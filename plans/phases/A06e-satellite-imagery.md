@@ -245,7 +245,7 @@ attribution control (`apps/web/src/components/MapView.tsx`, and `attribution` on
 contributors` · Copernicus Sentinel data \[year].
 
 ⚠ **Verify on device:** MapLibre native's attribution button behaves differently from GL JS's control,
-and suppressing it in favour of our own ⓘ has not been checked on Android.
+and suppressing it in favor of our own ⓘ has not been checked on Android.
 
 ---
 
@@ -866,7 +866,7 @@ still settling**, which is the point of putting the seam here.
 > logic that the render loop has already caught three separate bugs in.
 >
 > **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 3.
-> **The fallback if PR 3's clipping does not generalise:** Skia, revisited then rather than now.
+> **The fallback if PR 3's clipping does not generalize:** Skia, revisited then rather than now.
 
 **PR 2 — the producer.** ✅ **Merged 2026-08-25** (PR #46). **Everything server-side, so that PR 3 can
 be everything client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a

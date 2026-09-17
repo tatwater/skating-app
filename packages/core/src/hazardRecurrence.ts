@@ -2,7 +2,7 @@
  * Cross-season recurrence — the second window on D77's one clustering primitive (A05c / D78).
  *
  * Within a winter the question is *"is this the same ridge you already marked?"*. Across winters it is
- * *"is this the ridge that forms here every winter?"* — the same geometric judgement at a looser
+ * *"is this the ridge that forms here every winter?"* — the same geometric judgment at a looser
  * tolerance, plus the arithmetic in this file: how many distinct winters, out of how many, when in the
  * season, and how much of that is worth an operator's attention before first ice.
  *
@@ -50,7 +50,7 @@ export const RECURRENCE_PUBLIC_MIN_SEASONS = 2;
  * meant three winters of rows nobody ever looked at as a series (D78). What ships *dark* is the
  * skater-facing half: until this is on, every output of this module reaches an operator dashboard and
  * nothing else. Flip it when the queue has been read across at least two rollovers and the clusters at
- * the current bar look like real patterns — a judgement from `/admin/recurrence` and the tuning chart,
+ * the current bar look like real patterns — a judgment from `/admin/recurrence` and the tuning chart,
  * not a date.
  *
  * There is no feature-flag system in this repo and this phase does not invent one: a constant and a

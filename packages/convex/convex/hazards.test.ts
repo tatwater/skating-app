@@ -1086,7 +1086,7 @@ describe('hazards.listForBody — cluster consensus', () => {
 
     const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
     // Two witnesses across the cluster, though each stored row still shows one — the stored counts are
-    // untouched, because pooling is a read-time judgement and never rewrites what somebody said.
+    // untouched, because pooling is a read-time judgment and never rewrites what somebody said.
     for (const h of listed) expect(h.clusterConfirmCount).toBe(2);
     const stored = await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount);
     expect(stored).toBe(1);
@@ -1676,7 +1676,7 @@ describe('hazards.listRecentMerges', () => {
     );
   }
 
-  test('reads a window, so an ageing audit log never makes the panel slower', async () => {
+  test('reads a window, so an aging audit log never makes the panel slower', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', { role: 'moderator' });
     const recent = await seedAction(t, Date.now() - 2 * 24 * 60 * 60 * 1000);

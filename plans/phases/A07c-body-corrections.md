@@ -269,7 +269,7 @@ split" reports are a bay that wants a name, and the sheet says so before the cat
 - **§2.4 The A06f control folds in.** `PublicAccessSection`'s *Report no public access* becomes the
   `no_public_access` row of the same sheet, keeping its gate message and its *you reported this*
   read-back. One place to report, not two side by side.
-- **§2.5 "You reported this."** `myAccessFlags` generalises to `myOpenFlagsFor(waterBodyId)` so the
+- **§2.5 "You reported this."** `myAccessFlags` generalizes to `myOpenFlagsFor(waterBodyId)` so the
   sheet marks the categories already filed and the drawer can say *2 things reported — with the
   moderators*. The A08 `content_flag_resolved` notification already tells them the outcome.
 
@@ -392,7 +392,7 @@ outline writer in the app.
 ## Related
 
 - [`phases/A06f-no-public-access.md`](./A06f-no-public-access.md) — the first place in
-  `contentFlags`, and the dedup-as-corroboration argument this phase generalises.
+  `contentFlags`, and the dedup-as-corroboration argument this phase generalizes.
 - [`phases/A07b-corpus-by-request.md`](./A07b-corpus-by-request.md) — the request door.
 - [`phases/A09-subareas-as-places.md`](./A09-subareas-as-places.md) — why a bay is the answer to
   most "split" reports, and the put-in suppression row.

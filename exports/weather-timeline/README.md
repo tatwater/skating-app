@@ -69,7 +69,7 @@ Two reasons, and the first one is not sentiment:
 ## Layer tree
 
 Figma turns each `<g id>` into a layer name. Nothing is flattened, and no group is merged across
-lanes — every lane is independently selectable and recolourable.
+lanes — every lane is independently selectable and recolorable.
 
 ```
 Past weather — Mascoma Lake (dark)

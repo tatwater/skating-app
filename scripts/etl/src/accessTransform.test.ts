@@ -156,7 +156,7 @@ describe('parseAccessFeature', () => {
   });
 
   /**
-   * OSM's `fee` key takes values well beyond yes/no. Reading an unrecognised one as `false` would
+   * OSM's `fee` key takes values well beyond yes/no. Reading an unrecognized one as `false` would
    * publish "no fee" on a lot that charges.
    */
   test.each([

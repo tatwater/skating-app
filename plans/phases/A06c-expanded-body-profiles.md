@@ -395,7 +395,7 @@ own length.)*
 
 §5.2 specifies `summary` as a counter *"generalizing the Phase 04 contribution-counter pattern"*, and
 `lib/contributionCounts.ts` makes ±1 look obvious. But a profile's `reportCount` is a lifetime total
-where a card's counts are **window- and season-scoped**: a report ageing out has no event to hang a
+where a card's counts are **window- and season-scoped**: a report aging out has no event to hang a
 decrement on, and the D86 mean cannot be maintained incrementally at all — you cannot remove a value
 from a mean without knowing which value left.
 
@@ -1576,7 +1576,7 @@ time. Only *"change it right now"* requires a deploy, and none of these constant
 change in a hurry.
 
 **The one class that could reasonably move later** is A06d's OSM association radii (the ~250 m parking
-rule), because those want *iteration against real output* rather than judgement — the loop is
+rule), because those want *iteration against real output* rather than judgment — the loop is
 change-and-look, not change-and-reason. If that turns into a real annoyance during the ETL tuning pass,
 the honest fix is a script flag, not a database row: the tuning happens at ETL time, where a CLI argument
 is already the natural knob and the chosen value ends up in the runbook.
@@ -1725,7 +1725,7 @@ thumbs, which measure whether a *report* was helpful rather than what the ice wa
   predictions into the decay multiplier, the bounty gate and the contradiction settle. The fetch now
   returns `{ past, forecast }` and D74 is a return type rather than a rule each call site remembers.
 - **§5's counter is the wrong shape (D141).** Card counts are window- and season-scoped, so a report
-  ageing out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
+  aging out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
   Recomputed from a bounded index range, with a cron for the decay no write can catch.
 - **§5 cannot be validated on dev**, which holds 1 report and 2 hazards. It ships correct and renders
   nothing anywhere. Founder call: build it, validate at A06d or device testing.

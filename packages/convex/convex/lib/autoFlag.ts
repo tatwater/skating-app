@@ -34,7 +34,7 @@ type FlagReason = (typeof FLAG_REASONS)[number];
  *
  * 30 days is an opening number, and it belongs in the control room next to the chart that would say
  * whether it's right (the repeat-flag interval distribution). Too short and a chronic contributor
- * looks like a series of first offences; too long and someone who genuinely corrected course carries
+ * looks like a series of first offenses; too long and someone who genuinely corrected course carries
  * a count forward from last season.
  */
 export const AUTO_FLAG_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;

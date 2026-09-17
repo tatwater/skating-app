@@ -39,7 +39,7 @@ export interface BathymetrySource {
   /**
    * A notice the source's own terms require, rendered under the credit.
    *
-   * Only Champlain carries one so far. Its soundings are digitised from NOAA nautical charts, and
+   * Only Champlain carries one so far. Its soundings are digitized from NOAA nautical charts, and
    * chart-derived data conventionally carries a **"not for navigation"** notice — see §5 of the phase
    * doc, which flagged reading this properly before the layer renders next to anything on a safety
    * product.

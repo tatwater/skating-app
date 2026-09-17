@@ -13,7 +13,7 @@
  * components wearing one name (the risk `plans/phases/A02-body-editor-and-subareas.md` flags under
  * *To settle during the build*).
  *
- * **The skater path must come out behaviourally identical**, which is the price of Decision 12 and a
+ * **The skater path must come out behaviorally identical**, which is the price of Decision 12 and a
  * testing obligation rather than an aspiration: the existing map suite runs green unchanged.
  */
 

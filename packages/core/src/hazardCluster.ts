@@ -2,7 +2,7 @@
  * Hazard identity — one clustering primitive, read through two time windows (A05c / D77).
  *
  * *"Are these the same ridge you already marked?"* within a winter and *"is this the ridge that forms
- * here every winter?"* across winters are the **same geometric judgement** with a different time bound
+ * here every winter?"* across winters are the **same geometric judgment** with a different time bound
  * and a different tolerance. So there is one function here and two constant sets, rather than two
  * implementations that would drift — this repo already carries that scar, in the hazard verdict
  * vocabulary that was written down in four places and updated in three (D65).

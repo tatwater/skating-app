@@ -160,7 +160,7 @@ export function useFreezeUpTimeline({
   // change on renders that had nothing to do with the archive (the frame prefetch aborted and
   // restarted, the auto-select effect re-ran). `statsVersion` is bumped as each manifest lands, so
   // the progressive upgrade still happens — it just no longer happens for free.
-  // `statsVersion` is the invalidation key for a module-level cache the analyser cannot see, and
+  // `statsVersion` is the invalidation key for a module-level cache the analyzer cannot see, and
   // `baseUrl` is what `statsLookup` composes its keys from — neither is inferable from the body.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see above.
   const timeline = useMemo(

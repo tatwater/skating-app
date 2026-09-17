@@ -144,7 +144,7 @@ describe('parseAerialScene', () => {
 });
 
 describe('resolutionFromSceneName', () => {
-  it('reads centimetres out of the quarter-quad name', () => {
+  it('reads centimeters out of the quarter-quad name', () => {
     expect(resolutionFromSceneName('m_4407339_ne_18_030_20230621')).toBe(0.3);
     expect(resolutionFromSceneName('m_4407339_ne_18_060_20190612')).toBe(0.6);
     expect(resolutionFromSceneName('m_4407339_ne_18_100_20150801')).toBe(1);

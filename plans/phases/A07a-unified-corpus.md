@@ -39,7 +39,7 @@
 > blast-radius guard. 0 orphaned sub-areas and 0 dangling duplicate pointers after those deletions.
 >
 > **The three open items this document carried are all closed**, each on a measurement rather than a
-> judgement call: the salt-water question by **D126**'s elevation referee (98 refused), `classDissent`
+> judgment call: the salt-water question by **D126**'s elevation referee (98 refused), `classDissent`
 > by **D128**'s triage (354 → the residue only), and `RECONCILE_MIN_IOU` by **D129**'s soundings pass
 > (held at 0.5; nine pairs merged on per-row evidence). Elevation moved to 3DEP under **D127**, and
 > New York gained a measured-depth source under **D130**.
@@ -686,8 +686,8 @@ disagrees with geography, geography wins.
 
 **MIDAS 870 is not a water body.** Filed as North Pond (59 ac), it holds **17,922 soundings spanning
 151 × 348 km** — essentially all of Maine — of which **0.51% are actually inside North Pond**. Every
-row is `FMSRC=depthmap`, `FMSRCORG=meifw`: the digitised IF&W paper maps that `sources.ts` documents
-as a second dataset sharing one schema. Rows the digitisation could not key landed here.
+row is `FMSRC=depthmap`, `FMSRCORG=meifw`: the digitized IF&W paper maps that `sources.ts` documents
+as a second dataset sharing one schema. Rows the digitization could not key landed here.
 
 Assigning each sounding to the body containing it: **96.3% land in a body, across 263 distinct
 bodies.** Under the real gates (`MIN_SOUNDINGS = 12`, then density at `MAX_GAP_RATIO = 0.22`):
@@ -720,7 +720,7 @@ where 2.4 million measurements belong.
 The fixture that enforces it is MIDAS **5448** — China Lake, a real 3,939-acre water body with 25,807
 legitimate soundings and a clean containment score. **It must be provably untouched by the lane**, and
 that assertion belongs in the test suite rather than in a run log, because a future refactor that
-generalises the re-keyer is exactly the change that would break it silently.
+generalizes the re-keyer is exactly the change that would break it silently.
 
 ### The four rules (founder, 2026-08-03)
 
@@ -834,7 +834,7 @@ both sources specifically for parity/complementary benefit/clarity."*
 Our enum is `lake · pond · river · stream · reservoir · bay · marsh · other`. OSM's classifier
 (`packages/core/src/osm.ts`) accepts still water and defers flowing water, mapping `water=water body|pond|
 reservoir`, `natural=bay`, `wetland=marsh`, and falling back to `other` for a water *area* of
-unrecognised kind. Rivers and streams are deferred; swamp, bog and fen are skipped.
+unrecognized kind. Rivers and streams are deferred; swamp, bog and fen are skipped.
 
 Mapping NHD without regard to that produces asymmetry in both directions:
 
@@ -1811,7 +1811,7 @@ known and wasted if it isn't.
 | **`classDissent` (354)** | Joined to the refusing code: 164 `flowing`, ~87 `engineered`, both of them our own rules overruling a catalog. Only the residue queues. | **D128** |
 | **`RECONCILE_MIN_IOU` (287 pairs)** | The soundings refereed 9 of 292 — all nine one water body, none two. One-sided **and 3% of the band**, so the threshold **held at 0.5** and the nine merged as a named table. | **D129** |
 
-**The thing worth carrying out of it:** the salt question looked like a judgement call for a week and
+**The thing worth carrying out of it:** the salt question looked like a judgment call for a week and
 turned out to have a measurement sitting behind it that nobody had taken. The same measurement is
 what stopped the rule being *general* — 1,002 bodies sit under five meters and only 81 are
 candidates, so a corpus-wide cut would have deleted ~920 freshwater bodies including both entries of

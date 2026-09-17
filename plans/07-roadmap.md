@@ -374,7 +374,7 @@ page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted b
 🟢 **Complete** 2026-07-31 · PRs #34 #35 · [plan](./phases/A05c-hazard-memory.md) · D77 D78 D79 D80
 
 Two founder asks that were one problem: "which hazards were on this water body in '24/'25?" and "if three
-people pin the same ridge, do their confirmations split?" are the same geometric judgement at two time
+people pin the same ridge, do their confirmations split?" are the same geometric judgment at two time
 scales. One `clusterHazards` primitive, two windows (D77): within a season it prevents, pools, renders
 as consensus and auto-merges reversibly on the D36 tombstone pattern (D80); across seasons it becomes
 recurrence, ranked promotion suggestions, and body-level "ice history" advisories. The three-season
@@ -385,7 +385,7 @@ directly (D79); supersession is a backlink, never a hiding mechanism. *Duplicate
 corroboration, and operators watch recurrence form.*
 
 #### Deferred
-- ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgement, not a date
+- ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgment, not a date
 
 ## Phase A06a — Water body depth
 🟢 **Complete** 2026-07-30 · PR #33 · [plan](./phases/A06a-body-depth.md) · D68 D69
@@ -427,7 +427,7 @@ its basin.*
 #### Deferred
 - ⚪ **A curving anisotropy axis** — mitigated by capping at each water body's elongation; revisit only when a user complains about a named water body
 - ⚪ **Contour crowding on steep beds** — the obvious fix understates depth by omission
-- ⚪ **NY has no statewide source** — covered only via Champlain; the PDF digitisation path is costed in the plan doc
+- ⚪ **NY has no statewide source** — covered only via Champlain; the PDF digitization path is costed in the plan doc
 
 #### Ruled out
 - **Contours from GLOBathy rasters, permanently** — a linear distance-from-shore transform; an authoritative-looking rendering of a guess

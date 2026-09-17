@@ -45,7 +45,7 @@ export const REGION_MIN_ZOOM = 6;
  * The zoom admin lines and admin labels stop at.
  *
  * They come from the z0–6 overview, so past its native zoom they are drawn from overzoomed tiles and
- * carry that generalisation with them — a state line good to a few hundred meters. At low zoom that
+ * carry that generalization with them — a state line good to a few hundred meters. At low zoom that
  * is invisible. Past z10 it is not: the line would visibly part company with the mask's edge, which
  * is cut from TIGER and accurate to tens of meters, and would wander across Lake Champlain rather
  * than down it. So they fade out, and past z10 the border is shown by where the flat fill stops —
@@ -151,7 +151,7 @@ export interface ZoomableLayer {
  *
  * Zoom bounds are **narrowed, never widened**: a layer that already starts at z14 keeps z14 rather
  * than being pulled down to the regional floor, and one that already ends at z12 is not extended to
- * the admin cap. The policy is a clamp on the flavor's own judgement, not a replacement for it.
+ * the admin cap. The policy is a clamp on the flavor's own judgment, not a replacement for it.
  */
 export function composeBasemapLayers<L extends ZoomableLayer>(input: {
   /** `layers()` against the whole-planet overview source. */

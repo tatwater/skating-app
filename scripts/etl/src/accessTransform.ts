@@ -132,7 +132,7 @@ function parseCapacity(raw: unknown): number | undefined {
  * OSM `fee` as a tri-state.
  *
  * `undefined` means *nobody said*, which is emphatically not *free*. OSM's `fee` key takes values well
- * beyond yes/no (`interval`, a price, `donation`), and reading an unrecognised one as `false` would
+ * beyond yes/no (`interval`, a price, `donation`), and reading an unrecognized one as `false` would
  * publish "no fee" on a lot that charges — the kind of small confident wrongness D3 is about.
  */
 function parseFee(raw: unknown): boolean | undefined {

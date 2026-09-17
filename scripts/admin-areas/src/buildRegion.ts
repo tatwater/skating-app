@@ -39,7 +39,7 @@
  * a subtraction is unavoidable, since no TIGER file covers it, and there the error is biased on
  * purpose: the hole is punched at near-TIGER precision so the mask can never creep south over Vermont,
  * leaving the opposite error — an unmasked strip a few hundred meters wide on the Québec side, where a
- * little border-town detail may still show through. That is the artefact we chose to keep.
+ * little border-town detail may still show through. That is the artifact we chose to keep.
  *
  * The sea is subtracted too, and that one is a genuine two-source cut. See the `cutSea` block below
  * for why a legal boundary is not a coastline, and why this particular disagreement is harmless.
@@ -264,7 +264,7 @@ function subtract(a: Poly, b: Poly): Poly | null {
  * right — while the far side stayed as detailed as it liked. Doing it this way, the shared edge is
  * whatever `cutAgainst` says it is and the far side is as cheap as we can bear, which is the exact
  * opposite trade and the one we want. It is also why `cutAgainst` is a pre-simplified copy of the
- * region: an exact TIGER edge would drag fifty thousand centimetre-precision vertices into a file
+ * region: an exact TIGER edge would drag fifty thousand centimeter-precision vertices into a file
  * that ships inside a phone app.
  */
 function maskFeature(

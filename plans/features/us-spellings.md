@@ -115,6 +115,14 @@ the bounty labels `Cancelled` / `Cancelling…` and one "may have been cancelled
   "fulfilling".
 - Two Biome format errors: shortening a JSX line and a `lines.push('…')` argument crossed the
   reflow threshold. `biome format --write` on the two files.
+- **The word list was the ceiling, not the floor** (review pass, same day). A word-boundaried scan
+  cannot see a listed word inside a longer one — `unrecognised` past `recognise`, `behaviourally`
+  past `behaviour`, bare `favour` past `favourite` — and the table never held `judgement`,
+  `artefact`, `ageing`, `centimetre`, `digitise`, `generalise`, `relabel`, `channelling`,
+  `signalling`, `analyser`, `deserialise`, `recolour`, `offence`, `initialiser`, `mechanise`. A
+  stem-level pass over the whole tree found **~220 more hits in ~120 files**, a few of them
+  admin-facing copy (`/admin/tuning`, `/admin/water/$id`), and one identifier (`relabelled` in
+  `scripts/bathymetry/src/contour.ts`). The next sweep starts from stems, not words.
 
 **How it ran — two commits, one PR:**
 
@@ -135,8 +143,12 @@ this file; `water=harbour` (OSM tag, `waterClass.ts:113`); the place-name regex 
 `scripts/etl/src/tidalBand.ts`; the OSM depth-unit parser's regex (`metre|metres` alongside `meter|meters`) and its `'2 metres'`
 fixture in `scripts/etl/src/transform.ts` / `.test.ts`;
 "Burlington Harbour" in `phases/A02-body-editor-and-subareas.md`; agency `copyrightText` (fetched
-at runtime, never in the tree); and lowercase literals that name things that existed (branch names,
-campaign ids, commit scopes) — the same rule as the renumbering.
+at runtime, never in the tree); the one credit that *is* in the tree — *"Soundings digitised from
+NOAA nautical charts by University of Vermont and VCGI"*, the attribution we agreed to render
+(`contourLayer.ts`, `bathymetry/src/sources.ts`, `PROVENANCE.md`, and the tests and prose that
+quote it verbatim; `sources.test.ts` accepts either spelling on purpose); and lowercase literals
+that name things that existed (branch names, campaign ids, commit scopes) — the same rule as the
+renumbering.
 
 **Deliberately not built (founder calls, 2026-09-17):** a guard test. The rule in `plans/README.md`
 § Words and `CLAUDE.md` stands on review alone; if it drifts again, the inventory in this section

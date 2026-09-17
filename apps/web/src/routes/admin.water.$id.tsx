@@ -496,7 +496,7 @@ interface DepthBody {
  * **The editable fields hold operator values only, and that is a correctness rule rather than a
  * styling one** (review fix, 2026-07-31). The first cut pre-filled them from whatever the row held,
  * and `setDepth` stamped `operator` on everything it was sent — so saving a max you *did* know
- * relabelled the HydroLAKES mean sitting in the other box as a survey reading, dropped the `~` from
+ * relabeled the HydroLAKES mean sitting in the other box as a survey reading, dropped the `~` from
  * the public caption, and locked a modeled number against every future import. An automated value is
  * therefore shown as text, never as a pre-filled input, and a blank box means "no operator reading",
  * not "delete whatever is there".
@@ -862,7 +862,7 @@ function SubAreaTool({
                   <span className="block text-warning text-xs">{bay.systemDelistReason}</span>
                 ) : null}
                 {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
-                    automatic: a bay's seaward edge is a judgement a skater can prove wrong by
+                    automatic: a bay's seaward edge is a judgment a skater can prove wrong by
                     skating past it, and this is where the proof collects for a human to act on. */}
                 {(() => {
                   const bayStats = stats?.[bay._id];
@@ -1987,7 +1987,7 @@ function TrackTool({ tracks }: { tracks: readonly unknown[] }) {
  *
  * What it must never say is that a hazard *will* be there (D3). The ranking orders candidates for a
  * human decision — decay tier, corroboration, type — and the promotion it offers is the operator's
- * judgement, recorded with their reason like every other moderation action.
+ * judgment, recorded with their reason like every other moderation action.
  */
 
 /**
@@ -2266,8 +2266,8 @@ function PromotionTool({
         </ul>
       )}
       <p className="text-foreground-muted text-xs">
-        Ranked by how the type behaves and how many people confirmed it — a queue for your
-        judgement, not a prediction that any of them will be back.
+        Ranked by how the type behaves and how many people confirmed it — a queue for your judgment,
+        not a prediction that any of them will be back.
       </p>
     </ToolCard>
   );

@@ -722,7 +722,7 @@ export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): 
  * ## The two families, measured
  *
  * **`flowing`** — a catalog calls it moving water and another calls it a lake. This is the
- * impoundment and deadwater case, which D96 already settles in our favour: we carry 26 `river`-class
+ * impoundment and deadwater case, which D96 already settles in our favor: we carry 26 `river`-class
  * bodies on purpose, and `classifyName` keeps `Higley Flow` and `Debsconeag Deadwater` by name. 164
  * bodies on the measured run, dominated by `osm:water=river` (109) and `3dhp:featuretype=1` (43).
  * The fixture is **Lac Saint-François**, 87,927 acres of the St. Lawrence: OSM `water=lake`, 3DHP

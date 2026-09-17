@@ -155,7 +155,7 @@ describe('gridPlan', () => {
   });
 
   it('floors the shoreline spacing at 5 m, so a small pond is not over-constrained', () => {
-    // Below the floor a 2 km lake asks for 4 m and a farm pond for centimetres, which would put more
+    // Below the floor a 2 km lake asks for 4 m and a farm pond for centimeters, which would put more
     // zero-depth constraints around the bank than the survey has readings in the water.
     expect(2000 / GRID_CELLS).toBeLessThan(5);
     expect(gridPlan(cloud, 1).shoreSpacingM).toBe(5);

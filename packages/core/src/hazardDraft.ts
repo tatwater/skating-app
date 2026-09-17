@@ -12,7 +12,7 @@
  * center yet, and a line draft with fewer than two distinct vertices. A polyline is captured one tap
  * at a time, so "half a line" is a normal intermediate — it must be a value the UI can hold and
  * render, and `isDraftSubmittable` is the single gate that decides it can't be stored yet.
- * (`isValidHazardShape` remains the authority; this module never re-implements that judgement.)
+ * (`isValidHazardShape` remains the authority; this module never re-implements that judgment.)
  */
 
 import type { LatLng } from './geometry';

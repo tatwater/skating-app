@@ -99,7 +99,7 @@ describe('fitStefanAlpha', () => {
 });
 
 describe('unit conversion', () => {
-  it('round-trips inches and centimetres', () => {
+  it('round-trips inches and centimeters', () => {
     expect(inchesToCm(4)).toBeCloseTo(10.16, 6);
     expect(cmToInches(10.16)).toBeCloseTo(4, 6);
     expect(cmToInches(inchesToCm(7.5))).toBeCloseTo(7.5, 6);

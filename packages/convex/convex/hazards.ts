@@ -672,7 +672,7 @@ export const listPromotionCandidates = query({
  * confirming *"the ridge is here right now"* is a different statement from *"ridges form here"*, and
  * only the first is confirmable at all — so the pin is exactly the thing that should still take votes
  * once a feature exists beside it. Moderation stays the only visibility axis, which is what it always
- * should have been: one is a judgement about a *report*, the other is provenance about a *feature*.
+ * should have been: one is a judgment about a *report*, the other is provenance about a *feature*.
  */
 function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'hazards'> {
   return hazard !== null && hazard.moderationStatus === 'visible';

@@ -14,7 +14,7 @@
  * An access alert is a decaying claim about a *launch or lot* — 30-day TTL, hard-expired at the season
  * boundary. Private land does not thaw, so that lifecycle would delete the fact every July.
  * `waterBodies.remove` (D48) is a human act with a reason, for a body that should go. Neither
- * expresses *on the map, and marked*, which is the state this adds — and which A07b generalised into
+ * expresses *on the map, and marked*, which is the state this adds — and which A07b generalized into
  * **standing**: a `none` body is *dormant* (`standing.ts`), drawn only when you zoom in on it and
  * pushed at nobody, exactly like a lake nobody has skated in three seasons.
  *

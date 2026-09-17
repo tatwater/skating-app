@@ -71,7 +71,7 @@ pmtiles verify world-z6-*.pmtiles && pmtiles verify northeast-*.pmtiles
   draw order; the apps only supply the URLs.
 - **`--maxzoom=6` for the world** is the smallest thing that still draws recognizable coastlines and
   carries country and state labels. Each further level roughly quadruples it, and MapLibre overzooms
-  past the archive's own maximum, so z6 keeps rendering at z14 — generalised, which is why
+  past the archive's own maximum, so z6 keeps rendering at z14 — generalized, which is why
   `ADMIN_MAX_ZOOM` fades the admin lines out at z10 rather than letting them wander.
 - **`--region` rather than `--bbox`** roughly halves the regional archive (948 MB → 458 MB) *and* is
   what stops Ontario rendering. It clips by **tile**, not by polygon, so a fringe of Connecticut

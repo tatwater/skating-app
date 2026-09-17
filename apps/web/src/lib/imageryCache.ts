@@ -169,7 +169,7 @@ async function decode(blob: Blob): Promise<ImageBitmap | null> {
  * Is this cell already decoded in memory?
  *
  * Asked **before** a view announces itself as loading. A pan that lands on cells already resident
- * costs no network and no decode, so the wash would be signalling work that is not happening — and a
+ * costs no network and no decode, so the wash would be signaling work that is not happening — and a
  * loading indicator that fires when nothing is loading teaches people to ignore the one that means
  * something.
  */

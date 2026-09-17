@@ -954,7 +954,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       stats.classDissent++;
       // **Triaged, not just counted** (founder, 2026-08-08). 354 rows is a number, not a queue —
       // nobody can work it without knowing which are our own rules firing correctly. `flowing` is
-      // the impoundment case D96 already settles in our favour; `engineered` is NHD dropping 43% of
+      // the impoundment case D96 already settles in our favor; `engineered` is NHD dropping 43% of
       // its reservoirs by purpose code. What is left is a contradiction nobody has ruled on.
       const refusingTokens = group.members.filter((m) => m.cls === null).map((m) => m.sourceToken);
       if (settledClassDissent(refusingTokens)) stats.classDissentSettled++;
@@ -1023,7 +1023,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
         // ⚠ It used to demote unconditionally, which contradicted the rule twenty lines up: a named
         // bay the grid never found a parent for keeps `bay` (the Paugus Bay call, founder
         // 2026-08-07), while a named bay whose parent was found and *then* refused — for being out
-        // of region, tidal, or under the floor — was relabelled `unclassified`. Those are the same
+        // of region, tidal, or under the floor — was relabeled `unclassified`. Those are the same
         // epistemic position, "a named arm of something we do not carry", and the answer was being
         // decided by which way the parent happened to die.
         //

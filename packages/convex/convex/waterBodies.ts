@@ -2233,7 +2233,7 @@ export const importElevations = internalMutation({
  * encodes: a human who typed a surveyed number knows more than a DEM, and an automated sweep that
  * quietly reverted them would make the override worthless the next time a pass ran.
  *
- * ⚠ **And it does not decide anything.** The judgement lives in the pass — see `demIdentify`, where
+ * ⚠ **And it does not decide anything.** The judgment lives in the pass — see `demIdentify`, where
  * a set of rasters is read for consensus and for whether that consensus is about water or about the
  * ground under it. This clears what it is told to clear and counts what it did. **The caller owns
  * the blast radius**: a service returning junk could refuse every point in the corpus, and the cap
@@ -3002,7 +3002,7 @@ export const merge = mutation({
  * **Extracted from `merge` so the ETL cannot grow a second, subtly different version** (A07a-3). The
  * import path needs exactly this — see `retireAbsorbedBodies` — and the parts that are easy to omit
  * when reimplementing are the ones that lose data silently: a stranded `bodyFeature` known-hazard
- * pin, a suppressed put-in whose suppression is forgotten, a favouriter cut off from drive-time
+ * pin, a suppressed put-in whose suppression is forgotten, a favoriter cut off from drive-time
  * matching, a hand-drawn sub-area left on a tombstone. None of those throw.
  *
  * `actorId` is **optional, and absent means the system acted** — the precedent is A05c/D80's
@@ -3615,7 +3615,7 @@ export const setWeatherSamplePoints = mutation({
  * 2026-07-31). A field the moderator did not touch must arrive as `undefined` and be left *exactly* as it
  * was, rung included. The first cut took a plain `v.number()` per field and stamped `operator` on
  * everything it received — so a form that pre-filled a HydroLAKES mean and saved a max the moderator did
- * know relabelled a 90 m-DEM estimate as a survey reading: the public caption lost its `~`, and the value
+ * know relabeled a 90 m-DEM estimate as a survey reading: the public caption lost its `~`, and the value
  * became permanently immune to ETL correction. Provenance you can launder by accident is not provenance.
  *
  *  - **absent** — leave the measurement and its rung untouched, whatever they are.
@@ -5949,7 +5949,7 @@ export const resolveIncomingMergeDuplicates = internalMutation({
         // than losing a modeled depth.** A curated boost is an operator saying this lake matters;
         // `includedByRequest` is A07b's override saying it exists *despite* a corpus rule. Both
         // survive every prune by design, and deleting the row that carries one would revoke a human
-        // judgement with no trace. Neither is present on run 7's losers — which is exactly why it
+        // judgment with no trace. Neither is present on run 7's losers — which is exactly why it
         // is cheap to be right about now rather than after the first one appears.
         if ((survivor.curatedBoost ?? 0) === 0 && (loser.curatedBoost ?? 0) !== 0) {
           inherit.curatedBoost = loser.curatedBoost;
@@ -6189,7 +6189,7 @@ export const setIncludedByRequest = internalMutation({
  *
  * **The counts decay with no write to hang the decay on.** Every other path that touches
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
- * report simply *ageing out* of the 14-day window is not an event anywhere in the system. Without
+ * report simply *aging out* of the 14-day window is not an event anywhere in the system. Without
  * this tick, a lake that was busy in January still shows January's card in March, which is the exact
  * failure mode A06c §5.4 named: a card carrying last season's numbers into a month when the lake is open
  * water.

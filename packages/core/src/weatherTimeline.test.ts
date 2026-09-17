@@ -188,7 +188,7 @@ describe('precipitationKind', () => {
   });
 
   it('scales snowfall to water-equivalent before applying the threshold', () => {
-    // 0.3 cm of snow is ~3 mm of water. Comparing the centimetre figure against a millimetre floor
+    // 0.3 cm of snow is ~3 mm of water. Comparing the centimeter figure against a millimetre floor
     // set the bar ten times too high and dropped most light snow.
     expect(precipitationKind(hour(3, { snowfallCm: 0.3 }))).not.toBeNull();
   });
@@ -198,7 +198,7 @@ describe('precipitationKind', () => {
     expect(precipitationKind(hour(3, { precipitationMm: 0 }))).toBeNull();
   });
 
-  it('falls through to the derivation for an unrecognised code rather than dropping the hour', () => {
+  it('falls through to the derivation for an unrecognized code rather than dropping the hour', () => {
     const kind = precipitationKind(
       hour(3, { weatherCode: 999, snowfallCm: 1, precipitationMm: 10 }),
     );

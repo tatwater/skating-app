@@ -131,7 +131,7 @@ interface Candidate {
  * OSM water polygons at the one-acre floor, from the same cached extract the merge reads.
  *
  * **Unclassified on purpose.** The merge maps tags to a class and drops what it refuses; here that
- * would disqualify a candidate on a *taxonomic* judgement in a measurement about *geometry*, and it
+ * would disqualify a candidate on a *taxonomic* judgment in a measurement about *geometry*, and it
  * would do so asymmetrically, since the NHD side is loaded without its classifier too. If a state
  * agency surveyed it, it is water, whatever either catalog calls it.
  */
@@ -311,7 +311,7 @@ function candidateFor(anchor: LatLng, grid: Map<string, Candidate[]>): Candidate
   return best;
 }
 
-/** Which side a single metric favours, given the margin it has to clear. */
+/** Which side a single metric favors, given the margin it has to clear. */
 function compare(osm: number, nhd: number, margin: number, higherWins: boolean): Verdict {
   const diff = higherWins ? osm - nhd : nhd - osm;
   const scale = higherWins ? 1 : Math.max(Math.abs(osm), Math.abs(nhd), 1);

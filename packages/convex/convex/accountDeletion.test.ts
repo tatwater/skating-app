@@ -325,7 +325,7 @@ describe('the grace window', () => {
    * reports on every read — so the marker survives precisely because the report does. Under the first
    * amendment it didn't, and the purge had to materialize a row to compensate.
    *
-   * It also pins `lastUsedAt`: put-ins are exempt from every ageing rule in the app, so the date is
+   * It also pins `lastUsedAt`: put-ins are exempt from every aging rule in the app, so the date is
    * how a three-winters-old access point avoids reading as current (D3).
    */
   test("a departed skater's put-in survives, dated by the skate that revealed it", async () => {
@@ -1249,7 +1249,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
    * silently deleted, and the suite reported green because no test ever let 30 days pass.
    *
    * So this one advances the clock and goes in through `finalizeDueDeletions`, asserting the three
-   * things the shortcut can't see: the report survives its own ageing, the track survives with it, and
+   * things the shortcut can't see: the report survives its own aging, the track survives with it, and
    * the map still draws it.
    */
   test('the real path — request, thirty days, cron — keeps the published track drawing', async () => {

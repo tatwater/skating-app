@@ -147,8 +147,7 @@ export function MetricHistogram({
 }) {
   const result = useQuery(api.analytics.latest, { metrics: [metricKey] });
   const entry = catalog?.get(metricKey);
-  if (result === undefined || catalog === null)
-    return <LoadingCard title={entry?.label ?? '…'} />;
+  if (result === undefined || catalog === null) return <LoadingCard title={entry?.label ?? '…'} />;
   const point = result[metricKey];
   const labels = entry?.bucketLabels ?? [];
   const counts = point?.buckets ?? [];
@@ -211,8 +210,7 @@ export function MetricComposition({
 }) {
   const result = useQuery(api.analytics.latest, { metrics: [metricKey] });
   const entry = catalog?.get(metricKey);
-  if (result === undefined || catalog === null)
-    return <LoadingCard title={entry?.label ?? '…'} />;
+  if (result === undefined || catalog === null) return <LoadingCard title={entry?.label ?? '…'} />;
   const meta = result[metricKey]?.meta ?? {};
   const slices: CompositionSlice[] = Object.entries(meta).map(([key, value]) => ({
     key,

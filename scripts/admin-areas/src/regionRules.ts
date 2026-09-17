@@ -99,7 +99,7 @@ export function needsClipping(box: BBox): boolean {
 /**
  * Round every coordinate to four decimals — about eleven meters at this latitude.
  *
- * TIGER emits seven, which is centimetres: a precision no consumer of this file can render and every
+ * TIGER emits seven, which is centimeters: a precision no consumer of this file can render and every
  * consumer has to download. Applied **after** simplification, so it only trims digits rather than
  * moving any vertex a renderer would have kept — four decimals is finer than the finest tolerance the
  * builder uses.

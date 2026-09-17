@@ -162,7 +162,7 @@ describe('the gate threshold', () => {
     // three bands, which found that quality does not track this ratio at all (the worst sample was at
     // 10%, with the most soundings in the grid).
     //
-    // It reads 0.22 rather than 0.12 because the denominator changed, not because the judgement did.
+    // It reads 0.22 rather than 0.12 because the denominator changed, not because the judgment did.
     // `sqrt(area)` runs a median 1.82x smaller than the bbox diagonal, so holding 0.12 would have
     // silently tightened the gate by that factor — it took the drop count from 271 to 1,224. 0.22
     // reproduces the approved keep-rate (279) while letting the fairness fix redistribute WHICH lakes

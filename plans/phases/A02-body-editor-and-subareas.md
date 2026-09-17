@@ -158,7 +158,7 @@ the operator to redraw. See *§What the build found* item 1 for the hole this cl
 **Decision 12 — The editor's canvas comes from refactoring `MapView` into a shared shell**, not from a
 second map component (founder call, overriding the build's recommendation). One place for map bugs and
 one style/layer pipeline beats two diverging canvases, even though the refactor lands on the most
-load-bearing untested-by-design file in the web app. The skater path must come out behaviourally
+load-bearing untested-by-design file in the web app. The skater path must come out behaviorally
 identical; terra-draw stays lazy and admin-only regardless of who owns the shell.
 
 **Decision 13 — The curation session is drawn from the corpus, then corrected.** The build draws all
@@ -388,7 +388,7 @@ parameterized base — style, bounds, layer set, click handling — that the ska
 configure, leaving the pure transforms where they already live in `lib/waterMap`. The build's own
 recommendation was a second, leaner admin component; the founder's call is one shell, and the price is
 that this refactor lands on the most load-bearing file in the web app. **The skater path must come out
-behaviourally identical**, which is a testing obligation, not an aspiration: the existing map tests run
+behaviorally identical**, which is a testing obligation, not an aspiration: the existing map tests run
 green unchanged before anything editor-shaped is added.
 
 **The camera is locked to the body.** `maxBounds` = the body's bbox plus a small margin, `minZoom` =
@@ -746,7 +746,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
     exactly the kind of UI courtesy §7c says is not an authority. `listByWaterBody` now resolves the
     body and refuses a bay that isn't on it.
 
-    Two judgement calls in the check, both different from `bounties.create`'s superficially identical
+    Two judgment calls in the check, both different from `bounties.create`'s superficially identical
     one. It compares against the **survivor** (D36), because a merge repoints the loser's bays onto
     the survivor — a link still naming the merged-away body is a legitimate pair, not a cross-body
     one, and 400ing someone's bookmark would be the fix inventing a second bug. And a **delisted bay

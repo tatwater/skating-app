@@ -306,7 +306,7 @@ export const UNNAMED_WETLAND_MIN_SQM = UNNAMED_WETLAND_MIN_ACRES * SQ_M_PER_ACRE
  *
  * Two things fall out. **SwampMarsh is 13% of Maine's post-floor set and 63% of New Hampshire's** —
  * so "the mechanical part is small, 98.9% is LakePond variants" was a Maine fact that does not
- * generalise, and D96 could not have been decided from one state. And the naming gradient is the
+ * generalize, and D96 could not have been decided from one state. And the naming gradient is the
  * discriminator, consistently: lakes are named more than half the time, wetland almost never.
  *
  * Of the 19,610 unnamed bodies NHD would add to our region, **13,976 (71%) are SwampMarsh**, 82% of

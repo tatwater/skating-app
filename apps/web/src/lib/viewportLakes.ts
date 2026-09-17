@@ -51,7 +51,7 @@ export const VIEWPORT_LIST_LIMIT = 50;
 /**
  * Order the named bodies in view, cap the list, and say what was left off.
  *
- * **Unnamed water is filtered out entirely**, and that is a judgement about what a list can do that
+ * **Unnamed water is filtered out entirely**, and that is a judgment about what a list can do that
  * a map can't. On the map an unnamed pond is a distinct shape in a place — you can tell two of them
  * apart at a glance, and tapping one is a deliberate act. In a list they collapse into eleven
  * identical rows reading "Unnamed water", distinguishable only by an acreage nobody is searching by.

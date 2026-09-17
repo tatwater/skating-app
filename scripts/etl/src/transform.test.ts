@@ -323,7 +323,7 @@ describe('transformFeatures (batch resilience)', () => {
 
     // **A snowmaking basin at a ski resort is not water anyone skates.** `water=basin` used to fall
     // through to `other` and be imported; it is now an explicit drop. The old assertion here read
-    // `{ type: 'other', name: '' }` — an unnamed 14.8-acre "water area of unrecognised kind", which
+    // `{ type: 'other', name: '' }` — an unnamed 14.8-acre "water area of unrecognized kind", which
     // is precisely the shape of thing `other` was hiding.
     expect(byId.has('way/30930914')).toBe(false);
 

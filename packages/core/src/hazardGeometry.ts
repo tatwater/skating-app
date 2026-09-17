@@ -111,7 +111,7 @@ export const HAZARD_DEFAULT_RADIUS_M: Record<HazardType, number> = {
  *
  * A folded pressure ridge is loose plates 1–15 ft on *each* side with a deep puddle down the middle
  * (research §2) — several meters of genuine width plus GPS and eyeball error, so its band is wide. A
- * hairline tectonic crack is centimetres wide; its band is mostly just positional uncertainty. Drawing
+ * hairline tectonic crack is centimeters wide; its band is mostly just positional uncertainty. Drawing
  * both as the same zero-width polyline would be a lie in opposite directions.
  */
 export const HAZARD_DEFAULT_BUFFER_M: Record<HazardType, number> = {

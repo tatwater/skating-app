@@ -252,7 +252,7 @@ satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in A06e (Workstream 4, D138
 referenceLinks?: { label, url }[]       // the ONE non-derivable link class: water body associations (D71)
 // ── The map summary card (A06c §5, D141). Absent ⇒ no card at all, which is §5.3's whole rule.
 //    Recomputed from a bounded window on every write that could change it, never incremented:
-//    the counts are window- AND season-scoped, so a report ageing out has no event to decrement
+//    the counts are window- AND season-scoped, so a report aging out has no event to decrement
 //    on, and the D86 mean cannot be maintained incrementally at all.
 summary?: {
   recentReportCount: number             // visible reports in the 14d window, current season
@@ -847,7 +847,7 @@ type: enum(activity_detected, bounty_request,
            content_flag_resolved)
 payload: any                 // typed at the BOUNDARY, not the schema (A08): `lib/notificationQueue.ts`
                              // builds it from a settled trigger, `lib/notificationResolve.ts` parses it
-                             // and renders anything unrecognised as a degraded "unknown" row
+                             // and renders anything unrecognized as a degraded "unknown" row
 readAt?: timestamp
 createdAt: timestamp
 pushedAt?, emailedAt?: timestamp  // A08 PR 3 — transport stamps; the delivery action reads before / writes after

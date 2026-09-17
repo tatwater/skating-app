@@ -561,7 +561,7 @@ export function transformDepths(input: TransformInput): TransformResult {
     if (merged.contested) {
       errors.push({
         key,
-        message: `${merged.rowCount} records disagree across a shallow threshold (means ${fmt(merged.means)}, maxima ${fmt(merged.maxima)}) — merged, but the shallow classification is a judgement call here`,
+        message: `${merged.rowCount} records disagree across a shallow threshold (means ${fmt(merged.means)}, maxima ${fmt(merged.maxima)}) — merged, but the shallow classification is a judgment call here`,
       });
     }
     records.push({

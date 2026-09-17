@@ -19,7 +19,7 @@
  * ## Still water only (D4)
  *
  * Every function assumes a closed, still-water polygon. Rivers are deferred, and the axis and
- * fetch numbers would be actively meaningless on a reach: a river's "long axis" is an artefact of
+ * fetch numbers would be actively meaningless on a reach: a river's "long axis" is an artifact of
  * where the mapper cut the segment, and its "fetch" is the width of the channel. If rivers ever
  * enter the corpus, they must be excluded here rather than quietly measured.
  */
@@ -245,7 +245,7 @@ function convexHull(points: [number, number][]): [number, number][] {
  *
  * The plan said *"the hull diameter (longest chord between hull vertices), giving `longAxisM`…
  * The perpendicular hull width gives `shortAxisM`."* **That pair does not produce a dimension
- * line**, and the error is a factor of two, not a rounding artefact. For a rectangle `w × h` with
+ * line**, and the error is a factor of two, not a rounding artifact. For a rectangle `w × h` with
  * `h ≫ w` the hull diameter is the *diagonal*, and the hull's extent measured perpendicular to
  * that diagonal is `2wh/L ≈ 2w` — because the two extreme corners sit on opposite sides of the
  * diagonal. A 5 × 1 mile lake would have rendered as "5 × 2 miles", plausibly and wrongly.

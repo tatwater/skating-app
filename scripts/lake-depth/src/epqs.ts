@@ -109,7 +109,7 @@ export type EpqsOutcome =
  * (D104) is that *"a lake stamped from a 30 m raster can be re-stamped from 1 m later"* — a
  * comparison that silently breaks the day two rows carry two different units.
  *
- * The cut is at 0.01: no real DEM has a centimetre posting, and no degree-expressed resolution
+ * The cut is at 0.01: no real DEM has a centimeter posting, and no degree-expressed resolution
  * reaches a hundredth of a degree (1.1 km) for a product mapped at meter scale.
  */
 export function resolutionMeters(raw: unknown, lat: number): number | undefined {

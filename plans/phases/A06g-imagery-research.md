@@ -102,7 +102,7 @@ Checked, because "38% below the floor" reads like over-subtraction:
 - **It is not.** Only **2 nulls in 2,578**; the margin distribution runs to **p90 +8.8 dB** across a
   45 dB spread. Over-subtraction collapses a distribution; this one is broad.
 - **The size trend is flat to inverted** — 34% below floor for bodies under 50 interior pixels against
-  **51% for bodies over 1,000**. An estimation artefact would punish small water bodies hardest; this does the
+  **51% for bodies over 1,000**. An estimation artifact would punish small water bodies hardest; this does the
   opposite, which is the signature of a real property of large open surfaces.
 - **NESZ is ESA's own annotation**, consistent with the IW specification (≤ −22 dB) and with published
   calm-water `VH` values of −25 to −30 dB. Water bodies are genuinely that dark.

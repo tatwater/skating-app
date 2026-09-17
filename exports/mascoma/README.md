@@ -39,7 +39,7 @@ them there thins each road **proportionally to its class**:
 | desktop (z14.5) | 4.04 | 2.60 | 1.53 | 0.69 |
 
 The mobile file is not the desktop one shrunk. It's the app at z13.2 — different stroke weights,
-fewer labels, coarser generalisation, read from z13 tiles instead of z14.
+fewer labels, coarser generalization, read from z13 tiles instead of z14.
 
 ## Layer tree
 
@@ -171,4 +171,4 @@ why the first version of this export looked heavy. `layer_visible()` is not opti
 
 For light mode, regenerate the style with `namedFlavor('white')` and swap the four app colors for
 `WATER_PALETTE.white` / `CONTOUR_PALETTE.white`. Note the dark flavor has **71** style layers and the
-white one **69** — the sets genuinely differ, so the style JSON must be regenerated, not recoloured.
+white one **69** — the sets genuinely differ, so the style JSON must be regenerated, not recolored.

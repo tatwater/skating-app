@@ -35,7 +35,7 @@ const POLYGON_CACHE = join(WORK_DIR, 'polygons.json');
  *
  * **Champlain is pinned rather than left to the span**, for two reasons. It is the founder's ask, and
  * it is a 174 km outlier next to Vermont's next-largest at 5.7 km — a size-spanning pick puts it in
- * the top bucket and can then pass over it in favour of a shape it has not seen yet. It is also the
+ * the top bucket and can then pass over it in favor of a shape it has not seen yet. It is also the
  * only New York coverage that exists, filed under VT where its source lives.
  *
  * Lake George was asked for and is **not** here: no agency publishes bathymetry for it, or for any

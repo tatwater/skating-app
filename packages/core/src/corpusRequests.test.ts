@@ -114,9 +114,9 @@ describe('parseCatalogResponse', () => {
       NOW,
     );
     expect(res).toEqual({ kind: 'none' });
-    expect(parseCatalogResponse({ type: 'FeatureCollection', features: [] }, POINT, NOW)).toEqual(
-      { kind: 'none' },
-    );
+    expect(parseCatalogResponse({ type: 'FeatureCollection', features: [] }, POINT, NOW)).toEqual({
+      kind: 'none',
+    });
   });
 
   it('keeps a refused class as a candidate with no cls, so the moderator sees why', () => {

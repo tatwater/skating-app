@@ -273,7 +273,7 @@ differently, because "the state surveyed this" and "we interpolated this" are di
 There's one case worth telling because it shows what the data is really like. Maine files one of its
 lake IDs — number 870 — as "North Pond, 59 acres". It actually contains **17,922 depth soundings
 spread across 348 km, essentially the entire state**, of which 0.5% are in North Pond. It's not a
-lake; it's where the digitisation dumped everything it couldn't file. Rather than throw those
+lake; it's where the digitization dumped everything it couldn't file. Rather than throw those
 measurements away, we assigned each sounding to whichever lake actually contains it — recovering
 **232 lakes that had no contours at all.** The credit line on those says the lake assignment is ours,
 not the agency's, because it is.

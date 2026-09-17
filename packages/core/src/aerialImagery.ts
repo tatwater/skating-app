@@ -99,7 +99,7 @@ export function aerialExportUrl(
  * outward from the *solid* shape, so an image cropped to that shape's bounding box cuts the fade off
  * wherever the shape touches its own bbox — which is every lake, at the northernmost and southernmost
  * points at minimum. On screen that is a **hard straight line across the middle of a soft gradient**,
- * and it reads as a rendering artefact because it is one.
+ * and it reads as a rendering artifact because it is one.
  *
  * Pass the tier's feather distance. Erring generous costs a few meters of image nobody sees; erring
  * tight costs the edge the feather exists to create.
@@ -194,7 +194,7 @@ export function parseAerialScene(response: unknown): AerialScene | null {
 export function resolutionFromSceneName(name: string): number | undefined {
   const parts = name.split('_');
   for (const part of parts) {
-    // A three-digit field of centimetres: 030 ⇒ 0.3 m, 060 ⇒ 0.6 m, 100 ⇒ 1 m.
+    // A three-digit field of centimeters: 030 ⇒ 0.3 m, 060 ⇒ 0.6 m, 100 ⇒ 1 m.
     if (/^\d{3}$/.test(part)) {
       const cm = Number(part);
       if (cm > 0 && cm <= 200) return cm / 100;

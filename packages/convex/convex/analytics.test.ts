@@ -292,15 +292,26 @@ describe('analytics.renameMetricKey', () => {
     await expect(
       t.mutation(internal.analytics.renameMetricKey, { from: 'x', to: 'not_a_metric' }),
     ).rejects.toThrow(/unknown target metric/);
+    // `in` would have admitted an `Object.prototype` name; the spec lookup does not.
+    await expect(
+      t.mutation(internal.analytics.renameMetricKey, { from: 'x', to: 'constructor' }),
+    ).rejects.toThrow(/unknown target metric/);
+  });
+
+  test('refuses a counter or rollup target — the cron would become a second writer', async () => {
+    const t = harness();
+    await expect(
+      t.mutation(internal.analytics.renameMetricKey, { from: 'x', to: 'signups' }),
+    ).rejects.toThrow(/not an external catalog measurement/);
   });
 
   test('is a no-op when the keys are equal', async () => {
     const t = harness();
     const result = await t.mutation(internal.analytics.renameMetricKey, {
-      from: 'signups',
-      to: 'signups',
+      from: 'catalog_edh_coverage',
+      to: 'catalog_edh_coverage',
     });
-    expect(result).toEqual({ moved: 0 });
+    expect(result).toEqual({ moved: 0, dropped: 0 });
   });
 });
 

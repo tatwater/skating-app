@@ -874,7 +874,7 @@ the row that fell off. Selection now leads with the asserted associations: `infe
 already the human's mark — only `setOfficialParking` writes it, and a promotion runs one way — so no
 new column was needed.
 
-**The generalisation worth keeping:** *a cap is a read bound, so the rows that must survive it have to
+**The generalization worth keeping:** *a cap is a read bound, so the rows that must survive it have to
 be chosen, not sorted into place afterwards.* That sentence covers all three cap findings, including
 `accessForBody`'s referenced-lot resolution, which the load taught us the same way in August.
 

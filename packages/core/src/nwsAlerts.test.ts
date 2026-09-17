@@ -26,7 +26,7 @@ describe('nwsSeverityRank', () => {
     expect(nwsSeverityRank('Severe')).toBeGreaterThan(nwsSeverityRank('Minor'));
   });
 
-  it('sorts an unrecognised level last rather than throwing', () => {
+  it('sorts an unrecognized level last rather than throwing', () => {
     expect(nwsSeverityRank('Catastrophic')).toBe(-1);
   });
 });

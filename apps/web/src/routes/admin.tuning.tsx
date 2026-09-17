@@ -392,7 +392,7 @@ function AdminTuning() {
       {/* ── Cross-season recurrence ──────────────────────────────────────── */}
       <TuningSection
         title="Cross-season recurrence"
-        blurb="What several winters said about one spot (A05c / D78). Everything here ships dark: until the master switch is on, the whole engine feeds this dashboard and nothing a skater can see. Flip it when the queue has been read across two rollovers and the patterns at the current bar look real — a judgement from the chart below, not a date."
+        blurb="What several winters said about one spot (A05c / D78). Everything here ships dark: until the master switch is on, the whole engine feeds this dashboard and nothing a skater can see. Flip it when the queue has been read across two rollovers and the patterns at the current bar look real — a judgment from the chart below, not a date."
       >
         <MetricComposition metricKey="recurrence_clusters_by_seasons" catalog={catalog} />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -558,7 +558,7 @@ function AdminTuning() {
           >
             A body earns a rose only if its longest fetch clears this floor. Below it the exposure
             claim would describe a pond where no wind can build a wave — and every extra cell is
-            spent against a hard daily request cap, so the floor is a budget as much as a judgement.
+            spent against a hard daily request cap, so the floor is a budget as much as a judgment.
           </ConstantCard>
         </div>
       </TuningSection>

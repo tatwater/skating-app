@@ -363,7 +363,7 @@ campaign. That test is the first thing this workstream should write.
 
 ### Workstream L1 — What a `none` verdict does next: on the map and marked, never recommended
 
-> **Superseded by D176 (2026-09-16), the same day it was written.** The kickoff pass generalised
+> **Superseded by D176 (2026-09-16), the same day it was written.** The kickoff pass generalized
 > this into *standing*: a `none` body is one dormancy reason among four, drawn at the dormant rung
 > rather than the −2 demotion, and `isActive` is the one predicate. The D-number this section
 > proposed was taken by A09. Kept as the record of the argument — the *push vs reference* table below

@@ -73,7 +73,7 @@ verdicts. Absence of evidence *keeps a hazard alive*, on purpose (D3).
 Founder call, 2026-07-30: **one clustering primitive, two windows.**
 
 "Are these the same ridge?" within a winter and "is this the ridge that forms here every winter?" across
-winters are the same geometric judgement with a different time bound and a different tolerance. Build it
+winters are the same geometric judgment with a different time bound and a different tolerance. Build it
 twice and the two *will* drift into disagreeing about what "the same ridge" means — this repo has the
 scar already: the hazard verdict vocabulary was written in four places and only three were updated for
 D65, so a shipped verdict went untested (A05a, *What Greptile found*, item 2).
@@ -849,7 +849,7 @@ no new lifecycle. Correction is a new authoring power and deserves its own scopi
 - **Ship now, dark:** workstream 3, D and F behind `RECURRENCE_ADVISORIES_PUBLIC = false`.
 - **Flip the public flag when** the operator queue has been read across at least **two** rollovers and
   the clusters at the current bar look like real patterns — realistically the `'28/'29` rollover,
-  possibly `'27/'28` if the corpus is dense. A judgement from `/admin/recurrence` and the tuning chart,
+  possibly `'27/'28` if the corpus is dense. A judgment from `/admin/recurrence` and the tuning chart,
   not a date.
 - **Raise `RECURRENCE_PUBLIC_MIN_SEASONS` to 3** if 2-of-4 reads noisy once public. The constant, the
   timing window and the advisory move together, so it is one edit and one redeploy.
@@ -1292,7 +1292,7 @@ excludes it, so the compiler holds that line rather than a comment.
 
 `RECURRENCE_ADVISORIES_PUBLIC` flips when the operator queue has been read across at least **two**
 rollovers and the clusters at the current bar look like real patterns — realistically the `'28/'29`
-rollover, possibly `'27/'28` if the corpus is dense. That is a judgement from `/admin/recurrence` and
+rollover, possibly `'27/'28` if the corpus is dense. That is a judgment from `/admin/recurrence` and
 the *Patterns by winters observed* chart, not a date. Raising `RECURRENCE_PUBLIC_MIN_SEASONS` to 3 is
 one edit, and it moves the advisory and its timing clause together by construction.
 
@@ -1356,7 +1356,7 @@ way to ask for them, so §7.3's *"Reversible; never a delete"* was true of the s
 product. Both surfaces now carry Unsuppress, and the queue a *Show suppressed* toggle.
 
 This is §8's own finding — `bodyFeatures.create` shipped with no UI, which is why D79 existed —
-repeating inside the phase that recorded it. The generalisation worth keeping: **a mutation without a
+repeating inside the phase that recorded it. The generalization worth keeping: **a mutation without a
 surface is not a feature, and the reversibility argument for a destructive-looking action is only as
 good as the button.**
 
@@ -1594,7 +1594,7 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
 
 - **Two founder asks turned out to be one problem.** *"Which hazards existed on this water body in `'24/'25`?"*
   and *"if three people pin the same ridge, do their confirmations split?"* are the same geometric
-  judgement at two time scales. One `clusterHazards` in `@skating/core`, two callers, two tolerances —
+  judgment at two time scales. One `clusterHazards` in `@skating/core`, two callers, two tolerances —
   because building it twice guarantees they drift, which is the D65 four-copies lesson.
 - **The corpus gate was answered, not waited out.** Dev holds **one** hazard row and the three-season gate
   can't fire before ~2029, so the engine ships now with thin patterns **admin-only** and the skater-facing

@@ -791,7 +791,7 @@ describe('reports.update (author-only LWW, D25)', () => {
       });
 
       const after = await t.run((ctx) => ctx.db.get(reportId));
-      expect(after?.conditions?.source).toBe('openmeteo'); // not relabelled as the author's claim
+      expect(after?.conditions?.source).toBe('openmeteo'); // not relabeled as the author's claim
       expect(after?.conditions?.airTempC).toBe(-3.4); // and not nudged by the round trip
       expect(after?.conditions?.windSpeedKph).toBe(18.7);
       expect(after?.notes).toBe('fixed a typo');

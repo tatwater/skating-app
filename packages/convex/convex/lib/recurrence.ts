@@ -156,7 +156,7 @@ export function windowStartMs(currentSeason: Season): number {
 /**
  * Compute every cluster for one body across the window.
  *
- * **What is excluded, and why each one is a judgement rather than a filter** (§3.2):
+ * **What is excluded, and why each one is a judgment rather than a filter** (§3.2):
  *
  * - **Moderator-hidden pins.** A moderator judged the pin bad; it is not evidence.
  * - **Merge tombstones**, which are represented by the pin they were folded into (D80) — counting both

@@ -90,7 +90,7 @@ export interface GridPlan {
   ratio: number;
   /** `-R` for the solve, in the compressed local frame. */
   region: string;
-  /** `-R` for `grdedit`, relabelling the solved grid back to real meters. */
+  /** `-R` for `grdedit`, relabeling the solved grid back to real meters. */
   realRegion: string;
   /** `-I`, the cell size, square in the compressed frame. */
   increment: string;

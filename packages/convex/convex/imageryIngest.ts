@@ -12,7 +12,7 @@
  * recomputed for that season.
  *
  * **It does not start a backfill.** Cutting granules spends real money on infrastructure this
- * deployment cannot see, and the gate is a judgement about a season rather than a fact about a row —
+ * deployment cannot see, and the gate is a judgment about a season rather than a fact about a row —
  * so the cron's job is to *notice*, and an operator's job is to act on it. That is the same split the
  * CLI already draws: *"Deliberately does not run the selection itself… the operator should see it
  * before a fan-out spends anything."*

@@ -149,7 +149,7 @@ Consequences for the build:
   been disputed — be careful."* Two votes still close it. **Passage markers only**: on a hazard the
   same signal would invite skaters to discount a live warning, which is the unsafe direction.
 - **Copy is "suggested crossing", never "safe crossing"**, and every surface repeats that judging the
-  crossing in the moment is the skater's, not ours. The existing verdict relabelling
+  crossing in the moment is the skater's, not ours. The existing verdict relabeling
   (*still crossable / dicey now / ridge closed*) gets tightened in the same pass.
 - The `isHazardVisibleByDefault` floor needs a passage-marker branch — this is the one place a pin is
   allowed to leave the map on time alone, and it needs to be obvious in the code why.

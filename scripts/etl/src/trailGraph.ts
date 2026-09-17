@@ -189,7 +189,7 @@ export function createTrailGraphBuilder(): {
       if (i > 0) running += haversineMeters(way.coords[i - 1] as LatLng, point);
       cumulative[i] = running;
     }
-    // A way whose vertices are all the same point is a mapping artefact, not a trail. It would enter
+    // A way whose vertices are all the same point is a mapping artifact, not a trail. It would enter
     // the graph as a self-loop of zero length and settle in every search that reached it.
     if (running === 0) {
       degenerate++;

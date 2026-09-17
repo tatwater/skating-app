@@ -104,7 +104,7 @@ describe('the bleed box', () => {
 });
 
 describe('coordinate rounding', () => {
-  it('trims TIGER’s centimetres to about eleven meters', () => {
+  it('trims TIGER’s centimeters to about eleven meters', () => {
     // Seven decimals is a precision no consumer can render and every consumer has to download.
     const g = { type: 'Polygon', coordinates: [[[-73.1234567, 42.7654321]]] };
     expect(roundCoords(g)).toEqual({ type: 'Polygon', coordinates: [[[-73.1235, 42.7654]]] });

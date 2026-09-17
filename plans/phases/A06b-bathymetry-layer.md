@@ -92,8 +92,8 @@ per water body and cannot describe a shape at all.)*
 > survey-not-model, the datum trap, the coverage caveat — survives the corrections intact, and because
 > the shape of the error is itself worth not repeating: **every one of these rows was plausible.**
 
-All five states have digitised bathymetry, at varying maturity. Every one of them is a **survey** —
-GPS/depth-sounder transects or digitised chart soundings — not a model.
+All five states have digitized bathymetry, at varying maturity. Every one of them is a **survey** —
+GPS/depth-sounder transects or digitized chart soundings — not a model.
 
 | State | Source | Form | Notes |
 | --- | --- | --- | --- |
@@ -101,7 +101,7 @@ GPS/depth-sounder transects or digitised chart soundings — not a model.
 | **NH** | NH GRANIT *NH Bathymetry — Water bodies (Lines)*; NHDES surveys since 2000 + NH Fish & Game; updated Feb 2024 | contour lines, depth in feet ✅ | also a Polygons layer (contour-interval areas) |
 | **MA** | MassGIS *MassWildlife Inland Water Bathymetry*, 1:10,000, GPS/depth-sounder | contour lines ✅ (+ a depth raster we don't need) | ~~shapefile + TIFF in one zip~~ **→ a live FeatureServer** |
 | **NY** | NYSDEC Lake Contours, NYS GIS Clearinghouse | ~~contours~~ **→ no statewide dataset exists** | maturity/format needs a look; much of DEC's fishing-map corpus is PDF |
-| **ME** | Maine GeoLibrary *Lake Depths* | **sounding points, not contours** ✅ | ~~IFW water body survey maps are PDFs~~ **→ the state already digitised them** |
+| **ME** | Maine GeoLibrary *Lake Depths* | **sounding points, not contours** ✅ | ~~IFW water body survey maps are PDFs~~ **→ the state already digitized them** |
 
 **Vermont has usable prior art, and we build our own anyway.** An open-source project
 ([`cboone/vermont-lakes-and-ponds-bathymetry`](https://github.com/cboone/vermont-lakes-and-ponds-bathymetry),
@@ -175,7 +175,7 @@ build-it-ourselves call above is the right one.)*
 Maine is the one state in our set that publishes **soundings, not contours**. Maine GeoLibrary's *Lake
 Depths* layer is a point dataset — each point a measured depth at a location, with surface elevation —
 consolidated from several sources; Maine IF&W's ~1,900 water body survey maps exist as **PDFs**, which is a
-digitisation project, not an ETL.
+digitization project, not an ETL.
 
 So contours for Maine mean **we** would be interpolating, and that changes what we'd be drawing: not
 "the state surveyed this water body and here are its isobaths" but "here is our surface fitted through the
@@ -245,7 +245,7 @@ Champlain source covers the water body, not the state.** Its 104,910 soundings s
 So New York's most prominent skating water is covered — by a source filed under Vermont. That is an
 accident of filing that happens to be correct, and it means the pipeline does run end-to-end for NY.
 
-### The digitisation path, costed
+### The digitization path, costed
 
 NYSDEC has historically published water body contour maps as **PDFs** — the fishing-map corpus this doc's
 source table gestured at. They are the only NY bathymetry that exists, and turning them into a layer is
@@ -460,7 +460,7 @@ and unlabelled when absent has no coverage embarrassment to manage.
 
 ~~**NY's actual maturity.**~~ → **Answered 2026-07-31, and the answer is "neither."** See
 *§What the build found in the plan* §5. NY behaves like neither NH nor ME: there is no statewide water body
-bathymetry dataset in any form, vector or digitised-point. The afternoon of looking happened.
+bathymetry dataset in any form, vector or digitized-point. The afternoon of looking happened.
 
 ---
 
@@ -494,7 +494,7 @@ table below. The rest are edit-and-rerun, which is the honest interface for a ch
 setting was chosen by looking at a render.
 
 *(`MAX_GAP_RATIO` reads **0.22**, not the 0.12 this section first recorded. Both numbers gate the same
-water bodies: the fairness fix renormalised the gap by `sqrt(area)` instead of the bbox diagonal, which runs
+water bodies: the fairness fix renormalized the gap by `sqrt(area)` instead of the bbox diagonal, which runs
 1.82× smaller, so the old threshold silently tightened from 271 dropped water bodies to 1,224. Re-deriving
 it against the new denominator restored the keep-rate. The lesson is in `density.ts` and worth
 lifting: **a threshold is calibrated against its denominator, and changing one without re-deriving
@@ -613,7 +613,7 @@ read as hatching. The obvious fix — dropping levels that render too close toge
 by the founder and correctly**: a deep water body with a steep bed would then show *fewer* rings than a
 shallow one with a gentle bed, understating depth by omission, which is the misleading-by-rendering
 D82 exists to prevent. No accepted fix yet. Most likely candidates are a zoom-dependent client-side
-thinning (which moves cartographic judgement into two clients) or simply accepting it.
+thinning (which moves cartographic judgment into two clients) or simply accepting it.
 
 **Near-shore detail is unearned.** The shoreline is pinned at 0 ft and the nearest sounding is often
 30–40 ft, with nothing measured in between, so a band of contours crowds into the one place we have no
@@ -851,13 +851,13 @@ our redistribution chain.
    Vermont (JEFF LAIBLE), VCGI"* — so the placeholder left out UVM and added VT ANR and VT DEC, who
    are not in it at all.
 2. **NOAA asks that attribution not imply endorsement or affiliation**, and that modified data not be
-   presented as unaltered NOAA data. Champlain's contours are *doubly* derived — NOAA chart, digitised
+   presented as unaltered NOAA data. Champlain's contours are *doubly* derived — NOAA chart, digitized
    by UVM/VCGI, then interpolated by us — so the credit has to say where the soundings came from and
    stop short of implying NOAA drew any of this.
 3. **The notice is a separate obligation from the credit**, and is stored and rendered as its own
    field rather than folded into the attribution string.
 
-The credit is now *"Soundings digitised from NOAA nautical charts by University of Vermont and
+The credit is now *"Soundings digitized from NOAA nautical charts by University of Vermont and
 VCGI"*, with the notice *"Not for navigation."*
 
 **This does not breach D82.** D82 refuses copy telling a skater what a depth *means* for ice; a
@@ -935,7 +935,7 @@ looking — and it is the reason this one lasted hours instead of shipping.
 
 *The founder's question was the right one: **we had no ideal to compare against.** We do now. Both
 Maine IF&W and VT DEC publish finished depth charts as PDFs, including for water bodies in our sample grid —
-and for Maine those charts are the **originals our digitised points came from**, which makes the
+and for Maine those charts are the **originals our digitized points came from**, which makes the
 comparison as close to apples-to-apples as this phase will ever get.*
 
 | Water body | Official chart | Their max | **Our max** | Their interval | **Our interval** |
@@ -1239,16 +1239,16 @@ declining to reuse was its tiles, which are the cheap part.
 defensible density gate by an order of magnitude, which makes the interpolation genuinely defensible
 there in a way *§Maine* correctly doubts for Maine. Same shape of data, opposite problem.
 
-### 2 — Maine's PDFs have already been digitised, by Maine
+### 2 — Maine's PDFs have already been digitized, by Maine
 
-*§Maine* opens: *"Maine IF&W's ~1,900 water body survey maps exist as **PDFs**, which is a digitisation
-project, not an ETL."* The state did the digitisation. Maine DEP's *Depth Points* layer carries
+*§Maine* opens: *"Maine IF&W's ~1,900 water body survey maps exist as **PDFs**, which is a digitization
+project, not an ETL."* The state did the digitization. Maine DEP's *Depth Points* layer carries
 **147,755 points** whose provenance columns read `FMSRC=depthmap`, `FMSRCORG=meifw`, `FMPROCSS=dig` —
-those *are* the IF&W depth maps, digitised, published, and queryable.
+those *are* the IF&W depth maps, digitized, published, and queryable.
 
 So the §Maine process stands as written, minus its step 0. What it gains instead is a wrinkle it didn't
 anticipate: **the layer is two datasets wearing one schema**, and `FMSRC` is the discriminator —
-`depthmap` rows are digitised IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP
+`depthmap` rows are digitized IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP
 depth-sounder tracks. Two provenances, two collection methods, one table.
 
 Maine also keeps its density problem, and it is exactly the one §Maine step 2 was written for:
@@ -1258,7 +1258,7 @@ theoretical here; it is the whole integrity of the Maine lane.
 ### 3 — Maine's depth columns are both wrong, by a constant
 
 `DEPTHM` was computed with a **3.3 ft/m** constant rather than 3.28084. `DEPTHM × 3.3` lands on a whole
-foot for the digitised rows; `DEPTHM × 3.28084` does not:
+foot for the digitized rows; `DEPTHM × 3.28084` does not:
 
 | `DEPTHM` | `× 3.3` | published `DEPTHF` |
 | --- | --- | --- |
@@ -1362,7 +1362,7 @@ can act on wrongly.
   Champlain. Batching is adaptive — split-and-retry, with a water body that fails alone recorded as a named
   reject.
 - **Checked against the agencies' own charts.** Maine IF&W and VT DEC both publish finished depth maps,
-  and for Maine those are the *originals our points were digitised from*. Max depth matches exactly on
+  and for Maine those are the *originals our points were digitized from*. Max depth matches exactly on
   both water bodies checked (36 ft, 42 ft), which independently validates the whole unit chain.
 - **⚠ Three gates, and two of them had to be re-derived by looking.** The density gate's premise was
   overturned by its own comparison (quality does not track the gap ratio); the shore-share gate was
@@ -1380,9 +1380,9 @@ can act on wrongly.
 - **All five states are covered, and two of them aren't what this entry assumed.** VT publishes
   **soundings, not isobaths** (2.4M BioBase sonar points over 66 water bodies, plus 105k NOAA-chart points for
   Champlain), which makes it the *hardest* lane rather than the easy pilot half. Maine's IF&W depth maps
-  turned out to be **already digitised by the state** (147,755 points over 1,525 water bodies). NH (9,285
+  turned out to be **already digitized by the state** (147,755 points over 1,525 water bodies). NH (9,285
   contours / 558 water bodies) and MA (27,989 contours) are clean published isobaths. **NY publishes nothing** —
-  checked exhaustively; it is covered only via Champlain, and the PDF digitisation path is costed in the
+  checked exhaustively; it is covered only via Champlain, and the PDF digitization path is costed in the
   phase doc.
 - **The interpolation was the hard part by a wide margin**, and every failure was invisible in review and
   obvious on a render. Five mechanisms were rejected — IDW (bullseyes), TIN (facets), moving average

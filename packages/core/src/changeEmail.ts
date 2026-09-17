@@ -126,7 +126,7 @@ export interface EmailChangeResult {
   old: OldEmailOutcome;
 }
 
-/** `oauth_google` → `Google`; anything unrecognised keeps its own name rather than guessing. */
+/** `oauth_google` → `Google`; anything unrecognized keeps its own name rather than guessing. */
 export function providerLabel(type: string): string {
   const known: Record<string, string> = {
     oauth_google: 'Google',

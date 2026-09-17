@@ -192,7 +192,7 @@
 > **Open question 2 has no answer from dev, but the Google Group corpus answers it properly.**
 >
 > ⚠ **First, a correction.** The initial query looked for a table called `favorites`; the table is
-> **`waterBodyFavorites`**, and the "0 favorites" it reported was an artefact of the wrong name. The
+> **`waterBodyFavorites`**, and the "0 favorites" it reported was an artifact of the wrong name. The
 > real dev numbers are **14 favorites, 2 reports, 3 hazards, 1 bounty — 16 distinct bodies** (the 14
 > favorites are all the founder's own account). Still far too little to size a job from, but the
 > correction matters because the wrong number made the situation look worse than it is.
@@ -343,7 +343,7 @@ branch gained, in order:
 (170 km span), Lake Memphremagog (41 km) and Connecticut River Reservoir (20 km). Everything needed
 to fix that shipped in A02 — `suggestSamplePoints` proposes a grid at `DEFAULT_SAMPLE_SPACING_KM` and a
 moderator action writes it. Running it is a founder/operator call (it costs one forecast fetch and one
-cache row per point, and the spacing is a judgement), so it is recorded here rather than done.
+cache row per point, and the spacing is a judgment), so it is recorded here rather than done.
 
 Until then the panel says which claim it is making, which is the honest interim state rather than the
 fixed one.
@@ -653,7 +653,7 @@ The `/code-review` skill hit a session limit before running, so the pass was by 
   testing (D166); the number to change is `NO_PUBLIC_ACCESS_OPACITY_SCALE`, or a second scale for it.
 - **"As of" can differ by a day between the legend and a card.** `status` reads one arbitrary digest;
   a cell rebuilt after its local midnight is a day ahead of the 3,042 that were not. In season the
-  sweep rebuilds them all each morning, so the split is a rebuild-timing artefact; out of season the
+  sweep rebuilds them all each morning, so the split is a rebuild-timing artifact; out of season the
   digests simply hold their date.
 
 ### Holes closed by this PR
@@ -904,7 +904,7 @@ multiply), `precipitation_probability` (planning), `weather_code` (icons), `dew_
 rime) — put us at **14**, a flat 1.4× on every call. Dropping feels-like and humidity as offered saves
 about 13% of weighted cost, not a tier; so keep whichever is genuinely useful. Recommendation: keep
 `apparent_temperature` (a skater stands on wind-exposed ice for hours — it is the number they feel),
-skip `relative_humidity_2m` in favour of `dew_point_2m`, which is the better frost signal at the same
+skip `relative_humidity_2m` in favor of `dew_point_2m`, which is the better frost signal at the same
 price. ⚠ `precipitation_probability` exists only on forecast hours; it is null in the past and must not
 reach the reducer (the D74 wall at `weather.ts:380-386`).
 
@@ -1406,7 +1406,7 @@ whole corpus**, against a free tier of 10,000 calls/day.
 | **What it produces** | A regular lattice of unnamed points | Named places: *Malletts Bay*, *Broad Lake* |
 | **Champlain** | ~15–20 points | 10 bays, already drawn |
 | **Which one does the panel show?** | ⚠ **Unanswered** — a grid has no target, so the panel must pick, and "point 7 of 18" is not a claim | Falls out: the sub-area the user selected, else the body anchor, and the label names it |
-| **Operator work** | One action per body, three bodies owed, judgement on spacing | **None — 128 already placed** |
+| **Operator work** | One action per body, three bodies owed, judgment on spacing | **None — 128 already placed** |
 | **Coverage** | Any body, on demand | Only the 22 bodies that have them |
 | **Cost on small water bodies** | A grid is placed regardless | Collapses to the anchor cell; free |
 | **Serves D159's "where matched?"** | No — a grid index is not a place name | Yes, directly |

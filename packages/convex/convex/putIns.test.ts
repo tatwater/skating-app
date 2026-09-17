@@ -353,7 +353,7 @@ describe('OSM-derived launches on the map (A06d)', () => {
    * ⚠ Caught in pre-PR review, and it would have shipped silently. `loadPutInRows` bucketed rows as
    * `official` or `derived`; an `osm` row is neither, so the **3,588 launches the access ETL imported
    * were invisible to the map's marker query** while the drawer — which reads `accessForBody`
-   * directly — described them perfectly happily. The most visible artefact of the phase, missing.
+   * directly — described them perfectly happily. The most visible artifact of the phase, missing.
    */
   test('an osm put-in renders, carrying its OSM name', async () => {
     const t = convexTest(schema, modules);

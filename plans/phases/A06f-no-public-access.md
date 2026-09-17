@@ -358,7 +358,7 @@ published report's images the moment someone opened the edit form and backed out
 **3. Weather provenance was decided by an exact float comparison.** The conditions fields are whole
 °F and mph; the stored numbers are precise metric from Open-Meteo. −3.4 °C renders as `26` and comes
 back as −3.33, so `stored === next` was false for weather nobody touched, and the block was
-relabelled `user` — a model's figure restamped as a personal observation, with the number nudged on
+relabeled `user` — a model's figure restamped as a personal observation, with the number nudged on
 the way through. The existing tests had used −8 °C and 12 kph, which happen to be whole imperial
 units, which is why they passed.
 

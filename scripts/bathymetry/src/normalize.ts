@@ -60,7 +60,7 @@ const WHOLE_FOOT_TOLERANCE = 0.02;
  * Recover a Maine depth in feet.
  *
  * The GPS lanes (`gpscarrier`, `gpsrec`) are depth-sounder tracks — genuine meter readings — and are
- * converted normally. Only the digitised map lane is ambiguous, because only it was converted *from*
+ * converted normally. Only the digitized map lane is ambiguous, because only it was converted *from*
  * feet in the first place.
  */
 function maineDepthFt(meters: number, method: string): number {
@@ -105,7 +105,7 @@ export interface NormalizedSounding {
   lakeName: string;
   /**
    * Sub-source provenance, where one source mixes collection methods. Maine's single layer holds both
-   * digitised IF&W map soundings and DEP GPS depth-sounder tracks; nothing else sets this.
+   * digitized IF&W map soundings and DEP GPS depth-sounder tracks; nothing else sets this.
    */
   method?: string;
 }
@@ -296,7 +296,7 @@ export function normalizeChamplainSoundings(
 /**
  * Maine DEP *Depth Points*.
  *
- * Two datasets in one schema, told apart by `FMSRC`: `depthmap` rows are digitised IF&W lake-survey
+ * Two datasets in one schema, told apart by `FMSRC`: `depthmap` rows are digitized IF&W lake-survey
  * maps (the ones the plan believed were still PDFs), `gpscarrier`/`gpsrec` rows are DEP depth-sounder
  * tracks. The distinction is carried through as `method` because it is a provenance difference, not a
  * formatting one.

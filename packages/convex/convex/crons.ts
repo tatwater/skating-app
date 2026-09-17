@@ -277,7 +277,7 @@ crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.ref
 
 /**
  * Map summary cards (A06c §5). Six-hourly because the only thing this catches is *time* — a report
- * ageing out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
+ * aging out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
  * event-driven change to a card already happens synchronously on the write that caused it.
  */
 crons.interval(

@@ -48,7 +48,7 @@ describe('Rule 0 — the lane never touches a key that already works', () => {
   it('CHINA LAKE (MIDAS 5448) is never eligible — the fixture this rule is named for', () => {
     // A real 3,939-acre lake with 25,807 legitimate soundings and a clean containment score. It does
     // not appear in the join's reject list at all, so it never reaches this lane. Asserted here
-    // rather than in a run log because a future refactor that generalises the re-keyer is exactly
+    // rather than in a run log because a future refactor that generalizes the re-keyer is exactly
     // the change that would break it silently.
     //
     // Every reason a *matched* key could carry is the empty set: a match produces no reason. The

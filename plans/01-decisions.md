@@ -1580,7 +1580,7 @@ skater without giving anything back to the person who left.
   recomputed from live reports, so erasing the reports erased the access points — and compensated by
   materializing a `putIns` row before each delete. With reports kept, the report *is* the preservation.
   The stored-row reader in `putIns` stays; rows written by the old path exist on dev.
-- **Put-in markers now carry `lastUsedAt`** (founder call). Put-ins are exempt from every ageing rule
+- **Put-in markers now carry `lastUsedAt`** (founder call). Put-ins are exempt from every aging rule
   in the app, which is right and has a cost: an access point from three winters ago rendered
   identically to one used last week, while being the kind of fact that *does* go stale — land changes
   hands, a gate goes up, a pull-off gets posted. Saying when it was last used lets the exemption stand
@@ -1639,7 +1639,7 @@ So passage markers get an inverted lifecycle:
     skaters to discount a live warning — the unsafe direction. Same asymmetry as the inverted decay,
     and the reason both belong to the same decision.
 - **The copy is "suggested crossing", never "safe crossing"**, and every surface repeats that judging it
-  in the moment is the skater's call, not ours — extending the existing verdict relabelling
+  in the moment is the skater's call, not ours — extending the existing verdict relabeling
   (*still crossable / dicey now / ridge closed*) rather than replacing it.
 - `isHazardVisibleByDefault` gains a passage-marker branch: the **one** place a pin may leave the map on
   time alone, which needs to be conspicuous in the code precisely because it contradicts the rule beside
@@ -2028,7 +2028,7 @@ reviewing the build against D68 rather than by anything failing.
 
 **A moderator's save touches only what they touched.** `setDepth` originally took a plain number per
 measurement and stamped `operator` on everything it received, while the editor pre-filled both fields
-from the row — so saving a max you knew relabelled the HydroLAKES mean beside it as a survey reading. The
+from the row — so saving a max you knew relabeled the HydroLAKES mean beside it as a survey reading. The
 skater-facing caption lost its `~`, and the value became immune to correction by any future import. The
 value of provenance is entirely in its being *true*, so a write path that can silently falsify it is worse
 than no provenance field at all. Each measurement is now three-state: **absent** leaves the value and its
@@ -2278,7 +2278,7 @@ skating app.
 ## D77 — Hazard identity is one clustering primitive read through two time windows (A05c)
 
 **Decided (2026-07-30; founder call at A05c scoping.)** *"Are these the same ridge?"* within a winter and
-*"is this the ridge that forms here every winter?"* across winters are the **same geometric judgement**
+*"is this the ridge that forms here every winter?"* across winters are the **same geometric judgment**
 with a different time bound and a different tolerance. So there is **one** `clusterHazards` function in
 `@skating/core`, with two callers and two constant sets:
 
@@ -3822,7 +3822,7 @@ along, keyed on the token of whichever member refused.
 
 | family | what it is | measured |
 | --- | --- | --- |
-| **`flowing`** | a catalog calls it moving water, another calls it a water body — the impoundment and deadwater case D96 already settles in our favour, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
+| **`flowing`** | a catalog calls it moving water, another calls it a water body — the impoundment and deadwater case D96 already settles in our favor, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
 | **`engineered`** | refused as built infrastructure. **NHD drops 43% of its reservoirs** by purpose code, which is the volume D96 warned would bury the queue | **~87** (`nhd:fcode=436*`, `water=wastewater`, `water=basin`) |
 | *residue* | a contradiction nothing in our rules explains | **the queue** |
 
@@ -4212,7 +4212,7 @@ absent from the archive**. A flag that could be passed to one and not the other 
 decision into a failed run — or worse, into a coverage figure quoted over whatever cells happened to
 be there, which is the misleading-denominator shape this campaign has now corrected five times.
 
-This is the same reasoning that retired `--min-area-acres=N` in favour of `meetsAreaFloor`: *a
+This is the same reasoning that retired `--min-area-acres=N` in favor of `meetsAreaFloor`: *a
 parameter invites a caller to invent a floor; a shared constant cannot drift.*
 
 **Related:** [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin).
@@ -4390,7 +4390,7 @@ shape for half of what the card carries:
 
 - A profile's `reportCount` is a **lifetime total**. Every event that changes it is a ±1, and nothing
   changes it by the passage of time.
-- A card's counts are **window- and season-scoped**. A report ageing out of the 14-day window
+- A card's counts are **window- and season-scoped**. A report aging out of the 14-day window
   decrements the count with no event to hang the decrement on — and it changes the *mean* behind the
   D86 dots, which cannot be maintained incrementally at all: you cannot remove a value from a mean
   without knowing which value left.
@@ -5415,7 +5415,7 @@ explanation to a user about why their digest moved.
 **Why no hour setting.** 8pm local is the whole feature; a setting for it would be a preference nobody
 asked for on a settings page that already has ten toggles.
 
-**The edge, stated rather than mechanised:** `flushAfter` is stamped at enqueue, so a person who changes
+**The edge, stated rather than mechanized:** `flushAfter` is stamped at enqueue, so a person who changes
 zone between a report and 8pm gets that one digest at the old target. Coalescing keeps the earliest
 `flushAfter`, so the failure direction is "slightly early", never "never".
 
@@ -5693,7 +5693,7 @@ check.
 
 **Never a penalty**, which A06c §4.2 already said and which is now an invariant: an un-enriched body scores
 byte-identically to before, and a property test asserts enrichment never moves a body to a *narrower*
-zoom bucket. That is the founder's *"I'd hate to not have a body someone cares about"*, mechanised.
+zoom bucket. That is the founder's *"I'd hate to not have a body someone cares about"*, mechanized.
 
 **`hasContours` ships live** (founder call, 2026-08-02), via a `bathymetryCoverage` side table keyed
 on `externalId` rather than a column on `waterBodies`: coverage is a property of the **tileset**, so

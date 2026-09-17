@@ -193,7 +193,7 @@ export function parseIdentify(body: unknown): RasterReading[] {
  *     44.36450,-70.05632   86.40@n45w071 · 86.40@n45w071 · 86.40@ME_SouthCoastal_2020_A20
  *                          · 81.64@ME_SouthernArea_2012
  *
- * Three rasters agree to the centimetre and a 2012 survey dissents by 4.8 m. The median was already
+ * Three rasters agree to the centimeter and a 2012 survey dissents by 4.8 m. The median was already
  * *right*, and the range test discarded it anyway — a rule that gets stricter every time USGS adds
  * another survey, which is backwards.
  *

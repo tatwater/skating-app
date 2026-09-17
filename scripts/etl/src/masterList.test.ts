@@ -657,7 +657,7 @@ describe('a bay is an arm, not a lake', () => {
     //
     // ⚠ This asserted `unclassified` until the A07a-2 audit, and that was the rule twenty lines up
     // inverted: `Paugus Bay` keeps its class because no catalog draws it inside anything, while a
-    // bay whose parent was found and then refused — for region, salt or the floor — was relabelled.
+    // bay whose parent was found and then refused — for region, salt or the floor — was relabeled.
     // Same epistemic position, and the answer was decided by which way the parent happened to die.
     expect(result.bodies[0]?.cls).toBe('bay');
   });
@@ -984,7 +984,7 @@ describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () 
   });
 
   it('settles an impoundment a catalog calls a river, and does not queue it', () => {
-    // The largest measured pattern (109 bodies) and the one D96 already settles in our favour — we
+    // The largest measured pattern (109 bodies) and the one D96 already settles in our favor — we
     // carry 26 `river`-class bodies on purpose. Queueing these repeats the 1,437-row mistake
     // `RECONCILABLE_CLASS_PAIRS` had to undo.
     const result = buildMasterList(inputFor(contested('osm:water=river')));

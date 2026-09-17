@@ -208,7 +208,7 @@ describe('deriveShoreBand', () => {
  */
 describe('the warned footprint vs the selected half-width (D67)', () => {
   // A ~2.2 km-radius lake, so the shore is locally near-straight and "distance out from shore" at the
-  // arc's midpoint is a clean measurement rather than a curvature artefact.
+  // arc's midpoint is a clean measurement rather than a curvature artifact.
   const BIG_RING = circleRing(180, 0.02);
   const BIG_LAKE: Polygon = { type: 'Polygon', coordinates: [BIG_RING] };
 

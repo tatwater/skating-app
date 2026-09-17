@@ -1767,7 +1767,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
   test('keeps a sub-floor body that anything is attached to, and names the table', async () => {
     const t = convexTestWithGeo();
     const bodyId = await seedBody(t, { externalId: 'osm/skated' });
-    await seedUser(t, 'favouriter');
+    await seedUser(t, 'favoriter');
     await t.run(async (ctx) => {
       const profile = await ctx.db.query('profiles').first();
       if (!profile) throw new Error('expected the seeded profile');
@@ -4759,7 +4759,7 @@ describe('resolveIncomingMergeDuplicates (A07a)', () => {
     expect((await t.run((ctx) => ctx.db.get(survivor._id)))?.elevationM).toBeUndefined();
   });
 
-  // Losing a modeled depth costs a recompute. Losing a curation decision costs a human judgement
+  // Losing a modeled depth costs a recompute. Losing a curation decision costs a human judgment
   // with no trace of it ever having been made — and both survive every prune precisely because they
   // are decisions rather than data.
   test('carries a curation decision across, never revokes it by deleting the row', async () => {

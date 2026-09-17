@@ -253,7 +253,7 @@ export interface OrsRouteResponse {
  * How finely the approach line is kept.
  *
  * Five meters, matching the corpus shoreline's own simplification — a walking route is drawn beside a
- * lake outline already generalised to that, and keeping the path finer than the shore it runs along
+ * lake outline already generalized to that, and keeping the path finer than the shore it runs along
  * would store precision the map cannot show. An ORS foot route through a switchbacked trail arrives
  * with several hundred vertices; this typically takes a few dozen.
  */

@@ -61,7 +61,7 @@ export const SOURCES: BathymetrySource[] = [
     //    the actual named copyright holder, and added VT ANR / VT DEC, who are not in it.
     // 2. NOAA asks that attribution not "state or imply endorsement by or affiliation with NOAA", and
     //    that modified data not be presented as unaltered NOAA data. Our Champlain surface is doubly
-    //    derived — NOAA chart, digitised by UVM/VCGI, then interpolated by us — so the credit says
+    //    derived — NOAA chart, digitized by UVM/VCGI, then interpolated by us — so the credit says
     //    where the soundings came from and stops short of implying NOAA drew any of this.
     // 3. Our license relationship runs to **VCGI**, not to NOAA: we take the data from VCGI's service.
     //    NOAA's terms govern the character of the underlying survey, not our redistribution chain.
@@ -70,7 +70,7 @@ export const SOURCES: BathymetrySource[] = [
     sourceUrl: 'https://geodata.vermont.gov/datasets/7f451335fc6644e7a7376adbcd6282df_2/about',
     datum: 'NGVD 1929',
     notes:
-      '104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitised from 1:40,000 NOAA ' +
+      '104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitized from 1:40,000 NOAA ' +
       'charts; VCGI added the Mallets Bay–north and Crown Point–south gaps in 2003 and replaced the ' +
       'shoreline points in 2010. Covers the whole lake, so it is also our only New York coverage. ' +
       'NGVD 1929 does NOT share a datum with the VT ANR set below — never union the two into one ramp. ' +
@@ -150,9 +150,9 @@ export const SOURCES: BathymetrySource[] = [
       'made Maine look badly under-extracted — it is not. Every MIDAS in the layer is read, and the ' +
       'layer is the only depth layer the service publishes (MapServer/2 of five). ' +
       'TWO findings that change the plan: (1) the IF&W depth maps the ' +
-      'plan calls "PDFs, a digitisation project, not an ETL" HAVE ALREADY BEEN DIGITISED by the ' +
+      'plan calls "PDFs, a digitization project, not an ETL" HAVE ALREADY BEEN DIGITIZED by the ' +
       'state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is ' +
-      'TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitised ' +
+      'TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitized ' +
       'IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP depth-sounder tracks. ' +
       'UNIT TRAP: DEPTHM was computed with a 3.3 ft/m constant, not 3.28084 — DEPTHM * 3.3 lands on a ' +
       'whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is ' +

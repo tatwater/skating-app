@@ -10,7 +10,7 @@
  *
  * So this builds the comparison table instead: every stored attribute that could bear on "are these
  * one lake, and if so which row survives", each one flagged as agreeing or disagreeing. The UI
- * defaults to showing **only the disagreements**, because that is the whole judgement — two rows that
+ * defaults to showing **only the disagreements**, because that is the whole judgment — two rows that
  * differ in nothing but their `osmId` are trivially a duplicate, and two that differ in area by 4×
  * are trivially not.
  *

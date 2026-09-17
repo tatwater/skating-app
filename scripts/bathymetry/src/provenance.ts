@@ -8,7 +8,7 @@
  *
  * The organizing principle is **per state**, not per fetch. Agencies republish independently — NH
  * updated in Feb 2024, Vermont's 2020-named archive has a 2026 `last-modified` — so "our records are
- * out of date" is a per-state judgement and refreshing has to be a per-state action. A single
+ * out of date" is a per-state judgment and refreshing has to be a per-state action. A single
  * everything-at-once record would make the common case (one state moved) look like a full re-fetch.
  *
  * The rendering is pure and tested; the CLI at the bottom is I/O.
@@ -86,7 +86,7 @@ export function renderProvenance(entries: readonly ProvenanceEntry[], generatedA
     '',
     '## Refreshing',
     '',
-    'Agencies republish independently, so **staleness is a per-state judgement** and refreshing is a',
+    'Agencies republish independently, so **staleness is a per-state judgment** and refreshing is a',
     'per-state action. Check first, then refresh only what moved:',
     '',
     '```bash',
@@ -170,7 +170,7 @@ export function renderProvenance(entries: readonly ProvenanceEntry[], generatedA
     '',
     '**No statewide lake bathymetry exists to archive.** This is a checked finding, not a gap — see',
     '`plans/phases/A06b-bathymetry-layer.md` §New York for the search that established it and for the',
-    'costed digitisation path if we ever fund it.',
+    'costed digitization path if we ever fund it.',
     '',
     'New York is nonetheless covered where it matters most: the VCGI/NOAA Champlain source above spans',
     'the whole lake, including its entire New York shore.',

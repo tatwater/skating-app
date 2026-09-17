@@ -4,7 +4,7 @@
  *   pnpm --filter @skating/imagery ingest-window [--masks=<path.fgb>] [--days=92] [--sites=12]
  *
  * Prints the window and the `select-granules` invocation that follows from it. Deliberately does
- * *not* run the selection itself: the gate is a judgement about a season and the operator should see
+ * *not* run the selection itself: the gate is a judgment about a season and the operator should see
  * it before a fan-out spends anything.
  *
  * ## Sites come from the mask file

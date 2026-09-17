@@ -85,9 +85,9 @@ describe('attribution and notices', () => {
     expect(champlain?.attribution).toContain('VCGI');
   });
 
-  it('says the Champlain soundings were digitised rather than surveyed by NOAA', () => {
+  it('says the Champlain soundings were digitized rather than surveyed by NOAA', () => {
     // NOAA asks that attribution not imply endorsement or affiliation, and that modified data not be
-    // presented as unaltered NOAA data. Ours is doubly derived: chart -> digitised -> interpolated.
+    // presented as unaltered NOAA data. Ours is doubly derived: chart -> digitized -> interpolated.
     const champlain = sourceByKey('vt-vcgi-champlain-soundings');
     expect(champlain?.attribution).toMatch(/digitised|digitized/i);
     expect(champlain?.attribution).toContain('NOAA nautical charts');

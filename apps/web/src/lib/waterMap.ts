@@ -165,7 +165,7 @@ const MASK_FILL_OPACITY = 0.999;
  * paints with. The seam where it meets the world overview's own earth is invisible by construction;
  * the only seam a user can see is where it meets *our* detail, which is the border, which is the point.
  *
- * **`fill-opacity: 0.999`, and it is not a rounding artefact.** MapLibre sends a fill to the *opaque*
+ * **`fill-opacity: 0.999`, and it is not a rounding artifact.** MapLibre sends a fill to the *opaque*
  * render pass only at exactly opacity 1; everything else goes to the *translucent* pass. Symbols only
  * ever render in the translucent pass, and it runs after the opaque one with depth testing off — so an
  * opaque mask, however late in the layer order, was drawn *before* the labels beneath it and every

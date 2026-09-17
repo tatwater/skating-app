@@ -139,7 +139,7 @@ const MASK_FILL_OPACITY = 0.999;
  * covered rather than just its land, and colored from the flavor itself so the mask is the same
  * white and pale gray the basemap already paints with.
  *
- * **`fill-opacity: 0.999` is load-bearing**, not a rounding artefact: MapLibre only sends a fill to
+ * **`fill-opacity: 0.999` is load-bearing**, not a rounding artifact: MapLibre only sends a fill to
  * the opaque render pass at exactly opacity 1, and symbols render in the translucent pass afterwards
  * with depth testing off — so an opaque mask draws *under* the labels it is meant to hide, whatever
  * the layer order says. See web's `maskLayers` for the longer version.

@@ -481,7 +481,7 @@ that mattered.
 **1. The operator editor laundered modeled depths into rung 1, and the mutation let it.** `setDepth`
 took a plain number per field and stamped `operator` on everything it received, while the editor
 pre-filled both fields from whatever the row held. So a moderator who opened a water body carrying a
-HydroLAKES mean and typed the max they *did* know silently relabelled a 90 m-DEM estimate as a survey
+HydroLAKES mean and typed the max they *did* know silently relabeled a 90 m-DEM estimate as a survey
 reading: the public caption lost its `~`, and `winsLadder` then locked the value against every future
 import. **Provenance you can launder by accident is not provenance** — and this was D68's own display
 rule being broken by the one screen built to serve it.

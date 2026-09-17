@@ -10,7 +10,7 @@
  * ## The plan's proposed metric doesn't work, and the data says so
  *
  * §Maine suggests *"a maximum **nearest-neighbor** gap relative to lake extent."* For transect data
- * — which is what both a sonar log and a digitised depth map are — nearest-neighbor measures the
+ * — which is what both a sonar log and a digitized depth map are — nearest-neighbor measures the
  * spacing of readings **along** a boat's track, and says nothing about the distance **between**
  * tracks. Measured across real Maine lakes, the true coverage gap runs **8–12× larger** than
  * nearest-neighbor implies. One example from the archive: a lake with a 81 m median
@@ -333,7 +333,7 @@ export function shoreShare(soundingCells: number, shorelineCells: number): numbe
  * The reasoning it encodes: a depth level that traces as one or two closed rings is describing a
  * basin. The same level traced as eight disconnected squiggles is describing the interpolator — the
  * fit wobbling either side of that depth, drawn as though it were bathymetry. Four is where the
- * sampled lakes separate; it is a judgement, but it is a judgement about a picture rather than about
+ * sampled lakes separate; it is a judgment, but it is a judgment about a picture rather than about
  * a ratio of inputs.
  *
  * **Sounding lanes only.** On a contour lane the fragments are the agency's own cartography — a real

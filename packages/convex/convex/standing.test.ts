@@ -641,7 +641,7 @@ describe('push surfaces', () => {
     publicAccess: { verdict: 'none' as const, decidedAt: Date.now(), decidedByUserId: modId },
   });
 
-  test('the drive-time fan-out skips a `none` body; a favouriter is still told; a removed body tells nobody', async () => {
+  test('the drive-time fan-out skips a `none` body; a favoriter is still told; a removed body tells nobody', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const author = await seedUser(t, 'author');

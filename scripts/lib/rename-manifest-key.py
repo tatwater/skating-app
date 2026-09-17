@@ -22,7 +22,9 @@ After `--apply`, push each archive's mirror (`scripts/<pkg>/mirror*-r2.sh push`)
 carry the same key — the mirrors are `rclone copy`, so this is additive.
 
 Usage:
-  python3 scripts/lib/rename-manifest-key.py --from licence --to license [--root scripts] [--apply]
+  python3 scripts/lib/rename-manifest-key.py --from licence --to license [--root <dir>] [--apply]
+
+`--root` defaults to the `scripts/` directory this file lives under, wherever it is run from.
 """
 
 import argparse
@@ -35,7 +37,9 @@ from pathlib import Path
 def find_manifests(root: Path):
     """Every `*manifest.json` under a `.raw*` directory, at any depth."""
     for dirpath, dirnames, filenames in os.walk(root):
-        parts = Path(dirpath).parts
+        # Relative to `root`, so an absolute root whose own path holds a `.raw…` segment cannot
+        # make every directory under it look like an archive.
+        parts = Path(dirpath).relative_to(root).parts
         if not any(p.startswith('.raw') for p in parts):
             # Only descend into `.raw*` trees; skip `node_modules` and the like on the way.
             dirnames[:] = [d for d in dirnames if d.startswith('.raw') or not d.startswith(('.', 'node_modules'))]
@@ -72,18 +76,26 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--from', dest='old', required=True)
     ap.add_argument('--to', dest='new', required=True)
-    ap.add_argument('--root', default='scripts')
+    # Relative to the repo root (this file's grandparent), not the CWD: run from a package directory,
+    # a CWD-relative default would walk nothing and report "would rename 0" as if that were the truth.
+    ap.add_argument('--root', default=str(Path(__file__).resolve().parent.parent))
     ap.add_argument('--apply', action='store_true')
     args = ap.parse_args()
 
+    root = Path(args.root)
+    if not root.is_dir():
+        raise SystemExit(f'--root {root} is not a directory')
+
     counts: dict[str, int] = {}
     by_archive: dict[str, int] = {}
-    for path in find_manifests(Path(args.root)):
+    for path in find_manifests(root):
         outcome = rewrite(path, args.old, args.new, args.apply)
         counts[outcome] = counts.get(outcome, 0) + 1
         if outcome == 'renamed':
-            archive = '/'.join(path.parts[:3])  # scripts/<pkg>/.raw*
-            by_archive[archive] = by_archive.get(archive, 0) + 1
+            # `<pkg>/.raw*` — the archive, however deep the manifest sits inside it.
+            rel = path.relative_to(root).parts
+            depth = next(i for i, p in enumerate(rel) if p.startswith('.raw'))
+            by_archive['/'.join(rel[: depth + 1])] = by_archive.get('/'.join(rel[: depth + 1]), 0) + 1
         if outcome.startswith('skip:not'):
             print(f'  ! {outcome} {path}', file=sys.stderr)
 

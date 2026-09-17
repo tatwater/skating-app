@@ -49,7 +49,7 @@
  *
  * Five because it is what the agencies themselves reach for — Maine IF&W's charts are labeled in
  * 5 ft and 10 ft, and MassGIS steps in 5 ft below the shallows — and because a skater reads "every
- * five feet" without a legend. It is a judgement, but it is not an arbitrary one.
+ * five feet" without a legend. It is a judgment, but it is not an arbitrary one.
  */
 export const BASE_INTERVAL_FT = 5;
 

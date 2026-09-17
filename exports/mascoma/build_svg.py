@@ -20,7 +20,7 @@ every road *proportionally to its class* and keeps the hierarchy intact.
 
 So: pick a size, and the script derives the matching zoom, reads geometry from the tile zoom nearest
 it, and evaluates every paint expression there. The mobile export is not the desktop one shrunk --
-it is the app at z13.2, with the strokes, label density and generalisation that implies.
+it is the app at z13.2, with the strokes, label density and generalization that implies.
 
 Sizes are given as **how wide the lake itself should be**, not the canvas: the lake is 33.9% of the
 frame, the rest being the 3 mi buffer, so a 400px lake lands on a 1181px canvas.

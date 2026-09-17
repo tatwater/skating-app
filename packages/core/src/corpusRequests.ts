@@ -216,13 +216,7 @@ export const CATALOG_POINT_SERVICE =
   'https://hydro.nationalmap.gov/arcgis/rest/services/3DHP_all/MapServer/60/query';
 
 /** The fields the resolver asks for — `THREE_DHP_SELECT` in the ETL, plus nothing. */
-export const CATALOG_POINT_FIELDS = [
-  'id3dhp',
-  'gnisid',
-  'gnisidlabel',
-  'featuretype',
-  'areasqkm',
-];
+export const CATALOG_POINT_FIELDS = ['id3dhp', 'gnisid', 'gnisidlabel', 'featuretype', 'areasqkm'];
 
 /** The one-call point query: every waterbody feature intersecting the coordinate, as GeoJSON. */
 export function catalogQueryUrl(coord: LatLng): string {
@@ -271,11 +265,7 @@ export type CatalogResolution =
  * A feature whose class we refuse (a river, a canal, an ocean) is still returned as a candidate with
  * no `cls`, so the moderator sees *why* there is nothing to admit rather than an empty queue row.
  */
-export function parseCatalogResponse(
-  json: unknown,
-  coord: LatLng,
-  now: number,
-): CatalogResolution {
+export function parseCatalogResponse(json: unknown, coord: LatLng, now: number): CatalogResolution {
   const body = json as {
     error?: { message?: string };
     features?: {

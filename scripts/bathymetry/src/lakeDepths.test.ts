@@ -124,7 +124,7 @@ describe('agencyDepthFor', () => {
   });
 
   it('refuses a reading past the backstop, which means a units error', () => {
-    // A depth published in centimetres, or a sentinel read as a depth. Champlain's 122 m is the
+    // A depth published in centimeters, or a sentinel read as a depth. Champlain's 122 m is the
     // deepest water any of these sources covers, so anything past 250 m is not a lake.
     const meters = MAX_PLAUSIBLE_AGENCY_DEPTH_M + 10;
     const out = agencyDepthFor(

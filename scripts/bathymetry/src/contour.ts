@@ -268,8 +268,8 @@ export function interpolate(
   if (!solved) return { lines: [], depths: [], note: 'surface failed' };
 
   spawnSync('cp', [solvedGrid, realGrid]);
-  const relabelled = gmt(['grdedit', realGrid, plan.realRegion], label);
-  const grid = relabelled ? realGrid : solvedGrid;
+  const relabeled = gmt(['grdedit', realGrid, plan.realRegion], label);
+  const grid = relabeled ? realGrid : solvedGrid;
 
   // Smooth the SURFACE, not the contours. `gdal_contour` traces a raster, so its output follows cell
   // boundaries — at 500 cells across a lake that is a kink every few meters, and reads as pointy

@@ -22,7 +22,7 @@ const BASIS: CaptionBasis = {
 
 /**
  * Willoughby's real winter rose, measured from NREL WTK 2 km (Dec-Mar 2012) — bimodal along the
- * NNW-SSE trough, with the E/NE quadrant blocked by the ridges. Rounded to 3dp and renormalised.
+ * NNW-SSE trough, with the E/NE quadrant blocked by the ridges. Rounded to 3dp and renormalized.
  */
 const WINTER_ROSE = normalizeRose([
   110, 58, 23, 20, 20, 102, 563, 468, 87, 58, 93, 107, 163, 264, 540, 229,

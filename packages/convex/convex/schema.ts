@@ -413,7 +413,7 @@ export default defineSchema({
     /**
      * Samples fell on the parent **outside every bay** — the mouth-line evidence (A09 kickoff Q4).
      * Nothing acts on it; the admin card counts it beside the redraw control, because a bay's seaward
-     * edge is a judgement a skater can prove wrong by skating past it, and this is where that shows.
+     * edge is a judgment a skater can prove wrong by skating past it, and this is where that shows.
      */
     leftSubArea: v.optional(v.literal(true)),
     photoUrls: v.optional(v.array(v.string())),
@@ -819,7 +819,7 @@ export default defineSchema({
      * miles of open water that wind never blows from is not an exposed shore. Measured for Lake
      * Willoughby (NREL WTK 2 km, Dec–Mar): a strongly bimodal rose along its NNW–SSE trough — 19.4%
      * SE, 16.1% SSE, 18.6% NW — with the E/NE quadrant blocked by the ridges. That is terrain
-     * channelling, and it is invisible to the geometry.
+     * channeling, and it is invisible to the geometry.
      *
      * Consumed as `frequency × fetch` (`@skating/core`'s `mostExposedSector`). Absent ⇒ the caption
      * says nothing about wind at all, deliberately: falling back to longest-fetch is the claim this
@@ -951,7 +951,7 @@ export default defineSchema({
      * "constants stay in code" — that governs `SATELLITE_MIN_AREA_SQM`, the threshold. The exception
      * to a threshold is a fact about one lake, and facts about lakes live in rows.
      *
-     * Preserved across re-import like `curatedBoost`: an operator's judgement must survive an ETL run.
+     * Preserved across re-import like `curatedBoost`: an operator's judgment must survive an ETL run.
      */
     satelliteImagery: v.optional(literals(SATELLITE_IMAGERY_MODES)),
     /**
@@ -1028,7 +1028,7 @@ export default defineSchema({
      * showing up only on the lakes people are actually using.
      *
      * Window- and season-scoped, so `lib/bodySummary.ts` recomputes rather than increments — a
-     * report ageing out of the window has no write to hang a decrement on, and the D86 mean cannot
+     * report aging out of the window has no write to hang a decrement on, and the D86 mean cannot
      * be maintained incrementally at all.
      */
     summary: v.optional(
@@ -1178,7 +1178,7 @@ export default defineSchema({
   }).index('by_external_id', ['source', 'externalId']),
 
   // When each imagery season's ingest window opened (A06e §3.3 / D149). One row per season, written
-  // once by `imageryIngest.maybeCheckSeasonOpen` and never revised — the gate is a judgement made on
+  // once by `imageryIngest.maybeCheckSeasonOpen` and never revised — the gate is a judgment made on
   // the observations available at the time, and re-deciding it later with more data would silently
   // rewrite the reason a backfill was started.
   //

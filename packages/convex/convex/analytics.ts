@@ -219,33 +219,50 @@ const MAX_CATALOG_HISTORY = 200;
  * `catalogue_edh_coverage` to `catalog_edh_coverage`, and the old rows have to follow or the chart
  * reads an empty series.
  *
- * `to` must be a metric the catalog knows, so a typo cannot strand a series under a name nothing
- * reads. `from` deliberately need not be: by the time this runs, the old key is gone from `METRICS`.
+ * `to` must be an `external` metric the catalog knows — the same gate `recordCatalogSnapshot`
+ * applies, and for the same reason: a typo would strand a series under a name nothing reads, and a
+ * counter or rollup key would hand the cron's series a second writer. (`Object.hasOwn` rather than
+ * `in` or a bracket lookup: both walk the prototype chain, and `constructor` is a truthy "spec".)
+ * `from` deliberately need not be known: by the time this runs, the old key is gone from `METRICS`.
  * Bounded by the same ceiling as the read; a metric with more rows than that is not an `external`
  * one and should not be re-keyed with this.
  */
 export const renameMetricKey = internalMutation({
   args: { from: v.string(), to: v.string() },
   handler: async (ctx, { from, to }) => {
-    if (!(to in METRICS)) throw new Error(`unknown target metric "${to}"`);
-    if (from === to) return { moved: 0 };
+    if (!Object.hasOwn(METRIC_SPECS, to)) throw new Error(`unknown target metric "${to}"`);
+    const spec = METRIC_SPECS[to as MetricKey];
+    if (spec.kind !== 'external') {
+      throw new Error(
+        `metric "${to}" is a ${spec.kind}, not an external catalog measurement — re-keying rows into it would give the series a second writer`,
+      );
+    }
+    if (from === to) return { moved: 0, dropped: 0 };
     const rows = await ctx.db
       .query('metricSnapshots')
       .withIndex('by_metric_date', (q) => q.eq('metric', from))
       .take(MAX_CATALOG_HISTORY + 1);
     if (rows.length > MAX_CATALOG_HISTORY) {
-      throw new Error(`"${from}" has more than ${MAX_CATALOG_HISTORY} rows — not an external metric`);
+      throw new Error(
+        `"${from}" has more than ${MAX_CATALOG_HISTORY} rows — not an external metric`,
+      );
     }
+    // The dates already filed under the new key, read once rather than once per row. Same ceiling:
+    // the target is an `external` series too.
+    const taken = new Set(
+      (
+        await ctx.db
+          .query('metricSnapshots')
+          .withIndex('by_metric_date', (q) => q.eq('metric', to))
+          .take(MAX_CATALOG_HISTORY)
+      ).map((row) => row.date),
+    );
     let moved = 0;
     let dropped = 0;
     for (const row of rows) {
       // A row already filed under the new key for the same date was written by the renamed code
       // after the deploy — it is the newer measurement, and `(metric, date)` must stay unique.
-      const existing = await ctx.db
-        .query('metricSnapshots')
-        .withIndex('by_metric_date', (q) => q.eq('metric', to).eq('date', row.date))
-        .unique();
-      if (existing) {
+      if (taken.has(row.date)) {
         await ctx.db.delete(row._id);
         dropped += 1;
       } else {

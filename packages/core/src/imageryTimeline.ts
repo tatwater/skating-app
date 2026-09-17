@@ -92,7 +92,7 @@ export const MIN_BODY_CLEAR_FRACTION = 0.6;
  *
  * A pass that clipped 15% of a lake is a real observation of a sliver, and offering it as *the* view
  * of that date shows a skater a corner and lets them read it as the whole. Half is the point where
- * what is on screen is recognisably the lake.
+ * what is on screen is recognizably the lake.
  *
  * ⚠ **Below this a frame is blocked, never dropped.** It stays visible as a stop carrying
  * `blockedBy: 'coverage'`, because a silently shorter scrubber is the failure this whole module

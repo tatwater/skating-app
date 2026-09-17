@@ -310,7 +310,7 @@ invisible until it wasn't.
 
 **One gate: coverage.** Standing anywhere in the surveyed water, the nearest measurement must be within
 22% of the lake's characteristic size. That threshold was chosen by the founder *looking at rendered
-lakes*, and re-derived when its denominator changed so the same judgement survived.
+lakes*, and re-derived when its denominator changed so the same judgment survived.
 
 That produces **1,973 lakes → 45,693 contour lines → a 12 MB tile archive**, validated where we can
 check it: against Maine's and Vermont's own published depth charts, our maximum depths match **exactly**
@@ -356,7 +356,7 @@ Open questions before believing any of this:
   measure rather than reason.
 - **Does it hurt genuinely small features?** A small deep hole in a big lake is a small ring, and it's
   real. This is the risk, and it's the same "understating by omission" trap as Chapter 4.3.
-- **Is it cleanup or is it lying?** Removing a piece the fit produced is a cartographic judgement.
+- **Is it cleanup or is it lying?** Removing a piece the fit produced is a cartographic judgment.
   Removing a wobble is honest; removing a real feature because it's small is not, and the line between
   them is exactly what needs looking at.
 

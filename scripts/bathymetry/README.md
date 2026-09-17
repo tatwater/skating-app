@@ -65,7 +65,7 @@ pnpm --filter @skating/bathymetry provenance
 Per source it records where the data came from, **when we captured it**, how many records and bytes, a
 content **fingerprint**, the agency's own `copyrightText` *as captured*, the vertical datum, and the
 field notes for the traps in that dataset. It is organized **per state**, because agencies republish
-independently and so "our records are out of date" is a per-state judgement.
+independently and so "our records are out of date" is a per-state judgment.
 
 Two details that matter:
 
@@ -152,9 +152,9 @@ Two lanes, and the difference is a **provenance claim**, not a file format:
 - **Vermont publishes points, not isobaths.** The plan's source table said otherwise, which inverted
   the phase's sequencing argument — VT is the *hardest* lane, not the easiest. Its density makes the
   interpolation defensible anyway: the sparsest VT lake carries 5,034 soundings.
-- **Maine's IF&W depth maps have already been digitised by the state.** The plan calls them "PDFs, a
-  digitisation project, not an ETL." They are the `FMSRC=depthmap` rows.
-- **Maine's layer is two datasets in one schema**, and `FMSRC` separates them: digitised IF&W map
+- **Maine's IF&W depth maps have already been digitized by the state.** The plan calls them "PDFs, a
+  digitization project, not an ETL." They are the `FMSRC=depthmap` rows.
+- **Maine's layer is two datasets in one schema**, and `FMSRC` separates them: digitized IF&W map
   soundings vs. Maine DEP GPS depth-sounder tracks.
 - **Maine's meter column was computed with a 3.3 ft/m constant**, so the published `DEPTHF` is
   systematically **0.58% shallow**. Recover feet as `DEPTHM * 3.3` for the depthmap rows.

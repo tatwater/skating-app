@@ -358,7 +358,7 @@ export const SALT_CLAIM_TOKENS: ReadonlySet<string> = new Set([
 /**
  * Highest a body may sit and still be judged tidal — **five meters above the vertical datum**.
  *
- * ## The measurement, which for once handed over a threshold rather than a judgement call
+ * ## The measurement, which for once handed over a threshold rather than a judgment call
  *
  * The salt-containment histogram was *"smooth from 0 to 1 with no gap to cut at"* and had to be set
  * by reading names in each band. This one is the opposite. Probed against 3DEP at 1 m LiDAR over

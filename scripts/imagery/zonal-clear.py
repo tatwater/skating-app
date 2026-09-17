@@ -27,7 +27,7 @@ over a lake plus a ring of its shoreline, and the error scaled with perimeter ov
 Champlain, **7x a 1-acre pond's own area**. The frames already in R2 carry that denominator. See
 `revealMasks.ts` for the full arithmetic and `build_zones` for the fix.
 
-## The classes, and the two judgement calls
+## The classes, and the two judgment calls
 
 ESA's L2A scene classification, per pixel:
 

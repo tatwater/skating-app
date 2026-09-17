@@ -593,7 +593,7 @@ beats stale (D3). See §The re-derivation in the kickoff pass.
 ## The mouth line
 
 A bay's seaward edge is a straight line we drew across open water. It is the one part of a sub-area's
-geometry that is a **judgement**, not a tracing, and it is the one a skater can prove wrong by
+geometry that is a **judgment**, not a tracing, and it is the one a skater can prove wrong by
 skating past it.
 
 **Founder call, 2026-08-07:** adjust it from historical skate paths over time. Once `gpsActivities`

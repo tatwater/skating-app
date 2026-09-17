@@ -622,7 +622,7 @@ corpus follows is a product question — see the build notes.*
    60-meter ring of shoreline — a rounding error on a big lake, 70% of the "lake" on a small one.
    Averages are only as good as the outline they were taken over.
 5. **A date from space is always a bracket.** Cloud decides how wide.
-6. **Nothing here sees thickness, and nothing here is a safety judgement.** The app reports what an
+6. **Nothing here sees thickness, and nothing here is a safety judgment.** The app reports what an
    instrument recorded on a date. Whether ice will hold you is a question for the ice, and for you,
    standing on the shore.
 

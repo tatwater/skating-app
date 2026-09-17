@@ -1818,7 +1818,7 @@ const MOUTH_LINE_SCAN_CAP = 200;
 /**
  * **The admin card, per bay** (A09): this season's skates that ran past the mouth line, the derived
  * depth and when it was derived against when the outline last moved, and the stored fetch profile.
- * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgement a
+ * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgment a
  * skater can prove wrong by skating past it, and this is where the evidence collects. Nothing here
  * is automatic — a mouth line that moves on its own is a boundary nobody can reason about.
  *

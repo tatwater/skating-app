@@ -333,7 +333,7 @@ armed.
 **A snapped band re-typed onto a non-shore type kept its shoreline.** The web `chooseType` comment said
 clearing the snap prevented "a `pressure_ridge` shaped exactly like a shoreline" — and then called
 `retypeDraft`, which by D67 deliberately *preserves* polygons. So the ring survived and only the label
-went away; the comment described behavior the code didn't have. Resolved in favour of the comment, with
+went away; the comment described behavior the code didn't have. Resolved in favor of the comment, with
 the distinction written into D67: a **hand-drawn** area survives a re-type, because reaching one costs
 an opt-in plus three placements; a **snapped band** does not, because it cost two clicks and was derived
 for a shore-shaped type. Mobile already did the right thing here — it resets to a circle — which is why

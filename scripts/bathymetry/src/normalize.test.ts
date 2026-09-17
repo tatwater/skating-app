@@ -162,7 +162,7 @@ describe('normalizeMeSoundings', () => {
     expect(normalizeMeSoundings([feature({ DEPTHM: 10.90909 })]).records[0]?.depthFt).toBe(36);
   });
 
-  it('converts the GPS rows normally — only the digitised rows carry the bad constant', () => {
+  it('converts the GPS rows normally — only the digitized rows carry the bad constant', () => {
     // A depth-sounder track is a genuine meter reading; applying the 3.3 fudge to it would introduce
     // the very error we are undoing elsewhere.
     const record = normalizeMeSoundings([feature({ FMSRC: 'gpscarrier', DEPTHM: 10 })]).records[0];

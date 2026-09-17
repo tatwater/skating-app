@@ -137,7 +137,7 @@ describe('waterBodies.setDepth (D68 rung 1)', () => {
 
   test('an UNTOUCHED field keeps its value and its rung — no provenance laundering', async () => {
     // The review regression (2026-07-31). The editor pre-filled every field and the mutation stamped
-    // `operator` on everything it received, so saving a max you did know relabelled the imported mean
+    // `operator` on everything it received, so saving a max you did know relabeled the imported mean
     // beside it as a survey reading: the public caption lost its `~` and the ETL could never fix it.
     const t = convexTest(schema, modules);
     const body = await seedBody(t, 'way/1', {

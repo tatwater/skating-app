@@ -51,7 +51,7 @@ import { WeatherStrip } from './WeatherStrip';
  *
  * Every word describing hazard *state* comes from `@skating/core`'s copy helpers rather than being
  * written here, so the "never assert ice is safe" rule is enforced by one tested module — including
- * the per-type relabelling that turns the three verdicts into *still crossable / dicey now / ridge
+ * the per-type relabeling that turns the three verdicts into *still crossable / dicey now / ridge
  * closed* for a `ridge_crossing`.
  */
 
