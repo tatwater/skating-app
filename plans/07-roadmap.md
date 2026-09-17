@@ -17,8 +17,8 @@ it's part of the phase's own PR.
 ## Phase <token> — <title>
 <🟢|🟡|⚪|⚫> **<Complete|In progress|Scoped|Withdrawn>** <YYYY-MM-DD> · PR #n · [plan](./<doc>.md) · D# D#
 
-<One paragraph, ~120 words (up to ~180 for a big phase): what it is, why, the one or two calls that
-shaped it, ending with what a skater or operator can now do.>
+<One paragraph, ~120 words (up to ~180 for a big phase), concise and direct: what it is, why, the one or two
+calls that shaped it, ending with what a skater or operator can now do.>
 
 #### Data runs
 - **<YYYY-MM-DD> — <what ran>:** <the numbers>
