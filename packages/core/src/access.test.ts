@@ -388,7 +388,7 @@ describe('the approach leg (D87)', () => {
       expect(demoted.ascentM).toBeUndefined();
     });
 
-    test('holds at the boundary rather than a metre either side of it', () => {
+    test('holds at the boundary rather than a meter either side of it', () => {
       const at = { meters: MAX_PLAUSIBLE_APPROACH_M, routed: true };
       const over = { meters: MAX_PLAUSIBLE_APPROACH_M + 1, routed: true };
       expect(plausibleApproach(at, LOT, LAUNCH).routed).toBe(true);

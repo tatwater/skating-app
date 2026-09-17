@@ -29,7 +29,7 @@ import {
 /** A live hazard offered to a skater as "you may be marking this again". */
 export interface DuplicateCandidate<T> {
   hazard: T;
-  /** Edge-to-edge metres between the draft's footprint and this one's; `0` when they overlap. */
+  /** Edge-to-edge meters between the draft's footprint and this one's; `0` when they overlap. */
   distanceMeters: number;
 }
 

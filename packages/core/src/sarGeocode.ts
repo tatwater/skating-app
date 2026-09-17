@@ -55,7 +55,7 @@
  * so doubles the usable radar cadence.
  */
 
-/** Metres of ground displacement per metre of height error, at a given incidence angle. */
+/** Meters of ground displacement per meter of height error, at a given incidence angle. */
 export function rangeDisplacementPerMetre(incidenceDeg: number): number {
   return 1 / Math.tan((incidenceDeg * Math.PI) / 180);
 }
@@ -63,7 +63,7 @@ export function rangeDisplacementPerMetre(incidenceDeg: number): number {
 /**
  * How far, and which way, a flat surface at `heightM` is displaced by a GRD's geocoding.
  *
- * Returns metres **east and north** — the frame the caller will apply them in — derived from the
+ * Returns meters **east and north** — the frame the caller will apply them in — derived from the
  * range direction, which is perpendicular to the platform heading on the look side.
  *
  * ⚠ **The sign convention is the part to get right.** The GCPs place a lake as though it sat at
@@ -213,14 +213,14 @@ export function maskOffsetMeters(params: Parameters<typeof geocodeOffsetMeters>[
   return { eastM: -eastM, northM: -northM };
 }
 
-/** Metres per degree of latitude — near enough constant for a correction of a few hundred metres. */
+/** Meters per degree of latitude — near enough constant for a correction of a few hundred meters. */
 const METRES_PER_DEG_LAT = 111_132;
 
 /**
  * Apply a ground offset to a coordinate.
  *
- * A local flat-earth step rather than a geodesic one: these are offsets of a few hundred metres, where
- * the two agree to well under a metre, and a geodesic here would be precision the input height does
+ * A local flat-earth step rather than a geodesic one: these are offsets of a few hundred meters, where
+ * the two agree to well under a meter, and a geodesic here would be precision the input height does
  * not have.
  */
 export function shiftCoordinate(

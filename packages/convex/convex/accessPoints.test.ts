@@ -23,11 +23,11 @@ import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
 
-/** Degrees of latitude per metre — good enough to place a point a known distance from a shoreline. */
+/** Degrees of latitude per meter — good enough to place a point a known distance from a shoreline. */
 const DEG_PER_M = 1 / 111_320;
 
 /**
- * A square body centred on (44, −72). Inserted and then run through `importCanonical`, because the
+ * A square body centered on (44, −72). Inserted and then run through `importCanonical`, because the
  * A01 cell rows that import builds are what `listedBodiesNearCoord` reads — a hand-inserted body is
  * unreachable from any spatial lookup, which is the same property that keeps an unlisted body
  * invisible.
@@ -79,7 +79,7 @@ async function seedSquareBody(
   return id;
 }
 
-/** A point `metres` north of the body's northern shore (which sits at `lat + half`). */
+/** A point `meters` north of the body's northern shore (which sits at `lat + half`). */
 function northOfShore(metres: number, { half = 0.01, lat = 44, lng = -72 } = {}) {
   return { lat: lat + half + metres * DEG_PER_M, lng };
 }
@@ -1124,7 +1124,7 @@ describe('the lot a chosen put-in points at is always resolvable', () => {
    * Winnipesaukee and 64 on Seneca — all legitimate for lakes that size. `loadParkingForBody` reads a
    * capped window in *index* order, so on those bodies the lot a put-in references can sit outside it,
    * and `chooseAccessTarget` would fall back to routing a car at the launch: precisely the pre-A06d
-   * behaviour this phase exists to fix, on the four lakes that matter most.
+   * behavior this phase exists to fix, on the four lakes that matter most.
    */
   test('a referenced lot is returned even when it sits past the read cap', async () => {
     const t = convexTest(schema, modules);
@@ -1196,7 +1196,7 @@ describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
    * ⚠ A06d's parking pass ran 95,294 lookups on `listedBodiesNearCoord`'s default ~1,113 m net and
    * spent **104.95 GB of database I/O — 1.1 MB per lot** — enough to disable the deployment. Convex
    * has no projection, so reading a candidate reads its whole document, `polygon` included, and
-   * Champlain's ~300 KB outline was re-read for every lot within a kilometre of it.
+   * Champlain's ~300 KB outline was re-read for every lot within a kilometer of it.
    *
    * Tightening the box is safe because `bodiesCoveringBox` matches on **bbox**, and a polygon within
    * *r* of a point always has a bbox within *r* of it. These two tests pin both halves: nothing that
@@ -1225,7 +1225,7 @@ describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
     expect(row?.waterBodyId).toBe(body);
   });
 
-  /** Longitude degrees shrink with latitude; a metres→degrees conversion that forgets cos(lat) at
+  /** Longitude degrees shrink with latitude; a meters→degrees conversion that forgets cos(lat) at
    *  44°N would under-reach by ~28% in longitude and silently miss bodies to the east and west. */
   test('a lot due EAST of the shore still matches, so the longitude conversion is right', async () => {
     const t = convexTest(schema, modules);
@@ -1246,7 +1246,7 @@ describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
  * A moderator's hide reaches every access surface (PR #43 review, finding 3).
  *
  * `putIns.hide` does not flip a row's status — it inserts a `hidden` suppression row at a coord, so
- * one action outlives however many imports later land near it. `listForBody` has always honoured
+ * one action outlives however many imports later land near it. `listForBody` has always honored
  * that; the two read paths A06d added did not. Hiding a lake's only launch removed its marker from the
  * map while the drawer went on naming it, the directions button went on routing to it, and the body
  * kept its Hike-In chip.
@@ -1394,7 +1394,7 @@ describe("an operator's lot survives a lake that exceeds the read cap", () => {
  * re-creates the launch, the chip keeps describing it, and the drawer keeps offering it. The read cap
  * exists to bound what a drawer *returns*; it was never the right bound for a question.
  */
-describe('a hide is honoured however many put-ins the lake has', () => {
+describe('a hide is honored however many put-ins the lake has', () => {
   test('a suppression row past the render cap still suppresses', async () => {
     const t = convexTest(schema, modules);
     const body = await seedSquareBody(t);

@@ -77,7 +77,7 @@ def latitude_of(northing: float) -> float:
 
 
 # How many geolocation grid points to blend. The grid is spaced every ~10–20 km, so a handful of
-# neighbours spans the terrain a lake actually sits in. Measured over 10 lake-passes: k=3 gave 53.7 m
+# neighbors spans the terrain a lake actually sits in. Measured over 10 lake-passes: k=3 gave 53.7 m
 # RMS, k=6 44.4 m, k=12 44.1 m — it plateaus, and 8 is on the flat part.
 GRID_NEIGHBOURS = 8
 
@@ -122,7 +122,7 @@ def main() -> int:
     parser.add_argument(
         "--plan",
         action="store_true",
-        help="print the largest correction any body under this mask needs, in GROUND metres, "
+        help="print the largest correction any body under this mask needs, in GROUND meters, "
              "and exit — the caller sizes its warp extent from it",
     )
     parser.add_argument("--grid", required=True, help="`sar-geocode.py <ann> --grid` output")
@@ -237,7 +237,7 @@ def main() -> int:
         elevation = (feature.get("properties") or {}).get("elevationM")
         if elevation is None:
             # No height, no correction — but the lake still belongs in the frame. Copying it
-            # unshifted preserves exactly the behaviour this script replaces, rather than making a
+            # unshifted preserves exactly the behavior this script replaces, rather than making a
             # body disappear because the corpus is missing a number.
             d_col = d_row = 0
             has_height = False
@@ -262,7 +262,7 @@ def main() -> int:
                 "incidenceDeg": round(incidence, 3),
                 "geocodeReferenceHeightM": round(reference, 1),
                 # What was actually applied, in whole pixels — so a frame can be audited or undone
-                # rather than trusted. Ground metres, not the projected ones the shift was made in.
+                # rather than trusted. Ground meters, not the projected ones the shift was made in.
                 #
                 # ⚠ **Both components in the same frame.** `gt[5]` is already negative on a north-up
                 # raster, so `d_row * gt[5]` IS the northing — negating it as well made `north` point
@@ -299,7 +299,7 @@ def main() -> int:
         patch = band.ReadAsArray(cx0, cy0, cx1 - cx0, cy1 - cy0)
 
         # Rasterise this body alone over the destination window, so only its own pixels are written
-        # and a neighbouring lake at a different elevation cannot be dragged along with it.
+        # and a neighboring lake at a different elevation cannot be dragged along with it.
         mem = gdal.GetDriverByName("MEM").Create("", x1 - x0, y1 - y0, 1, gdal.GDT_Byte)
         mem.SetGeoTransform((gt[0] + x0 * gt[1], gt[1], 0, gt[3] + y0 * gt[5], 0, gt[5]))
         mem.SetProjection(src.GetProjection())
@@ -326,7 +326,7 @@ def main() -> int:
         target[cy0 - sy0 : cy0 - sy0 + (cy1 - cy0), cx0 - sx0 : cx0 - sx0 + (cx1 - cx0)] = patch
 
         existing = dst_band.ReadAsArray(x0, y0, x1 - x0, y1 - y0)
-        # Written under the body's own mask, so overlapping feathers of two neighbouring lakes do
+        # Written under the body's own mask, so overlapping feathers of two neighboring lakes do
         # not blank each other out — whichever is processed later wins only where it actually is.
         dst_band.WriteArray(np.where(inside, target, existing), x0, y0)
 

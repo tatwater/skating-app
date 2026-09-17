@@ -57,9 +57,9 @@ export const DEFAULT_LEAD_MAX_SEC = 60;
 /** Below ~walking pace (≈2.9 km/h) GPS course over ground is junk, so the projection doesn't run. */
 export const DEFAULT_MIN_SPEED_MPS = 0.8;
 /**
- * Forward-path sampling granularity, metres. Small enough to not step over the footprints a directional
+ * Forward-path sampling granularity, meters. Small enough to not step over the footprints a directional
  * warning is actually for (open water ~40 m, thin-ice zones ~50 m, thaw-rotten ~60 m, buffered ridges
- * tens of metres wide); the small point-source holes it might skip are the ones Layer 1's radius still
+ * tens of meters wide); the small point-source holes it might skip are the ones Layer 1's radius still
  * catches. Finer = more `distanceToHazard` calls per fix, which runs in a watcher on a cold phone.
  */
 export const DEFAULT_SAMPLE_STEP_M = 10;
@@ -139,8 +139,8 @@ export function evaluateDirectionalAlert(
 }
 
 /**
- * Distance along the projected course, in metres, at which it first enters `hazard`'s footprint — or
- * `null` if it never does within `maxDistance`. Walks the course in `step`-metre increments and reuses
+ * Distance along the projected course, in meters, at which it first enters `hazard`'s footprint — or
+ * `null` if it never does within `maxDistance`. Walks the course in `step`-meter increments and reuses
  * `distanceToHazard` (footprint edge distance, `0` inside), so contact means "a point on your path is
  * inside the same halo the map drew."
  */

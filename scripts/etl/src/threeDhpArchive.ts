@@ -1,5 +1,5 @@
 /**
- * 3DHP acquisition and provenance — the third canonical-water catalogue, and the only one with a
+ * 3DHP acquisition and provenance — the third canonical-water catalog, and the only one with a
  * future (A07a).
  *
  * ## Why this exists at all, when NHD is already archived
@@ -126,12 +126,12 @@ export const THREE_DHP_SOURCE_LAYER = 'hydro_3dhp_all_waterbody';
 export const THREE_DHP_WATERBODY_LAYER = 'waterbody';
 
 /**
- * The CRS the staged product is actually in: **NAD83(2011) / Conus Albers**, a projected metre grid,
+ * The CRS the staged product is actually in: **NAD83(2011) / Conus Albers**, a projected meter grid,
  * not lat/lon.
  *
  * This matters more than it looks. `ogr2ogr -spat` interprets its coordinates **in the source
  * layer's SRS unless told otherwise** — so passing our degrees envelope without `-spat_srs` would
- * have been read as metres from the Albers origin, selecting a strip of ocean somewhere south of
+ * have been read as meters from the Albers origin, selecting a strip of ocean somewhere south of
  * Texas and returning zero features. A clip that silently returns nothing looks exactly like a
  * source with no coverage.
  */
@@ -184,7 +184,7 @@ export interface EdhCoverage {
 }
 
 /**
- * Tally provenance over a catalogue's features.
+ * Tally provenance over a catalog's features.
  *
  * Pure and streaming-friendly: the caller supplies work-unit ids one at a time so a 275k-row
  * GeoPackage never has to be materialised.
@@ -227,7 +227,7 @@ export function summarizeEdhCoverage(
  * Three flags are explicit because each one is a silent failure if omitted:
  *
  * - **`-spat_srs`** — `-spat` reads its coordinates in the *source* SRS by default, and this source
- *   is Albers metres. Without it, a degrees envelope selects nothing and the clip "succeeds" empty.
+ *   is Albers meters. Without it, a degrees envelope selects nothing and the clip "succeeds" empty.
  * - **`-t_srs EPSG:4326`** — we store WGS84; the source does not.
  * - **`-dim XY`** — the source geometry is 3D, and nothing downstream expects a Z.
  */

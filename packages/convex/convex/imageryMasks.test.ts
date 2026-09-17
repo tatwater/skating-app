@@ -104,12 +104,12 @@ describe('listForImageryMask', () => {
     expect(masks[0]?.markerCoords).toHaveLength(0);
   });
 
-  test('⚠ a hidden coord suppresses its neighbours here too, not just itself', async () => {
+  test('⚠ a hidden coord suppresses its neighbors here too, not just itself', async () => {
     const t = convexTest(schema, modules);
     const bodyId = await seedBody(t);
     // A hide kills every marker within `HIDE_SUPPRESS_METERS`, which is how a moderator kills a bad
     // access point that OSM and a report cluster both keep re-deriving. Filtering on `status` alone
-    // would let the visible twin a few metres away buffer the exact ground the hide was protecting —
+    // would let the visible twin a few meters away buffer the exact ground the hide was protecting —
     // the map suppression, defeated on the one surface nobody looks at.
     await seedPutIn(t, bodyId, { status: 'hidden' as const, coord: { lat: 44.02, lng: -72 } });
     await seedPutIn(t, bodyId, { coord: { lat: 44.02001, lng: -72.00001 } });

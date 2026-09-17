@@ -321,7 +321,7 @@ async function fetchLocalHourly(
 // Persistence
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The stored shape of one summarised day, minus the key fields the mutation supplies. */
+/** The stored shape of one summarized day, minus the key fields the mutation supplies. */
 const daySummaryFields = {
   hours: v.optional(v.number()),
   minTempC: v.optional(v.number()),
@@ -382,7 +382,7 @@ function storableDay(day: WeatherDaySummary): Record<string, unknown> {
 }
 
 /**
- * Upsert summarised days for a cell — **idempotent on `(cellKey, dayMs)`**.
+ * Upsert summarized days for a cell — **idempotent on `(cellKey, dayMs)`**.
  *
  * The idempotence is not decoration. Every write path re-requests days it may already hold: the
  * append overlaps three days so a partial "today" gets completed, and the gap sweep re-asks for days
@@ -1431,7 +1431,7 @@ export const refreshTierDays = internalAction({
       } catch (err) {
         console.warn(`weatherArchive: cell ${cell.cellKey} failed`, err);
       }
-      // The discovery digest follows the rows it summarises (Workstream 5). Rebuilt even when the
+      // The discovery digest follows the rows it summarizes (Workstream 5). Rebuilt even when the
       // fetch failed: the cell's newest complete day has still moved on, and a digest that keeps
       // describing a chain as of last week is a stale match rather than an honest gap.
       if (tier === 'filter') await rebuildDigestFor(ctx, cell);
@@ -2001,7 +2001,7 @@ export interface WeatherDaysResult {
    */
   scope: { kind: 'body' } | { kind: 'subArea'; subAreaId: Id<'waterBodySubAreas'>; name: string };
   /**
-   * The body's 16-sector fetch profile in metres, when it has one.
+   * The body's 16-sector fetch profile in meters, when it has one.
    *
    * Feeds the wind lane's fill density and the scrub readout's open-water clause. Absent on a body
    * that has never been measured; both consumers simply draw and say less.

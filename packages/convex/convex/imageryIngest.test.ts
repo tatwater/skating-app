@@ -321,7 +321,7 @@ describe('season boundary alerts staff', () => {
 
     // The daily cron keeps ticking after an open (it is looking for the close), so a second tick
     // must not mail everyone again. ⚠ What stops it *here* is the control flow — the second tick
-    // takes the close branch and never reaches the open one. The `created` gate is defence in depth
+    // takes the close branch and never reaches the open one. The `created` gate is defense in depth
     // for the concurrent case this cannot reach; its own guarantee is asserted directly below.
     await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
     expect(await queuedBroadcasts(t)).toHaveLength(1);

@@ -51,7 +51,7 @@ describe('composeNameClaims', () => {
   // The bug this exists for, and it fails quietly: a moderator preferring "Lake Auburn" creates a
   // `user` claim with OSM's value, so a single dedupe drops OSM's — and clearing the override then
   // restores "The Basin" with NO alias, destroying the very name the pick was made to keep.
-  it('keeps the catalogue claim the moderator pick mirrors', () => {
+  it('keeps the catalog claim the moderator pick mirrors', () => {
     const composed = composeNameClaims(
       [claim('user', 'Lake Auburn')],
       [claim('nhd', 'The Basin'), claim('osm', 'Lake Auburn')],

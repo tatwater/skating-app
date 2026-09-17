@@ -45,7 +45,7 @@ export interface BathymetrySource {
    * product.
    *
    * **This does not breach D82's no-interpretive-copy rule.** D82 refuses copy that tells a skater
-   * what the depth *means* for ice; a licence notice makes no claim about the ice at all. If anything
+   * what the depth *means* for ice; a license notice makes no claim about the ice at all. If anything
    * it points the same way D82 does — it says do not navigate by this.
    */
   notice?: string;

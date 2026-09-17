@@ -199,7 +199,7 @@ export interface TrackFlushEffects {
    *
    * Returns how it settled rather than resolving-means-success: the toggle defaults *on*, so the
    * overwhelmingly common answer from a phone-only skater is "you aren't connected to Strava" — which
-   * is `skipped`, not `failed`. Throwing is still honoured (→ `failed`) so an adapter can just let a
+   * is `skipped`, not `failed`. Throwing is still honored (→ `failed`) so an adapter can just let a
    * transport error escape. Optional: a host with no Strava integration at all omits it entirely.
    */
   pushToStrava?(input: { activityId: string }): Promise<StravaPushOutcome>;
@@ -363,7 +363,7 @@ export interface StravaPushView {
 /**
  * The push state as a sentence plus an offer. Lives here, not in the screen, because "can this be
  * retried?" is the same question `isTrackFlushable` answers and the two must not drift: a row that
- * offers a retry the queue would ignore, or hides one it would honour, is worse than no row at all.
+ * offers a retry the queue would ignore, or hides one it would honor, is worse than no row at all.
  */
 export function describeStravaPush(track: QueuedTrack): StravaPushView {
   // Not ours yet: the skate itself is still queued, and *that* retry is the flush's job, not a

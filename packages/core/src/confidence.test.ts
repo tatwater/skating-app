@@ -33,23 +33,23 @@ describe('independentVoices', () => {
     expect(independentVoices(['osm', 'nhd', '3dhp'])).toBe(2);
   });
 
-  it('does not count a name or a moderator as a catalogue', () => {
+  it('does not count a name or a moderator as a catalog', () => {
     expect(independentVoices(['name'])).toBe(0);
     expect(independentVoices(['user'])).toBe(0);
   });
 });
 
 describe('scoreAttribute', () => {
-  it('is high only when two independent catalogues agree', () => {
+  it('is high only when two independent catalogs agree', () => {
     expect(scoreAttribute([c('osm', 'lakePond'), c('nhd', 'lakePond')])).toBe('high');
   });
 
-  it('is medium for one catalogue, uncontested — including NHD plus 3DHP', () => {
+  it('is medium for one catalog, uncontested — including NHD plus 3DHP', () => {
     expect(scoreAttribute([c('nhd', 'lakePond')])).toBe('medium');
     expect(scoreAttribute([c('nhd', 'lakePond'), c('3dhp', 'lakePond')])).toBe('medium');
   });
 
-  it('is low when catalogues conflict', () => {
+  it('is low when catalogs conflict', () => {
     expect(scoreAttribute([c('osm', 'lakePond'), c('nhd', 'wetland')])).toBe('low');
   });
 
@@ -58,7 +58,7 @@ describe('scoreAttribute', () => {
   });
 
   it('treats a name keyword as weak evidence that never corroborates', () => {
-    // The name is the same string the catalogue supplied, read a second way — not a second opinion.
+    // The name is the same string the catalog supplied, read a second way — not a second opinion.
     expect(scoreAttribute([c('name', 'lakePond')])).toBe('medium');
     expect(scoreAttribute([c('nhd', 'lakePond'), c('name', 'lakePond')])).toBe('medium');
   });
@@ -161,7 +161,7 @@ describe('scoreBody', () => {
   // 6,756 bodies had OSM silent and NHD saying LakePond. Scoring `unclassified` as a claim made every
   // one of them read as a conflict, and they were most of a 3,999-row queue nobody could have worked.
   // Our vocabulary draws a distinction NHD does not, and we already wrote down how it resolves. It
-  // is not the catalogues contradicting each other, and scoring it `low` put 1,437 foregone
+  // is not the catalogs contradicting each other, and scoring it `low` put 1,437 foregone
   // conclusions in front of a moderator.
   it('treats reservoir-vs-lakePond as agreement, not conflict', () => {
     const out = scoreBody({
@@ -186,7 +186,7 @@ describe('scoreBody', () => {
   // The one class disagreement that is about the water rather than the vocabulary. D96's admission
   // rules turn on it, and mis-resolving it deleted 123 bodies NHD calls LakePond.
   //
-  // **Direction matters, and these are the direction that is NOT settled**: the federal catalogue is
+  // **Direction matters, and these are the direction that is NOT settled**: the federal catalog is
   // the one saying "bog". See the pair below for the mirror case.
   it('still calls a FEDERAL wetland claim against open water a conflict', () => {
     for (const pair of [
@@ -342,7 +342,7 @@ describe('mergeReviewReasons', () => {
     ]);
   });
 
-  it('queues two features from one catalogue in one merge group', () => {
+  it('queues two features from one catalog in one merge group', () => {
     expect(mergeReviewReasons({ confidence: clean, sameSourceDuplicate: true })).toEqual([
       'same-source-duplicate',
     ]);

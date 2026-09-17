@@ -120,7 +120,7 @@ export function useFreezeUpTimeline({
     let cancelled = false;
 
     const candidates = candidateFramesFor(index, body, { band });
-    // ⚠ **Clear it, never just skip.** A previous lake's manifest loop is cancelled mid-flight by
+    // ⚠ **Clear it, never just skip.** A previous lake's manifest loop is canceled mid-flight by
     // this effect re-running, so its own `setLoading(false)` never lands — and a bare `return` here
     // left `loading` stuck true forever. The scrubber then showed "Loading the freeze-up timeline…"
     // in place of "No satellite passes recorded over this lake this season", which is the one claim

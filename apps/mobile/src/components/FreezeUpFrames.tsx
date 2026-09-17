@@ -167,7 +167,7 @@ export function FreezeUpFrames({
   }
   const previous = frames.previous;
 
-  // ⚠ **Memoised, and on this platform that is not a micro-optimisation.** `seamFeature` walks the
+  // ⚠ **Memoised, and on this platform that is not a micro-optimization.** `seamFeature` walks the
   // granule footprint at 25 m spacing — a Sentinel edge is 110–250 km, so it is tens of thousands of
   // point-in-polygon tests against a shoreline that can carry thousands of vertices — and it runs on
   // the JS thread, the same one the pan gesture's callbacks are on (`runOnJS(true)`). Recomputed per

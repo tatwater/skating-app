@@ -41,7 +41,7 @@ function circle(
   };
 }
 
-/** A buffered line from `fromEast` to `toEast` metres east of the origin, offset `northOf` metres north. */
+/** A buffered line from `fromEast` to `toEast` meters east of the origin, offset `northOf` meters north. */
 function band(
   id: string,
   type: HazardType,
@@ -145,7 +145,7 @@ describe('clusterHazards', () => {
     expect(clusters).toEqual([]);
   });
 
-  it('honours the family filter, so the cross-season window can exclude cracks', () => {
+  it('honors the family filter, so the cross-season window can exclude cracks', () => {
     const clusters = clusterHazards([circle('c', 'wet_crack', 0)], {
       ...duplicateOptions,
       families: RECURRENCE_FAMILIES,
@@ -209,13 +209,13 @@ describe('clusterHazards', () => {
   });
 
   describe('the chaining guard', () => {
-    // Ten 20 m pins strung 50 m apart: every neighbour pair is a 10 m gap, well inside the tolerance,
+    // Ten 20 m pins strung 50 m apart: every neighbor pair is a 10 m gap, well inside the tolerance,
     // and the whole line spans 450 m. Single-link without a guard swallows the lot.
     const chain = Array.from({ length: 10 }, (_, i) =>
       circle(`c${i}`, 'thin_ice', i * 50, 20, i + 1),
     );
 
-    it('refuses to let a chain of near-neighbours span the lake', () => {
+    it('refuses to let a chain of near-neighbors span the lake', () => {
       const clusters = clusterHazards(chain, duplicateOptions);
       expect(clusters.length).toBeGreaterThan(1);
       // Every member is a 20 m circle, so no cluster may reach further than one of those plus the

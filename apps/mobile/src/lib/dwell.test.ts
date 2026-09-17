@@ -113,7 +113,7 @@ describe('suggestedSkateWindow', () => {
     });
   });
 
-  it("a peek at a neighbouring lake never fragments the first lake's suggestion", () => {
+  it("a peek at a neighboring lake never fragments the first lake's suggestion", () => {
     const state = play([
       ['lakeA', 0],
       ['lakeA', 20],

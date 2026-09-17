@@ -65,7 +65,7 @@ describe('aerialExportUrl', () => {
   it('sends a Web Mercator bbox, because the mask is traced in the same projection', () => {
     const url = new URL(aerialExportUrl(BOX, 512, 512));
     const [minX, minY, maxX, maxY] = (url.searchParams.get('bbox') ?? '').split(',').map(Number);
-    // Projected metres, not degrees — a degrees bbox here is the units bug that misregisters the mask.
+    // Projected meters, not degrees — a degrees bbox here is the units bug that misregisters the mask.
     expect(Math.abs(minX as number)).toBeGreaterThan(1e6);
     expect(maxX as number).toBeGreaterThan(minX as number);
     expect(maxY as number).toBeGreaterThan(minY as number);

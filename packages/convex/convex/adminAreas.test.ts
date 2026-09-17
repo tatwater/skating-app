@@ -308,7 +308,7 @@ describe('adminAreas.listBoundariesForClip (what the merge clips against)', () =
     expect(page.areas.map((a) => a.name).sort()).toEqual(['New Hampshire', 'Vermont']);
   });
 
-  test('honours a batch size and hands back a usable cursor', async () => {
+  test('honors a batch size and hands back a usable cursor', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.adminAreas.importCanonical, {
       areas: [

@@ -7,10 +7,10 @@
  * the kinds the body's standing admits (`requestKindsFor`) and `create` refuses the rest, so the two
  * cannot disagree.
  *
- * **The `admit` resolver is an action against the live catalogue** (D106, order inverted from the
+ * **The `admit` resolver is an action against the live catalog** (D106, order inverted from the
  * plan — see the core module). `create` schedules it; it fetches the 3DHP waterbody under the point
  * and attaches the polygon with its provenance. A moderator approves geometry that already exists in
- * a catalogue, never a drawing.
+ * a catalog, never a drawing.
  *
  * **Approving a request performs the body-side act through the verb that already exists** —
  * `activateBody`, `restore`, `remove`, `setPublicAccess` — so the audit log reads the same whether a
@@ -140,7 +140,7 @@ export const create = mutation({
         ...(trimmedNote ? { note: trimmedNote } : {}),
         createdAt: now,
       });
-      // The catalogue lookup cannot happen in a mutation (D106): schedule it.
+      // The catalog lookup cannot happen in a mutation (D106): schedule it.
       await ctx.scheduler.runAfter(0, internal.corpusRequests.resolveAdmit, { requestId });
       return requestId;
     }
@@ -178,11 +178,11 @@ export const create = mutation({
 // ── The resolver ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * Ask the catalogue what water sits under an `admit` request's coordinate (D106).
+ * Ask the catalog what water sits under an `admit` request's coordinate (D106).
  *
  * One HTTP call to the live 3DHP waterbody layer; the parsing is `parseCatalogueResponse` in core,
  * where it is tested against the service's shapes. A miss and a failure are both recorded on the
- * request rather than thrown: the queue shows a moderator "the catalogue has nothing here" or "the
+ * request rather than thrown: the queue shows a moderator "the catalog has nothing here" or "the
  * service was down" as a row they can act on, and a re-resolve is one button.
  */
 export const resolveAdmit = internalAction({
@@ -211,7 +211,7 @@ export const resolveAdmit = internalAction({
         resolvedAt: now,
         ...(resolution.kind === 'found' ? { candidate: resolution.candidate } : {}),
         ...(resolution.kind === 'error' ? { resolveError: resolution.message } : {}),
-        ...(resolution.kind === 'none' ? { resolveError: 'No catalogue water at this point' } : {}),
+        ...(resolution.kind === 'none' ? { resolveError: 'No catalog water at this point' } : {}),
       });
     } catch (err) {
       // A candidate the row cannot hold (a Champlain-sized polygon against the document limit) must
@@ -219,7 +219,7 @@ export const resolveAdmit = internalAction({
       await ctx.runMutation(internal.corpusRequests.recordResolution, {
         requestId,
         resolvedAt: now,
-        resolveError: `could not store the catalogue answer: ${err instanceof Error ? err.message : String(err)}`,
+        resolveError: `could not store the catalog answer: ${err instanceof Error ? err.message : String(err)}`,
       });
       return { resolved: 'error' };
     }
@@ -277,7 +277,7 @@ export const recordResolution = internalMutation({
   },
 });
 
-/** Moderator: run the resolver again — after an outage, or after the catalogue was updated. */
+/** Moderator: run the resolver again — after an outage, or after the catalog was updated. */
 export const reresolve = mutation({
   args: { requestId: v.id('waterBodyRequests') },
   handler: async (ctx, { requestId }) => {
@@ -581,7 +581,7 @@ export const decline = mutation({
 
 /**
  * Up to `limit` of the other open asks that share this one's question: the same kind on the same
- * body, or — for an `admit` — the same catalogue feature (Greptile, PR #63: admits have no body to
+ * body, or — for an `admit` — the same catalog feature (Greptile, PR #63: admits have no body to
  * group by, and two taps on one pond were two independent decisions). An unresolved admit has no
  * siblings yet. Both index ranges are exactly the sibling set, so `capped` means there are more,
  * not that a filter ate the page (second pass).
@@ -745,13 +745,13 @@ async function bodyUnder(
 }
 
 /**
- * Insert the catalogue's polygon as a body admitted by request (D107).
+ * Insert the catalog's polygon as a body admitted by request (D107).
  *
- * `includedByRequest` from birth, active, `source: '3dhp'` with the catalogue id as `externalId` and
+ * `includedByRequest` from birth, active, `source: '3dhp'` with the catalog id as `externalId` and
  * `threeDhpId` — so a later campaign that emits the same feature upserts *this* row rather than a
  * twin, and the transform's floor cannot delete what a person admitted. The enrichment passes find
  * it by `activatedAt` like any other returned body. Refuses, rather than guessing, a candidate the
- * catalogue calls a river or a canal.
+ * catalog calls a river or a canal.
  */
 async function admitCandidate(
   ctx: MutationCtx,
@@ -763,13 +763,13 @@ async function admitCandidate(
   if (!c) {
     throw new ConvexError(
       request.resolveError
-        ? `The catalogue lookup did not find water here (${request.resolveError}). Re-resolve, or decline.`
-        : 'The catalogue lookup has not answered yet.',
+        ? `The catalog lookup did not find water here (${request.resolveError}). Re-resolve, or decline.`
+        : 'The catalog lookup has not answered yet.',
     );
   }
   if (c.cls === undefined) {
     throw new ConvexError(
-      'The catalogue classifies this as flowing water or a canal, which the corpus does not hold. Decline it, or draw it by hand in the lake editor.',
+      'The catalog classifies this as flowing water or a canal, which the corpus does not hold. Decline it, or draw it by hand in the lake editor.',
     );
   }
   // Two guards against a second row for one lake, because the check `create` made is stale by the
@@ -785,12 +785,12 @@ async function admitCandidate(
     const twinStanding = standingOf(twin);
     if (twinStanding.standing === 'removed' || twinStanding.standing === 'unlisted') {
       throw new ConvexError(
-        'The catalogue feature under this point is a body that was taken off the map. Decline this, or restore that body from the lake editor.',
+        'The catalog feature under this point is a body that was taken off the map. Decline this, or restore that body from the lake editor.',
       );
     }
     if (twinStanding.standing === 'dormant' && twinStanding.reason === 'no_public_access') {
       throw new ConvexError(
-        'The catalogue feature under this point is a body under a no-public-access ruling. Decline this, or change the ruling in the lake editor.',
+        'The catalog feature under this point is a body under a no-public-access ruling. Decline this, or change the ruling in the lake editor.',
       );
     }
     await activateBody(ctx, twin, {
@@ -839,7 +839,7 @@ async function admitCandidate(
     action: 'set_included_by_request',
     targetType: 'waterbody',
     targetId: id,
-    reason: `Admitted from the catalogue on a skater’s request (3DHP ${c.externalId})`,
+    reason: `Admitted from the catalog on a skater’s request (3DHP ${c.externalId})`,
     metadata: { includedByRequest: true, requestId: request._id, serviceUrl: c.serviceUrl },
     createdAt: now,
   });

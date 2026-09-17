@@ -3,11 +3,11 @@
  *
  *   pnpm --filter @skating/lake-depth archive [<key>…] [--refresh]
  *   pnpm --filter @skating/lake-depth archive --adopt=<key> --file=<path> [--file=<path>…] \
- *     --licence="…" [--url=…]
+ *     --license="…" [--url=…]
  *   pnpm --filter @skating/lake-depth archive --status
  *
  * Downloads each fetchable source into a permanent `.raw/<key>/` with a `manifest.json` carrying the
- * URL, fetch time, byte count, our sha256 and the publisher's checksum and licence where they exist.
+ * URL, fetch time, byte count, our sha256 and the publisher's checksum and license where they exist.
  * Then `./mirror-r2.sh push` puts a second copy in a private bucket, so the archive is not one laptop.
  *
  * **`--adopt` exists because one of the three cannot be fetched by a script.** LAGOS-US DEPTH sits
@@ -115,7 +115,7 @@ async function download(
   return { bytes, sha256: sha.digest('hex'), md5: digest };
 }
 
-/** figshare's API hands over the download URL, the size, the publisher md5 *and* the licence. */
+/** figshare's API hands over the download URL, the size, the publisher md5 *and* the license. */
 async function figshareFile(
   articleId: number,
   filename: string,
@@ -144,7 +144,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
     throw new Error(
       `${source.key} cannot be fetched by a script — it is behind ${source.fetch.portalUrl}\n` +
         `  Download it in a browser, then:\n` +
-        `  pnpm --filter @skating/lake-depth archive --adopt=${source.key} --file=<path> --licence="<the package's rights statement>"`,
+        `  pnpm --filter @skating/lake-depth archive --adopt=${source.key} --file=<path> --license="<the package's rights statement>"`,
     );
   }
 
@@ -259,7 +259,7 @@ function adopt(
   log(`✓ adopted ${key}: ${files.length} file(s), ${(bytes / 1_000_000).toFixed(1)} MB`);
   if (!licence?.trim()) {
     log(
-      `⚠ no --licence recorded for ${key}. The ETL will refuse to run from it — that is the point:\n` +
+      `⚠ no --license recorded for ${key}. The ETL will refuse to run from it — that is the point:\n` +
         "  this source's rights statement has been an open question since the phase was scoped.",
     );
   }
@@ -281,7 +281,7 @@ function status(): void {
     const runnable = isRunnable(manifest);
     log(
       `${runnable.ok ? '✓' : '⚠'} ${source.key.padEnd(16)} ${(totalBytes(manifest) / 1_000_000).toFixed(1)} MB · ` +
-        `${checksumState(manifest)} · licence: ${shortLicence(manifest.licence)}` +
+        `${checksumState(manifest)} · license: ${shortLicence(manifest.licence)}` +
         `${runnable.ok ? '' : ` — NOT RUNNABLE: ${runnable.reason}`}`,
     );
   }
@@ -297,7 +297,7 @@ async function main(): Promise<void> {
     if (files.length === 0) {
       throw new Error('--adopt needs at least one --file=<path> (repeat it for companion files)');
     }
-    const manifest = adopt(adoptKey, files, flag(args, 'licence'), flag(args, 'url'));
+    const manifest = adopt(adoptKey, files, flag(args, 'license'), flag(args, 'url'));
     recordRun(adoptKey, manifest);
     return;
   }
@@ -364,7 +364,7 @@ function recordRun(key: string, manifest: DepthManifest | undefined, error?: str
     logger.count('bytes', totalBytes(manifest));
     const runnable = isRunnable(manifest);
     logger.succeed([
-      `licence: ${manifest.licence ?? 'UNRECORDED — the ETL will refuse to run from this archive'}`,
+      `license: ${manifest.licence ?? 'UNRECORDED — the ETL will refuse to run from this archive'}`,
       `checksum: ${checksumState(manifest)}`,
       ...(manifest.adopted
         ? ['Adopted from a manual download — this source cannot be fetched by a script.']

@@ -5,7 +5,7 @@
  *
  * A timeline invites inference far harder than a still image does. Scrubbing feels like watching,
  * and watching implies continuity that 2–4 usable frames a month does not have — so every frame
- * carries its own date and its own caveat, travelling *with* the frame rather than sitting as
+ * carries its own date and its own caveat, traveling *with* the frame rather than sitting as
  * furniture around the control.
  *
  * ## What this may never say
@@ -38,7 +38,7 @@ const SOURCE_LABELS: Record<string, string> = {
 /**
  * How to read this band — **one line, and it names the ambiguity rather than the strength.**
  *
- * > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like grey fuzz to
+ * > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like gray fuzz to
  * > me) so I'm not sure how helpful it will be to others either."*
  *
  * The band toggle says what instrument took the picture, which tells a skater nothing about what
@@ -160,7 +160,7 @@ export function gapDaysBetween(earlier: string, later: string): number | null {
 }
 
 /**
- * What the four colours of a scene-classification frame mean.
+ * What the four colors of a scene-classification frame mean.
  *
  * ⚠ **These hexes are a COPY, and `scripts/imagery/scl-palette.txt` is the original.** The palette
  * is applied at cut time by `gdaldem color-relief`, months before any client sees a tile, so there
@@ -172,7 +172,7 @@ export function gapDaysBetween(earlier: string, later: string): number | null {
  * the palette file. A skater has four questions, and the twelve-class histogram survives per body in
  * the manifest for anything that wants the taxonomy.
  *
- * ⚠ **Never colour alone.** The palette's own validation left cloud below 3:1 against the map, and
+ * ⚠ **Never color alone.** The palette's own validation left cloud below 3:1 against the map, and
  * the rule for that is relief through visible labels — which is exactly what this list is for. It
  * is not decoration on a legible image; it is what makes the image legible.
  */

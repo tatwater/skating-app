@@ -16,7 +16,7 @@ actually reach.
 
 ## The mental model: knowing a lake and pushing a lake are different things
 
-The catalogues we merge ([where the lakes come from](./water-body-data.md)) give us every named pond
+The catalogs we merge ([where the lakes come from](./water-body-data.md)) give us every named pond
 and most unnamed ones over an acre. That is the right corpus to *know* — the pond you skated as a
 kid is in there, findable by zooming in or typing its name — and the wrong corpus to *push*: a
 "lakes near you" notification, a weather-discovery card, a recommended strip drawn from 25,000 bodies
@@ -35,7 +35,7 @@ So every body has a **standing**, and only one of them is pushed:
 drive-time notifications and the 8 pm digest, weather discovery, the recommended strip, bounties
 (which ask other people to go somewhere), the weather archive we pay to keep for each lake, and the
 enrichment passes that fetch elevation, wind and depth. "Reference surfaces" — the map when you are
-looking at that spot, the lake's own page, its reports and hazards, your favourites — are never
+looking at that spot, the lake's own page, its reports and hazards, your favorites — are never
 filtered: if you went looking, you find it.
 
 ---
@@ -44,7 +44,7 @@ filtered: if you went looking, you find it.
 
 **Nobody has been on it in three seasons.** Each July, every active lake with no report, no recorded
 skate and no hazard since the start of the season three back — and no curated boost, and nobody's
-favourite — is set dormant. Three is the number because a lake can miss a warm winter and a lazy one
+favorite — is set dormant. Three is the number because a lake can miss a warm winter and a lazy one
 and still be somewhere people skate. This is the only transition a machine makes on its own, and it
 is the cheapest one to undo (below).
 
@@ -85,8 +85,8 @@ dormancy, a no-public-access ruling and a removal stand until a person reverses 
 a private lake recording a skate there is not evidence the public may go — their skate attaches to
 that lake, the ruling stays.
 
-**Favouriting** a dormant lake does not activate it, but it does *retain* it: a favourite is a person
-saying the lake matters, and the July pass leaves a favourited lake alone.
+**Favoriting** a dormant lake does not activate it, but it does *retain* it: a favorite is a person
+saying the lake matters, and the July pass leaves a favorited lake alone.
 
 ---
 
@@ -99,7 +99,7 @@ and, later, their answer. You can see how many other people have asked for the s
 
 For water we don't have at all, **long-press it** on the phone or **right-click it** on the web. If
 we already hold a lake there — shelved or removed — you land on its page; otherwise you say what it
-is and a moderator looks it up in the public hydrography catalogue and adds it with its real
+is and a moderator looks it up in the public hydrography catalog and adds it with its real
 outline. You never draw the shape. A recorded skate over unknown water offers the same path from
 the You tab, with the track as evidence.
 
@@ -117,7 +117,7 @@ page lists it under *recently activated* with what it is still missing.
 ## How the corpus was partitioned
 
 The first pass (September 2026) kept every body with **evidence of access or use**: a put-in, a
-curated boost, any report, hazard, track, favourite, bounty, body feature or hand-drawn bay, an
+curated boost, any report, hazard, track, favorite, bounty, body feature or hand-drawn bay, an
 admission by request, a user-drawn origin, or a mention in the design corpus of community
 discussions. Everything else went dormant as *inactive*. A fresh import campaign lands its bodies
 active, and the same pass is re-run afterwards to put a new region's unskated ponds to sleep.
@@ -134,7 +134,7 @@ The counts are public: the About page shows each state's **known** and **active*
   brought each back.
 - **Remove / restore** stay on the same card (admin only). Restoring is an activation.
 - **Answer requests**: `/admin/water/requests` — approve performs the act (activate, restore,
-  remove, confirm access, admit from the catalogue) and closes every sibling ask; decline takes a
+  remove, confirm access, admit from the catalog) and closes every sibling ask; decline takes a
   note the skater reads.
 - **The July pass** records a run on `/admin/imports` (`standing_rollover`); if it failed, it retries
   daily through July 14.

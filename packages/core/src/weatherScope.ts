@@ -83,7 +83,7 @@ export function bodyWeatherAnchor(body: {
  * `representativePoint` when A02 stored one, else the deprecated `centroid` — both are the same
  * on-water `pointOnFeature` basis (D48), and a sub-area has no `interiorPoint` because the polygon
  * is a bay rather than a whole lake and the shoreline failure that forced `interiorPoint` onto bodies
- * (a crescent's bbox centre landing on land) is far rarer on a compact bay. Deliberately one chain,
+ * (a crescent's bbox center landing on land) is far rarer on a compact bay. Deliberately one chain,
  * here, so the registry's sub-area pass and the panel's read cannot key two cells for one bay.
  */
 export function subAreaWeatherPoint(subArea: {

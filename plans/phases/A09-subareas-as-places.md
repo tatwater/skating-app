@@ -42,7 +42,7 @@ files. **Prod is deferred, as for every phase since A01.**
   two writers of a bay's geometry; six former inline copies are gone. `restampParent` walks
   `gpsActivities → reports → hazards → putIns → bodyFeatures`.
 - **Stamps at write.** Put-ins by distance to the outline (30 m, smallest wins, tie judged to a
-  millimetre); features by footprint centre; tracks by majority of 64 samples with `leftSubArea`;
+  millimetre); features by footprint center; tracks by majority of 64 samples with `leftSubArea`;
   activity reports from their track.
 - **Favorites** with `subAreaId` (triple uniqueness), split reads (`loadFavorites` for the feed's
   per-report test, `loadFavoriteBodyIds` for the map/discovery's per-body test), the recipient-set
@@ -62,7 +62,7 @@ files. **Prod is deferred, as for every phase since A01.**
    screens therefore costs no reads. `memberSubAreaIds` in core is the one reader of the pair.
 3. **A membership floor** (`SUB_AREA_MEMBERSHIP_MIN_SHARE` = 10% of samples, ~6 minutes of an hour).
    Found by the review: with plurality alone, a body-wide skate that crossed Malletts' mouth for
-   one sample would be labelled, banded, fed and notified as a Malletts Bay report — and before A09 it
+   one sample would be labeled, banded, fed and notified as a Malletts Bay report — and before A09 it
    carried no bay at all. Below the floor the samples are open water for everything but the
    mouth-line flag. The primary is a plurality among *members*, the body rule.
 4. **`depthDerivedAt` survives the invalidation.** The kickoff said clear all four; the admin card's
@@ -386,7 +386,7 @@ Estimate 5–7k lines incl. tests — under the ~8k / ~100-file bar. Local gate 
 (`pnpm convex-dev --once`) and smoke the bay view on web against a Champlain bay.
 
 **PR 2 — `phase-n9-bay-depths` (ETL).** `scripts/bathymetry/src/exportBayDepths.ts`: read the
-join, export live sub-areas (`_id`, `subAreaKey`, parent catalogue ids, polygon) from Convex via an
+join, export live sub-areas (`_id`, `subAreaKey`, parent catalog ids, polygon) from Convex via an
 internal query, clip each archived parent's soundings / isobaths to each bay polygon, emit
 `{ subAreaId, maxDepthM, lane, understatesMax }`, and load through a new
 `subAreas.setDerivedDepth` internal mutation (writes `maxDepthSource: 'state_agency'`,
@@ -426,12 +426,12 @@ internal query, clip each archived parent's soundings / isobaths to each bay pol
 
 ## Why this is smaller than it sounds
 
-The audit that produced this doc found that **most of a sub-area's first-class behaviour already
+The audit that produced this doc found that **most of a sub-area's first-class behavior already
 exists**, built incrementally across A02, A05c and A06b without anyone naming the through-line:
 
 | already built | where |
 | --- | --- |
-| full-text search, with **aliases** and a denormalised `searchText` | `waterBodySubAreas.searchText`, `search_subarea`, `searchSubAreas` |
+| full-text search, with **aliases** and a denormalized `searchText` | `waterBodySubAreas.searchText`, `search_subarea`, `searchSubAreas` |
 | its own cell index, so it draws and hit-tests independently of its parent | `waterBodySubAreaCells` |
 | its own D49 display curve — `displayScore`, `minVisibleZoom`, `curatedBoost` | so Malletts Bay labels at regional zoom while a cove waits for z13 |
 | reports, hazards, hazard recurrence and bounties can already name one | `subAreaId` on all four tables |
@@ -439,7 +439,7 @@ exists**, built incrementally across A02, A05c and A06b without anyone naming th
 | containment survives the parent changing shape | `reclipSubAreasToParent` + `systemDelistReason` |
 | moderator authoring: create / redraw / rename / remove / restore, all audited | `subAreas.ts` |
 
-**What a sub-area cannot do today**, and it is a short list: be favourited, hold a put-in or an
+**What a sub-area cannot do today**, and it is a short list: be favorited, hold a put-in or an
 access marker, hold a known outlet, own a GPS track, carry its own depth / wind / elevation, be
 stamped on a contour tile, or get a drive-time band.
 
@@ -456,7 +456,7 @@ that resolves into three different answers, and the differences are the interest
 | | how | why this one, and not the others |
 | --- | --- | --- |
 | **put-ins, parking, toilets, outlets, hazards, reports, tracks** | stored on the **parent**, tagged with `subAreaId` **at write time** by point-in-polygon; re-derived on redraw | Already the shape of `reports.subAreaId`. **Tag-at-write rather than derive-at-read, because a derived value cannot be indexed** — the schema already calls out wanting `['subAreaId', 'moderationStatus', 'skateEndTime']` for the bounty gate. |
-| **favourites** | its own `subAreaId` on `waterBodyFavorites` | A favourite is not derived from anything: wanting alerts about Malletts Bay is a *different* statement from wanting alerts about all of Champlain, and only the user can make it. |
+| **favorites** | its own `subAreaId` on `waterBodyFavorites` | A favorite is not derived from anything: wanting alerts about Malletts Bay is a *different* statement from wanting alerts about all of Champlain, and only the user can make it. |
 | **elevation** | **inherit, never fetch** | It is the same water surface. Fetching it would spend quota to reproduce a number by definition equal to one we hold. |
 | **wind rose** | **inherit the parent's rose, and say that is what it is**; compute the bay's **own `fetchProfileM`** from its own polygon | ⚠ **Inherited because our data has no finer answer, NOT because the wind is the same.** See §Wind in a cove — the honest statement is a limitation, and it must not be written down as a fact. Fetch is the one bay-specific signal we can compute for free, and it is real. |
 | **max depth** (⚠ *max only* — mean was ruled out 2026-08-09, see §Kickoff pass) | **derive** by clipping the parent's soundings to the bay polygon, then **store** | ⚠ **Inheriting would be a safety-relevant lie.** Malletts Bay is not as deep as Champlain's broad water body, and a bay page reading "max depth 122 m" is worse than one reading nothing (D3). Expensive to recompute per read, so it is stored — which makes it a derived-and-cached value with an invalidation rule, see §The redraw problem. |
@@ -466,7 +466,7 @@ that resolves into three different answers, and the differences are the interest
 **The through-line worth stating once:** a sub-area's own *geometry* is the only new information it
 brings. Everything that follows from geometry (fetch, depth-within-the-outline, contour crop, which
 put-in is inside it) is derived; everything that does not (wind climate, elevation) is inherited;
-and the one thing that is neither (a favourite) is stored.
+and the one thing that is neither (a favorite) is stored.
 
 ---
 
@@ -488,7 +488,7 @@ question just made it visible.
 
 **Nothing finer exists as a gridded product**, and that is worth recording so it is not re-searched:
 WTK is **2 km** and is the finest public reanalysis for CONUS; HRRR is 3 km, NAM 3 km, ERA5 25 km.
-There is no sub-kilometre wind climatology to buy or download.
+There is no sub-kilometer wind climatology to buy or download.
 
 So there are exactly three honest moves, and the first two are free:
 
@@ -508,8 +508,8 @@ So there are exactly three honest moves, and the first two are free:
    is the second use that would justify taking the raster after all. Nothing needs mirroring to R2;
    the index is computed once locally and only the 16 numbers are stored.
    **Not scoped here.** It belongs with the wind pass (A07a step 11), it should be priced against a
-   measured sample rather than an estimate, and it is a *modelled* signal — so if it ships it is
-   labelled as one, and it never turns into a safety claim (cf. D82, where bathymetry was ruled
+   measured sample rather than an estimate, and it is a *modeled* signal — so if it ships it is
+   labeled as one, and it never turns into a safety claim (cf. D82, where bathymetry was ruled
    "context, not counsel").
 
 ---
@@ -530,9 +530,9 @@ Which means concretely:
 
 - **Feed:** one row, attributed to `Malletts Bay`, appearing in both Champlain's feed and the bay's.
   Not two rows. The label carries the specificity, the membership carries the reach.
-- **Notifications:** de-duplicated at the delivery layer. Favouriting *both* Champlain and Malletts
+- **Notifications:** de-duplicated at the delivery layer. Favoriting *both* Champlain and Malletts
   Bay must yield **one** notification, not two — and that is a real case, because a user who cares
-  about the bay very plausibly favourited the water body first.
+  about the bay very plausibly favorited the water body first.
 - **Bounties:** a bounty on the bay is satisfied by a report in the bay; a bounty on the water body is
   satisfied by any report in the water body, **including** one in the bay. Not symmetric, and the
   asymmetry is correct.
@@ -559,7 +559,7 @@ consumer — the A07a audit's own recurring lesson.
    genuinely new computation is the sounding clip.
 6. **A tile stamp.** ⚠ *Kickoff call 1: mint the key, skip the tiles.* Contour tiles are stamped with `externalId`, and a sub-area has none. It needs
    the `waterBodyKey` treatment — **which is D93's argument paying off a second time**: the reason
-   identity was split from the foreign catalogue key was so that a thing we mint can be stamped on a
+   identity was split from the foreign catalog key was so that a thing we mint can be stamped on a
    tile. Mint `subAreaKey` the same way, at insert, opaque and sortable.
 7. **Drive-time.** ~120 sub-areas against a corpus of 25,136 is a rounding error on the ORS budget;
    the work is in the read path deciding which bands to show, not in the fetch.
@@ -568,7 +568,7 @@ consumer — the A07a audit's own recurring lesson.
 
 ## The redraw problem, which is new
 
-A water body's outline changes when a catalogue re-publishes it — rarely, and the loader already gates the
+A water body's outline changes when a catalog re-publishes it — rarely, and the loader already gates the
 expensive work on `footprintMoved`. **A bay's outline changes whenever a moderator decides it
 should**, and the founder has explicitly signed up for that: *"If we learn that skaters venture past
 our mid-lake straight-line edge that defines the mouth of the bay, we can always adjust our geometry

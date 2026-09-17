@@ -11,7 +11,7 @@ import { type LatLng, nearestBodyForPoint } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 
 /**
- * Parking/approach buffer (metres) for GPS→lake auto-select — so opening the app offline from the
+ * Parking/approach buffer (meters) for GPS→lake auto-select — so opening the app offline from the
  * car still resolves the lake (S1: access/put-ins are a dominant concern). Mirrors the server-side
  * `AUTOSELECT_BUFFER_M` in `waterBodies.resolveBodyForCoord`; tunable (Phase 07 admin controls, D37).
  */

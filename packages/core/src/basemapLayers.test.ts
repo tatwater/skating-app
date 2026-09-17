@@ -13,7 +13,7 @@ const layer = (id: string, bounds: Partial<Omit<ZoomableLayer, 'id'>> = {}): Zoo
   ...bounds,
 });
 
-/** The handful of flavour layers the policy actually names, plus detail it should leave alone. */
+/** The handful of flavor layers the policy actually names, plus detail it should leave alone. */
 const flavour = (): ZoomableLayer[] => [
   layer('background'),
   layer('earth'),
@@ -79,7 +79,7 @@ describe('composeBasemapLayers', () => {
       expect(label?.filter).toEqual(['within', OUTLINE]);
     });
 
-    it("ands with the flavour's own filter rather than replacing it", () => {
+    it("ands with the flavor's own filter rather than replacing it", () => {
       const roads = withFilter().find((l) => l.id === 'roads_labels_major');
       // Converted first — `['all', <legacy>, ['within', …]]` is read as a legacy filter, and
       // `within` is not a legacy operator, so MapLibre rejects the entire style and the map goes
@@ -146,9 +146,9 @@ describe('composeBasemapLayers', () => {
     expect(find(compose(), 'roads_highway')?.minzoom).toBe(REGION_MIN_ZOOM);
   });
 
-  it('never widens a zoom range the flavour already narrowed', () => {
+  it('never widens a zoom range the flavor already narrowed', () => {
     const composed = compose();
-    // Streams start at z14 in the flavour and must not be pulled down to the regional floor.
+    // Streams start at z14 in the flavor and must not be pulled down to the regional floor.
     expect(find(composed, 'water_stream')?.minzoom).toBe(14);
     // A layer that already ends before the admin cap keeps its own ceiling.
     expect(find(composed, 'roads_major_casing_early')?.maxzoom).toBe(12);

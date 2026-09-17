@@ -26,7 +26,7 @@ import { ReasonDialog } from './ReasonDialog';
  * What this replaces: a card holding a name and a button reading `Merge →`. That was survivable when
  * the queue's only producer was a user drawing a pond over an OSM lake, and it stopped being
  * survivable when reconciliation filled the queue with **OSM against itself** — pairs where both
- * rows are the same catalogue, 37 of the first hundred have no name at all, and the two ends of one
+ * rows are the same catalog, 37 of the first hundred have no name at all, and the two ends of one
  * pair rendered as two identical blank cards. There was no way to tell which lake you were looking
  * at, whether the pair was one lake or two, or which of the two rows should survive. A merge
  * re-points every report on a lake and is not undone by a button.
@@ -201,7 +201,7 @@ export function DuplicateGroupCard({
                   title={`Keep “${bodyLabel(survivor)}”`}
                   description={`Merges ${group.members.length - 1} other row${
                     group.members.length === 2 ? '' : 's'
-                  } into it. Reports, hazards, bounties, put-ins, features, favourites and named bays all re-point to this body; the others become tombstones that deep links follow here.`}
+                  } into it. Reports, hazards, bounties, put-ins, features, favorites and named bays all re-point to this body; the others become tombstones that deep links follow here.`}
                   confirmLabel="Merge"
                   confirmVariant="default"
                   requireReason={false}
@@ -395,7 +395,7 @@ function Attachments({ group, detail }: { group: DuplicateGroup; detail: GroupDe
     bounties: 'Bounties',
     putIns: 'Put-ins',
     bodyFeatures: 'Known features',
-    favorites: 'Favourites',
+    favorites: 'Favorites',
     subAreas: 'Named bays',
   };
   const ordered = group.members

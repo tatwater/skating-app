@@ -50,7 +50,7 @@ describe('suggestSamplePoints', () => {
   });
 
   it('falls back to the representative point when no grid point lands on water', () => {
-    // A lagoon smaller than one grid step: the single centred point falls in the hole, so the grid
+    // A lagoon smaller than one grid step: the single centered point falls in the hole, so the grid
     // yields nothing and the caller still needs a point to sample at.
     const ring: Polygon = {
       type: 'Polygon',
@@ -128,8 +128,8 @@ describe('suggestSamplePoints', () => {
               const a = points[i];
               const b = points[j];
               if (!a || !b) continue;
-              // 1% slack for the difference between the haversine metre and the flat
-              // metres-per-degree constant the grid steps in.
+              // 1% slack for the difference between the haversine meter and the flat
+              // meters-per-degree constant the grid steps in.
               expect(haversineMeters(a, b)).toBeGreaterThan(spacingKm * 1000 * 0.99);
             }
           }

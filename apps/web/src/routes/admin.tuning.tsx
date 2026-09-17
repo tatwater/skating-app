@@ -350,7 +350,7 @@ function AdminTuning() {
             file="hazardCluster.ts"
           >
             The edge-to-edge gap at which two pins this winter are the same hazard. A{' '}
-            <strong>gap between footprints</strong>, not a distance between centres — which makes it
+            <strong>gap between footprints</strong>, not a distance between centers — which makes it
             a far tighter claim on a 600 m ridge than a radius would be. Raising it pools more
             aggressively; two leads 80 m apart on one afternoon really can be two leads, and
             collapsing those would under-warn.
@@ -444,7 +444,7 @@ function AdminTuning() {
           >
             When two winters' hazards are the same feature.{' '}
             <strong>Looser than the within-season tolerance, on purpose</strong>: ice does not
-            reassemble to the metre, so a ridge re-forming within 80 m is the same ridge — while two
+            reassemble to the meter, so a ridge re-forming within 80 m is the same ridge — while two
             pins that far apart on one afternoon may well be two different leads. Tight for
             identity, loose for recurrence.
           </ConstantCard>

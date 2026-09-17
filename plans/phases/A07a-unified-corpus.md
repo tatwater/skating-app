@@ -1,4 +1,4 @@
-# A07a — The unified corpus: one record per water body, two catalogues behind it, and a full data campaign on top
+# A07a — The unified corpus: one record per water body, two catalogs behind it, and a full data campaign on top
 
 > **Status:** ✅ **Campaign `n7-3-20260809` COMPLETE** (2026-08-09) — every pass run, `regionStats` last. The corpus is live on dev and
 > the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session
@@ -130,7 +130,7 @@
 >
 > | | |
 > | --- | --- |
-> | **A missed match is a duplicate, not a gap.** Identity is keyed on catalogue ids, so a group with no OSM member inserts a *second row* beside the water body we already had. Measured on the master list: **632 overlapping pairs at IoU ≥ 0.3, 408 of them sharing a name** — `Peabody Pond` 7 ac beside `Peabody Pond` 16 ac. The cause is structural: `scoreCandidates` skips any pair whose areas differ by more than 2×, which is most small-pond disagreements — and is also the measured answer to the long-open *"OSM↔NHD matches 33% and nobody knows why"*. | D118 |
+> | **A missed match is a duplicate, not a gap.** Identity is keyed on catalog ids, so a group with no OSM member inserts a *second row* beside the water body we already had. Measured on the master list: **632 overlapping pairs at IoU ≥ 0.3, 408 of them sharing a name** — `Peabody Pond` 7 ac beside `Peabody Pond` 16 ac. The cause is structural: `scoreCandidates` skips any pair whose areas differ by more than 2×, which is most small-pond disagreements — and is also the measured answer to the long-open *"OSM↔NHD matches 33% and nobody knows why"*. | D118 |
 > | **Salt water was in the corpus** — Great Bay 4,301 ac, Little Bay 1,826, Waquoit Bay, New Bedford Harbor, ~360 bodies. The token veto only fires when the federal estuary polygon lands in the group, and one estuary against forty OSM coves never does; the bay rule then demoted each cove to `unclassified` and admitted it. The veto is now **spatial**. | D119 |
 > | **The name veto deleted two real New York water bodies.** `Lake Superior` (179 ac, Sullivan County) and `Little Lake Erie` (4 ac) both match a substring rule aimed at the Great Lakes. Gated on area. | D120 |
 > | **A `conflict` verdict plus step 6 deleted both rows.** `importCanonical` wrote nothing on conflict, so neither row was stamped and the prune removed the evidence of the uniqueness violation. Plus: a load with failed batches leaves ~150 real water bodies unstamped per batch, and the prune would delete them. | D124 |
@@ -144,9 +144,9 @@
 >
 > **✅ Run 6, 2026-08-07 — and runs 2–6 each found something the one before could not.** The master
 > list is **25,133 bodies + 112 sub-areas + 153,211 named drops = 178,456 groups**, asserted rather
-> than printed. Pre-load checks clean: **0 bodies with no state, 0 duplicate catalogue ids**, so the
+> than printed. Pre-load checks clean: **0 bodies with no state, 0 duplicate catalog ids**, so the
 > load cannot silently collapse two bodies into one row. The headline find of the later rounds:
-> **`gnisRescued` fell 1,771 → 921 — 850 bodies were being admitted on a neighbouring pond's name**,
+> **`gnisRescued` fell 1,771 → 921 — 850 bodies were being admitted on a neighboring pond's name**,
 > because the gazetteer's ambiguity rule only refused *many points → one body* and never the mirror.
 > See D118–D125. Superseded numbers from the first re-run:
 >
@@ -172,7 +172,7 @@
 > that keys off `externalId`.
 > **Decisions:** **D92–D105**, proposed here, to be logged in [`01-decisions.md`](../01-decisions.md) at
 > build kickoff. D91 is the last one logged. **D95 and D100–D105 are approved** (founder, 2026-08-03).
-> D92 was widened to three catalogues and then **narrowed back to two** by measurement.
+> D92 was widened to three catalogs and then **narrowed back to two** by measurement.
 > **Steps 1 and 1b (NHD + 3DHP acquisition) are ✅ done**, 2026-08-03 — see the acquisition section.
 > **D92 is back to two-way**: 3DHP was measured against NHD over 7,878 water bodies and is the same data.
 
@@ -229,9 +229,9 @@ found so far, all by measuring rather than by reading docs:
 | id | spellings | consequence of getting it wrong |
 | --- | --- | --- |
 | NHD `permanent_identifier` | brace-wrapped GUID from REST, bare GUID from `ogr2ogr`, **and plain numeric** — **76.4%** of Maine's post-floor GNIS-keyed rows are numeric (`141034078`), only 23.6% GUIDs | a GUID-only rule drops three quarters of Maine's water bodies from reconciliation, with no error |
-| GNIS id | NHD zero-pads to a string (`"00869848"`), 3DHP stores an int (`561883`), OSM tags `gnis:feature_id` | joined raw over Maine: **0 of 3,031** matched. Normalised: **3,007** |
+| GNIS id | NHD zero-pads to a string (`"00869848"`), 3DHP stores an int (`561883`), OSM tags `gnis:feature_id` | joined raw over Maine: **0 of 3,031** matched. Normalized: **3,007** |
 | NHD field names | lower-case in the geodatabase, upper-case from REST | every measurement taken before the archive existed used the REST spelling |
-| CRS | NHD HR is **NAD83 (EPSG:4269)**; 3DHP staged is **NAD83(2011)/Conus Albers (EPSG:5070)**, a metre grid | `ogr2ogr -spat` reads its envelope in the *source* SRS — a degrees box against Albers selects ocean and the clip "succeeds" empty |
+| CRS | NHD HR is **NAD83 (EPSG:4269)**; 3DHP staged is **NAD83(2011)/Conus Albers (EPSG:5070)**, a meter grid | `ogr2ogr -spat` reads its envelope in the *source* SRS — a degrees box against Albers selects ocean and the clip "succeeds" empty |
 
 **The pattern is the finding.** In each case the wrong rule produced *silence*, not an error: an empty
 join, a missing id, an empty clip.
@@ -378,11 +378,11 @@ nothing from `contours.geojsonl` until it is rebuilt.
 
 ---
 
-## D92 — Which catalogue draws each water body is decided by a **bake-off**, not by precedent
+## D92 — Which catalog draws each water body is decided by a **bake-off**, not by precedent
 
 **Proposed as a measurement, deliberately not as an answer.**
 
-> **Widened to three catalogues (founder, 2026-08-03).** The bake-off is **OSM vs NHD vs 3DHP**, not
+> **Widened to three catalogs (founder, 2026-08-03).** The bake-off is **OSM vs NHD vs 3DHP**, not
 > a two-horse race. The reasoning is that NHD's freeze date makes it a snapshot with a known
 > expiry, and 3DHP is the only source that is both *maintained* and *elevation-derived* — so the
 > question "does LiDAR-derived hydrography actually draw a better water body than either?" is worth one
@@ -412,7 +412,7 @@ nothing from `contours.geojsonl` until it is rebuilt.
 > ### 🔬 Measured, 2026-08-03: it happens **every time**. The bake-off is two-way.
 >
 > Both archives are on disk, so the question got answered before the bake-off was written rather than
-> during it. Joining NHD to the 3DHP clip on normalised GNIS id, restricted to bodies matched **1:1**
+> during it. Joining NHD to the 3DHP clip on normalized GNIS id, restricted to bodies matched **1:1**
 > on both sides and above the D91 floor:
 >
 > | state | matched 1:1 | identical area (exact float) | differ < 0.1% | **differ ≥ 0.1%** | worst |
@@ -451,7 +451,7 @@ count comparison. That comparison is real but it only answers *how many*, not *w
 **1.10×** — nearly all of NHD's apparent 5× bulk is water the floor deletes anyway. So *coverage*
 barely separates them in Maine, which is the fairest test available (a corner state where crowd
 mapping should be weakest). NH measured 1.23× and VT 1.88×, both discounted: those bounding boxes
-bleed heavily into neighbouring states.
+bleed heavily into neighboring states.
 
 **What no measurement so far has settled is accuracy, and the reason is a trap worth recording.**
 Maine's MIDAS waterbody layer carries `Permanent_Identifier` and `ReachCode` — it *is* NHD. Scoring
@@ -461,7 +461,7 @@ of 51 sampled water bodies inside 5%. That says OSM is not *bad*. It does not sa
 
 ### The referee: our own soundings
 
-We hold something neither catalogue does — **2.4 million depth measurements taken on the water**. A
+We hold something neither catalog does — **2.4 million depth measurements taken on the water**. A
 polygon that is a better description of a water body will:
 
 - **contain a higher fraction of that water body's soundings** (`containedFraction`, already built), and
@@ -512,12 +512,12 @@ to create our own record from either or (or both) sources for each body."*
 A body carries:
 
 - **`waterBodyKey`** — a stable id we mint once and never change. Not the Convex `_id`, which moves if
-  a row is ever recreated; not `externalId`, which is a foreign catalogue's key and cannot survive a
+  a row is ever recreated; not `externalId`, which is a foreign catalog's key and cannot survive a
   source change.
-- **`osmId` / `nhdId` / `threeDhpId`** — what this water body is called in each catalogue that knows it.
+- **`osmId` / `nhdId` / `threeDhpId`** — what this water body is called in each catalog that knows it.
   More than one may be present, and once reconciled most will be. `threeDhpId` is populated, not a
   parity placeholder: 3DHP ships `id3dhp` on every feature.
-- **`gnisId`** — the one identifier all three catalogues share, and the cheapest exact-match bridge
+- **`gnisId`** — the one identifier all three catalogs share, and the cheapest exact-match bridge
   between them. See below.
 - **`geometrySource`** — whose outline we drew, so D92's per-body override is a field and not a
   migration.
@@ -529,11 +529,11 @@ A body carries:
 The proposal was to mint the key from the body's own coordinates (a bbox hash, a geohash) so it would
 be re-derivable on a later dedup pass. Three reasons it cannot be the *key*:
 
-1. **D92 is the thing that breaks it.** The bake-off exists to possibly change *which catalogue draws a
+1. **D92 is the thing that breaks it.** The bake-off exists to possibly change *which catalog draws a
    water body*. That changes the polygon → the bbox → the key. A geometry-derived id would move at exactly
    the moment identity must not, for every water body whose source we switched, in one pass, silently.
 2. **It repeats `externalId`'s sin at a worse ratio.** `externalId` conflates identity with a foreign
-   catalogue's key; a bbox key conflates identity with a *continuously edited measurement*. A mapper
+   catalog's key; a bbox key conflates identity with a *continuously edited measurement*. A mapper
    tightening one bay re-keys the water body.
 3. **No quantization setting works.** Coarse enough to survive shoreline edits and it collides — bays
    nested inside parents (North Bay/Moosehead, below), 180 "Mud Pond"s, dense pond clusters. Fine
@@ -555,7 +555,7 @@ every tile in the basemap bucket with no error, just blank water bodies. Portabi
 second-order version of the same thing. **That is the argument, and it should be stated rather than
 inherited.**
 
-**Form: opaque and sortable** (ULID-style), not minted from whichever catalogue id we happened to see
+**Form: opaque and sortable** (ULID-style), not minted from whichever catalog id we happened to see
 first. The first-id version is more debuggable but reads as a provenance claim when it is not — the
 exact failure `externalId` is being split up to escape. Debuggability comes from `osmId` / `nhdId` /
 `gnisId` sitting on the row.
@@ -568,12 +568,12 @@ than academic.
 
 **It also pre-empts the merge problem rather than solving it.** With reconciliation run *before* any
 NHD geometry is imported, we know each OSM body's NHD counterpart in advance, so the duplicate row is
-never created. Everything downstream points at `waterBodyKey` and is unaffected by which catalogue we
+never created. Everything downstream points at `waterBodyKey` and is unaffected by which catalog we
 later prefer. Residual one-to-many cases (Sherman Lake is one OSM body that NHD splits) are not fixable
 by any id scheme and need a rule or a human.
 
 > **Add `gnisId`, and reconcile by it first.** The GNIS Feature ID is **the only identifier all three
-catalogues carry** — OSM's `gnis:feature_id` tag, NHD's `gnis_id`, 3DHP's `gnisid` — and unlike
+catalogs carry** — OSM's `gnis:feature_id` tag, NHD's `gnis_id`, 3DHP's `gnisid` — and unlike
 `polygonIoU` it is an *exact* match rather than a geometric inference. Measured against the Vermont
 extract (18,260 water features): 361 carry one, **every single one of them is also named**, and it
 covers **35.3% of named features**. Since named bodies are what survives the D91 floor and what anyone
@@ -581,7 +581,7 @@ drives to, that is a strong deterministic candidate generator to run *ahead* of 
 already in the extract.
 
 **It is a candidate generator, not a uniqueness proof.** GNIS names *places*, so one id can legitimately
-span two features where a catalogue splits a water body. It proposes; `polygonIoU` adjudicates.
+span two features where a catalog splits a water body. It proposes; `polygonIoU` adjudicates.
 
 **Reconcile by `polygonIoU`, never by point containment.** Measured, not assumed. North Bay's
 > interior point sits inside NHD's *Moosehead Lake*, so a containment join hands a bay its parent's id
@@ -608,7 +608,7 @@ unattended: an automatic merge that is wrong is unrecoverable in a way a queued 
 measured frequency says queueing is affordable.
 
 **`gnisId` is deliberately not an upsert key.** It is the best *candidate generator* we have, but GNIS
-names **places** and a catalogue may split one place into several features — **92 GNIS ids resolve to
+names **places** and a catalog may split one place into several features — **92 GNIS ids resolve to
 more than one NHD body** (measured). Upserting on it would merge those water bodies.
 
 **One bug the tests caught before it shipped:** the default survivor rule read the first match in the
@@ -623,7 +623,7 @@ orderings look correct at the call site. Now ranked explicitly.
 uses to decide *"is this row already here?"*, has nowhere to go. A minted key is by definition not
 derivable from an incoming feature, so it cannot answer that question.
 
-The lookup therefore has to run on the catalogue ids, and that is a two-key (now three-key) match with
+The lookup therefore has to run on the catalog ids, and that is a two-key (now three-key) match with
 a genuine failure mode:
 
 | incoming feature matches | action |
@@ -646,7 +646,7 @@ sub-areas and put-ins keep resolving, then retired in a follow-up once every con
 `waterBodyKey`. The tile stamp moves in the same rebuild this phase already requires.
 
 **And `_id` never moves.** User content keys off the Convex `_id`, not off any of these. A body that
-carries a report, hazard, sub-area, favourite, put-in, track or bounty is **patched in place**; it is
+carries a report, hazard, sub-area, favorite, put-in, track or bounty is **patched in place**; it is
 never deleted and recreated, whatever its geometry source ends up being. On dev that set is twelve
 objects with zero dangling references (measured 2026-08-03), so the rule costs nothing to hold — and
 holding it is what makes "change a water body's geometry source" a field update rather than a migration.
@@ -724,7 +724,7 @@ generalises the re-keyer is exactly the change that would break it silently.
 
 ### The four rules (founder, 2026-08-03)
 
-1. **Match against the corpus first — both catalogues.** Re-keying runs *after* the unified corpus
+1. **Match against the corpus first — both catalogs.** Re-keying runs *after* the unified corpus
    exists, so a sounding can land on an NHD-sourced body as readily as an OSM one. Running it earlier
    would silently discard every sounding whose water body only NHD knows about.
 2. **One key, many bodies → decide whether to split.** The existing `splitByBody` is scale-free and
@@ -826,7 +826,7 @@ the point, and every one must be named in the drop ledger.
 
 ---
 
-## D96 — Accepted classes are chosen for **parity between the two catalogues**
+## D96 — Accepted classes are chosen for **parity between the two catalogs**
 
 **Proposed, and the founder's caution is the design constraint:** *"choose our acceptable classes from
 both sources specifically for parity/complementary benefit/clarity."*
@@ -849,7 +849,7 @@ Mapping NHD without regard to that produces asymmetry in both directions:
 **The work is to resolve the two asymmetries deliberately**, with the answer recorded either way:
 either narrow OSM's acceptance to match NHD's resolution, or admit the NHD class and accept that its
 boundary is coarser. Both are defensible; silently differing is not, because it would make "which
-catalogue drew this water body" change *what kind of thing it is* — the exact confusion D93 exists to remove.
+catalog drew this water body" change *what kind of thing it is* — the exact confusion D93 exists to remove.
 
 **The mechanical part is small.** 98.9% of Maine's post-floor NHD set is four FCODEs, all LakePond
 variants. The named junk is tiny: 8 sewage treatment, 4 treatment, 11 water storage, 20 unspecified
@@ -906,14 +906,14 @@ is consistent with reasoning already committed to, not merely a deferral.
 
 **The one measurement that would reverse this is not available yet, and is free at step 2.** What
 matters is not how many wetlands NHD has but how many are **new** — the same bogs are very likely in
-both catalogues, and reconciliation collapses them onto one row. If the increment is small, admitting
+both catalogs, and reconciliation collapses them onto one row. If the increment is small, admitting
 NHD 466 costs almost nothing. If it is large, five states of this is on the order of a **50% corpus
 expansion in unnamed wetland**, which lands on read-path cost, tile size, the A06c §4.2 prominence deciles,
 and every metered pass in D100's table.
 
 **So D96's wetland half stays open until reconciliation reports the increment.** Keep-them is the
 standing default; revisit only on that number. The naming gradient stays recorded as the lever that
-exists if it is ever wanted — it is a one-line change on both sides, and the two catalogues agree by
+exists if it is ever wanted — it is a one-line change on both sides, and the two catalogs agree by
 construction under it.
 
 ### Three traps in the geodatabase itself
@@ -935,7 +935,7 @@ D92's table reports NHD Maine at 5,163 post-floor after removing SwampMarsh and 
 OSM's 4,715 — **1.10×**. Measured from the archive, Maine's post-floor LakePond + Reservoir is
 **4,718**, against that same OSM 4,715: **1.001×**.
 
-**So on bulk coverage the two catalogues are indistinguishable in Maine**, and D92's stated
+**So on bulk coverage the two catalogs are indistinguishable in Maine**, and D92's stated
 willingness to conclude *"they are within noise, say so"* now has a number behind it. What NHD is
 actually worth is not bulk — it is the three things §Why this phase exists names: a key that collapses
 OSM's invisible duplicates, specific gap water bodies like Beau Lake, and the MIDAS linkage. **D92's write-up
@@ -951,7 +951,7 @@ already that do not meet our new criteria, so that we can go in and remove them 
 
 Deletion stays with `pruneBelowAreaFloor`, which already knows how to keep anything with a claim on it
 (`source: 'user'`, a `curatedBoost`, a soft-delist, a dedup/merge pointer, an unknown area, or any
-attached report / hazard / bounty / favourite / put-in / track / sub-area).
+attached report / hazard / bounty / favorite / put-in / track / sub-area).
 
 **Why not one pass.** Two passes that both delete will disagree at the edges, and the edge here is
 user content. One deleter, one reporter. The report is the phase's own check that the corpus matches
@@ -1081,7 +1081,7 @@ York 920 MB against 397 MB. There is no capability difference for our use.
 4.5 GB.
 
 **A sixth object per state comes free and should be taken:** the `.xml` FGDC metadata sitting beside
-each `.zip` is ~29 KB and is the provenance record — publication date, process lineage, the licence
+each `.zip` is ~29 KB and is the provenance record — publication date, process lineage, the license
 statement. Archive it with the payload, the way `DepthManifest` archives a data dictionary.
 
 ### 3DHP, resolved (2026-08-03) — and it forced a design call
@@ -1110,12 +1110,12 @@ clip needs the 11.9 GB again; re-deriving anything *downstream* of it does not.
 
 ---
 
-## D102 — The corpus refreshes annually, and only two of the three catalogues can ✅ **APPROVED**
+## D102 — The corpus refreshes annually, and only two of the three catalogs can ✅ **APPROVED**
 
 **Approved by the founder, 2026-08-03:** *"Please also document this process so that we can run
 re-imports for OSM and 3DHP every year to keep our maps up to date!"*
 
-| catalogue | cadence | why |
+| catalog | cadence | why |
 | --- | --- | --- |
 | **OSM** | any time — Geofabrik rebuilds daily | live, continuously edited |
 | **3DHP** | **annually**, early in the federal fiscal year | new staged release, more EDH each year |
@@ -1251,7 +1251,7 @@ and at 35,637 it is large enough to hide a coverage decision inside. See
 
 **Step 3 preceded step 5, and it was worth it — though not for the reason expected.** The worry was
 that importing first would mean importing 27,074 outlines twice. The bake-off's answer is that **the
-two catalogues are indistinguishable** (63.2% ties; 13.4% vs 12.6% on the least-confounded metric),
+two catalogs are indistinguishable** (63.2% ties; 13.4% vs 12.6% on the least-confounded metric),
 so OSM-first stands as the default on D92's own tie-break — the cheaper pipeline. The placeholder
 turned out to be right, which is only knowable now. See
 [D92](../01-decisions.md#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a)
@@ -1270,7 +1270,7 @@ the master list, and neither set contains the other.
 `waterBodies.pruneNotInCampaign` is that pass. `importCanonical` stamps `lastCampaignId` on every row
 it touches, so membership is **asserted by the loader** rather than re-derived — a second copy of the
 rules is how a prune and an import come to disagree at the edges, which is the failure D97 names. It
-is dry by default, names the bodies it would delete rather than only counting them, and honours every
+is dry by default, names the bodies it would delete rather than only counting them, and honors every
 protection `pruneBelowAreaFloor` does: user-created, `includedByRequest`, a curated boost, a dedup or
 merge pointer, a soft-delist, and any attachment.
 
@@ -1415,7 +1415,7 @@ answers:
 - MIDAS 870 **must** re-key into ~217 drawable bodies; 5448 (**China Lake**, a real 3,939-acre water body
   with 25,807 legitimate soundings) **must not** be touched by the re-key lane.
 - After D98's recalibration, the set of water bodies that stop drawing **must** be enumerated and reviewed,
-  not summarised.
+  not summarized.
 
 ### ✅ The merge's named fixtures, as built (2026-08-06)
 
@@ -1428,11 +1428,11 @@ three of them **changed answer** because the audit closed a hole the old test pi
 | Lake Erie, published by NHD alone as FTYPE 390 | ⚠ **admitted** — the test pinned the hole | refused by name (D114) |
 | an unnamed ocean-sized polygon | ⚠ admitted | refused on the 100,000-acre ceiling |
 | Lake Champlain at ~271,000 acres | ✅ | ✅ — the allow-list's only entry |
-| a group every catalogue refused is `null`, never `unclassified` | ✅ | ✅, and an explicit drop now beats silence too |
+| a group every catalog refused is `null`, never `unclassified` | ✅ | ✅, and an explicit drop now beats silence too |
 | Beau Lake is in region | ✅ | ✅ — and now drawn by NHD at 1,876.6 ac, within 5% of the published 1,788 |
 | a named wetland at 5 ac in, an unnamed one at 49 out | ✅ | ✅ |
 | a bay whose only candidate parent shares a bounding box | ⚠ **adopted** — pinned false positive | demoted; and a bay poking one vertex past its parent is no longer demoted |
-| a group holding two features from one catalogue queues | ✅ | ✅ — and the queue is now *stored* |
+| a group holding two features from one catalog queues | ✅ | ✅ — and the queue is now *stored* |
 | `inRegion` on a body whose in-region sliver falls between samples | ⚠ **dropped** — pinned false negative | found, by escalating to every vertex |
 
 ### ✅ The pipeline's own fixtures, as built (second audit, 2026-08-06)
@@ -1461,7 +1461,7 @@ to a body that satisfies two rules at once.
 | a bay whose parent was refused | a queued body, never a dangling sub-area |
 | Half Moon Cove | demoted and queued |
 | the Long Pond duplicate pair | one body, the absorbed id **named** |
-| two catalogues sharing an id namespace | throws |
+| two catalogs sharing an id namespace | throws |
 | a body whose geometry defeats the transform | counted, run survives |
 
 ### 📌 Deferred, with the setup written down: the regression corpus
@@ -1505,7 +1505,7 @@ Same discipline, applied to it — named answers, not a percentage:
   rescue the whole file exists for; it must be a test, not a run report.
 - **A group containing Lake Erie (`nhd:ftype=390`, a LakePond claim at 6.4M acres) is refused**, and
   refused by the *veto*, not by the area floor. Likewise Long Island Sound at `ftype=493`.
-- **A group every catalogue refused is `null`, never `unclassified`.** The distinction that admitted
+- **A group every catalog refused is `null`, never `unclassified`.** The distinction that admitted
   Lake Huron and seven polygons of the Atlantic.
 - **Beau Lake is in region** — it straddles the Québec border, so an `inRegion` that samples the wrong
   vertices drops the fixture this phase is named for.
@@ -1514,7 +1514,7 @@ Same discipline, applied to it — named answers, not a percentage:
 - **A bay whose only candidate parent merely shares a bounding box is demoted.** The parent test is
   `covers()` on bboxes alone; Half Moon Cove is the fixture for the demotion, and a bbox-only test has
   no fixture at all for the false-positive direction.
-- **A group holding two features from one catalogue queues rather than merging** — `sameSourceDuplicate`
+- **A group holding two features from one catalog queues rather than merging** — `sameSourceDuplicate`
   is the only thing standing between a three-lane union-find and two distinct water bodies chained into one.
 
 ---
@@ -1538,7 +1538,7 @@ possibly overlap it, and `bboxIntersects` rejects most of those before any geode
 
 | | |
 | --- | --- |
-| `RECONCILE_MIN_IOU` **0.5** | they share more area than they don't. Two catalogues tracing one shoreline land at 0.85–0.98; the measured OSM-vs-NHD median area disagreement is 2.4%. Below 0.5 is a bay against its parent, a reservoir against its river, or two neighbours in a chain. |
+| `RECONCILE_MIN_IOU` **0.5** | they share more area than they don't. Two catalogs tracing one shoreline land at 0.85–0.98; the measured OSM-vs-NHD median area disagreement is 2.4%. Below 0.5 is a bay against its parent, a reservoir against its river, or two neighbors in a chain. |
 | `RECONCILE_MIN_IOU_WITH_GNIS` **0.3** | both publishers independently naming the same place is real evidence — but not a bypass, because a water body NHD splits shares its GNIS id with both halves. |
 | `RECONCILE_MIN_MARGIN` **0.15** | when the top two are this close, geometry cannot separate them, and `ambiguous` sends it to a human rather than picking the marginally larger number. |
 
@@ -1579,7 +1579,7 @@ containment and *low* IoU, which is exactly the distinction that matters. Both c
 > 1. **`waterBodies.ts`'s `type === 'marsh'` check goes silently dead**, zeroing the
 >    `unnamedWetlandBands` tally — the distribution D96 says is the thing most likely to be re-tuned.
 >    It must route through `isWetlandClass`, which already accepts both spellings.
-> 2. **`humanizeEnum` cannot render `lakePond`** — it only swaps underscores and capitalises, so five
+> 2. **`humanizeEnum` cannot render `lakePond`** — it only swaps underscores and capitalizes, so five
 >    user-facing sites across web and mobile would print "LakePond". Needs a label table.
 > 3. **`unclassified` reaches a human picker.** Mobile's new-water prompt maps the enum straight to
 >    chips, so migrating unreviewed would offer a skater "Unclassified" as a choice. The picker needs
@@ -1601,9 +1601,9 @@ combinations before implementing — no gaps, no contradictions:
 | > 5 acres | wetland | ✓ | **in** |
 | > 5 acres | wetland | ✗ | **out** |
 
-Rules 1–3 are D91 unchanged. The wetland clauses are new, and **symmetric across catalogues on
+Rules 1–3 are D91 unchanged. The wetland clauses are new, and **symmetric across catalogs on
 purpose** — OSM accepts `wetland=marsh`, NHD's FTYPE 466 lumps swamp with marsh under one code whose
-FCODEs do not separate them. A one-sided rule would make *which catalogue drew this water body* change
+FCODEs do not separate them. A one-sided rule would make *which catalog drew this water body* change
 *what kind of thing it is*.
 
 **Why wetland at all:** above the floor, LakePond runs 59–66% named and SwampMarsh 1–2%, consistently
@@ -1640,7 +1640,7 @@ measurement is kept in `WETLAND_LONG_AXIS_EXEMPTION_DROPPED` because measuring w
 120 (16%), a 2 km bar kept 34 (4.7%).
 
 **What it cost was more than it looked.** It was the only rule gated on a *derived statistic*, and
-that split the correct behaviour in two: an **import** must refuse a body whose axis is unknown, and a
+that split the correct behavior in two: an **import** must refuse a body whose axis is unknown, and a
 **prune** must keep it, or it deletes the long channels the clause exists to protect on absence of
 evidence. Two opposite readings of one rule is how a silent deletion happens. It also forced
 `lakeGeometryStats` to be computed lazily mid-check in `transform.ts`, where it is deliberately
@@ -1744,7 +1744,7 @@ Since the recurring cost is only new bodies, spending 4 GB of the remaining free
 hundred annual requests is the wrong trade. **Use EPQS.** Keep the tiles as the documented fallback if
 it turns out to rate-limit.
 
-**The incremental behaviour is already built** — `listNeedingElevation` skips already-stamped rows
+**The incremental behavior is already built** — `listNeedingElevation` skips already-stamped rows
 server-side, which is what made the A06c pass resumable. Two caveats on "only new bodies":
 
 1. **A body whose geometry changes needs re-stamping**, because its representative point moves. Under
@@ -1766,7 +1766,7 @@ piece (`StagedProducts/GeographicNames/DomesticNames/`), **~5 MB for our five st
 It is the resolver behind the `gnisId` bridge D93 adds: feature ids, official names, coordinates and
 feature classes, from the body that assigns them. Two jobs it does that the inline ids cannot:
 settling a GNIS id where OSM, NHD and 3DHP disagree, and supplying **names and variant names** for
-search on bodies whose catalogue entry is unnamed.
+search on bodies whose catalog entry is unnamed.
 
 > **⚠ The variant-name half is still not built** (noted by the second audit, 2026-08-06). The lane
 > supplies a *name* where a body has none, and it resolves the *feature id* — both live. Variant
@@ -1776,7 +1776,7 @@ search on bodies whose catalogue entry is unnamed.
 > change rather than an ETL one, and why it is filed rather than folded in here.
 
 Cheapest lane in the phase by a wide margin, and it needs no new bucket — it belongs beside the
-catalogues it resolves.
+catalogs it resolves.
 
 ---
 
@@ -1795,7 +1795,7 @@ the Adirondacks. Nothing in the layer draws there.
 water body contour maps, and a *DEC Lake Contour Maps* layer exists on `data.gis.ny.gov`; USGS has
 higher-quality bathymetric DEMs for a handful of specific waters (the East-of-Hudson reservoirs, Lake
 Gleneida, Seneca). What is unknown and must be measured before a sixth source is written: **how many
-distinct water bodies it covers, whether it is contours or soundings, its licence, and whether it clears the
+distinct water bodies it covers, whether it is contours or soundings, its license, and whether it clears the
 same quality bar the other five did.** Report the number first; a fetcher is cheap once the answer is
 known and wasted if it isn't.
 
@@ -1807,13 +1807,13 @@ known and wasted if it isn't.
 
 | | how it was settled | |
 | --- | --- | --- |
-| **Salt water on the 26 named bays** | 3DEP at 1 m LiDAR. The distribution has a **7-metre hole** in it — Ontario's arms at 74.9 m, Winnipesaukee's at 153.1, nothing between 9.7 and 2.6, then Salt Bay at 0.3. **98 refused.** | **D126** |
-| **`classDissent` (354)** | Joined to the refusing code: 164 `flowing`, ~87 `engineered`, both of them our own rules overruling a catalogue. Only the residue queues. | **D128** |
+| **Salt water on the 26 named bays** | 3DEP at 1 m LiDAR. The distribution has a **7-meter hole** in it — Ontario's arms at 74.9 m, Winnipesaukee's at 153.1, nothing between 9.7 and 2.6, then Salt Bay at 0.3. **98 refused.** | **D126** |
+| **`classDissent` (354)** | Joined to the refusing code: 164 `flowing`, ~87 `engineered`, both of them our own rules overruling a catalog. Only the residue queues. | **D128** |
 | **`RECONCILE_MIN_IOU` (287 pairs)** | The soundings refereed 9 of 292 — all nine one water body, none two. One-sided **and 3% of the band**, so the threshold **held at 0.5** and the nine merged as a named table. | **D129** |
 
 **The thing worth carrying out of it:** the salt question looked like a judgement call for a week and
 turned out to have a measurement sitting behind it that nobody had taken. The same measurement is
-what stopped the rule being *general* — 1,002 bodies sit under five metres and only 81 are
+what stopped the rule being *general* — 1,002 bodies sit under five meters and only 81 are
 candidates, so a corpus-wide cut would have deleted ~920 freshwater bodies including both entries of
 `FRESHWATER_ALLOW_LIST`.
 
@@ -1935,7 +1935,7 @@ Three things that measurement settled that were assumptions:
 - **Wind climate is at zero**, not ~2%. The A06c pass wrote nothing before it was stopped.
 - **`other` is the largest class in the corpus at 46%** — water OSM's classifier could not identify.
   That is a bigger unknown than the wetland question D96 has been agonising over, and nothing in this
-  plan had looked at it. **Since addressed**: `waterClass.ts` maps all three catalogues into
+  plan had looked at it. **Since addressed**: `waterClass.ts` maps all three catalogs into
   `WATER_BODY_CLASSES`, where the honest name for this bucket is `unclassified` and it falls to
   1,533 of 27,074 (5.7%) in the master list.
 
@@ -2059,7 +2059,7 @@ when the table held 2,022 rows. **If a measurement comes back suspiciously clean
 is reaching the data at all.** Check the schema for the table name before reporting a zero.
 
 **A control experiment over features only one source has measures coverage, not error.** The matcher
-error rate read 15.53% until it was restricted to features *both* federal catalogues publish. The real
+error rate read 15.53% until it was restricted to features *both* federal catalogs publish. The real
 figure is **1.14%**.
 
 **A threshold taken from prose is a guess.** The polygon-agreement bar was set at 0.85 from a sentence
@@ -2069,7 +2069,7 @@ median and called 38.6% of all matched pairs a disagreement.
 **Estimate wall clock from a measured sample, never from the pacing delay.** The wind loader's
 "~96 min at 1/s" was off ~5×: WTK takes ~4–5.3 s per request, not 1 s.
 
-**An optimisation is only as good as the workload it was measured on.** The re-key's 11 m lookup grid
+**An optimization is only as good as the workload it was measured on.** The re-key's 11 m lookup grid
 cut calls **28.6×** on a dense MassGIS survey and **0.2%** on MIDAS 870 — the one key the lane exists
 for, whose soundings are scattered one per water body across 348 km. It cost 4+ hours per key before being
 deleted entirely. Measure the pathological case, because that is usually the whole job.
@@ -2101,7 +2101,7 @@ veto **must not depend on a match succeeding**: Erie's exclusion rested on 3DHP 
 geometrically until a name rule and an area ceiling replaced that.
 
 **`unclassified` and `silent` are not votes.** Scoring `unclassified` as a class claim made 6,756
-bodies read as "the catalogues conflict". 3DHP publishes **no wetland class at all**, so its silence
+bodies read as "the catalogs conflict". 3DHP publishes **no wetland class at all**, so its silence
 is never dissent.
 
 **One source agreeing with itself is not corroboration.** NHD and 3DHP collapse to one vote (3DHP
@@ -2143,7 +2143,7 @@ HTTP-date — which becomes an *immediate* retry into the same limit, strictly w
 ### About running the thing
 
 **A failed load must never be followed by the prune.** D124's guard prints it and exits non-zero;
-`run-corpus.sh` honours the exit code. The upsert is idempotent — re-run the load until it reports
+`run-corpus.sh` honors the exit code. The upsert is idempotent — re-run the load until it reports
 zero failed batches, *then* prune.
 
 **A wrapper's pipe eats the exit code, and `pipefail` does not save you.** `./run-corpus.sh … | tee
@@ -2237,7 +2237,7 @@ deleted. **No `HANDOFF-*` documents remain.**
 
 *The roadmap entry for A07a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**A07a — The unified corpus: one record per water body, two catalogues behind it, and a full data campaign.**
+**A07a — The unified corpus: one record per water body, two catalogs behind it, and a full data campaign.**
 ✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) — the one A07a document, with the
 operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
 and [`docs/water-body-data.md`](../../docs/water-body-data.md) for the same story written for humans.
@@ -2249,7 +2249,7 @@ referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data 
 **What it replaced.** The corpus was OSM-only, per-state, and a water body split across two features was two
 rows. A07a merges **OSM + NHD + 3DHP + GNIS** into one record per water body with our own minted key (D93),
 best-of-both per field (D94), and one admission floor applied **once** to the merged body rather than
-per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
+per catalog (D109/D110). 178,095 groups in, **24,958 bodies** out.
 
 **Where the data campaign stands** (`n7-3-20260809`):
 
@@ -2267,7 +2267,7 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
 - **`state_agency` was a ladder rung with no producer.** Rank 1 on D68's ladder, above LAGOS and
   HydroLAKES, and nothing had ever written to it while 298 MB of state survey data sat on disk from
   A06b. It now holds **3,033 measurements**.
-- **There was no `osm→osm` matching lane** (D136). Three lanes ran and none matched a catalogue
+- **There was no `osm→osm` matching lane** (D136). Three lanes ran and none matched a catalog
   against itself, so an OSM multipolygon relation and its own outer way both shipped as corpus rows.
   Every one of the 18 duplicate pairs at IoU ≥ 0.6 was OSM–OSM; two scored 1.000.
 - **One constant was doing two jobs** (D135). `MIN_FETCH_CLAUSE_M`, chosen for pressure-ridge captions,

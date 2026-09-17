@@ -180,7 +180,7 @@ The modules:
   to haversine-minus-radius so the watcher loop doesn't buffer a polygon on every GPS fix. *(Named
   `hazardFootprint` / `pointRadiusShape`, not the plan's earlier `pointRadiusToPolygon`.)*
 - **`hazardDraft.ts`** — the *authoring* state machine, shared by both platforms: the `HazardDraft`
-  union (a circle awaiting a centre / a polyline collecting vertices), `draftForType` +
+  union (a circle awaiting a center / a polyline collecting vertices), `draftForType` +
   `retypeDraft` (primitive and default size follow the hazard's real-world shape),
   `applyDraftMapClick` / `undoDraftPlacement` / `resizeDraft` / `switchDraftKind`, and
   `draftToShape` — the **single** gate deciding a draft is storable, delegating to
@@ -403,7 +403,7 @@ crossable / Dicey now / Ridge closed* for `ridge_crossing`. Confirmations queue 
 ### Deep link (built in v1, used by Layer 2 — ✅ `?action=confirm` shipped in Phase 09b)
 `skating://hazard/<id>` routes into the hazard drawer (`/hazard/[id]` on mobile, `/_map/hazard/$id` on
 web). Both the route and the URL scheme were built in v1 precisely so Layer 2's notification tap had
-somewhere to land, at near-zero cost then. The one v1 gap — the **`?action=confirm` behaviour** (deep-
+somewhere to land, at near-zero cost then. The one v1 gap — the **`?action=confirm` behavior** (deep-
 focusing the three-tier confirm control) — **shipped in Phase 09b (2026-07-22)**: both routes now read the
 `action` param and scroll/pre-focus the confirm control, while the destructive "fully healed" step stays
 gated behind its own second tap even when deep-linked (D3).
@@ -481,7 +481,7 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
      is now **exported and shared** — a parallel marker class would have been classified `transient`
      and retried forever.
    - **`hazards.create` gained `idempotencyKey`** (+ index). Without it a lost ack on flush drops a
-     second pin metres from the first, and duplicate *hazards* are worse than duplicate reports: two
+     second pin meters from the first, and duplicate *hazards* are worse than duplicate reports: two
      overlapping footprints read as two dangers and the confirm loop has to retire both.
    - **There is no "save for later" button.** On the ice, "am I online?" isn't a question the skater
      should have to answer, so Done always means Done: a transient failure falls through to the queue
@@ -573,8 +573,8 @@ evidence rather than re-deriving it:
   Phase 09b (2026-07-22)** via route (1) (`file://` pmtiles, no crawlable server), built flag-off
   (`EXPO_PUBLIC_OFFLINE_BASEMAP`) and awaiting its one on-device confirmation.
 - ✅ **SHIPPED in Phase 09b (2026-07-22). Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
-  centred in a small bay currently renders as a circle that can spill across land onto a peninsula or a
-  neighbouring water body. The ask: intersect the footprint with the body polygon so a hazard can never imply
+  centered in a small bay currently renders as a circle that can spill across land onto a peninsula or a
+  neighboring water body. The ask: intersect the footprint with the body polygon so a hazard can never imply
   danger on water it isn't on. **Deferred deliberately, not dismissed** — it's a genuine safety-*visual*
   improvement, but it touches the one invariant the layer is built around ("what's drawn IS what the
   proximity evaluator measures," `hazardLayer.ts`), so it must clip **both** the render and the alert or

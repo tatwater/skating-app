@@ -240,7 +240,7 @@ export type BodyResultPlace =
 export interface BodyResultData {
   waterBodyId: string;
   name: string;
-  /** `WATER_BODY_CLASSES` member, labelled by `waterBodyClassLabel`. */
+  /** `WATER_BODY_CLASSES` member, labeled by `waterBodyClassLabel`. */
   type: string;
   states?: string[];
   /** The instant the feed orders on — {@link eventInstantMs} of `eventDayMs`. */

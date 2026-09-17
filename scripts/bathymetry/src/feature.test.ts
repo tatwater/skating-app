@@ -42,7 +42,7 @@ describe('stampBodyId', () => {
 
   it('falls back to the Convex id rather than emitting an empty filter key', () => {
     // A body without an externalId should still render. Vanishing looks identical to a lake nobody
-    // ever surveyed, which is the failure mode this whole package is organised against.
+    // ever surveyed, which is the failure mode this whole package is organized against.
     expect(stampBodyId({ waterBodyId: 'k17abc' })).toBe('k17abc');
     expect(stampBodyId({ externalId: '   ', waterBodyId: 'k17abc' })).toBe('k17abc');
   });

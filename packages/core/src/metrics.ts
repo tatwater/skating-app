@@ -20,7 +20,7 @@
  *
  * **Days are UTC.** A metric day is a `YYYY-MM-DD` UTC string — lexicographically sortable, so a date
  * range is an index range. Northeast-US local days would smear an hour or two of activity into the
- * neighbouring bucket; at the granularity these charts are read (weeks of trend), that's noise, and a
+ * neighboring bucket; at the granularity these charts are read (weeks of trend), that's noise, and a
  * timezone-aware day key would make the cron's idempotency depend on when it ran.
  */
 
@@ -110,7 +110,7 @@ export const HOUR_BUCKETS = [0, 6, 12, 24, 48, 72, 168, 336] as const;
 
 /**
  * How a metric's payload is shaped, so the chart layer knows what to render without special-casing
- * each key: a `scalar` is one number per day, `buckets` is a histogram, and `meta` is a small labelled
+ * each key: a `scalar` is one number per day, `buckets` is a histogram, and `meta` is a small labeled
  * record (a funnel, a composition breakdown, a per-type table).
  */
 export type MetricShape = 'scalar' | 'buckets' | 'meta';
@@ -125,7 +125,7 @@ export interface MetricSpec {
    *
    * - `counter` — bumped at the event site (forward-only).
    * - `rollup` — computed by the daily cron from our own tables.
-   * - `external` — measured against a **third-party catalogue** by an ETL pass, on that catalogue's
+   * - `external` — measured against a **third-party catalog** by an ETL pass, on that catalog's
    *   own release cadence. The cron must not try to compute these and will find nothing to sweep;
    *   the series is sparse by design (one row per release, not one per day) and is read through
    *   `analytics.catalogueHistory` rather than the dense day-range `analytics.series`.
@@ -173,7 +173,7 @@ export const METRICS = {
   bounty_outcomes: {
     label: 'Bounty outcomes',
     description:
-      'The lifetime outcome funnel: open / fulfilled / expired / cancelled. A high expired-without-fulfillment share means the lifetime or the reward is wrong — people are asking and nobody is answering.',
+      'The lifetime outcome funnel: open / fulfilled / expired / canceled. A high expired-without-fulfillment share means the lifetime or the reward is wrong — people are asking and nobody is answering.',
     kind: 'rollup',
     shape: 'meta',
   },
@@ -228,7 +228,7 @@ export const METRICS = {
   contradiction_detected: {
     label: 'Disagreements considered',
     description:
-      'Disagreeing report PAIRS the settle loop weighed before the weather gate — counted per settle, so a report re-examined by a later neighbour is counted again. NOT a strict superset of the two stages below (those count reports, not pairs); read the three as "how the gate behaves", not "a ⊇ b ⊇ c".',
+      'Disagreeing report PAIRS the settle loop weighed before the weather gate — counted per settle, so a report re-examined by a later neighbor is counted again. NOT a strict superset of the two stages below (those count reports, not pairs); read the three as "how the gate behaves", not "a ⊇ b ⊇ c".',
     kind: 'counter',
     shape: 'scalar',
   },
@@ -369,7 +369,7 @@ export const METRICS = {
     shape: 'meta',
   },
 
-  // ── External catalogues (A07a) ───────────────────────────────────────────────
+  // ── External catalogs (A07a) ───────────────────────────────────────────────
   /**
    * **This one is expected to read zero for a while, and that is the point.**
    *
@@ -397,7 +397,7 @@ export type MetricKey = keyof typeof METRICS;
 /**
  * `METRICS` widened to the common spec shape. The `satisfies` above keeps each entry's literal type
  * (so `METRICS.contradiction_count_hist.edges` is exact where it's known statically), but that same
- * precision means the union has no common `edges` member for code iterating the catalogue generically.
+ * precision means the union has no common `edges` member for code iterating the catalog generically.
  * This view is that code's entry point.
  */
 export const METRIC_SPECS: Record<MetricKey, MetricSpec> = METRICS;
@@ -409,10 +409,10 @@ export const METRIC_KEYS = Object.keys(METRICS) as MetricKey[];
 export const COUNTER_METRIC_KEYS = METRIC_KEYS.filter((k) => METRICS[k].kind === 'counter');
 
 /**
- * The keys measured against a third-party catalogue by an ETL pass (A07a).
+ * The keys measured against a third-party catalog by an ETL pass (A07a).
  *
  * Split out for the same reason `COUNTER_METRIC_KEYS` is: **every key must have exactly one writer**,
- * and the three families together have to account for the whole catalogue. That invariant used to be
+ * and the three families together have to account for the whole catalog. That invariant used to be
  * "counter or rollup" and is asserted in the tests — adding a third family without naming it would
  * have left these keys looking like rollups the cron simply forgot to compute.
  */

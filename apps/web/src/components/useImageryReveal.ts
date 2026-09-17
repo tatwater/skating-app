@@ -8,7 +8,7 @@
  *
  * **The cartography did not match the photograph.** `IMAGERY_REPLACED_LAYERS` was hidden across the
  * whole style and every shoreline went white, but only one lake had a picture under it — so five
- * other lakes on screen lost their fill, their labels and their favourite gold for nothing. Founder:
+ * other lakes on screen lost their fill, their labels and their favorite gold for nothing. Founder:
  * *"turning on satellite imagery should show it for all bodies in the viewport."*
  *
  * **Every request was a cold render.** The bbox came from `map.getBounds()` and the size from
@@ -69,7 +69,7 @@ import { composeImagery, compositeCanvasSize, imageryCorners } from '../lib/imag
  * where a vector footprint drawn on a picture of that building belongs.
  *
  * Every step degrades rather than throws: no road layer after water ⇒ sit directly on top of water;
- * no `water` at all ⇒ the old behaviour; no style yet ⇒ append, which is v1's look and not a crash.
+ * no `water` at all ⇒ the old behavior; no style yet ⇒ append, which is v1's look and not a crash.
  */
 export function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
   const layers = map.getStyle()?.layers ?? [];
@@ -116,8 +116,8 @@ export function aerialAnchorId(map: maplibregl.Map): string | undefined {
  *
  * **A usefulness floor, not a cost one** — the grid's level-stepping already keeps a wide view to a
  * handful of cells, so a region-wide reveal is cheap. It is just not *worth* anything: at z11 a
- * viewport is ~40 km across, a cell resolves to tens of metres per pixel, and every lake on screen
- * would be a few pixels of green-grey. A skater reading that would reasonably conclude the imagery
+ * viewport is ~40 km across, a cell resolves to tens of meters per pixel, and every lake on screen
+ * would be a few pixels of green-gray. A skater reading that would reasonably conclude the imagery
  * is broken rather than that the zoom is wrong.
  *
  * z12 puts roughly 10–20 km across the viewport, which is where a shoreline starts having a shape
@@ -125,7 +125,7 @@ export function aerialAnchorId(map: maplibregl.Map): string | undefined {
  */
 export const IMAGERY_MIN_ZOOM = 12;
 
-/** A body to reveal, with a stable key so an unchanged view can be recognised as unchanged. */
+/** A body to reveal, with a stable key so an unchanged view can be recognized as unchanged. */
 export interface KeyedMask {
   /** The body's Convex `_id` — what the cartography filters on. Carried, never re-parsed from `key`. */
   id: string;
@@ -297,7 +297,7 @@ export function useImageryReveal({
 
       const container = map.getContainer();
       const devicePx = Math.max(1, container.clientWidth) * (window.devicePixelRatio || 1);
-      // What the screen could actually resolve, in projected metres — the sharpness we ask the grid
+      // What the screen could actually resolve, in projected meters — the sharpness we ask the grid
       // for. It answers with the coarsest level that meets it, or a coarser one if that would cost
       // more cells than the service tolerates in parallel.
       const target = (view.maxX - view.minX) / devicePx;
@@ -557,7 +557,7 @@ export function setLayersVisible(
  *
  * The fix for v2's worst cosmetic bug: suppression was a `visibility` flip, which is per *layer*, so
  * revealing one pond stripped the fill, the sub-area labels and the tracks from every lake on screen
- * — and a favourited lake elsewhere in the viewport silently lost its gold. A filter is per
+ * — and a favorited lake elsewhere in the viewport silently lost its gold. A filter is per
  * *feature*, so the photograph replaces exactly the cartography it covers.
  *
  * `ids` empty ⇒ the filter is removed rather than set to a never-matching expression, so a layer

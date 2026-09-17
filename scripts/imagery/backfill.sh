@@ -65,7 +65,7 @@ RUN_STARTED_ISO="$(date -u +"%Y-%m-%d %H:%M:%S")"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# ⚠ **Normalised exactly the way `fan-out.sh` normalises, or the two disagree about the list.**
+# ⚠ **Normalized exactly the way `fan-out.sh` normalizes, or the two disagree about the list.**
 #
 # fan-out strips `#` comments, CR line endings and blank lines before spawning. A plain `sort -u` here
 # does not, so a hand-annotated list — which is the common case for a retry — puts entries in

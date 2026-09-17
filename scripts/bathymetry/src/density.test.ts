@@ -81,7 +81,7 @@ describe('assessDensity', () => {
   });
 
   it('is scale-free — the same shape passes at pond size and at Champlain size', () => {
-    // gapRatio normalises by extent, so a 200 m pond and a 200 km lake are judged on the same terms.
+    // gapRatio normalizes by extent, so a 200 m pond and a 200 km lake are judged on the same terms.
     const pond = assessDensity({ lakeKey: 'pond', points: grid(10, 0.002) });
     const huge = assessDensity({ lakeKey: 'huge', points: grid(10, 0.9) });
     expect(pond.verdict).toBe('ok');
@@ -103,7 +103,7 @@ describe('assessDensity', () => {
     expect(result.reason).toContain('line, not an area');
   });
 
-  it('honours a caller-supplied threshold, so the gate can be swept over real data', () => {
+  it('honors a caller-supplied threshold, so the gate can be swept over real data', () => {
     const clustered = [
       ...grid(6, 0.004),
       { lng: -70 + 0.04, lat: 45 + 0.04 },

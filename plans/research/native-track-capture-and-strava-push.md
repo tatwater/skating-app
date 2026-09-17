@@ -77,7 +77,7 @@ They matter because they demand **different GPS fidelity**, and today we only ha
 
 - On-ice mode records at **`Accuracy.Balanced` (~100 m target), one fix per 20 m of
   movement** — chosen deliberately: *"`Balanced` accuracy, not `BestForNavigation`,
-  because cold-weather battery matters more than sub-metre precision for a fuzzy hazard
+  because cold-weather battery matters more than sub-meter precision for a fuzzy hazard
   alert"* (`apps/mobile/src/lib/onIceTask.ts`). Right for "is a hazard coming up in
   30–60 s" — a 10 m hazard-projection sample step over a size-capped footprint doesn't
   need survey precision.

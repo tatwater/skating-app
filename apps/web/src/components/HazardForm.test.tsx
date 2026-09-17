@@ -178,7 +178,7 @@ describe('polyline authoring', () => {
   });
 
   // D3: the width is an uncertainty band, and the copy has to read as one. A folded ridge is loose
-  // plates metres wide; a hairline crack is centimetres. Neither is a surveyed edge.
+  // plates meters wide; a hairline crack is centimetres. Neither is a surveyed edge.
   it('describes the width as an estimate to either side, never an edge', () => {
     lineFields([A, B]);
     expect(screen.getByText(/to either side of the line/)).toBeInTheDocument();
@@ -187,7 +187,7 @@ describe('polyline authoring', () => {
 });
 
 describe('point+radius authoring', () => {
-  it('is postable as soon as it has a centre — the two-tap guarantee', () => {
+  it('is postable as soon as it has a center — the two-tap guarantee', () => {
     renderFields({
       type: 'open_water',
       draft: applyDraftMapClick(draftForType('open_water'), A),
@@ -221,7 +221,7 @@ describe('photos', () => {
   it('offers photos, and says why they help', () => {
     renderFields({ type: 'open_water', draft: draftForType('open_water') });
     expect(screen.getByLabelText('Photos (optional)')).toBeInTheDocument();
-    expect(screen.getByText(/helps the next skater recognise it/)).toBeInTheDocument();
+    expect(screen.getByText(/helps the next skater recognize it/)).toBeInTheDocument();
   });
 
   it('never blocks posting on a photo', () => {

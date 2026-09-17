@@ -11,8 +11,8 @@ import { isCurrentRiskAckVersion } from './riskAck';
  *                   render a blank frame so we don't flash sign-in or bounce to onboarding.
  *  - `auth`       — signed out.
  *  - `onboarding` — signed in but no profile row yet: collect fields + first consent. Also the
- *                   landing spot for a **cancelled deletion** (D62 amendment): the row survived but
- *                   its identity was really scrubbed at request time and cancelling does not restore
+ *                   landing spot for a **canceled deletion** (D62 amendment): the row survived but
+ *                   its identity was really scrubbed at request time and canceling does not restore
  *                   it, so the account has to be introduced again before it can be used. Being sent
  *                   here is the honest version of "you'll have to re-add all of it" — the gentler
  *                   alternative is an account with no name posting under "Deleted skater".
@@ -41,7 +41,7 @@ export function resolveAuthRoute({
   if (!isSignedIn) return 'auth';
   if (profile === undefined) return 'loading';
   if (profile === null) return 'onboarding';
-  // A row that exists but was emptied by a deletion the user then cancelled. Checked before the
+  // A row that exists but was emptied by a deletion the user then canceled. Checked before the
   // ack gate because an account with no name is less usable than one with a stale acknowledgment,
   // and onboarding re-collects the acknowledgment on its way through anyway.
   if (needsProfileSetup(profile)) return 'onboarding';

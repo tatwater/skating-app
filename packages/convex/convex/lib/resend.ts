@@ -15,7 +15,7 @@ const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 /**
  * Resend's default ceiling is 2 requests/second, answered with a 429 and a `Retry-After`. A
  * notification batch sends one mail per row in sequence, which is faster than that, so a 429 is the
- * *expected* shape of a busy 8pm — not a failure to log and drop. Honoured up to this many times per
+ * *expected* shape of a busy 8pm — not a failure to log and drop. Honored up to this many times per
  * send, waiting what the header says (bounded, in case it says something silly).
  */
 const RATE_LIMIT_RETRIES = 3;

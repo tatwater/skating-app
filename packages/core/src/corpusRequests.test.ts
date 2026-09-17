@@ -73,7 +73,7 @@ describe('describeRequestOutcome', () => {
   });
 });
 
-describe('the catalogue point query', () => {
+describe('the catalog point query', () => {
   it('asks the 3DHP waterbody layer for GeoJSON at the point, lng first', () => {
     const url = new URL(catalogueQueryUrl(POINT));
     expect(url.pathname).toContain('/3DHP_all/MapServer/60/query');

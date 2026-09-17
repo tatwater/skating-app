@@ -91,7 +91,7 @@ async function ensureAndroidChannel(): Promise<void> {
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   } catch {
-    // Channel creation failing leaves Android's default behaviour; not fatal.
+    // Channel creation failing leaves Android's default behavior; not fatal.
   }
 }
 

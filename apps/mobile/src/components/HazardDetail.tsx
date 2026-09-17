@@ -45,7 +45,7 @@ import { WeatherStrip } from './WeatherStrip';
  *
  * Its job is the **three-tier confirmation**, and the asymmetry between the three is the whole
  * design. "Still here" and "Healing — still unsafe" both keep the pin up; only "Fully healed & safe"
- * retires it for everyone, so that one is de-emphasised and gated behind a second tap. A false
+ * retires it for everyone, so that one is de-emphasized and gated behind a second tap. A false
  * all-clear is the worst outcome this app can produce (D3), and the UI is shaped to make it the
  * hardest thing to do by accident.
  *
@@ -326,7 +326,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         </Paragraph>
       ) : null}
 
-      {/* The photo is often the thing that makes a hazard recognisable from a distance — which is
+      {/* The photo is often the thing that makes a hazard recognizable from a distance — which is
           the whole point of the pin. Shown before the notes for that reason. */}
       {photos && photos.length > 0 ? (
         <Section label="Photos">

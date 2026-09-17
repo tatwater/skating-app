@@ -94,7 +94,7 @@ export function BountyForm({
             ))}
           </XStack>
           <Text color="$foregroundMuted" fontSize={13}>
-            Narrowing the ask means only a report from that part of the lake will fulfil it — and a
+            Narrowing the ask means only a report from that part of the lake will fulfill it — and a
             recent report somewhere else won't stop you asking.
           </Text>
         </YStack>

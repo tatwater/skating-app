@@ -29,7 +29,7 @@
  * | Morey | 413 ft | ~432 ft |
  * | Shelburne Pond | 328 ft | ~269 ft |
  *
- * Three within ~5%, one **20 m high**. That is the expected behaviour of a radar *surface* model
+ * Three within ~5%, one **20 m high**. That is the expected behavior of a radar *surface* model
  * over water, where returns are noisy and small ponds are not flattened to their waterline. It is
  * fine for freeze order, where the differences that matter are hundreds of feet — and it is the
  * reason the copy must never put a lake's elevation next to a second lake's and imply the gap is
@@ -62,16 +62,16 @@ export const ELEVATION_SOURCES = ['operator', 'dem_3dep', 'dem_glo90'] as const;
 export type ElevationSource = (typeof ELEVATION_SOURCES)[number];
 
 /**
- * Lowest elevation we will accept for a body, in metres.
+ * Lowest elevation we will accept for a body, in meters.
  *
  * Our five states bottom out at sea level, so anything meaningfully below it is a no-data sentinel
  * or a bad join rather than a lake. Kept slightly under zero rather than at it, because a tidal
- * or near-sea-level coastal pond can legitimately read a metre or two negative on a DEM.
+ * or near-sea-level coastal pond can legitimately read a meter or two negative on a DEM.
  */
 export const MIN_PLAUSIBLE_ELEVATION_M = -20;
 
 /**
- * Highest elevation we will accept for a body, in metres.
+ * Highest elevation we will accept for a body, in meters.
  *
  * Mount Washington is 1,917 m and is the highest ground in the region; a *lake surface* sits far
  * below any summit. 1,600 m is generous by roughly a factor of two against the highest ponds in

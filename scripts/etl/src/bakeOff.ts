@@ -1,5 +1,5 @@
 /**
- * **D92's bake-off** — which catalogue draws a better lake, decided by our own soundings (A07a).
+ * **D92's bake-off** — which catalog draws a better lake, decided by our own soundings (A07a).
  *
  *   pnpm --filter @skating/bathymetry export-soundings   # once, produces the referee
  *   pnpm --filter @skating/etl bake-off [--input=<soundings.ndjson>] [--grid=N]
@@ -13,7 +13,7 @@
  * which says OSM is not bad and says nothing about which is better.
  *
  * We hold something neither publisher does: **21.9 million depth measurements taken on the water.**
- * They are physical, they are ours, and neither catalogue was drawn with reference to them.
+ * They are physical, they are ours, and neither catalog was drawn with reference to them.
  *
  * ## Two metrics, because either alone can be gamed
  *
@@ -49,11 +49,11 @@
  *    `osmContained` had a hard floor at **0.524 with zero lakes below 0.5**, against 12 for NHD and 8
  *    at exactly zero. OSM could not lose the tail; the tail was where every "OSM wins" came from.
  * 2. **Anchoring the NHD lookup on the OSM polygon** then picked, out of NHD, whichever feature most
- *    resembled OSM — so the second catalogue was chosen to agree with the first.
+ *    resembled OSM — so the second catalog was chosen to agree with the first.
  *
- * The fix is to anchor on **the referee itself**. Each catalogue independently supplies the smallest
+ * The fix is to anchor on **the referee itself**. Each catalog independently supplies the smallest
  * feature containing the survey's *medoid* — a real measurement location, so it is on water by
- * construction — and neither selection rule reads either scored metric. A catalogue with no such
+ * construction — and neither selection rule reads either scored metric. A catalog with no such
  * feature is a finding in its own right and is counted, not silently dropped.
  */
 
@@ -118,7 +118,7 @@ interface RefereeLake {
   pts: number[];
 }
 
-/** One catalogue's candidate outline for a lake. Both sides are read from archive extracts. */
+/** One catalog's candidate outline for a lake. Both sides are read from archive extracts. */
 interface Candidate {
   id: string;
   name: string;
@@ -133,7 +133,7 @@ interface Candidate {
  * **Unclassified on purpose.** The merge maps tags to a class and drops what it refuses; here that
  * would disqualify a candidate on a *taxonomic* judgement in a measurement about *geometry*, and it
  * would do so asymmetrically, since the NHD side is loaded without its classifier too. If a state
- * agency surveyed it, it is water, whatever either catalogue calls it.
+ * agency surveyed it, it is water, whatever either catalog calls it.
  */
 async function loadOsm(): Promise<Candidate[]> {
   const out: Candidate[] = [];
@@ -264,7 +264,7 @@ interface Score {
  *
  * A real sounding rather than a computed centroid, so it is by construction *on the water*: the
  * centroid of a crescent lake lands in the concavity, and anchoring the whole comparison on a point
- * in a farmer's field would pick the wrong lake from both catalogues at once. The component-wise
+ * in a farmer's field would pick the wrong lake from both catalogs at once. The component-wise
  * median (not the mean) keeps a stray point 300 km away from dragging it — which is not
  * hypothetical, since two Maine MIDAS keys hold clouds spanning 348 km.
  */
@@ -288,7 +288,7 @@ function medoid(points: readonly LatLng[]): LatLng {
 }
 
 /**
- * The candidate this catalogue offers for a survey: **the smallest feature containing its medoid.**
+ * The candidate this catalog offers for a survey: **the smallest feature containing its medoid.**
  *
  * Smallest, because a lake and the bay it contains both hold the medoid and the bay is the wrong
  * answer only when it does not contain the survey — but *larger* is the wrong tie-break in the other
@@ -296,7 +296,7 @@ function medoid(points: readonly LatLng[]): LatLng {
  * sounded. Smallest-containing is the rule that agrees with `containedFraction`'s own reasoning
  * without reading it.
  *
- * **Neither scored metric appears here.** That is the whole point: selection must not optimise the
+ * **Neither scored metric appears here.** That is the whole point: selection must not optimize the
  * thing being measured, which is exactly the mistake the first version of this file made.
  */
 function candidateFor(anchor: LatLng, grid: Map<string, Candidate[]>): Candidate | undefined {
@@ -322,7 +322,7 @@ function compare(osm: number, nhd: number, margin: number, higherWins: boolean):
 /**
  * Combine the two metrics into one verdict.
  *
- * **Agreement or nothing.** When containment and coverage point at different catalogues the honest
+ * **Agreement or nothing.** When containment and coverage point at different catalogs the honest
  * answer is that they disagree — one outline contains the survey better and the other describes the
  * water better — and picking a winner would be inventing a weighting the evidence does not support.
  * Those lakes are counted as `split` in the report and are exactly where a per-lake override would
@@ -336,14 +336,14 @@ function combine(containment: Verdict, coverage: Verdict): Verdict | 'split' {
 }
 
 /**
- * Lakes where the two metrics point at different catalogues — one outline contains the survey better
+ * Lakes where the two metrics point at different catalogs — one outline contains the survey better
  * and the other describes the water better. Collected rather than resolved: picking a winner would
  * mean inventing a weighting the evidence does not support.
  */
 const splits: Score[] = [];
 
 /**
- * Surveys only one catalogue has a polygon for — **the finding this whole phase started from.**
+ * Surveys only one catalog has a polygon for — **the finding this whole phase started from.**
  * Named rather than counted: "NHD has lakes OSM does not" is the claim that justified the campaign,
  * and a bare count cannot be checked against Beau Lake.
  */
@@ -384,14 +384,14 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // **Anchored on the survey, not on either polygon.** Each catalogue answers the same question
+    // **Anchored on the survey, not on either polygon.** Each catalog answers the same question
     // independently, so neither is chosen to resemble the other and neither is pre-screened on a
     // metric it is about to be scored on.
     const anchor = medoid(points);
     const osmPick = candidateFor(anchor, osmGrid);
     const nhdPick = candidateFor(anchor, nhdGrid);
 
-    // A catalogue with no polygon over the survey's centre is a coverage finding, not a geometry
+    // A catalog with no polygon over the survey's center is a coverage finding, not a geometry
     // one — counted here and reported, never scored as a loss.
     if (!osmPick && !nhdPick) {
       skipped.neitherHasIt++;
@@ -577,13 +577,11 @@ function report(scores: readonly Score[], skipped: Record<string, number>, grid:
 
   if (soleSource.length > 0) {
     lines.push('');
-    lines.push('  surveyed water only ONE catalogue draws:');
+    lines.push('  surveyed water only ONE catalog draws:');
     for (const line of soleSource) lines.push(`    ${line}`);
   }
   lines.push('');
-  lines.push(
-    '  method: both sides are SOURCE geometry, each catalogue independently supplying the',
-  );
+  lines.push('  method: both sides are SOURCE geometry, each catalog independently supplying the');
   lines.push(
     "  smallest feature containing the survey's medoid. Neither selection rule reads either",
   );

@@ -20,7 +20,7 @@
  * - **Coordinates are decimal degrees in the attributes.** The geometry is Web Mercator
  *   (`wkid 102100`), but every row also carries `Latitude` / `Longitude` in WGS84, so this reads
  *   those and never unprojects. One less transform to get subtly wrong.
- * - **No published licence.** The hosting item's `licenseInfo` and `accessInformation` are both
+ * - **No published license.** The hosting item's `licenseInfo` and `accessInformation` are both
  *   empty and the service carries no `copyrightText`. Same finding as ALSC, same response:
  *   `DEPTH_SOURCE_TERMS.cslap` credits it. See that entry.
  *
@@ -96,7 +96,7 @@ export interface CslapLake {
 }
 
 /**
- * Deepest **mean** we will accept, in metres.
+ * Deepest **mean** we will accept, in meters.
  *
  * Seneca Lake's published mean is 88.6 m and is the deepest in New York; 200 m is more than twice
  * that. A backstop exists to catch a units error or a column read across another, not to adjudicate
@@ -135,7 +135,7 @@ function str(value: unknown): string | undefined {
  * One `features[].attributes` object → a record, or a counted refusal.
  *
  * The bounds check on the coordinate is a **region** check rather than a validity one: a lake this
- * programme monitors is in New York, so a point outside the state's box means the columns were read
+ * program monitors is in New York, so a point outside the state's box means the columns were read
  * across each other (lat/lng swapped puts every lake in the Indian Ocean) rather than that CSLAP has
  * quietly gone national.
  */

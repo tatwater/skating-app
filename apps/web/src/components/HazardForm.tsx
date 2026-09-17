@@ -93,13 +93,13 @@ export interface ShoreBandState {
    */
   deriving: boolean;
   /**
-   * The band half-width, in metres. Carried on the prop rather than read off the draft because
+   * The band half-width, in meters. Carried on the prop rather than read off the draft because
    * Decision 3 stores a snapped band as an ordinary polygon: this number is an *input* to deriving
    * that ring, not a property of it, and putting it on the draft would give a polygon two widths.
    */
   halfWidthMeters: number;
   /**
-   * The type's uncertainty halo, in metres — what `hazardFootprint` adds *outside* the derived ring.
+   * The type's uncertainty halo, in meters — what `hazardFootprint` adds *outside* the derived ring.
    *
    * Here so the UI can say `halfWidthMeters + haloMeters` out loud. A band is the one primitive where
    * the number under the stepper is **not** the whole footprint: on a line the buffer *is* the
@@ -109,7 +109,7 @@ export interface ShoreBandState {
    * which is a fair thing to conclude from copy that doesn't mention it.
    */
   haloMeters: number;
-  /** Metres of shoreline the band covers, once derived. */
+  /** Meters of shoreline the band covers, once derived. */
   arcLengthMeters: number | null;
   /** Why the last attempt was refused, if it was. */
   error: string | null;
@@ -286,7 +286,7 @@ export function HazardFormFields({
           </div>
 
           {/* Any primitive is reachable from any other, because all of the mistakes are real: you may
-              only know the one spot on a ridge where you crossed it, you may realise the open water
+              only know the one spot on a ridge where you crossed it, you may realize the open water
               you started marking is a lead running across the bay, or you may have walked the edge
               of a rotten patch and be able to say where it is. */}
           <fieldset className="space-y-1 pt-1">
@@ -396,7 +396,7 @@ export function HazardFormFields({
       <div className="space-y-2">
         <Label htmlFor="hazard-photos">Photos (optional)</Label>
         <p className="text-foreground-muted text-xs">
-          Hard to describe, easy to show — a photo helps the next skater recognise it.
+          Hard to describe, easy to show — a photo helps the next skater recognize it.
         </p>
         <input
           id="hazard-photos"
@@ -566,7 +566,7 @@ export function HazardForm({
   // Leaving the form must never strand the map in crosshair mode or leave a phantom footprint
   // sitting on the lake — the same teardown discipline (and idiom) as the report form's put-in pin.
   // It has to be an unmount cleanup, not an `!open` branch: the draft lives in MapSelectionContext,
-  // which outlives this component, so cancelling or navigating away mid-draw would otherwise leave a
+  // which outlives this component, so canceling or navigating away mid-draw would otherwise leave a
   // translucent red hazard drawn over a lake nobody reported a hazard on.
   useEffect(() => {
     return () => {

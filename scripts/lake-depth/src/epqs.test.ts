@@ -126,8 +126,8 @@ describe('parseEpqsResponse', () => {
   });
 });
 
-describe('resolutionMetres — because 3DEP does not always answer in metres', () => {
-  it('passes a metre figure through', () => {
+describe('resolutionMetres — because 3DEP does not always answer in meters', () => {
+  it('passes a meter figure through', () => {
     expect(resolutionMetres(1, 44)).toBe(1);
     expect(resolutionMetres(30, 44)).toBe(30);
   });

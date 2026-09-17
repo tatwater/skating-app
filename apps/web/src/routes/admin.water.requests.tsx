@@ -22,7 +22,7 @@ import { Card, CardContent } from '../components/ui/card';
  * One card per open request, **oldest first, whatever the kind** — a request nobody answered is the
  * worst row, and grouping by kind would bury an old restore under every new tap.
  * Each card shows what a decision needs and nothing it doesn't: who asked and what they wrote, the
- * lake and its standing (or, for an `admit`, what the catalogue found under the point — name, class,
+ * lake and its standing (or, for an `admit`, what the catalog found under the point — name, class,
  * acres, and the service URL to eyeball the outline), and how many *other* people have the same
  * open ask on the same lake, which is the rank.
  *
@@ -133,7 +133,7 @@ function RequestQueue() {
                 ) : row.candidate ? (
                   <p className="text-sm">
                     <span className="text-foreground">
-                      {row.candidate.name || '(unnamed in the catalogue)'}
+                      {row.candidate.name || '(unnamed in the catalog)'}
                     </span>
                     <span className="ml-2 text-foreground-muted">
                       {row.candidate.cls
@@ -154,8 +154,8 @@ function RequestQueue() {
                 ) : (
                   <p className="text-foreground-muted text-sm">
                     {row.resolveError
-                      ? `Catalogue lookup: ${row.resolveError}`
-                      : 'Waiting for the catalogue lookup…'}
+                      ? `Catalog lookup: ${row.resolveError}`
+                      : 'Waiting for the catalog lookup…'}
                     <span className="ml-2 font-mono text-xs">
                       {row.coord.lat.toFixed(4)}, {row.coord.lng.toFixed(4)}
                     </span>
@@ -231,7 +231,7 @@ function RequestQueue() {
                         onClick={async () => {
                           try {
                             await reresolve({ requestId: row._id as Id<'waterBodyRequests'> });
-                            setBanner({ tone: 'ok', text: 'Asked the catalogue again.' });
+                            setBanner({ tone: 'ok', text: 'Asked the catalog again.' });
                           } catch (err) {
                             setBanner({ tone: 'error', text: messageOf(err) });
                           }
@@ -274,7 +274,7 @@ function approveDescription(kind: RequestKind): string {
     case 'activate':
       return 'Brings the lake back to the active map — re-scored, re-registered for weather, on every push surface. Every other open ask for it is approved with this one.';
     case 'admit':
-      return 'Inserts the catalogue’s outline as a body kept by request, active from now. Admin-visible provenance: the 3DHP id and the service URL.';
+      return 'Inserts the catalog’s outline as a body kept by request, active from now. Admin-visible provenance: the 3DHP id and the service URL.';
     case 'restore':
       return 'Reverses the removal (admin). The lake comes back active unless a no-access ruling still stands.';
     case 'contest_access':

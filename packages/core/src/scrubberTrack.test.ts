@@ -21,7 +21,7 @@ describe('notchPositions', () => {
     expect(last?.fraction).toBeCloseTo(0.95, 6);
   });
 
-  it('centres a lone notch, since there is no range for it to be at one end of', () => {
+  it('centers a lone notch, since there is no range for it to be at one end of', () => {
     expect(notchPositions(1)).toEqual([{ index: 0, fraction: 0.5 }]);
   });
 
@@ -93,7 +93,7 @@ describe('notchFraction — where the thumb goes', () => {
     ]);
   });
 
-  it('puts a lone notch in the centre, having no range to sit at one end of', () => {
+  it('puts a lone notch in the center, having no range to sit at one end of', () => {
     expect(notchFraction(0, 1)).toBe(0.5);
   });
 

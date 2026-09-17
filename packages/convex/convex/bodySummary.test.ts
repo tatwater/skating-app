@@ -259,7 +259,7 @@ describe('waterBodies.sweepAllBodySummaries', () => {
 
     await t.action(internal.waterBodies.sweepAllBodySummaries, {});
 
-    // Convex serialises an absent optional as `null` across the `t.run` boundary.
+    // Convex serializes an absent optional as `null` across the `t.run` boundary.
     expect(await summaryOf(t, waterBodyId)).toBeNull();
   });
 });

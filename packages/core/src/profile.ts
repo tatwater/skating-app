@@ -141,7 +141,7 @@ export const DATA_EXPORT_TTL_MS = DATA_EXPORT_TTL_DAYS * 24 * 60 * 60 * 1000;
  * request, so by finalization everything it held had aged out — and the finalize pass leaned on that,
  * which produced three separate bugs where the cutoff silently spared content nothing could ever come
  * back for. Finalization ignores the cutoff outright now, so this governs exactly one thing: the
- * **ghost-window sweep**, i.e. how fast your words come off while cancelling is still possible.
+ * **ghost-window sweep**, i.e. how fast your words come off while canceling is still possible.
  *
  * The one relationship still worth pinning is `DEPARTED_CONTENT_MAX_AGE_DAYS <= DELETION_GRACE_DAYS`
  * (asserted in the tests). Above it, no ghost-window sweep ever fires — every account would reach
@@ -169,7 +169,7 @@ export const DEPARTED_CONTENT_MAX_AGE_MS = DEPARTED_CONTENT_MAX_AGE_DAYS * 24 * 
  * So the client mirror of `requireContributor` also governs what a ghost sees: no compose affordances,
  * and their own profile shown as what it now is. The rule keeping the two honest: **hide exactly what
  * the server blocks, no more and no less** — hiding something still allowed (flagging, blocking,
- * cancelling) removes a safety tool for nothing; leaving a blocked one visible invites someone to
+ * canceling) removes a safety tool for nothing; leaving a blocked one visible invites someone to
  * write a report and only then refuses it.
  */
 export function isLeaving(profile: { deletionRequestedAt?: number } | null | undefined): boolean {
@@ -186,7 +186,7 @@ export const LEAVING_NOTICE =
 
 /**
  * What a ghost sees on their own profile (D62 amendment, founder call). Not a preview — the row really
- * is empty by the time this renders, and cancelling does **not** bring any of it back.
+ * is empty by the time this renders, and canceling does **not** bring any of it back.
  *
  * Nobody else can reach this page at all: to the rest of the platform, a ghost does not exist. That
  * asymmetry is the whole design — your contributions stay for their safety value, you don't.
@@ -218,7 +218,7 @@ export function needsProfileSetup(
   profile: { displayName?: string; deletionRequestedAt?: number } | null | undefined,
 ): boolean {
   if (!profile) return false;
-  // Still leaving ⇒ the empty profile is the *correct* state, not a setup prompt. Only a cancelled
+  // Still leaving ⇒ the empty profile is the *correct* state, not a setup prompt. Only a canceled
   // deletion leaves a live account holding a cleared row.
   if (profile.deletionRequestedAt !== undefined) return false;
   return profile.displayName === DELETED_DISPLAY_NAME;

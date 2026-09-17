@@ -29,7 +29,7 @@ function matched(batch: readonly JoinCandidate[]) {
 }
 
 describe('isReadLimitError', () => {
-  it('recognises the cap by its own wording', () => {
+  it('recognizes the cap by its own wording', () => {
     expect(isReadLimitError(READ_LIMIT)).toBe(true);
     expect(isReadLimitError('Read too much data in a single query')).toBe(true);
   });

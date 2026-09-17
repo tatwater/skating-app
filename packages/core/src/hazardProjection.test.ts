@@ -19,7 +19,7 @@ function fix(overrides: Partial<DirectionalFix> = {}): DirectionalFix {
   return { coord: CENTRE, headingDeg: 0, speedMps: 10, ...overrides };
 }
 
-/** A point+radius hazard whose *centre* sits `metres` away from CENTRE along `bearingDeg`. */
+/** A point+radius hazard whose *center* sits `meters` away from CENTER along `bearingDeg`. */
 function hazardAt(
   id: string,
   bearingDeg: number,

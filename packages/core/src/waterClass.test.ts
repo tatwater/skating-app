@@ -218,7 +218,7 @@ describe('classifyWaterBody', () => {
     token: 'osm:natural=water',
   };
 
-  it('lets a name asserting reservoir outrank the catalogue', () => {
+  it('lets a name asserting reservoir outrank the catalog', () => {
     // NHD calls all three of these LakePond; we call them reservoirs, because the concern is use.
     for (const name of [
       'Sugar Hill Reservoir',
@@ -233,14 +233,14 @@ describe('classifyWaterBody', () => {
     expect(nameAssertsReservoir('Upper Artichoke Reservoir')).toBe(true);
   });
 
-  it('prefers the catalogue over a name keyword', () => {
+  it('prefers the catalog over a name keyword', () => {
     expect(osm('Mud Pond', { natural: 'wetland', wetland: 'bog' })).toMatchObject({
       cls: 'wetland',
       basis: 'source-class',
     });
   });
 
-  it('falls back to the name only when the catalogue is silent', () => {
+  it('falls back to the name only when the catalog is silent', () => {
     expect(classifyWaterBody({ name: 'Occom Pond', claim: silentClaim })).toMatchObject({
       cls: 'lakePond',
       basis: 'name-keyword',
@@ -314,7 +314,7 @@ describe('regional vocabulary found by reading the unresolved list', () => {
     expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
   });
 
-  // A reach so slow the catalogues publish it as a waterbody. NHD calls every one of these
+  // A reach so slow the catalogs publish it as a waterbody. NHD calls every one of these
   // `LakePond`; for a skater there is current under the ice, which is the distinction that matters.
   it.each([
     'Debsconeag Deadwater',
@@ -436,7 +436,7 @@ describe('a still-water name outranks a flowing refusal (founder, 2026-08-09)', 
     expect(v.basis).toBe('name-still-water');
   });
 
-  it('rescues one the federal catalogue calls a River', () => {
+  it('rescues one the federal catalog calls a River', () => {
     // 3DHP `featuretype=1` is an opaque integer, which is why `refusalFamily` names it explicitly
     // rather than reading the value the way it reads `osm:water=river`.
     expect(
@@ -453,7 +453,7 @@ describe('a still-water name outranks a flowing refusal (founder, 2026-08-09)', 
     expect(osm('Sewall Deadwater Pond', { natural: 'water', water: 'river' }).cls).toBe('river');
   });
 
-  it('is narrow on the NAME side: an ordinary keep-word does not overrule a catalogue', () => {
+  it('is narrow on the NAME side: an ordinary keep-word does not overrule a catalog', () => {
     // These are the rapids and the brook their names say they are, and the wider rule the founder
     // declined would have admitted both. `classifyName` still resolves them — the point is that a
     // resolved name is not enough here.
@@ -473,7 +473,7 @@ describe('a still-water name outranks a flowing refusal (founder, 2026-08-09)', 
   it('cannot launder a veto: an ocean refusal is not a flowing one', () => {
     // 3DHP files the Atlantic and the Great Lakes under `featuretype=4`, which `VETO_TOKENS` refuses
     // outright. It is not in the `flowing` family, so no name reaches it — and `sourceToken` still
-    // carries the catalogue's own word either way, which is what the veto reads.
+    // carries the catalog's own word either way, which is what the veto reads.
     const v = classifyWaterBody({ name: 'Huron Flow', claim: classifyThreeDhp(4) });
     expect(v.cls).toBeNull();
     expect(v.basis).toBe('dropped-by-class');
@@ -513,8 +513,8 @@ describe('a still-water name outranks a flowing refusal (founder, 2026-08-09)', 
 });
 
 describe('the source token survives the classification ladder', () => {
-  it('keeps the catalogue token when a name overrules the class', () => {
-    // The veto is keyed on the catalogue's own token. Rung 1 returns early with `name:reservoir`,
+  it('keeps the catalog token when a name overrules the class', () => {
+    // The veto is keyed on the catalog's own token. Rung 1 returns early with `name:reservoir`,
     // which used to discard the only evidence that a feature was a tidal estuary — so a vetoed body
     // whose name happened to say "Reservoir" entered the corpus on a technicality.
     const v = classifyWaterBody({
@@ -526,7 +526,7 @@ describe('the source token survives the classification ladder', () => {
     expect(v.sourceToken).toBe('nhd:ftype=493');
   });
 
-  it('keeps it when a name keyword decides a silent catalogue', () => {
+  it('keeps it when a name keyword decides a silent catalog', () => {
     const v = classifyWaterBody({ name: 'Mud Pond', claim: classifyOsmTags({ natural: 'water' }) });
     expect(v.token).toBe('name:lakePond');
     expect(v.sourceToken).toBe('osm:natural=water');

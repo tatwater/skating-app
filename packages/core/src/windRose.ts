@@ -40,7 +40,7 @@
 
 /**
  * Where a wind rose came from. One source, like elevation and for the same reason — this is a
- * modelled climatology, not a scarce measurement, so a precedence ladder would be ceremony. The
+ * modeled climatology, not a scarce measurement, so a precedence ladder would be ceremony. The
  * literal exists so a second source (a finer downscaling, a longer record) can be added without
  * making every stored rose ambiguous.
  */
@@ -125,7 +125,7 @@ export interface WindExposure {
   sector: number;
   /** Share of winter hours wind blows from this sector, in `[0, 1]`. */
   frequency: number;
-  /** Open water in that direction, metres. */
+  /** Open water in that direction, meters. */
   fetchM: number;
 }
 
@@ -171,7 +171,7 @@ export function mostExposedSector(
  * That matters because the two wind hazards on a lake are different questions:
  *
  * - **Pressure ridges** are a *fetch* problem. Frequency × fetch, which `mostExposedSector` answers,
- *   and which is why `MIN_FETCH_CLAUSE_M` gates that clause at a kilometre.
+ *   and which is why `MIN_FETCH_CLAUSE_M` gates that clause at a kilometer.
  * - **Wind holes** are a *speed* problem. They are driven by sustained strong wind and have **no
  *   comparable fetch minimum** — so the 1 km gate is meaningful for the first and must not be
  *   assumed meaningful for the second (founder, 2026-08-02).

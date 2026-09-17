@@ -84,7 +84,7 @@ export const COMPASS_LABELS = [
  *
  * 8 kph ≈ 5 mph. Chosen as the point below which a lake surface stays glassy rather than from a
  * published number, because the published numbers are about wave formation on open water and this is
- * about a skim of new ice. ⚠ **A guess, and labelled one** — worth revisiting against D160's
+ * about a skim of new ice. ⚠ **A guess, and labeled one** — worth revisiting against D160's
  * calibration data once a season of paired observations exists.
  */
 export const CALM_FREEZE_MAX_KPH = 8;
@@ -432,7 +432,7 @@ function buildHeadline(
   // Founder, 2026-09-03: *"a single afternoon with sun above freezing will make the ice's surface
   // sticky and soft in a way that kind of ruins it."* The literature agrees on the mechanism —
   // shortwave penetrates clear ice and melts it internally at the grain boundaries — and it is the
-  // reason `hoursAboveFreezing` alone under-describes a thaw: a grey 2 °C day and a sunny 2 °C day
+  // reason `hoursAboveFreezing` alone under-describes a thaw: a gray 2 °C day and a sunny 2 °C day
   // score identically there and do very different things to a skating surface.
   //
   // ⚠ Stated as *sunny hours above freezing*, never as what they did to the ice. The mechanism is

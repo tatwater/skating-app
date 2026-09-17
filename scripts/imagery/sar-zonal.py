@@ -151,7 +151,7 @@ def main() -> int:
     parser.add_argument(
         "--erode-projected-m",
         type=float,
-        help="how far from the bank a pixel must sit to count as interior, in PROJECTED metres",
+        help="how far from the bank a pixel must sit to count as interior, in PROJECTED meters",
     )
     args = parser.parse_args()
 

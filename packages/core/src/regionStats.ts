@@ -4,7 +4,7 @@
  *
  * ## Why deciles per state, and not a percentile per body
  *
- * A caption wants to place a lake against its neighbours. The obvious shape — store each body's
+ * A caption wants to place a lake against its neighbors. The obvious shape — store each body's
  * percentile — is the wrong one: a percentile is a property of the *corpus*, not of the body, so
  * every import would invalidate all 116,070 of them and keeping them true would mean rewriting the
  * corpus on every run. Nobody would, so they would quietly become claims about a snapshot from
@@ -40,8 +40,8 @@ export interface DecileBlock {
  * Below this the deciles are noise wearing a distribution's clothes: with eight lakes, "in the top
  * decile for depth" means "one of the deepest eight", which is not the claim the caption makes.
  * Same denominator discipline as **D78**'s recurrence bar and **D86**'s quorum floor, applied for
- * the same reason — a comparison that silently summarises three data points looks identical to one
- * summarising three thousand.
+ * the same reason — a comparison that silently summarizes three data points looks identical to one
+ * summarizing three thousand.
  */
 export const MIN_DECILE_SAMPLE = 30;
 
@@ -58,7 +58,7 @@ export function computeDeciles(values: readonly number[]): DecileBlock | null {
 
   const deciles: number[] = [];
   for (let k = 1; k <= DECILE_COUNT; k++) {
-    // Linear interpolation between the two neighbouring order statistics — the standard
+    // Linear interpolation between the two neighboring order statistics — the standard
     // "type 7" quantile, and what every stats package will agree with if someone checks.
     const pos = ((clean.length - 1) * k) / (DECILE_COUNT + 1);
     const lo = Math.floor(pos);

@@ -13,7 +13,7 @@
  * the corpus be traced to the rows that produced it rather than to whatever the service says today.
  *
  * Contrast `snapshotAlsc.ts`, which is paced at 1 req/s over ~1,470 requests against a small
- * organisation's shared host. This is one query against an Esri-hosted government service; there is
+ * organization's shared host. This is one query against an Esri-hosted government service; there is
  * nothing to be polite about beyond identifying ourselves.
  */
 
@@ -80,7 +80,7 @@ function writeArchive(
           'service carries no copyrightText; sharing is public. Checked 2026-08-09. Same finding as ' +
           'ALSC and the same response: attribution, carried in DEPTH_SOURCE_TERMS.cslap.',
         note:
-          'Mean depth only — the programme publishes no maximum. Coordinates are read from the ' +
+          'Mean depth only — the program publishes no maximum. Coordinates are read from the ' +
           'WGS84 Latitude/Longitude attributes rather than unprojected from the Web Mercator ' +
           'geometry. Elevation is published here as a STRING and is ignored: ours is 1 m 3DEP.',
       },

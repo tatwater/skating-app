@@ -45,7 +45,7 @@ Two Sentinel-1 passes over Mascoma **24 hours apart** (ascending `…20260213T22
 islands appeared to jump. For each, the lake mask was scanned along that pass's own range direction
 to find where it covers the darkest pixels, i.e. where the water actually is in the product:
 
-⚠ **The scan worked in EPSG:3857 metres; everything here is in GROUND metres.** Web Mercator inflates
+⚠ **The scan worked in EPSG:3857 meters; everything here is in GROUND meters.** Web Mercator inflates
 by 1/cos(φ) = 1.382 at 43.65°N, so the measured +150 projected is ~108 on the ground.
 
     pass         scene avg    LOCAL grid    measured
@@ -76,7 +76,7 @@ import math
 import sys
 import xml.etree.ElementTree as ET
 
-# Metres per degree of latitude. Near enough constant for corrections of a few hundred metres, and
+# Meters per degree of latitude. Near enough constant for corrections of a few hundred meters, and
 # far more precision than the input height carries.
 METRES_PER_DEG_LAT = 111_132.0
 
@@ -139,7 +139,7 @@ def main() -> None:
         "height",
         type=float,
         nargs="?",
-        help="target surface height, metres above ellipsoid (omit with --grid)",
+        help="target surface height, meters above ellipsoid (omit with --grid)",
     )
     parser.add_argument(
         "--grid",

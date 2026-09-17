@@ -70,7 +70,7 @@ export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
  *
  * **`revealedIds` and not a boolean, since v3 reveals the whole viewport.** The boolean version
  * painted *every* shoreline white the moment the toggle flipped, including lakes with no photograph
- * under them — so a favourited lake elsewhere on screen silently lost its gold to a reveal it was not
+ * under them — so a favorited lake elsewhere on screen silently lost its gold to a reveal it was not
  * part of. Now the white applies feature by feature, to exactly the bodies that got pixels.
  */
 export function waterOutlineColor(flavor: MapFlavor, revealedIds: readonly string[] = []): unknown {
@@ -158,10 +158,10 @@ const MASK_FILL_OPACITY = 0.999;
  * The flat fills that make everywhere-but-here look like nowhere.
  *
  * Three layers, drawn in this order: **sea**, then **land** on top of it, then the major **lakes**.
- * Together they tile the whole neighbourhood, which matters more than it sounds — see below.
+ * Together they tile the whole neighborhood, which matters more than it sounds — see below.
  *
- * Colored from the flavour itself — `earth` for land, `water` for sea and lakes — so the mask is not
- * a grey rectangle laid over a map but the same white and the same pale grey the basemap already
+ * Colored from the flavor itself — `earth` for land, `water` for sea and lakes — so the mask is not
+ * a gray rectangle laid over a map but the same white and the same pale gray the basemap already
  * paints with. The seam where it meets the world overview's own earth is invisible by construction;
  * the only seam a user can see is where it meets *our* detail, which is the border, which is the point.
  *
@@ -201,7 +201,7 @@ function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
  *
  * `composeBasemapLayers` owns the ordering and the zoom policy — see `@skating/core/basemapLayers`.
  * `attribution` on the sources is what the `AttributionControl` surfaces. The sprite matches the
- * flavour's light/dark icon set.
+ * flavor's light/dark icon set.
  */
 export function buildMapStyle(input: {
   regionUrl: string;
@@ -286,7 +286,7 @@ export interface MappableBody {
  * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (A06f).
  * They draw dimmed for that person alone — an unconfirmed report must not change anyone else's map,
  * or one account could dim any lake in the corpus. It rides the properties bag rather than
- * feature-state (which is how favourites do it) so that the mobile client, whose binding has no
+ * feature-state (which is how favorites do it) so that the mobile client, whose binding has no
  * ergonomic `setFeatureState`, can share one expression instead of growing a parallel filtered layer.
  */
 export function waterBodiesToFeatureCollection(
@@ -641,7 +641,7 @@ export function summaryCardsToFeatureCollection(
  * Lives here rather than inline in `MapView` so it can be run through the style-spec validator in a
  * test — which is the point, because **an invalid layer fails silently**: MapLibre logs and declines
  * to draw, so the symptom is "the cards never appeared", indistinguishable from "no body had
- * anything to say", which is A06c §5.3's *correct* behaviour on this corpus. There is no louder failure
+ * anything to say", which is A06c §5.3's *correct* behavior on this corpus. There is no louder failure
  * available, so the check has to happen before the browser sees it.
  *
  * `['zoom']` inside a filter is the specific thing worth pinning: it is legal in MapLibre but

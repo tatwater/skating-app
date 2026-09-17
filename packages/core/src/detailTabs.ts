@@ -14,7 +14,7 @@
  * - **Planning** — the trip decision: the weather timeline, the forecast, put-ins, directions.
  *
  * If the ids or labels were declared per client, the two drawers could drift on a rename and the
- * shared tab store below would carry a value one of them no longer recognises. So the ids are one
+ * shared tab store below would carry a value one of them no longer recognizes. So the ids are one
  * list, the labels are one map, and each client renders them rather than restating them.
  *
  * ⚠ **The NWS alert belongs to none of these** and is deliberately not a tab concern. It sits above

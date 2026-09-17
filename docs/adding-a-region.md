@@ -257,7 +257,7 @@ contours. **Asking whether the new state publishes bathymetry at all** does.
 
 That question is research, not a pipeline run, and it has a real chance of answering "no" — New York
 publishes none, which we established by enumerating every layer on NYSDEC's ArcGIS server, the full
-385-dataset NYS GIS Clearinghouse catalogue, ArcGIS Online and `data.ny.gov`. Budget an afternoon,
+385-dataset NYS GIS Clearinghouse catalog, ArcGIS Online and `data.ny.gov`. Budget an afternoon,
 and see `plans/phases/A06b-bathymetry-layer.md` §New York for what a thorough "no" looks like so you
 can stop when you reach one.
 
@@ -288,7 +288,7 @@ scripts/bathymetry/tile.sh --upload dev/bathymetry-$(date +%Y%m%d).pmtiles
 
 **Two lanes, and which one you are in is a provenance claim rather than a file format.** If the agency
 publishes **contour lines**, we reproject and clip and invent nothing. If it publishes **sounding
-points**, *we* fit the surface — a weaker claim, gated harder, and labelled differently in the drawer.
+points**, *we* fit the surface — a weaker claim, gated harder, and labeled differently in the drawer.
 Both are legitimate; conflating them is not.
 
 ### What will actually go wrong

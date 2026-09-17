@@ -25,7 +25,7 @@
  * React runs a cleanup **before** the effect that replaces it. So every notch crossing had a window
  * with nothing on the map at all, opening the instant the old source was removed and closing only
  * when the new one's tiles arrived. On true color that window is short enough to read as a flicker;
- * on radar, where the difference between two dates is a couple of decibels of grey, it destroyed the
+ * on radar, where the difference between two dates is a couple of decibels of gray, it destroyed the
  * comparison the scrubber exists for — the eye has nothing to hold between the two pictures.
  *
  * So each slot owns **two lanes** and they leapfrog. The incoming date mounts on the free lane at
@@ -82,7 +82,7 @@ export type FreezeUpLane = number;
  * comparing them.
  *
  * Six, because a radar season is ~9 usable passes and an optical one ~30: it holds a whole
- * neighbourhood of radar and the working set of an optical scrub, and six lake-masked rasters is a
+ * neighborhood of radar and the working set of an optical scrub, and six lake-masked rasters is a
  * bounded amount of memory. The cost of raising it is that MapLibre keeps fetching tiles for every
  * mounted source as the camera moves, so this trades bandwidth on pan for latency on scrub.
  *
@@ -342,7 +342,7 @@ export function useFreezeUpFrame({
           // so it fades up from the basemap — which is the one moment a fade from nothing is honest.
           'raster-opacity': 0,
           'raster-opacity-transition': { duration: FADE_MS, delay: 0 },
-          // ⚠ Off, and load-bearing. MapLibre's default resampling blends neighbouring tiles at
+          // ⚠ Off, and load-bearing. MapLibre's default resampling blends neighboring tiles at
           // zoom boundaries, which on an alpha-masked frame smears the feather the cutter spent a
           // `gdal_proximity` pass computing — a soft edge turning into a soft *smudge*.
           'raster-fade-duration': 0,

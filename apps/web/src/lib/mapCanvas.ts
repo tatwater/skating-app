@@ -81,7 +81,7 @@ export interface MapCanvas {
 /**
  * Create and own one MapLibre map.
  *
- * The re-create-on-theme-change behaviour is inherited from `MapView` rather than reconsidered: the
+ * The re-create-on-theme-change behavior is inherited from `MapView` rather than reconsidered: the
  * basemap style is built per flavor, and rebuilding it in place would mean re-adding every caller's
  * layers anyway. `lastViewRef` carries pan/zoom across, so the user doesn't notice.
  */
@@ -174,22 +174,22 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     // stale the first time someone adds a layer.
     //
     // It also settles the ODbL question rather than skirting it. OSM's guidance wants the credit in
-    // the corner of a browsable map *or* behind a clearly-labelled affordance on the map itself —
+    // the corner of a browsable map *or* behind a clearly-labeled affordance on the map itself —
     // an ⓘ is the second of those. Credits reachable only from a drawer, on a map that renders
     // perfectly well with no drawer open, would be the configuration that risks it.
     map.addControl(new maplibregl.AttributionControl({ compact: true }));
     // ⚠ **`compact` does not mean *collapsed*, and that is the whole of what looked wrong.**
     //
     // MapLibre mounts the compact control **expanded** (`_updateCompact` adds `maplibregl-compact`
-    // *and* `maplibregl-compact-show`) and only minimises it on the first `drag` — not on a zoom, not
+    // *and* `maplibregl-compact-show`) and only minimizes it on the first `drag` — not on a zoom, not
     // on a click, not on a fly-to. So a map that is opened and read rather than dragged shows every
     // credit of every active source laid across the bottom edge for the entire session, growing each
     // time a source mounts: adding the freeze-up frames is what turned it into
     // *"© OpenStreetMap contributors | Copernicus Sentinel data 2025–2026"*.
     //
-    // Removing that one class is exactly what MapLibre's own minimise path does, so this is its rest
+    // Removing that one class is exactly what MapLibre's own minimize path does, so this is its rest
     // state arriving at mount instead of after a gesture. The ⓘ stays, the credits are one click
-    // behind it, and the licence surface is unchanged — which is why this, and not moving a required
+    // behind it, and the license surface is unchanged — which is why this, and not moving a required
     // credit into a panel that can be closed while the imagery it credits is still on the map.
     map
       .getContainer()

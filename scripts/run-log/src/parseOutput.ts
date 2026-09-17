@@ -9,7 +9,7 @@
  * Parse what `convex run` printed.
  *
  * Split out from the subprocess call because it is the part with a bug in it, and it had one: the
- * original only recognised `{…}` and `"…"`, so an **array** return (any list query) fell through to
+ * original only recognized `{…}` and `"…"`, so an **array** return (any list query) fell through to
  * a regex that matched the first `{…}` *inside* the array and parsed one element as the whole
  * result. Here that threw; the version of this mistake that silently succeeds is much worse.
  */

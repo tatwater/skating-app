@@ -42,10 +42,10 @@ describe('the downstate cut (D111)', () => {
   });
 });
 
-describe('the neighbour states', () => {
+describe('the neighbor states', () => {
   it('is the four that share a line with ours, by FIPS', () => {
-    // Their border is the one edge of the mask that has to be right: every metre of simplification
-    // there is a metre of their territory that may go unmasked and leak basemap detail.
+    // Their border is the one edge of the mask that has to be right: every meter of simplification
+    // there is a meter of their territory that may go unmasked and leak basemap detail.
     expect([...NEIGHBOUR_FIPS].sort()).toEqual(['09', '34', '42', '44']); // CT, NJ, PA, RI
   });
 
@@ -64,7 +64,7 @@ describe('the bleed box', () => {
     expect(BLEED_BOX).toEqual({ minLng: -86, minLat: 36, maxLng: -60, maxLat: 52 });
   });
 
-  it('admits a neighbouring state', () => {
+  it('admits a neighboring state', () => {
     expect(nearRegion({ minLng: -73.7, minLat: 40.9, maxLng: -71.8, maxLat: 42.1 })).toBe(true);
   });
 
@@ -104,7 +104,7 @@ describe('the bleed box', () => {
 });
 
 describe('coordinate rounding', () => {
-  it('trims TIGER’s centimetres to about eleven metres', () => {
+  it('trims TIGER’s centimetres to about eleven meters', () => {
     // Seven decimals is a precision no consumer can render and every consumer has to download.
     const g = { type: 'Polygon', coordinates: [[[-73.1234567, 42.7654321]]] };
     expect(roundCoords(g)).toEqual({ type: 'Polygon', coordinates: [[[-73.1235, 42.7654]]] });
@@ -124,7 +124,7 @@ describe('coordinate rounding', () => {
   });
 
   it('is finer than the finest tolerance the builder simplifies to', () => {
-    // 0.0005° is the neighbour tolerance — the tightest in the file. Rounding must not move a vertex
+    // 0.0005° is the neighbor tolerance — the tightest in the file. Rounding must not move a vertex
     // the simplifier deliberately kept, so it has to be finer than that, and 0.0001 is.
     expect(0.0001).toBeLessThan(0.0005);
   });

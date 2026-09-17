@@ -3,7 +3,7 @@
  * footprint rule that keeps a merge from ever shrinking warned area.
  *
  * The bar itself is pure and lives in `@skating/core`'s `hazardMerge`; this module is the persistence
- * around it, modelled on D36's water-body merge (`lib/bodies.resolveSurvivor`) because that pattern is
+ * around it, modeled on D36's water-body merge (`lib/bodies.resolveSurvivor`) because that pattern is
  * already proven on this codebase and a moderator already knows how it behaves.
  */
 

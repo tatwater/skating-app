@@ -1301,7 +1301,7 @@ seed failed to match turned out to be a region **inside** an existing polygon. S
   reached first. (First-match would have been A01's whole correction series happening again.)
 - **A sub-area is visible only while its parent is.** Cell rows exist on the conjunction, so a
   landowner takedown takes the water body's bays with it; a merge repoints them to the survivor.
-- **Full citizens:** labelled (feed card, report detail, hazard lines, through one composition helper),
+- **Full citizens:** labeled (feed card, report detail, hazard lines, through one composition helper),
   searchable by alias, rendered on both clients off their own ladder-grid cell table, and targetable by
   a bounty — narrowed at `attachReportToOpenBounties` and at a sub-area-scoped freshness index, since
   fulfillment begins at auto-attach and an unnarrowed one makes the targeting cosmetic.
@@ -1358,7 +1358,7 @@ and wrong for a private location trace, so the rule is no longer uniform.
 - **A 30-day grace window, finalized by cron** — not immediate. Reversible-by-default is the posture
   every other destructive path here already takes (D15 hazard archive, D36 merge tombstone, D53
   demotion). During the window the account is **fully functional and Clerk is untouched**: banning
-  Clerk on request would lock the user out of the very sign-in they need to undo. Cancelling is an
+  Clerk on request would lock the user out of the very sign-in they need to undo. Canceling is an
   **explicit button**, never an implicit side effect of signing in.
 - **Three buckets, not two.** *Erase* the private artifacts (OAuth tokens, notifications + queue,
   favorites, blocks, support tickets, home location + isochrones, unattached photos). *Anonymize* the
@@ -1387,7 +1387,7 @@ rule couldn't serve both, and the seam that separates them already existed in D5
 multiplier, not a visibility gate, so a report from two seasons ago still rendered in a water body's drawer
 and its GPS path still drew on the aggregate map — at ~0 opacity, but present. The map should show
 **this** season's ice; everything else is history you go and look at on purpose.
-- **The season boundary is July 1**, labelled `'24/'25` because a skating season spans New Year. July
+- **The season boundary is July 1**, labeled `'24/'25` because a skating season spans New Year. July
   is the deadest point of the year in the Northeast, so the boundary never cuts a live season and the
   reset lands when nobody is looking at the map.
 - **Season is DERIVED, never stored.** `seasonOf(skateEndTime)`; current season is `seasonOf(now)`.
@@ -1411,7 +1411,7 @@ anywhere, so an unvisited hazard stays `active` forever at a deliberate map opac
 reported in February 2025 is still drawn today. The recurring-hazard case is therefore handled *by
 accident* today, by a stale pin that never leaves and asserts a position nobody has evidence for.
 **Why:** an app that never forgets shows a skater a two-year-old report next to Tuesday's and asks them
-to tell the difference from opacity alone. Hiding is the honest default; a labelled way back is the
+to tell the difference from opacity alone. Hiding is the honest default; a labeled way back is the
 honest exception.
 
 **Four things settled at build kickoff (2026-07-28), each a question the decision left open:**
@@ -1426,7 +1426,7 @@ honest exception.
   on the map as well as in the list. "What did this bay look like last December?" is mostly a map
   question, and answering it with a re-listed sidebar over a current-season map would show two seasons
   at once, which is the confusion this decision exists to end.
-- **The global feed falls back to last season, labelled.** Seasonal scoping empties the feed on July 1
+- **The global feed falls back to last season, labeled.** Seasonal scoping empties the feed on July 1
   and it stays empty until first ice — five months of a dead home screen, not a July curiosity. When
   the current season has no reports the feed shows the previous one under a divider that says so. The
   label is what keeps this from being the thing the decision forbids: nothing is silently mixed.
@@ -1469,7 +1469,7 @@ and there, not in a month. So **`requestDeletion` really deletes**:
 | surviving content reads as **"Deleted skater"**, no handle, no trust ring | whatever crossed the 30-day line since |
 | everything past 30 days past its skate **erased**, plus every bounty | |
 
-- **Cancelling stops the deletion; it does not restore the person.** The profile stays empty and they
+- **Canceling stops the deletion; it does not restore the person.** The profile stays empty and they
   are routed back through onboarding (`needsProfileSetup`); the purged content is gone. That isn't an
   implementation limit — the data was deleted, and a cancel that pretended otherwise would be the one
   dishonest thing in the flow.
@@ -1478,7 +1478,7 @@ and there, not in a month. So **`requestDeletion` really deletes**:
   squatter in a window they may well cancel in.
 - **`dateOfBirth` is the one PII field that waits for finalization**, and the reason is safety, not
   convenience: scrubbing it means restoring it as the 1900 sentinel, which derives to *adult*, so a
-  minor who cancelled would come back with an adult's posting rights.
+  minor who canceled would come back with an adult's posting rights.
 - **The purge keeps running while the account is pending**, not once at the request: content three
   days old when they left is thirty-three days old three weeks later, and "your old reports are gone"
   has to keep being true rather than describing one instant.
@@ -1489,7 +1489,7 @@ and there, not in a month. So **`requestDeletion` really deletes**:
 - **Open**: flagging (a hazard is no less dangerous because the person who spotted it is leaving),
   blocking (self-protection outlives the account), support, export, private preferences — including
   `excludeTracksFromAggregate`, a privacy control that must not be collateral damage — and the
-  load-bearing one, **cancelling**.
+  load-bearing one, **canceling**.
 - **The clients hide the affordances, they don't just fail the call.** The point is not to refuse a
   report — it's to never invite one. Both apps drop every closed control and put one line in its
   place, because a button that silently vanishes reads as a broken build. **The rule keeping client
@@ -1506,7 +1506,7 @@ and there, not in a month. So **`requestDeletion` really deletes**:
   stamp, no second index and no deferred sweep — it's a stage of the existing chain. The grace window
   and the relevance window are the same 30 days *by construction*, a coupling to keep deliberate if
   either number moves.
-- **The cost, accepted:** a skater on bad ice during their window can't file the hazard. Cancelling is
+- **The cost, accepted:** a skater on bad ice during their window can't file the hazard. Canceling is
   one tap and the error says so, but it's a real trade rather than a free win.
 
 **What the build found:** the decision *"put-ins survive"* was **false in the code**, and invisibly so.
@@ -1524,7 +1524,7 @@ subtly-wrong predicate on exactly this kind of sweep.
 
 **The governing principle, since two rules in A05a look alike and aren't:** *aging never erases
 anything; an intentional account deletion erases everything that isn't of immediate value to the
-community.* Staleness and seasons only ever **hide** — for everyone, reversibly, with a labelled way
+community.* Staleness and seasons only ever **hide** — for everyone, reversibly, with a labeled way
 back. Erasure has exactly one trigger, and it's a person deciding to leave.
 **Why:** the ice record belongs to the community and the person doesn't. Their reports keep someone
 off bad ice for as long as they're current, and everything that says *who* left goes immediately —
@@ -1727,7 +1727,7 @@ place D62's "what a person typed vs what they observed" seam doesn't cut cleanly
 
 Under the second amendment a photo on a surviving report is kept whole — bytes, timestamp, coordinate
 — and only its caption is redacted. But **the image is the largest identifiability surface in the
-system**: faces, a licence plate, a house behind the put-in, the departed skater themselves. It is
+system**: faces, a license plate, a house behind the put-in, the departed skater themselves. It is
 *observation*, which is why no bucket ever questioned it, and it is also the richest personal data we
 hold.
 
@@ -1749,7 +1749,7 @@ re-encoding (addresses metadata, not the pixels, so it misses the actual concern
 choice at delete time (a consent record we would then owe forever, asked at the worst possible moment).
 
 **Why:** the loss falls only on people who chose to leave, and it falls on the photos with the least
-evidential value. Holding a departed person's photographs of themselves and their neighbours forever,
+evidential value. Holding a departed person's photographs of themselves and their neighbors forever,
 because the coordinate attached to them is ice record, is the retention this rule exists to prevent.
 
 **A capped scan escalates; it must never be retried** (Greptile, 2026-07-28). The completion marker
@@ -1791,7 +1791,7 @@ worth carrying: the season is resolved **once by the sweeper** and threaded thro
 continuations, so a July 1 rollover can't mark a pass complete for a boundary its earlier pages weren't
 judged against; and a pass whose hazard scan hit its cap deliberately **doesn't** mark the account, so
 the next tick retries rather than accepting an unanswered question as finished. The index it reads is
-the one place a Convex index on an optional field being **non-sparse** is the behaviour we want —
+the one place a Convex index on an optional field being **non-sparse** is the behavior we want —
 never-swept accounts have no value, `undefined` sorts before every number, so the range *is* the queue.
 
 ## D67 — Freeform hazard areas, and shore bands that come off the water body's own outline (A05b)
@@ -1843,7 +1843,7 @@ the band stops being snapped and becomes an ordinary area, and the copy says so.
 of PR #32)*. A band derived at half-width `H` and stored with halo `B` warns from `H + B` out: at the
 default 25 m with `thin_ice`'s 10 m margin, a skater who said "25 m out" gets a footprint reaching 35 m.
 Read cold that looks like the buffer being applied twice, and it isn't. `H` is a claim about the **ice**
-— rotten shore ice runs tens of metres out, which is why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
+— rotten shore ice runs tens of meters out, which is why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
 the type's 10 — and `B` is the type's uncertainty about **where any hazard's edge is**, which every other
 hazard in the app also carries. Dropping `B` would make a shore band the only hazard whose footprint is
 exactly its author's eyeball estimate, which is D3 read backwards: for a hazard footprint the fail-safe
@@ -1885,7 +1885,7 @@ dead-ends someone standing on ice with a hazard to file is worse than one that w
 **The shorter arc is the default, with an explicit "go the other way".** Two taps on a ring define two
 arcs; shorter is right almost always and silently wrong on a small pond or a narrow bay, where the band
 a skater means is most of the perimeter. A control, not an inference — and specifically not inferred
-from the map centre, which is unpredictable in exactly the cases that need predicting. **Taps that
+from the map center, which is unpredictable in exactly the cases that need predicting. **Taps that
 resolve to different rings are refused rather than guessed** (an island's shore and the mainland's, or
 two parts of a MultiPolygon), in the same spirit as A02's clip-refusal threshold, as is a tap more than
 500 m from any shoreline and a buffer that comes back as two lobes.
@@ -1901,7 +1901,7 @@ server refuses it because a client's manners are not evidence.
 
 ## D68 — Depth is a best-available number that carries its provenance (A06a)
 **Decided (2026-07-29; A06a kickoff.)** No single source gives us water body depth, and the sources differ in
-kind — some measured, some modelled — so depth is stored as a **best-available value plus a record of
+kind — some measured, some modeled — so depth is stored as a **best-available value plus a record of
 which rung produced it**. Four rungs, highest first: an **operator override** (a state-agency survey or
 local knowledge, typed into the A02 per-body editor); **LAGOS-US DEPTH** (observed, ~65 compiled agency /
 university / monitoring sources, water bodies > 1 ha); **HydroLAKES `Depth_avg`** (`Vol_total / Lake_area`);
@@ -1910,19 +1910,19 @@ area).
 
 **Provenance is per measurement, not per body.** The register's A06 entry proposed a single
 `depthSource`, which cannot be honest: LAGOS-US holds 17,675 maximum depths and only 6,137 means, so a
-body will routinely carry a measured max next to a modelled mean. `meanDepthSource` and `maxDepthSource`
+body will routinely carry a measured max next to a modeled mean. `meanDepthSource` and `maxDepthSource`
 are separate fields.
 
 **HydroLAKES splits into two rungs on `Vol_src`.** `Vol_src` 1 or 2 means `Depth_avg` derives from a
 *reported* volume rather than the geostatistical model, so those rows rank above `Vol_src = 3` —
-`hydrolakes_reported` and `hydrolakes_modeled` are distinct enum values. Free to honour, and treating all
-of HydroLAKES as one modelled rung would discard real measurements.
+`hydrolakes_reported` and `hydrolakes_modeled` are distinct enum values. Free to honor, and treating all
+of HydroLAKES as one modeled rung would discard real measurements.
 
 **The ladder exists because the display depends on it (D3).** Mean and max depth are shown to skaters
 (founder call), and a 90 m-DEM-derived estimate must not render like a depth-sounder transect: a measured
-depth reads plainly and names its source, a modelled one reads as an estimate. Without per-measurement
+depth reads plainly and names its source, a modeled one reads as an estimate. Without per-measurement
 provenance that distinction cannot be drawn, and the honest fallback would have been to show nothing —
-which would have left ~93% of the corpus blank *and* thrown away the modelled numbers that are perfectly
+which would have left ~93% of the corpus blank *and* thrown away the modeled numbers that are perfectly
 adequate as a decay input. Provenance is what lets one number serve both purposes at different
 confidence.
 
@@ -1992,7 +1992,7 @@ argument for it. The remaining false negative has a named shape: a broad shallow
 `shallow_early_thaw` flag overriding the number entirely.
 
 **And it gets settled with data rather than argument.** LAGOS-US DEPTH carries ~6,137 water bodies with *both* a
-mean and a max — a labelled set where `mean ≤ 3 m` is ground truth. **Step 6 of `scripts/lake-depth`'s
+mean and a max — a labeled set where `mean ≤ 3 m` is ground truth. **Step 6 of `scripts/lake-depth`'s
 runbook** sweeps the cutoff against our own region's matched water bodies, minimizing false negatives first, and
 tests relative depth on the same set. That check lives in the procedure that produces the evidence, not in
 a plan doc, because Phase 07-2 built a metric *and* an index to decide whether a cron was worth writing and
@@ -2017,7 +2017,7 @@ DEC survey"* — without a second field nobody fills.
 
 **Two rules that keep it from lying.** The note is **cleared when no depth remains**, so a body can never
 assert a 1998 chart beside numbers a global model supplied; and it is attached **only to the `operator`
-rung** in the caption, so a note left behind next to a modelled value never reads as a citation for the
+rung** in the caption, so a note left behind next to a modeled value never reads as a citation for the
 model's number. It also goes into the `moderationActions` reason, because the moderation log is where you
 ask *"who claimed this, and on what basis"*, and a reason that omits the basis makes you go and diff the
 row.
@@ -2059,7 +2059,7 @@ our own region is Christopher Boone's **Catamount Hardware Ice Atlas**
 *good*: 36 hand-picked NH and VT bodies, each with coordinates, elevation, surface area, dimensions, mean
 and max depth, individually named launches with their parking and facilities, and a curated set of
 external references. **Several ideas in A06c and A06d are lifted straight from what it chose to record** —
-elevation as a first-class field, per-body reference links, tying depth to freeze behaviour in prose, and
+elevation as a first-class field, per-body reference links, tying depth to freeze behavior in prose, and
 naming put-ins by compass side. It is also the source of the sharpest one-line framing of D3 any of us has
 written: *"This site tells you where to find ice, not whether it is safe."*
 
@@ -2108,7 +2108,7 @@ changes a query parameter. Generating them means **full coverage on day one**, a
 every body imported later, and a provider format change costing one function edit instead of a corpus
 rewrite. The stored version is more work for a strictly worse result.
 
-**Corollary — P2: a link is not an integration.** A URL template costs no storage, no quota, no licence and
+**Corollary — P2: a link is not an integration.** A URL template costs no storage, no quota, no license and
 no legal review. This is what lets the regional-community link ship *now* while forum ingestion stays
 behind the Q8/L5 legal gate: the gate is about **republication and consent**, and a link republishes
 nothing — the skater arrives at the community's own site under the community's own terms. It is the 5% of
@@ -2118,7 +2118,7 @@ the ingestion feature carrying 0% of its risk.
 water body associations. Expect tens of bodies, not thousands. Operator-editable, preserved across re-import
 like `curatedBoost`.
 
-## D72 — Parking is modelled apart from put-ins, and directions route to the car (A06d)
+## D72 — Parking is modeled apart from put-ins, and directions route to the car (A06d)
 
 **Decided (2026-07-30; founder call.)** `putIns` was one coordinate, and `directionsUrl` sent a car to it.
 For a drive-up launch that's right; **for a hike-in pond we hand a maps app a destination it cannot route
@@ -2131,7 +2131,7 @@ one exists, else the put-in**. `directionsUrl` itself is unchanged — only its 
 **Additive, deliberately.** *Considered and rejected:* generalizing `putIns` into an `accessPoints` table
 with a `kind` discriminator. Cleaner on paper, but `putIns` is load-bearing across drive-time bands, the
 notification fan-out, A03 deletion and the Phase 05 feed — a metadata phase should not put five other systems
-on its critical path for a modelling nicety.
+on its critical path for a modeling nicety.
 
 **Names come from OSM, and that is the whole reason this scales.** "Lake Fairlee Boat Ramp" *is* an OSM
 `leisure=slipway` with a `name` tag; so are fishing access areas, town beaches and trailhead lots. A second
@@ -2151,7 +2151,7 @@ the rest (D70). It is strictly more than the zero we have now.
 
 ### Second amendment (2026-08-10) — *directions* re-target; **drive-time bands do not**
 
-*"Directions target the parking area"* was written as though it named one behaviour. The A06d kickoff
+*"Directions target the parking area"* was written as though it named one behavior. The A06d kickoff
 found it names two, with very different costs, and only one of them is *"only its call sites get
 smarter"*:
 
@@ -2168,7 +2168,7 @@ recorded rather than hidden: a mile-away trailhead still classifies against the 
 car, so its 30/60/90 band reads slightly optimistic. **That is a bounded, one-band error on the small
 population of hike-in water bodies**, against a per-report read on the feed's hot path for every water body.
 
-**What would change the call** is a denormalised access coord on `waterBodies` — no read cost, but a
+**What would change the call** is a denormalized access coord on `waterBodies` — no read cost, but a
 second copy of a fact, maintained on every access-point write, of exactly the kind that drifts silently.
 Not worth it for a band boundary until something demonstrates that it is.
 
@@ -2178,7 +2178,7 @@ Not worth it for a band boundary until something demonstrates that it is.
 useful sentence on a water body page and the one most certain to be wrong. It is correct the day it's written and
 stale by spring, and **nothing in the system knows the difference**.
 
-So access blockers are modelled on hazards, not on text: an **`accessAlerts`** row against a put-in or
+So access blockers are modeled on hazards, not on text: an **`accessAlerts`** row against a put-in or
 parking area with a typed reason (`road_closed`, `gate_locked`, `not_plowed`, `lot_full`,
 `private_no_access`, `other`), confirmed or refuted by other skaters through the Phase 09a confirm/deny
 machinery (`pointEvents`, `by_ref`), including A05b's *"never existed"* retraction (D65).
@@ -2206,7 +2206,7 @@ them would silently break the reproducibility of hazard decay — which depends 
 that can be re-fetched and re-derived. A decay multiplier you cannot reproduce is one you cannot debug or
 refit, and the refit is already on the roadmap.
 
-So the boundary is sharp: **Open-Meteo computes; NWS informs.** Alerts render as a labelled, attributed
+So the boundary is sharp: **Open-Meteo computes; NWS informs.** Alerts render as a labeled, attributed
 advisory strip and never enter a formula. Polled **per state on a cron** (alerts are issued over
 counties/zones, so one state fetch serves every body in it) — keeping read cost independent of corpus size,
 the `listInViewport` lesson applied before it can bite.
@@ -2217,15 +2217,15 @@ isn't one.
 
 **Coverage gap:** US-only. A Québec expansion needs Environment Canada, a different API on different terms.
 
-## D75 — Satellite imagery ships as a link first; the licence blocker is resolved, the cost one isn't (A06c)
+## D75 — Satellite imagery ships as a link first; the license blocker is resolved, the cost one isn't (A06c)
 
 **Decided (2026-07-30; founder call.)** The roadmap parked a satellite-imagery layer as *"needs design — and
 it needs an imagery source whose terms permit the use."* **The terms question is now answered:** Copernicus
-Sentinel data is under the free, full and open Copernicus licence — reproduce, distribute and adapt, with
+Sentinel data is under the free, full and open Copernicus license — reproduce, distribute and adapt, with
 attribution. What remains is cost, not permission.
 
 **Tier 1, now: a Copernicus Browser deep link.** Centroid, zoom, Sentinel-2 L2A true color, ~14-day window.
-No account, no quota, no licence question. At 10 m with a ~5-day revisit the difference between open water,
+No account, no quota, no license question. At 10 m with a ~5-day revisit the difference between open water,
 black ice and snow-covered ice is visually obvious; cloud cover is the real limiter, which is why the link
 opens a *window* rather than a date.
 
@@ -2237,11 +2237,11 @@ and takes effect immediately. The threshold driving `auto` is the constant; the 
 
 **Tier 2, deferred with a trigger: imagery in the app.** The Copernicus Data Space free tier is **10,000
 requests + 10,000 processing units/month, 300/min**; a full-screen tile view is ~10–20 requests, so raw
-that's ~500–1,000 water body views/month. **Server-side tile caching is what makes it viable** — the open licence
+that's ~500–1,000 water body views/month. **Server-side tile caching is what makes it viable** — the open license
 permits it, and a body only needs re-fetching once per ~5-day revisit. **Do this when** we know which bodies
 get real traffic, since caching only wins if reads concentrate.
 
-**Planet: waited on, not rejected.** Their public catalogue (Sentinel, Landsat, HLS, Copernicus DEM) is the
+**Planet: waited on, not rejected.** Their public catalog (Sentinel, Landsat, HLS, Copernicus DEM) is the
 *same free data*; paying buys **PlanetScope — ~3 m, near-daily**, which is a real difference for ice, since a
 water body can go from open to skateable in 48 hours and a 5-day revisit can miss the whole onset. Against that:
 quote-based commercial pricing, a pilot with no revenue, and **no evidence yet that anyone opens the imagery
@@ -2291,11 +2291,11 @@ with a different time bound and a different tolerance. So there is **one** `clus
 **Matching is footprint-to-footprint, never centroid-to-centroid.** A `pressure_ridge` is a `LineString`
 with a buffer that often spans a bay; two ridges overlapping along different segments can have centroids
 400 m apart while sharing 300 m of geometry. The tolerance is therefore a **gap**, which makes 80 m a far
-tighter claim on a 600 m ridge than "centres within 80 m" would be.
+tighter claim on a 600 m ridge than "centers within 80 m" would be.
 
 **The tolerances differ in that direction deliberately.** Within a season, two pins 80 m apart may be two
 different leads and collapsing them would under-warn; across seasons a ridge re-forming within 80 m *is*
-the same feature, because ice does not reassemble to the metre. **Tight for identity, loose for
+the same feature, because ice does not reassemble to the meter. **Tight for identity, loose for
 recurrence.**
 
 **One is derived and one is stored, and that asymmetry is about read bounds, not taste.**
@@ -2399,7 +2399,7 @@ Four layers, cheapest first:
 2. **Pool** — every gate that *decides* something reads **distinct confirming users across the cluster**
    rather than the row: alert escalation, freshness, corroboration credit. **Archival stays per-row,
    deliberately** — pooling "gone" votes would let two people clearing one pin retire an unexamined
-   neighbour, which is pooling in the unsafe direction. *Pool the evidence a hazard is there; never the
+   neighbor, which is pooling in the unsafe direction. *Pool the evidence a hazard is there; never the
    evidence it is gone.*
 3. **Render** — overlapping same-family pins draw as one **union** footprint, opening to every reporter
    and every confirmation. A consensus footprint is never smaller than any member, so it can only warn
@@ -2538,12 +2538,12 @@ coverage gate can be set conservatively with no product argument pushing back.
 
 **Related:** [D3](#d3), [D52](#d52), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D68/D69](#d68), [`phase-A06b`](./phases/A06b-bathymetry-layer.md).
 
-## D83 — Contours carry their source's native interval and units, labelled; we never resample (A06b)
+## D83 — Contours carry their source's native interval and units, labeled; we never resample (A06b)
 
 **Decided (2026-07-31; founder call — *"we shouldn't invent lines that we don't have true data for. Let's
 use the units we're given."*)**
 
-NH and MA publish isobaths in **feet**, VT in metres, at different intervals. We tile each state at its
+NH and MA publish isobaths in **feet**, VT in meters, at different intervals. We tile each state at its
 native interval and unit and label it — *"NH GRANIT, 10 ft contours"* — rather than retiling everything to
 a common interval.
 
@@ -2559,7 +2559,7 @@ surveys *are* different — but it puts weight on the label, which has to be leg
 (NGVD 1929) and VT ANR (pool elevation at collection) share no reference, so styling reads
 **depth-below-surface**, never absolute elevation, and sources are never silently unioned into one
 styled-by-depth ramp. Native intervals make that easier to hold — each set already renders as its own
-labelled thing.
+labeled thing.
 
 **The revisit has a trigger, not a date:** a cross-state comparison surface ("the deepest water bodies within 90
 minutes") would need common units, and should convert **at read time** from stored native values. The
@@ -2602,7 +2602,7 @@ Tier 2 belongs in the drawer rather than on the map at all.
 116,070 bodies at zero cost, and remains the right answer for historical browsing and a date slider. This
 decision is the second step of that two-step, not a replacement for it.
 
-**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-a06c), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [`phase-A06e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-license-blocker-is-resolved-the-cost-one-isnt-a06c), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ## D85 — Derived geometry stats are measured on the source geometry, not the simplified copy (A06c)
 
@@ -2634,7 +2634,7 @@ at a different date, so a disagreement doesn't say who's right — but a 2× gap
 join or ring handling is broken, and that is worth catching at load time. **Log the comparison; store
 ours.**
 
-**Rounding (founder call): nearest whole mile / kilometre**, taking the softer of the two offers ("nearest"
+**Rounding (founder call): nearest whole mile / kilometer**, taking the softer of the two offers ("nearest"
 over "round up") because rounding up systematically overstates a figure a skater might use to judge a lap.
 Under a mile renders as *"under a mile of shoreline"* — no decimal on a farm pond. **Even measured at
 source it is never presented as authoritative:** OSM's shoreline is a tracing by many hands and still
@@ -2648,7 +2648,7 @@ won't equal a published survey.
 
 D85 said *measure the source geometry*. It did not say *from where*, and A06c's §1.4 said "cast a ray
 through the centroid" — which cannot be taken literally. **`waterBodies.centroid` is Turf's
-`pointOnFeature`**, which returns the bbox centre only when that lands inside the polygon and a point
+`pointOnFeature`**, which returns the bbox center only when that lands inside the polygon and a point
 on the **boundary** when it does not. That is true of any curved or narrow water body: Lake Willoughby's
 stored centroid **is ring vertex 199**, and Lake Champlain's sits **30.7 km** from mid-lake.
 
@@ -2727,7 +2727,7 @@ The per-body map summary card carries a consensus quality signal, rendered as **
 four), derived from the existing Phase 06 thumbs. No adjective, ever.
 
 **Because the objection to deferring it was an objection to words.** A06c argued that *"a single word
-summarising how good the ice is here is a safety claim wearing a summary's clothes."* That is true, and the
+summarizing how good the ice is here is a safety claim wearing a summary's clothes."* That is true, and the
 founder's answer removes the words rather than the feature. **A word has a referent** — "Great" is a claim
 *about the ice*, asserted by the app, on the surface where someone decides whether to drive. **A mark's
 referent is whatever the legend says**, and we control the legend: *how recent reporters rated it*. Dots
@@ -2739,7 +2739,7 @@ reading. Discrete dots read as a tally, which is what this is.
 
 **The quorum floor is the load-bearing rule.** Below ~3 rating reports in the window: **no dots at all**,
 not a low score. One person's opinion rendered as a consensus mark is the worst failure here and it fails
-*silently* — the mark looks identical whether it summarises 1 report or 40. Same denominator discipline as
+*silently* — the mark looks identical whether it summarizes 1 report or 40. Same denominator discipline as
 **D78**, for the same reason. Season- and window-scoped like the counts beside it, and the accessible text
 alternative (*"rated 3 of 4 by 12 recent reports"*) is usefully the honest long form.
 
@@ -2757,7 +2757,7 @@ the claim.
 D86 says the mark is *"derived from the existing thumbs"*. **Those are the wrong input.** Phase 06's
 polymorphic thumbs are `helpful` / `unhelpful` on a **report** — they measure whether the write-up
 was useful, not what the ice was like. Rendering them under a legend reading *"how recent reporters
-rated it"* would summarise one thing and label it another, on the surface where someone decides
+rated it"* would summarize one thing and label it another, on the surface where someone decides
 whether to drive. That is precisely the class of failure D86 was written to prevent; it just came in
 through the input rather than through the adjective.
 
@@ -2782,7 +2782,7 @@ distance."*)**
 
 **Because it's the account we already have.** Phase 04's drive-time isochrones run on ORS; the
 `foot-hiking` profile is the same key, same client, same free tier, and with `elevation: true` the
-response carries **ascent and descent in metres** — the second half of the founder's question, delivered
+response carries **ascent and descent in meters** — the second half of the founder's question, delivered
 by a request parameter rather than a second integration. It is also OSM-routed, so it walks the same
 `highway=path` / `route=hiking` ways A06d's Workstream 2 is already extracting.
 
@@ -2806,7 +2806,7 @@ two numbers are never summed: a 55-minute drive plus a 25-minute walk is not an 
 **Still out of scope:** routing the walk itself. We report distance, climb and a kind; navigating a trail
 is a maps app's job.
 
-**Related:** [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md), [`phase-04`](./phases/04-drive-time-and-filtering.md).
+**Related:** [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md), [`phase-04`](./phases/04-drive-time-and-filtering.md).
 
 ## D88 — Access-point photos ride the existing posting permission (A06d)
 
@@ -2873,7 +2873,7 @@ uniform in depth and never in map distance, so a deeper water body always shows 
 survives**: its rule was *"don't draw a line where no depth-sounder went"*, not *"don't choose which
 surveyed lines to show."*
 
-**Related:** [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D83](#d83--contours-carry-their-sources-native-interval-and-units-labelled-we-never-resample-a06b), [`phase-A06b`](./phases/A06b-bathymetry-layer.md).
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D83](#d83--contours-carry-their-sources-native-interval-and-units-labeled-we-never-resample-a06b), [`phase-A06b`](./phases/A06b-bathymetry-layer.md).
 
 ## D91 — The canonical corpus has a floor: five acres, or one acre with a name
 
@@ -2934,7 +2934,7 @@ that it is protecting known water bodies.**
 **There is deliberately no "…or an agency surveyed it" tier, and that knowingly costs 5 bodies.**
 One was built on 2026-08-03 and removed the same day (founder call), because **agency coverage is
 downstream of this rule**: `waterBodies.matchBathymetryLakes` resolves a surveyed water body by looking for
-a *listed body in our corpus* at its deepest sounding, with a zero-metre buffer. A water body the floor
+a *listed body in our corpus* at its deepest sounding, with a zero-meter buffer. A water body the floor
 excludes therefore can never be matched, contoured, or counted as covered.
 
 The consequence is a ratchet rather than a cycle. The clause could only ever protect water bodies that a
@@ -2983,7 +2983,7 @@ corpus (Malletts Bay, Button Bay, Dillenbeck Bay) are bays of Champlain, not bod
 `importCanonical` upserts and never deletes. `waterBodies.pruneBelowAreaFloor` is the other half: a
 paginated, **dry-by-default** pass that deletes the stored rows the floor would now refuse, and keeps
 anything with a claim on it (`source: 'user'`, a `curatedBoost`, a soft-delist, a dedup/merge pointer,
-an unknown area, or any attached report / hazard / bounty / favourite / put-in / track / sub-area).
+an unknown area, or any attached report / hazard / bounty / favorite / put-in / track / sub-area).
 And this isn't a
 map-clutter fix: [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at)'s
 `minVisibleZoom` already bounds what a wide viewport reads, in-index. This buys storage, ETL time and a
@@ -3003,7 +3003,7 @@ These had always been the same question, and only because of an accident: the ba
 so wherever we stopped drawing was also wherever we stopped claiming to know anything. Giving the map
 a world separated them, and once separated they have different right answers. Poughkeepsie and
 Brooklyn are real places in one of our five states, and a user driving north deserves to see where
-they are starting from — a map that ends in grey at the Bronx is a bug. But we have no basis for
+they are starting from — a map that ends in gray at the Bronx is a bug. But we have no basis for
 saying anything about skating on water down there: no local knowledge, no sounding coverage, no
 reports, and a climate that makes the question mostly moot.
 
@@ -3022,7 +3022,7 @@ where its bulk sits rather than by whichever inlet reaches furthest south.
 
 **It is counted separately from the region clip**, and that is not bookkeeping. `outOfRegion` is the
 state geodatabases spilling over their own state lines — a data artifact, and a number that should
-stay roughly constant. `belowI84` is a coverage decision we made. Totalling them would hide the
+stay roughly constant. `belowI84` is a coverage decision we made. Totaling them would hide the
 second inside the first, and the first is large enough (35,637 on the last run) to hide almost
 anything.
 
@@ -3071,7 +3071,7 @@ the pasture. Bounded on both sides.
 
 ### What the measurement actually says, stated carefully
 
-**Containment is substantially a proxy for "which catalogue draws larger."** The loser is usually the
+**Containment is substantially a proxy for "which catalog draws larger."** The loser is usually the
 smaller polygon, because the survey pokes outside it. NHD runs ~3% larger in Maine and ~6% smaller in
 Massachusetts, which is the whole of the apparent state split — **MA 53.7% OSM against ME 24.7% NHD is
 a size-convention difference, not a quality difference.** Big area disagreements (>25%) are a flat
@@ -3094,7 +3094,7 @@ clips the Québec half, present in NHD at 1,876.6.
 
 ### ⚠ The limits of this result, recorded rather than buried
 
-**It cannot measure coverage, only shoreline quality where both catalogues have a polygon.** The
+**It cannot measure coverage, only shoreline quality where both catalogs have a polygon.** The
 referee set is built from the bathymetry join, which needed an OSM body to exist — so the water bodies OSM is
 *missing* are excluded by construction. **Beau Lake is not in this sample.** The 15 OSM-only against 7
 NHD-only surveys found here are therefore not a coverage measurement, and must not be quoted as one;
@@ -3105,8 +3105,8 @@ the bathymetry join — which only accepts a body holding ≥ 0.5 of the survey 
 already passed the exact test it was about to be scored on. `osmContained` had a hard floor at 0.524
 with **zero water bodies below 0.5**, against 12 for NHD and 8 at exactly zero, and that tail was where every
 "OSM wins" came from. It then picked the NHD counterpart by matching *against the OSM polygon*, so the
-second catalogue was selected to resemble the first. Both are fixed by anchoring on the survey's
-medoid — a real measurement, so on water by construction — with each catalogue independently supplying
+second catalog was selected to resemble the first. Both are fixed by anchoring on the survey's
+medoid — a real measurement, so on water by construction — with each catalog independently supplying
 the smallest feature containing it, and neither selection rule reading either scored metric.
 
 **MA and NH contribute contour vertices rather than point soundings.** Checked for the obvious
@@ -3137,12 +3137,12 @@ cannot drift.
 
 **`pmtiles extract --region` clips by *tile*, not by polygon**, so the mask is not optional. A tile
 grazing New York survives whole — a 2.4 km fringe at z14, and ~450 km at z6, which overzooming then
-drags across Québec at every higher zoom. `--region` is a size optimisation; the mask is what makes
+drags across Québec at every higher zoom. `--region` is a size optimization; the mask is what makes
 the border crisp.
 
 **The mask covers water as well as land**, in three layers — sea, land over it, then the big water bodies.
 Land alone leaves the tail of "Madison" lying on Long Island Sound, because a label is wider than the
-ground it names. Its hole is our land grown five kilometres seaward, intersected back with the ocean
+ground it names. Its hole is our land grown five kilometers seaward, intersected back with the ocean
 so it can only ever grow into water and never into Connecticut; without that allowance a mask starting
 at Portland's shoreline eats half of "Portland".
 
@@ -3151,7 +3151,7 @@ mask cannot tell our labels from anyone else's: "New York" is anchored in Manhat
 over New Jersey, and Seekonk and Rehoboth are Massachusetts towns whose names overhang Rhode Island.
 So the regional archive's **point- and line-sourced** symbol layers sit *above* the mask with a
 `["within", outline]` filter — theirs dropped rather than covered, ours legible over the flat fill.
-The outline is generated a kilometre **outside** the true border, because the failure modes are not
+The outline is generated a kilometer **outside** the true border, because the failure modes are not
 symmetric: too small silently drops Vermont's own town names, too large shows one border town's name
 against flat fill.
 
@@ -3165,7 +3165,7 @@ exactly `fill-opacity: 1`; symbols render in the *translucent* pass, which runs 
 testing off. So an opaque mask is drawn *before* the labels beneath it and every town in Québec
 rendered straight through it. The mask sits at 0.999 for that reason and no other.
 
-**A filter is judged legacy-or-expression as a whole.** The Protomaps flavour writes eight of its
+**A filter is judged legacy-or-expression as a whole.** The Protomaps flavor writes eight of its
 symbol filters in legacy syntax, so `["all", <legacy>, ["within", …]]` is read as legacy, `within` is
 not a legacy operator, and MapLibre rejects **the entire style** — not the layer. The map went blank
 on device. Every filter goes through the style spec's `convertFilter` first, and both app suites now
@@ -3229,7 +3229,7 @@ rows reported to a terminal that scrolls. New kind: `corpus_merge`.
 
 ### The veto was contingent on a `polygonIoU` succeeding
 
-`VETO_TOKENS` is keyed on a catalogue's own class — `3dhp:featuretype=4`, `nhd:ftype=445`,
+`VETO_TOKENS` is keyed on a catalog's own class — `3dhp:featuretype=4`, `nhd:ftype=445`,
 `nhd:ftype=493` — so it fires only when the vetoing feature lands in the merged group. **NHD publishes
 Lake Erie as FTYPE 390 `LakePond`**, so Erie's and Ontario's exclusion rested entirely on 3DHP's
 counterpart matching at IoU ≥ 0.5, over the largest and most awkwardly-clipped polygons in the
@@ -3237,7 +3237,7 @@ archive. The merge's own test suite pinned this as a known hole rather than clos
 `inRegion` would not have caught the escape: TIGER's state outline includes New York's share of both
 water bodies.
 
-Two vetoes that need no match, no second catalogue and no geometry:
+Two vetoes that need no match, no second catalog and no geometry:
 
 1. **By name** — `assertsOceanOrGreatLake`: the Great Lakes, Long Island Sound, the Atlantic, the
    Gulf of Maine. A bare `ocean` is deliberately *not* in the pattern, because New England names a
@@ -3268,7 +3268,7 @@ same rule now applies across sources. **It still loses to a real class**, which 
 123-body rescue the merge exists for — only *silence* loses to a refusal, and the two outcomes are
 counted apart (`no-class` vs `refused-over-silence`) so the size of the change is visible.
 
-**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogues), [D109](#d109--the-stored-vocabulary-migrates-it-does-not-map-back), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogs), [D109](#d109--the-stored-vocabulary-migrates-it-does-not-map-back), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3298,7 +3298,7 @@ out-of-region row, an unnamed wetland under the 50-acre bar D96 settled after it
 `pruneNotInCampaign` asks the one question that covers every case: *did this campaign's master list
 re-affirm this body?* Membership is **asserted by the loader**, not re-derived here — a second copy of
 the rules is exactly how a prune and an import come to disagree at the edges. Every protection
-`pruneBelowAreaFloor` honours is honoured identically, and a body carrying user content is never
+`pruneBelowAreaFloor` honors is honored identically, and a body carrying user content is never
 deleted whatever the master list says.
 
 **Related:** [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D100](#d100--downstream-enrichment-runs-only-against-the-corpus-we-keep), [D110](#d110--confidence-is-per-attribute), [`phase-A07a`](./phases/A07a-unified-corpus.md).
@@ -3322,7 +3322,7 @@ not have**, producing 27,000 rows with no state at all and silently emptying eve
 the app.
 
 So `resolveStates`: **an explicit list from the producer is authoritative and replaces; a `--state`
-tag is a partial observation and unions.** Same rule `assertedCatalogueIds` follows for the catalogue
+tag is a partial observation and unions.** Same rule `assertedCatalogueIds` follows for the catalog
 ids, for the same reason — nothing inside the mutation can tell a complete record from a partial one,
 so the caller has to say.
 
@@ -3390,7 +3390,7 @@ that water body, and the bake-off's 140 two-metric disagreements are the pool fo
 **The second intake audit's headline** (2026-08-06), and the one finding that was not visible from
 any run report: **the matcher's false negatives do not produce gaps, they produce extra rows.**
 
-`resolveUpsert` keys identity on catalogue ids (D93). A merged group with no OSM member carries no
+`resolveUpsert` keys identity on catalog ids (D93). A merged group with no OSM member carries no
 `osmId`, so it meets a corpus that already holds that water body and **inserts a second row beside it**.
 Nothing downstream can tell the pair from two real water bodies: not the loader, not the prune, not the map.
 
@@ -3402,7 +3402,7 @@ Pond` 16 ac. `Freeses Pond` 25 beside 55. `Birch Ridge Pond` beside itself at Io
 
 `scoreCandidates` skips any pair whose **exact** IoU ceiling `min(area)/max(area)` falls below the
 bar. At `RECONCILE_MIN_IOU = 0.5` that means **any pair whose areas differ by more than 2× is
-rejected before an intersection is computed at all** — and on small ponds the catalogues differ by
+rejected before an intersection is computed at all** — and on small ponds the catalogs differ by
 2–3× routinely, because they disagree about where a marshy margin stops being water. The bar is
 unreachable exactly where the disagreement lives. That is also the measured answer to the long-open
 *"OSM↔NHD matches 33% and nobody knows why"*.
@@ -3465,8 +3465,8 @@ high-confidence half is the name lane, upstream, where the evidence is.
 Winter Harbor, Little Harbor, Pepperrell Cove, Little Pleasant Bay and ~360 more tidal bodies.
 
 `VETO_TOKENS` already refuses NHD's `Estuary` and `SeaOcean` and 3DHP's `Ocean or Great Lake` — and
-it fires **only when the vetoing feature lands in the merged group**, which needs a cross-catalogue
-`polygonIoU` match to have succeeded. It routinely does not: the federal catalogues draw one enormous
+it fires **only when the vetoing feature lands in the merged group**, which needs a cross-catalog
+`polygonIoU` match to have succeeded. It routinely does not: the federal catalogs draw one enormous
 estuary polygon where OSM draws forty separate coves, so the IoU between any cove and the estuary is
 near zero. The cove then arrives as its own body, `hasBayParent` finds no parent for it — because the
 parent *is* the ocean, which we refused — and the bay rule **demotes it to `unclassified` and admits
@@ -3474,7 +3474,7 @@ it**. The worst available outcome: tidal water in the corpus wearing the label w
 has described.
 
 **So the question is asked spatially instead.** `saltMask` collects every feature the federal
-catalogues class as sea (they are already in memory — the lanes keep them with `cls: null` rather than
+catalogs class as sea (they are already in memory — the lanes keep them with `cls: null` rather than
 dropping them), and a merged body whose outline is `SALT_MIN_CONTAINMENT` inside one is refused.
 No match required, which is the property the token veto lacks.
 
@@ -3553,8 +3553,8 @@ for, one paragraph before walking into it.
 **Kept rather than deleted, and that was the founder's call.** The area ceiling already refuses every
 body on the list on size alone, so the name rule is near-redundant *today* — but *"when adding Alaska
 and Québec, there's a chance we might still need it, gated on area."* The Gulf of St. Lawrence and
-Lake Huron become our neighbours the moment Québec does, and a categorical refusal that needs no
-cross-catalogue match is worth keeping for that. Gated, it costs nothing.
+Lake Huron become our neighbors the moment Québec does, and a categorical refusal that needs no
+cross-catalog match is worth keeping for that. Gated, it costs nothing.
 
 **Related:** [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
@@ -3575,7 +3575,7 @@ beside it — so this is a new lane on an existing table, not a new concept:
   one, which is Decision 9's smallest-containing rule one layer up (a cove in a bay in a water body belongs
   to the bay). Without it the answer depended on grid iteration order.
 - **The merge emits `sub-areas.ndjson`** and `subAreas.importBaySubAreas` loads it, resolving the
-  parent by catalogue id (D93) and clipping the bay's own traced outline to the parent's polygon
+  parent by catalog id (D93) and clipping the bay's own traced outline to the parent's polygon
   (D60/Decision 10). Run **after** the body load — the parent has to exist.
 - **A bay whose parent did not survive falls back to the no-parent branch**: demoted to
   `unclassified` and queued. A sub-area pointing at a body the loader will never create is the one
@@ -3630,7 +3630,7 @@ Three artifacts close it, all of them cheap:
 | --- | --- |
 | **`dropped.ndjson`** | one line per refused group — key, name, class, acres, reason, sources. ~150k lines, ~15 MB, and it makes the whole intake diffable. |
 | **`merge-manifest.json` outputs + delta** | the previous manifest is already on disk; every re-run now prints what moved and by how much. |
-| **`geometry-review.ndjson`** | the candidate pool for D92's per-body override — bodies whose chosen outline scores `polygon: low` against another catalogue's, ranked by the area spread between the claims. The Beau Lake shape, mechanically. |
+| **`geometry-review.ndjson`** | the candidate pool for D92's per-body override — bodies whose chosen outline scores `polygon: low` against another catalog's, ranked by the area spread between the claims. The Beau Lake shape, mechanically. |
 
 **And the middle of the pipeline asserts.** `groups == bodies + subAreas + dropped` now throws, which
 is the equation between the two D113 already had: a `continue` added anywhere in the filter loop would
@@ -3649,7 +3649,7 @@ the master list did not contain* — has two ways of being false, and both were 
    catastrophic next to the prune: the rows an ambiguous id resolved to were left clean, unattached
    and un-reaffirmed, so step 6 **deleted both** — resolving a corpus-uniqueness violation by
    destroying the evidence of it. They are now flagged `near_certain` for D36's queue, the same as a
-   `merge` verdict, which is also what the prune's protection list already honours.
+   `merge` verdict, which is also what the prune's protection list already honors.
 2. **`load.ts` deliberately survives isolated batch failures**, and every body in a skipped batch of
    ~150 is left unstamped and indistinguishable from a body the rules now refuse. A load reporting
    success with three failed batches would hand the prune 450 real water bodies.
@@ -3680,11 +3680,11 @@ will find the same smell.
 
 ---
 
-## D125 — One catalogue's account of one water body is represented by its **largest** feature (A07a)
+## D125 — One catalog's account of one water body is represented by its **largest** feature (A07a)
 
 **Found by running it, 2026-08-06.** `chooseGeometry` took `members.find(m => m.source === 'osm')` —
 the first OSM feature in array order, which is the order the extracts happened to stream in. A merge
-group routinely holds several features from one catalogue, because OSM carries invisible duplicates
+group routinely holds several features from one catalog, because OSM carries invisible duplicates
 *and* traces a big water body as one relation with its arms as separate ways. So the stored outline was
 being chosen arbitrarily, and `geometry-review.ndjson` — an artifact built the same day, for D92's
 override, which had never had a producer — surfaced what that cost on its first run:
@@ -3699,7 +3699,7 @@ A fragment stored as the whole water body **under-draws silently**, where a wron
 wrong on a map. The group carries `same-source-duplicate` so a human sees it eventually; the polygon
 was wrong in the meantime.
 
-**The rule is the largest member of the chosen catalogue**, and it is defensible in each of the three
+**The rule is the largest member of the chosen catalog**, and it is defensible in each of the three
 cases the flag covers: whole-versus-fragment, the largest is the water body; a genuine duplicate pair (Long
 Pond as a way and as a relation, within a percent of each other), it is a coin toss and at least a
 deterministic one; two distinct water bodies wrongly chained, it is no worse than the first and the flag is
@@ -3707,7 +3707,7 @@ what actually addresses that.
 
 **This is not D94's "never the larger of two claims".** That rule is about *area* and still holds —
 the stored area is measured from whichever polygon wins, never taken as the maximum of what the
-catalogues assert. This is about *which polygon*, within one catalogue's account of one water body.
+catalogs assert. This is about *which polygon*, within one catalog's account of one water body.
 
 **And one helper answers it for all three callers.** `chooseGeometry`, `catalogueIdsOf` and the
 absorbed-member list each picked a representative separately, so a fix to one would have left a row
@@ -3721,11 +3721,11 @@ spelling.
 ## D126 — The sea is settled by **how high the water sits**, not by what it is called (A07a-2)
 
 **Founder call, 2026-08-08.** D119 made the salt veto spatial — is this body inside water a federal
-catalogue calls the sea? — and that settles 941 bodies and is silent about the ones those polygons
+catalog calls the sea? — and that settles 941 bodies and is silent about the ones those polygons
 never cover. Tested against 4,794 `NHDArea` polygons, only **3** hit. Salt Bay, The Pool at
 Biddeford, 100 Acre Cove and Mill Cove are all tidal and all invisible to it.
 
-So the second question is one no catalogue had to answer: **how high is it?** Tidal water is at sea
+So the second question is one no catalog had to answer: **how high is it?** Tidal water is at sea
 level by definition. Probed against 3DEP at 1 m LiDAR:
 
 | | |
@@ -3740,20 +3740,20 @@ level by definition. Probed against 3DEP at 1 m LiDAR:
 
 **For once the measurement handed over the threshold.** The salt-containment histogram was *"smooth
 from 0 to 1 with no gap to cut at"* and had to be set by reading names in each band; this one has a
-7-metre hole in it. `TIDAL_MAX_ELEVATION_M = 5` sits inside that hole and above every astronomical
+7-meter hole in it. `TIDAL_MAX_ELEVATION_M = 5` sits inside that hole and above every astronomical
 tide in the region — eastern Maine's runs to ~3.5 m above NAVD88 and is the largest here by a
 distance.
 
 ### ⚠ It is a referee between two publishers, never an admission rule
 
 **The same measurement is what stopped it being general.** 1,002 corpus bodies sit at or under five
-metres and only 81 are bay-class or tidally named. A corpus-wide rule would delete **~920 freshwater
+meters and only 81 are bay-class or tidally named. A corpus-wide rule would delete **~920 freshwater
 bodies**, beginning with **Nequasset Lake** (4.8 m) and **Winnegance Lake** (1.1 m) — which are the
 *entire contents of* `FRESHWATER_ALLOW_LIST`, the two water bodies D119 hand-verified as fresh — plus two
-separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of kettle ponds a metre
+separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of kettle ponds a meter
 above the sea.
 
-So a candidate is a **publisher's claim** and never a name: a catalogue classed it `bay`, or tagged
+So a candidate is a **publisher's claim** and never a name: a catalog classed it `bay`, or tagged
 it `saltmarsh` / `tidalflat` / `salt_pool`. A name is a string — `Estuary` is a 32 m oxbow in
 Northampton, 150 km inland. That second limb also closes the 92 bodies D128's split surfaced, where
 `chooseClass` lets a federal `LakePond` silently overrule an OSM mapper writing `saltmarsh`.
@@ -3777,7 +3777,7 @@ coming from Open-Meteo — whose free tier counts each *coordinate*, which the p
 crons are also spending, and which stalled the pass at 5,975 bodies on page 86 of ~248.
 
 **It is also a data upgrade, which was not the argument for it.** `core`'s `elevation.ts` records
-GLO-90 reading Shelburne Pond **20 m high**, the expected behaviour of a 90 m radar *surface* model
+GLO-90 reading Shelburne Pond **20 m high**, the expected behavior of a 90 m radar *surface* model
 over water. EPQS serves 3DEP. Measured over the whole corpus: **24,601 of 25,044 readings at 1 m
 LiDAR (98.2%)**, 157 at 3 m, 284 at 10 m, 2 at 30 m, 1 refused as implausible.
 
@@ -3792,7 +3792,7 @@ lands *on the shoreline*, so a DEM read there returns the height of the bank —
 shoreline point near Paugus Bay read 171 m against the water body's 153 m. See
 [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a).
 
-**3DEP's `resolution` is not always in metres.** Most tiles answer `1`; some answer in *degrees*
+**3DEP's `resolution` is not always in meters.** Most tiles answer `1`; some answer in *degrees*
 (`3.086e-5`, which is 3.4 m and not a 31-micrometre DEM). Normalized on the way in, or D104's
 *"re-stamp the water bodies that came from a coarse raster"* comparison breaks the day two rows carry two
 units.
@@ -3812,7 +3812,7 @@ exists because the wind pass fetched, parsed and discarded, and one derived stat
 
 ## D128 — A contested class is **triaged before it is queued** (A07a-2)
 
-**Founder call, 2026-08-08.** D123 measured `classDissent` — a body one catalogue refused outright
+**Founder call, 2026-08-08.** D123 measured `classDissent` — a body one catalog refused outright
 while another classified it — at **354**. That is a number, not a queue: nobody can work 354 rows
 without knowing which are our own rules firing correctly.
 
@@ -3822,7 +3822,7 @@ along, keyed on the token of whichever member refused.
 
 | family | what it is | measured |
 | --- | --- | --- |
-| **`flowing`** | a catalogue calls it moving water, another calls it a water body — the impoundment and deadwater case D96 already settles in our favour, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
+| **`flowing`** | a catalog calls it moving water, another calls it a water body — the impoundment and deadwater case D96 already settles in our favour, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
 | **`engineered`** | refused as built infrastructure. **NHD drops 43% of its reservoirs** by purpose code, which is the volume D96 warned would bury the queue | **~87** (`nhd:fcode=436*`, `water=wastewater`, `water=basin`) |
 | *residue* | a contradiction nothing in our rules explains | **the queue** |
 
@@ -3835,14 +3835,14 @@ claims, and they are settled by D126's referee *refusing* them, not by being out
 in here would launder exactly what that rule exists to catch.
 
 Only the residue becomes `class-dissent`, a review reason ranked **above** `class-conflict`: a body
-one catalogue says is not water we cover at all is a bigger question than two catalogues disagreeing
+one catalog says is not water we cover at all is a bigger question than two catalogs disagreeing
 about which kind of water it is, and it is rarer.
 
 ⚠ **The residue count is the tripwire, not the token table.** Token strings drift with the
-catalogues; what does not drift is that a sharp move in the *unsettled* count means a source changed
+catalogs; what does not drift is that a sharp move in the *unsettled* count means a source changed
 shape. The merge reports both halves.
 
-**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogues), [D110](#d110--how-much-the-catalogues-agree-is-stored-per-attribute-a07a), [D123](#d123--every-refused-group-is-named-and-the-middle-of-the-pipeline-asserts-a07a), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2).
+**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogs), [D110](#d110--how-much-the-catalogs-agree-is-stored-per-attribute-a07a), [D123](#d123--every-refused-group-is-named-and-the-middle-of-the-pipeline-asserts-a07a), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2).
 
 ---
 
@@ -3945,10 +3945,10 @@ without saying when is not.
    published mission (*"for the benefit of … the general public … through an exchange of objective
    information"*). Fetched serially at 1 req/s with an identifying User-Agent, **once**, and archived
    to R2 so it never repeats.
-3. **There is no licence** — and that is a finding, not a gap. Every page was checked: no terms of
+3. **There is no license** — and that is a finding, not a gap. Every page was checked: no terms of
    use, no data-use statement, no rights page, only a footer `copyright ©` whose year is generated by
-   JavaScript. So the licence reads *"No published terms (checked 2026-08-08)"* and
-   `requiresAttribution` is **true**: where a licence is silent we credit rather than assume.
+   JavaScript. So the license reads *"No published terms (checked 2026-08-08)"* and
+   `requiresAttribution` is **true**: where a license is silent we credit rather than assume.
 
 ⚠ **It is a survey of small ponds** — median 6 ha, maximum 709 acres, which matches the ALSC's own
 description of itself. Lake George, Schroon and Indian Lake are not in it, so the largest Adirondack
@@ -3958,16 +3958,16 @@ water still has no measured depth.
 
 ---
 
-## D131 — A **still-water name** outranks a catalogue's flowing-water refusal (A07a-3)
+## D131 — A **still-water name** outranks a catalog's flowing-water refusal (A07a-3)
 
 **Decided 2026-08-09 (founder).** A name in the still-water family — `deadwater`, `stillwater`,
-`dead river`, `logan`, `bogan`, `flow`, `flowage`, `impoundment` — overrules a catalogue that has
+`dead river`, `logan`, `bogan`, `flow`, `flowage`, `impoundment` — overrules a catalog that has
 explicitly refused the feature as moving water. It stores the class `NAME_KEEP` gives that name, so
 `Debsconeag Deadwater` is a `river` and `Higley Flow` is a `lakePond`.
 
 ### The defect it fixes: one question, two answers
 
-`classifyWaterBody` checked the catalogue's class (rung 2 of 4) **before** the name keyword (rung 3),
+`classifyWaterBody` checked the catalog's class (rung 2 of 4) **before** the name keyword (rung 3),
 so a name could only ever outrank *silence*. The corpus therefore split on whether a mapper had
 bothered to add a subtag:
 
@@ -3986,7 +3986,7 @@ salt marshes and tidal flats that the salt veto would have refused a stage later
 
 - **The refusal must be `flowing`**, decided by `refusalFamily` — the same triage
   [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2) reads, so "which refusals are
-  the flowing ones" is answered in exactly one place. A body a catalogue calls wastewater, a settling
+  the flowing ones" is answered in exactly one place. A body a catalog calls wastewater, a settling
   basin or a salt pool is rescued by no name at all.
 - **The name must be in `STILL_WATER_NAME`**, not anywhere in `NAME_KEEP`. The wider rule was offered
   and declined: it would also admit `Round Pond Rips` and `Cedar Pond Brook`, which are the rapids
@@ -3995,7 +3995,7 @@ salt marshes and tidal flats that the salt veto would have refused a stage later
 This is `NAME_DROP`'s asymmetry pointed the other way, and the asymmetry is the whole argument:
 **keeping a rapid costs one row nobody skates; dropping a deadwater deletes real ice.**
 
-⚠ **It cannot launder a veto.** `sourceToken` still carries the catalogue's own word, so
+⚠ **It cannot launder a veto.** `sourceToken` still carries the catalog's own word, so
 `VETO_TOKENS` reads what NHD said rather than what the ladder concluded — the same hole rung 1 had to
 be closed against, and `3dhp:featuretype=4` (Ocean or Great Lake) is not a `flowing` refusal, so no
 name reaches it.
@@ -4006,13 +4006,13 @@ only way a member can carry a `name:` token *and* a flowing `sourceToken`, becau
 name-keyword rung fires on silence and silence is never `flowing`. The 123-body wetland deletion went
 unnoticed for a year precisely because the rule that caused it left no count.
 
-**Related:** [D96](#d96--the-four-admission-rules), [D109](#d109--every-catalogues-vocabulary-maps-into-ours), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2).
+**Related:** [D96](#d96--the-four-admission-rules), [D109](#d109--every-catalogs-vocabulary-maps-into-ours), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2).
 
 ---
 
 ## D132 — Depth stays **measured only**; the corpus accepts a ~30% ceiling (A07a-3)
 
-**Decided 2026-08-09 (founder).** No modelled depth rung beyond the global ones already loaded. Depth
+**Decided 2026-08-09 (founder).** No modeled depth rung beyond the global ones already loaded. Depth
 coverage tops out around 30% of the corpus and that is an accepted limit, not an outstanding gap.
 
 ### What was on the table
@@ -4036,7 +4036,7 @@ shoreline, both of which we hold.
 ### Why it was declined
 
 A ±6 m error bar on a pond that is 3 m deep is not a depth; it is a number shaped like one. D3
-already requires a modelled value to read as an estimate, and D68's ladder would have placed this
+already requires a modeled value to read as an estimate, and D68's ladder would have placed this
 below `globathy` — so the rung would have supplied a guess to precisely the bodies where a guess is
 least separable from a fact, and where `isShallowBody` turns depth into a **safety-adjacent bit**.
 
@@ -4064,12 +4064,12 @@ keeps the difference visible at no cost, because the ladder is ordered and posit
 precedence rule.
 
 **Above `lagos_us` deliberately, even though LAGOS-US probably contains it.** LAGOS-US DEPTH is a
-compilation of ~65 programmes and CSLAP is plausibly one of them, so where they disagree this is the
+compilation of ~65 programs and CSLAP is plausibly one of them, so where they disagree this is the
 primary source and that is the aggregator, one re-publication removed and possibly a decade stale.
-It contributes **mean only** — the programme publishes no maximum.
+It contributes **mean only** — the program publishes no maximum.
 
 Like ALSC ([D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-a07a-2))
-it has **no published licence**: the hosting ArcGIS item's `licenseInfo` *and* `accessInformation` are
+it has **no published license**: the hosting ArcGIS item's `licenseInfo` *and* `accessInformation` are
 both empty and the service carries no `copyrightText`. Same response — credit rather than assume.
 
 ### NH's bands may be integrated; our own surfaces may not
@@ -4177,7 +4177,7 @@ counted only the deliberate pause and was wrong by 5×.
 ### The bug was a constant doing two jobs
 
 `MIN_FETCH_CLAUSE_M` was chosen for **pressure ridges**, which are a fetch problem: a water body with no
-fetch has no ridge to warn about, so gating that caption clause at a kilometre is right and stays.
+fetch has no ridge to warn about, so gating that caption clause at a kilometer is right and stays.
 
 It was also, silently, deciding which bodies got a WTK cell **fetched at all** — and
 [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3)
@@ -4223,12 +4223,12 @@ parameter invites a caller to invent a floor; a shared constant cannot drift.*
 
 **Founder call, 2026-08-09.** A fourth matching lane, `osm→osm`, at `SAME_SOURCE_MIN_IOU` = **0.9**.
 
-### The gap: three lanes, and none of them looked at one catalogue twice
+### The gap: three lanes, and none of them looked at one catalog twice
 
 The merge ran `3dhp→nhd`, `osm→nhd` and `osm→3dhp`. **Nothing matched OSM against itself** — and OSM
-is the one catalogue that routinely publishes a water body twice, as a multipolygon **relation** and its own
+is the one catalog that routinely publishes a water body twice, as a multipolygon **relation** and its own
 outer **way**, both tagged and both arriving as features. Where NHD carries no counterpart, which is
-the normal case for wetland, neither cross-catalogue lane can see it and **both halves ship as
+the normal case for wetland, neither cross-catalog lane can see it and **both halves ship as
 separate corpus rows**.
 
 Measured on the 2026-08-09 corpus by `overlapDuplicates`, which is exhaustive over the kept set — so
@@ -4237,7 +4237,7 @@ this is the complete count, not a sample:
 | | pairs |
 | --- | --- |
 | OSM–OSM | **37** |
-| cross-catalogue | 268 |
+| cross-catalog | 268 |
 | NHD–NHD | 0 |
 | **every pair at IoU ≥ 0.6** | **all 18 are OSM–OSM** |
 | at IoU **1.000** | 2 |
@@ -4247,8 +4247,8 @@ Verified live on dev: `relation/2405214` and `way/180258202`, 62 acres each, IoU
 
 ### Why 0.9 and not `RECONCILE_MIN_IOU`
 
-Cross-catalogue overlap is two independent publishers agreeing about a shoreline — real evidence.
-**Same-catalogue overlap is not**: it is one publisher's data disagreeing with itself, where the
+Cross-catalog overlap is two independent publishers agreeing about a shoreline — real evidence.
+**Same-catalog overlap is not**: it is one publisher's data disagreeing with itself, where the
 innocent explanations (a chain of ponds, a bay tagged separately, a reservoir over its river) are at
 least as likely as a duplicate.
 
@@ -4260,15 +4260,15 @@ under 0.3"* by `RECONCILE_MIN_IOU`'s own docstring.
 ### ⚠ `minIouWithGnis` must move with it
 
 `decideMatch` drops the bar to `RECONCILE_MIN_IOU_WITH_GNIS` (0.3) whenever both sides assert the same
-GNIS id. That is sound across two catalogues and **actively wrong within one**: two OSM features
+GNIS id. That is sound across two catalogs and **actively wrong within one**: two OSM features
 sharing a GNIS id are most often a water body and its own named arm, both tagged with the place name.
 Leaving that bar at 0.3 would merge precisely the pairs this lane exists to leave alone. Both bars go
 to 0.9 together, and there is a test that fails if only one moves.
 
 **A collapsed group is still flagged `sameSourceDuplicate`** and still reaches a moderator. That is
 not a half-measure: the corpus stops carrying two rows, and the finding is still recorded. *"Two
-features from ONE catalogue in one group means either our matching chained two distinct water bodies, or the
-catalogue carries a duplicate it cannot see. Both are findings."*
+features from ONE catalog in one group means either our matching chained two distinct water bodies, or the
+catalog carries a duplicate it cannot see. Both are findings."*
 
 **Related:** [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D129](#d129--reconcile_min_iou-holds-at-05-and-nine-pairs-merge-on-evidence-instead).
 
@@ -4473,7 +4473,7 @@ for choosing the conservative rung rather than the flattering one.
 The ladder still does its job on top: an operator who pins an `official` marker at an OSM-derived
 coordinate promotes it, and a re-import never overwrites them (A06d §2.3).
 
-**Related:** [D184](#d184--profile-richness-weights-are-fractions-of-the-score-and-activity-dominates-a06c-1), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
+**Related:** [D184](#d184--profile-richness-weights-are-fractions-of-the-score-and-activity-dominates-a06c-1), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
 ---
 
@@ -4504,7 +4504,7 @@ has to state the thing the chip will then tell everyone.
 Three product lines and one cap, and only `PARKING_INFER_RADIUS_M` (250 m) is the cap. These move by
 founder call; that one moves by eyeballing a state's output.
 
-**Related:** [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [D87](#d87--approach-distance-is-walked-not-flown-a06d), [D3](#d3--never-a-safety-verdict), [`phase-A06d`](./phases/A06d-body-access-points.md).
+**Related:** [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [D87](#d87--approach-distance-is-walked-not-flown-a06d), [D3](#d3--never-a-safety-verdict), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
 ---
 
@@ -4602,7 +4602,7 @@ serves from Sentinel Hub–compatible endpoints, so building against Copernicus 
 hazard reports and Phase 08 tracks are the "what does it look like today" channel. Imagery's job is what
 a person on the shore cannot photograph: the whole water body at once, and the landscape around it.
 
-**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-a06c), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D146, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-license-blocker-is-resolved-the-cost-one-isnt-a06c), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D146, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ---
 
@@ -4834,7 +4834,7 @@ bounty · appears in a recorded track**, over a rolling window. Everything else 
 costs nothing until someone cares.
 
 Same instinct as the imagery archive being built by *listing R2* rather than remembering what was
-launched — **let the artifact tell you what exists.** Here the artifact is user behaviour.
+launched — **let the artifact tell you what exists.** Here the artifact is user behavior.
 
 **⚠ Size the job off the query, never off an estimate.** Dev holds 14 favorites, 2 reports, 3 hazards,
 1 bounty across 16 bodies, all of it the founder's own; year one has no history to look back on.
@@ -4942,7 +4942,7 @@ raster XYZ, so **mobile gets it for free** (MapLibre Native reads raster and `pm
 ## D158 — Paying Open-Meteo is a season-two decision with a written trigger (A06h)
 
 **2026-09-02, founder call.** **API Standard: $29/month or $319/year — 1,000,000 calls/month**, with a
-commercial-use licence, API key, dedicated endpoint, no daily rate limit, 99.9% uptime target. **Not
+commercial-use license, API key, dedicated endpoint, no daily rate limit, 99.9% uptime target. **Not
 this season:** *"It's not out of the question, but it's probably not going to happen for this first
 season until we see what community adoption looks like."*
 
@@ -4953,7 +4953,7 @@ runs at the same resolution as the panel.
 
 **Buy when any of these is true:** (1) sustained free-tier use exceeds ~7,000 calls/day; (2) the
 filter's 11 km coarseness becomes a felt limitation rather than a theoretical one; (3) the project
-stops being plainly non-commercial, at which point the free licence no longer covers us at any volume.
+stops being plainly non-commercial, at which point the free license no longer covers us at any volume.
 
 **⚠ There is no request counter anywhere in the weather path today** — no token bucket, no rate
 limiter, no metric. Trigger (1) cannot fire until one exists, so the counter is **in scope for A06h**,
@@ -4978,7 +4978,7 @@ read-cap-fragile at A01 and cost the A06d access load 105 GB of I/O.
 
 **So the filter evaluates over Tier B cells, not bodies.** There are 3,043 and they are small
 documents. (1) Evaluate the predicate over Tier-B cell-days → a matching cell set. (2) Resolve cells →
-bodies through a **denormalised, indexed `weatherCellKeyB` on `waterBodies`**, stamped at import; only
+bodies through a **denormalized, indexed `weatherCellKeyB` on `waterBodies`**, stamped at import; only
 matched cells are ever read as bodies. (3) Intersect with the user's Phase 04 drive-time band **last**,
 because it is per-user and uncacheable while everything above it is shared across the region. Cost
 becomes proportional to the answer, not the corpus — A01's two-tier lesson, one dataset over.
@@ -5023,7 +5023,7 @@ against `measured` entries only**; fitting to `estimated` ones is fitting to som
 - **It never feeds anything.** Not hazard decay, not bounty freshness, not trust, not reports. It is
   measured *against* the world and nothing reads it back; the moment a derived thickness becomes an
   input it acquires authority it has not earned.
-- **Graduating it to a skater surface requires its own decision.** This authorises a dark instrument
+- **Graduating it to a skater surface requires its own decision.** This authorizes a dark instrument
   and nothing more. [D3](#d3--never-a-safety-verdict) and D150 both still bind, and a thickness in
   inches is the most counsel-shaped number this app could ever publish.
 
@@ -5051,7 +5051,7 @@ made redundant by the scanner; it becomes **the thing that starts it.**
 
 **They are also different questions.** *"Has winter started anywhere in the region?"* is coarse and
 region-wide — 25 sites is plenty, and more resolution would not improve the answer. *"Which specific
-water bodies look frozen?"* needs per-cell fidelity, because distinguishing a water body from its neighbour is the
+water bodies look frozen?"* needs per-cell fidelity, because distinguishing a water body from its neighbor is the
 entire point.
 
 **Their failure modes differ, which is the stronger argument.** A season gate firing two days late
@@ -5105,7 +5105,7 @@ The panel line stays an observation (*"7 sunny hours above freezing, over 2 days
 not ice. `hoursOfSun` survives with a warning in its docblock: right for *"was it sunny?"*, wrong for
 *"how much did the sun do?"*.
 
-**⚠ Not modelled, and not to be read as modelled:** snow insulation of the ice below, water depth,
+**⚠ Not modeled, and not to be read as modeled:** snow insulation of the ice below, water depth,
 current, springs, wind-driven exchange, or thickness. Albedo here is a property of the *snow*, inferred
 from depth alone.
 
@@ -5203,8 +5203,8 @@ So:
 1. **The digest carries the chain length per threshold as four indexed scalars**
    (`nightsBelow32F` … `nightsBelow0F`). The query walks *one* index from the asked-for length
    upward and never reads a digest that cannot match.
-2. **The drive-time band and the viewport are applied to cell centres before any body is read.**
-   The digest stores the cell's snapped centre; a cell is kept if its centre falls inside the band's
+2. **The drive-time band and the viewport are applied to cell centers before any body is read.**
+   The digest stores the cell's snapped center; a cell is kept if its center falls inside the band's
    bounding box widened by a cell half-diagonal, and then bodies are tested exactly. Per-user, but
    over ≤ 3,043 small documents rather than the corpus.
 3. **Bodies resolve newest-event-first, to a cap.** Cells are sorted by their event day and the
@@ -5325,7 +5325,7 @@ not *"was this true a minute ago?"* — per type: the rating row still says `hel
 report and the comment are still `visible`; the hazard's phase is still the one that triggered it; the
 flag's status is still that verdict; the bounty is still open. A dropped row is deleted, not retried.
 
-**Re-check at send rather than cancel at undo** is the load-bearing half. Cancelling means every undo
+**Re-check at send rather than cancel at undo** is the load-bearing half. Canceling means every undo
 path — retract a thumb, flip a verdict, delete a comment, hide a report — has to know the queue exists
 and find the right row; miss one and a phantom notification ships. Re-check is one place, it covers
 paths nobody thought of, and it covers content that vanished for reasons that were never an "undo".
@@ -5346,7 +5346,7 @@ email sender needs — one place to add a transport, rather than six insert site
 
 **2026-09-11, founder call.** The plan's register described `bounty_fulfilled` as "your bounty was
 answered". The code notified the **fulfilling report's author** — "your report fulfilled a bounty" —
-and nobody, anywhere, told the requester a report had landed on their bounty. Fulfilment can't happen
+and nobody, anywhere, told the requester a report had landed on their bounty. Fulfillment can't happen
 until the requester thumbs an attached report, so the loop only closed if they happened to have
 favorited the water body.
 
@@ -5386,7 +5386,7 @@ missing cell row is a **silent** non-delivery (D5), it ships with a reconciliati
 comparison against the walk before the walk is retired. Every input to the footprint — isochrones,
 home, prefs, deletion, moderation — resyncs through one writer.
 
-**Why not now:** it changes no behaviour when it works, and it adds a second writer to keep in sync
+**Why not now:** it changes no behavior when it works, and it adds a second writer to keep in sync
 with a failure mode nobody would report. Building it before the inbox would have been optimizing a
 pipeline whose output nobody could see. Trigger: ~1,000 profiles, or the first fan-out that spans more
 than a handful of pages.
@@ -5401,7 +5401,7 @@ that zone is the **device's** (`Intl.DateTimeFormat().resolvedOptions().timeZone
 open, written only when it differs), not one derived from `homeCoord`.
 
 **Why the device.** The digest is a *"when will this person look at their phone"* question, and
-travelling to a different zone is exactly the case where the device answer is right. `homeCoord` is
+traveling to a different zone is exactly the case where the device answer is right. `homeCoord` is
 optional and private (D11) and a tz-boundary lookup is a ~1 MB dependency for a worse answer. A coarse
 zone next to a home coordinate we already hold carries no new exposure; it never goes on a public
 profile.
@@ -5557,7 +5557,7 @@ of a private water body, attaches to *that* row rather than minting a fresh publ
 **`isActive` is the predicate every push surface gates on**: the drive-time fan-out and digest,
 weather discovery, the recommended strip, bounty creation, the weather cell registry (the Open-Meteo
 bill), the ETL enrichment lists (elevation, wind, depth), imagery masks, sub-area cells. Reference
-surfaces — the map at the rung, `get`, favourites (dormant only), a body's own reports and hazards,
+surfaces — the map at the rung, `get`, favorites (dormant only), a body's own reports and hazards,
 the feed for a dormant body — are left. This supersedes the L1 draft (a `none` body "on the map,
 never recommended"): `none` is simply one dormancy reason.
 
@@ -5570,7 +5570,7 @@ never recommended"): `none` is simply one dormancy reason.
 
 - **Use within `INACTIVE_SEASONS` (3):** a report, a matched track, or a hazard on the body since the
   start of the season three back. *"N=3 sounds good to start."*
-- **Or a standing decision:** a positive `curatedBoost`, or anyone's favourite (*"if you favourited it,
+- **Or a standing decision:** a positive `curatedBoost`, or anyone's favorite (*"if you favorited it,
   you know something we don't"*).
 - **Not** a put-in — *"having a put-in should not rescue an unskated body"* — and not
   `includedByRequest`: admission is not retention.
@@ -5609,13 +5609,13 @@ the size and type rules"*, and a report brings it back by request. The D91 campa
 
 **The tombstone the plan asked about is not built**, because no path hard-deletes a removed row
 (all three prunes skip `removedAt`; `retireAbsorbedBodies` folds dedup twins only) and
-`importCanonical` patches by catalogue id — the campaign-walk test pins every state through a
+`importCanonical` patches by catalog id — the campaign-walk test pins every state through a
 re-import and both prunes. The real hole was user re-creation over a removed body, closed by D176's
 reachable-removed rule.
 
 **Related:** D91, D97, D176, D177.
 
-## D179 — Requests: five kinds, a moderator answers, and the catalogue is asked live (A07b PR 2)
+## D179 — Requests: five kinds, a moderator answers, and the catalog is asked live (A07b PR 2)
 
 **2026-09-16, founder calls at the A07b kickoff; built the same day.** D106–D108 proposed a
 request as *a coordinate plus a requester*, resolved against the archives, admitted by a moderator.
@@ -5625,7 +5625,7 @@ Built with three changes the kickoff settled.
 `activate` a dormant body (the common case once the corpus is tiered — no geometry, one decision),
 `restore` a removed one, `contest_access` a `none` ruling, and the landowner's `takedown` D48
 deferred to Phase 07 and nobody built (*"we should add landowner takedown request as a fifth kind"*).
-`admit` — water the corpus does not hold — is the one that needs the catalogue. `requestKindsFor`
+`admit` — water the corpus does not hold — is the one that needs the catalog. `requestKindsFor`
 maps a standing to the kinds it admits; the drawer offers exactly those and `create` refuses the
 rest. One open ask per person per water body per kind; the count of distinct people is the queue's rank;
 ten open asks per person.

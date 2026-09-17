@@ -131,7 +131,7 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
   });
 
   it('never offers "unclassified" as something a person can pick', () => {
-    // It is the honest answer when the CATALOGUES said nothing. Asking a skater to assert it about
+    // It is the honest answer when the CATALOGS said nothing. Asking a skater to assert it about
     // water they are standing on records a shrug as if it were an observation.
     expect(USER_SELECTABLE_WATER_BODY_CLASSES).not.toContain('unclassified');
     for (const c of USER_SELECTABLE_WATER_BODY_CLASSES) expect(WATER_BODY_CLASSES).toContain(c);
@@ -148,7 +148,7 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
   });
 
   it('calls a nameless body something, on every surface that shows one', () => {
-    // `name` is required and stores `''` for the thousands of ponds no catalogue ever labelled, so
+    // `name` is required and stores `''` for the thousands of ponds no catalog ever labeled, so
     // the raw value renders a blank heading — indistinguishable from a drawer that failed to load.
     expect(waterBodyDisplayName('Lake Willoughby')).toBe('Lake Willoughby');
     expect(waterBodyDisplayName('')).toBe('Unnamed water');

@@ -72,7 +72,7 @@ describe('projectToPixel', () => {
     expect(far.y).toBeCloseTo(100, 6);
   });
 
-  it('flips y — projected metres grow north, canvas pixels grow down', () => {
+  it('flips y — projected meters grow north, canvas pixels grow down', () => {
     const north = projectToPixel({ lat: 44.4575, lng: -73.195 }, box, 100, 100);
     const south = projectToPixel({ lat: 44.4525, lng: -73.195 }, box, 100, 100);
     // Getting this backwards renders a perfect mirror of the lake, which looks plausible.
@@ -88,7 +88,7 @@ describe('projectToPixel', () => {
 });
 
 describe('groundMetersPerPixel', () => {
-  it('corrects for the Mercator stretch rather than using projected metres raw', () => {
+  it('corrects for the Mercator stretch rather than using projected meters raw', () => {
     const box = toMercatorBox({ minLat: 44.45, minLng: -73.2, maxLat: 44.46, maxLng: -73.19 });
     const projected = (box.maxX - box.minX) / 256;
     const ground = groundMetersPerPixel(box, 256);
@@ -99,7 +99,7 @@ describe('groundMetersPerPixel', () => {
 
   it('is a z18-ish scale for a z18-ish tile', () => {
     const ground = groundMetersPerPixel(BURLINGTON_TILE, 256);
-    // z18 is ~0.597 m/px in projected metres, ~0.43 m on the ground at this latitude.
+    // z18 is ~0.597 m/px in projected meters, ~0.43 m on the ground at this latitude.
     expect(ground).toBeGreaterThan(0.3);
     expect(ground).toBeLessThan(0.6);
   });

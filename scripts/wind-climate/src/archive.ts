@@ -60,7 +60,7 @@ export interface CellManifest {
  * WTK's terms, as they apply to us — recorded in every manifest rather than in a doc.
  *
  * The WIND Toolkit is a NREL/US DOE product distributed for public use; the API requires a key and
- * an email on each request, which is registration rather than a licence restriction. Stated at the
+ * an email on each request, which is registration rather than a license restriction. Stated at the
  * length it deserves and no further: this file records what we were told, and a claim we cannot
  * support is worse than a short one.
  */

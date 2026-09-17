@@ -108,7 +108,7 @@ const BOUNDS: [[number, number], [number, number]] = [
 
 /**
  * A host that rebuilds every array-literal option on each render — which is what a real caller does.
- * `LakeEditorMap` derives its centre from the body's bbox inline, so this is not a contrived case.
+ * `LakeEditorMap` derives its center from the body's bbox inline, so this is not a contrived case.
  */
 function Host({ tick, onLoad }: { tick: number; onLoad?: (map: unknown) => void }) {
   const { containerRef } = useMapCanvas({
@@ -190,9 +190,9 @@ describe('useMapCanvas', () => {
   });
 
   /**
-   * ⚠ MapLibre mounts a `compact: true` attribution control **expanded**, and only minimises it on
+   * ⚠ MapLibre mounts a `compact: true` attribution control **expanded**, and only minimizes it on
    * the first `drag` — so a map that is read rather than dragged wears every active source's credit
-   * across its bottom edge all session. The credits themselves are untouched (they are a licence
+   * across its bottom edge all session. The credits themselves are untouched (they are a license
    * obligation, and they stay one click behind the ⓘ); it is the rest state being wrong that this
    * pins, because nothing about it is visible from the control's public API.
    */

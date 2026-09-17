@@ -21,7 +21,7 @@ import { HAZARD_TYPES } from './types';
 const CENTRE: LatLng = { lat: 44.4759, lng: -73.2121 }; // Burlington, VT
 
 /**
- * A closed ring of `n` vertices on a circle of `radiusDeg` around `centre`.
+ * A closed ring of `n` vertices on a circle of `radiusDeg` around `center`.
  *
  * A circle stands in for a shoreline well enough for the properties under test: the arithmetic here
  * is about walking a ring, not about the shape of any particular lake.
@@ -198,7 +198,7 @@ describe('deriveShoreBand', () => {
  *
  * A band derived at half-width `H` and stored with halo `B` warns from `H + B` out. That is two
  * *different* quantities, not one applied twice (D67): `H` is a claim about the **ice** — rotten shore
- * ice runs tens of metres out — and `B` is the type's uncertainty about **where any hazard's edge is**,
+ * ice runs tens of meters out — and `B` is the type's uncertainty about **where any hazard's edge is**,
  * which every other hazard in the app also gets. Dropping `B` would make a shore band the one hazard
  * whose footprint is exactly its author's eyeball estimate, which is D3's "never assert safety" read
  * backwards: the fail-safe direction for a hazard footprint is *out*, not in.
@@ -212,7 +212,7 @@ describe('the warned footprint vs the selected half-width (D67)', () => {
   const BIG_RING = circleRing(180, 0.02);
   const BIG_LAKE: Polygon = { type: 'Polygon', coordinates: [BIG_RING] };
 
-  /** How far inward from `from`, toward `CENTRE`, the geometry still contains a point (metres). */
+  /** How far inward from `from`, toward `CENTER`, the geometry still contains a point (meters). */
   function reachInland(geom: Polygon | MultiPolygon, from: LatLng): number {
     const dLat = CENTRE.lat - from.lat;
     const dLng = CENTRE.lng - from.lng;

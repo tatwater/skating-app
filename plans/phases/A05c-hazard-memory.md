@@ -185,7 +185,7 @@ same fallback ladder the render and the proximity math already use (`schema.ts:7
 footprints are distance `0`.
 
 That makes the tolerance a **gap**, not a radius: 80 m means "these nearly touch", a far tighter claim on
-a 600 m ridge than "their centres are 80 m apart".
+a 600 m ridge than "their centers are 80 m apart".
 
 **Single-link agglomeration with a diameter guard.** Single-link is right for extended objects —
 transitive overlap along a ridge genuinely is one feature — but its failure mode is **chaining**: A near
@@ -210,7 +210,7 @@ the most confidently wrong output in the system and looks fine in every tidy fix
 **Why the tolerances differ, and in that direction.** Within a season, two pins 25 m apart are the same
 lead; two pins 80 m apart may well be two different leads on the same day, and collapsing them would
 under-warn. Across seasons, a ridge re-forming within 80 m *is* the same feature — the ice does not
-reassemble to the metre. Tight for identity, loose for recurrence.
+reassemble to the meter. Tight for identity, loose for recurrence.
 
 **Why one is derived and the other stored.** `listForBody` already collects *all* of a body's active
 hazards in one bounded read (`hazards.ts:343-353`) — Phase 09a's call 6, deliberately never a viewport
@@ -260,7 +260,7 @@ reads `hazardConfirmations.by_hazard` for the members of **multi-member clusters
 clusters, which will be the overwhelming majority, cost nothing extra.
 
 **Archival stays per-row on purpose.** Pooling "gone" votes would let two people clearing one pin retire
-a neighbouring pin nobody looked at — pooling in the *unsafe* direction. The asymmetry is the same one
+a neighboring pin nobody looked at — pooling in the *unsafe* direction. The asymmetry is the same one
 D3 draws everywhere: pool the evidence that a hazard is *there*, never the evidence that it is gone.
 (Auto-merge, below, is what actually reduces the N× retirement work, and it does so by making the
 duplicates *one row* rather than by sharing their clearance votes.)
@@ -471,7 +471,7 @@ than later is the whole reason to do it at all.
 |---|---|
 | **3 seasons minimum**, regardless of `RECURRENCE_PUBLIC_MIN_SEASONS` | volatile types are volatile; two coincidences in a row is a plausible accident in a way two ridges are not |
 | **Depth must not contradict it**, where depth exists | A06a gave every body a depth with provenance (D68) and `SHALLOW_MAX_DEPTH_M`/`SHALLOW_MEAN_DEPTH_M` already encode "shallow" (D69). A recurring thin-ice cluster on a body the data says is deep is a signal about *that spot*, not the water body — suggest it, but say the depth disagrees |
-| **Never auto-suggested where depth positively contradicts** and the depth is measured rather than modelled | D68's provenance ladder exists precisely so a claim can be weighted by what it was read off |
+| **Never auto-suggested where depth positively contradicts** and the depth is measured rather than modeled | D68's provenance ladder exists precisely so a claim can be weighted by what it was read off |
 | Suggestion copy names the mechanism | *"this spot has been reported thin in 3 of the last 4 winters — shallow water goes out from the bottom first"*, so the moderator is judging a physical claim, not a count |
 
 > **A pleasing loop worth noting.** A06a's write-up records that `shallow_early_thaw` is a manual flag
@@ -614,7 +614,7 @@ So `promoteFromRecurrence`:
 - keeps `promotedFromHazardId` on the medoid so `demote` still has a source, extended to clear the
   backlink from every member it set.
 
-> ⚠ **This is a behaviour change to shipped code, and the reviewer's diff is every reader of
+> ⚠ **This is a behavior change to shipped code, and the reviewer's diff is every reader of
 > `promotedToFeatureId`** — `listForBody`, `isUserVisibleHazard`, `listPromotionCandidates`, and the
 > confirm path. That is precisely the pattern A05a's own review pass named: *"the diff to review after
 > widening a value is every existing reader of it."* Here the value is being **narrowed** in meaning,
@@ -680,7 +680,7 @@ Two consequences, one better than the plan and one worse:
   see it by accident because it never asks for it — no shared array, no adjacent field, nothing to get
   wrong. That is a better guarantee than "a separate field in the same row".
 - **"Rides the offline cache" is not true today, for advisories or for hazards.** Neither is durably
-  cached; both depend on the Convex client cache. Matching hazards' behaviour is the consistent choice
+  cached; both depend on the Convex client cache. Matching hazards' behavior is the consistent choice
   and needs no new SQLite table, but it should be *said* rather than assumed, and a durable per-body
   hazard cache is a real (unbuilt) thing if the on-ice path is ever to survive a cold start with no
   signal.
@@ -761,7 +761,7 @@ ships dark — cut from the bottom, not the top.
 | **A wrong auto-merge** hides a distinct hazard's identity | the one failure a skater can't undo | overlap + IoU + same-family + same-season bar; union footprint so warned area never shrinks; tombstone + one-click unmerge; audit panel and the unmerge-rate chart |
 | **Chaining** drags a cluster across a water body | single-link on extended geometry | span guards in both windows; a test built from a real ridge chain, not tidy fixtures |
 | **Over-merging in the nudge** — a skater talked out of a genuinely distinct pin | the prompt is a nudge at the worst moment to argue | "different hazard" is one tap, never blocked, and the nudge never fires for passage markers |
-| **Pooling in the unsafe direction** | it would let two votes retire an unexamined neighbour | archival stays per-row, explicitly, with the reasoning in the code |
+| **Pooling in the unsafe direction** | it would let two votes retire an unexamined neighbor | archival stays per-row, explicitly, with the reasoning in the code |
 | **One reporter's repeated error becomes "a pattern"** | nothing requires independent observers | `distinctAuthorCount` stored and shown; suppression; open question 2 |
 | **A migrating ridge** never clusters, or clusters wrongly | 80 m is a guess until there is data | tuned constants with charts behind them — the reason to build early |
 | **Stale precomputed rows read as live** | annual recompute | provenance on every surface, recompute button, merge hook |
@@ -1059,7 +1059,7 @@ out, in the code that *uses* them, and every one of them was a documented claim 
   asserts the automatic/moderator/undone split stays three numbers, that a quiet day writes a zero
   rather than a hole in the series, and that re-running a day overwrites.
 - **`clusterScopeFor`'s archived exclusion** — the claim that a pin the community voted healed must not
-  borrow freshness from a live neighbour. It was a bound inside an index expression with nothing
+  borrow freshness from a live neighbor. It was a bound inside an index expression with nothing
   asserting it; now a test.
 - **The merge-chain hop cap**, whose whole job is to turn a cycle into `null` rather than a query that
   never returns.
@@ -1149,7 +1149,7 @@ Greptile again, on the fix for §17.1 rather than on the original code — and r
 `dismissedDuplicateOf` was carried into the queue correctly, but **nothing cleared it afterwards**.
 Mobile runs the whole capture session on one mounted component, so after filing a pin with a dismissal
 the state stayed set, and the *next* capture — a different hazard, possibly a different type, possibly
-metres from a genuine duplicate — took the `dismissed === null` branch and skipped duplicate detection
+meters from a genuine duplicate — took the `dismissed === null` branch and skipped duplicate detection
 entirely, then sent the stale id to the server to suppress a merge nobody had declined. A field added
 to stop the machine overruling a skater had become a way to silently disable the check for everything
 that followed it.
@@ -1198,7 +1198,7 @@ session, and that is its own test.
 ### 17.8 Returning `null` is not unmounting
 
 The other half of §17.6, by a path the fix didn't cover. `HazardCapture` renders `null` while a deletion
-is pending (D62), and a pending deletion **can be cancelled** — so it is a round trip, not an exit, and
+is pending (D62), and a pending deletion **can be canceled** — so it is a round trip, not an exit, and
 every `useState` survives it. A dismissal made before the read-only window was inherited by the first
 capture after it, which then skipped duplicate detection and sent an unrelated exclusion.
 
@@ -1281,7 +1281,7 @@ excludes it, so the compiler holds that line rather than a comment.
 - **The `?action=` deep link and any notification path for advisories.** §9.4's no-list holds: no
   notification, no bounty, no feed row, no `displayScore`, no trust or points, and nothing confirmable.
 - **A durable offline cache for advisories.** §9.5 was corrected in the first half — no such cache
-  exists for hazards either — and matching hazards' behaviour is the consistent choice. A per-body
+  exists for hazards either — and matching hazards' behavior is the consistent choice. A per-body
   hazard cache is a real, unbuilt thing if the on-ice path is ever to survive a cold start with no
   signal, and it should be designed for hazards first.
 - **Impression tracking on the advisory**, and any measurement of whether skaters read it. There is
@@ -1323,7 +1323,7 @@ this phase's whole subject is a table that is computed once a year.
 representative footprint, on the same fallback ladder render and proximity use. The tolerance is the
 one the cluster was built at, so a pin that would have joined this cluster in July is the pin that
 silences it in January. Two tests replace the old one: a sighting filed *after* the pass (asserting
-explicitly that it is **not** a member and yields anyway), and the other direction — a pin a kilometre
+explicitly that it is **not** a member and yields anyway), and the other direction — a pin a kilometer
 away, or of another family, does not silence a history it is not about.
 
 ### 19.2 A query that ships dark should not read the water body
@@ -1387,7 +1387,7 @@ and with the status block linking to the section by number. Renumbered to **18**
   one `never_existed` vote lands in both `healedSeasons` and `neverExistedCount`. It needs a hazard
   with exactly one of each and no third vote, and both penalties point the same way, so the ranking
   errs conservative. Not worth a special case in the one function whose sign errors are hardest to see.
-- **`enqueueBody` recomputes inline rather than enqueuing.** The name is wrong and the behaviour is
+- **`enqueueBody` recomputes inline rather than enqueuing.** The name is wrong and the behavior is
   right — a body merge should not wait for July. Renaming it touches the merge path in `waterBodies`,
   which is not where this PR should be making incidental edits.
 
@@ -1432,7 +1432,7 @@ the card says so" and "no water body is recomputed this year", the plan picked t
 
 - **The window bound moved into the index.** New `hazards.by_water_body_first_reported`, so a
   recompute reads *four winters of one water body* rather than one water body's entire history. This is the actual
-  fix; everything below is defence in depth. It is the same lesson as A01's `listInViewport` and
+  fix; everything below is defense in depth. It is the same lesson as A01's `listInViewport` and
   `listPromotionCandidates` — **the bound has to be in the index, not after it**, which this repo has
   now learned three times.
 - **One confirmation read per hazard, not two.** `never_existed` decides both eligibility and ranking;

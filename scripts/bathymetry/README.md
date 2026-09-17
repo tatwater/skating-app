@@ -45,7 +45,7 @@ pnpm --filter @skating/bathymetry verify        # two cheap requests per source,
 
 - **breaking** (exit 2) — a field we read has gone, or changed type, or the geometry type changed.
   A transform written against the archive is now wrong for the live source.
-- **notable** (exit 0) — the record count moved, or the licence wording changed. One changes what we
+- **notable** (exit 0) — the record count moved, or the license wording changed. One changes what we
   render; the other changes what we *may* render. A human looks.
 - **cosmetic** — a field was added, or an HTTP validator moved with nothing else to corroborate it.
 
@@ -64,7 +64,7 @@ pnpm --filter @skating/bathymetry provenance
 
 Per source it records where the data came from, **when we captured it**, how many records and bytes, a
 content **fingerprint**, the agency's own `copyrightText` *as captured*, the vertical datum, and the
-field notes for the traps in that dataset. It is organised **per state**, because agencies republish
+field notes for the traps in that dataset. It is organized **per state**, because agencies republish
 independently and so "our records are out of date" is a per-state judgement.
 
 Two details that matter:
@@ -156,11 +156,11 @@ Two lanes, and the difference is a **provenance claim**, not a file format:
   digitisation project, not an ETL." They are the `FMSRC=depthmap` rows.
 - **Maine's layer is two datasets in one schema**, and `FMSRC` separates them: digitised IF&W map
   soundings vs. Maine DEP GPS depth-sounder tracks.
-- **Maine's metre column was computed with a 3.3 ft/m constant**, so the published `DEPTHF` is
+- **Maine's meter column was computed with a 3.3 ft/m constant**, so the published `DEPTHF` is
   systematically **0.58% shallow**. Recover feet as `DEPTHM * 3.3` for the depthmap rows.
 - **Contour interval is per lake, not per state.** The plan's example label — *"NH GRANIT, 10 ft
   contours"* — describes a uniformity that does not exist in any of the three contour sets.
-- **Everything is feet.** D83 assumed a VT-metres / NH-feet seam at a state line. There isn't one.
+- **Everything is feet.** D83 assumed a VT-meters / NH-feet seam at a state line. There isn't one.
 
 ---
 

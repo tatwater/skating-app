@@ -307,7 +307,7 @@ export function FeedFilterBar({
   );
 }
 
-/** A labelled filter control cell. */
+/** A labeled filter control cell. */
 function FilterField({
   label,
   htmlFor,

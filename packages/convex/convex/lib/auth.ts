@@ -86,7 +86,7 @@ export const DELETION_PENDING_MESSAGE =
  * - It can't be the only gate either. What stays open is everything that isn't a contribution to the
  *   public record: **flagging** (a hazard is no less dangerous because the person who spotted it is
  *   leaving), **blocking** (self-protection outlives the account), **support**, **export**, private
- *   preferences, and — the load-bearing one — **cancelling the deletion**.
+ *   preferences, and — the load-bearing one — **canceling the deletion**.
  *
  * Contrast the `deleting` status handled by `requireProfile`: that's the finalization lock, it gates
  * everything including the exemptions above, and it isn't reversible. This one is a fork in the road,

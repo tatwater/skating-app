@@ -24,7 +24,7 @@ describe('resolveWeatherSubArea', () => {
     expect(resolveWeatherSubArea(bays, undefined)?._id).toBe('malletts');
   });
 
-  it('honours an explicit focus over prominence', () => {
+  it('honors an explicit focus over prominence', () => {
     const bays = [bay('malletts', 'Malletts Bay', 7), bay('button', 'Button Bay', 2)];
     expect(resolveWeatherSubArea(bays, 'button')?._id).toBe('button');
   });

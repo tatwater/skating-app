@@ -5,7 +5,7 @@
  * user-drawn pond over an OSM lake (D36's original case, where "which is official" answers it), and
  * it is useless for what the queue actually holds after A07a: pairs of **OSM features that OSM cannot
  * see are the same lake** — 37 of the first 100 with no name at all, so the card read as a blank box
- * above a button labelled `Merge →`. Nothing on screen distinguished one pair from the next, and a
+ * above a button labeled `Merge →`. Nothing on screen distinguished one pair from the next, and a
  * merge is not reversible in the way a rejection is.
  *
  * So this builds the comparison table instead: every stored attribute that could bear on "are these
@@ -24,7 +24,7 @@
  *
  * Every cell is already a string by the time it leaves this module, so the table is dumb and the
  * rounding is tested. Areas are **acres** because the corpus's admission rule is written in acres
- * (D91's floor, and every ETL log line), and lengths are **metres** because the question a moderator
+ * (D91's floor, and every ETL log line), and lengths are **meters** because the question a moderator
  * is answering — "is this the same outline?" — is one that 812 m against 815 m answers and 0.50 mi
  * against 0.50 mi hides. That is a deliberate departure from D25's imperial display, and it is
  * confined to this operator surface.
@@ -171,7 +171,7 @@ interface FieldSpec {
  * The table, in reading order.
  *
  * Identity first because it is what settles the commonest case in this queue — the same lake carried
- * twice by one catalogue, where both rows hold an `osmId` and only one holds the `nhdId` that proved
+ * twice by one catalog, where both rows hold an `osmId` and only one holds the `nhdId` that proved
  * they were one thing. Lifecycle last because it decides the *survivor* rather than the *verdict*.
  */
 const FIELDS: readonly FieldSpec[] = [
@@ -403,8 +403,8 @@ export function describeAgreement(agreement: PairAgreement): string {
   if (agreement.iou !== null) parts.push(`${Math.round(agreement.iou * 100)}% overlap`);
   parts.push(
     agreement.centroidDistanceM < 1000
-      ? `centres ${Math.round(agreement.centroidDistanceM)} m apart`
-      : `centres ${(agreement.centroidDistanceM / 1000).toFixed(1)} km apart`,
+      ? `centers ${Math.round(agreement.centroidDistanceM)} m apart`
+      : `centers ${(agreement.centroidDistanceM / 1000).toFixed(1)} km apart`,
   );
   if (agreement.areaRatio !== null) {
     parts.push(

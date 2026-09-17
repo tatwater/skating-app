@@ -16,7 +16,7 @@
  * Rung 1 of D68's ladder had **zero rows** in the corpus on 2026-08-09, while 298 MB of measured
  * state survey data sat in `.raw/` feeding the contour layer alone. Every depth those lakes carried
  * came from LAGOS-US or from a model. This is not only a coverage win — for a lake that already has a
- * modelled depth it is a **provenance upgrade**, which the caption reads and which D3 exists for.
+ * modeled depth it is a **provenance upgrade**, which the caption reads and which D3 exists for.
  *
  * Thin: argv, `readAllLakes()`, the tested rules in `lakeDepths.ts`, a file, and a run row.
  */
@@ -33,7 +33,7 @@ import { SOURCES } from './sources';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUT = join(HERE, '..', '.scratch', 'state-agency-depths.ndjson');
 
-/** Skipped lakes named on the run row. Enough to recognise a pattern, small enough for a row. */
+/** Skipped lakes named on the run row. Enough to recognize a pattern, small enough for a row. */
 const SKIP_SAMPLE_CAP = 15;
 
 function log(message: string): void {

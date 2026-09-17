@@ -111,7 +111,7 @@ someone runs the transform and loader against a new extract.
 
 ## Pinning the NHD snapshot (A07a)
 
-The second canonical-water catalogue. Same discipline, opposite provenance problem.
+The second canonical-water catalog. Same discipline, opposite provenance problem.
 
 ```bash
 pnpm --filter @skating/etl archive-nhd              # all five states, smallest first
@@ -121,7 +121,7 @@ scripts/etl/mirror-nhd-r2.sh push                   # the durable second copy
 ```
 
 Geodatabases land in a gitignored **`.raw-nhd/<state>/`** — separate from `.raw/`, with its own
-`.env.nhd.local` and its own bucket (`skating-raw-nhd`), because the shared mirror body honours an
+`.env.nhd.local` and its own bucket (`skating-raw-nhd`), because the shared mirror body honors an
 inherited `RAW_BUCKET` and one config file for two archives would push a geodatabase into the OSM
 bucket and report success.
 
@@ -139,11 +139,11 @@ bytes* — and there is no published checksum to ask with. No `.md5`, no `.sha25
 - the publisher's `Last-Modified` is checked against the freeze date. If it ever moves, something
   republished a retired dataset under us.
 
-The ~29 KB FGDC `.xml` beside each payload is archived too — process lineage and the licence
+The ~29 KB FGDC `.xml` beside each payload is archived too — process lineage and the license
 statement in USGS's own words. It costs nothing and nobody can reconstruct it once a retired dataset
 comes down.
 
-**Licence:** public domain (US Government work, 17 U.S.C. §105). Attribution — *"U.S. Geological
+**License:** public domain (US Government work, 17 U.S.C. §105). Attribution — *"U.S. Geological
 Survey, National Hydrography Dataset"* — is courtesy rather than obligation, and is recorded in every
 manifest so it is not an oversight.
 
@@ -187,7 +187,7 @@ manifest each). Every state verified on both checks: exact byte count, and the f
 
 ## Pinning the 3DHP snapshot (A07a)
 
-The third canonical-water catalogue, and **the only one of the three with a future**. NHD was retired;
+The third canonical-water catalog, and **the only one of the three with a future**. NHD was retired;
 3DHP is its successor — elevation-derived hydrography where LiDAR exists, NHD elsewhere — published as
 an annual staged release with quarterly service updates.
 
@@ -267,9 +267,9 @@ the chart can draw the lag as its own line.
 
 ## The annual refresh runbook
 
-**Two of the three catalogues refresh; one cannot.**
+**Two of the three catalogs refresh; one cannot.**
 
-| catalogue | cadence | why |
+| catalog | cadence | why |
 | --- | --- | --- |
 | **OSM** (`archive`) | any time — Geofabrik rebuilds daily | live, continuously edited |
 | **3DHP** (`archive-3dhp`) | **annually**, early in the federal fiscal year | new staged release, more EDH each year |
@@ -313,7 +313,7 @@ re-derivable, and they are kilobytes.
 > the *corpus* or re-importing one *state's OSM extract*.
 >
 > ```bash
-> ./run-corpus.sh n7-20260807            # A07a: three catalogues → the master list → the corpus
+> ./run-corpus.sh n7-20260807            # A07a: three catalogs → the master list → the corpus
 > ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
 > ./run-canonical.sh n6c-20260802 vt nh  # …or just some
 > ```
@@ -327,7 +327,7 @@ re-derivable, and they are kilobytes.
 A run row that cannot say which files produced it is the failure this whole workstream exists to
 prevent — and it happened anyway, on the pass that matters most. The 2026-08-07 corpus campaign was
 typed by hand as four commands, so the `corpus_merge` run landed with an **empty Path** and the load
-of all 25,050 bodies was labelled *"unscoped canonical water"*. Nothing was missing from disk; the
+of all 25,050 bodies was labeled *"unscoped canonical water"*. Nothing was missing from disk; the
 loaders were simply never handed it.
 
 So the sidecars are now discovered rather than passed:
@@ -341,7 +341,7 @@ So the sidecars are now discovered rather than passed:
 `--merge-manifest=<path>` overrides the location if the NDJSON was copied away from the manifest
 that produced it. A missing or unreadable manifest costs provenance, never the import: the pass
 warns and carries on with a hole in the path. A **missing source archive** is different — it becomes
-a stage saying `MISSING`, because a corpus built without one of its four catalogues is a different
+a stage saying `MISSING`, because a corpus built without one of its four catalogs is a different
 corpus and the run row is the only place that can ever surface.
 
 Work in a scratch dir (gitignored); nothing here is committed except the final DB rows.
@@ -435,7 +435,7 @@ can do nothing with.
 
 **`--depths` — OSM depth tags (A06a rung 7).** A second, much smaller NDJSON: the bodies carrying a
 `depth` / `maxdepth` / `depth:mean` tag we can read. The parse is deliberately strict — a bare value is
-metres, an explicit `m`/`ft`/`'` converts, and a range (`2-3`), an approximation (`~5`) or anything else
+meters, an explicit `m`/`ft`/`'` converts, and a range (`2-3`), an approximation (`~5`) or anything else
 is refused rather than guessed at, because this is the bottom rung of the D68 ladder and a wrong number
 here feeds a safety signal. **A bare `depth` becomes a `max`, never a mean**: OSM documents the tag
 loosely enough that mappers use it for all three, and the mean is the field that *wins* the shallow
@@ -555,7 +555,7 @@ so the summary shows why:
 | `curated` | an admin set a `curatedBoost` by hand (D49) |
 | `dedupOrMerged` | a merge pointer or non-`clean` dedup status; reads follow the survivor (D36) |
 | `delisted` | `removedAt` is set — a soft-delist carries a reason, sometimes a takedown (D48) |
-| `attached` | a report, hazard, bounty, favourite, put-in, track, sub-area or gate event names it |
+| `attached` | a report, hazard, bounty, favorite, put-in, track, sub-area or gate event names it |
 | `alreadyDormant` | not active on some other account (a removal, a `none` ruling, an earlier pass) — counted, not re-shelved |
 
 Expect the run to take roughly **20 ms per body** (it reads whole rows, polygons included), so a
@@ -659,7 +659,7 @@ Quotas are **per-endpoint**, so this cannot starve Phase 04's isochrones. Dashbo
 **104.95 GB of Convex database I/O — 1.1 MB per lot — and disabled the deployment.** The candidate box
 defaulted to ~1,113 m for every caller; the parking gate tests 250 m (**20×** the area) and the put-in
 gate 30 m (**1,377×**). Convex has no projection, so each candidate read is a whole document with its
-polygon: Champlain's ~300 KB outline was re-read for every lot within a kilometre, 95,294 times.
+polygon: Champlain's ~300 KB outline was re-read for every lot within a kilometer, 95,294 times.
 
 > The same lesson is in `git log 53a952f` from five days earlier — the A07a-3 sounding re-key deleted a
 > per-point server lookup for exactly this reason and went from 4+ hours to seconds. **If a pass does a

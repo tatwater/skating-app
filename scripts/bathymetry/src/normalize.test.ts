@@ -43,7 +43,7 @@ describe('normalizeNhContours', () => {
     },
   });
 
-  it('recovers the surveyed depth from a value round-tripped through metres', () => {
+  it('recovers the surveyed depth from a value round-tripped through meters', () => {
     // NH's `depth` holds 2.00000006 where the survey said 2 — a ft→m→ft round trip with mismatched
     // constants. Left alone it makes a naive DISTINCT return 116 values where ~60 exist.
     expect(normalizeNhContours([feature({})]).records[0]?.depthFt).toBe(2);
@@ -163,7 +163,7 @@ describe('normalizeMeSoundings', () => {
   });
 
   it('converts the GPS rows normally — only the digitised rows carry the bad constant', () => {
-    // A depth-sounder track is a genuine metre reading; applying the 3.3 fudge to it would introduce
+    // A depth-sounder track is a genuine meter reading; applying the 3.3 fudge to it would introduce
     // the very error we are undoing elsewhere.
     const record = normalizeMeSoundings([feature({ FMSRC: 'gpscarrier', DEPTHM: 10 })]).records[0];
     expect(record?.depthFt).toBe(32.81);

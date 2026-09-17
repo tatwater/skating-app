@@ -232,7 +232,7 @@ describe('copernicusCredit — a winter spans two calendar years', () => {
 
   it('⚠ degrades to the bare required form rather than inventing a year', () => {
     // A wrong year is worse than none, and an unparseable season is not a reason to omit a credit a
-    // licence compels — unlike NAIP's, which is courtesy only.
+    // license compels — unlike NAIP's, which is courtesy only.
     expect(copernicusCredit('not-a-season')).toBe('Copernicus Sentinel data');
   });
 });

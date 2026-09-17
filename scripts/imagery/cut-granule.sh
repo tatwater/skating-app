@@ -60,7 +60,7 @@ fi
 # ⚠ **Radar is warped at 28 m, optical at 14 m, and that is not a downgrade.**
 #
 # A GRD IW product has 10 m pixel *spacing* but its true spatial *resolution* is 20 x 22 m — the
-# spacing oversamples the instrument. 28 projected metres is ~20 m on the ground at 44°N, which is
+# spacing oversamples the instrument. 28 projected meters is ~20 m on the ground at 44°N, which is
 # what the sensor actually resolves. Warping radar to the optical grid would invent detail Sentinel-1
 # does not have and pay four times over for it: a single S1 slice covers ~275 x 210 km, which at 14 m
 # is a **700-megapixel** raster (2.8 GB as float32, on a 2 GB Machine) against 175 Mpixels at 28 m.
@@ -70,8 +70,8 @@ fi
 #
 # ## `EROSION_M` — how far in from the bank a pixel must sit to count as interior
 #
-# ⚠ **It is a centre-to-centre distance, so the ring it removes is one less than it looks.**
-# `gdal_proximity` measures from a pixel's centre to the centre of the nearest pixel outside the lake,
+# ⚠ **It is a center-to-center distance, so the ring it removes is one less than it looks.**
+# `gdal_proximity` measures from a pixel's center to the center of the nearest pixel outside the lake,
 # so a pixel in the outermost ring measures exactly one pixel width, the next ring in measures two,
 # and so on. A threshold of *k* pixel widths therefore erodes **k−1** rings. Verified on a synthetic
 # 20x20 lake: at 20 m (≈2 grid pixels) the interior came out 18x18, not 16x16.
@@ -378,7 +378,7 @@ mask_extent() {
   ' "$@" | paste -sd' ' -
 }
 
-# Web Mercator metres for a ground distance, at an extent's centre latitude.
+# Web Mercator meters for a ground distance, at an extent's center latitude.
 #
 # ⚠ **The single place this conversion lives.** Mercator inflates distance by 1/cos(φ) — ~1.39x at
 # 44°N — so a bare ground figure handed to `gdal_proximity` or to a pixel offset is 28% short. It is
@@ -402,13 +402,13 @@ centre_lat_of() {
 # Build `alpha.tif` — the reveal's soft edge — on a given extent at `$WARP_RES`.
 #
 # Shared by both missions, because the feather is a property of the *lake outline* rather than of the
-# sensor: the same 240 ground metres of ramp, whether the pixels underneath came from a camera or a
+# sensor: the same 240 ground meters of ramp, whether the pixels underneath came from a camera or a
 # radar. A second copy would be a second chance for optical and radar frames to disagree about where a
 # lake ends, which would show up as a seam wherever a scrubber crossed between them.
 #
-# ⚠ **Mercator metres are not ground metres**, and this is where that bites. Web Mercator inflates
+# ⚠ **Mercator meters are not ground meters**, and this is where that bites. Web Mercator inflates
 # distance by 1/cos(latitude) — ~1.39x at 44°N — so feeding `gdal_proximity` a bare 240 would ramp over
-# 240 *projected* metres, which is ~173 m on the ground: a 28% error that looks like a slightly tight
+# 240 *projected* meters, which is ~173 m on the ground: a 28% error that looks like a slightly tight
 # edge rather than like a units bug. Hence `project_ground_m`.
 build_alpha() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
@@ -657,7 +657,7 @@ deshift_band() {
 # So this does not replace the full-zone statistic; it rides alongside it. `pixels` stays what the
 # whole body reported and `interiorPixels` says how much of that was clear of the bank.
 #
-# ⚠ **Ground metres, not projected ones** — the same 1/cos(φ) inflation `build_alpha` corrects for,
+# ⚠ **Ground meters, not projected ones** — the same 1/cos(φ) inflation `build_alpha` corrects for,
 # and getting it wrong here would erode 39% further at 44°N than intended, which on a small pond is
 # the difference between a few voting pixels and none.
 build_interior() {
@@ -719,7 +719,7 @@ reconcile_bodies() {
 #
 # L2A reflectance is `DN * scale + offset`. Processing baseline **04.00 (2022-01-25)** introduced
 # `BOA_ADD_OFFSET = -1000` — so `offset` is `-0.1` on recent granules and `0` on older ones, and a
-# nine-season archive spans the change. The scale cancels in a normalised ratio; **the offset does
+# nine-season archive spans the change. The scale cancels in a normalized ratio; **the offset does
 # not.** For typical snow it moves the denominator by about a quarter.
 #
 # Hardcoding either value would therefore introduce a step change in NDSI at January 2022 that looks
@@ -815,12 +815,12 @@ transform_granule() {
 
   # 6. SCL — ESA's per-pixel scene classification, and the number the product actually wants.
   #
-  # ⚠ **Nearest neighbour, never bilinear.** SCL values are *class labels* (4 = vegetation, 6 = water,
+  # ⚠ **Nearest neighbor, never bilinear.** SCL values are *class labels* (4 = vegetation, 6 = water,
   # 9 = high-probability cloud, 11 = snow/ice). Interpolating between class 8 and class 10 yields class
   # 9 — a different category, invented out of arithmetic. Every resample of this band is nearest.
   #
   # ⚠ **Onto the same grid as the mask**, via the identical `-te`/`-tr`, because the zonal statistic is
-  # a per-pixel join. A half-pixel offset silently attributes one lake's cloud to its neighbour, and
+  # a per-pixel join. A half-pixel offset silently attributes one lake's cloud to its neighbor, and
   # the result still looks like a plausible percentage.
   local scl_href
   scl_href="$(asset_href scl)"
@@ -924,7 +924,7 @@ transform_granule() {
   # third of Lake Champlain as a black lake-shaped blob. It read as "this lake is black" rather than
   # "this lake was not photographed", the exact confusion `footprint` and §3.4 exist to prevent.
   #
-  # `gdal raster tile` honours the source's per-band nodata — which `scene.tif` inherits from Sentinel's
+  # `gdal raster tile` honors the source's per-band nodata — which `scene.tif` inherits from Sentinel's
   # TCI (`NoData Value=0`) — and applies it **per pixel**, not merely per tile. So out-of-swath pixels
   # come out transparent whether or not the tile containing them is entirely blank. Verified by
   # building the same granule with the alpha explicitly clipped against a `-dstalpha` validity band:
@@ -999,19 +999,19 @@ transform_granule() {
     # rather than left at its default of `average`.
     #
     # PNG rather than WEBP, still — but the reason has moved. It was "lossy compression on a label
-    # band is the same category of error as interpolating one", and once the labels are coloured
-    # that no longer applies. What does: four flat colours are what PNG is best at, while lossy
-    # WEBP would ring at every class boundary and paint a fringe of a colour no pixel was assigned,
+    # band is the same category of error as interpolating one", and once the labels are colored
+    # that no longer applies. What does: four flat colors are what PNG is best at, while lossy
+    # WEBP would ring at every class boundary and paint a fringe of a color no pixel was assigned,
     # which reads as a fifth category along every edge.
-    # ⚠ **Colour the labels, or the frame is black.** SCL is class *labels* 0-11, and a tiler reads
+    # ⚠ **Color the labels, or the frame is black.** SCL is class *labels* 0-11, and a tiler reads
     # them as brightness: eleven over two hundred and fifty-five. Measured on a real granule, every
-    # class present rendered between **0.8% and 3.9% brightness** — water and vegetation two grey
-    # levels apart. `scl-palette.txt` carries the mapping and the argument for the four colours it
+    # class present rendered between **0.8% and 3.9% brightness** — water and vegetation two gray
+    # levels apart. `scl-palette.txt` carries the mapping and the argument for the four colors it
     # collapses twelve classes into; `-nearest_color_entry` picks an entry rather than interpolating
     # between two, which is the same rule the warp above follows and for the same reason.
     stage color_scl gdaldem color-relief -q -nearest_color_entry \
       scl.tif /usr/local/share/scl-palette.txt scl-rgb.tif \
-      || die "SCL colour-relief failed"
+      || die "SCL color-relief failed"
 
     # ⚠ **And give it the photograph's own alpha.** The visual band composes RGB with `alpha.tif`
     # into RGBA (step 5) so a frame is clipped to the lakes, their approaches and their parking. SCL
@@ -1179,7 +1179,7 @@ transform_sar() {
     # ⚠ **Neither the calibration nor the noise LUT is de-shifted with it, and that is safe.** Both
     # are smooth in range: gain varies ~1.50 dB across a 275 km scene, so over a 450 m correction it
     # moves ~0.0025 dB. The one place the noise LUT is NOT smooth is the sub-swath seams, which sit
-    # ~80 km apart — a shift of a few hundred metres can only mis-assign a body sitting essentially on
+    # ~80 km apart — a shift of a few hundred meters can only mis-assign a body sitting essentially on
     # one, and the error there is bounded by the step itself. Warping either a second time would buy
     # thousandths of a decibel.
     deshift_band "$p" "$feather_projected"
@@ -1311,12 +1311,12 @@ transform_sar() {
   #
   # ## ⚠ The window is now -29..-12, and -30..0 was spending most of the greyscale on nothing
   #
-  # > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like grey fuzz to
+  # > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like gray fuzz to
   # > me) so I'm not sure how helpful it will be to others either."*
   #
   # -30..0 dB is 30 dB across 256 levels, and `sar-zonal.py` measures the whole freeze-up signal at
-  # **~2 dB** — about 17 grey levels, under 7% of the range. The measurement was real and the picture
-  # threw it away. The fixed-stretch argument above is untouched by this: the same grey still means
+  # **~2 dB** — about 17 gray levels, under 7% of the range. The measurement was real and the picture
+  # threw it away. The fixed-stretch argument above is untouched by this: the same gray still means
   # the same backscatter on every frame in every season, which is what makes two dates comparable.
   # Only the range changed, and it changed to where the pixels actually are.
   #

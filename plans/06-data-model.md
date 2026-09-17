@@ -308,7 +308,7 @@ createdAt: timestamp
 > **`shorelineM` carries a caveat that must reach the UI (D70/D3):** perimeter is resolution-dependent
 > (the coastline paradox) and our polygons are simplified to ~5 m, so the figure is systematically shorter
 > than a published survey number and **not comparable** to one. Round hard (nearest 0.1 mi) so it can't
-> read as precise — a shoreline number *looks* like a hard fact in a way a modelled depth doesn't, which
+> read as precise — a shoreline number *looks* like a hard fact in a way a modeled depth doesn't, which
 > makes it more dangerous, not less.
 > **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
 > **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,953 bodies
@@ -556,7 +556,7 @@ createdAt: timestamp
 ```
 > **Why a sibling table and not a generalized `accessPoints` with a `kind`** (D72): `putIns` is
 > load-bearing across drive-time bands, the notification fan-out, A03 deletion and the Phase 05 feed. A
-> metadata phase should not put five other systems on its critical path for a modelling nicety, so this
+> metadata phase should not put five other systems on its critical path for a modeling nicety, so this
 > is purely additive. **Food is deliberately absent** from `amenities` — everyone has a maps app for
 > restaurants, and it's the amenity most likely to be wrong. **Boat ramp is kept** for the ice-fishing
 > crossover, and costs nothing: it's the same OSM tag already read to find put-ins.
@@ -575,7 +575,7 @@ createdAt: timestamp
 ```
 > **A note would have been the obvious design and it rots** (D73). *"Road closed until repairs are done"*
 > is correct the day it's written and stale by spring, and nothing in the system knows the difference. So
-> an access blocker is modelled like a hazard: confirmed/refuted through the **Phase 09a machinery**
+> an access blocker is modeled like a hazard: confirmed/refuted through the **Phase 09a machinery**
 > (`pointEvents`, `by_ref`), including A05b's **"never existed"** retraction (D65).
 > **Decay is weather-INsensitive, and this is the trap.** The instinct is to reuse `HAZARD_DECAY`
 > wholesale. **A locked gate does not thaw** — applying the D56 weather multiplier would let a warm week

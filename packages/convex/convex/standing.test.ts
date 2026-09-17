@@ -623,7 +623,7 @@ describe('evidence hooks', () => {
     expect(body.activatedAt).toBeDefined();
   });
 
-  test('a favourite does not activate — it retains, and it is the request path’s job to ask', async () => {
+  test('a favorite does not activate — it retains, and it is the request path’s job to ask', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t, 'osm/1', dormant('inactive'));
@@ -667,7 +667,7 @@ describe('push surfaces', () => {
     expect(queued.map((q) => [q.userId, q.type])).toEqual([[fan.id, 'favorite_report']]);
     expect(queued.some((q) => q.userId === nearby.id)).toBe(false);
 
-    // A removed body: the favourite predates the takedown; the report still tells nobody.
+    // A removed body: the favorite predates the takedown; the report still tells nobody.
     const removed = await seedBody(t, 'osm/removed');
     await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: removed });
     await t.run((ctx) => ctx.db.patch(removed, { removedAt: Date.now() }));
@@ -824,7 +824,7 @@ describe('seedStanding — the partition by evidence of access or use', () => {
 describe('the season rollover', () => {
   const SEASON = 2029;
 
-  test('demotes an active body with no activity in the window; retains use, boosts and favourites', async () => {
+  test('demotes an active body with no activity in the window; retains use, boosts and favorites', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const fan = await seedUser(t, 'fan');

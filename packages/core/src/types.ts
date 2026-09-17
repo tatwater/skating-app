@@ -70,7 +70,7 @@ export const LEGACY_TYPE_TO_CLASS: Readonly<Record<LegacyWaterBodyType, WaterBod
 };
 
 /**
- * What kind of water this is — **the vocabulary the three catalogues get mapped into** (A07a, D109).
+ * What kind of water this is — **the vocabulary the three catalogs get mapped into** (A07a, D109).
  *
  * Five values, and each one earned its place by being a distinction some source actually draws and
  * some consumer actually needs:
@@ -79,7 +79,7 @@ export const LEGACY_TYPE_TO_CLASS: Readonly<Record<LegacyWaterBodyType, WaterBod
  * | --- | --- |
  * | `lakePond` | NHD's own class is `LakePond` and 3DHP's is `Lake`; **neither separates a lake from a pond**, and no evidence-based definition does either. The one published attempt ([Richardson et al. 2022](https://www.nature.com/articles/s41598-022-14569-0): < 5 ha, < 5 m, < 30% emergent) would rename 4,283 New England "Ponds" into lakes, Great Pond's 8,520 acres among them. The regional name is the local truth and the limnology is not, so we stopped drawing the line. |
  * | `wetland` | plain English for what NHD calls `SwampMarsh` and OSM spreads across eight `wetland=*` values. **The one class with teeth**: it is the only value `belongsInCorpus` reads, because unnamed wetland is held to a much higher area bar. |
- * | `reservoir` | kept **not** because the catalogues agree — NHD classes 1,717 of our reservoirs as LakePond — but because a reservoir may carry use restrictions, access rules and cleanliness expectations a lake does not. That is a product concern, so the product keeps the class. |
+ * | `reservoir` | kept **not** because the catalogs agree — NHD classes 1,717 of our reservoirs as LakePond — but because a reservoir may carry use restrictions, access rules and cleanliness expectations a lake does not. That is a product concern, so the product keeps the class. |
  * | `bay` | an arm of a larger body. Freshwater ones (Alton Bay, North Bay, Melvin Bay) are destinations; tidal ones are not water we cover at all. **A bay must have a parent we also hold** — Half Moon Cove is 0.00 contained in anything and is a wetland despite its name. |
  * | `river` | **a slow river reach, not a lake** — a Maine deadwater, a stillwater, a logan. See below; this is a safety distinction, not a taxonomic one. |
  * | `unclassified` | **the honest name for what used to be `other`.** `other` read as a decided category; it was 55% of the corpus and meant "nobody told us". Naming it accurately is what makes it a prompt for a moderator rather than a bucket that stops being looked at. |
@@ -88,15 +88,15 @@ export const LEGACY_TYPE_TO_CLASS: Readonly<Record<LegacyWaterBodyType, WaterBod
  *
  * **It is not "we import rivers now".** Flowing water is still dropped: 4,424 OSM `water=river`
  * polygons and 4,101 3DHP `River` polygons above an acre are refused, exactly as before. `river` holds
- * the narrow case the catalogues get wrong for our purposes — **a reach so slow it is published as a
+ * the narrow case the catalogs get wrong for our purposes — **a reach so slow it is published as a
  * waterbody**. NHD classes all 58 in-region deadwaters, stillwaters and logans as `LakePond`
  * (Debsconeag Deadwater at 537 acres, Nesowadnehunk at 183, Cassidy at 221), because hydrologically
  * that is what they are.
  *
  * **For a skater they are not.** There is current under that ice even when the surface reads as a
- * pond, and thickness varies with it. That is the same reason `reservoir` overrides the catalogue —
+ * pond, and thickness varies with it. That is the same reason `reservoir` overrides the catalog —
  * what matters here is not what USGS classes it as but what it does to a person standing on it — and
- * it is why a name asserting a deadwater outranks a catalogue calling it a lake.
+ * it is why a name asserting a deadwater outranks a catalog calling it a lake.
  *
  * **`flow` and `flowage` are deliberately NOT in this class.** An Adirondack Flow is an impoundment
  * behind a dam — Cedar River Flow is NHD's own `Reservoir`, Crooked Brook Flowage is 1,254 acres —
@@ -108,7 +108,7 @@ export const LEGACY_TYPE_TO_CLASS: Readonly<Record<LegacyWaterBodyType, WaterBod
  * `LEGACY_WATER_BODY_TYPES` for the backfill's benefit and nothing else, with `LEGACY_TYPE_TO_CLASS`
  * as the one-way map.
  *
- * **`unclassified` is not offered to a user.** It is what we say when the catalogues did not tell us,
+ * **`unclassified` is not offered to a user.** It is what we say when the catalogs did not tell us,
  * which is a fine thing for a moderator to see and a meaningless thing to ask a skater to pick. See
  * `USER_SELECTABLE_WATER_BODY_CLASSES`.
  */
@@ -125,7 +125,7 @@ export type WaterBodyClass = (typeof WATER_BODY_CLASSES)[number];
 /**
  * What a person is shown for each class.
  *
- * A table rather than `humanizeEnum`, which only swaps underscores and capitalises a first letter —
+ * A table rather than `humanizeEnum`, which only swaps underscores and capitalizes a first letter —
  * it renders `lakePond` as "LakePond", and would have done so in five places across web and mobile.
  * The labels are also not just de-camel-cased spellings: **`lakePond` reads "Lake or pond"** because
  * the whole reason the class exists is that we decline to say which, and `unclassified` reads "Water"
@@ -143,8 +143,8 @@ export const WATER_BODY_CLASS_LABELS: Readonly<Record<WaterBodyClass, string>> =
 /**
  * What to call a water body on screen — its name, or "Unnamed water" when it hasn't got one.
  *
- * A great deal of the corpus is nameless: the catalogues carry thousands of ponds no publisher ever
- * labelled, and `name` is a required field storing `''` for every one of them. Rendering that raw
+ * A great deal of the corpus is nameless: the catalogs carry thousands of ponds no publisher ever
+ * labeled, and `name` is a required field storing `''` for every one of them. Rendering that raw
  * gives a heading that is simply absent — a drawer whose title line is blank, a sentence reading
  * "Report on ." — which looks like the page failed to load rather than like the pond has no name.
  *
@@ -166,7 +166,7 @@ export function waterBodyClassLabel(value: string): string {
 /**
  * The classes a person may choose when they draw a body themselves (D37 / Phase 08).
  *
- * **`unclassified` is deliberately absent.** It is the honest answer when *the catalogues* said
+ * **`unclassified` is deliberately absent.** It is the honest answer when *the catalogs* said
  * nothing, and offering it in a picker would invite a skater to select "we don't know" about water
  * they are standing on — which is not a thing they can know on our behalf and not a thing we should
  * record as if they had. Someone who cannot place their water picks the closest class; a moderator

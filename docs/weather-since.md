@@ -167,5 +167,5 @@ re-fetched and re-derived to the same result. A decay multiplier you cannot repr
 debug, and cannot refit when the corpus finally justifies refitting it.
 
 So the boundary is sharp, and worth stating in the same breath as the reducer: **Open-Meteo computes;
-NWS informs.** An NWS alert renders as a labelled, attributed strip beside this one. It never enters
+NWS informs.** An NWS alert renders as a labeled, attributed strip beside this one. It never enters
 `weatherDecaySignal`, never moves a multiplier, and never gates the honesty check.

@@ -333,7 +333,7 @@ describe('waterBodies.reject (D37)', () => {
 });
 
 describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert never did (A07a-3)', () => {
-  /** A body with the catalogue identity the ETL keys on. */
+  /** A body with the catalog identity the ETL keys on. */
   function seedKeyed(
     t: ReturnType<typeof convexTest>,
     name: string,
@@ -341,7 +341,7 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
     opts: {
       dedupStatus?: 'clean' | 'merged';
       mergedIntoId?: Id<'waterBodies'>;
-      /** A catalogue id that differs from `externalId` — the second key the same row answers to. */
+      /** A catalog id that differs from `externalId` — the second key the same row answers to. */
       osmId?: string;
     } = {},
   ) {
@@ -527,7 +527,7 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
 
   test('retires a row once when two pairs in ONE call resolve to it', async () => {
     // `Divol Pond` arrives as both an OSM key and an NHD one: the row is stored under `way/2` and
-    // carries `osmId: way/dup`, so the catalogue-id fallback lands both pairs on the same document.
+    // carries `osmId: way/dup`, so the catalog-id fallback lands both pairs on the same document.
     const t = harness();
     await seedKeyed(t, 'Survivor', 'way/1');
     await seedKeyed(t, 'Divol Pond', 'way/2', { osmId: 'way/dup' });

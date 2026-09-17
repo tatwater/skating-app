@@ -69,8 +69,8 @@ describe('probeCoverage', () => {
   it('scales by sqrt(area), so a big well-surveyed lake and a small one compare equally', () => {
     const small = probeCoverage(square(-70, 44, 0.01), soundings(-70, 44, 0.01, 20));
     const big = probeCoverage(square(-70, 44, 0.04), soundings(-70, 44, 0.04, 80));
-    // Same relative density, so the dimensionless ratios should sit in the same neighbourhood even
-    // though the raw metre gaps differ fourfold.
+    // Same relative density, so the dimensionless ratios should sit in the same neighborhood even
+    // though the raw meter gaps differ fourfold.
     expect(small?.ratio).toBeGreaterThan(0);
     expect(big?.ratio).toBeGreaterThan(0);
     expect(Math.abs((small?.ratio ?? 0) - (big?.ratio ?? 0))).toBeLessThan(0.05);
@@ -116,7 +116,7 @@ describe('probeCoverage', () => {
   });
 
   it('agrees with a brute-force nearest-distance search', () => {
-    // The grid index is an optimisation; it must not change the answer. Small inputs so the naive
+    // The grid index is an optimization; it must not change the answer. Small inputs so the naive
     // loop is affordable here and would be ruinous at bake-off scale.
     const pts = soundings(-70, 44, 0.02, 6);
     const viaIndex = probeCoverage(TRUE_LAKE, pts, { grid: 8 });

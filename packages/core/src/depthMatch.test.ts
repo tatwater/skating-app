@@ -17,7 +17,7 @@ import {
 
 const AREA_LIMIT = 4;
 
-/** A square body of roughly `side` degrees, centred on (lat, lng). */
+/** A square body of roughly `side` degrees, centered on (lat, lng). */
 function square<T>(
   ref: T,
   lat: number,

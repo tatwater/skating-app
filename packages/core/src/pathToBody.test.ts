@@ -60,7 +60,7 @@ describe('pathToBody', () => {
     }
   });
 
-  it('a lap around a pond fills in — a hole at the lake centre would break later resolution', () => {
+  it('a lap around a pond fills in — a hole at the lake center would break later resolution', () => {
     const derived = pathToBody(loop());
     expect(derived).not.toBeNull();
     if (!derived) return;
@@ -105,7 +105,7 @@ describe('pathToBody', () => {
         ],
       }),
     ).toBeNull();
-    // ...and one that shuffled a few metres is still not a skate.
+    // ...and one that shuffled a few meters is still not a skate.
     expect(pathToBody(line(3, 5))).toBeNull();
   });
 

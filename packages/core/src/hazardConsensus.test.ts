@@ -76,7 +76,7 @@ describe('clusterConsensus', () => {
   });
 
   it('never pools a "gone" verdict into anything', () => {
-    // Two people clearing one pin must not retire the neighbour nobody looked at. Nothing in this
+    // Two people clearing one pin must not retire the neighbor nobody looked at. Nothing in this
     // module reads `fully_healed` / `never_existed` at all — archival stays strictly per-row.
     const withGone = clusterConsensus(
       [member('a', 'alex'), member('b', 'kim')],

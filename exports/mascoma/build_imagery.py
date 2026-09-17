@@ -44,10 +44,10 @@ TILE_PX = 256
 # Matches build_svg.py's PRESETS: (name, lake width px).
 PRESETS = [("mobile", 400), ("desktop", 1000)]
 
-# How far past Mascoma's own shoreline the single-body clip reaches, in ground metres. Must clear
+# How far past Mascoma's own shoreline the single-body clip reaches, in ground meters. Must clear
 # the baked feather (240 m) or we would cut into the gradient the archive just spent a stage making.
 CLIP_REACH_M = 360.0
-CLIP_SOFTEN_M = 60.0           # soften that cut, so a neighbour poking in does not end on a hard line
+CLIP_SOFTEN_M = 60.0           # soften that cut, so a neighbor poking in does not end on a hard line
 
 R = 6378137.0
 WORLD = 2 * math.pi * R
@@ -77,7 +77,7 @@ X1, Y1 = lonlat_to_3857(MAX_LNG, MAX_LAT)
 SPAN_X, SPAN_Y = X1 - X0, Y1 - Y0
 LAKE_SPAN_X = R * math.radians(bb["maxLng"] - bb["minLng"])
 
-# Mercator inflates distance by 1/cos(lat); a ground metre is fewer 3857 units than it looks.
+# Mercator inflates distance by 1/cos(lat); a ground meter is fewer 3857 units than it looks.
 GROUND_TO_MERC = 1.0 / math.cos(math.radians(mid_lat))
 
 
@@ -162,10 +162,10 @@ def box_blur(a, radius):
 
 
 def mascoma_clip(width, height):
-    """A soft-edged selection around Mascoma, so neighbouring ponds drop out of the frame.
+    """A soft-edged selection around Mascoma, so neighboring ponds drop out of the frame.
 
     Hard-edged at `CLIP_REACH_M` would be safe on distance alone — the nearest revealed water is
-    over a kilometre off — but the outlet channel runs continuously off the lake's north-west tip,
+    over a kilometer off — but the outlet channel runs continuously off the lake's north-west tip,
     and a hard cut across it reads as a torn edge. Softening costs one blur.
     """
     poly = body["polygon"]

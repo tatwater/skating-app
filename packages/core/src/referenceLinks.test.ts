@@ -255,7 +255,7 @@ describe('copernicusUrl', () => {
     expect(url.origin).toBe('https://browser.dataspace.copernicus.eu');
   });
 
-  it('centres on the coordinate it was given', () => {
+  it('centers on the coordinate it was given', () => {
     const url = new URL(copernicusUrl(coord, NOW));
     expect(url.searchParams.get('lat')).toBe('44.5000');
     expect(url.searchParams.get('lng')).toBe('-73.2000');

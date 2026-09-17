@@ -49,7 +49,7 @@ export type WeatherTier = (typeof WEATHER_TIERS)[number];
 export interface WeatherTierSpec {
   /** Cell size in degrees, applied to both axes. */
   cellDeg: number;
-  /** Elevation band width in metres, or `null` when this tier does not band by elevation. */
+  /** Elevation band width in meters, or `null` when this tier does not band by elevation. */
   elevationBandM: number | null;
 }
 
@@ -65,12 +65,12 @@ export const WEATHER_TIER_SPECS: Record<WeatherTier, WeatherTierSpec> = {
 export interface WeatherCell {
   /** Cache key. Encodes the tier, so keys from two tiers can never collide. */
   key: string;
-  /** Cell-centre latitude — send this, not the body's. */
+  /** Cell-center latitude — send this, not the body's. */
   lat: number;
-  /** Cell-centre longitude — send this, not the body's. */
+  /** Cell-center longitude — send this, not the body's. */
   lng: number;
   /**
-   * Band-centre elevation in metres, or `undefined` when this tier does not band or the body has no
+   * Band-center elevation in meters, or `undefined` when this tier does not band or the body has no
    * elevation. `undefined` means "send no `elevation` param and let Open-Meteo use its own model
    * elevation" — which is exactly what the key records, so the two stay in agreement either way.
    */
@@ -78,7 +78,7 @@ export interface WeatherCell {
 }
 
 /**
- * Snap a coordinate to its cell index. `Math.round` rather than `Math.floor` so a cell is centred on
+ * Snap a coordinate to its cell index. `Math.round` rather than `Math.floor` so a cell is centered on
  * its representative point: index `k` covers `[k·d − d/2, k·d + d/2)`, and the value sent to
  * Open-Meteo is `k·d`, the middle of the cell rather than its corner.
  */
@@ -104,8 +104,8 @@ export function weatherCellFor(
   const spec = WEATHER_TIER_SPECS[tier];
   const latIdx = cellIndex(lat, spec.cellDeg);
   const lngIdx = cellIndex(lng, spec.cellDeg);
-  // Re-derive the centre from the index rather than carrying the caller's float through: two callers
-  // a metre apart must produce byte-identical request params, not merely the same key.
+  // Re-derive the center from the index rather than carrying the caller's float through: two callers
+  // a meter apart must produce byte-identical request params, not merely the same key.
   const cellLat = roundCoord(latIdx * spec.cellDeg);
   const cellLng = roundCoord(lngIdx * spec.cellDeg);
 
@@ -125,7 +125,7 @@ export function weatherCellFor(
 }
 
 /**
- * Kill float noise in the snapped centre. `874 * 0.05` is `43.7 00000000000005` in IEEE-754, and that
+ * Kill float noise in the snapped center. `874 * 0.05` is `43.7 00000000000005` in IEEE-754, and that
  * tail would reach Open-Meteo as a different URL for the same cell depending on which multiply
  * produced it — the cache-key-agrees-with-request invariant broken by arithmetic rather than by
  * logic. Six decimals is ~11 cm, far finer than any grid here.

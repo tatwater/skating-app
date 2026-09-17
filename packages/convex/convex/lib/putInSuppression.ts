@@ -3,7 +3,7 @@
  *
  * Hiding a put-in writes a separate `hidden` row and leaves the visible one alone, so that the
  * suppression outlives however many reports re-derive the marker. The consequence every reader has
- * to honour is that filtering on `status === 'visible'` does *nothing* to a hidden launch — the
+ * to honor is that filtering on `status === 'visible'` does *nothing* to a hidden launch — the
  * hidden row is a different row. A reader that wants the launches a moderator has not hidden must
  * test each visible coord against the hidden coords with this predicate.
  *
@@ -19,7 +19,7 @@ export const HIDE_SUPPRESS_METERS = DEFAULT_PUTIN_MERGE_METERS;
 /**
  * Is `coord` within the suppression radius of any moderator-hidden coord?
  *
- * Exported because a hidden coordinate has to suppress its neighbours **everywhere the coordinate is
+ * Exported because a hidden coordinate has to suppress its neighbors **everywhere the coordinate is
  * read**, not only in `putIns.listForBody`. The imagery reveal mask (`imageryMasks`) buffers put-ins
  * into the shape a satellite photograph is allowed to show through, so a marker this predicate would
  * hide on the map but not in the bake would reveal the ground anyway — the same suppression, defeated

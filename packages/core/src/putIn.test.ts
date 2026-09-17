@@ -27,7 +27,7 @@ function square(lat0: number, lng0: number, half = 0.01): Polygon {
 
 describe('clusterPutIns', () => {
   it('collapses nearby points into a single marker at their centroid', () => {
-    // Three points within a few metres of each other.
+    // Three points within a few meters of each other.
     const points: LatLng[] = [
       { lat: 44.0, lng: -72.0 },
       { lat: 44.00002, lng: -72.00002 },
@@ -49,7 +49,7 @@ describe('clusterPutIns', () => {
     expect(clusters.every((c) => c.reportCount === 1)).toBe(true);
   });
 
-  it('honours a custom merge distance', () => {
+  it('honors a custom merge distance', () => {
     // ~78 m apart at this latitude: merged under the 150 m default, split under 10 m.
     const points: LatLng[] = [
       { lat: 44.0, lng: -72.0 },

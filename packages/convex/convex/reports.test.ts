@@ -773,7 +773,7 @@ describe('reports.update (author-only LWW, D25)', () => {
      * client sends whatever the *form* round-tripped — so this drives the actual round trip rather
      * than hand-writing the numbers, and would have caught an exact `===` here.
      */
-    test('an unedited modelled reading survives the form’s whole-unit rounding', async () => {
+    test('an unedited modeled reading survives the form’s whole-unit rounding', async () => {
       const t = convexTestWithGeo();
       const { asAuthor, reportId } = await seedReport(t);
       const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
@@ -800,7 +800,7 @@ describe('reports.update (author-only LWW, D25)', () => {
     /**
      * The other side of the same line, and the reason the check predicts the round trip instead of
      * allowing a whole-unit tolerance: both inputs take decimals. A tolerance would read 26.4 °F
-     * typed over a modelled 26 °F as unchanged and restore the model's number — discarding an edit
+     * typed over a modeled 26 °F as unchanged and restore the model's number — discarding an edit
      * to protect provenance, which is worse than the bug the check exists to prevent.
      */
     test('a fractional edit inside the displayed unit is still the author’s', async () => {

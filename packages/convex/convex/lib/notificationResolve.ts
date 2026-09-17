@@ -183,7 +183,7 @@ export async function resolveNotifications(
 ): Promise<NotificationView[]> {
   const load = new Loader(ctx);
   // Rows resolve concurrently rather than one `await` chain at a time: a page is thirty rows of a
-  // few reads each, and serialising them is thirty times the round trips for no ordering benefit —
+  // few reads each, and serializing them is thirty times the round trips for no ordering benefit —
   // `Promise.all` keeps the page order, and the memo dedups across rows regardless of which one
   // asked first because it stores the *promise*, set synchronously before any read resolves.
   const views = await Promise.all(rows.map((row) => resolveOne(load, row, blocked, now)));

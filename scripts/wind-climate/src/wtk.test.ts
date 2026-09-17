@@ -248,7 +248,7 @@ describe('climateFromAccumulator', () => {
 describe('roseFromCounts', () => {
   it('refuses a sample too thin to render as a percentage', () => {
     // A rose is shown as "wind comes from the NW about 19% of the time". That reads identically
-    // whether it summarises 300 hours or 14,000 (same discipline as D78 and D86).
+    // whether it summarizes 300 hours or 14,000 (same discipline as D78 and D86).
     const counts = emptyCounts();
     counts[0] = 100;
     expect(roseFromCounts(counts, 100)).toBeNull();

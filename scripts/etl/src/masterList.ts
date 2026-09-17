@@ -24,7 +24,7 @@
  *  bay       an arm of a larger body becomes a SUB-AREA   → not a body at all
  *  region    the merged outline, against the five states  → out-of-region
  *  downstate NY below I-84 (D111)                         → not covered
- *  salt      inside water a catalogue calls the sea       → refused (founder, no salt water)
+ *  salt      inside water a catalog calls the sea       → refused (founder, no salt water)
  *  gnis      a gazetteer name, BEFORE the floor           → admits 306 bodies
  *  floor     D96's four admission rules                   → the corpus
  *  sweep     overlapping survivors                        → duplicate-candidate, queued
@@ -102,7 +102,7 @@ export type KeptBody = Merged & {
   confidence: { name: string; polygon: string; cls: string };
   reviewReasons: ReviewReason[];
   inRegionFraction: number;
-  /** The gazetteer's own Feature ID, where no catalogue in the group asserted one (D105). */
+  /** The gazetteer's own Feature ID, where no catalog in the group asserted one (D105). */
   gnisIdFromGazetteer?: string | undefined;
   /** Other kept bodies this one overlaps — the duplicate sweep's finding. */
   duplicateOf?: string[] | undefined;
@@ -113,7 +113,7 @@ export type KeptBody = Merged & {
 /**
  * A bay that is an arm of a body we keep — **a sub-area, not a body** (founder, 2026-08-06).
  *
- * Carries the parent's *catalogue* ids rather than a Convex id, because the loader resolves the
+ * Carries the parent's *catalog* ids rather than a Convex id, because the loader resolves the
  * parent the same way `importCanonical` resolves anything else: by the ids on the record. It also
  * carries its own ids, so a bay promoted to a body later (or demoted from one) is traceable.
  */
@@ -167,7 +167,7 @@ export interface MasterListStats {
    * Counted apart because the two are different instruments answering the same question: one is a
    * federal estuary polygon covering the body, the other is a 1 m DEM reading at its interior point.
    * A single `saltWater` total could not say which moved, and they move for different reasons — the
-   * first when a catalogue redraws, the second when the corpus does.
+   * first when a catalog redraws, the second when the corpus does.
    */
   tidalByElevation: number;
   subAreas: number;
@@ -180,14 +180,14 @@ export interface MasterListStats {
   backlog: number;
   duplicatePairs: number;
   /**
-   * Bodies **one catalogue explicitly refused and another explicitly classified** — measured,
+   * Bodies **one catalog explicitly refused and another explicitly classified** — measured,
    * because nothing else can see them (second audit, 2026-08-06).
    *
    * `chooseClass` lets a real class beat a drop, and that rule is load-bearing: it is the 123-body
    * rescue the whole merge exists for, where OSM tags a body `wetland=marsh` and NHD calls the same
    * polygon `LakePond`. But it also means an *explicit* disagreement resolves silently — and
    * `scoreBody` cannot flag it either, because a refusal contributes `cls: null` and the scorer only
-   * sees the non-null claims. So the two catalogues contradicting each other outright is currently
+   * sees the non-null claims. So the two catalogs contradicting each other outright is currently
    * the one conflict that reaches nobody.
    *
    * The fixture is **Lac Saint-François**, 87,927 acres of the St. Lawrence on the NY/Québec border:
@@ -202,26 +202,26 @@ export interface MasterListStats {
   /**
    * The dissents our own rules deliberately overrule — `flowing` and `engineered`. See
    * `settledClassDissent`. Counted rather than queued, and watched: a sharp move here means a
-   * catalogue changed shape, the same tripwire `settledWetland` provides one layer up.
+   * catalog changed shape, the same tripwire `settledWetland` provides one layer up.
    */
   classDissentSettled: number;
   /**
    * The dissents nobody has ruled on — **the ones that become a review reason.**
    *
    * This is the number the queue is sized by, and the reason the split was worth doing: 354 rows of
-   * "two catalogues disagree" is not workable, where the residue after subtracting the known
+   * "two catalogs disagree" is not workable, where the residue after subtracting the known
    * patterns is.
    */
   classDissentUnsettled: number;
   classDissentSamples: string[];
   /**
-   * `classDissent`, **split by which catalogue code did the refusing** (A07a-2, founder 2026-08-08).
+   * `classDissent`, **split by which catalog code did the refusing** (A07a-2, founder 2026-08-08).
    *
    * The count above says 354 bodies are contested and nothing more, which is not enough to decide
    * whether they belong in a review queue. The class-conflict queue met exactly this problem and was
    * settled exactly this way: joining every one of its 652 rows to the NHD FTYPE behind it split
-   * them into **520 where the federal catalogue says LakePond and OSM says wetland** — the 123-body
-   * rescue, settled rather than contested — and **132 where the federal catalogue is the dissenter**,
+   * them into **520 where the federal catalog says LakePond and OSM says wetland** — the 123-body
+   * rescue, settled rather than contested — and **132 where the federal catalog is the dissenter**,
    * which are real. 652 → 162.
    *
    * Keyed `<refusing sourceToken> → <class kept>`, because both halves matter: NHD dropping 43% of
@@ -245,7 +245,7 @@ export interface MasterListStats {
    * `settledWetlandDissent`: this is the 123-body rescue, and asking a moderator to confirm it 520
    * times is the 1,437-row mistake `RECONCILABLE_CLASS_PAIRS` already had to undo once.
    *
-   * **The number is the point.** If it moves sharply between runs, a catalogue has changed under us
+   * **The number is the point.** If it moves sharply between runs, a catalog has changed under us
    * — and the original 123-body deletion went unnoticed precisely because the rule that caused it
    * left no count behind.
    */
@@ -280,7 +280,7 @@ export interface MasterListStats {
   stillWaterRescued: number;
   stillWaterRescuedSamples: string[];
   /**
-   * Lakes re-drawn from the catalogue that contains their own named bay — **D92's per-lake
+   * Lakes re-drawn from the catalog that contains their own named bay — **D92's per-lake
    * `geometrySource` override, applied on evidence** (founder, 2026-08-07).
    *
    * D92 settled OSM as the default on a *tie-break* (63.2% of lakes scored identically; OSM won for
@@ -311,7 +311,7 @@ export interface MasterList {
   stats: MasterListStats;
 }
 
-/** Samples kept per refusal reason. Enough to recognise a pattern, small enough for a run row. */
+/** Samples kept per refusal reason. Enough to recognize a pattern, small enough for a run row. */
 export const REFUSAL_SAMPLE_CAP = 5;
 /** Samples of the one conflict nothing else can see. See `MasterListStats.classDissent`. */
 export const CLASS_DISSENT_SAMPLE_CAP = 10;
@@ -327,14 +327,14 @@ export const STILL_WATER_SAMPLE_CAP = 10;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * How much two features from the **same** catalogue must overlap before we call them one lake.
+ * How much two features from the **same** catalog must overlap before we call them one lake.
  *
  * ## Why a same-source lane exists at all
  *
  * The three geometric lanes are `3dhp→nhd`, `osm→nhd` and `osm→3dhp`. Nothing matched OSM against
- * itself, and OSM is the one catalogue that routinely publishes a lake twice: a multipolygon
+ * itself, and OSM is the one catalog that routinely publishes a lake twice: a multipolygon
  * **relation** and its own outer **way** are both tagged, both valid, and both arrive as features.
- * Neither cross-catalogue lane can see it, so where NHD carries no counterpart — which is the normal
+ * Neither cross-catalog lane can see it, so where NHD carries no counterpart — which is the normal
  * case for wetland — both halves shipped as separate corpus rows.
  *
  * Measured on the 2026-08-09 corpus, `overlapDuplicates` (exhaustive over the kept set) found **37
@@ -343,20 +343,20 @@ export const STILL_WATER_SAMPLE_CAP = 10;
  *
  * ## Why the bar is 0.9 and not `RECONCILE_MIN_IOU`
  *
- * Cross-catalogue overlap is two independent publishers agreeing about a shoreline, which is real
- * evidence. **Same-catalogue overlap is not** — it is one publisher's data disagreeing with itself,
+ * Cross-catalog overlap is two independent publishers agreeing about a shoreline, which is real
+ * evidence. **Same-catalog overlap is not** — it is one publisher's data disagreeing with itself,
  * and the innocent explanation (a chain of ponds, a bay tagged separately, a reservoir over its
  * river) is at least as likely as the duplicate. So this lane is deliberately not tuned to catch as
  * many as possible: it collapses only what is mechanically certain and leaves the rest in the review
  * queue, where a same-source overlap has always belonged (founder, 2026-08-09).
  *
  * At 0.9 two features share nine tenths of their area. A relation and its outer ring score 1.000; a
- * bay against its parent, or two neighbours in a chain, are far below it — `RECONCILE_MIN_IOU`'s own
+ * bay against its parent, or two neighbors in a chain, are far below it — `RECONCILE_MIN_IOU`'s own
  * docstring puts a bay "typically well under 0.3 of its parent".
  *
  * ⚠ **`minIouWithGnis` must be raised with it, and that is not cosmetic.** `decideMatch` lowers the
  * bar to `RECONCILE_MIN_IOU_WITH_GNIS` (0.3) whenever both sides assert the same GNIS id — sound for
- * two catalogues, and actively wrong here: two OSM features sharing a GNIS id are most often a lake
+ * two catalogs, and actively wrong here: two OSM features sharing a GNIS id are most often a lake
  * and its own named arm, both tagged with the place name. Leaving that bar at 0.3 would merge
  * exactly the pairs this lane is built to leave alone.
  */
@@ -502,7 +502,7 @@ export interface MasterListInput {
 }
 
 /**
- * Three catalogues in, one master list out.
+ * Three catalogs in, one master list out.
  *
  * Pure: every input is data and the only side effect is the optional `log`. That is what lets the
  * ordering — which is where this pipeline's bugs have all lived — be pinned by a fixture test rather
@@ -543,7 +543,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // ── Stage 3b: OSM against itself, at a much higher bar ────────────────────
   //
   // The lane the first three could not cover. A multipolygon relation and its own outer way are one
-  // lake published twice, and no cross-catalogue lane sees it when NHD carries no counterpart —
+  // lake published twice, and no cross-catalog lane sees it when NHD carries no counterpart —
   // which is the normal case for wetland, and every pair this found is wetland. See
   // `SAME_SOURCE_MIN_IOU` for why the bar is 0.9 rather than 0.5, and why the GNIS bar moves with it.
   log('stage 3b: OSM ↔ OSM (same-source duplicates)…');
@@ -566,14 +566,14 @@ export function buildMasterList(input: MasterListInput): MasterList {
   //
   // 3DHP and NHD are the same polygons here, so an OSM body that one lane matched and the other
   // missed is **our** matcher erring — the only false-negative estimate available without
-  // hand-labelling.
+  // hand-labeling.
   //
   // **Both sides must be restricted to dual-published features, and only one of them was** (second
   // audit, 2026-08-06). The first version of this measured 15.53% and was corrected to restrict the
   // NHD side to features 3DHP also publishes — but left the 3DHP side unrestricted, so every OSM
   // body matching a 3DHP feature **NHD has no counterpart for** was counted as our error when it is
   // 3DHP's coverage. The asymmetry showed in the output and was the giveaway: 7 one way against 512
-  // the other, over two catalogues that are the same data.
+  // the other, over two catalogs that are the same data.
   const dualPublishedNhd = new Set(federal.pairs.map(([, nhdId]) => nhdId));
   const dualPublishedDhp = new Set(federal.pairs.map(([dhpId]) => dhpId));
   const eligible = new Set(
@@ -734,7 +734,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
   /**
    * What each survivor needs in order to have its review reasons computed — held **beside** the
    * bodies rather than on them, because `duplicate-candidate` cannot be decided until the whole
-   * surviving set exists, and stashing scratch fields on a record that is about to be serialised is
+   * surviving set exists, and stashing scratch fields on a record that is about to be serialized is
    * how a `_scores` key ends up in the corpus.
    */
   const pending = new Map<
@@ -748,7 +748,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // ── D92's per-lake override, on evidence ──────────────────────────────────
   //
   // Before anything asks which lake a bay belongs to, correct the lakes we are drawing from the
-  // wrong catalogue: a stored outline that excludes its own named arm, where a member outline
+  // wrong catalog: a stored outline that excludes its own named arm, where a member outline
   // contains it. Runs *first* so every later stage — the bay rule, the region clip, the floor, the
   // emit — reads one outline, and the loader clips against the same one the parent test accepted.
   const regeometried = overrideGeometryForContainedBays(merged);
@@ -757,7 +757,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     .slice(0, GEOMETRY_OVERRIDE_SAMPLE_CAP)
     .map((m) => `${m.name} ${m.from}→${m.to} (contains ${m.bay})`);
   if (regeometried.length > 0) {
-    log(`  ${regeometried.length} lake(s) re-drawn from the catalogue that contains their own bay`);
+    log(`  ${regeometried.length} lake(s) re-drawn from the catalog that contains their own bay`);
   }
 
   // The bay rule needs the whole merged set, so it runs here rather than in the classifier.
@@ -787,7 +787,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     //
     // It used to be demoted to `unclassified`, on the reasoning that without a parent we cannot
     // support the claim. But the claim a *name* makes is its own: `Paugus Bay` is 1,241 acres of
-    // named water on Winnipesaukee that no catalogue draws inside anything, and storing it as
+    // named water on Winnipesaukee that no catalog draws inside anything, and storing it as
     // `unclassified` records our matching failure as a fact about the lake. Unnamed, we have nothing
     // to go on and the demotion stands.
     //
@@ -821,15 +821,15 @@ export function buildMasterList(input: MasterListInput): MasterList {
     // because the token veto only fires when the federal estuary polygon lands in the group — and
     // one estuary against forty OSM coves never does. See `saltContainment`.
     // The allow-list is checked first and reads the *merged* name, so a body NHD leaves unnamed is
-    // still rescued by whichever catalogue named it. See `FRESHWATER_ALLOW_LIST` — two lakes dammed
+    // still rescued by whichever catalog named it. See `FRESHWATER_ALLOW_LIST` — two lakes dammed
     // above a tidal inlet of the same name, which no threshold can separate from the salt ponds
     // sitting either side of them.
     // **The elevation referee, for what the federal polygons cannot see** (founder, 2026-08-08).
     //
-    // The spatial veto above asks "is this body inside water a federal catalogue calls the sea",
+    // The spatial veto above asks "is this body inside water a federal catalog calls the sea",
     // which settles 941 bodies and says nothing about the ones those polygons never cover — Salt
     // Bay, The Pool at Biddeford, 100 Acre Cove. Tested against 4,794 `NHDArea` polygons, only 3
-    // hit. So the second question is one no catalogue had to answer: **how high is it?** Tidal water
+    // hit. So the second question is one no catalog had to answer: **how high is it?** Tidal water
     // is at sea level by definition; Paugus Bay is a 153 m arm of Winnipesaukee.
     //
     // Runs after the containment test, because containment is the stronger claim — a federal
@@ -949,7 +949,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       stats.confidence[k].set(scores[k], (stats.confidence[k].get(scores[k]) ?? 0) + 1);
     }
     if (needsAttention(scores)) stats.backlog++;
-    // One catalogue refused this outright while another named a class. See `classDissent`.
+    // One catalog refused this outright while another named a class. See `classDissent`.
     if (group.members.some((m) => m.cls === null) && group.members.some((m) => m.cls !== null)) {
       stats.classDissent++;
       // **Triaged, not just counted** (founder, 2026-08-08). 354 rows is a number, not a queue —
@@ -964,7 +964,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       }
       // **Which code refused, not just that something did.** A count cannot distinguish "NHD drops
       // 43% of its reservoirs by FCODE" — systematic, settled, and no business in a queue — from a
-      // catalogue genuinely contradicting another about what a body is. Tallied per refusing token
+      // catalog genuinely contradicting another about what a body is. Tallied per refusing token
       // so the split is a measurement rather than a guess, exactly as the class-conflict queue's
       // 652 → 162 was arrived at.
       for (const refuser of group.members.filter((m) => m.cls === null)) {
@@ -991,7 +991,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       reviewReasons: [],
       gnisIdFromGazetteer,
       // The losing names, kept. `namedByGnis` rather than `name`, so the gazetteer is only credited
-      // where it actually supplied the name rather than where it merely agreed with a catalogue.
+      // where it actually supplied the name rather than where it merely agreed with a catalog.
       nameClaims: nameClaimsOf(group.members, namedByGnis ? name : undefined),
       inRegionFraction: inRegionFraction(group, boundaryGrid),
     });
@@ -1129,7 +1129,7 @@ export function emitCanonicalBodies(
       emitted.push(
         toCanonicalBody({
           source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-          // The arrival key stays the id of whichever catalogue drew the outline, so the existing
+          // The arrival key stays the id of whichever catalog drew the outline, so the existing
           // contour tile stamps keep resolving through one more campaign (D93).
           externalId: idFromKey(k.key),
           name: k.name,

@@ -28,7 +28,7 @@
 
 # The GNIS gazetteer archive (A07a / D105). Same rule as `.raw-nhd/` and more urgent than most: the
 # staged URL carries NO vintage and is overwritten in place, so this directory is the only version
-# record that exists. And a GNIS name decides admission, not just labelling — see `gnisArchive.ts`.
+# record that exists. And a GNIS name decides admission, not just labeling — see `gnisArchive.ts`.
 .raw-gnis/
 
 # GNIS mirror config (holds no secrets, but stays local).

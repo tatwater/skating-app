@@ -6,7 +6,7 @@
  * *"Road closed south of the gate until repairs are done"* is the most useful sentence on a lake page
  * and the one most certain to be wrong. It is correct the day it's written and wrong by spring, and
  * nothing in the system knows the difference — because nothing in the system is *asked*. So an access
- * blocker is modelled the way a hazard is: somebody asserts it, other people confirm or deny it, and
+ * blocker is modeled the way a hazard is: somebody asserts it, other people confirm or deny it, and
  * absent either it goes away on its own.
  *
  * ## The one thing this must not borrow from hazards
@@ -152,7 +152,7 @@ export function accessAlertExpiryFor(atMs: number, seasonEndMs: number): number 
  * content of the founder's exemption. An `active` row is live until its TTL passes, which is checked
  * here as well as by the sweep: a row whose expiry has passed but which the cron hasn't reached yet
  * must not annotate a put-in in the meantime, or the sweep's schedule would become a visible
- * behaviour.
+ * behavior.
  */
 export function accessAlertIsLive(alert: AccessAlertRecord, nowMs: number): boolean {
   if (alert.status === 'official') return true;

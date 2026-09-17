@@ -589,7 +589,7 @@ def basemap_groups(zoom, feats, tol, occluder=None):
     # ---- global label collision -------------------------------------------------------------
     # MapLibre drops a label whose box hits one already placed. Without this, a small frame piles
     # four names on the same lake. Priority is by importance rather than by MapLibre's placement
-    # order, which is the more useful behaviour for a mockup.
+    # order, which is the more useful behavior for a mockup.
     style_by_id = {l["id"]: l for l in style}
     boxes, keep, occluded = [], [], 0
     for c in sorted(cands, key=lambda c: (LABEL_PRIORITY.get(c["lid"], 9), -c["size"])):
@@ -672,7 +672,7 @@ def lake_groups(zoom, step, tol):
     groups, kept, dropped = [], 0, 0
     for depth in depths:
         # contourColorExpression: 0 -> shallow, maxDepthFt -> deep, scaled to THIS lake. The ramp
-        # spans the lake's full depth even when `step` drops levels, so colours stay comparable.
+        # spans the lake's full depth even when `step` drops levels, so colors stay comparable.
         color = _lerp_color(CONTOUR_SHALLOW, CONTOUR_DEEP, min(1.0, depth / max(1, top)))
         rings = []
         for f in by_depth[depth]:

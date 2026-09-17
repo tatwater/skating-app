@@ -7,7 +7,7 @@
  *
  *   1. **Lines or points?** `esriGeometryPolyline` means the agency surveyed isobaths and we tile what
  *      they published. `esriGeometryPoint` means soundings, and *we* fit the surface — a weaker
- *      provenance claim that has to be labelled differently in the UI (§Maine).
+ *      provenance claim that has to be labeled differently in the UI (§Maine).
  *   2. **How much is there?** The record count sizes the fetch and, for a sounding lane, is the first
  *      input to the density gate.
  *   3. **What are we required to say?** `copyrightText` is where an agency's credit wording actually

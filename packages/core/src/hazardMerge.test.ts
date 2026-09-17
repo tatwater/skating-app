@@ -90,7 +90,7 @@ describe('shouldAutoMerge', () => {
     );
   });
 
-  it('honours a moderator who separated the pair', () => {
+  it('honors a moderator who separated the pair', () => {
     // Otherwise Unmerge is a button that undoes nothing: the next create on the same spot re-merges
     // them by the same rule that merged them the first time.
     expect(verdict(pin('a', { noMergeWith: ['b'] }), pin('b', { metersEast: 5 }))).toBe(
@@ -101,7 +101,7 @@ describe('shouldAutoMerge', () => {
     );
   });
 
-  it('honours a skater who was shown the pin and said theirs was different', () => {
+  it('honors a skater who was shown the pin and said theirs was different', () => {
     // The nudge promised not to argue. Merging anyway is the same argument, held quietly.
     expect(verdict(pin('a'), pin('b', { metersEast: 5, dismissedDuplicateOf: 'a' }))).toBe(
       'skater_said_different',
@@ -112,7 +112,7 @@ describe('shouldAutoMerge', () => {
   // folded into a survivor — on the offline path hours pass between the nudge and the flush — and a
   // sibling overlapping the same ice is, by this phase's own definition, the same hazard. Either would
   // absorb the new pin into the very thing they rejected, through a door the exact-id check leaves open.
-  it('honours the dismissal against the survivor the shown pin was folded into', () => {
+  it('honors the dismissal against the survivor the shown pin was folded into', () => {
     // 'a' is what the skater declined; 'survivor' is what carries that hazard now.
     expect(
       verdict(pin('mine', { dismissedDuplicateOf: 'a' }), pin('survivor', { metersEast: 5 })),
@@ -126,7 +126,7 @@ describe('shouldAutoMerge', () => {
     ).toBe('skater_said_different');
   });
 
-  it('honours it against a cluster sibling of the pin that was shown', () => {
+  it('honors it against a cluster sibling of the pin that was shown', () => {
     expect(
       verdict(
         pin('mine', { dismissedDuplicateOf: 'a' }),

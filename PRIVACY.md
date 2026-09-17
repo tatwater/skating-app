@@ -50,7 +50,7 @@ your reports"). The app is not directed at children under 16.
   we collect technical data like app version, device model, OS, and error details, plus
   timing information about how the app performs: how long screens and pages take to
   load, and how long the app's network requests take (to our backend, the weather and
-  map services, and sign-in). Performance data is labelled by screen or route type
+  map services, and sign-in). Performance data is labeled by screen or route type
   (e.g. "lake detail"), and any web address in it has its query string removed before
   it leaves your device. We **do not** send your IP address, cookies, request bodies,
   or the contents of any form to Sentry, and before anything is sent we remove

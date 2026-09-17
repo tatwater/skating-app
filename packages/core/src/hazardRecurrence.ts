@@ -203,7 +203,7 @@ export function recurrencePriority(input: RecurrenceScoreInput): number {
  * The decay tier a cluster is ranked at: the **most permanent** tier among its member types.
  *
  * Most permanent rather than an average, because a cluster is one physical thing and its tier is a
- * claim about that thing's behaviour. A cluster holding both `pressure_ridge` (C) and `ice_heave` (C)
+ * claim about that thing's behavior. A cluster holding both `pressure_ridge` (C) and `ice_heave` (C)
  * is straightforward; one holding `thin_ice` (A) and `thawed_rotten` (A) is tier A whichever way you
  * count. Where they differ, the more structural reading is the one an operator should be shown, since
  * the list exists to surface things that come back.
@@ -237,7 +237,7 @@ function clamp01(value: number): number {
 }
 
 /**
- * The member whose footprint centre is most central to the cluster — the **representative**.
+ * The member whose footprint center is most central to the cluster — the **representative**.
  *
  * A medoid rather than a centroid, and the difference is the point: a medoid is a shape somebody
  * actually drew. An averaged line can bend a ridge through ice nobody ever marked, and a promoted

@@ -11,7 +11,7 @@
  * ## Why the split is the whole point
  *
  * The previous loader fetched and computed in one pass, which meant the only artifact of 5,225
- * requests was sixteen normalised frequencies per body. It had also been requesting wind **speed**
+ * requests was sixteen normalized frequencies per body. It had also been requesting wind **speed**
  * on every one of those requests and discarding it — so adding sustained-wind capture, which should
  * have been a local recompute, became a second 7.7-hour fetch. See `archive.ts`.
  *

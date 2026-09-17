@@ -131,7 +131,7 @@ function ringIsUsable(ring: Position[]): boolean {
 }
 
 /**
- * Local metres east/north of `origin` (equirectangular / flat-earth around the origin).
+ * Local meters east/north of `origin` (equirectangular / flat-earth around the origin).
  *
  * Mirrors `geometry.ts`'s private helper deliberately rather than importing it: this file's
  * consumers project *whole lake polygons* around a centroid, where the relevant accuracy question
@@ -150,7 +150,7 @@ function toLocal([lng, lat]: readonly [number, number], origin: LatLng): [number
 // ── A06c §1.3 — Shoreline length ────────────────────────────────────────────────────────────────────
 
 /**
- * Total shoreline length in metres — **every ring of every component**, outer rings and island
+ * Total shoreline length in meters — **every ring of every component**, outer rings and island
  * holes alike.
  *
  * **Islands count, and that is the conventional definition.** A lake's shoreline is all the water's
@@ -160,12 +160,12 @@ function toLocal([lng, lat]: readonly [number, number], origin: LatLng): [number
  * and never "lap" for exactly this reason.
  *
  * Measured geodesically per segment (`haversineMeters`) rather than in a local projection, because
- * a shoreline can span tens of kilometres and the projection error would accumulate along it.
+ * a shoreline can span tens of kilometers and the projection error would accumulate along it.
  *
  * **Never present the result as authoritative.** Measured at source resolution it is a real
  * improvement over the simplified copy, but OSM's shoreline is a tracing by many hands at many
  * zooms from different imagery, and it will not equal a published survey figure. This is D3-adjacent
- * and worth saying twice, because a distance *looks* like a hard fact in a way a modelled depth
+ * and worth saying twice, because a distance *looks* like a hard fact in a way a modeled depth
  * does not — which makes it more dangerous to present bare, not less.
  */
 export function shorelineMeters(geom: Polygon | MultiPolygon): number {
@@ -187,19 +187,19 @@ export function shorelineMeters(geom: Polygon | MultiPolygon): number {
 
 /** A lake's dimension line: the two sides of its minimum-area bounding rectangle. */
 export interface LakeAxes {
-  /** The longer side of the minimum-area bounding rectangle, in metres. */
+  /** The longer side of the minimum-area bounding rectangle, in meters. */
   longAxisM: number;
   /**
    * The long axis's bearing in `[0, 180)`, degrees clockwise from north. **Undirected** — an axis
    * has no head, so 20° and 200° are the same axis and both normalize to 20°.
    */
   longAxisBearingDeg: number;
-  /** The shorter side of the same rectangle, in metres. */
+  /** The shorter side of the same rectangle, in meters. */
   shortAxisM: number;
 }
 
 /**
- * Andrew's monotone chain convex hull over local-metre points. Returns the hull in
+ * Andrew's monotone chain convex hull over local-meter points. Returns the hull in
  * counter-clockwise order without the closing duplicate. Fewer than three distinct points yields
  * the input, which the caller treats as degenerate.
  */
@@ -354,7 +354,7 @@ export function lakeAxes(geom: Polygon | MultiPolygon, origin?: LatLng): LakeAxe
  */
 const INTERIOR_SCANLINES = 15;
 
-/** Every x where the horizontal line `y = at` crosses one of these rings, in local metres. */
+/** Every x where the horizontal line `y = at` crosses one of these rings, in local meters. */
 function horizontalCrossings(localRings: [number, number][][], at: number): number[] {
   const xs: number[] = [];
   for (const ring of localRings) {
@@ -396,8 +396,8 @@ function longestSpanAt(
  * ## Why this exists: `waterBodies.centroid` is not a centroid
  *
  * The stored `centroid` comes from `representativePoint`, i.e. Turf's `pointOnFeature`, which
- * guarantees a point *on* the feature — the bbox centre when that lands inside the polygon, and a
- * point on the **boundary** when it doesn't. For a curved or narrow lake the bbox centre is on dry
+ * guarantees a point *on* the feature — the bbox center when that lands inside the polygon, and a
+ * point on the **boundary** when it doesn't. For a curved or narrow lake the bbox center is on dry
  * land, so the stored point sits on the shoreline. Measured on the dev corpus: Lake Willoughby's
  * `centroid` **is ring vertex 199**.
  *
@@ -416,7 +416,7 @@ function longestSpanAt(
  * It also lands where the water is most open, which is the right bias for a figure describing
  * exposure.
  *
- * *(The textbook answer is the pole of inaccessibility — the centre of the largest inscribed
+ * *(The textbook answer is the pole of inaccessibility — the center of the largest inscribed
  * circle. It is a better point and it needs a dependency we don't have and a quadtree we'd have to
  * maintain; the difference between the two is far inside the uncertainty of a centroid-scale fetch
  * figure, which A06c §1.4 already states is the dominant error here.)*
@@ -508,7 +508,7 @@ function anchorFor(ring: Position[]): LatLng {
 
 /**
  * Distance from the ray origin to the **first** boundary crossing along `bearingDeg`, in local
- * metres, or `null` when the ray never crosses one.
+ * meters, or `null` when the ray never crosses one.
  *
  * The first crossing is exactly the end of the contiguous over-water run containing the origin,
  * which is what makes islands and concave shorelines come out honestly with no special casing: an
@@ -543,7 +543,7 @@ function firstBoundaryCrossing(
 }
 
 /**
- * The 16-bearing wind-fetch profile at the body's centroid, in metres — `fetchProfileM` on
+ * The 16-bearing wind-fetch profile at the body's centroid, in meters — `fetchProfileM` on
  * `waterBodies`.
  *
  * **Wind fetch** is the distance wind travels over open water before reaching a point. It is one of
@@ -580,7 +580,7 @@ function firstBoundaryCrossing(
  * direction, and a zero in a profile of non-zeros is visible in review.
  */
 export function fetchProfileMeters(geom: Polygon | MultiPolygon, origin?: LatLng): number[] | null {
-  // A caller-supplied origin is honoured only if it is genuinely in the water; otherwise (and by
+  // A caller-supplied origin is honored only if it is genuinely in the water; otherwise (and by
   // default) we derive one. Passing `waterBodies.centroid` must not silently produce a shore-cast
   // profile, which is exactly the bug this guard exists for.
   const from = origin && isStrictlyInside(geom, origin) ? origin : fetchOrigin(geom);
@@ -611,7 +611,7 @@ function componentContaining(geom: Polygon | MultiPolygon, point: LatLng): Posit
  * Is this point inside the water and **not on its edge**?
  *
  * `pointInPolygon` counts the boundary as inside, which is the right call for "is this report on
- * this lake" and the wrong one for "can I cast a ray from here". A metre of clearance is far below
+ * this lake" and the wrong one for "can I cast a ray from here". A meter of clearance is far below
  * any real shoreline feature and far above float noise.
  */
 function isStrictlyInside(geom: Polygon | MultiPolygon, point: LatLng): boolean {

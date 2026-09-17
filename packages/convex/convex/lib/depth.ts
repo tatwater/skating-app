@@ -11,7 +11,7 @@
  *    reason shallowness is a boolean and not a curve (a moderator's flag carries no number).
  *
  * OR, not precedence: either one saying "shallow" is enough. A local who flags a bay knows something the
- * modelled mean depth of the whole lake does not.
+ * modeled mean depth of the whole lake does not.
  */
 
 import { isShallowDepth } from '@skating/core';

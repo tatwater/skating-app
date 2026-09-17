@@ -10,8 +10,8 @@
  *    snow clause, the event day) is tested in memory over what the index returned.
  * 2. **Cells, not bodies.** Matched digests are the answer to *"where"*; nothing has read a body yet.
  *    The map stops here (`matchedCells`) and dims by cell on the client (D166).
- * 3. **The drive-time band, on cell centres first.** Per-user and uncacheable, so it comes last in
- *    D159's ordering — but cheap on a cell centre, and applying it before the join is what keeps a
+ * 3. **The drive-time band, on cell centers first.** Per-user and uncacheable, so it comes last in
+ *    D159's ordering — but cheap on a cell center, and applying it before the join is what keeps a
  *    Vermont-wide freeze from resolving 12,000 bodies for a viewer who asked for thirty minutes.
  *    A bounding box widened by a cell half-diagonal is the pre-test; the band itself is applied to
  *    each body's centroid exactly, as the feed does.
@@ -56,7 +56,7 @@ const MAX_BODY_RESULT_LIMIT = 200;
 
 /**
  * Half a filter cell's diagonal, in degrees — the margin the band's bounding box is widened by
- * before a cell centre is tested against it. A body sits anywhere inside its cell, so a centre just
+ * before a cell center is tested against it. A body sits anywhere inside its cell, so a center just
  * outside the box can still own a body just inside it.
  */
 const CELL_HALF_DIAGONAL_DEG = (WEATHER_TIER_SPECS.filter.cellDeg * Math.SQRT2) / 2;
@@ -123,7 +123,7 @@ async function matchedCellsFor(
   return out;
 }
 
-/** A simple lat/lng box — the band's extent, for the cell-centre pre-test. */
+/** A simple lat/lng box — the band's extent, for the cell-center pre-test. */
 interface Box {
   minLat: number;
   maxLat: number;
@@ -182,7 +182,7 @@ function inBox(lat: number, lng: number, box: Box, margin: number): boolean {
  *
  * The drive-time radius is applied on the client, from the viewer's own cached bands, for the same
  * reason: it already has them (`profiles.current`), and a per-body test there is exact where a
- * cell-centre test here is not.
+ * cell-center test here is not.
  */
 export const matchedCells = query({
   args: { filters: v.any() },

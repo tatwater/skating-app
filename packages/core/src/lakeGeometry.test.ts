@@ -33,7 +33,7 @@ function rect(b: BBox): Polygon {
   };
 }
 
-/** A square centred on the origin, `halfDeg` degrees to a side's midpoint. */
+/** A square centered on the origin, `halfDeg` degrees to a side's midpoint. */
 function square(halfDeg: number, centre: LatLng = { lat: 44, lng: -73 }): Polygon {
   return rect({
     minLat: centre.lat - halfDeg,
@@ -43,7 +43,7 @@ function square(halfDeg: number, centre: LatLng = { lat: 44, lng: -73 }): Polygo
   });
 }
 
-/** Metres per degree of latitude, on the mean-radius sphere the module uses. */
+/** Meters per degree of latitude, on the mean-radius sphere the module uses. */
 const M_PER_DEG_LAT = (Math.PI / 180) * 6_371_008.8;
 
 describe('compass buckets', () => {
@@ -350,7 +350,7 @@ describe('fetchProfileMeters', () => {
 
   it('is indexed by the direction the wind blows FROM', () => {
     // A big lake with the sample point tucked into its SE corner: there is ~10 km of open water to
-    // its north-west and a few hundred metres to its south-east. Wind *out of* the north-west has
+    // its north-west and a few hundred meters to its south-east. Wind *out of* the north-west has
     // crossed all that water; wind out of the south-east has crossed almost none. Reading the
     // profile with the opposite convention returns a plausible number that is exactly wrong, which
     // is why this is asserted rather than left to the doc comment.
@@ -400,7 +400,7 @@ describe('fetchProfileMeters', () => {
 
   it('ignores a supplied origin that is not in the water, and derives one instead', () => {
     // The load-bearing guard. `waterBodies.centroid` is Turf's `pointOnFeature`, which returns a
-    // point ON the boundary whenever the bbox centre falls outside the polygon — true for any
+    // point ON the boundary whenever the bbox center falls outside the polygon — true for any
     // curved or narrow lake. Casting rays from there produced 0.0 on half the compass.
     const lake = square(0.02, centre);
     const onTheShore: LatLng = { lat: 44, lng: -73.02 }; // exactly on the west edge
@@ -410,10 +410,10 @@ describe('fetchProfileMeters', () => {
     expect(profile).toEqual(fetchProfileMeters(lake));
   });
 
-  it('honours a supplied origin that IS strictly inside', () => {
+  it('honors a supplied origin that IS strictly inside', () => {
     const lake = square(0.02, centre);
     const offCentre: LatLng = { lat: 44.01, lng: -73 };
-    // A point well inside but off-centre has more water south of it than north.
+    // A point well inside but off-center has more water south of it than north.
     const profile = fetchProfileMeters(lake, offCentre) ?? [];
     expect(profile[fetchBucketFor(180)]).toBeGreaterThan(profile[fetchBucketFor(0)] as number);
   });
@@ -478,7 +478,7 @@ describe('fetchProfileMeters', () => {
           // a side when this module moved off hull-diameter onto the minimum-area rectangle, and a
           // ray cast toward a corner runs along the diagonal — which is up to 1.41x the long side
           // on a square. The old assertion survived because fast-check had not yet drawn a nearly
-          // square lake with an off-centre fetch origin; it did on seed -298658357.
+          // square lake with an off-center fetch origin; it did on seed -298658357.
           const diagonal = Math.hypot(axes?.longAxisM ?? 0, axes?.shortAxisM ?? 0);
           for (const d of profile) expect(d).toBeLessThanOrEqual(diagonal + 1);
         },

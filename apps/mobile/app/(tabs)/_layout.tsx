@@ -236,7 +236,7 @@ export default function TabsLayout() {
         options={{
           title: 'You',
           // The dot is decorative; the count rides on the tab's own label, which is what a screen
-          // reader actually announces (a nested labelled View inside the icon is not read).
+          // reader actually announces (a nested labeled View inside the icon is not read).
           tabBarAccessibilityLabel: unread > 0 ? `You, ${unread} unread notifications` : 'You',
           tabBarIcon: ({ color, size }) => (
             <View>

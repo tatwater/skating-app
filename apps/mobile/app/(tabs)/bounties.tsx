@@ -14,7 +14,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   fulfilled: 'Fulfilled',
   expired: 'Expired',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
 };
 
 /** "3.2 mi away" — a browse row's distance when `listOpen` was asked to sort by proximity. */

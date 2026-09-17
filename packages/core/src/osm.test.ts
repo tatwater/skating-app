@@ -166,9 +166,9 @@ describe('the five admission rules (D91 + D96)', () => {
 
   it('needs no derived statistic — every rule reads name, area and type alone', () => {
     // This replaced a long-axis exemption, which was the only rule gated on a computed shape stat.
-    // That forced lazy stats in the transform AND split the correct behaviour in two: an import must
+    // That forced lazy stats in the transform AND split the correct behavior in two: an import must
     // refuse an unprovable body, a prune must keep it. Two readings of one rule is how a silent
-    // deletion happens. Area needs no such branch — assert the property, not just the behaviour.
+    // deletion happens. Area needs no such branch — assert the property, not just the behavior.
     expect(UNNAMED_WETLAND_MIN_ACRES).toBe(50);
     expect(UNNAMED_WETLAND_MIN_SQM).toBeGreaterThan(MIN_SURFACE_AREA_SQM);
   });

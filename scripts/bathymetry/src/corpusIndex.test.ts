@@ -60,7 +60,7 @@ describe('coveringBody — what the D95 re-key resolves against', () => {
     expect(coveringBody(index, { lat: 45.56, lng: -69.64 })?.externalId).toBe('moosehead');
   });
 
-  it('honours holes — a point in an island is not in the lake', () => {
+  it('honors holes — a point in an island is not in the lake', () => {
     const withIsland: CorpusBody = {
       ...body('donut', -70, 44, 0.1),
       polygon: {

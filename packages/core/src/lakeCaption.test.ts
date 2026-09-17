@@ -114,7 +114,7 @@ describe('lakeCaption', () => {
       );
     });
 
-    it('a modelled depth reads as an estimate', () => {
+    it('a modeled depth reads as an estimate', () => {
       // A 90 m-DEM guess must not sound like a depth-sounder transect.
       for (const source of ['globathy', 'hydrolakes_modeled'] as const) {
         expect(lakeCaption({ maxDepthM: 30, maxDepthSource: source })).toContain(

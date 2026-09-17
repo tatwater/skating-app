@@ -50,7 +50,7 @@ import { Text, XStack, YStack } from 'tamagui';
 /**
  * Wide enough to read as a handle and to leave a window worth looking through — 12 less two 2 px
  * walls is 8 px of clear space over a 2 px mark, four times what it has to clear — and narrow enough
- * not to bury its neighbours, which in a dense winter are 6 px apart.
+ * not to bury its neighbors, which in a dense winter are 6 px apart.
  */
 const THUMB_WIDTH = 12;
 
@@ -153,7 +153,7 @@ export function FreezeUpScrubber({
   // lives in React state and the haptic is a native module call — neither is worklet-safe, and the
   // failure for both is a runtime crash on the UI thread rather than a type error here.
   //
-  // `minDistance(0)` makes a tap scrub as well, so the track does not have two behaviours a finger
+  // `minDistance(0)` makes a tap scrub as well, so the track does not have two behaviors a finger
   // has to know about before touching it.
   const pan = Gesture.Pan()
     .minDistance(0)
@@ -171,7 +171,7 @@ export function FreezeUpScrubber({
     // ⚠ **The anchor first, and it is a date rather than an index.** Switching bands swaps a ~30-pass
     // optical season for a ~9-pass radar one; carrying the number across means nothing, and landing
     // on "most recent" throws away the part of the winter the skater was reading. The date is what
-    // they meant. `nearestLandableStopToDate` returns null when the anchor cannot be honoured, and
+    // they meant. `nearestLandableStopToDate` returns null when the anchor cannot be honored, and
     // then this is an ordinary opening: the season runs forward to now, so now is where it starts.
     const anchored = anchorAt ? nearestLandableStopToDate(stops, anchorAt) : null;
     const landing = anchored ?? nearestLandableStop(stops, stops.length - 1);
@@ -372,7 +372,7 @@ export function FreezeUpScrubber({
           {SCL_LEGEND.map((entry) => (
             <XStack key={entry.color} alignItems="center" gap="$1.5">
               {/* `style`, not `backgroundColor`: these are literal hexes from the cutter's palette,
-                  and a Tamagui colour prop is typed to theme tokens. Casting one would be claiming
+                  and a Tamagui color prop is typed to theme tokens. Casting one would be claiming
                   it is a token; it is deliberately not, because it has to equal what `gdaldem`
                   painted rather than whatever the theme says. */}
               <XStack

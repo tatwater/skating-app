@@ -52,7 +52,7 @@ const SAMPLE_BODY = {
 /**
  * A canonical (OSM) body as the ETL would hand it to `importCanonical`.
  *
- * **`osmId` is now required in practice** (A07a / D93): the upsert keys on the catalogue ids, and a
+ * **`osmId` is now required in practice** (A07a / D93): the upsert keys on the catalog ids, and a
  * record carrying none cannot be identified at all — `resolveUpsert` returns `conflict` rather than
  * inventing one. It used to be derived from `source` + `externalId`, which is the conflation D93
  * exists to undo.
@@ -480,7 +480,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
 
   test('returns a large body whose centroid is off-screen but whose bbox overlaps (tier-2, D5)', async () => {
     const t = convexTestWithGeo();
-    // The exact case that regressed at corpus scale: a big lake centred at (0.8, 0.8) — well
+    // The exact case that regressed at corpus scale: a big lake centered at (0.8, 0.8) — well
     // outside the tiny viewport AND outside the tier-1 margin — but whose bbox spans it. Only
     // the tier-2 large-body scan can catch it; tier 1's small margin never reaches its centroid.
     await t.mutation(internal.waterBodies.importCanonical, {
@@ -519,7 +519,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () =>
   test('refines out a body that shares a cell with the viewport but whose bbox is not in view', async () => {
     const t = convexTestWithGeo();
     // A cell is coarser than the viewport at every rung but the finest, so "in one of these cells"
-    // is a *superset* of "in view" — this pond (bbox 0.11–0.14) sits in a neighbouring cell that
+    // is a *superset* of "in view" — this pond (bbox 0.11–0.14) sits in a neighboring cell that
     // the covering touches, and the bboxIntersects refine is what drops it.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
@@ -751,7 +751,7 @@ describe('waterBodies name claims and searchText (A07a)', () => {
       }),
     );
 
-    // The very same catalogue record arrives again, still insisting on "The Basin".
+    // The very same catalog record arrives again, still insisting on "The Basin".
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
     const after = await t.run((ctx) => ctx.db.get(bodyId));
     expect(after?.name).toBe('Lake Auburn');
@@ -796,7 +796,7 @@ describe('waterBodies name claims and searchText (A07a)', () => {
     // Choosing what displays must never cost a name — both stay searchable.
     expect(picked?.searchText).toBe('Lake Auburn The Basin');
 
-    // The catalogue insists on "The Basin" again; the moderator's decision wins.
+    // The catalog insists on "The Basin" again; the moderator's decision wins.
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
     expect((await t.run((ctx) => ctx.db.get(bodyId)))?.name).toBe('Lake Auburn');
 
@@ -1411,7 +1411,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
 
   test('keeps OSM and NHD distinct when they share an externalId but not an identity', async () => {
     // This used to be guaranteed by `source` being half the upsert key. It is now guaranteed by
-    // something stronger: the two records assert *different catalogue ids*, so `resolveUpsert` finds
+    // something stronger: the two records assert *different catalog ids*, so `resolveUpsert` finds
     // nothing in common. A shared `externalId` is a coincidence of string formatting and means
     // nothing to the upsert at all — which is the point of splitting the two fields.
     const t = convexTestWithGeo();
@@ -1440,8 +1440,8 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
   });
 
   test('two records claiming the SAME osmId are one lake, however they arrived', async () => {
-    // The mirror of the test above, and the behaviour change worth stating out loud: identity is the
-    // catalogue id now, so two records asserting `osmId: 'shared/1'` are the same body even when
+    // The mirror of the test above, and the behavior change worth stating out loud: identity is the
+    // catalog id now, so two records asserting `osmId: 'shared/1'` are the same body even when
     // their `source` and `externalId` differ. Under the old key they would have been two rows.
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
@@ -2449,7 +2449,7 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
       names: true,
     });
     // Whichever way the budget falls, it has to fall the same way on both ponds: the answer may not
-    // depend on where in the box a body sits. (Old behaviour: head in, tail out.)
+    // depend on where in the box a body sits. (Old behavior: head in, tail out.)
     const names = stats.names ?? [];
     expect(names.includes('Head Pond')).toBe(names.includes('Tail Pond'));
     // What's dropped is the finest *rung* — the tier that only draws once you've zoomed all the way
@@ -2840,14 +2840,14 @@ describe('waterBodies.findMatchCandidates (the "attach here?" steer, D36)', () =
 });
 
 /**
- * Catalogue identity — `osmId` / `nhdId` / `geometrySource` (A06b follow-up).
+ * Catalog identity — `osmId` / `nhdId` / `geometrySource` (A06b follow-up).
  *
  * These fields exist to separate *who a lake is* from *which key we imported it under*, so that a
  * body can eventually hold both an OSM and an NHD identity and draw from either. The tests that
  * matter are the two invariants a later NHD reconciliation depends on: an import must assert only
  * what it knows, and a re-import must not erase what reconciliation worked out.
  */
-describe('waterBodies catalogue identity', () => {
+describe('waterBodies catalog identity', () => {
   test('a canonical import stamps osmId and geometrySource without a backfill', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
@@ -2890,7 +2890,7 @@ describe('waterBodies catalogue identity', () => {
     expect((await t.run(async (ctx) => ctx.db.get(id)))?.nhdId).toBe('now-right');
   });
 
-  test('stores the third catalogue id and the gazetteer id D93 named', async () => {
+  test('stores the third catalog id and the gazetteer id D93 named', async () => {
     // `threeDhpId` is a third of `resolveUpsert`'s lookup and had no column until A07a step 5; `gnisId`
     // proposes candidates and must never decide identity (GNIS_IS_NOT_AN_UPSERT_KEY).
     const t = convexTestWithGeo();
@@ -2926,7 +2926,7 @@ describe('waterBodies catalogue identity', () => {
   });
 });
 
-describe('importCanonical keyed on catalogue ids (A07a / D93)', () => {
+describe('importCanonical keyed on catalog ids (A07a / D93)', () => {
   test('an NHD feature finds the OSM body it already is, instead of duplicating it', async () => {
     // **The failure this whole phase exists to prevent.** Under `(source, externalId)` an NHD record
     // could never match an OSM row, so importing the federal lane would have inserted a second copy
@@ -3013,7 +3013,7 @@ describe('importCanonical keyed on catalogue ids (A07a / D93)', () => {
     expect(all.every((b) => b.dedupStatus === 'near_certain')).toBe(true);
   });
 
-  test('refuses a record carrying no catalogue id at all, rather than inventing one', async () => {
+  test('refuses a record carrying no catalog id at all, rather than inventing one', async () => {
     const t = convexTestWithGeo();
     const res = await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...CANONICAL_ITEM, osmId: undefined, nhdId: undefined, threeDhpId: undefined }],
@@ -3086,7 +3086,7 @@ describe('importCanonical keyed on catalogue ids (A07a / D93)', () => {
     expect(res).toMatchObject({ deleted: 0, kept: expect.objectContaining({ dedupOrMerged: 2 }) });
   });
 
-  test('a 3dhp-only feature can be stored — the lake neither other catalogue draws', async () => {
+  test('a 3dhp-only feature can be stored — the lake neither other catalog draws', async () => {
     const t = convexTestWithGeo();
     const res = await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
@@ -3182,7 +3182,7 @@ describe('the merged record is accepted and stored whole', () => {
 
   test('an explicit list replaces, where a --state tag still unions', async () => {
     const t = convexTestWithGeo();
-    // The OSM lane's behaviour, unchanged: one extract at a time, accumulating.
+    // The OSM lane's behavior, unchanged: one extract at a time, accumulating.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
       state: 'VT',
@@ -3615,7 +3615,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
     expect(await t.run((ctx) => ctx.db.get(loser))).toBeNull();
   });
 
-  test('handles an unnamed NHD-sourced pair, and honours an explicit limit', async () => {
+  test('handles an unnamed NHD-sourced pair, and honors an explicit limit', async () => {
     // The unnamed path matters: 791 of the campaign's deletions carry no name at all, and the
     // coverage lookup keys on `source`, so an NHD-sourced loser reads a different side table.
     const t = convexTestWithGeo();
@@ -4149,7 +4149,7 @@ describe('the remaining edges of the corpus tooling', () => {
     const acres = (n: number) => n * 4046.8564224;
     await t.run(async (ctx) => {
       const rows = [
-        // above the 10 ha floor: one measured, one modelled, one with nothing
+        // above the 10 ha floor: one measured, one modeled, one with nothing
         { id: 'a', a: 60, max: 12, src: 'state_agency' as const },
         { id: 'b', a: 60, max: 9, src: 'globathy' as const },
         { id: 'c', a: 60, max: undefined, src: undefined },
@@ -4759,7 +4759,7 @@ describe('resolveIncomingMergeDuplicates (A07a)', () => {
     expect((await t.run((ctx) => ctx.db.get(survivor._id)))?.elevationM).toBeUndefined();
   });
 
-  // Losing a modelled depth costs a recompute. Losing a curation decision costs a human judgement
+  // Losing a modeled depth costs a recompute. Losing a curation decision costs a human judgement
   // with no trace of it ever having been made — and both survive every prune precisely because they
   // are decisions rather than data.
   test('carries a curation decision across, never revokes it by deleting the row', async () => {

@@ -23,7 +23,7 @@ describe('ELEVATION_SOURCES', () => {
 
   it('lets either DEM be overwritten, and neither overwrite a moderator', () => {
     // The whole precedence rule, stated once. Order in the array above is documentation; this is
-    // the behaviour.
+    // the behavior.
     expect(canOverwriteElevation('dem_glo90')).toBe(true);
     expect(canOverwriteElevation('dem_3dep')).toBe(true);
     expect(canOverwriteElevation(undefined)).toBe(true);

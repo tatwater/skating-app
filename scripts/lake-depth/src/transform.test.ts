@@ -122,7 +122,7 @@ describe('parseLagosDepth', () => {
 });
 
 describe('hydroLakesRung (Vol_src earns HydroLAKES two rungs)', () => {
-  it('treats a reported volume as measured-ish and everything else as modelled', () => {
+  it('treats a reported volume as measured-ish and everything else as modeled', () => {
     expect(hydroLakesRung(1)).toBe('hydrolakes_reported');
     expect(hydroLakesRung(2)).toBe('hydrolakes_reported');
     expect(hydroLakesRung(3)).toBe('hydrolakes_modeled');
@@ -428,7 +428,7 @@ describe('ALSC', () => {
 
 /**
  * The CSLAP lane (founder, 2026-08-09). The mirror image of ALSC: fewer depths, better coordinates,
- * current rather than 1984–87 — and mean only, because the programme publishes no maximum.
+ * current rather than 1984–87 — and mean only, because the program publishes no maximum.
  */
 describe('CSLAP', () => {
   /** Verbatim shape of an archive line, as `snapshotCslap.ts` writes it. */
@@ -507,7 +507,7 @@ describe('CSLAP', () => {
  * from the agency's own published numbers — see `nhBands.ts` for the frustum rule.
  */
 describe('NH depth bands', () => {
-  /** Horn Pond, verbatim from the service. Three disjoint bands totalling 226.1 acres. */
+  /** Horn Pond, verbatim from the service. Three disjoint bands totaling 226.1 acres. */
   const HORN: NhBandRow[] = [
     {
       auId: 'ME-1',
@@ -549,7 +549,7 @@ describe('NH depth bands', () => {
     );
   });
 
-  it('emits BOTH depths at state_agency, in metres, with the surveyed area', () => {
+  it('emits BOTH depths at state_agency, in meters, with the surveyed area', () => {
     const { records, summary } = transformDepths({ nhBands: HORN });
     expect(summary).toMatchObject({ nhBandsRead: 3, nhLakesRead: 1 });
     expect(records).toHaveLength(1);

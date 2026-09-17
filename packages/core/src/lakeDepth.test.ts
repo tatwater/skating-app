@@ -28,7 +28,7 @@ describe('the depth source ladder (D68)', () => {
     }
   });
 
-  it('ranks measured sources above the modelled ones — the point of the ladder', () => {
+  it('ranks measured sources above the modeled ones — the point of the ladder', () => {
     // `osm_tag` is the deliberate exception: measured by someone, but with an unverifiable datum and
     // near-zero inland coverage, so it sits last. Every OTHER measured source outranks every model.
     const modelled = DEPTH_SOURCES.filter((s) => !isMeasuredDepthSource(s));
@@ -40,13 +40,13 @@ describe('the depth source ladder (D68)', () => {
     }
   });
 
-  it('ranks a reported HydroLAKES volume above a modelled one', () => {
+  it('ranks a reported HydroLAKES volume above a modeled one', () => {
     expect(DEPTH_SOURCE_RANK.hydrolakes_reported).toBeLessThan(
       DEPTH_SOURCE_RANK.hydrolakes_modeled,
     );
   });
 
-  it('classifies every source as measured or modelled, and labels every one', () => {
+  it('classifies every source as measured or modeled, and labels every one', () => {
     for (const source of DEPTH_SOURCES) {
       expect(typeof isMeasuredDepthSource(source)).toBe('boolean');
       expect(DEPTH_SOURCE_LABELS[source]).toBeTruthy();
@@ -94,9 +94,9 @@ describe('the ALSC rung — measured, and older than everything', () => {
     expect(DEPTH_SOURCE_LABELS.alsc_1987).toMatch(/1984.?87/);
   });
 
-  it('records that no licence was published, and credits the survey anyway', () => {
+  it('records that no license was published, and credits the survey anyway', () => {
     // "No published terms" is a measurement — every page was checked. `requiresAttribution` is true
-    // in the conservative direction: where a licence is silent we credit rather than assume.
+    // in the conservative direction: where a license is silent we credit rather than assume.
     const terms = DEPTH_SOURCE_TERMS.alsc_1987;
     expect(terms).not.toBeNull();
     expect(terms?.requiresAttribution).toBe(true);
@@ -300,7 +300,7 @@ describe('describeLakeDepth — the operator source note (D68 amendment)', () =>
   });
 
   it('does NOT attach the note to a non-operator source', () => {
-    // A stray note next to a modelled value must not read as a citation for the model's number.
+    // A stray note next to a modeled value must not read as a citation for the model's number.
     const d = describeLakeDepth({
       maxDepthM: 18,
       maxDepthSource: 'globathy',
@@ -325,7 +325,7 @@ describe('describeLakeDepth — the operator source note (D68 amendment)', () =>
 });
 
 /**
- * Licence obligations (A06a, closed 2026-08-02).
+ * License obligations (A06a, closed 2026-08-02).
  *
  * Two of the three bulk depth sources are CC BY, which means displaying their numbers without a
  * credit is a breach — and a silent one: nothing misbehaves, the depth just renders. So the gap is
@@ -340,7 +340,7 @@ describe('depth source terms', () => {
 
   it('carries HydroLAKES’ required citation verbatim, on both of its rungs', () => {
     // Both rungs are the same dataset under the same terms; a credit on one and not the other would
-    // mean a lake attributed or not depending on whether its volume was reported or modelled.
+    // mean a lake attributed or not depending on whether its volume was reported or modeled.
     for (const rung of ['hydrolakes_reported', 'hydrolakes_modeled'] as const) {
       const terms = DEPTH_SOURCE_TERMS[rung];
       expect(terms?.licence).toMatch(/CC-BY/);
@@ -355,7 +355,7 @@ describe('depth source terms', () => {
     expect(DEPTH_SOURCE_TERMS.globathy?.credit).toBeUndefined();
   });
 
-  it('does not mistake a permissive licence for an unmet obligation', () => {
+  it('does not mistake a permissive license for an unmet obligation', () => {
     // The bug this replaced: deriving the obligation from `credit === undefined` reported CC0
     // GLOBathy as outstanding. Whether attribution is owed is a stated fact, not a string match.
     expect(DEPTH_SOURCE_TERMS.globathy?.requiresAttribution).toBe(false);
@@ -370,7 +370,7 @@ describe('depth source terms', () => {
   });
 
   it('has no outstanding attribution — every CC BY source carries its required wording', () => {
-    // The gate. A depth rendered from a CC BY source with no credit is a licence breach, and it
+    // The gate. A depth rendered from a CC BY source with no credit is a license breach, and it
     // fails silently: nothing misbehaves, the number just appears. Closed 2026-08-02 when the EDI
     // package's recommended citation was read off the portal.
     expect(attributionGaps()).toEqual([]);

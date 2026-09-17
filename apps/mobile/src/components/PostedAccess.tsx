@@ -18,7 +18,7 @@ import { Section } from './detailUi';
  * consequence at one instant. Both strings come from `@skating/core`, so the two platforms cannot
  * drift on what a posted rule reads like.
  *
- * **It annotates and never suppresses** — no button is disabled, no form hidden, no route greyed out.
+ * **It annotates and never suppresses** — no button is disabled, no form hidden, no route grayed out.
  */
 export function PostedAccess({
   rule,

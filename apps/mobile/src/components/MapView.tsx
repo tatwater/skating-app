@@ -625,7 +625,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // ── Bathymetric contours for the open lake (A06b / D81 / D82).
   //
   // **The one source in this file that is not always mounted**, and that is the decision rather than
-  // an optimisation: contours are a property of the detail view, so the source exists while a lake's
+  // an optimization: contours are a property of the detail view, so the source exists while a lake's
   // sheet is open and not otherwise. No toggle, no persisted preference, no settings row — the
   // visibility is derived from something the app already knows, which body is selected.
   //

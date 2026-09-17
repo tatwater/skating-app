@@ -9,7 +9,7 @@ import { useQuery } from 'convex/react';
  *
  * It exists because the alternative to a button is not *nothing* — a lake drawer that quietly lost
  * "Add a report" reads as a broken build, and the person most likely to see it is the one who has
- * already been told the app is behaving oddly on their account. So the empty space is labelled, and
+ * already been told the app is behaving oddly on their account. So the empty space is labeled, and
  * the label carries the way back rather than only the bad news.
  *
  * Deliberately not a toast or a modal: this is a *state*, not an event. It should be as boring as the

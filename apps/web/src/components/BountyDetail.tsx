@@ -19,7 +19,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   fulfilled: 'Fulfilled',
   expired: 'Expired',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
 };
 
 /**
@@ -40,7 +40,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
     return (
       <UnavailableState
         title="Bounty not available"
-        message="This bounty may have been cancelled or removed."
+        message="This bounty may have been canceled or removed."
       />
     );
   }
@@ -171,7 +171,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
                 disabled={cancelling}
                 className="self-start"
               >
-                {cancelling ? 'Cancelling…' : 'Cancel bounty'}
+                {cancelling ? 'Canceling…' : 'Cancel bounty'}
               </Button>
               {error ? (
                 <p role="alert" className="text-destructive text-xs">

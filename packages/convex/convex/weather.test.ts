@@ -678,7 +678,7 @@ describe('weather.getForecastForBody (A06c §2.5b)', () => {
 });
 
 describe('the weather cell key (D152 / A06h)', () => {
-  test("sends the cell centre and the band elevation, not the body's own coordinates", async () => {
+  test("sends the cell center and the band elevation, not the body's own coordinates", async () => {
     const t = convexTestWithGeo();
     // 44.0163 / 0.05 = 880.33 → 880 → 44.0;  -72.0331 / 0.05 = -1440.66 → -1441 → -72.05
     const waterBodyId = await seedBody(t, { lat: 44.0163, lng: -72.0331 });
@@ -694,7 +694,7 @@ describe('the weather cell key (D152 / A06h)', () => {
     const params = new URL(url).searchParams;
     expect(params.get('latitude')).toBe('44');
     expect(params.get('longitude')).toBe('-72.05');
-    // 338 m → band 3 → the band CENTRE, 300, is what the key was built from and so what we send.
+    // 338 m → band 3 → the band CENTER, 300, is what the key was built from and so what we send.
     // Sending 338 while keying on band 3 would mean two lakes sharing an entry that describes one.
     expect(params.get('elevation')).toBe('300');
     // The direction variable that crosses the 10-var billing threshold on purpose (A06h Workstream 3).

@@ -388,7 +388,7 @@ function NameTool({
         })}
       </div>
       <p className="text-foreground-muted text-sm">
-        Every name here stays searchable whichever one displays. A choice overrides the catalogue
+        Every name here stays searchable whichever one displays. A choice overrides the catalog
         ranking and survives the next import.
         {overridden ? (
           <>
@@ -399,7 +399,7 @@ function NameTool({
               onClick={async () => {
                 try {
                   await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
-                  onResult({ tone: 'ok', text: 'Back to the catalogue ranking.' });
+                  onResult({ tone: 'ok', text: 'Back to the catalog ranking.' });
                 } catch (err) {
                   onResult({ tone: 'error', text: errorText(err) });
                 }
@@ -497,7 +497,7 @@ interface DepthBody {
  * styling one** (review fix, 2026-07-31). The first cut pre-filled them from whatever the row held,
  * and `setDepth` stamped `operator` on everything it was sent — so saving a max you *did* know
  * relabelled the HydroLAKES mean sitting in the other box as a survey reading, dropped the `~` from
- * the public caption, and locked a modelled number against every future import. An automated value is
+ * the public caption, and locked a modeled number against every future import. An automated value is
  * therefore shown as text, never as a pre-filled input, and a blank box means "no operator reading",
  * not "delete whatever is there".
  *
@@ -2283,7 +2283,7 @@ function PromotionTool({
  *
  * The three buttons are a segmented control rather than a select, because there are exactly three
  * values and the current one should be readable without opening anything — and `auto` is deliberately
- * first and labelled with its consequence, since it is both the default and the undo.
+ * first and labeled with its consequence, since it is both the default and the undo.
  */
 function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
   const setMode = useMutation(api.waterBodies.setSatelliteImagery);

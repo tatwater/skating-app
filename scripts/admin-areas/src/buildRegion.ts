@@ -20,7 +20,7 @@
  * 2. **`region-data.geojson`** — the same union minus the New York counties south of I-84. This is
  *    the *data* region, the one the ETL clips the corpus to. The two differ on purpose: Poughkeepsie
  *    should draw on the map, it just should not have skateable water in our corpus.
- * 3. **`regionMask.ts`** — the neighbourhood around us that is *not* ours, as flat fill: sea, land
+ * 3. **`regionMask.ts`** — the neighborhood around us that is *not* ours, as flat fill: sea, land
  *    over it, and the big lakes on top. This is what turns New Jersey into an empty white shape
  *    while leaving its border and its name legible. It covers water as well as land because a label
  *    anchored on the Connecticut shore overhangs Long Island Sound, and a mask with no sea leaves
@@ -30,7 +30,7 @@
  *
  * The obvious construction — take the land, subtract the five states — produces a sliver wherever two
  * sources disagree about the same line, and two sources always disagree. Natural Earth's Maine coast
- * and TIGER's are a kilometre apart in places, so subtracting one from the other leaves a white ribbon
+ * and TIGER's are a kilometer apart in places, so subtracting one from the other leaves a white ribbon
  * of "land" lying over the sea just off the coast we care most about.
  *
  * So the mask avoids subtracting along any line it shares with us. The United States half is simply
@@ -38,7 +38,7 @@
  * hole is exact and free, with no boolean operation performed along it at all. Canada is the one place
  * a subtraction is unavoidable, since no TIGER file covers it, and there the error is biased on
  * purpose: the hole is punched at near-TIGER precision so the mask can never creep south over Vermont,
- * leaving the opposite error — an unmasked strip a few hundred metres wide on the Québec side, where a
+ * leaving the opposite error — an unmasked strip a few hundred meters wide on the Québec side, where a
  * little border-town detail may still show through. That is the artefact we chose to keep.
  *
  * The sea is subtracted too, and that one is a genuine two-source cut. See the `cutSea` block below
@@ -108,7 +108,7 @@ const log = makeLog('region');
  * Natural Earth, for everywhere TIGER does not reach.
  *
  * Public domain, no key, no rate limit. Not pinned by byte count the way the TIGER files are: Natural
- * Earth versions its releases in the path (`10m`), and a mask being a few hundred metres different
+ * Earth versions its releases in the path (`10m`), and a mask being a few hundred meters different
  * next year is not a correctness event the way a moved state line would be.
  */
 const NATURAL_EARTH = {
@@ -135,12 +135,12 @@ const NATURAL_EARTH = {
 /**
  * How hard each piece of the mask is simplified, in degrees.
  *
- * The number that matters is `neighbour`: those four states share a line with ours, and every metre
- * of simplification there is a metre of their territory that may go unmasked and leak basemap detail.
- * At 0.0005° that strip is about forty-five metres — four pixels at maximum zoom, nothing below it.
+ * The number that matters is `neighbor`: those four states share a line with ours, and every meter
+ * of simplification there is a meter of their territory that may go unmasked and leak basemap detail.
+ * At 0.0005° that strip is about forty-five meters — four pixels at maximum zoom, nothing below it.
  * Everything else is scenery, and scenery is where the file size lives: Canada's coast costs more
- * vertices than the entire Northeast. Québec at two kilometres of error is still a white shape of
- * very nearly the right outline, seen from a zoom where two kilometres is a pixel.
+ * vertices than the entire Northeast. Québec at two kilometers of error is still a white shape of
+ * very nearly the right outline, seen from a zoom where two kilometers is a pixel.
  *
  * `cut` is different in kind — it is not a tolerance for drawing but for *subtracting*. See
  * `maskFeature`: anything cut against the region inherits the region's own boundary as its inner
@@ -160,7 +160,7 @@ const TOLERANCE = {
    *
    * `["within", …]` runs a point-in-polygon test for every label in every tile, so the region's
    * 27,000-vertex outline would be paid thousands of times a frame. At 0.002° the shape keeps its
-   * character at a couple of hundred metres, which is far below the zoom any of this is visible at.
+   * character at a couple of hundred meters, which is far below the zoom any of this is visible at.
    */
   labelFilter: 0.002,
 } as const;
@@ -171,9 +171,9 @@ const TOLERANCE = {
  * **A label is wider than the ground it names.** The sea mask has to cover open water — that is where
  * Madison's and New Haven's labels overhang, and covering only their land would leave the tails of
  * the words lying on the Sound. But our *own* coastal labels overhang too, and at z10 a sixty-pixel
- * word spans nine kilometres, so a mask that started exactly at Portland's shoreline would eat half
- * of "Portland". Five kilometres of slack costs nothing — it is water only, and it is water within
- * five kilometres of ground we cover, so anything labelled there is ours to label.
+ * word spans nine kilometers, so a mask that started exactly at Portland's shoreline would eat half
+ * of "Portland". Five kilometers of slack costs nothing — it is water only, and it is water within
+ * five kilometers of ground we cover, so anything labeled there is ours to label.
  */
 const SEAWARD_ALLOWANCE_KM = 5;
 
@@ -240,7 +240,7 @@ function ogrFeatures(zip: string, layer: string, select: string, where?: string)
 /**
  * Turf's union over a whole list, which is how five states become one region.
  *
- * The single-feature case is not an optimisation — turf refuses a collection of one with "Must have
+ * The single-feature case is not an optimization — turf refuses a collection of one with "Must have
  * at least 2 geometries", and Natural Earth publishes the world's ocean as exactly one feature.
  */
 function unionAll(features: Poly[]): Poly {
@@ -375,7 +375,7 @@ function main(): void {
   // And a coarse copy, for the mutation that clears out what was imported before the cut existed.
   // `waterBodies.pruneOutsideCoverage` takes its polygons as an *argument* — a place resolution per
   // body exhausts Convex's read budget — so these have to be small enough to pass over the wire on
-  // every paginated call. At 0.001° the county lines are good to about ninety metres, which is far
+  // every paginated call. At 0.001° the county lines are good to about ninety meters, which is far
   // finer than the question being asked of them: is this lake's representative point downstate.
   const coarse = downstate.map((county) => ({
     type: 'Feature' as const,
@@ -454,7 +454,7 @@ function main(): void {
   // is why it never masked at all.
   //
   // Cutting the sea out is the only place this file lets two sources disagree about a shared line,
-  // and it is deliberate: the disagreement lands on Connecticut's own shoreline, a kilometre of
+  // and it is deliberate: the disagreement lands on Connecticut's own shoreline, a kilometer of
   // coarseness between white and blue in a place where neither side draws any detail. The lines that
   // had to stay exact — the borders we share — are untouched by it.
   const oceanZip = archive(NATURAL_EARTH.ocean, refresh, log);
@@ -479,7 +479,7 @@ function main(): void {
   // does not cover — so the tails of the words lay on the water with nothing over them. This covers
   // every drop of water that is not within `SEAWARD_ALLOWANCE_KM` of ground we actually cover.
   //
-  // It is drawn *beneath* the land layer, so the two together tile the whole neighbourhood: water
+  // It is drawn *beneath* the land layer, so the two together tile the whole neighborhood: water
   // color everywhere, land color on top of it wherever there is land.
   const regionCoarse = simplify(region, {
     tolerance: TOLERANCE.seaHole,
@@ -490,7 +490,7 @@ function main(): void {
   if (ourLand === null) throw new Error('the sea swallowed the entire region');
   const grown = buffer(ourLand, SEAWARD_ALLOWANCE_KM, { units: 'kilometers' }) as Poly | undefined;
   // The allowance is intersected back with the sea so it can only ever grow into water. Growing it
-  // into Connecticut would unmask a five-kilometre strip of exactly the labels this exists to hide.
+  // into Connecticut would unmask a five-kilometer strip of exactly the labels this exists to hide.
   const marineBand = grown
     ? (intersect(
         featureCollection([grown, sea] as Feature<Polygon | MultiPolygon>[]),
@@ -530,10 +530,10 @@ function main(): void {
       dropped++;
       continue;
     }
-    push(near ? 'neighbours' : 'us', trimmed);
+    push(near ? 'neighbors' : 'us', trimmed);
   }
   log(
-    `  ${others.length - dropped} US states in range (${dropped} too far to bleed) — neighbours ${kb('neighbours')}, rest ${kb('us')}`,
+    `  ${others.length - dropped} US states in range (${dropped} too far to bleed) — neighbors ${kb('neighbors')}, rest ${kb('us')}`,
   );
 
   // Everywhere else, by country — which within this box means Canada, and Saint Pierre and Miquelon.
@@ -564,7 +564,7 @@ function main(): void {
   // The big lakes in range, drawn back over the mask as water. Without them the Great Lakes are white
   // shapes butting against a detailed New York shoreline, which reads as a rendering fault rather
   // than as a boundary. Every one is cut against the region, which matters for the two that touch it:
-  // Ontario and Erie must stop at New York's shore rather than lie a coarse kilometre over it.
+  // Ontario and Erie must stop at New York's shore rather than lie a coarse kilometer over it.
   const lakeZip = archive(NATURAL_EARTH.lakes, refresh, log);
   const lakes = ogrFeatures(lakeZip, NATURAL_EARTH.lakes.layer, 'name,scalerank', 'scalerank <= 2');
   const lakesInRange = lakes.filter(nearRegion);
@@ -594,12 +594,12 @@ function main(): void {
   // **Grown outward, never inward.** Simplification moves a border in whichever direction it likes,
   // and a filter that has shrunk below Vermont's line would silently drop Vermont's own towns —
   // the failure you would not notice. Growing it means the opposite error: a foreign label within a
-  // few hundred metres of the border may survive. The mask still covers that ground, so the worst
+  // few hundred meters of the border may survive. The mask still covers that ground, so the worst
   // case is one border town's name showing against flat fill.
   //
   // Buffered first and simplified second, which is the reverse of everywhere else in this file and
   // deliberate: buffering rounds every corner into a fan of vertices, and the whole point of this
-  // outline is to be cheap. A kilometre out then a third of a kilometre of thinning still leaves it
+  // outline is to be cheap. A kilometer out then a third of a kilometer of thinning still leaves it
   // comfortably outside the border, which is the direction that matters.
   const grownOutline = buffer(
     simplify(region, { tolerance: TOLERANCE.labelFilter, highQuality: false, mutate: false }),

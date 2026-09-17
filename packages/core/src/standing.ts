@@ -36,7 +36,7 @@
  * ## The retention rule
  *
  * A body stays active while someone has been on it recently — `INACTIVE_SEASONS` — or while a person
- * has said it matters (a curated boost, a favourite). It becomes active again the moment there is
+ * has said it matters (a curated boost, a favorite). It becomes active again the moment there is
  * evidence: a report, a matched track, a put-in placed on it, a moderator confirming public access.
  * A put-in alone does not *keep* a body active (founder call): it is evidence of access, not of use,
  * so it qualifies a lake for the seed and re-activates a dormant one, and then the clock runs.
@@ -61,7 +61,7 @@ export type Standing = (typeof STANDINGS)[number];
  * and `removedAt`, and storing a second copy is how two fields come to disagree.
  *
  * - `inactive` — the retention rule: nobody has reported, tracked or marked anything here in
- *   `INACTIVE_SEASONS`, and nobody has boosted or favourited it. Written by the season cron and by
+ *   `INACTIVE_SEASONS`, and nobody has boosted or favorited it. Written by the season cron and by
  *   the seed. **The only reason the machine writes on its own.**
  * - `not_in_campaign` — the admission rules changed under it: a campaign's master list no longer
  *   contains it (a raised acreage floor, a class the merge now refuses). Written by the prunes, which
@@ -236,7 +236,7 @@ export interface RetentionInput {
   lastActivityAt?: number | undefined;
   /** A positive boost is a person saying "this is a destination" — a standing decision. */
   curatedBoost?: number | undefined;
-  /** Anyone at all has favourited it. *"If you favourited it, you know something we don't."* */
+  /** Anyone at all has favorited it. *"If you favorited it, you know something we don't."* */
   favorited: boolean;
 }
 

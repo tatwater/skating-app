@@ -279,7 +279,7 @@ export default function NewsfeedScreen() {
 }
 
 /**
- * The labelled fallback (D63) — web's `PastSeasonNotice`, same words, same reason.
+ * The labeled fallback (D63) — web's `PastSeasonNotice`, same words, same reason.
  *
  * Season-scoping the feed empties it on July 1 and leaves it empty until first ice, so the server
  * falls back to the newest season that has anything. What it must never do is fall back *silently*:

@@ -47,7 +47,7 @@ describe('per-type defaults', () => {
     }
   });
 
-  // A folded ridge is loose plates metres wide; a tectonic crack is a hairline. Drawing them with the
+  // A folded ridge is loose plates meters wide; a tectonic crack is a hairline. Drawing them with the
   // same uncertainty band would misrepresent both (research §2/§4).
   it('buffers a pressure ridge far wider than a wet crack', () => {
     expect(HAZARD_DEFAULT_BUFFER_M.pressure_ridge).toBeGreaterThan(
@@ -80,7 +80,7 @@ describe('defaultShapeForType', () => {
 });
 
 describe('distanceToHazard', () => {
-  it('is 0 at the centre of a point+radius hazard', () => {
+  it('is 0 at the center of a point+radius hazard', () => {
     expect(distanceToHazard(CENTRE, pointRadiusShape(CENTRE, 50))).toBe(0);
   });
 
@@ -94,7 +94,7 @@ describe('distanceToHazard', () => {
     );
   });
 
-  it('subtracts exactly the radius from the centre distance', () => {
+  it('subtracts exactly the radius from the center distance', () => {
     const far = { lat: CENTRE.lat + 0.01, lng: CENTRE.lng };
     const bare = distanceToHazard(far, pointRadiusShape(CENTRE, 0.0001));
     const withRadius = distanceToHazard(far, pointRadiusShape(CENTRE, 200));
@@ -140,7 +140,7 @@ describe('distanceToHazard', () => {
 });
 
 describe('hazardFootprint / hazardBbox', () => {
-  it('grows a point into a polygon that contains its own centre', () => {
+  it('grows a point into a polygon that contains its own center', () => {
     const bbox = hazardBbox(pointRadiusShape(CENTRE, 100));
     expect(bbox.minLat).toBeLessThan(CENTRE.lat);
     expect(bbox.maxLat).toBeGreaterThan(CENTRE.lat);
@@ -470,7 +470,7 @@ describe('clipFootprintToBody (Phase 09b)', () => {
   it('clips a shoreline circle down to the water side only', () => {
     const clipped = clipFootprintToBody(shorelineFootprint, WEST_BODY);
     expect(clipped).not.toBeNull();
-    // A circle centred on a straight shoreline loses ~half its area to land.
+    // A circle centered on a straight shoreline loses ~half its area to land.
     expect(surfaceAreaSqM(clipped as Polygon | MultiPolygon)).toBeLessThan(
       surfaceAreaSqM(shorelineFootprint) * 0.7,
     );

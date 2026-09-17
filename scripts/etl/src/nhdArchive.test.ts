@@ -121,7 +121,7 @@ describe('normalizeGnisId', () => {
   };
 
   it('reconciles NHD zero-padded strings with 3DHP bare integers', () => {
-    // Joined raw over Maine this matched 0 of 3,031 ids. Normalised, it matches 3,007.
+    // Joined raw over Maine this matched 0 of 3,031 ids. Normalized, it matches 3,007.
     expect(val('00869848')).toBe('869848'); // NHD, Sessions Pond
     expect(val(869_848)).toBe('869848'); // 3DHP, same lake
     expect(val('0561883')).toBe(val(561_883)); // Beau Lake
@@ -214,7 +214,7 @@ describe('buildNhdManifest', () => {
     expect(nhdRunTableRow(m)).toContain('unverified');
   });
 
-  it('records the licence on every row, since nothing else in the repo states it', () => {
+  it('records the license on every row, since nothing else in the repo states it', () => {
     const m = buildNhdManifest({ ...base, bytes: VT.expectedBytes });
     expect(m.licence).toMatch(/Public domain/);
     expect(m.attribution).toMatch(/U\.S\. Geological Survey/);

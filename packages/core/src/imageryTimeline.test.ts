@@ -119,7 +119,7 @@ describe('buildBodyTimeline — coverage decides the denominator', () => {
     expect(timeline.stops.map((s) => s.landable)).toEqual([true, false, false]);
   });
 
-  it('honours an override of the gate, for the admin editor that sees everything', () => {
+  it('honors an override of the gate, for the admin editor that sees everything', () => {
     const timeline = buildBodyTimeline(season([frame({ cloudCoverPct: 94 })]), CHAMPLAIN, {
       maxCloudPct: 100,
     });
@@ -130,7 +130,7 @@ describe('buildBodyTimeline — coverage decides the denominator', () => {
 
 describe('buildBodyTimeline — the gates that run before coverage', () => {
   it('offers no scrubber to a body too small for a 10 m pixel', () => {
-    // D70/D75's floor. A pond resolves to a handful of grey-green pixels, and the conclusion available
+    // D70/D75's floor. A pond resolves to a handful of gray-green pixels, and the conclusion available
     // to a skater looking at those is "this is broken" rather than "this sensor is coarse".
     const pond: TimelineBody = { ...CHAMPLAIN, surfaceAreaSqM: 4_107 };
 
@@ -409,7 +409,7 @@ describe('buildBodyTimeline — the gates, once they are per-body', () => {
     expect(timeline.stops[0]?.stats?.vhDb).toBe(-21.4);
   });
 
-  it('honours the coverage override, for the admin editor that sees everything', () => {
+  it('honors the coverage override, for the admin editor that sees everything', () => {
     const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
       minCoverage: 0,
       stats: statsFor('S2C_18TXP_20260215_0_L2A', [
@@ -693,7 +693,7 @@ describe('buildBodyTimeline — radar holds one orbit direction', () => {
     expect(timeline.orbit?.showing).toBe('ascending');
   });
 
-  it('honours an explicit direction', () => {
+  it('honors an explicit direction', () => {
     const timeline = buildBodyTimeline(radarSeason(['a', 'b']), CHAMPLAIN, {
       band: 'vh',
       orbitDirection: 'descending',
@@ -823,7 +823,7 @@ describe('nearestLandableStop — the direction a finger was going', () => {
     expect(nearestLandableStop(lopsided, 1, 1)).toBe(0);
   });
 
-  it('keeps the old earlier-on-tie behaviour when no direction is given', () => {
+  it('keeps the old earlier-on-tie behavior when no direction is given', () => {
     expect(nearestLandableStop(around, 1)).toBe(0);
   });
 });

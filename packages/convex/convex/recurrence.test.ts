@@ -100,7 +100,7 @@ function inSeason(season: number, dayOffset: number): number {
   return seasonStartMs(season) + dayOffset * 86_400_000;
 }
 
-/** A hazard at `metersEast` of the body's centre, first reported in `season`. */
+/** A hazard at `metersEast` of the body's center, first reported in `season`. */
 async function seedHazard(
   t: ReturnType<typeof convexTest>,
   waterBodyId: Id<'waterBodies'>,
@@ -467,9 +467,9 @@ describe('the volatile family and the depth cross-check (§3.7)', () => {
     expect(row?.seasonsObserved).toHaveLength(3);
   });
 
-  test('still suggests where the contradicting depth is only modelled', async () => {
+  test('still suggests where the contradicting depth is only modeled', async () => {
     // D68's provenance ladder exists so a claim can be weighted by what it was read off, and a
-    // modelled depth is a guess that several winters of people standing there outweighs.
+    // modeled depth is a guess that several winters of people standing there outweighs.
     const row = await volatilePass({ meanDepthM: 30, meanDepthSource: 'hydrolakes_modeled' });
     expect(row?.suggestedFeatureType).toBe('shallow_early_thaw');
   });
@@ -1335,7 +1335,7 @@ describe('listQueue’s filters, and the advisory yielding', () => {
       if (row) await ctx.db.patch(row._id, { publiclyVisible: true });
     });
 
-    // Same family, but a kilometre away — well past RECURRENCE_MATCH_METERS.
+    // Same family, but a kilometer away — well past RECURRENCE_MATCH_METERS.
     await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 1000 });
     expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
 

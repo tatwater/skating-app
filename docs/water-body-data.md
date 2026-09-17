@@ -1,7 +1,7 @@
 # Where the lakes come from
 
 Every lake in this app is a **merged record**. Nobody publishes "the list of skateable water in the
-Northeast" — so we build it, from four public catalogues that disagree with each other, and then we
+Northeast" — so we build it, from four public catalogs that disagree with each other, and then we
 enrich it from a dozen more.
 
 This is the story of that pipeline: what we take in, how we decide two outlines are the same lake,
@@ -23,15 +23,15 @@ New York** (north of I-84).
 
 One idea carries the whole design.
 
-**A catalogue does not tell us what a lake *is*. It makes a claim about it.** OpenStreetMap claims
+**A catalog does not tell us what a lake *is*. It makes a claim about it.** OpenStreetMap claims
 this outline. USGS claims that name and this classification. The state's survey boat claims this
-depth. Our record is *ours* — we mint the identifier, and every catalogue becomes a claim attached
+depth. Our record is *ours* — we mint the identifier, and every catalog becomes a claim attached
 to it.
 
 That sounds like bookkeeping. It's the difference between a corpus that can improve and one that
 can't:
 
-- When two catalogues disagree about a shoreline, we can pick the better one **per lake** instead of
+- When two catalogs disagree about a shoreline, we can pick the better one **per lake** instead of
   picking a winner globally and living with it.
 - When a new source arrives, it attaches to lakes that already exist rather than inserting duplicates
   beside them.
@@ -42,7 +42,7 @@ The corollary is the rule that governs everything downstream:
 
 > ### Merge first, filter once.
 >
-> Combine every catalogue's account of a lake into one record, **then** decide whether it belongs.
+> Combine every catalog's account of a lake into one record, **then** decide whether it belongs.
 
 We learned that the hard way. An earlier build filtered each source *before* merging — and
 OpenStreetMap's "this is a marsh" tag silently deleted **123 water bodies that USGS calls lakes**, 17
@@ -51,7 +51,7 @@ got a vote.
 
 ---
 
-## Step 1 — The four catalogues
+## Step 1 — The four catalogs
 
 | Source | What it's good at | What it's bad at |
 | --- | --- | --- |
@@ -79,29 +79,29 @@ the choice is made per lake instead of once.
 This is the hardest problem in the pipeline, and it has no perfect answer.
 
 We compare shapes by **how much they overlap** — technically the shared area divided by the combined
-area. Two catalogues tracing the same shoreline typically land at 0.85–0.98. The measured median
+area. Two catalogs tracing the same shoreline typically land at 0.85–0.98. The measured median
 disagreement on area between OSM and NHD is **2.4%**.
 
 **The bar is 0.5: they share more area than they don't.** Below that, a pair is usually not "one lake
 drawn twice" — it's a bay against its parent lake, a reservoir against the river that feeds it, or
-two neighbours in a chain. A bay is typically well under 0.3 of its parent, so 0.5 refuses that class
+two neighbors in a chain. A bay is typically well under 0.3 of its parent, so 0.5 refuses that class
 cleanly.
 
 Three refinements, each from a real failure:
 
-**A shared official name lowers the bar to 0.3.** If two catalogues independently assert the same
+**A shared official name lowers the bar to 0.3.** If two catalogs independently assert the same
 GNIS place ID, that's two publishers agreeing this is the same named place — real evidence beyond the
 geometry.
 
-**One catalogue matched against *itself* needs 0.9.** OpenStreetMap sometimes publishes a lake twice
-— once as a shape, once as a "relation" wrapping that shape. Cross-catalogue overlap is two
-independent observers agreeing; same-catalogue overlap is one observer contradicting itself, and the
+**One catalog matched against *itself* needs 0.9.** OpenStreetMap sometimes publishes a lake twice
+— once as a shape, once as a "relation" wrapping that shape. Cross-catalog overlap is two
+independent observers agreeing; same-catalog overlap is one observer contradicting itself, and the
 innocent explanations are at least as likely. So that bar is much higher, and anything below it goes
 to a human instead of being merged automatically. When we added this check, **`Mud Pond Swamp` turned
 out to be in the corpus twice.**
 
 **When geometry can't separate two candidates, we refuse to pick.** A lake in a chain acquiring its
-neighbour's identity is an error that's invisible afterwards.
+neighbor's identity is an error that's invisible afterwards.
 
 ### What happens to the ones we can't decide
 
@@ -115,15 +115,15 @@ merely untidy and can be fixed later.
 
 Once a lake is one record, each field is chosen on its own merits.
 
-- **The outline** comes from whichever catalogue draws it better *for that lake*.
-- **The name** comes from the gazetteer where there is one, and every catalogue's spelling is kept
+- **The outline** comes from whichever catalog draws it better *for that lake*.
+- **The name** comes from the gazetteer where there is one, and every catalog's spelling is kept
   alongside — so searching for a lake by the name your grandfather used still finds it.
 - **The area is measured from the outline we actually store.** It is never the larger of two claims.
-  A name is not an area, and a catalogue asserting "412 acres" doesn't override the shape on the map.
+  A name is not an area, and a catalog asserting "412 acres" doesn't override the shape on the map.
 
 One case worth knowing about: **Beau Lake**, on the Maine–Québec border, merged at 2,457 acres
-against Maine's published 1,788 — because OSM's outline swallowed a neighbouring pond. It's now drawn
-from NHD at 1,871 acres. Whenever one catalogue's outline *contains a named bay that the other
+against Maine's published 1,788 — because OSM's outline swallowed a neighboring pond. It's now drawn
+from NHD at 1,871 acres. Whenever one catalog's outline *contains a named bay that the other
 excludes*, that's evidence the first one is drawn wrong, and we switch.
 
 ---
@@ -165,7 +165,7 @@ threshold, and it overrides every rule on this page.
 ### The exception that proves the rule
 
 Rivers are refused — but **"deadwater", "stillwater" and "flowage" name still water**, and a
-catalogue calling them rivers is describing the watershed, not the ice. 43 bodies are in the corpus
+catalog calling them rivers is describing the watershed, not the ice. 43 bodies are in the corpus
 because a name overruled a classification. Debsconeag Deadwater and Nesowadnehunk Deadwater are real
 places people skate.
 
@@ -200,7 +200,7 @@ Two more guards, both from real incidents:
 There's also a subtler trap we hit and fixed: **importing never deletes.** When the merge decides two
 records are one lake, the import writes the survivor — and leaves the other one sitting there. That's
 now a separate, explicit step that folds the duplicate into the survivor, **moving every report,
-track, favourite and hazard across rather than stranding them.** Nothing is ever hard-deleted; a link
+track, favorite and hazard across rather than stranding them.** Nothing is ever hard-deleted; a link
 to a retired duplicate still lands you on the right lake.
 
 ---
@@ -211,9 +211,9 @@ Here's where coverage stops being a pipeline statistic and starts being what you
 
 ### Elevation — 99.5%
 
-From **USGS 3DEP**, and **98.2% of it is 1-metre LiDAR**. Effectively solved.
+From **USGS 3DEP**, and **98.2% of it is 1-meter LiDAR**. Effectively solved.
 
-We switched to it from a global 90-metre model partly for accuracy and partly because the old source
+We switched to it from a global 90-meter model partly for accuracy and partly because the old source
 was a metered weather API that the app's own forecasts were competing with for quota. The archive is
 stored, so re-deriving anything from it costs minutes and no requests.
 
@@ -246,13 +246,13 @@ its source, and they're ranked:
 1. **A moderator's entry** — read off a published chart or local knowledge. Beats everything.
 2. **A state agency survey** — someone in a boat with a depth sounder. 3,033 measurements.
 3. **NYSDEC CSLAP** — volunteers, sampling New York lakes through 2024.
-4. **LAGOS-US** — observed depths compiled from ~65 monitoring programmes.
+4. **LAGOS-US** — observed depths compiled from ~65 monitoring programs.
 5. **The Adirondack Lakes Survey** — 1,345 ponds sounded in 1984–87. Real measurements, four decades
    old, so they beat every model and lose to every newer measurement.
-6. **HydroLAKES / GLOBathy** — *modelled*. A statistical estimate from shoreline shape, area and
+6. **HydroLAKES / GLOBathy** — *modeled*. A statistical estimate from shoreline shape, area and
    elevation, validated against 1,503 lakes **globally**.
 
-**81% of the depths we show are measured rather than modelled.** A modelled depth is a perfectly good
+**81% of the depths we show are measured rather than modeled.** A modeled depth is a perfectly good
 hint that a lake is deep enough to be slow to freeze; it is not a number to plan a route on, and the
 app never displays it as though it were.
 
@@ -267,7 +267,7 @@ Two things to know:
 one we can close by working harder.
 
 **Where the lines are ours rather than an agency's, we say so.** Some are published isobaths; some we
-fit through a cloud of individual depth soundings. Those render differently and are labelled
+fit through a cloud of individual depth soundings. Those render differently and are labeled
 differently, because "the state surveyed this" and "we interpolated this" are different claims.
 
 There's one case worth telling because it shows what the data is really like. Maine files one of its
@@ -327,7 +327,7 @@ on it describes the *ice*.
   none does. Massachusetts' state bathymetry archive turns out to hold only 265 lakes, all of which
   we already use, so closing this needs sources we haven't found yet.
 - **New York has no statewide bathymetry.**
-- **Québec is not covered**, though several lakes on the border are — the Canadian catalogues are a
+- **Québec is not covered**, though several lakes on the border are — the Canadian catalogs are a
   separate integration we haven't done.
 - **About 1,100 bodies are `unclassified`** — we're confident it's water, and no source said what
   kind.

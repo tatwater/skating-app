@@ -146,7 +146,7 @@ describe('contourCredit', () => {
     expect(credit?.agencies).toEqual(['NH GRANIT', 'MassGIS']);
   });
 
-  it('renders the wording the licence requires, not the label the tile carries', () => {
+  it('renders the wording the license requires, not the label the tile carries', () => {
     // The one that matters: the Champlain tiles say "VCGI / NOAA", and that is precisely the credit
     // we may not render — VCGI's terms name UVM, and NOAA asks that we not imply its involvement.
     const credit = contourCredit([feature({ agency: 'VCGI / NOAA', lane: 'interpolated' })]);
@@ -179,7 +179,7 @@ describe('contourCredit', () => {
 
   it('reports the interval when the features agree and null when they do not', () => {
     expect(contourCredit([feature(), feature()])?.intervalFt).toBe(5);
-    // Two sources overlapping one body. Saying nothing beats labelling one source's lines with the
+    // Two sources overlapping one body. Saying nothing beats labeling one source's lines with the
     // other's spacing.
     expect(contourCredit([feature(), feature({ intervalFt: 10 })])?.intervalFt).toBeNull();
   });
@@ -237,9 +237,9 @@ describe('formatContourCredit', () => {
     expect(line).toContain('Maine Department of Environmental Protection');
   });
 
-  it('leaves a sentence-shaped licence credit standing on its own', () => {
+  it('leaves a sentence-shaped license credit standing on its own', () => {
     // Champlain's required wording IS a sentence about where the soundings came from. Splicing it
-    // into "…published by X" would be ungrammatical, and worse, an alteration of licence text.
+    // into "…published by X" would be ungrammatical, and worse, an alteration of license text.
     const line = formatContourCredit(
       contourCredit([feature({ agency: 'VCGI / NOAA', lane: 'interpolated' })]),
     );

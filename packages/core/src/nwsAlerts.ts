@@ -9,7 +9,7 @@
  * > **D74 — one weather physics source, plus a separate advisory layer.**
  * > Open-Meteo stays the single source for anything that feeds a calculation. **Do not blend.** Two
  * > providers disagreeing produces a *worse* number, not a better one, and it would silently break
- * > the reproducibility of the decay math. NWS alerts render as a clearly-labelled advisory strip
+ * > the reproducibility of the decay math. NWS alerts render as a clearly-labeled advisory strip
  * > that **never feeds a calculation.**
  *
  * Nothing in this module is imported by the decay, bounty or contradiction paths, and there is no

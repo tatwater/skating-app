@@ -90,7 +90,7 @@ export function CatalogueCoverage() {
   if (history.length === 0) {
     return (
       <AdminEmpty>
-        No catalogue measurement yet — run <code>pnpm --filter @skating/etl measure-3dhp</code>.
+        No catalog measurement yet — run <code>pnpm --filter @skating/etl measure-3dhp</code>.
       </AdminEmpty>
     );
   }

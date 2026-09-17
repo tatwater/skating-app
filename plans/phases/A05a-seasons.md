@@ -64,7 +64,7 @@ promotion is strictly more honest than that, not a loss of safety information.
 
 ## Decisions taken at kickoff (2026-07-27)
 
-**1. A season is July 1 → June 30, labelled `'24/'25`** (D63). July is the deadest point of the year in
+**1. A season is July 1 → June 30, labeled `'24/'25`** (D63). July is the deadest point of the year in
 the Northeast, so the boundary never cuts a live season and the reset lands when nobody is looking.
 
 **2. Season is DERIVED, never stored.** `seasonOf(skateEndTime)`; the current season is `seasonOf(now)`.
@@ -183,16 +183,16 @@ rather than for the person.
 | | |
 |---|---|
 | **Blocked** (`requireContributor`) | reports, comments, hazards, hazard confirmations, thumbs, bounties, photo uploads, native track ingest, new provider connections, skater-created water bodies |
-| **Open** | flagging, blocking, support, export, `excludeTracksFromAggregate` (its own mutation — it governs the tracks that outlive the account), and cancelling |
+| **Open** | flagging, blocking, support, export, `excludeTracksFromAggregate` (its own mutation — it governs the tracks that outlive the account), and canceling |
 | **Blocked, added by the second amendment** | *every* profile field — `updateProfile`, `setHome`, `setFeedFilterPrefs`, `setNotificationPrefs`. The request clears those exact fields; a ghost could type them back in, which made the wipe read as a suggestion |
 
-**Cancelling keeps the account, not the person**: the profile stays empty and they go back through
+**Canceling keeps the account, not the person**: the profile stays empty and they go back through
 onboarding, and the redacted words are gone. The handle is *reserved* through the window so nobody can
 take it. `dateOfBirth` is the one PII field held to finalization — scrubbing it derives to *adult*, so
-a minor who cancelled would come back with an adult's posting rights.
+a minor who canceled would come back with an adult's posting rights.
 
 **The clients empty out to match** — the affordance goes, not just the permission, so nobody writes a
-report and *then* learns it won't be accepted. Both apps drop every closed control and put one labelled
+report and *then* learns it won't be accepted. Both apps drop every closed control and put one labeled
 line in its place; the owner's own profile shows the cleared row with an explanation. That page is
 unreachable to everyone else, which is the point: to the rest of the platform, a ghost does not exist.
 
@@ -202,7 +202,7 @@ Three notes that matter to the rest of this phase:
   of what "you can still change your mind" means.
 - **It's why the redaction is a finalize stage rather than a deferred sweep** — see *Departed-user
   redaction* below. This is the decision that pays for itself.
-- **The accepted cost:** a skater on bad ice during their window can't file the hazard. Cancelling is
+- **The accepted cost:** a skater on bad ice during their window can't file the hazard. Canceling is
   one tap and the error says so, but it's a real trade, not a free win.
 
 ## Settled at build kickoff (2026-07-28)
@@ -225,10 +225,10 @@ are reachable only through the season selector and the admin promotion list.
 re-listed sidebar over a current-season map would put two seasons on screen at once, which is precisely
 the confusion this phase exists to end.
 
-**3. The global feed falls back to last season, labelled.** Season-scoping the feed empties it on
+**3. The global feed falls back to last season, labeled.** Season-scoping the feed empties it on
 July 1 and it *stays* empty until first ice — five months of a dead home screen, which the design
 hadn't followed through. When the current season has nothing, the feed shows the previous season under
-a divider that says so. Labelled is what keeps it honest; silently mixing is what D63 forbids.
+a divider that says so. Labeled is what keeps it honest; silently mixing is what D63 forbids.
 
 **4. A profile's report list is never season-scoped.** A person's contribution history is not a claim
 about the state of the ice. It's also the index `lib/contentPurge` sweeps — see the build note.
@@ -289,7 +289,7 @@ one silently mean the second in July.
 > **Aging never removes anything. An intentional account deletion erases what is private, redacts what
 > is personal, and keeps the observation either way.**
 
-Staleness and seasons only ever **hide** — for everyone, reversibly, with a labelled way back. Erasure
+Staleness and seasons only ever **hide** — for everyone, reversibly, with a labeled way back. Erasure
 has exactly one trigger, and it's a person deciding to leave; even then it reaches their private
 artifacts and their prose, never the ice record. The 30-day clock isn't "old content expires"; it's how
 long a departing skater's own words stay up, and it doesn't apply to anybody who's still here.
@@ -514,10 +514,10 @@ feature* — and this one read as done.
 with nothing marking an account complete, so a 2026 tombstone had its whole photo table re-paginated
 every day forever and the cost grew with every departure the app had ever had. A
 `photosExpiredForSeason` marker makes it one pass per account per season. The index it reads,
-`by_status_photos_expired`, is **the non-sparse-optional-field behaviour being useful for once** —
+`by_status_photos_expired`, is **the non-sparse-optional-field behavior being useful for once** —
 never-swept accounts have no value, `undefined` sorts before every number, so `lt(currentSeason)`
 returns exactly the work queue with no backfill. That is worth saying beside the warning two lines up
-in the same file, where the same behaviour nearly deleted every account on dev.
+in the same file, where the same behavior nearly deleted every account on dev.
 
 The season is resolved **once by the sweeper** and threaded through each account's continuations, so a
 July 1 rollover can't land mid-account and mark a pass done for a boundary its earlier pages weren't
@@ -575,7 +575,7 @@ the same rows must agree exactly on the paging and the fail-safe, and a copy wou
 `season_expiry` phase list omits `reports`, and that omission *is* the policy**: a surviving report
 must not protect a departed skater's photo, so deleting the phase is how you say so. Its own scratch
 flag, so the two daily crons can't clear each other's marks; a tombstone re-check every call, so a
-cancelled deletion abandons the run; and its last phase writes the completion marker, which is the
+canceled deletion abandons the run; and its last phase writes the completion marker, which is the
 only point at which the account has genuinely been answered.
 
 **1b. And the fix for it marked the work done before doing it** (Greptile's second pass, P1). The
@@ -620,7 +620,7 @@ that is worth more than a bug.
 
 ## Settled after the design review (2026-07-27)
 
-**Hidden reports still resolve by permalink**, labelled *"from the '24/'25 season"*. Hiding governs the
+**Hidden reports still resolve by permalink**, labeled *"from the '24/'25 season"*. Hiding governs the
 **default view**, not reachability: someone may hold a link, a bookmark or an old notification, and a
 404 on a URL that used to work is a worse lie than an old report clearly marked old. It also keeps the
 season filter's own rows clickable without a special case.
@@ -649,7 +649,7 @@ with a decided answer; what's missing is build time or an external dependency, n
 
 **1. Email-confirmed deletion with step-up re-auth.** Today one click, behind a live session, starts an
 immediate and irreversible destruction — the profile scrub and the redaction can't be undone by
-cancelling. The classic job of a 30-day window is protecting against a misclick or a stolen session,
+canceling. The classic job of a 30-day window is protecting against a misclick or a stolen session,
 and this design has moved the irreversible part *before* the window rather than inside it.
 
 The founder's shape, which is better than a plain re-auth because it adds a factor and a tripwire:
@@ -698,7 +698,7 @@ of. The original framing is kept below, since the alternatives it weighs are the
 
 Today a photo attached to a surviving report or hazard is kept whole — bytes, timestamp, coordinate —
 and only the caption is redacted. The coordinate is ice record and earns its place. The **image** is
-the largest identifiability surface in the system and nothing touches it: faces, a licence plate, a
+the largest identifiability surface in the system and nothing touches it: faces, a license plate, a
 house behind the put-in, the departed skater themselves. Every other bucket in D62 was argued from the
 "what a person typed vs what they observed" seam, and a photograph sits awkwardly across it — it is
 *observation*, which is why it was never questioned, but it is also the richest personal data we hold.
@@ -742,7 +742,7 @@ the empty state needs no special caveat — noted so the next person doesn't red
 - ~~**Whether the reset needs an announcement.**~~ **Answered at kickoff, and the answer was bigger
   than the question.** No announcement: the empty state carries it, on the water body ("no reports yet this
   season" plus the season selector) and in the feed — where the honest empty state turned out to be a
-  **labelled fallback to last season**, because the feed doesn't go blank for a day in July, it goes
+  **labeled fallback to last season**, because the feed doesn't go blank for a day in July, it goes
   blank until first ice. See kickoff decision 3.
 - **What the map does with a body whose only hazards are last season's.** Probably nothing — but
   prominence scoring (D49) partly reflects activity, and a reset changes its inputs.
@@ -772,7 +772,7 @@ Worth stating because it surprised the register: **nothing in the app expires to
 offline-cache window and the 48-hour `recommended` strip — so a report from the 2024/25 season still
 renders in a water body's drawer, at ~0 opacity, with its GPS path still on the aggregate map.
 
-- **A season is July 1 → June 30**, labelled `'24/'25`. **Derived, never stored** — no column, no
+- **A season is July 1 → June 30**, labeled `'24/'25`. **Derived, never stored** — no column, no
   backfill, no cron, nothing to drift. `skateEndTime` is already the range field of three existing
   indexes, so seasonal scoping makes those reads **cheaper**.
 - **Hazards reset on the same boundary**, and recurrence is **D53's `bodyFeatures` promotion** rather

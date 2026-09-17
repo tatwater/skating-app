@@ -76,7 +76,7 @@ export function WindExposure({
       <h3 className="font-medium text-foreground-muted text-xs uppercase tracking-widest">
         Wind exposure
       </h3>
-      {/* The rose is centred and the prose runs full width beneath it. Side by side, the chart was
+      {/* The rose is centered and the prose runs full width beneath it. Side by side, the chart was
           pinned left against a narrow column of wrapped text and read as an afterthought. */}
       <div className="flex flex-col gap-3">
         <svg

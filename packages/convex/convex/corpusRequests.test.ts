@@ -299,10 +299,10 @@ describe('the resolver record', () => {
     await t.mutation(internal.corpusRequests.recordResolution, {
       requestId,
       resolvedAt: Date.now(),
-      resolveError: 'No catalogue water at this point',
+      resolveError: 'No catalog water at this point',
     });
     let row = await t.run((ctx) => ctx.db.get(requestId));
-    expect(row?.resolveError).toMatch(/No catalogue water/);
+    expect(row?.resolveError).toMatch(/No catalog water/);
     expect(row?.candidate).toBeUndefined();
 
     await t.mutation(internal.corpusRequests.recordResolution, {
@@ -577,7 +577,7 @@ describe('decide — what approving performs', () => {
     expect(standingOf(body).standing).toBe('active');
   });
 
-  test('approving an admit inserts the catalogue polygon as a body kept by request', async () => {
+  test('approving an admit inserts the catalog polygon as a body kept by request', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -640,7 +640,7 @@ describe('decide — what approving performs', () => {
     expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
   });
 
-  test('an admit whose catalogue feature is a removed body is refused, never re-activated', async () => {
+  test('an admit whose catalog feature is a removed body is refused, never re-activated', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const mod = await seedUser(t, 'mod', 'moderator');

@@ -21,7 +21,7 @@ WebBrowser.maybeCompleteAuthSession();
  * setting (enable Password as a sign-in method), not a change here.
  *
  * Note `auth_config.first_factors` in Clerk's environment payload *does* list `password` —
- * ignore it. That field is the legacy capability catalogue (it also lists `ticket` and
+ * ignore it. That field is the legacy capability catalog (it also lists `ticket` and
  * `reset_password_*`); `user_settings.attributes` is the operative one.
  *
  * SSO adds no native module: `expo-web-browser` + `expo-auth-session` are already declared
@@ -125,7 +125,7 @@ export default function SignInScreen() {
       if (attempt.status === 'complete') {
         await setActive({ session: attempt.createdSessionId });
       } else if (attempt.status === 'needs_second_factor') {
-        // Instance-level 2FA is off, but a user can still enrol a phone individually.
+        // Instance-level 2FA is off, but a user can still enroll a phone individually.
         setError(
           'This account has two-factor authentication on, which this build doesn’t handle yet.',
         );

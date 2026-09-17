@@ -8,7 +8,7 @@
  *   lake nobody surveyed.
  * - `lane` wrong → a surface *we* fitted is captioned as one the state surveyed. This is the single
  *   claim this phase most cares about, and it is one string.
- * - `agency` wrong → we credit the wrong people, which is a licence problem rather than a bug.
+ * - `agency` wrong → we credit the wrong people, which is a license problem rather than a bug.
  * - `intervalFt` wrong → the drawer says "5 ft contours" over lines drawn every 25.
  *
  * None of those throws, none of them fails a build, and none is visible on a rendered map. That is

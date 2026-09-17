@@ -136,7 +136,7 @@ read-cost decision, not a call-site tweak.
 > This fixes the bug the phase exists for — a maps app handed a destination it cannot route to — with
 > no change to notification fan-out or feed filtering. The residue is stated rather than hidden: a
 > mile-away trailhead still bands against the water rather than the car, so its 30/60/90 classification
-> is slightly optimistic. Revisit with a denormalised access coord if that ever bites.
+> is slightly optimistic. Revisit with a denormalized access coord if that ever bites.
 
 **7. Three constants this doc names had no numbers, and one of them is a product line.**
 `HIKE_IN_THRESHOLD_M` is called *"a product line, not a geometry one"* and left blank; the
@@ -697,7 +697,7 @@ the Convex free plan and **disabled the dev deployment**. Restored by raising th
 | put-in | 30 m | 1,113 m | **1,377×** |
 
 **Convex has no projection**, so a candidate read is a *whole document* — `polygon` included. Lake
-Champlain's ~300 KB outline was therefore re-read for every one of the lots within a kilometre of it,
+Champlain's ~300 KB outline was therefore re-read for every one of the lots within a kilometer of it,
 95,294 times over. And **83% of that work was discarded** by the water-relevance gate, which runs
 *after* the lookup.
 
@@ -839,7 +839,7 @@ approach, so it contributes `undefined` and `bodyAccessKind` ignores it. The inv
 finding was genuinely unmaintained, though, and **`hide` is where it bites**:
 
 `putIns.hide` does not flip a row's status; it inserts a `hidden` suppression row at a coordinate, so
-one action outlives however many imports later land near it. `listForBody` has always honoured that.
+one action outlives however many imports later land near it. `listForBody` has always honored that.
 Neither read path this phase added did. Hiding a water body's only launch therefore removed its marker from
 the map while **the drawer went on naming it, the directions button went on routing to it, and the
 body kept its Hike-In chip** — the moderator's action visible on exactly one of four surfaces. That
@@ -990,14 +990,14 @@ upload is already the population we trust with reports.
 **Yes, and it's the API we're already paying no money for.** Phase 04's drive-time isochrones run on
 [**OpenRouteService**](https://openrouteservice.org/). ORS exposes a **`foot-hiking`** routing profile
 alongside the `driving-car` one we use, on the **same key, same account, same client code**. With
-`elevation: true` the Directions response carries **`ascent` and `descent` in metres** for the route —
+`elevation: true` the Directions response carries **`ascent` and `descent` in meters** for the route —
 which is the second half of the founder's question, and it's a request parameter rather than a second
 integration.
 
 > **D87 — Approach distance is walked, not flown.**
 > `approachMeters` is a routed `foot-hiking` distance where ORS can find a path, with straight-line as an
-> explicitly-flagged fallback. `approachAscentM` rides along, because a kilometre with 120 m of climb in
-> ski boots and a bag of gear is a different trip from a flat kilometre.
+> explicitly-flagged fallback. `approachAscentM` rides along, because a kilometer with 120 m of climb in
+> ski boots and a bag of gear is a different trip from a flat kilometer.
 
 **Why ORS and not the alternatives**, briefly, so this isn't re-litigated:
 
@@ -1033,7 +1033,7 @@ that nobody should discover this at the trailhead:
 
 - **The map summary card** ([A06c Workstream 5](./A06c-expanded-body-profiles.md#5--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
 - **The water body drawer/detail** — with the number: *"park here, then about 1.1 km on foot, 90 m of climb."*
-- **The feed card** — the Phase 04 drive-time filter row's neighbour. A skater filtering to "within 60
+- **The feed card** — the Phase 04 drive-time filter row's neighbor. A skater filtering to "within 60
   minutes" is filtering on *drive* time, and a hike-in water body inside that band is not the trip they think
   they're being offered.
 
@@ -1120,7 +1120,7 @@ getting it wrong costs some missed or spurious *inferences*, never a rejected hu
 2026-08-13** — all five workstreams, every UI surface, and the ETL run end to end: **3,588 put-ins,
 11,375 parking areas, 4,209 bodies with access** (16.7% of the corpus), routing 99.4%. Prod deferred. —
 scoped 2026-07-30; see [`phases/A06d-body-access-points.md`](./A06d-body-access-points.md); decisions
-**D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
+**D72** (parking modeled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
 **D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of A06c at
 scoping** — it was roughly the size of everything else there combined, and it's the only part introducing
 a new lifecycle. Independent of A06c; either order.
@@ -1171,7 +1171,7 @@ a new lifecycle. Independent of A06c; either order.
 
 > **All four open questions answered 2026-07-31.** **D87** — approach distance is **routed**, not flown:
 > **OpenRouteService's `foot-hiking` profile** is the same account, key and client Phase 04's drive-time
-> isochrones already use, and with `elevation: true` it returns **ascent in metres**, which answers the
+> isochrones already use, and with `elevation: true` it returns **ascent in meters**, which answers the
 > founder's *"elevation gain is going to affect people just as much as distance"* with a request parameter
 > rather than a second integration. Called at ETL time and cached — **never from a request path**. The
 > **Hike-In chip** ships on the map card, the drawer and the feed card, and the drive time and the walk are

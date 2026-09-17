@@ -53,7 +53,7 @@ export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dism
  * **`3dhp` is here for completeness rather than for traffic.** The merge's last run produced zero
  * 3DHP-sourced bodies — 3DHP re-publishes NHD across the whole Northeast, so every 3DHP feature that
  * survives the filter has an NHD counterpart that outranks it as identity (D92). But a 3DHP feature
- * matching nothing is a lake neither other catalogue draws, and refusing to store it would mean the
+ * matching nothing is a lake neither other catalog draws, and refusing to store it would mean the
  * import silently dropping exactly the kind of body this phase exists to find.
  */
 export const WATER_BODY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;

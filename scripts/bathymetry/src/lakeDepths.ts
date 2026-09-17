@@ -3,7 +3,7 @@
  *
  * ## Why this exists
  *
- * `state_agency` is rung 1 of D68's depth ladder — above LAGOS-US, above everything modelled — and
+ * `state_agency` is rung 1 of D68's depth ladder — above LAGOS-US, above everything modeled — and
  * on 2026-08-09 it had **zero rows in the corpus**. Its own docstring said the rung was *"deferred to
  * A06b, where those datasets are fetched for their contours anyway"*. A06b fetched them and never came
  * back. So 298 MB and ~2,400 lakes of measured depth have been on disk, feeding a contour layer and
@@ -40,11 +40,11 @@
 import type { ArchivedLake, Lane } from './lakes';
 import { maxDepthFt, representativePoint } from './lakes';
 
-/** Feet per metre. Restated from `normalize.ts`, which keeps it private and emits feet. */
+/** Feet per meter. Restated from `normalize.ts`, which keeps it private and emits feet. */
 const FEET_PER_METRE = 3.28084;
 
 /**
- * Deepest reading we will accept, in metres.
+ * Deepest reading we will accept, in meters.
  *
  * **Lake Champlain's 122 m is the deepest water any of these sources covers** — Seneca Lake is
  * deeper and is in New York, which publishes no bathymetry at all. 250 m is more than twice
@@ -128,7 +128,7 @@ export interface AgencyDepthResult {
  * **The zero check is load-bearing, and it is why `maxDepthFt` returning 0 has to mean "nothing".**
  * `SHORELINE_DEPTH` rows are how three of these sources close their polygons — Champlain's archive is
  * 84,565 shoreline zeros against 20,345 real soundings — so a lake whose survey is *only* shoreline
- * would otherwise report a maximum depth of zero metres, which reads as a measurement rather than as
+ * would otherwise report a maximum depth of zero meters, which reads as a measurement rather than as
  * an absence.
  */
 export function agencyDepthFor(

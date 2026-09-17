@@ -214,7 +214,7 @@ describe('evaluateOnIceAlert — degenerate inputs', () => {
 });
 
 describe('isInsideHazard', () => {
-  it('is true at the centre and false well outside', () => {
+  it('is true at the center and false well outside', () => {
     expect(isInsideHazard(CENTRE, pointRadiusShape(CENTRE, 50))).toBe(true);
     expect(isInsideHazard(north(CENTRE, 500), pointRadiusShape(CENTRE, 50))).toBe(false);
   });

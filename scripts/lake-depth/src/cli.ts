@@ -9,7 +9,7 @@
  *     [--nh-bands=.raw/nh-bathy-bands/bands.ndjson] [--states=VT,NH,ME,MA,NY]
  *
  * Any subset is valid — the sources are independent (GLOBathy excepted, which needs HydroLAKES for its
- * geometry), so you can load LAGOS-US first and add the modelled rungs later. The D68 ladder is enforced
+ * geometry), so you can load LAGOS-US first and add the modeled rungs later. The D68 ladder is enforced
  * server-side, so load order never changes the result.
  *
  * `--alsc` and `--cslap` read the archives `snapshot-alsc` and `snapshot-cslap` wrote. They are the

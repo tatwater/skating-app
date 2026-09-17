@@ -32,7 +32,7 @@ export const Route = createFileRoute('/admin/water/review')({ component: ReviewQ
 
 const REASON_LABELS: Record<ReviewReason, string> = {
   'duplicate-candidate': 'Duplicate candidates',
-  'same-source-duplicate': 'One catalogue, twice',
+  'same-source-duplicate': 'One catalog, twice',
   'bay-without-parent': 'Bays with no parent',
   'class-dissent': 'Contested as water at all',
   'class-conflict': 'Class conflicts',
@@ -43,13 +43,13 @@ const REASON_BLURBS: Record<ReviewReason, string> = {
   'duplicate-candidate':
     'Two separate bodies whose outlines overlap. The corpus renders both and search returns both, so this is the one a skater can see going wrong.',
   'same-source-duplicate':
-    'One catalogue carrying the same lake twice — the case OSM cannot see about itself and NHD can.',
+    'One catalog carrying the same lake twice — the case OSM cannot see about itself and NHD can.',
   'bay-without-parent':
     'An arm of something larger, with nothing in the corpus to attach it to, so it is stored as `unclassified` rather than as a bay.',
   'class-dissent':
-    'One catalogue refused this outright as water we cover while another classified it, and nothing in our rules explains the disagreement. A refusal we DO overrule on purpose is not here — an impoundment a catalogue calls a river, or a treatment pond it drops by purpose code, are both settled.',
+    'One catalog refused this outright as water we cover while another classified it, and nothing in our rules explains the disagreement. A refusal we DO overrule on purpose is not here — an impoundment a catalog calls a river, or a treatment pond it drops by purpose code, are both settled.',
   'class-conflict':
-    'The catalogues disagree about what kind of water this is, and our own rules did not settle it. A federal open-water class beating an OSM wetland tag is NOT here — that one is settled.',
+    'The catalogs disagree about what kind of water this is, and our own rules did not settle it. A federal open-water class beating an OSM wetland tag is NOT here — that one is settled.',
   'name-conflict':
     'Two publishers, two names. Both are stored and both are searchable, so nothing is broken — this is choosing which one displays.',
 };
@@ -120,7 +120,7 @@ function ReviewQueue() {
                   <Th>Lake</Th>
                   <Th>Acres</Th>
                   <Th>What is disputed</Th>
-                  <Th>Catalogues</Th>
+                  <Th>Catalogs</Th>
                 </tr>
               </thead>
               <tbody>

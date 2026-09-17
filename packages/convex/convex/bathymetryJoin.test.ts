@@ -16,7 +16,7 @@ const modules = import.meta.glob('./**/*.*s');
  *
  * So the three tests that matter most here are regressions against what shipped, not proofs that a
  * join works: the survey must reach the lake rather than its bay, must be bounded by its own
- * footprint rather than by nothing at all, and must survive a shoreline disagreement of a few metres.
+ * footprint rather than by nothing at all, and must survive a shoreline disagreement of a few meters.
  */
 describe('waterBodies.matchBathymetryLakes', () => {
   /** Insert a body directly, for a typed id. `importCanonical` below is what makes it reachable. */
@@ -34,7 +34,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
         searchText: String(extra.name ?? ''),
         // The hand-inserted row has to look like an imported one, or the `importCanonical` call
         // below inserts a SECOND body instead of patching this one — the upsert keys on the
-        // catalogue id now, and a row without one matches nothing (A07a / D93).
+        // catalog id now, and a row without one matches nothing (A07a / D93).
         osmId: externalId,
         dedupStatus: 'clean' as const,
         createdAt: Date.now(),
@@ -44,7 +44,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
   }
 
   /**
-   * A square body centred on `centre`. Inserted for a typed id, then run through `importCanonical`
+   * A square body centered on `center`. Inserted for a typed id, then run through `importCanonical`
    * to build the A01 cell rows — `listedBodiesNearCoord` reads those, so a hand-inserted body is
    * unreachable from any spatial lookup.
    */
@@ -282,9 +282,9 @@ describe('waterBodies.matchBathymetryLakes', () => {
     expect(result.rejects[0]?.reason).toContain('no listed body within');
   });
 
-  test('a metres-wide shoreline disagreement still resolves — 7 real lakes were lost to this', async () => {
+  test('a meters-wide shoreline disagreement still resolves — 7 real lakes were lost to this', async () => {
     // Two agencies drawing the same shore from different imagery on different dates. The deepest
-    // sounding in a lake is the furthest point from any shore, so a few metres outside our polygon is
+    // sounding in a lake is the furthest point from any shore, so a few meters outside our polygon is
     // never the pond across the road. Burncoat Park Pond sat 0 m outside its own namesake; Wat-Tuh
     // Lake 1 m; Middle Pond 2 m — all rejected outright by the zero buffer this replaces.
     const t = convexTest(schema, modules);

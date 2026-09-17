@@ -23,7 +23,7 @@ type Count = ImportRun['counts'][number];
  * the page said which numbers were the answer. Every count is still here, and none of them is still
  * equal: the outcome is a KPI row, the funnel is a ledger that has to balance, and the long tail is
  * grouped by the prefix the loaders already name it with, sorted, and measured against its own
- * family. Nothing is summarised away — magnitude is just drawn instead of only printed.
+ * family. Nothing is summarized away — magnitude is just drawn instead of only printed.
  */
 export function ImportRunDetail({ run }: { run: ImportRun }) {
   return (
@@ -252,7 +252,7 @@ function Coverage({ run }: { run: ImportRun }) {
 const COUNT_GROUPS: Record<string, { title: string; note?: string }> = {
   refused: {
     title: 'Refused',
-    note: 'no catalogue classed the merged group as still water we carry — these never became bodies',
+    note: 'no catalog classed the merged group as still water we carry — these never became bodies',
   },
   floor: {
     title: 'Below the admission floor',
@@ -389,7 +389,7 @@ function CountGroupCard({ group }: { group: CountGroup }) {
 }
 
 /**
- * One labelled number with a proportion bar under it.
+ * One labeled number with a proportion bar under it.
  *
  * The bar is a **hairline under the row**, not a chart: it makes relative size readable without
  * turning a ledger into a plot, and it never replaces the number — the value is always printed, so
@@ -463,7 +463,7 @@ interface StageFamily {
  * Group `source · osm/vt`, `source · nhd/VT`, … into one **source** step.
  *
  * Seventeen archives is seventeen checksums and there is nowhere else to put them — `RunStage`
- * carries exactly one `sha256`, one URL, one date, so rolling a catalogue into a single stage would
+ * carries exactly one `sha256`, one URL, one date, so rolling a catalog into a single stage would
  * discard the only field that answers "is this the archive we think". Grouping on the separator lets
  * the path read as the four steps it conceptually is while keeping every file's evidence one click
  * away. A stage with no separator is its own family of one and renders unchanged.

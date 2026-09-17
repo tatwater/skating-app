@@ -48,7 +48,7 @@ about" can never drift from "drawn."
 Answers **"what is near me right now"** — a radius around the skater's current point. Fires when
 you pull the phone out of your pocket.
 
-- **`DEFAULT_ALERT_BUFFER_M = 150`** — how close, in metres *beyond* the hazard's own footprint,
+- **`DEFAULT_ALERT_BUFFER_M = 150`** — how close, in meters *beyond* the hazard's own footprint,
   triggers an alert. Generous on purpose: the footprint is already fuzzy, GPS on a cold phone is
   poor, and a skater with speed carries a long way.
 
@@ -121,7 +121,7 @@ stops the directional re-fire. The suppressed set resets **per session**, not pe
 
 | Setting | Value | Why |
 |---|---|---|
-| accuracy | `Location.Accuracy.Balanced` | cold-weather battery matters more than sub-metre precision for a fuzzy alert |
+| accuracy | `Location.Accuracy.Balanced` | cold-weather battery matters more than sub-meter precision for a fuzzy alert |
 | `distanceInterval` | 20 m | emit a fix every 20 m of travel |
 | foreground service | on | the "On-ice mode is on" persistent notification (Android) / iOS blue pill |
 

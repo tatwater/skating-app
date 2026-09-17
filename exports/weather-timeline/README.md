@@ -1,7 +1,7 @@
 # Past-weather timeline — layered SVG for Figma
 
 **A port, not a redraw.** Every coordinate comes from `weatherTimelineModel` in `@skating/core` and
-every colour from `@skating/design`'s validated scale — the same two modules the web and native apps
+every color from `@skating/design`'s validated scale — the same two modules the web and native apps
 render from. This builder walks the model and writes SVG elements instead of React ones, so if the
 chart's geometry changes, re-running produces the new chart rather than a stale drawing of the old one.
 
@@ -57,7 +57,7 @@ would print for that week.
 
 Two reasons, and the first one is not sentiment:
 
-- **Its max fetch is 2,901 m**, comfortably over `MIN_FETCH_CLAUSE_M`. Below a kilometre the wind
+- **Its max fetch is 2,901 m**, comfortably over `MIN_FETCH_CLAUSE_M`. Below a kilometer the wind
   lane still draws — speed and the calm-freezing rail are measured on every lake — but its fill goes
   flat and the across-the-lake clause stays silent, because a per-lake density ramp on a pond would
   paint a vivid contrast between a 60 m shore and a 90 m one. That is the right answer for ~95% of
@@ -96,7 +96,7 @@ Past weather — Mascoma Lake (dark)
 
 - **The temperature and sun strokes are gradient fills** (`url(#temp-dark)`, `url(#sun-dark)`), in
   *user space*. Figma imports them, but moving a path without its gradient re-anchoring is the usual
-  SVG-gradient trap — if a line suddenly goes flat-coloured, that is why.
+  SVG-gradient trap — if a line suddenly goes flat-colored, that is why.
 - **The precipitation hatch is a `<pattern>`.** Figma's pattern support is the weakest part of its SVG
   importer; if a hatched block arrives as a flat rectangle, redraw it as diagonal lines rather than
   fighting it. Hatch means *"arrived wet and froze"* — freezing rain, sleet, ice pellets.

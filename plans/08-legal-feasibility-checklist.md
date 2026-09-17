@@ -41,7 +41,7 @@ Each item cross-references its decision (`D#`) / open question (`Q#`) elsewhere 
 | L10 | OSM **ODbL share-alike** if we publish the derived DB | D5 | 🟡 | Only bites if we redistribute the extract |
 | L11 | Landowner takedown wording / obligation | D48, Q10 | 🟡 | Lawyer confirms takedown policy |
 | L12 | PostHog session replay (minors + location) | D29 | ⛔ | Masking + minor-exclusion + PRIVACY update |
-| L13 | Weather (Open-Meteo) attribution + **non-commercial free-tier licence** | 04-integrations, D158 | 🟢 | Attribution appreciated; ⚠ free tier is **non-commercial only** — A06h adds surfaces and sources |
+| L13 | Weather (Open-Meteo) attribution + **non-commercial free-tier license** | 04-integrations, D158 | 🟢 | Attribution appreciated; ⚠ free tier is **non-commercial only** — A06h adds surfaces and sources |
 | L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**) **and built** (Phase 08): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out. Still 🟡 — the *derivations* over the aggregate (L9) need their own pass |
 | L15 | **AGPL §13 network-service obligation** for a self-hosted radar service | D157 | 🟢⏸ | Dormant by design — D157 says *borrow the approach, don't deploy the software*. Bites only if we run a **modified** LibreWXR (or any AGPL service) for users |
 
@@ -210,7 +210,7 @@ weather-since strip appears (Phase 10).
 **⚠ The free tier is licensed for non-commercial use.** That is fine today — `00-vision.md:144`
 commits to a passion / open-source project leaning on free tiers — but it is now a *condition* rather
 than a convenience, because A06h leans on it much harder (a corpus-wide daily cron, not just
-drawer-open fetches). **If the project ever stops being plainly non-commercial, the licence stops
+drawer-open fetches). **If the project ever stops being plainly non-commercial, the license stops
 covering us at any volume**, independent of whether we are under the call ceiling. That is written
 into **D158** as one of the three triggers for buying the $319/yr Standard plan, and it is the only
 one of the three that is a legal gate rather than an operational one.
@@ -225,7 +225,7 @@ own credit line, and each source has different terms:
 | RainViewer | radar v1 | **mandatory** credit + link to rainviewer.com; free tier is *"personal, educational, and small-scale community use"*, ~1,000 req/day |
 | Iowa Environmental Mesonet | radar fallback | academic courtesy — cache and proxy rather than pointing clients at them directly |
 
-**⚠ The RainViewer terms are a size-dependent licence, not a permanent one.** It covers us now at a
+**⚠ The RainViewer terms are a size-dependent license, not a permanent one.** It covers us now at a
 projected ~1,000 users; it is worth a re-read if adoption materially exceeds that, since "small-scale
 community" is the qualifying phrase and it is not defined numerically.
 

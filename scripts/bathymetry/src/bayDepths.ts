@@ -34,7 +34,7 @@ import { MAX_PLAUSIBLE_AGENCY_DEPTH_M } from './lakeDepths';
 import type { ArchivedLake, Lane } from './lakes';
 import { contourVertices } from './lakes';
 
-/** Feet per metre — the archives are normalized to feet. */
+/** Feet per meter — the archives are normalized to feet. */
 const FEET_PER_METRE = 3.28084;
 
 /** A live bay as `subAreas.exportForDepths` hands it over. */

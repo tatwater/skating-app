@@ -136,7 +136,7 @@ export function evaluateDirectionalAlert(
 1. **Guard.** If `speedMps < minSpeedMps` or `headingDeg < 0` → return `[]`. Standing still or unknown
    heading means no honest forward path; Layer-1 proximity covers the "you're right on it" case.
 2. **Project the forward path.** From `coord`, walk along `headingDeg` out to `speedMps * leadMaxSec`
-   metres, **sampling every `sampleStepMeters`** (using `toLocalMetres` / the existing local-metric
+   meters, **sampling every `sampleStepMeters`** (using `toLocalMetres` / the existing local-metric
    projection in `geometry.ts`).
 3. **First contact per hazard.** For each hazard, the first sample with `distanceToHazard(sample, shape)
    === 0` (inside the footprint) is the encounter point; encounter distance → **TTE = distance /
@@ -254,7 +254,7 @@ added (course-over-ground decision).
   about — but with one important rule. The watcher records enter/leave timestamps **per body**, debounced
   against brief GPS excursions (a lap that clips the shoreline isn't a "left"). When the report form opens
   for body X, it prefills the skate window from **`min(start)` and `max(end)` across *all* of today's
-  intervals on body X** — so exiting/re-entering on-ice mode to peek at a neighbouring water body and coming
+  intervals on body X** — so exiting/re-entering on-ice mode to peek at a neighboring water body and coming
   back, or a snack break off the ice, collapses to one suggested window (earliest start, latest end), and
   excursions to *other* water bodies never fragment X's suggestion (aggregation is per-body). Editable, never
   authoritative.

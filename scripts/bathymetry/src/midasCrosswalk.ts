@@ -32,7 +32,7 @@
  * row the service happened to return first. `crosswalkFor` sorts by area and says when it is
  * guessing.
  *
- * **3. The two catalogues disagree about names, and that is information rather than noise.** MIDAS
+ * **3. The two catalogs disagree about names, and that is information rather than noise.** MIDAS
  * 1892 is `Harvey Pond` to Maine and `Umsaskis Lake` to GNIS. Both names are carried, because a
  * disagreement is the cheapest available signal that a key spans two bodies (D95 rule 2).
  */

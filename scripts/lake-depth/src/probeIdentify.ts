@@ -104,7 +104,7 @@ async function main(): Promise<void> {
       if (verdict.ok) {
         tally.ok++;
         const delta = Math.abs(verdict.elevationM - entry.elevationM);
-        // A tenth of a metre: finer than any real difference between two flights, coarse enough
+        // A tenth of a meter: finer than any real difference between two flights, coarse enough
         // that float formatting cannot manufacture a disagreement.
         if (delta > 0.1 && drifted.length < 25) {
           drifted.push(

@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react';
  * the second is unverifiable and useless for planning.
  *
  * **It annotates and never suppresses.** Nothing here disables a button, hides a report form, or
- * greys the directions out — the `AccessSection` invariant, and Phase 10's never-hide rule. A skater
+ * grays the directions out — the `AccessSection` invariant, and Phase 10's never-hide rule. A skater
  * on the ice at dusk is exactly the person who most needs to file, and a posted rule is a fact about
  * permission rather than a fact about safety.
  *

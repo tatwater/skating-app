@@ -16,7 +16,7 @@
  *    different passes. This is most of the variance.
  * 2. **Cloud**, among the passes that did cover this lake.
  *
- * Showing *every regional pass* and grey-ing out the rest would make the control mostly grey, for a
+ * Showing *every regional pass* and gray-ing out the rest would make the control mostly gray, for a
  * reason no skater can be expected to hold in their head — and it would collapse "the satellite was
  * never over your lake" and "it was cloudy" into one disabled state, which trades a silent gap for a
  * misleading one.
@@ -114,7 +114,7 @@ export const MIN_BODY_COVERAGE = 0.5;
  * of a lake that was never in that state.
  *
  * Sixteen days is roughly the observed spacing of usable optical frames in a Northeast winter
- * (11–12 a season), so this admits a neighbouring pass and refuses a distant one. **The dates are
+ * (11–12 a season), so this admits a neighboring pass and refuses a distant one. **The dates are
  * always drawn on both sides regardless** — the cap is not what makes the seam honest, the labels
  * are. It only stops the pairing from being absurd.
  */

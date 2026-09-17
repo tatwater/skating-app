@@ -64,7 +64,7 @@ describe('buildMapStyle', () => {
     const mask = style.sources['region-mask'] as { type: string; data: GeoJSON.FeatureCollection };
     expect(mask.type).toBe('geojson');
     expect(mask.data.features.length).toBeGreaterThan(0);
-    // Sea underneath, land over it, lakes on top — together they tile the neighbourhood, so a
+    // Sea underneath, land over it, lakes on top — together they tile the neighborhood, so a
     // label overhanging Long Island Sound has something over it too.
     const kinds = new Set(mask.data.features.map((f) => f.properties?.kind));
     expect(kinds).toEqual(new Set(['sea', 'land', 'water']));
@@ -77,7 +77,7 @@ describe('buildMapStyle', () => {
     expect(at('region-mask-land')).toBeLessThan(at('world_boundaries'));
   });
 
-  it("paints the mask in the flavour's own land and water colors, not a grey of its own", () => {
+  it("paints the mask in the flavor's own land and water colors, not a gray of its own", () => {
     const light = buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'white' });
     const fill = (style: ReturnType<typeof buildMapStyle>) =>
       (
@@ -111,10 +111,10 @@ describe('buildMapStyle', () => {
     expect(at('region-mask-land')).toBeLessThan(at('region-mask-water'));
   });
 
-  it('admits our own border towns to the label filter and refuses the neighbours', () => {
+  it('admits our own border towns to the label filter and refuses the neighbors', () => {
     // The one assertion that catches a filter outline generated inside-out or too tight: it is a
     // real point-in-polygon test against the shipped geometry, not a shape check.
-    // The flavour gives this layer its own filter, so ours is ANDed on the end rather than alone.
+    // The flavor gives this layer its own filter, so ours is ANDed on the end rather than alone.
     const filter = (
       style.layers.find((l) => l.id === 'places_locality') as unknown as { filter: unknown[] }
     ).filter;
@@ -155,7 +155,7 @@ describe('buildMapStyle', () => {
     // name off the map inside our own region — the one label class this app can least afford to
     // lose, since the basemap is the only thing that draws it (we label bays, not lakes).
     //
-    // Asserted against the real flavour rather than a fixture, so a Protomaps change that moves a
+    // Asserted against the real flavor rather than a fixture, so a Protomaps change that moves a
     // label onto a polygon source fails here rather than on a device.
     const POLYGON_SOURCES = new Set(['water', 'earth', 'buildings', 'landuse']);
     const filtered = style.layers.filter((l) =>

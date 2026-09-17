@@ -43,7 +43,7 @@ export function ConstantCard({
   );
 }
 
-/** A labelled group of constants under one heading, with room for the companion chart beside them. */
+/** A labeled group of constants under one heading, with room for the companion chart beside them. */
 export function TuningSection({
   title,
   blurb,

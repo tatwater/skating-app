@@ -13,12 +13,12 @@ const LNG = -72.0553;
 const ELEV = 338;
 
 describe('weatherCellFor — the D152 two-tier key', () => {
-  it('snaps browse coordinates to the 0.05° cell centre', () => {
+  it('snaps browse coordinates to the 0.05° cell center', () => {
     const cell = weatherCellFor('browse', LAT, LNG, ELEV);
     // 44.7361 / 0.05 = 894.722 → 895 → 44.75;  -72.0553 / 0.05 = -1441.106 → -1441 → -72.05
     expect(cell.lat).toBe(44.75);
     expect(cell.lng).toBe(-72.05);
-    // 338 / 100 = 3.38 → band 3 → centre 300 m
+    // 338 / 100 = 3.38 → band 3 → center 300 m
     expect(cell.elevationM).toBe(300);
     expect(cell.key).toBe('b:895:-1441:3');
   });
@@ -54,7 +54,7 @@ describe('weatherCellFor — the D152 two-tier key', () => {
     expect(b.elevationM).toBe(a.elevationM);
   });
 
-  it('splits neighbours that straddle a band boundary — inherent to banding, and priced in', () => {
+  it('splits neighbors that straddle a band boundary — inherent to banding, and priced in', () => {
     // 338 m and 351 m are 13 m apart and land either side of the 350 m edge. This is *why* banding
     // costs ~1.16× rather than nothing, and it is correct: the two get different `elevation` params,
     // so they must not share a cache entry.
@@ -73,7 +73,7 @@ describe('weatherCellFor — the D152 two-tier key', () => {
     expect(ridge.key).not.toBe(valley.key);
     expect(valley.elevationM).toBe(200);
     expect(ridge.elevationM).toBe(600);
-    // Same cell centre, different elevation — which is the whole point of banding rather than
+    // Same cell center, different elevation — which is the whole point of banding rather than
     // simply rounding coordinates coarser.
     expect(ridge.lat).toBe(valley.lat);
     expect(ridge.lng).toBe(valley.lng);
@@ -101,7 +101,7 @@ describe('weatherCellFor — the D152 two-tier key', () => {
     }
   });
 
-  it('emits float-clean coordinates — the snapped centre must be byte-identical between callers', () => {
+  it('emits float-clean coordinates — the snapped center must be byte-identical between callers', () => {
     // 895 * 0.05 is 44.75000000000001 in IEEE-754 without the rounding guard, which would reach
     // Open-Meteo as a different URL for the same cell.
     for (let i = -2000; i < 2000; i += 137) {

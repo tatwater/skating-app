@@ -11,7 +11,7 @@ It builds **two** archives, and the split is the point:
 - a **world overview** at z0–6, carrying oceans, continents, borders and a handful of names —
   everywhere, so the map does not simply end where our coverage does.
 
-Between them the apps draw a **mask**: the neighbourhood around us that is not ours — sea, land over
+Between them the apps draw a **mask**: the neighborhood around us that is not ours — sea, land over
 it, then the big lakes — painted flat, which is what makes New Jersey an empty white shape with a
 border and a name rather than a fully rendered state we have nothing to say about. It covers water as
 well as land, and it is drawn a thousandth short of opaque; both are load-bearing, and
@@ -69,7 +69,7 @@ pmtiles verify world-z6-*.pmtiles && pmtiles verify northeast-*.pmtiles
   whole-planet z0–6 buys an ocean everywhere and a world you can zoom out to. `REGION_MIN_ZOOM` in
   `packages/core/src/basemapLayers.ts` is where the two hand over, and that module owns the whole
   draw order; the apps only supply the URLs.
-- **`--maxzoom=6` for the world** is the smallest thing that still draws recognisable coastlines and
+- **`--maxzoom=6` for the world** is the smallest thing that still draws recognizable coastlines and
   carries country and state labels. Each further level roughly quadruples it, and MapLibre overzooms
   past the archive's own maximum, so z6 keeps rendering at z14 — generalised, which is why
   `ADMIN_MAX_ZOOM` fades the admin lines out at z10 rather than letting them wander.

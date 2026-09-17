@@ -7,7 +7,7 @@ by hand. See [`plans/phases/A06a-body-depth.md`](../../plans/phases/A06a-body-de
 Depth has two consumers: the D69 shallow signal in the hazard-decay model, and the lake drawer, which
 shows both numbers to skaters **framed by where they came from**. That framing is the reason provenance is
 a stored field rather than a footnote — see *Sources*, below, and note that two of the three sources are
-**modelled, not measured**.
+**modeled, not measured**.
 
 > ### What A07a-2 added (2026-08-08)
 >
@@ -40,20 +40,20 @@ a stored field rather than a footnote — see *Sources*, below, and note that tw
 > **`load-elevation` now reads that archive and the Open-Meteo module is deleted** (A07a-3). Run
 > `load-elevation --compare` **first**: D101 asks for the datum comparison against the 5,692 rows
 > already stamped `dem_glo90` *before* re-stamping, because a swap that silently moves a datum moves
-> every `regionStats` decile and looks like a data-quality improvement. A delta distribution centred
+> every `regionStats` decile and looks like a data-quality improvement. A delta distribution centered
 > on zero is GLO-90 being coarse; one displaced off zero is a datum shift.
 >
 > **`snapshot-cslap`** is NYSDEC's Citizens Statewide Lake Assessment Program (founder, 2026-08-09) —
 > **278 lakes with a published mean depth**, sampled through 2024, at its own `cslap` ladder rung
-> between `state_agency` and `lagos_us`. Mean only; the programme publishes no maximum. Like ALSC it
-> has **no published licence** (the hosting item's `licenseInfo` and `accessInformation` are both
+> between `state_agency` and `lagos_us`. Mean only; the program publishes no maximum. Like ALSC it
+> has **no published license** (the hosting item's `licenseInfo` and `accessInformation` are both
 > empty), so it is credited rather than assumed permissive.
 >
 > **`snapshot-alsc`** is the Adirondack Lakes Survey (**D130**) — 1,345 ponds, every one with a max
 > *and* a mean depth, and New York's first measured-depth source. It is a **scraper**, deliberately
 > serial at 1 req/s with an identifying User-Agent, run **once**, and archived so it never repeats.
 > Read `src/alsc.ts` before touching it: the certificate does not validate, `robots.txt` is a blanket
-> disallow, and there is no published licence — all three are recorded in the archive manifest along
+> disallow, and there is no published license — all three are recorded in the archive manifest along
 > with the reasoning, and the payload is corroborated against GNIS and our own polygons rather than
 > trusted.
 >
@@ -104,7 +104,7 @@ workspace dependencies.
 | 1 | operator override (`/admin/water/:id`) | **measured** | — | mean + max | — |
 | 2 | [LAGOS-US DEPTH v1.0](https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1) | **measured**, ~65 compiled sources | > 1 ha | 17,675 max · 6,137 mean | ⚠ confirm at download |
 | 3 | [Adirondack Lakes Survey](https://www.adirondacklakessurvey.org) 1984–87 (`--alsc`) | **measured**, one survey, pre-GPS coordinates | ~0.5–700 acres | 1,345 max · 1,345 mean | **no published terms** — attribution only |
-| 4 | [HydroLAKES v1.0](https://www.hydrosheds.org/products/hydrolakes) `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` splits reported from modelled | ≥ 10 ha | mean | CC-BY 4.0 |
+| 4 | [HydroLAKES v1.0](https://www.hydrosheds.org/products/hydrolakes) `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` splits reported from modeled | ≥ 10 ha | mean | CC-BY 4.0 |
 | 5 | [GLOBathy](https://springernature.figshare.com/collections/GLOBathy_the_Global_Lakes_Bathymetry_Dataset/5243309) `Dmax` | random forest over shoreline / area / volume / elevation / watershed | ≥ 10 ha (HydroLAKES-keyed) | max | CC0 1.0 |
 
 > **⚠ Before the first real run:** confirm LAGOS-US DEPTH's Intellectual Rights statement on its EDI
@@ -138,7 +138,7 @@ mkdir -p .scratch && cd .scratch
 
 > ✅ **The `.raw/` archive the note below asked for now exists** (built 2026-08-02). Downloads land in
 > `.raw/<key>/` with a machine-written `manifest.json` — source URL, fetch time, byte count, our
-> sha256, the publisher's checksum where one exists, and **the licence** — and `./mirror-r2.sh push`
+> sha256, the publisher's checksum where one exists, and **the license** — and `./mirror-r2.sh push`
 > puts a second copy in the private `skating-raw-lake-depth` bucket. Nothing here needs a run note.
 
 ```bash
@@ -149,7 +149,7 @@ pnpm --filter @skating/lake-depth archive --status # what is archived, and what 
 
 Two of the three fetch themselves. **LAGOS-US DEPTH does not** — see below.
 
-| source | how | licence |
+| source | how | license |
 | --- | --- | --- |
 | HydroLAKES | direct HTTPS, 762.5 MB | CC-BY 4.0 (publishes no checksum → archived as `unverified`) |
 | GLOBathy | figshare API, 115.6 MB | **CC0**, confirmed by the API; md5 verified against the publisher's |
@@ -201,15 +201,15 @@ manual step.
    | mean depth — *(the other of the two)* | `lake_meandepth_m`, `lake_meandepth`, `meandepth_m`, `mean_depth_m` |
    | area — optional | `lake_waterarea_ha`, `lake_area_ha`, `lake_totalarea_ha` |
 
-   Depths must be in **metres** and area in **hectares**; the transform converts hectares to m² and
-   assumes metres for depth. If the file you have is in feet, say so rather than converting it by
+   Depths must be in **meters** and area in **hectares**; the transform converts hectares to m² and
+   assumes meters for depth. If the file you have is in feet, say so rather than converting it by
    hand — the conversion belongs in the transform where it can be tested.
 
    If a column is named something not on these lists, **add it to the candidate list** in
    `src/transform.ts` rather than renaming the third party's file. The file in `.raw/` must stay
    byte-identical to what they served.
 
-5. Archive it, with the licence:
+5. Archive it, with the license:
 
    ```bash
    pnpm --filter @skating/lake-depth archive \
@@ -225,7 +225,7 @@ manual step.
    `--file` repeats. Every file is hashed and listed in the manifest; the ETL reads only
    `lake_depth`, and the companions ride along because they are what make it legible.
 
-   `--licence` is **enforced, not decorative**: `isRunnable()` refuses an archive with no licence
+   `--licence` is **enforced, not decorative**: `isRunnable()` refuses an archive with no license
    recorded, so the ETL cannot quietly run from LAGOS-US while nobody has read its terms. That would
    close the open question by forgetting it.
 
@@ -234,7 +234,7 @@ manual step.
    exist. Losing the laptop copy means a human repeats step 1 by hand.
 
 Every archive step writes an `importRuns` row, so `/admin/imports` shows what was fetched, from where,
-how big, whether the checksum verified, and what licence it came under.
+how big, whether the checksum verified, and what license it came under.
 
 #### What the archived file turned out to be — read before the first run
 
@@ -380,7 +380,7 @@ its reason (capped at 20, with the withheld count stated).
 > reason line says exactly that. If that number ever comes out *small*, the clip is wrong.
 >
 > Source mix of the 40,260: max from GLOBathy 22,585 + LAGOS-US 17,675; mean from HydroLAKES 22,585
-> (of which only **279 are `hydrolakes_reported`** — the rest modelled) + LAGOS-US 6,137. That 279 is
+> (of which only **279 are `hydrolakes_reported`** — the rest modeled) + LAGOS-US 6,137. That 279 is
 > worth knowing: splitting the reported rung out of HydroLAKES is nearly free, and it is nearly empty.
 >
 > Spot-check that survived: Lake Ontario (`hylak/7`) came through at 84.8 m mean / 244 m max against
@@ -399,7 +399,7 @@ Batches of **8** lakes, tunable with `--batch=N`. It **refuses a non-dev target 
 >
 > The original 25 was reasoned against Convex's 4,096-**read** cap, on the grounds that the input
 > records are tiny (a point and two numbers). They are, and it doesn't matter: **what the mutation
-> reads is the corpus.** Each lake pulls every listed body whose bbox covers its neighbourhood, and
+> reads is the corpus.** Each lake pulls every listed body whose bbox covers its neighborhood, and
 > Convex also caps a transaction at **16 MB of reads**. A body averages 1.8 KB — but the A01 cell index
 > files large bodies at coarse rungs, so a lookup anywhere near Champlain or Ontario drags a ~300 KB
 > polygon along with it. Twenty-five such lookups in one transaction blew the cap at batch 8 of 1,611
@@ -416,7 +416,7 @@ Batches of **8** lakes, tunable with `--batch=N`. It **refuses a non-dev target 
 >
 > **A failed batch no longer ends the run** (it did on 2026-08-02, taking 1,603 loadable batches with
 > it). Isolated failures are recorded and skipped; five consecutive aborts, on the theory that a
-> streak is systemic rather than a dense neighbourhood.
+> streak is systemic rather than a dense neighborhood.
 
 **Re-running is safe and converges.** The D68 ladder lives inside the mutation: an `operator` value is
 never overwritten, a worse rung never displaces a better one per measurement, and an equal rung *does*
@@ -487,7 +487,7 @@ middle of a defensible 5–9 m band, not a derived number — it exists because 
 mean, and it leans generous on purpose (a false positive makes a hazard warning linger; a false negative
 loses the signal). It was always meant to be settled with data, and **the data arrives with this ETL**.
 
-LAGOS-US DEPTH carries roughly **6,137 lakes with both a mean and a max**. That is a labelled validation
+LAGOS-US DEPTH carries roughly **6,137 lakes with both a mean and a max**. That is a labeled validation
 set: for each one, `mean ≤ 3 m` is the ground-truth answer and `max ≤ X` is the prediction. So after the
 load, over the *matched* bodies in our five states:
 

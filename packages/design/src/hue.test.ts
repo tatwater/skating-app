@@ -20,7 +20,7 @@ describe('hueOf', () => {
     expect(hueOf('#00447f')).toBeCloseTo(hueOf('#0088fe') as number, 6);
   });
 
-  it('reports no hue for greys, rather than reporting red', () => {
+  it('reports no hue for grays, rather than reporting red', () => {
     // A neutral reported as 0° sits exactly on top of the danger color and would fail a separation
     // check it should pass.
     expect(hueOf('#000000')).toBeUndefined();
@@ -54,7 +54,7 @@ describe('hueDistance', () => {
   });
 
   it('scores an achromatic color as maximally separated', () => {
-    // A grey cannot be mistaken for a red, which is the question this answers.
+    // A gray cannot be mistaken for a red, which is the question this answers.
     expect(hueDistance('#808080', '#ff0000')).toBe(MAX_HUE_DISTANCE);
     expect(hueDistance('#ff0000', '#ffffff')).toBe(MAX_HUE_DISTANCE);
   });

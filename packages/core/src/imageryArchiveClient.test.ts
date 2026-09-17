@@ -76,7 +76,7 @@ describe('caching — the archive is immutable, so once per session is the polic
 
   it('⚠ collapses concurrent requests for the same key into one', async () => {
     // Ten lakes opening at once must not become ten identical requests. The in-flight map is what
-    // makes the manifest-per-granule design pay off, since neighbouring lakes share most granules.
+    // makes the manifest-per-granule design pay off, since neighboring lakes share most granules.
     const calls = serve({
       [`${BASE}/frames/winter-2025-26/S2C_A.json`]: { granuleId: 'S2C_A', capturedAt: 'x' },
     });

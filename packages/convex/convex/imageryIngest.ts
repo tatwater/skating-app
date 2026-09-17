@@ -252,7 +252,7 @@ async function fetchDailyLows(
   const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
   if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText}`);
   const json = (await res.json()) as DailyResponse | DailyResponse[];
-  // One coordinate returns an object; several return an array. Normalised so the caller never has to
+  // One coordinate returns an object; several return an array. Normalized so the caller never has to
   // care how many sites survived the point check above.
   const rows = Array.isArray(json) ? json : [json];
 

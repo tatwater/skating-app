@@ -5,7 +5,7 @@
  * one already records what a reader needs to reproduce the input — the resolved URL, the
  * publisher's build date, the size, our sha256, and whatever verification the publisher made
  * possible. Until A07a's provenance pass, only the OSM one was ever read back, so a run row could say
- * "an OSM extract" and nothing at all about the three other catalogues that decide the corpus.
+ * "an OSM extract" and nothing at all about the three other catalogs that decide the corpus.
  *
  * **The manifest shapes are re-declared here, not imported**, for the same reason `types.ts` gives:
  * `scripts/etl` is a separate tsconfig project, and a shared logger should not take a dependency on
@@ -260,7 +260,7 @@ export function derivedFileStage(input: {
  * An HTTP `Last-Modified` header → epoch ms, or `undefined`.
  *
  * Looser than {@link parseBuildDate} on purpose: this one is a header a server wrote in a
- * standardised format, not a six-digit field we invented, so `Date.parse` is the right reader —
+ * standardized format, not a six-digit field we invented, so `Date.parse` is the right reader —
  * but an unparseable header still has to become "no date" rather than `NaN` on the page.
  */
 export function parseHttpDate(value: string | undefined): number | undefined {

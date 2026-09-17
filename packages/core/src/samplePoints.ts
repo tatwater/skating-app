@@ -41,7 +41,7 @@ export const DEFAULT_SAMPLE_SPACING_KM = 11;
  */
 export const MAX_SUGGESTED_SAMPLE_POINTS = 64;
 
-/** Metres per degree of latitude (WGS84 mean) — the same constant basis as `haversineMeters`. */
+/** Meters per degree of latitude (WGS84 mean) — the same constant basis as `haversineMeters`. */
 const M_PER_DEG_LAT = 111_320;
 const DEG = Math.PI / 180;
 
@@ -93,12 +93,12 @@ export interface SampleSuggestion {
  * means paying for forecasts that duplicate each other, while being slightly coarser costs nothing
  * the model can resolve. It's property-tested in that direction.
  *
- * **The grid is centred on the bbox**, not started at its corner, so a body that fits inside one
+ * **The grid is centered on the bbox**, not started at its corner, so a body that fits inside one
  * spacing gets a point in the middle rather than one hugging its southwest edge.
  *
  * **It never returns nothing.** A long skinny reach can slip between grid lines entirely; a body with
  * no sample points would silently fall back to its centroid at read time anyway (see
- * `lib/sampling.ts`), so returning that point explicitly — flagged — is the same behaviour said out
+ * `lib/sampling.ts`), so returning that point explicitly — flagged — is the same behavior said out
  * loud, and the operator can see the grid didn't take.
  */
 export function suggestSamplePoints(
@@ -127,7 +127,7 @@ export function suggestSamplePoints(
 
   const points: LatLng[] = [];
   let truncated = false;
-  // Centre the grid: how many whole steps fit, then inset by the leftover half so the row/column
+  // Center the grid: how many whole steps fit, then inset by the leftover half so the row/column
   // pattern is symmetric about the body rather than anchored to its corner.
   const rows = Math.floor((box.maxLat - box.minLat) / latStep) + 1;
   const cols = Math.floor((box.maxLng - box.minLng) / lngStep) + 1;

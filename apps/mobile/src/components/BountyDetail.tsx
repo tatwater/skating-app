@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   fulfilled: 'Fulfilled',
   expired: 'Expired',
-  cancelled: 'Cancelled',
+  cancelled: 'Canceled',
 };
 
 /**
@@ -37,7 +37,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
     return (
       <Unavailable
         title="Bounty not available"
-        message="This bounty may have been cancelled or removed."
+        message="This bounty may have been canceled or removed."
       />
     );
   }
@@ -176,7 +176,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           <Separator borderColor="$border" />
           <YStack gap="$1" alignItems="flex-start">
             <Button size="$4" chromeless onPress={onCancel} disabled={cancelling}>
-              {cancelling ? 'Cancelling…' : 'Cancel bounty'}
+              {cancelling ? 'Canceling…' : 'Cancel bounty'}
             </Button>
             {error ? (
               <Text color="$danger" fontSize={12} accessibilityRole="alert">

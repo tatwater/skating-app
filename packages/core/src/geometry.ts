@@ -74,12 +74,12 @@ export function pointInPolygon(point: LatLng, polygon: Polygon | MultiPolygon): 
   return booleanPointInPolygon([point.lng, point.lat], polygon);
 }
 
-/** Mean Earth radius in metres (matches Turf's WGS84 mean radius). */
+/** Mean Earth radius in meters (matches Turf's WGS84 mean radius). */
 const EARTH_RADIUS_M = 6_371_008.8;
 const DEG = Math.PI / 180;
 
 /**
- * Great-circle (crow-flies) distance between two points in metres — the shared radius primitive
+ * Great-circle (crow-flies) distance between two points in meters — the shared radius primitive
  * behind the Phase-04 90-min drive band (a uniform crow-flies fallback, since hosted ORS caps
  * isochrones at 60 min) and put-in clustering. Uses the haversine formula on the WGS84 mean radius,
  * which is exact enough at drive-time / lake scale and dependency-free.
@@ -120,9 +120,9 @@ export function destinationPoint(
  * ("North launch") derive from.
  *
  * Flat-earth around the origin, matching `destinationPoint` and `toLocalMetres` rather than the
- * great-circle initial bearing, and that consistency is the point: at the sub-kilometre scale this
+ * great-circle initial bearing, and that consistency is the point: at the sub-kilometer scale this
  * serves (a launch off a lake's interior point) the two differ by far less than the uncertainty in
- * where the "centre" of a lake even is, while a mixed pair would not round-trip.
+ * where the "center" of a lake even is, while a mixed pair would not round-trip.
  *
  * Returns `0` for coincident points — arbitrary, but a label has to say something, and "N" is the
  * conventional degenerate answer rather than a `NaN` from `atan2(0, 0)`.
@@ -135,7 +135,7 @@ export function bearingDegrees(origin: LatLng, target: LatLng): number {
 }
 
 /**
- * Project a GeoJSON `[lng, lat]` position into local metres relative to `origin`
+ * Project a GeoJSON `[lng, lat]` position into local meters relative to `origin`
  * (equirectangular / flat-earth around the origin). Exact enough at lake / parking-lot
  * scale — sub-1% distance error out to several km, far tighter than the ~300 m buffer this
  * feeds — and dependency-free, so `distanceToPolygonMeters` doesn't pull a new Turf module.
@@ -147,7 +147,7 @@ function toLocalMetres([lng, lat]: readonly [number, number], origin: LatLng): [
   ];
 }
 
-/** Distance from `(px,py)` to segment `a–b`, all in local metres. Handles a zero-length edge. */
+/** Distance from `(px,py)` to segment `a–b`, all in local meters. Handles a zero-length edge. */
 function segmentDistanceMetres(
   px: number,
   py: number,
@@ -162,7 +162,7 @@ function segmentDistanceMetres(
 }
 
 /**
- * Distance in metres from `point` to the nearest edge of `polygon` — **`0` when the point is
+ * Distance in meters from `point` to the nearest edge of `polygon` — **`0` when the point is
  * inside** (boundary counts as inside, per `pointInPolygon`). The proximity primitive behind
  * offline body auto-select (§6.2), the map-open "you're at this lake" framing, and Phase 09a hazard
  * binding: a skater standing in the parking lot is *near* the lake though not *on* it, so a plain
@@ -196,12 +196,12 @@ function polygonRings(polygon: Polygon | MultiPolygon): Position[][] {
 }
 
 /**
- * Minimum distance in metres between two polygons' **edges** — `0` when they overlap, touch or one
+ * Minimum distance in meters between two polygons' **edges** — `0` when they overlap, touch or one
  * contains the other. The hazard-clustering primitive (A05c/D77): "are these the same ridge?" is asked
  * of *footprints*, never of centroids, because a `pressure_ridge` is a buffered LineString that often
  * spans a bay, and two ridges sharing 300 m of geometry can have centroids 400 m apart. Measuring
  * edge-to-edge makes the tolerance a **gap** rather than a radius, which is a far tighter claim on a
- * long feature than "their centres are within 80 m".
+ * long feature than "their centers are within 80 m".
  *
  * Computed in two passes, because each catches a case the other misses:
  *
@@ -460,7 +460,7 @@ export function representativePoint(geom: Polygon | MultiPolygon): LatLng {
   return { lat, lng };
 }
 
-/** Surface area of a water body's polygon in square metres (geodesic; wraps `@turf/area`). */
+/** Surface area of a water body's polygon in square meters (geodesic; wraps `@turf/area`). */
 export function surfaceAreaSqM(geom: Polygon | MultiPolygon): number {
   return area(feature(geom));
 }
@@ -487,7 +487,7 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
 
 /**
  * Ramer–Douglas–Peucker: drop the points of a path that lie within `toleranceMeters` of the line
- * their neighbours already describe. Endpoints are always kept.
+ * their neighbors already describe. Endpoints are always kept.
  *
  * Written for the A05b shore band, where the input is a section of an OSM shoreline — arbitrarily
  * detailed, and detail is exactly what a hazard footprint must not claim to have. The tolerance is

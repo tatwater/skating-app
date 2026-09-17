@@ -69,7 +69,7 @@ export function gridKey({ lat, lng }: WtkPoint): string {
   return `${round(lat).toFixed(4)},${round(lng).toFixed(4)}`;
 }
 
-/** The representative point for a grid key — the cell centre we actually request. */
+/** The representative point for a grid key — the cell center we actually request. */
 export function pointForGridKey(key: string): WtkPoint {
   const [lat, lng] = key.split(',').map(Number) as [number, number];
   return { lat, lng };
@@ -194,7 +194,7 @@ export function accumulateCsv(csv: string, into: WindAccumulator): number {
  * One winter is ~2,900 hours, so this is roughly a season and a half — enough that a single
  * anomalous month cannot define a lake's rose. Below it we store **nothing**, because a rose is
  * rendered as a percentage and a percentage of a small sample is the failure mode D78 and D86 both
- * exist to prevent: it looks identical whether it summarises 300 hours or 14,000.
+ * exist to prevent: it looks identical whether it summarizes 300 hours or 14,000.
  */
 export const MIN_ROSE_HOURS = 4000;
 
@@ -303,7 +303,7 @@ export function retryAfterMs(header: string | null | undefined, now: number): nu
  * A 429 is expected in normal operation — the daily and per-second limits are real — so it backs
  * off rather than failing the run. A 4xx that is not 429 is not retried: it will not become valid.
  *
- * **A 429 gets its own, longer budget** (`WTK_RATE_LIMIT_RETRIES`) and honours `Retry-After` when the
+ * **A 429 gets its own, longer budget** (`WTK_RATE_LIMIT_RETRIES`) and honors `Retry-After` when the
  * server sends one, because being told exactly how long to wait and then guessing is how a run loses
  * requests it could have kept. Everything else keeps the short budget: a broken service should fail
  * fast and be reported, not retried for four minutes.

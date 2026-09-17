@@ -140,7 +140,7 @@ export const contradictionCluster = internalQuery({
  * Record a contributor's contradiction pattern (D56 §7b), bundled (A02).
  *
  * This used to carry its own copy of "one open flag per (target, reason)" and said so in its comment
- * — the duplication is what moved the mechanism into `lib/autoFlag.ts`. The behavioural change is
+ * — the duplication is what moved the mechanism into `lib/autoFlag.ts`. The behavioral change is
  * that a contributor parked above the threshold no longer files a fresh `/admin` row every settle:
  * the count goes up on the row already tracking them, which is the number a moderator needs to judge
  * the D57 lever and the thing a stream of identical rows was hiding.

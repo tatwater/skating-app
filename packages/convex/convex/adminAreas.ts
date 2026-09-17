@@ -198,7 +198,7 @@ export const resolvePlace = query({
  * geodatabases that are not clipped to their states* — New Hampshire's reaches 46.09°N, into Maine
  * and Québec — while OSM arrives as per-state extracts that are. Left unclipped the master list
  * imports Québec (Grand lac Saint-François, Lac Aylmer), Ontario (Hamilton Harbor), New Jersey
- * (Raritan Bay) and 1,300-odd others measured, purely because a neighbouring state's download
+ * (Raritan Bay) and 1,300-odd others measured, purely because a neighboring state's download
  * happened to include them.
  *
  * **Counties and towns, not states.** Only three `state` rows exist — Vermont, Maine, Massachusetts

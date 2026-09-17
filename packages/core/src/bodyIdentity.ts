@@ -1,5 +1,5 @@
 /**
- * How an incoming catalogue feature finds the body it already is — the upsert rule (A07a, D93).
+ * How an incoming catalog feature finds the body it already is — the upsert rule (A07a, D93).
  *
  * ## The job `externalId` used to do, and why it cannot keep doing it
  *
@@ -9,14 +9,14 @@
  * minted by us, so it is by definition not derivable from an incoming feature and cannot answer
  * "have I seen this before?".
  *
- * The answer has to come from the **catalogue ids** — which means a multi-key lookup, and that has a
+ * The answer has to come from the **catalog ids** — which means a multi-key lookup, and that has a
  * failure mode worth naming before it is met in production: two ids on one incoming feature can point
  * at **two different stored rows**.
  *
  * ## Why not derive the key from the geometry
  *
  * Asked and rejected (founder, 2026-08-03). D92's entire purpose is to possibly change *which
- * catalogue draws a lake* — which changes the polygon, the bbox, and therefore any key derived from
+ * catalog draws a lake* — which changes the polygon, the bbox, and therefore any key derived from
  * them, at exactly the moment identity must not move. It would also repeat `externalId`'s sin at a
  * worse ratio: a foreign key at least changes rarely; a shoreline is edited continuously. The useful
  * half of that idea is a **blocking key** for dedup, and `waterBodyCells` (A01) already is one.
@@ -43,7 +43,7 @@
  * already violates its own uniqueness invariant, and picking one at random would bury that.
  */
 
-/** The catalogue ids an incoming feature can carry. All optional; at least one must be present. */
+/** The catalog ids an incoming feature can carry. All optional; at least one must be present. */
 export interface CatalogueIds {
   /** `way/<id>` or `relation/<id>`. */
   osmId?: string | undefined;
@@ -56,11 +56,11 @@ export interface CatalogueIds {
 /**
  * `gnisId` is **deliberately not** part of the upsert key.
  *
- * It is the one identifier all three catalogues share, which makes it an excellent *candidate
- * generator* for reconciliation — but GNIS names **places**, and a catalogue may split one place into
+ * It is the one identifier all three catalogs share, which makes it an excellent *candidate
+ * generator* for reconciliation — but GNIS names **places**, and a catalog may split one place into
  * several features. Measured against the archives: **92 GNIS ids resolve to more than one NHD body**
  * (0.8% of 10,984). Upserting on it would merge those lakes. It proposes; `polygonIoU` adjudicates;
- * only the per-catalogue ids decide identity.
+ * only the per-catalog ids decide identity.
  */
 export const GNIS_IS_NOT_AN_UPSERT_KEY = true;
 
@@ -101,7 +101,7 @@ export interface ResolveOptions<Key> {
    * Defaults to the **first** match in `CATALOGUE_ID_FIELDS` order, i.e. an OSM-keyed row outranks an
    * NHD-keyed one. That is not a claim about geometry quality — D92 decides that per lake through
    * `geometrySource` — it is a claim about **attachment**: the OSM lane has been the corpus since
-   * Phase 01, so its rows are the ones carrying reports, hazards, sub-areas and favourites. Merging
+   * Phase 01, so its rows are the ones carrying reports, hazards, sub-areas and favorites. Merging
    * *into* them keeps the most user content on its original `_id`.
    */
   preferSurvivor?: (candidates: readonly { key: Key; field: CatalogueIdField }[]) => Key;
@@ -122,7 +122,7 @@ export function resolveUpsert<Key>(
     return {
       action: 'conflict',
       reason:
-        'incoming feature carries no catalogue id at all — it cannot be upserted, only counted as a drop',
+        'incoming feature carries no catalog id at all — it cannot be upserted, only counted as a drop',
     };
   }
 

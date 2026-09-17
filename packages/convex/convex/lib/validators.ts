@@ -56,8 +56,8 @@ export const latLng = v.object({ lat: v.number(), lng: v.number() });
  *
  * `count` is not decoration: `decileRankOf` refuses to rank against a block below
  * `MIN_DECILE_SAMPLE`, because deciles over a handful of lakes are noise wearing a distribution's
- * clothes and the failure is silent — a block summarising eight bodies looks exactly like one
- * summarising eight thousand.
+ * clothes and the failure is silent — a block summarizing eight bodies looks exactly like one
+ * summarizing eight thousand.
  */
 export const decileBlock = v.object({
   deciles: v.array(v.number()),

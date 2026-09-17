@@ -165,7 +165,7 @@ export const latest = query({
 });
 
 /**
- * Record one measurement of a third-party catalogue (A07a).
+ * Record one measurement of a third-party catalog (A07a).
  *
  * **`internalMutation`, so it is reachable only from `convex run` with an admin key** — the same
  * channel `@skating/run-log` already uses. The measurement is taken by an ETL pass against an archive
@@ -176,7 +176,7 @@ export const latest = query({
  * a number the cron or the event site also writes, and two writers on one series is how a chart starts
  * disagreeing with itself. The rejection is loud (throws) rather than a warn-and-drop, because unlike
  * a fire-and-forget client signal this is a deliberate operator action whose silent failure would look
- * exactly like "the catalogue hasn't changed".
+ * exactly like "the catalog hasn't changed".
  *
  * Idempotent per `date` — `writeMetricSnapshot` replaces. Re-measuring the same release overwrites
  * rather than accumulating, so a corrected run is just a re-run.
@@ -193,7 +193,7 @@ export const recordCatalogueSnapshot = internalMutation({
     if (!spec) throw new Error(`unknown metric "${metric}"`);
     if (spec.kind !== 'external') {
       throw new Error(
-        `metric "${metric}" is a ${spec.kind}, not an external catalogue measurement — it is written by ${
+        `metric "${metric}" is a ${spec.kind}, not an external catalog measurement — it is written by ${
           spec.kind === 'counter' ? 'the event site' : 'the daily cron'
         }, and a second writer would make the series disagree with itself.`,
       );
@@ -220,7 +220,7 @@ const MAX_CATALOGUE_HISTORY = 200;
  *
  * **Separate from `series` because the shape of the data is different, not because it is convenient.**
  * `series` generates a dense run of `YYYY-MM-DD` keys and fills the gaps with nulls, which is right
- * for a daily rollup: a quiet day is a real zero. An external catalogue is measured **when its
+ * for a daily rollup: a quiet day is a real zero. An external catalog is measured **when its
  * publisher ships a release**, so the gaps between rows are years of nothing happening, not years of
  * zeroes. Rendering them through `series` would either cap at `MAX_SERIES_DAYS` (365 — losing every
  * prior year, which is the entire point of the metric) or draw 730 empty days between two points.
@@ -247,7 +247,7 @@ export const catalogueHistory = query({
 });
 
 /**
- * The metric catalogue — label, description, shape, and (for histograms) the axis labels derived from
+ * The metric catalog — label, description, shape, and (for histograms) the axis labels derived from
  * the bucket edges. Served rather than imported directly by the web app so a chart's axis can never
  * drift from the edges the rollup actually bucketed against.
  */

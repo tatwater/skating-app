@@ -151,7 +151,7 @@ export function osmAccessExportArgs(filtered: string, out: string): string[] {
  * would have been work for an answer already paid for.
  *
  * What it could not answer is the case the routing never reaches. `pairAccessFeatures` caps at
- * `PARKING_INFER_RADIUS_M`, so a lot a kilometre up a trail from a launch **never pairs**, and a leg
+ * `PARKING_INFER_RADIUS_M`, so a lot a kilometer up a trail from a launch **never pairs**, and a leg
  * that is never requested is never routed. The mile-in trailhead is invisible to the pipeline by
  * construction — measured over 3,000 unpaired lots, the distance curve to the nearest launch rises
  * monotonically out to 3–8 km with no trailhead population sitting at a characteristic distance, so
@@ -184,7 +184,7 @@ export function osmTrailFilterArgs(pbf: string, out: string): string[] {
  *
  * **`-a type,id` is load-bearing here for a reason it is not elsewhere.** In the other passes the id
  * is an upsert key. Here nothing is stored, and the id is what lets a way appear in two state
- * extracts — every one of these files overlaps its neighbours at the border — and be recognised as
+ * extracts — every one of these files overlaps its neighbors at the border — and be recognized as
  * one edge rather than two parallel ones, which would double a walk that crosses a state line.
  */
 export function osmTrailExportArgs(filtered: string, out: string): string[] {
@@ -272,8 +272,8 @@ export const THREE_DHP_SELECT = [
 /**
  * `ogr2ogr` argv for the 3DHP waterbody clip, at the one-acre floor.
  *
- * The staged product is **NAD83(2011) / Conus Albers (EPSG:5070)**, a metre grid — which is why any
- * `-spat` box here has to be in metres too. A degrees box against Albers selects ocean, and the clip
+ * The staged product is **NAD83(2011) / Conus Albers (EPSG:5070)**, a meter grid — which is why any
+ * `-spat` box here has to be in meters too. A degrees box against Albers selects ocean, and the clip
  * "succeeds" empty. We do not pass one (the clip was taken at acquisition), and the note stays
  * because the next person to add a bbox is the one it will bite.
  */

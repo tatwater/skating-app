@@ -10,7 +10,7 @@
  *
  * `maplibre-gl` is faked (jsdom has no WebGL), so what these pin is the contract between this
  * component and the map API: which bounds, which zoom floor, which sources get which data. Whether
- * MapLibre honours `maxBounds` is MapLibre's test to write.
+ * MapLibre honors `maxBounds` is MapLibre's test to write.
  */
 
 import { act, render, screen } from '@testing-library/react';

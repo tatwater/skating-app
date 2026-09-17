@@ -135,7 +135,7 @@ export function FreezeUpScrubber({
     // ⚠ **The anchor first, and it is a date rather than an index.** Switching bands swaps a ~30-pass
     // optical season for a ~9-pass radar one; carrying the number across means nothing, and landing
     // on "most recent" throws away the part of the winter the skater was reading. The date is what
-    // they meant. `nearestLandableStopToDate` returns null when the anchor cannot be honoured, and
+    // they meant. `nearestLandableStopToDate` returns null when the anchor cannot be honored, and
     // then this is an ordinary opening: the season runs forward to now, so now is where it starts.
     const anchored = anchorAt ? nearestLandableStopToDate(stops, anchorAt) : null;
     const landing = anchored ?? nearestLandableStop(stops, stops.length - 1);
@@ -160,7 +160,7 @@ export function FreezeUpScrubber({
   );
 
   // ⚠ **Releasing on a clouded date slides to one with a picture**, in the direction the cursor was
-  // travelling. Leaving the thumb parked on a blocked notch would leave the caption and the image
+  // traveling. Leaving the thumb parked on a blocked notch would leave the caption and the image
   // disagreeing at rest — and snapping *back* to the last good date would send the skater somewhere
   // they had already scrubbed past, which is counter to what the drag was for.
   const settle = useCallback(() => {
@@ -337,7 +337,7 @@ export function FreezeUpScrubber({
          *
          * A solid handle hides the one mark whose state the skater most needs — the one it is
          * standing on. Everywhere else on the track a tall blue tick means *there is a picture here*
-         * and a short grey one means *this date is clouded out*; under a filled thumb that reading
+         * and a short gray one means *this date is clouded out*; under a filled thumb that reading
          * goes dark exactly where the answer matters, and the only recourse is to remember what was
          * there before the thumb arrived. So the fill comes out and the mark shows through the
          * window: full height means the frame on the map is this date, a stub at the bottom means the
@@ -364,12 +364,12 @@ export function FreezeUpScrubber({
               // which is why the thumb is the full height of the track (`bottom-0 h-9`) while the
               // marks sit 6 px up from its floor (`pb-1.5`, plus the mark's own 24).
               //
-              // Horizontally the opposite pressure: every pixel of width is a pixel of a neighbour
+              // Horizontally the opposite pressure: every pixel of width is a pixel of a neighbor
               // obscured, and a dense winter is 6 px per notch. 12 less two 2 px walls still leaves
               // an 8 px window over a 2 px mark, which is four times what it has to clear.
               //
               // `ring-background` sits *outside* the outline, separating the handle from the marks
-              // it is not standing on — without it a dense winter puts a neighbouring tick against
+              // it is not standing on — without it a dense winter puts a neighboring tick against
               // the outline and the two merge into one shape.
               'pointer-events-none absolute bottom-0 h-9 w-3 -translate-x-1/2 rounded-full border-2 border-primary shadow-sm ring-2 ring-background',
               // ⚠ Not while dragging. A 120 ms ease between notches reads as weight when the thumb
@@ -443,7 +443,7 @@ export function FreezeUpScrubber({
       ) : null}
 
       {/* ⚠ **The legend is not decoration on a legible image; it is what makes the image legible.**
-          A classification raster is four flat colours with no shape a reader can fall back on — and
+          A classification raster is four flat colors with no shape a reader can fall back on — and
           the palette's own validation left cloud under 3:1 against the map, whose remedy is relief
           through visible labels. Only for the band it explains: a legend for a photograph would be
           a key to something nobody needs decoding. */}
@@ -542,7 +542,7 @@ function StopMark({
               // read as the handle having a shadow.
               'h-full bg-primary/45 group-hover:bg-primary/80'
             : // Blocked: drawn, obviously inert, and not mistakable for a landable one. Short and
-              // grey, which is the distinction doing real work now that neither one is colored by
+              // gray, which is the distinction doing real work now that neither one is colored by
               // selection — a skater has to be able to see, at a glance, which dates have a picture.
               'h-2.5 bg-muted-foreground/30',
           // ⚠ **The skeleton, and it is a claim rather than a decoration.** A stop whose manifest has

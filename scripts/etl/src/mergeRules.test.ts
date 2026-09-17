@@ -3,7 +3,7 @@
  *
  * Written to the plan's verification discipline — *"named fixtures, not coverage percentages"*. Every
  * case below is either a body we can name or a failure the campaign actually met, and several of them
- * pin behaviour that is **known to be weaker than it looks**, so that tightening it later is a visible
+ * pin behavior that is **known to be weaker than it looks**, so that tightening it later is a visible
  * change to a test rather than a silent change to 27,074 rows.
  */
 
@@ -177,7 +177,7 @@ describe('the veto', () => {
     // refusal was contingent on the 3DHP lane matching and contributing its `featuretype=4`, i.e. on
     // a `polygonIoU` succeeding over the most awkwardly-clipped polygons in the archive.
     //
-    // Now the name refuses it, with no match and no second catalogue involved.
+    // Now the name refuses it, with no match and no second catalog involved.
     const lakeErieFromNhdAlone = [
       feature('nhd', '999', {
         token: 'nhd:ftype=390',
@@ -192,7 +192,7 @@ describe('the veto', () => {
 
   it('catches an UNNAMED ocean-sized polygon on the area ceiling alone', () => {
     // The other half of the same hole: a fragment of a Great Lake or a bay of the Gulf of Maine that
-    // nobody named and no catalogue classed as ocean. 100,000 acres, and the only body in our five
+    // nobody named and no catalog classed as ocean. 100,000 acres, and the only body in our five
     // states above it is Lake Champlain — which is why the allow-list has exactly one entry.
     const unnamedOcean = [
       feature('nhd', '999', { token: 'nhd:ftype=390', cls: 'lakePond', areaSqM: 2.57e10 }),
@@ -201,9 +201,9 @@ describe('the veto', () => {
     expect(mergeGroup(unnamedOcean)).toBeNull();
   });
 
-  it('lets Lake Champlain through the ceiling, on any catalogue’s spelling of the name', () => {
+  it('lets Lake Champlain through the ceiling, on any catalog’s spelling of the name', () => {
     // ~271,000 acres, the largest body we cover, and the reason the allow-list exists at all. The
-    // name is checked across **every** member: three catalogues spell it three ways and testing only
+    // name is checked across **every** member: three catalogs spell it three ways and testing only
     // the first named one would veto Champlain on whichever ordering the union-find produced.
     const champlain = [
       feature('osm', 'relation/1', { cls: 'lakePond', name: '', areaSqM: 1.1e9 }),
@@ -213,7 +213,7 @@ describe('the veto', () => {
     expect(mergeGroup(champlain)?.name).toBe('Lake Champlain');
   });
 
-  it('reads the CATALOGUE token, so a naming rule cannot launder a vetoed feature', () => {
+  it('reads the CATALOG token, so a naming rule cannot launder a vetoed feature', () => {
     // `classifyWaterBody` returns early with `token: 'name:reservoir'` when a name says reservoir,
     // which used to discard the only evidence that the feature was a tidal estuary. The veto now
     // reads `sourceToken`, which no rung of the ladder overwrites.
@@ -240,7 +240,7 @@ describe('class selection', () => {
     expect(mergeGroup(group)?.cls).toBe('lakePond');
   });
 
-  it('refuses a group every catalogue refused — null, never unclassified', () => {
+  it('refuses a group every catalog refused — null, never unclassified', () => {
     // Collapsing `null` into `unclassified` admitted Lake Huron and seven polygons of the Atlantic on
     // the first real run. `null` means "not water we cover"; `unclassified` means "water, but nobody
     // said what kind". A drop that survives a merge launders a refusal into a shrug.
@@ -281,14 +281,14 @@ describe('class selection', () => {
 });
 
 describe('name selection', () => {
-  it('prefers a name over its absence, from whichever catalogue has one', () => {
+  it('prefers a name over its absence, from whichever catalog has one', () => {
     expect(chooseName([feature('osm', 'a'), feature('nhd', 'b', { name: 'Beau Lake' })])).toBe(
       'Beau Lake',
     );
   });
 
   it('prefers the authoritative name over the longer one', () => {
-    // **The rule this replaced was longest-wins**, defended as "right when the catalogues disagree
+    // **The rule this replaced was longest-wins**, defended as "right when the catalogs disagree
     // about which lake this is". That is backwards: if they disagree about which lake this is, the
     // merge is already wrong and the longer string entrenches the error under a more confident
     // label. NHD's `gnis_name` column IS the gazetteer; OSM's `name` is a mapper's free text.
@@ -312,7 +312,7 @@ describe('name selection', () => {
   });
 
   it('still prefers the longer name INSIDE one source, where authority cannot separate them', () => {
-    // A `sameSourceDuplicate` group holds two features from one catalogue; rank ties, so length is
+    // A `sameSourceDuplicate` group holds two features from one catalog; rank ties, so length is
     // the only tie-break left and it is as good as any.
     expect(
       chooseName([
@@ -323,7 +323,7 @@ describe('name selection', () => {
   });
 
   it('is decided by rank, not by arrival order, so a stable input gives a stable name', () => {
-    // Two equal-length names from different catalogues: rank separates them, and it does so the same
+    // Two equal-length names from different catalogs: rank separates them, and it does so the same
     // way whichever order the union-find produced. Under longest-wins this was an arrival-order
     // tie-break, i.e. a name chosen by the shape of someone else's loop.
     const osmFirst = [
@@ -369,7 +369,7 @@ describe('nameClaimsOf', () => {
   });
 
   it('appends the gazetteer name as a gnis claim, ranked first', () => {
-    // It has no member to belong to: it is what `resolveGnisNames` supplied for a body no catalogue
+    // It has no member to belong to: it is what `resolveGnisNames` supplied for a body no catalog
     // named, and the ordering rule still has to place it.
     expect(nameClaimsOf([feature('osm', 'a', { name: 'The Bog' })], 'Cicero Swamp')).toEqual([
       { source: 'gnis', value: 'Cicero Swamp' },
@@ -392,7 +392,7 @@ describe('nameClaimsOf', () => {
 
   // Two OSM features in one `sameSourceDuplicate` group can carry two real spellings, and both are
   // worth searching under — this is not the same question as which one displays.
-  it('keeps two spellings from one catalogue', () => {
+  it('keeps two spellings from one catalog', () => {
     expect(
       nameClaimsOf([
         feature('osm', 'a', { name: 'Moose Pond' }),
@@ -412,7 +412,7 @@ describe('geometry selection (provisional, pending D92)', () => {
     expect(chooseGeometry([feature('3dhp', 'd')])?.source).toBe('3dhp');
   });
 
-  it('honours the Beau Lake override — the fixture this phase is named for', () => {
+  it('honors the Beau Lake override — the fixture this phase is named for', () => {
     // Maine's own record says **1,788 acres** and Wikipedia says 7.23 km² (= 1,786 ac); two
     // independent sources agreeing to within a percent. NHD's archived polygon is 7.594 km² =
     // 1,876.6 ac, ~5% over. OSM merges it at 2,457 ac — 37% over, because Geofabrik clips the
@@ -440,7 +440,7 @@ describe('geometry selection (provisional, pending D92)', () => {
   });
 
   it('falls back to the default when the override names a source the group does not have', () => {
-    // The entry matched, but the preferred catalogue is not in this group. Preferring nothing over
+    // The entry matched, but the preferred catalog is not in this group. Preferring nothing over
     // a body would be worse than preferring the wrong outline.
     const overrides: ReadonlyMap<string, ClaimSource> = new Map([
       ['osm:way/1', '3dhp' as ClaimSource],
@@ -466,14 +466,14 @@ describe('geometry selection (provisional, pending D92)', () => {
 });
 
 describe('same-source duplicates', () => {
-  it('flags two features from one catalogue — the only guard against a chained union-find', () => {
+  it('flags two features from one catalog — the only guard against a chained union-find', () => {
     // Unioning three lanes can in principle chain two distinct lakes into one group. Nothing prevents
     // it; this flag is what sends such a group to a human instead of merging it.
     const group = [feature('osm', 'way/1'), feature('osm', 'relation/2'), feature('nhd', 'n1')];
     expect(mergeGroup(group)?.sameSourceDuplicate).toBe(true);
   });
 
-  it('does not flag one feature per catalogue', () => {
+  it('does not flag one feature per catalog', () => {
     const group = [feature('osm', 'way/1'), feature('nhd', 'n1'), feature('3dhp', 'd1')];
     expect(mergeGroup(group)?.sameSourceDuplicate).toBe(false);
   });
@@ -573,7 +573,7 @@ describe('the bay rule', () => {
 
   it('keeps a bay whose outline pokes just outside its parent, which `covers` used to demote', () => {
     // **The costlier half of the same bug.** `covers()` demanded *full* box containment, so a bay
-    // traced by OSM against a parent drawn by NHD lost its parent over a single vertex a few metres
+    // traced by OSM against a parent drawn by NHD lost its parent over a single vertex a few meters
     // past the box — and was demoted to `unclassified` for a reason that has nothing to do with
     // whether it is a bay. The containment bar is a fraction, so one stray vertex costs nothing.
     const lake = merged({
@@ -581,7 +581,7 @@ describe('the bay rule', () => {
       polygon: square(-70, 44, 0.1),
       areaSqM: 1e9,
     });
-    // Almost wholly inside the lake, with one vertex a few hundred metres past its western shore —
+    // Almost wholly inside the lake, with one vertex a few hundred meters past its western shore —
     // the ordinary case when two publishers trace the same coast.
     const pokesOut: Polygon = {
       type: 'Polygon',
@@ -624,8 +624,8 @@ describe('the region clip', () => {
     ).toBe(true);
   });
 
-  it('keeps Beau Lake, which straddles the Québec border — any part, not its centre', () => {
-    // Beau Lake is absent from the corpus because Geofabrik clips the Québec half. A centre-based
+  it('keeps Beau Lake, which straddles the Québec border — any part, not its center', () => {
+    // Beau Lake is absent from the corpus because Geofabrik clips the Québec half. A center-based
     // test on a body straddling the border is a coin flip; this one asks the question we mean.
     const straddling = square(-70.5, 45.8, 1); // most of it north/west of the mask
     expect(inRegion({ polygon: straddling, bbox: bboxOf(straddling) }, grid)).toBe(true);
@@ -734,9 +734,9 @@ describe('the downstate cut (D111)', () => {
     // Asymmetric with `inRegion` on purpose: that one is generous because a body straddling the
     // Québec border is one we want and only its edge proves it. This one asks whether the body *is*
     // downstate, so a reservoir across the county line is decided by its bulk.
-    const mostlyNorth = square(-73.8, 41.25, 0.2); // centre at 41.35, north of the county's 41.3 top
+    const mostlyNorth = square(-73.8, 41.25, 0.2); // center at 41.35, north of the county's 41.3 top
     expect(inDownstate({ bbox: bboxOf(mostlyNorth) }, excluded)).toBe(false);
-    const mostlySouth = square(-73.8, 41.05, 0.2); // centre at 41.15, inside
+    const mostlySouth = square(-73.8, 41.05, 0.2); // center at 41.15, inside
     expect(inDownstate({ bbox: bboxOf(mostlySouth) }, excluded)).toBe(true);
   });
 });
@@ -759,7 +759,7 @@ describe('the GNIS lane', () => {
       { lng: -69.95, lat: 44.05, name: 'Cicero Swamp', featureClass: 'Swamp', featureId: '966086' },
     ]);
     // Returns the id alongside the name now — D105's other half, which the lane was specified for
-    // and never read. It fills `gnisId` only where no catalogue in the group asserted one.
+    // and never read. It fills `gnisId` only where no catalog in the group asserted one.
     expect(gnisNameFor(body, grid)).toEqual({ name: 'Cicero Swamp', featureId: '966086' });
   });
 
@@ -799,7 +799,7 @@ describe('the GNIS lane', () => {
 
 describe('drop reasons', () => {
   it('reports a GNIS-named wetland as named, not as unnamed', () => {
-    // **The bug this function was extracted to fix.** The reason label read the catalogue name while
+    // **The bug this function was extracted to fix.** The reason label read the catalog name while
     // the refusal was decided against the GNIS-augmented one, so a wetland the gazetteer HAD named
     // was reported as "unnamed wetland under 50 acres" — the one lane whose contribution the report
     // exists to measure, described as absent.
@@ -856,7 +856,7 @@ describe('polygon confidence claims', () => {
     // **The correction the audit forced.** A 3DHP feature that reached the group through NHD was
     // never compared to the OSM outline, so neither lane direction has an entry — and the old code
     // substituted `RECONCILE_MIN_IOU` (0.5), which sits *below* `POLYGON_DISAGREE_IOU` (0.7). Every
-    // three-catalogue body therefore scored its polygon `low` by construction: a statement about
+    // three-catalog body therefore scored its polygon `low` by construction: a statement about
     // which lane ran, published as a statement about the data.
     const chosen = square(-70, 44, 0.01);
     const group = {
@@ -901,7 +901,7 @@ describe('polygon confidence claims', () => {
 });
 
 describe('the emit stage', () => {
-  it('takes one id per catalogue, and the gazetteer id from whoever has it', () => {
+  it('takes one id per catalog, and the gazetteer id from whoever has it', () => {
     const ids = catalogueIdsOf([
       feature('osm', 'way/1'),
       feature('nhd', '141034078', { gnisId: '00869848' }),
@@ -915,8 +915,8 @@ describe('the emit stage', () => {
     });
   });
 
-  it('breaks a tie toward the first when one catalogue appears twice at the same size', () => {
-    // A group holding two OSM features is either a catalogue duplicate or two lakes our matching
+  it('breaks a tie toward the first when one catalog appears twice at the same size', () => {
+    // A group holding two OSM features is either a catalog duplicate or two lakes our matching
     // chained together. `sameSourceDuplicate` flags it for a human; this just must not throw or
     // invent a third id. Equal areas, so the tie-break is what is being pinned.
     const members = [feature('osm', 'way/1'), feature('osm', 'relation/2')];
@@ -924,7 +924,7 @@ describe('the emit stage', () => {
     expect(mergeGroup(members)?.sameSourceDuplicate).toBe(true);
   });
 
-  it('takes the LARGEST when one catalogue appears twice at different sizes — the Indian Lake case', () => {
+  it('takes the LARGEST when one catalog appears twice at different sizes — the Indian Lake case', () => {
     // Measured on the 2026-08-06 run: Indian Lake, NY was stored at **534 acres** from OSM while OSM
     // also carried a 3,742-acre feature for it and NHD/3DHP both said 4,296. `find()` took whichever
     // arrived first, which is the order the extracts happened to stream in — so the corpus was about
@@ -943,7 +943,7 @@ describe('the emit stage', () => {
 
   it('keeps the geometry source rule while doing it — largest WITHIN a source, not across', () => {
     // D92 says OSM by default; D94 says never take the larger of two area claims. Both still hold:
-    // the choice between catalogues is unchanged, and only ties within one catalogue are resolved.
+    // the choice between catalogs is unchanged, and only ties within one catalog are resolved.
     const members = [
       feature('osm', 'way/1', { areaSqM: 10 * SQ_M_PER_ACRE }),
       feature('nhd', 'n1', { areaSqM: 900 * SQ_M_PER_ACRE }),
@@ -1049,14 +1049,14 @@ describe('the lanes', () => {
       expect(f).toMatchObject({ source: 'osm', id: 'way/1', name: 'Beau Lake', cls: 'lakePond' });
     });
 
-    it('captures gnis:feature_id, normalised — the tag the transform never read', () => {
+    it('captures gnis:feature_id, normalized — the tag the transform never read', () => {
       // 35.3% of named OSM water features carry one, and the stored corpus has none, which is why
       // the GNIS-assisted reconciliation bar has never once fired.
       const out = parseOsmFeature(raw({ 'gnis:feature_id': '00869848' }), new Set());
       expect((out as { ok: true; feature: Feature }).feature.gnisId).toBe('869848');
     });
 
-    it('carries the catalogue token separately from the decided one', () => {
+    it('carries the catalog token separately from the decided one', () => {
       const out = parseOsmFeature(raw({ name: 'Sugar Hill Reservoir' }), new Set());
       const f = (out as { ok: true; feature: Feature }).feature;
       expect(f.token).toBe('name:reservoir'); // the name outranked the tag
@@ -1118,7 +1118,7 @@ describe('the lanes', () => {
       geometry: geom,
     });
 
-    it('classifies a LakePond and normalises both ids', () => {
+    it('classifies a LakePond and normalizes both ids', () => {
       const out = parseNhdFeature(raw(), new Set());
       expect((out as { ok: true; feature: Feature }).feature).toMatchObject({
         source: 'nhd',
@@ -1180,7 +1180,7 @@ describe('the lanes', () => {
       geometry: geom,
     });
 
-    it('classifies a Lake and normalises the integer GNIS id', () => {
+    it('classifies a Lake and normalizes the integer GNIS id', () => {
       const out = parseThreeDhpFeature(raw(), new Set());
       expect((out as { ok: true; feature: Feature }).feature).toMatchObject({
         source: '3dhp',
@@ -1332,7 +1332,7 @@ describe('the GNIS lane, extended', () => {
   it('accepts a point just outside the outline — GNIS places many at the outlet', () => {
     // Zero tolerance was silently costing matches: GNIS publishes one coordinate per feature and for
     // water it is often the outlet, which lands on the shoreline — and a shoreline traced by a
-    // different publisher puts it a few tens of metres outside as often as not. A miss here does not
+    // different publisher puts it a few tens of meters outside as often as not. A miss here does not
     // merely leave a body unnamed; for a 5–50 acre wetland it deletes the body (D96).
     const justOutside = gridOf([
       { lng: -70.0005, lat: 44.05, name: 'Outlet Pond', featureClass: 'Lake' },
@@ -1366,11 +1366,11 @@ describe('the GNIS lane, extended', () => {
 });
 
 describe('the gazetteer’s own id', () => {
-  it('fills gnisId when no catalogue asserted one', () => {
+  it('fills gnisId when no catalog asserted one', () => {
     expect(catalogueIdsOf([feature('osm', 'way/1')], '966086').gnisId).toBe('966086');
   });
 
-  it('never overrules a catalogue — a catalogue names THIS feature, the gazetteer names a place', () => {
+  it('never overrules a catalog — a catalog names THIS feature, the gazetteer names a place', () => {
     // The ordering matters because `gnisId` is documented as a candidate generator rather than an
     // identity: 92 GNIS ids resolve to more than one NHD body. A geometric location must not get to
     // overwrite a publisher's own assertion about which feature this is.
@@ -1405,7 +1405,7 @@ describe('the ocean name veto is gated on area', () => {
     ).toBeUndefined();
   });
 
-  it('reads the LARGEST member, so one catalogue under-drawing an ocean cannot smuggle it in', () => {
+  it('reads the LARGEST member, so one catalog under-drawing an ocean cannot smuggle it in', () => {
     // A group where OSM traces a fragment and NHD has the whole thing. The area gate must see NHD's.
     expect(
       vetoReason([
@@ -1651,7 +1651,7 @@ describe('what a merge absorbs is named', () => {
     expect(body?.absorbedIds).toEqual(['osm:relation/2']);
   });
 
-  it('is empty for an ordinary one-per-catalogue group', () => {
+  it('is empty for an ordinary one-per-catalog group', () => {
     const { body } = mergeGroupWithReason([feature('osm', 'way/1'), feature('nhd', 'n1')]);
     expect(body?.absorbedIds).toEqual([]);
   });
@@ -1709,7 +1709,7 @@ describe('the tidal referee — elevation, where the federal polygons say nothin
     expect(isTidalCandidate([feature('osm', 'way/1')], 'bay')).toBe(true);
   });
 
-  it('judges a body a catalogue tagged salt outright, whatever class won', () => {
+  it('judges a body a catalog tagged salt outright, whatever class won', () => {
     // The `classDissent` split found 92 of these: `chooseClass` lets a real class beat a drop, so a
     // mapper writing `wetland=saltmarsh` is silently outvoted by a federal `LakePond`.
     for (const token of ['osm:wetland=saltmarsh', 'osm:wetland=tidalflat', 'osm:water=salt_pool']) {
@@ -1761,7 +1761,7 @@ describe('the tidal referee — elevation, where the federal polygons say nothin
 describe("D92's override picks the largest qualifying member, not the first", () => {
   it('takes the bigger of two same-source outlines that both contain the bay', () => {
     // **The same latent bug D125 removed from `chooseGeometry`, sitting in the file written to fix
-    // it** (A07a-2 audit, 2026-08-08). This was `.find()`, so when one catalogue puts several features
+    // it** (A07a-2 audit, 2026-08-08). This was `.find()`, so when one catalog puts several features
     // in a group and more than one of them contains the bay, the stored outline was decided by the
     // order the extracts happened to stream in. That is exactly how `Indian Lake` came to be stored
     // at 534 acres with a 3,743-acre member beside it.
@@ -1953,7 +1953,7 @@ describe('statesFor escalates the way inRegion does', () => {
 
   it('skips the walk when no other state is even reachable from the body cells', () => {
     // The gate that keeps the fix free: a body in the middle of Maine touches only cells holding
-    // Maine, so `reachable` equals `found` and no vertex walk happens. Asserted through behaviour —
+    // Maine, so `reachable` equals `found` and no vertex walk happens. Asserted through behavior —
     // a body whose sparse sample answers is unchanged by a second state 300 km away.
     const me = state('Maine', square(-71, 44, 2));
     const ny = state('New York', square(-76, 42, 1));
@@ -2045,7 +2045,7 @@ describe('the gazetteer resolves globally — a point names at most one body', (
   };
 
   it('names a body from the one point inside it', () => {
-    // `square(lng, lat, side)` runs NORTH-EAST from its corner, so the centre is +side/2.
+    // `square(lng, lat, side)` runs NORTH-EAST from its corner, so the center is +side/2.
     const grid = gridOf([pt(-69.998, 44.002, 'Twinings Pond', '616007')]);
     const names = resolveGnisNames([body('osm:way/1', -70, 44)], grid);
     expect(names.get('osm:way/1')).toEqual({ name: 'Twinings Pond', featureId: '616007' });

@@ -6,7 +6,7 @@
 import type { Destination, MatchOutcome } from './match';
 
 /**
- * Split one CSV line, honouring double-quoted fields and doubled quotes inside them — the same
+ * Split one CSV line, honoring double-quoted fields and doubled quotes inside them — the same
  * splitter `scripts/lake-depth` uses (copied: the scripts do not depend on each other). A lake
  * named `"Pond, Little"` in the gazetteer must not shift the `region` column and get shelved for it.
  */

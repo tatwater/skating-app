@@ -41,10 +41,10 @@ describe('principalFrame', () => {
     expect(Math.abs(frame.angle - Math.PI / 4)).toBeLessThan(0.05);
   });
 
-  it('measures the axis in metres, not degrees', () => {
+  it('measures the axis in meters, not degrees', () => {
     // At 45°N a degree of longitude is ~0.7 of a degree of latitude. Working in raw degrees would
     // make an east–west lake look ~40% longer than it is and pull the axis east–west on every lake
-    // in the corpus. A square-in-METRES cloud has no preferred axis; a square-in-degrees one would.
+    // in the corpus. A square-in-METERS cloud has no preferred axis; a square-in-degrees one would.
     const mPerLng = 111_320 * Math.cos((45 * Math.PI) / 180);
     const square: { lng: number; lat: number }[] = [];
     for (let i = 0; i < 8; i += 1) {
@@ -93,7 +93,7 @@ describe('toLocal / fromLocal', () => {
     expect(alongSpan).toBeGreaterThan(acrossSpan * 5);
   });
 
-  it('measures in metres', () => {
+  it('measures in meters', () => {
     const local = points.map((p) => toLocal(p, frame));
     const alongSpan =
       Math.max(...local.map((l) => l.along)) - Math.min(...local.map((l) => l.along));
@@ -116,7 +116,7 @@ describe('compressAlong / expandAlong', () => {
     expect(expandAlong(compressAlong(local, 2.5), 2.5)).toEqual(local);
   });
 
-  it('is the identity at ratio 1 — the isotropic behaviour it replaces', () => {
+  it('is the identity at ratio 1 — the isotropic behavior it replaces', () => {
     expect(compressAlong(local, 1)).toEqual(local);
   });
 });

@@ -6,7 +6,7 @@ const hit = (field: (typeof CATALOGUE_ID_FIELDS)[number], value: string, ...keys
   ({ field, value, keys }) as IdMatch<string>;
 
 describe('the normal traffic', () => {
-  it('inserts a lake no catalogue id resolves to', () => {
+  it('inserts a lake no catalog id resolves to', () => {
     expect(resolveUpsert({ nhdId: '141034078' }, [])).toEqual({ action: 'insert' });
   });
 
@@ -61,7 +61,7 @@ describe('the case the campaign ordering exists to make rare', () => {
     if (verdict.action === 'merge') expect(verdict.into).toBe('k-osm');
   });
 
-  it('honours an explicit survivor rule over the default', () => {
+  it('honors an explicit survivor rule over the default', () => {
     const verdict = resolveUpsert(
       { osmId: 'way/1', nhdId: 'n1' },
       [hit('osmId', 'way/1', 'k-osm'), hit('nhdId', 'n1', 'k-nhd')],
@@ -102,11 +102,11 @@ describe('the corpus-invariant violations, which must never be guessed at', () =
     expect(verdict.action).toBe('conflict');
   });
 
-  it('refuses a feature carrying no catalogue id at all', () => {
+  it('refuses a feature carrying no catalog id at all', () => {
     // It cannot be upserted, only counted as a drop — which the DropLedger is for.
     const verdict = resolveUpsert({}, []);
     expect(verdict.action).toBe('conflict');
-    if (verdict.action === 'conflict') expect(verdict.reason).toMatch(/no catalogue id/);
+    if (verdict.action === 'conflict') expect(verdict.reason).toMatch(/no catalog id/);
   });
 });
 

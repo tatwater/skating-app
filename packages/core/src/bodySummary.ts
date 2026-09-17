@@ -49,7 +49,7 @@ export const SUMMARY_MAX_HAZARD_TYPES = 3;
  *
  * **The load-bearing rule of D86.** Below this: no dots at all, *not* a low score. One person's
  * opinion rendered as a consensus mark is the worst failure mode available here, and it fails
- * silently — the mark looks identical whether it summarises 1 report or 40. Same denominator
+ * silently — the mark looks identical whether it summarizes 1 report or 40. Same denominator
  * discipline as D78 on recurrence claims, and for the same reason.
  */
 export const SUMMARY_QUALITY_QUORUM = 3;
@@ -80,7 +80,7 @@ export interface BodySummary {
   latestReportAt?: number;
   /** Filled dots out of {@link SUMMARY_QUALITY_DOTS}. Absent below quorum — never zero-as-a-score. */
   qualityDots?: number;
-  /** How many rated reports the mark summarises. The honest denominator the glance omits. */
+  /** How many rated reports the mark summarizes. The honest denominator the glance omits. */
   qualityCount?: number;
   updatedAt: number;
 }

@@ -359,7 +359,7 @@ describe('solar weighting (the melt side)', () => {
     expect(day.absorbedInsolationWhM2).toBeGreaterThan(allSnow.absorbedInsolationWhM2 * 2);
   });
 
-  it('separates a sunny thaw from a grey one, which hoursAboveFreezing cannot', () => {
+  it('separates a sunny thaw from a gray one, which hoursAboveFreezing cannot', () => {
     const [sunny] = summarizeWeatherDays(sunArc('2026-01-15', 2, 400));
     const [grey] = summarizeWeatherDays(sunArc('2026-01-15', 2, 60));
     if (!sunny || !grey) throw new Error('expected one day each');

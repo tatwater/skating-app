@@ -1,5 +1,5 @@
 /**
- * **How much the catalogues agree, per attribute** (A07a, D110).
+ * **How much the catalogs agree, per attribute** (A07a, D110).
  *
  * A merged body is assembled field by field from up to three publishers, and by the time it reaches
  * a row every trace of *how sure we were* is gone. One number per body would be useless — a lake can
@@ -10,9 +10,9 @@
  *
  * | | means | who acts |
  * | --- | --- | --- |
- * | `high` | two **independent** catalogues assert the same thing | nobody |
- * | `medium` | exactly one catalogue asserts it, uncontested | nobody |
- * | `low` | the catalogues **conflict** and a precedence rule broke the tie | **a moderator, from the queue** |
+ * | `high` | two **independent** catalogs assert the same thing | nobody |
+ * | `medium` | exactly one catalog asserts it, uncontested | nobody |
+ * | `low` | the catalogs **conflict** and a precedence rule broke the tie | **a moderator, from the queue** |
  * | `none` | nothing asserts it at all | nobody — it is a backlog, not a queue |
  *
  * **`low` and `none` are separated on purpose, and it is the difference between a queue that gets
@@ -48,10 +48,10 @@ export const CLAIM_SOURCES = ['osm', 'nhd', '3dhp', 'gnis', 'name', 'user'] as c
 export type ClaimSource = (typeof CLAIM_SOURCES)[number];
 
 /**
- * The catalogues that count as **separate votes**.
+ * The catalogs that count as **separate votes**.
  *
- * `nhd` and `3dhp` collapse to one; `name` is not a catalogue at all (it is the same string the
- * catalogue supplied, read a second way) and never corroborates the source it came from; `user` is a
+ * `nhd` and `3dhp` collapse to one; `name` is not a catalog at all (it is the same string the
+ * catalog supplied, read a second way) and never corroborates the source it came from; `user` is a
  * moderator decision, which outranks the question rather than voting in it.
  *
  * **`gnis` gets no vote either, and that is not obvious.** It is a real independent authority — the
@@ -68,7 +68,7 @@ export function independentVoices(sources: readonly ClaimSource[]): number {
   return (osm ? 1 : 0) + (federal ? 1 : 0);
 }
 
-/** One publisher's claim about one attribute. `value` is compared with `===` after normalisation. */
+/** One publisher's claim about one attribute. `value` is compared with `===` after normalization. */
 export interface AttributeClaim<T> {
   readonly source: ClaimSource;
   readonly value: T;
@@ -90,7 +90,7 @@ export function scoreAttribute<T>(
   if (claims.some((c) => c.source === 'user')) return 'high';
   if (claims.length === 0) return 'none';
 
-  // `name` is a keyword read off a string a catalogue already supplied; `gnis` is where NHD's own
+  // `name` is a keyword read off a string a catalog already supplied; `gnis` is where NHD's own
   // name column comes from. Neither is a second opinion, so neither joins the vote.
   const catalogue = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
   // Nothing but a keyword or a gazetteer lookup. Better than silence, and never corroboration.
@@ -108,7 +108,7 @@ export function scoreAttribute<T>(
  * Where two outlines stop agreeing — **derived from the measured distribution, not from prose**.
  *
  * The first draft of this file put a single bar at 0.85 and justified it with a sentence carried over
- * from the phase plan: *"two catalogues tracing one shoreline land at 0.85–0.98"*. The real
+ * from the phase plan: *"two catalogs tracing one shoreline land at 0.85–0.98"*. The real
  * OSM-vs-NHD distribution over all **12,643 matched pairs** says otherwise:
  *
  * | p1 | p10 | p25 | **p50** | p75 | p90 | p99 |
@@ -162,7 +162,7 @@ export function scorePolygonAgreement(claims: readonly AttributeClaim<number>[])
  * | possessive `s` | `Clark Pond` / `Clarks Pond` · `Howes Pond` / `Howe Pond` |
  * | word order | `Salem Lake` / `Lake Salem` · `Lake Sadawga` / `Sadawga Lake` |
  *
- * **Typos are deliberately NOT normalised, and that line is the important part.** `Lake Runnemede` /
+ * **Typos are deliberately NOT normalized, and that line is the important part.** `Lake Runnemede` /
  * `Lake Runnenede`, `Therman W. Dix` / `Thurman W. Dix` and `Little Eligo` / `Little Elligo` all
  * differ by one character and would fall to an edit-distance rule — but so do **`Bear Pond` and
  * `Bean Pond`**, which are two different lakes. A structural difference is provably the same name
@@ -239,7 +239,7 @@ export function sameDisplayName(a: string, b: string): boolean {
 /**
  * Class pairs that **look like a disagreement and are not** (founder call, 2026-08-04).
  *
- * Both entries have the same shape: **our vocabulary draws a distinction the federal catalogue does
+ * Both entries have the same shape: **our vocabulary draws a distinction the federal catalog does
  * not, and we have already written down which way it resolves.** NHD classes a body by what it *is*;
  * we class two kinds of body by what they *do to a person on the ice*. When NHD says `LakePond` and
  * OSM says `reservoir`, the two are not contradicting each other — they are answering different
@@ -284,20 +284,20 @@ const OPEN_WATER_CLASSES: ReadonlySet<WaterBodyClass> = new Set(['lakePond', 're
  * single largest population in the review queue. Measured on the `n7-2026-08-07` master list by
  * joining all 652 `class-conflict` bodies to the NHD feature they merged with:
  *
- * | the federal catalogue says | we stored | | |
+ * | the federal catalog says | we stored | | |
  * | --- | --- | --- | --- |
  * | `390 LakePond` / `436 Reservoir` | open water | **520** | OSM's mapper tagged it `wetland` |
- * | `466 SwampMarsh` | open water | **132** | the *federal* catalogue is the dissenter |
+ * | `466 SwampMarsh` | open water | **132** | the *federal* catalog is the dissenter |
  *
  * **Only the first row is settled, and the asymmetry is the whole point.** NHD compiled the
  * northeast at 1:24,000 and calls this open water; one mapper tagged the same polygon a marsh. We
  * already decided that direction, in D96, on evidence — so queueing it asks a moderator to confirm a
  * rule we trust, 520 times, which is exactly the 1,437-row mistake `RECONCILABLE_CLASS_PAIRS` was
- * written to undo. The **reverse** direction is where the federal catalogue is the one saying "bog",
+ * written to undo. The **reverse** direction is where the federal catalog is the one saying "bog",
  * it is the direction D96's admission floor turns on, and those 132 stay in the queue.
  *
  * **Settled is not silent.** The merge counts every collapse and reports it, because the *volume* of
- * this pattern moving between runs is a real signal about a catalogue changing under us — and a rule
+ * this pattern moving between runs is a real signal about a catalog changing under us — and a rule
  * that resolves rows without leaving a number behind is how the original 123-body deletion went
  * unnoticed in the first place.
  *
@@ -342,7 +342,7 @@ export interface BodyConfidence {
 }
 
 /**
- * Score a whole body from what each catalogue said about it.
+ * Score a whole body from what each catalog said about it.
  *
  * Claims are passed already extracted, so this stays pure and testable without a geodatabase — the
  * merge does the reading, this does the judging, and the split is what lets every dangerous case be
@@ -363,7 +363,7 @@ export function scoreBody(input: {
     polygon: scorePolygonAgreement(input.polygons),
     // **`unclassified` is silence, not a dissenting vote**, and dropping it here is not a nicety:
     // scoring it as a claim made 6,756 bodies where OSM said nothing and NHD said `LakePond` read as
-    // "the catalogues conflict", which was most of a 3,999-row review queue nobody could have worked.
+    // "the catalogs conflict", which was most of a 3,999-row review queue nobody could have worked.
     // Same principle as 3DHP's `silent` — a source with no opinion does not get a vote.
     // **…and a federal open-water class beating an OSM wetland tag is settled, not contested.** See
     // `settledWetlandDissent` — 520 of the queue's 652 class conflicts, all of them our own rule
@@ -413,10 +413,10 @@ export const REVIEW_REASONS = [
    */
   'duplicate-candidate',
   /**
-   * **Two catalogues contradicting each other outright**, where nothing in our rules explains it.
+   * **Two catalogs contradicting each other outright**, where nothing in our rules explains it.
    *
-   * Distinct from `class-conflict`, which is two catalogues asserting *different classes*: this is
-   * one catalogue asserting a class while another refuses the body as water we cover at all.
+   * Distinct from `class-conflict`, which is two catalogs asserting *different classes*: this is
+   * one catalog asserting a class while another refuses the body as water we cover at all.
    * `chooseClass` lets the class win — that is the 123-body wetland rescue — so the disagreement
    * resolves in silence and `scoreBody` cannot see it either, because a refusal contributes no claim.
    *
@@ -436,9 +436,9 @@ export type ReviewReason = (typeof REVIEW_REASONS)[number];
  * | | | |
  * | --- | --- | --- |
  * | `duplicate-candidate` | the corpus renders **two lakes where there is one** | search returns both |
- * | `same-source-duplicate` | one catalogue carrying a lake twice | same, one layer up |
+ * | `same-source-duplicate` | one catalog carrying a lake twice | same, one layer up |
  * | `bay-without-parent` | an arm of something, stored as `unclassified` | a wrong label |
- * | `class-conflict` | the catalogues disagree about what kind of water it is | a wrong label |
+ * | `class-conflict` | the catalogs disagree about what kind of water it is | a wrong label |
  * | `name-conflict` | two publishers, two names, **both stored and both searchable** | nothing |
  *
  * The top two are the only ones a skater can see going wrong. The bottom one, since `nameClaims`
@@ -450,8 +450,8 @@ export const REVIEW_REASON_PRIORITY: readonly ReviewReason[] = [
   'duplicate-candidate',
   'same-source-duplicate',
   'bay-without-parent',
-  // Above `class-conflict`: a body one catalogue says is not water we cover is a *bigger* question
-  // than two catalogues disagreeing about which kind of water it is, and it is rarer.
+  // Above `class-conflict`: a body one catalog says is not water we cover is a *bigger* question
+  // than two catalogs disagreeing about which kind of water it is, and it is rarer.
   'class-dissent',
   'class-conflict',
   'name-conflict',
@@ -500,12 +500,12 @@ export function primaryReviewReason(
  *   corpus is a claim we cannot support. Half Moon Cove is the fixture: 330 acres, named "Cove",
  *   0.00 contained in anything, and [the state's own map](https://anrmaps.vermont.gov/websites/wma/maps/Halfmoon%20Cove.pdf)
  *   calls it a wetland. Nothing about the *name* could have caught that; only the missing parent does.
- * - **`sameSourceDuplicate`** — one merge group holding two features from one catalogue means our
+ * - **`sameSourceDuplicate`** — one merge group holding two features from one catalog means our
  *   matching chained two distinct lakes together, or found a real duplicate OSM cannot see. Both are
  *   findings; neither may be merged unattended.
  * - **`overlapDuplicate`** — two bodies that never shared a group and yet cover the same water. This
  *   is the one the matcher cannot self-report: a missed match produces *two rows*, and the upsert
- *   key is a catalogue id, so nothing downstream can tell them from two real lakes. Measured at 632
+ *   key is a catalog id, so nothing downstream can tell them from two real lakes. Measured at 632
  *   overlapping pairs (≥ 0.3 IoU) in the pre-fix master list, 408 of which shared a name.
  */
 export function mergeReviewReasons(input: {
@@ -513,7 +513,7 @@ export function mergeReviewReasons(input: {
   bayWithoutParent?: boolean;
   sameSourceDuplicate?: boolean;
   overlapDuplicate?: boolean;
-  /** An unexplained refusal from one catalogue against another's class — see `class-dissent`. */
+  /** An unexplained refusal from one catalog against another's class — see `class-dissent`. */
   classDissent?: boolean;
 }): ReviewReason[] {
   const reasons: ReviewReason[] = [];

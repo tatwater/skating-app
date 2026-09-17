@@ -26,18 +26,18 @@ the one case skaters care about most, which is the case this document spends the
 | **polarisation** | Which way the radar pulse is oriented going down (V or H) and coming back. `VH` means sent vertical, received horizontal. |
 | **`sigma0`** | Backscatter as a physical number, in decibels, after correcting for how the instrument saw it. A raw radar file does *not* contain this — see Chapter 5. |
 | **SCL** | *Scene Classification Layer.* A free per-pixel label — "this pixel is water / cloud / snow" — that the European Space Agency computes and ships with every optical scene. |
-| **NDSI** | *Normalised Difference Snow Index.* An arithmetic trick for telling snow from cloud, which color alone cannot do. |
+| **NDSI** | *Normalized Difference Snow Index.* An arithmetic trick for telling snow from cloud, which color alone cannot do. |
 | **black ice** | Clear, new ice you can see the lake bottom through. The good stuff. Also, as we'll see, nearly invisible from space. |
 
 ---
 
 ## Chapter 1: Two satellites, two completely different senses
 
-Everything here comes from **Copernicus**, the European Union's Earth-observation programme. It is
+Everything here comes from **Copernicus**, the European Union's Earth-observation program. It is
 free, it is open, and the archive goes back years. We use two of its missions and ignore the rest.
 
 **Sentinel-2 is a camera.** Two spacecraft (now three) in the same orbit, photographing the planet in
-daylight at **10 metres per pixel**. At our latitude, some patch of ground gets photographed every
+daylight at **10 meters per pixel**. At our latitude, some patch of ground gets photographed every
 2–4 days. Over one tile covering Lake Morey and Mascoma Lake, winter 2025-26 gave us **45 passes**.
 
 **Sentinel-1 is radar.** It transmits a microwave pulse and measures the echo. Because it makes its
@@ -92,7 +92,7 @@ So the rule we settled on is: **keep the picture, keep the numbers, discard the 
 ## Chapter 3: SCL — a free opinion about every pixel
 
 The single most useful thing in a Sentinel-2 product isn't a band at all. **ESA runs its own
-classifier over every scene and ships the result**, labelling each pixel with one of twelve
+classifier over every scene and ships the result**, labeling each pixel with one of twelve
 categories:
 
 | | | | |
@@ -154,7 +154,7 @@ reasonable thing and calls it water.
 And the contrast with Morey on the same day is the proof, because it comes with its own explanation.
 The founder's note: *"my first skate on Morey was January 9, but I think that was probably because I
 missed getting on it before the first snow fell."* Morey had **snow on its ice by 22 December**, which
-is precisely why the satellite could see it. Two lakes, thirty kilometres apart, same day, same
+is precisely why the satellite could see it. Two lakes, thirty kilometers apart, same day, same
 sky — and the one with snow on it read 45% ice while the one with perfect skating ice read 2%.
 
 ### What follows from that
@@ -293,7 +293,7 @@ observational data offers.
 
 A radar image does not arrive with a map position attached. It arrives with a set of reference points,
 worked out by assuming the ground sits at one particular height. Anything higher or lower than that
-assumption gets drawn **sideways** — about 140 metres out of place for every 100 metres of height
+assumption gets drawn **sideways** — about 140 meters out of place for every 100 meters of height
 error.
 
 Sentinel-1 looks out to one side, so a rising pass views a lake from one direction and a falling pass
@@ -307,7 +307,7 @@ right, and neither was obvious.
 
 **The height has to be the local one.** A pass covers 250 km, and averaging the terrain across all of
 it gives a number describing what the satellite flew over rather than where any lake sits — measured
-across five real passes, that average ranged from **8 metres** (mostly ocean) to **370 metres** (the
+across five real passes, that average ranged from **8 meters** (mostly ocean) to **370 meters** (the
 White Mountains). Correcting with the average was *worse than not correcting at all*. Using each
 lake's own local reference instead cut the error from 116 m to 42 m.
 
@@ -319,7 +319,7 @@ The payoff is not just tidier pictures. Because rising and falling passes now ag
 is, they can be read as one series — **which doubles how often we get to look at a lake.**
 
 *The largest correction in our region belongs to Upper Lake of the Clouds, on Mount Washington at 1,531
-metres: its pixels were landing about a kilometre from the lake.*
+meters: its pixels were landing about a kilometer from the lake.*
 
 ### ⚠ The radar has a floor, and lakes are sitting on it
 
@@ -403,7 +403,7 @@ The whole problem, in one table. **Nothing in the right-hand column is easy.**
 | **Cloud** | white — *looks like snow* | cloud | **low** ✅ | invisible — passes straight through ✅ |
 | **Shadow** | dark | cast/cloud shadow | — | unaffected ✅ |
 
-Read the columns and the division of labour falls out:
+Read the columns and the division of labor falls out:
 
 - **Optical answers "is there snow on it?"** reliably, and is defeated by cloud maybe 75% of the time.
 - **NDSI's one job** is separating snow from cloud, which true color genuinely cannot do — both are
@@ -417,7 +417,7 @@ Read the columns and the division of labour falls out:
 
 ## Chapter 7: How the data actually gets here
 
-1. **Ask the catalogue.** A public index (STAC, hosted by Amazon) answers "which passes covered this
+1. **Ask the catalog.** A public index (STAC, hosted by Amazon) answers "which passes covered this
    box between these dates" — free, and before any computing happens.
 2. **Skip empty ground.** Roughly half the passes returned cover only ocean, Québec or ground where we
    hold no lakes. We test each map tile once against our lake outlines and drop those, which removes
@@ -436,7 +436,7 @@ roughly **$1.46**, producing ~19 GB.
 
 ### The radar path is not a variation on that one
 
-Steps 1–4 are shared — same catalogue, same tile prefilter, same rented machine, same range reads,
+Steps 1–4 are shared — same catalog, same tile prefilter, same rented machine, same range reads,
 though a different collection with a different id grammar and different metadata. **After that the two
 pipelines diverge completely**, because a radar pass is not a picture:
 
@@ -445,11 +445,11 @@ pipelines diverge completely**, because a radar pass is not a picture:
 - **Measure both polarisations, render one.** `VV` and `VH` are both reduced to per-lake `sigma0`, but
   only `VH` becomes an image — it is the informative channel, and publishing both would put a frame in
   the archive that nothing looks at.
-- **⚠ The grey scale is fixed, not per-scene.** −30 dB to 0 dB on every frame in every season. A
+- **⚠ The gray scale is fixed, not per-scene.** −30 dB to 0 dB on every frame in every season. A
   per-scene stretch would make each individual frame look its best and **destroy the archive's only
   purpose**: a lake that darkened by 2 dB on freezing would be re-brightened by the stretch, and the
   between-date change the scrubber exists to show would vanish into the rendering.
-- **The picture is never the measurement.** Nothing reads numbers back out of the grey; the full-precision
+- **The picture is never the measurement.** Nothing reads numbers back out of the gray; the full-precision
   `sigma0` was recorded before anything was squeezed into eight bits.
 
 ### What we keep, and what we deliberately don't
@@ -457,7 +457,7 @@ pipelines diverge completely**, because a radar pass is not a picture:
 | Kept | Discarded |
 | --- | --- |
 | The masked color picture, per optical pass | The raw scenes — re-readable free, forever |
-| The `VH` grey image, per radar pass | The nine optical bands `visual` doesn't use |
+| The `VH` gray image, per radar pass | The nine optical bands `visual` doesn't use |
 | Per-lake numbers, per pass — `clearPct`, `snowIcePct`, `waterPct`, `vvDb`, `vhDb`, `coveragePct` | The `VV` image (its number survives) |
 | The SCL classification image, per optical pass | Every working file in between — warps, masks, distance ramps |
 | Where the satellite actually had pixels | |
@@ -531,12 +531,12 @@ worth explaining.
 ### The first version of this measured the beach
 
 The app draws satellite imagery in a shape — the lake, plus the walk in from the car park, each
-widened by 60 metres so the shoreline and the path are actually visible. That shape exists for a good
+widened by 60 meters so the shoreline and the path are actually visible. That shape exists for a good
 reason: a photograph clipped exactly to the waterline is useless for working out where to park and how
 to get down to the ice.
 
 **The mistake was using that same shape to take the measurements.** So when the pipeline reported "82%
-water", the area it averaged over was the lake *plus a 60-metre ring of its bank, plus its islands,
+water", the area it averaged over was the lake *plus a 60-meter ring of its bank, plus its islands,
 plus the trail and the car park*.
 
 The error is not evenly spread, which is what made it hard to notice. A fixed-width ring around a big
@@ -595,8 +595,8 @@ describes and what the January numbers are too coarse to show.
 
 **Mascoma, at least, is now cut in two.** On 26 August 2026 the lake was split into *Mascoma North* and
 *Mascoma South* along the line the road takes across the narrows — from the southern corner of the
-peninsula to the far shore, a gap of just **90 metres** at the tightest point. North is 1.20 km²,
-south is 3.43 km², and the two together account for every square metre of the lake.
+peninsula to the far shore, a gap of just **90 meters** at the tightest point. North is 1.20 km²,
+south is 3.43 km², and the two together account for every square meter of the lake.
 
 That does not by itself produce two numbers — the measurement still has to be told to use the halves —
 but it is the piece that had to exist first, and it exists for the one lake where somebody kept a
@@ -619,7 +619,7 @@ corpus follows is a product question — see the build notes.*
    being able to see it — fine for *"this whole lake darkened"*, not fine for *"that corner is
    glassy"*. Whether radar can **date** a freeze-up is still unproven.
 4. **Check which pixels a number came from.** The first version of these measurements included a
-   60-metre ring of shoreline — a rounding error on a big lake, 70% of the "lake" on a small one.
+   60-meter ring of shoreline — a rounding error on a big lake, 70% of the "lake" on a small one.
    Averages are only as good as the outline they were taken over.
 5. **A date from space is always a bracket.** Cloud decides how wide.
 6. **Nothing here sees thickness, and nothing here is a safety judgement.** The app reports what an

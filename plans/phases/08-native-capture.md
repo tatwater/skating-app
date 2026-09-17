@@ -356,7 +356,7 @@ device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
   never-hide guarantee lives in `pathOpacity`'s floor, which holds at any age.
 - **§`pathToBody` — buffer, don't hull.** A hull swallows land, islands and the next bay over on any
   track that doesn't circumnavigate. It **does** fill interior rings (a lap around a pond otherwise
-  stores a donut, and a hole at the water body's centre is where later reports fail to resolve) and refuses
+  stores a donut, and a hole at the water body's center is where later reports fail to resolve) and refuses
   a track with no real extent (turf buffers a motionless phone into a perfect circular "pond"). No
   `@turf/convex`/`@turf/concave` dependency was added. Accepted cost: an out-and-back yields a
   corridor, so a later report from the far shore may create a near-certain duplicate — which is
@@ -446,7 +446,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 >   the shared bounty primitives; report cards keep their relative-time labels. Least D3 risk.
 > - **`pathToBody` buffers but does NOT hull** — a hull swallows land/islands on any non-circumnavigating
 >   track. It *does* fill interior rings (a lap around a pond would otherwise store a donut with a hole
->   at the water body's centre where reports fail to resolve) and refuses a track with no extent (turf happily
+>   at the water body's center where reports fail to resolve) and refuses a track with no extent (turf happily
 >   buffers a motionless phone into a perfect circular "pond"). No `@turf/convex` dep added.
 > - **`waterBodies.create` is now path-only at the trust boundary** — it takes an `activityId`, **not a
 >   polygon**, so "no freehand drawing, ever" is a server contract rather than a UI convention. Existing

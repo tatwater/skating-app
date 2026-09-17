@@ -60,7 +60,7 @@ describe('tile addressing', () => {
     expect(once.map(tileKey)).toEqual(again.map(tileKey));
   });
 
-  it('a one-metre shift of the view does NOT change the cells', () => {
+  it('a one-meter shift of the view does NOT change the cells', () => {
     // The exact case that made every request a cold render before the grid existed.
     const shifted = {
       minX: BURLINGTON.minX + 1,
@@ -73,7 +73,7 @@ describe('tile addressing', () => {
     );
   });
 
-  it('tiles tile — every cell abuts its neighbour with no gap and no overlap', () => {
+  it('tiles tile — every cell abuts its neighbor with no gap and no overlap', () => {
     const a = tileBox(12, 1200, 1500);
     const right = tileBox(12, 1201, 1500);
     const below = tileBox(12, 1200, 1501);

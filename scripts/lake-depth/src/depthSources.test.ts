@@ -11,7 +11,7 @@ import {
 /**
  * The registry and the manifest rules (A06a). Two things here are load-bearing rather than tidy:
  * `unverified` and `mismatch` must never collapse into one another, and an archive with no recorded
- * licence must refuse to be run from — because LAGOS-US' rights statement has been an open question
+ * license must refuse to be run from — because LAGOS-US' rights statement has been an open question
  * since this phase was scoped, and a clean import would close it by forgetting it.
  */
 
@@ -40,7 +40,7 @@ describe('DEPTH_SOURCES', () => {
     expect(lagos?.fetch.kind).toBe('manual');
   });
 
-  it('records every licence, including the one that was an open question until 2026-08-02', () => {
+  it('records every license, including the one that was an open question until 2026-08-02', () => {
     expect(DEPTH_SOURCES.find((s) => s.key === 'hydrolakes')?.expectedLicence).toMatch(/CC-BY/);
     expect(DEPTH_SOURCES.find((s) => s.key === 'globathy')?.expectedLicence).toMatch(/CC0/);
     // Read off the EDI package page. It is CC BY, so it carries an attribution obligation — the
@@ -48,7 +48,7 @@ describe('DEPTH_SOURCES', () => {
     expect(DEPTH_SOURCES.find((s) => s.key === 'lagos-us-depth')?.expectedLicence).toMatch(/CC BY/);
   });
 
-  it('still makes --adopt pass a licence explicitly, even now that we know it', () => {
+  it('still makes --adopt pass a license explicitly, even now that we know it', () => {
     // Knowing today's answer must not stop tomorrow's download from checking: the statement itself
     // says versions change and it is the Data User's job to notice.
     expect(isRunnable(manifest({ licence: undefined })).ok).toBe(false);
@@ -93,13 +93,13 @@ describe('isRunnable', () => {
     expect(isRunnable(manifest({ publishedMd5: 'abc', md5Verified: true }))).toEqual({ ok: true });
   });
 
-  it('refuses an archive with no licence recorded', () => {
+  it('refuses an archive with no license recorded', () => {
     const verdict = isRunnable(manifest({ licence: undefined }));
     expect(verdict.ok).toBe(false);
-    expect(verdict.reason).toMatch(/licence/i);
+    expect(verdict.reason).toMatch(/license/i);
   });
 
-  it('treats whitespace as no licence — an empty confirmation is not a confirmation', () => {
+  it('treats whitespace as no license — an empty confirmation is not a confirmation', () => {
     expect(isRunnable(manifest({ licence: '   ' })).ok).toBe(false);
   });
 
@@ -130,7 +130,7 @@ describe('shortLicence', () => {
     expect(shortLicence(statement)).toBe('CC BY');
   });
 
-  it('recognises the identifiers our sources actually use', () => {
+  it('recognizes the identifiers our sources actually use', () => {
     expect(shortLicence('CC0 (https://creativecommons.org/publicdomain/zero/1.0/)')).toMatch(/CC0/);
     expect(shortLicence('CC-BY 4.0')).toMatch(/CC-BY/);
   });
@@ -141,7 +141,7 @@ describe('shortLicence', () => {
     expect(shortLicence(odd).endsWith('…')).toBe(true);
   });
 
-  it('says UNRECORDED for an absent or blank licence', () => {
+  it('says UNRECORDED for an absent or blank license', () => {
     expect(shortLicence(undefined)).toBe('UNRECORDED');
     expect(shortLicence('   ')).toBe('UNRECORDED');
   });

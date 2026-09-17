@@ -77,7 +77,7 @@ describe('FreezeUpScrubber — blocked stops stay drawn', () => {
 
   it('⚠ gives a blocked mark its reason as an accessible name', () => {
     // The whole point of drawing blocked stops is that they explain themselves. A screen-reader user
-    // must get the same explanation a sighted one gets from a greyed mark, or it is decoration.
+    // must get the same explanation a sighted one gets from a grayed mark, or it is decoration.
     render(
       <Harness
         timeline={timelineOf([
@@ -531,7 +531,7 @@ describe('FreezeUpScrubber — the thumb', () => {
 
   it('⚠ is a window, not a lozenge — the mark it stands on stays readable through it', () => {
     // The thumb covers the one notch whose state the skater most needs: whether the date under it
-    // has a picture (tall, blue) or is clouded out (short, grey). Filling it in would black out that
+    // has a picture (tall, blue) or is clouded out (short, gray). Filling it in would black out that
     // answer exactly where it is being asked, leaving nothing but memory of what was there before.
     const thumb = thumbOf(at(1).container);
     expect(thumb?.className).toContain('border-2');
@@ -649,7 +649,7 @@ describe('FreezeUpScrubber — landing near where the skater was', () => {
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 
-  it('falls back rather than failing when the anchor cannot be honoured', () => {
+  it('falls back rather than failing when the anchor cannot be honored', () => {
     const onSelect = vi.fn();
     render(
       <FreezeUpScrubber

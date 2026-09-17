@@ -193,7 +193,7 @@ export const reconcileUploaderPhotos = internalMutation({
     }
 
     // A departed-photo run must not outlive the tombstone that justified it. If the deletion was
-    // cancelled mid-run the account is ordinary again, and an ordinary account's photos are on no
+    // canceled mid-run the account is ordinary again, and an ordinary account's photos are on no
     // clock at all — aging never removes anything (D62 second amendment). Checked every call rather
     // than at entry, because the phases are separate transactions with real time between them.
     if (mode === 'season_expiry') {

@@ -49,10 +49,10 @@ import { useThemePreference } from '../providers/ThemeProvider';
  * so it can never be confused with a pan.
  */
 /**
- * The three auxiliary lanes and how each is coloured — the native twin of web's `AUX_LANES`.
+ * The three auxiliary lanes and how each is colored — the native twin of web's `AUX_LANES`.
  *
  * `side` picks which temperature pole the emphasis rail wears (both emphases are conjunctions with
- * temperature); `litColor` is the trace colour while the measure is actually happening, which only
+ * temperature); `litColor` is the trace color while the measure is actually happening, which only
  * the sun lane has.
  */
 const AUX_LANES: {
@@ -62,7 +62,7 @@ const AUX_LANES: {
   litColor?: (gradientId: string) => string;
 }[] = [
   { key: 'wind', side: 'cold' },
-  // ⚠ A gradient reference rather than a flat colour: the sun trace ramps pale → saturated with
+  // ⚠ A gradient reference rather than a flat color: the sun trace ramps pale → saturated with
   // irradiance, and irradiance is the y axis, so the paint is a function of height.
   { key: 'sun', side: 'warm', litColor: (id) => `url(#${id})` },
   { key: 'snowDepth', side: 'cold' },
@@ -335,7 +335,7 @@ export function WeatherTimeline({
                 if (!lane) return null;
                 return (
                   <React.Fragment key={lane.box.top}>
-                    {/* Flat when the lane has no second measure — or when the lake is under a kilometre of
+                    {/* Flat when the lane has no second measure — or when the lake is under a kilometer of
                         fetch, where its own geometry cannot support the distinction. */}
                     {lane.areaSegments.length === 0 ? (
                       <Path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
@@ -356,7 +356,7 @@ export function WeatherTimeline({
                       ))
                     )}
                     {/* One stroke per run: a run ends both at a data hole and at every crossing into
-                        or out of "the measure is happening". Only the sun draws two colours today. */}
+                        or out of "the measure is happening". Only the sun draws two colors today. */}
                     {lane.segments.map((seg) => (
                       <Path
                         d={seg.d}
@@ -498,7 +498,7 @@ function TimelineScrubber({
       {/* 24px tall so the touch target clears the ~44pt guideline once the surrounding gap is
           counted; the visible track is the 4px rule inside it. */}
       <XStack alignItems="center" height={24} width="100%">
-        {/* ⚠ `style`, not the `backgroundColor` prop. Tamagui's shorthand colour props take *theme
+        {/* ⚠ `style`, not the `backgroundColor` prop. Tamagui's shorthand color props take *theme
             tokens*; these are resolved hex values from the validated chart scale, which has no
             Tamagui token because it is a data palette rather than a UI role. Same reason
             `WindExposure` reads `theme.x.val` for its SVG fills. */}

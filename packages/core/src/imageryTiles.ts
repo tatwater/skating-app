@@ -10,7 +10,7 @@
  * ```
  * cold (a bbox never requested before)   29.3 s median   `x-cache: Miss from cloudfront`
  * warm (the identical URL again)          0.08 s median   `x-cache: Hit from cloudfront`
- * the same bbox shifted by one metre     32.3 s          a full miss
+ * the same bbox shifted by one meter     32.3 s          a full miss
  * the same bbox, size 1921 not 1920      22.9 s          a full miss
  * ```
  *
@@ -35,14 +35,14 @@
  *
  * ## The levels are ours, not the slippy convention
  *
- * A cell at level `z` spans `WORLD / 2^z` metres and is always rendered at `AERIAL_TILE_PX`, so
+ * A cell at level `z` spans `WORLD / 2^z` meters and is always rendered at `AERIAL_TILE_PX`, so
  * resolution is `span / 2048`. That is the slippy ladder shifted by `log2(2048/256) = 3`; naming them
  * separately keeps a reader from assuming a level here is a MapLibre zoom, which it is not.
  */
 
 import { MERCATOR_WORLD_M, type MercatorBox } from './webMercator';
 
-/** The full projected width of the world, in metres — the span of a level-0 cell. */
+/** The full projected width of the world, in meters — the span of a level-0 cell. */
 const WORLD_SPAN_M = 2 * MERCATOR_WORLD_M;
 
 /**
@@ -73,12 +73,12 @@ export const AERIAL_MAX_GRID_LEVEL = 16;
  */
 export const AERIAL_MAX_TILES_PER_VIEW = 4;
 
-/** Ground metres per pixel at a level. */
+/** Ground meters per pixel at a level. */
 export function gridResolution(level: number): number {
   return WORLD_SPAN_M / 2 ** level / AERIAL_TILE_PX;
 }
 
-/** The projected span of one cell at a level, in metres. */
+/** The projected span of one cell at a level, in meters. */
 export function gridSpan(level: number): number {
   return WORLD_SPAN_M / 2 ** level;
 }

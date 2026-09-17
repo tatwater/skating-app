@@ -131,7 +131,7 @@ model, never in the UI at the same time.
 **Decision 4 — The shorter arc is the default, with a "go the other way" control.**
 Two taps on a ring define two arcs, and "shorter" is right almost always and silently wrong on a
 small pond or a narrow bay where the band a skater means is most of the perimeter. One explicit
-control beats inferring intent — and inferring it from the map centre, the tempting alternative, is
+control beats inferring intent — and inferring it from the map center, the tempting alternative, is
 unpredictable in precisely the cases that need predicting. **Taps landing on different rings are
 refused rather than guessed** (islands, MultiPolygon bodies), in the same spirit as A02's
 clip-refusal threshold.
@@ -292,7 +292,7 @@ in this branch and belong to no other phase's doc.
   renamed to `.index.tsx` to make them siblings, and the guard is a test on the **file layout** rather
   than on any component, because that is where the bug lives: `routeNesting.test.ts` fails if any parent
   route gains a child without rendering an outlet.
-- **Favourite paint drifted onto the wrong water bodies.** `setData` does *not* clear MapLibre feature-state,
+- **Favorite paint drifted onto the wrong water bodies.** `setData` does *not* clear MapLibre feature-state,
   and our feature ids are array indices — so panning rebound every painted id to whatever body now sat
   at that index, and unrelated water bodies came back gold while their own sheets correctly said they weren't
   favorited. Fixed by clearing the whole source's state on every data change rather than tracking which
@@ -333,14 +333,14 @@ armed.
 **A snapped band re-typed onto a non-shore type kept its shoreline.** The web `chooseType` comment said
 clearing the snap prevented "a `pressure_ridge` shaped exactly like a shoreline" — and then called
 `retypeDraft`, which by D67 deliberately *preserves* polygons. So the ring survived and only the label
-went away; the comment described behaviour the code didn't have. Resolved in favour of the comment, with
+went away; the comment described behavior the code didn't have. Resolved in favour of the comment, with
 the distinction written into D67: a **hand-drawn** area survives a re-type, because reaching one costs
 an opt-in plus three placements; a **snapped band** does not, because it cost two clicks and was derived
 for a shore-shaped type. Mobile already did the right thing here — it resets to a circle — which is why
 the same comment was true there and false on web.
 
 **Two smaller ones.** The web draw banner interpolated a raw count, so switching a placed circle to an
-area — which carries the centre over as a lone corner — read *"1 corners — drag any of them to adjust"*,
+area — which carries the center over as a lone corner — read *"1 corners — drag any of them to adjust"*,
 ungrammatical and wrong about what the next click did; the instruction now stands until there are three.
 And `waterBodies.get` was fetched on *type selection* rather than on arming the snap, despite a comment
 worrying about exactly its cost (Champlain's polygon is 116 rings) — most `thin_ice` reports are an
@@ -357,7 +357,7 @@ past storable, so its **footprint** — the shape that would actually be saved �
 Greptile raised one P1 on [PR #32](https://github.com/tatwater/skating-app/pull/32): **shore bands are
 buffered twice.** The arithmetic is right — a band derived at 25 m warns from 35 m, measured — and the
 conclusion isn't. Those are two different quantities: the half-width is a claim about the **ice** (rotten
-shore ice runs tens of metres out, which is exactly why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
+shore ice runs tens of meters out, which is exactly why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
 the type's 10 m), and `bufferMeters` is the type's uncertainty about **where any hazard's edge is**, which
 every other hazard carries too. Removing it would leave a shore band as the only hazard whose footprint is
 exactly its author's eyeball estimate — D3 backwards, since the fail-safe direction for a footprint is
@@ -457,7 +457,7 @@ type selection rather than on arming the snap.
 dead link — TanStack made `admin.water.$id.tsx` a child of an outlet-less leaf, so `/admin/water/:id` and
 `/admin/users/:id` (Phase 07's whole ban / suspend / grant-role surface) matched the URL and rendered the
 parent's queue table instead, with every test passing in isolation. Guarded now by a test on the route
-*file layout*. And favourite paint drifted onto the wrong water bodies, because `setData` doesn't clear MapLibre
+*file layout*. And favorite paint drifted onto the wrong water bodies, because `setData` doesn't clear MapLibre
 feature-state and our ids are array indices, so panning rebound them.
 
 *Left for later:* nothing from this pass. Paste-GeoJSON stays admin-only, as scoped. The one thing the

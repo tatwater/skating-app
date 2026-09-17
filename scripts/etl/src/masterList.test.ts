@@ -177,8 +177,8 @@ describe('elevation as the tidal referee (founder, 2026-08-08)', () => {
     expect(result.stats.tidalByElevation).toBe(0);
   });
 
-  it('refuses a low body a catalogue tagged saltmarsh, whatever class won the vote', () => {
-    // The 92 the `classDissent` split found: OSM says saltmarsh, a federal catalogue says LakePond,
+  it('refuses a low body a catalog tagged saltmarsh, whatever class won the vote', () => {
+    // The 92 the `classDissent` split found: OSM says saltmarsh, a federal catalog says LakePond,
     // and `chooseClass` lets the class win — correctly, since that rule is the wetland rescue. The
     // referee is what stops that from quietly admitting tidal water.
     const marsh = feat('osm', 'way/marsh', {
@@ -199,7 +199,7 @@ describe('elevation as the tidal referee (founder, 2026-08-08)', () => {
     expect(result.stats.tidalByElevation).toBe(1);
   });
 
-  it('spares Nequasset Lake, which is on the allow-list AND under five metres', () => {
+  it('spares Nequasset Lake, which is on the allow-list AND under five meters', () => {
     // **The measurement that forced the scoping.** 1,002 corpus bodies sit at or under 5 m and only
     // 81 are bay-class or tidally named — so a general rule would delete ~920 freshwater bodies,
     // starting with the two that FRESHWATER_ALLOW_LIST was hand-built to protect. Nequasset is
@@ -216,7 +216,7 @@ describe('elevation as the tidal referee (founder, 2026-08-08)', () => {
   });
 
   it('leaves an ordinary low-lying pond alone, because it is not a candidate', () => {
-    // `Fresh Pond`, Maine, 2.9 m and 102 acres. No catalogue called it a bay or tagged it salt, so
+    // `Fresh Pond`, Maine, 2.9 m and 102 acres. No catalog called it a bay or tagged it salt, so
     // the referee never looks at it — which is the whole reason this rule is scoped.
     const pond = feat('osm', 'way/fresh', {
       name: 'Fresh Pond',
@@ -315,7 +315,7 @@ describe('what the corpus must and must not contain', () => {
     expect(keys(result.bodies)).toEqual(['osm:way/superior']);
   });
 
-  it('refuses a tidal cove no catalogue matched, which the token veto could not reach', () => {
+  it('refuses a tidal cove no catalog matched, which the token veto could not reach', () => {
     // Great Bay's shape: one federal estuary polygon against separate OSM coves. The coves never
     // reach IoU 0.5 against the estuary, so it never lands in their group — and the bay rule then
     // demoted them to `unclassified` and let them in, because their only possible parent is the sea.
@@ -366,7 +366,7 @@ describe('what the corpus must and must not contain', () => {
     expect(keys(result.bodies)).toEqual(['osm:way/braddock']);
   });
 
-  it('keeps Beau Lake, which straddles the Québec border — any part, not its centre', () => {
+  it('keeps Beau Lake, which straddles the Québec border — any part, not its center', () => {
     const beau = feat('nhd', 'beau', {
       name: 'Beau Lake',
       // Straddling the mask's western edge at -71: half its vertices are outside our five states,
@@ -414,7 +414,7 @@ describe('what the corpus must and must not contain', () => {
     expect(result.stats.settledWetland).toBe(1);
   });
 
-  // The mirror, and the reason the rule is directional: here the FEDERAL catalogue is the one saying
+  // The mirror, and the reason the rule is directional: here the FEDERAL catalog is the one saying
   // bog, which is what D96's admission floor turns on. 132 of the 652, and they stay in the queue.
   it('still queues an OSM open-water claim against a federal wetland one', () => {
     const shape = square(-70.7, 44.7, sideForAcres(30));
@@ -484,7 +484,7 @@ describe('what the corpus must and must not contain', () => {
     it('assigns the id but never the name, which still waits for the merge', () => {
       // `resolveGnisNames` refuses a point that could name more than one BODY, and that rule took
       // `gnisRescued` from 1,771 to 921. It cannot move earlier: before the merge one lake is several
-      // features and a point legitimately falls inside both catalogues' polygons — which the
+      // features and a point legitimately falls inside both catalogs' polygons — which the
       // cross-body rule would read as ambiguity and refuse. Ids only.
       const lonely = feat('osm', 'way/lonely', { polygon: square(-70.3, 44.3, side) });
       const result = buildMasterList(inputFor({ osm: [lonely], gnisGrid: gnisGrid() }));
@@ -656,7 +656,7 @@ describe('a bay is an arm, not a lake', () => {
     // **Named, so it keeps `bay`** — the same answer a bay whose parent was never *found* gets.
     //
     // ⚠ This asserted `unclassified` until the A07a-2 audit, and that was the rule twenty lines up
-    // inverted: `Paugus Bay` keeps its class because no catalogue draws it inside anything, while a
+    // inverted: `Paugus Bay` keeps its class because no catalog draws it inside anything, while a
     // bay whose parent was found and then refused — for region, salt or the floor — was relabelled.
     // Same epistemic position, and the answer was decided by which way the parent happened to die.
     expect(result.bodies[0]?.cls).toBe('bay');
@@ -673,7 +673,7 @@ describe('a bay is an arm, not a lake', () => {
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
   });
 
-  // Six real arms of real lakes had no parent because the catalogue that knew the relationship was
+  // Six real arms of real lakes had no parent because the catalog that knew the relationship was
   // not the one that won the outline: Sebago Cove is **0.81 contained in NHD's Sebago Lake and 0.00
   // in OSM's**, and D92 makes OSM draw by default.
   //
@@ -681,7 +681,7 @@ describe('a bay is an arm, not a lake', () => {
   // could not express it — a sub-area is stored clipped to its parent's STORED polygon, so all six
   // clipped to nothing and, having been counted as sub-areas, landed in no table at all. The fix is
   // one layer up: correct the outline (D92's per-lake override), then ask the corrected one.
-  it('re-draws the lake from the catalogue that contains its own named bay', () => {
+  it('re-draws the lake from the catalog that contains its own named bay', () => {
     // OSM draws the lake without the cove; NHD draws it with. The merged body carries OSM's.
     const osmLake = feat('osm', 'way/sebago', {
       name: 'Sebago Lake',
@@ -705,7 +705,7 @@ describe('a bay is an arm, not a lake', () => {
       name: 'Sebago Cove',
       parentKey: 'osm:way/sebago',
     });
-    // **The parent is now drawn by NHD** — the catalogue whose outline actually contains the arm.
+    // **The parent is now drawn by NHD** — the catalog whose outline actually contains the arm.
     // Nothing is invented: this is one publisher's polygon chosen over another's, which is what
     // `geometrySource` is a field FOR (D92), and the margin is the containment itself.
     expect(result.bodies[0]?.geometrySource).toBe('nhd');
@@ -732,7 +732,7 @@ describe('a bay is an arm, not a lake', () => {
 
   // **A named bay with no parent keeps the class** (founder, 2026-08-07). Demoting it recorded our
   // matching failure as a fact about the lake: `Paugus Bay` is 1,241 acres of named water on
-  // Winnipesaukee that no catalogue draws inside anything. It is still queued — keeping the class is
+  // Winnipesaukee that no catalog draws inside anything. It is still queued — keeping the class is
   // not the same as claiming to know what it is an arm of.
   it('keeps a NAMED parentless bay as a bay body, and still queues it', () => {
     const cove = feat('osm', 'way/halfmoon', {
@@ -896,7 +896,7 @@ describe('the emit stage', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('identity', () => {
-  it('refuses to run if two catalogues ever share an id namespace', () => {
+  it('refuses to run if two catalogs ever share an id namespace', () => {
     // They do not today — `way/…`, an NHD GUID or bare numeric, and 3DHP's `I…` — but `Union`, the
     // group map and the IoU map all share one flat string space, so a source whose ids looked like
     // another's would chain unrelated lakes together with no error at all.
@@ -926,7 +926,7 @@ describe('identity', () => {
 });
 
 describe('the conflict nothing else can see', () => {
-  it('counts a body one catalogue refused outright and another classed', () => {
+  it('counts a body one catalog refused outright and another classed', () => {
     // Lac Saint-François, 87,927 ac of the St. Lawrence: OSM tags it `water=lake` (and `salt=no`),
     // 3DHP publishes it as `featuretype = 1 River`. A real class beats a drop — the 123-body rescue
     // — so it resolves to `lakePond` silently, and `scoreBody` cannot flag it either, because a
@@ -951,7 +951,7 @@ describe('the conflict nothing else can see', () => {
     expect(result.stats.classDissentSamples[0]).toMatch(/refused by \[3dhp:featuretype=1\]/);
   });
 
-  it('does not count a group every catalogue agreed on', () => {
+  it('does not count a group every catalog agreed on', () => {
     const result = buildMasterList(
       inputFor({ osm: [feat('osm', 'way/1', { name: 'Ordinary Pond' })] }),
     );
@@ -983,7 +983,7 @@ describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () 
     ],
   });
 
-  it('settles an impoundment a catalogue calls a river, and does not queue it', () => {
+  it('settles an impoundment a catalog calls a river, and does not queue it', () => {
     // The largest measured pattern (109 bodies) and the one D96 already settles in our favour — we
     // carry 26 `river`-class bodies on purpose. Queueing these repeats the 1,437-row mistake
     // `RECONCILABLE_CLASS_PAIRS` had to undo.
@@ -1009,7 +1009,7 @@ describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () 
     expect(result.bodies[0]?.reviewReasons).toContain('class-dissent');
   });
 
-  it('counts no dissent at all when every catalogue agrees it is water', () => {
+  it('counts no dissent at all when every catalog agrees it is water', () => {
     const result = buildMasterList(
       inputFor({ osm: [feat('osm', 'way/y', { name: 'Plain Pond' })] }),
     );
@@ -1020,7 +1020,7 @@ describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () 
 
 describe('the still-water rescue leaves a number behind (founder, 2026-08-09)', () => {
   /**
-   * A deadwater as the OSM lane now produces it: the catalogue refused it as a river, and
+   * A deadwater as the OSM lane now produces it: the catalog refused it as a river, and
    * `classifyWaterBody`'s rung 2 let the name overrule that. The pair of tokens IS the signature —
    * the ordinary name-keyword rung fires only on silence, and silence is never `flowing`.
    */
@@ -1044,7 +1044,7 @@ describe('the still-water rescue leaves a number behind (founder, 2026-08-09)', 
     expect(result.stats.stillWaterRescuedSamples[0]).toContain('river');
   });
 
-  it('counts nothing for a body no catalogue refused', () => {
+  it('counts nothing for a body no catalog refused', () => {
     // Debsconeag Deadwater is in the corpus because OSM says `natural=water` and nothing else — the
     // silence case, which is the name-keyword rung and not this one.
     const silent = feat('osm', 'way/debsconeag', {
@@ -1107,7 +1107,7 @@ describe('osm → osm: the lane the other three could not cover', () => {
     expect(result.bodies).toHaveLength(1);
     // One body, so there is no longer an overlapping pair for the sweep to flag.
     expect(result.stats.duplicatePairs).toBe(0);
-    // …and it is still reported, because a same-catalogue collapse is a finding either way.
+    // …and it is still reported, because a same-catalog collapse is a finding either way.
     expect(result.bodies[0]?.sameSourceDuplicate).toBe(true);
   });
 
@@ -1136,7 +1136,7 @@ describe('osm → osm: the lane the other three could not cover', () => {
 
   it('leaves two overlapping-but-distinct OSM bodies alone, and queues them', () => {
     // The reason the bar is 0.9. Two ponds in a chain overlapping by about half is exactly what a
-    // cross-catalogue lane is allowed to merge at 0.5 and a same-source lane must not: one
+    // cross-catalog lane is allowed to merge at 0.5 and a same-source lane must not: one
     // publisher's data disagreeing with itself is not two publishers agreeing.
     const a = feat('osm', 'way/chain-a', {
       name: 'First Pond',
@@ -1154,7 +1154,7 @@ describe('osm → osm: the lane the other three could not cover', () => {
 
   it('does NOT let a shared GNIS id drop the bar to 0.3', () => {
     // `decideMatch` lowers the bar whenever both sides assert one GNIS id — sound across two
-    // catalogues, wrong within one: two OSM features sharing a GNIS id are most often a lake and its
+    // catalogs, wrong within one: two OSM features sharing a GNIS id are most often a lake and its
     // own named arm. Leaving `minIouWithGnis` at 0.3 would merge exactly what this lane must not.
     const lake = feat('osm', 'way/gnis-lake', {
       name: 'Long Pond',
@@ -1190,7 +1190,7 @@ describe('matchLane, directly — the options the same-source lane needs', () =>
   });
 
   it('reads a feature and its own twin as AMBIGUOUS when self is left in', () => {
-    // The subtler half, and the reason `excludeSelf` is not merely an optimisation: the target and
+    // The subtler half, and the reason `excludeSelf` is not merely an optimization: the target and
     // its duplicate both score 1.0, `decideMatch`'s margin rule cannot separate them, and the lane
     // returns nothing at all rather than the wrong thing. A silent zero, from a lane that is working.
     const both = matchLane([a], [a, twin], undefined, { minIou: SAME_SOURCE_MIN_IOU });
@@ -1198,9 +1198,9 @@ describe('matchLane, directly — the options the same-source lane needs', () =>
     expect(both.stats.ambiguous).toBe(1);
   });
 
-  it('honours a raised minIou', () => {
+  it('honors a raised minIou', () => {
     const half = feat('osm', 'way/half', { polygon: square(-70.1 + side * 0.4, 44.1, side) });
-    // Comfortably over the cross-catalogue bar…
+    // Comfortably over the cross-catalog bar…
     expect(matchLane([a], [half], undefined, { minIou: 0.4 }).pairs).toHaveLength(1);
     // …and nowhere near the same-source one.
     expect(matchLane([a], [half], undefined, { minIou: SAME_SOURCE_MIN_IOU }).pairs).toHaveLength(

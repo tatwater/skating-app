@@ -13,7 +13,7 @@
  * 2. **It never feeds anything.** Not hazard decay, not bounty freshness, not trust, not reports. It
  *    is measured *against* the world and nothing reads it back. The moment a derived thickness
  *    becomes an input it acquires authority it has not earned.
- * 3. **Graduating it to a skater surface needs its own decision.** D160 authorises a dark instrument
+ * 3. **Graduating it to a skater surface needs its own decision.** D160 authorizes a dark instrument
  *    and nothing more.
  *
  * ## Why build it at all, then

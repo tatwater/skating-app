@@ -150,7 +150,7 @@ describe('describeNotification', () => {
     ).toBe('2 new reports on Lake Champlain');
   });
 
-  it('report buckets land on the lake, the digest summarises across lakes', () => {
+  it('report buckets land on the lake, the digest summarizes across lakes', () => {
     expect(
       describeNotification({
         ...base,

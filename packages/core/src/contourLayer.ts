@@ -187,7 +187,7 @@ export function maxContourDepthFt(
 /**
  * What an agency's own terms require us to render, keyed by the `agency` a tile carries.
  *
- * **The tile carries a short agency label; the licence requires particular words.** For four of the
+ * **The tile carries a short agency label; the license requires particular words.** For four of the
  * five sources those are nearly the same thing, and for the fifth they are not: VCGI's terms name
  * the University of Vermont as the copyright holder, and NOAA asks that attribution neither imply
  * its endorsement nor present modified data as unaltered NOAA data — so *"VCGI / NOAA"*, which is
@@ -319,7 +319,7 @@ export function contourCredit(
  * inside ours, because at least one source's required wording is itself a sentence about where the
  * soundings came from — *"Soundings digitised from NOAA nautical charts by…"* — and splicing that
  * into "…published by X" produces a line that is both ungrammatical and, worse, an alteration of
- * licence text.
+ * license text.
  */
 export function formatContourCredit(credit: ContourCredit | undefined): string {
   if (!credit) return '';

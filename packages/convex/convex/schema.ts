@@ -171,7 +171,7 @@ export default defineSchema({
      * The device's IANA timezone, refreshed on app open (A08 §3). Only the 8pm digest reads it: the
      * hour is 20:00 for everyone, the *zone* is per person. The device's zone rather than one
      * derived from `homeCoord`, because the digest is a "when will this person look at their phone"
-     * question, and someone travelling is exactly the case where the device is right. Coarse enough
+     * question, and someone traveling is exactly the case where the device is right. Coarse enough
      * to carry no new exposure next to `homeCoord`; never on a public profile. Absent ⇒ the pilot
      * default (`America/New_York`).
      */
@@ -303,7 +303,7 @@ export default defineSchema({
      * The departed-photo sweep's work queue (D66/A05a): tombstones that haven't been swept for the
      * current season yet.
      *
-     * **This is the one place the non-sparse-index behaviour above is what we want**, and it's worth
+     * **This is the one place the non-sparse-index behavior above is what we want**, and it's worth
      * saying so beside the warning that it's usually a trap. `photosExpiredForSeason` is absent on
      * every account that has never been swept, `undefined` sorts before every number, so a
      * `lt('photosExpiredForSeason', currentSeason)` range returns the never-swept accounts *first* and
@@ -489,7 +489,7 @@ export default defineSchema({
     /**
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
-     * Denormalised on every name write, never set by a client, same shape and same
+     * Denormalized on every name write, never set by a client, same shape and same
      * `@skating/core`'s `searchTextFor` as `waterBodySubAreas` — **and required, like that one.**
      *
      * It shipped optional for one campaign because Convex validates existing documents on push and
@@ -523,7 +523,7 @@ export default defineSchema({
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
     /**
-     * **Who this lake is, in each catalogue that knows it** — as against `externalId`, which is who
+     * **Who this lake is, in each catalog that knows it** — as against `externalId`, which is who
      * we happened to import it from.
      *
      * The two are the same string today, and the split exists because that is a coincidence rather
@@ -552,7 +552,7 @@ export default defineSchema({
      *
      * **Opaque, and that is the point.** Not derived from `osmId`, because a key that encodes its
      * origin reads as a claim about provenance the moment the origin changes; not derived from the
-     * geometry, because D92's whole purpose is to possibly change which catalogue draws a lake, and
+     * geometry, because D92's whole purpose is to possibly change which catalog draws a lake, and
      * a bbox-derived key would move at exactly the moment identity must not. (The useful half of
      * that idea — a cheap spatial blocking key for dedup — is what `waterBodyCells` already is.)
      *
@@ -563,7 +563,7 @@ export default defineSchema({
      * lakes. Portability off Convex is the second-order version of the same thing.
      *
      * **Not the upsert key.** A minted id cannot be derived from an incoming feature, so a re-import
-     * finds its row through the catalogue ids below — see `resolveUpsert` in `@skating/core`, which
+     * finds its row through the catalog ids below — see `resolveUpsert` in `@skating/core`, which
      * also defines what happens when two of them point at different rows.
      */
     waterBodyKey: v.optional(v.string()),
@@ -586,9 +586,9 @@ export default defineSchema({
      * GNIS Feature ID — **deliberately not an upsert key**, and the comment matters more than the
      * field.
      *
-     * It is the one identifier all three catalogues share, which makes it the cheapest exact-match
+     * It is the one identifier all three catalogs share, which makes it the cheapest exact-match
      * bridge between them and an excellent *candidate generator* for reconciliation. It is a terrible
-     * identity: GNIS names **places**, and a catalogue may split one place into several features.
+     * identity: GNIS names **places**, and a catalog may split one place into several features.
      * Measured against the archives, **92 GNIS ids resolve to more than one NHD body** (0.8% of
      * 10,984). Upserting on it would merge those lakes.
      *
@@ -637,7 +637,7 @@ export default defineSchema({
     /**
      * How well corroborated each attribute is (D110): `high` · `medium` · `low` · `none`.
      *
-     * `high` means two **independent** catalogues agree (NHD and 3DHP count as one — 3DHP
+     * `high` means two **independent** catalogs agree (NHD and 3DHP count as one — 3DHP
      * re-publishes NHD, zero area disagreements ≥ 0.1% over 7,878 lakes). `medium` is one
      * uncontested claim. `low` is a genuine conflict a precedence rule broke. `none` is silence.
      *
@@ -659,7 +659,7 @@ export default defineSchema({
      * Distinct from `confidence` because two of the four are **structural rather than evidential**:
      * `bay-without-parent` is a bay with nothing to be an arm of (Half Moon Cove: 330 acres, named
      * "Cove", and a wetland), and `same-source-duplicate` is one merge group holding two features
-     * from one catalogue — which means our matching chained two lakes, or OSM carries a duplicate it
+     * from one catalog — which means our matching chained two lakes, or OSM carries a duplicate it
      * cannot see. Neither is a confidence score and neither may merge unattended.
      *
      * Absent is the normal case: a low-confidence *polygon* deliberately does not queue anyone, since
@@ -703,7 +703,7 @@ export default defineSchema({
      * silently changing what survives a prune, which is `externalId` doing three jobs all over again.
      * And not "has this been skated?", even though that signal is durable (D62's second amendment
      * keeps published observations forever, redacting only what a person typed) and is already
-     * honoured by the prune's attachment check.
+     * honored by the prune's attachment check.
      *
      * **Use cannot protect the moment that matters.** At the instant a body is admitted there is no
      * report and no track, because the whole point is that someone is asking for a lake they *want*
@@ -726,11 +726,11 @@ export default defineSchema({
      * The on-water **representative point** (D48) — display, distance and the town stamp.
      *
      * **Renamed from `centroid`, because it never was one** (founder call, 2026-08-02). It comes
-     * from Turf's `pointOnFeature`, which returns the bbox centre when that lands inside the polygon
+     * from Turf's `pointOnFeature`, which returns the bbox center when that lands inside the polygon
      * and a point on the **boundary** when it does not — so on a curved or narrow lake it sits on
      * the shoreline. Lake Willoughby's is ring vertex 199.
      *
-     * **That behaviour is correct and must not be "fixed" into a true centroid.** The area centroid
+     * **That behavior is correct and must not be "fixed" into a true centroid.** The area centroid
      * of a crescent lake is on the headland in the middle, i.e. on land — which breaks the on-water
      * guarantee every consumer here relies on. A06b already paid for this lesson: a hand-rolled
      * centroid join missed 4 of 6 real Maine lakes (`scripts/bathymetry/src/join.ts`). The name was
@@ -770,7 +770,7 @@ export default defineSchema({
      * canonical import from the source geometry.
      *
      * **It exists because `centroid` above is not a centroid.** That field is Turf's
-     * `pointOnFeature`, which returns the bbox centre when it lands inside the polygon and a point
+     * `pointOnFeature`, which returns the bbox center when it lands inside the polygon and a point
      * on the **boundary** when it doesn't — true of any curved or narrow lake. Lake Willoughby's
      * `centroid` is ring vertex 199; Lake Champlain's sits **30.7 km** from mid-lake.
      *
@@ -796,18 +796,18 @@ export default defineSchema({
     //
     // No index on any of them: like depth, they are only ever read with a body already in hand.
     // All optional ⇒ migration-free, and `importCanonical` patches an explicit field list.
-    /** Total shoreline in metres, **including island rings** — the conventional definition, and
+    /** Total shoreline in meters, **including island rings** — the conventional definition, and
      *  what HydroLAKES' `Shore_len` measures, so D85's free cross-check compares like with like.
      *  Never authoritative (D3): OSM's shoreline is a tracing by many hands. */
     shorelineM: v.optional(v.number()),
-    /** Longer side of the minimum-area bounding rectangle, in metres. NOT the hull diameter — see
+    /** Longer side of the minimum-area bounding rectangle, in meters. NOT the hull diameter — see
      *  `lakeAxes`, which documents why the plan's stated method reported 2× the true width. */
     longAxisM: v.optional(v.number()),
     /** The long axis's bearing in `[0, 180)`, clockwise from north. Undirected: an axis has no head. */
     longAxisBearingDeg: v.optional(v.number()),
     /** Shorter side of the same rectangle. With `longAxisM` this is the "about 5 × 1 miles" line. */
     shortAxisM: v.optional(v.number()),
-    /** Wind fetch in metres at 16 compass bearings, **indexed by the direction wind blows FROM** —
+    /** Wind fetch in meters at 16 compass bearings, **indexed by the direction wind blows FROM** —
      *  so the drawer reads `fetchProfileM[fetchBucketFor(windDirection)]` with no arithmetic.
      *  Precomputed because the read-time alternative is geometry on every drawer open. */
     fetchProfileM: v.optional(v.array(v.number())),
@@ -829,7 +829,7 @@ export default defineSchema({
     /**
      * `v.literal` rather than `literals(WIND_ROSE_SOURCES)` because the helper requires two or more
      * members and there is exactly one source. The field exists anyway, on the D3/D68 principle
-     * that a modelled number carries its provenance: if a second downscaling is ever added, every
+     * that a modeled number carries its provenance: if a second downscaling is ever added, every
      * already-stored rose stays attributable instead of becoming ambiguous.
      */
     windRoseSource: v.optional(v.literal(WIND_ROSE_SOURCES[0])),
@@ -878,14 +878,14 @@ export default defineSchema({
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in
     // `@skating/core`'s `lakeDepth.ts` — `operator` beats every automated source and the depth loader
     // refuses to overwrite it; the rest is `state_agency` → `lagos_us` → HydroLAKES (split on `Vol_src`,
-    // reported above modelled) → `globathy` → `osm_tag`.
+    // reported above modeled) → `globathy` → `osm_tag`.
     //
     // No index: depth is only ever read with a body already in hand (the decay cron has the row, so does
     // the drawer and the editor), and nothing selects *by* depth.
     //
     // Two consumers. The decay model reads shallowness as one bit (D69, via `isShallowBody` — depth OR a
     // `shallow_early_thaw` `bodyFeature`), and the clients show both numbers to skaters framed by
-    // their source: measured reads plainly, modelled reads as an estimate (D3 — a 90 m-DEM guess must not
+    // their source: measured reads plainly, modeled reads as an estimate (D3 — a 90 m-DEM guess must not
     // look like a depth-sounder transect). All optional ⇒ migration-free, and because `importCanonical`
     // patches an explicit field list, depth survives a canonical re-import untouched.
     meanDepthM: v.optional(v.number()),
@@ -918,7 +918,7 @@ export default defineSchema({
     elevationM: v.optional(v.number()),
     elevationSource: v.optional(literals(ELEVATION_SOURCES)),
     /**
-     * The source raster's ground sample distance in metres, and its 3DEP raster id (D104).
+     * The source raster's ground sample distance in meters, and its 3DEP raster id (D104).
      *
      * **Both exist so a coarse reading can be found again.** 3DEP's coverage improves — a lake
      * stamped from a 30 m raster today may be re-stampable from 1 m LiDAR next year — and without
@@ -1124,7 +1124,7 @@ export default defineSchema({
     // prevent. NOT sparse, same as the others: `eq()` only, never a range scan.
     .index('by_osm_id', ['osmId'])
     .index('by_nhd_id', ['nhdId'])
-    // The third catalogue id, same shape and same trap as `by_nhd_id`: NOT sparse, so `eq()` only.
+    // The third catalog id, same shape and same trap as `by_nhd_id`: NOT sparse, so `eq()` only.
     .index('by_three_dhp_id', ['threeDhpId'])
     // The curation list (A02). Until now there was NO index on `curatedBoost` and no query listing
     // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
@@ -1329,7 +1329,7 @@ export default defineSchema({
      */
     subAreaKey: v.optional(v.string()),
     /**
-     * The bay's own 16-sector fetch profile in metres, off its **own** clipped outline — the one
+     * The bay's own 16-sector fetch profile in meters, off its **own** clipped outline — the one
      * bay-specific wind signal we can compute for free, and genuinely local where the rose is not
      * (a bay never carries a `windRose`: it inherits the parent's, and the caption says so).
      * Recomputed by `rederiveSubArea` on every geometry write.
@@ -1510,16 +1510,16 @@ export default defineSchema({
    * So the cells are materialised. `backfillWeatherCells` walks the corpus once, in batches, and
    * writes one row per distinct (tier, cell); after that the cron reads a few thousand small rows.
    *
-   * `lat`/`lng` are the **snapped cell centre** — the values that go to Open-Meteo — so the cron never
+   * `lat`/`lng` are the **snapped cell center** — the values that go to Open-Meteo — so the cron never
    * needs a body row at all. `bodyCount` is diagnostic: it is how you notice that a re-import moved
    * lakes between cells, and how the D152 cardinality claims stay auditable rather than remembered.
    */
   weatherCells: defineTable({
     cellKey: v.string(),
     tier: literals(WEATHER_TIERS),
-    lat: v.number(), // snapped centre
-    lng: v.number(), // snapped centre
-    /** Band-centre elevation for a banded tier; absent on `filter` and on unbanded cells. */
+    lat: v.number(), // snapped center
+    lng: v.number(), // snapped center
+    /** Band-center elevation for a banded tier; absent on `filter` and on unbanded cells. */
     elevationM: v.optional(v.number()),
     bodyCount: v.number(),
     /**
@@ -1630,7 +1630,7 @@ export default defineSchema({
    * full-table read on the query that matters most. Four indexes — one per D164 threshold — let the
    * query walk from the requested length upward and read only digests that can match.
    *
-   * `lat`/`lng` are the cell's snapped centre, copied from the registry so the drive-time band and
+   * `lat`/`lng` are the cell's snapped center, copied from the registry so the drive-time band and
    * the viewport can be applied to cells before a single body is read.
    */
   weatherCellDigests: defineTable({
@@ -1894,7 +1894,7 @@ export default defineSchema({
    * would do so invisibly. Counting makes the decision visible and leaves it to a human.
    *
    * Deliberately generic in `provider` so the ORS drive-time path (which has its own per-endpoint
-   * quota, and whose 403-not-429 out-of-quota behaviour is already a known trap) can share it.
+   * quota, and whose 403-not-429 out-of-quota behavior is already a known trap) can share it.
    */
   externalApiCalls: defineTable({
     provider: v.string(), // 'open-meteo' | 'ors' | …
@@ -2155,12 +2155,12 @@ export default defineSchema({
     bufferMeters: v.optional(v.number()),
     bbox, // of the *footprint* (geometry grown by radius/buffer), for proximity prefiltering
     // The footprint intersected with the water-body polygon, stored at create (Phase 09b) so a big
-    // circle near shore can't imply danger across land / a neighbouring lake. Present ONLY when clipping
+    // circle near shore can't imply danger across land / a neighboring lake. Present ONLY when clipping
     // actually removed area; render, the stored bbox, AND the proximity/directional distance all read it
     // when set and fall back to the live footprint when absent — so it's migration-safe (existing rows
     // keep working, and are lazily recomputable) and the drawn halo can never drift from the measured one.
     clippedFootprint: v.optional(geoJson),
-    // The named sub-area this hazard's footprint centre falls in (A02 / D60) — same stamp, same
+    // The named sub-area this hazard's footprint center falls in (A02 / D60) — same stamp, same
     // re-stamp job, same flat shape as `reports` above, so the hazard reporter line composes through
     // the one `formatLocationLine` helper the feed card uses.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
@@ -2488,7 +2488,7 @@ export default defineSchema({
     promotedFromHazardId: v.optional(v.id('hazards')),
     active: v.boolean(), // demotion flips this off (reversible, never hard-deleted)
     createdAt: v.number(),
-    // The named bay the feature's footprint centre falls in (A09 / D175) — the hazard rule
+    // The named bay the feature's footprint center falls in (A09 / D175) — the hazard rule
     // (`hazardCenter` → smallest containing), stamped at write and re-stamped by `restampParent`.
     // "Known outlet", never "outlet" (D103) — the bay view lists what the lake already knows.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
@@ -2507,14 +2507,14 @@ export default defineSchema({
 
   /**
    * Corpus requests (A07b PR 2 / D106–D108, D179): a skater asking for a lake — to be activated,
-   * admitted from a catalogue, restored, un-ruled, or taken down — and a moderator's answer.
+   * admitted from a catalog, restored, un-ruled, or taken down — and a moderator's answer.
    *
    * **A request is a proposal; a moderator admits** (D107). One row per ask, never deleted: a
    * declined request stays as the record that four people asked for the same pond rather than one
    * unanswered tap. The requester reads the outcome on the lake's own drawer.
    *
    * `waterBodyId` is set for every kind but `admit`, where there is no body yet — `coord` is what the
-   * skater pointed at, and `candidate` is what the resolver found in the catalogue (the polygon a
+   * skater pointed at, and `candidate` is what the resolver found in the catalog (the polygon a
    * moderator approves, with its provenance). `activityId` is D108's stronger evidence: a recorded
    * skate over the water.
    */
@@ -2529,7 +2529,7 @@ export default defineSchema({
     /** The skater's sentence — why, or how to get in. Public to moderators only. */
     note: v.optional(v.string()),
     /**
-     * The resolver's answer for an `admit` (D106): the catalogue polygon and its provenance. Absent
+     * The resolver's answer for an `admit` (D106): the catalog polygon and its provenance. Absent
      * until the action has run; `resolveError` says why it could not, and `resolvedAt` says it did.
      */
     candidate: v.optional(
@@ -2552,7 +2552,7 @@ export default defineSchema({
     resolveError: v.optional(v.string()),
     /**
      * `candidate.externalId`, lifted to the row so it can be indexed: two people tapping the same
-     * pond file two `admit` rows with no `waterBodyId` to group them by, and the catalogue id is the
+     * pond file two `admit` rows with no `waterBodyId` to group them by, and the catalog id is the
      * one identity they share once resolved. Written with `candidate`, never on its own.
      */
     candidateExternalId: v.optional(v.string()),
@@ -2579,7 +2579,7 @@ export default defineSchema({
     // contiguous range a mutation can drain page by page, not a filter over a capped page of every
     // kind (Greptile, PR #63).
     .index('by_water_body', ['waterBodyId', 'kind', 'status'])
-    // Every `admit` that resolved to the same catalogue feature — the sibling set a decision closes.
+    // Every `admit` that resolved to the same catalog feature — the sibling set a decision closes.
     // `eq()` only: the field is optional and the index is not sparse.
     .index('by_candidate_external_id', ['candidateExternalId', 'status']),
 
@@ -2826,7 +2826,7 @@ export default defineSchema({
    *
    * `payload` stays `v.any()` deliberately. Its shape is typed at the boundary instead —
    * `lib/notificationQueue.ts` builds it and `lib/notificationResolve.ts` parses it, rendering
-   * anything it doesn't recognise as a degraded row rather than failing the page. Rows written before
+   * anything it doesn't recognize as a degraded row rather than failing the page. Rows written before
    * the payloads were typed carry older shapes, nobody has ever seen them (there was no reader), and
    * the season purge retires them; a validator here would have forced a migration for the privilege.
    *
@@ -2935,7 +2935,7 @@ export default defineSchema({
     parkingAreaId: v.optional(v.id('parkingAreas')),
 
     /**
-     * The walk from `parkingAreaId` to here, in metres — **routed, not flown** (D87).
+     * The walk from `parkingAreaId` to here, in meters — **routed, not flown** (D87).
      *
      * A routed `foot-hiking` leg where ORS could find a path, straight-line where it could not. The
      * difference is disclosed rather than smoothed over, because straight-line **under-reports** and
@@ -2947,10 +2947,10 @@ export default defineSchema({
     approachMeters: v.optional(v.number()),
 
     /**
-     * Metres of climb on that leg, one-way, parking → put-in (D87).
+     * Meters of climb on that leg, one-way, parking → put-in (D87).
      *
-     * The founder's half of the question, and the reason it is not a footnote: a kilometre with 120 m
-     * of climb in skate boots carrying a chair is a different trip from a flat kilometre. The return
+     * The founder's half of the question, and the reason it is not a footnote: a kilometer with 120 m
+     * of climb in skate boots carrying a chair is a different trip from a flat kilometer. The return
      * trip's climb is the descent and the skater can infer it.
      */
     approachAscentM: v.optional(v.number()),
@@ -2972,7 +2972,7 @@ export default defineSchema({
      * - **Routed**, because a straight-line fallback's line does not exist. The distance can hedge
      *   itself — *"at least 900 m"* — but a line drawn on a map cannot, and a crow-flies segment
      *   through the woods would look exactly like the routed ones beside it.
-     * - **Hike-in**, because below `SHORT_WALK_MAX_M` the path is a few metres between a car and a
+     * - **Hike-in**, because below `SHORT_WALK_MAX_M` the path is a few meters between a car and a
      *   bank: invisible at the zoom the drawer uses, invisible inside A06e's mask buffer, and paid for
      *   on every read of the row.
      *
@@ -3026,7 +3026,7 @@ export default defineSchema({
     .index('by_created_by', ['createdByUserId']),
 
   /**
-   * Where the car goes (A06d / D72) — modelled apart from `putIns`, and many-to-many with bodies.
+   * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.
    *
    * **Apart**, because `putIns` is load-bearing across drive-time bands, the notification fan-out, A03
    * deletion and the Phase 05 feed: generalizing it into an `accessPoints` table with a `kind`
@@ -3106,7 +3106,7 @@ export default defineSchema({
    * "Temporarily inaccessible" as a decaying community claim (A06d / D73).
    *
    * A free-text seasonal note is correct the day it is written and wrong by spring, and nothing in the
-   * system knows the difference — because nothing is ever asked. So a blocker is modelled like a
+   * system knows the difference — because nothing is ever asked. So a blocker is modeled like a
    * hazard: somebody asserts it, others confirm or deny, and absent either it expires on its own.
    *
    * **The decay is a plain TTL and must never become D56's.** A locked gate does not thaw; applying the
@@ -3349,7 +3349,7 @@ export default defineSchema({
    * but only attribution answers whether a handful of requesters account for all of it — the
    * empirical case for or against the deferred per-user `activeBountyPostLimit` lever (D57). It's
    * operator-only data of the same sensitivity as `moderationActions`, and the daily cron prunes rows
-   * past the retention window so it can't accumulate a permanent behavioural record.
+   * past the retention window so it can't accumulate a permanent behavioral record.
    */
   bountyGateEvents: defineTable({
     waterBodyId: v.id('waterBodies'),
@@ -3406,7 +3406,7 @@ export default defineSchema({
     date: v.string(), // 'YYYY-MM-DD' UTC; lexicographic order == chronological, so a range is an index range
     scalar: v.optional(v.number()),
     buckets: v.optional(v.array(v.number())),
-    meta: v.optional(v.any()), // small labelled record: a funnel, a composition, a per-type table
+    meta: v.optional(v.any()), // small labeled record: a funnel, a composition, a per-type table
     updatedAt: v.number(),
   })
     // Point lookup for the upsert + the per-metric date-range read every chart makes.

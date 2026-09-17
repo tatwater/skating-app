@@ -28,7 +28,7 @@ describe('gazetteerToDestinations', () => {
     ]);
   });
 
-  it('honours a quoted name with an embedded comma', () => {
+  it('honors a quoted name with an embedded comma', () => {
     const csv = ['water_body,messages,mentions,region', '"Pond, Little",3,4,NH'].join('\n');
     expect(gazetteerToDestinations(csv)).toEqual([
       { name: 'Pond, Little', state: 'NH', sources: ['community'] },

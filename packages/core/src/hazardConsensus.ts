@@ -9,7 +9,7 @@
  *
  * **The asymmetry, which is the whole design.** Pool the evidence that a hazard *is there*; never pool
  * the evidence that it is *gone*. Sharing "gone" votes would let two people clearing one pin retire a
- * neighbouring pin nobody looked at — pooling in the unsafe direction. So archival stays strictly
+ * neighboring pin nobody looked at — pooling in the unsafe direction. So archival stays strictly
  * per-row (`deriveHazardLifecycle`, untouched by this module), and what is pooled here is only ever
  * confirmation and freshness, which can make a hazard louder and never quieter.
  *

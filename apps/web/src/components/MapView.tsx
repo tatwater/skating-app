@@ -936,7 +936,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // ── Bathymetric contours for the open lake (A06b / D81 / D82).
   //
   // **The one layer in this file that is not added at map init**, and that is the decision rather
-  // than an optimisation: contours are a property of the detail view, so the source is added when a
+  // than an optimization: contours are a property of the detail view, so the source is added when a
   // lake's drawer opens and removed when it closes. The browse map's tile budget is exactly what it
   // was before this phase, and there is no toggle, no persisted preference and no settings row —
   // the visibility is derived from something the app already knows, which body is selected.
@@ -1067,7 +1067,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // every tile. `null` whenever the reveal is off, which is also how "no lake open" arrives.
   //
   // **Identity is cached against a key, and that is the fix for a visible bug rather than a
-  // micro-optimisation.** `features` is replaced every time the viewport subscription re-emits, and
+  // micro-optimization.** `features` is replaced every time the viewport subscription re-emits, and
   // a Convex subscription re-emits on its own schedule — so a plain memo over `features` handed back
   // a new object roughly once a second, tearing the raster down and re-adding it each time. On
   // screen that was a steady flicker of the road map showing through the photograph. Keying on what
@@ -1120,7 +1120,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (entries.length === 0) return null;
 
     // Identity is cached against the joined keys, and that is a fix for a visible bug rather than a
-    // micro-optimisation. `features` is replaced every time the viewport subscription re-emits, and
+    // micro-optimization. `features` is replaced every time the viewport subscription re-emits, and
     // a Convex subscription re-emits on its own schedule — so a plain memo handed back a new array
     // roughly once a second, tearing the reveal down and re-adding it each time. On screen that was
     // a steady flicker of the road map through the photograph.
@@ -1274,7 +1274,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   });
   // The hairline where the two meet. Derived from the *primary* footprint, because that is the frame
   // drawn on top and therefore the one whose edge is the visible join — clipped to the lake, since
-  // the same granule edge also runs a hundred kilometres across land nobody is looking at.
+  // the same granule edge also runs a hundred kilometers across land nobody is looking at.
   useFreezeUpSeam({
     mapRef,
     loaded,
@@ -1416,7 +1416,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // `representativePoint` lands *on* the shoreline (it is Turf's `pointOnFeature`), and here that
     // is fine: NAIP photographs land and water alike, and a quarter-quad scene is far larger than
     // the error. It is emphatically **not** fine for Workstream 4's Copernicus link, which opens a
-    // browser centred on the point — hence the stored `interiorPoint` there and this one here.
+    // browser centered on the point — hence the stored `interiorPoint` there and this one here.
     const centre = representativePoint(open.mask.polygon);
     const controller = new AbortController();
     fetch(aerialIdentifyUrl(centre), { signal: controller.signal })
@@ -1703,7 +1703,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             <>
               <span>
                 {/* The instruction stands until there are three corners, not just at zero: switching
-                    a placed circle to an area carries its centre over as a lone corner, and terra-draw
+                    a placed circle to an area carries its center over as a lone corner, and terra-draw
                     starts a fresh ring regardless — so "1 corners, drag any of them" would be both
                     ungrammatical and a lie about what the next click does. */}
                 {drawUnavailable

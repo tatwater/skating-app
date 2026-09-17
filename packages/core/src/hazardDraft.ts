@@ -9,7 +9,7 @@
  * stops being the footprint the proximity evaluator measures.
  *
  * Two states are deliberately representable and deliberately *not* submittable: a point draft with no
- * centre yet, and a line draft with fewer than two distinct vertices. A polyline is captured one tap
+ * center yet, and a line draft with fewer than two distinct vertices. A polyline is captured one tap
  * at a time, so "half a line" is a normal intermediate — it must be a value the UI can hold and
  * render, and `isDraftSubmittable` is the single gate that decides it can't be stored yet.
  * (`isValidHazardShape` remains the authority; this module never re-implements that judgement.)
@@ -53,7 +53,7 @@ export type HazardDraft =
   | { geometryKind: 'polygon'; vertices: LatLng[]; bufferMeters: number };
 
 /**
- * The size ladders, in metres. Coarse and non-linear on purpose: this is an eyeball estimate of
+ * The size ladders, in meters. Coarse and non-linear on purpose: this is an eyeball estimate of
  * something on a lake, not a survey (D3), and a short ladder is what makes the control a pair of
  * −/+ buttons rather than a slider — sliders are miserable with gloves on.
  */
@@ -66,7 +66,7 @@ export const HAZARD_RADIUS_STEPS_M = [5, 10, 25, 50, 100, 200, 400] as const;
  */
 export const HAZARD_BUFFER_STEPS_M = [2, 4, 8, 15, 25, 40, 60] as const;
 
-/** Move `current` to the neighbouring rung, clamping at the ends. Off-ladder values snap inward. */
+/** Move `current` to the neighboring rung, clamping at the ends. Off-ladder values snap inward. */
 export function stepSize(current: number, steps: readonly number[], direction: 1 | -1): number {
   if (steps.length === 0) return current;
   if (direction === 1) return steps.find((s) => s > current) ?? Math.max(...steps, current);
@@ -78,7 +78,7 @@ export function stepSize(current: number, steps: readonly number[], direction: 1
  *
  * A ridge, a heave and a working crack are lines in reality, so they start as lines — that is the
  * whole D51 thesis (draw the shape the thing actually is, which is also the shape a human can
- * produce accurately). Everything else starts as a circle awaiting a centre.
+ * produce accurately). Everything else starts as a circle awaiting a center.
  */
 export function draftForType(type: HazardType): HazardDraft {
   return HAZARD_DEFAULT_GEOMETRY_KIND[type] === 'line'
@@ -105,7 +105,7 @@ export function pointDraftForType(type: HazardType): HazardDraft {
  *
  * Every direction stays open regardless of the type's default, because all of these cases happen: you
  * see a ridge but only know the one spot you're standing at (line → point), you started marking open
- * water and realise it's a lead running across the bay (point → line), or the lead turns out to be a
+ * water and realize it's a lead running across the bay (point → line), or the lead turns out to be a
  * rotten patch you've now walked the edge of (line → polygon).
  *
  * Converting to or from a **circle** swaps in the type's default size, since a 400 m radius and a
@@ -166,7 +166,7 @@ export function retypeDraft(draft: HazardDraft, type: HazardType): HazardDraft {
 
 /**
  * A map tap. One entry point for both primitives, so the capture UI arms "drop mode" once and does
- * not branch: a circle takes the tap as its centre (and a second tap *moves* it), a line appends.
+ * not branch: a circle takes the tap as its center (and a second tap *moves* it), a line appends.
  */
 export function applyDraftMapClick(draft: HazardDraft, coord: LatLng): HazardDraft {
   return draft.geometryKind === 'point_radius'
@@ -175,7 +175,7 @@ export function applyDraftMapClick(draft: HazardDraft, coord: LatLng): HazardDra
 }
 
 /**
- * Undo the last placement. On a line this drops the last vertex; on a circle it clears the centre,
+ * Undo the last placement. On a line this drops the last vertex; on a circle it clears the center,
  * which is the same promise — one step back, never a full reset of the size you already tuned.
  */
 export function undoDraftPlacement(draft: HazardDraft): HazardDraft {

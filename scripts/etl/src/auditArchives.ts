@@ -7,13 +7,13 @@
  *
  * Every downstream layer — reconciliation, the corpus, depth, bathymetry, wind — keys off identifiers
  * that come out of these archives. A wrong id rule does not produce an error; it produces an **empty
- * join**, which reads as "these catalogues have nothing in common". This phase met that failure four
+ * join**, which reads as "these catalogs have nothing in common". This phase met that failure four
  * separate times in one session:
  *
  * - `normalizeNhdId` accepted only GUIDs, and **84.4%** of the corpus is numeric.
  * - GNIS ids joined raw matched **0 of 3,031** because NHD zero-pads and 3DHP does not.
  * - NHD's field names are lower-case in the geodatabase and upper-case from the REST service.
- * - `ogr2ogr -spat` read a degrees envelope as Albers metres and clipped an empty file, exit 0.
+ * - `ogr2ogr -spat` read a degrees envelope as Albers meters and clipped an empty file, exit 0.
  *
  * So this pass re-derives every rule **from the archives themselves** and asserts the result against
  * the census stored beside the rule. If the source changes shape or someone widens a rule without

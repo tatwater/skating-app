@@ -113,7 +113,7 @@ export function fitProjection(
 
   const midLat = (bounds.minLat + bounds.maxLat) / 2;
   const mPerLng = metresPerLngDegree(midLat);
-  // Ground metres, so the aspect is the lake's real one rather than the coordinate grid's.
+  // Ground meters, so the aspect is the lake's real one rather than the coordinate grid's.
   const spanX = Math.max((bounds.maxLng - bounds.minLng) * mPerLng, 1e-6);
   const spanY = Math.max((bounds.maxLat - bounds.minLat) * 111_320, 1e-6);
 

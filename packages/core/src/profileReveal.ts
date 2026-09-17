@@ -22,7 +22,7 @@
  *
  * **The D86 bypass is the dangerous one and is treated as such.** The quorum exists because one
  * person's opinion rendered as a consensus mark is that feature's worst failure, and it fails
- * silently: the mark looks identical whether it summarises 1 report or 40. A revealed mark is
+ * silently: the mark looks identical whether it summarizes 1 report or 40. A revealed mark is
  * therefore always accompanied by {@link REVEAL_MARKER} at the call site, so a mark that is only on
  * screen because of this flag can never be mistaken for one that earned its way there.
  *

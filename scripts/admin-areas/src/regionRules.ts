@@ -63,7 +63,7 @@ export const NEIGHBOUR_FIPS: ReadonlySet<string> = new Set(['09', '34', '42', '4
 export const BLEED_BOX = { minLng: -86, minLat: 36, maxLng: -60, maxLat: 52 } as const;
 
 /**
- * Does a feature's bbox overlap the bleed neighbourhood at all — the cheap keep/drop test.
+ * Does a feature's bbox overlap the bleed neighborhood at all — the cheap keep/drop test.
  *
  * **Cheap, and therefore wrong for anything that crosses the antimeridian.** Alaska's bbox runs from
  * -180 to 180 because the Aleutians straddle the date line, so this returns true for a state two time
@@ -97,7 +97,7 @@ export function needsClipping(box: BBox): boolean {
 }
 
 /**
- * Round every coordinate to four decimals — about eleven metres at this latitude.
+ * Round every coordinate to four decimals — about eleven meters at this latitude.
  *
  * TIGER emits seven, which is centimetres: a precision no consumer of this file can render and every
  * consumer has to download. Applied **after** simplification, so it only trims digits rather than

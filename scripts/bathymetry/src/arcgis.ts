@@ -40,9 +40,9 @@ export interface PageParams {
  * One page of features.
  *
  * `outSR=4326` is requested unconditionally, including for `f=geojson`. The GeoJSON spec mandates
- * WGS84 and most services honour that implicitly — but MassGIS and Maine publish in State Plane and
+ * WGS84 and most services honor that implicitly — but MassGIS and Maine publish in State Plane and
  * older ArcGIS builds have been known to emit GeoJSON with projected coordinates anyway. Asking
- * explicitly costs nothing and turns a silent 200 000-metre-offset bug into a non-event.
+ * explicitly costs nothing and turns a silent 200 000-meter-offset bug into a non-event.
  */
 export function pageUrl(layerUrl: string, params: PageParams): string {
   const search = new URLSearchParams({

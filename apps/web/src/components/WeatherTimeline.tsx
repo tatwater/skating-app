@@ -38,7 +38,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  * readout is an enhancement, never the only route to a value — the day labels, the freezing rule and
  * the panel's sentences all stand on their own.
  *
- * ## Colour says the same thing in every lane
+ * ## Color says the same thing in every lane
  *
  * Cyan is the cold side and orange the warm side, throughout — see {@link AUX_LANES}. The sun trace is
  * additionally yellow whenever the sun is up and neutral when it is not, so the lane reads as daylight
@@ -46,15 +46,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  */
 
 /**
- * The three auxiliary lanes, and how each one is coloured.
+ * The three auxiliary lanes, and how each one is colored.
  *
  * `side` picks which temperature pole the emphasis rail wears, because both emphases are conjunctions
  * with temperature: wind is highlighted when it was calm *and below* freezing, sun when it was bright
- * *and above*. `litColor` is the trace colour while the measure is actually happening — only the sun
+ * *and above*. `litColor` is the trace color while the measure is actually happening — only the sun
  * has one, and it is what turns that lane into a legible day/night rhythm rather than a row of bumps.
  *
  * A table rather than three near-identical JSX blocks: the lanes differ in exactly these two ways, and
- * spelling that out is what stops a later edit from giving wind a sun colour by copy-paste.
+ * spelling that out is what stops a later edit from giving wind a sun color by copy-paste.
  */
 const AUX_LANES: {
   key: 'wind' | 'sun' | 'snowDepth';
@@ -63,7 +63,7 @@ const AUX_LANES: {
   litColor?: (gradientId: string) => string;
 }[] = [
   { key: 'wind', side: 'cold' },
-  // ⚠ A gradient reference rather than a flat colour: the sun trace ramps pale → saturated with
+  // ⚠ A gradient reference rather than a flat color: the sun trace ramps pale → saturated with
   // irradiance, and irradiance is the y axis, so the paint is a function of height.
   { key: 'sun', side: 'warm', litColor: (id) => `url(#${id})` },
   { key: 'snowDepth', side: 'cold' },
@@ -377,7 +377,7 @@ export function WeatherTimeline({
               if (!lane) return null;
               return (
                 <g key={lane.box.top}>
-                  {/* Flat when the lane has no second measure — or when the lake is under a kilometre of
+                  {/* Flat when the lane has no second measure — or when the lake is under a kilometer of
                       fetch, where its own geometry cannot support the distinction. */}
                   {lane.areaSegments.length === 0 ? (
                     <path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
@@ -387,7 +387,7 @@ export function WeatherTimeline({
                       // channel, not a hue — D145 keeps wind out of the warm ramp, and the chart has no
                       // spare hue left in any case.
                       // ⚠ `trace`, not `fill` — and it is the same fix the native twin already
-                      // carries. `fill` is a hair off the surface by design (it is the colour of an
+                      // carries. `fill` is a hair off the surface by design (it is the color of an
                       // inert lane), so no opacity ramp on it produces visible steps; the density
                       // channel was simply invisible here. See `WIND_FETCH_OPACITY`.
                       <path

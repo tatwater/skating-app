@@ -43,7 +43,7 @@ describe('parseCslapRow', () => {
 
   it('takes the WGS84 attributes, not the Web Mercator geometry', () => {
     // The service returns `geometry: {x: -8406552, y: 5290042}` for this same lake. Reading that
-    // instead would put Lake Moraine several thousand kilometres into the Atlantic, and the point
+    // instead would put Lake Moraine several thousand kilometers into the Atlantic, and the point
     // is the join key — so this is the one column pair that must never be confused.
     const out = parseCslapRow(MORAINE);
     if (!out.ok) throw new Error('expected a lake');

@@ -3,7 +3,7 @@
  *
  * What these pin is that the card cannot be *mistaken for another card*, which is the failure it
  * exists to fix: the queue arrived holding pairs of unnamed OSM features, both ends of every pair,
- * rendered as blank boxes above a button reading `Merge →`. So: an unnamed body is labelled as one,
+ * rendered as blank boxes above a button reading `Merge →`. So: an unnamed body is labeled as one,
  * the fields that disagree are the ones on screen, and the expensive half of the payload is not
  * fetched until somebody asks for it.
  */

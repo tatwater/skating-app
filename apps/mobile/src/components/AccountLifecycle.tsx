@@ -131,7 +131,7 @@ function DeleteAccount() {
           your notes, your comments, your photo captions. You can browse, but not post.
         </Paragraph>
         <Paragraph color="$foregroundMuted" fontSize={13}>
-          Cancelling keeps the account and stops the deletion. It can't bring back your profile or
+          Canceling keeps the account and stops the deletion. It can't bring back your profile or
           the words already deleted — you'd set your profile up again from scratch.
         </Paragraph>
         <Button size="$3" onPress={() => void cancel({})}>
@@ -155,7 +155,7 @@ function DeleteAccount() {
         goes in {DELETION_GRACE_DAYS} days.
       </Paragraph>
       <Paragraph color="$foregroundMuted" fontSize={13}>
-        During those {DELETION_GRACE_DAYS} days you can still sign in, and cancelling keeps the
+        During those {DELETION_GRACE_DAYS} days you can still sign in, and canceling keeps the
         account — but your profile stays empty and you'd set it up again from scratch. Export your
         data first if you want a copy.
       </Paragraph>

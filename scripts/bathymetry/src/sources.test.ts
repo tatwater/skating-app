@@ -55,7 +55,7 @@ describe('the source registry', () => {
   });
 
   it('carries feet as the native unit everywhere, so there is no cross-state unit seam', () => {
-    // D83's premise was that VT publishes metres and NH/MA feet, which would put a unit change on a
+    // D83's premise was that VT publishes meters and NH/MA feet, which would put a unit change on a
     // state line. Every source we actually fetch is feet, so the rule stands and the seam does not.
     for (const source of SOURCES) expect(source.unit).toBe('ft');
   });

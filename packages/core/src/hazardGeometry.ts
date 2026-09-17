@@ -70,11 +70,11 @@ export const HAZARD_DEFAULT_GEOMETRY_KIND: Record<HazardType, HazardGeometryKind
 };
 
 /**
- * Starting radius for point+radius hazards, in metres — tunable in Phase 07 (D49), adjustable by the
+ * Starting radius for point+radius hazards, in meters — tunable in Phase 07 (D49), adjustable by the
  * skater at capture time with steppers.
  *
- * Sized by what the thing physically is (research §2): an auger hole is a few metres, a thaw-rotten
- * *zone* or a thin-ice area is tens of metres. Starting near the truth matters more on mobile than
+ * Sized by what the thing physically is (research §2): an auger hole is a few meters, a thaw-rotten
+ * *zone* or a thin-ice area is tens of meters. Starting near the truth matters more on mobile than
  * anywhere else, because on the ice the default is what most people will actually ship — the adjust
  * step is optional by design (two taps to a committable hazard).
  */
@@ -107,10 +107,10 @@ export const HAZARD_DEFAULT_RADIUS_M: Record<HazardType, number> = {
 };
 
 /**
- * Uncertainty half-width for linear hazards, in metres.
+ * Uncertainty half-width for linear hazards, in meters.
  *
  * A folded pressure ridge is loose plates 1–15 ft on *each* side with a deep puddle down the middle
- * (research §2) — several metres of genuine width plus GPS and eyeball error, so its band is wide. A
+ * (research §2) — several meters of genuine width plus GPS and eyeball error, so its band is wide. A
  * hairline tectonic crack is centimetres wide; its band is mostly just positional uncertainty. Drawing
  * both as the same zero-width polyline would be a lie in opposite directions.
  */
@@ -189,7 +189,7 @@ function footprintBufferMeters(shape: HazardShape): number {
  * either does nothing (the footprint is already wholly inside the body) or can't be done safely.
  *
  * Why clip (Phase 09b): a point+radius hazard dropped near shore buffers into a circle that spills
- * across land or into a neighbouring lake, drawing a danger halo where there is no water to be in
+ * across land or into a neighboring lake, drawing a danger halo where there is no water to be in
  * danger on. Intersecting the footprint with the body confines the halo to the ice.
  *
  * **Never clips to empty.** A hazard is GPS-anchored on its body, so a truly-empty intersection means
@@ -238,7 +238,7 @@ export function hazardBbox(
 }
 
 /**
- * Distance in metres from a coordinate to the hazard's footprint edge; **0 when inside it**.
+ * Distance in meters from a coordinate to the hazard's footprint edge; **0 when inside it**.
  *
  * When a `clippedFootprint` is supplied (the body-clipped polygon stored at create) it is measured
  * against directly — it *must* be, in lockstep with render and bbox, or "warned about" would drift from
@@ -311,7 +311,7 @@ export function polygonShape(vertices: readonly LatLng[], bufferMeters: number):
 }
 
 /**
- * Hard ceiling on a hazard's radius / uncertainty half-width, in metres.
+ * Hard ceiling on a hazard's radius / uncertainty half-width, in meters.
  *
  * A hazard is a *localized* danger within one water body — the largest default is a 60 m thaw-rotten
  * zone. 5 km is far past anything real (78 km² of footprint) while still bounding the absurd: without

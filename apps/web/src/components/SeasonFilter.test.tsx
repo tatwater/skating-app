@@ -4,7 +4,7 @@ import { SeasonEmptyState } from './SeasonFilter';
 
 /**
  * The empty state is the only announcement the seasonal reset gets (D63). On July 1 a skater's
- * favourite lake goes blank, which is correct and will read as a bug unless the copy names the season
+ * favorite lake goes blank, which is correct and will read as a bug unless the copy names the season
  * and points at the way back — so what it says is load-bearing, not decoration.
  */
 describe('SeasonEmptyState', () => {

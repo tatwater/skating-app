@@ -37,7 +37,7 @@
  * with an explicit and better-founded one.
  */
 
-/** A point in the lake's local metric frame: `along` the axis, `across` it, both in metres. */
+/** A point in the lake's local metric frame: `along` the axis, `across` it, both in meters. */
 export interface LocalPoint {
   along: number;
   across: number;
@@ -49,7 +49,7 @@ export interface Frame {
   originLat: number;
   /** Principal-axis bearing, radians, measured from east in the local metric plane. */
   angle: number;
-  /** Metres per degree of longitude at this latitude. */
+  /** Meters per degree of longitude at this latitude. */
   mPerLng: number;
 }
 
@@ -118,7 +118,7 @@ export function fromLocal(local: LocalPoint, frame: Frame): { lng: number; lat: 
  * 2026-08-01: *"I want to see what things look like if we really try it. But if it ends up making
  * things look silly, I'd love to be able to adjust it back."*).
  *
- * `1` is the isotropic behaviour this replaces. Higher values connect deeps more readily. It cannot
+ * `1` is the isotropic behavior this replaces. Higher values connect deeps more readily. It cannot
  * be pushed into fabricating a trough through measured shallow water — `surface` fits through its
  * data whatever this is set to — so the failure mode of an over-large value is a lake that looks
  * more channel-like than it is *in the gaps between soundings*, not one that contradicts a reading.
@@ -176,7 +176,7 @@ export function effectiveAnisotropy(
  *
  * Separated from the frame maths because the compression is applied to the solver's *input* and undone
  * on its *output grid* — the pipeline feeds `surface` compressed coordinates and then `grdedit -R`s the
- * solved grid back to real metres, rather than expanding the traced contours point by point. A
+ * solved grid back to real meters, rather than expanding the traced contours point by point. A
  * mismatch between the two would stretch every lake in the corpus by a factor nobody would spot in a
  * thumbnail, which is why the round trip is tested rather than eyeballed.
  */

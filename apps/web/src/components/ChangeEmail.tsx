@@ -34,7 +34,7 @@ export interface ChangeEmailViewProps {
   /** What became of the previous address, once `step === 'done'`. */
   old: OldEmailOutcome | null;
   onStart: () => void;
-  /** Back to the resting row — from a cancelled step or from the confirmation. */
+  /** Back to the resting row — from a canceled step or from the confirmation. */
   onCancel: () => void;
   onSendCode: (email: string) => void;
   onVerify: (code: string) => void;
@@ -44,7 +44,7 @@ export interface ChangeEmailViewProps {
 
 /**
  * The form. Its two text fields are local state, and they belong to *one run* of the sequence:
- * the wiring below remounts this component whenever the step returns to `idle`, so a cancelled
+ * the wiring below remounts this component whenever the step returns to `idle`, so a canceled
  * attempt's address — or a wrong code from the last try — never greets the next one.
  */
 export function ChangeEmailView(props: ChangeEmailViewProps) {

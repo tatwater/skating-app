@@ -20,13 +20,13 @@ import {
  * metric (or a small set) and renders it through the right chart for its shape, so the dashboard and
  * the tuning control-room stay declarative — a page names the metric it wants and gets a titled,
  * table-backed, empty-state-aware card. The metric's label + description + axis labels come from the
- * server `catalogue`, so a chart can never drift from the rollup that fills it.
+ * server `catalog`, so a chart can never drift from the rollup that fills it.
  */
 
 /** A day count for trend windows — the default the analytics queries use. */
 const DEFAULT_DAYS = 30;
 
-/** The metric catalogue, keyed for lookup. Cached by Convex, so calling this per card is cheap. */
+/** The metric catalog, keyed for lookup. Cached by Convex, so calling this per card is cheap. */
 export function useCatalogue() {
   const entries = useQuery(api.analytics.catalogue, {});
   if (!entries) return null;
@@ -51,7 +51,7 @@ function humanizeMetaKey(key: string): string {
 /**
  * A time series of one or more scalar metrics over a trailing window. Pass `status` on a line whose
  * value carries polarity (a rate); otherwise it takes the next categorical slot. Renders the shared
- * `catalogue` description under the chart, so the "what does this tune?" text lives in one place.
+ * `catalog` description under the chart, so the "what does this tune?" text lives in one place.
  */
 export function ScalarTrend({
   metrics,
@@ -128,8 +128,8 @@ function formatCell(value: number | string | null | undefined, percent: boolean)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The latest snapshot of a bucketed metric, drawn as a histogram with axis labels from the catalogue.
- * `markers` overlays labelled reference lines at named buckets — the trust-class cutoffs on the
+ * The latest snapshot of a bucketed metric, drawn as a histogram with axis labels from the catalog.
+ * `markers` overlays labeled reference lines at named buckets — the trust-class cutoffs on the
  * reputation distribution, the flag threshold on the contradiction distribution.
  */
 export function MetricHistogram({

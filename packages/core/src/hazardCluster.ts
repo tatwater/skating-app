@@ -133,7 +133,7 @@ export const DUPLICATE_MATCH_METERS = 25;
 
 /**
  * The chaining guard within a season: how far a cluster may extend **beyond its largest single
- * member**, in metres.
+ * member**, in meters.
  *
  * **Relative, not absolute, and that correction matters.** The obvious guard is a cap on the cluster's
  * total span — but a `pressure_ridge` is routinely 600 m of buffered LineString, so any absolute cap
@@ -151,7 +151,7 @@ export const DUPLICATE_MAX_CLUSTER_SPREAD_M = 150;
  * Across seasons, how close two footprints must come to be the same feature (D77).
  *
  * **Loose for recurrence**, and in that direction on purpose: a ridge re-forming within 80 m *is* the
- * same feature, because the ice does not reassemble to the metre.
+ * same feature, because the ice does not reassemble to the meter.
  */
 export const RECURRENCE_MATCH_METERS = 80;
 
@@ -365,7 +365,7 @@ function unionBBox(a: BBox, b: BBox): BBox {
   };
 }
 
-/** A box's north–south and east–west extents in metres. */
+/** A box's north–south and east–west extents in meters. */
 export interface BBoxExtent {
   northSouth: number;
   eastWest: number;

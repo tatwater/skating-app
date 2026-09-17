@@ -1,5 +1,5 @@
 /**
- * Corpus requests (A07b PR 2) — **the skater says "this is skateable", and the catalogue answers.**
+ * Corpus requests (A07b PR 2) — **the skater says "this is skateable", and the catalog answers.**
  *
  * D91 put a floor under the corpus and deleted 102,000 bodies on one sentence: *"if I get user
  * feedback that someone's pond isn't there, then we can relax the rule and re-run the import."* That
@@ -10,9 +10,9 @@
  * can ask for (`standing.ts`):
  *
  * - **`activate`** — the body is in the corpus and dormant. *"Put it back on the active map."* The
- *   common case once the corpus is tiered, and the cheapest: no geometry, no catalogue, one decision.
+ *   common case once the corpus is tiered, and the cheapest: no geometry, no catalog, one decision.
  * - **`admit`** — nothing in the corpus at this coordinate. *"This is water; we skate it."* The
- *   resolver asks the catalogue for the polygon (D106) and a moderator admits it with its real
+ *   resolver asks the catalog for the polygon (D106) and a moderator admits it with its real
  *   geometry, `includedByRequest` (D107). The user never draws.
  * - **`restore`** — the body was removed (D48). *"That was wrong, or things changed."*
  * - **`contest_access`** — a moderator ruled no public access. *"There is a way in, and here it is."*
@@ -23,7 +23,7 @@
  *
  * The floor deleted 102,000 bodies and most of them are farm dugouts, retention basins and widenings
  * in a brook. One tap is not evidence against that; it is a request to look. The review is cheap —
- * for `admit` the moderator is approving *geometry that already exists in a catalogue*, not
+ * for `admit` the moderator is approving *geometry that already exists in a catalog*, not
  * adjudicating a drawing — and a declined request stays as a record, so the same pond asked for by
  * four people reads as four people rather than one unanswered tap.
  *
@@ -144,7 +144,7 @@ export function requestPrompt(kind: RequestKind): RequestPrompt {
       return {
         title: 'This is skateable',
         description:
-          'We don’t have water here. Say what it is and how you reach it; a moderator will look it up in the catalogue and add it with its real outline.',
+          'We don’t have water here. Say what it is and how you reach it; a moderator will look it up in the catalog and add it with its real outline.',
         placeholder: 'A pond behind the school; the trail from the parking lot reaches the shore.',
       };
     case 'restore':
@@ -239,14 +239,14 @@ export function catalogueQueryUrl(coord: LatLng): string {
   return `${CATALOGUE_POINT_SERVICE}?${params.toString()}`;
 }
 
-/** What the resolver attaches to an `admit` request when the catalogue knows the water. */
+/** What the resolver attaches to an `admit` request when the catalog knows the water. */
 export interface CatalogueCandidate {
   source: '3dhp';
-  /** `id3dhp` — the catalogue's own id, and the row's `externalId` / `threeDhpId` if admitted. */
+  /** `id3dhp` — the catalog's own id, and the row's `externalId` / `threeDhpId` if admitted. */
   externalId: string;
   gnisId?: string;
   name: string;
-  /** Our class, from 3DHP's `featuretype`; absent when the catalogue calls it a river or a canal. */
+  /** Our class, from 3DHP's `featuretype`; absent when the catalog calls it a river or a canal. */
   cls?: WaterBodyClass;
   featureType: number;
   polygon: Polygon | MultiPolygon;

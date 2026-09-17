@@ -317,7 +317,7 @@ describe('transformFeatures (batch resilience)', () => {
     // **Reeds Marsh — 103 acres, named, and this fixture used to drop it.** `natural=wetland` with
     // no `wetland=*` subtag was a skip under the old OSM-only classifier, which accepted `marsh` and
     // nothing else. That is the D96 asymmetry in miniature: NHD publishes the same ground as
-    // SwampMarsh and we accept it there, so refusing it here made *which catalogue drew the polygon*
+    // SwampMarsh and we accept it there, so refusing it here made *which catalog drew the polygon*
     // decide whether the lake existed. Switching to `classifyWaterBody` (D109) closes it.
     expect(byId.get('way/43152092')).toMatchObject({ type: 'wetland', name: 'Reeds Marsh' });
 
@@ -427,7 +427,7 @@ describe('transformFeatures (batch resilience)', () => {
 describe('surface-area floor', () => {
   /** A square pond of roughly `acres`, at Vermont's latitude. */
   function pondOfAcres(acres: number, props: Record<string, unknown> = {}): OsmWaterFeature {
-    const side = Math.sqrt(acres * 4046.8564224); // metres
+    const side = Math.sqrt(acres * 4046.8564224); // meters
     const dLat = side / 111_320;
     const dLng = side / (111_320 * Math.cos((44 * Math.PI) / 180));
     return waterFeature(props, [
@@ -514,7 +514,7 @@ describe('surface-area floor', () => {
  * make the bottom rung safe to trust at all.
  */
 describe('parseOsmDepthMeters', () => {
-  it('reads a bare number as metres (the OSM default unit)', () => {
+  it('reads a bare number as meters (the OSM default unit)', () => {
     expect(parseOsmDepthMeters('4')).toBe(4);
     expect(parseOsmDepthMeters('3.5')).toBe(3.5);
     expect(parseOsmDepthMeters(6)).toBe(6);

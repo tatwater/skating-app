@@ -1,5 +1,5 @@
 /**
- * **The master list** — three catalogues in, one record per lake out (A07a, D109/D110).
+ * **The master list** — three catalogs in, one record per lake out (A07a, D109/D110).
  *
  *   pnpm --filter @skating/etl merge            # read-only; writes .scratch/merge/
  *   pnpm --filter @skating/etl merge --refresh  # re-extract the sources first
@@ -33,7 +33,7 @@
  * `Permanent_Identifier` (so it cannot hold the MIDAS bathymetry linkage or collapse the OSM
  * duplicate pairs) and publishes **no wetland class at all**, against NHD's 44,295 SwampMarsh
  * features above an acre. A 3DHP-primary merge would fail to match every wetland in the region.
- * Which catalogue draws the better *outline* is a separate question, and `geometrySource` answers it
+ * Which catalog draws the better *outline* is a separate question, and `geometrySource` answers it
  * as a field.
  *
  * ## What it does not do
@@ -287,7 +287,7 @@ function loadGnis(): Map<string, GnisPoint[]> {
     const text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
     const lines = text.split('\n');
     const header = (lines[0] ?? '').split('|');
-    // **D105's other half.** The lane was specified to settle a GNIS id where the catalogues
+    // **D105's other half.** The lane was specified to settle a GNIS id where the catalogs
     // disagree, and read only the name — so the gazetteer could not resolve the one identifier it is
     // the authority for. The id is optional: a missing id costs a bridge, a missing coordinate costs
     // the whole lane, and only the latter is worth refusing to run over.
@@ -309,7 +309,7 @@ function loadGnis(): Map<string, GnisPoint[]> {
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || isNullIsland(lat, lng)) continue;
       const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
       const bucket = grid.get(cell);
-      // Normalised the same way every other lane's is, because NHD zero-pads this id to a string
+      // Normalized the same way every other lane's is, because NHD zero-pads this id to a string
       // and 3DHP stores it as a bare int — joining them raw over Maine matched 0 of 3,031.
       const rawId = col.id === undefined ? undefined : cells[col.id];
       const featureId = normalizeGnisId(rawId);
@@ -458,7 +458,7 @@ async function main(): Promise<void> {
 
   const logger = new RunLogger({
     kind: 'corpus_merge',
-    label: 'A07a master list — three catalogues, one filter',
+    label: 'A07a master list — three catalogs, one filter',
     campaignId,
     target: resolveDeployment(),
     stages: sourceStages,
@@ -466,7 +466,7 @@ async function main(): Promise<void> {
     notes: [
       'Read-only against Convex: this pass writes only .scratch/merge/.',
       `sources: OSM ${OSM_STATES.join('/')} · NHD ${NHD_SOURCES.length} states · 3DHP clip · GNIS`,
-      // Named on the row, not just in the Path: a corpus built without one of its four catalogues is
+      // Named on the row, not just in the Path: a corpus built without one of its four catalogs is
       // a different corpus, and it is worth seeing before scrolling.
       ...(absent.length > 0
         ? [`⚠ ${absent.length} source archive(s) had no readable manifest — see the path`]
@@ -476,7 +476,7 @@ async function main(): Promise<void> {
   if (runLogEnabled) logger.start();
   activeLogger = logger;
 
-  // Every lane keeps its own ledger, so "where did the rows go" is answerable per catalogue rather
+  // Every lane keeps its own ledger, so "where did the rows go" is answerable per catalog rather
   // than as one number that could mean anything. See `LaneLedger`.
   const lanes = {
     osm: new LaneLedger(),
@@ -644,7 +644,7 @@ async function main(): Promise<void> {
   }
   lines.push(
     `  of which by ELEVATION ${n(stats.tidalByElevation)} — bodies at or under ` +
-      `${TIDAL_MAX_ELEVATION_M} m that a catalogue called a bay or tagged salt, and that no federal`,
+      `${TIDAL_MAX_ELEVATION_M} m that a catalog called a bay or tagged salt, and that no federal`,
   );
   lines.push(
     '    estuary polygon covers. Zero here means the 3DEP archive is missing, not that the sea is.',
@@ -713,7 +713,7 @@ async function main(): Promise<void> {
     `  still water    ${n(stats.stillWaterRescued)}  kept bodies with a member a deadwater / flow / logan name`,
   );
   lines.push(
-    "    rescued from a catalogue's flowing refusal. Zero means the rung is dead and the region's",
+    "    rescued from a catalog's flowing refusal. Zero means the rung is dead and the region's",
   );
   lines.push(
     '    deadwaters are gone again. ⚠ NOT the number of bodies it ADDED — where another member',
@@ -729,7 +729,7 @@ async function main(): Promise<void> {
     '    resolved, not queued (the 123-body rescue). Watch this number move between runs.',
   );
   lines.push(
-    `  class dissent ${n(stats.classDissent)}  one catalogue refused this outright, another classed it;`,
+    `  class dissent ${n(stats.classDissent)}  one catalog refused this outright, another classed it;`,
   );
   lines.push(
     '    a real class beats a drop (the 123-body rescue), so these resolve SILENTLY today:',
@@ -738,10 +738,10 @@ async function main(): Promise<void> {
   // **Split by the refusing code, because a total cannot be triaged** (A07a-2). The class-conflict
   // queue was settled exactly this way — joining its 652 rows to the NHD FTYPE behind each split
   // them 520 settled / 132 real. A code that accounts for hundreds of rows is a systematic property
-  // of that catalogue; one that accounts for three is a body worth looking at.
+  // of that catalog; one that accounts for three is a body worth looking at.
   lines.push(
     `    settled ${n(stats.classDissentSettled)} (flowing / engineered — our own rules overruling a ` +
-      `catalogue) · UNSETTLED ${n(stats.classDissentUnsettled)} → queued as class-dissent`,
+      `catalog) · UNSETTLED ${n(stats.classDissentUnsettled)} → queued as class-dissent`,
   );
   lines.push('    by refusing code → class kept:');
   for (const [token, count] of [...stats.classDissentByToken].sort((a, b) => b[1] - a[1])) {
@@ -844,7 +844,7 @@ async function main(): Promise<void> {
 
   // **The candidate pool for D92's per-lake override**, which until now had no producer at all: the
   // bake-off wrote per-lake scores to a scratch file nothing read, and `GEOMETRY_OVERRIDES` was one
-  // hand-typed line. A body whose chosen outline disagrees materially with another catalogue's is
+  // hand-typed line. A body whose chosen outline disagrees materially with another catalog's is
   // exactly the Beau Lake shape — OSM merged it at 2,457 acres against NHD's 1,876.6 — and the
   // polygon confidence score already knows, it just summons nobody (D110: no human can adjudicate
   // "these outlines differ by 20%" by eye, but they CAN check a lake against its published acreage).
@@ -938,7 +938,7 @@ async function main(): Promise<void> {
       GEOGRAPHIC[d.reason] ??
       (floorReasons.has(d.reason)
         ? `below the post-merge admission floor — ${d.reason}`
-        : `no catalogue classed it as still water we carry — ${d.reason}`);
+        : `no catalog classed it as still water we carry — ${d.reason}`);
     omissionCounts.set(reason, (omissionCounts.get(reason) ?? 0) + 1);
   }
   const omissions = [...omissionCounts].map(([reason, count]) => ({ reason, count }));

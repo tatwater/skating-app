@@ -33,12 +33,12 @@ export interface NotchPosition {
 /**
  * Spread `count` notches evenly across a track.
  *
- * ⚠ **Inset by half a step rather than running edge to edge.** A notch centred on x=0 is half
+ * ⚠ **Inset by half a step rather than running edge to edge.** A notch centered on x=0 is half
  * outside the box, and — worse for a drag — the first and last notches would each have half the
  * catchment of every other one, so the ends would feel harder to hit than the middle. Half-step
  * insets give every notch the same width of track.
  *
- * A single notch sits in the centre, because there is no range for it to be at one end of.
+ * A single notch sits in the center, because there is no range for it to be at one end of.
  */
 export function notchPositions(count: number): NotchPosition[] {
   if (count <= 0) return [];

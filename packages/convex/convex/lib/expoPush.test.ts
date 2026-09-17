@@ -15,7 +15,7 @@ afterEach(() => {
 const msg = (i: number) => ({ to: `ExponentPushToken[${i}]`, title: `t${i}` });
 
 describe('expoPush', () => {
-  test('recognises both token spellings and nothing else', () => {
+  test('recognizes both token spellings and nothing else', () => {
     expect(isExpoPushToken('ExponentPushToken[abc]')).toBe(true);
     expect(isExpoPushToken('ExpoPushToken[abc]')).toBe(true);
     expect(isExpoPushToken('ExponentPushToken[]')).toBe(false);

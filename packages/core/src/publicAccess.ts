@@ -51,7 +51,7 @@ export interface PublicAccess {
    * When the ruling was made.
    *
    * Load-bearing rather than decoration: it is what makes an `open` verdict *dated*, so a later report
-   * can be recognised as disputing a specific review rather than repeating a settled one.
+   * can be recognized as disputing a specific review rather than repeating a settled one.
    */
   decidedAt: number;
   decidedByUserId: string;
@@ -78,7 +78,7 @@ export const NO_PUBLIC_ACCESS_OPACITY_SCALE = 0.5;
  * dormancy, a removal — anything `standingOf` says is not `active`, A07b), or *this viewer* has
  * reported it and is seeing their own claim reflected back.
  *
- * Both signals ride the GeoJSON `properties` bag rather than one being feature-state. Favourites use
+ * Both signals ride the GeoJSON `properties` bag rather than one being feature-state. Favorites use
  * feature-state on web, and copying that here would have forced mobile into a parallel filtered-layer
  * implementation, because the React Native binding has no ergonomic `setFeatureState`. Two mechanisms
  * for one visual effect is how the two platforms drift.

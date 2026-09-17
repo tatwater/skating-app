@@ -174,7 +174,7 @@ describe('recordClientSignal', () => {
 });
 
 describe('role gates', () => {
-  test('the charts are admin-only — a moderator cannot read the series, latest, or catalogue', async () => {
+  test('the charts are admin-only — a moderator cannot read the series, latest, or catalog', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     await expect(mod.as.query(api.analytics.series, { metrics: ['signups'] })).rejects.toThrow();
@@ -257,7 +257,7 @@ describe('analytics.latest', () => {
   });
 });
 
-describe('analytics.catalogue', () => {
+describe('analytics.catalog', () => {
   test('serves each metric’s axis labels from the same edges the rollup buckets against', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');

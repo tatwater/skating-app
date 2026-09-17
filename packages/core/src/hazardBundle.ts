@@ -10,7 +10,7 @@
  * The difference matters because the candidate list is a live query. If we stored the selection
  * positively, a hazard that finished syncing after the form opened — or one flagged from the ice
  * moments earlier — would arrive unchecked and be silently dropped from the report. Storing the
- * opt-outs means a late-arriving candidate is included by default, which is the behaviour D55
+ * opt-outs means a late-arriving candidate is included by default, which is the behavior D55
  * actually promises. Nothing is ever attached invisibly: the prompt itemises every candidate.
  */
 

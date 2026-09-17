@@ -47,7 +47,7 @@ describe('ScalarTrend', () => {
 
 describe('MetricComposition', () => {
   it('renders the humanized meta keys with their counts', () => {
-    // The catalogue call and the latest call share the same mock; return by shape.
+    // The catalog call and the latest call share the same mock; return by shape.
     useQuery.mockImplementation((_fn: unknown, args: { metrics?: string[] }) => {
       if (!args?.metrics)
         return [

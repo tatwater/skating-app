@@ -31,7 +31,7 @@ import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
  *    skater to guess what it just did.
  *
  * ⚠ Rule 1 means the collapsed button has *two* meanings: with imagery off it turns imagery on, and
- * with imagery on it means "bring the timeline back". It is labelled for whichever one it is, because
+ * with imagery on it means "bring the timeline back". It is labeled for whichever one it is, because
  * a button reading "Show imagery" over imagery already on the map is a lie about the screen.
  */
 export function ImageryDock({

@@ -2,7 +2,7 @@
  * The past-weather panel as a layered SVG, for Figma.
  *
  * **A port, not a redraw** — the same principle as `exports/mascoma/build_svg.py`. Every coordinate
- * comes from `weatherTimelineModel` in `@skating/core` and every colour from `@skating/design`'s
+ * comes from `weatherTimelineModel` in `@skating/core` and every color from `@skating/design`'s
  * validated scale, exactly as the two apps do. Nothing here draws a chart; it walks the same model
  * and writes SVG elements instead of React ones. If the app's geometry changes, re-run this and the
  * export changes with it.
@@ -143,7 +143,7 @@ function headlineFor(days: TimelineDayInput[]): string[] {
   const summaries = summarizeWeatherDays(hours);
   // The archive is February 2025, so every day in it finished happening long ago. Passing a "today"
   // past the end of the data is the honest way to say that — `isCompleteDay` asks about the date now,
-  // not the hour count, and a mock must not render its last column greyed out as if still in progress.
+  // not the hour count, and a mock must not render its last column grayed out as if still in progress.
   const todayLocalDayMs = Math.max(...summaries.map((d) => d.dayMs)) + DAY_MS;
   return buildPastWeatherPanel(summaries as unknown as PanelDay[], { todayLocalDayMs }).headline;
 }
@@ -248,7 +248,7 @@ function build(mode: 'dark' | 'light', all: TimelineDayInput[], start: number, s
         `<stop offset="0" stop-color="${p.sunRamp.lit}"/><stop offset="1" stop-color="${p.sunRamp.dim}"/></linearGradient>`,
     );
   }
-  // Figma honours a clipPath as a frame clip, so the part-drawn column arrives cropped rather
+  // Figma honors a clipPath as a frame clip, so the part-drawn column arrives cropped rather
   // than hanging outside the artboard as a stray path.
   defs.push(
     `<clipPath id="plot-${mode}"><rect x="0" y="0" width="${PLOT_WIDTH}" height="${DEFAULT_TIMELINE_HEIGHT}"/></clipPath>`,

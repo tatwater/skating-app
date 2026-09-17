@@ -62,7 +62,7 @@ export interface IndexedFrame {
    * Granule-wide cloud fraction, or `null` when the source did not report one — never a guess.
    *
    * ⚠ **Optical only, and `null` means two different things depending on the mission.** On a
-   * `visual` frame it means the catalogue did not report a figure. On a **radar** frame it means the
+   * `visual` frame it means the catalog did not report a figure. On a **radar** frame it means the
    * question does not apply — radar sees straight through cloud, so `null` there is not a gap in the
    * metadata and must not be shown as a caveat or treated as an unknown worth flagging.
    */
@@ -219,7 +219,7 @@ export interface FrameBodyStats {
    * ⚠ **Comparable only within one platform and one orbit direction, and this is measured rather than
    * assumed.** Across all 503 radar passes of winter 2025-26, calibration leaves an S1A−S1C offset of
    * −0.52 dB VH ascending and +1.53 dB VH descending. Pooled across directions it reads −0.03 dB,
-   * which is two opposite biases cancelling — **so a consumer that drops those filters sees agreement
+   * which is two opposite biases canceling — **so a consumer that drops those filters sees agreement
    * that is not there**, at a scale comparable to the signal.
    */
   vvDb?: number | null;
@@ -257,7 +257,7 @@ export interface FrameBodyStats {
   interiorClassHist?: number[] | null;
 
   /**
-   * Normalised Difference Snow Index over the eroded body — optical only.
+   * Normalized Difference Snow Index over the eroded body — optical only.
    *
    * The independent second opinion where SCL is weakest: snow and cloud are both bright in the
    * visible and only snow is dark in the shortwave infrared. ⚠ **It will not find black ice** — it is
@@ -326,7 +326,7 @@ export interface FrameBodyStats {
   incidenceDeg?: number | null;
   /** The local terrain height the product geocoded this body at — never a scene average. */
   geocodeReferenceHeightM?: number | null;
-  /** The whole-pixel correction applied, in GROUND metres, so a frame can be audited or undone. */
+  /** The whole-pixel correction applied, in GROUND meters, so a frame can be audited or undone. */
   geocodeShiftM?: { east: number; north: number } | null;
 }
 
@@ -374,7 +374,7 @@ export interface FrameStats {
  * ESA's terms ask for *"Copernicus Sentinel data [year]"*. A winter spans two calendar years and the
  * archive is keyed by season, so both are named rather than picking one and being wrong for half the
  * frames. An unparseable season degrades to the bare required form: a wrong year is worse than none,
- * and neither is a reason to omit a credit a licence compels.
+ * and neither is a reason to omit a credit a license compels.
  *
  * ⚠ Unlike NAIP's — public-domain federal work, and courtesy only — **this one is required.**
  */
@@ -510,7 +510,7 @@ export function bodyStatsIn(
   if (!index) {
     index = new Map();
     // First wins, matching `find` — a manifest should never carry a body twice, and if one does the
-    // behaviour must not depend on whether this lookup happened to be memoised.
+    // behavior must not depend on whether this lookup happened to be memoised.
     for (const body of frame.bodies) {
       if (!index.has(body.waterBodyId)) index.set(body.waterBodyId, body);
     }

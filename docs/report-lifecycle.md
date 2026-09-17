@@ -85,7 +85,7 @@ stage. The strip is descriptive only; it never asserts the ice is safe (D3). See
 
 ## Age framing #3 — the season boundary (A05a/D63)
 
-The one place a report *does* leave a default view. **A season runs July 1 → June 30**, labelled
+The one place a report *does* leave a default view. **A season runs July 1 → June 30**, labeled
 by the two calendar years it spans (`'24/'25`), and the lake's report list and the global feed
 both show **this** season only.
 
@@ -96,7 +96,7 @@ the one that looks like an exception:
   did — someone may hold a link, a bookmark or an old notification, and a 404 on a URL that used
   to work is a worse lie than an old report clearly marked old. It renders with a *"from the
   '24/'25 season"* line so it can't be mistaken for Tuesday's.
-- **It's reversible and labelled**, by a per-lake season selector. Browsing a past season is a
+- **It's reversible and labeled**, by a per-lake season selector. Browsing a past season is a
   curiosity ("what was this bay like in December?"), not a safety surface, so the control lives on
   one lake and nowhere near the map's default state — and it governs the *whole* lake view (list,
   hazard pins, aggregate tracks), because two seasons on one screen is exactly the confusion this
@@ -117,7 +117,7 @@ Three reads are deliberately **exempt**, each for its own reason:
   because the calendar did, and access is the corpus's single most-discussed concern.
 - **The global feed's fallback.** Scoping the feed strictly would blank the home screen on July 1
   and leave it blank until first ice — five months, not a day — so when this season has nothing
-  the feed serves the newest season that does, **under a divider that says so**. Labelled is what
+  the feed serves the newest season that does, **under a divider that says so**. Labeled is what
   keeps it honest; silently mixing two winters is the thing D63 forbids.
 
 ---

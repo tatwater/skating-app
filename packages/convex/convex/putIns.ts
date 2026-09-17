@@ -247,7 +247,7 @@ export const listForBody = query({
  * three phases while the admin card linked to the public map, which never grew a control either.
  *
  * `name` is optional and new with that UI. An `osm` launch arrives with whatever OSM called it and a
- * `derived` one is labelled by compass bearing (`resolvePutInName`), so a hand-placed launch was the
+ * `derived` one is labeled by compass bearing (`resolvePutInName`), so a hand-placed launch was the
  * one rung that could never be named — despite being the rung where somebody actually knows.
  */
 export const setOfficial = mutation({

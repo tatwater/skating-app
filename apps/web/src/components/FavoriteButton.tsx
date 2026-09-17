@@ -10,7 +10,7 @@ import { Button } from './ui/button';
  * Favorite toggle (Phase 04, decision #1) — the place-based curation heart. Favoriting a lake makes its
  * reports notify by default, boost + badge in the feed, and highlight on the map. Optimistic-feeling
  * via the reactive `isFavorite` query; signed-out users see a disabled prompt (the mutation requires
- * auth). Compact `icon` variant for the map/drawer header; a labelled variant for a favorites list.
+ * auth). Compact `icon` variant for the map/drawer header; a labeled variant for a favorites list.
  *
  * Filled star = favorited, outline star = not — the same solid/regular pair mobile's `FavoriteButton`
  * uses, so a skater who moves between the two surfaces sees one control, not two.

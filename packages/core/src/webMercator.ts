@@ -6,7 +6,7 @@
  * The imagery reveal clips a photograph to a lake's shape by drawing that shape onto the photograph
  * as an alpha mask. The photograph comes back from `USGSNAIPPlus` in **EPSG:3857**, so the shape has
  * to be projected the same way before it is drawn — and the failure of getting that wrong is subtle
- * rather than loud: a linear lat/lng mapping puts the mask a few tens of metres off, north-south
+ * rather than loud: a linear lat/lng mapping puts the mask a few tens of meters off, north-south
  * only, growing with latitude. At 44°N over a 2 km lake that is roughly a **20 m** offset, which
  * reads as "the imagery is slightly misaligned with the shoreline" and would be blamed on the source.
  *
@@ -16,7 +16,7 @@
 
 import type { LatLng } from './geometry';
 
-/** Web Mercator's equatorial half-circumference, in metres — the edge of the projected world. */
+/** Web Mercator's equatorial half-circumference, in meters — the edge of the projected world. */
 export const MERCATOR_WORLD_M = 20037508.342789244;
 
 /**
@@ -26,7 +26,7 @@ export const MERCATOR_WORLD_M = 20037508.342789244;
  */
 export const MERCATOR_MAX_LAT = 85.051128779806604;
 
-/** A rectangle in projected metres. Distinct from `BBox`, which is degrees, on purpose. */
+/** A rectangle in projected meters. Distinct from `BBox`, which is degrees, on purpose. */
 export interface MercatorBox {
   minX: number;
   minY: number;
@@ -34,12 +34,12 @@ export interface MercatorBox {
   maxY: number;
 }
 
-/** Longitude → projected x, in metres. Linear, which is the half nobody gets wrong. */
+/** Longitude → projected x, in meters. Linear, which is the half nobody gets wrong. */
 export function lngToMercatorX(lng: number): number {
   return (lng / 180) * MERCATOR_WORLD_M;
 }
 
-/** Latitude → projected y, in metres. The half that matters. */
+/** Latitude → projected y, in meters. The half that matters. */
 export function latToMercatorY(lat: number): number {
   const clamped = Math.max(-MERCATOR_MAX_LAT, Math.min(MERCATOR_MAX_LAT, lat));
   const radians = (clamped * Math.PI) / 180;
@@ -57,7 +57,7 @@ export function mercatorYToLat(y: number): number {
   return (radians * 180) / Math.PI;
 }
 
-/** A degrees box → a projected-metres box. */
+/** A degrees box → a projected-meters box. */
 export function toMercatorBox(box: {
   minLat: number;
   minLng: number;
@@ -94,10 +94,10 @@ export function projectToPixel(
 }
 
 /**
- * Metres on the ground per pixel, at the box's centre latitude.
+ * Meters on the ground per pixel, at the box's center latitude.
  *
- * Used to convert a feather distance in metres into a blur radius in pixels. Projected metres are
- * *not* ground metres — Mercator stretches by `1/cos(latitude)`, ~1.40× at 44°N — so a feather
+ * Used to convert a feather distance in meters into a blur radius in pixels. Projected meters are
+ * *not* ground meters — Mercator stretches by `1/cos(latitude)`, ~1.40× at 44°N — so a feather
  * computed from the projected span alone would come out 40% too wide here and worse further north.
  */
 export function groundMetersPerPixel(box: MercatorBox, width: number): number {

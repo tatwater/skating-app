@@ -274,8 +274,8 @@ describe('grouping the path', () => {
         })}
       />,
     );
-    // One catalogue, three files — and the roll-up reports each verdict separately rather than
-    // folding "we could not check" into "the check failed". Rolling up per *catalogue* rather than
+    // One catalog, three files — and the roll-up reports each verdict separately rather than
+    // folding "we could not check" into "the check failed". Rolling up per *catalog* rather than
     // per "sources" is why this is a meaningful claim at all: Geofabrik publishes an md5, USGS
     // publishes nothing, so a single mixed fraction would have described neither.
     expect(screen.getByText('1/3 checksum verified')).toBeInTheDocument();

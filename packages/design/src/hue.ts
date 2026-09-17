@@ -17,9 +17,9 @@ import { hexToRgb } from './contrast';
 /**
  * The hue of a hex color in degrees `[0, 360)`, or `undefined` when it has none.
  *
- * **Grey has no hue, and saying "0" for it would be a lie that reads as "red".** A neutral line
+ * **Gray has no hue, and saying "0" for it would be a lie that reads as "red".** A neutral line
  * cannot be confused with the danger color, but an achromatic color reported as 0° sits exactly on
- * top of red and would fail a separation check it should pass. So the absence is modelled rather than
+ * top of red and would fail a separation check it should pass. So the absence is modeled rather than
  * flattened, and `hueDistance` is where that absence gets its meaning.
  */
 export function hueOf(hex: string): number | undefined {
@@ -43,7 +43,7 @@ export const MAX_HUE_DISTANCE = 180;
  * Shortest distance between two colors' hues, in degrees `[0, 180]`.
  *
  * **An achromatic color scores the maximum**, because the question this answers is whether one
- * color can be mistaken for the other, and a grey cannot be mistaken for a red. Returning 0 there —
+ * color can be mistaken for the other, and a gray cannot be mistaken for a red. Returning 0 there —
  * which is what treating "no hue" as "hue 0" does — would fail a palette that is in fact perfectly
  * safe, and it would fail it in a way whose cause is entirely invisible at the call site.
  */

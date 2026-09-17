@@ -69,7 +69,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 
 <details><summary>Field notes (traps found in the real data)</summary>
 
-147,755 depth POINTS over 5,000+ lakes, grouped by MIDAS (Maine's lake id) — so the per-lake split needs no spatial work. TWO findings that change the plan: (1) the IF&W depth maps the plan calls "PDFs, a digitisation project, not an ETL" HAVE ALREADY BEEN DIGITISED by the state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitised IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP depth-sounder tracks. UNIT TRAP: DEPTHM was computed with a 3.3 ft/m constant, not 3.28084 — DEPTHM * 3.3 lands on a whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is systematically 0.58% shallow and must NOT be read as-is. Recover feet as DEPTHM * 3.3 for depthmap rows; the GPS rows are genuine metre readings and convert normally. Density IS the concern here: ~29 points per lake on average, against Vermont's ~37,000.
+147,755 depth POINTS over 5,000+ lakes, grouped by MIDAS (Maine's lake id) — so the per-lake split needs no spatial work. TWO findings that change the plan: (1) the IF&W depth maps the plan calls "PDFs, a digitisation project, not an ETL" HAVE ALREADY BEEN DIGITISED by the state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitised IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP depth-sounder tracks. UNIT TRAP: DEPTHM was computed with a 3.3 ft/m constant, not 3.28084 — DEPTHM * 3.3 lands on a whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is systematically 0.58% shallow and must NOT be read as-is. Recover feet as DEPTHM * 3.3 for depthmap rows; the GPS rows are genuine meter readings and convert normally. Density IS the concern here: ~29 points per lake on average, against Vermont's ~37,000.
 
 </details>
 
@@ -93,7 +93,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 
 <details><summary>Field notes (traps found in the real data)</summary>
 
-9,285 contour lines over 558 lakes, surveyed since 2000. The strongest source in the set and the one the whole chain was proved on. Carries both `depth` (ft) and `meters`. CAUTION: `depth` has been round-tripped through metres, so it holds 1.00000003 alongside 1 — a naive DISTINCT returns 116 values where ~60 exist. Round before grouping or labelling. Interval is per lake, not per state (the plan assumed "10 ft"; the real set spans 1–180 ft).
+9,285 contour lines over 558 lakes, surveyed since 2000. The strongest source in the set and the one the whole chain was proved on. Carries both `depth` (ft) and `meters`. CAUTION: `depth` has been round-tripped through meters, so it holds 1.00000003 alongside 1 — a naive DISTINCT returns 116 values where ~60 exist. Round before grouping or labeling. Interval is per lake, not per state (the plan assumed "10 ft"; the real set spans 1–180 ft).
 
 </details>
 

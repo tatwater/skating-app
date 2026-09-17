@@ -348,7 +348,7 @@ describe('reportFormFromReport', () => {
    * whole imperial units, so they survive an exact comparison and hide the problem. Open-Meteo has no
    * reason to return either.
    */
-  describe('a modelled reading that does not land on a whole imperial unit', () => {
+  describe('a modeled reading that does not land on a whole imperial unit', () => {
     /** −3.4 °C → 25.88 °F → the field shows 26 → back to −3.33 °C. Off by a rounding step, untouched. */
     const MODELLED: StoredReportForForm = {
       skateEndTime: SKATE_END,
@@ -362,7 +362,7 @@ describe('reportFormFromReport', () => {
       expect(rebuilt.conditions?.airTempC).toBeCloseTo(-3.4, 0);
     });
 
-    it('is recognised as untouched, because the round trip is predicted exactly', () => {
+    it('is recognized as untouched, because the round trip is predicted exactly', () => {
       const rebuilt = buildReportInput(reportFormFromReport(MODELLED), 'wb1');
       expect(isFormRoundTripOf('airTempC', -3.4, rebuilt.conditions?.airTempC)).toBe(true);
       expect(isFormRoundTripOf('windSpeedKph', 18.7, rebuilt.conditions?.windSpeedKph)).toBe(true);
@@ -392,7 +392,7 @@ describe('reportFormFromReport', () => {
 
     /**
      * ⚠ The reason this predicts the round trip instead of allowing a whole-unit tolerance: both
-     * inputs take decimals, so a tolerance would read 26.4 °F typed over a modelled 26 °F as
+     * inputs take decimals, so a tolerance would read 26.4 °F typed over a modeled 26 °F as
      * unchanged and restore the model's number — discarding an edit to protect provenance, which is
      * a worse failure than the one the check exists to prevent.
      */

@@ -38,7 +38,7 @@ const DEGREES_PER_SECTOR = 360 / WIND_ROSE_SECTORS;
 /**
  * The mean speed that draws a full-length arrow, in m/s.
  *
- * **Fixed rather than per-lake, on purpose.** Normalising each chart to its own maximum makes every
+ * **Fixed rather than per-lake, on purpose.** Normalizing each chart to its own maximum makes every
  * lake look equally windy — a sheltered pond and an exposed reservoir would both show one full-size
  * arrow — and two lakes could not be compared by eye, which is most of what a reader does with a
  * profile page. A shared reference means arrow size carries an absolute claim.
@@ -60,7 +60,7 @@ const DEGREES_PER_SECTOR = 360 / WIND_ROSE_SECTORS;
 export const WIND_ARROW_REFERENCE_MPS = 10;
 
 /**
- * How the radius is divided, outward from the centre: frequency plot, gap, arrow band, label ring.
+ * How the radius is divided, outward from the center: frequency plot, gap, arrow band, label ring.
  *
  * Split explicitly because the first version allotted the arrows whatever was left after a single
  * `rimFraction` — about 12px of a 176px chart — and then drew the compass labels *into the same
@@ -108,7 +108,7 @@ export interface WindRoseChartModel {
   areaPoints: ChartPoint[];
   /** Hairline reference circles, largest last. */
   rings: WindRoseRing[];
-  /** Sector dividers, drawn from centre to `plotRadius`. */
+  /** Sector dividers, drawn from center to `plotRadius`. */
   spokes: { from: ChartPoint; to: ChartPoint }[];
   /** Sized speed glyphs. Sectors with no speed reading are **absent**, not zero-length. */
   arrows: WindRoseArrow[];
@@ -116,7 +116,7 @@ export interface WindRoseChartModel {
   cardinals: { label: string; at: ChartPoint }[];
   /** The largest frequency in the rose — what the outermost ring represents. */
   maxFrequency: number;
-  /** Present only when a sector was emphasised. */
+  /** Present only when a sector was emphasized. */
   emphasizedSector: number | null;
 }
 
@@ -187,7 +187,7 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
   const plotRadius = outerRadius - arrowBand - arrowGap - outerRadius * WIND_ROSE_LABEL_BAND;
 
   // The area scale is anchored at zero and topped at the lake's own maximum, which is the one place
-  // per-lake normalisation is right: the rose is a *shape*, and its shape is the claim. Absolute
+  // per-lake normalization is right: the rose is a *shape*, and its shape is the claim. Absolute
   // frequency is carried by the ring labels and the sentence.
   const areaPoints = rose.map((frequency, sector) =>
     polarPoint(center, clamp01(frequency / maxFrequency) * plotRadius, sector * DEGREES_PER_SECTOR),
@@ -207,7 +207,7 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
   if (Array.isArray(meanWindMps) && meanWindMps.length === WIND_ROSE_SECTORS) {
     const tipRadius = plotRadius + arrowGap;
     // **The band has to bound the whole triangle, not its centreline.** A base corner sits half a
-    // width off-axis, so its distance from the centre is `hypot(tipRadius + L, halfWidth)` — which
+    // width off-axis, so its distance from the center is `hypot(tipRadius + L, halfWidth)` — which
     // overshoots the band even when the back edge fits exactly. Solving
     //   (tipRadius + L)² + (w·L)² = limit²
     // for L gives the longest arrow whose corners still clear the label ring. Ignoring it let the
@@ -252,7 +252,7 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
     }
   }
 
-  // Centred in the label ring, which the arrow band no longer reaches into.
+  // Centered in the label ring, which the arrow band no longer reaches into.
   const cardinalRadius = outerRadius - (outerRadius * WIND_ROSE_LABEL_BAND) / 2;
   const cardinals = [
     { label: 'N', sector: 0 },
@@ -332,7 +332,7 @@ export interface WindExposureSummaryInput {
   meanWindMps?: readonly (number | null)[] | null | undefined;
   /** Only used above `MIN_FETCH_CLAUSE_M`; below that a fetch claim is not worth making. */
   fetchProfileM?: readonly number[] | null | undefined;
-  /** `mostExposedSector().sector`, so the prose and the emphasised arrow agree. */
+  /** `mostExposedSector().sector`, so the prose and the emphasized arrow agree. */
   mostExposedSector?: number | null | undefined;
   minFetchClauseM: number;
   spokenDirection: (point: CompassPoint16) => string;
@@ -437,7 +437,7 @@ export function windExposureSummary(input: WindExposureSummaryInput): WindExposu
     );
   }
   // Skipped once the rare-but-strong sentence has been said. The blocked sector and the rare-strong
-  // one are usually *neighbours* — at Willoughby, ENE and E — so keeping both reads as two sentences
+  // one are usually *neighbors* — at Willoughby, ENE and E — so keeping both reads as two sentences
   // arguing about the same side of the lake. `blocked` stays populated either way; this drops the
   // sentence, not the fact.
   if (blocked && !strongestIsRare) {

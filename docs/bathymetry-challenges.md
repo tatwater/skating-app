@@ -116,7 +116,7 @@ this properly. Measured across settings from 0.25 to 4, contour elongation didn'
 way) and the fragment count went *up*. Worth recording so nobody spends an evening on it again.
 
 **What actually works:** squash for the *solve only*, then relabel the result's coordinates back to
-real metres before anything else touches it. The solver sees a compressed lake; the smoother, the mask
+real meters before anything else touches it. The solver sees a compressed lake; the smoother, the mask
 and the contour tracer all see true distances.
 
 ---
@@ -149,14 +149,14 @@ costed; it's real work and it isn't done.
 Some lakes have too little data to draw honestly. We need a rule. **We tried five, and the render
 falsified every single one.** This chapter is the most useful thing in this document.
 
-### 3.1 Nearest-neighbour spacing — *measures the wrong gap*
+### 3.1 Nearest-neighbor spacing — *measures the wrong gap*
 
 *"Reject a lake if its soundings are too far apart."*
 
 **Wrong gap.** On transect data, the distance to the nearest sounding measures spacing **along the
 boat's track** — which is tiny — and says nothing about the distance **between tracks**, which is what
 you're actually interpolating across. Measured on real lakes, the true coverage gap ran **8–12× larger**
-than nearest-neighbour implied. One lake had 81 m between adjacent readings and **981 m** of water that
+than nearest-neighbor implied. One lake had 81 m between adjacent readings and **981 m** of water that
 was nowhere near any reading.
 
 **Replaced by:** *standing anywhere in the surveyed water, how far is the nearest measurement?* — which
@@ -231,7 +231,7 @@ closed rings**. The reasoning was right about real bathymetry and wrong about wh
 
 Along the way I reported fragment lengths **in grid cells** and concluded Champlain looked worse than
 the lakes we were trying to catch. **Cell size varies 10× across the corpus**, so that comparison was
-meaningless. In real metres it inverts completely:
+meaningless. In real meters it inverts completely:
 
 | Lake | cell size | median ring length |
 | --- | --- | --- |
@@ -352,7 +352,7 @@ lake** — which is the property every previous attempt lacked.
 
 Open questions before believing any of this:
 
-- **What size?** Absolute metres, or relative to the lake? Both have obvious failure modes and I'd
+- **What size?** Absolute meters, or relative to the lake? Both have obvious failure modes and I'd
   measure rather than reason.
 - **Does it hurt genuinely small features?** A small deep hole in a big lake is a small ring, and it's
   real. This is the risk, and it's the same "understating by omission" trap as Chapter 4.3.
@@ -367,24 +367,24 @@ Open questions before believing any of this:
 ## The five lessons, if you read nothing else
 
 1. **Every input-side metric we invented failed to predict output quality.** Five for five —
-   nearest-neighbour spacing, the coverage ratio's premise, shore share, fragment count, closure. If
+   nearest-neighbor spacing, the coverage ratio's premise, shore share, fragment count, closure. If
    you find yourself computing a number about the *inputs* and expecting it to tell you whether the
    *picture* is good, that has not once worked here.
 2. **Render it. Every single failure above was invisible in code review and obvious in an image.** The
    test suite was green through all of them.
 3. **A threshold is calibrated against its denominator.** Change one and you must re-derive the other,
    or you've silently retuned the system while believing you fixed a bug.
-4. **Check your units before drawing a conclusion.** One comparison in grid cells rather than metres
+4. **Check your units before drawing a conclusion.** One comparison in grid cells rather than meters
    produced a conclusion that was exactly backwards.
 5. **The most legible version of a map is often the most misleading one.** A green→yellow→red depth
    ramp would be far easier to read than our single-hue one — and would read as a *danger scale*,
    reintroducing through color a claim we deliberately refuse to make in words. Legibility is not
-   automatically the thing to optimise.
+   automatically the thing to optimize.
 
 ---
 
 ## Related
 
 Contours are one layer of a larger data pipeline. For where the lakes themselves come from, how four
-catalogues get merged into one record, and what coverage looks like for depth, elevation and wind,
+catalogs get merged into one record, and what coverage looks like for depth, elevation and wind,
 see [Where the lakes come from](./water-body-data.md).

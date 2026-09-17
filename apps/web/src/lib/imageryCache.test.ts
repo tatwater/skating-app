@@ -24,7 +24,7 @@ describe('tileUrl', () => {
     expect(b.map(tileUrl)).toEqual(a.map(tileUrl));
   });
 
-  it('differs between neighbouring cells', () => {
+  it('differs between neighboring cells', () => {
     const tiles = imageryTilesFor({ ...VIEW, maxX: VIEW.maxX + 40_000 }, 12);
     expect(tiles.length).toBeGreaterThan(1);
     expect(new Set(tiles.map(tileUrl)).size).toBe(tiles.length);

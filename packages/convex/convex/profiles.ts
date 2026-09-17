@@ -172,7 +172,7 @@ export const upsertFromClerk = mutation({
     // `displayName` and the avatar back out of Clerk and quietly un-delete the person's identity.
     // (`syncFromClerk`, which *does* run on every launch, carries the same guard for the same reason.)
     //
-    // Cancelling clears the stamp, and *then* this sync is exactly the re-onboarding path
+    // Canceling clears the stamp, and *then* this sync is exactly the re-onboarding path
     // (`needsProfileSetup` routes them here): same code, no special restore, and the name they type
     // is the name they get.
     if (existing && existing.deletionRequestedAt !== undefined) {
@@ -196,7 +196,7 @@ export const upsertFromClerk = mutation({
       // opts to make it public — nothing is auto-widened (D13/D41). Posting also unlocks at 18
       // separately (reports.create gates on age), since all reports are public (D13).
       // Keep the *original* acceptance time when the version is unchanged (a re-onboarding,
-      // e.g. after a cancelled deletion); only stamp a new time when the user accepts a bumped version.
+      // e.g. after a canceled deletion); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion;
       await ctx.db.patch(existing._id, {
         displayName,
@@ -696,7 +696,7 @@ export const getPublicProfile = query({
     // A ghost (D62 amendment) is unreachable to everyone but themselves — not "empty", *not found*.
     // Their reports stay on the ice record under `Deleted skater`; the person behind them stops
     // existing the moment they ask to leave. The row is still here, and so is the handle, which is
-    // why this is a read gate rather than a scrub: cancelling has to be able to give the name back.
+    // why this is a read gate rather than a scrub: canceling has to be able to give the name back.
     if (isLeaving(target) && !isSelf) return null;
     // The raw trust number is admin-only (D50). Gate it server-side on the *viewer's* role so it never
     // leaves the deployment for an ordinary viewer — the client-side chrome that hides it is only
