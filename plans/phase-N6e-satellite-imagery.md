@@ -1374,3 +1374,92 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    S1C-specific calibration-annotation handling and incidence-angle differences the manifest does not
    currently record. ⚠ **A fourth platform, S1D, is already appearing in the data** (4 passes, late
    April 2026) — the id grammar accepts it, so this question will only get more crowded.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6e as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** ✅ **Built through
+PR 3, 2026-08-26** — a lake can be revealed as a photograph and its freeze-up scrubbed, on **both**
+clients. Re-scoped 2026-08-21; see [`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
+decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
+Gated behind N6d, which is complete on dev.
+
+**Four of six PRs done.** **PR 0** the way in (2026-08-21) · **PR 1** the web reveal (#45, 2026-08-23)
+· **PR 2** the producer (#46, 2026-08-25) · **PR 3** the consumer — both scrubbers, the band selector,
+mobile's reveal, attribution (built 2026-08-26 on `phase-n6e-satellite-imagery-3`, **no PR opened,
+undeployed**). **PR 4** (phenology, derived dark) and **PR 5** (the charts and the freeze-up
+notification) are not started; both want the nine-season backfill, which is a deliberate separate
+spend. Only the **single season** (winter 2025-26) is in R2 today.
+
+*The 2026-07-31 scoping specced a map-wide **base-map toggle**. A founder review falsified that shape
+three ways, so the doc was rewritten rather than patched.*
+
+- **Imagery is content scoped to a body, not a base map (D146).** One reveal, in the detail view,
+  clipped to the lake **and its way in** — a union of buffered lake, trail and parking, feathered
+  outward. This **replaces D81's second half** and deletes most of the original phase's risk with it:
+  no style branch, no label filtering, no region-mask question, no attribution swap. Smaller *and* the
+  thing the founder wanted. The cost, accepted: no panning the region in aerial.
+- **The constraint was never really the quota — it's physics (D147).** NAIP is **aerial photography
+  flown every 2–3 years in mid-summer**; Burlington's current scene is dated the 2023 summer solstice,
+  so **no NAIP frame will ever show ice.** And the `USGSImageryOnly` service the old doc named caps at
+  **z16 (~1.7 m/px here)**, not the "~0.6 m" it and `05-accounts-and-credentials` both claimed.
+  **`USGSNAIPPlus` does serve 0.3 m**, keyless, via `exportImage` + MapLibre's `{bbox-epsg-3857}`.
+- **A pressure ridge is 1–3 m wide** — legible at 0.3 m, nonexistent at 10 m. The imagery that would
+  answer *"where can I cross?"* is **tasked commercial at ~$200–400 per lake per capture**. We buy
+  neither end: 0.3 m for the landscape, 10 m for the ice, no promise about the surface.
+- **The freeze-up timeline ships in the same PR (D148),** region-wide rather than a shortlist. Reading
+  the open COGs directly instead of Sentinel Hub's metered API means **~20–25 granules covers five
+  states** and the 10,000-request quota stops being the ceiling at all. Stored as **one masked raster
+  PMTiles per pass** (~40 MB/pass, ~1.2 GB/season) on the pipeline the basemap and bathymetry archives
+  already use. **Sentinel-1 SAR is in scope** — cloud-proof, but smooth black ice and calm open water
+  look alike in radar, which is the one distinction skaters care most about.
+- **This phase buys our first owned infrastructure.** A GDAL-class granule job runs on neither Convex
+  nor Vercel. **Fly** over Railway — its per-job Machine model *is* the workload, and it's ~2× cheaper
+  for the always-warm RAM-heavy service we want next (self-hosted ORS, ~$46 vs ~$81/mo at 8 GB).
+- **Ingest is weather-gated and the archive turns over on a frame, not a date (D149).** D63's July
+  season boundary is right for reports and absurd for imagery — it would blank the scrubber in
+  midsummer. Last winter's frames stay live until the first frame of the new winter lands; in a warm
+  year that flips late, by itself.
+- **Ice classification is an observation, never counsel (D150) — deferred to N6g.** The band data (SCL,
+  NDSI, SWIR) is where the real signal is, and ESA computes the snow/ice classification for us inside
+  L2A. Amended onto D140's line: dated per-pass classification is permitted, the hop to *skateable*
+  is not. **Capture the bands during N6e's reads anyway** — re-fetching a season later is the
+  expensive version.
+- ✅ **Workstream 0 — the way in, built 2026-08-21** (on the N6e branch, not as an N6d follow-up). The
+  prerequisite was *"store the ORS route geometry **before** N6d's routing pass finishes"*, and it
+  arrived eight days late: the pass completed 2026-08-13 and the cache holds only
+  `{meters, ascentM, routed}`, so the free window had shut. Re-routing the **262 hike-in legs**
+  (founder call, over 4,945 or 2,349) bought the lines back for under a day of quota. **The trail
+  connectivity fast-follow N6d sized and declined shipped with it** at the founder's ask — 1.15M ways
+  hashed into a graph by byte-identical endpoints, never stored, budget capped at `HIKE_IN_ASSERT_M`
+  because D144 already said an association at that range must be asserted rather than derived. And the
+  approach is **drawn** on both clients, from the marker query so a moderator's `hide` takes the line
+  with it. **254 of 262 lines recovered; 30 launches across 22 lakes now draw a walk.** The trail pass
+  found **69 pairings against the 150–300 it was sized at** (+12 launches that gained a lot once
+  loaded) — N6d's *"don't, yet"* was right about the yield, and the launch side was always the
+  ceiling. ⚠ **And drawing the lines exposed 30 approaches that were never walks**: legs ORS routed
+  around the water, up to **99 km** between a lot and a launch 250 m apart, which N6d has been
+  rendering as *"about 99 km on foot"* since August. `MAX_PLAUSIBLE_APPROACH_M` demotes them to the
+  straight-line rung; dev now carries none.
+
+**Three things building it taught, all of them about verification.**
+
+- **An artifact review cannot tell you the frame is of the lake.** PR 2 shipped verified by files you
+  could open, which is a real standard and a higher one than a screenshot — and four defects still
+  survived it, each caught within days of a scrubber existing. The radar was never denoised; every
+  per-body statistic was measuring a 60 m ring of shoreline; the geocode reference was an average of
+  the pass rather than local to the body; the SCL band would have rendered as a black rectangle.
+  *Well-formed and correct are different questions, and only one of them has a cheap test.*
+- **The mobile deferral was right, and it was right for the stated reason.** PR 1 declined to add Skia
+  on the argument that PR 2's baked alpha would remove the need for a canvas entirely. It did: mobile's
+  reveal is an `ImageSource` pointed at a URL. No native dependency, no second copy of the
+  projection-and-feather logic. *A dependency deferred on a specific prediction is worth more than one
+  deferred on general caution — the prediction can be checked.*
+- **A skater falsified two things a review had passed.** Islands visibly bouncing east-west between
+  dates exposed that the radar geocode is not terrain-corrected (open question 8), and Mascoma reading
+  `27% ice / 65% water` on a day the skate log says the north half was ready exposed that one number
+  cannot describe two surfaces (deferred question 7). Both came from *use*, not inspection.

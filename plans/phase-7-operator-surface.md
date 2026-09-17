@@ -417,3 +417,103 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
   queryable trace), and a narrow **client signal** (`analytics.recordClientSignal`, allowlisted +
   authenticated, only for the future-skate rejection the server can't see). Nothing that gates content,
   trust, or moderation is ever client-reported.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 7 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 7 — Operator surface (admin, moderation, dedup review) ✅ Complete (dev; prod deferred) (2026-07-24)
+*(The founder-facing back office — the second half of the old combined phase.)*
+> **Detailed build plan:** [`phase-7-operator-surface.md`](./phase-7-operator-surface.md) (planning
+> session 2026-07-23; D37/D38 + the D49/D52/D56/D57 tuning surfaces). Read-only config control-room,
+> in-house Convex analytics, in-context moderation across the web app, two PRs (operator core + analytics).
+>
+> **Shipped:** PR 7a (operator core — merged, #24) + PR 7b (analytics & tuning). Two Convex tables
+> (`metricSnapshots` daily rollups, `bountyGateEvents` forward-only per-attempt), a `@skating/core`
+> metric vocabulary, maintain-on-write counters for the events that leave no trace (contradiction
+> funnel, flag dispositions, future-skate-time rejections), three rollup crons (6-hourly recompute,
+> weekly corpus sweep, daily gate-event prune), the admin read layer + the tenure-aware
+> contributor-trend query, a validated Recharts chart kit (dataviz-checked palette), and the
+> `/admin/tuning` control-room + dashboard app-health strip + trust-trend panel.
+>
+> **Key build deltas vs this plan (settled 2026-07-23/-24 — the phase-7 doc is authoritative):**
+> - **Config is a read-only control-room, NOT editable-in-dash.** The "admin UI to *edit* the
+>   displayScore curve / HAZARD_DECAY / FRESH_REPORT_HOURS" bullets below are superseded: the founder
+>   works with a coding agent, so *editing the constant in `@skating/core` and redeploying* is the
+>   tuning workflow. Global constants render read-only (live value + explanation + companion chart +
+>   "defined in `packages/core/…` · requires a redeploy"). Only genuinely per-row data stays editable
+>   (`curatedBoost`, `weatherSamplePoints`, `canPost*`, ban/suspend/role, `bodyFeatures`). `appConfig`
+>   (a runtime override table) is a documented future seam, not built speculatively.
+> - **`bountyGateEvents` carries `requesterId`** (founder call): a cap-hit *rate* tunes the cap, but only
+>   attribution answers whether a handful of requesters drive it — the case for the deferred
+>   `activeBountyPostLimit` lever. Pruned at 180d (privacy + storage).
+> - **The gate had to stop throwing to be observable.** A thrown Convex mutation rolls its writes back,
+>   so a throwing gate could only log the attempts it *allowed*. `bounties.createChecked` now returns its
+>   verdict and `create` re-raises it, so `suppressed`/`capped` events commit.
+> - **Two planned metrics changed shape** to stay honest: `viewport_truncated` (client can't observe it —
+>   post-query refinement drops rows) → `zoom_band_distribution` (server-side, points at the curve);
+>   `weather_strip_renders` (client-only state) → `weather_strip_coverage` (corpus classified server-side).
+> - **All five "additional stats flagged during planning" shipped** (cap-hit rate, photo-orphan count,
+>   viewport→zoom-band, weather-strip coverage, future-skate rejection, per-state coverage).
+- **Admin/moderator surface (D37):** a role-gated **`/admin` route tree in the web app**
+  (not a separate app), organized as **work queues** — flag queue (with
+  `unsafe_false_report` in a **priority lane** per D3), user admin (search/history,
+  **ban/suspend/unban**, grant role), and a **support inbox** (`supportTickets`, D35 —
+  not Zendesk). Role model expands to `member | moderator | admin` (admin ⊇ moderator).
+- **Water-body dedup review queue (D36):** moderator view of `suspected_duplicate`
+  bodies with a manual **merge** (re-point children → survivor, soft-tombstone loser),
+  plus **approve/reject** of user-drawn bodies (`reviewStatus`, D37).
+- **Display-tuning surface (D49):** ~~admin UI to edit~~ **read-only control-room view of** the
+  `displayScore` curve constants (log-area bounds + score→zoom map) paired with the
+  `zoom_band_distribution` chart, plus per-body **`curatedBoost`** set from the water-body surface
+  (that one stays editable — it's per-row data). Constants stay in `@skating/core`; the control-room
+  surfaces the live value + its chart so they're **never buried in code** a non-engineer can't *see*
+  (edit = change the constant + redeploy, per the settled decision above).
+- **Hazard-tuning surface (D52/D54, from Phase 9):** same read-only pattern for hazards — the
+  `HAZARD_DECAY` per-type durations live in `hazardDecay.ts`, checked against the
+  `hazard_confirm_outcomes` + `hazard_age_at_confirm_h` charts (a type confirmed "still here" past its
+  stale line is decaying too fast). The confirm/removal thresholds are likewise constants + their charts.
+- **Bounty-freshness surface + chart (D56 §7c, from Phase 10):** the decay-based bounty gate rendered
+  read-only — `FRESH_REPORT_HOURS`, the trust/thumbs boosts, and the **weather-reopen thresholds**
+  (`BOUNTY_REOPEN_FREEZING_DEGREE_HOURS` / `BOUNTY_REOPEN_THAW_DEGREE_HOURS`) — raise them and a
+  corroborated report holds bounties off through more weather; lower them and bounties reopen sooner.
+  Ship a **bounty-suppression chart** so the effect is
+  legible before touching a number: instrument every `bounties.create` gate decision into a lightweight
+  `bountyGateEvents` log — `{ waterBodyId, decision: suppressed|allowed, suppressingReportId?, reportAgeH,
+  netThumbs, trustClass, weatherReopened: bool, appliedWindowH }` — and chart, over a chosen window,
+  **(a)** a scatter of *report age at bounty attempt* vs *the suppression window actually applied* (dots
+  above the line = blocked, below = allowed) with the base/boosted window bands overlaid, and **(b)** a
+  time series of the **weather-reopen rate** (share of attempts where warming/freezing flipped a
+  would-be-block to allow). Too-many dots clustered just under the line ⇒ bounties open too easily (raise
+  the reopen thresholds / base window); a flat-zero reopen rate through a real thaw ⇒ too hard (lower them).
+  The event log is also the honest input for the Phase-10-deferred **decay-magnitude refit**.
+- **Known seasonal body features (D53, from Phase 9):** a moderator surface to **promote** a recurring
+  hazard into a persistent **`bodyFeatures`** attribute (spring/current, constriction, bridge-narrows,
+  recurring pressure ridge) and to **demote** one — so a permanent risk stops needing user re-marking.
+  Includes the **`hazard` flag queue** (`contentFlags.targetType: hazard`) to hide a bad/malicious pin.
+- **Posting-rights & appeals tooling (D57, feeds from Phase 10):** restrict/restore per-action posting
+  rights (`canPostReports` / `canPostHazards`) as a lever **finer than suspend/ban** (D37) — proportionate,
+  appealable, reversible — plus an **appeals / reinstatement** workflow. Backed by a **contributor-trust
+  panel**: the private, non-scoring **contradiction counter** (from the Phase-10 D56 signal) shown
+  *alongside* a **good-vs-bad reports trend over time**, deliberately **tenure-aware** so a 10-year
+  contributor and a 1-month account with the same raw count are obviously distinguishable at a glance.
+  - **3rd lever — `canPostComments` (boolean, D57 extension): ✅ BUILT in Phase 7** *(status corrected
+    2026-07-24 — this read "planned")*. Comments are free-text content, so a boolean revocation fits; its
+    point is muting a toxic commenter *without* silencing their safety reports. Enforced in
+    `comments.create` via `assertCanPostComments` (`lib/auth.ts`); optional/migration-free. See D57.
+  - **Deferred bounty lever — `activeBountyPostLimit` (nullable int, NOT a boolean):** bounty abuse is
+    volumetric, so the lever is a per-user override of `MAX_OPEN_BOUNTIES_PER_DAY` (`?? 3`; `0` ⇒ can't post),
+    which subsumes a `canPostBounties` flag. Built only if a real spammer earns it — the existing cap does most
+    of the work. Keep the boolean-per-capability shape; don't build a `postingRestrictions` framework for 3–4 fields.
+- Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
+  audit row.
+- **Operator alerts (D38):** Resend + React Email — email the founder on new
+  `supportTickets` and safety-priority items, deep-linking into `/admin`.
+- **Done:** operators can ban/unban users, **restrict/restore per-action posting rights and handle
+  appeals** (D57), approve/reject user-drawn water bodies, and triage flags + support from `/admin`, with
+  every action audited and safety items alerted by email.
+- Needs: Resend (domain verified).
+

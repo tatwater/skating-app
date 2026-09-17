@@ -261,3 +261,57 @@ everything (it can't, and shouldn't — that's clutter).
 - **OSM attribute quality** — names/types vary; the `other` bucket + later NHD enrichment
   (deferred) are the safety nets.
 - **Attribution is a launch gate** — ODbL, treat like "Powered by Strava."
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 1 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 1 — Water-body data ✅ Complete (2026-07-13)
+> **Detailed build plan:** [`phase-1-water-bodies.md`](./phase-1-water-bodies.md).
+> **Pilot region: Vermont** (compact; the Nordic-skating heartland — Lake Morey et al.).
+> **Rivers deferred** to a later release (reaches are hard; pilot skating is still-water) —
+> import lakes/ponds/reservoirs only.
+>
+> **Status:** shipped across PRs #7–#11. `@skating/core` OSM tag mapping + on-water point (#7);
+> Convex `listed` refactor + `by_external_id` + `importCanonical` + admin remove/restore (#8);
+> the `scripts/etl` OSM pipeline + the real 9,967-body Vermont import (#9); the read-only MapLibre
+> web map + the two-tier `listInViewport` fix that made the corpus queryable at scale (#10); and
+> the **self-hosted Vermont `.pmtiles` basemap** — built with `pmtiles extract` (z0–14, ~280 MB),
+> hosted on **Convex file storage** (colocated; its serving URL passes the `Range` + CORS checks
+> `pmtiles://` needs), tooling + reproducible pipeline in `scripts/basemap` (#11). All tests green
+> with coverage held. **Operational follow-ups (you own):** set `VITE_PMTILES_URL` to the dev
+> serving URL in local `.env`, confirm the map renders against self-hosted tiles, then re-run the
+> upload with `--prod` and set the prod URL in Vercel. Off-ramp to Cloudflare R2 (zero egress) is
+> documented if tile bandwidth grows.
+
+- **OSM ETL** (`scripts/etl`, run manually) for Vermont: filter water features, map OSM
+  tags → our `type` enum, **simplify to ~5 m fidelity** (Google/Apple-parity for click
+  zones + fill coloring), compute `bbox` / `centroid` (an **on-water** point, D48) /
+  `surfaceAreaSqM`; emit NDJSON keyed by OSM id (D5/D14). Store generously — clutter is a
+  *display* problem (zoom-based rendering), not a reason to under-populate (D48).
+- **Idempotent import** into `waterBodies`: an internal `importCanonical` mutation
+  (`source: 'osm'`, `listed: true`), upsert-keyed on `source + externalId` (new
+  **`by_external_id`** index), inserting centroids into the geospatial index. Re-runnable;
+  **preserves removed state** across re-imports (D48).
+- **`listed` filter-key refactor + bbox-intersection viewport (D5/D48):** replace the
+  Phase-0 `reviewStatus`-only geospatial filter with the derived `listed` boolean (fixes
+  canonical bodies being hidden + the D37 auto-visible contradiction), and implement the
+  decided bbox-intersection `listInViewport` (expanded geospatial prefilter → `@skating/core`
+  `bboxIntersects` refine), now tunable against the real polygon corpus.
+- **Admin remove/restore (D48):** minimal `remove`/`restore` mutations (soft-delist +
+  `removalReason` + `moderationActions` audit row) so the fresh import can be curated and a
+  landowner takedown honored. Request-intake UX defers to Phase 7.
+- **Read-only map layer (web):** a MapLibre map (**Protomaps `.pmtiles`** basemap, D6 —
+  start on hosted demo tiles, swap to a self-built Vermont extract) rendering the imported
+  polygons, to *confirm* the data. Full interactive map + report creation stays Phase 2.
+- **Attribution:** "© OpenStreetMap contributors" (**ODbL**) shown wherever the data/basemap
+  appears — a build-time acceptance criterion like "Powered by Strava" (see
+  `04-integrations.md`).
+- **Done:** Vermont water bodies queryable by bbox (bbox-intersection) and rendering on the
+  read-only web map, with OSM attribution; admins can remove/restore a body.
+- Needs: OSM extract tooling (osmium/GDAL + a JS simplify pass), Convex, a Protomaps
+  basemap (self-built or hosted demo).
+

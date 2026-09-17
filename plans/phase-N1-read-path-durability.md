@@ -435,3 +435,45 @@ statable answer — and the omitted tier is the one that only draws when you zoo
 where the map was heading anyway. The regression test (`waterBodies.test.ts`, "an over-budget cell
 plan drops whole rungs") puts two ponds identical in size and score at opposite ends of that box and
 asserts they share a fate; against the old cut, the head pond came back and the tail pond didn't.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N1 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+~~**N1 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
+[`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for the design, the
+corrections to what this entry used to say, and the measured results.
+
+Shipped: `@convex-dev/geospatial` is **gone entirely** (both instances, plus `convex.config.ts` —
+the app installs no components now). Water bodies and admin boundaries are indexed into
+`waterBodyCells` / `adminAreaCells`, one row per grid cell an object's **bbox** covers, at a rung no
+finer than the zoom it first draws at — so a viewport read is "scan the cells covering the viewport,
+at every rung up to this zoom", bounded by geometry rather than by a measured constant. That retired
+the ±margin, the `isLarge` outlier list and both of its per-read `.collect()`s, the 256 clamp's role
+as a crash guard, and the JS `listed` re-check (an unlisted body has no cell rows at all).
+
+Four things this entry had wrong, all corrected in the phase doc: the fix **wasn't expressible** in
+the component we were on (it indexes one point per key); the trigger had **already fired** (the 256
+clamp was measured against 9,967 bodies and never revisited after Phase 2.5 loaded ~116k); a **fifth**
+unbounded `.collect()` ran on every viewport read and wasn't listed; and two of the four named
+`.collect()` sites were misfiled (the bounty cap already logged; `findContradictingPriors` doesn't
+exist — it's `contradictionCluster`, which hid a second scan inside an N+1).
+
+Two things came out that weren't scoped: **`adminAreas` had the same bug with a worse symptom** — a
+±0.2° centroid search sized on the premise that "our towns run well under 0.4° across", which the
+Adirondacks falsified silently (9 towns exceed 0.35°, 264 more are marginal), so a report from inside
+one quietly lost its town label; and **`reports.create` was scanning every profile in the app** to
+fan out notifications, an unbounded read on the most important write in the product, now a scheduled
+self-continuing paged job.
+
+Measured on dev after backfilling 116,070 bodies: the off-data pan that used to crash costs **22**
+document reads, the heaviest real viewport **1,771** (under half of Convex's 4,096 cap), and dense
+eastern Maine returns **513** bodies where the old clamp returned 256 — 257 real lakes that had been
+missing from the map. `waterBodies:viewportReadStats` keeps that checkable, and every measured
+viewport is recorded with its exact bbox so the table can be re-run rather than trusted.
+
+*Left for later:* the notification **reverse spatial index** — still N8, since N1 only made the
+profile walk bounded, not unnecessary.

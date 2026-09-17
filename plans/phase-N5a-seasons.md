@@ -748,3 +748,77 @@ the empty state needs no special caveat — noted so the next person doesn't red
   prominence scoring (D49) partly reflects activity, and a reset changes its inputs.
 - **Whether `'24/'25` is the right label** for a region where ice spans one calendar year. Fine for the
   Northeast; revisit if the corpus moves south.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N5a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+~~**N5a — Seasons: seasonal visibility, the season filter, departed-user redaction.**~~ **✅ COMPLETE
+2026-07-28** (built, all suites green, **deployed to dev**; not device-tested, prod deferred) — see
+[`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63**, **D64**, **D65**, **D66** + the
+**D62 amendment** and its **second amendment**. *(Re-scoped: this entry used to be "hazard authoring &
+confirmation polish". It keeps that entry's two **lifecycle** items, because they touch the same
+`deriveHazardLifecycle` a seasonal reset does; the three **authoring-UX** items became **N5b**.)*
+
+The founder ask that started it: **reports and paths from previous seasons should not be visible on the
+map at all** — fully hidden, not deleted — with a deliberate way to browse a past season, and recurring
+hazards easy to bring back.
+
+Worth stating because it surprised the register: **nothing in the app expires today.** `reportFreshness`
+(D59) is an *opacity* multiplier, not a visibility gate, and the only age cutoffs anywhere are the
+offline-cache window and the 48-hour `recommended` strip — so a report from the 2024/25 season still
+renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggregate map.
+
+- **A season is July 1 → June 30**, labelled `'24/'25`. **Derived, never stored** — no column, no
+  backfill, no cron, nothing to drift. `skateEndTime` is already the range field of three existing
+  indexes, so seasonal scoping makes those reads **cheaper**.
+- **Hazards reset on the same boundary**, and recurrence is **D53's `bodyFeatures` promotion** rather
+  than new machinery. That makes the pre-first-ice promotion pass a **safety** task, not housekeeping —
+  the sharp edge of this phase, since hiding hazards means the first skater of the season sees a clean
+  map where last winter there was a ridge.
+- ~~**Departed-user erasure at 30 days**~~ → **redaction**, and **✅ shipped 2026-07-27 (PR #30)**.
+  This bullet described round one of the D62 amendment and is kept struck rather than deleted, because
+  every clause of it was reversed later the same day by the **second amendment** and the superseded
+  version is the one someone reading the register would otherwise act on. What actually shipped:
+  a deletion **request** makes you a ghost immediately (profile scrubbed, unreachable to everyone else,
+  posting closed — only the *login* waits 30 days, so the decision is reversible); published content is
+  **kept and anonymized**, with every free-text field cleared at 30 days (`reports.notes`, reading
+  notes, `hazards.description`, photo captions, comment bodies, `contentFlags.note`); **hazards are
+  never erased** — they are the multi-season record recurrence detection is built on; **bounties go at
+  the request**, not at finalize; and **put-ins survive by ordinary derivation**, since the report they
+  derive from is kept. Flat 30 days rather than the D59 curve — and the terminal pass ignores the clock
+  entirely, which is the correction three walkthrough bugs shared.
+- Folded in from the old entry: **"this never existed" confirmation verdict** and **naming confirmers**
+  — designed at build kickoff as **D65** (pools with `fully_healed` toward the same 2-vote archive *and*
+  files a moderation flag; confirmers named subject to `profileVisibility`).
+- **A departed skater's photos split on evidential value (D66)** — hazard photos kept, everything else
+  expires at the end of the season it was taken in. Promoted out of the deferred register at kickoff
+  because its clock *is* this phase's boundary; deferring it means inventing a per-photo TTL later.
+- **Suggested crossings decay in the opposite direction from hazards (D64).** Moved here from N5b once
+  the founder's version of "ridge-crossing v2" turned out to be a lifecycle change rather than an
+  authoring one: several *suggested crossings* per ridge, individually downvotable, decaying **faster**
+  than hazards and needing **more** corroboration to survive. `ridge_crossing` currently inherits the
+  hazard rules whole — including the map opacity floor where stale never means gone — which is
+  conservative for a danger and **anti-conservative for a passage**: a marker placed in November still
+  reads "reported crossable" in March. Copy becomes *"suggested crossing"*, never "safe". A single
+  "closed" vote — **invisible today** — makes a crossing visibly **disputed**; closing still takes two,
+  because removing on one vote lets any single user delete a contribution and destroys the information
+  that a crossing was ever found there. The two constants, settled at kickoff: expiry is its **own**
+  72-hour window (not the existing `agingH: 36`, which would make "faded" and "gone" the same instant),
+  and it takes **two** independent confirmations to stop being provisional against every hazard's one.
+
+**Two premises the code check falsified**, both making the phase *more* consequential:
+- **Reports don't draw on the map at all** — there is no report layer. What reaches the map from a
+  report is its put-in marker, its track and (while open) its photo pins. So the map half of this is
+  **tracks + hazards**; reports are season-scoped in the *feed and lake list*. Put-ins are deliberately
+  exempt, and the trap is that `putIns.listForBody` derives them by reading **reports** — scope that
+  read carelessly and put-ins vanish with it.
+- **Hazards never age out.** `deriveHazardLifecycle` archives on community "fully healed" votes only;
+  there is no time-based archival anywhere. An unvisited hazard stays `active` forever, fading to
+  `stale` — behind a "show older" toggle in the list, but on the map at a deliberate opacity **floor**
+  (D3: decay is confidence, not safety). A ridge reported in Feb 2025 is still on the map today. That
+  makes the hazard half the *most* consequential part, and means the recurring-hazard case is currently
+  handled **by accident** — the stale pin never leaves, asserting a position nobody has evidence for.

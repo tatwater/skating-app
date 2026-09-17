@@ -236,3 +236,46 @@ deploy (memory: convex-test-is-not-deploy).
 - **Account deletion / data export** (D33) — matures on its own track; profile anonymization must
   render gracefully wherever authors are shown (design for it, don't build it here).
 - **Forum/email comment-vs-report ingestion** (Q8) — `comments.source: imported` exists for it later.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 3 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 3 — Comments + profiles + user-facing safety tools ✅ Complete (2026-07-16)
+> **Detailed build plan:** [`phase-3-community-and-safety.md`](./phase-3-community-and-safety.md)
+> (design settled 2026-07-16 — the four "don't code into a corner" calls are recorded there).
+>
+> **Status: ✅ shipped on dev (2026-07-16, PR #17)** — all four workstreams landed: **A** `@skating/core`
+> `comment`/`block` modules + revised `visibility` (report gate → moderation-only; `isAuthorBlocked` +
+> the "a block never hides a report" invariant test); **B** Convex `blocks`/`comments`/`contentFlags`/
+> `moderation` + extended `profiles` (search index, `getPublicProfile`, `searchProfiles`, `updateProfile`,
+> `loadBlockedAuthorIds` union, `backfillNotificationPrefs`); **C** web UI (profile page + edit, 2-level
+> comment threads with `[hidden]` placeholders, block/flag controls + "Blocked" chip, role-gated inline
+> moderator actions, profile search, blocked-users list); **D** the mobile mirror. Review fixes followed:
+> block-failure surfacing, a bidirectional "Blocked" chip, bounded profile reads, and a broadened
+> profiles migration to canonicalize legacy `notificationPrefs` drift. Trust score renders `0` everywhere
+> (D50 computation is Phase 6). Prod cutover still deferred (Convex prod uninitialized).
+*(Was "Social graph + comments" — the **social graph was removed 2026-07-15 (D13)**. No
+follows/friends. What remains is the community-interaction + safety layer, kept ahead of
+the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
+- Threaded **comments** on reports (D21/D25). All reports are public (D13), so comments are too —
+  gated only by moderation + blocks.
+- **Profiles (D13):** public profiles are **searchable by name** and show name, photo, town/state,
+  **bio**, #reports/#comments, trust score (D50), and full public report history; **private profiles
+  are name + photo only** and not searchable (all minors; adults who opt in). No follow/friend graph.
+- **User-facing safety tools (D32):** **block** users (block == "mute" — one feature); **flag/report**
+  reports/comments/photos/users for abuse (incl. `unsafe_false_report`). Public UGC without block/flag
+  is unacceptable, so these ship here.
+- **A block hides the person's profile + comments + interaction, but NOT their reports (2026-07-16,
+  safety-first D3):** an interpersonal block must never pull safety observations off the map/feed. A
+  blocked author's report stays visible with a de-emphasized author line + a "Blocked" chip. (This
+  refines the earlier "moderation-visible + not-blocked" note: report reads are **moderation-visible
+  only**; the block set gates comments/profiles + drives author de-emphasis.)
+- A minimal moderator **hide/remove** path (founder) so flagged content can be taken
+  down immediately, even before the full operator surface (Phase 7).
+- **Done ✅:** comment threads work; profiles are viewable/searchable (privacy respected);
+  users can block/mute and flag; content can be quickly taken down.
+

@@ -1635,3 +1635,165 @@ users. A skater who pushes a session into a regional club is doing our marketing
 ME → the Maine/NH Facebook group. The Google Groups have searchable public archives, so they get a
 *search* URL carrying the body name; Facebook groups get a plain group link, since their search is
 neither stable nor reliably public.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6c / N6c-1 / N6c-2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6c — Expanded lake profiles.** *(Split at kickoff 2026-08-02 into **N6c-1** — derived numbers —
+and **N6c-2** — links, cards and observability. As scoped it was ~15 workstreams across schema, ETL,
+two clients, a new external API, an admin surface and a corpus-wide re-score, i.e. one review surface
+for all of it.)*
+
+> **⏰ Its data gate is CLEARED as of 2026-08-09 (N7-3).** Everything below that reads *"ETL passes
+> not yet run"* was written before the data campaign. Against the loaded corpus today: **elevation
+> 99.5%** (24,834 of 24,958, 3DEP, 98.2% at 1 m LiDAR), **wind roses 11,114 bodies** stamped from the
+> archive (1,193 at the time this was written; widened to the 250 m gate and completed 2026-08-15),
+> **depth 24.2% overall but 83–90% above 50 acres**, and **bathymetry coverage 2,057
+> bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
+> campaign and gates only the **decile** copy (A5), not the rest of N6c-1.
+>
+> See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) for the campaign's final state.
+
+**N6c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
+2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
+— see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md) *§What the
+N6c-1 build found*. New decision **D90** (wind exposure) plus **D85**, **D86** and **D2** amendments.
+
+**Six of the plan's own claims were false**, four of them caught by running the code against real
+lakes rather than fixtures — which is the finding underneath the findings, since every one of them
+passed its unit tests:
+
+- **The dimension-line method reported 2× the true width.** Hull diameter + perpendicular extent
+  gives `2w` on an elongated rectangle, so a 5 × 1 mile lake would have rendered "5 × 2 miles".
+  Replaced with the minimum-area bounding rectangle; Champlain now measures 106.3 × 14.8 mi against
+  a published ~107 × 14.
+- **`waterBodies.centroid` is not a centroid** — it is `pointOnFeature`, which falls back to a point
+  on the *shoreline* whenever the bbox centre lands outside the polygon. Willoughby's is ring vertex
+  199; Champlain's sits 30.7 km from mid-lake. The fetch profile was casting rays from the shore, so
+  7 of Willoughby's 16 bearings came back 0.0. `centroid` is deliberately left alone (drive-time and
+  town stamps want it); a new `interiorPoint` serves weather sampling, the one consumer it hurt.
+- **Fetch alone names the wrong wind direction (D90).** Founder catch. Measured at Willoughby: the
+  winter rose is bimodal along the trough (19.4% SE, 16.1% SSE, 18.6% NW) with the E/NE quadrant
+  blocked by the ridges — so exposure is `frequency × fetch`, and a lake with no rose says nothing
+  about wind. New `scripts/wind-climate` against NREL's WIND Toolkit; GWA was rejected for having no
+  documented API.
+- **D2's prominence weights were ~13× the score's whole dynamic range.** A "+1 for a name" would
+  have pushed every named body to the widest zoom bucket with all tests still green.
+- **The plan's illustrative caption contradicted D25**, mixing acres and miles with metres and km.
+- **`hasContours` had no data source** — N6b's join is a read-only query that stores nothing. Fixed
+  at the founder's ask: a `bathymetryCoverage` side table records the **2,022** bodies that actually
+  produced a contour line (not the 2,437 the join matched), keyed on `externalId` so it survives a
+  re-import.
+
+*The run order is now load-bearing and asserted:* canonical re-import → depth + elevation →
+`regionStats:recompute` → wind rose → `backfillCells` **last**, because the D2 re-score reads
+everything above it.
+
+**N6c-2 — reference links, NWS alerts, the short forecast, the seed script, per-body summary cards,
+and the per-lake timeline.** ✅ **BUILT 2026-08-09** on branch `phase-n6c-2-links-cards` (off
+`phase-n7-3-unified-corpus`; **unpushed and undeployed on purpose** — a second session was mid-campaign
+against dev, and a redeploy mid-pass is the one way to break an otherwise resumable run). Tests green:
+core 1,738+ · convex 1,141 · web 291+ · mobile 95 · seed-destinations 15. New decisions **D138–D142**.
+
+Shipped: **B** (Windy + the regional community archive, derived and stored nowhere), **B5** (NWS
+alerts on a 15-minute cron, state rung of the zone ladder), **B5b** (the forward forecast), **B7**
+(the one stored link, with its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary
+cards with D86's dots), **F1** (the per-lake activity timeline), and mobile parity for all three
+drawer strips through `openBrowserAsync` (D76).
+
+**Everything satellite deferred to [N6e](./phase-N6e-satellite-imagery.md) at the founder's ask
+(D138)** — the Copernicus deep link, the `satelliteImagery` override and `SATELLITE_MIN_AREA_SQM` —
+so the imagery story lands in one piece rather than a link one phase and a layer the next. That split
+renamed the seed script to `seed-destinations` (**D139**), since the job it does today is Workstream
+D's boosts.
+
+Carries the **D86 amendment**: the consensus dots read `reports.skateQuality`, not the Phase 6
+thumbs, which measure whether a *report* was helpful rather than what the ice was like.
+
+**What the build found — the plan's own findings had not reached its later workstreams:**
+
+- **Workstream B was still built on `centroid`**, which this same plan proves in its finding 2 is a
+  *shoreline* point (Willoughby = ring vertex 199; Champlain 30.7 km off mid-lake). A Windy link for
+  Champlain would have opened 30 km away, silently, because a shoreline coordinate is a valid
+  coordinate. Links and summary cards read `interiorPoint`; a test pins it.
+- **B5b's cheap build is the wrong build (D140).** The forward hours were being discarded by the same
+  filter that feeds `summarizeWeatherSince`, so widening it — the one-line version — would have put
+  predictions into the decay multiplier, the bounty gate and the contradiction settle. The fetch now
+  returns `{ past, forecast }` and D74 is a return type rather than a rule each call site remembers.
+- **E's counter is the wrong shape (D141).** Card counts are window- and season-scoped, so a report
+  ageing out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
+  Recomputed from a bounded index range, with a cron for the decay no write can catch.
+- **E cannot be validated on dev**, which holds 1 report and 2 hazards. It ships correct and renders
+  nothing anywhere. Founder call: build it, validate at N6d or device testing.
+- **The corpus is 24,953 listed, not the 116,070 the plan says throughout** — including in P1 and P2, its two
+  governing rules. The rules survive; every cost argument in the doc was measured on a corpus that no
+  longer exists.
+
+**A reveal flag, so nothing goes untested for being invisible (D142).** Founder ask after the build:
+almost every surface here renders nothing on a corpus with one report, and a missing surface looks
+exactly like a broken one. `PROFILE_REVEAL_ALL` states each absence instead — it never invents a
+value, the revealed card mark is empty rather than computed, and it is **forced off against
+production** whatever the constant says. Flip it to `false` before the season.
+
+✅ **`regionStats` is populated** — 5 states × 5 metrics, recomputed over 24,953 bodies as the N7-3
+campaign's last pass (PR #41, merged after this branch was cut). So A5's decile clauses are **live**,
+not dark: a caption can now say a lake is among the deepest in Vermont. This branch asserted the
+opposite until it merged main; corrected here rather than left standing.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6c (the earlier 'scoped, unbuilt' entry that was never removed) as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6c — Expanded lake profiles: derived stats, captions, and reference links.** 📋 Scoped 2026-07-30,
+unbuilt — see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md); decisions
+**D70** (derived-not-hand-maintained), **D71** (links generated, not stored), **D74** (one physics source
++ NWS alerts), **D75** (satellite ships as a link), **D76** (in-app browser, never a WebView).
+
+N6a gave every lake two depth numbers and a provenance caption, and **told a skater nothing about what
+they mean**. This phase is that payoff plus the lake-page gaps open since Phase 2 — shape, exposure,
+elevation, and where else to look.
+
+> **All five open questions answered 2026-07-31**, adding **D85** (geometry stats measured on the source
+> geometry) and **D86** (the summary card's quality consensus renders as a graded mark, never a word —
+> reversing the doc's own recommendation to defer). Also in scope now: a **short forward forecast** on the
+> lake drawer, which turned out to be free — `weather.ts:112` already requests `forecast_days: '1'` and
+> the window filter discards the forward hours. NWS alerts move to **zone precision with a state
+> fallback rung**, so a slipping zone import can't block the feature.
+
+- **⛔ Elevation now *gates* the N6a depth ETL run** (founder call, 2026-07-31 — *"definitely block N6a
+  ETL run until we're ready for elevation"*). `elevationM` is a per-centroid lookup against Open-Meteo's
+  free elevation endpoint (~1,200 batched requests for all 116,070). Folding it into that unrun loader
+  costs **one column**; doing it afterwards costs **a second full pass over the corpus**. Recorded as a
+  hard gate in [N6a](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate), with the escape
+  hatch stated so it stays reversible under season pressure.
+- **There are two ETL passes in flight, not one (D85).** The depth run carries elevation; the **canonical
+  water re-import** carries the geometry stats, because shoreline and axis must be measured on the
+  pre-simplification geometry rather than the ~5 m-simplified polygon we store. Conflating them is how a
+  field gets missed.
+- **Wind fetch is the genuinely new signal** — a 16-bearing over-water-distance profile precomputed at
+  ETL (16 numbers/body), so the drawer can pair today's wind direction with the distance it crossed. It
+  is one of the main determinants of whether a lake sets smooth black ice or gets wind-slabbed, and
+  nothing in `plans/` had mentioned it before this pass. Long axis + shoreline length come along with it.
+- **The links cover 116k *because* they aren't stored (D71).** They're pure functions of
+  `(centroid, name, states)`, so full-corpus coverage costs a `@skating/core` module and no migration.
+  The founder asked for ETL coverage; not storing them is what delivers it.
+- **This retires the satellite-imagery blocker below.** Copernicus Sentinel data is under the free, full
+  and open licence, so *"needs an imagery source whose terms permit the use"* is answered — the deep link
+  ships here (D75), and **in-app imagery is now its own phase, [N6e](./phase-N6e-satellite-imagery.md)**
+  (scoped 2026-07-31 at the founder's ask). The cost trigger turned out to bind only *half* of it: see
+  **D84**.
+- **NWS alerts are the one new integration** (free, no key, `User-Agent` only). Open-Meteo still computes;
+  NWS only informs (D74).
+- **A proving run, not a general rollout:** `scripts/seed-satellite` (renamed from `seed-destinations`
+  2026-07-31 — named after the job, not its first dataset) matches the ~35–40 destinations already
+  surfaced in research to `waterBodies` rows, sets `curatedBoost`, and verifies each generated Copernicus
+  URL — proving URL shape, name-matching at 116k, and imagery legibility before anything is built on top.
+  **Two commands, not one:** a `--dry-run` emitting reviewable matches, then an apply step, because the
+  founder reviews the list before boosts land. The unmatched entries are the interesting output.

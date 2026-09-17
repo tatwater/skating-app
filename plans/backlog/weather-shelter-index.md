@@ -1,13 +1,13 @@
 # Next-gen — A terrain-and-canopy wind shelter index, and the "where will I be sheltered tomorrow" map
 
-> **Scoped 2026-09-16 (N9 kickoff), post-alpha, unbuilt.** First doc in the `next-gen-*` series:
+> **Scoped 2026-09-16 (N9 kickoff), post-alpha, unbuilt.** First doc in the backlog series:
 > plans the founder wants bundled for after the alpha, not sequenced into the N-phases. This one
 > grew out of N9's §Wind in a cove, where the honest conclusion was that a bay's wind rose is the 2 km
 > cell's and *fetch* is the only bay-specific wind signal we can compute. This is the part fetch
 > cannot answer.
 >
 > **Depends on:** N9 (bays carry their own `fetchProfileM`); the wind pass (N7 step 11) for the
-> loader shape; [`next-gen-weather-stations.md`](./next-gen-weather-stations.md) for the validation
+> loader shape; [`weather-stations.md`](./weather-stations.md) for the validation
 > data. **Blocks nothing.**
 
 ---
@@ -147,7 +147,7 @@ table, reveal gate). Neither is scoped further here.
    people actually set up?
 2. **The rose itself**: Willoughby's terrain-blocked E/NE should show low exposure there; a
    flat-country reservoir should show ~1 everywhere but its treeline.
-3. **The station-bias study** in `next-gen-weather-stations.md`: where a station sits near a bay,
+3. **The station-bias study** in `weather-stations.md`: where a station sits near a bay,
    the model-vs-observed wind bias by sector is the one *measured* quantity that can tune
    `f_terrain` / `f_canopy` rather than leaving them as priors.
 4. **A property test**: exposure is monotone in horizon angle and in canopy cover, and a body with no
@@ -168,8 +168,8 @@ table, reveal gate). Neither is scoped further here.
 
 ## Related
 
-[`phase-N9-subareas-as-places.md`](./phase-N9-subareas-as-places.md) ·
-[`next-gen-weather-stations.md`](./next-gen-weather-stations.md) ·
-[`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md) (fetch, D85/D90) ·
-[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md) (D152, the browse-cell forecast) ·
-[`01-decisions.md`](./01-decisions.md) (D82, D104)
+[`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) ·
+[`weather-stations.md`](./weather-stations.md) ·
+[`phase-N6c-expanded-lake-profiles.md`](../phase-N6c-expanded-lake-profiles.md) (fetch, D85/D90) ·
+[`phase-N6h-weather-detail.md`](../phase-N6h-weather-detail.md) (D152, the browse-cell forecast) ·
+[`01-decisions.md`](../01-decisions.md) (D82, D104)
