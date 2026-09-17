@@ -139,11 +139,16 @@ fi
 
 echo
 echo "campaign ${CAMPAIGN} complete — the path is at /admin/imports?campaign=${CAMPAIGN}"
-echo "Still manual, and deliberately so — both of these can remove a body from the map, so both are"
-echo "dry by default and neither runs without you. Order does not matter; skipping either is silent."
+echo "Still manual, and deliberately so — all three change what the map shows, so all are dry by"
+echo "default and none runs without you. Order does not matter; skipping any is silent."
 echo
-echo "  pnpm --filter @skating/etl prune-floor            # dry run; --apply to delete"
-echo "      rows the current admission rules refuse."
+echo "  pnpm --filter @skating/etl prune-floor            # dry run; --apply to demote"
+echo "      rows the current admission rules refuse — to dormant, never deleted (N7b)."
+echo
+echo "  pnpm --filter @skating/seed-destinations seed-standing \\"
+echo "    --gazetteer=training_data/google_group/gazetteer.csv   # dry run; --apply to shelve"
+echo "      bodies this campaign inserted with no evidence of access or use (N7b) — a fresh"
+echo "      import lands ACTIVE, and this is what puts a new region's 5,000 unskated ponds to sleep."
 echo
 echo "  pnpm --filter @skating/etl retire-absorbed \\"
 echo "    --campaign=${CAMPAIGN}                          # dry run; --apply to fold"

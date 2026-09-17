@@ -174,7 +174,6 @@ describe('buildBodyResultView — the card (D165)', () => {
     chain: chain as NonNullable<typeof chain>,
     otherBayNames: [],
     oneSampleForALargeBody: false,
-    noPublicAccess: false,
     isFavorite: false,
   };
 
@@ -205,13 +204,12 @@ describe('buildBodyResultView — the card (D165)', () => {
     expect(view.focusSubAreaId).toBe('s1');
   });
 
-  it('carries the size caveat and the access mark', () => {
+  it('carries the size caveat', () => {
     const view = buildBodyResultView(
-      { ...base, place: { kind: 'body' }, oneSampleForALargeBody: true, noPublicAccess: true },
+      { ...base, place: { kind: 'body' }, oneSampleForALargeBody: true },
       day(4),
     );
     expect(view.caveat).toBe(ONE_SAMPLE_CAVEAT);
-    expect(view.noPublicAccess).toBe(true);
   });
 });
 
@@ -235,7 +233,6 @@ describe('interleaveLatest — bodies among reports, newest first (D165)', () =>
     place: { kind: 'body' },
     otherBayNames: [],
     oneSampleForALargeBody: false,
-    noPublicAccess: false,
     isFavorite: false,
   });
   const report = (id: string, t: number) => ({ id, t });

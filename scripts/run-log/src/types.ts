@@ -50,7 +50,10 @@ export type ImportRunKind =
    * data quality finding rather than a sequencing mistake.
    */
   | 'access_parking'
-  | 'access_put_ins';
+  | 'access_put_ins'
+  // Corpus standing (N7b): the one-time partition into active / dormant, and the July rollover.
+  | 'standing_seed'
+  | 'standing_rollover';
 
 /** A named tally. Each loader names its own; see the table comment for why they aren't columns. */
 export interface RunCount {

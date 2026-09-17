@@ -130,23 +130,25 @@ describe('waterBodiesToFeatureCollection', () => {
       type: 'lake',
       // Always present, never absent (N6f): the shared dim expression compares against `true`, and a
       // missing property evaluates to null inside an `any`, which throws rather than reading false.
-      noPublicAccess: false,
+      inactive: false,
       selfFlagged: false,
       weatherDimmed: false,
     });
   });
 
-  it('dims a body a moderator ruled shut, and the viewer’s own reports (N6f)', () => {
+  it('dims every non-active standing (N7b), and the viewer’s own reports (N6f)', () => {
     const body = {
       _id: 'wb1',
       name: 'Lake Morey',
       type: 'lake',
       polygon: { type: 'Point' as const, coordinates: [-72.1, 43.9] },
     };
-    expect(
-      waterBodiesToFeatureCollection([{ ...body, publicAccess: { verdict: 'none' } }]).features[0]
-        ?.properties?.noPublicAccess,
-    ).toBe(true);
+    const inactive = (over: Record<string, unknown>) =>
+      waterBodiesToFeatureCollection([{ ...body, ...over }]).features[0]?.properties?.inactive;
+    expect(inactive({ publicAccess: { verdict: 'none', decidedAt: 1 } })).toBe(true);
+    expect(inactive({ publicAccess: { verdict: 'open', decidedAt: 1 } })).toBe(false);
+    expect(inactive({ removedAt: 1 })).toBe(true);
+    expect(inactive({ dormant: { since: 1, reason: 'inactive' } })).toBe(true);
     expect(
       waterBodiesToFeatureCollection([body], new Set(['wb1'])).features[0]?.properties?.selfFlagged,
     ).toBe(true);

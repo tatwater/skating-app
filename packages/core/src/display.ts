@@ -14,6 +14,8 @@
  * admin controls (D49) so a non-engineer can adjust them without a code change.
  */
 
+import { DORMANT_MIN_VISIBLE_ZOOM } from './standing';
+
 /** Surface area (m²) mapping to display score 0 — a tiny pond. At or below this the area term is 0. */
 export const DISPLAY_AREA_MIN_SQM = 100;
 /** Surface area (m²) mapping to display score 1 — ~Lake Champlain, the pilot's largest. Above, caps at 1. */
@@ -182,61 +184,32 @@ export interface DisplayScoreInput {
   curatedBoost?: number;
   /** What we know about the body (N6c / D2). Absent ⇒ no richness boost, same score as before. */
   richness?: ProfileRichness;
-  /**
-   * A moderator ruled that there is no lawful way onto this body (N6f). Demotes it — see
-   * `NO_PUBLIC_ACCESS_DEMOTION`.
-   */
-  noPublicAccess?: boolean;
 }
 
 /**
- * How far a moderator-confirmed "no public access" pushes a body down the zoom ladder (N6f).
+ * Prominence score for a water body: `normalize(log area) + curatedBoost + profileRichness`. The
+ * area term is clamped to [0, 1] at the fixed reference bounds; `curatedBoost` can push the total
+ * above 1 (force wider) or below 0 (demote) — `minVisibleZoom` re-clamps, so out-of-range totals are
+ * safe.
  *
- * **This is the first penalty term, and it amends the rule stated above.** That rule is not softened
- * here, it is scoped — two things make this the exception rather than the first of many (founder
- * call, 2026-08-16):
- *
- * 1. **It is the only attribute that *should* discourage someone from trying.** Every other term
- *    rewards what we know about a lake, and the absence of that knowledge is *our* gap, not the
- *    lake's fault — an undocumented pond has done nothing wrong, which is exactly why subtracting for
- *    it would be unjust. "There is no lawful way in" is a fact about the place, and a map that led
- *    someone there anyway would be doing them harm rather than merely failing to help.
- * 2. **It is entirely contingent on a human decision.** The rest of the ladder moves on aggregates —
- *    time, report density, profile completeness — side effects of activity in the app that a lake
- *    neither controls nor deserves. Nothing here is inferred: a moderator ruled, with a name and an
- *    audit row, and that is a different kind of input from a statistic.
- *
- * The clamp is what makes it *safe* rather than what makes it right: `minVisibleZoom` clamps its
- * input to `[0, 1]`, so the z14 floor holds no matter how negative the total goes. A demoted body
- * draws *later*; it can never stop drawing. It is still a real lake, someone may hold a key or an
- * invitation, and taking it off the map would be a claim we have no business making —
- * `waterBodies.remove` exists for the case where a body genuinely should go (D48).
- *
- * `0.25` is two zoom levels on the `[0,1] → z14..z6` span (`SCORE_PER_ZOOM_LEVEL` is 0.125) —
- * enough that a private lake stops crowding a regional view, small enough that a large one is still
- * findable when you zoom to where you know it is.
- */
-export const NO_PUBLIC_ACCESS_DEMOTION = 2 * SCORE_PER_ZOOM_LEVEL;
-
-/**
- * Prominence score for a water body: `normalize(log area) + curatedBoost + profileRichness`, minus
- * the no-public-access demotion. The area term is clamped to [0, 1] at the fixed reference bounds;
- * `curatedBoost` can push the total above 1 (force wider) or below 0 (demote) — `minVisibleZoom`
- * re-clamps, so out-of-range totals are safe.
+ * **Every term is still a boost.** N6f briefly made "no public access" the ladder's one penalty — a
+ * −2-zoom subtraction, argued as the only attribute that *should* discourage someone from trying.
+ * N7b kept the argument and moved the mechanism: a `none` body is *dormant*, and dormant is a rung
+ * above the floor (`DORMANT_MIN_VISIBLE_ZOOM`), not a number subtracted here. A score says how
+ * prominent a lake is *among the lakes we push*; whether we push it at all is standing, a different
+ * question, answered by `minVisibleZoomFor`.
  */
 export function displayScore({
   surfaceAreaSqM,
   curatedBoost = 0,
   richness,
-  noPublicAccess = false,
 }: DisplayScoreInput): number {
   const area =
     surfaceAreaSqM !== undefined && Number.isFinite(surfaceAreaSqM) && surfaceAreaSqM > 0
       ? surfaceAreaSqM
       : DISPLAY_AREA_MIN_SQM;
   const areaTerm = Math.min(1, Math.max(0, (Math.log(area) - LOG_AREA_MIN) / LOG_AREA_SPAN));
-  const demotion = noPublicAccess ? NO_PUBLIC_ACCESS_DEMOTION : 0;
-  return areaTerm + curatedBoost + profileRichness(richness) - demotion;
+  return areaTerm + curatedBoost + profileRichness(richness);
 }
 
 /**
@@ -249,4 +222,17 @@ export function minVisibleZoom(score: number): number {
   const clamped = Math.min(1, Math.max(0, score));
   const span = MIN_VISIBLE_ZOOM_FLOOR - MIN_VISIBLE_ZOOM_WIDEST;
   return Math.round(MIN_VISIBLE_ZOOM_FLOOR - clamped * span);
+}
+
+/**
+ * The zoom a body first draws at, **given its standing** (N7b) — the function every scoring site
+ * calls, so that "is this lake active" is decided once rather than at each of them.
+ *
+ * An active body draws at the D49 bucket its score earns. Anything else draws at
+ * `DORMANT_MIN_VISIBLE_ZOOM`, past the floor: reachable by zooming in on the water, never by
+ * browsing. The score is still computed and stored for a dormant body, so the day it comes back it
+ * lands at the right rung without a re-score.
+ */
+export function minVisibleZoomFor(score: number, active: boolean): number {
+  return active ? minVisibleZoom(score) : DORMANT_MIN_VISIBLE_ZOOM;
 }

@@ -37,9 +37,11 @@ import {
   bandForCoord,
   bandWithinRadius,
   type DriveTimeBands,
+  isActive,
   isDriveTimeBand,
   memberSubAreaIds,
   nextZonedHourMs,
+  standingOf,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
@@ -159,7 +161,9 @@ export async function enqueueReportNotifications(
   const body = await ctx.db.get(report.waterBodyId);
   if (!body) return;
 
-  // 1. Favorites — notify anyone who favorited this body (any distance), default on.
+  // 1. Favorites — notify anyone who favorited this body (any distance), default on. A removed body
+  // is the one exception (N7b): a takedown must not keep paging the people who favourited it.
+  if (standingOf(body).standing === 'removed') return;
   //
   // **The recipient set is built first, then enqueued once per person** (N9 / D175). A bay favorite
   // shares the parent's `waterBodyId`, so this one scan finds the lake's favoriters *and* every
@@ -217,6 +221,11 @@ export const fanOutNearbyNotifications = internalMutation({
     if (report?.moderationStatus !== 'visible') return { stopped: 'report_gone' as const };
     const body = await ctx.db.get(report.waterBodyId);
     if (!body) return { stopped: 'body_gone' as const };
+    // Only an active body is pushed at people (N7b). A report on a machine-shelved body activated it
+    // before this ran; what is left here is a `none` ruling, a moderator's dormancy or a removal —
+    // none of which "ice near you" should send anyone to. Favourites were already told above: that
+    // is a reference surface, and they asked.
+    if (!isActive(body)) return { stopped: 'body_not_active' as const };
     // A bay report is banded from the bay's own drive-time coordinate — its best put-in, else its
     // representative point (N9 kickoff call 2) — never from the lake's, whose representative point
     // can sit 30 km from where anyone launches. Resolved once per page, not once per profile.

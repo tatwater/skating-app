@@ -39,6 +39,7 @@ import {
   rate,
   reportStripState,
   seasonOf,
+  standingOf,
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -670,7 +671,10 @@ export const sweepCorpus = internalMutation({
       .paginate({ cursor: args.cursor ?? null, numItems: SWEEP_PAGE_SIZE });
 
     for (const body of result.page) {
-      if (!isListed(body)) continue; // removed / rejected / merged bodies aren't coverage
+      // Rejected / merged bodies aren't coverage, and neither is a removed one (N7b: reachable, but
+      // a takedown is not a lake we cover). A dormant body IS counted — it lands in the z16 band,
+      // which is how the chart shows the active/dormant split without a second sweep.
+      if (!isListed(body) || standingOf(body).standing === 'removed') continue;
       for (const state of body.states ?? ['unknown']) {
         states[state] = (states[state] ?? 0) + 1;
       }

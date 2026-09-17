@@ -237,14 +237,31 @@ describe('reports.create', () => {
     expect((await t.run((ctx) => ctx.db.get(reportId)))?.waterBodyId).toEqual(survivor.id);
   });
 
-  test('refuses a report on a removed (unlisted) body', async () => {
+  test('refuses a report on an unlisted (rejected) body', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
-    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }));
+    await t.run((ctx) => ctx.db.patch(id, { reviewStatus: 'rejected' }));
     const asUser = await seedUser(t, 'clerk_a');
     await expect(
       asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME }),
     ).rejects.toThrow(/not found/i);
+  });
+
+  /**
+   * N7b: a removed body is reachable — the landowner skating their own taken-down pond, or a resident
+   * of a private lake, files against the row that carries the takedown. The report exists; the body
+   * stays removed (a report is not evidence the public may go there); nothing fans out.
+   */
+  test('accepts a report on a removed body without un-removing it', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    await t.run((ctx) =>
+      ctx.db.patch(id, { removedAt: Date.now(), removalReason: 'landowner_request' }),
+    );
+    const asUser = await seedUser(t, 'clerk_a');
+    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    const body = await t.run((ctx) => ctx.db.get(id as Id<'waterBodies'>));
+    expect(body?.removedAt).toBeDefined();
   });
 
   test('rejects a photo the author does not own', async () => {

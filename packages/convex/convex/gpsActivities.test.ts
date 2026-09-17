@@ -227,14 +227,18 @@ describe('gpsActivities.ingestTrack', () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
     const realBody = await seedBody(t);
-    // A body the device cached that has since been removed — `isListed` is false, so the hint is
-    // dropped and the track re-resolves from its own geometry.
-    const removedBody = await seedBody(t, { name: 'Removed Pond', offset: 10 });
-    await t.run((ctx) => ctx.db.patch(removedBody, { removedAt: Date.now() }));
+    // A body the device cached that has since been merged away — `isListed` is false, so the hint
+    // is dropped and the track re-resolves from its own geometry. (A *removed* body would be
+    // honoured: since N7b it is reachable, so the landowner's own skate lands on it — see
+    // `resolveBodyForCoord`'s test in waterBodies.)
+    const mergedBody = await seedBody(t, { name: 'Merged Pond', offset: 10 });
+    await t.run((ctx) =>
+      ctx.db.patch(mergedBody, { dedupStatus: 'merged', mergedIntoId: realBody }),
+    );
 
     const activityId = await user.as.mutation(
       api.gpsActivities.ingestTrack,
-      ingestArgs({ waterBodyId: removedBody }),
+      ingestArgs({ waterBodyId: mergedBody }),
     );
     const activity = await t.run((ctx) => ctx.db.get(activityId));
     expect(activity?.waterBodyId).toBe(realBody);
@@ -819,7 +823,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     expect(stale).toBeGreaterThan(0);
   });
 
-  test('returns nothing for an unlisted body', async () => {
+  test('returns nothing for a removed body — a takedown reaches the tracks too', async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
     const bodyId = await seedBody(t);
@@ -828,6 +832,19 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
 
     const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
     expect(tracks).toEqual([]);
+  });
+
+  test('still returns tracks for a dormant body — its history is why it may come back (N7b)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    await skateAndReport(user, bodyId);
+    await t.run((ctx) =>
+      ctx.db.patch(bodyId, { dormant: { since: Date.now(), reason: 'inactive' } }),
+    );
+
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks).toHaveLength(1);
   });
 });
 

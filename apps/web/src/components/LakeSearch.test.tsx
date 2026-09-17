@@ -65,6 +65,11 @@ describe('LakeSearchBox', () => {
     expect(screen.getByText('Reservoir · ME')).toBeInTheDocument();
   });
 
+  it('badges a dormant body as Inactive ahead of its meta (N7b)', () => {
+    renderBox({ items: [{ ...(HITS[0] as LakeHit), inactive: true }] });
+    expect(screen.getByText('Inactive · Lake or pond · NY')).toBeInTheDocument();
+  });
+
   it('tells you which lake a named bay belongs to, not its (parent-inherited) type', () => {
     renderBox({ items: [...HITS, BAY_HIT] });
     expect(screen.getByText('Malletts Bay')).toBeInTheDocument();

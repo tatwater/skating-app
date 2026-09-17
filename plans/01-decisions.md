@@ -5567,3 +5567,94 @@ not as deep as the broad lake, and a bay page reading the lake's 122 m is worse 
 nothing (D3). Its inputs live on disk, so a redraw *clears* it and the admin card asks for the re-run.
 
 **Related:** D4, D9, D44, D60, D93, [`phase-N9`](./phase-N9-subareas-as-places.md).
+
+## D176 — A body has a standing: active, dormant, removed, or unlisted — derived from four fields in one order, and only `active` is pushed (N7b)
+
+**2026-09-16, founder calls at the N7b kickoff; built the same day (N7b PR 1).** The corpus holds
+~25,000 bodies and the founder's target is *"a refined corpus of actually-accessible, actually-skated
+bodies … more like 500, not 25,000"* — with the rest *"in some kind of 'disabled' state … not
+discoverable unless a user specifically tries to access them, whereupon they'll learn why."*
+
+**Standing is derived, never stored whole.** `standingOf(body)` (`@skating/core` `standing.ts`)
+reads `reviewStatus`/`dedupStatus`, `removedAt`, `publicAccess.verdict` and the new `dormant` field
+in one precedence order — unlisted › removed › `none` › dormant › active — so no two fields can
+disagree about what a body is. That is the N6f lesson applied: the access demotion was a *derived*
+number re-derived at six scoring sites, and every omission silently un-demoted a lake. Now one
+function is the input and `scoreFields` takes `active: boolean`, never a hand-spelled flag.
+
+**The dormant rung, not a subtraction.** A body that is not active draws at
+`DORMANT_MIN_VISIBLE_ZOOM` (z16), *past* the D49 discoverability floor: you see it only zoomed in on
+the water itself, dimmed, and the drawer says why. N6f's −2-zoom penalty term is retired; "how
+prominent among the lakes we push" (the score) and "whether we push it at all" (standing) are two
+questions. The cell index is unchanged — `indexLevelFor` clamps to z14 and the `by_cell` range does
+the rest — and a coordinate lookup scans every rung with no cutoff, which is the load-bearing
+property: **a dormant body is still resolvable by a tap or a track.**
+
+**`isListed` now means reachable, and a removed body is listed.** Founder call: removed bodies
+*"should only be map-discoverable … but not from search."* So a D48 removal keeps its cell rows at the
+dormant rung with the reason in the drawer (including *"Removed at the landowner's request"* — *"we
+can re-address this if someone complains"*), is absent from search and every push surface, and is
+found by someone standing on it — so the landowner skating their own taken-down pond, or a resident
+of a private lake, attaches to *that* row rather than minting a fresh public body over the takedown
+(D48's deferred edge (a), closed). Reports there attach and reach no feed or notification.
+
+**`isActive` is the predicate every push surface gates on**: the drive-time fan-out and digest,
+weather discovery, the recommended strip, bounty creation, the weather cell registry (the Open-Meteo
+bill), the ETL enrichment lists (elevation, wind, depth), imagery masks, sub-area cells. Reference
+surfaces — the map at the rung, `get`, favourites (dormant only), a body's own reports and hazards,
+the feed for a dormant body — are left. This supersedes the L1 draft (a `none` body "on the map,
+never recommended"): `none` is simply one dormancy reason.
+
+**Related:** D48, D49, N6f, D177, D178, [`phase-N7b`](./phase-N7b-corpus-by-request.md),
+[`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md).
+
+## D177 — Retention is use within three seasons or a standing human decision; evidence re-activates, and never a ruling (N7b)
+
+**2026-09-16, founder calls.** The rule for what stays active, stated once (`retainsActive`):
+
+- **Use within `INACTIVE_SEASONS` (3):** a report, a matched track, or a hazard on the body since the
+  start of the season three back. *"N=3 sounds good to start."*
+- **Or a standing decision:** a positive `curatedBoost`, or anyone's favourite (*"if you favourited it,
+  you know something we don't"*).
+- **Not** a put-in — *"having a put-in should not rescue an unskated body"* — and not
+  `includedByRequest`: admission is not retention.
+
+**The seed (option b)** partitions the stored corpus once by evidence of *access or use*: a put-in, a
+boost, any human attachment, an admission by request, a user-drawn origin, or a mention in the design
+corpus (`seed-standing --gazetteer`). Ambiguous name matches are reported, not kept. A fresh import
+lands **active** (inserting dormant would have blanked every fixture and every new region for a
+season) and the seed is re-run after a campaign to put an unskated region to sleep.
+
+**The rollover** is a cron, not a queue: each July 1–14, every active body failing the rule becomes
+dormant `inactive`, recorded as an `importRuns` row. Automatic because dormancy is cheap to undo and
+visible on `/admin/water/standing`. Removal stays a human act (D48).
+
+**What re-activates on its own** (`activateOnEvidence`): a report, a track, a hazard, a put-in placed
+or imported, a moderator confirming public access (`open`), a positive boost, a restore, an admitted
+request. **Only the machine-written dormancies yield** (`inactive`, `not_in_campaign`); a moderator's
+dormancy, a `none` ruling and a removal are decisions and are reversed by a person — the resident of a
+private lake skating it is not evidence the public may. Coming back from `not_in_campaign` sets
+`includedByRequest`, or the next campaign would shelve it straight back. Every activation re-scores
+with richness, re-cells, re-registers the weather cell, stamps `activatedAt` and writes an audit row;
+the enrichment passes find the returned bodies by that stamp.
+
+**Related:** D176, D178, D63, D106–D108.
+
+## D178 — The campaign prunes demote to dormant; nothing deletes a body the corpus once held (N7b)
+
+**2026-09-16, founder call:** bodies the rules refuse *"shouldn't leave our database entirely."*
+`pruneBelowAreaFloor`, `pruneNotInCampaign` and `pruneOutsideCoverage` now set `dormant`
+(`not_in_campaign`) instead of deleting — same protections, same dry-by-default, the `deleted` tally
+kept as a field name and counting demotions. A raised acreage floor or a class the merge stops taking
+is therefore a *display* change: the refused body stays reachable, its drawer says *"no longer meets
+the size and type rules"*, and a report brings it back by request. The D91 campaign that deleted
+102,000 rows ran before this and those live in the archives, reachable through the request path
+(D106–D108); this decision does not re-admit them.
+
+**The tombstone the plan asked about is not built**, because no path hard-deletes a removed row
+(all three prunes skip `removedAt`; `retireAbsorbedBodies` folds dedup twins only) and
+`importCanonical` patches by catalogue id — the campaign-walk test pins every state through a
+re-import and both prunes. The real hole was user re-creation over a removed body, closed by D176's
+reachable-removed rule.
+
+**Related:** D91, D97, D176, D177.

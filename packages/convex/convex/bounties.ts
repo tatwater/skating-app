@@ -26,6 +26,7 @@ import {
   DEFAULT_BOUNTY_REWARD_POINTS,
   FRESH_REPORT_HOURS,
   haversineMeters,
+  isActive,
   isMinor,
   MAX_OPEN_BOUNTIES_PER_DAY,
   memberSubAreaIds,
@@ -527,7 +528,14 @@ export const createChecked = internalMutation({
     }
 
     const body = await resolveSurvivor(ctx, waterBodyId);
+    // Active, not merely listed (N7b): a bounty asks other people to go there, which is the one
+    // thing a dormant or removed body must not do.
     if (!body || !isListed(body)) throw new ConvexError('Water body not found');
+    if (!isActive(body)) {
+      throw new ConvexError(
+        'This lake isn\u2019t on the active map, so a bounty can\u2019t send anyone there.',
+      );
+    }
     // Re-check the bay at write time, not just in the action: a moderator could have delisted it (or
     // a merge repointed it) during the Open-Meteo round-trip, and a bounty on an unreachable bay is
     // one nobody can see to fulfill.
@@ -999,7 +1007,7 @@ export const listOpen = query({
     const rows = [];
     for (const b of open) {
       const body = await resolveSurvivor(ctx, b.waterBodyId);
-      if (!body || !isListed(body)) continue; // bounty on a since-removed body — skip
+      if (!body || !isActive(body)) continue; // bounty on a since-shelved or removed body — skip
       if (viewport && !bboxIntersects(body.bbox, viewport)) continue;
       const requester = await ctx.db.get(b.requesterId);
       const subArea = b.subAreaId ? await ctx.db.get(b.subAreaId) : null;

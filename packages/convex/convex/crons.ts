@@ -233,6 +233,23 @@ crons.interval(
 );
 
 /**
+ * The corpus-standing rollover (N7b) — the third once-a-year job, same shape.
+ *
+ * Every active body with no report, track or hazard in the last `INACTIVE_SEASONS` (three) seasons
+ * and no standing human decision (a curated boost, a favourite) becomes dormant: off every push
+ * surface, drawn only when zoomed in on, and back the moment someone reports on it. Automatic
+ * because dormancy is cheap to undo; recorded as an `importRuns` row so "did this season's pass
+ * finish" is a fact, and gated on that row so the daily tick outside July 1–14 costs one indexed
+ * read. Removal stays a human act (D48).
+ */
+crons.interval(
+  'demote inactive bodies at the rollover',
+  { hours: 24 },
+  internal.standing.maybeRunStandingRollover,
+  {},
+);
+
+/**
  * Watch for the imagery season to open (N6e §C3 / D149) — the other once-a-year job, same shape.
  *
  * Daily from 1 October, this asks the observed weather whether freeze-up has started, and records the

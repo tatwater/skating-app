@@ -101,6 +101,7 @@ export * from './sentryPrivacy';
 export * from './shoreBand';
 export * from './solar';
 export * from './spatialCells';
+export * from './standing';
 export * from './strava';
 export * from './subArea';
 export * from './subAreaPlace';

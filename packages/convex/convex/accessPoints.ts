@@ -60,6 +60,7 @@ import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessL
 import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
+import { activateOnEvidence } from './lib/standing';
 import { latLng, literals } from './lib/validators';
 import { resolveSubAreaForPutIn } from './subAreas';
 import { listedBodiesNearCoord } from './waterBodies';
@@ -352,6 +353,7 @@ export const matchAndImportPutIns = internalMutation({
     let parkingMissing = 0;
     const notes: { key: string; reason: string }[] = [];
     const touchedBodies = new Set<Id<'waterBodies'>>();
+    const newlyAccessible = new Set<Id<'waterBodies'>>();
 
     for (const candidate of putIns) {
       const nearby = await bodiesWithin(ctx, candidate.point, PUTIN_SHORE_RADIUS_M);
@@ -426,6 +428,7 @@ export const matchAndImportPutIns = internalMutation({
           createdAt: Date.now(),
         });
         created++;
+        newlyAccessible.add(waterBodyId);
       } else if (existing.source === 'official') {
         operatorHeld++;
         // The approach is measured, not asserted — an operator pinning a marker said "you can get on
@@ -451,6 +454,10 @@ export const matchAndImportPutIns = internalMutation({
     // One recompute per distinct body rather than one per put-in: a lake with six launches would
     // otherwise re-read and re-derive the same set six times inside one batch.
     for (const waterBodyId of touchedBodies) await recomputeAccessKind(ctx, waterBodyId);
+    // Standing (N7b): a body the access pass just found a way onto qualifies for the active map —
+    // the same rule the seed applies. Only on a *new* launch, so a re-run of the pass over bodies the
+    // rollover has since shelved does not un-shelve them by re-stamping the same OSM slipway.
+    for (const waterBodyId of newlyAccessible) await activateOnEvidence(ctx, waterBodyId, 'put_in');
 
     return {
       created,

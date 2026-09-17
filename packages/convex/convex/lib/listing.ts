@@ -1,20 +1,27 @@
 /**
- * `listed` — the derived boolean that decides whether a water body appears on the public
- * map (D48/D5). It decides whether a body has rows in the cell index at all (see `./cellIndex`), set at
- * import / `create` / `approve` / `reject` / `remove`, and queried by
- * `waterBodies.listInViewport` (`listed == true`).
+ * `listed` — **is this body reachable at all?** (D48/D5, re-scoped by N7b.)
  *
- * A body is **listed unless** it's explicitly suppressed:
+ * A listed body has rows in the cell index (`./cellIndex`), can be opened by id, and can be resolved
+ * from a coordinate — by the map at some zoom, by a tap, by a recorded track. It is the predicate for
+ * *existence on the map*, and since N7b it is deliberately **not** the predicate for *being pushed*:
+ * that is `isActive` (`@skating/core`'s `standing.ts`), which every notification, digest, discovery
+ * card, recommended strip and enrichment pass gates on instead.
+ *
+ * A body is **listed unless** reads must not reach it:
  *  - `reviewStatus === 'rejected'` — a moderator rejected a user-drawn body (D37).
  *  - `dedupStatus === 'merged'` — it lost a dedup merge; reads follow the survivor (D36).
- *  - `removedAt` set — an admin soft-delisted it (curation / landowner takedown, D48).
  *
- * So canonical (`osm`/`nhd`) bodies — which carry no `reviewStatus` — and auto-visible
- * `pending` / `approved` user bodies are all listed (the D37 auto-visible-then-review rule).
- * Kept as a pure helper (no `ctx`) so `importCanonical` can re-derive it on re-import while
- * preserving a removed state, rather than resurrecting a takedown.
+ * **`removedAt` no longer unlists** (founder call, 2026-09-16). A removed body — a landowner takedown,
+ * a curation call — draws at the dormant rung (z16, dimmed, with the reason in the drawer), is absent
+ * from search and from every push surface, and *is* found by someone standing on it. That last
+ * property is why: the landowner skating their own pond, or a resident of a private lake, records a
+ * track — and it must attach to the row that carries the takedown rather than mint a fresh public
+ * body over it (D48's deferred edge (a), closed).
+ *
+ * Kept as a pure helper (no `ctx`) so `importCanonical` can re-derive it on re-import.
  */
 
+import { isReachable } from '@skating/core';
 import type { DEDUP_STATUSES, REVIEW_STATUSES } from './enums';
 
 type ReviewStatus = (typeof REVIEW_STATUSES)[number];
@@ -24,14 +31,11 @@ type DedupStatus = (typeof DEDUP_STATUSES)[number];
 export interface ListableBody {
   reviewStatus?: ReviewStatus;
   dedupStatus: DedupStatus;
+  /** Accepted and ignored — a removed body is listed (N7b). Here so `{ ...body, removedAt }` typechecks. */
   removedAt?: number;
 }
 
-/** Whether a water body shows on the public map — decides whether it's cell-indexed at all (D48). */
+/** Whether a water body is reachable — cell-indexed, openable, coordinate-resolvable (D48/N7b). */
 export function isListed(body: ListableBody): boolean {
-  return (
-    body.reviewStatus !== 'rejected' &&
-    body.dedupStatus !== 'merged' &&
-    body.removedAt === undefined
-  );
+  return isReachable(body);
 }

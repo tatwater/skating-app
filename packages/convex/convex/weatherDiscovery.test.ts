@@ -600,7 +600,12 @@ describe('listBodyResults — the feed read (D165)', () => {
     expect(res.exhausted).toBe(false);
   });
 
-  test('marks a no-public-access lake rather than dropping it (call 22)', async () => {
+  /**
+   * N6h's call 22 marked a `none` lake rather than dropping it, deliberately deferring the
+   * corpus-lifecycle answer. N7b is that answer: a `none` body is dormant, and a discovery card
+   * *recommends* a lake — so it is neither registered by the walk nor surfaced by the read.
+   */
+  test('drops a no-public-access lake — it is dormant, and discovery only pushes active bodies (N7b)', async () => {
     const t = convexTest(schema, modules);
     const mod = await seedUser(t, 'mod', 'moderator');
     await seedBody(t, 'Posted', A, {
@@ -612,8 +617,7 @@ describe('listBodyResults — the feed read (D165)', () => {
     const res = await t.query(api.weatherDiscovery.listBodyResults, {
       filters: { weather: { thresholdF: 20, minNights: 3 } },
     });
-    expect(res.results).toHaveLength(1);
-    expect(res.results[0]?.noPublicAccess).toBe(true);
+    expect(res.results).toHaveLength(0);
   });
 });
 

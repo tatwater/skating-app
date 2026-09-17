@@ -573,17 +573,21 @@ lake, with the numbers the profile page needed.*
 - 🟢 **Corpus by request / lifecycle** — N7b
 - ⚪ **1,353 downstate NY bodies still unpurged on dev** — the map draws five whole states, the corpus stops at I-84
 
-## Phase N7b — Corpus by request and lifecycle
-🟡 **In progress** 2026-09-16 · [plan](./phase-N7b-corpus-by-request.md) · D106–D108 D175
+## Phase N7b — Corpus lifecycle and the request path
+🟡 **In progress** 2026-09-16 · PRs #61 #63 · [plan](./phase-N7b-corpus-by-request.md) · D106–D108 D176 D177 D178
 
-Split out of N7 because it's a product feature across two clients, not a data campaign: a skater says
-"this is skateable" about a body below the admission floor, and the catalogue answers — riding N7's
-`includedByRequest` and `belongsInCorpus`, which landed early so N7's own prune couldn't delete what
-this admits. Widened at the 2026-09-16 kickoff into the home for **corpus lifecycle** as a whole:
-admitting, demoting and removing a body, keeping a removed one out of the next campaign, and what
-happens to everything attached to it in each state — starting with the consequence of an N6f `none`
-verdict. On branch `phase-n7b-corpus-lifecycle`. *A skater can vouch a lake into the corpus, and an
-operator can stand one down.*
+Split out of N7 as a product feature, not a data campaign, and widened at kickoff into the whole
+lifecycle: the 25,000-body corpus should settle toward the few hundred that are actually reached and
+skated. PR 1 gives a body a **standing** — `active` · `dormant` · `removed` · `unlisted` — derived
+from four fields by one function (D176). Only `active` is pushed (notifications, discovery, bounties,
+the weather registry, enrichment); everything reachable still draws when zoomed in, and the drawer
+says why. Evidence re-activates a machine-shelved body, while a person's dormancy, a `none` ruling
+and a removal need a person (D177); the prunes demote, never delete (D178). A seed partitions the
+stored corpus by evidence of use and a July cron shelves three idle seasons. PR 2 is the request path
+(D106–D108). *A skater can vouch a lake into the corpus, and an operator can stand one down.*
+
+#### Owed
+- Dev deploy and the seed run (`seed-destinations`), after PR 1 merges
 
 ## Phase N8 — The notification pipeline
 🟢 **Complete** 2026-09-15 · PRs #52 #53 #55 #57 · [plan](./phase-N8-notification-pipeline.md) · D167–D174

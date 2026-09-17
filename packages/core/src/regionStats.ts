@@ -105,3 +105,52 @@ export function isTopDecile(value: number, block: DecileBlock | undefined | null
 export function isBottomDecile(value: number, block: DecileBlock | undefined | null): boolean {
   return decileRankOf(value, block) === 0;
 }
+
+// ── Corpus counts (N7b) ────────────────────────────────────────────────────────────────────────
+
+const STATE_NAMES: Record<string, string> = {
+  NY: 'New York',
+  VT: 'Vermont',
+  NH: 'New Hampshire',
+  ME: 'Maine',
+  MA: 'Massachusetts',
+};
+
+/** One state's public corpus counts — "X known · Y active" (founder call, 2026-09-16). */
+export interface CorpusCountLine {
+  state: string;
+  stateName: string;
+  known: number;
+  /** Absent on a row written before N7b's `recompute` ran; the line then shows known alone. */
+  active?: number;
+}
+
+/**
+ * The per-state "how many lakes" lines, from `regionStats.list`.
+ *
+ * Both numbers, always: *known* is every listed body that is not removed — the corpus a skater can
+ * find by zooming in — and *active* is the subset we push. A single number would either overstate
+ * what the map recommends or understate what it knows, and the founder asked for the pair rather
+ * than a choice between them. Ordered by known, largest first, so the line reads as a ranking.
+ */
+export function corpusCountLines(
+  rows: readonly { state: string; bodiesScanned: number; bodiesActive?: number }[],
+): CorpusCountLine[] {
+  return rows
+    .filter((r) => STATE_NAMES[r.state] !== undefined)
+    .map((r) => ({
+      state: r.state,
+      stateName: STATE_NAMES[r.state] as string,
+      known: r.bodiesScanned,
+      ...(r.bodiesActive !== undefined ? { active: r.bodiesActive } : {}),
+    }))
+    .sort((a, b) => b.known - a.known);
+}
+
+/** "4,102 known · 220 active", or "4,102 known" before the active count exists. */
+export function formatCorpusCount(line: CorpusCountLine): string {
+  const known = `${line.known.toLocaleString('en-US')} known`;
+  return line.active === undefined
+    ? known
+    : `${known} · ${line.active.toLocaleString('en-US')} active`;
+}

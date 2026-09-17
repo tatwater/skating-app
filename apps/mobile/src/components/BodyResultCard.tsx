@@ -73,7 +73,6 @@ export function BodyResultCard({
       <XStack gap="$1" flexWrap="wrap">
         <Badge tone="solid">Weather match</Badge>
         {card.isHikeIn ? <Badge>Hike-in</Badge> : null}
-        {card.noPublicAccess ? <Badge>No public access</Badge> : null}
       </XStack>
     </YStack>
   );

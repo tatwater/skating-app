@@ -1,8 +1,11 @@
 import {
+  DORMANT_MIN_VISIBLE_ZOOM,
   HARD_MIN_SURFACE_AREA_SQM,
+  isActive,
   meetsAreaFloor,
   type ReviewReason,
   satelliteImageryAvailable,
+  standingOf,
 } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
@@ -1644,9 +1647,20 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     return { deleted, scanned, kept, attachedBy };
   }
 
+  /**
+   * The bodies still **active** — since N7b the prune demotes rather than deletes, so "what
+   * survived" means what is still on the active map. `stillStored` below pins that nothing left.
+   */
   async function remaining(t: ReturnType<typeof convexTest>): Promise<string[]> {
     const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
-    return rows.map((r) => r.externalId ?? '(none)').sort();
+    return rows
+      .filter((r) => isActive(r))
+      .map((r) => r.externalId ?? '(none)')
+      .sort();
+  }
+
+  async function stillStored(t: ReturnType<typeof convexTest>): Promise<number> {
+    return (await t.run((ctx) => ctx.db.query('waterBodies').collect())).length;
   }
 
   test('D96: removes unnamed wetland over five acres, keeps named wetland and unnamed lakes', async () => {
@@ -1715,14 +1729,25 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     expect(result.deleted).toBe(2);
     expect(result.kept.clearsFloor).toBe(2);
     expect(await remaining(t)).toEqual(['osm/big', 'osm/named']);
-    // The N1 index row went with it — an orphan cell would keep the body on the map.
+    // Demoted, not deleted (N7b): the row is still there, dormant with the prune's reason, and its
+    // cell rows moved to the dormant rung — reachable by someone standing on it, invisible to
+    // anyone browsing.
+    expect(await stillStored(t)).toBe(4);
+    const row = await t.run((ctx) => ctx.db.get(doomed));
+    expect(row?.dormant?.reason).toBe('not_in_campaign');
+    expect(row?.minVisibleZoom).toBe(DORMANT_MIN_VISIBLE_ZOOM);
     const cells = await t.run((ctx) =>
       ctx.db
         .query('waterBodyCells')
         .withIndex('by_body', (q) => q.eq('waterBodyId', doomed))
         .collect(),
     );
-    expect(cells).toHaveLength(0);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((c) => c.minVisibleZoom === DORMANT_MIN_VISIBLE_ZOOM)).toBe(true);
+    // Running it again finds nothing to do: the demoted rows are counted, not re-demoted.
+    const again = await runPrune(t, true);
+    expect(again.deleted).toBe(0);
+    expect(again.kept.alreadyDormant).toBe(2);
   });
 
   test('dry by default: identical tallies, nothing written', async () => {
@@ -1736,6 +1761,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     const wet = await runPrune(t, true);
     expect(wet.deleted).toBe(dry.deleted);
     expect(await remaining(t)).toEqual([]);
+    expect(await stillStored(t)).toBe(1); // demoted, never deleted
   });
 
   test('keeps a sub-floor body that anything is attached to, and names the table', async () => {
@@ -1774,7 +1800,9 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
       dedupOrMerged: 1,
       userCreated: 1,
     });
-    expect(await remaining(t)).toHaveLength(4);
+    // Three active, and the delisted one still stored (it was never active to begin with).
+    expect(await remaining(t)).toHaveLength(3);
+    expect(await stillStored(t)).toBe(4);
   });
 
   test('drops an unnamed 1–5 ac body even where a state agency surveyed it', async () => {
@@ -1791,7 +1819,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     expect(await remaining(t)).toEqual([]);
   });
 
-  test('never deletes a body whose area we do not know — absent is not small', async () => {
+  test('never demotes a body whose area we do not know — absent is not small', async () => {
     const t = convexTestWithGeo();
     await seedBody(t, { externalId: 'osm/unmeasured', surfaceAreaSqM: undefined });
 
@@ -1801,16 +1829,18 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     expect(await remaining(t)).toEqual(['osm/unmeasured']);
   });
 
-  test('agrees exactly with the importer: nothing it deletes would be re-imported', async () => {
+  test('agrees exactly with the importer: nothing it demotes would be re-imported', async () => {
     // The invariant that makes the prune safe to run repeatedly. If these two ever disagree, a
-    // prune deletes rows the next canonical import puts straight back.
+    // prune shelves rows the next canonical import puts straight back.
     const t = convexTestWithGeo();
     await seedBody(t, { externalId: 'osm/puddle' });
     await seedBody(t, { externalId: 'osm/named', name: 'Someones Pond' });
     await seedBody(t, { externalId: 'osm/big', surfaceAreaSqM: BIG });
     await runPrune(t, true);
 
-    const survivors = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const survivors = (await t.run((ctx) => ctx.db.query('waterBodies').collect())).filter((b) =>
+      isActive(b),
+    );
     for (const body of survivors) {
       expect(meetsAreaFloor({ name: body.name, surfaceAreaSqM: body.surfaceAreaSqM ?? 0 })).toBe(
         true,
@@ -1974,11 +2004,26 @@ describe('waterBodies.get (detail + merged redirect, D36/D47)', () => {
     expect(result.body._id).toEqual(survivor._id);
   });
 
-  test('signals unavailable (not null) for a removed body', async () => {
+  test('returns a removed body whole, so the client can say why (N7b)', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
     const id = await onlyBodyId(t);
-    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }));
+    await t.run((ctx) =>
+      ctx.db.patch(id, { removedAt: Date.now(), removalReason: 'landowner_request' }),
+    );
+    const result = await t.query(api.waterBodies.get, { waterBodyId: id });
+    if (!result?.available) throw new Error('expected the body');
+    expect(standingOf(result.body)).toMatchObject({
+      standing: 'removed',
+      reason: 'landowner_request',
+    });
+  });
+
+  test('signals unavailable (not null) for a rejected body', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await onlyBodyId(t);
+    await t.run((ctx) => ctx.db.patch(id, { reviewStatus: 'rejected' }));
     expect(await t.query(api.waterBodies.get, { waterBodyId: id })).toEqual({ available: false });
   });
 
@@ -2696,14 +2741,34 @@ describe('waterBodies.resolveBodyForCoord (F2 offline flush / coord→lake)', ()
     expect(res).toBeNull();
   });
 
-  test('excludes an unlisted (removed) body even when the coord is inside it', async () => {
+  test('excludes an unlisted (rejected) body even when the coord is inside it', async () => {
     const t = convexTestWithGeo();
     const id = await seedCanonical(t);
-    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }));
+    await t.run((ctx) => ctx.db.patch(id, { reviewStatus: 'rejected' }));
+    await t.mutation(internal.waterBodies.backfillCells, {});
     const res = await t.query(api.waterBodies.resolveBodyForCoord, {
       coord: { lat: 0.5, lng: 0.5 },
     });
     expect(res).toBeNull();
+  });
+
+  /**
+   * The N7b change, and the reason a removed body keeps its cell rows: the landowner skating their
+   * own taken-down pond resolves to *that* row, so their report attaches to it rather than minting
+   * a fresh public body over the takedown.
+   */
+  test('resolves a removed body when the coord is inside it (N7b)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedCanonical(t);
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    await asAdmin.mutation(api.waterBodies.remove, {
+      waterBodyId: id,
+      reason: 'landowner_request',
+    });
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 0.5 },
+    });
+    expect(res?.waterBodyId).toEqual(id);
   });
 });
 
@@ -3055,12 +3120,17 @@ describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
     });
     const after = await t.run(async (ctx) => ctx.db.get(id));
     expect(after?.removedAt).toBeDefined();
-    // A delisted body has its cell rows REMOVED rather than flagged — there is no `listed` column
-    // on `waterBodyCells`, so the viewport query cannot reach it at all. (The first version of this
-    // assertion read `c.listed === false`, which was `undefined === false` on every row and passed
-    // vacuously over an empty array. A typecheck caught it; the test never would have.)
+    expect(after?.removalReason).toBe('landowner_request');
+    // Since N7b a removed body keeps cell rows — at the dormant rung, so the browsable viewport
+    // read (`minVisibleZoom <= zoom` at z14) cannot reach it, while a coordinate lookup can. The
+    // re-import must re-derive that rung from the preserved `removedAt`, not from area + boost.
+    expect(after?.minVisibleZoom).toBe(DORMANT_MIN_VISIBLE_ZOOM);
     const cells = await t.run((ctx) => ctx.db.query('waterBodyCells').collect());
-    expect(cells).toHaveLength(0);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((c) => c.minVisibleZoom === DORMANT_MIN_VISIBLE_ZOOM)).toBe(true);
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
+    ).toHaveLength(0);
   });
 });
 
@@ -3162,12 +3232,13 @@ describe('the merged record is accepted and stored whole', () => {
 describe('pruneNotInCampaign — campaign step 6', () => {
   const CAMPAIGN = 'n7-2026-08-06';
 
-  test('deletes a stored body the master list did not re-affirm', async () => {
+  test('demotes a stored body the master list did not re-affirm (deleted it, before N7b)', async () => {
     // `importCanonical` never deletes, so after a re-import the corpus is the UNION of the new master
     // list and whatever was there before — and neither set contains the other. A body the new rules
     // now refuse (a vetoed Great Lake, an out-of-region row, an unnamed wetland under the 50-acre
     // bar) survives forever: `pruneBelowAreaFloor` only sees area, `pruneOutsideCoverage` only sees
-    // polygons handed to it.
+    // polygons handed to it. Since N7b the answer is dormancy, not deletion: the row stays, off
+    // every push surface, and a report on it brings it back as `includedByRequest`.
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1', externalId: 'way/1' }],
@@ -3177,7 +3248,19 @@ describe('pruneNotInCampaign — campaign step 6', () => {
       apply: true,
     });
     expect(res).toMatchObject({ deleted: 1 });
-    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(0);
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.dormant?.reason).toBe('not_in_campaign');
+    expect(isActive(rows[0] as Doc<'waterBodies'>)).toBe(false);
+    // A second pass counts it rather than re-shelving it.
+    const again = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(again).toMatchObject({
+      deleted: 0,
+      kept: expect.objectContaining({ alreadyDormant: 1 }),
+    });
   });
 
   test('keeps a body this campaign re-affirmed', async () => {
@@ -3736,7 +3819,7 @@ describe('corpusStats — the paged census the campaign is measured against', ()
   });
 });
 
-describe('pruneOutsideCoverage — the coverage cut that deletes', () => {
+describe('pruneOutsideCoverage — the coverage cut that demotes', () => {
   const DOWNSTATE = {
     type: 'Polygon' as const,
     coordinates: [
@@ -3763,7 +3846,7 @@ describe('pruneOutsideCoverage — the coverage cut that deletes', () => {
       }),
     );
 
-  test('deletes a body inside the excluded polygons and keeps one outside', async () => {
+  test('demotes a body inside the excluded polygons and keeps one outside', async () => {
     const t = convexTestWithGeo();
     const inside = await seedAt(t, -73.5, 41.2);
     const outside = await seedAt(t, -70, 44);
@@ -3776,8 +3859,11 @@ describe('pruneOutsideCoverage — the coverage cut that deletes', () => {
       deleted: 1,
       kept: expect.objectContaining({ inCoverage: 1 }),
     });
-    expect(await t.run((ctx) => ctx.db.get(inside))).toBeNull();
-    expect(await t.run((ctx) => ctx.db.get(outside))).not.toBeNull();
+    // Dormant, not gone (N7b).
+    const shelved = await t.run((ctx) => ctx.db.get(inside));
+    expect(shelved?.dormant?.reason).toBe('not_in_campaign');
+    const kept = await t.run((ctx) => ctx.db.get(outside));
+    expect(kept?.dormant).toBeUndefined();
   });
 
   test('is dry by default', async () => {
@@ -4200,7 +4286,7 @@ describe('a boost of zero is not a curation decision', () => {
       apply: true,
     });
     expect(res).toMatchObject({ deleted: 1, kept: expect.objectContaining({ curated: 0 }) });
-    expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(id)))?.dormant?.reason).toBe('not_in_campaign');
   });
 
   test('a real boost still protects, and so does a NEGATIVE one', async () => {

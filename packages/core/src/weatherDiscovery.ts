@@ -256,8 +256,6 @@ export interface BodyResultData {
   /** The lake is too large for one reading and was checked at one point (PR 1's caveat). */
   oneSampleForALargeBody: boolean;
   accessKind?: string;
-  /** A moderator ruled no public access (N6f); the card marks it, never hides it. */
-  noPublicAccess: boolean;
   isFavorite: boolean;
 }
 
@@ -280,7 +278,6 @@ export interface BodyResultView {
   /** `subAreaId` to focus on tap, when the match was read at a bay. */
   focusSubAreaId: string | null;
   isFavorite: boolean;
-  noPublicAccess: boolean;
   isHikeIn: boolean;
 }
 
@@ -319,7 +316,6 @@ export function buildBodyResultView(data: BodyResultData, now: number): BodyResu
     relativeTime: formatRelativeTime(data.eventMs, now),
     focusSubAreaId: data.place.kind === 'subArea' ? data.place.subAreaId : null,
     isFavorite: data.isFavorite,
-    noPublicAccess: data.noPublicAccess,
     isHikeIn: data.accessKind === 'hike_in',
   };
 }
