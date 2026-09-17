@@ -1,6 +1,6 @@
 # Phase 1 build plan — Water-body data
 
-The concrete implementation plan for **Phase 1** of [`07-roadmap.md`](./07-roadmap.md).
+The concrete implementation plan for **Phase 1** of [`07-roadmap.md`](../07-roadmap.md).
 Design rationale lives in the decisions log (D5, D6, D14, D36, D37, **D48**); this doc is
 the *how* — ordered workstreams, file-level changes, and the test plan.
 
@@ -14,7 +14,7 @@ the *how* — ordered workstreams, file-level changes, and the test plan.
 > rectangle, the `isLarge` two-tier scan, the 256-row clamp) is gone. Reads now run on a bbox-coverage
 > cell index whose cost follows from geometry. This doc is kept as history because its two
 > read-cap postmortems are the clearest record of the failure mode; see
-> [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for what replaced it.
+> [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md) for what replaced it.
 
 ## Scope (decided)
 
@@ -270,7 +270,7 @@ everything (it can't, and shouldn't — that's clutter).
 *The roadmap entry for Phase 1 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 1 — Water-body data ✅ Complete (2026-07-13)
-> **Detailed build plan:** [`phase-1-water-bodies.md`](./phase-1-water-bodies.md).
+> **Detailed build plan:** [`phases/01-water-bodies.md`](./01-water-bodies.md).
 > **Pilot region: Vermont** (compact; the Nordic-skating heartland — Lake Morey et al.).
 > **Rivers deferred** to a later release (reaches are hard; pilot skating is still-water) —
 > import lakes/ponds/reservoirs only.

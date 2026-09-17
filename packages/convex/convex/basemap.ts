@@ -13,7 +13,7 @@
  * viewed tiles per map view (KBs), so pilot bandwidth is negligible and the ~280 MB Vermont
  * file sits well under the free-tier storage cap. If per-tile egress grows as regions expand,
  * Cloudflare R2 (zero egress) is the documented scale-out host — swapping is a `VITE_PMTILES_URL`
- * change, nothing here (see `plans/phase-1-water-bodies.md` open items + `04-integrations.md`).
+ * change, nothing here (see `plans/phases/01-water-bodies.md` open items + `04-integrations.md`).
  */
 
 import { v } from 'convex/values';

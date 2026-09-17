@@ -222,7 +222,7 @@ comments for nothing.)
 
 ### Amendment 3 — the `N3-N4 | A3-B4` line is a typo
 
-`phase-N3-N4-account-lifecycle.md` is one doc that absorbed two roadmap entries. It becomes
+`phases/A03-A04-account-lifecycle.md` is one doc that absorbed two roadmap entries. It becomes
 `phase-A03-A04-account-lifecycle.md` (`Phase A03/A04` in prose), with `A04` never used alone. Not
 `A3-B4`.
 
@@ -283,7 +283,7 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    itself on the next cut, which prod needs anyway.
 3. **Links and anchors — paths go through a filename map, never the token regex.** 237 intra-plans
    links, 12 with anchors, 67 path links from `docs/`, `scripts/*/README.md`, and code
-   (`scripts/bathymetry/src/provenance.ts` cites `plans/phase-N6b-bathymetry-layer.md` by path).
+   (`scripts/bathymetry/src/provenance.ts` cites `plans/phases/A06b-bathymetry-layer.md` by path).
    The directory move adds **re-basing**: 54 links from phase docs to `./01-decisions.md#…` /
    `./research/…` become `../…`, and 155 links from `00–08` + README to `./phase-*` become
    `./phases/…`. So every path is rewritten from an explicit 30-entry old→new filename map, with
@@ -317,12 +317,12 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    use the two-step `git mv` via a temp name.
 7. **Claude's memory dir.** 38 files speak the old names. Rewrite their *contents* in the same pass
    (same regex, same review); their filenames are internal ids and stay. Separately: a prior session
-   wrote `memory/phase-7-operator-surface.md` into the **repo root** (tracked, commit `54ae486`)
+   wrote `memory/phases/07-operator-surface.md` into the **repo root** (tracked, commit `54ae486`)
    instead of `~/.claude/…/memory/` — `git rm` it in the mechanical PR.
 8. **The next-gen docs get sorted, not renamed in place.** By the phase-vs-feat test: this doc and
    `us-spellings.md` are scoped and scheduled → `features/phase-numbers.md`,
    `features/us-spellings.md`; `next-gen-weather-shelter-index.md`, `next-gen-weather-stations.md`
-   and `phase-N6g-imagery-research.md` are unscoped → `backlog/weather-shelter-index.md`,
+   and `backlog/A06g-imagery-research.md` are unscoped → `backlog/weather-shelter-index.md`,
    `backlog/weather-stations.md`, `backlog/imagery-research.md`.
 9. **Verified clean, nothing to do:** the Fly app is `skating-imagery`; no cron name, R2 key,
    snapshot file, or `vitest -t` filter carries a token; GitHub has no repo description, milestones,

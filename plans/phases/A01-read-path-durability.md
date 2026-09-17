@@ -1,7 +1,7 @@
 # N1 — Read-path durability: the crash class
 
 > **Status: ✅ complete on dev (2026-07-26); prod deferred.** PR **#27**. The first item in the
-> roadmap's *Next-phase candidates* register ([`07-roadmap.md`](./07-roadmap.md) → *Later /
+> roadmap's *Next-phase candidates* register ([`07-roadmap.md`](../07-roadmap.md) → *Later /
 > deferred* → N1), picked first because this is the map's front door and its failure mode is a
 > **crash**, not a slowdown.
 >
@@ -39,7 +39,7 @@ The entry was written from the Phase-6 sketch and had drifted. Corrections found
 2. **The trigger already fired, and the safety constants are stale.** `MAX_VIEWPORT_LIMIT = 256`
    was tuned against a measured "~320 crash edge" on the **9,967-body Vermont** corpus (PR #11,
    Phase 1). Phase 2.5 then loaded **~116k bodies** — NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885
-   plus VT's ~9,970 (`scripts/etl/README.md`, `phase-2.5-regional-expansion.md` §1). Nobody
+   plus VT's ~9,970 (`scripts/etl/README.md`, `phases/02b-regional-expansion.md` §1). Nobody
    re-measured. The roadmap's own trigger ("do this when the corpus grows enough that the 256 clamp
    visibly drops bodies at normal zoom") fired **11.6× ago**; the register just didn't know it.
 
@@ -444,7 +444,7 @@ asserts they share a fate; against the old cut, the head pond came back and the 
 *The roadmap entry for N1 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ~~**N1 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
-[`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for the design, the
+[`phases/A01-read-path-durability.md`](./A01-read-path-durability.md) for the design, the
 corrections to what this entry used to say, and the measured results.
 
 Shipped: `@convex-dev/geospatial` is **gone entirely** (both instances, plus `convex.config.ts` —

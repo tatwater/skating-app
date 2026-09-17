@@ -1,7 +1,7 @@
 # Phase 9 — Hazard decay calibration & behavior research
 
 > **What this is.** The evidence-backed calibration promised in
-> [`phase-9-hazards.md`](../phase-9-hazards.md) → "Research follow-up." A separate session
+> [`phases/09a-hazards.md`](../phases/09a-hazards.md) → "Research follow-up." A separate session
 > (2026-07-21) mined two sources for **how each ice hazard behaves over time and weather**, then fed the
 > results back into **D52** ([`01-decisions.md`](../01-decisions.md)) and the schema
 > ([`06-data-model.md`](../06-data-model.md)). This doc is the durable record: the calibrated
@@ -211,7 +211,7 @@ Also for Phase 10:
 - **Depth / shallow.** Shallow ponds & bays melt from the bottom and go out first — a body-level
   shallow/pond signal sharpens decay (see `shallow_bay_early_thaw` bodyFeature). **No depth data source
   exists in OSM;** v1 ships this as a manual bodyFeature, with a HydroLAKES + GLOBathy backfill deferred
-  (see `phase-10-weather.md` → Later/deferred).
+  (see `phases/10-weather.md` → Later/deferred).
 
 **The Phase-10 variable set (expanded 2026-07-22 scoping — supersedes the original strip's five vars).**
 The original `WeatherSinceSummary` (peak temp · hours near/above freezing · sun-hours · precip · max wind)
@@ -229,7 +229,7 @@ is a fine *descriptive* strip but misses what the *decay model* needs. Two kinds
   wind holes; during freeze = faster growth). Open-Meteo raw fields to fetch:
   `temperature_2m, precipitation, rain, snowfall, snow_depth, wind_speed_10m, wind_gusts_10m, cloud_cover,
   sunshine_duration, shortwave_radiation`. **Out of scope:** dew point / humidity / freezing-rain glaze
-  (below our usable resolution). Full build plan: `phase-10-weather.md`.
+  (below our usable resolution). Full build plan: `phases/10-weather.md`.
 
 ---
 

@@ -244,7 +244,7 @@ export type ConditionSource = (typeof CONDITION_SOURCES)[number];
  * decay tier, and `Record<HazardType, HazardDecay>` could not typecheck against the research table.
  *
  * Ordered by decay tier (A → D) so the table below reads top-to-bottom as volatile → permanent.
- * Evidence for every entry: `plans/phase-9-hazard-research.md`.
+ * Evidence for every entry: `plans/research/hazard-decay-calibration-and-behavior.md`.
  */
 export const HAZARD_TYPES = [
   // Tier A — volatile: refreeze/re-open within a day.

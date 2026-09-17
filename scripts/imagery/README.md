@@ -3,7 +3,7 @@
 Cuts Sentinel granules down to the corpus and publishes masked raster PMTiles to R2, so the freeze-up
 scrubber is an archive URL swap rather than a metered API call per lake.
 
-Phase doc: [`plans/phase-N6e-satellite-imagery.md`](../../plans/phase-N6e-satellite-imagery.md) —
+Phase doc: [`plans/phases/A06e-satellite-imagery.md`](../../plans/phases/A06e-satellite-imagery.md) —
 **§C2 (D148)** is the decision this directory implements, and the *Settled 2026-08-21* section is
 where the hosting call and its one condition live.
 

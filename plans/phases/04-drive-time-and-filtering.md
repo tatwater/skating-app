@@ -1,6 +1,6 @@
 # Phase 4 — Drive-time + dynamic filtering
 
-> **Roadmap:** [`07-roadmap.md`](./07-roadmap.md) → Phase 4. This is the detailed build plan,
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 4. This is the detailed build plan,
 > in the style of the Phase 1/2/2.5/3/5 docs.
 >
 > **What this phase is.** Turns drive-time from a *hard global gate* (the original Phase-4 sketch)
@@ -23,7 +23,7 @@
 > **Build order:** web first, then mobile (mirrors Phase 2/3/5). Backend + `@skating/core` geometry
 > front-load; both clients consume the same `listFeed` filter args + isochrone helpers.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ---
 
@@ -296,7 +296,7 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 *The roadmap entry for Phase 4 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 4 — Drive-time + dynamic filtering ✅ Complete (dev; prod deferred) (2026-07-18)
-> **Detailed build plan:** [`phase-4-drive-time-and-filtering.md`](./phase-4-drive-time-and-filtering.md)
+> **Detailed build plan:** [`phases/04-drive-time-and-filtering.md`](./04-drive-time-and-filtering.md)
 > (decisions settled 2026-07-17).
 >
 > **Status: ✅ shipped on dev (2026-07-18), PR #19** — all six workstreams landed: **favorites**

@@ -5,7 +5,7 @@
  *
  * Sunset-timed *notifications* were considered and dropped twice — the digest flushes at a fixed 20:00
  * ET because a fixed hour needs no astronomy and no per-body fetch
- * (`plans/phase-N8-notification-pipeline.md:508`). **That decision stands and this module does not
+ * (`plans/phases/A08-notification-pipeline.md:508`). **That decision stands and this module does not
  * reopen it.** Nothing here is imported by the scheduler; `schedule.ts` still knows only about wall
  * clocks. What changed is not the cost of the calculation but the question being asked: a digest picks
  * one hour for thousands of users, while a lake drawer answers "may I be out there right now" for one

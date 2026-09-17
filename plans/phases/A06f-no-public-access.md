@@ -14,9 +14,9 @@ expires, or a body that vanishes — and needed a third: **on the map, and marke
 > it stands, in the shape of the other N-series docs, so the next person can find it. See *§The
 > follow-up* for what writing it turned up.
 > **No D-number was assigned.** The founder calls are recorded in *§Founder calls* below rather than
-> in [`01-decisions.md`](./01-decisions.md); the only entry there that touches this phase is **D166**
+> in [`01-decisions.md`](../01-decisions.md); the only entry there that touches this phase is **D166**
 > (N6h), which re-uses the map dim this phase built.
-> **Rode with:** [N6e](./phase-N6e-satellite-imagery.md)'s posted-access rules and four stranded
+> **Rode with:** [N6e](./A06e-satellite-imagery.md)'s posted-access rules and four stranded
 > N7-3 wind-rose commits — three lanes on one branch, separated by commit prefix. The PR body is the
 > summary of all three; this doc is the `n6f` prefix only.
 > **Touches:** `waterBodies` (a new field and six scoring sites), `contentFlags` (a new target type
@@ -322,7 +322,7 @@ The You tab's unreported list needed a **server `activityId`** path through the 
 recorder hands over a local draft id because the track may not have flushed, but a row from the
 server may have no local draft at all. That path is what un-blocked N7b's `NewWaterPrompt`, which
 was written, complete and unmounted for lack of exactly this id (see
-[N7b](./phase-N7b-corpus-by-request.md#-the-client-half-is-already-written-and-unmounted--wire-it-dont-write-it-noted-2026-08-16)).
+[N7b](./A07b-corpus-by-request.md#-the-client-half-is-already-written-and-unmounted--wire-it-dont-write-it-noted-2026-08-16)).
 
 ---
 
@@ -395,11 +395,11 @@ red run teaches anyone is to re-run it.
   been on a device. Put-in placement *was* click-tested by hand. Both want a look on the next
   preview build; neither is code.
 - **No corpus-lifecycle consequence of a `none` verdict.** Recorded in
-  [N6h](./phase-N6h-weather-detail.md) rather than here: weather discovery deliberately does *not*
+  [N6h](./A06h-weather-detail.md) rather than here: weather discovery deliberately does *not*
   filter `none` bodies, because the founder's read is that a confirmed ruling should eventually
   **remove a body from the corpus** rather than have every query learn to skip it — *"the ideal
   situation eventually (way down the line) would be managing 5,000 lakes that actually get skated
-  on, not 20,000 nobody ever touches."* **Scoped 2026-09-16 as [N7b Workstream L1](./phase-N7b-corpus-by-request.md#workstream-l1--what-a-none-verdict-does-next-on-the-map-and-marked-never-recommended)
+  on, not 20,000 nobody ever touches."* **Scoped 2026-09-16 as [N7b Workstream L1](./A07b-corpus-by-request.md#workstream-l1--what-a-none-verdict-does-next-on-the-map-and-marked-never-recommended)
   and proposed as D175:** a `none` verdict removes a body from every *discovery* surface and no
   *reference* surface (one `isDiscoverable` predicate; purge stays a human act via D48 plus a
   purge-candidate list). Its own PR, because it touches the Phase 4 fan-out.
@@ -508,21 +508,21 @@ core and by the same server tests, not by a render.
 
 ## Where this phase is referenced from
 
-- **D166** ([`01-decisions.md`](./01-decisions.md)) — N6h's discovery dim rides `withAccessDim`.
-- [**N6h**](./phase-N6h-weather-detail.md) — the map-dim reuse, and the deferred corpus-lifecycle
+- **D166** ([`01-decisions.md`](../01-decisions.md)) — N6h's discovery dim rides `withAccessDim`.
+- [**N6h**](./A06h-weather-detail.md) — the map-dim reuse, and the deferred corpus-lifecycle
   question above.
-- [**N7b**](./phase-N7b-corpus-by-request.md) — `NewWaterPrompt` is un-blocked by the server
+- [**N7b**](./A07b-corpus-by-request.md) — `NewWaterPrompt` is un-blocked by the server
   `activityId` path this phase built; that phase wires it rather than writing a second one.
-- [**N6d**](./phase-N6d-lake-access-points.md) — the `accessAlerts` lifecycle this phase is
+- [**N6d**](./A06d-body-access-points.md) — the `accessAlerts` lifecycle this phase is
   deliberately *not*, and the three-edit target-type rule it inherited.
-- [**N6e**](./phase-N6e-satellite-imagery.md) — `postedAccess`, the annotate-never-suppress contract
+- [**N6e**](./A06e-satellite-imagery.md) — `postedAccess`, the annotate-never-suppress contract
   that made this a separate field.
 - **PR #44** — the merged branch, with the N7-3 wind rose and N6e's posted rules in the same history.
 - **PR #56** — this doc, the mobile section, the web test, and the body-key fix (*§The follow-up*).
 
 > One stray reference *was* a mislabel, not a link: `scripts/imagery/cut-granule.sh` said the SCL /
 > NDSI bands are *"the bands N6f is built on."* They are the ice-classification bands the roadmap
-> defers to **N6g** ([`phase-N6g-imagery-research.md`](./phase-N6g-imagery-research.md)); nothing in
+> defers to **N6g** ([`backlog/A06g-imagery-research.md`](../backlog/A06g-imagery-research.md)); nothing in
 > this phase reads a granule. Corrected in #56 — noted so a future grep for `N6f` that comes up one
 > short knows why.
 
@@ -535,7 +535,7 @@ core and by the same server tests, not by a render.
 
 **N6f — No public access: a corroborated claim that dims a body.** ✅ **COMPLETE on dev 2026-08-16**
 (merged as **#44** with N6e's posted rules; prod deferred) — see
-[`phase-N6f-no-public-access.md`](./phase-N6f-no-public-access.md), **written after the fact on
+[`phases/A06f-no-public-access.md`](./A06f-no-public-access.md), **written after the fact on
 2026-09-14**: the phase was a founder ask taken straight into the N6e branch and shipped with no plan
 doc and no D-number. The state that did not exist: `isListed` was binary, so a body was either fully on
 the map or gone, and `waterBodies.publicAccess` is the **third state — on the map, and marked**. Three

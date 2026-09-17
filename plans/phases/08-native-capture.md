@@ -5,9 +5,9 @@
 > device-unverified** — see "Build outcome" below. This was the last unbuilt phase in the roadmap.
 
 *Detailed build plan — scoped 2026-07-24. Supersedes the original "GPS providers (pull/ingest)"
-framing of Phase 8 in [`07-roadmap.md`](./07-roadmap.md). Built on the reframe in
-[`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
-and the Strava legal read ([`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) L7).
+framing of Phase 8 in [`07-roadmap.md`](../07-roadmap.md). Built on the reframe in
+[`research/native-track-capture-and-strava-push.md`](../research/native-track-capture-and-strava-push.md)
+and the Strava legal read ([`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) L7).
 New decisions this phase: **D58** (aggregate-track privacy) and **D59** (unified report freshness).*
 
 ## The reframe (why this phase looks nothing like the old Phase 8)
@@ -468,9 +468,9 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 > background/battery parity), a real Strava sandbox upload (callback domain now set), and the prod
 > cutover.
 
-> **Detailed build plan:** [`phase-8-native-capture.md`](./phase-8-native-capture.md) (scoped
+> **Detailed build plan:** [`phases/08-native-capture.md`](./08-native-capture.md) (scoped
 > 2026-07-24). Reframe write-up:
-> [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
+> [`research/native-track-capture-and-strava-push.md`](../research/native-track-capture-and-strava-push.md)
 > + Strava legal read (`08-legal-feasibility-checklist.md` L7). New decisions: **D58** (aggregate-track
 > privacy), **D59** (unified report freshness).
 

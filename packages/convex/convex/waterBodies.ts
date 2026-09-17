@@ -7,7 +7,7 @@
  * it via `approve`. Admins can `remove`/`restore` any body — a reversible soft-delist (D48).
  * Whether a body shows on the public map is the derived `listed` boolean (see `./lib/listing`) —
  * an unlisted body simply has no rows in the N1 cell index, so it can't be reached from the map at
- * all (see `./lib/cellIndex` and `plans/phase-N1-read-path-durability.md`).
+ * all (see `./lib/cellIndex` and `plans/phases/A01-read-path-durability.md`).
  */
 
 import {
@@ -4944,7 +4944,7 @@ async function bodiesCoveringBox(
  * cell index. A body is indexed under every cell its bbox covers, at a level no finer than the zoom
  * it first draws at, so this query is exactly: *scan the cells covering the viewport, at every rung
  * up to the current zoom.* No margin, no large-body outlier list, no read-cap tuning — see
- * `plans/phase-N1-read-path-durability.md` for the two theorems and
+ * `plans/phases/A01-read-path-durability.md` for the two theorems and
  * `packages/core/src/spatialCells.ts` for the math.
  *
  * **Why the reads are bounded.** Every rung scanned is coarser than or equal to the viewport's own

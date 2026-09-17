@@ -7,7 +7,7 @@
  * margin-plus-outlier-list whose safety rested on constants measured against a corpus that has
  * since grown 11.6×. A plain Convex index costs only the rows it returns, and an empty cell costs
  * ~nothing, so the bound here comes from the geometry. See
- * `plans/phase-N1-read-path-durability.md`.
+ * `plans/phases/A01-read-path-durability.md`.
  *
  * Each indexed object gets one row per cell its **bbox** covers, at the level
  * `indexLevelFor` picks. Reads walk `by_cell` for the cells covering the query shape; writes diff

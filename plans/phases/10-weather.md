@@ -398,7 +398,7 @@ No backfill needed anywhere.
 ## Later / deferred
 
 - ~~**Lake depth / bathymetry data source (the shallow-water decay signal).**~~ **→ scoped as
-  [N6a](./phase-N6a-lake-depth.md) + [N6b](./phase-N6b-bathymetry-layer.md) (2026-07-29).** Kept in full
+  [N6a](./A06a-body-depth.md) + [N6b](./A06b-bathymetry-layer.md) (2026-07-29).** Kept in full
   below because two of its claims are load-bearing and **wrong**, and someone reading this entry would act
   on them: (a) *"v1 ships the signal without the data, manually"* — **it didn't.** The `bodyFeature` was
   added to the enum and the admin dropdown and wired to no decay at all, so there is no `isShallow` scalar
@@ -448,7 +448,7 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
   never existed** — the real function is `contradictionCluster`, and it hid a *second* unbounded read
   this entry didn't see (a `pointEvents` scan per clustered report, an N+1 multiplying the first) — and
   `bountyFreshnessInputs` isn't itself a scan; it reads through `recentReports`, which is where the cap
-  went. See [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
+  went. See [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md).
 - **`weatherCache` TTL / prune.** No pruner today; a new row per `(samplePoint, windowStart, hourBucket)`
   accumulates as the `now`-bucket advances. It's a *disk-growth* concern, not staleness (served summaries
   are ≤1 hour old by the bucket key). A tiny prune cron (drop rows older than N days) clears it.
@@ -470,7 +470,7 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
 *The roadmap entry for Phase 10 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 10 — Weather-since strips + weather-driven hazard decay ✅ Complete (dev; prod deferred) (2026-07-23)
-> **Detailed build plan:** [`phase-10-weather.md`](./phase-10-weather.md) (scoping settled 2026-07-22;
+> **Detailed build plan:** [`phases/10-weather.md`](./10-weather.md) (scoping settled 2026-07-22;
 > new decision **D56**). **Scoping scan found half of this phase already on dev:** the D19 **weather-since
 > reducer** (`summarizeWeatherSince`) is built + property-tested in `@skating/core`, and **auto-suggest
 > skate times is done (Phase 9.5)** — see the struck bullet below. The genuinely new work is **four
@@ -550,8 +550,8 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
 - **Deferred to this phase's Later/deferred (see the phase doc):** the **lake-depth / shallow-water decay
   signal** ships v1 as a manual `shallow_early_thaw` `bodyFeature` (no depth data source exists in
   OSM); the real fix is a **HydroLAKES + GLOBathy** backfill of `meanDepthM`/`maxDepthM`, a separate data
-  PR. Full write-up (sources, state bathymetry, ETL update) in `phase-10-weather.md` → Later/deferred.
-  **→ scoped as [N6a](./phase-N6a-lake-depth.md) (2026-07-29).** Correction worth carrying: *"the decay
+  PR. Full write-up (sources, state bathymetry, ETL update) in `phases/10-weather.md` → Later/deferred.
+  **→ scoped as [N6a](./A06a-body-depth.md) (2026-07-29).** Correction worth carrying: *"the decay
   model reads a simple `isShallow` scalar"* was never true — the v1-without-the-data half of this bullet
   **did not ship**. The `bodyFeature` renders and is wired to nothing, so N6a builds the signal rather
   than sharpening it, and the manual flag turns out to be permanent (73% of the corpus is below every

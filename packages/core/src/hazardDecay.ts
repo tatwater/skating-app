@@ -15,7 +15,7 @@
  * Constants are **hours** (admin-tunable integers, Phase 7 / D49), converted to ms only at the
  * comparison boundary — so tuning stays human-legible and the math stays trivial.
  *
- * Calibration evidence for every row: `plans/phase-9-hazard-research.md` §1–§2 (lakeice.info +
+ * Calibration evidence for every row: `plans/research/hazard-decay-calibration-and-behavior.md` §1–§2 (lakeice.info +
  * a 1,197-post regional corpus). These are literature+community defaults, explicitly refittable once
  * real hazard rows exist.
  */

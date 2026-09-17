@@ -258,7 +258,7 @@ of every line is the founder — they are provisioning decisions, not code.
 2. **First `convex deploy`** — unblocked by (1). Then the ETL `--prod` corpus load (prod has no
    bodies), and `backfillCells`.
 3. **Resend prod key** + the three email vars on prod; the checklist (including why there is
-   deliberately no MX record) is in `plans/phase-7-operator-surface.md` § "Resend checklist".
+   deliberately no MX record) is in `plans/phases/07-operator-surface.md` § "Resend checklist".
 4. **Tiles**: `scripts/basemap/upload.sh … --prod`, then the prod tile URLs on Vercel and in the
    `production` EAS environment.
 5. **Vercel**: point production at prod Convex/Clerk; keep previews on dev.

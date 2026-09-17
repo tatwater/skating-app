@@ -3,7 +3,7 @@
 How a reported ice hazard ages, fades, gets confirmed or cleared, and how big it's drawn on
 the map. This is the human-readable companion to the calibration research in
 [`plans/research/hazard-decay-calibration-and-behavior.md`](../plans/research/hazard-decay-calibration-and-behavior.md) (Phase 9) and the
-weather layering in [`plans/phase-10-weather.md`](../plans/phase-10-weather.md) (Phase 10).
+weather layering in [`plans/phases/10-weather.md`](../plans/phases/10-weather.md) (Phase 10).
 
 > **Who this is for.** Anyone tuning hazard behavior, or trying to understand why a two-week-old
 > pressure-ridge pin is still on the map while a day-old open-water pin has already faded. The
@@ -69,7 +69,7 @@ are (danger is type + copy):
 | **A\*** | Very volatile — same-day info only | <12 h / 12–36 h / >36 h | thawed_rotten, ridge_crossing |
 | **B** | Semi-persistent — re-skins but the weak spot lingers days | <3 d / 3–7 d / >7 d | wet_crack, drilled_hole, shell_area |
 | **C** | Structural — don't heal in a season, often grow | <7 d / 7–21 d / >21 d | pressure_ridge, ice_heave |
-| **D** | Effectively permanent — [body-feature](../plans/phase-9-hazards.md) candidates | <14 d / 14–45 d / >45 d | spring_current, gas_hole, reef_hole |
+| **D** | Effectively permanent — [body-feature](../plans/phases/09a-hazards.md) candidates | <14 d / 14–45 d / >45 d | spring_current, gas_hole, reef_hole |
 
 Two nuances baked into the tiers:
 
@@ -310,7 +310,7 @@ ridge in November carries it across the boundary with no operator in the loop.
 winter's hazards means the first skater in November sees a clean map where there was a ridge, so
 `hazards.listPromotionCandidates` ranks last season's by likelihood of recurrence for a
 pre-first-ice operator pass, and anything that forms every winter becomes a persistent
-[body feature](../plans/phase-9-hazards.md) that no reset touches. The ranking is a queue for a
+[body feature](../plans/phases/09a-hazards.md) that no reset touches. The ranking is a queue for a
 human decision, never a prediction that a hazard will recur (D3).
 
 ---
@@ -391,4 +391,4 @@ The 16 canonical hazard type keys aren't invented vocabulary. They track the sta
 freshwater ice — **Michel, B. & Ramseier, R.O. (1971), *Classification of River and Lake Ice*, Canadian
 Geotechnical Journal** — which is why the categories carve at joints skaters recognize even though no
 skater wrote them. The wider reading list behind our decay and freeze-timing copy is in
-[`plans/phase-N6c-expanded-lake-profiles.md`](../plans/phase-N6c-expanded-lake-profiles.md) → Appendix A.
+[`plans/phases/A06c-expanded-body-profiles.md`](../plans/phases/A06c-expanded-body-profiles.md) → Appendix A.

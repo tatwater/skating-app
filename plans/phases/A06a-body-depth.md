@@ -7,7 +7,7 @@
 > > The rung below was the largest depth win available and it has been taken: the state survey data
 > > that was already on disk is loaded, `state_agency` went **0 → 3,033**, and corpus depth is 24.2%
 > > overall with **81.2% of stored depths measured**. See
-> > [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md). The paragraph below is kept as the
+> > [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md). The paragraph below is kept as the
 > > diagnosis that led there, not as an open item.
 >
 > **`state_agency` is a rung with no producer.** *(As of 2026-08-08 — resolved above.)* Confirmed
@@ -38,13 +38,13 @@ consumer that makes it mean something. One ETL, one core change, one display sur
 > the code path is tested but no real depth is loaded. Not device-tested; prod deferred, as every phase
 > since 2.5.
 >
-> ⛔ **Do not run the ETL until [N6c](./phase-N6c-expanded-lake-profiles.md) is complete** (founder call,
+> ⛔ **Do not run the ETL until [N6c](./A06c-expanded-body-profiles.md) is complete** (founder call,
 > 2026-07-31). N6c's elevation pass wants to ride this same run, and running without it costs a second
 > full pass over 116,070 bodies. See *§Before the ETL runs — the ordering gate*.
 >
 > Split from the register's single **N6** entry at kickoff: the founder's ask for **real bathymetric
 > contour lines inside the lake polygons** turned out to be both feasible and phase-sized, so it became
-> [**N6b**](./phase-N6b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
+> [**N6b**](./A06b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
 > consumer. New decisions **D68** (the precedence ladder) and **D69** (shallow amplifies thaw only).
 >
 > **Four of the register's premises about this work were false**, all checked against code — see
@@ -78,7 +78,7 @@ What it is *not*: contours (N6b), and anything to do with the corpus below the d
 Same discipline N1/N2/N3 applied to their entries. Four corrections, each verified against a file.
 
 **1. The `isShallow` scalar does not exist, and neither does any consumer of depth.**
-`plans/phase-10-weather.md:408` says *"the decay model reads a simple `isShallow` scalar and doesn't care
+`plans/phases/10-weather.md:408` says *"the decay model reads a simple `isShallow` scalar and doesn't care
 where it came from"*, and the register's N6 entry says this backfill replaces *"the manual
 `shallow_bay_early_thaw` `bodyFeature` stand-in"*. Neither is true. `grep isShallow` over `packages/`
 and `apps/` returns nothing at all. `shallow_bay_early_thaw` appears in exactly two places — the enum
@@ -170,7 +170,7 @@ estimate; disqualifying for anything drawn. See N6b, where this is the load-bear
 
 ## Decisions taken at kickoff
 
-Written up in full in [`01-decisions.md`](./01-decisions.md); summarised here.
+Written up in full in [`01-decisions.md`](../01-decisions.md); summarised here.
 
 ### D68 — Depth is a best-available number that carries its provenance
 
@@ -289,7 +289,7 @@ infrastructure, not a stand-in — which is a straight reversal of what the regi
 
 **Deferred out of this phase:**
 
-- **Bathymetric contour lines** → [N6b](./phase-N6b-bathymetry-layer.md), including the Maine
+- **Bathymetric contour lines** → [N6b](./A06b-bathymetry-layer.md), including the Maine
   point-interpolation note and the four states' sources.
 - **State-agency bathymetry as an ETL rung.** Rung 1 exists and the operator can type a number into it,
   but bulk-loading NH GRANIT / VT ANR / MassGIS / NYSDEC *depths* is deferred to N6b, where those
@@ -744,11 +744,11 @@ and that turned out to be phase-sized on its own. Was sequenced after N1 so the 
 **N1 has now shipped and its backfill is run**, so both are unblocked.)*
 
 **N6a — Lake depth: the precedence ladder and the shallow signal.** ✅ **BUILT + on dev 2026-07-30** (ETL written and tested but **not yet run** — it needs three third-party downloads plus a licence/column confirmation; not device-tested; prod deferred) — see
-[`phase-N6a-lake-depth.md`](./phase-N6a-lake-depth.md); decisions **D68** (provenance-carrying depth) and
+[`phases/A06a-body-depth.md`](./A06a-body-depth.md); decisions **D68** (provenance-carrying depth) and
 **D69** (shallow amplifies thaw only). **Four of this entry's own premises were false**, all corrected in
 the phase doc, and the first one reshaped the work:
 
-- **The `isShallow` scalar this entry claimed to be "replacing" has never existed.** `phase-10-weather.md`
+- **The `isShallow` scalar this entry claimed to be "replacing" has never existed.** `phases/10-weather.md`
   describes the decay model as reading it; nothing does. `shallow_early_thaw` lives in exactly two
   places — the enum and an admin dropdown label — so a moderator can set it and see a pin, and it changes
   no decay anywhere. `decayMultiplier` takes no body-level input at all. **The signal is the deliverable**;

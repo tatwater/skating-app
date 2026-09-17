@@ -258,7 +258,7 @@ contours. **Asking whether the new state publishes bathymetry at all** does.
 That question is research, not a pipeline run, and it has a real chance of answering "no" — New York
 publishes none, which we established by enumerating every layer on NYSDEC's ArcGIS server, the full
 385-dataset NYS GIS Clearinghouse catalogue, ArcGIS Online and `data.ny.gov`. Budget an afternoon,
-and see `plans/phase-N6b-bathymetry-layer.md` §New York for what a thorough "no" looks like so you
+and see `plans/phases/A06b-bathymetry-layer.md` §New York for what a thorough "no" looks like so you
 can stop when you reach one.
 
 ### If the state does publish

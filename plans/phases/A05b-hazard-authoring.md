@@ -5,8 +5,8 @@ no lifecycle, no schema, no decay.*
 
 > **Status: ✅ COMPLETE 2026-07-29** — built, **deployed to dev** (`agile-bee-397`), every suite green
 > (core 984 · convex 787 · web 221 · mobile 79). **Still not device-tested**; prod deferred, as every
-> phase since 2.5. Decision **D67** is written into [`01-decisions.md`](./01-decisions.md). Split from
-> the roadmap's old N5 when the seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's
+> phase since 2.5. Decision **D67** is written into [`01-decisions.md`](../01-decisions.md). Split from
+> the roadmap's old N5 when the seasonal work ([N5a](./A05a-seasons.md)) took over that entry's
 > lifecycle half.
 >
 > Four of this doc's premises were checked against code at kickoff and **two of them were false** —
@@ -195,7 +195,7 @@ survive.
 That's not an authoring affordance. It's a lifecycle inversion — a passage marker where absence of
 evidence must **kill** the pin rather than keep it alive — and it lands in `deriveHazardLifecycle`,
 `HAZARD_DECAY` and the confirm loop. This doc's own rule says anything touching those is in the wrong
-phase, so it goes to [N5a](./phase-N5a-seasons.md) as **D64**.
+phase, so it goes to [N5a](./A05a-seasons.md) as **D64**.
 
 What's left here is two items, which is a better-shaped pass: both are pure geometry, both are
 finishable, and neither needs a research answer first.
@@ -414,7 +414,7 @@ re-litigated.
 *The roadmap entry for N5b as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ~~**N5b — Hazard authoring UX.**~~ **✅ COMPLETE 2026-07-29** (built, deployed to dev, all suites green;
-**not device-tested**) — see [`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md)
+**not device-tested**) — see [`phases/A05b-hazard-authoring.md`](./A05b-hazard-authoring.md)
 for the design, the four corrections to what this entry and its own plan claimed, and decision
 **D67**.
 

@@ -16,7 +16,7 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D170–D174** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> **Decisions:** logged as **D170–D174** in [`01-decisions.md`](../01-decisions.md) — the numbers this
 > document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D167**
 > (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
 > D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
@@ -202,7 +202,7 @@ Three functions in `notifications.ts`, all public:
   `eq('userId', me).eq('readAt', undefined)`. Worth being explicit, because this repo has been bitten
   here: an index on an optional field is **not sparse**, and `undefined` sorts before every number — but
   that trap is about **range** bounds (`lte`), and this is an **equality**, which is exactly the shape
-  that behaves. (See the N3 finalize-cron bug in [`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md).)
+  that behaves. (See the N3 finalize-cron bug in [`phases/A03-A04-account-lifecycle.md`](./A03-A04-account-lifecycle.md).)
   If the count proves hot, the fallback is a denormalized counter on `profiles` in the Phase 4
   contribution-counter pattern — but measure first.
 - **`markRead`** — stamp `readAt` on one row or on everything up to a timestamp. Owner-only.
@@ -752,7 +752,7 @@ Web: the two channel checkboxes. `app.config.ts` picks up `google-services.json`
 **Founder tasks to make it live** (none block the merge; the code is credential-blind):
 1. Firebase project → `google-services.json` → EAS file env `GOOGLE_SERVICES_JSON` + FCM V1 key via
    `eas credentials`; new Android build. Recipe in
-   [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11.
+   [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) §11.
 2. `eas credentials` → iOS → push key (Apple Developer account is enrolled). Untestable without an
    iPhone; the code path is identical.
 3. Confirm the Clerk `convex` JWT template maps `email` (the default does). If not, the sender's
@@ -823,7 +823,7 @@ neither is complete without the other:
   or nothing — the first address on an account mid-change is the unverified one it just added.
 
 **Founder task, per Clerk instance:** register the endpoint and set `CLERK_WEBHOOK_SIGNING_SECRET`
-— recipe in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11b. Until then
+— recipe in [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) §11b. Until then
 the route answers 500 and the launch-time sync is the only refresh.
 
 **Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows
@@ -984,7 +984,7 @@ B4a's overlap/start-time thresholds (needs an actual dual-source user) and D4's 
 *The roadmap entry for N8 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 **N8 — The notification pipeline.** ✅ **COMPLETE 2026-09-15** (PRs #52/#53/#55 + PR 4 on
-`phase-n8-notification-pipeline-4`, [`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md),
+`phase-n8-notification-pipeline-4`, [`phases/A08-notification-pipeline.md`](./A08-notification-pipeline.md),
 D167–D174). Push credentials in on both platforms, the Android small icon shipped, the Clerk
 webhook registered on dev; what's still owed — the end-to-end smoke, an install, a change-email
 run, the prod-cutover items, the scale-triggered reverse index — is the plan's **Deferred** list,

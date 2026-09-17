@@ -260,7 +260,7 @@ AGPL code as a service. Clearing one says nothing about the other.
 ## L14 — Aggregate/heatmap privacy for our own tracks (D41, D42, **D58**) 🟡
 The **L7 pivot moved the binding constraint from Strava to us.** Once we render crowd layers off our own
 recorded tracks, *our* privacy design is what protects skaters — there's no upstream ToS doing it. **The
-model is now decided — D58** (see `phase-8-native-capture.md`): **publish-is-consent, not k-anonymity.**
+model is now decided — D58** (see `phases/08-native-capture.md`): **publish-is-consent, not k-anonymity.**
 Requirements the aggregate layer must meet (Phase 8, PR 8e) — **all five built 2026-07-24**
 (`gpsActivities.listTracksForBody`, convex-tested for each gate; still to be **deployed + device-verified**):
 - [x] **Minors excluded** from all aggregate layers by construction (D41) — automatic: minors can't post

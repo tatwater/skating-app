@@ -1,6 +1,6 @@
 # Phase 9.5 build plan — On-ice live alerting (D54 Layer 2) + deferred hazard threads
 
-> **Roadmap / parent:** the fast-follow to [`phase-9-hazards.md`](./phase-9-hazards.md). Phase 9 shipped
+> **Roadmap / parent:** the fast-follow to [`phases/09a-hazards.md`](./09a-hazards.md). Phase 9 shipped
 > Layers 0–1 (silent sync + foreground-only proximity banners); this is the deferred **D54 Layer 2** —
 > the opt-in **"on-ice mode"** that keeps warning you *while you skate with the phone in your pocket* —
 > bundled with the several smaller hazard threads Phase 9 logged as deferred.
@@ -23,7 +23,7 @@
 > module (directional projection), a fresh native-dep set (`expo-notifications`, `expo-task-manager`,
 > background location), and the wiring.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ---
 

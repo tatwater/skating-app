@@ -25,7 +25,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > nothing before a scrubber could have found them — see [the batched re-run queue](#the-batched-re-run-queue-established-2026-08-25),
 > which is what they feed.
 >
-> Gated behind [N6d](./phase-N6d-lake-access-points.md), which is complete on dev.
+> Gated behind [N6d](./A06d-body-access-points.md), which is complete on dev.
 >
 > **What changed, and why the rewrite rather than a patch.** The 2026-07-31 scoping specced a
 > **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
@@ -36,7 +36,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 >    **content**, not a base map, which contradicts D81's second half. See **D146**.
 > 2. **The source the plan named cannot do the job the founder wants.** `USGSImageryOnly` caps at
 >    **zoom 16** (~1.7 m/px at our latitude), not the "~0.6 m" the doc and
->    [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) both claimed — and NAIP is
+>    [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) both claimed — and NAIP is
 >    **summer aerial photography on a 2–3 year cycle**, so no NAIP frame will ever show ice. See
 >    **D147**, and §B for the 0.3 m endpoint that does exist.
 > 3. **The founder wants a scrubbable timeline of the freeze**, which promotes Workstream C from
@@ -596,7 +596,7 @@ exactly the fact a skater is trying to reconstruct by reading reports.
 is a description. *"Prime window"* and *"best ice"* are the phrasings to avoid; the sentence is more
 useful without them anyway.
 
-#### Two research lanes this archive opens → [N6g](./phase-N6g-imagery-research.md)
+#### Two research lanes this archive opens → [N6g](../backlog/A06g-imagery-research.md)
 
 Split into their own doc at the founder's ask (2026-08-21c), because both read this archive, neither can
 start before it exists, and both are easy to ship and hard to ship *correctly*:
@@ -1191,7 +1191,7 @@ function predated it. Every job would have exited 0 and written an ordinary fram
 ### What the pre-run review found *(2026-08-25, founder: "I'd rather wait until we're confident")*
 
 The season backfill was started and stopped forty seconds in, because a read-through of this doc and
-[N6g](./phase-N6g-imagery-research.md) against the built pipeline turned up two things that a
+[N6g](../backlog/A06g-imagery-research.md) against the built pipeline turned up two things that a
 nine-season run would have baked in irreversibly. Both are now fixed.
 
 **1. Thermal noise was never removed.** `sar-cal-lut.py` reads the calibration annotation; the *noise*
@@ -1291,7 +1291,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    **The cost is that every statistic gets more expensive and more complicated**, and it rides a
    re-run. Recorded because the winter's data and the founder's skate log pointed at the same seam
    independently, which is the strongest reason to expect it back. See
-   [`docs/reading-ice-from-orbit.md`](../docs/reading-ice-from-orbit.md) ch. 9 for the measurement.
+   [`docs/reading-ice-from-orbit.md`](../../docs/reading-ice-from-orbit.md) ch. 9 for the measurement.
 
 8. **⚠ Radar is not terrain-corrected, and it is visible — new, 2026-08-25.** `cut-granule.sh`
    geocodes a GRD with `gdalwarp -tps` from its ground-control points, on the stated assumption that
@@ -1384,7 +1384,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 
 **N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** ✅ **Built through
 PR 3, 2026-08-26** — a lake can be revealed as a photograph and its freeze-up scrubbed, on **both**
-clients. Re-scoped 2026-08-21; see [`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
+clients. Re-scoped 2026-08-21; see [`phases/A06e-satellite-imagery.md`](./A06e-satellite-imagery.md);
 decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
 Gated behind N6d, which is complete on dev.
 

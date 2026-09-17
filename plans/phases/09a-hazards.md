@@ -1,6 +1,6 @@
 # Phase 9 — Hazards
 
-> **Roadmap:** [`07-roadmap.md`](./07-roadmap.md) → Phase 9. This is the detailed build plan, in the
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 9. This is the detailed build plan, in the
 > style of the Phase 1/2/2.5/3/4/5 docs.
 >
 > **What this phase is.** The safety-content surface the MVP has been missing: skaters can mark
@@ -15,14 +15,14 @@
 > banners) are not yet exercised on a real device — that waits for a deeper QA pass after more phases
 > land. Decisions settled 2026-07-18 (**D51–D54**), calibrated by the 2026-07-21 research pass, and six
 > build-kickoff gaps resolved 2026-07-21 (see *Calls made at build kickoff* below) — which amended
-> **D51** and **D54** and added **D55**. Schema deltas are in [`06-data-model.md`](./06-data-model.md).
+> **D51** and **D54** and added **D55**. Schema deltas are in [`06-data-model.md`](../06-data-model.md).
 > Prior phases are on dev; prod deferred. **The Layer-3 offline basemap tile-pack was dropped** during
 > the build (native spike — findings recorded below); it was **retried in Phase 9.5** via a `file://`
 > pmtiles path, built flag-off and awaiting one on-device confirmation.
 >
 > **Fast-follow — ✅ done.** The deferred **D54 Layer 2** on-ice live-alerting bundle (plus the smaller
 > deferred threads: `?action=confirm`, the reporter/author line, clip-footprint-to-body, and auto-suggest
-> skate times) shipped as its own build plan — **[`phase-9.5-on-ice-alerting.md`](./phase-9.5-on-ice-alerting.md)**,
+> skate times) shipped as its own build plan — **[`phases/09b-on-ice-alerting.md`](./09b-on-ice-alerting.md)**,
 > ✅ **complete 2026-07-22** (branch `phase-9.5-on-ice-alerting`; pending PR + dev deploy). The deferred
 > items below are annotated inline with what 9.5 delivered; **silent-push stays deferred** even so.
 >
@@ -36,7 +36,7 @@
 > was **timeboxed and dropped from this phase** (findings below); the online-first degrade mirrors F2
 > report capture, and on-ice capture never depended on the basemap in the first place.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ---
 
@@ -98,10 +98,10 @@ into the skater's later report**.
 - **Canonical 16-key `hazards.type` (call 2).** The slash-pairs that shipped as *separate* keys collapse
   to one key each with a two-part display label: `open_water` ("Open water / lead"), `ice_heave`
   ("Ice heave / buckling"), `spring_current` ("Spring / inlet-outlet current", replacing both
-  `inlet_outlet_current` and `spring`). Full table in [`06-data-model.md`](./06-data-model.md). This is
+  `inlet_outlet_current` and `spring`). Full table in [`06-data-model.md`](../06-data-model.md). This is
   what makes `Record<HazardType, HazardDecay>` typecheck against the research table. `types.test.ts`'s
   enum snapshot lock is updated deliberately as part of the change.
-- **Expanded `hazards.type` (2026-07-21 research → [`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)).**
+- **Expanded `hazards.type` (2026-07-21 research → [`research/hazard-decay-calibration-and-behavior.md`](../research/hazard-decay-calibration-and-behavior.md)).**
   Added volatile holes `drain_hole` / `wind_hole` / `slush_hole` (Tier A), the `thawed_rotten` zone
   (Tier A\*, the #1 fatality cause), persistent natural holes `gas_hole` / `reef_hole` (Tier D →
   bodyFeatures), and the **`ridge_crossing`** passage marker (Tier A\*, positive-but-cautious render,
@@ -151,7 +151,7 @@ The modules:
   A\* very-volatile sub-case; **stored in HOURS**, converted via `hoursToMs` at compare time so the
   Phase-7 admin surface tweaks human-legible integers) + `deriveHazardFreshness(type, lastConfirmedAt,
   now) → 'fresh' | 'aging' | 'stale'`. **Calibrated table + evidence:**
-  [`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md) §1. Property tests: monotonic in elapsed
+  [`research/hazard-decay-calibration-and-behavior.md`](../research/hazard-decay-calibration-and-behavior.md) §1. Property tests: monotonic in elapsed
   time; tier boundaries; a "still here" reset returns to fresh. Also exports **`isHazardVisibleByDefault(
   freshness)`** (the fresh/aging-vs-stale split that decides what shows without "show older") and
   **`hazardTypesInTier(tier)`** (the inverse lookup, used by tests and any tier-scoped copy). **Invariant
@@ -596,9 +596,9 @@ evidence rather than re-deriving it:
 ## Research follow-up — ✅ DONE (2026-07-21)
 
 Completed in a dedicated session. Full writeup + calibrated `HAZARD_DECAY` table + per-type evidence +
-Phase-10 notes: **[`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)**. Corrections fed back
-into **D52** ([`01-decisions.md`](./01-decisions.md)) and the schema
-([`06-data-model.md`](./06-data-model.md)). Sources: the regional corpus (`training_data/google_group/`,
+Phase-10 notes: **[`research/hazard-decay-calibration-and-behavior.md`](../research/hazard-decay-calibration-and-behavior.md)**. Corrections fed back
+into **D52** ([`01-decisions.md`](../01-decisions.md)) and the schema
+([`06-data-model.md`](../06-data-model.md)). Sources: the regional corpus (`training_data/google_group/`,
 1,197 posts) + **lakeice.info** (Bob Dill's ice-safety reference).
 
 **What changed as a result** (all folded into the plan above):
@@ -622,13 +622,13 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
 *The roadmap entry for Phase 9 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
-> **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;
+> **Detailed build plan:** [`phases/09a-hazards.md`](./09a-hazards.md) (decisions settled 2026-07-18;
 > **D51–D55** — D55 added at build kickoff: on-ice hazards auto-bundle into the skater's later report).
 > Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
 > client-side on-ice alerts) → offline commit (hazard/confirmation draft-queue reuse) → PR. The
 > **Layer-3 offline basemap tile-pack** that was originally sequenced into the offline commit was
 > **dropped from this phase** — it's a native spike that needs a device build, and the on-ice flow
-> already degrades correctly without it (see `phase-9-hazards.md` → *Layer-3 offline basemap tile-pack —
+> already degrades correctly without it (see `phases/09a-hazards.md` → *Layer-3 offline basemap tile-pack —
 > spike findings*).
 - **Authoring — geometry-per-type, not freeform-by-default (D51).** Most people can't hand-draw an
   accurate blob on a phone from what they see on the ice, so the primitive matches the hazard's shape:
@@ -684,7 +684,7 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
     Phase 9 UI is also waiting on. It was **timeboxed and not built**; on-ice capture degrades
     correctly regardless (the pin drops at GPS, sizing/Done/queue all work — only *tapping the map*
     to Move/Trace needs tiles). Findings + the three candidate routes are recorded in
-    `phase-9-hazards.md` → *Layer-3 offline basemap tile-pack — spike findings*; revisit alongside
+    `phases/09a-hazards.md` → *Layer-3 offline basemap tile-pack — spike findings*; revisit alongside
     the device-build pass. The F2 body-cache module was already designed to accept a tile-pack field,
     so slotting it in later needs no rearchitecture.
   - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still

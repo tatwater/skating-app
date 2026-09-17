@@ -196,10 +196,10 @@ Plus three things that came up alongside:
   never the gap — `weatherDays` is kept for ever (D153) — coverage was: Tier A (bay-resolution) rows
   are fetched lazily, only for bays somebody opened.
 - **The shelter index and the station-bias study are post-alpha**, scoped in
-  [`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md) and
-  [`backlog/weather-stations.md`](./backlog/weather-stations.md). Not built here.
+  [`backlog/weather-shelter-index.md`](../backlog/weather-shelter-index.md) and
+  [`backlog/weather-stations.md`](../backlog/weather-stations.md). Not built here.
 - **US spellings everywhere**, as a separate mechanical PR *after* this phase lands — findings in
-  [`features/us-spellings.md`](./features/us-spellings.md). New text written for this phase uses US
+  [`features/us-spellings.md`](../features/us-spellings.md). New text written for this phase uses US
   spellings; the existing prose in this doc is left for that sweep.
 
 ### The rule, settled — to be written as **D175** in `01-decisions.md` by PR 1
@@ -651,13 +651,13 @@ written down.
 
 ## Related
 
-[`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md) ·
-[`backlog/weather-stations.md`](./backlog/weather-stations.md) ·
-[`features/us-spellings.md`](./features/us-spellings.md) ·
-[`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) ·
-[`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md) ·
-[`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md) ·
-[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) ·
-[`phase-N7b-corpus-by-request.md`](./phase-N7b-corpus-by-request.md) ·
-[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md) ·
-[`01-decisions.md`](./01-decisions.md)
+[`backlog/weather-shelter-index.md`](../backlog/weather-shelter-index.md) ·
+[`backlog/weather-stations.md`](../backlog/weather-stations.md) ·
+[`features/us-spellings.md`](../features/us-spellings.md) ·
+[`phases/A02-body-editor-and-subareas.md`](./A02-body-editor-and-subareas.md) ·
+[`phases/A06b-bathymetry-layer.md`](./A06b-bathymetry-layer.md) ·
+[`phases/A06d-body-access-points.md`](./A06d-body-access-points.md) ·
+[`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) ·
+[`phases/A07b-corpus-by-request.md`](./A07b-corpus-by-request.md) ·
+[`phases/A08-notification-pipeline.md`](./A08-notification-pipeline.md) ·
+[`01-decisions.md`](../01-decisions.md)

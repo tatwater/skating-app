@@ -3,7 +3,7 @@
 A manual, run-on-demand pipeline that turns a regional **OpenStreetMap** extract into the
 canonical water bodies stored in Convex (`waterBodies`, `source: 'osm'`). This is **not**
 built or deployed with the apps — you run it by hand when seeding or refreshing a region
-(D5 / D14 / D48; see [`plans/phase-1-water-bodies.md`](../../plans/phase-1-water-bodies.md)).
+(D5 / D14 / D48; see [`plans/phases/01-water-bodies.md`](../../plans/phases/01-water-bodies.md)).
 
 Pipeline stages:
 
@@ -686,7 +686,7 @@ let the patchiness argue for hand-entering the rest; that is the trap D70 exists
 
 To widen the corpus beyond Vermont, run the same pipeline **once per state** — no code change; the
 transform/load already handle multiple states. Full runbook + rationale:
-[`plans/phase-2.5-regional-expansion.md`](../../plans/phase-2.5-regional-expansion.md).
+[`plans/phases/02b-regional-expansion.md`](../../plans/phases/02b-regional-expansion.md).
 
 - **States (per-state Geofabrik extracts, not `us/northeast`):** `new-york`, `vermont`,
   `new-hampshire`, `maine`, `massachusetts`.

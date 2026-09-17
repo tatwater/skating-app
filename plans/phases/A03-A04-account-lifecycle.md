@@ -448,7 +448,7 @@ disposable account before the alpha.
 *The roadmap entry for N3 / N4 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ~~**N3 / N4 — Account lifecycle + storage hygiene (D33/D62).**~~ **✅ COMPLETE on dev (2026-07-27)** —
-see [`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md) for the design, the
+see [`phases/A03-A04-account-lifecycle.md`](./A03-A04-account-lifecycle.md) for the design, the
 corrections to what these entries used to say, and the measured results. **The two entries are one
 phase**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is a workstream inside it,
 because the lifecycle work *creates* the storage problems the crons exist to solve: an export bundle is

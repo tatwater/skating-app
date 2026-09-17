@@ -4,8 +4,8 @@
 > All workstreams executed — see "Progress" below. The prod pass (re-run the loader + tiles + env
 > against a prod deployment) waits until prod exists.
 
-The execution runbook for **Workstream H** of [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md)
-(§H) and **Phase 2.5** of [`07-roadmap.md`](./07-roadmap.md). Design rationale lives in those docs
+The execution runbook for **Workstream H** of [`phases/02a-map-and-reports.md`](./02a-map-and-reports.md)
+(§H) and **Phase 2.5** of [`07-roadmap.md`](../07-roadmap.md). Design rationale lives in those docs
 and the decisions log (D5/D6/D48/D49); this doc is the *how* — the ordered ops runbook, the small
 code changes, and the tuning knobs.
 
@@ -99,7 +99,7 @@ code changes, and the tuning knobs.
 
 ## §1 — Water data: per-state ETL into dev Convex
 
-Re-run the Phase 1 pipeline (see [`scripts/etl/README.md`](../scripts/etl/README.md)) **once per
+Re-run the Phase 1 pipeline (see [`scripts/etl/README.md`](../../scripts/etl/README.md)) **once per
 state**. Only NY gets the extra clip step. Record each extract's **download date + md5** in the PR.
 
 Per-state Geofabrik extracts (north-america/us/):
@@ -128,7 +128,7 @@ steps in `scripts/etl/README.md` (§ Code changes).
 
 ## §2 — Basemap: build the multi-state `.pmtiles`
 
-One extract over the 5-state envelope (see [`scripts/basemap/README.md`](../scripts/basemap/README.md)).
+One extract over the 5-state envelope (see [`scripts/basemap/README.md`](../../scripts/basemap/README.md)).
 The `--bbox` **must match the widened `NORTHEAST_MAX_BOUNDS`** (§6) — the basemap has to cover
 everywhere the map lets you pan.
 
@@ -257,7 +257,7 @@ that no wanted lake falls outside the box or south of the clip.
   wide-zoom read counts after the load, so the `MAX_VIEWPORT_LIMIT = 256` clamp (tuned against VT's
   9,967 bodies) silently stayed put — dropping 257 real lakes from a dense eastern-Maine viewport that
   holds 513. Fixed by the N1 cell index; the read counts this bullet asked for are now recorded in
-  [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) and re-checkable via
+  [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md) and re-checkable via
   `waterBodies:viewportReadStats`.
 - **Border-spanning bodies** — dedupe by `externalId` (verified idempotent), but spot-check Lake
   Champlain and the Connecticut River bays render once, not doubled, after the multi-state load.
@@ -275,7 +275,7 @@ that no wanted lake falls outside the box or south of the clip.
 *The roadmap entry for Phase 2.5 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 2.5 — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
-> **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
+> **Detailed plan + runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md)
 > (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
 > (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
 > community layer (Phase 3) — but the corpus should be region-complete before drive-time / feeds

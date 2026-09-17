@@ -1,6 +1,6 @@
 # Phase 6 — Bounties + trust score
 
-> **Roadmap:** [`07-roadmap.md`](./07-roadmap.md) → Phase 6. This is the detailed build plan,
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 6. This is the detailed build plan,
 > in the style of the Phase 1/2/2.5/3/4/5 docs.
 >
 > **What this phase is.** Three deliverables that turn the app from a report firehose into a
@@ -42,7 +42,7 @@
 > **B** Convex trust primitives → **C** Convex bounties → **D** Web + Mobile UI → **E** recommended
 > feed (last — it *consumes* the trust primitives). See the PR / commit breakdown below.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md). This phase is the build-out of
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md). This phase is the build-out of
 **D50** (trust score), **D10/D17** (bounties + cosmetic reward), **D44** (bounty eligibility), and the
 D3/D13 hard constraints they all inherit.
 
@@ -390,7 +390,7 @@ their consumers:
 *The roadmap entry for Phase 6 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 6 — Bounties + trust score ✅ Complete (dev; prod deferred) (2026-07-22)
-> **Detailed build plan:** [`phase-6-bounties-and-trust.md`](./phase-6-bounties-and-trust.md) (decisions
+> **Detailed build plan:** [`phases/06-bounties-and-trust.md`](./06-bounties-and-trust.md) (decisions
 > settled 2026-07-21). All six workstreams shipped on **web + mobile**, green (core/convex/web/mobile
 > suites). Trust class is derived server-side + rendered as a cosmetic chip/ring (never a raw number, D50);
 > bounty browse rides the bounded `by_status_expires` index (no viewport geospatial); recommended-feed

@@ -50,7 +50,7 @@ Newsfeed pages, and crash-report.*
 - Apple dev-build distribution for the mobile alpha crew
 
 ## Phase 1 — Water-body data
-🟢 **Complete** 2026-07-13 · PRs #7–#11 · [plan](./phase-1-water-bodies.md) · D5 D6 D14 D48
+🟢 **Complete** 2026-07-13 · PRs #7–#11 · [plan](./phases/01-water-bodies.md) · D5 D6 D14 D48
 
 The OSM ETL (`scripts/etl`) filters water features, maps tags to our `type` enum, simplifies to
 ~5 m, computes bbox, an on-water point and area, and emits NDJSON keyed by OSM id; an idempotent
@@ -71,7 +71,7 @@ lakes render on a map and an admin can remove or restore one.*
 - ⚪ **Rivers as named reaches (D4)** — validate still-water with users first → register
 
 ## Phase 2 — Map + reports (the MVP)
-🟢 **Complete** 2026-07-16 · PRs #12 #13 #16 · [plan](./phase-2-map-and-reports.md) · D9 D13 D20 D30 D31 D41 D42 D49
+🟢 **Complete** 2026-07-16 · PRs #12 #13 #16 · [plan](./phases/02a-map-and-reports.md) · D9 D13 D20 D30 D31 D41 D42 D49
 
 The usable MVP: an interactive MapLibre map with the D49 zoom-scored prominence (a small-but-beloved
 lake can show at state zoom while clutter drops), tap-to-detail with deep-linkable drawers, and report
@@ -88,7 +88,7 @@ LRU and draft queue. Reports are always public (D13 — a visibility selector sh
 - 🟢 **Photo-orphan GC** — folded into N3
 
 ## Phase 2.5 — Regional expansion
-🟢 **Complete** 2026-07-15 · PR #14 · [plan](./phase-2.5-regional-expansion.md)
+🟢 **Complete** 2026-07-15 · PR #14 · [plan](./phases/02b-regional-expansion.md)
 
 Data and infra only: the Vermont pilot widened to the Northeast lake-skating states — NY north of the
 metro, VT, NH, ME, MA, deliberately not the whole Geofabrik "northeast" dump — via per-state extracts
@@ -106,7 +106,7 @@ anywhere in the five states opens the app and sees their lakes.*
 - 🟢 **Per-body curation and the bays OSM lacks** — N2 (and "add the bays" turned out unbuildable as asked)
 
 ## Phase 3 — Comments + profiles + user-facing safety tools
-🟢 **Complete** 2026-07-16 · PRs #15 #17 · [plan](./phase-3-community-and-safety.md) · D13 D21 D25 D32 D50
+🟢 **Complete** 2026-07-16 · PRs #15 #17 · [plan](./phases/03-community-and-safety.md) · D13 D21 D25 D32 D50
 
 Threaded comments on reports, public/private profiles searchable by name, block (which is also mute)
 and flag for reports, comments, photos and users, and a minimal moderator hide/remove path so flagged
@@ -122,7 +122,7 @@ block and flag, and content can be taken down fast.*
 - 🟢 **Full operator surface** — Phase 7
 
 ## Phase 4 — Drive-time + dynamic filtering
-🟢 **Complete** 2026-07-18 · PR #19 · [plan](./phase-4-drive-time-and-filtering.md) · D11
+🟢 **Complete** 2026-07-18 · PR #19 · [plan](./phases/04-drive-time-and-filtering.md) · D11
 
 Reframed at scoping from a hard distance gate to a **soft, quality-weighted signal that behaves
 differently per context**: browse is permissive (show all, filters narrow, favorites boosted),
@@ -143,7 +143,7 @@ scope by favorites and drive-time; put-ins and directions are on the map.*
 - ⚪ **Reverse spatial index for fan-out (D172)** — trigger ~1,000 profiles → N8
 
 ## Phase 5 — Newsfeed
-🟢 **Complete** 2026-07-17 · PR #18 · [plan](./phase-5-newsfeed.md) · D28
+🟢 **Complete** 2026-07-17 · PR #18 · [plan](./phases/05-newsfeed.md) · D28
 
 A global cross-body feed, newest skate-*end* time first — a project-wide rename of `skateTime` to
 `skateEndTime` ("when the skater left the ice" is the freshest read), with `skateStartTime` stored
@@ -155,7 +155,7 @@ ahead of Phase 4, whose drive-time filters became an additive clause on the same
 community activity is browsable without going lake by lake.*
 
 ## Phase 6 — Bounties + trust score
-🟢 **Complete** 2026-07-22 · PR #22 · [plan](./phase-6-bounties-and-trust.md) · D10 D17 D44 D50
+🟢 **Complete** 2026-07-22 · PR #22 · [plan](./phases/06-bounties-and-trust.md) · D10 D17 D44 D50
 
 Request-a-report bounties (post, browse on the bounded `by_status_expires` index, fulfill, thumbs)
 and the **trust score** that stands in for the removed social graph: boost-only, window-bounded
@@ -174,7 +174,7 @@ class from corroboration and helpful marks.*
 - ⚪ **A dedicated bounties geospatial instance** — only past the 200-scan cap → register
 
 ## Phase 7 — Operator surface
-🟢 **Complete** 2026-07-24 · PRs #24 #25 · [plan](./phase-7-operator-surface.md) · D35 D37 D38 D57
+🟢 **Complete** 2026-07-24 · PRs #24 #25 · [plan](./phases/07-operator-surface.md) · D35 D37 D38 D57
 
 The founder-facing back office: a role-gated `/admin` route tree in the web app organized as work
 queues (flags with an `unsafe_false_report` priority lane, user admin with ban/suspend/role, dedup
@@ -193,7 +193,7 @@ every tunable.*
 - **`appConfig` runtime-override table** — a documented seam, deliberately not built
 
 ## Phase 8 — Native track capture + Strava push
-🟢 **Complete** 2026-07-24 · PR #26 · [plan](./phase-8-native-capture.md) · D14 D36 D58 D59
+🟢 **Complete** 2026-07-24 · PR #26 · [plan](./phases/08-native-capture.md) · D14 D36 D58 D59
 
 The phase inverted before it started: Strava's 2024 terms forbid showing one athlete's data to
 another, so the "pull tracks from Strava" plan died and became **record in-app, push to Strava** —
@@ -222,7 +222,7 @@ the lake, pushes it to Strava, and new water gets a body from the track.*
 - A real Strava sandbox upload (callback domain is set)
 
 ## Phase 9 — Hazards
-🟢 **Complete** 2026-07-21 · PR #20 · [plan](./phase-9-hazards.md) · D12 D15 D51 D52 D53 D54 D55
+🟢 **Complete** 2026-07-21 · PR #20 · [plan](./phases/09a-hazards.md) · D12 D15 D51 D52 D53 D54 D55
 
 Hazard authoring with the geometry matched to the hazard — point-plus-radius by default, polyline for
 ridges and cracks, polygon stored and rendered but not yet authorable — over a 16-key taxonomy the
@@ -246,7 +246,7 @@ with the right shape, age per type, and warn a skater standing near one.*
 - **The Layer-3 offline basemap tile-pack, in this phase** — a native spike needing a device build; on-ice capture degrades correctly without it (findings in the plan doc)
 
 ## Phase 9.5 — On-ice live alerting
-🟢 **Complete** 2026-07-22 · PR #21 · [plan](./phase-9.5-on-ice-alerting.md) · D54
+🟢 **Complete** 2026-07-22 · PR #21 · [plan](./phases/09b-on-ice-alerting.md) · D54
 
 The D54 Layer 2 fast-follow: an opt-in "on-ice mode" that keeps warning you with the phone in your
 pocket — `expo-notifications` (local only) plus session-scoped background location and a
@@ -266,7 +266,7 @@ skater in motion gets a directional warning before reaching a confirmed hazard.*
 - Real cold-weather battery and course-noise behavior
 
 ## Phase 10 — Weather-since strips + weather-driven hazard decay
-🟢 **Complete** 2026-07-23 · PR #23 · [plan](./phase-10-weather.md) · D19 D56 D57
+🟢 **Complete** 2026-07-23 · PR #23 · [plan](./phases/10-weather.md) · D19 D56 D57
 
 A live Open-Meteo fetch (forecast API with `past_days`, on drawer-open, into `weatherCache`) feeding
 the plain-text, verdict-free **weather-since strip** on aging reports and hazards, and
@@ -288,7 +288,7 @@ by what actually happened.*
 - **The archive API** — ~5 days lagged, so the forecast API's `past_days` was used; N6h later widened this past 92 days (D153)
 
 ## Phase N1 — Read-path durability
-🟢 **Complete** 2026-07-26 · PR #27 · [plan](./phase-N1-read-path-durability.md)
+🟢 **Complete** 2026-07-26 · PR #27 · [plan](./phases/A01-read-path-durability.md)
 
 The crash class: `@convex-dev/geospatial` reads roughly in proportion to `maxResults`, not results,
 so a wide sparse viewport hit Convex's 4,096-read cap — and the 256-row clamp meant to contain it had
@@ -307,7 +307,7 @@ profile to fan out notifications — now a paged scheduled job. *The map can't c
 - ⚪ **Reverse spatial index for notification fan-out** — N1 bounded the walk, didn't remove it → N8 (D172)
 
 ## Phase N2 — Lake editor + sub-areas
-🟢 **Complete** 2026-07-26 · PR #28 · [plan](./phase-N2-lake-editor-and-subareas.md) · D60 D61
+🟢 **Complete** 2026-07-26 · PR #28 · [plan](./phases/A02-body-editor-and-subareas.md) · D60 D61
 
 Named sub-areas (D60): a bay is a region *inside* one polygon, not a lake beside it, so one sheet of
 ice keeps one set of reports, hazards, bounties and favorites while carrying the name skaters use.
@@ -323,7 +323,7 @@ a place with a name, and an operator can curate a lake in place.*
 - **2026-07-26 — curation session:** the seeded sub-areas and the bay re-parenting recorded in the plan doc
 
 ## Phase N3 / N4 — Account lifecycle + storage hygiene
-🟢 **Complete** 2026-07-27 · PRs #29 #30 · [plan](./phase-N3-N4-account-lifecycle.md) · D33 D62
+🟢 **Complete** 2026-07-27 · PRs #29 #30 · [plan](./phases/A03-A04-account-lifecycle.md) · D33 D62
 
 Two register entries that were one phase: the crons exist to clean up what the lifecycle creates.
 Deletion under D62's three buckets — erase the private (`homeCoord`, isochrones, OAuth tokens),
@@ -339,7 +339,7 @@ account. *A user can export or delete their account, and the record stays honest
 - ⚪ **Policy wording for deletion/retention (L3)** — mechanism built; copy waits on the legal pass → register
 
 ## Phase N5a — Seasons
-🟢 **Complete** 2026-07-28 · PR #31 · [plan](./phase-N5a-seasons.md) · D63 D64 D65 D66
+🟢 **Complete** 2026-07-28 · PR #31 · [plan](./phases/A05a-seasons.md) · D63 D64 D65 D66
 
 Nothing in the app expired before this: freshness was an opacity, not a gate, so a 2024/25 report
 still rendered and a ridge from February was still on the map. A season is July 1 → June 30 (D63),
@@ -355,7 +355,7 @@ this winter's.*
 - Device verification of the native surfaces
 
 ## Phase N5b — Hazard authoring UX
-🟢 **Complete** 2026-07-29 · PR #32 · [plan](./phase-N5b-hazard-authoring.md) · D67
+🟢 **Complete** 2026-07-29 · PR #32 · [plan](./phases/A05b-hazard-authoring.md) · D67
 
 The last of D51's three primitives: **freeform areas** with real vertex dragging on web (terra-draw)
 and close-the-ring on mobile's existing tap-to-place trace — terra-draw ships no React Native adapter,
@@ -371,7 +371,7 @@ page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted b
 - Whether 25 m is the right default band half-width for a small pond
 
 ## Phase N5c — Hazard identity
-🟢 **Complete** 2026-07-31 · PRs #34 #35 · [plan](./phase-N5c-hazard-memory.md) · D77 D78 D79 D80
+🟢 **Complete** 2026-07-31 · PRs #34 #35 · [plan](./phases/A05c-hazard-memory.md) · D77 D78 D79 D80
 
 Two founder asks that were one problem: "which hazards were on this lake in '24/'25?" and "if three
 people pin the same ridge, do their confirmations split?" are the same geometric judgement at two time
@@ -388,7 +388,7 @@ corroboration, and operators watch recurrence form.*
 - ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgement, not a date
 
 ## Phase N6a — Lake depth
-🟢 **Complete** 2026-07-30 · PR #33 · [plan](./phase-N6a-lake-depth.md) · D68 D69
+🟢 **Complete** 2026-07-30 · PR #33 · [plan](./phases/A06a-body-depth.md) · D68 D69
 
 The body-level depth D56 was designed around and never got — the `isShallow` scalar Phase 10 described
 never existed; the manual `bodyFeature` was wired to nothing. Depth arrives as a provenance-carrying
@@ -408,7 +408,7 @@ shallow pond's hazards thaw faster in the model, and the drawer says where its d
 - 🟢 **OSM `depth`/`maxdepth` tags** — rides the water ETL (`--depths`), built in the review pass
 
 ## Phase N6b — The bathymetry layer
-🟢 **Complete** 2026-08-01 · PRs #36 #37 · [plan](./phase-N6b-bathymetry-layer.md) · D81 D82 D83 D89
+🟢 **Complete** 2026-08-01 · PRs #36 #37 · [plan](./phases/A06b-bathymetry-layer.md) · D81 D82 D83 D89
 
 Measured state-agency isobaths as a PMTiles overlay drawn inside the open lake: five sources archived
 and normalized, joined at 98%, gated, contoured, tiled on the Phase 2.5 upload lane, and rendered by
@@ -434,7 +434,7 @@ its basin.*
 - **Reusing a third party's prebuilt Vermont tiles** — every state goes through our own pipeline
 
 ## Phase N6c — Expanded lake profiles
-🟢 **Complete** 2026-08-10 · PRs #38 #42 · [plan](./phase-N6c-expanded-lake-profiles.md) · D70 D71 D74 D76 D85 D86 D90 D138–D142
+🟢 **Complete** 2026-08-10 · PRs #38 #42 · [plan](./phases/A06c-expanded-body-profiles.md) · D70 D71 D74 D76 D85 D86 D90 D138–D142
 
 What N6a's depth numbers were missing — split at kickoff into **N6c-1** (derived numbers: geometry
 stats measured on the source geometry, elevation, a 16-bearing wind-fetch profile made honest by wind
@@ -455,7 +455,7 @@ including that `waterBodies.centroid` is a point *on the shoreline*, which would
 - ⚪ **`PROFILE_REVEAL_ALL`** — the reveal flag (D142) is still on; flip it to `false` before the season
 
 ## Phase N6d — Lake access points
-🟢 **Complete** 2026-08-13 · PR #43 · [plan](./phase-N6d-lake-access-points.md) · D72 D73 D87 D88 D143 D144
+🟢 **Complete** 2026-08-13 · PR #43 · [plan](./phases/A06d-body-access-points.md) · D72 D73 D87 D88 D143 D144
 
 Parking modelled apart from put-ins so directions stop routing cars to hike-in shorelines (D72,
 many-to-many after the amendment — a trailhead lot serves three ponds), named access points from a
@@ -479,7 +479,7 @@ whether the gate is locked.*
 - ⚪ **`matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB)** — the same unbounded-read shape as the parking load, unfixed
 
 ## Phase N6e — Imagery, scoped to a lake
-🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phase-N6e-satellite-imagery.md) · D75 D84 D146–D151
+🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phases/A06e-satellite-imagery.md) · D75 D84 D146–D151
 
 Not a base map you switch to: a photograph of *this lake*, clipped to its shape and the way in, with a
 date on it (D146 — a founder review falsified the map-wide toggle the first scoping specced, and the
@@ -506,7 +506,7 @@ its freeze-up scrubbed, on both clients.*
 - **Skia on mobile** — PR 2's baked alpha made the reveal an `ImageSource`
 
 ## Phase N6f — No public access
-🟢 **Complete** 2026-08-16 · PRs #44 #56 · [plan](./phase-N6f-no-public-access.md)
+🟢 **Complete** 2026-08-16 · PRs #44 #56 · [plan](./phases/A06f-no-public-access.md)
 
 The third map state: **on the map, and marked.** `isListed` was binary; `waterBodies.publicAccess`
 adds a corroborated community claim — `contentFlags`' existing dedup *is* the vote count — that only a
@@ -522,7 +522,7 @@ you can't legally reach stays visible and says so.*
 - 🟢 **A mobile report control** — PR #56
 
 ## Phase N6g — What nine seasons of imagery might know
-⚫ **Withdrawn** 2026-09-16 · [plan](./phase-N6g-imagery-research.md)
+⚫ **Withdrawn** 2026-09-16 · [plan](./backlog/A06g-imagery-research.md)
 
 Three research lanes that read N6e's archive — single-frame ice identification, corpus shrinking by
 observed freeze behavior, and the phenology derivations — none of which can start before the
@@ -530,7 +530,7 @@ nine-season backfill exists. Assigned a number at N6e's scoping, never built, an
 the number stays vacant. *(The doc moves to `backlog/imagery-research.md` in the renumbering pass.)*
 
 ## Phase N6h — The weather panel
-🟡 **In progress** 2026-09-12 · PRs #48 #49 #50 #51 #54 · [plan](./phase-N6h-weather-detail.md) · D152–D166
+🟡 **In progress** 2026-09-12 · PRs #48 #49 #50 #51 #54 · [plan](./phases/A06h-weather-detail.md) · D152–D166
 
 Grew out of a costing question whose answer moved the design: the expensive half wasn't the data but
 the **cache key**, which produced one fetch per lake (24,832 keys for 24,948 bodies) against models
@@ -552,7 +552,7 @@ observations (D160). *A skater asks "do I get in the car?" against a lake with a
 - **An always-on LibreWXR** — ~$760/yr for what cutting costs ~$5/mo
 
 ## Phase N7 — The unified corpus
-🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phase-N7-unified-corpus.md) · D92–D105 D109–D137
+🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phases/A07a-unified-corpus.md) · D92–D105 D109–D137
 
 The corpus was OSM-only, per-state, and a lake split across two features was two rows. N7 merges
 OSM + NHD + 3DHP + GNIS into one record per lake with our own minted key (D93), best-of-both per field
@@ -574,7 +574,7 @@ lake, with the numbers the profile page needed.*
 - ⚪ **1,353 downstate NY bodies still unpurged on dev** — the map draws five whole states, the corpus stops at I-84
 
 ## Phase N7b — Corpus lifecycle and the request path
-🟢 **Complete** 2026-09-16 · PRs #61 #63 · [plan](./phase-N7b-corpus-by-request.md) · D106–D108 D176–D179
+🟢 **Complete** 2026-09-16 · PRs #61 #63 · [plan](./phases/A07b-corpus-by-request.md) · D106–D108 D176–D179
 
 Split out of N7 as a product feature, not a data campaign, and widened at kickoff into the whole
 lifecycle: the 25,000-body corpus should settle toward the few hundred that are actually reached and
@@ -596,7 +596,7 @@ can stand one down.*
 - Dev deploy, the seed run (`seed-destinations`), device verification of the request flows
 
 ## Phase A07c — Lake corrections
-⚪ **Scoped** 2026-09-16 · [plan](./phases/A07c-lake-corrections.md) · D180–D183
+⚪ **Scoped** 2026-09-16 · [plan](./phases/A07c-body-corrections.md) · D180–D183
 
 The skater says *"this is wrong"* — the lake is two polygons, the boat ramp is a private driveway,
 the aerial is off, the lot has no toilets — and today only "no public access" has anywhere to go.
@@ -622,7 +622,7 @@ about a lake, and a moderator can fix it in place and have it stay fixed.*
 - The five founder calls in the plan's *Open questions* before build
 
 ## Phase N8 — The notification pipeline
-🟢 **Complete** 2026-09-15 · PRs #52 #53 #55 #57 · [plan](./phase-N8-notification-pipeline.md) · D167–D174
+🟢 **Complete** 2026-09-15 · PRs #52 #53 #55 #57 · [plan](./phases/A08-notification-pipeline.md) · D167–D174
 
 The scoping pass found the real problem: **nothing in the app could read a notification** — six types
 were being written and had never been seen. So: the inbox first (web `/notifications`, mobile bell and
@@ -646,7 +646,7 @@ fixed the Clerk mirrors that had never refreshed, with change-email and the `use
 - Prod: the webhook endpoint and secret need their own registration
 
 ## Phase N9 — A bay is a place
-🟢 **Complete** 2026-09-16 · PRs #58 #59 · [plan](./phase-N9-subareas-as-places.md)
+🟢 **Complete** 2026-09-16 · PRs #58 #59 · [plan](./phases/A09-subareas-as-places.md)
 
 Sub-areas become destinations rather than labels: favoritable, with their own put-ins, lots, bounties,
 hazards, reports, wind rose and access section, findable in search and drive time, and borrowing what

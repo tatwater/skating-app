@@ -7,7 +7,7 @@
  * forecast endpoint's `past_days` (≤ 92) reaches right up to `now`, and 92 days comfortably covers the
  * longest window any consumer needs (the report strip's ≤ 14-day cap and the hazard/decay 7-day
  * lookback). So one endpoint serves both; the archive is never worth a second integration. See
- * `plans/phase-10-weather.md` §2.
+ * `plans/phases/10-weather.md` §2.
  *
  * Like `isochrones.ts`, the outbound HTTP call lives in an **action** (no direct db access): it reads the
  * cache via an internal query and writes it via an internal mutation. The strip calls

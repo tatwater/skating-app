@@ -8,7 +8,7 @@ correct in advance.
 > **Who this is for.** Anyone touching the contour pipeline, anyone tempted to "improve" one of its
 > gates, and anyone who wants to understand why a feature that sounds like a weekend turned into the
 > most iterated work in the project. **No prior mapping knowledge assumed.** Build notes:
-> [`plans/phase-N6b-bathymetry-layer.md`](../plans/phase-N6b-bathymetry-layer.md).
+> [`plans/phases/A06b-bathymetry-layer.md`](../plans/phases/A06b-bathymetry-layer.md).
 
 ---
 

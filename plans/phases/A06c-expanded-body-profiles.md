@@ -15,7 +15,7 @@
 >
 > **Deferred by founder call: everything satellite** (**D138**) — B3's Copernicus deep link, the
 > `satelliteImagery` per-row override and `SATELLITE_MIN_AREA_SQM` all move to
-> [N6e](./phase-N6e-satellite-imagery.md) so the imagery story lands in one piece.
+> [N6e](./A06e-satellite-imagery.md) so the imagery story lands in one piece.
 >
 > | this doc says | actually |
 > | --- | --- |
@@ -90,14 +90,14 @@
 > summary cards) was folded in on 2026-07-30**, out of the roadmap's deferred design sketches.
 > **Depends on:** N6a (`meanDepthM`/`maxDepthM` + the depth ladder) — built and on dev, **ETL not yet
 > run**. That unrun loader is this phase's one scheduling constraint; see [Sequencing](#sequencing--and-the-one-time-sensitive-item).
-> **Sibling of:** [N6d — lake access points](./phase-N6d-lake-access-points.md) (split out of this doc
+> **Sibling of:** [N6d — lake access points](./A06d-body-access-points.md) (split out of this doc
 > at scoping, 2026-07-30: it was roughly the size of everything else here combined) and
-> [N6b — bathymetry contours](./phase-N6b-bathymetry-layer.md) (complete 2026-08-01 — its coverage is
+> [N6b — bathymetry contours](./A06b-bathymetry-layer.md) (complete 2026-08-01 — its coverage is
 > what feeds this doc's `+2 has bathymetric contours` prominence term).
 > **N6 is now a five-way split:** N6a depth → N6b contours → **N6c profiles** → N6d access points →
-> [N6e satellite imagery](./phase-N6e-satellite-imagery.md) (specced 2026-07-31 out of B3).
+> [N6e satellite imagery](./A06e-satellite-imagery.md) (specced 2026-07-31 out of B3).
 > **Decisions:** D70, D71, D74, D75, D76, and **D85/D86** added 2026-07-31, plus **D90** (the wind
-> rose) and the **D85/D86/D2 amendments** added 2026-08-02 (see [`01-decisions.md`](./01-decisions.md)).
+> rose) and the **D85/D86/D2 amendments** added 2026-08-02 (see [`01-decisions.md`](../01-decisions.md)).
 > D72/D73 are N6d's; D81–D84 are N6b's and N6e's, plus **D89** (N6b's fixed contour ladder).
 > **All five open questions were answered 2026-07-31**, plus A3, B3, B3a, B5 and E3 — see the marked
 > sections. Two answers changed the build: **shoreline is measured on the source geometry** (D85, and it
@@ -460,7 +460,7 @@ delete it once the findings landed here. Audited line by line against the deploy
 
 **What needed no carrying.** Passes 1–3 (canonical re-import, depth join, bathymetry coverage) were
 superseded wholesale by N7's re-merge and are recorded in
-[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md). Pass 4's Open-Meteo elevation lane is
+[`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md). Pass 4's Open-Meteo elevation lane is
 dead (**D127** → USGS 3DEP, 99.5%). Pass 5's wind roses ran (1,193 bodies then; **11,114 after the
 250 m widening finished 2026-08-15**). Pass 6's
 `regionStats:recompute` ran. And **all six of its "gotchas worth not re-learning" are already written
@@ -486,7 +486,7 @@ exactly**, which is the point: this was never a bad *assignment*, it was rows wr
 writer.
 
 *(24,961 = 24,953 listed + 8 retired-duplicate tombstones, which is the same arithmetic
-[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) reports — an independent cross-check
+[`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) reports — an independent cross-check
 that the pass walked the whole table.)*
 
 > ### The three point fields, since two of them are the same thing
@@ -655,7 +655,7 @@ as geometry*, not what we can *measure in flight*.
 
 **This changes the sequencing.** A2–A4 now ride the **canonical water re-import** (`scripts/etl`), not the
 N6a depth run — two different passes with different cargo. Recorded in
-[N6a's ordering gate](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate) so nobody expects
+[N6a's ordering gate](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate) so nobody expects
 one run to deliver both.
 
 **A cross-check that rides the depth join for free.** [HydroLAKES](https://www.hydrosheds.org/products/hydrolakes)
@@ -781,7 +781,7 @@ app, which is where navigation belongs.)*
 
 ### B3 — Copernicus Browser — and the satellite blocker it retires
 
-**The roadmap entry this closes.** [`07-roadmap.md`](./07-roadmap.md) has parked the satellite-imagery
+**The roadmap entry this closes.** [`07-roadmap.md`](../07-roadmap.md) has parked the satellite-imagery
 layer as *"needs design — and it needs an imagery source whose terms permit the use."* That second half
 is now answered: **Copernicus Sentinel data is under the free, full and open Copernicus licence** —
 reproduce, distribute and adapt, with attribution. The terms question was the blocker; it is no longer
@@ -834,7 +834,7 @@ research, rather than waiting for general traffic.
   *The rename is worth the thirty seconds it costs.* `seed-destinations` names the **input** — a list of
   lakes — which is the thing most likely to change. `seed-satellite` names the **job**: prove and
   provision the imagery path. When the shortlist grows into a region, or a second cohort, or the tile
-  pre-warm list [N6e](./phase-N6e-satellite-imagery.md) will want, the script keeps its name and only its
+  pre-warm list [N6e](./A06e-satellite-imagery.md) will want, the script keeps its name and only its
   input file changes. A script named after its first dataset is a script somebody forks instead of
   extends.
 - Ship with a README documenting how to re-run it — same posture as the other `scripts/` tools.
@@ -842,7 +842,7 @@ research, rather than waiting for general traffic.
   that the imagery is actually legible at these bodies' sizes. All three are cheaper to learn now than
   after we've built the in-app tier on top of them.
 
-**Imagery *in* the app → [N6e](./phase-N6e-satellite-imagery.md), specced 2026-07-31 at the founder's
+**Imagery *in* the app → [N6e](./A06e-satellite-imagery.md), specced 2026-07-31 at the founder's
 ask** (*"I don't want to lose track of this, because I want to do it ASAP"*).
 
 **Does it fit inside B3?** No — and the reason is worth one paragraph, because "it's just a raster layer"
@@ -870,7 +870,7 @@ guessing that they do. B3a's proving run is what starts producing that evidence,
 `seed-satellite` is now named after the job rather than the list.
 
 Full cost/benefit for Copernicus and Planet lives in
-[`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md).
+[`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md).
 
 ### B4 — Weather links: Windy
 
@@ -884,7 +884,7 @@ what the founder asked for — Windy's animation, over our app, with a Done butt
 €0/year, versus €990/year and a second map engine for the API route.
 
 Cost, tiers and the future-integration case are documented in
-[`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md).
+[`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md).
 
 ### B5 — Weather data: NWS alerts ✅ **in scope** (D74)
 
@@ -1142,7 +1142,7 @@ at-a-glance basics, so the map stops being a field of anonymous polygons you mus
 | Active hazard types | the top few, as icons or short labels |
 
 **Explicitly *not* on the card:** recurring / "potential hazard" advisories from
-[N5c](./phase-N5c-hazard-memory.md). That was asked and answered at N5c's scoping: this surface sits
+[N5c](./A05c-hazard-memory.md). That was asked and answered at N5c's scoping: this surface sits
 closest to the map, where D3 pressure is highest, and a history line rendered over an unselected polygon
 is one step from reading as a live condition. Recorded there as worth revisiting — *"likely open water"*
 or *"frequently pressure ridges off the eastern shore"* would genuinely help someone judge a lake with no
@@ -1397,7 +1397,7 @@ Everything after is preference:
 2. **A2–A4** — pure geometry, no external dependency, testable in isolation. **These ride a different
    pass** (D85): they're computed in `scripts/etl`'s transform from the pre-simplification geometry, so
    they need a **canonical water re-import**, not the depth run. Two passes, different cargo — the
-   inventory is in [N6a's ordering gate](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate).
+   inventory is in [N6a's ordering gate](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate).
 3. **A5 + C** — captions need the deciles; both are small once A is in.
 4. **B** — link generation. Only B7 touches the schema. Fast, visible, high value-to-effort.
 5. **B3a + D** — the proving run and the boosts, one script.
@@ -1478,7 +1478,7 @@ exactly like no warning.
 > *"Definitely block N6a ETL run until we're ready for elevation."*
 
 Recorded in N6a itself as a hard gate — see
-[*§Before the ETL runs*](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate) — with the
+[*§Before the ETL runs*](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate) — with the
 escape hatch stated (run alone, accept a second pass) so the decision stays reversible under season
 pressure rather than becoming a rule nobody can override. The founder's phrasing was *"until N6c is
 complete,"* deliberately more conservative than *"until A1 is built,"* and N6a's gate carries the
@@ -1544,7 +1544,7 @@ content as the count next to it.
   recent reports"* — which is also, usefully, the honest long form: it names the denominator that the
   glanceable version omits.
 
-**Still deferred, and now clearly separable:** the [N5c](./phase-N5c-hazard-memory.md) recurrence line
+**Still deferred, and now clearly separable:** the [N5c](./A05c-hazard-memory.md) recurrence line
 (*"frequently pressure ridges off the eastern shore"*). That one is deferred because it is **history
 presented as a tendency**, which is a different and harder problem than aggregating explicit ratings. The
 two were bundled as "the D3-sensitive half of this card"; the founder's mark-not-word answer separates
@@ -1591,7 +1591,7 @@ this is source material, not a feature.
 
 | Work | Relevance to us |
 |---|---|
-| Michel, B. & Ramseier, R.O. (1971), *Classification of River and Lake Ice*, Canadian Geotechnical Journal | The academic taxonomy behind our **16 canonical hazard type keys**. Worth citing in [`docs/hazard-decay-and-lifecycle.md`](../docs/hazard-decay-and-lifecycle.md). |
+| Michel, B. & Ramseier, R.O. (1971), *Classification of River and Lake Ice*, Canadian Geotechnical Journal | The academic taxonomy behind our **16 canonical hazard type keys**. Worth citing in [`docs/hazard-decay-and-lifecycle.md`](../../docs/hazard-decay-and-lifecycle.md). |
 | Ashton, G.D. (1989), *Thin Ice Growth*, Water Resources Research | Early-season growth rates — directly relevant to Workstream C's freeze-timing clauses and to D56 decay. |
 | Gow, A.J., Ueda, H.T. & Ricard, J.A. (1978), *Flexural Strength of Ice on Temperate Lakes*, CRREL Report 78-9 | Load-bearing physics — the basis for any thickness guidance, and therefore for our decision **not** to give any. |
 | Fransson, L. (2009), *Ice Handbook for Engineers* v1.2, Luleå University of Technology | General engineering reference. |
@@ -1656,11 +1656,11 @@ for all of it.)*
 > bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
 > campaign and gates only the **decile** copy (A5), not the rest of N6c-1.
 >
-> See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) for the campaign's final state.
+> See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) for the campaign's final state.
 
 **N6c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
 2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
-— see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md) *§What the
+— see [`phases/A06c-expanded-body-profiles.md`](./A06c-expanded-body-profiles.md) *§What the
 N6c-1 build found*. New decision **D90** (wind exposure) plus **D85**, **D86** and **D2** amendments.
 
 **Six of the plan's own claims were false**, four of them caught by running the code against real
@@ -1705,7 +1705,7 @@ alerts on a 15-minute cron, state rung of the zone ladder), **B5b** (the forward
 cards with D86's dots), **F1** (the per-lake activity timeline), and mobile parity for all three
 drawer strips through `openBrowserAsync` (D76).
 
-**Everything satellite deferred to [N6e](./phase-N6e-satellite-imagery.md) at the founder's ask
+**Everything satellite deferred to [N6e](./A06e-satellite-imagery.md) at the founder's ask
 (D138)** — the Copernicus deep link, the `satelliteImagery` override and `SATELLITE_MIN_AREA_SQM` —
 so the imagery story lands in one piece rather than a link one phase and a layer the next. That split
 renamed the seed script to `seed-destinations` (**D139**), since the job it does today is Workstream
@@ -1752,7 +1752,7 @@ opposite until it merged main; corrected here rather than left standing.
 *The roadmap entry for N6c (the earlier 'scoped, unbuilt' entry that was never removed) as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 **N6c — Expanded lake profiles: derived stats, captions, and reference links.** 📋 Scoped 2026-07-30,
-unbuilt — see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md); decisions
+unbuilt — see [`phases/A06c-expanded-body-profiles.md`](./A06c-expanded-body-profiles.md); decisions
 **D70** (derived-not-hand-maintained), **D71** (links generated, not stored), **D74** (one physics source
 + NWS alerts), **D75** (satellite ships as a link), **D76** (in-app browser, never a WebView).
 
@@ -1771,7 +1771,7 @@ elevation, and where else to look.
   ETL run until we're ready for elevation"*). `elevationM` is a per-centroid lookup against Open-Meteo's
   free elevation endpoint (~1,200 batched requests for all 116,070). Folding it into that unrun loader
   costs **one column**; doing it afterwards costs **a second full pass over the corpus**. Recorded as a
-  hard gate in [N6a](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate), with the escape
+  hard gate in [N6a](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate), with the escape
   hatch stated so it stays reversible under season pressure.
 - **There are two ETL passes in flight, not one (D85).** The depth run carries elevation; the **canonical
   water re-import** carries the geometry stats, because shoreline and axis must be measured on the
@@ -1786,7 +1786,7 @@ elevation, and where else to look.
   The founder asked for ETL coverage; not storing them is what delivers it.
 - **This retires the satellite-imagery blocker below.** Copernicus Sentinel data is under the free, full
   and open licence, so *"needs an imagery source whose terms permit the use"* is answered — the deep link
-  ships here (D75), and **in-app imagery is now its own phase, [N6e](./phase-N6e-satellite-imagery.md)**
+  ships here (D75), and **in-app imagery is now its own phase, [N6e](./A06e-satellite-imagery.md)**
   (scoped 2026-07-31 at the founder's ask). The cost trigger turned out to bind only *half* of it: see
   **D84**.
 - **NWS alerts are the one new integration** (free, no key, `User-Agent` only). Open-Meteo still computes;

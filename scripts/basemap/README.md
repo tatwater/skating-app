@@ -112,7 +112,7 @@ the end, the `VITE_PMTILES_URL` value to wire in step 3.
 > viewed tiles per map view (KBs), so pilot bandwidth is negligible and 280 MB sits well under
 > the free-tier storage cap. If per-tile egress grows as regions expand, **Cloudflare R2**
 > (zero egress, the standard pmtiles host) is the documented scale-out target — a
-> `VITE_PMTILES_URL` swap, nothing in the app. See `plans/phase-1-water-bodies.md` open items.
+> `VITE_PMTILES_URL` swap, nothing in the app. See `plans/phases/01-water-bodies.md` open items.
 
 ## 2b. Host on Cloudflare R2 (Phase 2.5+ — the scale-out host)
 
@@ -120,7 +120,7 @@ Convex file storage (§2) is fine for the ~280 MB Vermont file, but the multi-st
 extract (~1.3–2 GB) overflows the Convex free tier, so the regional basemap hosts on **Cloudflare
 R2** (zero egress; the standard pmtiles host). R2 is the primary host going forward; `upload.sh`
 (Convex storage) stays for the Vermont-only/legacy path. Full context: the
-[Phase 2.5 runbook](../../plans/phase-2.5-regional-expansion.md).
+[Phase 2.5 runbook](../../plans/phases/02b-regional-expansion.md).
 
 ### One-time setup
 

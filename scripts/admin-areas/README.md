@@ -4,7 +4,7 @@ A manual, run-on-demand pipeline that turns a regional **OpenStreetMap** extract
 administrative boundaries stored in Convex (`adminAreas`), used to resolve a report's point
 (put-in pin / GPS start) → `{ town?, county?, state? }` for the newsfeed location label. This is
 **not** built or deployed with the apps — you run it by hand when seeding or refreshing a region
-(Phase 5; see [`plans/phase-5-newsfeed.md`](../../plans/phase-5-newsfeed.md)).
+(Phase 5; see [`plans/phases/05-newsfeed.md`](../../plans/phases/05-newsfeed.md)).
 
 It reuses the **same per-state Geofabrik extracts** the water ETL (`scripts/etl`) already uses — no
 new dataset, same **© OpenStreetMap contributors / ODbL** attribution. Pipeline stages mirror the
@@ -109,7 +109,7 @@ pnpm exec convex run adminAreas:backfillCells '{"batchSize": 200, "cursor": "<cu
 
 Existing reports predate the point-derived label, so once the boundaries are loaded, run the Phase-5
 report migration to stamp `place` (and complete the `skateTime` → `skateEndTime` rename) — see
-[`plans/phase-5-newsfeed.md`](../../plans/phase-5-newsfeed.md) → schema-migration dance and
+[`plans/phases/05-newsfeed.md`](../../plans/phases/05-newsfeed.md) → schema-migration dance and
 `reports.renameSkateTimeToSkateEndTime`. It's paginated (N1), so loop it on its returned `cursor`
 until `isDone`.
 

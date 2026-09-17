@@ -1100,7 +1100,7 @@ profiles 1─* pointEvents
   grid cell its **bbox** covers, in a plain Convex table — `waterBodyCells`, `adminAreaCells` and
   (N2) `waterBodySubAreaCells`, all keyed `by_cell = [z, x, y, …]`. A viewport read scans the cells covering the viewport at every
   rung up to the current zoom; a containment lookup scans one cell per rung. See
-  [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) and
+  [`phases/A01-read-path-durability.md`](./phases/A01-read-path-durability.md) and
   `packages/core/src/spatialCells.ts`.
   - **Which rung:** the coarser of *how big the object is* and (for water bodies) *the zoom it first
     draws at* (D49 `minVisibleZoom`). That ceiling is what makes a zoom-filtered query provably

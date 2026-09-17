@@ -7,7 +7,7 @@ not something that quietly shares the screen with a report from Tuesday.*
 > departure half shipped a day earlier as PR #30). Every suite green — core 934 / convex 779 / web 206 /
 > mobile 79 — lint clean; **not device-tested, not on prod**. Splits from the roadmap's old N5, keeping
 > its two **lifecycle** items; the three **authoring-UX** items become
-> [N5b](./phase-N5b-hazard-authoring.md).
+> [N5b](./A05b-hazard-authoring.md).
 
 ## What checking the code changed about the plan
 
@@ -689,7 +689,7 @@ redacted comment renders as *"This comment was deleted"* in both apps. Not yet a
 moderation queue shows for one, and whether `commentCount` should follow a redaction (it currently
 doesn't — the comment still exists, which is arguably correct and worth confirming).
 
-**5. ~~What to do about a departed skater's photo *images*.~~ → decided at kickoff as [D66](./01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-n5a),
+**5. ~~What to do about a departed skater's photo *images*.~~ → decided at kickoff as [D66](../01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-n5a),
 and built in this phase as work item 9.** The founder's shape below is what was taken, with one
 implementation consequence the write-up hadn't reached: because finalization lands 30 days after the
 request and therefore mid-season, the expiry sweep has to **outlive the tombstone** — it runs off
@@ -758,7 +758,7 @@ the empty state needs no special caveat — noted so the next person doesn't red
 
 ~~**N5a — Seasons: seasonal visibility, the season filter, departed-user redaction.**~~ **✅ COMPLETE
 2026-07-28** (built, all suites green, **deployed to dev**; not device-tested, prod deferred) — see
-[`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63**, **D64**, **D65**, **D66** + the
+[`phases/A05a-seasons.md`](./A05a-seasons.md); decisions **D63**, **D64**, **D65**, **D66** + the
 **D62 amendment** and its **second amendment**. *(Re-scoped: this entry used to be "hazard authoring &
 confirmation polish". It keeps that entry's two **lifecycle** items, because they touch the same
 `deriveHazardLifecycle` a seasonal reset does; the three **authoring-UX** items became **N5b**.)*

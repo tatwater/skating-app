@@ -14,12 +14,12 @@
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
 > *§What the load found*, *§The run, completed*, *§What the pre-PR review found* and
 > *§What Greptile found*.
-> **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
+> **Split from** [N6c](./A06c-expanded-body-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
 > **Touches:** the existing `putIns` table, the Phase 1 OSM ETL, the Phase 9 confirm/deny machinery,
 > the N2 lake editor, and N5a's season boundary.
-> **Decisions:** D72, D73, and **D87/D88** added 2026-07-31 (see [`01-decisions.md`](./01-decisions.md)).
+> **Decisions:** D72, D73, and **D87/D88** added 2026-07-31 (see [`01-decisions.md`](../01-decisions.md)).
 > **All four open questions were answered 2026-07-31.** Two changed the build: **approach distance is
 > routed via OpenRouteService `foot-hiking`** (D87 — the account Phase 4 already uses, and it returns
 > elevation gain), and **`parkingAreas` is many-to-many with bodies** because the association radius caps
@@ -27,7 +27,7 @@
 >
 > ### ⚠ This doc was written before N7, and three of its premises moved
 >
-> Scoped 2026-07-30; [N7](./phase-N7-unified-corpus.md) landed 2026-08-07 and rebuilt the corpus under
+> Scoped 2026-07-30; [N7](./A07a-unified-corpus.md) landed 2026-08-07 and rebuilt the corpus under
 > it. See *§What the kickoff found in the plan*, which is the first section below — the corrections are
 > **not** cosmetic: one of them changes where the join runs.
 >
@@ -93,7 +93,7 @@ inputs are byte-identical to the ones behind the current corpus.
 *"Put-in candidates within ~30 m of a body's polygon boundary attach to that body"* reads as something
 the transform does. It can't: the transform has no access to our polygons, and post-N7 the merge output
 is **not** the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it). This is
-precisely what [N6a](./phase-N6a-lake-depth.md) discovered mid-build and it has the same fix —
+precisely what [N6a](./A06a-body-depth.md) discovered mid-build and it has the same fix —
 `waterBodies.matchAndImportDepths` does the geometric join in Convex against the N1 cell index, and
 `matchAndImportAccessPoints` will mirror it. The same free benefit comes with it: an access point and
 the app's own *"you're at Lake X"* resolution agree by construction, because both go through
@@ -251,7 +251,7 @@ Over the *same* Geofabrik state extract the water pass already downloads
 
 Both thresholds are tunable constants with tests, not magic numbers. They will need one round of
 eyeballing against real output — the 250 m figure in particular is a guess that a dense state will
-falsify quickly. *(They stay code constants, per [N6c's tuning-constants note](./phase-N6c-expanded-lake-profiles.md#where-the-tuning-constants-live); if the ETL tuning loop gets tedious, the fix is a script flag, not a database row.)*
+falsify quickly. *(They stay code constants, per [N6c's tuning-constants note](./A06c-expanded-body-profiles.md#where-the-tuning-constants-live); if the ETL tuning loop gets tedious, the fix is a script flag, not a database row.)*
 
 ### B3 — Provenance and re-import safety
 
@@ -1031,7 +1031,7 @@ one test asserting we don't accidentally report the round trip.
 **The Hike-In chip ✅.** Founder ask, and it belongs on **all three surfaces**, because the whole point is
 that nobody should discover this at the trailhead:
 
-- **The map summary card** ([N6c Workstream E](./phase-N6c-expanded-lake-profiles.md#workstream-e--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
+- **The map summary card** ([N6c Workstream E](./A06c-expanded-body-profiles.md#workstream-e--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
 - **The lake drawer/detail** — with the number: *"park here, then about 1.1 km on foot, 90 m of climb."*
 - **The feed card** — the Phase 4 drive-time filter row's neighbour. A skater filtering to "within 60
   minutes" is filtering on *drive* time, and a hike-in lake inside that band is not the trip they think
@@ -1119,7 +1119,7 @@ getting it wrong costs some missed or spurious *inferences*, never a rejected hu
 **N6d — Lake access points: parking, named put-ins, and access alerts.** ✅ **COMPLETE on dev
 2026-08-13** — all five workstreams, every UI surface, and the ETL run end to end: **3,588 put-ins,
 11,375 parking areas, 4,209 bodies with access** (16.7% of the corpus), routing 99.4%. Prod deferred. —
-scoped 2026-07-30; see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions
+scoped 2026-07-30; see [`phases/A06d-body-access-points.md`](./A06d-body-access-points.md); decisions
 **D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
 **D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
 scoping** — it was roughly the size of everything else there combined, and it's the only part introducing

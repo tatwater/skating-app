@@ -10,9 +10,9 @@
 > live, but the machinery it rides on isn't — `minVisibleZoom` was the geospatial entry's `sortKey`
 > and is now the trailing field of `waterBodyCells.by_cell`. The `@convex-dev/geospatial@0.2.1`
 > `sortKey` spike recorded below is therefore historical. See
-> [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
+> [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md).
 
-The concrete implementation plan for **Phase 2** of [`07-roadmap.md`](./07-roadmap.md). Design
+The concrete implementation plan for **Phase 2** of [`07-roadmap.md`](../07-roadmap.md). Design
 rationale lives in the decisions log (D3, D4, D6, D9, D13, D14, D20, D22–D25, D30, D31, D36,
 D41, D42, **D49**); this doc is the *how* — ordered workstreams, file-level changes, and the
 test plan.
@@ -475,7 +475,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 
 ### H. Regional expansion (post-MVP — Phase 2.5, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
 
-> **Execution runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md) — the
+> **Execution runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md) — the
 > step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
 > small code changes. **Reordered 2026-07-14: H runs before F2** (F2 is the mobile-only offline
 > queue, orthogonal to H's data/infra — nothing in H depends on it).
@@ -668,7 +668,7 @@ doc once web is proven:
 *The roadmap entry for Phase 2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 2 — Map + reports (the MVP) ✅ Complete (2026-07-16)
-> **Detailed build plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md).
+> **Detailed build plan:** [`phases/02a-map-and-reports.md`](./02a-map-and-reports.md).
 > **Web first, then mobile (two PRs)** — web front-loads the shared Convex backend and proves the
 > whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
 > dependency blocks it (web ships on Vercel; mobile needs only an EAS dev build + — for physical

@@ -106,7 +106,7 @@ tables, and the deliverable of the first winter is a doc with the fitted numbers
 
 ## Related
 
-[`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) (Workstream G) ·
+[`phases/A09-subareas-as-places.md`](../phases/A09-subareas-as-places.md) (Workstream G) ·
 [`weather-shelter-index.md`](./weather-shelter-index.md) ·
-[`phase-N6h-weather-detail.md`](../phase-N6h-weather-detail.md) (D152, D153, D161) ·
-[`phase-N6c-expanded-lake-profiles.md`](../phase-N6c-expanded-lake-profiles.md) (the NWS client)
+[`phases/A06h-weather-detail.md`](../phases/A06h-weather-detail.md) (D152, D153, D161) ·
+[`phases/A06c-expanded-body-profiles.md`](../phases/A06c-expanded-body-profiles.md) (the NWS client)

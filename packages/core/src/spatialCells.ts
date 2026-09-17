@@ -7,7 +7,7 @@
  * wide, sparse viewport exhausted a large covering and blew Convex's hard 4,096-reads-per-query
  * cap. That is a **crash**, not slow paging, and it had to be patched twice (PR #10, #11) with a
  * margin-plus-outlier-list scheme whose safety rested on constants measured against a corpus that
- * has since grown 11.6×. See `plans/phase-N1-read-path-durability.md`.
+ * has since grown 11.6×. See `plans/phases/A01-read-path-durability.md`.
  *
  * **The fix.** Index each object into *cells it covers*, in a plain Convex table. A plain index
  * range read costs only the rows it returns and an empty cell costs ~nothing, so the read bound

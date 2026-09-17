@@ -75,7 +75,7 @@ and a Clerk JWT template named `convex`).
   scaled with `maxResults` rather than with results, and which crashed a wide viewport twice
   (PRs #10/#11) before its workarounds were retired here. `zoom` is a **required** argument —
   the completeness guarantee is stated against it. See
-  `plans/phase-N1-read-path-durability.md` and `packages/core/src/spatialCells.ts`. Still
+  `plans/phases/A01-read-path-durability.md` and `packages/core/src/spatialCells.ts`. Still
   deferred: a spatial index on `reports.point` (near-me / cross-body queries, Phase 5/6).
 - **`geoJson` is now a structured GeoJSON-geometry validator** (`lib/validators.ts`),
   not `v.any()` — a discriminated union over Point/MultiPoint/Line/MultiLine/Polygon/

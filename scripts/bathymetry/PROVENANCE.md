@@ -148,7 +148,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 ## New York
 
 **No statewide lake bathymetry exists to archive.** This is a checked finding, not a gap — see
-`plans/phase-N6b-bathymetry-layer.md` §New York for the search that established it and for the
+`plans/phases/A06b-bathymetry-layer.md` §New York for the search that established it and for the
 costed digitisation path if we ever fund it.
 
 New York is nonetheless covered where it matters most: the VCGI/NOAA Champlain source above spans

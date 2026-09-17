@@ -10,7 +10,7 @@
  *     (`freezingDegreeHours`/`thawDegreeHours`, freeze-run, freeze/thaw cycles).
  *
  * Input is Open-Meteo-style hourly data (see the mapping in `04-integrations.md`). The expanded
- * variable set (2026-07-22 scoping) supersedes the original five — see `plans/phase-10-weather.md` §1
+ * variable set (2026-07-22 scoping) supersedes the original five — see `plans/phases/10-weather.md` §1
  * for the per-variable rationale. Units follow Open-Meteo's native ones so the fetch layer can pass
  * values straight through: temperature °C, rain mm, snowfall **cm**, snow depth m, wind kph,
  * shortwave radiation W/m².

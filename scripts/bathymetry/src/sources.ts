@@ -6,7 +6,7 @@
  * five special cases.
  *
  * **Every field below was verified against the live service on 2026-07-31**, and doing so corrected
- * the phase plan four times — see `plans/phase-N6b-bathymetry-layer.md` §"What the build found in the
+ * the phase plan four times — see `plans/phases/A06b-bathymetry-layer.md` §"What the build found in the
  * plan". The corrections are recorded in `notes` rather than only in the plan, because the person who
  * next re-runs this will be standing here, not in a plan doc.
  */

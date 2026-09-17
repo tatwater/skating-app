@@ -20,7 +20,7 @@
 > **Touches:** `weather.ts` (the sample-point key, the fetch spec), `weatherCache` /
 > `weatherForecastCache`, the N5a season boundary, the N6c wind rose + fetch profile, Phase 4
 > drive-time, the Phase 5 feed filter row, and the N6e imagery scrubber + Fly/R2 cutter pattern.
-> **Decisions:** **D152–D166**, all written into [`01-decisions.md`](./01-decisions.md) (D152–D161 on
+> **Decisions:** **D152–D166**, all written into [`01-decisions.md`](../01-decisions.md) (D152–D161 on
 > 2026-09-03, D162–D166 on 2026-09-11).
 > **Supersedes one Phase 10 rule:** *"never the archive API"* was right for its use case and is wrong
 > for this one. See D153.
@@ -890,7 +890,7 @@ It is also buying nothing. Open-Meteo's US best-match resolves at ~3 km (HRRR) t
 ## The cost model
 
 Everything below is priced against **Open-Meteo's free tier: 10,000 calls/day, 300,000/month,
-non-commercial** — which is what [`00-vision.md:144`](./00-vision.md) commits to ("passion /
+non-commercial** — which is what [`00-vision.md:144`](../00-vision.md) commits to ("passion /
 open-source project; lean on free tiers"). Their weighting is roughly
 
 > `calls ≈ ceil(days / 14) × (variables / 10)`
@@ -1136,7 +1136,7 @@ which runs per satellite pass and can fail quietly for a day without anyone noti
 copy its source selection and its RQI handling, and run the cut in our own pattern. ⚠ If we ever
 *deploy* a modified LibreWXR as a network service, **AGPL §13 obliges us to offer that modified source
 to its users** — a real obligation even for an open-source project, and one that belongs in
-[`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) as a new L-item before any
+[`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) as a new L-item before any
 such deployment. They offer separate commercial licensing, which implies they expect this to bite.
 
 **Reuse on the client, honestly assessed.** `useFreezeUpFrame.ts`'s lane pool and `sourcedata` reveal
@@ -1540,7 +1540,7 @@ wind-rose × fetch-profile multiply already exists in `windRose.ts`; this is lar
 
 **⚠ The panel is one step from an ice-thickness calculator, and we have already decided not to be
 that.** The FDD integrals are right there and the ~1″/15-FDD backbone is written down in
-[`phase-10-weather.md`](./phase-10-weather.md). Publish an integer and a reader divides by fifteen.
+[`phases/10-weather.md`](./10-weather.md). Publish an integer and a reader divides by fifteen.
 Observations only — *"four nights below 20°F, calm; no snow since Feb 2"* — never derived ice. This is
 D3 and D150, and it is not negotiable in a safety app.
 
@@ -1600,7 +1600,7 @@ the *operational* burden was. So two conditions ride along:
    loop nobody is reading in July is the same waste as a weather sweep nobody is filtering on, and
    the gate now exists for free.
 2. **The AGPL §13 note becomes an L-item in
-   [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) *before* the first Fly
+   [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) *before* the first Fly
    deploy, not alongside it.** Borrowing LibreWXR's source selection and RQI handling is fine;
    deploying a modified LibreWXR as a network service obliges us to offer that modified source to
    its users. They sell commercial licences, which implies they expect this to bite.
@@ -1827,7 +1827,7 @@ three-tab drawer IA + sub-area weather spread) and PR 4 (#51, the seven-day plan
 dim, D164–D166) built 2026-09-12 on dev; F (radar) remains.** Founder ask, grown out
 of a costing question — *"what is most expensive about this plan?"* — whose answer moved the design: the
 expensive half is not the data, it is **the cache key**, which today shares nothing. See
-[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D166**. Depends on
+[`phases/A06h-weather-detail.md`](./A06h-weather-detail.md); decisions **D152**–**D166**. Depends on
 nothing; every seam it needs is already built.
 
 *Today the weather block is two lines: an NWS alert when one is active, and a 12-hour temperature

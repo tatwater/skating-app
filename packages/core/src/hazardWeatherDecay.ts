@@ -27,8 +27,8 @@
  *
  * Magnitudes are literature/anecdote defaults (Ashton's ~1″ ice per 15 freezing-degree-days; thaw ~30%
  * faster) and are **explicitly tunable** — admin-liftable in Phase 7 (D49), refittable once real hazard
- * rows exist. The signs are locked; the numbers are not. See `plans/phase-9-hazard-research.md` §5 and
- * `plans/phase-10-weather.md` §4.
+ * rows exist. The signs are locked; the numbers are not. See `plans/research/hazard-decay-calibration-and-behavior.md` §5 and
+ * `plans/phases/10-weather.md` §4.
  */
 
 import { deriveHazardFreshness, type HazardFreshness } from './hazardDecay';

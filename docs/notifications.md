@@ -2,7 +2,7 @@
 
 *The design rationale behind the inbox, the settle window, and the two transports. The decisions this
 explains are D167–D174 in [`plans/01-decisions.md`](../plans/01-decisions.md); the build record is
-[`plans/phase-N8-notification-pipeline.md`](../plans/phase-N8-notification-pipeline.md).*
+[`plans/phases/A08-notification-pipeline.md`](../plans/phases/A08-notification-pipeline.md).*
 
 ## The inbox is the product; push and email are ways of pointing at it
 

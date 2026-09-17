@@ -391,12 +391,12 @@ outline writer in the app.
 
 ## Related
 
-- [`phase-N6f-no-public-access.md`](../phase-N6f-no-public-access.md) — the first place in
+- [`phases/A06f-no-public-access.md`](./A06f-no-public-access.md) — the first place in
   `contentFlags`, and the dedup-as-corroboration argument this phase generalises.
-- [`phase-N7b-corpus-by-request.md`](../phase-N7b-corpus-by-request.md) — the request door.
-- [`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) — why a bay is the answer to
+- [`phases/A07b-corpus-by-request.md`](./A07b-corpus-by-request.md) — the request door.
+- [`phases/A09-subareas-as-places.md`](./A09-subareas-as-places.md) — why a bay is the answer to
   most "split" reports, and the put-in suppression row.
-- [`phase-N2-lake-editor-and-subareas.md`](../phase-N2-lake-editor-and-subareas.md) — the canvas
+- [`phases/A02-body-editor-and-subareas.md`](./A02-body-editor-and-subareas.md) — the canvas
   §4.3 would extend.
 - [`features/representative-point-rename.md`](../features/representative-point-rename.md) — row 6.
 - D3 (never authoritative — nothing in a correction says the ice is anything), D32/D37 (flags and

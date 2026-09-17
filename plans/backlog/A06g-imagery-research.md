@@ -1,6 +1,6 @@
 # Phase N6g — What nine seasons of imagery might know
 
-*These lanes read [N6e](./phase-N6e-satellite-imagery.md)'s archive and none can start before it
+*These lanes read [N6e](../phases/A06e-satellite-imagery.md)'s archive and none can start before it
 exists. One would be the most-wanted feature in the product. One would shrink the corpus. All are the
 kind of thing that is easy to ship and hard to ship **correctly**, which is why they are here rather
 than in a workstream.*
@@ -153,7 +153,7 @@ before Christmas."*
 
 The lane's premise is a **conjunction** — low radar backscatter AND optical classification of *ice, not
 water*. The second half is simply absent: optical calls black ice water, which is what
-[Chapter 4](../docs/reading-ice-from-orbit.md) has always said. So the question becomes whether
+[Chapter 4](../../docs/reading-ice-from-orbit.md) has always said. So the question becomes whether
 anything else separates it. Measured, on the same lake, against two open-water dates:
 
 | | 22 Nov (open water) | **22 Dec (black ice)** | 27 Mar (open water) | 15 Feb (snow-covered) |
@@ -323,7 +323,7 @@ justifies the lane or kills it for the price of neither.
 > elimination phase once more with a proof point that people actually want it!"*
 
 **The argument is good**: a Cape Cod salt pond that has not frozen in nine observed winters is not a
-skating destination, it is corpus weight — and [N7b](./phase-N7b-corpus-by-request.md) makes removal
+skating destination, it is corpus weight — and [N7b](../phases/A07b-corpus-by-request.md) makes removal
 recoverable rather than final, which is what changes the calculus. Three findings shape how it should
 be done.
 

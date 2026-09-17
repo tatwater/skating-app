@@ -5,7 +5,7 @@ lake's drawer, and (b) measured **rung-1 depths** for the D68 ladder. Manual and
 [`scripts/etl`](../etl/README.md) and [`scripts/lake-depth`](../lake-depth/README.md) — **not** built
 or deployed with the apps.
 
-Phase doc: [`plans/phase-N6b-bathymetry-layer.md`](../../plans/phase-N6b-bathymetry-layer.md).
+Phase doc: [`plans/phases/A06b-bathymetry-layer.md`](../../plans/phases/A06b-bathymetry-layer.md).
 **Read first if you are about to change an interpolator or a gate:**
 [`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md) — the five interpolation
 methods and five gates that were tried and abandoned, and what each one actually drew.
@@ -256,7 +256,7 @@ it declines, so a threshold can be judged by looking rather than by argument.
 asks how much of the fit is measurement at all (a lake fitted mostly to its own outline is
 approximately a distance transform, which this phase opens by refusing) and *fragments per level*
 asks whether a depth traced as one ring or as eight. Both were tried as gates and both were falsified
-by a render within hours — see `plans/phase-N6b-bathymetry-layer.md` §*The gate that measured the
+by a render within hours — see `plans/phases/A06b-bathymetry-layer.md` §*The gate that measured the
 wrong thing*. **Read them before changing anything about the interpolation; do not re-add either as a
 gate without rendering the lakes either side of the threshold first.**
 

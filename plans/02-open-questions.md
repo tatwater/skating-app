@@ -72,7 +72,7 @@ and D3's safety framing. **Possible future feature:** per-water-body **put-in / 
 (parking, launches) — not scoped to a phase yet, but clearly wanted. *(Also feeds the D18 drive-time
 approximation: testing the actual put-in, not the water-body centroid.)*
 
-**Answered by D72/D73** — [N6d](./phase-N6d-lake-access-points.md) scopes parking as a first-class table
+**Answered by D72/D73** — [N6d](./phases/A06d-body-access-points.md) scopes parking as a first-class table
 apart from put-ins, named access points derived from a second OSM pass, and access blockers as decaying
 community alerts. **The corpus was more specific than this entry recorded, and the extra specificity is
 the phase:** "where to park" and "where to get on the ice" are *two* questions, and we had been answering
@@ -90,7 +90,7 @@ NE arm as **"Inland Sea"** (55).
 
 **Answered by D60** — `waterBodySubAreas`, a named region *inside* one polygon, carrying `aliases`
 for exactly the spelling problem this entry names. Nine bays are drawn on Champlain with their alias
-sets (see [`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) → *The
+sets (see [`phases/A02-body-editor-and-subareas.md`](./phases/A02-body-editor-and-subareas.md) → *The
 curation session*).
 
 **Checked and closed, not carried forward:** the obvious next worry — that the same problem exists
@@ -138,7 +138,7 @@ corpus at all** (see the N2 doc's *Open after this phase*).
 - **Weather providers → D74** — Open-Meteo computes, NWS informs; never blended.
 - **Satellite imagery → D75, then D81/D84** — the deferred layer's blocker was a licence question, and
   Copernicus Sentinel data already answered it. Deep link ships in N6c; **in-app imagery is now
-  [N6e](./phase-N6e-satellite-imagery.md)** (2026-07-31), where the cost call turned out to bind only one
+  [N6e](./phases/A06e-satellite-imagery.md)** (2026-07-31), where the cost call turned out to bind only one
   of two tiers: public-domain **USGS/NAIP** aerial has no quota at all, and it's the tier that serves the
   most common use. Sentinel-2's quota keeps its traffic trigger.
 - **External links on mobile → D76** — in-app browser (`expo-web-browser`), never a WebView, because

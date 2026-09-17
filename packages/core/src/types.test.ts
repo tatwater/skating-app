@@ -72,7 +72,7 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
 
   // Canonicalized 2026-07-21 (Phase 9): slash-pairs collapsed to one key each (`lead` → `open_water`,
   // `buckling` → `ice_heave`, `inlet_outlet_current`/`spring` → `spring_current`) and the research
-  // taxonomy added. Ordered by decay tier. See plans/06-data-model.md + phase-9-hazard-research.md.
+  // taxonomy added. Ordered by decay tier. See plans/06-data-model.md + plans/research/hazard-decay-calibration-and-behavior.md.
   it('hazard types match the confirmed list', () => {
     expect([...HAZARD_TYPES]).toEqual([
       'open_water',

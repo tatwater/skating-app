@@ -2,8 +2,8 @@
 
 > **Status: ✅ COMPLETE on dev (2026-07-26; prod deferred, as every phase since 2.5).** Decisions
 > **D60** (named sub-areas) and **D61** (the per-lake operator canvas) are written into
-> [`01-decisions.md`](./01-decisions.md). The second item in the roadmap's *Next-phase candidates*
-> register ([`07-roadmap.md`](./07-roadmap.md) → *Later / deferred* → N2), picked second because the
+> [`01-decisions.md`](../01-decisions.md). The second item in the roadmap's *Next-phase candidates*
+> register ([`07-roadmap.md`](../07-roadmap.md) → *Later / deferred* → N2), picked second because the
 > founder **is** the operator, and because the corpus models its most-skated destinations worst.
 
 **Goal.** Give one sheet of ice the names skaters actually use for it, and give the operator one place
@@ -835,7 +835,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 *The roadmap entry for N2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ~~**N2 — Operator surface completion + corpus curation.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
-[`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) for the design, the
+[`phases/A02-body-editor-and-subareas.md`](./A02-body-editor-and-subareas.md) for the design, the
 seven corrections to what this entry and its own plan claimed, and the measured results.
 
 Shipped: **named sub-areas** (D60) — a bay is a region *inside* one polygon, not a lake beside it, so

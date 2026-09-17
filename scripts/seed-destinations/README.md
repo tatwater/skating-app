@@ -6,7 +6,7 @@ the plan specifies them together: the matching is the hard part and both outputs
 
 > **Renamed from `seed-satellite`** (founder call, 2026-08-09). That name was chosen to name the
 > *job* — provision and prove the imagery path — rather than the input list. With B3's Copernicus
-> deep link deferred to [N6e](../../plans/phase-N6e-satellite-imagery.md) so the whole imagery story
+> deep link deferred to [N6e](../../plans/phases/A06e-satellite-imagery.md) so the whole imagery story
 > ships together, the job this script does today is the other half. N6e adds the URL verification
 > back on top when it needs it; the input file is what changes, not the name.
 

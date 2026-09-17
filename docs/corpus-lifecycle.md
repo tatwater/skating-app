@@ -10,7 +10,7 @@ actually reach.
 > to do about it); a moderator deciding whether to shelve or restore one; a developer meeting the
 > `standing` field for the first time. The decision record is
 > [`plans/01-decisions.md`](../plans/01-decisions.md) (**D176–D179**) and the engineering record is
-> [`plans/phase-N7b-corpus-by-request.md`](../plans/phase-N7b-corpus-by-request.md).
+> [`plans/phases/A07b-corpus-by-request.md`](../plans/phases/A07b-corpus-by-request.md).
 
 ---
 
@@ -59,7 +59,7 @@ moderator brings these back.
 
 **A moderator found no public access.** Every approach crosses private land. This is the strongest
 reason and the one the drawer shows first if several apply; the lake's access section carries the
-date and the note. See [no public access](../plans/phase-N6f-no-public-access.md).
+date and the note. See [no public access](../plans/phases/A06f-no-public-access.md).
 
 A lake can also be **removed** outright — a landowner's request, junk data, a duplicate. That is not
 a dormancy: it is a human act with a reason, it never expires, and only a restore reverses it. The

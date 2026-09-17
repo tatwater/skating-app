@@ -1,6 +1,6 @@
 # Phase 3 — Comments + profiles + user-facing safety tools
 
-> **Roadmap:** [`07-roadmap.md`](./07-roadmap.md) → Phase 3. This is the detailed build plan,
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 3. This is the detailed build plan,
 > in the style of the Phase 1/2/2.5 docs.
 >
 > **What this phase is.** The community-interaction + safety layer, kept **ahead of the feeds**
@@ -19,7 +19,7 @@
 > backend (comments/blocks/flags/moderation/profile reads) and the profile + comment surfaces are
 > faster to build and verify on web. Mobile mirrors once the backend + web prove the model.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ---
 
@@ -245,7 +245,7 @@ deploy (memory: convex-test-is-not-deploy).
 *The roadmap entry for Phase 3 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 3 — Comments + profiles + user-facing safety tools ✅ Complete (2026-07-16)
-> **Detailed build plan:** [`phase-3-community-and-safety.md`](./phase-3-community-and-safety.md)
+> **Detailed build plan:** [`phases/03-community-and-safety.md`](./03-community-and-safety.md)
 > (design settled 2026-07-16 — the four "don't code into a corner" calls are recorded there).
 >
 > **Status: ✅ shipped on dev (2026-07-16, PR #17)** — all four workstreams landed: **A** `@skating/core`

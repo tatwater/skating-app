@@ -120,7 +120,7 @@
 > silence, a floor and a prune reading two different areas, `inRegion` dropping 35,637 bodies on an
 > eight-vertex sample, a bbox-only bay-parent test wrong in both directions, and `merge.ts` re-running
 > the entire five-state GNIS download on every run because it imported a constant from a module with a
-> `main()`. See **D113–D117** in [`01-decisions.md`](./01-decisions.md).
+> `main()`. See **D113–D117** in [`01-decisions.md`](../01-decisions.md).
 >
 > ### 🔍 The second intake audit, 2026-08-06 — D118–D124
 >
@@ -170,7 +170,7 @@
 > **Touches:** every ETL package — `scripts/etl`, `scripts/admin-areas`, `scripts/lake-depth`,
 > `scripts/bathymetry`, `scripts/wind-climate` — plus `waterBodies` identity, and every downstream
 > that keys off `externalId`.
-> **Decisions:** **D92–D105**, proposed here, to be logged in [`01-decisions.md`](./01-decisions.md) at
+> **Decisions:** **D92–D105**, proposed here, to be logged in [`01-decisions.md`](../01-decisions.md) at
 > build kickoff. D91 is the last one logged. **D95 and D100–D105 are approved** (founder, 2026-08-03).
 > D92 was widened to three catalogues and then **narrowed back to two** by measurement.
 > **Steps 1 and 1b (NHD + 3DHP acquisition) are ✅ done**, 2026-08-03 — see the acquisition section.
@@ -1247,14 +1247,14 @@ the map and left out of the corpus, because a basemap with a world made "what we
 claim to cover" two questions instead of one. It is counted apart from `outOfRegion` on purpose: that
 number is the geodatabases spilling over their own state lines, which should stay roughly constant,
 and at 35,637 it is large enough to hide a coverage decision inside. See
-[D111](./01-decisions.md#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7).
+[D111](../01-decisions.md#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7).
 
 **Step 3 preceded step 5, and it was worth it — though not for the reason expected.** The worry was
 that importing first would mean importing 27,074 outlines twice. The bake-off's answer is that **the
 two catalogues are indistinguishable** (63.2% ties; 13.4% vs 12.6% on the least-confounded metric),
 so OSM-first stands as the default on D92's own tie-break — the cheaper pipeline. The placeholder
 turned out to be right, which is only knowable now. See
-[D92](./01-decisions.md#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7)
+[D92](../01-decisions.md#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7)
 for the numbers, the per-lake override, and — importantly — **what this result cannot say**: the
 referee set is built from the bathymetry join and therefore excludes every lake OSM is missing, Beau
 Lake among them.
@@ -2216,19 +2216,19 @@ reading did.
 **This is the only N7 document.** `HANDOFF-n7-classification.md` and
 `HANDOFF-n7-2-data-campaign.md` were folded in above and deleted (2026-08-10);
 `HANDOFF-n6c-data-campaign.md` was audited against the deployment, folded into
-[`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) and [`phase-N6a`](./phase-N6a-lake-depth.md), and
+[`phase-N6c`](./A06c-expanded-body-profiles.md) and [`phase-N6a`](./A06a-body-depth.md), and
 deleted (2026-08-10) — its one still-live item was `backfillRepresentativePoint`, since **run**: all
 three tables clean, 9 sub-areas filled, 24,961 bodies and 2,546 admin areas already complete.
 `HANDOFF-wind-climate-archive.md` went the same way on **2026-08-15**, once the wind lane finished:
-audited, its findings folded into [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md),
-[`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md) and D134/D135/**D145**, and
+audited, its findings folded into [`phase-N6c`](./A06c-expanded-body-profiles.md),
+[`scripts/wind-climate/README.md`](../../scripts/wind-climate/README.md) and D134/D135/**D145**, and
 deleted. **No `HANDOFF-*` documents remain.**
 
-[`01-decisions.md`](./01-decisions.md) — **D92–D105**, **D109–D137** ·
-[`docs/water-body-data.md`](../docs/water-body-data.md) — the same story for humans ·
-[`phase-1`](./phase-1-water-bodies.md) · [`phase-N6a`](./phase-N6a-lake-depth.md) ·
-[`phase-N6b`](./phase-N6b-bathymetry-layer.md) ·
-[`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) · [`phase-N7b`](./phase-N7b-corpus-by-request.md).
+[`01-decisions.md`](../01-decisions.md) — **D92–D105**, **D109–D137** ·
+[`docs/water-body-data.md`](../../docs/water-body-data.md) — the same story for humans ·
+[`phase-1`](./01-water-bodies.md) · [`phase-N6a`](./A06a-body-depth.md) ·
+[`phase-N6b`](./A06b-bathymetry-layer.md) ·
+[`phase-N6c`](./A06c-expanded-body-profiles.md) · [`phase-N7b`](./A07b-corpus-by-request.md).
 
 
 ---
@@ -2238,9 +2238,9 @@ deleted. **No `HANDOFF-*` documents remain.**
 *The roadmap entry for N7 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
-✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the
+✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) — the one N7 document, with the
 operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
-and [`docs/water-body-data.md`](../docs/water-body-data.md) for the same story written for humans.
+and [`docs/water-body-data.md`](../../docs/water-body-data.md) for the same story written for humans.
 Decisions **D92–D105** and **D109–D137**.
 
 Three PRs so far: **#39** (the merge, the master list, the review queue), **#40** (the audit and the

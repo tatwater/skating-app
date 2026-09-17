@@ -14,7 +14,7 @@
 
 ## GPS activity providers — all six v1-scoped, shipped fast-follow (D24)
 
-> **⚠️ Superseded for Phase 8 (2026-07-24) — read [`phase-8-native-capture.md`](./phase-8-native-capture.md).**
+> **⚠️ Superseded for Phase 8 (2026-07-24) — read [`phases/08-native-capture.md`](./phases/08-native-capture.md).**
 > The Strava *pull/ingest* model described below is **dead** (L7: Strava forbids cross-user display of its
 > data + bans AI/ML). Phase 8 inverted to **native capture + Strava push**: we **record the track
 > ourselves** (first-party data we own → legal to aggregate/draw on reports) and **push** it to Strava
@@ -220,7 +220,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 
 - Provider: **Open-Meteo** — the **forecast API with `past_days`** (up to 92 days back), free, no API key.
   **Not the historical archive** (ERA5-backed, ~5-day lag) — our windows are all recent, and `past_days`
-  covers both the strip and the longest decay window (≤45 days); see `phase-10-weather.md` §2.
+  covers both the strip and the longest decay window (≤45 days); see `phases/10-weather.md` §2.
 - Use: annotate aging **reports** (window = since the skate time) **and hazards** (window = a rolling
   recent ~5–7 days, since "first reported" is meaningless for a season-long ridge) with what the weather
   has *done*, to support the skater's own judgment. **Never** used to assert ice safety.
@@ -274,7 +274,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   L2A true color, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
   URL format we don't control — verify against the live browser and keep it behind a single tested
   function.
-- **Imagery rendered in-app → [N6e](./phase-N6e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
+- **Imagery rendered in-app → [N6e](./phases/A06e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
   binds only *one* of two tiers. Sentinel-2 via their Sentinel Hub–compatible OGC/Process APIs is
   **10,000 requests + 10,000 processing units/month, 300/min**; a tile view is ~10–20 requests, so it only
   works with **server-side tile caching** (which the open licence permits — a body needs re-fetching once
@@ -302,7 +302,7 @@ The other half of D84's two-tier split, and **the one that ships the satellite t
 - **What it's for, and what it isn't.** Leaf-on summer imagery refreshed every ~2–3 years: **useless for
   reading ice, ideal for reading access** — roads, lots, trailheads and shorelines don't change between
   July and January. It answers *where's the pull-off*, which pairs directly with
-  [N6d](./phase-N6d-lake-access-points.md)'s parking and approach data. Recent-ice questions stay with
+  [N6d](./phases/A06d-body-access-points.md)'s parking and approach data. Recent-ice questions stay with
   Sentinel-2 above.
 - **Caching:** none in v1 — point MapLibre at it and measure. Public-domain imagery may be freely cached,
   so a proxy is available whenever load or latency justifies it, and **it's the same caching layer
@@ -368,7 +368,7 @@ for the water body's coordinates:
   wind_speed_10m, wind_gusts_10m, cloud_cover, sunshine_duration, shortwave_radiation`.
 - **Two consumers, one fetch (Phase 10):** the **descriptive strip** (D19) reads the human
   subset; the **hazard decay model** (D52/D56) reads the degree-hour integrals + freeze-run
-  counts. See `phase-10-weather.md` for the full variable rationale.
+  counts. See `phases/10-weather.md` for the full variable rationale.
 - Present the strip as a compact **plain-text, verdict-free** factual line (e.g. "since this
   report: peak 41°F · low 22°F · 3 nights below freezing · 6h strong sun · ½″ rain"). No
   verdict, no color-coded "safe/unsafe"; degree-hour integrals stay model-internal.

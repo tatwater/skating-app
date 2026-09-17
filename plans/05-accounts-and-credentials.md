@@ -272,7 +272,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
     visually obvious. Cloud cover is the real limiter, not resolution.
   - **Do this when** we know which handful of bodies get real traffic — caching only wins if reads
     concentrate. N6c's proving run (B3a) is what starts producing that evidence.
-  - **→ Now scoped as [N6e](./phase-N6e-satellite-imagery.md) Workstream C (D84, 2026-07-31)**, where it
+  - **→ Now scoped as [N6e](./phases/A06e-satellite-imagery.md) Workstream C (D84, 2026-07-31)**, where it
     is **Tier 2** of a two-tier split. Everything above still holds — but it is no longer what gates the
     satellite toggle, because Tier 1 doesn't need an account at all:
 

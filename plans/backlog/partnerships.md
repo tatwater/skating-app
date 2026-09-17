@@ -25,7 +25,7 @@
 - **Phase 8's deferred list** — third-party capture adapters (Garmin / HealthKit / Health Connect /
   COROS / Polar) and the **watch-wins ingest path**, each integrated individually. The A-input side of
   the A→B→C pipeline; the native recorder is A-input #1 and these are #2 onward. See
-  [`phase-8-native-capture.md`](../phase-8-native-capture.md).
+  [`phases/08-native-capture.md`](../phases/08-native-capture.md).
 - **L8** in [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) — per-provider
   ToS / brand / health-data review at integration time (D24).
 - **`05-accounts-and-credentials.md`** — the account table, ordered by lead time; update the ❔ once

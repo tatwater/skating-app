@@ -106,37 +106,37 @@ change. This table is how to read them.
 | Old | New | PRs | Doc today | Note |
 | --- | --- | --- | --- | --- |
 | 0 | 00 | #1–#6 | — | foundations; no phase doc, see the roadmap |
-| 1 | 01 | #7–#11 | [phase-1-water-bodies.md](./phase-1-water-bodies.md) | |
-| 2 | 02a | #12, #13, #16 | [phase-2-map-and-reports.md](./phase-2-map-and-reports.md) | |
-| 2.5 | 02b | #14 | [phase-2.5-regional-expansion.md](./phase-2.5-regional-expansion.md) | |
-| 3 | 03 | #15, #17 | [phase-3-community-and-safety.md](./phase-3-community-and-safety.md) | |
-| 4 | 04 | #19 | [phase-4-drive-time-and-filtering.md](./phase-4-drive-time-and-filtering.md) | |
-| 5 | 05 | #18 | [phase-5-newsfeed.md](./phase-5-newsfeed.md) | |
-| 6 | 06 | #22 | [phase-6-bounties-and-trust.md](./phase-6-bounties-and-trust.md) | |
-| 7, 7a, 7b | 07, 07-1, 07-2 | #24, #25 | [phase-7-operator-surface.md](./phase-7-operator-surface.md) | 7a/7b were two PRs of one doc → dash |
-| 8 | 08 | #26 | [phase-8-native-capture.md](./phase-8-native-capture.md) | |
-| 9 | 09a | #20 | [phase-9-hazards.md](./phase-9-hazards.md) | |
-| 9.5 | 09b | #21 | [phase-9.5-on-ice-alerting.md](./phase-9.5-on-ice-alerting.md) | |
-| 10 | 10 | #23 | [phase-10-weather.md](./phase-10-weather.md) | |
-| N1 | A01 | #27 | [phase-N1-read-path-durability.md](./phase-N1-read-path-durability.md) | |
-| N2 | A02 | #28 | [phase-N2-lake-editor-and-subareas.md](./phase-N2-lake-editor-and-subareas.md) | |
-| N3, N4 | A03, A04 | #29, #30 | [phase-N3-N4-account-lifecycle.md](./phase-N3-N4-account-lifecycle.md) | one doc; `A04` never used alone |
-| N5a | A05a | #31 | [phase-N5a-seasons.md](./phase-N5a-seasons.md) | |
-| N5b | A05b | #32 | [phase-N5b-hazard-authoring.md](./phase-N5b-hazard-authoring.md) | |
-| N5c | A05c | #34, #35 | [phase-N5c-hazard-memory.md](./phase-N5c-hazard-memory.md) | |
-| N6a | A06a | #33 | [phase-N6a-lake-depth.md](./phase-N6a-lake-depth.md) | |
-| N6b | A06b | #36, #37 | [phase-N6b-bathymetry-layer.md](./phase-N6b-bathymetry-layer.md) | |
-| N6c, N6c-1, N6c-2 | A06c, A06c-1, A06c-2 | #38, #42 | [phase-N6c-expanded-lake-profiles.md](./phase-N6c-expanded-lake-profiles.md) | |
-| N6d | A06d | #43 | [phase-N6d-lake-access-points.md](./phase-N6d-lake-access-points.md) | |
-| N6e, "N6e PR 0–3" | A06e, A06e-0 … -3 | #44–#47 | [phase-N6e-satellite-imagery.md](./phase-N6e-satellite-imagery.md) | PR 4/5 unbuilt |
-| N6f | A06f | #44, #56 | [phase-N6f-no-public-access.md](./phase-N6f-no-public-access.md) | |
-| N6g | *(vacant)* | — | [phase-N6g-imagery-research.md](./phase-N6g-imagery-research.md) | never built → `backlog/imagery-research.md` |
-| N6h, "N6h PR 1–5" | A06h, A06h-1 … -5 | #48–#51, #54 | [phase-N6h-weather-detail.md](./phase-N6h-weather-detail.md) | **not** A06g — gaps stay |
-| N7, N7-2, N7-3 | A07a, A07a-2, A07a-3 | #39, #40, #41 | [phase-N7-unified-corpus.md](./phase-N7-unified-corpus.md) | |
-| N7b | A07b | — | [phase-N7b-corpus-by-request.md](./phase-N7b-corpus-by-request.md) | branch `phase-n7b-corpus-lifecycle` |
-| — | A07c | — | [phases/A07c-lake-corrections.md](./phases/A07c-lake-corrections.md) | scoped under the new scheme; no old name |
-| N8, "N8 PR 1–4" | A08, A08-1 … -4 | #52, #53, #55, #57 | [phase-N8-notification-pipeline.md](./phase-N8-notification-pipeline.md) | |
-| N9, "N9 PR 1–2" | A09, A09-1, A09-2 | #58, #59 | [phase-N9-subareas-as-places.md](./phase-N9-subareas-as-places.md) | |
+| 1 | 01 | #7–#11 | [phases/01-water-bodies.md](./phases/01-water-bodies.md) | |
+| 2 | 02a | #12, #13, #16 | [phases/02a-map-and-reports.md](./phases/02a-map-and-reports.md) | |
+| 2.5 | 02b | #14 | [phases/02b-regional-expansion.md](./phases/02b-regional-expansion.md) | |
+| 3 | 03 | #15, #17 | [phases/03-community-and-safety.md](./phases/03-community-and-safety.md) | |
+| 4 | 04 | #19 | [phases/04-drive-time-and-filtering.md](./phases/04-drive-time-and-filtering.md) | |
+| 5 | 05 | #18 | [phases/05-newsfeed.md](./phases/05-newsfeed.md) | |
+| 6 | 06 | #22 | [phases/06-bounties-and-trust.md](./phases/06-bounties-and-trust.md) | |
+| 7, 7a, 7b | 07, 07-1, 07-2 | #24, #25 | [phases/07-operator-surface.md](./phases/07-operator-surface.md) | 7a/7b were two PRs of one doc → dash |
+| 8 | 08 | #26 | [phases/08-native-capture.md](./phases/08-native-capture.md) | |
+| 9 | 09a | #20 | [phases/09a-hazards.md](./phases/09a-hazards.md) | |
+| 9.5 | 09b | #21 | [phases/09b-on-ice-alerting.md](./phases/09b-on-ice-alerting.md) | |
+| 10 | 10 | #23 | [phases/10-weather.md](./phases/10-weather.md) | |
+| N1 | A01 | #27 | [phases/A01-read-path-durability.md](./phases/A01-read-path-durability.md) | |
+| N2 | A02 | #28 | [phases/A02-body-editor-and-subareas.md](./phases/A02-body-editor-and-subareas.md) | |
+| N3, N4 | A03, A04 | #29, #30 | [phases/A03-A04-account-lifecycle.md](./phases/A03-A04-account-lifecycle.md) | one doc; `A04` never used alone |
+| N5a | A05a | #31 | [phases/A05a-seasons.md](./phases/A05a-seasons.md) | |
+| N5b | A05b | #32 | [phases/A05b-hazard-authoring.md](./phases/A05b-hazard-authoring.md) | |
+| N5c | A05c | #34, #35 | [phases/A05c-hazard-memory.md](./phases/A05c-hazard-memory.md) | |
+| N6a | A06a | #33 | [phases/A06a-body-depth.md](./phases/A06a-body-depth.md) | |
+| N6b | A06b | #36, #37 | [phases/A06b-bathymetry-layer.md](./phases/A06b-bathymetry-layer.md) | |
+| N6c, N6c-1, N6c-2 | A06c, A06c-1, A06c-2 | #38, #42 | [phases/A06c-expanded-body-profiles.md](./phases/A06c-expanded-body-profiles.md) | |
+| N6d | A06d | #43 | [phases/A06d-body-access-points.md](./phases/A06d-body-access-points.md) | |
+| N6e, "N6e PR 0–3" | A06e, A06e-0 … -3 | #44–#47 | [phases/A06e-satellite-imagery.md](./phases/A06e-satellite-imagery.md) | PR 4/5 unbuilt |
+| N6f | A06f | #44, #56 | [phases/A06f-no-public-access.md](./phases/A06f-no-public-access.md) | |
+| N6g | *(vacant)* | — | [backlog/A06g-imagery-research.md](./backlog/A06g-imagery-research.md) | never built → `backlog/imagery-research.md` |
+| N6h, "N6h PR 1–5" | A06h, A06h-1 … -5 | #48–#51, #54 | [phases/A06h-weather-detail.md](./phases/A06h-weather-detail.md) | **not** A06g — gaps stay |
+| N7, N7-2, N7-3 | A07a, A07a-2, A07a-3 | #39, #40, #41 | [phases/A07a-unified-corpus.md](./phases/A07a-unified-corpus.md) | |
+| N7b | A07b | — | [phases/A07b-corpus-by-request.md](./phases/A07b-corpus-by-request.md) | branch `phase-n7b-corpus-lifecycle` |
+| — | A07c | — | [phases/A07c-body-corrections.md](./phases/A07c-body-corrections.md) | scoped under the new scheme; no old name |
+| N8, "N8 PR 1–4" | A08, A08-1 … -4 | #52, #53, #55, #57 | [phases/A08-notification-pipeline.md](./phases/A08-notification-pipeline.md) | |
+| N9, "N9 PR 1–2" | A09, A09-1, A09-2 | #58, #59 | [phases/A09-subareas-as-places.md](./phases/A09-subareas-as-places.md) | |
 
 Workstreams were letters before the renumbering: `§A` / `Workstream A` / a bare `A3` in a code
 comment all mean what is now `§1` / `§1.3`; `B4` is `§2.4`, and so on through `H` = `§8`. (Phase 8's

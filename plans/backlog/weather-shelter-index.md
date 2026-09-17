@@ -168,8 +168,8 @@ table, reveal gate). Neither is scoped further here.
 
 ## Related
 
-[`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) ·
+[`phases/A09-subareas-as-places.md`](../phases/A09-subareas-as-places.md) ·
 [`weather-stations.md`](./weather-stations.md) ·
-[`phase-N6c-expanded-lake-profiles.md`](../phase-N6c-expanded-lake-profiles.md) (fetch, D85/D90) ·
-[`phase-N6h-weather-detail.md`](../phase-N6h-weather-detail.md) (D152, the browse-cell forecast) ·
+[`phases/A06c-expanded-body-profiles.md`](../phases/A06c-expanded-body-profiles.md) (fetch, D85/D90) ·
+[`phases/A06h-weather-detail.md`](../phases/A06h-weather-detail.md) (D152, the browse-cell forecast) ·
 [`01-decisions.md`](../01-decisions.md) (D82, D104)

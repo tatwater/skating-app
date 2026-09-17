@@ -1,6 +1,6 @@
 # Phase 5 — Newsfeed page
 
-> **Roadmap:** [`07-roadmap.md`](./07-roadmap.md) → Phase 5. This is the detailed build plan,
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 5. This is the detailed build plan,
 > in the style of the Phase 1/2/2.5/3 docs.
 >
 > **What this phase is.** The chronological, **cross-water-body** feed (D28) — the co-primary page
@@ -39,7 +39,7 @@
 > **Build order:** **web first, then mobile** (mirrors Phase 2/3) — web front-loads the shared Convex
 > `listFeed` query + card view-model and is faster to verify. Mobile mirrors once proven.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ---
 
@@ -283,7 +283,7 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
 *The roadmap entry for Phase 5 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 ### Phase 5 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 4 — see doc)*
-> **Detailed build plan:** [`phase-5-newsfeed.md`](./phase-5-newsfeed.md) (decisions settled 2026-07-16).
+> **Detailed build plan:** [`phases/05-newsfeed.md`](./05-newsfeed.md) (decisions settled 2026-07-16).
 > **Reordered ahead of Phase 4 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
 > two drive-time bullets below — *"within range"* and *"temporarily expand radius"* — are definitionally
 > Phase 4 and move there as an **additive filter** on the same `listFeed` query (near-zero rework).

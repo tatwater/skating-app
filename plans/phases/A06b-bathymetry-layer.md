@@ -18,7 +18,7 @@
 > | **Uploaded + wired** | ✅ `dev/bathymetry-20260801-2.pmtiles` on the basemap R2 bucket, both `.env.local`s set |
 > | **Seen drawing** | ✅ confirmed by the founder on both clients — but only after it wasn't, see *§The render half had to be rendered too* |
 > | **Two-agency lakes** | ✅ re-tiled out: **2,022 bodies, 49,742 lines**, no body carrying two surveys |
-> | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./phase-N6a-lake-depth.md)'s ordering gate |
+> | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./A06a-body-depth.md)'s ordering gate |
 >
 > **A deployment without the env var mounts nothing, and that is correct rather than degraded** — under
 > D82 contours make no claim, so an unconfigured build shows a flat lake exactly as it does for the
@@ -29,17 +29,17 @@
 > D82 means a contour makes no claim a skater can act on wrongly.
 >
 > 📖 **The narrative version, written for a reader with no mapping background, is
-> [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md)** — every interpolator and every
+> [`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md)** — every interpolator and every
 > gate we tried, what each one drew, and why it was abandoned. Read that before changing a threshold.
 >
 > **Originally: 📋 Designed at N6a's kickoff (2026-07-29), deliberately not built.** Split out of the
 > register's single **N6** entry when the founder asked whether we could draw topographic lines inside
 > the lake bodies. The answer is **yes, from measured state-agency data, and emphatically not from the
 > global modelled sources** — the finding that made this its own phase rather than a bullet in
-> [N6a](./phase-N6a-lake-depth.md). Storage/serving settled at kickoff: **PMTiles on R2**.
+> [N6a](./A06a-body-depth.md). Storage/serving settled at kickoff: **PMTiles on R2**.
 > **All six open questions were answered 2026-07-31** — see *§Settled by the founder*. The largest
 > consequence: **there is no contour toggle.** Contours are a property of the detail view, and the map's
-> only layer switch is satellite, which now has its own phase — [N6e](./phase-N6e-satellite-imagery.md).
+> only layer switch is satellite, which now has its own phase — [N6e](./A06e-satellite-imagery.md).
 > Decisions: **D81** (one toggle), **D82** (context, not counsel), **D83** (native intervals),
 > **D89** (the fixed 5 ft ladder).
 
@@ -156,7 +156,7 @@ The consequences to accept with that choice, rather than discover later:
   which is what the great majority of bodies do anyway, so an offline caveat would be copy explaining
   the absence of a layer that makes no claim when present.
 - **A second tile artifact to rebuild** when a state republishes. The basemap runbook
-  (`plans/phase-2.5-regional-expansion.md`) is the template; this adds one more `tippecanoe` → R2 lane.
+  (`plans/phases/02b-regional-expansion.md`) is the template; this adds one more `tippecanoe` → R2 lane.
 
 **VT + NH first**, then MA and NY, with ME deferred (below). Two states prove the whole chain — fetch,
 reproject, join, tile, upload, render, toggle — and mirrors how Phase 1 piloted Vermont before 2.5 went
@@ -355,7 +355,7 @@ while the camera is zoomed out), but it is a guard rail rather than the mechanis
 visibility is derived from something the app already knows: which body is selected.
 
 **Interaction with satellite.** Satellite replaces the base map wholesale — see D81's second half in
-[N6e](./phase-N6e-satellite-imagery.md) — so with imagery on there is no cartographic base for contours to
+[N6e](./A06e-satellite-imagery.md) — so with imagery on there is no cartographic base for contours to
 annotate, and drawing them over a photograph would fight it for legibility. Hazards and skate paths stay
 in both modes; contours are base-map furniture and go with the base map.
 
@@ -739,7 +739,7 @@ Two smaller things the wide grid surfaced:
 > **Settled: we ship with neither.** Shore share was falsified by a render, and the fragmentation gate
 > that replaced it was falsified within the hour by Lake Champlain. Both are still *computed and
 > reported* on every sample card, so the next attempt costs nothing to evaluate — but nothing gates on
-> the output today. Full narrative: [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md).
+> the output today. Full narrative: [`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md).
 
 **`MAX_SHORE_SHARE` was added and removed on the same day, and the reason is the most transferable
 thing this phase has produced.**
@@ -1334,7 +1334,7 @@ install instead of your code. The script is called `snapshot`.)*
 *The roadmap entry for N6b as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
 **N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
-deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
+deferred.** See [`phases/A06b-bathymetry-layer.md`](./A06b-bathymetry-layer.md).
 
 Archived (five sources, 298 MB, mirrored privately) → normalized → **joined, 2,437 of 2,491 lakes
 (98%)**, Vermont included for the first time → gated → **2,042 lakes contoured into 49,742 lines** →
@@ -1371,7 +1371,7 @@ can act on wrongly.
   by Lake Champlain, whose 10.2 pieces per level are a dozen real basins. **Five metrics have now
   failed to predict output quality**, so we ship with no output gate at all, which D82 makes cheap.
   The whole sequence is written up for a non-specialist reader in
-  [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md).
+  [`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md).
 - **A fairness bug in the primary gate**, found by the founder asking whether the floor should be a
   density rather than a count: the coverage gap was normalised by the **bbox diagonal**, which across
   2,437 bodies runs 1.76–3.36× `sqrt(area)` — so long thin lakes got up to a 4× easier pass. Now

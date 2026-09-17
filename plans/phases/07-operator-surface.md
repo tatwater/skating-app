@@ -427,7 +427,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
 
 ### Phase 7 — Operator surface (admin, moderation, dedup review) ✅ Complete (dev; prod deferred) (2026-07-24)
 *(The founder-facing back office — the second half of the old combined phase.)*
-> **Detailed build plan:** [`phase-7-operator-surface.md`](./phase-7-operator-surface.md) (planning
+> **Detailed build plan:** [`phases/07-operator-surface.md`](./07-operator-surface.md) (planning
 > session 2026-07-23; D37/D38 + the D49/D52/D56/D57 tuning surfaces). Read-only config control-room,
 > in-house Convex analytics, in-context moderation across the web app, two PRs (operator core + analytics).
 >

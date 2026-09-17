@@ -14,14 +14,14 @@ once is the only way the two can't disagree.*
 > *§20 — What Greptile found*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
-> **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
+> **Depends on:** [N5a](./A05a-seasons.md) — seasons as a derived first-class dimension, the
 > interim promotion list, and the D62 second amendment that keeps a departed skater's hazards.
 > **Touches:** `hazards`, `hazardConfirmations`, `bodyFeatures`, a new `hazardRecurrence` table, a new
 > season-rollover job, the hazard draw flow on both clients, the map's hazard layer, the on-ice payload,
 > `/admin/water/$id`, `/admin/features`, `/admin/tuning`, and a new `/admin/recurrence`.
 > **Decisions:** D77–D80, plus a **D53 amendment** (supersession is a backlink, not a hiding
 > mechanism — §8.2) and a **D53 rename** (`shallow_bay_early_thaw` → `shallow_early_thaw`). All of them
-> are already recorded in [`01-decisions.md`](./01-decisions.md) (2026-07-31), so the work item that
+> are already recorded in [`01-decisions.md`](../01-decisions.md) (2026-07-31), so the work item that
 > said "at kickoff" is done.
 
 ---
@@ -1585,7 +1585,7 @@ rendering, auto-merge, manual authoring, the D53 amendment and the rename); the 
 `phase-n5c-recurrence`, green across every suite, **unpushed and undeployed**. The advisory ships
 **dark** behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended state: operators watch
 patterns form for two rollovers before anybody sets the public bar. Scoped 2026-07-30 —
-see [`phase-N5c-hazard-memory.md`](./phase-N5c-hazard-memory.md); decisions **D77** (one clustering
+see [`phases/A05c-hazard-memory.md`](./A05c-hazard-memory.md); decisions **D77** (one clustering
 primitive, two windows), **D78** (recurrence is history with its denominator, admin-only until a tunable
 bar), **D79** (moderators author body features directly), **D80** (duplicates are consensus: prevent,
 pool, render, merge reversibly), plus a **D53 amendment** (supersession is a backlink, not a hiding

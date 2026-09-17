@@ -4,7 +4,7 @@
 > lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2
 > (`phase-n7b-requests`, stacked on PR 1): requests — the table, the gestures, the resolver, the
 > moderator queue, `NewWaterPrompt`. Neither deployed to dev nor device-tested; the seed not run.
-> Split out of [`N7`](./phase-N7-unified-corpus.md) because it is a product feature across two
+> Split out of [`N7`](./A07a-unified-corpus.md) because it is a product feature across two
 > clients, not a data campaign.
 > **Depends on:** N7's `includedByRequest` field and `belongsInCorpus` predicate — **both landed
 > 2026-08-03**, deliberately ahead of this phase, because without them N7's own prune deletes
@@ -19,7 +19,7 @@
 > the next ETL campaign, and what happens to everything attached to a body in each state. The
 > founder's vision at kickoff: *"instead of 25,000 bodies clogging up our map, we should eventually
 > settle down to a refined corpus of actually-accessible, actually-skated bodies … more like 500."*
-> The skater-facing story is [`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md).
+> The skater-facing story is [`docs/corpus-lifecycle.md`](../../docs/corpus-lifecycle.md).
 
 ---
 
@@ -319,7 +319,7 @@ campaign. That test is the first thing this workstream should write.
 > proposed was taken by N9. Kept as the record of the argument — the *push vs reference* table below
 > is exactly the split the build made.
 
-**The founder's read** ([N6h](./phase-N6h-weather-detail.md), open questions): a moderator-confirmed
+**The founder's read** ([N6h](./A06h-weather-detail.md), open questions): a moderator-confirmed
 `none` should *"eventually remove a body from the corpus rather than have every query learn to skip
 it — the ideal situation eventually (way down the line) would be managing 5,000 lakes that actually
 get skated on, not 20,000 nobody ever touches."*
@@ -410,5 +410,5 @@ them nothing costs more. Not decided.
 
 ## Related
 
-[D91](./01-decisions.md), [D62](./01-decisions.md), [`N7`](./phase-N7-unified-corpus.md),
-[`phase-N2`](./phase-N2-lake-editor-and-subareas.md), [`phase-8`](./phase-8-native-capture.md)
+[D91](../01-decisions.md), [D62](../01-decisions.md), [`N7`](./A07a-unified-corpus.md),
+[`phase-N2`](./A02-body-editor-and-subareas.md), [`phase-8`](./08-native-capture.md)
