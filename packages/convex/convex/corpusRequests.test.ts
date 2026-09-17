@@ -9,7 +9,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { QUEUE_CAP, RANK_CAP } from './corpusRequests';
+import { QUEUE_CAP } from './corpusRequests';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -395,7 +395,7 @@ describe('decide — what approving performs', () => {
     expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(1);
   });
 
-  test('a decision closes every sibling past the page cap, of its own kind only; the rank says "50+"', async () => {
+  test('a decision closes every sibling past the page cap, of its own kind, as the group stood when it was made', async () => {
     const t = harness();
     const a = await seedUser(t, 'a');
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -406,8 +406,10 @@ describe('decide — what approving performs', () => {
       waterBodyId: id,
     });
     // More siblings than one page holds, plus open asks of another kind on the same lake, written
-    // straight to the table — `create` would refuse the second ask from one person.
-    const seedOpen = (kind: 'activate' | 'contest_access', n: number) =>
+    // straight to the table — `create` would refuse the second ask from one person. Explicit
+    // `createdAt`s keep the queue's order deterministic: activates first, contests after.
+    const base = Date.now();
+    const seedOpen = (kind: 'activate' | 'contest_access', n: number, from: number) =>
       t.run(async (ctx) => {
         for (let i = 0; i < n; i++) {
           await ctx.db.insert('waterBodyRequests', {
@@ -416,19 +418,19 @@ describe('decide — what approving performs', () => {
             requesterId: a.id,
             coord: INSIDE,
             waterBodyId: id,
-            createdAt: Date.now() + i,
+            createdAt: from + i,
           });
         }
       });
-    await seedOpen('activate', QUEUE_CAP + 30);
-    await seedOpen('contest_access', 5);
+    await seedOpen('activate', QUEUE_CAP + 30, base + 1);
+    await seedOpen('contest_access', 5, base + 1_000);
 
     const counts = await t.query(api.corpusRequests.openCountsForBody, { waterBodyId: id });
     expect(counts).toEqual({ activate: QUEUE_CAP, contest_access: 5 });
+    // The queue is a backlog: the rank counts the page it holds and says so.
     const queue = await mod.as.query(api.corpusRequests.listQueue, {});
-    const mine = queue.find((r) => r._id === first);
-    expect(mine).toMatchObject({ askers: RANK_CAP + 1, askersCapped: true });
-    expect(queue.find((r) => r.kind === 'contest_access')).not.toHaveProperty('askersCapped');
+    expect(queue).toHaveLength(QUEUE_CAP);
+    expect(queue[0]).toMatchObject({ _id: first, askers: QUEUE_CAP, askersCapped: true });
 
     // The approve closes the request and one page in its own transaction; the rest is a scheduled
     // continuation, so the mutation's write count is bounded whatever the group's size.
@@ -446,9 +448,24 @@ describe('decide — what approving performs', () => {
       const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
       expect(scheduled.map((s) => s.name)).toContain('corpusRequests:closeSiblings');
 
+      // An ask filed while the pages drain is a new question: it inherits nothing.
+      vi.advanceTimersByTime(1);
+      const late = await t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'activate',
+          status: 'open',
+          requesterId: a.id,
+          coord: INSIDE,
+          waterBodyId: id,
+          createdAt: Date.now(),
+        }),
+      );
+
       await t.finishAllScheduledFunctions(vi.runAllTimers);
-      expect(new Set(await statuses('activate'))).toEqual(new Set(['approved']));
-      expect(await statuses('activate')).toHaveLength(QUEUE_CAP + 31);
+      expect((await statuses('activate')).filter((s) => s === 'approved')).toHaveLength(
+        QUEUE_CAP + 31,
+      );
+      expect((await t.run((ctx) => ctx.db.get(late)))?.status).toBe('open');
       expect(new Set(await statuses('contest_access'))).toEqual(new Set(['open']));
       const audits = await t.run((ctx) => ctx.db.query('moderationActions').collect());
       expect(audits.filter((x) => x.action === 'approve_request')).toHaveLength(QUEUE_CAP + 31);

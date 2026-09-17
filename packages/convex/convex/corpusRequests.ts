@@ -71,12 +71,6 @@ const MAX_OPEN_REQUESTS_PER_USER = 10;
 /** Cap on the moderator queue read. Past this the queue is a backlog, not a list. */
 export const QUEUE_CAP = 200;
 
-/**
- * How far the queue counts a row's askers before saying "50+". The count is a rank, and past this
- * the rank is "a lot"; the decision itself walks every sibling regardless (`decide`).
- */
-export const RANK_CAP = 50;
-
 // ── Create ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -307,12 +301,16 @@ export const listMineForBody = query({
   handler: async (ctx, { waterBodyId }) => {
     const profile = await getCurrentProfile(ctx);
     if (!profile) return [];
+    // The caller's own rows on this lake — bounded by one person's asks, not by everything anyone
+    // ever filed on the body (which `by_water_body` would have collected across every season).
     const rows = await ctx.db
       .query('waterBodyRequests')
-      .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .collect();
+      .withIndex('by_requester_body', (q) =>
+        q.eq('requesterId', profile._id).eq('waterBodyId', waterBodyId),
+      )
+      .order('desc')
+      .take(50);
     return rows
-      .filter((r) => r.requesterId === profile._id)
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((r) => ({
         _id: r._id,
@@ -376,7 +374,23 @@ export const openCountsForBody = query({
   },
 });
 
-/** Moderator: the queue — open requests, oldest first, each with what a decision needs. */
+/**
+ * The question a request asks, as a key: two rows with the same key are one decision (`decide`).
+ * An unresolved admit is its own question until the resolver names the water.
+ */
+function questionKey(r: Doc<'waterBodyRequests'>): string {
+  if (r.kind === 'admit') return r.candidateExternalId ? `admit:${r.candidateExternalId}` : r._id;
+  return `${r.kind}:${r.waterBodyId}`;
+}
+
+/**
+ * Moderator: the queue — open requests, oldest first, each with what a decision needs.
+ *
+ * The asker count is grouped from the page already read, never from a per-row sibling read: at
+ * `QUEUE_CAP` rows a per-row read was 200 × 200 documents against a 16,384-document limit. When
+ * the page is the whole open set (the usual case) the counts are exact; when the queue is a
+ * backlog past the cap, they are lower bounds and every row says so.
+ */
 export const listQueue = query({
   args: { status: v.optional(literals(['open', 'approved', 'declined'] as const)) },
   handler: async (ctx, { status }) => {
@@ -386,13 +400,19 @@ export const listQueue = query({
       .query('waterBodyRequests')
       .withIndex('by_status_created', (q) => q.eq('status', status ?? 'open'))
       .order(status === undefined || status === 'open' ? 'asc' : 'desc')
-      .take(QUEUE_CAP);
+      .take(QUEUE_CAP + 1);
+    const pageIsPartial = rows.length > QUEUE_CAP;
+    const page = rows.slice(0, QUEUE_CAP);
+    const askersByQuestion = new Map<string, number>();
+    for (const r of page) {
+      if (r.status !== 'open') continue;
+      const key = questionKey(r);
+      askersByQuestion.set(key, (askersByQuestion.get(key) ?? 0) + 1);
+    }
     const out = [];
-    for (const r of rows) {
+    for (const r of page) {
       const requester = await ctx.db.get(r.requesterId);
       const body = r.waterBodyId ? await ctx.db.get(r.waterBodyId) : null;
-      const siblings =
-        r.status === 'open' ? await openSiblings(ctx, r, RANK_CAP) : { rows: [], capped: false };
       out.push({
         _id: r._id,
         kind: r.kind,
@@ -415,9 +435,9 @@ export const listQueue = query({
             }
           : {}),
         /** Distinct people with the same open ask on the same lake — the rank. */
-        askers: siblings.rows.length + 1,
-        /** The rank stopped counting at `RANK_CAP`; the decision still closes every one. */
-        ...(siblings.capped ? { askersCapped: true } : {}),
+        askers: askersByQuestion.get(questionKey(r)) ?? 1,
+        /** The queue is a backlog past the cap, so the rank counts only what this page holds. */
+        ...(pageIsPartial && r.status === 'open' ? { askersCapped: true } : {}),
         ...(r.candidate
           ? {
               candidate: {
@@ -560,16 +580,21 @@ export const decline = mutation({
 });
 
 /**
- * Up to `limit + 1` of the other open asks that share this one's question: the same kind on the
- * same body, or — for an `admit` — the same catalogue feature (Greptile, PR #63: admits have no
- * body to group by, and two taps on one pond were two independent decisions). An unresolved admit
- * has no siblings yet. Both index ranges are exactly the sibling set, so `capped` means there are
- * more, not that a filter ate the page (Greptile, PR #63, second pass).
+ * Up to `limit` of the other open asks that share this one's question: the same kind on the same
+ * body, or — for an `admit` — the same catalogue feature (Greptile, PR #63: admits have no body to
+ * group by, and two taps on one pond were two independent decisions). An unresolved admit has no
+ * siblings yet. Both index ranges are exactly the sibling set, so `capped` means there are more,
+ * not that a filter ate the page (second pass).
+ *
+ * `asOf` bounds the range to rows that existed then, on the index's implicit `_creationTime` tail:
+ * a decision closes the group *as it stood when the moderator answered*, and an ask filed while
+ * the pages were draining is a new question, left open for the next answer (fourth pass).
  */
 async function openSiblings(
   ctx: QueryCtx,
   request: Doc<'waterBodyRequests'>,
   limit: number,
+  asOf: number = Number.POSITIVE_INFINITY,
 ): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
   const none = { rows: [], capped: false };
   let rows: Doc<'waterBodyRequests'>[];
@@ -578,7 +603,10 @@ async function openSiblings(
     rows = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_candidate_external_id', (q) =>
-        q.eq('candidateExternalId', request.candidateExternalId).eq('status', 'open'),
+        q
+          .eq('candidateExternalId', request.candidateExternalId)
+          .eq('status', 'open')
+          .lte('_creationTime', asOf),
       )
       .take(limit + 2);
   } else {
@@ -586,7 +614,11 @@ async function openSiblings(
     rows = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_water_body', (q) =>
-        q.eq('waterBodyId', request.waterBodyId).eq('kind', request.kind).eq('status', 'open'),
+        q
+          .eq('waterBodyId', request.waterBodyId)
+          .eq('kind', request.kind)
+          .eq('status', 'open')
+          .lte('_creationTime', asOf),
       )
       .take(limit + 2);
   }
@@ -645,14 +677,15 @@ async function closeRow(
  * One page of siblings closed with the decision; the next page scheduled if there is one. The page
  * is the transaction's bound — `QUEUE_CAP` patches plus as many audit rows — so a sibling group of
  * any size drains in bounded steps instead of one mutation that grows until it cannot commit
- * (Greptile, PR #63, third pass). Each page comes back empty of the rows the last one closed.
+ * (Greptile, PR #63, third pass). Each page comes back empty of the rows the last one closed, and
+ * the range ends at `decision.now`, so the drain converges on the group the moderator saw.
  */
 async function closeSiblingPage(
   ctx: MutationCtx,
   request: Doc<'waterBodyRequests'>,
   decision: Decision,
 ): Promise<void> {
-  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP);
+  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP, decision.now);
   for (const row of rows) await closeRow(ctx, row, decision);
   if (capped) await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, decision);
 }
