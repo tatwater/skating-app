@@ -30,13 +30,17 @@ carry proper safety gear, skate with others, and know your rescue plan.
 
 ## Status
 
-**Alpha in progress — built, not yet released.** Every planned phase (0–10) is now built: the map +
-peer reports, community + safety tooling, drive-time filtering, the newsfeed, bounties + trust
-score, hazards + on-ice alerting, weather-since context, the operator/admin surface, and — last —
-**native GPS track recording with a push to Strava**. All of it runs on the **development**
-deployment; **nothing is deployed to production yet** (the prod cutover is deliberately deferred),
-and the newest native surfaces are still awaiting on-device verification. The full design record —
-including everything deliberately deferred — lives under [`plans/`](./plans/).
+**Alpha in progress — built, not yet released.** The roadmap phases (`00`–`10`) are all built: the
+map + peer reports, community + safety tooling, drive-time filtering, the newsfeed, bounties + trust
+score, hazards + on-ice alerting, weather-since context, the operator/admin surface, and native GPS
+track recording with a push to Strava. The enrichment phases (`A01`–`A09`) then taught the app its
+water bodies: a unified 25k-body corpus for the Northeast, depth and bathymetry, access points and
+posted rules, satellite imagery, a full weather panel, a notification pipeline, and bays as places
+in their own right; two of those are still in progress and the next era (`B01`…, launch readiness)
+is being scoped. All of it runs on the **development** deployment; **nothing is deployed to
+production yet** (the prod cutover is deliberately deferred), and the native recorder still awaits
+on-device verification. The full design record — status per phase and everything deliberately
+deferred — is [`plans/07-roadmap.md`](./plans/07-roadmap.md), under [`plans/`](./plans/).
 
 First target: a small **friends-only alpha** (~20 skaters) before any regional rollout,
 timed for the first ice of the season (~November).
@@ -64,12 +68,14 @@ Full rationale in [`plans/03-tech-stack-options.md`](./plans/03-tech-stack-optio
 | Language | TypeScript everywhere |
 | Mobile (primary) | Expo / React Native + Tamagui |
 | Web (secondary) | TanStack Start + Tailwind + shadcn (on Vercel) |
-| Backend / DB | Convex (+ file storage + geospatial) |
+| Backend / DB | Convex (+ file storage; our own grid-cell spatial index) |
 | Auth | Clerk |
-| Maps | MapLibre GL + Protomaps tiles + hosted OpenRouteService (isochrones) |
-| Weather | Open-Meteo |
+| Maps | MapLibre GL + self-hosted Protomaps tiles on Cloudflare R2 + hosted OpenRouteService (isochrones, routes) |
+| Data | OSM + NHD + state agencies via `scripts/` ETLs · Sentinel-2 / Sentinel-1 imagery · 3DEP elevation |
+| Weather | Open-Meteo · NWS alerts |
+| Notifications | Expo push · email via Resend |
 | Testing / CI | Vitest (+ fast-check, convex-test) · GitHub Actions |
-| Observability | Sentry (crash/error) · PostHog (analytics, later) |
+| Observability | Sentry (crash/error) · in-house operator analytics on Convex · PostHog (later) |
 
 ## Repo layout
 
@@ -81,7 +87,8 @@ packages/
   design/     # shared design tokens (FUI theme, light/dark/high-contrast)
   convex/     # Convex schema, functions, client
   core/       # shared logic, types, validators (visibility, dedup, geo, units)
-plans/        # design documentation (start here today)
+scripts/      # the data pipelines: OSM/NHD ETL, basemap, bathymetry, imagery, access, wind climate
+plans/        # the design record: vision, decisions, data model, roadmap, one doc per phase
 docs/         # public documentation (how important systems work after they're built, and why)
 ```
 

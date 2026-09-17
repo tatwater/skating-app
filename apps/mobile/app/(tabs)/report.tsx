@@ -17,7 +17,7 @@ import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext';
 
 /**
  * The center "＋ Report" tab (D28). Online, reports are created in place from a lake's detail drawer
- * (D47) — this tab points you there. Offline (F2), it's the **first-class capture entry point**:
+ * (D47) — this tab points you there. Offline (Phase 02a §6.2), it's the **first-class capture entry point**:
  * "Capture a report" uses your GPS to bind to the nearest cached lake (or resolves it at sync), and
  * this screen lists your queued drafts (pending / errored) with sync + edit + delete. Drafts flush
  * automatically on reconnect (D12); "Sync now" forces it.

@@ -1,13 +1,13 @@
 import type { NotificationTarget, NotificationView } from '@skating/core';
 
 /**
- * Where a notification's tap goes on the web (A08/A3). `describeNotification` hands back a
+ * Where a notification's tap goes on the web (A08 §1.3). `describeNotification` hands back a
  * platform-neutral target; this is the one place it becomes a route.
  *
  * `unreported_skates` has no web surface — the recorder is mobile-only, and the You-tab list it
  * points at doesn't exist here — so an `activity_detected` row falls back to the lake it was skated
  * on, which is at least where the report gets written. `flags` is likewise untappable: the flagger
- * isn't owed the target (A08/B3), so there is nowhere honest to send them.
+ * isn't owed the target (A08 §2.3), so there is nowhere honest to send them.
  */
 export function notificationHref(
   target: NotificationTarget | null,

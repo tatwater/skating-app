@@ -1,5 +1,5 @@
 /**
- * Persistent store for the offline report-draft queue (F2) — the `expo-sqlite` glue behind the pure
+ * Persistent store for the offline report-draft queue (Phase 02a §6.2) — the `expo-sqlite` glue behind the pure
  * `@skating/core` draft-queue logic. Each draft is stored as a JSON blob (it's a nested, reopenable
  * record) plus a few queryable columns. `saveDraft` is the `persist` effect the core `flushDraft`
  * calls after every checkpoint, so an interrupted flush always leaves a resumable draft on disk.

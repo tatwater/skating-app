@@ -136,7 +136,7 @@ Measured on dev (`agile-bee-397`) 2026-09-16 with a one-off query:
   feature stamps ship tested but empty, and the favorites migration is trivial.
 - The bathymetry archive is on this machine: `scripts/bathymetry/.raw/` is 299 MB (ME soundings,
   VT soundings incl. Champlain, NH + MA contours, MIDAS crosswalk), `.scratch/join/lakes.json` is
-  the last join, so the depth lane (§Workstream 6) can run without a refetch.
+  the last join, so the depth lane (§6) can run without a refetch.
 
 ### What the audit found already built — corrections to the scoping table
 
@@ -192,7 +192,7 @@ Two premises of the scoping doc that do not survive contact with the code:
 
 Plus three things that came up alongside:
 
-- **Widen the weather archive's *coverage* to every bay, all season** (§Workstream 7). Retention was
+- **Widen the weather archive's *coverage* to every bay, all season** (§7). Retention was
   never the gap — `weatherDays` is kept for ever (D153) — coverage was: Tier A (bay-resolution) rows
   are fetched lazily, only for bays somebody opened.
 - **The shelter index and the station-bias study are post-alpha**, scoped in
@@ -281,7 +281,7 @@ information we hold to dodge a hard question.
    `hazards` (`RESTAMP_TABLES` grows to four), rebuilding `reportSubAreas` for every report it
    touches.
 
-`scoreFields` for a sub-area stays area + boost; a bay does **not** get the D2 richness terms in
+`scoreFields` for a sub-area stays area + boost; a bay does **not** get the A06c §4.2 richness terms in
 this phase (its parent already earns `hasActivity` from the bay's reports — rolling up is the rule).
 
 ### Schema changes (all optional ⇒ migration-free, per the widen→deploy→backfill→narrow rule)
@@ -517,7 +517,7 @@ So there are exactly three honest moves, and the first two are free:
 ## The rule that touches everything: what a report on a bay is a report *on*
 
 **This is the hard part, and it is one decision applied in six places.** A report inside Malletts Bay
-is also a report on Lake Champlain. The feed, the notification queue, the bounty gate, the D2
+is also a report on Lake Champlain. The feed, the notification queue, the bounty gate, the A06c §4.2
 prominence score, the trust corroboration count and the conditions strip all currently assume **one
 body per report**.
 

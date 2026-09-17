@@ -1,12 +1,12 @@
 /**
- * Push contour coverage into Convex (A06c-1 / D2) — which bodies the tileset actually draws.
+ * Push contour coverage into Convex (A06c-1 / A06c §4.2) — which bodies the tileset actually draws.
  *
  *   pnpm --filter @skating/bathymetry coverage [--prod] [--dry-run] [--allow-empty]
  *
  * Reads the **built** contour features (`.scratch/build/contours.geojsonl`) rather than the join
  * cache, and the distinction is the whole point: the join matched 2,437 source lakes, but only
  * **2,022** produced a line anyone can see. A lake whose survey was matched and then gated out is
- * not a lake with contours, and scoring it as one (D2) would claim a state survey we do not draw.
+ * not a lake with contours, and scoring it as one (A06c §4.2) would claim a state survey we do not draw.
  *
  * Streams the file line by line and extracts `bodyId` — it is ~800 MB, so `readFileSync` would
  * blow the heap and `JSON.parse` per line is wasted work when the field is a fixed string key.
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   // thing standing between that and a silently smaller `hasContours` population.
   const logger = new RunLogger({
     kind: 'bathymetry_coverage',
-    label: 'bathymetry coverage (D2 hasContours)',
+    label: 'bathymetry coverage (A06c §4.2 hasContours)',
     campaignId,
     target,
     call: convexRun,

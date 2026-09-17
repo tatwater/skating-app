@@ -116,7 +116,7 @@ export const setPostedAccess = mutation({
       targetType: target.type,
       targetId: target.id,
       reason: describeChange(next),
-      // `prev` alongside the new value (the F1 convention): an audit row that records only what a
+      // `prev` alongside the new value (the A06c §6.1 convention): an audit row that records only what a
       // field *became* can answer "who changed this" and never "changed it from what", which is most
       // of what someone reading a wrong closure back would want.
       metadata: { postedAccess: next ?? null, prev: { postedAccess: prev ?? null } },

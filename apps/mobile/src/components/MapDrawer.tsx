@@ -7,7 +7,7 @@ import { useTheme } from 'tamagui';
 import { DrawerScrollContext } from './DrawerScrollContext';
 
 /**
- * The drawer's two out-of-flow slots, and why a screen needs them (A06h/H).
+ * The drawer's two out-of-flow slots, and why a screen needs them (A06h §8).
  *
  * React Native can only pin a **direct child** of a scroll view (`stickyHeaderIndices`), and this
  * scroll view's one child is Expo Router's `<Slot />` — the whole detail screen. A tab strip nested

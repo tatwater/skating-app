@@ -2,12 +2,12 @@ import type { NotificationTarget, NotificationView } from '@skating/core';
 import type { Href } from 'expo-router';
 
 /**
- * Where a notification's tap goes on mobile (A08/A3). `describeNotification` hands back a
+ * Where a notification's tap goes on mobile (A08 §1.3). `describeNotification` hands back a
  * platform-neutral target; this is the one place it becomes an Expo Router href.
  *
  * `unreported_skates` is the You tab, where `UnreportedSkates` lists the skate and offers the report
  * button — the notification is the nudge, the list is the place. `flags` has nowhere honest to go
- * (the flagger isn't owed the target, A08/B3), so it stays untappable.
+ * (the flagger isn't owed the target, A08 §2.3), so it stays untappable.
  */
 export function notificationRoute(
   target: NotificationTarget | null,

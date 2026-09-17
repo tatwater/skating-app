@@ -486,7 +486,7 @@ export function useImageryReveal({
  * `waterBodyId`; a track carries neither; a contour tile carries `bodyId`, which is the OSM
  * `externalId` rather than a Convex id. MapLibre's `in` answers `false` for a null needle rather than
  * throwing, so filtering all of them on `_id` fails **silently open** — the bay outlines, the labels,
- * the tracks and the isobaths all keep drawing over the photograph, which is the D81/A3 rule
+ * the tracks and the isobaths all keep drawing over the photograph, which is the D81, A06e §1.3 rule
  * unimplemented again. So the list is split by what the layer can actually be asked.
  *
  * `HAZARD_LAYERS` is separate because it is not ours to decide (see `hazardsOverImagery`). Keeping

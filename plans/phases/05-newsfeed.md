@@ -118,7 +118,7 @@ Applied in `packages/convex/convex/schema.ts`.
      temporarily `defineSchema(..., { schemaValidation: false })` (uncommitted) → push → run migration →
      revert → redeploy strict (memory: `phase-03-community-safety`). Dev has a handful of test reports;
      prod is uninitialized.
-   - Touches the **mobile offline draft queue** (F2) draft shape + `@skating/core` `draftQueue.ts` /
+   - Touches the **mobile offline draft queue** (Phase 02a §6.2) draft shape + `@skating/core` `draftQueue.ts` /
      `reportForm.ts` / `report.ts` / `reportView.ts`, and the web/mobile report forms + all reads.
 
 2. **`reports.place?: { town?: string; county?: string; state?: string }`** (optional ⇒ migration-free)

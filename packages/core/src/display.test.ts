@@ -138,7 +138,7 @@ describe('displayScore → minVisibleZoom (D49 end-to-end)', () => {
   });
 });
 
-describe('profile richness (A06c / D2)', () => {
+describe('profile richness (A06c / A06c §4.2)', () => {
   it('is a boost and never a penalty — an empty body scores exactly as before', () => {
     // The founder's stated worry: "I'd hate to not have a body someone cares about". Implementing
     // this as a subtraction would push already-obscure ponds below the discoverability floor.
@@ -226,7 +226,7 @@ describe('profile richness (A06c / D2)', () => {
   });
 });
 
-describe('curatedBoostIsRedundant (the D2 retirement signal)', () => {
+describe('curatedBoostIsRedundant (the D184 retirement signal)', () => {
   it('flags a boost a body has now earned on its own', () => {
     // Curated boosts are a cold-start seed with a retirement path, not a permanent registry.
     expect(curatedBoostIsRedundant(0.3, { hasActivity: true })).toBe(true);

@@ -357,7 +357,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // that were in view three pages ago if it ever renders before the map answers again.
   useEffect(() => () => setViewportLakes(null), [setViewportLakes]);
 
-  // Per-body summary cards (A06c/E). **No extra query** — the cards are derived from the same
+  // Per-body summary cards (A06c §5). **No extra query** — the cards are derived from the same
   // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
   // body. That is the whole argument for denormalizing it: a card costs no read at all.
   const [summaryFeatures, setSummaryFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
@@ -573,7 +573,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'text-halo-width': 1.2,
         },
       });
-      // Per-body summary cards (A06c/E). Added HERE — after the bay labels and before the hazard,
+      // Per-body summary cards (A06c §5). Added HERE — after the bay labels and before the hazard,
       // put-in and bounty pins — so it inherits the same collision posture the bay label documents:
       // a card may not displace a marker a skater needs to see, and if it doesn't fit it doesn't
       // draw. `text-optional` plus `text-allow-overlap: false` is what makes that true.
@@ -1298,7 +1298,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   // Layers step aside for the photograph, except the ones the skater decides about.
   //
-  // Two effects rather than one, and deliberately: the replaced set is ours (the A3 table) and the
+  // Two effects rather than one, and deliberately: the replaced set is ours (the A06e §1.3 table) and the
   // hazard set is the skater's. Folding them together would put a safety layer's visibility inside a
   // code path that also owns cartography.
   //

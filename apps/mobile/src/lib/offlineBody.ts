@@ -1,5 +1,5 @@
 /**
- * Pure offline body-resolution logic (F2 Layer 2) — kept free of the `expo-sqlite` glue (see
+ * Pure offline body-resolution logic (Phase 02a §6.2 Layer 2) — kept free of the `expo-sqlite` glue (see
  * `bodyCache.ts`) so it's unit-testable, and reusable by the eventual Phase 09a hazard capture.
  *
  * The app caches the reference data of recently-viewed lakes on-device; offline, a device GPS fix

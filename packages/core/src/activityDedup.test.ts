@@ -14,7 +14,7 @@ function act(over: Partial<DedupActivity> & { id: string }): DedupActivity {
   return { userId: 'u1', provider: 'native', startTime: T0, endTime: T0 + 60 * MIN, ...over };
 }
 
-describe('activitiesMatch (A08/B4a)', () => {
+describe('activitiesMatch (A08 §2.4a)', () => {
   it('matches overlapping recordings whose starts are inside the window', () => {
     const phone = act({ id: 'p' });
     const watch = act({

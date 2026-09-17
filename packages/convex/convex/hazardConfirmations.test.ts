@@ -110,7 +110,7 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.query('notifications').collect());
 }
 
-describe('hazard_confirmation to the author (A08/B2)', () => {
+describe('hazard_confirmation to the author (A08 §2.2)', () => {
   test('fires on the phase transition — provisional → confirmed — not on every vote', async () => {
     const { t, hazardId, author } = await setup();
     const first = await seedUser(t, 'first');

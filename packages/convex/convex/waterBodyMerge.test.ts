@@ -617,7 +617,7 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
   });
 });
 
-describe('a merge moves both map cards (A06c/E, self-review 2026-08-10)', () => {
+describe('a merge moves both map cards (A06c §5, self-review 2026-08-10)', () => {
   /**
    * A merge re-points the loser's reports and hazards onto the survivor. That changes the survivor's
    * counts with **no report or hazard mutation to hang a recompute on** — the one shape

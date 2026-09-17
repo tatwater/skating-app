@@ -277,7 +277,7 @@ describe('pairAccessFeatures', () => {
     expect(paired.stats.toiletsOrphaned).toBe(1);
   });
 
-  /** A diffable artifact is how the eyeballing pass B2 asks for actually gets done. */
+  /** A diffable artifact is how the eyeballing pass A06d §2.2 asks for actually gets done. */
   test('amenities are sorted, so the emitted records are byte-stable across runs', () => {
     const lot = access({ kind: 'parking', externalId: 'way/40', point: LAKE });
     const toilet = access({

@@ -65,10 +65,10 @@ export interface PutInMarker {
   approachMeters?: number;
   approachAscentM?: number;
   /**
-   * The launch's name (A06d/A3) — OSM's where it has one, else the derived compass label.
+   * The launch's name (A06d §1.3) — OSM's where it has one, else the derived compass label.
    *
    * *"Lake Fairlee Boat Ramp"* is what makes a pin worth tapping rather than a dot, and it is the
-   * headline of the phase's A3: OSM already names these features, so the names arrive free with the
+   * headline of the phase's A06d §1.3: OSM already names these features, so the names arrive free with the
    * geometry. Absent on `derived` clusters, which are a statistical artefact of report points and have
    * nothing to be named after.
    */

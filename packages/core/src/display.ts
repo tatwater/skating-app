@@ -47,7 +47,7 @@ export const SUB_AREA_MIN_RENDER_ZOOM = 10;
 const LOG_AREA_MIN = Math.log(DISPLAY_AREA_MIN_SQM);
 const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN;
 
-// ── Profile-richness prominence (A06c / D2) ───────────────────────────────────────────────────
+// ── Profile-richness prominence (A06c / A06c §4.2) ───────────────────────────────────────────────────
 //
 // **Prominence rewards how much we know about a body.** The founder's starting instinct was to
 // consider dropping unnamed bodies, and the corpus falsified it: 92% of the 116,070 are unnamed, so
@@ -62,7 +62,7 @@ const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN;
 //
 // ## The scale, which the plan got wrong by an order of magnitude
 //
-// A06c's D2 table proposed +1 for a name, +2 for contours, +4 for an official put-in — summing to
+// A06c's A06c §4.2 table proposed +1 for a name, +2 for contours, +4 for an official put-in — summing to
 // +13. But `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom`
 // clamps the total to [0,1] before mapping it onto z14→z6. Every curated boost on dev is exactly
 // **0.3**, and boosted bodies score 0.75–1.30. A "+1 has a real name" term would therefore push all
@@ -115,7 +115,7 @@ export const RICHNESS_STATIC_CAP = 0.15;
 /** Ceiling on the whole richness term — about 3.2 zoom levels, against a curated boost's 2.4. */
 export const RICHNESS_TOTAL_CAP = 0.4;
 
-/** What we know about a body, for the D2 prominence terms. All optional; absent ⇒ contributes 0. */
+/** What we know about a body, for the A06c §4.2 prominence terms. All optional; absent ⇒ contributes 0. */
 export interface ProfileRichness {
   /** A real name, not a blank and not a bare generic like "Pond". */
   hasName?: boolean;
@@ -178,11 +178,11 @@ export interface DisplayScoreInput {
    * Admin prominence nudge (D49); added directly to the score. Default 0. A positive boost forces a
    * small-but-beloved lake (Lake Morey) to draw wider; a negative one demotes.
    *
-   * **A cold-start seed with a retirement path** (D2), not a permanent registry — see
+   * **A cold-start seed with a retirement path** (D184), not a permanent registry — see
    * `curatedBoostIsRedundant`.
    */
   curatedBoost?: number;
-  /** What we know about the body (A06c / D2). Absent ⇒ no richness boost, same score as before. */
+  /** What we know about the body (A06c / A06c §4.2). Absent ⇒ no richness boost, same score as before. */
   richness?: ProfileRichness;
 }
 

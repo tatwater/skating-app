@@ -147,7 +147,7 @@ function toLocal([lng, lat]: readonly [number, number], origin: LatLng): [number
   ];
 }
 
-// ── A3 — Shoreline length ────────────────────────────────────────────────────────────────────
+// ── A06c §1.3 — Shoreline length ────────────────────────────────────────────────────────────────────
 
 /**
  * Total shoreline length in metres — **every ring of every component**, outer rings and island
@@ -183,7 +183,7 @@ export function shorelineMeters(geom: Polygon | MultiPolygon): number {
   return total;
 }
 
-// ── A2 — Long axis, short axis, bearing ──────────────────────────────────────────────────────
+// ── A06c §1.2 — Long axis, short axis, bearing ──────────────────────────────────────────────────────
 
 /** A lake's dimension line: the two sides of its minimum-area bounding rectangle. */
 export interface LakeAxes {
@@ -419,7 +419,7 @@ function longestSpanAt(
  * *(The textbook answer is the pole of inaccessibility — the centre of the largest inscribed
  * circle. It is a better point and it needs a dependency we don't have and a quadtree we'd have to
  * maintain; the difference between the two is far inside the uncertainty of a centroid-scale fetch
- * figure, which A4 already states is the dominant error here.)*
+ * figure, which A06c §1.4 already states is the dominant error here.)*
  *
  * **The largest component wins** on a MultiPolygon, not the one containing the stored centroid —
  * both because that centroid may sit on a boundary and because the main basin is the honest
@@ -504,7 +504,7 @@ function anchorFor(ring: Position[]): LatLng {
   return { lat, lng };
 }
 
-// ── A4 — Directional fetch profile ───────────────────────────────────────────────────────────
+// ── A06c §1.4 — Directional fetch profile ───────────────────────────────────────────────────────────
 
 /**
  * Distance from the ray origin to the **first** boundary crossing along `bearingDeg`, in local

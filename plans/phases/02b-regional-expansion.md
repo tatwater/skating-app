@@ -28,7 +28,7 @@ code changes, and the tuning knobs.
   query (typo-tolerant; JS-refines out unlisted; 4 convex-tests) — deployed to dev, verified live
   (George/Winnipesaukee/Sebago/Champlain). Web: shadcn/Base-UI `Combobox` primitive + `LakeSearch`
   (container + testable `LakeSearchBox`), 4 tests, build green. Mobile: Tamagui `LakeSearch` overlay
-  (RN-render tests deferred — same infra gap F1 flagged). Shared gate `searchQueryArg` lives in
+  (RN-render tests deferred — same infra gap Phase 02a §6.1 flagged). Shared gate `searchQueryArg` lives in
   `@skating/core`. Select → `/water/:id` (reuses the existing fly-to).
 - **§2/§3 Basemap → R2 — ✅ DONE (dev).** `pmtiles extract` from `build.protomaps.com/20251215.pmtiles`
   over the `-79.9,41.2,-66.8,47.5` bbox, z0–14 → **948 MB** (275,750 tiles), verified. Uploaded via
@@ -140,7 +140,7 @@ pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles \
 pmtiles verify scripts/basemap/.scratch/northeast-basemap.pmtiles
 ```
 - **Source = a live `build.protomaps.com/<date>.pmtiles`**, not the dead demo `v4.pmtiles` (they
-  prune dated builds; F1b already repointed the app default). Pick a current dated build.
+  prune dated builds; Phase 02a §6.1 already repointed the app default). Pick a current dated build.
 - **Size estimate:** the envelope is ~5× VT's area, so expect **~1.3–2 GB** at z0–14 (denser around
   Boston/Albany; a lot of the box is ocean, which costs little). This **overflows Convex free storage**
   → R2. Record the actual size in the README's "Last build" table.

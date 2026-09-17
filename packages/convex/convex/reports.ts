@@ -178,7 +178,7 @@ function toReportInput(
 export const create = mutation({
   args: {
     waterBodyId: v.id('waterBodies'),
-    // Mobile offline queue (F2/D30): a draft carries one client-generated key across every flush
+    // Mobile offline queue (Phase 02a §6.2/D30): a draft carries one client-generated key across every flush
     // retry, so a create whose ack was lost returns the same report instead of a duplicate. Convex
     // serializes a concurrent double-flush via OCC — the second call's index read conflicts with the
     // first's insert and retries, then finds the row below. Omitted by web/online callers.
@@ -199,7 +199,7 @@ export const create = mutation({
     const profile = await requireContributor(ctx);
     const now = Date.now();
 
-    // Idempotency short-circuit (F2/D30): if this key already produced a report, return it — the
+    // Idempotency short-circuit (Phase 02a §6.2/D30): if this key already produced a report, return it — the
     // flush is a retry, not a new post. Scoped to the author so a (UUID-collision-improbable) shared
     // key can never hand back someone else's report. Runs before validation/insert so a lost-ack
     // retry is cheap and never re-inserts.
@@ -362,12 +362,12 @@ export const create = mutation({
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
     await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
 
-    // And the body's map summary card (A06c/E). Recomputed rather than incremented — see
+    // And the body's map summary card (A06c §5). Recomputed rather than incremented — see
     // `lib/bodySummary.ts`: the count is window- and season-scoped, so a ±1 would drift the moment a
     // report aged out, and the D86 quality mean cannot be maintained incrementally at all.
     // **`body._id`, not `args.waterBodyId`** — the same distinction the insert above already makes,
     // for the same reason. An offline draft can carry a body id that was merged away before the
-    // queue flushed (D36/F2), and `resolveSurvivor` sends the report to the canonical lake.
+    // queue flushed (D36, Phase 02a §6.2), and `resolveSurvivor` sends the report to the canonical lake.
     // Recomputing the requested id would refresh the *loser's* card — a row nothing renders, since a
     // merged body is unlisted — and leave the survivor, the card a skater is actually looking at,
     // stale until the six-hourly sweep.
@@ -397,14 +397,14 @@ export const create = mutation({
       await enqueueReportNotifications(ctx, inserted);
     }
 
-    // Conditions auto-fill (Phase 10 / §07-1): when the reporter left conditions blank, schedule a
+    // Conditions auto-fill (Phase 10 / §7a): when the reporter left conditions blank, schedule a
     // post-insert action to pull the weather AT the skate time (a mutation can't fetch). A user-entered
     // value always wins, so we only schedule when none was provided. Eventually-consistent by design.
     if (n.conditions === undefined) {
       await ctx.scheduler.runAfter(0, internal.conditions.autofillConditions, { reportId });
     }
 
-    // Contradiction signal (Phase 10 / §07-2): a report can only contradict on `skateQuality`, so only
+    // Contradiction signal (Phase 10 / §7b): a report can only contradict on `skateQuality`, so only
     // schedule the (weather-fetching) settle when one is present. Runs after this mutation commits, so
     // `runCorroboration`'s awards are already in the ledger and the settle sees current corroboration. It
     // discloses conflicts + escalates the un-corroborated minority to moderation — never a trust penalty
@@ -1250,7 +1250,7 @@ export const update = mutation({
       memberSubAreaIds(subAreas),
     );
 
-    // **An edit changes the card's inputs, so the card is recomputed (A06c/E).** `skateEndTime` and
+    // **An edit changes the card's inputs, so the card is recomputed (A06c §5).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report
     // can move it in or out of the 14-day window, and re-rating it moves the D86 mean. Without this
     // the card would be wrong until the six-hourly sweep — and the module doc for

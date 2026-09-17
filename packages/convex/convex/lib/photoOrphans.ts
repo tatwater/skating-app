@@ -36,7 +36,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * How long a photo must have existed before the sweep will consider it abandoned.
  *
  * Generous on purpose. A photo uploaded minutes ago is mid-submission, not abandoned — the form
- * uploads before `reports.create` — and an offline draft (F2/D30) can flush a day or more later. The
+ * uploads before `reports.create` — and an offline draft (Phase 02a §6.2/D30) can flush a day or more later. The
  * cost of waiting is a few kilobytes; the cost of being early is deleting someone's photo out from
  * under the report they were still writing.
  */

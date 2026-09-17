@@ -328,7 +328,7 @@ export const updateProfile = mutation({
  * chose, and `writeTombstone` deliberately never touches this field.
  */
 /**
- * Record the device's IANA timezone (A08/C) — the only per-user input the 8pm digest has. Called by
+ * Record the device's IANA timezone (A08 §3) — the only per-user input the 8pm digest has. Called by
  * both clients on app open, and only when it differs from what's stored, so an ordinary day writes
  * nothing. Validated by the zone primitives' own probe (`isKnownTimeZone`, core `zonedTime.ts`): the
  * runtime's `Intl` table is the one authority on what counts as a zone, and a bad string from a client

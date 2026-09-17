@@ -1,5 +1,5 @@
 /**
- * Offline draft queue provider (F2) — owns the flush triggers and exposes the queue to the UI.
+ * Offline draft queue provider (Phase 02a §6.2) — owns the flush triggers and exposes the queue to the UI.
  *
  * Flush fires on **NetInfo reconnect + app-foreground + a manual "Sync now"** (NetInfo transitions
  * can be missed, so we don't rely on one signal), all funneling through the re-entrancy-guarded

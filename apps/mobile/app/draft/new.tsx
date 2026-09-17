@@ -8,7 +8,7 @@ import { ReportForm } from '../../src/components/ReportForm';
 import { resolveCachedBody } from '../../src/lib/bodyCache';
 
 /**
- * Offline report capture (F2). Uses the device GPS to bind the report to the nearest cached lake
+ * Offline report capture (Phase 02a §6.2). Uses the device GPS to bind the report to the nearest cached lake
  * (Layer-2 auto-select); if none is cached, the draft carries just the coord and the lake is
  * resolved server-side at flush (`waterBodies.resolveBodyForCoord`). Rendered off the map, so the
  * `ReportForm` uses its no-map put-in fallback. Everything here can run with no signal.

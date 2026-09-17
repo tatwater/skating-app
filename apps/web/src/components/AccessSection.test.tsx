@@ -122,7 +122,7 @@ describe('AccessSectionView (A06d / D72, D73, D87)', () => {
   });
 
   /**
-   * Most of the corpus has no access data at all, and B4's discipline is that its absence is the
+   * Most of the corpus has no access data at all, and A06d §2.4's discipline is that its absence is the
    * honest signal — a panel reading "we don't know where to park" on 20,000 lakes is worse than none.
    */
   it('renders nothing at all when there is no access data', () => {

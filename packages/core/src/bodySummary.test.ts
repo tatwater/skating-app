@@ -85,7 +85,7 @@ describe('topHazardTypes', () => {
   });
 });
 
-describe('summaryHasCard (E3)', () => {
+describe('summaryHasCard (A06c §5.3)', () => {
   it('draws a card for recent reports', () => {
     expect(summaryHasCard(summary({ recentReportCount: 2 }))).toBe(true);
   });

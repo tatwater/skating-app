@@ -116,7 +116,7 @@ test plan.
 
 ## Workstreams (web PR — in dependency order)
 
-### A. `@skating/core` additions (pure, tested first) — ✅ DONE (2026-07-13)
+### §1 — `@skating/core` additions (pure, tested first) — ✅ DONE (2026-07-13)
 The logic both Convex and the apps need, kept framework-free and property-tested (D40). All land
 before anything consumes them.
 
@@ -162,7 +162,7 @@ before anything consumes them.
     (property test); a minimal "notes-only" report validates; **a locked/minor profile can't set
     `public`** (clamp/reject).
 
-### B. Convex schema + geospatial — ✅ DONE (2026-07-13)
+### §2 — Convex schema + geospatial — ✅ DONE (2026-07-13)
 Minimal — the report/photo/comment tables already exist in full (Phase 00 schema). Only additive,
 migration-free optional fields.
 
@@ -190,7 +190,7 @@ migration-free optional fields.
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
   `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 04/5.
 
-### C. Convex functions + `convex-test` — ✅ DONE (2026-07-13)
+### §3 — Convex functions + `convex-test` — ✅ DONE (2026-07-13)
 
 > **Shipped:** `waterBodies` `get` (merged→survivor redirect + unavailable signal) + `setCuratedBoost`
 > + `importCanonical`/`listInViewport` D49 wiring; `reports.ts` (`create`/`listByWaterBody`/`get`/
@@ -240,7 +240,7 @@ migration-free optional fields.
   high-`minVisibleZoom` (low-prominence) body is absent at wide zoom while a boosted body appears;
   `setCuratedBoost` gates on `admin`, recomputes `minVisibleZoom`, + writes the audit row.
 
-### D. Web UI — read + map (the loop, read side) — ✅ DONE (2026-07-13)
+### §4 — Web UI — read + map (the loop, read side) — ✅ DONE (2026-07-13)
 
 > **Shipped:** interactive `MapView` (tap→`/water/$id`, feature-state highlight, zoom passed into
 > `listInViewport` for the D49 filter, browser-geolocation framing, drawer-driven fly-to + report
@@ -279,7 +279,7 @@ migration-free optional fields.
   Testing Library) for detail rendering + imperial formatting; the imperative MapLibre shell stays
   excluded from coverage (Phase 01 precedent).
 
-### E. Web UI — write (report creation) — ✅ DONE (2026-07-13)
+### §5 — Web UI — write (report creation) — ✅ DONE (2026-07-13)
 
 > **Shipped:** `ReportForm` (a shadcn **Dialog** opened from the water-body drawer, D47) —
 > split into a presentational, Convex-free `ReportFormFields` (fully testable) + a container that
@@ -320,12 +320,12 @@ migration-free optional fields.
   profile is not offered `public`**; thickness add/remove + value-XOR-range UI; geotag opt-in
   toggles coord retention; put-in pin sets/clears `point`.
 
-### F. Mobile (separate follow-on PR(s)) — split into §6.1 (online) + §6.2 (offline queue), decided 2026-07-13
+### §6 — Mobile (separate follow-on PR(s)) — split into §6.1 (online) + §6.2 (offline queue), decided 2026-07-13
 Built after web ships; reuses **all** of §1–§3 unchanged. **Split into two PRs** (decided 2026-07-13):
 the online loop lands and gets proven first, then the offline queue (the single hardest, mobile-only
 piece) lands on its own so its review is scoped (Greptile reviews are metered).
 
-**Shared prep (lands with F1):** lift the three pure web helpers out of `apps/web/src/lib` into
+**Shared prep (lands with §6.1):** lift the three pure web helpers out of `apps/web/src/lib` into
 `@skating/core` so both apps draw from one source (they were web-local by accident of build order):
 `reportDisplay` (`humanizeEnum`, the enum→label maps, imperial formatters), `reportForm`
 (`buildReportInput`, `visibilityOptions`, thickness form state) and `photo` (`photoUploadCoord`). The
@@ -397,7 +397,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 > still uninitialized). The offline story splits into three layers with very different cost/risk;
 > **§6.2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 09a** (documented in
 > `07-roadmap.md`). Key reframe: report capture needs only *which water body* + GPS, **not** a visible
-> basemap — so the map dependency drops out of F2 entirely.
+> basemap — so the map dependency drops out of §6.2 entirely.
 
 - **Layer 1 — the draft queue.**
   - **Storage (decided 2026-07-13): `expo-sqlite`** for the draft records (relational — a **list**
@@ -406,7 +406,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
     photo files + **`@react-native-community/netinfo`** for reconnect detection.
   - **Drafts are fully-serialized, reopenable records** (not write-only blobs), so **offline
     editing** (decided 2026-07-15) is a modest increment: a drafts list (edit/delete) + hydrating
-    the existing F1 `ReportForm` from a draft. The fiddly part editing forces — the **persisted-photo
+    the existing §6.1 `ReportForm` from a draft. The fiddly part editing forces — the **persisted-photo
     lifecycle** (a photo added offline lives in `expo-file-system` across restarts; remove/edit must
     not orphan files) — is largely paid for by the queue itself.
   - **Photos are processed at capture time** (`expo-image-manipulator` resize + EXIF-strip, coord
@@ -416,7 +416,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
     (2026-07-15 — the real subtlety).** A retry after a lost-ack would otherwise re-upload blobs +
     re-create photo rows and orphan them, because `create` returns the existing report and drops the
     new `photoIds`. Fix: **persist each photo's upload checkpoint (`storageId` → `photoId`) into the
-    sqlite draft as it lands** (the durable version of F1 `ReportForm`'s in-memory
+    sqlite draft as it lands** (the durable version of §6.1 `ReportForm`'s in-memory
     `fullStorageId`/`uploadedId`), so a retry *resumes* and sends the *same* `photoIds`. This is
     when the optional `reports.idempotencyKey?` schema field + a `by_idempotency_key` index land
     (additive, D30); `create` reads the index before inserting, so Convex OCC serializes a
@@ -448,7 +448,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
     flush** using the **existing `waterBodies` geospatial index** (tiny bbox around the coord →
     buffered point-in-polygon) — **no new Phase-04 `reports.point` index required**.
   - **Offline put-in pin** degrades to **"drop at my current GPS location"** (better UX standing at
-    the put-in anyway) — so F2 needs no offline basemap.
+    the put-in anyway) — so §6.2 needs no offline basemap.
 
 - **Layer 3 — offline basemap tiles: DEFERRED to Phase 09a** (decided 2026-07-15). Report capture
   doesn't need it; accurate *hazard* pins do. A real native spike (maplibre-native offline packs vs.
@@ -458,7 +458,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 - **Testing seam.** Push the queue state machine + flush orchestration + idempotency-key gen +
   buffered auto-select into **pure, unit-tested modules** (`@skating/core` for the geometry + queue
   logic; `convex-test` for idempotent `create` + the coord→body resolver), leaving only the
-  sqlite/file-system/netinfo/native glue untested (F1 precedent). Maestro E2E for capture→sync later.
+  sqlite/file-system/netinfo/native glue untested (§6.1 precedent). Maestro E2E for capture→sync later.
 
 - **Commit breakdown (one PR):** (1) convex — `idempotencyKey?` schema + index + idempotent
   `create` + coord→body resolver (+ `convex-test`); (2) core — draft state machine, flush
@@ -466,14 +466,14 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   auto-select; (4) mobile — draft queue (sqlite/fs persistence, photo checkpointing, flush triggers,
   offline put-in); (5) mobile — drafts list + edit; (6) §7 docs + hygiene.
 
-### G. Docs + hygiene — ✅ DONE (2026-07-16)
+### §7 — Docs + hygiene — ✅ DONE (2026-07-16)
 - README updates: `packages/convex` (reports/photos functions, displayScore/minVisibleZoom),
   `apps/web` (report flow, photo pipeline). Update `plans/README.md` index + the roadmap's Phase 02a
   status when it lands.
 - Confirm token/drift-guard tests still pass; keep OSM + "Powered by Strava" (N/A this phase) and
   ODbL attribution visible.
 
-### H. Regional expansion (post-MVP — Phase 02b, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
+### §8 — Regional expansion (post-MVP — Phase 02b, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
 
 > **Execution runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md) — the
 > step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
@@ -533,11 +533,11 @@ PR; commits map to §1–§5):
 
 **Mobile — two separate follow-on PRs** (§6, decided 2026-07-13), each with its own short build-plan
 doc once web is proven:
-1. **F1 — mobile online loop:** lift the shared `reportDisplay`/`reportForm`/`photo` helpers into
+1. **§6.1 — mobile online loop:** lift the shared `reportDisplay`/`reportForm`/`photo` helpers into
    `@skating/core` (+ refactor web onto them); `@maplibre/maplibre-react-native` map + tap→detail;
    bottom-sheet drawers + `MapSelectionContext`; report read + **online** create (native photo
    pipeline via `expo-image-picker`/`expo-image-manipulator`); geolocation framing.
-2. **F2 — mobile offline draft queue:** `expo-sqlite` draft list + `expo-file-system` photos +
+2. **§6.2 — mobile offline draft queue:** `expo-sqlite` draft list + `expo-file-system` photos +
    NetInfo reconnect flush; additive `reports.idempotencyKey?` + idempotent `reports.create`.
 
 ## Settled during review (2026-07-13)
@@ -693,7 +693,7 @@ doc once web is proven:
 > polygons (Layer 2 — GPS auto-select offline, reused by Phase 09a), plus an `expo-sqlite` +
 > `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
 > on an additive `idempotencyKey`, and `waterBodies.resolveBodyForCoord` resolves a coord-only draft
-> at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (F2 "Layer 3") were
+> at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (§6.2 "Layer 3") were
 > deferred to Phase 09a** (hazard pins need them; report capture doesn't). Native UI pending an emulator
 > verification pass (pure + Convex layers are tested).
 

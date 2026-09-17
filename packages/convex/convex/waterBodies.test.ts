@@ -891,7 +891,7 @@ describe('waterBodies.backfillRepresentativePoint (the centroid rename transitio
   });
 });
 
-describe('waterBodies profile-richness prominence (A06c / D2)', () => {
+describe('waterBodies profile-richness prominence (A06c / A06c §4.2)', () => {
   test('contour coverage feeds the richness score, and a re-tile can take it away', async () => {
     // Coverage is a property of the TILESET, not the body, so it lives in a side table keyed on
     // externalId — which is also why a body that drops out of a re-tile cannot keep claiming a
@@ -2696,7 +2696,7 @@ describe('waterBodies.applyCuratedBoostSeed (Phase 02b re-seed)', () => {
   });
 });
 
-describe('waterBodies.resolveBodyForCoord (F2 offline flush / coord→lake)', () => {
+describe('waterBodies.resolveBodyForCoord (Phase 02a §6.2 offline flush / coord→lake)', () => {
   async function seedCanonical(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
     return onlyBodyId(t);

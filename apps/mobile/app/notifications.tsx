@@ -19,7 +19,7 @@ import { notificationRoute } from '../src/lib/notificationRoutes';
 const PAGE_SIZE = 30;
 
 /**
- * The inbox (A08/A3) — reached from the bell on the You tab, never a tab of its own (D28's five
+ * The inbox (A08 §1.3) — reached from the bell on the You tab, never a tab of its own (D28's five
  * stand). Mirrors the web route: newest first, infinite scroll, everything shown marks itself read
  * once it has actually been on screen, and a row whose target is gone renders degraded and
  * untappable rather than vanishing (A08 #5).

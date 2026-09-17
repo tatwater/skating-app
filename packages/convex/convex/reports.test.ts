@@ -919,7 +919,7 @@ describe('reports.update (author-only LWW, D25)', () => {
   });
 });
 
-describe('reports.create idempotency (F2 offline flush, D30)', () => {
+describe('reports.create idempotency (Phase 02a §6.2 offline flush, D30)', () => {
   test('reusing a key returns the same report — no duplicate (lost-ack retry)', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
@@ -1593,7 +1593,7 @@ describe('reports counters + offline read-cache', () => {
 });
 
 /**
- * A body's map summary (A06c/E). `seedBody` returns an untyped id, so `db.get` widens to the union of
+ * A body's map summary (A06c §5). `seedBody` returns an untyped id, so `db.get` widens to the union of
  * every table's document and `summary` is invisible without narrowing.
  */
 async function cardFor(t: ReturnType<typeof convexTest>, bodyId: string) {
@@ -1667,7 +1667,7 @@ describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-1
   const DAY = 86_400_000;
 
   /**
-   * An offline draft can hold a body id that was merged away before the queue flushed (D36/F2).
+   * An offline draft can hold a body id that was merged away before the queue flushed (D36, Phase 02a §6.2).
    * `create` sends the report to the canonical survivor — so the card that must move is the
    * survivor's. Recomputing the requested id refreshes a row nothing renders (a merged body is
    * unlisted) and leaves the visible card stale until the sweep.

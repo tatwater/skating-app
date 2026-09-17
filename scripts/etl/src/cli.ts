@@ -86,7 +86,7 @@ function main(): void {
   }
 
   // The durable copy. Every skipped feature is itemized here, not just tallied: "3 skipped" is a
-  // number an operator can do nothing with, and the whole point of F2 is to be able to answer
+  // number an operator can do nothing with, and the whole point of A06c §6.2 is to be able to answer
   // *which lakes did it decline, and why* without re-running the pass.
   if (summaryPath) {
     writeFileSync(

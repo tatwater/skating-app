@@ -81,7 +81,7 @@ export const pruneWeatherCache = internalMutation({
 });
 
 /**
- * The inbox empties at the season boundary (A08/A5) — delete every `notifications` row created before
+ * The inbox empties at the season boundary (A08 §1.5) — delete every `notifications` row created before
  * the current season's start (July 1, D63), **read or not**.
  *
  * It's the right clock rather than a convenient one. Every notification is about a *moment* —
@@ -126,7 +126,7 @@ export const purgeLastSeasonNotifications = internalMutation({
 });
 
 /**
- * Delete `weatherForecastCache` rows whose hour bucket has passed (A06c/B5b).
+ * Delete `weatherForecastCache` rows whose hour bucket has passed (A06c §2.5b).
  *
  * **The same unaddressable-by-construction argument as `pruneWeatherCache` above**, and it applies
  * more forcefully: a forecast row is keyed on `(samplePointKey, forecastBucketMs)`, so the instant

@@ -201,7 +201,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
  * first time, which is why this lands before that feature rather than after it.
  *
  * **`includedByRequest` is a statement about membership, not about prominence.** It is deliberately
- * not `curatedBoost` (a D2 display lever that gets tuned) and deliberately not "has this been
+ * not `curatedBoost` (a A06c §4.2 display lever that gets tuned) and deliberately not "has this been
  * skated?" — that signal is durable, already feeds prominence, and is already honoured by the prune's
  * attachment check, but it **cannot protect the moment that matters**: at promotion there is no
  * report and no track yet, because the whole point is that someone is asking for a lake they *want*

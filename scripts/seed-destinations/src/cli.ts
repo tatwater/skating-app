@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (A06c §2.3a / A06e D).
+ * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (A06c §2.3a / A06e §4).
  *
  * **Two commands, and the default is the safe one.** Without `--apply` this writes a reviewable
  * report and touches nothing — the founder asked to see the seed list before boosts go in, and the
@@ -8,7 +8,7 @@
  *
  * Reads the corpus through `waterBodies:listNamedForSeeding`, applies through
  * `waterBodies:setCuratedBoost` — the existing Phase 07 admin path, so a seeded boost is
- * indistinguishable from a hand-set one and lands in the same audit log the F1 timeline renders.
+ * indistinguishable from a hand-set one and lands in the same audit log the A06c §6.1 timeline renders.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -34,7 +34,7 @@ const REPORT = fileURLToPath(new URL('../.report.json', import.meta.url));
 const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.meta.url));
 
 /**
- * B3a's proving run, moved here with the link it proves (D138) — **and it is not a link checker.**
+ * A06c §2.3a's proving run, moved here with the link it proves (D138) — **and it is not a link checker.**
  *
  * "Does the URL resolve" is the weakest question available: the Copernicus Browser is a single-page
  * app, so it answers 200 for any coordinate on earth, including ones in the middle of the Atlantic.
@@ -203,7 +203,7 @@ async function main() {
 
   const logger = new RunLogger({
     kind: 'seed_destinations',
-    label: 'curated destination boosts (A06c §2.3a/D)',
+    label: 'curated destination boosts (A06c §2.3a/§4)',
     ...(campaignId ? { campaignId } : {}),
     target: resolveDeployment(),
     call: convexRun,

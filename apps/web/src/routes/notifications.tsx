@@ -11,7 +11,7 @@ import { notificationHref } from '../lib/notificationTargets';
 const PAGE_SIZE = 30;
 
 /**
- * The inbox (A08/A3) — *what happened to you and your contributions*, as opposed to the newsfeed's
+ * The inbox (A08 §1.3) — *what happened to you and your contributions*, as opposed to the newsfeed's
  * *what happened on the ice*. A route rather than a popover so it's linkable and testable.
  *
  * Opening the page marks everything that exists at that moment as read (the server bounds it by its

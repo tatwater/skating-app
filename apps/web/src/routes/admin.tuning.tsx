@@ -470,7 +470,7 @@ function AdminTuning() {
           <ConstantCard name="RICHNESS_ACTIVITY" value={RICHNESS_ACTIVITY} file="display.ts">
             A body with any report or hazard on record. The only term that is evidence of{' '}
             <em>use</em> rather than of data, so it is the largest — and it alone can out-rank a
-            curated boost, which is the point (D2).
+            curated boost, which is the point (D184).
           </ConstantCard>
           <ConstantCard name="RICHNESS_STATIC_CAP" value={RICHNESS_STATIC_CAP} file="display.ts">
             Ceiling on the imported-metadata half (name, depth, contours, put-ins). Deliberately

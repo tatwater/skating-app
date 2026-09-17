@@ -5,7 +5,7 @@ Matches a curated shortlist of regional skating destinations to corpus bodies an
 the plan specifies them together: the matching is the hard part and both outputs need it.
 
 > **Renamed from `seed-satellite`** (founder call, 2026-08-09). That name was chosen to name the
-> *job* — provision and prove the imagery path — rather than the input list. With B3's Copernicus
+> *job* — provision and prove the imagery path — rather than the input list. With A06c §2.3's Copernicus
 > deep link deferred to [A06e](../../plans/phases/A06e-satellite-imagery.md) so the whole imagery story
 > ships together, the job this script does today is the other half. A06e adds the URL verification
 > back on top when it needs it; the input file is what changes, not the name.
@@ -54,12 +54,12 @@ reported as ambiguous rather than accepted — the coordinate says the author me
 ## Why the boost is 0.3
 
 `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom` clamps the
-total. The usable range is small: A06c-1 found the D2 table's proposed weights were ~13× the whole
+total. The usable range is small: A06c-1 found the A06c §4.2 table's proposed weights were ~13× the whole
 dynamic range, which would have pushed every named body to the widest zoom bucket with all tests
 still green. 0.3 matches every existing curated boost on dev.
 
 A seed is a **cold-start hack with a retirement path** (D49), not a permanent registry. Profile
-richness (D2) is the durable mechanism meant to take over, and `curatedBoostIsRedundant` is the
+richness (A06c §4.2) is the durable mechanism meant to take over, and `curatedBoostIsRedundant` is the
 advisory signal that says when a given seed has been earned organically.
 
 **A boost a human already set is never overwritten.** A hand-set value is a judgement about a
@@ -70,5 +70,5 @@ what D49 wants from it. Those are recorded as itemized failures on the run row.
 
 `/admin/imports`, as kind `seed_destinations`, with counts, coverage and the itemized declines.
 Boosts are applied through `waterBodies:setCuratedBoost` — the existing Phase 07 admin path — so a
-seeded boost is indistinguishable from a hand-set one and lands in the same audit log the F1
+seeded boost is indistinguishable from a hand-set one and lands in the same audit log the A06c §6.1
 per-lake timeline renders.

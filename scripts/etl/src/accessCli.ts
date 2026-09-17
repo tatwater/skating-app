@@ -1,5 +1,5 @@
 /**
- * The access ETL's transform stage (A06d §2.1/B2) — glue, so it is excluded from coverage; every rule it
+ * The access ETL's transform stage (A06d §2.1/§2.2) — glue, so it is excluded from coverage; every rule it
  * applies lives in `./accessTransform` and `@skating/core`.
  *
  *   pnpm --filter @skating/etl access-transform                       # all five states
@@ -322,7 +322,7 @@ function cacheKey(from: LatLng, to: LatLng): string {
  * 2,173 legs were poisoned that way before this was fixed.
  *
  * A `404` is different. ORS genuinely has no path between these two points (an unmapped herd path
- * routes to nothing — the B4 caveat in another form), and that answer is stable, so it caches.
+ * routes to nothing — the A06d §2.4 caveat in another form), and that answer is stable, so it caches.
  */
 interface RoutedLeg {
   leg: ApproachLeg;

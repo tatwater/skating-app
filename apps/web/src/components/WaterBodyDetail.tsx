@@ -272,7 +272,7 @@ export function WaterBodyDetail({
             landowner's takedown. Closed while a deletion is pending, like every other composer. */}
         <StandingNotice body={result.body} />
         {leaving ? null : <RequestButtons body={result.body} />}
-        {/* The derived profile (A06c/C). Renders NOTHING — no heading, no empty section — when
+        {/* The derived profile (A06c §3). Renders NOTHING — no heading, no empty section — when
             there is nothing to say, which is most of the corpus and is the correct outcome rather
             than a gap to fill with hedged filler. */}
         {/* The lake's profile caption is the lake's — its depth, its fetch, its deciles — and under a
@@ -311,12 +311,12 @@ export function WaterBodyDetail({
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
         {leaving ? <LeavingNotice /> : null}
-        {/* Official NWS alerts (A06c/B5) ABOVE the tab strip, always visible — a warning from the
+        {/* Official NWS alerts (A06c §2.5) ABOVE the tab strip, always visible — a warning from the
             local forecast office outranks both our observations and anybody's forecast, and a tabbed
             alert is an alert you can be one tap away from not seeing. This is what preserves the
-            authority ordering (alert > observation > prediction) under the three-tab IA (A06h/H). */}
+            authority ordering (alert > observation > prediction) under the three-tab IA (A06h §8). */}
         <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
-        {/* The three sub-tabs (A06h/H, open question 4). Nothing below is new: the panels that used to
+        {/* The three sub-tabs (A06h §8, open question 4). Nothing below is new: the panels that used to
             stack flat are grouped by the founder's taxonomy — Overview = machine-compiled facts about
             the body, Reporting = user-supplied this season, Planning = the trip decision — and keep
             their relative order inside each group, so every "above X because Y" argument in the
@@ -367,7 +367,7 @@ export function WaterBodyDetail({
               <WindExposure body={result.body} />
             )}
             <WaterBodyModeratorControls body={result.body} />
-            {/* Reference links (A06c/B), below our own content and above the credits. Everything here
+            {/* Reference links (A06c §2), below our own content and above the credits. Everything here
                 leaves the app, so it sits after everything a skater came for — and it renders nothing
                 at all on a body with no coordinate and no regional community. */}
             <ReferenceLinks body={result.body} reveal={reveal} />
@@ -447,7 +447,7 @@ export function WaterBodyDetail({
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
             />
-            {/* The forward forecast (A06c/B5b; the seven-day planner since A06h D) — the other half of
+            {/* The forward forecast (A06c §2.5b; the seven-day planner since A06h §4) — the other half of
                 the weather-since timeline, and the half that answers "should I bother driving". */}
             <ForecastPanel
               waterBodyId={result.body._id}

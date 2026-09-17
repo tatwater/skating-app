@@ -1,5 +1,5 @@
 /**
- * Persistent storage for offline draft photos (F2) — the `expo-file-system` glue. A captured photo
+ * Persistent storage for offline draft photos (Phase 02a §6.2) — the `expo-file-system` glue. A captured photo
  * is processed (resized + EXIF-stripped) into the picker **cache**, which the OS can evict over the
  * days a draft may sit; so at capture we copy the stripped output into the app **document** dir and
  * store that persistent uri in the draft. Untested native glue (like `photoPipeline`).

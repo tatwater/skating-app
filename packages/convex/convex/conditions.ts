@@ -1,5 +1,5 @@
 /**
- * Report conditions auto-fill from Open-Meteo (Phase 10 / §07-1 / D19). Populates the stubbed `openmeteo`
+ * Report conditions auto-fill from Open-Meteo (Phase 10 / §7a / D19). Populates the stubbed `openmeteo`
  * condition source with the weather **at the skate time** (a point-in-time reading — distinct from the
  * "since" summary that feeds the strip + decay).
  *

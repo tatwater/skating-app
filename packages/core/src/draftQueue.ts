@@ -1,5 +1,5 @@
 /**
- * Offline draft-queue logic (F2/D30) — the pure, testable heart of the mobile offline report queue.
+ * Offline draft-queue logic (Phase 02a §6.2/D30) — the pure, testable heart of the mobile offline report queue.
  *
  * The mobile app persists a **list** of captured-but-unsent report drafts (a day of offline
  * lake-hopping) in `expo-sqlite`, with photo files in `expo-file-system`, and flushes them on
@@ -53,7 +53,7 @@ export type DraftStatus = 'pending' | 'uploading' | 'creating' | 'done' | 'error
  *  for offline editing and the flush can rebuild the report input — one source of truth for both. */
 export interface ReportDraft {
   id: string;
-  /** Client-generated at capture, carried across every flush retry (server dedup, F2/D30). */
+  /** Client-generated at capture, carried across every flush retry (server dedup, Phase 02a §6.2/D30). */
   idempotencyKey: string;
   status: DraftStatus;
   /** Set when `status === 'error'` — the permanent reason, surfaced in the drafts list. */

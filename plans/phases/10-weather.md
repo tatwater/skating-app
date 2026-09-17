@@ -38,7 +38,7 @@ mid-build:
 - **Conditions auto-fill is object-level "user wins":** the scheduled action fills only when the report
   has **no** conditions at all (not field-by-field), clean given `source` is one enum for the object.
 - **Contradiction escalation is consensus-based + order-independent** (revised in the 2026-07-23 review;
-  §07-2). `settleContradictions` escalates the weather-unexplained **un-corroborated minority** (a report
+  §7b). `settleContradictions` escalates the weather-unexplained **un-corroborated minority** (a report
   disagreeing with a *more-corroborated* one, itself un-corroborated) — never the later poster, never the
   corroborated majority — via a private `reports.contradiction` flag that drives the author's non-scoring
   `contradictionCount` and **self-corrects** (a report that later earns corroboration clears + decrements).
@@ -53,7 +53,7 @@ mid-build:
 - **Test infra:** `packages/convex/test.setup.ts` stubs a benign offline `fetch` by default so the weather
   actions `reports.create` now schedules never hit the network in unrelated tests.
 
-Commit map: §1 reducer · §4 decay core · §2 fetch+cache · §5a read-path · §5b cron+sampling · §07-1
+Commit map: §1 reducer · §4 decay core · §2 fetch+cache · §5a read-path · §5b cron+sampling · §7a
 conditions · §7b-1 D57 perms · §7b-2 contradiction · §7c bounty gate · §7c+ bounty weather action · §3
 strip core · §3 strip UI.
 
@@ -459,7 +459,7 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
 - **Contradiction re-flag bundling.** The auto-flag dedups only on an *open* flag, so a user parked above
   threshold files a fresh `/admin` row on each further contradiction after a mod resolves the prior one.
   Bundle repeated auto-flags into one queue entry in the Phase-07 moderation surface. (The escalation
-  *targeting* was fixed in the review — §07-2 now escalates the un-corroborated minority, order-independent,
+  *targeting* was fixed in the review — §7b now escalates the un-corroborated minority, order-independent,
   and self-corrects — so this is purely the mod-queue UX, not a correctness item.)
 
 

@@ -74,7 +74,7 @@ function RootNavigator() {
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
-        {/* The inbox (A08/A3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
+        {/* The inbox (A08 §1.3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
         <Stack.Screen
           name="notifications"
           options={{ presentation: 'modal', headerShown: true, title: 'Notifications' }}
@@ -85,7 +85,7 @@ function RootNavigator() {
           name="support"
           options={{ presentation: 'modal', headerShown: true, title: 'Contact support' }}
         />
-        {/* Offline report capture + draft editing (F2) — full-screen modals, off the map. */}
+        {/* Offline report capture + draft editing (Phase 02a §6.2) — full-screen modals, off the map. */}
         <Stack.Screen
           name="draft/new"
           options={{ presentation: 'modal', headerShown: true, title: 'New report' }}

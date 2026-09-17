@@ -25,7 +25,7 @@ describe('putInsToFeatureCollection', () => {
     expect(fc.features[0]?.properties?.source).toBe('official');
   });
 
-  /** The `osm` rung and its name (A06d/A3) — the same assertion web's helper carries, so the two
+  /** The `osm` rung and its name (A06d §1.3) — the same assertion web's helper carries, so the two
    *  clients cannot drift on what an imported launch looks like to a layer. */
   it('carries the osm rung and its name through to the layer', () => {
     const fc = putInsToFeatureCollection([

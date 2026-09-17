@@ -599,7 +599,7 @@ export const importCanonical = internalMutation({
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
         // curatedBoost are preserved. Score uses the new area + the *preserved* admin boost (D49).
         //
-        // ⚠ **This resets the score to area + boost, dropping the D2 richness term**, because
+        // ⚠ **This resets the score to area + boost, dropping the A06c §4.2 richness term**, because
         // reading put-ins and reports per body would put two extra index reads on every one of
         // 116,070 rows inside the heaviest mutation in the app. So the ordering is not optional:
         // canonical re-import → depth/elevation run → `backfillCells`, which recomputes richness
@@ -629,7 +629,7 @@ export const importCanonical = internalMutation({
           // cannot move — the contour tiles are stamped with it (D93). Patching `source` alone
           // separates the pair, and `richnessFor` reads exactly that pair to find a body's contour
           // coverage — so "correcting" it would look up `('nhd', 'way/123')`, match nothing, and
-          // silently drop `hasContours` from the D2 prominence score of every body whose geometry
+          // silently drop `hasContours` from the A06c §4.2 prominence score of every body whose geometry
           // source changed.
           //
           // Whose outline we drew is `geometrySource`, which IS patched, three lines down. The two
@@ -1313,7 +1313,7 @@ export const backfillCells = internalMutation({
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
     for (const body of page.page) {
-      // The D2 richness term is applied HERE and nowhere else — see `richnessFor` for why, and the
+      // The A06c §4.2 richness term is applied HERE and nowhere else — see `richnessFor` for why, and the
       // warning in `importCanonical` for the ordering that makes it correct.
       const richness = await richnessFor(ctx, body);
       const scores = scoreFields({
@@ -1985,7 +1985,7 @@ export const pruneOutsideCoverage = internalMutation({
  */
 const SHORELINE_CROSS_CHECK_RATIO = 2;
 
-// ── Bathymetry contour coverage (A06c-1 / D2) ─────────────────────────────────────────────────
+// ── Bathymetry contour coverage (A06c-1 / A06c §4.2) ─────────────────────────────────────────────────
 
 /**
  * Replace the contour-coverage set with the bodies the current tileset actually draws.
@@ -3130,7 +3130,7 @@ export async function mergeBodyInto(
       minVisibleZoom: zoomSortKey(loser),
       listed: isListed({ ...loser, dedupStatus: 'merged' }),
     });
-    // **Both map cards move, so both are recomputed (A06c/E).** A merge re-points the loser's reports
+    // **Both map cards move, so both are recomputed (A06c §5).** A merge re-points the loser's reports
     // and hazards onto the survivor, which is a change to the survivor's counts with no report or
     // hazard mutation to hang the recompute on — the one shape `lib/bodySummary.ts`'s write-path
     // coverage cannot see. Left alone, the survivor understates its activity until the six-hourly
@@ -3481,7 +3481,7 @@ export const setReferenceLinks = mutation({
         trimmed.length === 0
           ? 'Cleared the reference links'
           : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`,
-      // **`prev` alongside the new value (F1).** An audit row that records only what a field *became*
+      // **`prev` alongside the new value (A06c §6.1).** An audit row that records only what a field *became*
       // can answer "who changed this" and never "changed it from what", which is most of what someone
       // reading the timeline actually wants. Same convention as `setDepth`.
       metadata: { referenceLinks: trimmed, prev: { referenceLinks: body.referenceLinks ?? [] } },
@@ -5054,7 +5054,7 @@ export const viewportReadStats = internalQuery({
   },
 });
 
-/** Default parking/approach buffer for coord→lake resolution (F2 offline flush + map-open framing).
+/** Default parking/approach buffer for coord→lake resolution (Phase 02a §6.2 offline flush + map-open framing).
  *  ~300 m covers a lakeside lot / approach so opening from the car still resolves the lake (S1).
  *  Tunable — Phase 07 lifts it behind admin controls, same "don't bury constants" principle as the
  *  displayScore curve (D37). */
@@ -5062,7 +5062,7 @@ const AUTOSELECT_BUFFER_M = 300;
 
 /**
  * Public: resolve a GPS coord to the listed water body it's on / nearest to within a parking-approach
- * buffer. The server side of the **F2 offline flush** for a *coord-only* draft — a report captured
+ * buffer. The server side of the **Phase 02a §6.2 offline flush** for a *coord-only* draft — a report captured
  * off a lake the device hadn't cached, so the client couldn't auto-select it locally (see the mobile
  * body cache). Reuses `listInViewport`'s two-tier centroid + large-body lookup (read-cap-safe: the
  * per-point rectangle is small), then ranks candidates with the shared `nearestBodyForPoint`
@@ -6191,10 +6191,10 @@ export const setIncludedByRequest = internalMutation({
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
  * report simply *ageing out* of the 14-day window is not an event anywhere in the system. Without
  * this tick, a lake that was busy in January still shows January's card in March, which is the exact
- * failure mode E4 named: a card carrying last season's numbers into a month when the lake is open
+ * failure mode A06c §5.4 named: a card carrying last season's numbers into a month when the lake is open
  * water.
  *
- * Walks only bodies that **have** a summary, which is the small minority — the whole point of E3 is
+ * Walks only bodies that **have** a summary, which is the small minority — the whole point of A06c §5.3 is
  * that most of the corpus carries none — so this is cheap despite running over the corpus. It pages,
  * because "the small minority" is a claim about today and not a guarantee.
  */
@@ -6252,7 +6252,7 @@ export const sweepAllBodySummaries = internalAction({
 });
 
 /**
- * Named bodies, paged, for the destination seeding script (A06c §2.3a/D).
+ * Named bodies, paged, for the destination seeding script (A06c §2.3a/§4).
  *
  * **Named only.** A curated destination has a name by definition, so the unnamed ~92% of the corpus
  * can never match one — and filtering here rather than in the script is the difference between the

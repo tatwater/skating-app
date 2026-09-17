@@ -194,7 +194,7 @@ describe('parsePayload (the typed boundary over notifications.payload)', () => {
   });
 });
 
-// ── The "still true?" table, negatives (E2 / D169) ─────────────────────────────────────────────
+// ── The "still true?" table, negatives (A08 §5.2 / D169) ─────────────────────────────────────────────
 //
 // The producer tests pin the common drops — a retracted thumb, a removed comment, a cancelled
 // bounty, a converted skate. These are the rest of the table, driven through `settleTrigger`

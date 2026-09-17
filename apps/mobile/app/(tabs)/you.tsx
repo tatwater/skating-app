@@ -51,7 +51,7 @@ export default function YouScreen() {
   const profile = useQuery(api.profiles.current, {});
   const router = useRouter();
   const theme = useTheme();
-  // The bell's dot (A08/A3). The tab bar shows the same signal on the You icon from every screen.
+  // The bell's dot (A08 §1.3). The tab bar shows the same signal on the You icon from every screen.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
   // Sign-out takes this phone's push address with it and drops the offline inbox (A08 PR 3): a phone

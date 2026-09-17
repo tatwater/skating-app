@@ -30,8 +30,9 @@ Read, in this order: `plans/README.md` (conventions), the phase doc, its `07-roa
    in the data); don't assume what they'd want. Weighing pros and cons together is welcome.
 5. **The roadmap entry is part of the phase's PR.** Write it at scoping (⚪), flip it at build start
    (🟡), close it at merge (🟢), from the template at the top of `07-roadmap.md`;
-   `roadmapShape.test.ts` enforces the shape. Record what the build found in the phase doc, not the
-   roadmap. New decisions get a `D#`.
+   `roadmapShape.test.ts` enforces the shape; `planConventions.test.ts` enforces workstream naming
+   (`§3.2`, never a letter). Record what the build found in the phase doc, not the roadmap. New
+   decisions get a `D#`.
 
 ## Things that bite
 

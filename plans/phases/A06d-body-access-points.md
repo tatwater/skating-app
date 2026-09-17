@@ -37,7 +37,7 @@
 >    offered and declined. So the access alert lifecycle and the photo carve-out are in scope here, not
 >    deferred to an A06d-2.
 > 2. **Directions re-target to parking; drive-time bands do not.** See correction 6.
-> 3. **An `osm` put-in scores as `derived` (+0.06) in D2's richness ladder.** See correction 5.
+> 3. **An `osm` put-in scores as `derived` (+0.06) in A06c §4.2's richness ladder.** See correction 5.
 > 4. **The approach thresholds:** `drive_up` ≤ 150 m · `short_walk` ≤ 800 m · `hike_in` > 800 m, and the
 >    UI **demands** an explicit `hike_in` assertion above **1,600 m**. See correction 7.
 
@@ -78,8 +78,8 @@ file before a line was written. Seven corrections. The third is the one that cha
 on the old figure four times — *"what makes named access points a 116k feature rather than a 36-water body
 one"*, *"nothing on most of the 116k"*. But A07a did not merely shrink the corpus, it **changed its
 composition**: one admission floor now applies once to the merged body (≥ 5 acres, or ≥ 1 acre if named
-— D91), so the ~90k sub-acre ponds B4's pessimism was calibrated against are no longer rows at all. The
-surviving population is exactly the set OSM is most likely to have named a slipway or a lot for. B4's
+— D91), so the ~90k sub-acre ponds §2.4's pessimism was calibrated against are no longer rows at all. The
+surviving population is exactly the set OSM is most likely to have named a slipway or a lot for. §2.4's
 *"expect solid results on well-known bodies and nothing on most"* should be re-read as a much narrower
 gap than it was written to describe.
 
@@ -89,7 +89,7 @@ still true, and `scripts/etl/.raw/<state>/` now holds **pinned, md5-verified, da
 `provenance.ts` replays into an `/admin/imports` run row. So this pass's provenance is free and its
 inputs are byte-identical to the ones behind the current corpus.
 
-**3. ⚠ B2's association rule cannot be implemented as written — the join has to run server-side.**
+**3. ⚠ §2.2's association rule cannot be implemented as written — the join has to run server-side.**
 *"Put-in candidates within ~30 m of a body's polygon boundary attach to that body"* reads as something
 the transform does. It can't: the transform has no access to our polygons, and post-A07a the merge output
 is **not** the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it). This is
@@ -101,7 +101,7 @@ the app's own *"you're at Lake X"* resolution agree by construction, because bot
 `@skating/core`.
 
 **The half that *is* local, and this is what keeps the ETL's four-stage shape.** Pairing a parking lot
-to a put-in candidate is **OSM-to-OSM** — both are features in the same extract — so B2's ~250 m
+to a put-in candidate is **OSM-to-OSM** — both are features in the same extract — so §2.2's ~250 m
 inference, and the ORS `foot-hiking` leg that rides on it, need no corpus and happen in the transform.
 Only *which body this serves* needs the server. Without that split the pipeline would have to
 load → query back the unrouted pairs → route → patch, which is a shape none of the other three ETLs
@@ -113,7 +113,7 @@ has.
 slipways), **polygons** (parking) and **lines** (trails, slipway ways). That is a second export
 configuration, and by that file's own docstring it belongs *in* it rather than beside it.
 
-**5. `osm` as a `putIns` rung collides with D2's richness ladder, and the collision is load-bearing.**
+**5. `osm` as a `putIns` rung collides with A06c §4.2's richness ladder, and the collision is load-bearing.**
 `PUTIN_SOURCES` is `['derived', 'official']` and `staticRichness` has exactly two matching terms —
 derived **+0.06**, official **+0.12**, official superseding rather than stacking. An OSM slipway is
 stored like an `official` row and approximate like a `derived` one, so it needed a call rather than a
@@ -155,11 +155,11 @@ read-cost decision, not a call-site tweak.
   can ever reference a photo are its uploader's own reports and hazards."* Workstream 4 breaks that
   invariant, so an access-point photo becomes an orphan and is **deleted after the 30-day grace** —
   silently, by a cron, a month later. `photoReconcile` has the same shape. Extending both is
-  unbudgeted work inside D, and it is the one finding here that would have shipped as data loss.
+  unbudgeted work inside §4, and it is the one finding here that would have shipped as data loss.
 - **Flags:** `FLAG_TARGET_TYPES` is `['report','comment','photo','user','hazard']` and
-  `MODERATION_TARGET_TYPES` likewise. Photos ride it as C2 claims; an access **alert** has no slot yet.
+  `MODERATION_TARGET_TYPES` likewise. Photos ride it as §3.2 claims; an access **alert** has no slot yet.
 
-**9. Extracting trails may be redundant, and dropping them removes a geometry class.** B1 extracts
+**9. Extracting trails may be redundant, and dropping them removes a geometry class.** §2.1 extracts
 `highway=path|footway|track` + `route=hiking` for a `trail` amenity. But ORS `foot-hiking` (D87) routes
 over *exactly those ways* — so **"a route was found" is the trail signal**, already paid for, with no
 line geometry in the extract at all. The only residue is a trail beside a put-in that has no parking to
@@ -182,7 +182,7 @@ five other systems for no user-visible gain. So:
 |---|---|
 | `waterBodyIds` | **plural** — a trailhead lot can serve several ponds, and a mile-away lot often does (open question 4). Many-to-many from the start; retrofitting a single id is the annoying version of this. |
 | `coord` | where the car goes |
-| `name` | from OSM where available, else derived (A3) |
+| `name` | from OSM where available, else derived (§1.3) |
 | `source` | same ladder discipline as `putIns` — `official` beats `osm` |
 | `status` | `visible` / `hidden` (moderator-suppressed), mirroring `putIns` |
 | `amenities` | `('toilets' \| 'trail' \| 'boat_ramp')[]` |
@@ -358,7 +358,7 @@ to no privacy benefit; there is no personal information in a photograph of a gra
 - **Hand-written access descriptions** of any kind (D70/P1) — Workstream 3 replaces the one case that
   mattered.
 - **Food amenities** (founder call).
-- **Renaming `putIns` to `accessPoints`** — additive only (A1), for blast-radius reasons.
+- **Renaming `putIns` to `accessPoints`** — additive only (§1.1), for blast-radius reasons.
 - **Routing *along* the approach path** — we report `approachMeters` and a kind; we don't navigate the
   walk. That's a maps-app job.
 - **Rivers** — still deferred (D4); shoreline-proximity association assumes a still-water polygon.
@@ -367,13 +367,13 @@ to no privacy benefit; there is no personal information in a photograph of a gra
 
 ## Sequencing
 
-1. **A1** — schema: `parkingAreas` + the `putIns` additions. Additive and migration-free.
-2. **B1–B3** — the OSM pass. The bulk of the work, and independently testable against a single state's
+1. **§1.1** — schema: `parkingAreas` + the `putIns` additions. Additive and migration-free.
+2. **§2.1–§2.3** — the OSM pass. The bulk of the work, and independently testable against a single state's
    extract before it touches the corpus.
-3. **A3 + the routing rule** — names and directions-target-parking. This is the first user-visible win
+3. **§1.3 + the routing rule** — names and directions-target-parking. This is the first user-visible win
    and it is small once the data exists.
-4. **C** — the alert lifecycle. New table, new decay, reuses Phase 09a's confirm/deny UI.
-5. **D** — photos, and the purge carve-out.
+4. **§3** — the alert lifecycle. New table, new decay, reuses Phase 09a's confirm/deny UI.
+5. **§4** — photos, and the purge carve-out.
 
 **Suggested split if this grows:** steps 1–3 (derived access data) are shippable without 4–5 (the
 community layer), and the first three are where most of the value is.
@@ -390,7 +390,7 @@ community layer), and the first three are where most of the value is.
 *Five things the plan did not anticipate. Two are corrections to the plan, two are decisions it left
 implicit, and one is the shape of an unfinished edge.*
 
-**1. `parkingAreas.waterBodyIds` could not be an array, and the reason is the read.** A1's field
+**1. `parkingAreas.waterBodyIds` could not be an array, and the reason is the read.** §1.1's field
 sketch stores the association on the parking row. That records the fact and cannot answer what every
 read actually asks — *"what parking serves this water body?"* — because Convex has no array-contains index,
 so a body-side lookup is a full table scan on a table that grows with the corpus. It is the
@@ -425,7 +425,7 @@ A drive-up ramp routes over the car park's own service road, which is why the le
 
 **5. What is built and what is not.** The data path is complete end to end — the second osmium pass,
 the OSM-to-OSM pairing, the ORS leg, the server-side join, both loaders, the alert lifecycle with its
-cron, the photo model, the operator write path, and the D2 richness rung that finally releases
+cron, the photo model, the operator write path, and the A06c §4.2 richness rung that finally releases
 `backfillCells`. **The ETL has not been run**, so no access data is loaded and none of it has been seen
 against real output — including the `PARKING_INFER_RADIUS_M` eyeballing pass the plan asks for.
 
@@ -446,7 +446,7 @@ deserve.
 ## What the first real run found — 2026-08-11
 
 *Three corrections, all from running the thing rather than reading it. The first is the eyeballing
-pass B2 asked for, and it earned its keep on the first state.*
+pass §2.2 asked for, and it earned its keep on the first state.*
 
 **1. `amenity=parking` is one of OSM's most common tags, and the plan had no gate for it.** Vermont
 alone yields **4,656 parking areas, 202 of which pair with a launch**; across five states it is
@@ -485,7 +485,7 @@ the number improves.
 
 ## The 250 m radius, eyeballed — 2026-08-12
 
-*B2 asks for this explicitly and it had only been checked in aggregate. Two measurements, and the
+*§2.2 asks for this explicitly and it had only been checked in aggregate. Two measurements, and the
 second dissolves a worry rather than answering it.*
 
 ### Pairing rate by state, at 250 m
@@ -569,7 +569,7 @@ already found, so perhaps +11–22%, and only for lots that a walk actually conn
 **Cost:** ~600–900k line geometries across five states (VT alone is 40,840 ways / 642k vertices, so
 memory wants streaming rather than a naïve load), a coordinate-hashed connectivity graph, a
 budget-bounded BFS with property tests for cycles and disconnection, plus a handful of extra ORS legs.
-Comparable in size to Workstream B1/B2 — call it a small phase, not an afternoon.
+Comparable in size to §2.1/§2.2 — call it a small phase, not an afternoon.
 
 **Recommendation: don't, yet.** The case it targets is already served twice over — `setOfficialParking`
 takes a human's association at any distance (D72 amendment), and 840 lots already survived the gate on
@@ -1019,7 +1019,7 @@ this from a request path**, which is the one rule worth writing at the call site
 
 1. **Routed `foot-hiking` distance + ascent** — when ORS finds a path between parking and put-in.
 2. **Straight-line, flagged** — when it can't. OSM's rural trail coverage is real but patchy (the same
-   B4 caveat), and an unmapped herd path routes to nothing. Straight-line **under-reports**, so the
+   §2.4 caveat), and an unmapped herd path routes to nothing. Straight-line **under-reports**, so the
    flag matters: it is the difference between *"about 900 m on foot"* and *"at least 900 m on foot."*
 3. **Nothing** — when there's no parking area to route from, which is most of the 116k.
 
@@ -1037,7 +1037,7 @@ that nobody should discover this at the trailhead:
   minutes" is filtering on *drive* time, and a hike-in water body inside that band is not the trip they think
   they're being offered.
 
-**The chip is derived, not entered** — `approachKind === 'hike_in'`, which A1 already derives from
+**The chip is derived, not entered** — `approachKind === 'hike_in'`, which §1.1 already derives from
 `approachMeters` with an operator override. So it costs a component and a threshold, and it inherits the
 override for the cases where a number lies.
 
@@ -1063,7 +1063,7 @@ reason: a water body with three launches and one blocked gate is still a water b
 
 **The second guess is right, and the doc was ambiguous about it.** The ~250 m figure is a threshold for
 the **automatic OSM pass** — how far the ETL will reach to guess that a lot serves a put-in with no human
-saying so. It was never meant to constrain what a person can assert, and B2 didn't say so.
+saying so. It was never meant to constrain what a person can assert, and §2.2 didn't say so.
 
 > **D72 amendment — the association radius governs inference only. An operator- or author-set parking
 > association has no distance limit.**
@@ -1072,7 +1072,7 @@ saying so. It was never meant to constrain what a person can assert, and B2 didn
 **The ramifications, since that's what was actually asked** — there are four, and three are already
 handled:
 
-1. **Drive time must target the parking, not the put-in.** ✅ Already the design (A1's routing rule), and
+1. **Drive time must target the parking, not the put-in.** ✅ Already the design (§1.1's routing rule), and
    at a mile it stops being cosmetic: the Phase 04 isochrone bands are computed to a coordinate, and
    computing them to a shoreline point a car cannot reach makes the band **wrong**, not just imprecise.
    The routing rule fixes drive time and directions together.
@@ -1083,7 +1083,7 @@ handled:
 3. **A distant lot may be nearer another water body — so the relationship is many-to-many.** ✅ Worth building
    for from the start rather than retrofitting: a trailhead serving three ponds is normal in the
    Northeast, and `parkingAreas` should not carry a single `waterBodyId` it will later have to grow out
-   of. **This is a real change to A1's table sketch**, and it is cheap now and annoying later.
+   of. **This is a real change to §1.1's table sketch**, and it is cheap now and annoying later.
 4. **A far-flung association is the one thing here a human can get wrong at no cost to themselves.**
    Mistyping a lot ten miles away sends someone to the wrong trailhead in the dark. Two mitigations, both
    already in the phase's vocabulary: **(a)** the `source` ladder means an operator value outranks OSM
@@ -1138,21 +1138,21 @@ a new lifecycle. Independent of A06c; either order.
 > one notifies nobody.
 >
 > **The first real run found three things** — see the doc's *§What the first real run found*. The
-> eyeballing pass B2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
+> eyeballing pass §2.2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
 > five states, 92,384 unpaired** (fire departments, ski clubs, supermarkets), so the loader gained a
 > water-relevance gate. ORS's free tier caps directions at **40/minute**, not the ~85 the gap assumed
 > — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs
 > permanently unroutable.
 >
 > **✅ `backfillCells` ran 2026-08-14** — 24,961 bodies re-scored in 84 batches, closing the single
-> full-corpus re-score A06c had held since 2026-08-02. D2's put-in terms are live for the first time.
+> full-corpus re-score A06c had held since 2026-08-02. A06c §4.2's put-in terms are live for the first time.
 >
 > ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** (restored by
 > raising the spending cap). One parameter: `listedBodiesNearCoord`'s candidate box was a fixed
 > ~1,113 m for every caller, so a 250 m gate read 20× the area it needed and a 30 m gate read 1,377×
 > — of *whole documents*, polygons included, since Convex has no projection. Fixed with an optional
 > `marginMeters`. `matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same
-> shape and remain unfixed. D2's put-in terms have never fired (dev carried 0
+> shape and remain unfixed. A06c §4.2's put-in terms have never fired (dev carried 0
 > `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
 > access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
 > data and have to be repeated, which is the duplicated work that gate exists to avoid.

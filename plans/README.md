@@ -50,8 +50,9 @@ Rules that fell out of the history and are worth keeping:
 
 - **A sub-phase letter means its own doc** (`02a`, `02b`, `A06e`). A PR sequence inside one doc is a
   dash (`A06c-2`, `07-2`, `B01-4`) — `-N` is "the Nth PR of this phase", never a sub-phase.
-- **Never close a gap, never shift a token.** A phase that gets cut keeps its number (`A06g` is
-  vacant; its scoping moved to the backlog). A number that's in the git history is spoken for.
+- **Never close a gap, never shift a token.** A phase that gets cut keeps its number (`A06g` was
+  withdrawn unbuilt; its doc keeps the number under `phases/` and the roadmap marks it ⚫). A number
+  that's in the git history is spoken for.
 - **`B` is the last lettered era.** With two-digit padding, `A` alone had 99 slots, so `B` exists
   for meaning rather than capacity — and letter eras collide with the registers (`D#`, `Q#`, `L#`)
   soon after. After `B` closes, everything is a feat.
@@ -61,7 +62,10 @@ Rules that fell out of the history and are worth keeping:
 Inside a phase doc, workstreams are numbered and always carry the section sigil: `§3` is workstream
 three, `§3.2` its second item, headings `### §3.2 — The read path`. Prose can say "workstream 3"
 where a word reads better. The sigil is mandatory — with it, a bare `A4` or `B2` can only ever be a
-phase, and `D74` can only ever be a decision.
+phase, and `D74` can only ever be a decision. A reference from outside the phase's own doc carries
+the token (`A06c §4.2`). `packages/core/src/planConventions.test.ts` enforces this over `plans/` and
+`docs/` — a lettered workstream, a bare `E3`, an `A08/B4`, or a single-digit `### D2 —` heading in
+a phase doc fails the build.
 
 ### Registers
 
@@ -86,7 +90,7 @@ reacted to.
 
 The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted
 or relocated from before it, and the archived register — so a document that says `A06e` may be
-quoting something that originally said `A06e`. Only three things kept the old spellings on purpose:
+quoting something that originally said `N6e`. Only three things kept the old spellings on purpose:
 this table's *Old* column, [`features/phase-numbers.md`](./features/phase-numbers.md), and lowercase
 literals (`feat(n6e):` scopes, branch names, campaign ids), which name things that existed under
 those names.
@@ -107,11 +111,13 @@ those names.
 
 ## Reading old history
 
-Everything before the renumbering — 59 pull requests, every commit message, every branch name, the
-import-run rows in the admin UI — uses the old names, and the commit history is deliberately **not**
-rewritten (it would strip the signed merge commits). PR titles and descriptions get rewritten in
-the renumbering pass and carry a banner pointing here; their branch names and commit lists never
-change. This table is how to read them.
+Everything before the renumbering — the 63 pull requests before the rename PR (#64), every commit
+message, every branch name, the import-run rows in the admin UI — used the old names, and the
+commit history is deliberately **not** rewritten (it would strip the signed merge commits). PR
+titles and descriptions *were* rewritten (2026-09-17, `gh pr edit`) and carry a banner pointing
+here; their branch names and commit lists never change. Two PRs were left as written
+because the old names are their subject: #60 (the crosswalk) and #64 (the rename). This table is
+how to read the rest.
 
 | Old | New | PRs | Doc | Note |
 | --- | --- | --- | --- | --- |
@@ -140,16 +146,16 @@ change. This table is how to read them.
 | N6d | A06d | #43 | [phases/A06d-body-access-points.md](./phases/A06d-body-access-points.md) | |
 | N6e, "N6e PR 0–3" | A06e, A06e-0 … -3 | #44–#47 | [phases/A06e-satellite-imagery.md](./phases/A06e-satellite-imagery.md) | PR 4/5 unbuilt |
 | N6f | A06f | #44, #56 | [phases/A06f-no-public-access.md](./phases/A06f-no-public-access.md) | |
-| N6g | *(vacant)* | — | [phases/A06g-imagery-research.md](./phases/A06g-imagery-research.md) | never built → `backlog/imagery-research.md` |
+| N6g | A06g *(vacant)* | — | [phases/A06g-imagery-research.md](./phases/A06g-imagery-research.md) | never built; withdrawn ⚫, the doc keeps the number |
 | N6h, "N6h PR 1–5" | A06h, A06h-1 … -5 | #48–#51, #54 | [phases/A06h-weather-detail.md](./phases/A06h-weather-detail.md) | **not** A06g — gaps stay |
 | N7, N7-2, N7-3 | A07a, A07a-2, A07a-3 | #39, #40, #41 | [phases/A07a-unified-corpus.md](./phases/A07a-unified-corpus.md) | |
-| N7b | A07b | — | [phases/A07b-corpus-by-request.md](./phases/A07b-corpus-by-request.md) | branch `phase-n7b-corpus-lifecycle` |
+| N7b, "N7b PR 1–2" | A07b, A07b-1, A07b-2 | #61, #63 | [phases/A07b-corpus-by-request.md](./phases/A07b-corpus-by-request.md) | branches `phase-n7b-corpus-lifecycle`, `phase-n7b-requests` |
 | — | A07c | — | [phases/A07c-body-corrections.md](./phases/A07c-body-corrections.md) | scoped under the new scheme; no old name |
 | N8, "N8 PR 1–4" | A08, A08-1 … -4 | #52, #53, #55, #57 | [phases/A08-notification-pipeline.md](./phases/A08-notification-pipeline.md) | |
 | N9, "N9 PR 1–2" | A09, A09-1, A09-2 | #58, #59 | [phases/A09-subareas-as-places.md](./phases/A09-subareas-as-places.md) | |
 
-Workstreams were letters before the renumbering: `§1` / `Workstream 1` / a bare `§1.3` in a code
-comment all mean what is now `§1` / `§1.3`; `§2.4` is `§2.4`, and so on through `H` = `§8`. (Phase 08's
+Workstreams were letters before the renumbering: `§A` / `Workstream A` / a bare `A3` in a code
+comment all mean what is now `§1` / `§1.3`; `B4` is `§2.4`, and so on through `H` = `§8`. (Phase 08's
 "A→B→C pipeline" are stage names, not workstreams, and are unchanged.)
 
 Lowercase tokens are always literals and were never rewritten: `feat(n6e):` is the scope a commit

@@ -326,7 +326,7 @@ season of evidence. `seasonsObserved` is a **set**, derived per member from `sea
 the field A05a chose for hazard season, because it is a clock nobody can move. Without this rule, one
 enthusiastic week becomes "a pattern".
 
-(B4's auto-merge reduces how often this rule has to do the work, but never replaces it: unmerged
+(§2.4's auto-merge reduces how often this rule has to do the work, but never replaces it: unmerged
 near-misses at 30 m still need collapsing to one season.)
 
 ### §3.2 — What is excluded from a cluster

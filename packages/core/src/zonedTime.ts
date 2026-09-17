@@ -87,7 +87,7 @@ export function zonedInstant(
  * Whether this runtime knows `timeZone` — `Intl` throws a `RangeError` for anything it doesn't. The
  * runtime's own table is the one authority on what counts as a zone, and every helper in this file
  * would throw on a string it rejects, so a zone that crosses a trust boundary (a client writing
- * `profiles.timezone`, A08/C) is checked here before it can become the argument that throws later.
+ * `profiles.timezone`, A08 §3) is checked here before it can become the argument that throws later.
  */
 export function isKnownTimeZone(timeZone: string): boolean {
   if (timeZone.length === 0 || timeZone.length > 64) return false;

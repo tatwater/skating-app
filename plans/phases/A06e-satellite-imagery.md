@@ -126,8 +126,8 @@ Québec past z10" trap, the attribution swap (both credits simply coexist), and 
 persisted per-device preference, because a per-body reveal is something you *do*, not a mode you live
 in.
 
-**What it costs:** you can no longer pan the Northeast in aerial to hunt for access. That was A2's
-original pitch in the 07-31 scoping. The founder accepted the trade explicitly.
+**What it costs:** you can no longer pan the Northeast in aerial to hunt for access. That was the aerial
+tier's original pitch in the 07-31 scoping (its §1.2 then; today's §1.2 is different content). The founder accepted the trade explicitly.
 
 **Where the control lives** *(founder, 2026-08-21)*: only where a single body is selected **and the map
 is visible** — the route carries a body id and the drawer is not expanded to full screen. There is no
@@ -190,7 +190,7 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 | **Sub-area outlines + labels** | drawn | **drawn, behind a flag** | Founder call reversed 2026-08-21b — *"I'm open to keeping [them] drawn… let's make that easy to turn on and off so we can play around with it."* |
 | **Hazards** | drawn | **user's choice, default ON** | Founder call, 2026-08-21c — a toggle inside the reveal. See below. |
 | **Skate paths** | drawn | **not drawn** | Founder call — *"different user intents."* The least contentious half: a track is a record, not a warning. |
-| **Put-ins / parking / toilets / approach** | drawn | **drawn** | They're inside the mask *by construction* — that's what the union in A1 is for |
+| **Put-ins / parking / toilets / approach** | drawn | **drawn** | They're inside the mask *by construction* — that's what the union in §1.1 is for |
 | **Place labels** | from the vector style | **kept** | The base map never changed, so this is free |
 | Attribution | OSM/ODbL, on-map control | **drawer credits + an on-map ⓘ** | §1.4 |
 
@@ -261,7 +261,7 @@ that a clearing is a parking lot; not enough to count spaces, and a footpath und
 `access-control-allow-origin: *`. It is an **ImageServer**, not a tile cache, so there is no `/tile/`
 endpoint; MapLibre's **`{bbox-epsg-3857}`** token makes `exportImage` a drop-in raster source. Verified
 returning a 256×256 JPEG at a z18 extent over Burlington, in which individual cars are countable —
-which is the A5 use case exactly.
+which is this tier's use case exactly.
 
 **The trade:** dynamic rendering, no CDN. Courtesy load matters much more here than against a cached
 service, which is why §2.3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
@@ -336,13 +336,13 @@ and it turns out to be both cheaper and simpler:
 - **Read the open COGs directly** (Copernicus S3 / AWS Earth Search STAC) instead of Sentinel Hub's
   metered Process API. The five states are **~20–25 granules**; at ~6 passes/month that's ~150 granule
   reads a month, and we cut *every body in the corpus* out of them. **The 10,000-request/month quota
-  stops being the ceiling at all** — which retires the entire §3.2/C3 quota argument from the 07-31 doc.
+  stops being the ceiling at all** — which retires the entire §3.2/§3.3 quota argument from the 07-31 doc.
 - **Mask first, then store.** Water plus buffers is roughly 5% of the region's area, so masking shrinks
   each pass ~20× — on the order of **40 MB per pass, ~1.2 GB per season**. Pennies in R2.
 - **PMTiles, because we already have the whole pipeline**: `scripts/basemap/upload-r2.sh`, the
   bathymetry archive's shape, and a `pmtiles://` reader running natively on both clients.
 - **Scrubbing is then swapping an archive URL.** No per-body fetch, no image source, no tile math, and
-  the per-body mask and feather are already baked in (A2).
+  the per-body mask and feather are already baked in (§1.2).
 
 **This needs infrastructure we do not have.** Cutting and rendering granules is a GDAL-class batch job:
 not Convex, not a Vercel function. Costed 2026-08-21 against both providers; **Fly** is the
@@ -456,7 +456,7 @@ gate that misses freeze-up, not an early one that wastes compute.
 
 ### §3.4 — The scrubber, and the honesty that rides with it
 
-**The date is the content, not a caption** (D84, C1 of the original doc, and D3 behind both). A
+**The date is the content, not a caption** (D84, §3.1 of the original doc, and D3 behind both). A
 timeline invites inference far harder than a static image does, so every frame carries its own date and
 its own cloud caveat — they travel with the frame, they are not furniture around the control.
 
@@ -468,7 +468,7 @@ its own cloud caveat — they travel with the frame, they are not furniture arou
 **A granule edge can bisect a water body**, and when it does neither frame is wrong — they are two
 photographs of two halves, taken on different days. The tempting fix is to pick one and crop, which
 would present a single date over ground that was observed twice, weeks apart. That is precisely the
-inference C4 exists to prevent, and it fails silently: nothing on screen would say the eastern half is
+inference §3.4 exists to prevent, and it fails silently: nothing on screen would say the eastern half is
 a fortnight older than the western.
 
 So both render, with a hairline between them and each date on its own side. **The producer already
@@ -645,7 +645,7 @@ polygon needs to see past its current edge, which is the opposite of what a skat
 
 ---
 
-## Workstream 0 — Getting the way in into the app ✅ **BUILT 2026-08-21**
+## §0 — Getting the way in into the app ✅ **BUILT 2026-08-21**
 
 *Scoped as a one-line prerequisite. It became a workstream because the window it depended on had
 already closed, and because the founder took the second half of it at the same time.*
@@ -825,12 +825,12 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
 
 **PR 1 — the reveal, web only. Zero infrastructure.** ✅ **Merged 2026-08-23** (PR #45).
 
-1. **A1 + A2 against NAIP** — mask, inverse fill, hard edge. Where the design risk lives, and entirely
+1. **§1.1 + §1.2 against NAIP** — mask, inverse fill, hard edge. Where the design risk lives, and entirely
    testable before anything is user-visible.
-2. **B1 + B2** — the 0.3 m source and its date stamp. The moment the feature exists.
-3. **A3 + the control** — the reveal, scoped to the detail view; then rings for the feather.
-4. **E** — the admin editor, unmasked. Cheap once 1–3 land, and where operators will stress it.
-5. **D** — the deep link and the `satelliteImagery` machinery.
+2. **§2.1 + §2.2** — the 0.3 m source and its date stamp. The moment the feature exists.
+3. **§1.3 + the control** — the reveal, scoped to the detail view; then rings for the feather.
+4. **§5** — the admin editor, unmasked. Cheap once 1–3 land, and where operators will stress it.
+5. **§4** — the deep link and the `satelliteImagery` machinery.
 
 Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while A06d is
 still settling**, which is the point of putting the seam here.
@@ -955,7 +955,7 @@ everything user-facing that reads what PR 4 derived. This is A06g's content, and
 > - **The 2–4 usable frames a month problem is sharper here than anywhere else** (§3.1). "Just reached"
 >   implies a transition we watched happen, and with a fortnight of cloud between frames we may only
 >   be able to say "was open on the 3rd, was frozen by the 18th". The honest phrasing has to survive
->   that, and the frame's own date travels with the claim (C4).
+>   that, and the frame's own date travels with the claim (§3.4).
 > - **A notification is a decay-sensitive claim in a way a chart is not.** A chart is read now and
 >   understood as history; a push arrives once and is remembered. D56's weather-driven decay should
 >   gate whether a freeze-up notice is still worth sending by the time we could send it.

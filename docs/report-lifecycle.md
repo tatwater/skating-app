@@ -122,7 +122,7 @@ Three reads are deliberately **exempt**, each for its own reason:
 
 ---
 
-## Conditions auto-fill (Phase 10 §07-1)
+## Conditions auto-fill (Phase 10 §7a)
 
 A report's observed `conditions` (air temp, wind, sky, precip) can be **pre-filled** from
 Open-Meteo at the skate time and location (`packages/core/src/weatherConditions.ts`), so a

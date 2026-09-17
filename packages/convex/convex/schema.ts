@@ -168,7 +168,7 @@ export default defineSchema({
     excludeTracksFromAggregate: v.optional(v.boolean()),
     notificationPrefs, // every type toggleable (D16)
     /**
-     * The device's IANA timezone, refreshed on app open (A08/C). Only the 8pm digest reads it: the
+     * The device's IANA timezone, refreshed on app open (A08 §3). Only the 8pm digest reads it: the
      * hour is 20:00 for everyone, the *zone* is per person. The device's zone rather than one
      * derived from `homeCoord`, because the digest is a "when will this person look at their phone"
      * question, and someone travelling is exactly the case where the device is right. Coarse enough
@@ -421,7 +421,7 @@ export default defineSchema({
     linkedReportId: v.optional(v.id('reports')),
     detectedAt: v.number(),
     /**
-     * Another row that is the better copy of this same skate (A08/B4a) — a watch and an aggregator
+     * Another row that is the better copy of this same skate (A08 §2.4a) — a watch and an aggregator
      * both saw one session, and the ladder in core's `activityDedup.ts` picked the other one. Never
      * deleted: the record that two devices saw it is cheap, and a deletion is unrecoverable if the
      * ladder was wrong. A superseded row is skipped by the prompt sweep and the unreported-skates
@@ -437,11 +437,11 @@ export default defineSchema({
     .index('by_user', ['userId'])
     .index('by_provider_activity', ['provider', 'providerActivityId']) // unique dedup (D24)
     .index('by_water_body', ['waterBodyId']) // per-lake skate history + bounty eligibility (D44)
-    // The `activity_detected` sweep (A08/B4): `eq('pending').lte(detectedAt, now − settle)`. Both
+    // The `activity_detected` sweep (A08 §2.4): `eq('pending').lte(detectedAt, now − settle)`. Both
     // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
     // row leaves this range the moment it's been asked about.
     .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
-    // The sweep's dedup candidates (A08/B4a, PR #53 review): a same-skate copy starts within
+    // The sweep's dedup candidates (A08 §2.4a, PR #53 review): a same-skate copy starts within
     // `ACTIVITY_DEDUP_START_WINDOW_MS` of the due row, so the read is a start-time window per due
     // row. `by_user` orders by *insertion*, and "the 50 most recently inserted" is the wrong set —
     // an already-prompted copy behind fifty later syncs fell out of it and the skate was asked
@@ -699,7 +699,7 @@ export default defineSchema({
      * area floor (A07b).
      *
      * A statement about **membership**, and deliberately nothing else. Not `curatedBoost`, which is a
-     * D2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
+     * A06c §4.2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
      * silently changing what survives a prune, which is `externalId` doing three jobs all over again.
      * And not "has this been skated?", even though that signal is durable (D62's second amendment
      * keeps published observations forever, redacting only what a person typed) and is already
@@ -1157,7 +1157,7 @@ export default defineSchema({
     // first would have taken search down for every row the backfill had not yet reached.
     .searchIndex('search_name', { searchField: 'searchText' }),
 
-  // Which bodies the A06b contour tileset actually draws lines for (A06c-1 / D2).
+  // Which bodies the A06b contour tileset actually draws lines for (A06c-1 / A06c §4.2).
   //
   // **A side table rather than a flag on `waterBodies`, because contour coverage is a property of
   // the TILESET, not of the body.** Re-tiling replaces ~2,000 rows here instead of migrating 116,070,
@@ -1483,7 +1483,7 @@ export default defineSchema({
      * `lib/validators`) is what `writeForecastCache` accepts too.
      */
     hours: v.array(forecastHour),
-    // ⚠ Written by nothing since the planner (A06h D): the strip line is now derived on the client
+    // ⚠ Written by nothing since the planner (A06h §4): the strip line is now derived on the client
     // from `hours`. Kept optional so the last pre-planner hour of rows validates on push; the
     // hourly prune removes them and the fields can be dropped in any later schema pass.
     precipStartsMs: v.optional(v.number()),
@@ -2026,7 +2026,7 @@ export default defineSchema({
     // hide a marker, we never scrub location. Default true; optional ⇒ migration-free.
     showPutIn: v.optional(v.boolean()),
     // No visibility field — every report is public (D13). Minors can't create reports (D41).
-    // Client-generated dedup key for the mobile offline draft queue (F2/D30): a draft carries one
+    // Client-generated dedup key for the mobile offline draft queue (Phase 02a §6.2/D30): a draft carries one
     // key from capture, so a reconnect flush whose ack was lost can retry `reports.create` and get
     // the same report back instead of a duplicate. Optional ⇒ migration-free (web/online omits it).
     idempotencyKey: v.optional(v.string()),
@@ -2037,7 +2037,7 @@ export default defineSchema({
     // boost-only) and NEVER hides the report (D3). Absent ⇒ no known conflict. **Symmetric** — both sides
     // of a disagreement carry it.
     conflicting: v.optional(v.boolean()),
-    // The escalation half of the contradiction signal (Phase 10 / D56 §07-2) — set when this report is the
+    // The escalation half of the contradiction signal (Phase 10 / D56 §7b) — set when this report is the
     // weather-unexplained, **un-corroborated minority** against a *more-corroborated* opposing report. Drives
     // the author's private `contradictionCount`; recomputed each settle, so a report that later earns
     // corroboration clears it (self-correcting, order-independent — never the corroborated majority). NOT a
@@ -2085,7 +2085,7 @@ export default defineSchema({
     // and "what ice was skated today" are different questions and the photo-orphan sweep needs the
     // former (a photo is attached at create, whatever the skate time claims).
     .index('by_created_at', ['createdAt'])
-    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
+    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 02a §6.2/D30)
 
   /**
    * **A report's bay memberships, one row per (report, bay)** (A09 / D175) — the indexable copy of
@@ -2599,7 +2599,7 @@ export default defineSchema({
     occurrences: v.optional(v.number()),
     lastOccurrenceAt: v.optional(v.number()),
     supersedesFlagId: v.optional(v.id('contentFlags')),
-    // Who filed it (A08/B3): a person, or the system crossing a threshold. Absent on rows from before
+    // Who filed it (A08 §2.3): a person, or the system crossing a threshold. Absent on rows from before
     // the field and read as `auto` — the fail-quiet direction for the one reader that cares
     // (`content_flag_resolved` notifies only `user` flaggers). See `FLAG_ORIGINS`.
     origin: v.optional(literals(FLAG_ORIGINS)),
@@ -2830,7 +2830,7 @@ export default defineSchema({
    * the payloads were typed carry older shapes, nobody has ever seen them (there was no reader), and
    * the season purge retires them; a validator here would have forced a migration for the privilege.
    *
-   * Retention is the season boundary (A08/A5): `storageHygiene.purgeLastSeasonNotifications` deletes
+   * Retention is the season boundary (A08 §1.5): `storageHygiene.purgeLastSeasonNotifications` deletes
    * rows created before the current season's start, read or not, daily off `by_created_at`. Rows
    * otherwise die only with the account (`accountDeletion.ts`). The inbox is not an archive.
    */
@@ -2851,7 +2851,7 @@ export default defineSchema({
     // sparse and `undefined` sorts first — but that trap bites **range** bounds (the A03 finalize
     // bug), and this is an **equality**, which is the shape that behaves.
     .index('by_user_read', ['userId', 'readAt'])
-    // The season purge (A08/A5): `lt(createdAt, seasonStart)` across every user. `createdAt` is
+    // The season purge (A08 §1.5): `lt(createdAt, seasonStart)` across every user. `createdAt` is
     // required, so the range is honest.
     .index('by_created_at', ['createdAt']),
 

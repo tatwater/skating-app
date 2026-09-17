@@ -38,12 +38,12 @@ and a Clerk JWT template named `convex`).
   admin **`setCuratedBoost`** (recompute score + re-index + audit, D49), `listInViewport`
   (**two-tier bbox-intersection** viewport query with the optional D49 `zoom` prominence filter —
   see below), `searchByName` (map search box), public **`resolveBodyForCoord`** (GPS→lake for the
-  F2 offline-draft flush: the same two-tier lookup + the shared buffered `nearestBodyForPoint`,
+  Phase 02a §6.2 offline-draft flush: the same two-tier lookup + the shared buffered `nearestBodyForPoint`,
   ~300 m parking buffer), `listPendingReview`.
 - **`convex/reports.ts`** — the read/write loop (D3/D22–D25/D41): `create` (`requireProfile`,
   re-enforces `@skating/core` `validateReportInput`, rejects minors, resolves the merged
   survivor, defaults `point` to the body centroid, server-stamps `reportTime`; **idempotent on an
-  optional `idempotencyKey`** so a mobile offline-flush retry can't duplicate — F2/D30),
+  optional `idempotencyKey`** so a mobile offline-flush retry can't duplicate — Phase 02a §6.2/D30),
   `listByWaterBody` (feed by **skate time** desc, moderation + block filtered via `canViewReport`),
   `get` (moderation-checked), `update` (author-only last-write-wins).
 - **`convex/photos.ts`** — `generateUploadUrl` (auth'd storage upload URL), `create` (records a

@@ -27,7 +27,7 @@
  *    So the courtesy problem is real but it is not the one that was written down: the cost is not
  *    "every request is compute", it is *"every request we make is compute **because we never repeat a
  *    URL**"*. That is why requests are snapped to a fixed grid — see `imageryTiles`.
- * 3. **The acquisition date is queryable**, which is what lets B2 state a date rather than hedge.
+ * 3. **The acquisition date is queryable**, which is what lets A06e §2.2 state a date rather than hedge.
  *
  * An earlier build drove this through MapLibre's `{bbox-epsg-3857}` raster template, one tile per
  * request. That is gone: clipping a photograph to a lake means owning its alpha channel, and owning

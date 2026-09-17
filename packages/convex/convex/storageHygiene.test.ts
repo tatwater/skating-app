@@ -177,7 +177,7 @@ describe('pruneWeatherCache', () => {
   });
 });
 
-describe('purgeLastSeasonNotifications (A08/A5)', () => {
+describe('purgeLastSeasonNotifications (A08 §1.5)', () => {
   test('deletes every row from before the current season’s start, read or not, and nothing newer', async () => {
     const t = harness();
     const userId = await seedUser(t, 'u');
@@ -605,7 +605,7 @@ describe('expireDepartedPhotos (D66)', () => {
   });
 });
 
-describe('pruneForecastCache (A06c/B5b, self-review 2026-08-10)', () => {
+describe('pruneForecastCache (A06c §2.5b, self-review 2026-08-10)', () => {
   const HOUR = 3_600_000;
   function row(forecastBucketMs: number) {
     return {

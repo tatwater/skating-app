@@ -38,7 +38,7 @@ import { loadBlockedAuthorIds } from './lib/reportVisibility';
  * report must exist + be moderation-`visible`; validate the body; enforce the 2-level cap (D25) — a
  * reply's parent must exist, belong to the same report, and be **top-level** (the client flattens
  * deeper replies via `resolveReplyParentId`, and we re-enforce here). Then notify the report's author
- * and, for a reply, the parent comment's author (A08/B1).
+ * and, for a reply, the parent comment's author (A08 §2.1).
  */
 export const create = mutation({
   args: {
@@ -93,7 +93,7 @@ export const create = mutation({
     // Bump the author's denormalized comment counter (born visible) — see contributionCounts.ts.
     await bumpContributionCount(ctx, profile._id, 'commentCount', 1);
 
-    // `report_commented` (A08/B1, D21 finally delivered): the report's author hears about a comment,
+    // `report_commented` (A08 §2.1, D21 finally delivered): the report's author hears about a comment,
     // and a reply's parent author hears about the reply. Both ride the settle queue (D169) — a busy
     // report's burst becomes one "3 new comments", and a comment deleted or hidden inside the window
     // never sends. Never-self, prefs, deletion state and blocks are all applied in `enqueue`. The

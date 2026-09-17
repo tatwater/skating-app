@@ -750,9 +750,9 @@ describe('access-point photos (Workstream 4 / D88)', () => {
   });
 });
 
-describe('D2 richness — the term this phase unblocks (D143)', () => {
+describe('A06c §4.2 richness — the term this phase unblocks (D143)', () => {
   /**
-   * `backfillCells` has been held since 2026-08-02 waiting for this phase, because D2's put-in terms
+   * `backfillCells` has been held since 2026-08-02 waiting for this phase, because A06c §4.2's put-in terms
    * are the strongest static signals in the richness model and nothing had ever written a put-in row.
    * These are that rung assignment, pinned.
    *

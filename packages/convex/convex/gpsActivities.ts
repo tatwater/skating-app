@@ -278,7 +278,7 @@ export const setPromptState = mutation({
 });
 
 /**
- * How long a recorded skate sits `pending` before the sweep asks about it (A08/B4). Long enough that
+ * How long a recorded skate sits `pending` before the sweep asks about it (A08 §2.4). Long enough that
  * the recorder's own stop-prompt and a same-day flush from the offline queue get first go, and that
  * a second source of the same skate (a watch syncing when it feels like it) has usually arrived —
  * the dedup below needs both copies in the table before it can pick one. Same idea as the D169 settle
@@ -301,8 +301,8 @@ const PROMPT_SWEEP_CAP = 50;
 const CANDIDATE_WINDOW_CAP = 50;
 
 /**
- * The `activity_detected` producer (A08/B4): find skates still `pending` after the delay, dedup each
- * user's batch first (B4a), and file one notification per winner — "You skated on Lake Morey on
+ * The `activity_detected` producer (A08 §2.4): find skates still `pending` after the delay, dedup each
+ * user's batch first (A08 §2.4a), and file one notification per winner — "You skated on Lake Morey on
  * Tuesday. Add a report?" — flipping the row to `prompted` so it fires once.
  *
  * **Why this exists.** `ingestTrack` inserts every recorded track as `pending`, and the recorder
@@ -372,7 +372,7 @@ export const sweepUnpromptedActivities = internalMutation({
       // A loser the user had already been asked about (`prompted`) or had waved off (`dismissed`)
       // settles the *skate*, not the row: the winner inherits that answer, so a phone copy that
       // flushes a day after the watch copy was prompted doesn't ask a second time about the same
-      // afternoon — the double prompt B4a exists to prevent.
+      // afternoon — the double prompt A08 §2.4a exists to prevent.
       const inherited = new Map<Id<'gpsActivities'>, 'prompted' | 'dismissed'>();
       for (const { loser, winner } of result.superseded) {
         const loserId = loser.id as Id<'gpsActivities'>;
@@ -463,7 +463,7 @@ export const sweepUnpromptedActivities = internalMutation({
         // A winner that isn't due yet waits for a later tick — unless a loser handed it an answer,
         // which has to land *now*: that loser was superseded above and is out of the candidate set
         // from here on, so an answer not applied on this tick is gone, and the winner would be asked
-        // about a skate the person already answered for (the very double prompt B4a exists to stop).
+        // about a skate the person already answered for (the very double prompt A08 §2.4a exists to stop).
         if (answered === undefined && !dueIds.has(id)) continue;
         const row = await ctx.db.get(id);
         // Re-read: a link or a dismissal may have landed above, or between the scan and here.
@@ -553,12 +553,12 @@ const MAX_SUPERSESSION_HOPS = 8;
  * activity doesn't point back to, and the aggregate layer's privacy predicate reads the *activity*
  * side (`linkedReportId`), so a missing back-link would silently drop a track from the map.
  *
- * **A superseded copy hands the link to its winner** (A08/B4a), the same move `sweepUnpromptedActivities`
+ * **A superseded copy hands the link to its winner** (A08 §2.4a), the same move `sweepUnpromptedActivities`
  * makes when it finds a linked loser — only here the order is reversed: the sweep ran first and the
  * link arrives after. The report form can hold an activity id for hours (drive home, fill it in), and
  * the hourly sweep may have picked a better copy of that skate in between. Linking the loser would
  * leave the winner un-linked and `pending`, to be prompted later about a skate already reported — the
- * double prompt B4a exists to stop — and the skate off the aggregate layer, which skips superseded
+ * double prompt A08 §2.4a exists to stop — and the skate off the aggregate layer, which skips superseded
  * rows. Redirecting keeps `reports.activityId` and `linkedReportId` pointing at each other, which is
  * the invariant this helper exists for.
  */

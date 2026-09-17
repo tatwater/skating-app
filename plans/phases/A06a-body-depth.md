@@ -584,10 +584,10 @@ exists to prevent. The current inventory of what wants to ride a pass:
 
 | A06c item | Which pass | Why it rides |
 |---|---|---|
-| **A1 elevation** | **this one** — the depth run | Per-centroid third-party lookup; identical shape to the depth join, and it writes to the same rows. |
+| **A06c §1.1 elevation** | **this one** — the depth run | Per-centroid third-party lookup; identical shape to the depth join, and it writes to the same rows. |
 | **§1.3 shoreline length** | the **canonical water re-import** (`scripts/etl`), not this one | It must be measured on the *pre-simplification* geometry, which only the water ETL holds (see A06c §1.3). |
-| **A2 long axis / A4 fetch profile** | the canonical water re-import | Pure geometry, computed in `transform.ts` alongside `surfaceAreaSqM`. |
-| **A5 `regionStats`** | after both | Deciles are computed *from* the loaded values, so it is a consequence of the runs, not a rider on one. |
+| **A06c §1.2 long axis / A06c §1.4 fetch profile** | the canonical water re-import | Pure geometry, computed in `transform.ts` alongside `surfaceAreaSqM`. |
+| **A06c §1.5 `regionStats`** | after both | Deciles are computed *from* the loaded values, so it is a consequence of the runs, not a rider on one. |
 
 So there are **two** passes in flight, not one, and they carry different cargo. This gate covers the
 depth pass; the geometry stats ride the other and are not blocked by it.
@@ -595,17 +595,17 @@ depth pass; the geometry stats ride the other and are not blocked by it.
 > **✅ GATE CLEARED 2026-08-02.** A06c-1 is built: `elevationM` / `elevationSource` are on the schema,
 > and `scripts/lake-depth`'s `load-elevation` writes them in the same pass as the depth join. The
 > founder's conservative phrasing (*"until A06c is complete"*) was honoured by building all of A06c-1
-> before the run rather than only A1 — and it earned its keep, because **A4b (the winter wind rose)
+> before the run rather than only A06c §1.1 — and it earned its keep, because **A06c §1.4b (the winter wind rose)
 > and `interiorPoint` both turned out to want a pass too**, neither of which existed when the gate
-> was written. The inventory table below was right that A1 would not be the only rider; it was
+> was written. The inventory table below was right that A06c §1.1 would not be the only rider; it was
 > incomplete about which.
 >
 > **The run order that replaced it** — see A06c's *§What the A06c-1 build found*: canonical re-import
 > → **this depth + elevation run** → `regionStats:recompute` → `wind-climate load` → *(A06c-2's data)*
 > → `backfillCells`. That last step is **one pass at the very end of A06c as a whole** (founder call,
 > 2026-08-02), not once per sub-phase: it walks all 116,070 bodies and rebuilds every A01 cell row, and
-> running it twice is exactly the duplicated work D2 was folded into A06c to avoid. It is also not
-> optional — `importCanonical` resets `displayScore` to area + boost, so the D2 re-score has to come
+> running it twice is exactly the duplicated work A06c §4.2 was folded into A06c to avoid. It is also not
+> optional — `importCanonical` resets `displayScore` to area + boost, so the A06c §4.2 re-score has to come
 > after everything it reads.
 
 **When the gate lifts:** the moment A06c's §1.1 loader can write `elevationM` in the same invocation. At

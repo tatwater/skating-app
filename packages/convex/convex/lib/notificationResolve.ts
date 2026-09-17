@@ -1,5 +1,5 @@
 /**
- * The inbox resolver (A08/A2): stored rows → `NotificationView`s a client can render.
+ * The inbox resolver (A08 §1.2): stored rows → `NotificationView`s a client can render.
  *
  * A notification row is ids in a `v.any()` payload. Rendering "Ellie found your report on Lake Morey
  * helpful" means resolving those ids, and the resolution has to survive the content having changed

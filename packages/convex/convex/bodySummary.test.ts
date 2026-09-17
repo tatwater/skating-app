@@ -286,7 +286,7 @@ describe('Greptile P1 regressions (2026-08-10)', () => {
     await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
 
     const summary = await summaryOf(t, waterBodyId);
-    // No reports, and its one hazard is a tombstone ⇒ nothing to say ⇒ no card (E3).
+    // No reports, and its one hazard is a tombstone ⇒ nothing to say ⇒ no card (A06c §5.3).
     expect(summary?.topHazardTypes).toEqual([]);
     expect(summaryHasCard(summary ?? undefined)).toBe(false);
   });

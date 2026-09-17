@@ -170,7 +170,7 @@ which is where it belongs.
 is asking for a water body they *want* to skate. Protect it only by use, and the next prune deletes it
 before anyone can use it.
 
-The second reason is the one running through all of A07a: **prominence gets tuned.** D2 weights,
+The second reason is the one running through all of A07a: **prominence gets tuned.** A06c §4.2 weights,
 `curatedBoost`, A06c's profile richness. The moment somebody re-weights prominence they would be
 silently changing what survives a prune — `externalId` doing three jobs, again.
 

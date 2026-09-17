@@ -1,6 +1,13 @@
 # Next-gen — one phase-naming scheme: what a rename actually touches, and the traps in it
 
-> **✅ The tree is renamed (2026-09-17, PR 2 of 3).** What remains is step 2b — `gh pr edit` over the pre-pass PRs with the banner — and it runs after that PR merges. This doc keeps the old names deliberately: it is the record of the mapping.
+> **✅ Done (2026-09-17).** The tree was renamed in PR #64 (step 2); step 2b — `gh pr edit` over
+> PRs #1–#63 with the banner — ran the same night, from a throwaway script that reused the token
+> table, dry-run first (#2, #53, #54), verified idempotent, and re-fetched to check: no old token
+> survives outside #60 and #64, which were left as written because the old names are their subject.
+> Step 3 (the roadmap restructure) had already landed as PR #62 *before* step 2, so the "written
+> once, in the new names" argument for its ordering went unused; what it left over (the root
+> `README.md` refresh, the prose that PR #64's token pass turned on itself in `plans/README.md`)
+> went into the 2b PR. This doc keeps the old names deliberately: it is the record of the mapping.
 >
 > **Scoped 2026-09-16 (after N9 merged).** Founder: the numbering has
 > drifted through three schemes — pre-build docs `00–08`, roadmap phases `1–10` with `.5` splits,
@@ -335,6 +342,58 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    founder prunes it, not a PR.
 
 ## How to run it (three PRs, in this order)
+
+*As run: (1) = PR #60; (3) = PR #62, which jumped the queue because the n7b branch was still
+landing; (2) = PR #64; (2b) = the PR pass plus a small tree PR. What the PR pass found that the plan
+didn't say: `Phases 0–2.5` ranges, `Phase-2.5` hyphenated, bare `PR 7b` / `2.5 runbook`, and
+workstream letters in PR text with two meanings (`F2` = 02a's offline queue in #14/#16/#20, A06c's
+run history in #42) — each mapped by hand from context, like the tree's own hand-checked shapes.*
+
+*What the 2b tree pass found that PR #64 had left (all fixed in the 2b PR, ~400 sites, comments and
+test names only, every suite green): the token pass only renamed a workstream letter **beside** a
+phase token, so bare refs survived everywhere else — `E3`, `B4a`, `F2` (~240), the slash forms
+`A08/B4`, `A06c/E`, `D84/C4`, `§2.1/B2` (~150, the lookbehind excluded `/`), a bare letter after a
+token (`since A06h D`), and 02a's own `### A.`–`### H.` headings. Each bare ref was resolved to its
+phase by file (the same letter means different things: `F2` is 02a's offline queue under
+`apps/mobile/` and A06c's run history in `WaterBodyTimeline.tsx`), spelled `§5.3` inside its own
+phase doc and `A06c §5.3` anywhere else. One collateral of the token pass itself: Phase 10's
+workstreams `§7a`/`§7b` had been caught by the `7a → 07-1` rule and read `§07-1`; restored.
+The pre-PR review then caught what that pass's own boundary had excluded: the possessive (`E3's`,
+`B4a's`, `F1's` — ~40 sites, 9 in code), the single letters left in half-converted lists (`§2.1,
+§2.2, B3.`; `4. **C** —`), and A08 §4's `### D1`–`### D4` sub-headings, which collided with
+decisions D1–D4 (`D3 — Fail-open` read as the safety invariant) and are now `§4.1`–`§4.4`.
+Two things are deliberately still lettered: A06h's own workstream definitions (`**D — The
+forecast panel**` and the doc's prose, mid-flight on its PR 5 branch — the code now cites
+`A06h §4`/`§8`, which the doc's "Workstream 4"/"§8" lines answer but its headings do not), and
+A06e's one citation of its superseded 07-31 layout (*"that was `A2`'s original pitch in the 07-31
+scoping"*), where today's §1.2 is different content — the two beside it that name "the original
+doc" were converted by rule and carry the same caveat.*
+
+*`D2` was two things — resolved (founder call, 2026-09-17).* Decision D2 is "Convex as the app
+database"; A06c's *workstream* D2 (profile richness feeds prominence) was cited as `D2` in ~70
+places across code and docs, and `01-decisions.md` carried a "D2 amendment" that amended the
+*workstream's* weights table, not the decision. Now: the workstream is `A06c §4.2` (69 cites
+rewritten by hand, the six real-decision cites — the Convex client, the env files — left alone), and
+the amendment is **D184**, moved to the register's end with a provenance line. The measurement that
+settled the "should we audit every phase doc?" question: only seven docs ever used lettered
+workstreams, the A–G letters were already at zero, and every other single-digit `D1`–`D9` cite in
+those docs was the real decision — the collision was one workstream, not a class. What keeps it that
+way is `packages/core/src/planConventions.test.ts`: lettered workstreams, bare items, slash forms
+and single-digit `D` headings in phase docs fail the build.
+
+*Sign-off checks (2026-09-17), beyond the sweeps: old tokens in the file types the sweeps skipped
+(`.json`/`.yml`/`.github`/env) — zero; false `§` conversions where the letter was an Option, Tier,
+Plan or Appendix — zero; the original letter set of every lettered doc against its `§` headings —
+all contiguous from A, so position = number held; a relative-link + anchor checker (GitHub slug
+rules) on `main` vs the branch — net −1 (the phantom `#d2--display-prominence` link), one anchor the
+sweep had broken fixed, and the 84 that remain are pre-existing: 80 are the `[D3](#d3)` short-form
+anchors inside `01-decisions.md`, which never resolved (the slug is `#d3--safety-first…`), plus D90's
+`×` and three emoji-led headings in `scripts/imagery/README.md`; every `§N.M` reference resolved
+against its target doc's headings — the misses were all `§` meaning "section" (`research §4`,
+`AGPL §13`, `README §10`) in docs that never had `§` workstream headings, plus A06e's `Workstream 0`
+heading, now `§0`. Not done, and noted for whoever wants it: the phase docs' H1s vary in style
+(`# Phase 01 build plan —`, `# A01 —`, `# Phase A06e —`) though every token is right, and the 80
+short anchors want either full slugs or `<a id>` targets.*
 
 1. **Scheme + crosswalk** — `plans/README.md` rewritten: the *target* directory layout (with a ⏳
    line saying the move lands in the next PR), the phase-vs-feat test, the conventions (token

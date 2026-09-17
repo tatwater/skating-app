@@ -225,7 +225,7 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.query('notifications').collect());
 }
 
-describe('moderation.resolveFlag — content_flag_resolved (A08/B3)', () => {
+describe('moderation.resolveFlag — content_flag_resolved (A08 §2.3)', () => {
   test('tells a person who filed a flag the verdict, and nothing else', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');

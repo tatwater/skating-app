@@ -20,7 +20,7 @@ expires, or a body that vanishes — and needed a third: **on the map, and marke
 > A07a-3 wind-rose commits — three lanes on one branch, separated by commit prefix. The PR body is the
 > summary of all three; this doc is the `n6f` prefix only.
 > **Touches:** `waterBodies` (a new field and six scoring sites), `contentFlags` (a new target type
-> and reason), `moderation` (a grouped queue lane), the D2 zoom ladder in `core/display.ts`, both
+> and reason), `moderation` (a grouped queue lane), the A06c §4.2 zoom ladder in `core/display.ts`, both
 > clients' map layers, the web drawer, the web list, and — under the same prefix — the water body editor's
 > placement tools, `reports.update`'s first UI, and the recorder's unreported-skates list.
 > **Not built at #44:** a mobile report control (mobile had the map dim and nothing to press) —
@@ -124,7 +124,7 @@ names the water body rather than rendering it as '(deleted)'"* pins the third ed
 
 ## §2 — The demotion: the ladder's first penalty
 
-`packages/core/src/display.ts:56` states the D2 rule with a founder note attached: **every term is a
+`packages/core/src/display.ts:56` states the A06c §4.2 rule with a founder note attached: **every term is a
 boost, never a penalty.** A body with no profile data keeps the zoom it has; richer bodies rise past
 it. Subtracting for missing data would push obscure ponds below the discoverability floor, which is
 exactly the founder's stated worry.
@@ -333,7 +333,7 @@ phase's own headline trap — a derived value re-computed from fewer inputs than
 
 **1. A ruling dropped the richness the body had earned** (`waterBodies.ts`, `setPublicAccess`).
 `scoreFields` takes richness too, and the ruling wasn't passing it — so ruling on a water body re-scored it
-from area + boost alone and dropped every D2 term: its put-ins, its depth, its contours, the fact
+from area + boost alone and dropped every A06c §4.2 term: its put-ins, its depth, its contours, the fact
 that anyone had ever reported on it. The trap the module already warned about for `noPublicAccess`,
 one argument over, and it lands hardest here because this is the ladder's only penalty: a demotion
 on a stripped score puts the body *lower than the ruling asks*, and clearing the verdict restores it
@@ -470,7 +470,7 @@ right. Three tests, verified to fail first.
 *Left as a founder call:* the A08 copy is verdict-only and target-less — *"A moderator reviewed
 something you flagged and left it up"* — because the flagged party is usually a person. Here it is a
 water body, so a reason-aware line (*"…your access report on Tomhannock — public access confirmed"*) would
-extend B3 rather than break it. Not done.
+extend A08 §2.3 rather than break it. Not done.
 
 **6. The ordinary verdict reads as a plain fact (founder call, 2026-09-16, from the first live look
 at the drawer).** *"A moderator reviewed this on August 25, 2026 and found public access"* dressed
@@ -543,7 +543,7 @@ verdicts with absence as one (`none` dims 50% and demotes ~2 zoom levels; `open`
 exists only to gate re-reports). A member's report changes nothing on anyone else's map; others
 **corroborate** rather than re-report, the reporter sees their own water body faded, and the queue lane
 ranks by how many agree. Corroboration needed no votes table — `contentFlags` already dedups to one
-open flag per (flagger, target), so N open rows *is* N people. **This is the D2 ladder's first
+open flag per (flagger, target), so N open rows *is* N people. **This is the A06c §4.2 ladder's first
 penalty**, scoped by two arguments (the only attribute that *should* discourage a trip; the only one
 contingent on a human ruling) and safe only because `minVisibleZoom` clamps — a demoted body draws
 later, never not at all. ⚠ The demotion is *derived*, so six scoring sites must read the verdict or

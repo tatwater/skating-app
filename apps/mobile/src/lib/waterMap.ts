@@ -340,7 +340,7 @@ export function waterBodiesToFeatureCollection(
 export interface MappablePutIn {
   coord: { lat: number; lng: number };
   source: 'derived' | 'osm' | 'official';
-  /** OSM's name for the launch (A06d/A3), where it has one — what makes a pin worth tapping. */
+  /** OSM's name for the launch (A06d §1.3), where it has one — what makes a pin worth tapping. */
   name?: string;
 }
 
