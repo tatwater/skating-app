@@ -18,6 +18,7 @@
  * (`plans/README.md` is the record of the mapping and is exempt outright; the plan that ran the
  * pass, `features/phase-numbers.md`, was deleted when it shipped). Anchors (`#d2--…`) and paths (`A06c/lake-depth`) are excluded by the lookbehinds.
  */
+import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -238,6 +239,20 @@ function anchorsOf(file: string): Set<string> {
   return set;
 }
 
+/**
+ * "Exists" means **tracked**, not on disk: the founder's checkout holds gitignored files (the R2
+ * credentials walkthrough, `.raw` archives) that a link can resolve to locally and nowhere else.
+ * CI found exactly that on the first run of this rule while the local run was green.
+ */
+const TRACKED = new Set(
+  execSync('git ls-files', { cwd: REPO, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    .map((f) => resolve(REPO, f)),
+);
+const TRACKED_DIRS = new Set([...TRACKED].map((f) => resolve(f, '..')));
+const tracked = (p: string) => TRACKED.has(p) || TRACKED_DIRS.has(p);
+
 function brokenLinks(): string[] {
   const found: string[] = [];
   const files = LINK_ROOTS.flatMap((p) => (statSync(p).isDirectory() ? markdownFiles(p) : [p]));
@@ -250,7 +265,7 @@ function brokenLinks(): string[] {
       const [path, anchor] = target.split('#') as [string, string | undefined];
       const targetFile = path ? resolve(file, '..', path) : file;
       const line = text.slice(0, m.index).split('\n').length;
-      if (path && !statSync(targetFile, { throwIfNoEntry: false })) {
+      if (path && !tracked(targetFile)) {
         found.push(`${rel}:${line}  no such file  →  ${target}`);
         continue;
       }
