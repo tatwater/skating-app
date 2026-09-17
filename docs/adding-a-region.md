@@ -62,8 +62,9 @@ pnpm install                                    # workspace Node deps, from the 
 
 **Cloudflare R2** — a bucket named `skating-basemap` and an rclone remote named `r2`. Full
 walkthrough (API token, `rclone config`, public access) is in
-[`scripts/basemap/README.md`](../scripts/basemap/README.md) §2b and
-[`scripts/basemap/RCLONE_SETUP.md`](../scripts/basemap/RCLONE_SETUP.md).
+[`scripts/basemap/README.md`](../scripts/basemap/README.md) §2b; the founder's local
+`scripts/basemap/RCLONE_SETUP.md` holds the actual keys and is gitignored on purpose, so it is
+named here, not linked.
 
 **Convex target — dev first, always.** The ETL loader and the tile upload both refuse a
 non-dev deployment unless you pass `--prod`, so you can't accidentally touch production. Confirm
