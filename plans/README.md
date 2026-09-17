@@ -62,7 +62,10 @@ Rules that fell out of the history and are worth keeping:
 Inside a phase doc, workstreams are numbered and always carry the section sigil: `§3` is workstream
 three, `§3.2` its second item, headings `### §3.2 — The read path`. Prose can say "workstream 3"
 where a word reads better. The sigil is mandatory — with it, a bare `A4` or `B2` can only ever be a
-phase, and `D74` can only ever be a decision.
+phase, and `D74` can only ever be a decision. A reference from outside the phase's own doc carries
+the token (`A06c §4.2`). `packages/core/src/planConventions.test.ts` enforces this over `plans/` and
+`docs/` — a lettered workstream, a bare `E3`, an `A08/B4`, or a single-digit `### D2 —` heading in
+a phase doc fails the build.
 
 ### Registers
 

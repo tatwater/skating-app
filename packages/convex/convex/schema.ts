@@ -699,7 +699,7 @@ export default defineSchema({
      * area floor (A07b).
      *
      * A statement about **membership**, and deliberately nothing else. Not `curatedBoost`, which is a
-     * D2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
+     * A06c §4.2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
      * silently changing what survives a prune, which is `externalId` doing three jobs all over again.
      * And not "has this been skated?", even though that signal is durable (D62's second amendment
      * keeps published observations forever, redacting only what a person typed) and is already
@@ -1157,7 +1157,7 @@ export default defineSchema({
     // first would have taken search down for every row the backfill had not yet reached.
     .searchIndex('search_name', { searchField: 'searchText' }),
 
-  // Which bodies the A06b contour tileset actually draws lines for (A06c-1 / D2).
+  // Which bodies the A06b contour tileset actually draws lines for (A06c-1 / A06c §4.2).
   //
   // **A side table rather than a flag on `waterBodies`, because contour coverage is a property of
   // the TILESET, not of the body.** Re-tiling replaces ~2,000 rows here instead of migrating 116,070,

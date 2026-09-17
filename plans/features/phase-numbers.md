@@ -369,13 +369,17 @@ A06e's one citation of its superseded 07-31 layout (*"that was `A2`'s original p
 scoping"*), where today's §1.2 is different content — the two beside it that name "the original
 doc" were converted by rule and carry the same caveat.*
 
-*⚠ Open founder call — `D2` is two things.* Decision D2 is "Convex as the app database"; A06c's
-*workstream* D2 (profile richness feeds prominence) is cited as `D2` in ~50 places across code and
-docs (`display.ts`, `scoring.ts`, `enums.ts`, the A06c/A06d/A06f/A09 docs), and `01-decisions.md`
-carries a "D2 amendment" entry (line ~2096) that amends the *workstream's* weights table, not the
-decision. The sweep left every `D2` alone — under the scheme those should read `A06c §4.2`, and the
-amendment wants re-homing (as its own `D#`, or under D49/D70), but that is a register edit, not a
-rename.
+*`D2` was two things — resolved (founder call, 2026-09-17).* Decision D2 is "Convex as the app
+database"; A06c's *workstream* D2 (profile richness feeds prominence) was cited as `D2` in ~70
+places across code and docs, and `01-decisions.md` carried a "D2 amendment" that amended the
+*workstream's* weights table, not the decision. Now: the workstream is `A06c §4.2` (69 cites
+rewritten by hand, the six real-decision cites — the Convex client, the env files — left alone), and
+the amendment is **D184**, moved to the register's end with a provenance line. The measurement that
+settled the "should we audit every phase doc?" question: only seven docs ever used lettered
+workstreams, the A–G letters were already at zero, and every other single-digit `D1`–`D9` cite in
+those docs was the real decision — the collision was one workstream, not a class. What keeps it that
+way is `packages/core/src/planConventions.test.ts`: lettered workstreams, bare items, slash forms
+and single-digit `D` headings in phase docs fail the build.
 
 1. **Scheme + crosswalk** — `plans/README.md` rewritten: the *target* directory layout (with a ⏳
    line saying the move lands in the next PR), the phase-vs-feat test, the conventions (token

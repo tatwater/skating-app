@@ -434,7 +434,7 @@ its basin.*
 - **Reusing a third party's prebuilt Vermont tiles** — every state goes through our own pipeline
 
 ## Phase A06c — Expanded water body profiles
-🟢 **Complete** 2026-08-10 · PRs #38 #42 · [plan](./phases/A06c-expanded-body-profiles.md) · D70 D71 D74 D76 D85 D86 D90 D138–D142
+🟢 **Complete** 2026-08-10 · PRs #38 #42 · [plan](./phases/A06c-expanded-body-profiles.md) · D70 D71 D74 D76 D85 D86 D90 D138–D142 D184
 
 What A06a's depth numbers were missing — split at kickoff into **A06c-1** (derived numbers: geometry
 stats measured on the source geometry, elevation, a 16-bearing wind-fetch profile made honest by wind
@@ -448,7 +448,7 @@ including that `waterBodies.centroid` is a point *on the shoreline*, which would
 
 #### Data runs
 - **2026-08-09 — the campaign passes (A07a-3):** elevation 99.5% · wind roses 11,114 bodies (completed 2026-08-15) · `regionStats` 5 states × 5 metrics
-- **2026-08-14 — `backfillCells`:** the D2 re-score A06c-1 had held since 2026-08-02 ran under A06d
+- **2026-08-14 — `backfillCells`:** the A06c §4.2 re-score A06c-1 had held since 2026-08-02 ran under A06d
 
 #### Deferred
 - 🟢 **Everything satellite** — A06e, at the founder's ask, so the imagery story lands in one piece (D138)
@@ -469,7 +469,7 @@ whether the gate is locked.*
 
 #### Data runs
 - **2026-08-13 — access ETL:** 3,588 put-ins · 11,375 parking areas · 4,209 bodies with access (16.7%), routing 99.4%
-- **2026-08-14 — `backfillCells`:** 24,961 bodies re-scored in 84 batches; D2's put-in terms fire for the first time
+- **2026-08-14 — `backfillCells`:** 24,961 bodies re-scored in 84 batches; A06c §4.2's put-in terms fire for the first time
 - ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** — `listedBodiesNearCoord`'s fixed candidate box read 1,377× the area a 30 m gate needed; fixed with `marginMeters`
 
 #### Deferred
@@ -510,7 +510,7 @@ its freeze-up scrubbed, on both clients.*
 
 The third map state: **on the map, and marked.** `isListed` was binary; `waterBodies.publicAccess`
 adds a corroborated community claim — `contentFlags`' existing dedup *is* the vote count — that only a
-moderator's ruling turns into a 50% dim and a two-zoom-level demotion, the D2 ladder's first and only
+moderator's ruling turns into a 50% dim and a two-zoom-level demotion, the A06c §4.2 ladder's first and only
 penalty, safe because `minVisibleZoom` clamps. `open` is a stored verdict whose whole job is to make
 re-reporting cost one sentence. Taken straight into the A06e branch with no plan doc and no D-number;
 the doc was written after the fact. Under the same prefix: the 164-function audit that armed eleven

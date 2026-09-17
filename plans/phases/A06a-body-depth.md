@@ -604,8 +604,8 @@ depth pass; the geometry stats ride the other and are not blocked by it.
 > → **this depth + elevation run** → `regionStats:recompute` → `wind-climate load` → *(A06c-2's data)*
 > → `backfillCells`. That last step is **one pass at the very end of A06c as a whole** (founder call,
 > 2026-08-02), not once per sub-phase: it walks all 116,070 bodies and rebuilds every A01 cell row, and
-> running it twice is exactly the duplicated work D2 was folded into A06c to avoid. It is also not
-> optional — `importCanonical` resets `displayScore` to area + boost, so the D2 re-score has to come
+> running it twice is exactly the duplicated work A06c §4.2 was folded into A06c to avoid. It is also not
+> optional — `importCanonical` resets `displayScore` to area + boost, so the A06c §4.2 re-score has to come
 > after everything it reads.
 
 **When the gate lifts:** the moment A06c's §1.1 loader can write `elevationM` in the same invocation. At

@@ -2093,50 +2093,6 @@ exists nothing stops it filling with text nobody dates or re-reads.
 **One deliberate exception, and it proves the rule:** the local body-association URL (D71), because there
 is no algorithm from a water body's name to its association's website.
 
-## D2 amendment — profile-richness weights are fractions of the score, and activity dominates (A06c-1)
-
-**Decided (2026-08-02; the weights were caught by reading `display.ts`, the ordering by a founder
-call.)**
-
-A06c's Workstream D2 tabled prominence weights of **+1** for a name, **+2** for contours, **+4** for
-an official put-in — summing to +13. **That is roughly thirteen times the score's entire dynamic
-range.** `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom` clamps
-the total to `[0,1]` before mapping it onto z14→z6. Measured on dev: **every** curated boost is
-exactly `0.3`, and boosted bodies score 0.75–1.30. A `+1` for having a name would have pushed all
-~9,000 named bodies to the widest zoom bucket — and nothing would have failed, because no test
-asserts what the map looks like.
-
-The weights are therefore the plan's **relative ordering on the real scale**: name `0.02`, depth
-`0.04`, contours `0.06`, derived put-in `0.06`, official put-in `0.12`, activity `0.30`. One zoom
-level is `0.125`, which is the unit these should be read in.
-
-**Activity dominates, and the caps encode why** (founder call):
-
-> *"I would love for the real-world data of users documenting water bodies well… to completely remove the
-> need for moderators to hand-curate 'destination' water bodies. Curation should exist only as a way to get
-> us a good seed, and as a check on our automated system."*
-
-So static metadata caps at **0.15**, *below* `curatedBoost`'s 0.3 — metadata says a body is
-documented, not that anyone wants to skate it — while activity alone reaches 0.30 and the total caps
-at **0.40**, above it. A genuinely used water body overtakes a hand-seeded one.
-
-**And the retirement path becomes a mechanism**: `curatedBoostIsRedundant` flags a boost the body has
-now earned on its own, for the admin surface. **Advisory, never automatic** — clearing a boost on a
-body's behalf is a silent prominence change nobody reviewed, and a check that removes itself is not a
-check.
-
-**Never a penalty**, which D2 already said and which is now an invariant: an un-enriched body scores
-byte-identically to before, and a property test asserts enrichment never moves a body to a *narrower*
-zoom bucket. That is the founder's *"I'd hate to not have a body someone cares about"*, mechanised.
-
-**`hasContours` ships live** (founder call, 2026-08-02), via a `bathymetryCoverage` side table keyed
-on `externalId` rather than a column on `waterBodies`: coverage is a property of the **tileset**, so
-re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped water body cannot leave a stale
-flag claiming a survey we no longer draw. It records the **2,022** bodies that produced a visible
-contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d.**
-
-**Related:** [D49](#d49), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
-
 ## D71 — Reference links are generated at render time, not stored per body (A06c)
 
 **Decided (2026-07-30; founder call at A06c scoping — the founder asked whether the ETL could configure
@@ -3610,7 +3566,7 @@ cross-catalogue match is worth keeping for that. Gated, it costs nothing.
 top-level water body, which double-counts the water: the corpus carried `West Branch Keuka Lake`
 (2,707 ac), `Spencer Bay` (4,742 ac, on Moosehead) and Winnipesaukee's `Alton`, `Paugus` and
 `Meredith` bays as rows overlapping the very water bodies they are arms of. A search for the water body returned
-it twice and the D2 deciles counted its water twice.
+it twice and the A06c §4.2 deciles counted its water twice.
 
 A02 built `waterBodySubAreas` for exactly this shape — Malletts Bay is part of Champlain, not a water body
 beside it — so this is a new lane on an existing table, not a new concept:
@@ -3714,7 +3670,7 @@ keeps `source: 'osm'` for ever. That reads like drift and is not: **`source` and
 pair**, describing where the row *arrived* from, and `externalId` cannot move because the contour
 tiles are stamped with it (D93). `richnessFor` reads exactly that pair to find a body's contour
 coverage — so patching `source` alone would look up `('nhd', 'way/123')`, match nothing, and silently
-drop `hasContours` from the D2 prominence score of every body whose geometry source changed. Whose
+drop `hasContours` from the A06c §4.2 prominence score of every body whose geometry source changed. Whose
 outline we drew is `geometrySource`, which *is* patched. The two disagreeing is the design working.
 
 Recorded here because the fix was written, tested, and reverted within the hour, and the next audit
@@ -4495,7 +4451,7 @@ means forgetting is survivable rather than harmful.
 ## D143 — A derived access point is **data**, not a vouch (A06d)
 
 **2026-08-10, founder call.** An OSM-sourced put-in enters `PUTIN_SOURCES` below `official`, and in
-D2's richness ladder it scores as **`derived` (+0.06)**, not as `official` (+0.12).
+A06c §4.2's richness ladder it scores as **`derived` (+0.06)**, not as `official` (+0.12).
 
 The call was needed because an `osm` row is a hybrid of the two rungs that already exist: it is
 **stored**, like an operator's `official` pin, and **approximate**, like a cluster of report points. So
@@ -4510,14 +4466,14 @@ other richness term, this one is about to be baked in by the single held `backfi
 
 **The stakes, stated plainly, because they are unusual for a constant.** Both put-in terms have never
 fired: dev carries **0 `putIns` rows**. A06c has held `backfillCells` since 2026-08-02 waiting for this
-phase, so the first time D2's access terms ever affect a `displayScore` is the run that follows this
+phase, so the first time A06c §4.2's access terms ever affect a `displayScore` is the run that follows this
 build. There is no incumbent scoring to compare against and no gradual rollout — which is the argument
 for choosing the conservative rung rather than the flattering one.
 
 The ladder still does its job on top: an operator who pins an `official` marker at an OSM-derived
 coordinate promotes it, and a re-import never overwrites them (A06d §2.3).
 
-**Related:** [D2](#d2--display-prominence-is-computed), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
+**Related:** [D184](#d184--profile-richness-weights-are-fractions-of-the-score-and-activity-dominates-a06c-1), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
 ---
 
@@ -5700,3 +5656,49 @@ carries each match's standing, `NewWaterPrompt` shows a shelved or removed water
 re-drawn around.
 
 **Related:** D48, D106–D108, D176–D178, [`phase-A07b`](./phases/A07b-corpus-by-request.md).
+
+## D184 — Profile-richness weights are fractions of the score, and activity dominates (A06c-1)
+
+**Decided (2026-08-02; the weights were caught by reading `display.ts`, the ordering by a founder
+call.)** *Filed that day as a "D2 amendment" — but the D2 it amended was A06c's workstream item
+(now §4.2), not decision D2; renumbered 2026-09-17 so a workstream number can never read as a
+decision.*
+
+A06c §4.2 tabled prominence weights of **+1** for a name, **+2** for contours, **+4** for
+an official put-in — summing to +13. **That is roughly thirteen times the score's entire dynamic
+range.** `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom` clamps
+the total to `[0,1]` before mapping it onto z14→z6. Measured on dev: **every** curated boost is
+exactly `0.3`, and boosted bodies score 0.75–1.30. A `+1` for having a name would have pushed all
+~9,000 named bodies to the widest zoom bucket — and nothing would have failed, because no test
+asserts what the map looks like.
+
+The weights are therefore the plan's **relative ordering on the real scale**: name `0.02`, depth
+`0.04`, contours `0.06`, derived put-in `0.06`, official put-in `0.12`, activity `0.30`. One zoom
+level is `0.125`, which is the unit these should be read in.
+
+**Activity dominates, and the caps encode why** (founder call):
+
+> *"I would love for the real-world data of users documenting water bodies well… to completely remove the
+> need for moderators to hand-curate 'destination' water bodies. Curation should exist only as a way to get
+> us a good seed, and as a check on our automated system."*
+
+So static metadata caps at **0.15**, *below* `curatedBoost`'s 0.3 — metadata says a body is
+documented, not that anyone wants to skate it — while activity alone reaches 0.30 and the total caps
+at **0.40**, above it. A genuinely used water body overtakes a hand-seeded one.
+
+**And the retirement path becomes a mechanism**: `curatedBoostIsRedundant` flags a boost the body has
+now earned on its own, for the admin surface. **Advisory, never automatic** — clearing a boost on a
+body's behalf is a silent prominence change nobody reviewed, and a check that removes itself is not a
+check.
+
+**Never a penalty**, which A06c §4.2 already said and which is now an invariant: an un-enriched body scores
+byte-identically to before, and a property test asserts enrichment never moves a body to a *narrower*
+zoom bucket. That is the founder's *"I'd hate to not have a body someone cares about"*, mechanised.
+
+**`hasContours` ships live** (founder call, 2026-08-02), via a `bathymetryCoverage` side table keyed
+on `externalId` rather than a column on `waterBodies`: coverage is a property of the **tileset**, so
+re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped water body cannot leave a stale
+flag claiming a survey we no longer draw. It records the **2,022** bodies that produced a visible
+contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d.**
+
+**Related:** [D49](#d49), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).

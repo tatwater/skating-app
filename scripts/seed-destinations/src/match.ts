@@ -1,5 +1,5 @@
 /**
- * Matching a curated destination shortlist to corpus bodies (A06c Workstream §2.3a/D).
+ * Matching a curated destination shortlist to corpus bodies (A06c §2.3a/§4).
  *
  * **Renamed from `seed-satellite` (founder call, 2026-08-09).** That name was chosen to name the
  * *job* rather than the input list — provision and prove the imagery path. With A06c §2.3's Copernicus deep
@@ -60,7 +60,7 @@ export const MATCH_RADIUS_KM = 25;
  *
  * **0.3, matching every existing curated boost on dev**, and deliberately not more. `displayScore`
  * is `normalize(log area) ∈ [0,1] + curatedBoost` and `minVisibleZoom` clamps the total, so the
- * usable range is small — the A06c-1 build found the D2 table's proposed weights were ~13× the whole
+ * usable range is small — the A06c-1 build found the A06c §4.2 table's proposed weights were ~13× the whole
  * dynamic range, which would have pushed every named body to the widest zoom bucket with all tests
  * still green. A seed is a cold-start hack with a retirement path (D49), not a permanent registry;
  * profile richness is the durable mechanism meant to take over.

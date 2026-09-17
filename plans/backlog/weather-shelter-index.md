@@ -151,7 +151,7 @@ table, reveal gate). Neither is scoped further here.
    the model-vs-observed wind bias by sector is the one *measured* quantity that can tune
    `f_terrain` / `f_canopy` rather than leaving them as priors.
 4. **A property test**: exposure is monotone in horizon angle and in canopy cover, and a body with no
-   shelter row renders exactly as today (the D2 "never a penalty" shape).
+   shelter row renders exactly as today (the D184 "never a penalty" shape).
 
 ---
 

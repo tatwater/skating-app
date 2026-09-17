@@ -126,8 +126,8 @@ Québec past z10" trap, the attribution swap (both credits simply coexist), and 
 persisted per-device preference, because a per-body reveal is something you *do*, not a mode you live
 in.
 
-**What it costs:** you can no longer pan the Northeast in aerial to hunt for access. That was A2's
-original pitch in the 07-31 scoping. The founder accepted the trade explicitly.
+**What it costs:** you can no longer pan the Northeast in aerial to hunt for access. That was the aerial
+tier's original pitch in the 07-31 scoping (its §1.2 then; today's §1.2 is different content). The founder accepted the trade explicitly.
 
 **Where the control lives** *(founder, 2026-08-21)*: only where a single body is selected **and the map
 is visible** — the route carries a body id and the drawer is not expanded to full screen. There is no

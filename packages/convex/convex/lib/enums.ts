@@ -443,7 +443,7 @@ export const NOTIFICATION_PREF_DEFAULTS = CORE_NOTIFICATION_PREF_DEFAULTS;
  * - `osm` — a named slipway, beach, pier or fishing access from the Geofabrik extract (A06d §2.1).
  * - `official` — an operator pinned it. Accurate, priority styling.
  *
- * ⚠ **`osm` scores as `derived` in D2's richness ladder, not as `official`** (D143). It is stored like
+ * ⚠ **`osm` scores as `derived` in A06c §4.2's richness ladder, not as `official`** (D143). It is stored like
  * an official row and approximate like a derived one, so the resemblance to check is provenance rather
  * than storage: `display.ts` calls the official term *"the strongest static signal we have"* on the
  * grounds that a **human** confirmed you can get on the ice here, and an ETL cannot confirm that.
@@ -553,8 +553,8 @@ export const IMPORT_RUN_KINDS = [
   'lake_depth', // scripts/lake-depth — HydroLAKES/GLOBathy/LAGOS-US join
   'elevation', // scripts/lake-depth load-elevation — Open-Meteo
   'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
-  'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
-  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (A06c §2.3a/D). A pass rather
+  'bathymetry_coverage', // scripts/bathymetry coverage — A06c §4.2's hasContours
+  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (A06c §2.3a/§4). A pass rather
   // than a one-off because the shortlist grows and the interesting output is what it *declined* to
   // match: an ambiguous name, or a well-known lake absent from the corpus entirely.
   'seed_destinations',

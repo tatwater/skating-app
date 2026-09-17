@@ -908,7 +908,7 @@ is consistent with reasoning already committed to, not merely a deferral.
 matters is not how many wetlands NHD has but how many are **new** — the same bogs are very likely in
 both catalogues, and reconciliation collapses them onto one row. If the increment is small, admitting
 NHD 466 costs almost nothing. If it is large, five states of this is on the order of a **50% corpus
-expansion in unnamed wetland**, which lands on read-path cost, tile size, the D2 prominence deciles,
+expansion in unnamed wetland**, which lands on read-path cost, tile size, the A06c §4.2 prominence deciles,
 and every metered pass in D100's table.
 
 **So D96's wetland half stays open until reconciliation reports the increment.** Keep-them is the

@@ -37,7 +37,7 @@
 >    offered and declined. So the access alert lifecycle and the photo carve-out are in scope here, not
 >    deferred to an A06d-2.
 > 2. **Directions re-target to parking; drive-time bands do not.** See correction 6.
-> 3. **An `osm` put-in scores as `derived` (+0.06) in D2's richness ladder.** See correction 5.
+> 3. **An `osm` put-in scores as `derived` (+0.06) in A06c §4.2's richness ladder.** See correction 5.
 > 4. **The approach thresholds:** `drive_up` ≤ 150 m · `short_walk` ≤ 800 m · `hike_in` > 800 m, and the
 >    UI **demands** an explicit `hike_in` assertion above **1,600 m**. See correction 7.
 
@@ -113,7 +113,7 @@ has.
 slipways), **polygons** (parking) and **lines** (trails, slipway ways). That is a second export
 configuration, and by that file's own docstring it belongs *in* it rather than beside it.
 
-**5. `osm` as a `putIns` rung collides with D2's richness ladder, and the collision is load-bearing.**
+**5. `osm` as a `putIns` rung collides with A06c §4.2's richness ladder, and the collision is load-bearing.**
 `PUTIN_SOURCES` is `['derived', 'official']` and `staticRichness` has exactly two matching terms —
 derived **+0.06**, official **+0.12**, official superseding rather than stacking. An OSM slipway is
 stored like an `official` row and approximate like a `derived` one, so it needed a call rather than a
@@ -425,7 +425,7 @@ A drive-up ramp routes over the car park's own service road, which is why the le
 
 **5. What is built and what is not.** The data path is complete end to end — the second osmium pass,
 the OSM-to-OSM pairing, the ORS leg, the server-side join, both loaders, the alert lifecycle with its
-cron, the photo model, the operator write path, and the D2 richness rung that finally releases
+cron, the photo model, the operator write path, and the A06c §4.2 richness rung that finally releases
 `backfillCells`. **The ETL has not been run**, so no access data is loaded and none of it has been seen
 against real output — including the `PARKING_INFER_RADIUS_M` eyeballing pass the plan asks for.
 
@@ -1145,14 +1145,14 @@ a new lifecycle. Independent of A06c; either order.
 > permanently unroutable.
 >
 > **✅ `backfillCells` ran 2026-08-14** — 24,961 bodies re-scored in 84 batches, closing the single
-> full-corpus re-score A06c had held since 2026-08-02. D2's put-in terms are live for the first time.
+> full-corpus re-score A06c had held since 2026-08-02. A06c §4.2's put-in terms are live for the first time.
 >
 > ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** (restored by
 > raising the spending cap). One parameter: `listedBodiesNearCoord`'s candidate box was a fixed
 > ~1,113 m for every caller, so a 250 m gate read 20× the area it needed and a 30 m gate read 1,377×
 > — of *whole documents*, polygons included, since Convex has no projection. Fixed with an optional
 > `marginMeters`. `matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same
-> shape and remain unfixed. D2's put-in terms have never fired (dev carried 0
+> shape and remain unfixed. A06c §4.2's put-in terms have never fired (dev carried 0
 > `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
 > access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
 > data and have to be repeated, which is the duplicated work that gate exists to avoid.

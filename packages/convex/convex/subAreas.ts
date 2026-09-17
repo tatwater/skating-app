@@ -1579,7 +1579,7 @@ export const listForBody = query({
  * top-level water body double-counts the water: the corpus carried `West Branch Keuka Lake` (2,707
  * ac), `Spencer Bay` (4,742 ac, on Moosehead) and Winnipesaukee's `Alton`, `Paugus` and `Meredith`
  * bays as rows overlapping the very lakes they are part of. A search for the lake returned it twice,
- * and the D2 deciles counted its water twice. The founder's call: **sub-area, not body.**
+ * and the A06c §4.2 deciles counted its water twice. The founder's call: **sub-area, not body.**
  *
  * ## How this differs from `importSeed`, and why both exist
  *

@@ -599,7 +599,7 @@ export const importCanonical = internalMutation({
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
         // curatedBoost are preserved. Score uses the new area + the *preserved* admin boost (D49).
         //
-        // ⚠ **This resets the score to area + boost, dropping the D2 richness term**, because
+        // ⚠ **This resets the score to area + boost, dropping the A06c §4.2 richness term**, because
         // reading put-ins and reports per body would put two extra index reads on every one of
         // 116,070 rows inside the heaviest mutation in the app. So the ordering is not optional:
         // canonical re-import → depth/elevation run → `backfillCells`, which recomputes richness
@@ -629,7 +629,7 @@ export const importCanonical = internalMutation({
           // cannot move — the contour tiles are stamped with it (D93). Patching `source` alone
           // separates the pair, and `richnessFor` reads exactly that pair to find a body's contour
           // coverage — so "correcting" it would look up `('nhd', 'way/123')`, match nothing, and
-          // silently drop `hasContours` from the D2 prominence score of every body whose geometry
+          // silently drop `hasContours` from the A06c §4.2 prominence score of every body whose geometry
           // source changed.
           //
           // Whose outline we drew is `geometrySource`, which IS patched, three lines down. The two
@@ -1313,7 +1313,7 @@ export const backfillCells = internalMutation({
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
     for (const body of page.page) {
-      // The D2 richness term is applied HERE and nowhere else — see `richnessFor` for why, and the
+      // The A06c §4.2 richness term is applied HERE and nowhere else — see `richnessFor` for why, and the
       // warning in `importCanonical` for the ordering that makes it correct.
       const richness = await richnessFor(ctx, body);
       const scores = scoreFields({
@@ -1985,7 +1985,7 @@ export const pruneOutsideCoverage = internalMutation({
  */
 const SHORELINE_CROSS_CHECK_RATIO = 2;
 
-// ── Bathymetry contour coverage (A06c-1 / D2) ─────────────────────────────────────────────────
+// ── Bathymetry contour coverage (A06c-1 / A06c §4.2) ─────────────────────────────────────────────────
 
 /**
  * Replace the contour-coverage set with the bodies the current tileset actually draws.
@@ -6252,7 +6252,7 @@ export const sweepAllBodySummaries = internalAction({
 });
 
 /**
- * Named bodies, paged, for the destination seeding script (A06c §2.3a/D).
+ * Named bodies, paged, for the destination seeding script (A06c §2.3a/§4).
  *
  * **Named only.** A curated destination has a name by definition, so the unnamed ~92% of the corpus
  * can never match one — and filtering here rather than in the script is the difference between the

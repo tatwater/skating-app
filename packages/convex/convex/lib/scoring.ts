@@ -43,7 +43,7 @@ export function scoreFields(input: {
 }
 
 /**
- * A body's D2 profile richness, read from what it actually has.
+ * A body's A06c §4.2 profile richness, read from what it actually has.
  *
  * **Costs two index reads per body**, which is why it is computed in `backfillCells` (paginated,
  * a few hundred bodies per transaction) and NOT in `importCanonical`, which already does the

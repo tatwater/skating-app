@@ -173,7 +173,7 @@ describe('corroboration', () => {
 describe('DESTINATION_BOOST', () => {
   /**
    * `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, clamped by `minVisibleZoom`.
-   * A06c-1 found the D2 table's proposed weights were ~13× that whole range.
+   * A06c-1 found the A06c §4.2 table's proposed weights were ~13× that whole range.
    */
   it('sits inside the score’s real dynamic range', () => {
     expect(DESTINATION_BOOST).toBeGreaterThan(0);

@@ -54,12 +54,12 @@ reported as ambiguous rather than accepted — the coordinate says the author me
 ## Why the boost is 0.3
 
 `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom` clamps the
-total. The usable range is small: A06c-1 found the D2 table's proposed weights were ~13× the whole
+total. The usable range is small: A06c-1 found the A06c §4.2 table's proposed weights were ~13× the whole
 dynamic range, which would have pushed every named body to the widest zoom bucket with all tests
 still green. 0.3 matches every existing curated boost on dev.
 
 A seed is a **cold-start hack with a retirement path** (D49), not a permanent registry. Profile
-richness (D2) is the durable mechanism meant to take over, and `curatedBoostIsRedundant` is the
+richness (A06c §4.2) is the durable mechanism meant to take over, and `curatedBoostIsRedundant` is the
 advisory signal that says when a given seed has been earned organically.
 
 **A boost a human already set is never overwritten.** A hand-set value is a judgement about a

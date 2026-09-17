@@ -281,7 +281,7 @@ information we hold to dodge a hard question.
    `hazards` (`RESTAMP_TABLES` grows to four), rebuilding `reportSubAreas` for every report it
    touches.
 
-`scoreFields` for a sub-area stays area + boost; a bay does **not** get the D2 richness terms in
+`scoreFields` for a sub-area stays area + boost; a bay does **not** get the A06c §4.2 richness terms in
 this phase (its parent already earns `hasActivity` from the bay's reports — rolling up is the rule).
 
 ### Schema changes (all optional ⇒ migration-free, per the widen→deploy→backfill→narrow rule)
@@ -517,7 +517,7 @@ So there are exactly three honest moves, and the first two are free:
 ## The rule that touches everything: what a report on a bay is a report *on*
 
 **This is the hard part, and it is one decision applied in six places.** A report inside Malletts Bay
-is also a report on Lake Champlain. The feed, the notification queue, the bounty gate, the D2
+is also a report on Lake Champlain. The feed, the notification queue, the bounty gate, the A06c §4.2
 prominence score, the trust corroboration count and the conditions strip all currently assume **one
 body per report**.
 

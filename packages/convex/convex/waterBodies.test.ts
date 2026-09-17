@@ -891,7 +891,7 @@ describe('waterBodies.backfillRepresentativePoint (the centroid rename transitio
   });
 });
 
-describe('waterBodies profile-richness prominence (A06c / D2)', () => {
+describe('waterBodies profile-richness prominence (A06c / A06c §4.2)', () => {
   test('contour coverage feeds the richness score, and a re-tile can take it away', async () => {
     // Coverage is a property of the TILESET, not the body, so it lives in a side table keyed on
     // externalId — which is also why a body that drops out of a re-tile cannot keep claiming a
