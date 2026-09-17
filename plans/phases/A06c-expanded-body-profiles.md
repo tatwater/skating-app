@@ -82,7 +82,7 @@
 >   per-body activity timeline). **Not built.** Everything below those headings stands as written
 >   except where *§What the A06c-1 build found* corrects it.
 >   — **except §6.2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
->   is built: see [*§6.2 as built*](#f2-as-built--the-run-history). Its own sequencing note asked for
+>   is built: see [*§6.2 as built*](#62-as-built--the-run-history). Its own sequencing note asked for
 >   this and was nearly missed: *"§6.2 wants to exist **before** the A06a depth run, not after — the
 >   first real run is the one whose numbers matter most."*
 >

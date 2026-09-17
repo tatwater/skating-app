@@ -645,7 +645,7 @@ polygon needs to see past its current edge, which is the opposite of what a skat
 
 ---
 
-## Workstream 0 — Getting the way in into the app ✅ **BUILT 2026-08-21**
+## §0 — Getting the way in into the app ✅ **BUILT 2026-08-21**
 
 *Scoped as a one-line prerequisite. It became a workstream because the window it depended on had
 already closed, and because the founder took the second half of it at the same time.*

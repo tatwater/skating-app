@@ -136,7 +136,7 @@ Measured on dev (`agile-bee-397`) 2026-09-16 with a one-off query:
   feature stamps ship tested but empty, and the favorites migration is trivial.
 - The bathymetry archive is on this machine: `scripts/bathymetry/.raw/` is 299 MB (ME soundings,
   VT soundings incl. Champlain, NH + MA contours, MIDAS crosswalk), `.scratch/join/lakes.json` is
-  the last join, so the depth lane (§Workstream 6) can run without a refetch.
+  the last join, so the depth lane (§6) can run without a refetch.
 
 ### What the audit found already built — corrections to the scoping table
 
@@ -192,7 +192,7 @@ Two premises of the scoping doc that do not survive contact with the code:
 
 Plus three things that came up alongside:
 
-- **Widen the weather archive's *coverage* to every bay, all season** (§Workstream 7). Retention was
+- **Widen the weather archive's *coverage* to every bay, all season** (§7). Retention was
   never the gap — `weatherDays` is kept for ever (D153) — coverage was: Tier A (bay-resolution) rows
   are fetched lazily, only for bays somebody opened.
 - **The shelter index and the station-bias study are post-alpha**, scoped in
