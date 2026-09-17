@@ -6,7 +6,7 @@
 import { standingOf } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { QUEUE_CAP, RANK_CAP } from './corpusRequests';
@@ -430,14 +430,31 @@ describe('decide — what approving performs', () => {
     expect(mine).toMatchObject({ askers: RANK_CAP + 1, askersCapped: true });
     expect(queue.find((r) => r.kind === 'contest_access')).not.toHaveProperty('askersCapped');
 
-    await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
-    const rows = await t.run((ctx) => ctx.db.query('waterBodyRequests').collect());
-    const byKind = (kind: string) => rows.filter((r) => r.kind === kind).map((r) => r.status);
-    expect(new Set(byKind('activate'))).toEqual(new Set(['approved']));
-    expect(byKind('activate')).toHaveLength(QUEUE_CAP + 31);
-    expect(new Set(byKind('contest_access'))).toEqual(new Set(['open']));
-    const audits = await t.run((ctx) => ctx.db.query('moderationActions').collect());
-    expect(audits.filter((x) => x.action === 'approve_request')).toHaveLength(QUEUE_CAP + 31);
+    // The approve closes the request and one page in its own transaction; the rest is a scheduled
+    // continuation, so the mutation's write count is bounded whatever the group's size.
+    vi.useFakeTimers();
+    try {
+      await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
+      const statuses = async (kind: string) =>
+        (await t.run((ctx) => ctx.db.query('waterBodyRequests').collect()))
+          .filter((r) => r.kind === kind)
+          .map((r) => r.status);
+      expect((await statuses('activate')).filter((s) => s === 'approved')).toHaveLength(
+        QUEUE_CAP + 1,
+      );
+      expect((await statuses('activate')).filter((s) => s === 'open')).toHaveLength(30);
+      const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+      expect(scheduled.map((s) => s.name)).toContain('corpusRequests:closeSiblings');
+
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(new Set(await statuses('activate'))).toEqual(new Set(['approved']));
+      expect(await statuses('activate')).toHaveLength(QUEUE_CAP + 31);
+      expect(new Set(await statuses('contest_access'))).toEqual(new Set(['open']));
+      const audits = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+      expect(audits.filter((x) => x.action === 'approve_request')).toHaveLength(QUEUE_CAP + 31);
+    } finally {
+      vi.useRealTimers();
+    }
   }, 20_000);
 
   test('approving an admit re-checks the point: a body admitted under it since, without a 3DHP id, is used', async () => {

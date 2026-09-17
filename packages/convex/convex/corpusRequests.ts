@@ -595,11 +595,82 @@ async function openSiblings(
   return { rows: others.slice(0, limit), capped: others.length > limit };
 }
 
+/** What a decision writes on every row it closes — carried to the continuation unchanged. */
+const decisionArgs = {
+  requestId: v.id('waterBodyRequests'),
+  status: literals(['approved', 'declined'] as const),
+  actorId: v.id('profiles'),
+  now: v.number(),
+  note: v.optional(v.string()),
+  admittedWaterBodyId: v.optional(v.id('waterBodies')),
+};
+type Decision = {
+  requestId: Id<'waterBodyRequests'>;
+  status: 'approved' | 'declined';
+  actorId: Id<'profiles'>;
+  now: number;
+  note?: string;
+  admittedWaterBodyId?: Id<'waterBodies'>;
+};
+
+async function closeRow(
+  ctx: MutationCtx,
+  row: Doc<'waterBodyRequests'>,
+  { requestId, status, actorId, now, note, admittedWaterBodyId }: Decision,
+): Promise<void> {
+  await ctx.db.patch(row._id, {
+    status,
+    decidedAt: now,
+    decidedByUserId: actorId,
+    ...(note ? { decisionNote: note } : {}),
+    ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
+  });
+  await ctx.db.insert('moderationActions', {
+    actorId,
+    action: status === 'approved' ? 'approve_request' : 'decline_request',
+    targetType: 'waterBodyRequest',
+    targetId: row._id,
+    reason: note || `${status === 'approved' ? 'Approved' : 'Declined'} a ${row.kind} request`,
+    metadata: {
+      kind: row.kind,
+      ...(row.waterBodyId ? { waterBodyId: row.waterBodyId } : {}),
+      ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
+      ...(row._id !== requestId ? { withRequestId: requestId } : {}),
+    },
+    createdAt: now,
+  });
+}
+
+/**
+ * One page of siblings closed with the decision; the next page scheduled if there is one. The page
+ * is the transaction's bound — `QUEUE_CAP` patches plus as many audit rows — so a sibling group of
+ * any size drains in bounded steps instead of one mutation that grows until it cannot commit
+ * (Greptile, PR #63, third pass). Each page comes back empty of the rows the last one closed.
+ */
+async function closeSiblingPage(
+  ctx: MutationCtx,
+  request: Doc<'waterBodyRequests'>,
+  decision: Decision,
+): Promise<void> {
+  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP);
+  for (const row of rows) await closeRow(ctx, row, decision);
+  if (capped) await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, decision);
+}
+
+export const closeSiblings = internalMutation({
+  args: decisionArgs,
+  handler: async (ctx, decision) => {
+    const request = await ctx.db.get(decision.requestId);
+    if (!request) return;
+    await closeSiblingPage(ctx, request, decision);
+  },
+});
+
 /**
  * Close the request and every open sibling, with one audit row each. Siblings share the decision
- * because they share the question — and *every* sibling: the walk re-reads the index a page at a
- * time, and each page comes back empty of the rows just closed, since a mutation sees its own
- * writes. Nothing is left open past a page boundary (Greptile, PR #63).
+ * because they share the question — and *every* sibling: the first page closes with the request,
+ * and the rest follow in scheduled pages. Nothing is left open past a page boundary (Greptile,
+ * PR #63).
  */
 async function decide(
   ctx: MutationCtx,
@@ -610,35 +681,16 @@ async function decide(
   note: string | undefined,
   admittedWaterBodyId?: Id<'waterBodies'>,
 ): Promise<void> {
-  const close = async (row: Doc<'waterBodyRequests'>) => {
-    await ctx.db.patch(row._id, {
-      status,
-      decidedAt: now,
-      decidedByUserId: actorId,
-      ...(note ? { decisionNote: note } : {}),
-      ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
-    });
-    await ctx.db.insert('moderationActions', {
-      actorId,
-      action: status === 'approved' ? 'approve_request' : 'decline_request',
-      targetType: 'waterBodyRequest',
-      targetId: row._id,
-      reason: note || `${status === 'approved' ? 'Approved' : 'Declined'} a ${row.kind} request`,
-      metadata: {
-        kind: row.kind,
-        ...(row.waterBodyId ? { waterBodyId: row.waterBodyId } : {}),
-        ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
-        ...(row._id !== request._id ? { withRequestId: request._id } : {}),
-      },
-      createdAt: now,
-    });
+  const decision: Decision = {
+    requestId: request._id,
+    status,
+    actorId,
+    now,
+    ...(note !== undefined ? { note } : {}),
+    ...(admittedWaterBodyId !== undefined ? { admittedWaterBodyId } : {}),
   };
-  await close(request);
-  for (;;) {
-    const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP);
-    for (const row of rows) await close(row);
-    if (!capped) break;
-  }
+  await closeRow(ctx, request, decision);
+  await closeSiblingPage(ctx, request, decision);
 }
 
 /** The reachable body under a point, within the admit margin — the check `create` makes, repeated. */
