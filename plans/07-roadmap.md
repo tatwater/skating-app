@@ -589,6 +589,9 @@ by long-press on unheld water, `admit` resolved live against the 3DHP catalogue,
 queue whose approve performs the act. *A skater can vouch a lake into the corpus, and an operator
 can stand one down.*
 
+#### Deferred
+- ⚪ **Cap open asks per lake per kind at create** — the sibling set is unbounded by construction, so a decision drains it in scheduled pages snapshotted at decision time (five review passes to get right); a cap of ~100 would delete `closeSiblings` and the snapshot outright. Trigger: the next defect in that code
+
 #### Owed
 - Dev deploy, the seed run (`seed-destinations`), device verification of the request flows
 
@@ -658,7 +661,7 @@ long-form register this table replaced is archived verbatim in
 | N6h Workstream F — radar | ⚪ | nothing; next in N6h | N6h |
 | Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | N6h |
 | `centroid` → `representativePoint` stage 2 — the ~100-site code sweep | ⚪ | nothing, and it shouldn't linger | [`features/representative-point-rename.md`](./features/representative-point-rename.md) |
-| Phase renumbering — the mechanical PR and the PR-title pass | ⚪ | `phase-n7b-corpus-lifecycle` landing | [`features/phase-numbers.md`](./features/phase-numbers.md) |
+| Phase renumbering — the mechanical PR and the PR-title pass | ⚪ | nothing — N7b landed 2026-09-16 | [`features/phase-numbers.md`](./features/phase-numbers.md) |
 | US spellings sweep | ⚪ | same window | [`features/us-spellings.md`](./features/us-spellings.md) |
 | Reverse spatial index for notification fan-out (D172) | ⚪ | ~1,000 profiles | N8 |
 | Web push | ⚪ | a service worker | N8 |
