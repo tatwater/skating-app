@@ -434,6 +434,62 @@ describe('decide — what approving performs', () => {
     expect(second.admittedWaterBodyId).toEqual(body._id);
   });
 
+  test('approving an activate refuses when the lake acquired a ruling since the ask', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await seedBody(t, 'osm/1', dormant);
+    const requestId = await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'activate',
+      coord: INSIDE,
+      waterBodyId: id,
+    });
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: 'none' });
+    await expect(mod.as.mutation(api.corpusRequests.approve, { requestId })).rejects.toThrow(
+      /no-public-access ruling/i,
+    );
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
+  });
+
+  test('an admit whose catalogue feature is a removed body is refused, never re-activated', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: '3dhp',
+          externalId: 'I6PYK',
+          threeDhpId: 'I6PYK',
+          name: 'Taken Down Pond',
+          type: 'lakePond',
+          polygon: CANDIDATE.polygon as Polygon,
+          bbox: CANDIDATE.bbox,
+          centroid: FAR,
+          surfaceAreaSqM: 4_900_000,
+        },
+      ],
+    });
+    const twin = (await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0];
+    if (!twin) throw new Error('seed failed');
+    await t.run((ctx) =>
+      ctx.db.patch(twin._id, { removedAt: Date.now(), removalReason: 'landowner_request' }),
+    );
+    const requestId = await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'admit',
+      coord: { lat: 40, lng: 40 },
+    });
+    await t.mutation(internal.corpusRequests.recordResolution, {
+      requestId,
+      resolvedAt: Date.now(),
+      candidate: CANDIDATE,
+    });
+    await expect(mod.as.mutation(api.corpusRequests.approve, { requestId })).rejects.toThrow(
+      /taken off the map/i,
+    );
+    expect(standingOf((await get(t, twin._id)) as Doc<'waterBodies'>).standing).toBe('removed');
+  });
+
   test('an admit whose candidate is flowing water is refused rather than guessed', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');

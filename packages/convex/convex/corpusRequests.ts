@@ -19,6 +19,7 @@
  */
 
 import {
+  ADMIT_KNOWN_WATER_MARGIN_M,
   catalogueQueryUrl,
   isActive,
   MAX_REQUEST_NOTE_LENGTH,
@@ -65,12 +66,6 @@ import { listedBodiesNearCoord } from './waterBodies';
  * skater who has ten unanswered asks has said what they have to say until a moderator catches up.
  */
 const MAX_OPEN_REQUESTS_PER_USER = 10;
-
-/**
- * How far an `admit` coordinate may sit from a body we already hold and still be "new water". Inside
- * this, the request is really an `activate` or a `restore` on that body, and the client is told which.
- */
-const ADMIT_KNOWN_WATER_MARGIN_M = 50;
 
 /** Cap on the moderator queue read. Past this the queue is a backlog, not a list. */
 const QUEUE_CAP = 200;
@@ -222,13 +217,24 @@ export const resolveAdmit = internalAction({
       return { resolved: 'error' };
     }
     const resolution = parseCatalogueResponse(json, request.coord, now);
-    await ctx.runMutation(internal.corpusRequests.recordResolution, {
-      requestId,
-      resolvedAt: now,
-      ...(resolution.kind === 'found' ? { candidate: resolution.candidate } : {}),
-      ...(resolution.kind === 'error' ? { resolveError: resolution.message } : {}),
-      ...(resolution.kind === 'none' ? { resolveError: 'No catalogue water at this point' } : {}),
-    });
+    try {
+      await ctx.runMutation(internal.corpusRequests.recordResolution, {
+        requestId,
+        resolvedAt: now,
+        ...(resolution.kind === 'found' ? { candidate: resolution.candidate } : {}),
+        ...(resolution.kind === 'error' ? { resolveError: resolution.message } : {}),
+        ...(resolution.kind === 'none' ? { resolveError: 'No catalogue water at this point' } : {}),
+      });
+    } catch (err) {
+      // A candidate the row cannot hold (a Champlain-sized polygon against the document limit) must
+      // not leave the request "waiting" forever: record the failure without the polygon.
+      await ctx.runMutation(internal.corpusRequests.recordResolution, {
+        requestId,
+        resolvedAt: now,
+        resolveError: `could not store the catalogue answer: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return { resolved: 'error' };
+    }
     return { resolved: resolution.kind };
   },
 });
@@ -429,7 +435,6 @@ export const listQueue = query({
                 surfaceAreaSqM: r.candidate.surfaceAreaSqM,
                 bbox: r.candidate.bbox,
                 centroid: r.candidate.centroid,
-                polygon: r.candidate.polygon,
                 serviceUrl: r.candidate.serviceUrl,
               },
             }
@@ -497,11 +502,13 @@ export const approve = mutation({
           await ctx.runMutation(api.waterBodies.restore, { waterBodyId: body._id });
           break;
         case 'contest_access':
+          // The decision note goes to the requester; the ruling carries none. A public,
+          // 160-character note on the lake is a different sentence for a different reader, and the
+          // lake editor is where a moderator writes one.
           await ctx.runMutation(api.waterBodies.setPublicAccess, {
             waterBodyId: body._id,
             verdict: 'open',
-            ...(trimmedNote ? { note: trimmedNote } : {}),
-            reason: 'Public access confirmed on a skater’s request',
+            reason: 'Public access confirmed on a skater\u2019s request',
           });
           break;
         case 'takedown':
@@ -512,6 +519,26 @@ export const approve = mutation({
           });
           break;
       }
+    }
+
+    // The act must have taken: a body that acquired a `none` ruling or a removal after the ask was
+    // filed does not come back on an `activate`, and telling the requester it did would be a lie.
+    const after = await ctx.db.get(
+      admittedWaterBodyId ?? (request.waterBodyId as Id<'waterBodies'>),
+    );
+    if (!after) throw new ConvexError('Water body not found');
+    const outcome = standingOf(after);
+    const expectActive = request.kind !== 'takedown';
+    if (expectActive ? outcome.standing !== 'active' : outcome.standing !== 'removed') {
+      throw new ConvexError(
+        expectActive
+          ? `This lake is still ${outcome.standing === 'removed' ? 'removed' : 'dormant'}${
+              outcome.standing === 'dormant' && outcome.reason === 'no_public_access'
+                ? ' under a no-public-access ruling'
+                : ''
+            } — clear that first in the lake editor, then approve.`
+          : 'The removal did not take.',
+      );
     }
 
     await decide(ctx, request, 'approved', actor._id, now, trimmedNote, admittedWaterBodyId);
@@ -615,6 +642,17 @@ async function admitCandidate(
     .withIndex('by_three_dhp_id', (q) => q.eq('threeDhpId', c.externalId))
     .first();
   if (twin) {
+    const twinStanding = standingOf(twin);
+    if (twinStanding.standing === 'removed' || twinStanding.standing === 'unlisted') {
+      throw new ConvexError(
+        'The catalogue feature under this point is a body that was taken off the map. Decline this, or restore that body from the lake editor.',
+      );
+    }
+    if (twinStanding.standing === 'dormant' && twinStanding.reason === 'no_public_access') {
+      throw new ConvexError(
+        'The catalogue feature under this point is a body under a no-public-access ruling. Decline this, or change the ruling in the lake editor.',
+      );
+    }
     await activateBody(ctx, twin, {
       via: 'request',
       actorId: actor._id,

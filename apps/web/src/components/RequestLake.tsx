@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  ADMIT_KNOWN_WATER_MARGIN_M,
   describeRequestOutcome,
   MAX_REQUEST_NOTE_LENGTH,
   type RequestKind,
@@ -214,7 +215,13 @@ export function AdmitPrompt({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
-  const resolved = useQuery(api.waterBodies.resolveBodyForCoord, { coord });
+  // The same 50 m the server's `known_water` refusal uses — not the report form's 300 m parking
+  // buffer, which would route every press within a lot's walk of a lake to that lake and never
+  // open the form for the pond next door.
+  const resolved = useQuery(api.waterBodies.resolveBodyForCoord, {
+    coord,
+    bufferMeters: ADMIT_KNOWN_WATER_MARGIN_M,
+  });
   const create = useMutation(api.corpusRequests.create);
 
   // A body under the click is what the click was about: hand off to its drawer.

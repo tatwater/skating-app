@@ -74,6 +74,13 @@ export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 export const MAX_REQUEST_NOTE_LENGTH = 280;
 
 /**
+ * How far an `admit` coordinate may sit from a body we already hold and still be "new water". Inside
+ * this, the ask is really about that body — the server refuses with `known_water` and the clients
+ * pre-resolve with the same margin so the form never opens for a lake we have.
+ */
+export const ADMIT_KNOWN_WATER_MARGIN_M = 50;
+
+/**
  * Which kinds a body's standing admits. The drawer offers exactly these, and the server refuses the
  * rest, so the two cannot disagree about what can be asked of a lake.
  *
