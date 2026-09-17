@@ -1,5 +1,5 @@
 /**
- * Display scoring for water bodies (D49/D2), shared by every site that writes a body's
+ * Display scoring for water bodies (D49, A06c §4.2), shared by every site that writes a body's
  * `displayScore` / `minVisibleZoom` — the import, the backfill, `create`, the curation mutations,
  * and the standing transitions in `./standing`.
  *
