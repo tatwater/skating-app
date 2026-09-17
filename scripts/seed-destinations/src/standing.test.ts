@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeDestinations, gazetteerToDestinations } from './standingSeed';
+import { dedupeDestinations, gazetteerToDestinations, keepIdsFor } from './standingSeed';
 
 describe('gazetteerToDestinations', () => {
   it('reads name and region, ignores the tallies, and skips blank rows', () => {
@@ -37,6 +37,20 @@ describe('gazetteerToDestinations', () => {
 
   it('refuses a file without the two columns it needs', () => {
     expect(() => gazetteerToDestinations('name,state\nMorey,VT')).toThrow(/water_body/);
+  });
+});
+
+describe('keepIdsFor', () => {
+  it('keeps headline-state and coordinate matches, never a poster-state-only one', () => {
+    const d = { name: 'Lake George', state: 'VT', states: ['VT', 'NY'], sources: [] as [] };
+    expect(
+      keepIdsFor([
+        { kind: 'matched', destination: d, body: { _id: 'vt' } },
+        { kind: 'matched', destination: d, body: { _id: 'ny' }, viaMentionedState: true },
+        { kind: 'ambiguous', destination: d, candidates: [{ _id: 'x' }] },
+        { kind: 'unmatched', destination: d },
+      ]),
+    ).toEqual(['vt']);
   });
 });
 

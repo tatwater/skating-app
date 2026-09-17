@@ -25,7 +25,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { type CandidateBody, type Destination, matchAll } from './match';
-import { dedupeDestinations, gazetteerToDestinations } from './standingSeed';
+import { dedupeDestinations, gazetteerToDestinations, keepIdsFor } from './standingSeed';
 
 const SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
 const REPORT = fileURLToPath(new URL('../.standing-report.json', import.meta.url));
@@ -69,7 +69,8 @@ async function main() {
   const matched = outcomes.filter((o) => o.kind === 'matched');
   const ambiguous = outcomes.filter((o) => o.kind === 'ambiguous');
   const unmatched = outcomes.filter((o) => o.kind === 'unmatched');
-  const keepIds = matched.map((o) => (o.kind === 'matched' ? o.body._id : '')).filter(Boolean);
+  const posterOnly = matched.filter((o) => o.kind === 'matched' && o.viaMentionedState);
+  const keepIds = keepIdsFor(outcomes);
 
   // **The run row is opened before the first mutating page** (review, PR #61): every page commits
   // on its own, so a walk that dies at page 80 has shelved 4,000 bodies — and without a `running`
@@ -128,7 +129,12 @@ async function main() {
         totals,
         matched: matched.map((o) =>
           o.kind === 'matched'
-            ? { name: o.destination.name, state: o.destination.state, bodyId: o.body._id }
+            ? {
+                name: o.destination.name,
+                state: o.destination.state,
+                bodyId: o.body._id,
+                ...(o.viaMentionedState ? { viaMentionedState: true, kept: false } : {}),
+              }
             : null,
         ),
         ambiguous: ambiguous.map((o) =>
@@ -148,7 +154,7 @@ async function main() {
   );
 
   process.stderr.write(
-    `[standing] keep list: ${matched.length} matched · ${ambiguous.length} ambiguous · ${unmatched.length} unmatched\n` +
+    `[standing] keep list: ${matched.length} matched (${posterOnly.length} via a poster state only — reported, not kept) · ${ambiguous.length} ambiguous · ${unmatched.length} unmatched\n` +
       `[standing] corpus: ${totals.scanned} scanned · ${totals.demoted} ${apply ? 'shelved' : 'would be shelved'} · kept ${JSON.stringify(totals.kept)}\n` +
       `[standing] report written to ${REPORT}\n`,
   );

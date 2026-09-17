@@ -104,7 +104,18 @@ export function bodyPoint(body: CandidateBody): { lat: number; lng: number } | u
 }
 
 export type MatchOutcome =
-  | { kind: 'matched'; destination: Destination; body: CandidateBody; distanceKm?: number }
+  | {
+      kind: 'matched';
+      destination: Destination;
+      body: CandidateBody;
+      distanceKm?: number;
+      /**
+       * The body is in one of the destination's *mentioned* states, not its headline state, and no
+       * coordinate narrowed it — so the only evidence is a unique name in a state people posted
+       * from. Reported as a match, never kept on apply (review, PR #64).
+       */
+      viaMentionedState?: true;
+    }
   | { kind: 'ambiguous'; destination: Destination; candidates: CandidateBody[] }
   | { kind: 'unmatched'; destination: Destination };
 
@@ -136,11 +147,14 @@ export function matchDestination(
   if (byName.length === 1) {
     const body = byName[0] as CandidateBody;
     const point = bodyPoint(body);
+    const inHeadlineState = body.states?.includes(destination.state) ?? false;
+    const narrowed = destination.near !== undefined && point !== undefined;
     return {
       kind: 'matched',
       destination,
       body,
       ...(destination.near && point ? { distanceKm: distanceKm(destination.near, point) } : {}),
+      ...(!inHeadlineState && !narrowed ? { viaMentionedState: true as const } : {}),
     };
   }
 

@@ -3,7 +3,7 @@
  * from the CLI so the rules are covered and the subprocess glue is excluded, like `cli.ts`.
  */
 
-import type { Destination } from './match';
+import type { Destination, MatchOutcome } from './match';
 
 /**
  * Split one CSV line, honouring double-quoted fields and doubled quotes inside them — the same
@@ -68,6 +68,17 @@ export function gazetteerToDestinations(csv: string): Destination[] {
       { name, state, ...(states.length > 1 ? { states } : {}), sources: ['community' as const] },
     ];
   });
+}
+
+/**
+ * The ids an apply run keeps: every match except one that rests on a poster state alone.
+ * `region_breakdown` says where people wrote from, not where the water is, so a unique same-named
+ * body in a mentioned state is a lead for the report, not evidence to shelve everything else by.
+ */
+export function keepIdsFor(outcomes: readonly MatchOutcome[]): string[] {
+  return outcomes.flatMap((o) =>
+    o.kind === 'matched' && !o.viaMentionedState ? [o.body._id] : [],
+  );
 }
 
 /** Two lists, one keep set: a lake on both is one entry, not two matches. */

@@ -70,7 +70,14 @@ describe('matchDestination', () => {
       states: ['VT', 'NY'],
       sources: [] as [],
     };
-    expect(matchDestination(acrossStates, [ny])).toMatchObject({ kind: 'matched', body: ny });
+    // Found — but only because NY is a state people posted from. Reported, flagged, never kept.
+    expect(matchDestination(acrossStates, [ny])).toMatchObject({
+      kind: 'matched',
+      body: ny,
+      viaMentionedState: true,
+    });
+    const vtHeadline = body({ _id: 'vt2', name: 'Lake George', states: ['VT'] });
+    expect(matchDestination(acrossStates, [vtHeadline])).not.toHaveProperty('viaMentionedState');
     const vt = body({ _id: 'vt', name: 'Lake George', states: ['VT'] });
     expect(matchDestination(acrossStates, [ny, vt])).toMatchObject({ kind: 'ambiguous' });
     const vtOnly = { name: 'Lake George', state: 'VT', sources: [] as [] };
