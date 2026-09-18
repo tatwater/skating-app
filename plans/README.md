@@ -98,8 +98,9 @@ a phase doc fails the build.
   on the list), and a regex literal is code to a tokenizer — check by hand any regex that parses
   third-party text.
 
-Nothing here is final code; the data model in `06` is schema-flavored pseudocode meant to be
-reacted to.
+Nothing here is code; where a doc and the code disagree, the code is right and the doc is the bug —
+`06` maps `schema.ts` rather than restating it, and `05` maps the deployments, each with a test
+that says so.
 
 The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted
 or relocated from before it, and the archived register — so a document that says `A06e` may be
@@ -116,10 +117,10 @@ git history of PRs #60, #62, #64 and #65.)
 | 00 | [Vision](./00-vision.md) | The problem, the product, the principles, app structure. **Start here.** |
 | 01 | [Decisions log](./01-decisions.md) | ADR-style log of every decision (`D#`) and its rationale. |
 | 02 | [Open questions](./02-open-questions.md) | What we're deliberately deferring (`Q#`), with current leanings. |
-| 03 | [Tech stack options](./03-tech-stack-options.md) | Service/tooling menu with pros/cons; the locked default stack. |
-| 04 | [Integrations](./04-integrations.md) | GPS providers, weather, email — setup + ToS watch-outs. |
-| 05 | [Accounts & credentials](./05-accounts-and-credentials.md) | External accounts to register, ordered by lead time. |
-| 06 | [Data model](./06-data-model.md) | Conceptual schema for every entity + vocabulary. |
+| 03 | [Tech stack & options](./03-tech-stack-options.md) | What we run on, by layer, with its `D#`; what was considered and set aside; deferred tech; the cost posture. |
+| 04 | [Data sources & integrations](./04-integrations.md) | Every dataset and API by what it feeds — license, quota, archive, alternatives — plus the outbound integrations (Strava push, GPX, watch adapters). |
+| 05 | [Accounts & credentials](./05-accounts-and-credentials.md) | The register: every external account, the credential it yields, where it lives per environment; kept current by `credentialsRegister.test.ts`. |
+| 06 | [Data model](./06-data-model.md) | The map over `schema.ts`: every table by domain, relationships, the vocabulary's provenance, the modeling rules that bite; kept current by `dataModelRegister.test.ts`. |
 | 07 | [Roadmap](./07-roadmap.md) | Every phase, its status, what it deferred, and what it ruled out. |
 | 08 | [Legal & feasibility checklist](./08-legal-feasibility-checklist.md) | Register of everything deferred behind a legal / ToS / consent / feasibility gate. |
 

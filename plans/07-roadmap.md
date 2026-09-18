@@ -713,7 +713,7 @@ long-form register this table replaced is archived verbatim in
 | Bathymetry: a curving anisotropy axis · contour crowding · NY statewide coverage | ⚪ | a user complaint about a named water body; a NY source | A06b |
 | A06e: radar terrain correction · two-surface ice fractions | ⚪ | the backfill | A06e |
 | Strava: a real sandbox upload | ⚪ | a session | Phase 08 |
-| The Apple / Play / TestFlight distribution track | ⚪ | the accounts, with the prod cutover | `05` |
+| The iOS build / TestFlight and the Play track | ⚪ | an iPhone (Apple is enrolled); a Play account (none yet) — with the prod cutover | [`backlog/ios-distribution.md`](./backlog/ios-distribution.md), `05` |
 
 **Ruled out, project-wide** (the per-phase reasons are in the entries above): pulling GPS from
 Strava (L7) · k-anonymity contributor gating (D58) · Fitbit as a provider · the `appConfig`
