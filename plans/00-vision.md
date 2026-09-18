@@ -14,8 +14,8 @@ work.
 ## The problem
 
 Nordic skating is a niche but passionate sport, concentrated where winters are long — New England,
-New York, Québec, Alaska, the Upper Midwest. Its defining fact is that ice conditions are extremely
-time- and place-sensitive: ice that was perfect this morning can be ruined by an afternoon of sun,
+New York, Québec, and Alaska. Its defining fact is that ice conditions are extremely
+time- and place-sensitive: ice that was perfect this morning can be ruined by an afternoon of higher temps,
 a night of snow, or a warm rain — and ice that was too thin on Tuesday can be the skate of the year
 on Friday.
 
