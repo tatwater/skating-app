@@ -58,7 +58,7 @@ Rules that fell out of the history and are worth keeping:
   that's in the git history is spoken for.
 - **`B` is the last lettered era.** With two-digit padding, `A` alone had 99 slots, so `B` exists
   for meaning rather than capacity — and letter eras collide with the registers (`D#`, `Q#`, `L#`)
-  soon after. After `B` closes, everything is a feat.
+  soon after. After `B` closes, everything is a feature.
 
 ### Workstreams
 
@@ -80,27 +80,7 @@ a phase doc fails the build.
 - **`L#`** — a legal / ToS / feasibility gate, in
   [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md).
 
-### Words
-
-- **Water body**, not *lake*, for the general case — people skate ponds, reservoirs, bays and
-  reaches too (founder call, 2026-09-16). *Lake* stays in proper nouns, dataset names and terms of
-  art (lake-effect, lake-skating). `plans/` follows this; `docs/`, code comments and UI copy are
-  still to be swept (see the deferred register).
-- **US spellings** in all new text. The tree was swept 2026-09-17 (D185 — stored keys migrated,
-  not grandfathered). What stays UK on purpose, and is the allowlist for any future sweep: OSM tag
-  values (`water=harbour`, the key of `OSM_WATER` in `waterClass.ts`); the place-name regex in
-  `scripts/etl/src/tidalBand.ts`; the OSM depth-unit parser's `metre|metres` and its `'2 metres'`
-  fixture in `scripts/etl/src/transform.ts`; "Burlington Harbour" as a name alias in A02; the VCGI
-  credit *"Soundings digitised from NOAA nautical charts…"* (an agreed attribution, in code, tests
-  and prose); and lowercase literals that name things that existed (branch names, campaign ids,
-  commit scopes). Two lessons from the sweep: the next one starts from **stems, not words**
-  (`unrecognised` hides past `recognise`; `judgement`, `artefact`, `ageing`, `centimetre` were never
-  on the list), and a regex literal is code to a tokenizer — check by hand any regex that parses
-  third-party text.
-
-Nothing here is code; where a doc and the code disagree, the code is right and the doc is the bug —
-`06` maps `schema.ts` rather than restating it, and `05` maps the deployments, each with a test
-that says so.
+### Renumbering pass
 
 The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted
 or relocated from before it, and the archived register — so a document that says `A06e` may be
