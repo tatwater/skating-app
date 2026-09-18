@@ -35,7 +35,7 @@ A sibling of `core` and `design` is the shape every other shared thing in the re
      unsubscribe footer; the per-type subject lines stay where they are.
    `sendEmail` keeps its `{ html, text }` contract and its never-throw posture — the only change
    at the call site is where the strings come from.
-2. **Runtime.** `@react-email/render` runs on `react-dom/server`. `dataExport.ts` and
+2. **Runtime.** `@react-email/render` 2.x runs on `react-dom/server`. `dataExport.ts` and
    `operatorAlerts.ts` are already `"use node"`; `notificationDelivery.deliverBatch` is a default-
    runtime `internalAction`. Either render in the isolate (React Email documents edge support —
    **verify with `convex dev --once` before assuming**) or split the email half into a `"use node"`

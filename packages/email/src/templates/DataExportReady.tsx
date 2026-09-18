@@ -6,7 +6,7 @@
  * with its `PreviewProps`; the named export is what the app renders.
  */
 
-import { Heading, Link, Text } from '@react-email/components';
+import { Heading, Link, Text } from 'react-email';
 import { Layout, styles } from '../Layout';
 
 export type DataExportReadyProps = {

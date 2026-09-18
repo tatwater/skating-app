@@ -545,7 +545,9 @@ office; see `07-roadmap.md`).
 
 ## D38 — Transactional email: Resend + React Email
 **Decided.** **Resend** is the transactional email provider; email templates are authored
-with **React Email** (`@react-email/components`). Sent from **Convex actions** (Node
+with **React Email** (`react-email` ≥ 6, which ships the components itself — every
+`@react-email/*` component package was deprecated in 2026; `@react-email/render` stays the
+renderer. Amended 2026-09-18, PR #68). Sent from **Convex actions** (Node
 runtime) via the Resend SDK/API; API key lives in Convex env vars (never client-side).
 **First use — operator alerts (D37):** email the founder on every **new
 `supportTickets` row**, and on any **safety-priority** item (`unsafe_false_report` flags,

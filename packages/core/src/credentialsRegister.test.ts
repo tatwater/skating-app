@@ -20,6 +20,13 @@ const REGISTER = join(REPO, 'plans/05-accounts-and-credentials.md');
 
 const PROCESS_ENV = /process\.env\.([A-Z][A-Z0-9_]+)/g;
 const IMPORT_META_ENV = /import\.meta\.env\.([A-Z][A-Z0-9_]+)/g;
+/**
+ * The pipelines' idiom: `const env = { ...readEnvFile(…), ...process.env }` and then `env.NAME`.
+ * A direct-access regex can't see those reads, so any file that mentions `process.env` at all is
+ * also scanned for `env.NAME` — the object is only ever built from it. (`import.meta.env.NAME`
+ * matches too, harmlessly: those names are registered by the other pattern.)
+ */
+const ENV_OBJECT = /\benv\.([A-Z][A-Z0-9_]+)/g;
 
 /** A tree of sources filtered by relative path, or one known file. */
 type Source = { pattern: RegExp } & ({ dir: string; ext: RegExp } | { file: string });
@@ -87,12 +94,15 @@ function namesRead(): Map<string, Set<string>> {
     const { pattern } = source;
     for (const file of filesOf(source)) {
       const text = readFileSync(file, 'utf8');
-      for (const m of text.matchAll(pattern)) {
-        const name = m[1] as string;
-        if (NOT_CONFIG.has(name)) continue;
-        const where = found.get(name) ?? new Set<string>();
-        where.add(relative(REPO, file));
-        found.set(name, where);
+      const patterns = text.includes('process.env') ? [pattern, ENV_OBJECT] : [pattern];
+      for (const p of patterns) {
+        for (const m of text.matchAll(p)) {
+          const name = m[1] as string;
+          if (NOT_CONFIG.has(name)) continue;
+          const where = found.get(name) ?? new Set<string>();
+          where.add(relative(REPO, file));
+          found.set(name, where);
+        }
       }
     }
   }

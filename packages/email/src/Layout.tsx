@@ -10,7 +10,7 @@
  * Gmail, Apple Mail and a plain-text fallback beats one that looks better in one of them.
  */
 
-import { Body, Container, Head, Html, Preview, Section, Text } from '@react-email/components';
+import { Body, Container, Head, Html, Preview, Section, Text } from 'react-email';
 import { light } from '@skating/design';
 import type { ReactNode } from 'react';
 
