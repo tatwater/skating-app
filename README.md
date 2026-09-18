@@ -13,9 +13,8 @@ today the community coordinates almost entirely over email forums and Facebook g
 which are hard to search, easy to miss, and have no map, no distance filtering, and no
 freshness signal. This app is a purpose-built alternative.
 
-> 🧭 **New here? Start with the [vision](./plans/00-vision.md)** — what we're building, for whom,
-> the four principles everything answers to, and what this app deliberately is *not*. Five minutes,
-> and everything else in this repo makes sense.
+> 🧭 **New here? Start with the [vision](./plans/00-vision.md)** — what we're building, for whom, and
+> the four principles everything answers to.
 
 ## ⚠️ Safety first — please read
 
