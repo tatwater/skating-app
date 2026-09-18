@@ -823,7 +823,7 @@ neither is complete without the other:
   or nothing — the first address on an account mid-change is the unverified one it just added.
 
 **Founder task, per Clerk instance:** register the endpoint and set `CLERK_WEBHOOK_SIGNING_SECRET`
-— recipe in [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) §11b. Until then
+— recipe in [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) § 3c. Until then
 the route answers 500 and the launch-time sync is the only refresh.
 
 **Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows

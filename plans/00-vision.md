@@ -1,154 +1,181 @@
 # Vision
 
+**A map of the ice, kept by the people who were just on it.**
+
+A map-first app for Nordic (wild) ice skating — lakes, ponds, bays, and (eventually) rivers — where
+skaters share what the ice was like when they were standing on it, and where everything else you'd
+want to know about a body of water before you drive to it is already waiting in the same place.
+
+This is the guiding document: what we're trying to do and why it matters. The mechanics live
+elsewhere — the [decisions log](./01-decisions.md) for every choice and its reasoning, the
+[roadmap](./07-roadmap.md) for what's being built, and [`docs/`](../docs/) for how the important systems
+work.
+
 ## The problem
 
-Nordic (wild) ice skating is a niche but passionate sport, concentrated in the
-northern US (New England, New York, Alaska). Ice conditions are extremely
-time- and place-sensitive: ice that is perfect today can be ruined tomorrow by
-sun, snow, rain, or temperature swings — and ice that was too thin two days ago
-can be great today.
+Nordic skating is a niche but passionate sport, concentrated where winters are long — New England,
+New York, Québec, Alaska, the Upper Midwest. Its defining fact is that ice conditions are extremely
+time- and place-sensitive: ice that was perfect this morning can be ruined by an afternoon of sun,
+a night of snow, or a warm rain — and ice that was too thin on Tuesday can be the skate of the year
+on Friday.
 
-The community currently coordinates almost entirely over **Google Group email
-forums** (plus some per-state Facebook groups). Email is a poor fit for this:
+The community coordinates almost entirely over **email and Facebook groups**. Email is a poor fit for
+information that expires in days and only matters to each person within an acceptable driving radius:
 
-- Time-sensitive, location-specific info is buried in and around unrelated email.
-- Easy to miss; hard to search.
-- Overwhelming — threads about far-away water bodies flood inboxes with irrelevant info.
-- No structure: no map, no filtering by distance, no freshness signal.
+- The one report you needed is buried between a gear-for-sale thread and a fifty-reply argument.
+- It's easy to miss, hard to search, and impossible to sort by *physical location*.
+- Threads about water bodies three states away flood everyone's inbox.
+- There's no structure: no map, no distance, no sense of how old a report is or what the weather
+  has done to it since — not without a side quest through three other sites.
+
+The people in those groups are careful, experienced, and generous with what they know. The tools
+are what's holding the knowledge back.
 
 ## The product
 
-A **map-first** app for sharing peer ice reports, built as:
+**The center of the app is a human report:** a named skater, a specific water body, a specific
+time, and what they found — the ice, the thickness they measured, the hazards they saw, a photo, a
+note. Everything else exists to make those reports easier to write, easier to find, and easier to
+interpret and extrapolate from.
 
-- **Mobile app (primary)** — iOS + Android via React Native / Expo. Optimized
-  for live/just-finished reporting from the field.
-- **Web app (secondary)** — TanStack Start, for people who prefer a keyboard/big
-  screen for planning and longer reports.
+Around each report, the app already knows the lake. How deep it is and which parts are deepest. Which
+shore the wind hammers. Where the boat launch is, where you can park, how far the walk in is, and
+whether anyone's posted a sign saying you can't. What it looks like from orbit this week, and the week
+it froze over. What the weather has done since the last skater was there. Today that research means a
+dozen browser tabs across a dozen services; here it's one drawer, one tap, and the report sits on
+top of all of it.
 
-The primary view is a **map centered on the user's home**, themed wintery/icy,
-with bodies of water as the focus (roads shown only for reference/scale). Tap any
-water body to see its name, surface area, and a feed of past reports (sorted by
-**skate time, not report time**).
+Two surfaces, one product: a **mobile app** built for the field — cold hands, low battery, no signal
+— and a **web app** for planning at a big screen and writing the longer story of a good day.
 
 ## Product principles
 
-1. **Safety-first, never authoritative.** The app helps skaters make *their own*
-   smart decisions. It never tells anyone ice is "safe" or "good to go." Every
-   report is a **named peer's observation at a specific time and place**. The
-   decision to step on ice is always the individual's.
-   - We *contextualize* aging reports (e.g. "3 days of sun + rain since this
-     report") to help judgment — without predicting or promising anything.
-   - A report that says **"don't do it"** is as valuable as a positive one.
-   - Because a dangerously false "the ice is great!" report is a *safety* risk, not
-     just spam, users can **flag/report** content and **block** users, with a
-     moderator takedown path (D32).
-2. **Fast and low-friction in the cold.** Reporting and confirming hazards must
-   be near-instant. Cold + wind drains phone batteries fast; minimize taps,
-   minimize battery use, support offline capture with later sync.
-3. **Respect the existing community & its safety culture.** Don't lecture experts.
-   Reference guides live elsewhere — e.g. the **Nordic Skater** sites
-   (<https://nordicskaters.squarespace.com/> and <http://lakeice.squarespace.com/>),
-   whose terminology this app adopts
-   (see `06-data-model.md` vocabulary) — so we link out and let people jump straight
-   to reading/submitting reports. Recruit and bridge, don't replace-by-force.
-4. **Privacy by default where it matters.** Home address is private to the user
-   (a filter input only). **Reports are always public** (D13) — the app is a community
-   commons, not a private log; the privacy control is at the **profile** level (public
-   & searchable, or private = name + photo only). Users can **delete their account and
-   export their data**; deletion anonymizes (doesn't erase) their past reports (D33).
+1. **Safety-first, never authoritative.** The app helps skaters make *their own* decisions. It
+   never says ice is "safe" or "good to go," never predicts, never grades. Every report is one
+   named peer's observation at one time and place, and the decision to step onto the ice is always
+   the individual's.
+   - We *contextualize* aging reports — "three days of sun and rain since this one" — to support
+     judgment, not replace it. When something on the map fades, it's our **confidence** fading, never
+     a claim that a hazard has gone.
+   - A report that says **"don't"** is as valuable as one that says "go."
+   - A dangerously false "the ice is great!" is a safety issue, not just spam. Anyone can flag bad
+     reporting, and a human moderator can take it down fast.
+2. **Fast and low-friction in the cold.** Reporting and confirming a hazard must be near-instant:
+   minimum taps, minimum battery, and it works with no signal — write it on the ice, it syncs from
+   the car.
+3. **Respect the community and its safety culture.** Don't lecture experts. The reference material
+   already exists — the **Nordic Skater** sites (<https://nordicskaters.squarespace.com/> and
+   <http://lakeice.squarespace.com/>) whose vocabulary this app adopts — so we link out to the expert
+   guidance and get people straight to reading and writing reports. Recruit and bridge; not replace.
+4. **Privacy by default where it matters.** Your home is private — it's a filter, never shown. Reports
+   are public, because a report is a gift to the next skater and the app is a commons, not a private
+   log. Your profile is as public as you want it. Your data is yours to export and yours to take
+   with you.
 
-## Who it's for / rollout
+## What you can do
 
-- **Alpha (first ~20 users):** the founder + close skating friends. Squash bugs
-  in a real friend group before any broader push.
-- **Then:** expand region-by-region (likely NH/VT/ME first — where the community
-  and existing FB groups are), rather than thin nationwide coverage.
+### Say how the ice was
 
-## Core value loop
+- **Report** — live or just-finished: ice type, thickness readings, conditions, hazards, photos, the
+  put-in you used, and when you skated.
+- **Mark a hazard** where it actually is — a point, a line, a shaded area inside the water body — and
+  the next skaters confirm if it's still there or say it's gone. Some hazards return to the same
+  place every winter; the app remembers, so a pressure ridge that forms off the same point every
+  year can present a warning on the map before anyone hits it.
+- **Talk** — threaded comments on a report. Ask what the north end was like. Say thanks.
+- **Ask** — post a bounty on a water body nobody's reported on lately; skaters who've been there
+  recently or live nearby get the nudge.
+- **Be trusted** — reputation earned from corroboration and helpfulness. Encourages participation and
+  accuracy, but is not a badge of honor, never a leaderboard, never a number you're chasing.
 
-A skater hunting for good ice tomorrow opens the map, pans around what's within
-their willing **drive time** from home, taps candidate water bodies, and reads
-the freshest peer reports for each — then makes their own call.
+### Do all your research in one place
 
-Reports are seeded and kept fresh via:
-- Native in-app reporting (live or just-finished).
-- **The in-app GPS recorder** — record the skate here, and stopping it offers to file the report
-  with the real path attached. *(Amended 2026-07-24: this used to read "Strava integration —
-  auto-detect ice-skate activities"; Strava's terms forbid the pull direction, so we record it
-  ourselves and **push** to Strava instead — see D24's amendment and L7.)*
-- (Aspirational) **Bridging** existing Google Group / Facebook posts into
-  summarized in-app reports.
+Tap any water body and it's already there, with its source credited:
 
-## Feature pillars
+- **Depth** and **contours** — how deep, where the shallows are, the org that surveyed it, and whether
+  a number is measured or estimated. Deep water freezes late; the app tells you which parts are deep.
+- **Wind** — which direction winter wind actually comes from on *this* lake, and which shore takes
+  it, from years of climatology rather than a guess from the lake's shape.
+- **Access** — the launches, the lots, the walk in with its distance and climb, and the posted rules
+  where there are any. A body you can't legally reach says so.
+- **From orbit** — a season of satellite passes of this water body, clipped to its shape, cloudy
+  passes left out, to scrub through and watch the ice form and change.
+- **Weather** — what it has done since the last report, hour by hour, and a seven-day planner for
+  when to go. Turn it around and search by weather: *three nights below 20°F and no snow, within an
+  hour of home* — and find ice nobody's written about yet.
+- **Places within places** — the bay is its own destination, with its own launches, its own depth,
+  its own reports, whether it's on the ocean, a Great Lake, or just a lake with different parts.
 
-- **Map** — home-centered, water-focused, drive-time filtered, custom icy/FUI style.
-- **Reports** — per-water-body feed; ice quality, hazards, photos, weather, time.
-  Always **public** (D13) — post to the community or not at all.
-- **Hazards** — users draw points/lines/shaded areas *within* a water body to mark
-  specific dangers; Waze-style "is this still there?" confirmation loop.
-- **Community (no social graph — D13)** — threaded comments on reports; **searchable
-  profiles** (public or private) that coalesce a skater's reports; a **trust score**
-  earned from corroboration + helpful marks (D50); town (not address) optionally public
-  on profile. Deliberately **no follow/friend graph** — a report is a report regardless
-  of who made it, and any private coordination belongs off-platform.
-- **GPS tracks — recorded here, pushed out** *(reframed 2026-07-24, D24 amendment / L7)*. A native
-  in-app **recorder** produces the trusted path; a track that's ours is legal to draw on a public
-  report and aggregate into a water body's community map (a Strava-sourced one never would be). It
-  **pushes** to Strava (`activity:write`) so you keep your stats — record once, get both. Garmin /
-  COROS / Polar / Apple Health / Google Health Connect stay planned **input adapters** into the same
-  store, deferred. Each skate is **resolved to the water body it was on** (D44), so you can find
-  "skates on Lake Morey" by name, not by drawing a box on the map. Where a path came from is also
-  what lets a skate on unmapped water **create** that water body — a track is evidence, a drawing
-  isn't (D14).
-- **Bounties** — request a report for a water body; skaters who were recently
-  there get prompted; honest reports (esp. with photo evidence) earn reputation.
-- **Newsfeed** — reports/conversations within the user's drive radius, sorted by
-  most recent **skate time** first.
+### On the ice
 
-## App structure & navigation
+- **Record your skate** in the app. Stop, and it offers to file the report with the real path
+  attached — a path is evidence, and evidence on unmapped water can put a new pond on the map.
+- **On-ice mode**, opt-in: as you skate toward a reported hazard, your phone tells you before you
+  reach it.
+- **Push your track** to Strava, Garmin, and the rest, so recording here costs you nothing you
+  already had.
+- **Or bring your own.** Already record with a watch or another app? Import the GPX and file the
+  report from it — keep recording the way you prefer, and the skate still lands on the map.
 
-Two primary top-level pages — **Map** (default) and **Newsfeed** — plus
-create/detail/profile flows. They're two lenses on the same reports: Map is
-**spatial**, Newsfeed is **chronological**.
+### Hear about what matters
 
-### Mobile (Expo Router — tab navigation)
-- **Map** (default tab) — home/water framing on open (D20); tap a water body → detail.
-- **Newsfeed** (tab) — cross-water-body, in-range feed (above).
-- **＋ Report** (center action) — create a report (offline-capable, D9).
-- **Bounties** (tab) — browse / request bounties.
-- **You** (tab) — profile, reputation, GPS connections, settings, notifications.
+Notifications are about *your* water, on *your* terms: the lake you love got its first report of the
+season; the bounty you posted got answered; someone confirmed the hazard you marked; the weather
+turned on the pond you skated last weekend; the ice arrived. One evening digest if that's how you
+like it, silence if it's not.
 
-### Web (TanStack Start routes) — see D47
-- `/` — Map (default). **Create-a-report** and **bounties** are surfaced *here*, not as
-  separate pages (D47).
-- `/feed` — Newsfeed, with **create-a-report** surfaced here too (D47).
-- `/u/:username` — profile (including the current user's own) — its own page.
-- `/settings` — settings + GPS provider connections.
-- `/notifications` — notifications.
-- **Detail child routes** — `/report/:id` (+ threaded comments), `/bounties/:id`,
-  `/water/:id` (water-body view) — are reached *from* `/` and `/feed`; there are **no
-  top-level `/report` or `/bounties` browse pages** (D47). Added as the summary-in-place
-  content outgrows the top-level pages — deferred, not built up-front.
-- Auth handled by **Clerk** (D26), with the same **profile-provisioning + risk-ack gate**
-  as mobile (onboarding / re-ack).
+## Two lenses
 
-Both surfaces read the same Convex data; mobile and web share logic/types/tokens,
-not UI components (D7).
+The app has two front pages, and they're two views of the same reports. **Explore** is spatial: the
+map, centered on home — or on wherever you're headed — water in focus, everything else for
+reference. **Latest** is chronological: what's fresh, sorted by skate time, tuned to how far you're
+willing to drive. Reporting and bounties
+hang off both.
 
-## Explicitly deferred
+## Who it's for, and where
 
-- AI predictions of ice condition (liability-heavy — see open questions; at most,
-  *summarize/contextualize* human reports, never predict actionable go/no-go).
-- In-app group-skate organizing.
-- In-app safety guides (link out to existing resources instead).
-- Monetization (passion / open-source project; lean on free tiers).
+**First: about twenty friends.** The founder's own skating circle, on real ice, to kick off the 2026-27
+season, until we prove the app is something worth sharing.
 
-## Aesthetic & accessibility
+**Then: New England and New York**, where the community and its email groups already are, and where
+the app already knows roughly 25,000 water bodies. The 2026-27 season is that region. **Southern Québec**
+is the obvious next step — the same skaters cross the border for a day — and comes as soon as there's a
+real signal. **Alaska**, and potentially the Upper Midwest, are prepped for 2027-28.
 
-FUI ("fantasy UI" / sci-fi / spy-movie) — techy and reserved, **never at the
-expense of usability**. Explored later; foundation and features come first.
+Reports are seeded and kept fresh by the people who skate: native reporting, the in-app recorder, and
+— aspirationally — a bridge to the existing email and Facebook groups that runs both ways, so the
+knowledge already flowing reaches everyone, and a report written here can still reach the skaters
+who haven't switched.
 
-Two first-class themes (D34): a **high-contrast / bright outdoor mode** for
-readability in glare on sunny ice (readability outdoors is a safety feature), and
-a **dark mode** for evening planning on the sofa. Baseline accessibility — WCAG AA
-contrast, dynamic type, screen-reader labels — is a requirement, not a polish item.
+## Look and feel
+
+The look this app is heading toward is **FUI** — "fantasy UI," the interfaces of sci-fi and spy films:
+reserved, precise, technical; a map that reads like an instrument. Techy without being cold to use, and
+never at the expense of legibility. What's built today points in that direction; the design work ahead
+of it is much bigger than what's behind it, and the bar is high.
+
+Two first-class themes, because they're safety features: a **bright, high-contrast outdoor mode**
+you can read in glare on sunny ice, and a **dark mode** for planning on the sofa. WCAG AA contrast,
+dynamic type, and screen-reader labels are the floor, not polish.
+
+## What this app is not
+
+Some of the sharpest decisions were about what to leave out. Recording them here so the pitch stays
+honest:
+
+- **Not a prediction.** No AI ice forecast, no "safe" badge, no ice classification from a photo.
+  Machines summarize and curate what humans and instruments observed; they never grade the ice or make
+  safety decisions for you.
+- **Not a social network.** No follows, no friends, no feed of people. A report is a report
+  regardless of who wrote it; private coordination belongs off-platform.
+- **Not a Strava scraper.** Tracks are recorded here or imported by you, owned by you, and *pushed*
+  out. Nothing is pulled from a fitness platform behind your back; a path reaches the map only because
+  you attached it to a report.
+- **Not anonymous by design.** Every report has a name on it. That's the trust model; the app
+  protects your home, not your authorship.
+- **Not a safety guide.** The guides exist and are excellent; we link to them.
+- **Not a place to organize a group skate.** Maybe one day. Not yet.
+- **Not a business.** A passion project, open source, on free tiers for as long as that holds. Skaters
+  who want to can chip in toward running costs (how is still open — Q14).
+
+Everything above is in service of one thing: the next skater knowing what the last one knew.

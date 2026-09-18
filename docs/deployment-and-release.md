@@ -197,7 +197,7 @@ need an explicit `environment` field in `eas.json` or EAS loads no variables at 
 | APNs push key (iOS push) | ✅ uploaded 2026-09-14 | created manually at developer.apple.com and pasted into `eas credentials` (the Apple-login path failed with `iTunes service key is empty`, an Apple-side error, not a bad password). One key per Apple team, covers every app. |
 | iOS distribution cert / provisioning | ⬜ | no iOS build exists yet; needs `eas device:create` for ad-hoc installs |
 | `EXPO_ACCESS_TOKEN` (Convex env) | ✅ dev deployment | lets `expoPush.ts` authenticate to Expo's push API; label on expo.dev is `convex-dev-push` |
-| `CLERK_WEBHOOK_SIGNING_SECRET` (Convex env) | ✅ dev 2026-09-15 (endpoint registered in the dev Clerk instance) | verifies `POST /clerk-webhook` (`user.updated` → email/avatar mirrors). Route answers 500 until set, on purpose. Per Clerk instance; §11b of the credentials doc. |
+| `CLERK_WEBHOOK_SIGNING_SECRET` (Convex env) | ✅ dev 2026-09-15 (endpoint registered in the dev Clerk instance) | verifies `POST /clerk-webhook` (`user.updated` → email/avatar mirrors). Route answers 500 until set, on purpose. Per Clerk instance; § 3c of the credentials doc. |
 
 `eas credentials` stores an Apple password in the macOS Keychain as an **internet** password,
 server `deliver.<apple-id>`; clear a bad one with
@@ -268,7 +268,7 @@ of every line is the founder — they are provisioning decisions, not code.
 7b. **Clerk webhook**: a new endpoint in the **prod** Clerk instance pointing at
    `https://diligent-guanaco-965.convex.site/clerk-webhook`, its signing secret as
    `CLERK_WEBHOOK_SIGNING_SECRET` on prod Convex. Per-instance, nothing carries over from dev —
-   recipe in [`05-accounts-and-credentials.md`](../plans/05-accounts-and-credentials.md) §11b.
+   recipe in [`05-accounts-and-credentials.md`](../plans/05-accounts-and-credentials.md) § 3c.
 8. **Strava callback domain** (Phase 08) on the prod host.
 9. First **iOS build**: `eas device:create`, distribution cert via `eas credentials`; push works
    on it with no further setup.

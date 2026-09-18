@@ -1,392 +1,283 @@
-# Integrations
+# Data sources & integrations
 
-> **⚠️ Strategic update (2026-07-24) — read [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md) (and L7 in the legal checklist).**
-> The current Strava API Agreement was read: Strava **forbids** displaying one athlete's data to any
-> other user (even public data) and **bans AI/ML** use. So the *pull* model below **cannot** feed our
-> cross-user map/heatmap/report-path, and the old "Garmin is our fallback for Strava-path display"
-> stance is retired. The pivot: a **native in-app recorder** produces tracks *we own* (not Strava
-> Data) → legal to aggregate/heatmap/draw-on-reports; and we **push** those tracks *to* Strava
-> (`activity:write`) as the adoption lever. Reframed as an **A → B → C pipeline**: A = capture inputs
-> (native recorder first; the six providers below augment it), **B = our own track store +
-> aggregate/privacy, the always-covered hub**, C = push outputs (Strava first). The provider notes
-> below still hold **for the ingest side (A)**, but cross-user *display* now comes from **B (our
-> tracks), never from a provider's data.**
+What the app **reads from and writes to**: every third-party dataset and API, grouped by what it
+feeds, with the license, the quota, where the raw copy is archived, and the alternatives that were
+considered beside it. The stack itself (frameworks, vendors we run on) is
+[`03-tech-stack-options.md`](./03-tech-stack-options.md); account setup and keys are
+[`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md); the story of how the sources
+become one record per water body is [`docs/water-body-data.md`](../docs/water-body-data.md); the
+runbooks are each `scripts/*/README.md`.
 
-## GPS activity providers — all six v1-scoped, shipped fast-follow (D24)
-
-> **⚠️ Superseded for Phase 08 (2026-07-24) — read [`phases/08-native-capture.md`](./phases/08-native-capture.md).**
-> The Strava *pull/ingest* model described below is **dead** (L7: Strava forbids cross-user display of its
-> data + bans AI/ML). Phase 08 inverted to **native capture + Strava push**: we **record the track
-> ourselves** (first-party data we own → legal to aggregate/draw on reports) and **push** it to Strava
-> (`activity:write`). The **native recorder** is now A-input #1; the other five providers
-> (Garmin/HealthKit/HC/COROS/Polar) are **deferred**, each integrated individually later. Only the **free
-> Strava app** is needed now, and only for push. The per-provider setup notes below stay as reference for
-> those later adapters; the *cross-user display* stance further down is replaced by **D58**.
-
-All six providers are v1-scoped and the architecture is **provider-agnostic**, so
-any skater's device can contribute a **trusted** GPS path. **Apply for every
-approval in Phase 00** (Garmin/COROS/Polar reviews take weeks). They then **ship in
-a fast-follow order**, not simultaneously:
-
-1. **Strava + Apple HealthKit** — first. Covers most of the US alpha; Strava also
-   carries the write-ups + photos, HealthKit covers Apple Watch.
-2. **Garmin** — next. Adds Garmin-watch GPS, and is our **fallback for map
-   display** if Strava's terms forbid showing a Strava path to other users (below).
-3. **COROS · Polar · Google Health Connect** — fast-follow.
-
-**Fitbit is not a v1 provider:** Health Connect doesn't reliably expose Fitbit GPS
-routes, and many Fitbit users already sync to Strava (so we capture them there).
-Logged as a possible future provider.
-
-Two ingestion patterns:
-
-- **Server-webhook providers** (Strava, Garmin, COROS, Polar): the provider **pushes**
-  an activity event to a Convex HTTP endpoint → we fetch the activity → prompt a
-  report → ingest the trusted GPS path (+ media where ToS allows).
-- **On-device providers** (Apple HealthKit, Google Health Connect): **no server API** —
-  the mobile app observes new workouts locally (background delivery) and uploads the
-  trusted path to Convex → prompt.
-
-All normalize to our canonical "ice skate" concept + `gpsActivities` (D24). At ingest,
-each activity's trusted path is **spatially resolved to the water body it was on** and
-that `waterBodyId` is stored (D44) — so a skate is findable by **water body name/ID**, not by
-geospatial area ("5 miles on Lake Morey", not "5 miles somewhere near here").
-
-**Canonical activity-type mapping** (verify each against current provider docs):
-
-| Provider | Ice-skate type | Detection | Media |
-|---|---|---|---|
-| Strava | `IceSkate` (sport_type) | webhook push subscription | photo URLs (ToS-limited) |
-| Garmin | `ICE_SKATING` (activityType) | Ping/Push notifications | generally none |
-| COROS | skating activity type (verify) | webhook | none |
-| Polar | ice-skating sport (verify) | AccessLink webhook | none |
-| Apple HealthKit | `HKWorkoutActivityType.skatingSports` | on-device background delivery | none |
-| Google Health Connect | `EXERCISE_TYPE_ICE_SKATING` | on-device change reads | none |
-
-Detailed per-provider setup follows (Strava first, as the cold-start priority).
-
-## Strava (priority provider — key to cold-start & fresh data)
-
-Goal: when a user records an **ice-skate** activity on Strava, our app detects it
-and prompts them to create a report — optionally pre-filling media/text/time.
-
-### Setup
-- Register a Strava API application → obtain **client ID / client secret**.
-- Implement **OAuth 2.0** (Expo AuthSession on mobile; standard OAuth on web).
-- **Scopes:** `activity:read` (public) or `activity:read_all` (incl. private
-  activities). Request the minimum needed.
-
-### Detecting ice skates without polling
-- Use the **Strava Webhook / Push Subscription API**: subscribe once; Strava POSTs
-  an event when a user creates/updates an activity. On event, fetch the activity
-  and check the sport type.
-- Strava sport type for ice skating is **`IceSkate`** (verify current enum).
-- **Why webhooks, not polling:** rate limits are tight — ~**100 requests / 15 min**
-  and **~1000 / day** by default. Polling all users would blow the budget.
-
-### Pulling media / text
-- Activity detail includes description and **photo URLs** (`photos` field). We can
-  pre-fill a report draft from these.
-
-### ⚠ Terms / compliance watch-outs — Agreement read 2026-07-24 (L7)
-- **Nov-2024 API Agreement (confirmed by the read):**
-  - **Displaying one user's Strava data to other users is forbidden** — even public
-    data ("*may not be displayed or disclosed*"). This **rules out** a Strava-sourced
-    path on the shared public map / heatmap / report. **Resolved by the pivot:**
-    cross-user display comes from **our own recorded tracks**, not Strava — see
-    "Cross-user map display" below and `research/native-track-capture-and-strava-push.md`.
-  - **AI/LLM use of Strava data is banned** — kills "auto-summarize Strava text/photos
-    via AI" (Q9) over Strava-sourced content.
-- **"Powered by Strava"** branding required wherever Strava data appears (and honor the
-  "Connect with Strava" button asset on the connect/push surfaces).
-- Cannot use Strava data to **train models**; cannot build competing
-  segment/leaderboard products; storage/retention constraints; access is a revocable
-  privilege with mandatory deletion on termination.
-- **Still allowed (and now our plan):** **pushing** a user's *own* activity to their
-  *own* Strava via `activity:write` (the Garmin model) — the adoption lever. The
-  *ingest/pull* slice remains legal only **single-user** (show a user their own data).
-
-### "Powered by Strava" attribution — UI checklist
-Strava's brand guidelines are mandatory wherever Strava data appears. Treat these as
-build-time acceptance criteria (verify against current guidelines before launch):
-- [ ] **"Powered by Strava"** logo/text shown on any view rendering Strava-sourced data
-      (a report/activity ingested from Strava, a Strava path on the map).
-- [ ] **"Connect with Strava"** button uses Strava's official connect button asset
-      (don't hand-roll it).
-- [ ] Strava marks used in **approved colors/clear-space**; no altering or implying
-      Strava endorsement.
-- [ ] Activity/segment data displayed per the Agreement (no building competing
-      segment/leaderboard features; respect storage/retention limits).
-- [ ] Attribution persists in **exports** and any shared/deep-linked views.
-- [ ] Other providers' attribution requirements checked the same way when their
-      integrations land (Garmin/COROS/Polar/Apple/Google each have brand terms).
-
-### Cross-user map display — our stance (D24/D35) — updated 2026-07-24
-We *want* to show a skater's trusted GPS path on the shared map. The 2026-07-24 Strava
-read (L7) settled how:
-1. **Strava is out as a display source** — its terms forbid showing one user's data to
-   any other user, even public data. We do **not** display Strava-sourced paths cross-user.
-2. **Display comes from tracks we own (B).** The **native recorder** produces first-party
-   tracks (not Strava Data) that we're free to aggregate, heatmap, and draw on public
-   reports — gated by *our* privacy model (**D58**: publish-is-consent, minors-out,
-   put-in-gated endpoint clipping, opt-out — *not* k-anonymity; L14). A **watch skater**
-   feeds B by connecting a provider whose terms *permit*
-   cross-user display (Garmin/COROS/Polar or on-device HealthKit/Health Connect) — never
-   via Strava's copy (that's the forbidden pull).
-3. **Native reports never require a GPS path at all** (D24 data model) — so a
-   missing/blocked path never stops someone posting a report. We are never blocked
-   from shipping; at worst the map shows fewer trusted paths.
-
-Full reasoning + the A→B→C pipeline and Strava **push** (`activity:write`) adoption lever:
-[`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md).
+One idea governs the whole register: **a source makes a claim; the record is ours.** We mint the
+identifier, every catalog attaches a claim to it, and every claim carries its provenance — which is
+why the drawer can say "state survey" or "estimated" next to a number instead of just the number.
 
 ---
 
-## Garmin (Connect Developer Program — server webhook)
-- **Apply to the Garmin Connect Developer Program** for **Health API + Activity
-  API** access. **Partner approval required — allow weeks of lead time.**
-- **Auth:** OAuth (PKCE). **Detection:** Garmin's **Ping/Push notification** service
-  POSTs to your webhook when a new activity is available → fetch activity + FIT/GPS.
-- **Activity type:** `ICE_SKATING` (verify). **Media:** not generally exposed.
+## Attribution register
 
-## COROS (Open API — server webhook)
-- **Apply to the COROS developer/partner program** (approval required).
-- **Auth:** OAuth2. **Detection:** webhook on new activity → fetch activity + GPS.
-- Verify the exact skating activity type in COROS's activity enum. **Media:** none.
+Attribution is a build-time acceptance criterion, the same class of obligation as a test. Each row
+is rendered where the data appears; the legal side is `08-legal-feasibility-checklist.md` (L7, L10,
+L13).
 
-## Polar (AccessLink API — server webhook)
-- Register at **Polar admin** (<https://admin.polaraccesslink.com>); AccessLink is
-  lighter-weight than Garmin's program.
-- **Auth:** OAuth2. **Detection:** **webhooks** for new exercises → fetch GPX/TCX.
-- Verify the ice-skating sport type in Polar's sport list. **Media:** none.
-
-## Apple HealthKit (on-device, iOS)
-- Enable the **HealthKit entitlement** + `NSHealthShareUsageDescription`.
-- Read workouts of type **`HKWorkoutActivityType.skatingSports`** and the associated
-  **`HKWorkoutRoute`** (GPS). Use **`HKObserverQuery` + background delivery** to be
-  notified of new workouts even when backgrounded → upload path → prompt.
-- iOS-only; **no partner approval**; **no media**.
-
-## Google Health Connect (on-device, Android)
-- Use **Health Connect** (the Google Fit APIs are deprecated). Request permissions
-  for **`ExerciseSessionRecord`** (type **`EXERCISE_TYPE_ICE_SKATING`**) +
-  **`ExerciseRoute`**.
-- **Detection:** read on device (changes API / periodic background read) → upload path.
-- Requires Google Play **health-data access review** for sensitive permissions.
-- Android-only; **no media**.
+| Source | Obligation | Rendered |
+| --- | --- | --- |
+| OpenStreetMap (outlines, boundaries, access features, the basemap) | **ODbL** — "© OpenStreetMap contributors", linked; share-alike bites only if we *publish* the derived database (L10) | every map view |
+| Open-Meteo | attribution; free tier is **non-commercial** (L13, D158) | every weather strip and panel |
+| Copernicus Sentinel data | free, full and open **with attribution** ("Contains modified Copernicus Sentinel data") | the imagery reveal and scrubber |
+| Each bathymetry agency | the credit line in its service descriptor (`copyrightText`), captured in the manifest and re-verified by `bathymetry verify`; VCGI's "Soundings digitised from NOAA nautical charts…" is an agreed wording | the contour layer's credit |
+| ALSC, NYSDEC CSLAP | **no published terms** — credited, never assumed permissive (L16) | the depth line's source |
+| Strava | brand guidelines wherever Strava is named: "Powered by Strava", the official "Connect with Strava" asset, approved marks (L7) | the connect / push surfaces |
+| US federal (NHD, 3DHP, GNIS, 3DEP, NAIP, NWS, TIGER), Natural Earth, GLOBathy (CC0) | public domain — credit as courtesy | the depth/elevation/imagery source lines |
+| HydroLAKES | CC-BY 4.0 | the depth line's source |
+| NREL WIND Toolkit | open data, API key; credit as courtesy | the wind rose |
 
 ---
 
-## Forum / Facebook ingestion (aspirational — see Q8)
+## What feeds what
 
-Auto-ingesting Google Group + regional Facebook group posts into summarized
-in-app reports would dramatically reduce cold-start.
+### Water body outlines, names, classification
 
-**Blockers to research:**
-- Google Groups: no clean API; scraping/ToS + auth (many groups are members-only).
-- Facebook: Graph API access to groups is heavily restricted; scraping violates ToS.
-- Consent: turning someone's forum post into an in-app report raises attribution
-  and consent questions.
-- AI summarization of ingested content may collide with source ToS.
+| Source | Role | Refresh | Archive |
+| --- | --- | --- | --- |
+| **OpenStreetMap** via per-state [Geofabrik](https://download.geofabrik.de/) extracts | outlines (draws the body by default), local names, tags → our `type` | any time; `osmium` + GDAL, `scripts/etl` | `.scratch/` + R2 mirror |
+| **USGS NHD** (National Hydrography Dataset) | authoritative classification, federal IDs, completeness | **frozen since 2023** — never refreshed | `prd-tnm.s3.amazonaws.com` snapshots, mirrored |
+| **USGS 3DHP** | NHD's successor; measured as *the same data* (7,878 lakes, zero disagreements) so it gets one vote, not two | annual | as NHD; also queried **live** (`hydro.nationalmap.gov`) to resolve an A07b *admit* request against the catalog |
+| **USGS GNIS** | the official name and the ID that ties spellings together; points, not shapes | annual | as NHD |
 
-**Reply classification (the messy part):** email threads mix *comments* (replies to
-a post) and *new reports* (someone answering with their own ice report). Proposed
-pipeline: an **AI classifier** reads each threaded message and routes it to either
-a `comment` on the original report or a new `report`. This AI operates on
-**forum/email content** (not Strava data), so it's **outside Strava's AI terms** —
-but the ingestion + AI use must still clear the source's own ToS + consent (Q8).
+Merged by `scripts/etl` into one record per body with our own key (D93), best-of-both per field (D94),
+one admission floor applied once (D109/D110); every loader replays the merge's path from
+`merge-manifest.json` (provenance is the default). Refused bodies are logged, never silently dropped.
 
-**Status:** desired; not committed. Requires a feasibility + legal pass.
+*Considered:* **Overpass API** for OSM — rejected for extracts, which are reproducible, archivable
+and don't rate-limit a five-state pull. **NHD as the outline** — the D92 bake-off against OSM over
+2,359 lakes with real depth soundings was a dead heat (63% ties); OSM stays by the cheaper-pipeline
+tie-break, chosen *per lake* where one catalog contains a named bay the other excludes.
+
+### Boundaries, the region, and the basemap
+
+| Source | Role |
+| --- | --- |
+| **OpenStreetMap** `boundary=administrative` relations (same Geofabrik extracts) | `adminAreas` — the town / county / state a report's point resolves to (`scripts/admin-areas`) |
+| **US Census TIGER** state polygons (`www2.census.gov`) | the five-state region polygon the basemap is clipped to, and the out-of-region mask |
+| **Natural Earth** 10 m countries + lakes (`naciscdn.org`) | the sea / land / big-lake layers of the mask, so the map has an ocean beyond the region |
+| **Protomaps** whole-planet builds (`build.protomaps.com`, dated) | the two self-extracted `.pmtiles` archives — world z0–6 and the region at full detail (`scripts/basemap`) |
+
+*Considered:* the Protomaps hosted demo bucket — dev-only, rotates and 404s; never in production.
+
+### Elevation
+
+| Source | Role | Coverage |
+| --- | --- | --- |
+| **USGS 3DEP** via the Elevation Point Query Service (`epqs.nationalmap.gov`) | one reading per body at its interior point; keyed on the rounded coordinate so it survives a corpus rebuild | 99.5% of the corpus, **98.2% at 1 m LiDAR**; no key, no documented cap, ~1.5 h for the corpus |
+
+*Replaced (D127):* **Open-Meteo's elevation endpoint** (Copernicus GLO-90, 90 m) — it shared a
+quota with the app's own weather calls, and it was 90× coarser. The archive on R2 means re-deriving
+anything from it costs minutes and zero requests.
+
+### Depth — a ranked ladder (D68)
+
+Every depth carries its source, and the drawer says *measured* or *estimated* accordingly.
+`scripts/lake-depth` is the runbook; 81% of the depths shown are measured.
+
+| Rung | Source | Basis | Gives | License |
+| --- | --- | --- | --- | --- |
+| 1 | operator entry (`/admin/water/:id`) | a published chart or local knowledge | mean + max | — |
+| 2 | **state agency surveys** (the bathymetry sources below, read as soundings) | a boat and a depth sounder — 3,033 measurements | max (+ mean where surveyed) | per agency |
+| 3 | **NYSDEC CSLAP** (Citizens Statewide Lake Assessment Program) | volunteer sampling through 2024; 278 lakes | mean only | no published terms |
+| 4 | **LAGOS-US DEPTH v1.0** (EDI) | ~65 compiled monitoring programs; > 1 ha | 17,675 max · 6,137 mean | ⚠ confirm the EDI rights statement |
+| 5 | **Adirondack Lakes Survey** 1984–87 | one survey, 1,345 ponds, pre-GPS coordinates (depth only — the coordinates are ±340 m) | max + mean | no published terms; scraped once, serially, archived |
+| 6 | **HydroLAKES v1.0** `Depth_avg` | volume / area; ≥ 10 ha | mean | CC-BY 4.0 |
+| 7 | **GLOBathy** `Dmax` | a random forest over shoreline / area / elevation; validated on 1,503 lakes globally | max | CC0 |
+
+**The floor is the sources', not ours.** Every global dataset stops near 25 acres; below that nobody
+surveyed the pond, and our stored coverage tracks the sources to within 1–2 points per size band.
+
+### Bathymetry contours (A06b)
+
+Five agency sources across four states, archived byte-for-byte with a manifest each
+(`scripts/bathymetry`, [`PROVENANCE.md`](../scripts/bathymetry/PROVENANCE.md) is the committed
+record). Published isobaths are drawn as the agency's; where only soundings exist we interpolate,
+and those render and are labeled as ours.
+
+| State | Source | Lane |
+| --- | --- | --- |
+| MA | MassGIS / MassWildlife inland bathymetry (FeatureServer) | contours |
+| ME | Maine DEP / IF&W lake soundings (MapServer) — two datasets in one schema, and a 3.3 ft/m unit trap | soundings |
+| NH | NH GRANIT | contours |
+| VT | VCGI / NOAA Lake Champlain soundings (covers the whole lake, New York shore included) | soundings |
+| VT | VT ANR BioBase soundings | soundings |
+| NY | **no statewide source exists** — a checked finding, not a gap to close by working harder | — |
+
+*Considered:* contours from **GLOBathy rasters** — ruled out; the modeled surface has no bottom
+detail to contour. Massachusetts' archive turned out to hold 265 lakes, all already used.
+
+### Wind (A06c)
+
+| Source | Role |
+| --- | --- |
+| **NREL WIND Toolkit** (2 km WRF, hourly, 10 m) — Dec–Mar of 2010–2014, five winters, `developer.nlr.gov` API key | a 16-sector winter rose per body plus strong-wind hours per sector; 47,765 cell-years archived on R2, 11,114 roses |
+
+*Considered:* the **Global Wind Atlas** — 250 m and sees more terrain, but its public API paths
+return the site's HTML shell, its climatology is annual (December wind is not July wind), and its
+downloadable layers are combined *across* sectors — there is no directional layer to build a rose
+from.
+
+### Access — put-ins, parking, the walk in (A06d)
+
+| Source | Role |
+| --- | --- |
+| **OpenStreetMap** `leisure=slipway` / `waterway=slipway`, `amenity=parking` (+ `parking=*`, `access=*`, `fee=*`, `capacity=*`), `highway=path` / `route=hiking` — a second `osmium` pass over the same extracts | put-in candidates, parking areas, trails; 3,588 put-ins, 11,375 lots |
+| **OpenRouteService** `foot-hiking` (the Phase 04 account; ETL-time, once per put-in, cached on the row with geometry since A06e §0) | routed distance and ascent from the lot to the water; straight-line is the flagged fallback |
+| **Operator-drawn approaches** | where routing can't reach |
+
+*Considered:* **GraphHopper** (a second vendor and key for nothing ORS lacks), **Valhalla**
+self-hosted (a server), **Mapbox Directions** (`walking` only, tuned for sidewalks), **AllTrails /
+Gaia** (licensed trail content, no point-to-point API). A **NYSDEC** scrape of posted rules was sized
+and not built (A06e).
+
+### Weather
+
+| Source | Role | Boundary |
+| --- | --- | --- |
+| **Open-Meteo** forecast API with `past_days` (up to 92 back), hourly; two-tier grid cache key (D152), durable past-weather archive (D153); a corpus-wide daily cron on 3,043 cells | the weather-since strip, the D56 decay multiplier, the bounty gate, the past panel, the hourly timeline, the seven-day planner, weather-first discovery (D159); the short forward forecast rides the same call (D140) | **the single source for anything that feeds a calculation** — one deterministic, re-fetchable input |
+| **NWS** `api.weather.gov` active alerts, polled per state every 15 min | the advisory strip — winter-storm, ice-storm, wind-chill warnings | **informs, never computes** (D74); never blended with Open-Meteo. US-only |
+
+The *past_days* endpoint, not the historical archive: the archive is ERA5-backed with a ~5-day lag,
+and every window we need is recent. The hourly variable set and the reducer that both consumers read
+are in [`phases/10-weather.md`](./phases/10-weather.md) § 2 and
+[`docs/weather-since.md`](../docs/weather-since.md).
+
+*Considered:* **OpenWeatherMap**, **Tomorrow.io** — keyed and paid-leaning for data Open-Meteo gives
+away. **MerrySky** — a frontend over Pirate Weather and Open-Meteo; the same data with no API to buy.
+**Windy** — its Map Forecast API is Leaflet-only and can't overlay MapLibre, so we open
+`windy.com/?lat,lng,zoom` in the in-app browser (D75/D76) for €0. **Radar** — MRMS with its Radar
+Quality Index, cut on the Fly→R2 pattern (D157), is A06h's deferred Workstream 6; RainViewer and the
+Iowa Environmental Mesonet were evaluated for it (their terms are in L13). **Paying Open-Meteo** is a
+season-two decision with a written trigger (D158).
+
+### Imagery (A06e)
+
+| Source | Role | Terms |
+| --- | --- | --- |
+| **Sentinel-2 L2A** and **Sentinel-1 GRD** via **AWS Earth Search** (`earth-search.aws.element84.com`, anonymous STAC; S1 from the AWS open-data bucket) | a season of passes per body, cut to its outline on Fly, published as masked raster PMTiles on R2; the freeze-up scrubber | Copernicus: free, full, open, with attribution; AWS open data: no account |
+| **USGS / The National Map — NAIP** (`basemap.nationalmap.gov`, `USGSImageryOnly`) | the aerial reveal — ~0.6 m summer orthoimagery, for reading *access*, never ice | public domain, no key, no quota; grid-snap every URL (a 29 s cold render otherwise) |
+
+*Considered:* **Copernicus Data Space (CDSE)** — serves both missions from one place, but needs an
+account, sits in Europe, and Earth Search needed neither; the Sentinel Hub–compatible API's 10k
+requests/month only works with server-side caching, which is what R2 is. **Planet** — same free
+catalog; only PlanetScope (~3 m, near-daily) is new. **Its price is not public** — quote-based via
+sales, scoped per area of interest as an annual subscription, not per capture; the smallest
+commercial tiers are understood to start in the low thousands of dollars a year (⚠ unverified —
+get the quote before treating that as a number). The case for it is real (a body can go from open
+water to skateable in 48 h, and a 5-day revisit can miss the whole onset), so it's *deferred*, not
+rejected: the trigger is the free imagery seeing real use **and** a freeze event the revisit
+demonstrably missed. Full entry: [`research/imagery-and-weather-vendors.md`](./research/imagery-and-weather-vendors.md)
+§ 16. **Esri World Imagery**
+(off-platform use restricted), **Mapbox / Maxar** (metered per tile), **state orthoimagery** (five
+integrations for a marginal gain over 0.6 m), **tasked commercial imagery** (~$200–400 per body per
+capture). The physics is the real limit (D147): NAIP will never show ice, and 10 m Sentinel can't show
+a 1–3 m ridge.
+
+### Drive time (Phase 04)
+
+**OpenRouteService** isochrones, hosted, cached per user (D18) — three bands, with 60 → 90 min as a
+radius because hosted ORS caps the isochrone. Quotas are per endpoint (~2,000 directions/day, 40/min;
+out-of-quota is a 403), so an ETL can't starve the app. Self-hosting is a backlog item
+(`backlog/self-hosted-ors.md`).
+
+### Geocoding — wanted, not yet chosen
+
+Nothing geocodes today: home is set from device geolocation, report location from the map or the
+GPS path. The **location anchor** ([`backlog/location-anchor.md`](./backlog/location-anchor.md),
+Q17) — search from home, from an address you'll be at, or from here — is the first feature that
+needs an address → coordinate step, and the volume is tiny: once per anchor a skater sets, never per
+view.
+
+| Option | Shape | Terms / notes |
+| --- | --- | --- |
+| **Photon** (komoot's public instance) | OSM-backed, typo-tolerant, no key | public instance asks for fair use, no hard published quota; self-hostable if it ever matters |
+| **Nominatim** (OSM public) | OSM-backed, no key | usage policy: ≤ 1 req/s, identifying User-Agent, **no autocomplete** against the public instance — fine for "geocode this address once" |
+| **MapTiler / Stadia / Geoapify** geocoding | hosted, keyed | free tiers well above our volume; a key in the client; the same vendors we declined for tiles |
+| **Mapbox / Google** | hosted, keyed | metered and proprietary; Google's terms also restrict displaying results on a non-Google map |
+| **OpenRouteService** `/geocode` (Pelias) | the account we already have | Pelias-backed, keyed, in the existing quota family |
+
+**Leaning:** a Pelias/Photon-class OSM geocoder, keyed, called from a Convex action (never the
+client), result cached on the anchor; **ORS's `/geocode`** is the zero-new-vendor option and is
+probably where to start. Autocomplete-as-you-type is a different product (and a different quota) from
+geocode-on-submit; the anchor needs the latter. *Considered and out:* Google Places (terms +
+metering).
+
+### Community references (D70/D71)
+
+Not data we ingest — links we generate at render time, so every body has them: the **Nordic Skater**
+and **Lake Ice** sites, the **Catamount Hardware atlas**, and a pre-canned search into the regional
+community's own archive for the body you're looking at. The skater lands on their site under their
+terms; we store nothing.
 
 ---
 
-## OpenStreetMap data (ODbL) — attribution + compliance
+## Outbound and user-facing integrations
 
-Water-body polygons (Phase 01 ETL, D5/D14) and the Protomaps basemap (D6) both derive from
-**OpenStreetMap**, licensed under the **Open Database License (ODbL)**. Treat attribution as
-a **build-time acceptance criterion**, the same class of obligation as "Powered by Strava":
+### Strava — push only (`activity:write`), D24 as amended, L7
 
-- [ ] **"© OpenStreetMap contributors"** shown wherever OSM-derived data or the basemap is
-      displayed (the map view, at minimum) — visible, not buried.
-- [ ] The credit links to <https://www.openstreetmap.org/copyright> where practical.
-- [ ] Persist attribution in any exported/shared/deep-linked map view.
-- [ ] **Share-Alike awareness:** ODbL is share-alike on the *database*. Our derived
-      `waterBodies` extract is an OSM-derived database; if we ever *publish* that extract we
-      do so under ODbL. (Displaying it in-app is a "Produced Work" — attribution suffices;
-      the share-alike bite is on redistributing the data itself.) Full wording is
-      legal-gated with the rest of Q10.
+The Strava API Agreement was read on 2026-07-24 and settled the shape: **displaying one athlete's
+data to any other user is forbidden, even public data, and AI/ML use is banned.** So Strava can never
+feed the map. What it can do is receive: a skater records here (or imports a GPX), the track is ours
+to draw and aggregate under our own privacy model (D58), and the app **pushes** it to the skater's own
+Strava so recording here costs them nothing they already had. Built in Phase 08 — OAuth via
+`convex/http.ts` and `oauthStates`, the upload action, a sandbox upload still owed.
 
-## Weather (context, not prediction)
+**Brand checklist** (build-time acceptance criteria; re-verify against current guidelines before launch):
+- [ ] "Connect with Strava" uses Strava's official button asset — never hand-rolled.
+- [ ] "Powered by Strava" wherever Strava is named as the destination.
+- [ ] Marks in approved colors and clear space; no implied endorsement.
+- [ ] No competing segment / leaderboard features; respect storage and retention limits; delete on
+      termination.
 
-- Provider: **Open-Meteo** — the **forecast API with `past_days`** (up to 92 days back), free, no API key.
-  **Not the historical archive** (ERA5-backed, ~5-day lag) — our windows are all recent, and `past_days`
-  covers both the strip and the longest decay window (≤45 days); see `phases/10-weather.md` §2.
-- Use: annotate aging **reports** (window = since the skate time) **and hazards** (window = a rolling
-  recent ~5–7 days, since "first reported" is meaningless for a season-long ridge) with what the weather
-  has *done*, to support the skater's own judgment. **Never** used to assert ice safety.
-- **Attribution:** show a small "Weather: Open-Meteo" credit wherever the strip appears (legal checklist
-  **L13** — same class as "Powered by Strava" / "© OpenStreetMap contributors").
-- ⚠️ **STALE (D127, A07a-2):** elevation no longer comes from Open-Meteo. It is USGS **3DEP** via
-  `epqs.nationalmap.gov` — no key, no quota shared with the product's weather crons, and **98.2% of the
-  corpus at 1 m LiDAR** against Copernicus GLO-90's 90 m. Kept below as the reasoning for why we left.
-- **Also Open-Meteo, no account:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM,
-  batched coordinates) — A06c's body-elevation pass, ~1,200 requests for all 116,070 centroids.
+**Cross-user display, the stance:** display comes from tracks *we own* — the native recorder, a GPX
+the skater imported, or (later) a watch provider whose terms permit it — gated by D58
+(publish-is-consent, minors out, put-in-gated endpoint clipping, opt-out; *not* k-anonymity, L14).
+A native report never requires a path at all, so a missing one never stops anyone posting. Full
+reasoning: [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md).
 
-### The short forward forecast — same call, same quota (A06c §2.5b, D140) ✅ **BUILT 2026-08-09**
+### GPX import
 
-- **No new provider and no new quota.** `weather.ts` already sent `forecast_days: '1'` so the series
-  covered today's elapsed hours; the forward hours arrived in that same response and were discarded.
-  Two days instead of one lets a 12-hour horizon survive a day boundary, so an evening skater sees
-  tomorrow morning.
-- **The forward hours are a separate array, not a widened window (D140).** The filter that discarded
-  them is the same one feeding `summarizeWeatherSince` — the input to the decay multiplier, the bounty
-  gate and the contradiction settle. Widening it would make all three unreproducible after the fact,
-  silently. `fetchOpenMeteoHourly` returns `{ past, forecast }` so D74 is a return type rather than a
-  rule each call site remembers.
-- **Attribution:** a "Forecast: Open-Meteo" credit beside the strip, same L13 family as the rest.
-- **D3 holds at the copy:** the strip names weather and a clock — *"snow starting around 3pm"* — and
-  never the ice. A test greps the rendered line for ice/skate/safe/condition.
+A skater who already records with a watch or another app picks the file and files the report from
+it. Unbuilt, pitched in the vision; scoped in
+[`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md). It's clean under L7 because the
+*file* is the skater's own export, not a platform's API.
 
-### NWS alerts — a second provider that never touches a calculation (D74, A06c) ✅ **BUILT 2026-08-09**
+### Watch and health-platform adapters — deferred behind partner applications
 
-- Provider: **`api.weather.gov`** — free, **no account and no API key**, US-only. Requires a `User-Agent`
-  header identifying the app; rate limits are unpublished (retry a 429 after ~5 s), and their docs warn a
-  key **may** be required in future.
-- Use: **official alerts only** — winter-storm, ice-storm and wind-chill warnings from the local forecast
-  office, rendered as a labeled, attributed advisory strip on the water body drawer.
-- **The boundary is the decision (D74): Open-Meteo computes, NWS informs.** Open-Meteo stays the single
-  source for anything feeding a calculation, because the D56 decay math depends on one deterministic,
-  re-fetchable input — a multiplier you cannot reproduce is one you cannot debug or refit. **Never blend
-  the two.**
-- Polled **per state on a cron**, not per body per view: alerts are issued over counties/zones, so one
-  state fetch serves every body in it and read cost stays independent of corpus size.
-- **Coverage gap:** US-only. A Québec expansion needs Environment Canada — a different API on different
-  terms.
-- *Considered and rejected:* **MerrySky**, a frontend over Pirate Weather and Open-Meteo — the same data
-  we already pull, with no API to buy. Recorded because it looks like a third source and isn't one.
+Garmin, COROS, Polar, Apple HealthKit, Google Health Connect: all v1-scoped in principle (D24),
+each an input adapter into the same track store, each integrated individually once its approval
+lands — HealthKit first, since it needs none. The applications haven't been confirmed submitted; the
+reminder, the per-provider setup notes, and the activity-type mapping are in
+[`backlog/partnerships.md`](./backlog/partnerships.md). Fitbit is not a provider (Health Connect
+doesn't reliably expose its routes; many Fitbit users already sync to Strava).
 
-## Satellite imagery — Copernicus (D75, A06c)
+### Forum / Facebook bridging — Q8, L5
 
-- Provider: **Copernicus Data Space Ecosystem**. **Copernicus Sentinel data is under the free, full and
-  open Copernicus license** — reproduce, distribute and adapt, **with attribution**. That license is what
-  retired the long-deferred satellite-layer blocker; the open question was never a missing source.
-- **Ships in A06c: a deep link** to `browser.dataspace.copernicus.eu` per body (centroid, zoom, Sentinel-2
-  L2A true color, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
-  URL format we don't control — verify against the live browser and keep it behind a single tested
-  function.
-- **Imagery rendered in-app → [A06e](./phases/A06e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
-  binds only *one* of two tiers. Sentinel-2 via their Sentinel Hub–compatible OGC/Process APIs is
-  **10,000 requests + 10,000 processing units/month, 300/min**; a tile view is ~10–20 requests, so it only
-  works with **server-side tile caching** (which the open license permits — a body needs re-fetching once
-  per ~5-day revisit). Cost/traffic call, not a design one. **The other tier has no quota at all** — see
-  the USGS/NAIP entry below, which is what actually ships the toggle.
-- **Attribution requirement** joins the L13 family alongside Open-Meteo / Strava / OpenStreetMap.
-- **Planet** is evaluated and deferred: their public catalog is the same free Sentinel/Landsat/HLS data,
-  and only **PlanetScope** (~3 m, near-daily) is genuinely new. Same Sentinel Hub API surface, so choosing
-  Copernicus now is not a lock-out. Numbers + triggers in `05-accounts-and-credentials.md`.
+Turning the community's Google Group and Facebook posts into in-app reports is the most heavily
+gated idea in the plan (no clean APIs, members-only groups, and a consent question before an access
+one). The data model holds `imported` as a source; nothing is built. What *did* happen: a one-time
+private corpus extraction as design input (L5a — vocabulary, the boost seed, the access and sub-area
+signals), and the D71 search link above. Status and direction: [`02-open-questions.md`](./02-open-questions.md) § Q8.
 
-## Aerial imagery — USGS / NAIP (D84, A06e)
+**The bridge runs both ways.** The *outbound* half is Gli posting back to the email group(s) the
+lake's region belongs to on behalf of the skater – so they keep contributing to the members of the
+community who haven't switched, without writing it twice. It's a different legal shape: the skater's
+own words, sent with their consent, under their name, to a list they're a member of. It's also the
+network-effect lever: the most detailed, best-organized reports on the list arrive with *"posted from
+Gli"* and a link to the water body, and people come to see where they came from. Unbuilt; belongs with
+the inbound half in Q8 so the two are designed as one bridge. The mechanics are sketched in
+[`backlog/email-group-bridge.md`](./backlog/email-group-bridge.md).
 
-The other half of D84's two-tier split, and **the one that ships the satellite toggle**.
+---
 
-- Provider: **USGS, The National Map** — `basemap.nationalmap.gov`'s `USGSImageryOnly` tile service,
-  serving NAIP-derived aerial orthoimagery (~0.6 m from 2018 onward) for the conterminous US.
-- **Public domain.** NAIP is USDA Farm Service Agency imagery and USGS distributes it as public-domain
-  federal work: **no key, no quota, no license review.** The three things that deferred in-app imagery are
-  all absent here. It is the same imagery layer OSM editors offer for tracing.
-- **XYZ-compatible tiles**, so it drops into a MapLibre `raster` source directly — no new client library.
-- ⚠ **Confirm at build:** the ArcGIS endpoint's axis order is `/tile/{z}/{y}/{x}` — **y before x**, a
-  classic silent failure that returns tiles, just the wrong ones. Also the service's stated usage
-  expectations and its behavior past native max zoom. One tested URL function, same discipline as the
-  Copernicus link.
-- **What it's for, and what it isn't.** Leaf-on summer imagery refreshed every ~2–3 years: **useless for
-  reading ice, ideal for reading access** — roads, lots, trailheads and shorelines don't change between
-  July and January. It answers *where's the pull-off*, which pairs directly with
-  [A06d](./phases/A06d-body-access-points.md)'s parking and approach data. Recent-ice questions stay with
-  Sentinel-2 above.
-- **Caching:** none in v1 — point MapLibre at it and measure. Public-domain imagery may be freely cached,
-  so a proxy is available whenever load or latency justifies it, and **it's the same caching layer
-  Sentinel-2 would need** — which is the argument for building it once, later, rather than twice.
-- *(Considered and rejected: **Esri World Imagery** — terms restrict use off their platform; **Mapbox /
-  Maxar** — excellent and metered per tile; **state orthoimagery** (VT/NH/MA all publish it) — higher
-  resolution, but five integrations with five sets of terms for a marginal gain over 0.6 m. Revisit state
-  imagery only if NAIP proves inadequate for the access use case.)*
+## Beyond the US
 
-## Trail routing — OpenRouteService `foot-hiking` (D87, A06d)
-
-**Not a new provider.** Phase 04's drive-time isochrones already run on OpenRouteService (§6 of
-[`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md)); the `foot-hiking` profile is the
-**same account, key and client**.
-
-- **What it answers:** the founder's *"it could be 800 m as the crow flies but a full kilometer of weaving
-  trail."* ORS routes over the OSM `highway=path` / `route=hiking` ways A06d's second `osmium` pass is
-  already extracting, so the routed distance and the trail data agree by construction.
-- **Elevation gain comes with it.** With `elevation: true` the Directions response carries **`ascent` /
-  `descent` in meters** — the second half of the ask, delivered by a request parameter rather than a
-  second integration. ⚠ Confirm we read the **one-way** figure (parking → put-in); there are known
-  oddities on out-and-back routes, and reporting a round trip would silently double it.
-- **Quota is a non-issue because of *when* we call it:** at **ETL time, once per put-in**, cached on the
-  row — never from a request path. Even a full corpus pass is a rate-limited background job.
-- **Fallback ladder:** routed distance + ascent → straight-line **explicitly flagged** (it under-reports,
-  so the flag is the difference between *"about 900 m on foot"* and *"at least 900 m"*) → nothing, for the
-  majority of bodies with no parking area to route from.
-- *(Considered: **GraphHopper** — comparable hiking profile, but a second vendor and key for no capability
-  we lack; **Valhalla** self-hosted — most control, and a server to run; **Mapbox Directions** — `walking`
-  only, tuned for sidewalks; **AllTrails / Gaia / Strava** — trail *content* products with licensed
-  geometry and no general point-to-point routing API.)*
-
-## Windy — a link, not an integration (D75/D76, A06c)
-
-- **No API purchase.** Windy's Map Forecast API is *"a library based on Leaflet 1.4.x"* and tightly coupled
-  to it; **we render MapLibre**, so their animated layers cannot be overlaid on our map — €990/year would
-  buy a second map engine, not a layer. Their free tiers are unusable regardless (map API is dev-only; the
-  point API returns deliberately shuffled data), and the point API duplicates Open-Meteo anyway.
-- **What we do instead:** open `windy.com/?<lat>,<lng>,<zoom>`. On mobile that goes through
-  **`expo-web-browser`** (D76), so the skater gets Windy's animation over our app with a Done button —
-  the same outcome for €0.
-- **Revisit only if** we want animated weather inside our own canvas *and* a MapLibre-compatible path
-  exists. More money does not currently buy a different answer.
-
-### "Weather since report" spec (derived summary)
-Computed over the window **[skate time → now]** from Open-Meteo **hourly** data,
-for the water body's coordinates:
-
-| We show / compute | Derived from Open-Meteo hourly vars |
-|---|---|
-| **Peak temperature** | max(`temperature_2m`) |
-| **Overnight low** *(added — "did it freeze last night")* | min(`temperature_2m`) / per-night min |
-| **Hours at/near freezing** | count of hours where `temperature_2m` in a band (e.g. -2°C … +2°C) |
-| **Hours above freezing** | count of hours where `temperature_2m` > 0°C |
-| **Hours of sun** | sum(`sunshine_duration`) or low-`cloud_cover` hours |
-| **Rain vs snow** *(split — opposite decay signs)* | sum(`rain`) and sum(`snowfall`)/`snow_depth` separately, **never lumped** |
-| **Wind** | max/avg `wind_speed_10m` + `wind_gusts_10m` (+ wind-run) |
-| **Insolation** *(added — season/solar term)* | sum(`shortwave_radiation`) — bakes in seasonal intensity |
-| **Freezing-/thaw-degree-hours** *(model-internal)* | Σ(0−`temperature_2m`) over freezing h · Σ(`temperature_2m`−0) over thaw h |
-| **Sustained-freeze run / freeze-thaw cycles** *(model-internal)* | longest consecutive freezing run · count of 0°C crossings |
-
-- **Fetch vars (hourly):** `temperature_2m, precipitation, rain, snowfall, snow_depth,
-  wind_speed_10m, wind_gusts_10m, cloud_cover, sunshine_duration, shortwave_radiation`.
-- **Two consumers, one fetch (Phase 10):** the **descriptive strip** (D19) reads the human
-  subset; the **hazard decay model** (D52/D56) reads the degree-hour integrals + freeze-run
-  counts. See `phases/10-weather.md` for the full variable rationale.
-- Present the strip as a compact **plain-text, verdict-free** factual line (e.g. "since this
-  report: peak 41°F · low 22°F · 3 nights below freezing · 6h strong sun · ½″ rain"). No
-  verdict, no color-coded "safe/unsafe"; degree-hour integrals stay model-internal.
-- Cache the fetch per **(sample point, window)** to avoid refetching on every view; windows
-  only extend, so results are append-friendly. **Sampling:** body **centroid by default**
-  (a body is usually smaller than one Open-Meteo grid cell — *not* town/county), with an
-  optional `weatherSamplePoints[]` for the few multi-cell giants (Champlain/Winnipesaukee).
-
-## Transactional email — Resend + React Email (D38)
-
-- Provider: **Resend**; templates authored with **React Email**
-  (`@react-email/components`), sharing the design-token package (D7).
-- **Send path:** a **Convex action** (Node runtime) calls the Resend SDK; API key in
-  Convex env vars, never client-side. A ticket/flag mutation schedules the action.
-- **v1 use — operator alerts (D37):** on new `supportTickets`, and on safety-priority
-  items (`unsafe_false_report` flags, `category: safety` tickets). Each email
-  deep-links into the `/admin` queue.
-- **Setup gate:** verify a sending domain (DNS) so alerts don't land in spam
-  (see `05-accounts-and-credentials.md` #13).
-- **Boundaries:** Clerk owns auth emails (D26) — no duplication. User-facing product
-  email (digests) stays deferred; in-app `notifications` (D16) remain the user channel.
+Almost every row above stops at the border: NHD, 3DHP, GNIS, 3DEP, NAIP, NWS and TIGER are US
+federal. OSM, Open-Meteo, Sentinel and HydroLAKES are global. What a Québec expansion needs, and the
+leaning, is [`02-open-questions.md`](./02-open-questions.md) § Q16.

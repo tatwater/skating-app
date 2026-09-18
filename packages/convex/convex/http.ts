@@ -104,7 +104,7 @@ http.route({
  * to handle rather than half-erased from here.
  *
  * Registering the endpoint and its secret is per Clerk instance — see
- * `plans/05-accounts-and-credentials.md` §11b.
+ * `plans/05-accounts-and-credentials.md` § 3c.
  */
 http.route({
   path: '/clerk-webhook',
