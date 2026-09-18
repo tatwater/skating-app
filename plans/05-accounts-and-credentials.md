@@ -1,377 +1,249 @@
-# Accounts & credentials setup
+# Accounts & credentials — the register
 
-A prioritized checklist of external accounts / API registrations, ordered by
-**lead time and blocking-ness** — so nothing stalls the build later. Goal: get a
-legit friends-only proof-of-concept running.
+Every external account the project depends on, the credential each one yields, and **where that
+credential lives** per environment. This is the doc the prod cutover reads; the release mechanics
+are [`docs/deployment-and-release.md`](../docs/deployment-and-release.md), the vendor choices are
+[`03-tech-stack-options.md`](./03-tech-stack-options.md), and the data sources are
+[`04-integrations.md`](./04-integrations.md).
 
-Legend: 💰 = costs money · ⏳ = has approval/enrollment lead time · 🆓 = free/instant
+**Kept current by a test.** `packages/core/src/credentialsRegister.test.ts` collects every
+environment variable the backend, the pipelines and the two clients read, and fails the build if
+one is missing from § 2 below. Add a variable → add its row in the same PR.
 
-> **Cost posture (D35):** favor hosted free tiers over self-hosted infra; a small
-> paid bill (target < ~$100/mo at ~1000 users) beats ops toil.
+Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · 💰 paid · ⏳ has a lead time
 
-## Where this stands (added 2026-07-24, with every phase built)
-
-Inferred from what the code actually uses — **not** from a founder confirmation, so treat the
-"unknown" rows as *check before relying on them*. This exists because "which account is still
-missing" is now the question that gates several deferred items, and the list below had no status at all.
-
-| Account | State | Notes |
-|---|---|---|
-| Convex (dev) | ✅ in use | **Prod deployment never initialized** — the prod cutover's first blocker |
-| Clerk (dev) | ✅ in use | Prod instance env vars are what unblock `convex deploy` to prod |
-| Vercel | ✅ in use | `SENTRY_AUTH_TOKEN` set (confirmed 2026-09-16) ⇒ build-time source-map upload works |
-| Expo / EAS | ✅ in use | Dev builds; a **new dev-client build** is needed for the Phase 08 recorder |
-| Sentry | ✅ in use | Both surfaces |
-| OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also A06d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent. ⚠ Dashboard moved to <https://account.heigit.org>; **directions ≈2,000/day & 40/min, quota-exceeded is a `403`**, and quotas are **per-endpoint** (§6) |
-| Cloudflare R2 | ✅ in use | 948 MB 5-state basemap |
-| Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (A06c §1.1) |
-| NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** A06c §2.5 alerts. Needs only a `User-Agent` header (D74) |
-| Copernicus Data Space | ⬜ **needed for A06e** | 🆓 registration. **Now on the critical path** — A06e's freeze-up timeline reads Sentinel-2 + Sentinel-1 (D148). ⚠ We read the **open COGs via STAC**, not the metered Process API, so the 10,000-req/month quota is not the ceiling; AWS Earth Search is the anonymous alternative if registration bites |
-| USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. Ships A06e's aerial reveal. ⚠ Use **`USGSNAIPPlus`** (0.3 m), **not** `USGSImageryOnly` (caps at z16) — §14b |
-| Fly.io | ⬜ **needed for A06e** | 💰 First infrastructure we operate. Granule pipeline ≈ **$4/mo** (per-job Machines, seasonal); self-hosted ORS later ≈ **$46/mo** always-warm at 8 GB. Chosen over Railway (~$81/mo for the same ORS) — D148 |
-| Windy API | ⬜ deliberately not set up | €990/yr, and there is **no MapLibre overlay path** — we link out instead (D75, §15) |
-| Planet | ⬜ deliberately not set up | Quote-based. Their free catalog duplicates Copernicus; only PlanetScope is new (§16) |
-| Apple Developer | ✅ enrolled | Per the Phase 08 doc. TestFlight distribution to the alpha crew still pending |
-| Strava API app | ✅ registered | **Callback domain not yet set** to the Convex `.site` host ⇒ no real OAuth round-trip yet |
-| Resend | ✅ dev, 2026-09-16 | Key + verified sending domain on dev Convex; operator alerts and A08 email send. Prod needs its own key at the cutover (D38) |
-| Google Play | ❔ unknown | $25 one-time; needed for Android distribution **and** any Health Connect review |
-| PostHog | ⬜ not set up | Deliberate (D29) — add when there's usage to measure; replay is L12-gated |
-| Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 00 |
-| Expo Push / APNs / FCM | ✅ dev, 2026-09-14 | FCM V1 key + APNs key on EAS, `google-services.json` in `development`/`preview`, `EXPO_ACCESS_TOKEN` on dev Convex; first Android push delivered (Expo receipt `ok`). Prod = the `production` EAS environment + the prod Convex env var; release mechanics in `docs/deployment-and-release.md` |
+> **Cost posture (D35):** hosted free tiers over self-run infrastructure, under ~$100/mo at ~1,000
+> users. The paid rows below are the whole bill.
 
 ---
 
-## Do these first (longest lead time / blocking)
+## 1. The account register
 
-### 1. Apple Developer Program — 💰 ⏳
-- **What:** enroll at <https://developer.apple.com/programs/> ($99/year).
-- **Why now:** required for **TestFlight** (how friends install the iOS build) and
-  for **push notifications** on iOS. Enrollment/identity verification can take
-  **a few days** — start early.
-- **Individual** enrollment is simplest; org enrollment needs a D-U-N-S number.
+### Platform and tooling
 
-### 2. Strava API application — 🆓 ⏳(for expanded access)
-- **What:** create an app at <https://www.strava.com/settings/api>.
-  - Set **Authorization Callback Domain** (localhost + your dev/prod domains).
-  - Record **Client ID** and **Client Secret** (secret stays server-side/Convex).
-- **Why now:** OAuth + webhook wiring is central; start testing against your own
-  account immediately.
-- **⏳ Watch-outs:**
-  - New apps have **rate limits** (~100–200 requests / 15 min, ~1,000–2,000 / day —
-    *verify current values*). Webhook-driven design keeps us under them (D-series
-    notes). Request an **increase early** if needed.
-  - New apps may have an **athlete/access cap** until you request expansion —
-    fine for a small friends alpha, but apply for more **before** widening.
-  - Enable a **webhook push subscription** for activity events (see
-    `04-integrations.md`).
-  - Must display **"Powered by Strava"**; review the current **API Agreement**
-    (esp. 2024 limits on cross-user display + AI use) before pulling media/text.
+| Account | For | Dev | Prod | Credential → where it lives | Notes |
+| --- | --- | --- | --- | --- | --- |
+| **Convex** — project `skating-app` | database, functions, file storage | ✅ `agile-bee-397` | ⬜ `diligent-guanaco-965` **uninitialized** | deployment env vars (§ 2a) · `CONVEX_DEPLOYMENT` in `packages/convex/.env.local` · `CONVEX_DEPLOY_KEY` for loaders and `convex deploy` | the cutover's first blocker is Clerk's prod vars (D-and-R doc § Prod cutover) |
+| **Clerk** — instance `polite-lemming-64` | auth on both surfaces | ✅ dev instance, email-code only | ⬜ prod instance not configured | `CLERK_SECRET_KEY` + `CLERK_JWT_ISSUER_DOMAIN` + `CLERK_WEBHOOK_SIGNING_SECRET` on Convex · publishable key in both clients | webhook endpoint is **per instance** (§ 3c); password sign-in can never complete on dev |
+| **Vercel** — `skating-app` under `teagan-atwaters-projects` (`desk@…`) | web hosting, previews per PR | ✅ | (same project; points at dev Convex) | `VITE_*` + Clerk keys + `SENTRY_AUTH_TOKEN` in project env | ⚠ the CLI logs into the wrong account easily (`newmoneycompany`, 0 projects) |
+| **Expo / EAS** | mobile builds, updates, push | ✅ `development` + `preview` environments | ⬜ `production` environment **empty** | EAS environments carry the `EXPO_PUBLIC_*` set + `GOOGLE_SERVICES_JSON` (file) + `SENTRY_AUTH_TOKEN` + `FONTAWESOME_NPM_AUTH_TOKEN`; `EXPO_ACCESS_TOKEN` (label `convex-dev-push`) on Convex | Android keystore lives **only** on EAS (`Build Credentials Q16AvUyj_E`) |
+| **Apple Developer Program** 💰 $99/yr | iOS builds, APNs | ✅ enrolled | — | APNs key uploaded to EAS 2026-09-14 (made by hand at developer.apple.com) | no iOS build has ever been made; no owned iPhone → [`backlog/ios-distribution.md`](./backlog/ios-distribution.md) |
+| **Google Play Console** 💰 $25 once | store distribution, Health Connect review | ⬜ **no account** (founder, 2026-09-17) | — | — | not needed for EAS internal distribution; needed before any Play track or Health Connect adapter |
+| **Google Cloud org + Firebase project** | FCM (Android push) | ✅ 2026-09-14 | (same project) | FCM V1 service-account key on EAS; `google-services.json` local + EAS file var | the org-policy override story is § 3b |
+| **Sentry** — org `teagan-atwater`, projects `skating-web` + mobile | crash / error | ✅ both | — | DSNs in client env (public); `SENTRY_AUTH_TOKEN` on Vercel + EAS for source maps | |
+| **GitHub** — the repo, Actions, Greptile app | CI, review | ✅ | — | Actions secret `FONTAWESOME_NPM_AUTH_TOKEN` | Greptile reviews are metered — one PR per phase |
+| **FontAwesome Pro** 💰 one seat | icons | ✅ | — | npm token in `~/.npmrc` (local) + EAS envs + the Actions secret | [`docs/fontawesome-pro.md`](../docs/fontawesome-pro.md); the one recurring paid line item |
+| **Figma** | the design system | ✅ | — | — | exports via the SVG pipeline; no key in the repo |
+| **Resend** | transactional email | ✅ dev, 2026-09-16 | ⬜ prod needs its own key | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `OPERATOR_ALERT_EMAIL` on Convex | sending domain `skating.teaganatwater.com`, CNAME-verified — **no MX, on purpose** (§ 3d) |
+| **Squarespace** — DNS for `teaganatwater.com` | Resend's CNAMEs | ✅ | — | — | founder, 2026-09-17; the place to look when mail stops verifying |
 
-### 2b. Other GPS provider developer programs — ⏳ (approvals!)
-All six GPS providers ship in **v1** (D24), and several need **partner approval with
-real lead time** — apply now, in parallel with everything else:
-- **Garmin** — Garmin Connect Developer Program (Health/Activity API). Partner
-  application + review (**weeks**). Push/ping activity notifications.
-- **COROS** — COROS Open API developer/partner application + review.
-- **Polar** — **AccessLink** API; register at <https://admin.polaraccesslink.com>
-  (lighter than Garmin). Webhooks.
-- **Apple HealthKit** — no partner approval; enable the **HealthKit entitlement** +
-  privacy usage strings in the app (uses #1 Apple account). On-device.
-- **Google Health Connect** — Android permissions + Play **health-data access
-  review** for sensitive permissions. On-device.
-See `04-integrations.md` for per-provider integration detail.
+### Infrastructure we operate
 
-### 3. Google Play Developer account — 💰 (one-time)
-- **What:** <https://play.google.com/console> ($25 one-time).
-- **Why:** needed to distribute the Android build (internal testing track for
-  friends). Not blocking early dev (Expo dev builds run without it), so it can lag
-  Apple — but cheap, so just do it.
+| Account | For | Dev | Prod | Credential → where it lives | Notes |
+| --- | --- | --- | --- | --- | --- |
+| **Cloudflare** — R2 | every static artifact and raw archive | ✅ | ⬜ `--prod` upload path exists, never run | one R2 API token per script, in gitignored config: `scripts/basemap/RCLONE_SETUP.md`, each `mirror-r2.sh`'s rclone remote, Fly's staged `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` | buckets: `skating-basemap` (basemap ×2, bathymetry, imagery archive; public `r2.dev` subdomain) · `skating-raw-lake-osm` · `skating-raw-lake-depth` · `skating-raw-wind-climate` |
+| **Fly.io** 💰 ~$5/mo when cutting | the imagery granule box, per-job Machines | ✅ app `skating-imagery`, region `sjc` | — | `FLY_API_TOKEN` local; `R2_*` + `AWS_*` (anonymous Earth Search reads) staged on the app | read the imagery README's *six ways to get this wrong* before any `fly` command; secrets are `--stage`d and stay "Staged" forever, correctly |
 
----
+### Data and API keys
 
-## Do these when you start wiring (fast / free)
+| Account | For | State | Credential → where it lives | Notes |
+| --- | --- | --- | --- | --- |
+| **OpenRouteService** (HeiGIT) | drive-time isochrones (Phase 04), `foot-hiking` approaches (A06d) | ✅ | `ORS_API_KEY` on Convex; the ETL reads the same key | portal is <https://account.heigit.org>; measured quotas in § 3a |
+| **NREL WIND Toolkit** | winter wind roses | ✅ | `WIND_TOOLKIT_API_KEY` + `WIND_TOOLKIT_EMAIL`, local `.env` in `scripts/wind-climate` | free, instant at <https://developer.nlr.gov/signup/>; the host moved from `developer.nrel.gov`, hence the variable name |
+| **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | ⚠ **callback domain not yet set** to the Convex `.site` host — no real OAuth round-trip has run; new apps carry an athlete cap until expansion is requested |
 
-### 4. Convex — 🆓
-- Sign up at <https://convex.dev>, `npx convex dev`. Free tier is generous.
+### No account, by design
 
-### 4b. Clerk (auth) — 🆓 tier
-- Sign up at <https://clerk.com>; wire **Clerk ↔ Convex** (D26). Handles email +
-  social login on **both** Expo and web.
+Sources the pipelines and the app read with no registration, listed so nobody goes looking for one:
+**Open-Meteo** (no key; non-commercial free tier, D158) · **NWS `api.weather.gov`** (a `User-Agent`
+header only) · **AWS Earth Search** (anonymous STAC; Sentinel-2/-1) · **USGS** — 3DEP EPQS, 3DHP
+live, NAIP, The National Map downloads · **Geofabrik** · **US Census TIGER** · **Natural Earth** ·
+**Protomaps builds** · the state bathymetry portals (MassGIS, Maine GeoLibrary, NH GRANIT, VCGI,
+VT ANR) · **HydroLAKES**, **GLOBathy**, **LAGOS-US** (EDI), **ALSC**, **NYSDEC CSLAP**.
 
-### 5. Expo / EAS — 🆓
-- Account at <https://expo.dev>. Needed for **EAS dev builds** (required for native
-  map modules — Expo Go won't cut it) and **Expo Push**. Free tier includes a
-  limited number of cloud builds/month (or build locally).
+### Not set up, on purpose
 
-### 6. Routing provider — **OpenRouteService (hosted)** 🆓 (D18/D35)
-- Sign up for an API key at <https://openrouteservice.org>. Chosen over self-hosted
-  Valhalla to avoid running a routing server; isochrones are cached per user (D18),
-  so the free tier is ample. Valhalla stays a "later, only if we outgrow ORS" option.
-
-> #### ⚠ The account portal has moved, and the free-tier limits are not what we assumed (2026-08-13)
->
-> **Dashboard: <https://account.heigit.org>** — `openrouteservice.org/plans` now 301s there. ORS is
-> operated by HeiGIT and the key/usage panel lives in that portal, not on the old
-> `openrouteservice.org/dev` dashboard. Neither the plans page nor `/restrictions/` publishes the
-> per-endpoint quotas (the former is a JS app; the latter documents *request size* limits, which are a
-> different thing entirely and easy to mistake for rate limits).
->
-> **What A06d's routing pass measured**, since the documentation would not tell us:
->
-> | | observed |
-> |---|---|
-> | `directions/foot-hiking` per minute | **40** — a 700 ms gap (~85/min) got exactly 40 through, then `429` |
-> | `directions` per day | **~2,000** — two consecutive days stopped dead at 2,000 |
-> | daily reset | **not 24 h, and not midnight UTC** — refused at +24 h and again at +26½ h |
-> | quota exhausted signal | **`403 {"error":"Quota exceeded"}`**, *not* 429, and with **no rate-limit headers** |
-> | `isochrones` while `directions` was exhausted | **HTTP 200** — the pools are **per-endpoint** |
->
-> **The last row is the one that matters for the app.** D87 has A06d's approach routing sharing Phase 04's
-> key, and the obvious worry is an ETL starving the drive-time bands a user waits on. It cannot: the
-> quotas are separate, verified while directions was refusing.
->
-> **The reset behavior is still unexplained** and is the thing to check in the portal. A plausible
-> reading is that HeiGIT's migration changed the free allotment from a daily quota to something
-> smaller or longer-cycled; our own usage is the only evidence we have either way.
->
-> **The operational rule this bought** (`scripts/etl/src/accessCli.ts`): three consecutive 403s trip a
-> circuit breaker and the pass stops calling. Before that existed, one run sent **2,978 requests to an
-> endpoint that had already said no**.
-- **Second use, same key (D87, A06d):** the **`foot-hiking`** profile for parking → put-in approach
-  distance, with `elevation: true` for **ascent in meters**. Called at **ETL time, once per put-in** and
-  cached on the row — never from a request path — so it adds no per-user quota pressure. This is why
-  A06d's trail-routing question needed no new vendor: *"do you know of a service with an API"* was already
-  answered by an account we've had since Phase 04.
-
-### 7. Map tiles — pick one (renderer = MapLibre, no account)
-- **Protomaps** — 🆓, no account: build a regional `.pmtiles` and host on a CDN/S3.
-- **MapTiler** — 🆓 tier + key at <https://maptiler.com> (also does geocoding).
-
-### 8. Geocoding (home address → coords, low volume)
-- Prefer a **hosted** option (no self-hosting, D35): **Photon**- or **MapTiler**-
-  hosted geocoding (key). Public **Nominatim** is acceptable given once-per-user
-  volume, if we respect its usage policy.
-
-### 9. Weather — 🆓 no account
-- **Open-Meteo** <https://open-meteo.com> — no key. Nothing to set up. **The single source for
-  anything that feeds a calculation** (D74): forecast + `past_days` history for the D56 decay math.
-  **Also A06c §2.5b's short forward forecast**, at no additional cost: `weather.ts:112` already sends
-  `forecast_days: '1'` and the window filter discards the forward hours, so a drawer-side "will it be
-  snowing when I get there" strip is a parameter change and a slice, not a new call.
-- **Also Open-Meteo:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM, batched
-  coordinates) — A06c's body-elevation pass. Same vendor, same no-key posture, ~1,200 requests to
-  cover all 116,070 centroids.
-- **NWS `api.weather.gov`** — 🆓, **no account and no API key**, US-only. Added for A06c §2.5 (official
-  winter-storm / ice-storm / wind-chill **alerts**, `/alerts/active?area={state}`).
-  - **Setup is one header:** a `User-Agent` identifying the app (contact info encouraged). Their docs
-    note a key **may be required in future** — leave a comment at the call site so that isn't a surprise.
-  - Rate limits are unpublished; retry a 429 after ~5 s. Poll **per state on a cron**, not per view.
-  - **Zone precision for v1** (founder call, 2026-07-31), as a ladder: bodies stamped with their NWS
-    forecast zone match on it; everything else falls back to `states[]`. **Polling stays per-state** —
-    zone precision is about *matching*, not fetching, so read cost stays independent of corpus size. The
-    zone geometry is a public download and the stamp is the `adminAreas` point-in-polygon pass again.
-    ⚠ Some alerts are issued by **county (SAME/FIPS)** rather than forecast zone; handle both id spaces
-    or a class of alerts silently never matches, and a missing warning looks exactly like no warning.
-  - **Never blend it with Open-Meteo** (D74) — it's an advisory layer, not a physics input.
-  - Coverage gap: US-only. A Québec expansion would need Environment Canada.
-
-### 10. Web hosting — Vercel (D27)
-- **Vercel** — sign up at <https://vercel.com>; first-class TanStack Start deploy.
-
-### 11. Push (mobile) — 🆓 — ✅ done for dev 2026-09-14
-- **Expo Push** handles APNs/FCM. For iOS you still need #1 (Apple). Create a
-  **Firebase** project for **FCM** (Android) — free.
-- **Built (A08 PR 3).** The code is credential-blind: `pushRegistration.ts` mints an Expo token on the
-  device and `notificationDelivery.ts` posts to `exp.host`. What the founder does, once (the steps
-  below), plus what the first run through them actually hit — recorded so prod cutover doesn't
-  re-derive it:
-  - The Firebase project must sit **under the Google Cloud organization**, not "No organization",
-    or the console can't override org policies for it (Resource Manager → Migrate).
-  - New orgs enforce `iam.managed.disableServiceAccountKeyCreation`, so step 1's *Generate new
-    private key* fails. Override it **at the project** (needs Organization Policy Administrator on
-    the org), generate the key, then re-enforce — existing keys keep working.
-  - Step 2's Apple login died on `iTunes service key is empty` — an Apple-side error, not a bad
-    password (a stored one lives in the macOS Keychain as an **internet** password, server
-    `deliver.<apple-id>`). The APNs key was created by hand at developer.apple.com and pasted in.
-  - Step 3 was done: expo.dev token labeled `convex-dev-push`, set as `EXPO_ACCESS_TOKEN` on dev.
-  - Verified with a direct POST to `exp.host/--/api/v2/push/send` + `getReceipts` → `status: ok`,
-    then a real token in `pushTokens` from the `preview` build.
-  1. **Android:** <https://console.firebase.google.com> → new project → add an Android app with
-     package `com.teaganatwater.gli` → download `google-services.json` into `apps/mobile/`
-     (gitignored) and upload it as an EAS **file** env var `GOOGLE_SERVICES_JSON` for every
-     environment. Then Project settings → Service accounts → *Generate new private key*, and
-     `cd apps/mobile && eas credentials` → Android → *Google Service Account* → *Set up FCM V1* →
-     upload that JSON. New EAS build (native fingerprint changes).
-  2. **iOS:** `eas credentials` → iOS → *Push Notifications: Set up* — EAS creates the APNs key on the
-     Apple Developer account and stores it. Nothing to download. (Untestable without an iPhone.)
-  3. Optional: an **Expo access token** (expo.dev → Access tokens) in Convex env `EXPO_ACCESS_TOKEN`
-     turns on Expo's "enhanced push security"; the sender adds it as a bearer when present.
-
-### 11b. Clerk webhook — 🆓 — ✅ done for dev 2026-09-15; per Clerk instance, so prod needs its own (A08 PR 4)
-- **What it's for.** Clerk posts `user.updated` to the Convex HTTP router so the `profiles.email` /
-  `profileImageUrl` mirrors follow a change *the moment it happens* — the launch-time
-  `syncFromClerk` only catches up on the next app open, and the person the email channel serves
-  is exactly the one who isn't opening the app. Built with the change-email affordance on both
-  clients; verified with `standardwebhooks` (`lib/clerkWebhook.ts`).
-- **Per Clerk instance, once** (dev now; prod at cutover):
-  1. Clerk Dashboard → *Configure* → *Webhooks* → **Add endpoint**. URL is the deployment's
-     `.convex.site` host + `/clerk-webhook` — dev: `https://agile-bee-397.convex.site/clerk-webhook`.
-     Subscribe to **`user.updated`** (and `user.created`, harmless; `user.deleted` is acknowledged
-     and ignored — our finalization deletes the Clerk user itself).
-  2. Copy the endpoint's **Signing Secret** (`whsec_…`) → Convex env
-     `CLERK_WEBHOOK_SIGNING_SECRET` on the matching deployment:
-     `cd packages/convex && pnpm exec convex env set CLERK_WEBHOOK_SIGNING_SECRET whsec_…`
-     (prod: `--prod`). Until it's set the route answers **500** — deliberately loud, and Svix
-     retries, so nothing is lost when the secret lands.
-  3. Verify: change your email from Settings (web) or the You tab (mobile), then check the
-     endpoint's *Messages* tab in Clerk shows a 200 and `profiles.email` on the row moved.
-- **Prod cutover note:** the endpoint URL and the secret are both per-instance — the prod Clerk
-  instance needs its own endpoint pointing at `diligent-guanaco-965.convex.site`, and its own
-  secret on prod Convex. Neither carries over.
-
-### 12. Observability — 🆓 tiers (D29)
-- **Sentry** — sign up at <https://sentry.io>; add `@sentry/react-native` (mobile)
-  + browser SDK (web). Free developer tier. Set up **from day one** for crash/error.
-- **PostHog** — <https://posthog.com>; add later for product analytics + feature
-  flags + session replay (generous free tier). OSS.
-
-### 13. Transactional email — **Resend** 🆓 tier (D38)
-- Sign up at <https://resend.com>; create an API key → store in **Convex env vars**.
-- **Verify a sending domain** (add DNS records) so operator alerts don't land in spam.
-- Templates authored with **React Email** (`@react-email/components`) — no account
-  needed, it's a library. First use = founder alerts on new support tickets / safety
-  flags (D37/D38). Clerk still owns auth emails (D26) — don't duplicate.
+| Account | Why not | Trigger |
+| --- | --- | --- |
+| **Garmin / COROS / Polar** partner programs ⏳ weeks | no applications submitted (founder, 2026-09-17); nothing to build against until one lands | the founder submitting them → [`backlog/partnerships.md`](./backlog/partnerships.md) |
+| **Google Health Connect** review | needs the Play account first | with Play |
+| **PostHog** | D29 "later"; replay is L12-gated | [`backlog/posthog.md`](./backlog/posthog.md) |
+| **Meta / Facebook developer app**, Google Groups access | Q8 / L5 — the inbound bridge is legal-gated | the feasibility + consent pass |
+| **Copernicus Data Space** | never needed — Earth Search serves the same data anonymously | a Sentinel product Earth Search lacks |
+| **Planet** 💰 quote-based · **Windy** 💰 €990/yr | evaluated and declined/deferred (D75) — [`research/imagery-and-weather-vendors.md`](./research/imagery-and-weather-vendors.md) | Planet: real imagery usage **and** a missed freeze event; Windy: a MapLibre-compatible path |
+| **Lawyer** (Q10) | the one engagement that clears L1–L4 + L11 | before any launch past the friends alpha |
 
 ---
 
-## External data providers — the numbers behind the calls (added 2026-07-30, A06c)
+## 2. Where every secret lives
 
-Founder ask: record cost, benefit and setup for the providers we evaluated during A06c scoping, so the
-"why not" is checkable and the "when" has a trigger. All three decisions are D75 unless noted.
+The same name never means two things, and a value lives in **one** place per environment. Names
+only — values are never in the repo.
 
-### 14. Satellite imagery — **Copernicus Data Space** 🆓 (D75)
+### 2a. Convex deployment env vars (`pnpm convex-dev env set NAME value`; prod: `--prod`)
 
-**The decision:** deep-link now (no account), integrate later (free account, quota-bound).
+Read by running functions only; `.env.local` values are read by the CLI, never by functions.
 
-- **License — this is the part that unblocked a deferred roadmap item.** Copernicus Sentinel data is
-  under the **free, full and open Copernicus license**: reproduce, distribute and adapt, with
-  attribution. The roadmap parked the satellite-imagery layer for want of *"an imagery source whose
-  terms permit the use"* — that question is now answered, and what remains is cost, not permission.
-- **Tier 1 — the deep link (A06c, ships now): 🆓, no account, no quota.**
-  <https://browser.dataspace.copernicus.eu/> with lat/lng/zoom + a ~14-day Sentinel-2 L2A window.
-  Nothing to set up. ⚠️ Verify the query-param shape against the live browser at build time — it's the
-  one URL format we don't control.
-- **Tier 2 — imagery in the app (deferred): 🆓 registration**, Sentinel Hub–compatible OGC/Process APIs.
-  - **Free-tier quota: 10,000 requests + 10,000 processing units per month; 300/min.**
-  - A full-screen tile view is ~10–20 requests ⇒ only **~500–1,000 water body views/month** raw. Not enough
-    for general use.
-  - **Server-side tile caching is what makes it viable**, and the open license permits it: a popular
-    body is viewed many times but only needs fetching once per **~5-day** satellite revisit. That turns
-    the quota from per-view into per-body-per-week, which fits comfortably.
-  - **Benefit:** 10 m resolution is enough that open water vs. black ice vs. snow-covered ice is
-    visually obvious. Cloud cover is the real limiter, not resolution.
-  - **Do this when** we know which handful of bodies get real traffic — caching only wins if reads
-    concentrate. A06c's proving run (§2.3a) is what starts producing that evidence.
-  - **→ Now scoped as [A06e](./phases/A06e-satellite-imagery.md) Workstream 3 (D84, 2026-07-31)**, where it
-    is **Tier 2** of a two-tier split. Everything above still holds — but it is no longer what gates the
-    satellite toggle, because Tier 1 doesn't need an account at all:
+| Variable | Dev | Prod | Secret? |
+| --- | --- | --- | --- |
+| `CLERK_JWT_ISSUER_DOMAIN` | ✅ | ⬜ prod instance's | no |
+| `CLERK_SECRET_KEY` | ✅ | ⬜ | **yes** |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | ✅ 2026-09-15 | ⬜ its own endpoint + secret | **yes** |
+| `EXPO_ACCESS_TOKEN` | ✅ | ⬜ | **yes** |
+| `ORS_API_KEY` | ✅ | ⬜ | **yes** |
+| `RESEND_API_KEY` | ✅ | ⬜ prod key | **yes** |
+| `RESEND_FROM_EMAIL` | ✅ `Gli Updates <updates@skating.teaganatwater.com>` | ⬜ | no |
+| `OPERATOR_ALERT_EMAIL` | ✅ | ⬜ | no |
+| `STRAVA_CLIENT_ID` · `STRAVA_CLIENT_SECRET` | ✅ | ⬜ | id no · secret **yes** |
+| `WEB_APP_URL` | ✅ the Vercel deployment URL | ⬜ the prod URL | no |
+| `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 
-### 14b. Aerial imagery — **USGS / The National Map (NAIP)** 🆓 — **no account** (D84, corrected by D147)
+### 2b. Mobile — EAS environments (`development`, `preview`, `production`) and local `apps/mobile/.env.local`
 
-**The tier that actually ships the reveal**, and it needs nothing set up.
+`eas config --profile preview --platform android` shows what a build will see. Public unless marked.
 
-> ⚠ **Corrected 2026-08-21, against the live services.** This entry previously named the
-> `USGSImageryOnly` tile service at "~0.6 m". Both halves were wrong, and the error was load-bearing —
-> it is what let A06e's original scoping promise a skater the gap in the trees and the path to the shore.
+| Variable | Notes |
+| --- | --- |
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | `pk_test_…` on dev/preview; `pk_live_…` for production |
+| `EXPO_PUBLIC_CONVEX_URL` | the deployment URL |
+| `EXPO_PUBLIC_PMTILES_URL` · `EXPO_PUBLIC_WORLD_PMTILES_URL` · `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` · `EXPO_PUBLIC_IMAGERY_ARCHIVE_URL` | R2 archive URLs; blank = layer never mounts (basemap blank falls to the expiring demo bucket) |
+| `EXPO_PUBLIC_OFFLINE_BASEMAP` | the Layer-3 device spike, off by default |
+| `EXPO_PUBLIC_SENTRY_DSN` | public |
+| `GOOGLE_SERVICES_JSON` | EAS **file** variable; local copy gitignored |
+| `SENTRY_AUTH_TOKEN` | **secret** — build-time source-map upload; `SENTRY_ORG` / `SENTRY_PROJECT` are committed in `app.config.ts`, not env |
+| `FONTAWESOME_NPM_AUTH_TOKEN` | **secret** — `eas-build-pre-install` writes it to `~/.npmrc` on the builder |
 
-- **Use `imagery.nationalmap.gov`'s `USGSNAIPPlus` ImageServer** — `pixelSizeX: 0.3`, CORS `*`, no key.
-  It is an **ImageServer, not a tile cache**, so there is no `/tile/` endpoint; MapLibre's
-  **`{bbox-epsg-3857}`** token makes `exportImage` a drop-in raster source. Verified returning a 256×256
-  JPEG at a z18 extent over Burlington in which individual cars are countable.
-- **Not `basemap.nationalmap.gov`'s `USGSImageryOnly`.** Its `maxScale` is 9027.977411 — **ArcGIS level
-  16** — and z17+ returns a hard **404** rather than upsampling. At 44.5°N that is **~1.7 m/px on the
-  ground**: enough to see that a clearing is a parking lot, not enough to count spaces. Its own service
-  description says *"1 meter pixel resolution"* and *"visible to the 1:9,028 zoom scale."* Keep it only
-  as a cheap low-zoom floor.
-- **NAIP is an airplane, not a satellite,** and this is the fact that shapes the phase: flown on a
-  **2–3 year per-state cycle, deliberately in mid-summer** for the USDA's crop program. **No NAIP frame
-  will ever show ice.** Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
-  solstice, 2023.
-- **The acquisition date is queryable per water body**, which is what makes an honest date stamp possible:
-  `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the source scene with
-  `acquisition_date` in epoch ms. One cached call per body.
-- **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no license review.**
-- **Cost: €0**, with no tier to outgrow.
-- **What it's for:** reading *access*, not ice — which is why it pairs with A06d rather than the weather
-  work.
-- **The thing to watch is courtesy, and it's sharper than it was:** `USGSNAIPPlus` renders every request
-  dynamically with no CDN in front. v1 points at it and measures; the caching proxy is **the same
-  infrastructure the Sentinel timeline needs** (D148), so it gets designed once.
-- **Attribution string, read off the service:** `USDA, USGS The National Map: Orthoimagery. Data
-  refreshed June, 2024.`
-- ⚠ **Confirm at build:** ArcGIS tile axis order is `/tile/{z}/{y}/{x}` (**y before x** — a swapped pair
-  404'd in testing, but that is luck of the coordinate; elsewhere it returns tiles, just the wrong ones).
+### 2c. Web — Vercel project env and local `apps/web/.env`
 
-### 15. Windy — 💰 **evaluated and declined** (D75)
+| Variable | Notes |
+| --- | --- |
+| `CLERK_PUBLISHABLE_KEY` · `CLERK_SECRET_KEY` | server-side (no `VITE_` prefix); secret key **secret** |
+| `VITE_CONVEX_URL` | |
+| `VITE_PMTILES_URL` · `VITE_WORLD_PMTILES_URL` · `VITE_BATHYMETRY_PMTILES_URL` · `VITE_IMAGERY_ARCHIVE_URL` | same values as mobile's |
+| `VITE_SENTRY_DSN` | public |
+| `VITE_APP_VERSION` | optional; unset → `web` in the support form |
+| `SENTRY_ORG` · `SENTRY_PROJECT` · `SENTRY_AUTH_TOKEN` | build-time; token **secret**; without it the plugin skips upload and builds still succeed |
 
-**The decision: link out (in-app browser on mobile), do not buy the API.**
+### 2d. GitHub Actions secrets
 
-- **Cost, confirmed against their pricing pages (2026-07-30):**
-  | Product | Free "Testing" tier | Professional |
-  |---|---|---|
-  | **Map Forecast API** | 500 sessions/day, **GFS only**, 3 layers, *"development purpose only, not intended for production"* | **€990/year** (+ **€1,000** for ECMWF), 10,000 sessions/day, 40+ layers |
-  | **Point Forecast API** | 500 requests/day, and it **returns randomly shuffled and slightly modified data** | **€990/year**, 10,000 requests/day, ECMWF excluded by license |
-  *(Priced per product — using both looks like ~€1,980/yr. Confirm with them before assuming a bundle.)*
-- **The blocker is technical, not financial.** The Map Forecast API is, in their words, *"a simple-to-use
-  library based on Leaflet 1.4.x"* and is tightly coupled to it. **We render MapLibre.** There is no way
-  to overlay Windy's animated layers onto our map — buying it means embedding *their entire map*
-  alongside ours, i.e. shipping a second map engine.
-- **The free tier cannot be used anyway** — dev-only for the map API, and deliberately corrupted data for
-  the point API.
-- **What we do instead:** open `windy.com/?<lat>,<lng>,<zoom>` through **`expo-web-browser`** on mobile
-  (D76), which delivers the founder's actual goal — Windy's animation, over our app, with a Done button —
-  for €0 and one line of code. Web opens a new tab.
-- **The Point Forecast API is separately unnecessary**: it duplicates what Open-Meteo already gives us
-  for free, and D74 says one physics source regardless.
-- **Trigger to revisit:** we want animated weather *inside* our own map canvas AND a MapLibre-compatible
-  path exists (their product, or a raster-tile endpoint). Absent that, more money doesn't buy a
-  different answer.
+`FONTAWESOME_NPM_AUTH_TOKEN` — the only one. CI pushes Convex functions to a throwaway local
+backend, so it needs no deployment credential.
 
-### 16. Planet — 💰 **evaluated and deferred** (D75)
+### 2e. Local-only and pipeline credentials (all gitignored)
 
-**The decision: wait. Revisit only on evidence.**
+| Where | What |
+| --- | --- |
+| `~/.npmrc` | the FontAwesome token |
+| `packages/convex/.env.local` | `CONVEX_DEPLOYMENT` (which deployment the CLI targets); `CONVEX_DEPLOY_KEY` for loaders that run as admin and for `convex deploy` |
+| `scripts/wind-climate/.env` | `WIND_TOOLKIT_API_KEY`, `WIND_TOOLKIT_EMAIL` |
+| `scripts/basemap/RCLONE_SETUP.md` + each `mirror-r2.sh`'s rclone remote | R2 API tokens (Object Read & Write, scoped per bucket) |
+| Fly app `skating-imagery`, staged secrets | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (empty — anonymous), `FLY_API_TOKEN` local for `flyctl` |
+| Imagery / pipeline knobs (not secrets, read from env) | `STAC_URL`, `STAC_COLLECTION`, `STAC_COLLECTION_S1`, `THALWEG_RATIO`, `NODE_TLS_REJECT_UNAUTHORIZED` (the ALSC scraper's expired certificate, one run, archived) |
+| Pipeline shell wrappers — each `scripts/*/.env.local`, documented by its `.env.example` (not secrets) | the `mirror-r2.sh` family: `RCLONE_REMOTE`, `RAW_BUCKET`, `ELEVATION_BUCKET` · `basemap/upload-r2.sh`: `R2_REMOTE`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` · `imagery/fan-out.sh`: `FLY_APP`, `FLY_REGION`, `FLY_IMAGE`, `MAX_PARALLEL`, `MASK_SEASON` (⚠ the masks' season, never the frame's — the example file says why) |
+| macOS Keychain | `eas credentials` stores an Apple password as an internet password, server `deliver.<apple-id>`; `EXPO_NO_KEYCHAIN=1` skips it |
 
-- **Cost: not publicly listed — quote-based via sales.** Their pricing page carries no figures. Assume a
-  commercial subscription scoped per area-of-interest; budget a real conversation, not a signup.
-  *(They also run an Education & Research program; we are not academic, so it doesn't apply.)*
-- **What money does *not* buy.** Planet's public-data catalog — Sentinel-1, Sentinel-2 L1C/L2A,
-  Landsat 4–9, HLS, Copernicus DEM — is **the same free data we can get directly from Copernicus**.
-  Paying does not unlock it.
-- **What money *does* buy: PlanetScope — ~3 m, near-daily revisit.** For ice this is a genuine product
-  difference, not a vanity upgrade: a water body can go from open water to skateable in 48 hours, and a 5-day
-  revisit can miss the entire onset. Worth being honest that the case here is real.
-- **Why not yet:** it's a commercial imagery subscription against a pilot with no revenue, and **we do not
-  yet know whether anyone opens the imagery link at all.**
-- **Low-regret detail:** Planet serves its public data from **Sentinel Hub endpoints**
-  (`services.sentinel-hub.com`) — the same API surface as the Copernicus Data Space. Building against
-  Copernicus now is *not* a lock-out; it's the same client either way.
-- **Trigger to revisit:** the free Copernicus link sees real usage **and** we hit a case where the 5-day
-  revisit demonstrably missed a freeze event.
+**Secrets rule:** client secrets (Clerk secret, Strava secret, Resend, ORS, Expo token) live in
+Convex env vars, never in a client bundle; `.env.example` files document names, never values; the
+Convex MCP server has `envGet` / `envSet` disabled (⚠ `envList` returns values, not just names —
+treat it as a secret-reading tool). **Public-by-design identifiers** — deployment names, the Clerk
+instance domain, publishable keys — may appear in docs where they help tell dev from prod: they ship
+in every client bundle, and the deployment URL grants nothing on its own (every function checks
+auth). Nothing else does; an identifier that doesn't help someone act (an OAuth client id, a
+hostname of a service that isn't ours) stays out.
 
 ---
 
-## Deferred (do NOT set up yet — see open questions)
-- **Meta / Facebook developer app** for group ingestion (Q8) — restricted APIs +
-  ToS; only after a feasibility/legal pass.
-- **Google Groups ingestion** — no clean API; parked.
-- **Full legal review** (Q10) — after the friends POC. **Interim guardrails already in
-  place:** a temporary privacy notice (`PRIVACY.md`), a signup **age gate (16+)** and
-  **assumption-of-risk acknowledgment** (D41/D45), and the AGPL **App Store exception**
-  (`LICENSE-EXCEPTIONS.md`, D43) — all of which a lawyer confirms before broad launch.
+## 3. Setup notes worth keeping — the parts that were hard-won
+
+### 3a. OpenRouteService — the portal moved and the limits are measured, not published (2026-08-13)
+
+Dashboard: <https://account.heigit.org> (`openrouteservice.org/plans` 301s there). Neither the plans
+page nor `/restrictions/` publishes per-endpoint quotas; what A06d's routing pass measured:
+
+| | observed |
+|---|---|
+| `directions/foot-hiking` per minute | **40** — a 700 ms gap (~85/min) got exactly 40 through, then `429` |
+| `directions` per day | **~2,000** — two consecutive days stopped dead at 2,000 |
+| daily reset | not 24 h and not midnight UTC — refused at +24 h and again at +26½ h |
+| quota exhausted signal | **`403 {"error":"Quota exceeded"}`**, *not* 429, no rate-limit headers |
+| `isochrones` while `directions` was exhausted | **HTTP 200** — the pools are **per-endpoint** |
+
+The last row is the one that matters: an ETL cannot starve the drive-time bands a skater waits on.
+The operational rule it bought (`scripts/etl/src/accessCli.ts`): three consecutive 403s trip a
+circuit breaker — before it existed one run sent 2,978 requests to an endpoint that had already
+said no. Hosted isochrones cap at 60 min, so the 90-min band is a radius
+([`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md)).
+
+### 3b. Push — Firebase / FCM and APNs (done for dev 2026-09-14)
+
+The code is credential-blind (`pushRegistration.ts` mints an Expo token; `notificationDelivery.ts`
+posts to `exp.host`). What the one-time setup hit, recorded so the prod cutover doesn't re-derive it:
+
+- The Firebase project must sit **under the Google Cloud organization**, not "No organization", or
+  the console can't override org policies for it (Resource Manager → Migrate).
+- New orgs enforce `iam.managed.disableServiceAccountKeyCreation`, so *Generate new private key*
+  fails. Override it **at the project** (needs Organization Policy Administrator on the org),
+  generate the key, then re-enforce — existing keys keep working.
+- The Apple-login path in `eas credentials` died on `iTunes service key is empty` — an Apple-side
+  error, not a bad password. The APNs key was created by hand at developer.apple.com and pasted in.
+  One key per Apple team covers every app.
+- Steps, per environment: Firebase → Android app with package `com.teaganatwater.gli` →
+  `google-services.json` into `apps/mobile/` (gitignored) and as the EAS file var
+  `GOOGLE_SERVICES_JSON`; Service accounts → key → `eas credentials` → Android → *Set up FCM V1*.
+  New EAS build (the native fingerprint changes). Verified end to end with a direct POST to
+  `exp.host/--/api/v2/push/send` + `getReceipts` → `status: ok`.
+
+### 3c. Clerk webhook — per instance, once (dev 2026-09-15; prod at cutover)
+
+`user.updated` → `POST /clerk-webhook` on the Convex HTTP router keeps `profiles.email` /
+`profileImageUrl` current the moment they change (the app-open `syncFromClerk` only catches up on
+the next open, and the person the email channel serves is exactly the one not opening the app).
+
+1. Clerk Dashboard → *Configure* → *Webhooks* → **Add endpoint**: the deployment's `.convex.site`
+   host + `/clerk-webhook` (dev: `https://agile-bee-397.convex.site/clerk-webhook`). Subscribe to
+   `user.updated` (`user.created` harmless; `user.deleted` acknowledged and ignored — finalization
+   deletes the Clerk user itself).
+2. The endpoint's signing secret → `CLERK_WEBHOOK_SIGNING_SECRET` on the matching deployment. Until
+   set, the route answers **500** on purpose; Svix retries, nothing is lost.
+3. Verify: change your email in Settings (web) or the You tab (mobile); the endpoint's *Messages*
+   tab shows a 200 and the profile row moved.
+
+Prod needs its own endpoint (`diligent-guanaco-965.convex.site`) and its own secret; neither
+carries over.
+
+### 3d. Resend — CNAME-verified, and there is deliberately no MX record
+
+The sending domain is verified through Resend's CNAME flow, which serves the MX and SPF from their
+side; adding an MX at the same name would break the CNAME. The full checklist is
+[`phases/07-operator-surface.md`](./phases/07-operator-surface.md) § *Resend checklist*. All three
+email vars ship unset on a fresh deployment on purpose — `lib/resend.ts` logs and returns rather
+than blocking every deploy on a founder task.
+
+### 3e. Fly — secrets are staged, and that is the finished state
+
+`fly secrets set --app skating-imagery --stage KEY=value`; ignore flyctl's advice to `fly secrets
+deploy` — this app has no long-lived Machines, every job's Machine is born with the staged set. The
+rest of the traps (never plain `fly deploy`, `machine run` needs `--detach`, region `sjc` because
+`sea` is dead) are in [`scripts/imagery/README.md`](../scripts/imagery/README.md).
 
 ---
 
-## Secrets handling
-- Client secrets (Strava, provider keys) live **server-side in Convex env vars**,
-  never in the mobile/web bundle.
-- Keep a local `.env.example` documenting required vars; never commit real values.
+## 4. The prod cutover — the account column
+
+Every line is a provisioning act, not code; the ordered checklist is
+[`docs/deployment-and-release.md`](../docs/deployment-and-release.md) § *Prod cutover*. By account:
+
+1. **Clerk** — a production instance; its issuer domain + secret key on prod Convex; a `pk_live_`
+   key in the `production` EAS environment and on Vercel; its own webhook endpoint + secret.
+2. **Convex** — the first `convex deploy` (needs a deploy key); every § 2a variable on prod; the
+   `--prod` corpus load and `backfillCells`.
+3. **Resend** — a prod API key; the three email vars.
+4. **Cloudflare R2** — `upload.sh … --prod`, then the prod tile URLs on Vercel and in EAS
+   `production`.
+5. **Expo / EAS** — fill the `production` environment; `EXPO_ACCESS_TOKEN` on prod Convex.
+6. **Strava** — the callback domain on the API app; `WEB_APP_URL` on prod.
+7. **Sentry** — prod DSNs if they're to be separate projects (or keep one per surface).
+8. **Google Play** (when there is a store track) and **Apple** (the first iOS build).
+
+When a line lands, its row in § 1 flips to ✅ and its variables in § 2 gain a prod column entry — in
+the same PR, so the register and the deployment never disagree about which tier exists.
