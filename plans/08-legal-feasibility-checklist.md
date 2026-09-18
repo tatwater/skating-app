@@ -1,294 +1,202 @@
 # Legal & feasibility checklist
 
-A single register of everything we've **deferred behind a legal, ToS, consent, privacy, or
-feasibility question** — so nothing legal-gated gets silently built, and nothing gets forgotten.
-Each item cross-references its decision (`D#`) / open question (`Q#`) elsewhere in `/plans`.
+The register of everything deferred or constrained by a **legal, terms-of-service, consent,
+privacy, license, or feasibility** question — so nothing gated gets built by accident, and nothing
+gets forgotten. One row per gate (`L#`), each with its status, the guardrail already live, and what
+clears it.
 
-> **This is not legal advice, and this doc is not the legal review.** The actual review is **Q10**
-> (a real lawyer, before broad launch). This is the *engineering-side* tracker: what's gated, why,
-> what question must be answered before it can ship, and what interim guardrail (if any) is already
-> in place. When an item clears, note the resolution here and move the decision to `01-decisions.md`.
+> **Not legal advice, and not the review.** The review is **Q10** — one lawyer engagement before
+> any launch past the friends alpha, which clears most of the 🟡 rows at once. This is the
+> engineering-side tracker.
 
-## When the gates apply
+**What lives elsewhere, on purpose:** the *attribution obligations* per data source are the
+register in [`04-integrations.md`](./04-integrations.md) § Attribution (this doc holds only the
+gates among them); the *policy narratives* are [`docs/minors-and-age-policy.md`](../docs/minors-and-age-policy.md)
+and [`docs/account-deletion.md`](../docs/account-deletion.md); the *accounts* not set up for legal
+reasons are in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) § *Not set up,
+on purpose*. A row here says *what's gated and why*; the mechanics stay where they're built.
 
-- **Friends alpha (now):** interim guardrails only (age gate, risk ack, temporary privacy notice).
-  Everything in this doc is either deferred entirely or shipped in a form that doesn't need the
-  full review yet.
-- **Broad / public launch:** the **Q10 legal review** must clear first, and every ⛔ item below
-  must be resolved or explicitly accepted.
+**How to use it.** A change touches a gated area → check the row: ⛔ doesn't ship until the gate
+clears; 🟡 ships only if the interim guardrail still holds. A gate clears → flip the status, record
+the resolution in one line, and put the decision in `01-decisions.md`. **When the gates apply:**
+the friends alpha runs on the interim guardrails; a broad launch needs Q10 done and every ⛔ resolved
+or explicitly accepted.
 
-## Status legend
-- ⛔ **Blocked** — do not build/enable until the question is answered.
-- 🟡 **Shipped with interim guardrail** — live in a limited/safe form; full review still required.
-- 🔬 **Feasibility-gated** — needs a research/feasibility pass before it's even a legal question.
+Legend: ⛔ blocked · 🟡 shipped behind an interim guardrail, review still required · 🔬 needs a
+feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dormant by design
 
 ---
 
-## Summary register
+## The register
 
-| # | Item | Refs | Status | Gate before it can ship |
+| # | Gate | Refs | Status | What clears it |
 |---|---|---|---|---|
-| L1 | Full ToS / assumption-of-risk / disclaimers / privacy policy | Q10, D3, D45 | 🟡 | Lawyer review |
-| L2 | Minor (16–17) data collection — DOB as sensitive PII | D41, Q10 | 🟡 | Lawyer confirms minor-data posture |
-| L3 | Account deletion / retention / export policy wording | D33, Q10 | 🟡 | Lawyer confirms policy text |
-| L4 | AGPL App Store / Play distribution exception wording | D43, Q10 | 🟡 | Lawyer confirms §7 exception text |
-| L5 | Forum / Facebook / Google Group **ingestion** (republish) | Q8, D21 | 🔬⛔ | Feasibility + consent + ToS pass |
-| L5a | One-time **private corpus extraction** (design input only) | Q8 | 🟡 | Access legitimately; keep private; PII care |
-| L6 | AI summarization beyond weather facts | Q9, D21 | ⛔ | Liability review + source-ToS pass |
-| L7 | Strava API terms — cross-user path display, AI, branding | D24 | 🟢 | **Read 2026-07-24:** *pull* forbidden → shelved; *push* (`activity:write`) allowed; aggregate off **our own** tracks |
-| L8 | Other GPS provider ToS / brand / health-data review | D24 | ⛔ | Per-provider terms at integration time |
-| L9 | GPS-path hazard **deduction** (our own tracks) | Q11 | 🔬 | Volume + calibration + privacy pass (legal half cleared by L7) |
-| L10 | OSM **ODbL share-alike** if we publish the derived DB | D5 | 🟡 | Only bites if we redistribute the extract |
-| L11 | Landowner takedown wording / obligation | D48, Q10 | 🟡 | Lawyer confirms takedown policy |
-| L12 | PostHog session replay (minors + location) | D29 | ⛔ | Masking + minor-exclusion + PRIVACY update |
-| L13 | Weather (Open-Meteo) attribution + **non-commercial free-tier license** | 04-integrations, D158 | 🟢 | Attribution appreciated; ⚠ free tier is **non-commercial only** — A06h adds surfaces and sources |
-| L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**) **and built** (Phase 08): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out. Still 🟡 — the *derivations* over the aggregate (L9) need their own pass |
-| L15 | **AGPL §13 network-service obligation** for a self-hosted radar service | D157 | 🟢⏸ | Dormant by design — D157 says *borrow the approach, don't deploy the software*. Bites only if we run a **modified** LibreWXR (or any AGPL service) for users |
+| L1 | ToS, privacy policy, assumption-of-risk enforceability, disclaimers | Q10, D3, D45 | 🟡 | the lawyer |
+| L2 | Minor (16–17) data collection and the read-only posture | D41, Q10 | 🟡 | the lawyer confirms the posture; decide whether minors may ever post |
+| L3 | Deletion, retention, export — the policy wording | D62, Q10 | 🟡 | the lawyer confirms the wording matches what's built |
+| L4 | AGPL §7 App Store / Play distribution exception | D43, Q10 | 🟡 | the lawyer confirms the exception text before any store listing |
+| L5 | Forum / Facebook / Google Group **ingestion** — republishing others' posts | Q8, D21 | 🔬⛔ | feasibility → consent model → ToS pass |
+| L5a | The one-time private corpus extraction for design | Q8 | 🟢 | done; guardrails held |
+| L6 | Machine summaries of human reports | Q9, D160, D151 | ⛔ | a liability review of any sentence a skater could read as a safety judgment |
+| L7 | Strava API terms | D24, D58 | 🟢 | read 2026-07-24; push-only, brand kit met |
+| L8 | Watch / health-platform provider terms, brand, health-data review | D24 | ⛔ | per provider, at integration; none applied for |
+| L9 | Path-cluster hazard deduction over our own tracks | Q11, L14 | 🔬 | volume + calibration + the L14 pass |
+| L10 | OSM ODbL share-alike | D5 | 🟡 | bites only if we *publish* the derived database |
+| L11 | Landowner takedown — the wording and any obligation | D48, D179, Q10 | 🟡 | the lawyer |
+| L12 | PostHog session replay with minors and location | D29 | ⛔ | masking + minor exclusion + `PRIVACY.md` update, before enabling |
+| L13 | Data-source license conditions — Open-Meteo non-commercial; radar sources' size-dependent terms | D158, Q14 | 🟡 | stays plainly non-commercial; re-read at scale |
+| L14 | Aggregate / heatmap privacy for our own tracks | D41, D42, D58 | 🟡 | built (Phase 08); device verification owed; derivations need their own pass |
+| L15 | AGPL §13 network-service obligation | D157 | 🟢⏸ | dormant unless we run AGPL code as a service |
+| L16 | Datasets with no published terms — ALSC, NYSDEC CSLAP | D130 | 🟡 | credited, never assumed permissive; ask if it ever matters |
+| L17 | Privacy law outside the US — Québec Law 25, PIPEDA | Q16 | 🔬 | a separate pass before the first non-US region |
+| L18 | Donations vs. app-store billing rules | Q14 | ⛔ | choose the vehicle; a link-out avoids the store's cut and review |
+| L19 | Email compliance — unsubscribe, sender identity, postal address | D174, Q10 | 🟡 | one-click unsubscribe built; the lawyer confirms the rest |
 
 ---
 
-## L1 — Full ToS / assumption-of-risk / disclaimers / privacy policy (Q10) 🟡
-The umbrella legal review. This is a **safety app**, so how reports are framed in-UI (never
-"safe/good to go," D3), the assumption-of-risk language (D45), data retention, and disclaimers all
-need real legal sign-off before broad launch.
-- **Interim guardrails already live:** temporary `PRIVACY.md`, interim `TERMS.md`, signup **age
-  gate (16+, D41)**, blocking **assumption-of-risk acknowledgment** (D45, versioned + timestamped
-  server-side).
-- **Before broad launch:** lawyer confirms ToS + privacy policy + the enforceability of the
-  assumption-of-risk framing; confirm the "peer observation, never a guarantee" framing holds up.
-- [ ] Lawyer engaged for the Q10 review.
-- [ ] ToS + privacy policy finalized (supersede the interim `TERMS.md`/`PRIVACY.md`).
-- [ ] Assumption-of-risk wording reviewed for enforceability; bump `RISK_ACK_VERSION` if it changes.
+## L1 — ToS, privacy, assumption of risk (Q10) 🟡
+The umbrella. A safety app's terms have to survive the *"peer observation, never a guarantee"*
+framing (D3) and the assumption-of-risk acknowledgment (D45) being enforced as written.
+- **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 16+ gate;
+  a versioned, server-stamped risk-ack (`RISK_ACK_VERSION`) that re-prompts on change.
+- [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Risk-ack
+      wording reviewed; bump the version if it changes.
 
-## L2 — Minor (16–17) data collection (D41) 🟡
-Min age is **16**, so under-13 COPPA is avoided by construction — but **16–17-year-olds are still
-minors**, and we now **store DOB** (sensitive PII, D41). Various regimes may still apply (this is a
-question *for the lawyer*, not an assertion): US state privacy laws, GDPR's digital-consent age
-(16 default, varies 13–16 by member state), the UK Age Appropriate Design Code, etc.
-- **Interim posture:** minors are **read-only** — since all reports are public (D13), a minor
-  **cannot post reports** (server + client enforced), so we never broadcast a known minor's
-  location; their profile is forced private (D41). DOB is treated as sensitive PII (**scrubbed on
-  deletion**, D33); minor status is derived at read time (self-corrects at 18). **This read-only
-  stance is an interim guardrail, revisitable here:** if the review clears public minor posting, it's
-  a one-line flip.
-- [ ] Lawyer confirms the minor-data collection + retention posture for our target regions.
-- [ ] **Decide whether minors may post public reports at all** (currently no — read-only until 18).
-- [ ] Confirm whether we need parental-consent flows anywhere we operate (likely not at 16+, but ask).
-- [ ] Confirm DOB storage vs. minimization trade-off (D41's deliberate relaxation of D11) is defensible.
+## L2 — Minors, 16–17 (D41) 🟡
+Under-13 is avoided by construction; 16–17 are still minors and we store DOB. The posture — minors
+are read-only, profile forced private, DOB scrubbed on deletion, minor status derived at read time —
+and everything it would take to open participation up is
+[`docs/minors-and-age-policy.md`](../docs/minors-and-age-policy.md).
+- [ ] Lawyer confirms collection + retention for our regions (US state law, GDPR ages, the UK code).
+- [ ] Decide whether minors may ever post public reports (a one-line flip if cleared).
+- [ ] Confirm no parental-consent flow is needed at 16+.
 
-## L3 — Account deletion / retention / export (D33) 🟡
-Product behavior is **decided** (anonymize-don't-erase past reports — all public, D13; scrub PII;
-JSON export bundle). The **policy wording** waits on Q10.
-- [ ] Lawyer confirms the anonymize-don't-erase approach + retention windows.
-- [ ] Confirm export contents (no secrets/tokens) meet any data-portability obligations.
+## L3 — Deletion, retention, export (D62) 🟡
+Built and decided: the request *is* the deletion; three buckets (erased / redacted at 30 days /
+anonymized); a 30-day login grace; a JSON export. [`docs/account-deletion.md`](../docs/account-deletion.md).
+The **wording** in the terms and privacy policy waits on Q10.
+- [ ] Lawyer confirms the three-bucket model and windows. [ ] Export contents meet portability
+      obligations (no tokens, nothing of other users').
 
-## L4 — AGPL App Store / Play distribution exception (D43) 🟡
-The GPLv3 §7 "additional permission" (App Store exception) is drafted in `LICENSE-EXCEPTIONS.md`.
-Sole-copyright-holder makes it clean, but the **wording is legal-gated**.
-- [ ] Lawyer confirms the §7 exception text before any public/store distribution.
+## L4 — AGPL §7 store exception (D43) 🟡
+Drafted in [`LICENSE-EXCEPTIONS.md`](../LICENSE-EXCEPTIONS.md); sole-copyright-holder keeps it
+clean. ⚠ Distinct from L15 — this is *distributing our client* through stores whose terms conflict
+with AGPL; L15 is *running someone else's* AGPL code.
+- [ ] Lawyer confirms the text before any store listing (which also waits on the name, Q15).
 
-## L5 — Forum / Facebook / Google Group ingestion — *republish* (Q8) 🔬⛔
-Auto-ingesting Google Group + Facebook posts into **in-app reports/comments** would crush
-cold-start — but it's the most heavily gated thing in the whole plan. **Deferred indefinitely; not
-in any numbered phase** (roadmap "Later / deferred"). The data model has the hooks
-(`reports.source`/`comments.source` include `imported`) and the D21 comment-vs-report AI classifier
-is spec'd, but the pipeline isn't built.
-- **Feasibility blockers (research first):**
-  - **Google Groups:** *no clean API*; consumer groups can't be exported programmatically; many are
-    members-only (auth). Scraping the web UI is a ToS gray area.
-  - **Facebook:** Graph API access to groups is heavily restricted; scraping violates ToS.
-- **Consent / attribution:** turning a person's forum post into an attributed in-app report raises
-  real consent questions — this is the crux, separate from access mechanics.
-- **AI terms:** if an LLM summarizes/classifies ingested content, clear the *source's* ToS (this AI
-  runs on forum/email content, **not** Strava data, so it's outside Strava's AI terms — but still
-  gated).
-- [ ] Feasibility pass: can we get *authorized* access to the specific groups the community uses?
-- [ ] Consent model: opt-in from post authors, or an attribution+opt-out approach a lawyer blesses?
-- [ ] ToS pass on the chosen access method (Google Groups + each Facebook group).
-- [ ] Only then: promote to a numbered phase, building on `imported` source + the D21 classifier.
-- **Do NOT set up** a Meta/Facebook dev app yet (`05-accounts-and-credentials.md` "Deferred").
+## L5 — Ingesting the community's posts (Q8) 🔬⛔
+Turning Google Group / Facebook posts into in-app reports: no clean API, members-only groups, and
+a **consent** question before an access one. The data model holds `imported` as a source; nothing is
+built. Direction and status: [`02-open-questions.md`](./02-open-questions.md) § Q8.
+- [ ] Feasibility: authorized access to the specific groups. [ ] A consent model a lawyer blesses.
+      [ ] ToS pass on the access method. [ ] Only then a phase.
+- **Not gated:** the *outbound* bridge — posting a skater's own report to a list they belong to,
+  opt-in, under their name ([`backlog/email-group-bridge.md`](./backlog/email-group-bridge.md)).
+  Their words, their consent, their list; each group's posting rules are the only constraint.
+- **Not gated:** the D71 search link into the community's own archive — we store nothing.
 
-## L5a — One-time *private corpus extraction* for design (Q8, distinct from L5) 🟡
-**Materially different, and much lower-risk than L5.** Using last year's group emails as a
-**private, internal design input** — to learn the real report vocabulary, conversation shapes, and
-a ranked list of popularly-reported water bodies — is *learning from* the data, **not
-republishing** it. This is a reasonable, valuable step; L5's consent gate is about *publishing*
-others' words in-app, which this doesn't do.
-- **Guardrails that keep it clean:**
-  - **Access it legitimately** — prefer exporting **your own received email** via **Google Takeout**
-    (Mail → `.mbox`) if you're a member, over scraping the Groups UI. See the "how" note below.
-  - **Keep it private** — the corpus has real names, emails, and location patterns (PII). Store it
-    outside the repo (never commit it), secured; don't feed it wholesale into third-party services.
-  - **Design input ≠ seed content.** Findings (vocab, a ranked water-body list for `curatedBoost`
-    seeding, D49) are fine to act on. Turning actual posts into visible in-app reports is L5 (gated).
-- [ ] Extraction done via a legitimate export path (Takeout of own mail / Workspace admin export).
-- [ ] Corpus stored privately, PII-aware, out of version control.
-- [ ] Outputs used are *derived insights*, not verbatim republished posts.
+## L5a — The private corpus extraction 🟢 done
+Learning from the group's history as design input is not republishing it. Done: 1,197 posts,
+in `training_data/` (gitignored), used only for derived findings — vocabulary, the boost seed, and
+the access / sub-area signals that became D72/D73 and D60. Stays private, PII-aware, never fed
+wholesale to a third party; re-runnable by the founder's own membership.
 
-## L6 — AI summarization beyond weather facts (Q9) ⛔
-Baseline "weather since report" is plain facts (D19, no AI). Anything further (LLM summarizing
-multiple human reports) is deferred: **never predict actionable go/no-go** (liability, D3), and
-constrained by Strava AI terms if Strava-sourced data is involved.
-- [ ] Liability review of any AI-generated summary that could be read as a safety judgment.
-- [ ] Source-ToS pass (esp. Strava) if the input includes provider data.
+## L6 — Machine summaries of human reports (Q9) ⛔
+"Weather since" is facts, not AI (D19). Two derived estimates exist and ship **dark, operator-only**
+— the ice-thickness instrument (D160) and imagery-derived freeze-up dates (D151) — which is the
+boundary holding. Anything that summarizes *reports* for a skater waits.
+- [ ] Liability review of any generated sentence that could read as a safety judgment (D3).
 
-## L7 — Strava API terms (D24) 🟢 — read & resolved 2026-07-24
-**Read done.** Full write-up:
+## L7 — Strava API terms 🟢 (read 2026-07-24)
+Cross-user display of Strava data is forbidden even when public; AI/ML use is banned. So: **no
+pull, ever**; tracks are recorded here (or imported by the skater) and **pushed** with
+`activity:write`. The binding privacy constraint moved to us (L14). Full read:
 [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md).
-What the current (post-Nov-2024) Agreement actually says, and how it moved our decisions:
+- [x] Brand kit on the connect / push surface (mobile-only today; `@skating/core/strava.ts`).
+- [x] The consent explainer says we upload on the skater's behalf and never read back.
+- [ ] Re-check the brand kit if a web connect surface is added.
 
-- **Cross-user display is flatly forbidden.** *"Strava Data provided by a specific user can only be
-  displayed or disclosed in your Developer Application to that user"* — and data about other users
-  *"even if such data is publicly viewable… may not be displayed or disclosed."* That kills showing a
-  **Strava-sourced** path to anyone but its owner: no water body heatmap, no crowd pressure-ridge
-  intelligence, no path on a (public) report — off Strava data.
-- **AI/ML ban.** Nov-2024 terms prohibit using API data in AI/ML models — rules out any derived
-  route-intelligence over Strava data too.
-- **Anti-competition + "privilege not a right" + mandatory deletion on termination + volume limits.**
-- **Exception path exists** (`developers@strava.com`, ~§2.2) but the odds of a waiver on *exactly* the
-  cross-user/AI things they just locked down are low; not worth blocking on.
+## L8 — Watch and health-platform providers (D24) ⛔
+Garmin / COROS / Polar partner terms and brand; HealthKit entitlement; Health Connect's Play
+health-data review. No applications submitted (2026-09-17) — [`backlog/partnerships.md`](./backlog/partnerships.md).
+- [ ] Per-provider ToS + brand checklist when each adapter lands. [ ] Play health-data review.
+- **Not gated:** GPX import — a skater's own export file is not a provider integration.
 
-**Decision influence (this is the important part):**
-- **Strava *pull* (read tracks from Strava) is SHELVED** — it can never legally feed our cross-user
-  map/heatmap/report-path. This retires the old D24 "show a Strava path cross-user if terms allow"
-  stance: terms don't allow it.
-- **Pivot: capture tracks in our *own* recorder** → that data is **Developer Application Data, not
-  Strava Data**, so aggregating/heatmapping/drawing-on-reports is legal. The binding privacy
-  constraint moves to **us** (→ new **L14**), not Strava.
-- **Strava *push* (write the user's own activity via `activity:write`) is ALLOWED** and becomes the
-  **adoption lever** (record once, keep your Strava stats/kudos). This is the canonical complementary
-  integration (Garmin model), squarely in Strava's "still allowed" bucket.
-- [x] "Powered by Strava" / "Connect with Strava" brand kit met on the connect + push surfaces
-      (see `04-integrations.md`) — honor it even though a pure push shows no Strava *data*.
-      *(Done — Phase 08: copy + brand orange single-sourced in `@skating/core/strava.ts` so web and
-      mobile can't drift; rendered by `StravaConnect.tsx`. The connect surface is **mobile-only**
-      today, which is where recording happens.)*
-- [x] `activity:write` consent screen clearly states we upload on the user's behalf.
-      *(Done — `STRAVA_CONNECT_EXPLAINER` states it plainly before the OAuth screen opens, including
-      the thing users actually wonder about: we never read anything back.)*
-- [ ] Re-check the brand kit if a **web** connect surface is ever added.
-
-## L8 — Other GPS provider ToS / brand / health-data review (D24) ⛔
-Garmin / COROS / Polar (partner-program terms + brand) and Apple HealthKit / Google Health Connect
-(on-device; Google Play **health-data access review** for sensitive permissions). Each has its own
-brand terms and data-use limits.
-- [ ] Per-provider ToS + brand checklist at the point each integration lands (Phase 08).
-- [ ] Google Play health-data access review for Health Connect permissions.
-
-## L9 — Path-cluster hazard deduction (Q11) 🔬 — legal half cleared 2026-07-24
-Future bet: many skaters detouring around the same stretch = a possible unreported hazard. Noisy +
-needs volume + privacy care. Logged, not committed. **Note (2026-07-24):** now runs on **our own**
-recorded tracks (L7 pivot), so it's **outside Strava's AI terms** — but still needs the L14 privacy
-pass (this is inference over clustered user paths).
-- [ ] Revisit once there's path volume; privacy pass on inferring hazards from clustered paths.
+## L9 — Hazard deduction from clustered paths (Q11) 🔬
+Runs over our own tracks, so no provider's terms reach it; what's left is volume, calibration, and
+the L14 privacy pass on *inferring* anything from clustered paths. Not before real paths exist.
 
 ## L10 — OSM ODbL share-alike (D5) 🟡
-Attribution ("© OpenStreetMap contributors") is a build-time criterion **already met** on the map.
-The share-alike bite is only on **redistributing the derived `waterBodies` database** — displaying
-it in-app is a "Produced Work" (attribution suffices).
-- [ ] If we ever *publish* the derived extract, do so under ODbL (full wording legal-gated w/ Q10).
+Attribution is met on every map view. Share-alike bites only on *redistributing* the derived
+`waterBodies` database; in-app display is a Produced Work.
+- [ ] If the extract is ever published, publish it under ODbL (wording with Q10).
 
-## L11 — Landowner takedown wording / obligation (D48) 🟡
-The takedown **mechanism** shipped in Phase 01 (reversible soft-delist + audit). The **request
-intake** rides with Phase 07. The exact **wording/obligation** is legal-gated (Q10).
-- [ ] Lawyer confirms takedown policy + any obligation to honor requests + the intake wording.
-- [ ] (Future hardening) teach dedup to honor a suppression list so a removed pond can't be
-      re-created as a user body (D48 deferred edge).
+## L11 — Landowner takedown (D48, D179) 🟡
+Built: the reversible soft-delist (Phase 01), the `takedown` request kind and moderator queue
+(A07b), and the no-public-access ruling (A06f). The **wording** and whether there's an *obligation*
+to honor a request wait on Q10.
+- [ ] Lawyer confirms the policy and the intake wording.
+- [ ] Hardening: a suppression list so a removed body can't be re-created from a track (D48 edge).
 
-## L12 — PostHog session replay: minors + location (D29) ⛔
-Session replay ships **OFF** and is **never recorded for minors** by construction. Before enabling
-for adults: input/text **masking** on (mask location UI so coords/PII don't leak), start recording
-only **after auth resolves AND `isMinor === false`**, and **update PRIVACY.md** first.
-- [ ] Masking configured; minor-exclusion verified; PRIVACY.md updated *before* enabling in prod.
+## L12 — PostHog session replay (D29) ⛔
+Ships off, never for `isMinor`, starts only after the profile resolves. Not wired at all today
+([`backlog/posthog.md`](./backlog/posthog.md)).
+- [ ] Input masking on (coordinates, PII); minor exclusion verified; `PRIVACY.md` updated — before
+      enabling in prod.
 
-## L13 — Weather attribution (Open-Meteo) 🟢
-Open-Meteo is free with no key; attribution is appreciated. Minor, but note it wherever the
-weather-since strip appears (Phase 10).
+## L13 — Data-source license conditions 🟡
+The full attribution table is `04-integrations.md` § Attribution; the rows that are *gates*:
+- **Open-Meteo's free tier is non-commercial.** A condition, not a courtesy, since A06h runs a
+  corpus-wide cron on it. It's one of D158's three triggers for the paid plan, and the only legal one.
+  ⚠ **Q14's donations must not turn the project "commercial"** in Open-Meteo's sense — check their
+  definition before the donation vehicle goes live; a $319/yr plan is the fallback.
+- **Radar (A06h §6, unbuilt):** RainViewer's free tier is *"personal, educational, small-scale
+  community use"* with mandatory credit — a size-dependent license to re-read past ~1,000 users;
+  the Iowa Environmental Mesonet is academic courtesy (cache and proxy, never point clients at
+  it); NWS/MRMS is public domain. Applies when the workstream lands.
+- **Copernicus** attribution is required and rendered (`copernicusCredit`, both clients) 🟢.
 
-### A06h widens this in two ways (2026-09-03)
+## L14 — Privacy of our own aggregate tracks (D58) 🟡
+The L7 pivot made *our* privacy model the only one protecting skaters. Decided and built
+(Phase 08, `gpsActivities.listTracksForBody`, each gate convex-tested): **publish-is-consent** (no
+k-anonymity), minors out by construction, put-in-gated endpoint clipping, a person-level opt-out on
+both surfaces, decay with the report and never to zero. Still 🟡 for two reasons:
+- [ ] Device verification of the aggregate layer (the roadmap's *Owed*).
+- [ ] The derivations over it (L9) need their own pass; the substrate rules still govern them.
 
-**⚠ The free tier is licensed for non-commercial use.** That is fine today — `00-vision.md:144`
-commits to a passion / open-source project leaning on free tiers — but it is now a *condition* rather
-than a convenience, because A06h leans on it much harder (a corpus-wide daily cron, not just
-drawer-open fetches). **If the project ever stops being plainly non-commercial, the license stops
-covering us at any volume**, independent of whether we are under the call ceiling. That is written
-into **D158** as one of the three triggers for buying the $319/yr Standard plan, and it is the only
-one of the three that is a legal gate rather than an operational one.
+## L15 — AGPL §13 for a service we run (D157) 🟢⏸
+Running a *modified* AGPL program as a network service obliges us to offer its source to the
+service's users. D157 borrows LibreWXR's approach and deploys none of its code, so nothing applies.
+Flips to 🟡 if we deploy LibreWXR, vendor AGPL code into the cutter, or adopt any AGPL component in
+a server role. Cheap to satisfy if it ever bites — our own code is AGPL — the trap is deploying
+without noticing.
 
-**More sources means more attribution surfaces.** A06h adds panels and a map layer, each needing its
-own credit line, and each source has different terms:
+## L16 — Datasets with no published terms 🟡
+- **Adirondack Lakes Survey** (D130): no terms anywhere on the site, a blanket `robots.txt`
+  disallow, an invalid certificate. Founder call 2026-08-08: scraped **once**, serially, with an
+  identifying User-Agent, archived so it never repeats; credited as the source; depth only (the
+  coordinates are pre-GPS and unused).
+- **NYSDEC CSLAP:** the hosting item's `licenseInfo` and `accessInformation` are both empty.
+  Credited, never assumed permissive.
+- **LAGOS-US DEPTH** is *not* in this row — its rights are recorded as CC BY 4.0 in
+  `depthSources.ts`, and the fetcher refuses to run if the served statement differs.
+- [ ] If either source ever objects, or before a broad launch if the lawyer wants it: ask.
 
-| source | used for | obligation |
-|---|---|---|
-| Open-Meteo | all forecast + past-weather panels | attribution; **non-commercial** free tier |
-| NWS / NOAA (alerts, NDFD, MRMS) | alerts, forecast grids, radar | US public domain — no obligation, credit as courtesy |
-| RainViewer | radar v1 | **mandatory** credit + link to rainviewer.com; free tier is *"personal, educational, and small-scale community use"*, ~1,000 req/day |
-| Iowa Environmental Mesonet | radar fallback | academic courtesy — cache and proxy rather than pointing clients at them directly |
+## L17 — Privacy law beyond the US (Q16) 🔬
+Québec's Law 25 and PIPEDA are a separate consent and privacy pass from Q10's US one, and the
+first thing a Québec expansion needs after data sources. Not started; triggers with the demand
+signal ([`02-open-questions.md`](./02-open-questions.md) § Q16).
 
-**⚠ The RainViewer terms are a size-dependent license, not a permanent one.** It covers us now at a
-projected ~1,000 users; it is worth a re-read if adoption materially exceeds that, since "small-scale
-community" is the qualifying phrase and it is not defined numerically.
+## L18 — Donations vs. store billing (Q14) ⛔
+An in-app "support the developer" payment can be read by Apple and Google as a digital purchase
+that must run through store billing at their cut, and can draw review; a link out to a web page
+generally isn't. This is why Q14 leans to a link-out (buymeacoffee). Nothing ships in-app until the
+vehicle is chosen with this in mind — and see L13 for the Open-Meteo side of the same decision.
 
-## L15 — AGPL §13 network-service obligation (D157) 🟢⏸
-**Dormant by design, recorded so it cannot surprise us.** LibreWXR — the self-hosted radar server A06h
-evaluated — is **AGPL-3.0-or-later**. AGPL §13 goes further than GPL: running a **modified** version
-as a *network service* obliges us to offer that modified source to the service's users, even though we
-never distribute a binary. Its authors offer separate commercial licensing, which implies they expect
-this to matter.
-
-**Why this is currently 🟢 and parenthetical:** **D157 decided to borrow the approach, not deploy the
-software** — read it (AGPL means we can), take its source selection and RQI handling, and run the cut
-in our own `scripts/imagery/` Fly→R2 pattern at ~$5/mo rather than ~$760/yr for an always-on server.
-Nothing we would then ship is a derivative of their code.
-
-**It flips to 🟡 the moment any of these becomes true:**
-
-- We deploy LibreWXR (modified or not) as a service our users reach.
-- We vendor AGPL code into the cutter rather than reimplementing from the same public data sources.
-- We adopt any other AGPL component in a server role.
-
-**The mitigation is cheap if it ever bites** — this project's own client is already AGPL (see **L4**,
-which handles the App Store / Play distribution exception), so publishing modified server source is
-consistent with what we already do rather than a new posture. The trap is not the obligation; it is
-**deploying without noticing the obligation attached**, which is exactly what this row exists to
-prevent.
-
-⚠ **L4 and L15 are different obligations and should not be conflated.** L4 is about *distributing* our
-client through app stores whose terms conflict with AGPL §7. L15 is about *running someone else's*
-AGPL code as a service. Clearing one says nothing about the other.
-
-## L14 — Aggregate/heatmap privacy for our own tracks (D41, D42, **D58**) 🟡
-The **L7 pivot moved the binding constraint from Strava to us.** Once we render crowd layers off our own
-recorded tracks, *our* privacy design is what protects skaters — there's no upstream ToS doing it. **The
-model is now decided — D58** (see `phases/08-native-capture.md`): **publish-is-consent, not k-anonymity.**
-Requirements the aggregate layer must meet (Phase 08, PR 8e) — **all five built 2026-07-24**
-(`gpsActivities.listTracksForBody`, convex-tested for each gate; still to be **deployed + device-verified**):
-- [x] **Minors excluded** from all aggregate layers by construction (D41) — automatic: minors can't post
-      reports, so their tracks never link to a public report and never aggregate. *(Nothing checks an age;
-      the exclusion falls out of the model, which is why it can't be forgotten in a later query.)*
-- [x] **Publish-is-consent** — the aggregate is built **only** from tracks linked to a *visible, non-minor*
-      report; publishing the report is the consent. **No k-anonymity threshold** (a public report is meant
-      to be shared — one skater is enough; the old N-contributor gate is **dropped** by D58). **No** separate
-      `sharedToAggregate` flag. *(Enforced as `linkedReportId` set **and** `moderationStatus === 'visible'`.)*
-- [x] **Put-in-gated endpoint clipping** — the report's existing `showPutIn?` opt-out is the clipping
-      consent: put-in shared ⇒ full path; put-in withheld ⇒ clip first/last ~150 m before it aggregates, so
-      a skate-from-home start/stop can't reveal a residence. (Replaces the old blanket `sortByHome` clip.)
-      *(A path that is entirely endpoints is dropped, not emitted short.)*
-- [x] **Global opt-out** — `profiles.excludeTracksFromAggregate?` (person-level; a later opt-out
-      retroactively drops all their tracks). Recording / Strava push unaffected. *(Ships on **both**
-      surfaces — mobile `you.tsx` and web `/settings`, added 2026-07-25 when the web gap was caught.
-      Copy single-sourced in `core/trackPrivacy.ts` so the promise can't be worded two ways.)*
-- [x] **Decay with the report** — path opacity fades via D59 and never fully vanishes (D3 min-opacity floor).
-- [ ] **Deferred derivations** — pressure-ridge/clearest-side intelligence + path-cluster hazard deduction
-      (L9) render only after a volume + calibration pass; the substrate privacy above still governs them.
-- [x] Open-Meteo attribution shown on the weather-since strip. *(Done — Phase 10, PR #23; `WeatherStrip` on web + mobile.)*
-
----
-
-## How this doc is used
-- **New feature touches a gated area?** Check here first; if it's ⛔, it doesn't ship until the gate
-  clears. If 🟡, confirm the interim guardrail still holds.
-- **A gate clears?** Record the resolution here, promote the decision to `01-decisions.md`, and flip
-  the status. This doc stays the running "what's still legally open" view.
-- **Q10 legal review** is the event that clears most 🟡 items at once — schedule it before broad
-  launch, after the friends POC.
+## L19 — Email compliance (D174) 🟡
+Built: one-click unsubscribe (`List-Unsubscribe` + `-Post` headers, a per-person secret, honored
+before the next send); mail only for the types a person opted into; the sending domain is
+CNAME-verified. For the lawyer with Q10:
+- [ ] Whether the digest counts as commercial mail under CAN-SPAM (which would require a physical
+      postal address in every footer) or as transactional/relationship mail.
+- [ ] Sender identity wording in the footer once the name is final (Q15).
