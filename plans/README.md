@@ -23,19 +23,19 @@ The pre-build docs stay at the top level on purpose: they're the overview, and `
 the living narrative of everything built since — status per phase, what each deferred, and what
 turned out infeasible. The detail lives in the phase docs; the roadmap points at them.
 
-## Phases and feats
+## Phases and features 
 
-Work is either a **phase** or a **feat**, and the shape of the work decides which — not its size
+Work is either a **phase** or a **feature**, and the shape of the work decides which — not its size
 in weeks, and not how mature the product is:
 
 - a **phase** has several workstreams, lands over several PRs, and mints its own decisions (`D#`);
-- a **feat** is one doc, one-to-few PRs, and few or no new decisions.
+- a **feature** is one doc, one-to-few PRs, and few or no new decisions.
 
 A doc moves through the directories as it matures: `backlog/x.md` (an idea) → `features/x.md` (scoped
-and scheduled) → **deleted when it ships** (founder call, 2026-09-17). A phase doc is the record of its
-phase and stays; a feat doc is a plan, and its record after shipping is the roadmap register row,
+and scheduled) → **deleted when it ships**. A phase doc is the record of its
+phase and stays; a feature doc is a plan, and its record after shipping is the roadmap register row,
 any `D#` it minted, and whatever convention it settled here — git history keeps the rest. Phases are
-numbered; feats are named by slug.
+numbered; features are named by slug.
 
 ### Phase names
 
