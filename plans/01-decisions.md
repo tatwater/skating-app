@@ -199,7 +199,7 @@ and the per-user-cached design removes the performance concern.
 skate time — peak temp, hours at/near freezing, hours of sun, total precipitation,
 wind — from Open-Meteo history. Users draw their own conclusions.
 **Why:** Supports judgment (D3) without asserting anything about current ice.
-See `04-integrations.md` for the exact variable mapping.
+See `phases/10-weather.md` § 2 for the exact variable mapping (`04-integrations.md` § Weather for the sources).
 
 ## D20 — Map default framing: home when browsing, water body when on the ice
 **Decided.** On app-open, after grabbing location (D12):
@@ -448,7 +448,7 @@ the current stack does comfortably. Concrete consequences:
 - Avoid standing up multiple self-hosted services just to stay free; if free-tier
   juggling gets burdensome, pay for the turnkey option instead.
 - **Later:** a "Buy me a coffee"-style optional contribution, never paywalled
-  features (monetization stays deferred — 00-vision).
+  features (the vehicle is Q14; `00-vision` § What this app is not).
 **Why:** Founder-funded passion project; developer time is the scarce resource, so
 trade a few dollars for less ops toil.
 
@@ -5545,7 +5545,7 @@ only reason the gap had been theoretical) and Clerk's **`user.updated` webhook**
 `POST /clerk-webhook`, verified with `standardwebhooks` and writing through the same
 `applyClerkMirrors` helper as the launch-time sync. The address is still never a string a client
 claims: it arrives by signed token or signed webhook, nothing else. `CLERK_WEBHOOK_SIGNING_SECRET`
-and the endpoint are per Clerk instance (credentials doc §11b).
+and the endpoint are per Clerk instance (credentials doc § 3c).
 
 **Push posture keeps Phase 09b's rule.** Permission is never asked on cold launch: on app open the
 device registers only if permission is *already* granted (by on-ice mode, or by the explicit "this
