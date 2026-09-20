@@ -70,6 +70,8 @@ export interface CandidateBody {
   interiorPoint?: { lat: number; lng: number };
   representativePoint?: { lat: number; lng: number };
   centroid?: { lat: number; lng: number };
+  /** The outline's extent, so a `near` on the shore of a 190 km lake reads as *on* it, not 60 km off. */
+  bbox?: Bbox;
 }
 
 /**
@@ -93,6 +95,7 @@ export interface CandidateSubArea {
   curatedBoost?: number;
   representativePoint?: { lat: number; lng: number };
   centroid?: { lat: number; lng: number };
+  bbox?: Bbox;
 }
 
 /** Either candidate pool, as a single outcome may match either table. */
@@ -180,6 +183,33 @@ export function candidatePoint(
 /** @deprecated Renamed to {@link candidatePoint}, which also accepts a sub-area. */
 export const bodyPoint = candidatePoint;
 
+export interface Bbox {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+}
+
+/**
+ * How far `near` is from the candidate *as an extent*: zero inside its bbox, else the distance to
+ * the nearest bbox edge; the representative point when no bbox came back. A corpus `near` is a town
+ * centroid on a shore, and against a point it measured Lake Champlain's Charlotte at 30 km from a
+ * lake it borders — a false decoy (Greptile, PR #69). Undefined when the candidate has no geometry.
+ */
+export function candidateDistanceKm(
+  near: { lat: number; lng: number },
+  candidate: MatchCandidate,
+): number | undefined {
+  const box = candidate.bbox;
+  if (box) {
+    const lat = Math.min(Math.max(near.lat, box.minLat), box.maxLat);
+    const lng = Math.min(Math.max(near.lng, box.minLng), box.maxLng);
+    return distanceKm(near, { lat, lng });
+  }
+  const point = candidatePoint(candidate);
+  return point ? distanceKm(near, point) : undefined;
+}
+
 export type MatchOutcome =
   | {
       kind: 'matched';
@@ -249,14 +279,25 @@ export function matchDestination(
   if (byName.length === 0) return { kind: 'unmatched', destination };
   if (byName.length === 1) {
     const found = byName[0] as MatchCandidate;
-    const point = candidatePoint(found);
     const inHeadlineState = found.states?.includes(destination.state) ?? false;
-    const narrowed = destination.near !== undefined && point !== undefined;
+    const distance = destination.near ? candidateDistanceKm(destination.near, found) : undefined;
+    // One name match is not a match when a `near` says it is the wrong one: a corpus town centroid
+    // and a sole same-named body 54 km away is the body the catalog *lacks* plus a decoy, and the
+    // decoy would take the boost. The same radius the multi-candidate branch applies (Greptile,
+    // PR #69). Reported as ambiguous so the reviewer sees the decoy and its distance.
+    // …unless the entry named the bay's parent and this sub-area is on it: the parent already
+    // disambiguates, and a corpus `near` for a bay is often the sender's town rather than the
+    // bay's (Little Eagle Bay's one mention came from Burlington, 30 km down the lake).
+    const parentVouches = isSubArea(found) && parentTarget !== undefined;
+    if (distance !== undefined && distance > MATCH_RADIUS_KM && !parentVouches) {
+      return { kind: 'ambiguous', destination, candidates: byName };
+    }
+    const narrowed = distance !== undefined;
     return {
       kind: 'matched',
       destination,
       target: found,
-      ...(destination.near && point ? { distanceKm: distanceKm(destination.near, point) } : {}),
+      ...(distance !== undefined ? { distanceKm: distance } : {}),
       ...(!inHeadlineState && !narrowed ? { viaMentionedState: true as const } : {}),
     };
   }
@@ -265,8 +306,8 @@ export function matchDestination(
     const near = destination.near;
     const within = byName
       .map((candidate) => {
-        const point = candidatePoint(candidate);
-        return point ? { candidate, d: distanceKm(near, point) } : null;
+        const d = candidateDistanceKm(near, candidate);
+        return d === undefined ? null : { candidate, d };
       })
       .filter(
         (x): x is { candidate: MatchCandidate; d: number } => x !== null && x.d <= MATCH_RADIUS_KM,

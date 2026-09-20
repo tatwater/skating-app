@@ -1042,6 +1042,7 @@ export const listNamedForSeeding = internalQuery({
       curatedBoost?: number;
       representativePoint?: { lat: number; lng: number };
       centroid: { lat: number; lng: number };
+      bbox: Doc<'waterBodySubAreas'>['bbox'];
     }[] = [];
     for (const subArea of page.page) {
       if (subArea.removedAt !== undefined) continue;
@@ -1062,6 +1063,7 @@ export const listNamedForSeeding = internalQuery({
         curatedBoost: subArea.curatedBoost,
         representativePoint: subArea.representativePoint,
         centroid: subArea.centroid,
+        bbox: subArea.bbox,
       });
     }
     return { subAreas, cursor: page.continueCursor, isDone: page.isDone };

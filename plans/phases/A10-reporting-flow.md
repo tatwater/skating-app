@@ -524,7 +524,8 @@ path, not a fallback.
   (freshness sort, weather-since) is better with a half-hour estimate than with "afternoon".
 - **Relay as a report kind.** The other person should post; if they can't, *someone told me* is
   provenance the reader can see, not a kind that needs its own decay.
-- **Pre-selected suggestions of any origin.** D188.
+- **Pre-selected suggestions from anyone but the author.** Peer and data suggestions are ghosts
+  (D188); only the author's own extracted words arrive selected, through *Confirm & Post*.
 - **A multi-body report row.** Everything downstream keys on one body; the Post carries the many.
 
 ## Open at scoping

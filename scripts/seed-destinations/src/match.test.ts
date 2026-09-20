@@ -168,6 +168,65 @@ describe('matchDestination', () => {
     expect(result.kind).toBe('ambiguous');
   });
 
+  it('refuses a SOLE far-away namesake too — the corpus-town case (Greptile, PR #69)', () => {
+    // Mill Pond near Montpelier: the catalog lacks it and holds one Mill Pond 54 km away. Before
+    // the fix the single candidate matched unconditionally and `--apply` would have boosted it.
+    const result = matchDestination(
+      destination({ name: 'Mill Pond', near: { lat: 44.26, lng: -72.58 } }),
+      [body({ _id: 'decoy', name: 'Mill Pond', centroid: { lat: 43.8, lng: -72.2 } })],
+    );
+    expect(result.kind).toBe('ambiguous');
+    expect(result.kind === 'ambiguous' && result.candidates.map((c) => c._id)).toEqual(['decoy']);
+  });
+
+  it('measures near against the extent, not the point — a shore town on a 190 km lake is ON it', () => {
+    // Charlotte VT sits on Lake Champlain's shore but 30 km from the lake's representative point.
+    const champlain = body({
+      _id: 'champlain',
+      name: 'Lake Champlain',
+      centroid: { lat: 44.53, lng: -73.33 },
+      bbox: { minLat: 43.5, minLng: -73.5, maxLat: 45.05, maxLng: -73.0 },
+    });
+    const result = matchDestination(
+      destination({ name: 'Lake Champlain', near: { lat: 44.31, lng: -73.26 } }),
+      [champlain],
+    );
+    expect(result).toMatchObject({ kind: 'matched', target: { _id: 'champlain' }, distanceKm: 0 });
+  });
+
+  it('lets a matched parent name vouch for a sole bay that near would have vetoed', () => {
+    // The bay is the only one by that name on the lake the entry named; its `near` is the sender's
+    // town, 30 km away. Parent wins; the distance is still recorded for the reviewer.
+    const bay = subArea({
+      _id: 'bay',
+      name: 'Little Eagle Bay',
+      parentName: 'Lake Champlain',
+      states: ['VT'],
+      centroid: { lat: 44.85, lng: -73.3 },
+    });
+    const result = matchDestination(
+      destination({
+        name: 'Little Eagle Bay',
+        kind: 'bay',
+        parent: 'Lake Champlain',
+        near: { lat: 44.49, lng: -73.23 },
+      }),
+      [],
+      [bay],
+    );
+    expect(result).toMatchObject({ kind: 'matched', target: { _id: 'bay' } });
+    expect(result.kind === 'matched' && (result.distanceKm ?? 0)).toBeGreaterThan(25);
+  });
+
+  it('still matches a sole namesake inside the radius, with its distance recorded', () => {
+    const result = matchDestination(
+      destination({ name: 'Mill Pond', near: { lat: 44.26, lng: -72.58 } }),
+      [body({ _id: 'near', name: 'Mill Pond', centroid: { lat: 44.3, lng: -72.6 } })],
+    );
+    expect(result).toMatchObject({ kind: 'matched', target: { _id: 'near' } });
+    expect(result.kind === 'matched' && (result.distanceKm ?? 99)).toBeLessThan(25);
+  });
+
   it('reports a destination with no match at all — the interesting case', () => {
     const result = matchDestination(destination({ name: 'Somewhere Nobody Mapped' }), [
       body({ _id: 'a', name: 'Lake Willoughby' }),

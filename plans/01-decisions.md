@@ -5997,9 +5997,11 @@ thin.
 
 ## D196 — Extraction is author-side, reviewed, evidence-bearing, and engine-plugged (A10)
 
-**Decided (2026-09-18).** Prose → structured fields fills the *author's own* sheet as ghost chips
-(D188), each with an evidence span; the author confirms before anything persists and is the
-claimant. It is not a reader-side summary (Q9, L6 untouched). The contract is engine-independent
+**Decided (2026-09-18; the persistence rule amended the same day with D188).** Prose → structured
+fields fills the *author's own* sheet as **extracted chips** — pre-selected, marked *from your
+writing*, each with an evidence span — that persist unless deselected; the author reviews them on
+one *Confirm & Post* screen and is the claimant. (The first draft said ghost chips; that was
+superseded by D188's two tiers and is recorded here so no build follows it.) It is not a reader-side summary (Q9, L6 untouched). The contract is engine-independent
 (`{text, bodyCandidates, subAreas, sectors, enums} → {reports: [{bodyRef, visit?, fields}]}`), runs
 as a Convex action per completed paragraph, online only, and is gated per field on the A10 §1
 eval's precision floors. The privacy policy states that parsed report text goes to a model
