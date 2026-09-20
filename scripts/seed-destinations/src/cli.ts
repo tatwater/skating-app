@@ -16,11 +16,13 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
   copernicusUrl,
+  distanceToPolygonMeters,
   linkCoordinate,
   SATELLITE_MIN_AREA_SQM,
   satelliteImageryAvailable,
 } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import type { MultiPolygon, Polygon } from 'geojson';
 import {
   boostFor,
   type CandidateBody,
@@ -29,6 +31,7 @@ import {
   DESTINATION_BOOST,
   type Destination,
   isSubArea,
+  type MatchCandidate,
   matchAll,
 } from './match';
 
@@ -121,6 +124,50 @@ async function verifyImageryLinks(matched: ReturnType<typeof matchAll>): Promise
   }
 }
 
+/**
+ * The matcher's third stage (see `resolveNearDistance`): the true distance from a corpus town to a
+ * candidate's polygon, fetched **only** for the candidates the point and bbox tests could not decide
+ * — a handful per run, never one per body (the paged reads deliberately omit polygons). A body's
+ * outline comes from `waterBodies:get`; a sub-area's from its parent's `subAreas:listForBody`.
+ * Cached per id. Returns undefined when the read fails, and the matcher then falls back to the bbox
+ * and flags the outcome `bbox` so a reviewer sees it (Greptile, PR #69).
+ */
+function outlineDistanceResolver(): (
+  candidate: MatchCandidate,
+  near: { lat: number; lng: number },
+) => number | undefined {
+  const polygons = new Map<string, Polygon | MultiPolygon | null>();
+  const fetchPolygon = (candidate: MatchCandidate): Polygon | MultiPolygon | null => {
+    const cached = polygons.get(candidate._id);
+    if (cached !== undefined) return cached;
+    let polygon: Polygon | MultiPolygon | null = null;
+    try {
+      if (isSubArea(candidate)) {
+        const rows = convexRun<{ _id: string; polygon: Polygon | MultiPolygon }[]>(
+          'subAreas:listForBody',
+          { waterBodyId: candidate.parentId },
+        );
+        polygon = rows.find((r) => r._id === candidate._id)?.polygon ?? null;
+      } else {
+        const result = convexRun<{
+          available: boolean;
+          body?: { polygon: Polygon | MultiPolygon };
+        }>('waterBodies:get', { waterBodyId: candidate._id });
+        polygon = result.body?.polygon ?? null;
+      }
+    } catch {
+      polygon = null;
+    }
+    polygons.set(candidate._id, polygon);
+    return polygon;
+  };
+  return (candidate, near) => {
+    const polygon = fetchPolygon(candidate);
+    if (!polygon) return undefined;
+    return distanceToPolygonMeters(near, polygon) / 1000;
+  };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
@@ -178,7 +225,15 @@ async function main() {
   }
   process.stderr.write(`[seed] ${subAreas.length} named sub-areas read\n`);
 
-  const outcomes = matchAll(destinations, bodies, subAreas);
+  const outcomes = matchAll(destinations, bodies, subAreas, {
+    outlineDistanceKm: outlineDistanceResolver(),
+  });
+  const bboxBased = outcomes.filter((o) => o.kind === 'matched' && o.distanceBasis === 'bbox');
+  if (bboxBased.length > 0) {
+    process.stderr.write(
+      `[seed] ⚠ ${bboxBased.length} match(es) rest on a bbox distance because the outline could not be fetched — review them\n`,
+    );
+  }
   const matched = outcomes.filter((o) => o.kind === 'matched');
   const ambiguous = outcomes.filter((o) => o.kind === 'ambiguous');
   const unmatched = outcomes.filter((o) => o.kind === 'unmatched');
@@ -201,6 +256,7 @@ async function main() {
               ? { parentId: target.parentId, parentName: target.parentName }
               : {}),
             distanceKm: o.distanceKm,
+            distanceBasis: o.distanceBasis,
             corroboration: corroboration(o.destination),
             curatedBoost: boostFor(o.destination),
             alreadyBoosted: (target.curatedBoost ?? 0) !== 0,

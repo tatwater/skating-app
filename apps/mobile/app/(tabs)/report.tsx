@@ -121,6 +121,8 @@ export default function ReportScreen() {
 type Located =
   | { phase: 'locating' }
   | { phase: 'denied' }
+  /** Permission was fine but the fix never came — location services off, a timeout, an airplane-mode phone. */
+  | { phase: 'failed' }
   | {
       phase: 'ready';
       coord: { lat: number; lng: number };
@@ -141,21 +143,27 @@ function ReportCapture({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   useEffect(() => {
     let canceled = false;
     void (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        if (!canceled) setState({ phase: 'denied' });
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({});
-      const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      const match = resolveCachedBody(coord);
-      if (!canceled) {
-        setState({
-          phase: 'ready',
-          coord,
-          waterBodyId: match?.waterBodyId as Id<'waterBodies'> | undefined,
-          bodyName: match?.name,
-        });
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          if (!canceled) setState({ phase: 'denied' });
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({});
+        const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const match = resolveCachedBody(coord);
+        if (!canceled) {
+          setState({
+            phase: 'ready',
+            coord,
+            waterBodyId: match?.waterBodyId as Id<'waterBodies'> | undefined,
+            bodyName: match?.name,
+          });
+        }
+      } catch {
+        // Either call rejects when location services are off or the fix times out. Without this
+        // the rejection was unhandled and the tab sat on its spinner forever (Greptile, PR #69).
+        if (!canceled) setState({ phase: 'failed' });
       }
     })();
     return () => {
@@ -179,6 +187,17 @@ function ReportCapture({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           Location permission is needed to capture a report where you're skating.
         </Paragraph>
         {/* Remounting re-asks: once the permission is granted in Settings the next tap goes through. */}
+        <Button onPress={onClose}>Try again</Button>
+      </YStack>
+    );
+  }
+
+  if (state.phase === 'failed') {
+    return (
+      <YStack alignItems="center" gap="$3" paddingVertical="$6">
+        <Paragraph color="$foregroundMuted" textAlign="center">
+          Couldn't get your location. Check that location services are on, then try again.
+        </Paragraph>
         <Button onPress={onClose}>Try again</Button>
       </YStack>
     );

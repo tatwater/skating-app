@@ -614,6 +614,9 @@ importers:
         specifier: workspace:*
         version: link:../run-log
     devDependencies:
+      '@types/geojson':
+        specifier: ^7946.0.16
+        version: 7946.0.16
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1

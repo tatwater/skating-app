@@ -191,23 +191,67 @@ export interface Bbox {
 }
 
 /**
- * How far `near` is from the candidate *as an extent*: zero inside its bbox, else the distance to
- * the nearest bbox edge; the representative point when no bbox came back. A corpus `near` is a town
- * centroid on a shore, and against a point it measured Lake Champlain's Charlotte at 30 km from a
- * lake it borders — a false decoy (Greptile, PR #69). Undefined when the candidate has no geometry.
+ * How a `near` was measured against a candidate. `point` is the representative point — exact
+ * enough for a pond, meaningless for a 190 km lake; `outline` is the true distance to the polygon,
+ * fetched on demand; `bbox` is the axis-aligned extent, the lenient fallback when no outline
+ * resolver was supplied (a concave lake's box covers inland towns — flagged, never silent).
  */
-export function candidateDistanceKm(
+export type DistanceBasis = 'point' | 'outline' | 'bbox';
+
+export interface ResolvedDistance {
+  km: number;
+  basis: DistanceBasis;
+}
+
+export interface MatchOptions {
+  /**
+   * True distance from `near` to the candidate's outline in km (0 inside it), or undefined when the
+   * polygon can't be had. Called only for the candidates the cheap tests cannot decide — `near`
+   * beyond the radius of the point but inside the radius of the bbox — so a run makes a handful of
+   * polygon reads, not one per body. The CLI supplies one backed by `waterBodies:get` /
+   * `subAreas:listForBody` and core's `distanceToPolygonMeters`.
+   */
+  outlineDistanceKm?: (
+    candidate: MatchCandidate,
+    near: { lat: number; lng: number },
+  ) => number | undefined;
+}
+
+/** Distance from `near` to the candidate's bbox: zero inside, else to the nearest edge. */
+function bboxDistanceKm(near: { lat: number; lng: number }, box: Bbox): number {
+  const lat = Math.min(Math.max(near.lat, box.minLat), box.maxLat);
+  const lng = Math.min(Math.max(near.lng, box.minLng), box.maxLng);
+  return distanceKm(near, { lat, lng });
+}
+
+/**
+ * Resolve `near` against a candidate in three stages, cheapest first (Greptile, PR #69, twice):
+ *
+ * 1. the point — inside the radius, done: a small body's point is the body;
+ * 2. the bbox — if even the extent is beyond the radius, the point distance stands and the
+ *    candidate is far by every measure (Charlotte VT is *inside* Champlain's box, so the box is
+ *    what stops a shore town on a long lake reading as 30 km off);
+ * 3. the outline — `near` is beyond the point but within the box, which is exactly where a
+ *    concave lake's box lies: ask for the polygon. No resolver ⇒ the bbox answer, flagged `bbox`.
+ *
+ * Undefined only when the candidate has no geometry at all.
+ */
+export function resolveNearDistance(
   near: { lat: number; lng: number },
   candidate: MatchCandidate,
-): number | undefined {
-  const box = candidate.bbox;
-  if (box) {
-    const lat = Math.min(Math.max(near.lat, box.minLat), box.maxLat);
-    const lng = Math.min(Math.max(near.lng, box.minLng), box.maxLng);
-    return distanceKm(near, { lat, lng });
-  }
+  options: MatchOptions = {},
+): ResolvedDistance | undefined {
   const point = candidatePoint(candidate);
-  return point ? distanceKm(near, point) : undefined;
+  const pointKm = point ? distanceKm(near, point) : undefined;
+  if (pointKm !== undefined && pointKm <= MATCH_RADIUS_KM) return { km: pointKm, basis: 'point' };
+  const box = candidate.bbox;
+  if (!box) return pointKm === undefined ? undefined : { km: pointKm, basis: 'point' };
+  const boxKm = bboxDistanceKm(near, box);
+  if (boxKm > MATCH_RADIUS_KM)
+    return { km: pointKm ?? boxKm, basis: pointKm === undefined ? 'bbox' : 'point' };
+  const outlineKm = options.outlineDistanceKm?.(candidate, near);
+  if (outlineKm !== undefined) return { km: outlineKm, basis: 'outline' };
+  return { km: boxKm, basis: 'bbox' };
 }
 
 export type MatchOutcome =
@@ -217,6 +261,8 @@ export type MatchOutcome =
       /** The matched row — a body or a sub-area; {@link isSubArea} tells them apart. */
       target: MatchCandidate;
       distanceKm?: number;
+      /** How `distanceKm` was measured — `bbox` is the lenient fallback and is called out in the report. */
+      distanceBasis?: DistanceBasis;
       /**
        * The target is in one of the destination's *mentioned* states, not its headline state, and no
        * coordinate narrowed it — so the only evidence is a unique name in a state people posted
@@ -251,6 +297,7 @@ export function matchDestination(
   destination: Destination,
   bodies: readonly CandidateBody[],
   subAreas: readonly CandidateSubArea[] = [],
+  options: MatchOptions = {},
 ): MatchOutcome {
   const target = normalizeName(destination.name);
   const states = destination.states ?? [destination.state];
@@ -280,7 +327,10 @@ export function matchDestination(
   if (byName.length === 1) {
     const found = byName[0] as MatchCandidate;
     const inHeadlineState = found.states?.includes(destination.state) ?? false;
-    const distance = destination.near ? candidateDistanceKm(destination.near, found) : undefined;
+    const resolved = destination.near
+      ? resolveNearDistance(destination.near, found, options)
+      : undefined;
+    const distance = resolved?.km;
     // One name match is not a match when a `near` says it is the wrong one: a corpus town centroid
     // and a sole same-named body 54 km away is the body the catalog *lacks* plus a decoy, and the
     // decoy would take the boost. The same radius the multi-candidate branch applies (Greptile,
@@ -297,7 +347,7 @@ export function matchDestination(
       kind: 'matched',
       destination,
       target: found,
-      ...(distance !== undefined ? { distanceKm: distance } : {}),
+      ...(resolved ? { distanceKm: resolved.km, distanceBasis: resolved.basis } : {}),
       ...(!inHeadlineState && !narrowed ? { viaMentionedState: true as const } : {}),
     };
   }
@@ -306,16 +356,23 @@ export function matchDestination(
     const near = destination.near;
     const within = byName
       .map((candidate) => {
-        const d = candidateDistanceKm(near, candidate);
-        return d === undefined ? null : { candidate, d };
+        const r = resolveNearDistance(near, candidate, options);
+        return r === undefined ? null : { candidate, r };
       })
       .filter(
-        (x): x is { candidate: MatchCandidate; d: number } => x !== null && x.d <= MATCH_RADIUS_KM,
+        (x): x is { candidate: MatchCandidate; r: ResolvedDistance } =>
+          x !== null && x.r.km <= MATCH_RADIUS_KM,
       )
-      .sort((a, b) => a.d - b.d);
+      .sort((a, b) => a.r.km - b.r.km);
     if (within.length === 1) {
-      const only = within[0] as { candidate: MatchCandidate; d: number };
-      return { kind: 'matched', destination, target: only.candidate, distanceKm: only.d };
+      const only = within[0] as { candidate: MatchCandidate; r: ResolvedDistance };
+      return {
+        kind: 'matched',
+        destination,
+        target: only.candidate,
+        distanceKm: only.r.km,
+        distanceBasis: only.r.basis,
+      };
     }
     if (within.length > 1) {
       return { kind: 'ambiguous', destination, candidates: within.map((w) => w.candidate) };
@@ -333,8 +390,11 @@ export function matchAll(
   destinations: readonly Destination[],
   bodies: readonly CandidateBody[],
   subAreas: readonly CandidateSubArea[] = [],
+  options: MatchOptions = {},
 ): MatchOutcome[] {
-  return destinations.map((destination) => matchDestination(destination, bodies, subAreas));
+  return destinations.map((destination) =>
+    matchDestination(destination, bodies, subAreas, options),
+  );
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   matchAll,
   matchDestination,
   normalizeName,
+  resolveNearDistance,
 } from './match';
 
 function body(over: Partial<CandidateBody> & { _id: string }): CandidateBody {
@@ -65,6 +66,60 @@ describe('distanceKm', () => {
   it('measures a known separation', () => {
     // One degree of latitude is ~111 km.
     expect(distanceKm({ lat: 44, lng: -72 }, { lat: 45, lng: -72 })).toBeCloseTo(111, 0);
+  });
+});
+
+describe('resolveNearDistance', () => {
+  const near = { lat: 44.2, lng: -73.2 };
+  const boxAround = { minLat: 44.0, minLng: -74.0, maxLat: 45.0, maxLng: -73.0 };
+
+  it('answers from the point when the point is within the radius', () => {
+    const c = body({ _id: 'a', centroid: { lat: 44.21, lng: -73.21 }, bbox: boxAround });
+    expect(resolveNearDistance(near, c, { outlineDistanceKm: () => 99 })).toMatchObject({
+      basis: 'point',
+    });
+  });
+
+  it('is far by every measure when even the bbox is beyond the radius — no outline asked', () => {
+    let asked = 0;
+    const c = body({
+      _id: 'a',
+      centroid: { lat: 46.0, lng: -70.0 },
+      bbox: { minLat: 45.9, minLng: -70.1, maxLat: 46.1, maxLng: -69.9 },
+    });
+    const r = resolveNearDistance(near, c, {
+      outlineDistanceKm: () => {
+        asked++;
+        return 0;
+      },
+    });
+    expect(r?.basis).toBe('point');
+    expect(r?.km).toBeGreaterThan(25);
+    expect(asked).toBe(0);
+  });
+
+  it('asks the outline only in the undecided zone, and trusts it', () => {
+    const c = body({ _id: 'a', centroid: { lat: 44.9, lng: -73.4 }, bbox: boxAround });
+    expect(resolveNearDistance(near, c, { outlineDistanceKm: () => 3 })).toEqual({
+      km: 3,
+      basis: 'outline',
+    });
+  });
+
+  it('falls back to the bbox, flagged, when no outline can be had', () => {
+    const c = body({ _id: 'a', centroid: { lat: 44.9, lng: -73.4 }, bbox: boxAround });
+    expect(resolveNearDistance(near, c)).toEqual({ km: 0, basis: 'bbox' });
+    expect(resolveNearDistance(near, c, { outlineDistanceKm: () => undefined })).toEqual({
+      km: 0,
+      basis: 'bbox',
+    });
+  });
+
+  it('is undefined for a candidate with no geometry, and point-only without a bbox', () => {
+    expect(resolveNearDistance(near, body({ _id: 'a' }))).toBeUndefined();
+    expect(
+      resolveNearDistance(near, body({ _id: 'a', centroid: { lat: 45.0, lng: -73.0 } })),
+    ).toMatchObject({ basis: 'point' });
   });
 });
 
@@ -216,6 +271,47 @@ describe('matchDestination', () => {
     );
     expect(result).toMatchObject({ kind: 'matched', target: { _id: 'bay' } });
     expect(result.kind === 'matched' && (result.distanceKm ?? 0)).toBeGreaterThan(25);
+  });
+
+  it("does not let a concave lake's bbox vouch for a town far from its water (Greptile, PR #69)", () => {
+    // An L-shaped lake whose box covers an inland town 40 km from any shore. The point test fails,
+    // the bbox test passes, so the outline is asked — and says 40 km. Sole candidate ⇒ ambiguous.
+    const concave = body({
+      _id: 'concave',
+      name: 'Long Lake',
+      centroid: { lat: 44.9, lng: -73.4 },
+      bbox: { minLat: 44.0, minLng: -74.0, maxLat: 45.0, maxLng: -73.0 },
+    });
+    const outlineDistanceKm = () => 40;
+    const result = matchDestination(
+      destination({ name: 'Long Lake', near: { lat: 44.2, lng: -73.2 } }),
+      [concave],
+      [],
+      { outlineDistanceKm },
+    );
+    expect(result.kind).toBe('ambiguous');
+  });
+
+  it('prefers the pond a town is on over the big lake whose box merely contains the town', () => {
+    const bigLake = body({
+      _id: 'big',
+      name: 'Mud Pond',
+      centroid: { lat: 44.9, lng: -73.4 },
+      bbox: { minLat: 44.0, minLng: -74.0, maxLat: 45.0, maxLng: -73.0 },
+    });
+    const pond = body({ _id: 'pond', name: 'Mud Pond', centroid: { lat: 44.21, lng: -73.21 } });
+    const outlineDistanceKm = (c: { _id: string }) => (c._id === 'big' ? 35 : 0);
+    const result = matchDestination(
+      destination({ name: 'Mud Pond', near: { lat: 44.2, lng: -73.2 } }),
+      [bigLake, pond],
+      [],
+      { outlineDistanceKm },
+    );
+    expect(result).toMatchObject({
+      kind: 'matched',
+      target: { _id: 'pond' },
+      distanceBasis: 'point',
+    });
   });
 
   it('still matches a sole namesake inside the radius, with its distance recorded', () => {
