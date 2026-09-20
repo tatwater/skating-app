@@ -45,8 +45,8 @@ describe('keepIdsFor', () => {
     const d = { name: 'Lake George', state: 'VT', states: ['VT', 'NY'], sources: [] as [] };
     expect(
       keepIdsFor([
-        { kind: 'matched', destination: d, body: { _id: 'vt' } },
-        { kind: 'matched', destination: d, body: { _id: 'ny' }, viaMentionedState: true },
+        { kind: 'matched', destination: d, target: { _id: 'vt' } },
+        { kind: 'matched', destination: d, target: { _id: 'ny' }, viaMentionedState: true },
         { kind: 'ambiguous', destination: d, candidates: [{ _id: 'x' }] },
         { kind: 'unmatched', destination: d },
       ]),

@@ -22,14 +22,17 @@ import {
 } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
+  boostFor,
   type CandidateBody,
+  type CandidateSubArea,
   corroboration,
   DESTINATION_BOOST,
   type Destination,
+  isSubArea,
   matchAll,
 } from './match';
 
-const SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
+const DEFAULT_SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
 const REPORT = fileURLToPath(new URL('../.report.json', import.meta.url));
 const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.meta.url));
 
@@ -58,7 +61,12 @@ const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.m
 async function verifyImageryLinks(matched: ReturnType<typeof matchAll>): Promise<void> {
   const rows = matched.flatMap((outcome) => {
     if (outcome.kind !== 'matched') return [];
-    const body = outcome.body;
+    const target = outcome.target;
+    // Sub-areas carry no `satelliteImagery` override and no imagery link of their own (A06e is
+    // body-scoped) — a bay match here would either crash `linkCoordinate` or silently report on its
+    // parent's imagery, which is not what the row claims. Skipped, not substituted.
+    if (isSubArea(target)) return [];
+    const body = target;
     const coord = linkCoordinate(body);
     const linked = satelliteImageryAvailable(body);
     return [
@@ -116,11 +124,26 @@ async function verifyImageryLinks(matched: ReturnType<typeof matchAll>): Promise
 async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
+  // `setCuratedBoost` is the admin path (moderator role): `--apply` runs it as the operator named by
+  // `CONVEX_RUN_AS` (a Clerk user id with a moderator/admin profile on the target deployment).
+  const runAs = process.env.CONVEX_RUN_AS;
+  if (apply && !runAs) {
+    process.stderr.write('[seed] --apply needs CONVEX_RUN_AS=<clerk user id of a moderator>\n');
+    process.exit(2);
+  }
   const verifyImagery = args.includes('--verify-imagery');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
+  // Lets a dry run point at an alternative shortlist (e.g. a corpus-derived one) without
+  // touching the hand-curated `destinations.json` default.
+  const inputArg = args.find((a) => a.startsWith('--input='))?.slice('--input='.length);
+  const shortlistPath = inputArg
+    ? fileURLToPath(new URL(inputArg, `file://${process.cwd()}/`))
+    : DEFAULT_SHORTLIST;
 
-  const destinations = JSON.parse(readFileSync(SHORTLIST, 'utf8')) as Destination[];
-  process.stderr.write(`[seed] ${destinations.length} destinations on the shortlist\n`);
+  const destinations = JSON.parse(readFileSync(shortlistPath, 'utf8')) as Destination[];
+  process.stderr.write(
+    `[seed] ${destinations.length} destinations on the shortlist (${shortlistPath})\n`,
+  );
 
   // Page the named corpus. Named-only, because a destination has a name by definition and the
   // unnamed 92% of the corpus can never match one — that filter is the difference between reading
@@ -139,34 +162,60 @@ async function main() {
   }
   process.stderr.write(`[seed] ${bodies.length} named bodies read\n`);
 
-  const outcomes = matchAll(destinations, bodies);
+  // Page the sub-area table too (A02/A09 bays). It is small — dev holds ~120 rows total — but still
+  // paged, the same discipline `listNamedForSeeding` uses for the corpus proper.
+  const subAreas: CandidateSubArea[] = [];
+  let subAreaCursor: string | undefined;
+  let subAreasDone = false;
+  while (!subAreasDone) {
+    const page = convexRun<{ subAreas: CandidateSubArea[]; cursor: string; isDone: boolean }>(
+      'subAreas:listNamedForSeeding',
+      subAreaCursor ? { cursor: subAreaCursor } : {},
+    );
+    subAreas.push(...page.subAreas.map((s) => ({ ...s, kind: 'subArea' as const })));
+    subAreaCursor = page.cursor;
+    subAreasDone = page.isDone;
+  }
+  process.stderr.write(`[seed] ${subAreas.length} named sub-areas read\n`);
+
+  const outcomes = matchAll(destinations, bodies, subAreas);
   const matched = outcomes.filter((o) => o.kind === 'matched');
   const ambiguous = outcomes.filter((o) => o.kind === 'ambiguous');
   const unmatched = outcomes.filter((o) => o.kind === 'unmatched');
+  const matchedSubAreas = matched.filter((o) => o.kind === 'matched' && isSubArea(o.target));
 
   writeFileSync(
     REPORT,
     `${JSON.stringify(
       {
-        matched: matched.map((o) =>
-          o.kind === 'matched'
-            ? {
-                name: o.destination.name,
-                state: o.destination.state,
-                bodyId: o.body._id,
-                bodyName: o.body.name,
-                distanceKm: o.distanceKm,
-                corroboration: corroboration(o.destination),
-                alreadyBoosted: (o.body.curatedBoost ?? 0) !== 0,
-              }
-            : null,
-        ),
+        matched: matched.map((o) => {
+          if (o.kind !== 'matched') return null;
+          const target = o.target;
+          return {
+            name: o.destination.name,
+            state: o.destination.state,
+            kind: isSubArea(target) ? ('subArea' as const) : ('body' as const),
+            targetId: target._id,
+            targetName: target.name,
+            ...(isSubArea(target)
+              ? { parentId: target.parentId, parentName: target.parentName }
+              : {}),
+            distanceKm: o.distanceKm,
+            corroboration: corroboration(o.destination),
+            curatedBoost: boostFor(o.destination),
+            alreadyBoosted: (target.curatedBoost ?? 0) !== 0,
+          };
+        }),
         ambiguous: ambiguous.map((o) =>
           o.kind === 'ambiguous'
             ? {
                 name: o.destination.name,
                 state: o.destination.state,
-                candidates: o.candidates.map((c) => ({ _id: c._id, name: c.name })),
+                candidates: o.candidates.map((c) => ({
+                  _id: c._id,
+                  name: c.name,
+                  kind: isSubArea(c) ? ('subArea' as const) : ('body' as const),
+                })),
               }
             : null,
         ),
@@ -180,7 +229,8 @@ async function main() {
   if (verifyImagery) await verifyImageryLinks(matched);
 
   process.stderr.write(
-    `[seed] ${matched.length} matched · ${ambiguous.length} ambiguous · ${unmatched.length} unmatched\n` +
+    `[seed] ${matched.length} matched (${matchedSubAreas.length} sub-areas) · ` +
+      `${ambiguous.length} ambiguous · ${unmatched.length} unmatched\n` +
       `[seed] report written to ${REPORT}\n`,
   );
   // **Named individually, not just counted.** An unmatched well-known lake means either a naming
@@ -213,18 +263,37 @@ async function main() {
   let applied = 0;
   for (const o of matched) {
     if (o.kind !== 'matched') continue;
+    const target = o.target;
     // **Never overwrite a boost a human already set.** A hand-set value is a judgment about a
     // specific lake; this list is a cold-start seed, and a seed that silently overrides curation is
     // the opposite of what D49 wants from it.
-    if ((o.body.curatedBoost ?? 0) !== 0) {
+    if ((target.curatedBoost ?? 0) !== 0) {
       logger.fail({ stage: 'apply', key: o.destination.name, reason: 'already boosted by hand' });
       continue;
     }
     try {
-      convexRun('waterBodies:setCuratedBoost', {
-        waterBodyId: o.body._id,
-        curatedBoost: DESTINATION_BOOST,
-      });
+      // Routed by table: a sub-area's boost goes through `subAreas:setCuratedBoost` (its own
+      // moderator mutation, its own audit-log target type), never through the body mutation with a
+      // sub-area id — the two tables' rows are not interchangeable ids.
+      if (isSubArea(target)) {
+        convexRun(
+          'subAreas:setCuratedBoost',
+          {
+            subAreaId: target._id,
+            curatedBoost: boostFor(o.destination),
+          },
+          { as: runAs },
+        );
+      } else {
+        convexRun(
+          'waterBodies:setCuratedBoost',
+          {
+            waterBodyId: target._id,
+            curatedBoost: boostFor(o.destination),
+          },
+          { as: runAs },
+        );
+      }
       applied++;
     } catch (err) {
       logger.fail({
@@ -237,6 +306,7 @@ async function main() {
 
   logger.count('shortlist', destinations.length);
   logger.count('matched', matched.length);
+  logger.count('matchedSubAreas', matchedSubAreas.length);
   logger.count('ambiguous', ambiguous.length);
   logger.count('unmatched', unmatched.length);
   logger.count('applied', applied);
@@ -253,7 +323,14 @@ async function main() {
         : []),
     ],
   });
-  logger.succeed([`${applied} boosts applied at ${DESTINATION_BOOST}`]);
+  const uniformBoost = destinations.every(
+    (d) => (d.curatedBoost ?? DESTINATION_BOOST) === DESTINATION_BOOST,
+  );
+  logger.succeed([
+    uniformBoost
+      ? `${applied} boosts applied at ${DESTINATION_BOOST}`
+      : `${applied} boosts applied (graded per entry — see .report.json for the distribution)`,
+  ]);
   process.stderr.write(`[seed] applied ${applied} boosts\n`);
 }
 

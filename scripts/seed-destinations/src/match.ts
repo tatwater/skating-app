@@ -36,6 +36,26 @@ export interface Destination {
   /** Why it is on the list — the community corpus, the atlas survey, or both. */
   sources: ('community' | 'atlas')[];
   notes?: string;
+  /**
+   * Per-entry override of {@link DESTINATION_BOOST}, e.g. a corpus-graded seed that boosts a
+   * heavily-discussed body more than a rarely-mentioned one. Falls back to
+   * {@link DESTINATION_BOOST} when absent, so the 40-body hand-curated shortlist (uniformly 0.3)
+   * needs no changes.
+   */
+  curatedBoost?: number;
+  /**
+   * Marks the entry as a bay/cove/arm rather than a standalone lake — A02/A09 modeled these as
+   * `waterBodySubAreas` rows on a parent body, not rows in `waterBodies`, so they need a different
+   * candidate pool. Optional: {@link looksLikeBay} infers it from the name when absent, so a
+   * corpus-derived list (this file's caller) doesn't have to classify every entry by hand.
+   */
+  kind?: 'bay';
+  /**
+   * The parent lake's name, when known — "Lake Champlain" for "Malletts Bay". Narrows a sub-area
+   * match the same way {@link Destination.near} narrows a body match: a same-named bay on two
+   * different lakes is ambiguous without it.
+   */
+  parent?: string;
 }
 
 /** The corpus rows the matcher considers. */
@@ -52,6 +72,52 @@ export interface CandidateBody {
   centroid?: { lat: number; lng: number };
 }
 
+/**
+ * A `waterBodySubAreas` row (A02/A09) — "Malletts Bay" as a region of Lake Champlain rather than a
+ * lake beside it. Tagged with `kind: 'subArea'` so a matched or ambiguous outcome can tell which
+ * table it needs to write through: {@link CandidateBody} carries no such tag (every existing caller
+ * already assumes a body), so the presence of `kind` is itself the discriminant.
+ *
+ * `states` is always the parent's — the row has none of its own (see `packages/convex/convex/schema.ts`
+ * `waterBodySubAreas`), so `subAreas:listNamedForSeeding` denormalizes it at read time the same way
+ * `searchSubAreas` does for the name box.
+ */
+export interface CandidateSubArea {
+  kind: 'subArea';
+  _id: string;
+  name: string;
+  parentId: string;
+  parentName?: string;
+  states?: string[];
+  surfaceAreaSqM?: number;
+  curatedBoost?: number;
+  representativePoint?: { lat: number; lng: number };
+  centroid?: { lat: number; lng: number };
+}
+
+/** Either candidate pool, as a single outcome may match either table. */
+export type MatchCandidate = CandidateBody | CandidateSubArea;
+
+/** True for a {@link CandidateSubArea}, false for a {@link CandidateBody} — the discriminant in use. */
+export function isSubArea(candidate: MatchCandidate): candidate is CandidateSubArea {
+  return (candidate as CandidateSubArea).kind === 'subArea';
+}
+
+/** A name ending the way a bay, cove, arm or harbor's does — the inference {@link Destination.kind} skips. */
+const BAY_LIKE_SUFFIX = /\b(bay|cove|arm|harbor)$/i;
+
+/**
+ * Whether a destination should be matched against sub-area candidates (in addition to bodies) —
+ * either the entry says so explicitly, or its name reads like one. Inferred rather than required on
+ * every entry, because the corpus-derived shortlist this script actually reviews was generated
+ * before A02/A09 existed and re-tagging ~35 bays by hand is exactly the busywork a name suffix can
+ * do for free; an explicit `kind` still wins where the suffix would guess wrong (e.g. a lake
+ * genuinely named "... Harbor").
+ */
+export function looksLikeBay(destination: Destination): boolean {
+  return destination.kind === 'bay' || BAY_LIKE_SUFFIX.test(destination.name.trim());
+}
+
 /** How far a candidate may sit from the shortlist's coordinate and still be the same lake. */
 export const MATCH_RADIUS_KM = 25;
 
@@ -66,6 +132,11 @@ export const MATCH_RADIUS_KM = 25;
  * profile richness is the durable mechanism meant to take over.
  */
 export const DESTINATION_BOOST = 0.3;
+
+/** The boost to apply for a destination: its own override, or {@link DESTINATION_BOOST}. */
+export function boostFor(destination: Destination): number {
+  return destination.curatedBoost ?? DESTINATION_BOOST;
+}
 
 /** Great-circle distance in km. */
 export function distanceKm(
@@ -98,25 +169,32 @@ export function normalizeName(name: string): string {
   return stripped.length > 0 ? stripped : bare;
 }
 
-/** Where a body is, preferring the on-water point for the same reason everything else does. */
-export function bodyPoint(body: CandidateBody): { lat: number; lng: number } | undefined {
-  return body.interiorPoint ?? body.representativePoint ?? body.centroid;
+/** Where a candidate is, preferring the on-water point for the same reason everything else does. */
+export function candidatePoint(
+  candidate: MatchCandidate,
+): { lat: number; lng: number } | undefined {
+  if (isSubArea(candidate)) return candidate.representativePoint ?? candidate.centroid;
+  return candidate.interiorPoint ?? candidate.representativePoint ?? candidate.centroid;
 }
+
+/** @deprecated Renamed to {@link candidatePoint}, which also accepts a sub-area. */
+export const bodyPoint = candidatePoint;
 
 export type MatchOutcome =
   | {
       kind: 'matched';
       destination: Destination;
-      body: CandidateBody;
+      /** The matched row — a body or a sub-area; {@link isSubArea} tells them apart. */
+      target: MatchCandidate;
       distanceKm?: number;
       /**
-       * The body is in one of the destination's *mentioned* states, not its headline state, and no
+       * The target is in one of the destination's *mentioned* states, not its headline state, and no
        * coordinate narrowed it — so the only evidence is a unique name in a state people posted
        * from. Reported as a match, never kept on apply (review, PR #64).
        */
       viaMentionedState?: true;
     }
-  | { kind: 'ambiguous'; destination: Destination; candidates: CandidateBody[] }
+  | { kind: 'ambiguous'; destination: Destination; candidates: MatchCandidate[] }
   | { kind: 'unmatched'; destination: Destination };
 
 /**
@@ -131,28 +209,53 @@ export type MatchOutcome =
  * Where a coordinate is supplied, it narrows first: same name *and* within {@link MATCH_RADIUS_KM}
  * is a match even when other same-named bodies exist elsewhere in the state, because the coordinate
  * is the disambiguation the shortlist author already did by hand.
+ *
+ * **Sub-areas join the candidate pool only when {@link looksLikeBay} says so** — a plain lake name
+ * has no business matching a bay row, and searching that pool for all ~200 shortlist entries when
+ * only ~35 could ever hit it would just be waste. When it does apply, body and sub-area candidates
+ * are pooled together for exactly one ambiguity check: a name that resolves in both tables is exactly
+ * as ambiguous as a name that resolves twice in one, and the caller (the CLI's report / apply step)
+ * tells the two tables apart afterward with {@link isSubArea}, not before.
  */
 export function matchDestination(
   destination: Destination,
   bodies: readonly CandidateBody[],
+  subAreas: readonly CandidateSubArea[] = [],
 ): MatchOutcome {
   const target = normalizeName(destination.name);
   const states = destination.states ?? [destination.state];
   const inState = bodies.filter(
     (body) => body.states?.some((s) => states.includes(s)) && body.name !== undefined,
   );
-  const byName = inState.filter((body) => normalizeName(body.name as string) === target);
+  const byNameBodies: MatchCandidate[] = inState.filter(
+    (body) => normalizeName(body.name as string) === target,
+  );
+
+  const parentTarget = destination.parent ? normalizeName(destination.parent) : undefined;
+  const byNameSubAreas: MatchCandidate[] = looksLikeBay(destination)
+    ? subAreas.filter((subArea) => {
+        if (normalizeName(subArea.name) !== target) return false;
+        if (!subArea.states?.some((s) => states.includes(s))) return false;
+        // A parent name is given: it must match, or a same-named bay on the wrong lake would slip
+        // through as unambiguous. No parent given is not evidence either way — fall through to the
+        // ordinary ambiguity/near handling below, same as a body with no `near`.
+        if (parentTarget) return normalizeName(subArea.parentName ?? '') === parentTarget;
+        return true;
+      })
+    : [];
+
+  const byName = [...byNameBodies, ...byNameSubAreas];
 
   if (byName.length === 0) return { kind: 'unmatched', destination };
   if (byName.length === 1) {
-    const body = byName[0] as CandidateBody;
-    const point = bodyPoint(body);
-    const inHeadlineState = body.states?.includes(destination.state) ?? false;
+    const found = byName[0] as MatchCandidate;
+    const point = candidatePoint(found);
+    const inHeadlineState = found.states?.includes(destination.state) ?? false;
     const narrowed = destination.near !== undefined && point !== undefined;
     return {
       kind: 'matched',
       destination,
-      body,
+      target: found,
       ...(destination.near && point ? { distanceKm: distanceKm(destination.near, point) } : {}),
       ...(!inHeadlineState && !narrowed ? { viaMentionedState: true as const } : {}),
     };
@@ -161,18 +264,20 @@ export function matchDestination(
   if (destination.near) {
     const near = destination.near;
     const within = byName
-      .map((body) => {
-        const point = bodyPoint(body);
-        return point ? { body, d: distanceKm(near, point) } : null;
+      .map((candidate) => {
+        const point = candidatePoint(candidate);
+        return point ? { candidate, d: distanceKm(near, point) } : null;
       })
-      .filter((x): x is { body: CandidateBody; d: number } => x !== null && x.d <= MATCH_RADIUS_KM)
+      .filter(
+        (x): x is { candidate: MatchCandidate; d: number } => x !== null && x.d <= MATCH_RADIUS_KM,
+      )
       .sort((a, b) => a.d - b.d);
     if (within.length === 1) {
-      const only = within[0] as { body: CandidateBody; d: number };
-      return { kind: 'matched', destination, body: only.body, distanceKm: only.d };
+      const only = within[0] as { candidate: MatchCandidate; d: number };
+      return { kind: 'matched', destination, target: only.candidate, distanceKm: only.d };
     }
     if (within.length > 1) {
-      return { kind: 'ambiguous', destination, candidates: within.map((w) => w.body) };
+      return { kind: 'ambiguous', destination, candidates: within.map((w) => w.candidate) };
     }
     // A name match in the right state but none inside the radius is NOT a match — the coordinate
     // says the author meant a different lake, and the nearest same-named one is a decoy.
@@ -186,8 +291,9 @@ export function matchDestination(
 export function matchAll(
   destinations: readonly Destination[],
   bodies: readonly CandidateBody[],
+  subAreas: readonly CandidateSubArea[] = [],
 ): MatchOutcome[] {
-  return destinations.map((destination) => matchDestination(destination, bodies));
+  return destinations.map((destination) => matchDestination(destination, bodies, subAreas));
 }
 
 /**

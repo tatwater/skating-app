@@ -329,3 +329,100 @@ describe('adminAreas.listBoundariesForClip (what the merge clips against)', () =
     expect(second.areas[0]?.name).not.toBe(first.areas[0]?.name);
   });
 });
+
+describe('adminAreas.listTownCentroids (A10 town→coordinate lookup)', () => {
+  test('returns only town-level rows, with name/state/lat/lng', async () => {
+    const t = convexTestWithGeo();
+    await seedAreas(t); // Vermont (state), New York (state), Chittenden County (county), Burlington (town)
+
+    const page = await t.query(internal.adminAreas.listTownCentroids, {});
+    expect(page.isDone).toBe(true);
+    expect(page.towns).toHaveLength(1);
+    expect(page.towns[0]).toEqual({
+      name: 'Burlington',
+      state: 'VT',
+      lat: 0.5, // seedAreas' Burlington town square is [0,1]², centroid (0.5, 0.5)
+      lng: 0.5,
+    });
+  });
+
+  test('prefers representativePoint over centroid, falling back only when it is unset', async () => {
+    const t = convexTestWithGeo();
+    // importCanonical always writes representativePoint = centroid, so a row with them genuinely
+    // different (or representativePoint absent) has to be inserted directly, the way a row created
+    // before A01's backfill would look.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('adminAreas', {
+        externalId: 'tiger/with-rep-point',
+        name: 'Has Rep Point',
+        level: 'town',
+        state: 'VT',
+        polygon: square(0, 0, 1, 1),
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        representativePoint: { lat: 0.9, lng: 0.1 }, // deliberately off the shoreline centroid
+        centroid: { lat: 0.5, lng: 0.5 },
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('adminAreas', {
+        externalId: 'tiger/centroid-only',
+        name: 'Centroid Only',
+        level: 'town',
+        state: 'ME',
+        polygon: square(2, 2, 3, 3),
+        bbox: { minLat: 2, minLng: 2, maxLat: 3, maxLng: 3 },
+        // representativePoint intentionally omitted — pre-backfill shape.
+        centroid: { lat: 2.5, lng: 2.5 },
+        createdAt: Date.now(),
+      });
+    });
+
+    const page = await t.query(internal.adminAreas.listTownCentroids, {});
+    const byName = new Map(page.towns.map((town) => [town.name, town]));
+    expect(byName.get('Has Rep Point')).toEqual({
+      name: 'Has Rep Point',
+      state: 'VT',
+      lat: 0.9,
+      lng: 0.1,
+    });
+    expect(byName.get('Centroid Only')).toEqual({
+      name: 'Centroid Only',
+      state: 'ME',
+      lat: 2.5,
+      lng: 2.5,
+    });
+  });
+
+  test('excludes county and state rows', async () => {
+    const t = convexTestWithGeo();
+    await seedAreas(t);
+    const page = await t.query(internal.adminAreas.listTownCentroids, {});
+    expect(page.towns.map((town) => town.name)).toEqual(['Burlington']);
+  });
+
+  test('honors a batch size and hands back a usable cursor', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [
+        area('relation/burlington', 'Burlington', 'town', 'VT', [0, 0, 1, 1]),
+        area('relation/essex', 'Essex', 'town', 'VT', [2, 2, 3, 3]),
+      ],
+    });
+
+    const first = await t.query(internal.adminAreas.listTownCentroids, { batchSize: 1 });
+    expect(first.towns).toHaveLength(1);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(internal.adminAreas.listTownCentroids, {
+      cursor: first.cursor,
+      batchSize: 1,
+    });
+    expect(second.towns).toHaveLength(1);
+    expect(second.towns[0]?.name).not.toBe(first.towns[0]?.name);
+  });
+
+  test('returns nothing when no admin areas are imported at all', async () => {
+    const t = convexTestWithGeo();
+    const page = await t.query(internal.adminAreas.listTownCentroids, {});
+    expect(page).toEqual({ towns: [], cursor: expect.any(String), isDone: true });
+  });
+});

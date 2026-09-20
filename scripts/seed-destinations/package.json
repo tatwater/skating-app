@@ -9,7 +9,8 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "seed": "tsx src/cli.ts",
-    "seed-standing": "tsx src/standing.ts"
+    "seed-standing": "tsx src/standing.ts",
+    "build-input": "tsx src/buildInputCli.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

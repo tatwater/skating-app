@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  boostFor,
   type CandidateBody,
+  type CandidateSubArea,
   corroboration,
   DESTINATION_BOOST,
   type Destination,
   distanceKm,
+  isSubArea,
+  looksLikeBay,
   matchAll,
   matchDestination,
   normalizeName,
@@ -12,6 +16,18 @@ import {
 
 function body(over: Partial<CandidateBody> & { _id: string }): CandidateBody {
   return { states: ['VT'], ...over };
+}
+
+function subArea(
+  over: Partial<CandidateSubArea> & { _id: string; name: string },
+): CandidateSubArea {
+  return {
+    kind: 'subArea',
+    parentId: 'parent',
+    states: ['VT'],
+    surfaceAreaSqM: 100_000,
+    ...over,
+  };
 }
 
 function destination(over: Partial<Destination> = {}): Destination {
@@ -59,7 +75,7 @@ describe('matchDestination', () => {
       body({ _id: 'b', name: 'Caspian Lake' }),
     ]);
     expect(result.kind).toBe('matched');
-    expect(result.kind === 'matched' && result.body._id).toBe('a');
+    expect(result.kind === 'matched' && result.target._id).toBe('a');
   });
 
   it('tries every state the author listed, and is ambiguous across them as within one', () => {
@@ -73,7 +89,7 @@ describe('matchDestination', () => {
     // Found — but only because NY is a state people posted from. Reported, flagged, never kept.
     expect(matchDestination(acrossStates, [ny])).toMatchObject({
       kind: 'matched',
-      body: ny,
+      target: ny,
       viaMentionedState: true,
     });
     const vtHeadline = body({ _id: 'vt2', name: 'Lake George', states: ['VT'] });
@@ -113,7 +129,7 @@ describe('matchDestination', () => {
       ],
     );
     expect(result.kind).toBe('matched');
-    expect(result.kind === 'matched' && result.body._id).toBe('near');
+    expect(result.kind === 'matched' && result.target._id).toBe('near');
   });
 
   it('prefers the interior point over the shoreline centroid when measuring', () => {
@@ -126,6 +142,18 @@ describe('matchDestination', () => {
       }),
     ]);
     expect(result.kind === 'matched' && result.distanceKm).toBeCloseTo(0);
+  });
+
+  it('reports ambiguous when a coordinate sits within range of two same-named bodies', () => {
+    const result = matchDestination(
+      destination({ name: 'Mill Pond', near: { lat: 44.0, lng: -72.0 } }),
+      [
+        body({ _id: 'near1', name: 'Mill Pond', centroid: { lat: 44.01, lng: -72.0 } }),
+        body({ _id: 'near2', name: 'Mill Pond', centroid: { lat: 44.02, lng: -72.0 } }),
+      ],
+    );
+    expect(result.kind).toBe('ambiguous');
+    expect(result.kind === 'ambiguous' && result.candidates).toHaveLength(2);
   });
 
   /** A coordinate that matches nothing nearby means the author meant a lake we do not have. */
@@ -152,6 +180,101 @@ describe('matchDestination', () => {
   });
 });
 
+describe('looksLikeBay', () => {
+  it('is true for an explicit kind: "bay", regardless of name', () => {
+    expect(looksLikeBay(destination({ name: 'Malletts', kind: 'bay' }))).toBe(true);
+  });
+
+  it('infers a bay from a name ending in Bay, Cove, Arm or Harbor', () => {
+    expect(looksLikeBay(destination({ name: 'Malletts Bay' }))).toBe(true);
+    expect(looksLikeBay(destination({ name: 'Dog Cove' }))).toBe(true);
+    expect(looksLikeBay(destination({ name: 'The Broad Arm' }))).toBe(true);
+    expect(looksLikeBay(destination({ name: 'Boothbay Harbor' }))).toBe(true);
+  });
+
+  it('is false for an ordinary lake, pond or reservoir name', () => {
+    expect(looksLikeBay(destination({ name: 'Lake Willoughby' }))).toBe(false);
+    expect(looksLikeBay(destination({ name: 'Mill Pond' }))).toBe(false);
+    expect(looksLikeBay(destination({ name: 'Moore Reservoir' }))).toBe(false);
+  });
+});
+
+describe('matchDestination against sub-areas', () => {
+  it('matches a bay under its parent unambiguously', () => {
+    const result = matchDestination(
+      destination({ name: 'Malletts Bay', kind: 'bay', parent: 'Lake Champlain' }),
+      [],
+      [subArea({ _id: 'malletts', name: 'Malletts Bay', parentName: 'Lake Champlain' })],
+    );
+    expect(result.kind).toBe('matched');
+    expect(result.kind === 'matched' && isSubArea(result.target) && result.target._id).toBe(
+      'malletts',
+    );
+  });
+
+  it('never searches the sub-area pool for a destination that does not look like a bay', () => {
+    const result = matchDestination(
+      destination({ name: 'Lake Willoughby' }),
+      [],
+      [subArea({ _id: 'decoy', name: 'Lake Willoughby' })],
+    );
+    expect(result.kind).toBe('unmatched');
+  });
+
+  it('disambiguates same-named bays on two different lakes by parent name', () => {
+    const d = destination({ name: 'North Bay', kind: 'bay', parent: 'Lake George' });
+    const onGeorge = subArea({ _id: 'george', name: 'North Bay', parentName: 'Lake George' });
+    const onChamplain = subArea({
+      _id: 'champlain',
+      name: 'North Bay',
+      parentName: 'Lake Champlain',
+    });
+    const result = matchDestination(d, [], [onGeorge, onChamplain]);
+    expect(result.kind).toBe('matched');
+    expect(result.kind === 'matched' && result.target._id).toBe('george');
+  });
+
+  it('disambiguates same-named bays by a `near` coordinate when no parent is given', () => {
+    const d = destination({ name: 'North Bay', near: { lat: 44.0, lng: -72.0 } });
+    const close = subArea({
+      _id: 'close',
+      name: 'North Bay',
+      centroid: { lat: 44.01, lng: -72.0 },
+    });
+    const far = subArea({ _id: 'far', name: 'North Bay', centroid: { lat: 41.0, lng: -75.0 } });
+    const result = matchDestination(d, [], [close, far]);
+    expect(result.kind).toBe('matched');
+    expect(result.kind === 'matched' && result.target._id).toBe('close');
+  });
+
+  it('reports ambiguous when two same-named bays are given neither a parent nor a near', () => {
+    const d = destination({ name: 'North Bay' });
+    const a = subArea({ _id: 'a', name: 'North Bay', parentName: 'Lake George' });
+    const b = subArea({ _id: 'b', name: 'North Bay', parentName: 'Lake Champlain' });
+    const result = matchDestination(d, [], [a, b]);
+    expect(result.kind).toBe('ambiguous');
+    expect(result.kind === 'ambiguous' && result.candidates).toHaveLength(2);
+  });
+
+  it('pools body and sub-area candidates for one ambiguity check when a name matches both', () => {
+    const d = destination({ name: 'Carry Bay' });
+    const asBody = body({ _id: 'body-carry', name: 'Carry Bay' });
+    const asSubArea = subArea({ _id: 'sub-carry', name: 'Carry Bay' });
+    const result = matchDestination(d, [asBody], [asSubArea]);
+    expect(result.kind).toBe('ambiguous');
+    expect(result.kind === 'ambiguous' && result.candidates).toHaveLength(2);
+  });
+
+  it('reports a matched sub-area distinctly from a matched body via isSubArea', () => {
+    const result = matchDestination(
+      destination({ name: 'Malletts Bay', parent: 'Lake Champlain' }),
+      [],
+      [subArea({ _id: 'malletts', name: 'Malletts Bay', parentName: 'Lake Champlain' })],
+    );
+    expect(result.kind === 'matched' && isSubArea(result.target)).toBe(true);
+  });
+});
+
 describe('matchAll', () => {
   it('returns one outcome per destination, in order', () => {
     const results = matchAll(
@@ -167,6 +290,17 @@ describe('corroboration', () => {
     expect(corroboration(destination({ sources: ['community', 'atlas'] }))).toBe('both');
     expect(corroboration(destination({ sources: ['community'] }))).toBe('community');
     expect(corroboration(destination({ sources: ['atlas'] }))).toBe('atlas');
+  });
+});
+
+describe('boostFor', () => {
+  it('falls back to DESTINATION_BOOST when a destination carries no override', () => {
+    expect(boostFor(destination())).toBe(DESTINATION_BOOST);
+  });
+
+  it('honors a per-entry curatedBoost, e.g. a corpus mention-count grading', () => {
+    expect(boostFor(destination({ curatedBoost: 0.1 }))).toBe(0.1);
+    expect(boostFor(destination({ curatedBoost: 0.2 }))).toBe(0.2);
   });
 });
 
