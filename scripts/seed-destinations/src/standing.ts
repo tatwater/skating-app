@@ -132,7 +132,7 @@ async function main() {
             ? {
                 name: o.destination.name,
                 state: o.destination.state,
-                bodyId: o.body._id,
+                bodyId: o.target._id,
                 ...(o.viaMentionedState ? { viaMentionedState: true, kept: false } : {}),
               }
             : null,

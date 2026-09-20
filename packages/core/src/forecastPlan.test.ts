@@ -14,6 +14,11 @@ import {
 import type { ForecastHour } from './lakeForecast';
 
 const HOUR = 3_600_000;
+/** A value the test's setup guarantees exists — throws with a message instead of a `!` (Biome). */
+function must<T>(value: T | null | undefined, what = 'a value'): T {
+  if (value === null || value === undefined) throw new Error(`expected ${what}`);
+  return value;
+}
 
 /**
  * A local-shifted instant from a local wall-clock string — `Date.UTC` on purpose, because that is
@@ -108,7 +113,7 @@ describe('buildForecastPlan — hours', () => {
 
   it('reads the clock and the date with UTC getters, because startMs is already local', () => {
     const plan = buildForecastPlan([hour(local('2026-01-14T22:00:00'))], NOW);
-    const h = plan.hours[0]!;
+    const h = must(plan.hours[0], 'a first hour');
     expect(h.localHour).toBe(22);
     expect(h.localDate).toBe('2026-01-14');
     expect(planHourLabel(h)).toBe('10 PM');
@@ -127,7 +132,7 @@ describe('buildForecastPlan — hours', () => {
       ],
       NOW,
     );
-    const h = plan.hours[0]!;
+    const h = must(plan.hours[0], 'a first hour');
     expect(h.temperatureF).toBe(20);
     expect(h.snowfallIn).toBe(1);
     expect(h.rainIn).toBe(0.1);
@@ -137,17 +142,17 @@ describe('buildForecastPlan — hours', () => {
 
   it('calls night by shortwave when it has it, and by the clock when it does not', () => {
     const lit = buildForecastPlan([hour(local('2026-01-14T20:00:00'), { shortwaveWm2: 200 })], NOW);
-    expect(lit.hours[0]!.isNight).toBe(false); // trust the sensor over the clock
+    expect(lit.hours[0]?.isNight).toBe(false); // trust the sensor over the clock
     const dark = buildForecastPlan(
       [hour(local('2026-01-14T20:00:00'), { shortwaveWm2: undefined })],
       NOW,
     );
-    expect(dark.hours[0]!.isNight).toBe(true);
+    expect(dark.hours[0]?.isNight).toBe(true);
     const noon = buildForecastPlan(
       [hour(local('2026-01-15T12:00:00'), { shortwaveWm2: undefined })],
       NOW,
     );
-    expect(noon.hours[0]!.isNight).toBe(false);
+    expect(noon.hours[0]?.isNight).toBe(false);
   });
 
   it('is empty when nothing is forward', () => {
@@ -176,18 +181,18 @@ describe('buildForecastPlan — days', () => {
       partial: false,
       hourCount: 24,
     });
-    expect(plan.days[2]!.label).toBe('Fri');
+    expect(plan.days[2]?.label).toBe('Fri');
     // The hour row is cut with the day row, so a tap can never target an hour that is not drawn.
-    const last = plan.days[plan.days.length - 1]!;
+    const last = must(plan.days[plan.days.length - 1], 'a last day');
     expect(plan.hours).toHaveLength(last.firstHourIndex + last.hourCount);
-    expect(plan.hours[plan.hours.length - 1]!.localDate).toBe(last.localDate);
+    expect(plan.hours[plan.hours.length - 1]?.localDate).toBe(last.localDate);
   });
 
   it('points each day at its first hour, which is what a day-card tap scrolls to', () => {
     const start = local('2026-01-14T15:00:00');
     const plan = buildForecastPlan(series(start, 48), NOW);
-    const tomorrow = plan.days[1]!;
-    expect(plan.hours[tomorrow.firstHourIndex]!.startMs).toBe(local('2026-01-15T00:00:00'));
+    const tomorrow = must(plan.days[1], 'a second day');
+    expect(plan.hours[tomorrow.firstHourIndex]?.startMs).toBe(local('2026-01-15T00:00:00'));
   });
 
   it("takes the high and low over the day and the night low over the archive's window", () => {
@@ -202,11 +207,11 @@ describe('buildForecastPlan — days', () => {
       }),
       NOW,
     );
-    const thu = plan.days[1]!;
+    const thu = must(plan.days[1], 'a second day');
     expect(thu.highC).toBe(2);
     expect(thu.lowC).toBe(-20);
     // Today's night (Tue 18:00 → Wed 09:00) is entirely behind us: no claim.
-    expect(plan.days[0]!.nightLowC).toBeNull();
+    expect(plan.days[0]?.nightLowC).toBeNull();
     // Thursday's night low IS its day low, so the line would only repeat it: no claim either.
     expect(thu.nightLowC).toBeNull();
   });
@@ -223,7 +228,7 @@ describe('buildForecastPlan — days', () => {
       }),
       NOW,
     );
-    const thu = plan.days[1]!;
+    const thu = must(plan.days[1], 'a second day');
     expect(thu.lowC).toBe(-5);
     expect(thu.nightLowC).toBe(-20); // [Wed 18:00, Thu 09:00) reaches back into Wednesday evening
     expect(thu.nightLowF).toBe(-4);
@@ -237,7 +242,7 @@ describe('buildForecastPlan — days', () => {
       ),
       NOW,
     );
-    expect(plan.days[0]!.condition).toBe('cloudy');
+    expect(plan.days[0]?.condition).toBe('cloudy');
   });
 
   it('names a dry day by its daytime cloud, and any snow day by the snow', () => {
@@ -250,13 +255,13 @@ describe('buildForecastPlan — days', () => {
       NOW,
     );
     // 7–11 cloudy (5 h) vs 12–16 clear (5 h): the tie resolves toward the cloudier state.
-    expect(cloudyMorning.days[0]!.condition).toBe('cloudy');
+    expect(cloudyMorning.days[0]?.condition).toBe('cloudy');
 
     const snowyHour = buildForecastPlan(
       series(start, 24, (i) => (i === 3 ? { weatherCode: 73, snowfallCm: 1 } : { weatherCode: 0 })),
       NOW,
     );
-    expect(snowyHour.days[0]!.condition).toBe('snow');
+    expect(snowyHour.days[0]?.condition).toBe('snow');
   });
 
   it('names a day by a storm that is still falling on it, and gives it a continuation line with its own share', () => {
@@ -296,9 +301,9 @@ describe('buildForecastPlan — days', () => {
       }),
       NOW,
     );
-    expect(plan.days[0]!.lines).toEqual(['Snow 8 PM–6 AM Sat · 6.7″']);
-    expect(plan.days[1]!.lines).toEqual(['Snow all day · 4.7″']);
-    expect(plan.days[2]!.lines).toEqual(['Snow until 6 AM · 1.2″']);
+    expect(plan.days[0]?.lines).toEqual(['Snow 8 PM–6 AM Sat · 6.7″']);
+    expect(plan.days[1]?.lines).toEqual(['Snow all day · 4.7″']);
+    expect(plan.days[2]?.lines).toEqual(['Snow until 6 AM · 1.2″']);
   });
 
   it('never says "all day" on a truncated card — the forecast ended, the weather did not', () => {
@@ -309,9 +314,9 @@ describe('buildForecastPlan — days', () => {
       NOW,
     );
     expect(plan.days[1]).toMatchObject({ partial: true, hourCount: 9 });
-    expect(plan.days[1]!.lines).toEqual(['Snow through 8 AM · 1.8″']);
+    expect(plan.days[1]?.lines).toEqual(['Snow through 8 AM · 1.8″']);
     // And Thursday's own sentence has no end to print either.
-    expect(plan.days[0]!.lines).toEqual(['Snow from 8 PM · 2.6″']);
+    expect(plan.days[0]?.lines).toEqual(['Snow from 8 PM · 2.6″']);
   });
 
   it('gives today\'s card a range, not "all day", for a run over the rest of it', () => {
@@ -321,8 +326,8 @@ describe('buildForecastPlan — days', () => {
       series(start, 30, (i) => (i < 10 ? { weatherCode: 73, snowfallCm: 0.5 } : {})),
       NOW,
     );
-    expect(plan.days[0]!.partial).toBe(true);
-    expect(plan.days[0]!.lines).toEqual(['Snow 2 PM–12 AM · 2″']);
+    expect(plan.days[0]?.partial).toBe(true);
+    expect(plan.days[0]?.lines).toEqual(['Snow 2 PM–12 AM · 2″']);
   });
 
   it('needs no weekday for a run that ends exactly at midnight', () => {
@@ -331,8 +336,8 @@ describe('buildForecastPlan — days', () => {
       series(start, 48, (i) => (i >= 18 && i < 24 ? { weatherCode: 73, snowfallCm: 0.5 } : {})),
       NOW,
     );
-    expect(plan.days[0]!.lines).toEqual(['Snow 6 PM–12 AM · 1.2″']);
-    expect(plan.days[1]!.lines).toEqual([]);
+    expect(plan.days[0]?.lines).toEqual(['Snow 6 PM–12 AM · 1.2″']);
+    expect(plan.days[1]?.lines).toEqual([]);
   });
 
   it("continues a wind run with that day's own gusts, not the storm's", () => {
@@ -345,8 +350,8 @@ describe('buildForecastPlan — days', () => {
       ),
       NOW,
     );
-    expect(plan.days[0]!.lines).toEqual(['Wind 8 PM–6 AM Fri · gusts 43 mph']);
-    expect(plan.days[1]!.lines).toEqual(['Wind until 6 AM · gusts 31 mph']);
+    expect(plan.days[0]?.lines).toEqual(['Wind 8 PM–6 AM Fri · gusts 43 mph']);
+    expect(plan.days[1]?.lines).toEqual(['Wind until 6 AM · gusts 31 mph']);
   });
 
   it('names a day of sub-floor drizzle "drizzle", not the first row of the table', () => {
@@ -355,8 +360,8 @@ describe('buildForecastPlan — days', () => {
       series(start, 24, () => ({ weatherCode: 51, rainMm: 0.01, precipitationMm: 0.01 })),
       NOW,
     );
-    expect(plan.days[0]!.condition).toBe('drizzle');
-    expect(plan.days[0]!.lines).toEqual([]);
+    expect(plan.days[0]?.condition).toBe('drizzle');
+    expect(plan.days[0]?.lines).toEqual([]);
   });
 
   it('lets an hour of thunder name the day even when its rain run earns a sentence', () => {
@@ -367,8 +372,8 @@ describe('buildForecastPlan — days', () => {
       ),
       NOW,
     );
-    expect(plan.days[0]!.condition).toBe('thunder');
-    expect(plan.days[0]!.lines).toEqual(['Rain 1–4 PM · 0.24″']);
+    expect(plan.days[0]?.condition).toBe('thunder');
+    expect(plan.days[0]?.lines).toEqual(['Rain 1–4 PM · 0.24″']);
   });
 
   it('ranks freezing rain above snow above rain when a day has all three', () => {
@@ -382,7 +387,7 @@ describe('buildForecastPlan — days', () => {
       }),
       NOW,
     );
-    expect(plan.days[0]!.condition).toBe('freezing-rain');
+    expect(plan.days[0]?.condition).toBe('freezing-rain');
   });
 
   it('counts sunlit hours only when shortwave is available', () => {
@@ -391,12 +396,12 @@ describe('buildForecastPlan — days', () => {
       series(start, 24, (_, ms) => ({ shortwaveWm2: sun(ms) })),
       NOW,
     );
-    expect(withSun.days[0]!.sunlitHours).toBeGreaterThan(0);
+    expect(withSun.days[0]?.sunlitHours).toBeGreaterThan(0);
     const without = buildForecastPlan(
       series(start, 24, () => ({ shortwaveWm2: undefined })),
       NOW,
     );
-    expect(without.days[0]!.sunlitHours).toBeNull();
+    expect(without.days[0]?.sunlitHours).toBeNull();
   });
 });
 
@@ -412,12 +417,12 @@ describe('episodes', () => {
       }),
       NOW,
     );
-    const thu = plan.days[0]!;
+    const thu = must(plan.days[0], 'a first day');
     expect(thu.episodes).toHaveLength(1);
     // The end crosses midnight, so it names its day; Friday then says how it ends there, with
     // Friday's own share (four hours of the six).
     expect(thu.lines).toEqual(['Snow 10 PM–4 AM Fri · 1.2″']);
-    expect(plan.days[1]!.lines).toEqual(['Snow until 4 AM · 0.8″']);
+    expect(plan.days[1]?.lines).toEqual(['Snow until 4 AM · 0.8″']);
   });
 
   it('bridges a single dry hour inside a snow run, but not two', () => {
@@ -447,7 +452,7 @@ describe('episodes', () => {
       }),
       NOW,
     );
-    expect(plan.days[0]!.lines).toEqual(['Freezing rain 2–3 PM']);
+    expect(plan.days[0]?.lines).toEqual(['Freezing rain 2–3 PM']);
   });
 
   it('reports wind as its own episode, by gust when the gust outruns the speed', () => {
@@ -457,7 +462,7 @@ describe('episodes', () => {
       ),
       NOW,
     );
-    expect(plan.days[0]!.lines).toEqual(['Wind 2–7 PM · gusts 37 mph']);
+    expect(plan.days[0]?.lines).toEqual(['Wind 2–7 PM · gusts 37 mph']);
   });
 
   it('says "all day" when the run covers the whole card', () => {
@@ -465,7 +470,7 @@ describe('episodes', () => {
       series(start, 24, () => ({ weatherCode: 73, snowfallCm: 0.2 })),
       NOW,
     );
-    expect(plan.days[0]!.lines).toEqual(['Snow all day · 1.9″']);
+    expect(plan.days[0]?.lines).toEqual(['Snow all day · 1.9″']);
   });
 
   it('names sleet by both amounts and formats rain in hundredths', () => {
@@ -479,7 +484,8 @@ describe('episodes', () => {
         })),
         NOW,
       ).hours,
-    )[0]!;
+    )[0];
+    if (!e) throw new Error('expected an episode');
     expect(formatEpisode(e)).toBe('Sleet 12–3 AM · 0.6″ snow, 0.12″ rain');
   });
 });
@@ -527,7 +533,7 @@ describe('episodes across holes and DST', () => {
     const plan = buildForecastPlan(hours, transition - 3 * HOUR - 5 * HOUR);
     expect(plan.hours.slice(0, 4).map(planHourLabel)).toEqual(['12 AM', '1 AM', '3 AM', '4 AM']);
     expect(detectEpisodes(plan.hours)).toHaveLength(1);
-    expect(plan.days[0]!.lines).toEqual(['Snow 12–5 AM · 0.8″']);
+    expect(plan.days[0]?.lines).toEqual(['Snow 12–5 AM · 0.8″']);
   });
 
   it('reads a fall-back night as continuous — 1 AM happens twice, and neither is a gap', () => {
@@ -541,7 +547,7 @@ describe('episodes across holes and DST', () => {
     const plan = buildForecastPlan(hours, transition - 3 * HOUR - 4 * HOUR);
     expect(plan.hours.map(planHourLabel)).toEqual(['12 AM', '1 AM', '1 AM', '2 AM']);
     expect(detectEpisodes(plan.hours)).toHaveLength(1);
-    expect(plan.days[0]!.hourCount).toBe(4);
+    expect(plan.days[0]?.hourCount).toBe(4);
   });
 
   it('calls a 23-hour spring-forward day whole, not partial', () => {
@@ -581,9 +587,9 @@ describe('liquidMm', () => {
       ),
       NOW,
     );
-    expect(plan.days[0]!.condition).toBe('rain');
-    expect(plan.days[0]!.lines).toEqual(['Rain 1–4 PM · 0.18″']);
-    expect(plan.days[0]!.rainIn).toBe(0.18);
+    expect(plan.days[0]?.condition).toBe('rain');
+    expect(plan.days[0]?.lines).toEqual(['Rain 1–4 PM · 0.18″']);
+    expect(plan.days[0]?.rainIn).toBe(0.18);
   });
 });
 
@@ -593,8 +599,8 @@ describe('arrival', () => {
     const marked = plan.hours.filter((h) => h.arrival);
     expect(marked).toHaveLength(1);
     // now = 14:20, band 60 → 15:20 → the 3 PM card.
-    expect(marked[0]!.localHour).toBe(15);
-    expect(plan.arrivalIndex).toBe(plan.hours.indexOf(marked[0]!));
+    expect(marked[0]?.localHour).toBe(15);
+    expect(plan.arrivalIndex).toBe(plan.hours.indexOf(must(marked[0], 'a marked hour')));
     expect(arrivalCaption(plan)).toBe('≈ arrival, 60 min drive');
   });
 

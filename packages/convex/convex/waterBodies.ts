@@ -60,7 +60,6 @@ import {
   reactivatesOnEvidence,
   referenceLinkError,
   resolveUpsert,
-  retainsActive,
   SATELLITE_IMAGERY_MODES,
   satelliteImageryAvailable,
   searchTextFor,
@@ -6283,6 +6282,7 @@ export const listNamedForSeeding = internalQuery({
         interiorPoint: body.interiorPoint,
         representativePoint: body.representativePoint,
         centroid: body.centroid,
+        bbox: body.bbox,
       }));
     return { bodies, cursor: page.continueCursor, isDone: page.isDone };
   },

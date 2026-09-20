@@ -85,11 +85,8 @@ function RootNavigator() {
           name="support"
           options={{ presentation: 'modal', headerShown: true, title: 'Contact support' }}
         />
-        {/* Offline report capture + draft editing (Phase 02a §6.2) — full-screen modals, off the map. */}
-        <Stack.Screen
-          name="draft/new"
-          options={{ presentation: 'modal', headerShown: true, title: 'New report' }}
-        />
+        {/* Offline draft editing (Phase 02a §6.2) — a full-screen modal, off the map. New captures
+            happen inline on the ＋ Report tab. */}
         <Stack.Screen
           name="draft/[id]"
           options={{ presentation: 'modal', headerShown: true, title: 'Edit draft' }}

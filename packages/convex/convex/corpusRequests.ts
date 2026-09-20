@@ -231,7 +231,7 @@ export const getForResolve = internalQuery({
   args: { requestId: v.id('waterBodyRequests') },
   handler: async (ctx, { requestId }) => {
     const request = await ctx.db.get(requestId);
-    if (!request || request.kind !== 'admit' || request.status !== 'open') return null;
+    if (request?.kind !== 'admit' || request.status !== 'open') return null;
     return { coord: request.coord };
   },
 });
@@ -283,7 +283,7 @@ export const reresolve = mutation({
   handler: async (ctx, { requestId }) => {
     await requireContributorRole(ctx, 'moderator');
     const request = await ctx.db.get(requestId);
-    if (!request || request.kind !== 'admit') throw new ConvexError('Not an admit request');
+    if (request?.kind !== 'admit') throw new ConvexError('Not an admit request');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     await ctx.scheduler.runAfter(0, internal.corpusRequests.resolveAdmit, { requestId });
     return requestId;

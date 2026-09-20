@@ -1003,6 +1003,74 @@ export const setCuratedBoost = mutation({
 });
 
 /**
+ * Named sub-areas, paged, for the destination seeding script (A10 bay-matching addendum).
+ *
+ * **Sibling to `waterBodies:listNamedForSeeding`, not a merge into it.** The read shapes genuinely
+ * differ: a sub-area has no `states` of its own (it inherits the parent's — same join
+ * `searchSubAreas` already does for the search box), and a sub-area has no `reviewStatus` /
+ * `dedupStatus` to run `isListed` against, so its own reachability is `removedAt === undefined`
+ * *and* the parent being `isActive` — `subAreaListed`'s rule, applied here the same way
+ * `searchSubAreas` applies it for the name box. Folding both tables into one handler would mean
+ * branching on `kind` for every field with no code actually shared.
+ *
+ * No name filter (unlike the body version): every sub-area is named by construction (D175), so there
+ * is no unnamed majority to skip reading.
+ */
+export const listNamedForSeeding = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // Same byte-budget reasoning as the body version: `paginate` reads whole documents before this
+    // runs, so the page size is a real bound even though the table itself is small (~130 rows).
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db
+      .query('waterBodySubAreas')
+      .paginate({ cursor: cursor ?? null, numItems });
+    // **The parent lookup is memoized per page, not re-read per row.** Live on dev, Lake
+    // Winnipesaukee alone parents 48 rows in this table — reading its ~210 KB polygon once per row
+    // pushed a single page of 128 sub-areas to 14.9 MB, a hair under the 16 MB read cap the same way
+    // the corpus-wide `listedBodiesNearCoord` incident did (CLAUDE.md's bound-every-corpus-wide-read
+    // rule). A `Map` keyed by parent id turns "one full-polygon read per bay" into "one per distinct
+    // lake on the page", which is the whole fix.
+    const parents = new Map<Id<'waterBodies'>, Doc<'waterBodies'> | null>();
+    const subAreas: {
+      _id: Id<'waterBodySubAreas'>;
+      name: string;
+      parentId: Id<'waterBodies'>;
+      parentName?: string;
+      states: string[];
+      surfaceAreaSqM: number;
+      curatedBoost?: number;
+      representativePoint?: { lat: number; lng: number };
+      centroid: { lat: number; lng: number };
+      bbox: Doc<'waterBodySubAreas'>['bbox'];
+    }[] = [];
+    for (const subArea of page.page) {
+      if (subArea.removedAt !== undefined) continue;
+      if (!parents.has(subArea.waterBodyId)) {
+        parents.set(subArea.waterBodyId, await ctx.db.get(subArea.waterBodyId));
+      }
+      const parent = parents.get(subArea.waterBodyId) ?? null;
+      // Active, not merely listed — a bay of a dormant or removed lake is not reachable from the map
+      // either (`subAreaListed`), so it is not a candidate a seed should be able to boost.
+      if (!parent || !isActive(parent)) continue;
+      subAreas.push({
+        _id: subArea._id,
+        name: subArea.name,
+        parentId: parent._id,
+        parentName: parent.name,
+        states: parent.states ?? [],
+        surfaceAreaSqM: subArea.surfaceAreaSqM,
+        curatedBoost: subArea.curatedBoost,
+        representativePoint: subArea.representativePoint,
+        centroid: subArea.centroid,
+        bbox: subArea.bbox,
+      });
+    }
+    return { subAreas, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
  * Re-stamp one page of a parent's reports or hazards, then reschedule itself until both tables are
  * exhausted (see `scheduleRestamp` for why this pages rather than caps).
  *

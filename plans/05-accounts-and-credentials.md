@@ -141,6 +141,7 @@ backend, so it needs no deployment credential.
 | Imagery / pipeline knobs (not secrets, read from env) | `STAC_URL`, `STAC_COLLECTION`, `STAC_COLLECTION_S1`, `THALWEG_RATIO`, `NODE_TLS_REJECT_UNAUTHORIZED` (the ALSC scraper's expired certificate, one run, archived) |
 | Pipeline shell wrappers — each `scripts/*/.env.local`, documented by its `.env.example` (not secrets) | the `mirror-r2.sh` family: `RCLONE_REMOTE`, `RAW_BUCKET`, `ELEVATION_BUCKET` · `basemap/upload-r2.sh`: `R2_REMOTE`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` · `imagery/fan-out.sh`: `FLY_APP`, `FLY_REGION`, `FLY_IMAGE`, `MAX_PARALLEL`, `MASK_SEASON` (⚠ the masks' season, never the frame's — the example file says why) |
 | macOS Keychain | `eas credentials` stores an Apple password as an internet password, server `deliver.<apple-id>`; `EXPO_NO_KEYCHAIN=1` skips it |
+| Seed operator identity (not a secret, read from env) | `CONVEX_RUN_AS` — the Clerk user id of a moderator/admin profile on the target deployment; `seed-destinations --apply` runs `setCuratedBoost` as that user via `convex run --identity`, so the audit rows carry a person (A10 corpus seed, 2026-09-19) |
 
 **Secrets rule:** client secrets (Clerk secret, Strava secret, Resend, ORS, Expo token) live in
 Convex env vars, never in a client bundle; `.env.example` files document names, never values; the

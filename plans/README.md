@@ -80,6 +80,24 @@ a phase doc fails the build.
 - **`L#`** — a legal / ToS / feasibility gate, in
   [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md).
 
+### Words
+
+- **Water body**, not *lake*, for the general case — people skate ponds, reservoirs, bays and
+  reaches too (founder call, 2026-09-16). *Lake* stays in proper nouns, dataset names and terms of
+  art (lake-effect, lake-skating). `plans/` follows this; `docs/`, code comments and UI copy are
+  still to be swept (see the deferred register).
+- **US spellings** in all new text. The tree was swept 2026-09-17 (D185 — stored keys migrated,
+  not grandfathered). What stays UK on purpose, and is the allowlist for any future sweep: OSM tag
+  values (`water=harbour`, the key of `OSM_WATER` in `waterClass.ts`); the place-name regex in
+  `scripts/etl/src/tidalBand.ts`; the OSM depth-unit parser's `metre|metres` and its `'2 metres'`
+  fixture in `scripts/etl/src/transform.ts`; "Burlington Harbour" as a name alias in A02; the VCGI
+  credit *"Soundings digitised from NOAA nautical charts…"* (an agreed attribution, in code, tests
+  and prose); and lowercase literals that name things that existed (branch names, campaign ids,
+  commit scopes). Two lessons from the sweep: the next one starts from **stems, not words**
+  (`unrecognised` hides past `recognise`; `judgement`, `artefact`, `ageing`, `centimetre` were never
+  on the list), and a regex literal is code to a tokenizer — check by hand any regex that parses
+  third-party text.
+
 ### Renumbering pass
 
 The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted

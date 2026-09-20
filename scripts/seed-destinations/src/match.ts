@@ -36,6 +36,26 @@ export interface Destination {
   /** Why it is on the list — the community corpus, the atlas survey, or both. */
   sources: ('community' | 'atlas')[];
   notes?: string;
+  /**
+   * Per-entry override of {@link DESTINATION_BOOST}, e.g. a corpus-graded seed that boosts a
+   * heavily-discussed body more than a rarely-mentioned one. Falls back to
+   * {@link DESTINATION_BOOST} when absent, so the 40-body hand-curated shortlist (uniformly 0.3)
+   * needs no changes.
+   */
+  curatedBoost?: number;
+  /**
+   * Marks the entry as a bay/cove/arm rather than a standalone lake — A02/A09 modeled these as
+   * `waterBodySubAreas` rows on a parent body, not rows in `waterBodies`, so they need a different
+   * candidate pool. Optional: {@link looksLikeBay} infers it from the name when absent, so a
+   * corpus-derived list (this file's caller) doesn't have to classify every entry by hand.
+   */
+  kind?: 'bay';
+  /**
+   * The parent lake's name, when known — "Lake Champlain" for "Malletts Bay". Narrows a sub-area
+   * match the same way {@link Destination.near} narrows a body match: a same-named bay on two
+   * different lakes is ambiguous without it.
+   */
+  parent?: string;
 }
 
 /** The corpus rows the matcher considers. */
@@ -50,6 +70,55 @@ export interface CandidateBody {
   interiorPoint?: { lat: number; lng: number };
   representativePoint?: { lat: number; lng: number };
   centroid?: { lat: number; lng: number };
+  /** The outline's extent, so a `near` on the shore of a 190 km lake reads as *on* it, not 60 km off. */
+  bbox?: Bbox;
+}
+
+/**
+ * A `waterBodySubAreas` row (A02/A09) — "Malletts Bay" as a region of Lake Champlain rather than a
+ * lake beside it. Tagged with `kind: 'subArea'` so a matched or ambiguous outcome can tell which
+ * table it needs to write through: {@link CandidateBody} carries no such tag (every existing caller
+ * already assumes a body), so the presence of `kind` is itself the discriminant.
+ *
+ * `states` is always the parent's — the row has none of its own (see `packages/convex/convex/schema.ts`
+ * `waterBodySubAreas`), so `subAreas:listNamedForSeeding` denormalizes it at read time the same way
+ * `searchSubAreas` does for the name box.
+ */
+export interface CandidateSubArea {
+  kind: 'subArea';
+  _id: string;
+  name: string;
+  parentId: string;
+  parentName?: string;
+  states?: string[];
+  surfaceAreaSqM?: number;
+  curatedBoost?: number;
+  representativePoint?: { lat: number; lng: number };
+  centroid?: { lat: number; lng: number };
+  bbox?: Bbox;
+}
+
+/** Either candidate pool, as a single outcome may match either table. */
+export type MatchCandidate = CandidateBody | CandidateSubArea;
+
+/** True for a {@link CandidateSubArea}, false for a {@link CandidateBody} — the discriminant in use. */
+export function isSubArea(candidate: MatchCandidate): candidate is CandidateSubArea {
+  return (candidate as CandidateSubArea).kind === 'subArea';
+}
+
+/** A name ending the way a bay, cove, arm or harbor's does — the inference {@link Destination.kind} skips. */
+const BAY_LIKE_SUFFIX = /\b(bay|cove|arm|harbor)$/i;
+
+/**
+ * Whether a destination should be matched against sub-area candidates (in addition to bodies) —
+ * either the entry says so explicitly, or its name reads like one. Inferred rather than required on
+ * every entry, because the corpus-derived shortlist this script actually reviews was generated
+ * before A02/A09 existed and re-tagging ~35 bays by hand is exactly the busywork a name suffix can
+ * do for free; an explicit `kind` still wins where the suffix would guess wrong (e.g. a lake
+ * genuinely named "... Harbor").
+ */
+export function looksLikeBay(destination: Destination): boolean {
+  return destination.kind === 'bay' || BAY_LIKE_SUFFIX.test(destination.name.trim());
 }
 
 /** How far a candidate may sit from the shortlist's coordinate and still be the same lake. */
@@ -66,6 +135,11 @@ export const MATCH_RADIUS_KM = 25;
  * profile richness is the durable mechanism meant to take over.
  */
 export const DESTINATION_BOOST = 0.3;
+
+/** The boost to apply for a destination: its own override, or {@link DESTINATION_BOOST}. */
+export function boostFor(destination: Destination): number {
+  return destination.curatedBoost ?? DESTINATION_BOOST;
+}
 
 /** Great-circle distance in km. */
 export function distanceKm(
@@ -98,25 +172,105 @@ export function normalizeName(name: string): string {
   return stripped.length > 0 ? stripped : bare;
 }
 
-/** Where a body is, preferring the on-water point for the same reason everything else does. */
-export function bodyPoint(body: CandidateBody): { lat: number; lng: number } | undefined {
-  return body.interiorPoint ?? body.representativePoint ?? body.centroid;
+/** Where a candidate is, preferring the on-water point for the same reason everything else does. */
+export function candidatePoint(
+  candidate: MatchCandidate,
+): { lat: number; lng: number } | undefined {
+  if (isSubArea(candidate)) return candidate.representativePoint ?? candidate.centroid;
+  return candidate.interiorPoint ?? candidate.representativePoint ?? candidate.centroid;
+}
+
+/** @deprecated Renamed to {@link candidatePoint}, which also accepts a sub-area. */
+export const bodyPoint = candidatePoint;
+
+export interface Bbox {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+}
+
+/**
+ * How a `near` was measured against a candidate. `point` is the representative point — exact
+ * enough for a pond, meaningless for a 190 km lake; `outline` is the true distance to the polygon,
+ * fetched on demand; `bbox` is the axis-aligned extent, the lenient fallback when no outline
+ * resolver was supplied (a concave lake's box covers inland towns — flagged, never silent).
+ */
+export type DistanceBasis = 'point' | 'outline' | 'bbox';
+
+export interface ResolvedDistance {
+  km: number;
+  basis: DistanceBasis;
+}
+
+export interface MatchOptions {
+  /**
+   * True distance from `near` to the candidate's outline in km (0 inside it), or undefined when the
+   * polygon can't be had. Called only for the candidates the cheap tests cannot decide — `near`
+   * beyond the radius of the point but inside the radius of the bbox — so a run makes a handful of
+   * polygon reads, not one per body. The CLI supplies one backed by `waterBodies:get` /
+   * `subAreas:listForBody` and core's `distanceToPolygonMeters`.
+   */
+  outlineDistanceKm?: (
+    candidate: MatchCandidate,
+    near: { lat: number; lng: number },
+  ) => number | undefined;
+}
+
+/** Distance from `near` to the candidate's bbox: zero inside, else to the nearest edge. */
+function bboxDistanceKm(near: { lat: number; lng: number }, box: Bbox): number {
+  const lat = Math.min(Math.max(near.lat, box.minLat), box.maxLat);
+  const lng = Math.min(Math.max(near.lng, box.minLng), box.maxLng);
+  return distanceKm(near, { lat, lng });
+}
+
+/**
+ * Resolve `near` against a candidate in three stages, cheapest first (Greptile, PR #69, twice):
+ *
+ * 1. the point — inside the radius, done: a small body's point is the body;
+ * 2. the bbox — if even the extent is beyond the radius, the point distance stands and the
+ *    candidate is far by every measure (Charlotte VT is *inside* Champlain's box, so the box is
+ *    what stops a shore town on a long lake reading as 30 km off);
+ * 3. the outline — `near` is beyond the point but within the box, which is exactly where a
+ *    concave lake's box lies: ask for the polygon. No resolver ⇒ the bbox answer, flagged `bbox`.
+ *
+ * Undefined only when the candidate has no geometry at all.
+ */
+export function resolveNearDistance(
+  near: { lat: number; lng: number },
+  candidate: MatchCandidate,
+  options: MatchOptions = {},
+): ResolvedDistance | undefined {
+  const point = candidatePoint(candidate);
+  const pointKm = point ? distanceKm(near, point) : undefined;
+  if (pointKm !== undefined && pointKm <= MATCH_RADIUS_KM) return { km: pointKm, basis: 'point' };
+  const box = candidate.bbox;
+  if (!box) return pointKm === undefined ? undefined : { km: pointKm, basis: 'point' };
+  const boxKm = bboxDistanceKm(near, box);
+  if (boxKm > MATCH_RADIUS_KM)
+    return { km: pointKm ?? boxKm, basis: pointKm === undefined ? 'bbox' : 'point' };
+  const outlineKm = options.outlineDistanceKm?.(candidate, near);
+  if (outlineKm !== undefined) return { km: outlineKm, basis: 'outline' };
+  return { km: boxKm, basis: 'bbox' };
 }
 
 export type MatchOutcome =
   | {
       kind: 'matched';
       destination: Destination;
-      body: CandidateBody;
+      /** The matched row — a body or a sub-area; {@link isSubArea} tells them apart. */
+      target: MatchCandidate;
       distanceKm?: number;
+      /** How `distanceKm` was measured — `bbox` is the lenient fallback and is called out in the report. */
+      distanceBasis?: DistanceBasis;
       /**
-       * The body is in one of the destination's *mentioned* states, not its headline state, and no
+       * The target is in one of the destination's *mentioned* states, not its headline state, and no
        * coordinate narrowed it — so the only evidence is a unique name in a state people posted
        * from. Reported as a match, never kept on apply (review, PR #64).
        */
       viaMentionedState?: true;
     }
-  | { kind: 'ambiguous'; destination: Destination; candidates: CandidateBody[] }
+  | { kind: 'ambiguous'; destination: Destination; candidates: MatchCandidate[] }
   | { kind: 'unmatched'; destination: Destination };
 
 /**
@@ -131,29 +285,69 @@ export type MatchOutcome =
  * Where a coordinate is supplied, it narrows first: same name *and* within {@link MATCH_RADIUS_KM}
  * is a match even when other same-named bodies exist elsewhere in the state, because the coordinate
  * is the disambiguation the shortlist author already did by hand.
+ *
+ * **Sub-areas join the candidate pool only when {@link looksLikeBay} says so** — a plain lake name
+ * has no business matching a bay row, and searching that pool for all ~200 shortlist entries when
+ * only ~35 could ever hit it would just be waste. When it does apply, body and sub-area candidates
+ * are pooled together for exactly one ambiguity check: a name that resolves in both tables is exactly
+ * as ambiguous as a name that resolves twice in one, and the caller (the CLI's report / apply step)
+ * tells the two tables apart afterward with {@link isSubArea}, not before.
  */
 export function matchDestination(
   destination: Destination,
   bodies: readonly CandidateBody[],
+  subAreas: readonly CandidateSubArea[] = [],
+  options: MatchOptions = {},
 ): MatchOutcome {
   const target = normalizeName(destination.name);
   const states = destination.states ?? [destination.state];
   const inState = bodies.filter(
     (body) => body.states?.some((s) => states.includes(s)) && body.name !== undefined,
   );
-  const byName = inState.filter((body) => normalizeName(body.name as string) === target);
+  const byNameBodies: MatchCandidate[] = inState.filter(
+    (body) => normalizeName(body.name as string) === target,
+  );
+
+  const parentTarget = destination.parent ? normalizeName(destination.parent) : undefined;
+  const byNameSubAreas: MatchCandidate[] = looksLikeBay(destination)
+    ? subAreas.filter((subArea) => {
+        if (normalizeName(subArea.name) !== target) return false;
+        if (!subArea.states?.some((s) => states.includes(s))) return false;
+        // A parent name is given: it must match, or a same-named bay on the wrong lake would slip
+        // through as unambiguous. No parent given is not evidence either way — fall through to the
+        // ordinary ambiguity/near handling below, same as a body with no `near`.
+        if (parentTarget) return normalizeName(subArea.parentName ?? '') === parentTarget;
+        return true;
+      })
+    : [];
+
+  const byName = [...byNameBodies, ...byNameSubAreas];
 
   if (byName.length === 0) return { kind: 'unmatched', destination };
   if (byName.length === 1) {
-    const body = byName[0] as CandidateBody;
-    const point = bodyPoint(body);
-    const inHeadlineState = body.states?.includes(destination.state) ?? false;
-    const narrowed = destination.near !== undefined && point !== undefined;
+    const found = byName[0] as MatchCandidate;
+    const inHeadlineState = found.states?.includes(destination.state) ?? false;
+    const resolved = destination.near
+      ? resolveNearDistance(destination.near, found, options)
+      : undefined;
+    const distance = resolved?.km;
+    // One name match is not a match when a `near` says it is the wrong one: a corpus town centroid
+    // and a sole same-named body 54 km away is the body the catalog *lacks* plus a decoy, and the
+    // decoy would take the boost. The same radius the multi-candidate branch applies (Greptile,
+    // PR #69). Reported as ambiguous so the reviewer sees the decoy and its distance.
+    // …unless the entry named the bay's parent and this sub-area is on it: the parent already
+    // disambiguates, and a corpus `near` for a bay is often the sender's town rather than the
+    // bay's (Little Eagle Bay's one mention came from Burlington, 30 km down the lake).
+    const parentVouches = isSubArea(found) && parentTarget !== undefined;
+    if (distance !== undefined && distance > MATCH_RADIUS_KM && !parentVouches) {
+      return { kind: 'ambiguous', destination, candidates: byName };
+    }
+    const narrowed = distance !== undefined;
     return {
       kind: 'matched',
       destination,
-      body,
-      ...(destination.near && point ? { distanceKm: distanceKm(destination.near, point) } : {}),
+      target: found,
+      ...(resolved ? { distanceKm: resolved.km, distanceBasis: resolved.basis } : {}),
       ...(!inHeadlineState && !narrowed ? { viaMentionedState: true as const } : {}),
     };
   }
@@ -161,18 +355,27 @@ export function matchDestination(
   if (destination.near) {
     const near = destination.near;
     const within = byName
-      .map((body) => {
-        const point = bodyPoint(body);
-        return point ? { body, d: distanceKm(near, point) } : null;
+      .map((candidate) => {
+        const r = resolveNearDistance(near, candidate, options);
+        return r === undefined ? null : { candidate, r };
       })
-      .filter((x): x is { body: CandidateBody; d: number } => x !== null && x.d <= MATCH_RADIUS_KM)
-      .sort((a, b) => a.d - b.d);
+      .filter(
+        (x): x is { candidate: MatchCandidate; r: ResolvedDistance } =>
+          x !== null && x.r.km <= MATCH_RADIUS_KM,
+      )
+      .sort((a, b) => a.r.km - b.r.km);
     if (within.length === 1) {
-      const only = within[0] as { body: CandidateBody; d: number };
-      return { kind: 'matched', destination, body: only.body, distanceKm: only.d };
+      const only = within[0] as { candidate: MatchCandidate; r: ResolvedDistance };
+      return {
+        kind: 'matched',
+        destination,
+        target: only.candidate,
+        distanceKm: only.r.km,
+        distanceBasis: only.r.basis,
+      };
     }
     if (within.length > 1) {
-      return { kind: 'ambiguous', destination, candidates: within.map((w) => w.body) };
+      return { kind: 'ambiguous', destination, candidates: within.map((w) => w.candidate) };
     }
     // A name match in the right state but none inside the radius is NOT a match — the coordinate
     // says the author meant a different lake, and the nearest same-named one is a decoy.
@@ -186,8 +389,12 @@ export function matchDestination(
 export function matchAll(
   destinations: readonly Destination[],
   bodies: readonly CandidateBody[],
+  subAreas: readonly CandidateSubArea[] = [],
+  options: MatchOptions = {},
 ): MatchOutcome[] {
-  return destinations.map((destination) => matchDestination(destination, bodies));
+  return destinations.map((destination) =>
+    matchDestination(destination, bodies, subAreas, options),
+  );
 }
 
 /**

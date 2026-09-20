@@ -5812,3 +5812,283 @@ ours to spell, and never move.
 
 **Related:** D40, [`README.md` § Words](./README.md#words) (the stays-UK allowlist), `CLAUDE.md` § Things
 that bite (the schema migration order). The feat doc was deleted when it shipped; git history has it.
+
+## D186 — A Post carries the narrative; a Report carries one body's hard data (A10)
+
+**Decided (2026-09-18, founder call at A10 scoping).** Two objects. A **Report** stays per body,
+per visit, with its own `skateEndTime` and every existing consumer untouched — body feed, bounties,
+D56 contradiction, D59 decay, A09 membership, notifications. A **Post** wraps one or more Reports
+and owns the prose, the photo set and the ordering; the newsfeed and the profile show Posts, the
+body page and the map show Reports. A Post **requires at least one Report**; photos are tagged to
+both the Post and the Report they belong to.
+
+**Why:** a fifth of the community's reports span more than one body or more than one visit
+([`research/report-corpus-classification.md`](./research/report-corpus-classification.md)). A
+multi-body report row would break every read keyed on `waterBodyId`; a Post over per-body Reports
+breaks none. The before-and-after-work day is two Reports on one body in one Post, and the
+freshest-eyes sort works without a special case. "Post" rather than "outing" because the Reports
+need not be one trip. Requiring a Report keeps the platform for reports; questions and planning
+stay on the email lists for now.
+
+**Related:** D4, D13, D28, D59, D175.
+
+## D187 — One sheet, fixed order, three doors — never a wizard (A10)
+
+**Decided (2026-09-18).** The report is authored on one scrollable **sheet** with a section order
+that never changes, each section collapsing to a one-line summary once filled, *How was it?* pinned
+at the top. The sheet is also the review screen after prose extraction and the edit screen after
+posting. It is entered three ways — chips on a body, the prose page, or a track — and every door
+lands on the same layout.
+
+**Why:** the founder's two hard requirements are muscle memory (nothing moves) and no forced order
+(bop around). A wizard satisfies neither. Three separate surfaces (form, essay, wizard) would drift
+and triple the test surface; one sheet pre-filled by three sources is one component.
+
+**Related:** D9, D23, D188, D189.
+
+## D188 — Two tiers of suggestion: what others implied stays a ghost, what the author wrote stays selected (A10)
+
+**Decided (2026-09-18; amended the same day, founder call).** Suggestions on the sheet come in two
+tiers and the tier is decided by *whose words they came from*:
+
+- **Ghost chips** — anything not from the author's own prose: other skaters' recent reports on the
+  body, the weather, the track's geometry, a prior visit. Outlined and glyphed; only an explicit tap
+  makes one solid, and only solid persists. Peer suggestions render as one collapsed line per
+  section that expands to ghost chips, never pre-selected, and the layout never reorders around
+  them.
+- **Extracted chips** — values a model read out of the author's own title and prose (D196). These
+  arrive **pre-selected**, marked *from your writing*, with the evidence span a long-press away,
+  and **persist on Post unless the author deselects them**. An extraction whose confidence is below
+  its field's precision floor (A10 §1.4) demotes to a ghost chip. When any extracted chip exists
+  the submit button is **Confirm & Post**: one screen lists everything *from your writing*,
+  safety-flavored values first, and one tap confirms and posts (founder call, 2026-09-19, closing
+  the review's objection that door two lets a model-attributed *don't go* ship unseen).
+
+**Why:** the first draft of this decision made everything a ghost. The founder's objection was
+right: an author who wrote "black ice on the north end" and is then asked to tap *black ice* has
+been asked to say it twice, and nobody does both — the result is half-complete reports. What the
+author wrote is the author's claim; a model transcribing it is not a guess. What another skater
+said *is* a guess about this author's observation, and storing it untapped would manufacture an
+observation — D3 in a different coat — and would herd reports, eroding the independence D56's
+contradiction logic relies on. The floor is what keeps the eval honest: a low-confidence
+extraction is treated as a guess.
+
+**Related:** D3, D56, D196, D189.
+
+## D189 — The minimum structured set is the same whatever filled it (A10)
+
+**Decided (2026-09-18).** A Report may post only with: a body, an end time, *How was it?*, and one
+of {an ice or surface chip, a thickness reading, a hazard} — a scouting Report substitutes *still
+open / frozen over / snow-covered* for the last. Prose alone never posts. Extraction (D196) is
+**opt-out** by a persisted profile preference; an opted-out author gets the same four taps and an
+*Extract from my writing* button per Post. Free-writing is always allowed.
+
+**Amended 2026-09-19 (review pass):** the set applies on **create only**, version-gated. `update`
+re-runs the same validator today, and `report.ts` deliberately accepts a notes-only "don't skate
+here" report — making the floor retroactive would leave every such report uneditable, which D199
+forbids. Under the new sheet a don't-skate report still posts in two taps: *don't go* satisfies
+*How was it?* and a hazard satisfies the last term.
+
+**Why:** the founder wants the structured data that helps other skaters without making the
+no-AI path hostile. Making the floor identical regardless of engine means opting out costs four
+taps, not the ability to write. The set may be tuned as the flow is used.
+
+**Related:** D23, D187, D196.
+
+## D190 — Quality and suitability are two axes; "don't go" lives on suitability (A10)
+
+**Decided (2026-09-18).** *How was it?* is two rows: `skateQuality` (great / good / fair / poor)
+and **suitability** (*don't go* / *experienced only* / *not for beginners* / *beginner-friendly*;
+labels settled 2026-09-19). Both optional in storage; *How was it?* in the minimum set means at
+least one.
+
+**Why:** quality and warning are independent — the corpus has "great skating on 1.5 inches" and
+"lovely, but rotting by afternoon." "Don't go" as a suitability value is a claim about *who* should
+be there, which D3 blesses; as the left end of a quality scale it would make "great" read as its
+opposite, "safe." Suitability phrases appear in 3% of reports — real, small, a row not a headline.
+
+**Related:** D3, D23.
+
+## D191 — `observedFrom` is provenance the reader sees; relay is not a kind (A10)
+
+**Decided (2026-09-18).** Every Report carries `observedFrom: on_ice | shore | secondhand`,
+defaulting to *on the ice* (two taps to change), shown on the card and the detail. Scouting from
+shore, a car, a webcam or a satellite is a first-class Report. A relayed observation is not its own
+kind: the other person should post, and if they can't, *someone told me* is what the reader
+weighs.
+
+**Why:** 15% of corpus reports are drive-bys and 9% are secondhand; both are honest about their
+provenance, and showing a secondhand thickness as the poster's own firsthand reading would mislead
+in exactly the way the app promises not to. One chip carries both cases; a relay kind would need
+its own decay and its own card for a 9% case that shrinks as the poster's friends join.
+
+**Related:** D3, D22, D50.
+
+## D192 — End time is required, to the half hour, pinned to the minute when possible (A10)
+
+**Decided (2026-09-18).** `skateEndTime` is filled exactly from a track when one exists. Otherwise
+the sheet offers a chip row: the **minute the sheet was opened** ("04:12 PM"), pinned and kept if
+the draft is resumed, then half-hour steps backward, then a date picker. It is preselected only
+when the open time falls in plausible daylight for the body (A06e's solar times); after dark the
+row starts at sunset with nothing preselected. `skateEndPrecision: gps | minute | half_hour` is
+stored. **No part-of-day value.**
+
+**Why:** 96% of corpus reports never say when the skater left the ice, so the field has no muscle
+memory from email and must be nearly free — but the founder judged "afternoon" a worse answer than
+a half-hour estimate, and everything downstream (the freshest-eyes sort, D19/D56 weather-since)
+agrees. The pinned minute is the common case: most reports are written within an hour of leaving.
+
+**Related:** D9, D19, D28, D56.
+
+## D193 — `where` is a union: whole, a bay, a compass sector, or a point (A10)
+
+**Decided (2026-09-18).** A located chip or reading carries `where`: `whole` (with *mostly* /
+*patches* qualifiers) | `subArea(id)` (A09) | `sector(N | NE | E | SE | S | SW | W | NW | center |
+shore)` computed from the body's geometry — and, when the `where` is scoped to a bay, `head` (inner,
+the back of the bay) and `mouth` (outer), computed from the bay's mouth line (the seaward edge A09
+already reasons about) — | `point(coord, radius, name?)` from a coarse tap. A sector
+renders as a soft highlight; a point as the A05b primitive. Named landmarks fill `point.name` from a
+later OSM ETL.
+
+**Amended 2026-09-20 (founder observation):** "inner / outer", "the back of the bay", "the far
+side" are a locative grammar relative to a bay's shape, the way "north end" is relative to a compass
+— not names. Malletts Bay happens to have proper Inner and Outer halves, but the grammar is general
+and belongs in the sector stage; extraction maps "the back of Malletts" to
+`{subArea: Malletts Bay, sector: head}`.
+
+**Why:** half of corpus reports locate something, and mostly by compass — "north end", "west of the
+Broads" — not by bay name. Named bays are the right object where they exist and the wrong one
+where they don't; sectors are the honest 90% of painting without a brush, and extraction maps
+"north end" to `sector(N)` trivially. `compassPointFor` already exists for put-in labels.
+
+**Related:** D4, D51, D60, D175.
+
+## D194 — Snow is coverage, impediment and drifts before it is a depth (A10)
+
+**Decided (2026-09-18).** `snowCoverCm` becomes a `snow` object: `coverage` (none / patches /
+lanes / mostly / everywhere), `impediment` (didn't matter / slowed me / avoided areas), `drifts`
+(none / avoidable / everywhere), optional `depthCm`, optional `plowedPath`. Existing numbers
+backfill as `depthCm` during the widen→deploy→backfill→narrow sequence.
+
+**Why:** the corpus talks about snow as coverage (21%) and whether it mattered (5%) far more than
+as a depth (6%), and "lanes" and "drifts" are distinct concepts skaters plan around. A single
+number could not say "two thirds covered, mostly north of the island, lanes of black ice
+elsewhere, not an impediment." Texture (dry / heavy / crusty) stays in prose until a chip earns
+its place.
+
+**Related:** D23, D25.
+
+## D195 — Thickness methods include pokes, lower bounds and supportability (A10)
+
+**Decided (2026-09-18).** `THICKNESS_METHODS` widens to `measured | estimated | poke`
+(`observed_others` was proposed and dropped at review: whose eyes saw it is `observedFrom`'s job,
+D191, and "fishing holes were 4 inches" is `estimated` with a note); a `poke` reading keeps the count and the skater's own inch estimate separately
+(pokes are person- and pole-relative); a reading may be a lower bound (`minCm` without `maxCm`);
+a reading may carry `supportable: boolean` — the skater's word. A quick-path chip row (under 2 /
+2–3 / 3–4 / 4–6 / 6+ / didn't check) with scope *everywhere I tested* or *at this spot* writes a
+reading with `estimated` and the range.
+
+**Why:** poke, lower-bound and supportability together (15% of corpus reports) exceed measured
+(10%). "5 pokes for me (3–4" by my estimate; I didn't drill)" is a real and lower-trust reading
+the schema had no way to keep honestly. D22's multi-reading shape holds; only the vocabulary was
+thin.
+
+**Related:** D22, D25, D50.
+
+## D196 — Extraction is author-side, reviewed, evidence-bearing, and engine-plugged (A10)
+
+**Decided (2026-09-18; the persistence rule amended the same day with D188).** Prose → structured
+fields fills the *author's own* sheet as **extracted chips** — pre-selected, marked *from your
+writing*, each with an evidence span — that persist unless deselected; the author reviews them on
+one *Confirm & Post* screen and is the claimant. (The first draft said ghost chips; that was
+superseded by D188's two tiers and is recorded here so no build follows it.) It is not a reader-side summary (Q9, L6 untouched). The contract is engine-independent
+(`{text, bodyCandidates, subAreas, sectors, enums} → {reports: [{bodyRef, visit?, fields}]}`), runs
+as a Convex action per completed paragraph, online only, and is gated per field on the A10 §1
+eval's precision floors. The privacy policy states that parsed report text goes to a model
+provider for that purpose only.
+
+**Why:** the corpus is prose (2% labeled fields), and the founder wants the author's voice kept
+while the hard data still lands. The author-reviews-everything rule is what keeps this on the
+right side of D3 and L6. Engine choice is deferred to evidence: Claude structured outputs (keys
+exist; one schema, free-form `where`, evidence quotes) versus Jev (calibrated per-enum
+probabilities, no invented values, weakest on multi-body segmentation); every option costs under a
+cent per report, so accuracy per field decides.
+
+**Amended 2026-09-19 (Jev access granted):** built as **two stages from the start**, behind one
+`Extractor` interface with a Claude-only sibling. Stage A — Claude (Haiku 4.5, Sonnet 5 if the
+eval says) segments title + body into observation units (which sentences belong to which body and
+visit) and finds candidate spans (numbers with units, poke counts, compass phrases, named places).
+Stage B — Jev votes: per unit, a `noul` over every enum value and a `choice` over Stage A's
+candidates for thickness, snow depth and `where`, returning a calibrated probability per value that
+decides the D188 tier. The split follows each engine's documented shape — Jev cannot return a string
+it was not offered and is weak on indirection; Claude does not return calibrated per-value
+probabilities. Stage B is dropped if the eval shows Claude-only matching it on the enums. Extracted
+values are pre-selected per D188 (amended), not ghosts.
+
+**Related:** D3, D19, D188, D189, Q9, L6.
+
+## D197 — Access conditions ride the access alerts, with the Report as provenance (A10)
+
+**Decided (2026-09-18; amended 2026-09-19).** Per-visit shoreline conditions — `icy_lot`,
+`mud_at_launch`, `plank_needed`, `walk_in`, `plowed_trail`, `snowed_in` — are filed from the sheet
+on the chosen put-in or lot as `accessAlerts` rows, decaying and corroborated exactly as A06d's
+road-side alerts do, with the Report as provenance (`reportId`, plus an idempotency key the table
+lacked) and an optional one-line note. They are a **separate reason set** (`ACCESS_CONDITION_REASONS`),
+not additions to `ACCESS_ALERT_REASONS`: `accessPoints.ts` puts every live alert's target into
+`blockedIds` and directions demote it — a condition is something to bring, not a reason the launch
+is closed.
+
+**Why:** a third of corpus reports carry access prose, and half of it is the shoreline at launch
+("plank needed", "park on the road — the pull-off is sheer ice"), not the road. A06d (D73) already has
+the decaying, corroborated, moderated object; a second table would re-implement it.
+
+**Related:** D72, D73 (A06d access alerts), D143.
+
+## D198 — A GPS start point snaps to a known put-in only within a fixed radius (A10)
+
+**Decided (2026-09-18).** `PUT_IN_SNAP_METERS` (start at 150 m, tuned on real tracks). Inside it,
+the track's start snaps to the nearest known put-in; outside it, the sheet asks the skater to pick
+or create one.
+
+**Why:** nearest-snap without a bound pulls a start in an unmapped cove onto a put-in in the next
+bay, and A06d's coverage is good but not complete. The founder's call: within a constant, snap;
+otherwise it is the skater's choice.
+
+**Related:** D42, D72, D143.
+
+## D199 — A Report is at most seven days old when it posts (A10)
+
+**Decided (2026-09-19, founder call).** `skateEndTime` must be no more than **seven days** before
+the post and never in the future (the existing clock-skew tolerance stays). The picker cannot offer
+an older date; a saved draft, a queued offline item or an imported track outside the window is
+refused with a plain message — at flush as well, so a phone returning to signal after a week does
+not post a stale report. Editing an existing Report is always allowed; an edit is not a new claim.
+A Report may not be **added** to a Post older than the window — that is a new Post.
+
+**Why:** freshness is the product — an old report is worse than none because it reads as current.
+The founder weighed three days; seven was chosen because the corpus is full of "skated Thursday,
+writing Saturday" and a Monday post about Friday is exactly three days. D59 decay and the age on
+the card already make a five-day report *read* as old; the window's only job is to stop pointless
+ones. `reportTime − skateEndTime` is stored on every report, so the distribution is measurable
+after a season and the window can be tightened on evidence rather than instinct.
+
+**Related:** D9, D28, D59, D192.
+
+## D200 — The corpus replay runs on its own deployment, and the miss list is the coverage check (A10)
+
+**Decided (2026-09-19, founder call).** Three seasons of community email are replayed into a
+**dedicated replay Convex deployment** — Posts and Reports by fake authors, on the dates the emails
+were sent, through the extraction pipeline — never into the shared dev deployment. For each
+report-bearing email the pipeline also emits a **miss list**: what the author said that the report
+contract has no slot for. The founder reads the miss list rather than replaying the UI; the
+question per email is whether the author *could* have conveyed it through our components.
+
+**Why:** the reporting flow's coverage claim ("every report style the community writes") needs a
+test against the community's actual writing, and 1,309 emails through a UI by hand is a season of
+work that tests taps, not coverage. The replay also gives every freshness-, season- and
+contradiction-dependent feature a populated world to be judged in for the first time. A separate
+deployment because the alpha crew reads dev: other people's posts under invented names shown to
+third parties is republishing (L5), whatever the byline says; on a private, disposable deployment
+it is testing.
+
+**Related:** D186, D196, D199, Q8, L5a.

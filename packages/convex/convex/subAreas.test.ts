@@ -1272,6 +1272,100 @@ describe('subAreas.setCuratedBoost', () => {
   });
 });
 
+describe('subAreas.listNamedForSeeding (A10 bay-matching addendum)', () => {
+  test('a listed sub-area on an active parent comes back with the parent’s states and name', async () => {
+    const t = harness();
+    const body = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Champlain',
+        searchText: 'Lake Champlain',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: LAKE,
+        bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
+        centroid: { lat: 44.5, lng: -73.0 },
+        surfaceAreaSqM: 8.7e9,
+        states: ['VT', 'NY'],
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+
+    const page = await t.query(internal.subAreas.listNamedForSeeding, {});
+    expect(page.isDone).toBe(true);
+    expect(page.subAreas).toEqual([
+      expect.objectContaining({
+        _id: id,
+        name: 'Malletts Bay',
+        parentId: body,
+        parentName: 'Lake Champlain',
+        states: ['VT', 'NY'],
+      }),
+    ]);
+  });
+
+  test('excludes a delisted bay and a bay whose parent is dormant, the same rule the search box uses', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const delisted = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Retired Cove',
+      polygon: rect(-73.2, 44.2, -73.19, 44.21),
+    });
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: delisted });
+
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Quiet Cove',
+      polygon: rect(-73.3, 44.3, -73.29, 44.31),
+    });
+    await t.run((ctx) =>
+      ctx.db.patch(body, { dormant: { since: Date.now(), reason: 'inactive' } }),
+    );
+
+    const page = await t.query(internal.subAreas.listNamedForSeeding, {});
+    expect(page.subAreas.map((s) => s.name)).not.toContain('Retired Cove');
+    expect(page.subAreas.map((s) => s.name)).not.toContain('Quiet Cove');
+  });
+
+  test('pages rather than reading the whole table at once', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'First Cove',
+      polygon: rect(-73.2, 44.2, -73.19, 44.21),
+    });
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Second Cove',
+      polygon: rect(-73.3, 44.3, -73.29, 44.31),
+    });
+
+    const first = await t.query(internal.subAreas.listNamedForSeeding, { batchSize: 1 });
+    expect(first.subAreas).toHaveLength(1);
+    expect(first.isDone).toBe(false);
+    const second = await t.query(internal.subAreas.listNamedForSeeding, {
+      batchSize: 1,
+      cursor: first.cursor,
+    });
+    expect(second.subAreas).toHaveLength(1);
+    expect(second.isDone).toBe(true);
+    expect([first, second].flatMap((p) => p.subAreas.map((s) => s.name)).sort()).toEqual([
+      'First Cove',
+      'Second Cove',
+    ]);
+  });
+});
+
 /**
  * The Phase-10 escape hatch finally gets a writer (D56 §5). Its schema field and reader have shipped
  * since Phase 10 with zero mutations behind them.

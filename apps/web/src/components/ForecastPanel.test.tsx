@@ -132,7 +132,8 @@ describe('ForecastPlanner', () => {
     expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(1);
     const hourList = screen.getByRole('list', { name: 'Hourly forecast' });
     hourList.scrollTo = vi.fn();
-    const tomorrow = screen.getByText('Tomorrow').closest('button')!;
+    const tomorrow = screen.getByText('Tomorrow').closest('button');
+    if (!tomorrow) throw new Error('expected the Tomorrow tab to be a button');
     expect(tomorrow).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(tomorrow);
     expect(tomorrow).toHaveAttribute('aria-pressed', 'true');

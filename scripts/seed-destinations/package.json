@@ -9,13 +9,15 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "seed": "tsx src/cli.ts",
-    "seed-standing": "tsx src/standing.ts"
+    "seed-standing": "tsx src/standing.ts",
+    "build-input": "tsx src/buildInputCli.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
     "@skating/run-log": "workspace:*"
   },
   "devDependencies": {
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^22.10.0",
     "@vitest/coverage-v8": "^3.2.7",
     "tsx": "^4.19.0",

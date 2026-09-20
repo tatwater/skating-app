@@ -77,7 +77,7 @@ export function gazetteerToDestinations(csv: string): Destination[] {
  */
 export function keepIdsFor(outcomes: readonly MatchOutcome[]): string[] {
   return outcomes.flatMap((o) =>
-    o.kind === 'matched' && !o.viaMentionedState ? [o.body._id] : [],
+    o.kind === 'matched' && !o.viaMentionedState ? [o.target._id] : [],
   );
 }
 

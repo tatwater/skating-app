@@ -229,6 +229,36 @@ export const listBoundariesForClip = internalQuery({
 });
 
 /**
+ * Named town centroids, paged, for the destination-seeding script's town→coordinate lookup (A10).
+ *
+ * The corpus's LLM mention inventory (`training_data/google_group/mentions`) gives towns, not
+ * coordinates — the seed matcher disambiguates same-named bodies with a `near` point (`match.ts`'s
+ * `MATCH_RADIUS_KM`), so a town name has to become one before it can help. Reuses the point every
+ * `adminAreas` row already carries from import — `representativePoint`, falling back to the
+ * deprecated `centroid` alias when only the older field was ever populated — rather than recomputing
+ * anything: both are interior-ish points on the boundary polygon, and a bbox center is explicitly
+ * the wrong shortcut for an L-shaped or multi-part town (the same reasoning `fetchOrigin`'s doc
+ * comment gives for lake polygons).
+ *
+ * Paged like `listBoundariesForClip`; unlike it, only `town`-level rows are returned (the seed's
+ * `near` is always a town-scale disambiguator, never a county or state one).
+ */
+export const listTownCentroids = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('adminAreas').paginate({ cursor: cursor ?? null, numItems });
+    const towns = page.page
+      .filter((area) => area.level === 'town')
+      .map((area) => {
+        const point = area.representativePoint ?? area.centroid;
+        return { name: area.name, state: area.state, lat: point.lat, lng: point.lng };
+      });
+    return { towns, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
  * Delete named admin areas **and their cell rows** — the superseded-duplicate path (A07a).
  *
  * ## Why this needs to exist at all
