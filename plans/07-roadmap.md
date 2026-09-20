@@ -68,7 +68,7 @@ water bodies render on a map and an admin can remove or restore one.*
 #### Deferred
 - 🟢 **Basemap off-ramp to Cloudflare R2** — done in Phase 02b
 - 🟢 **Curation / request-intake UX** — Phase 07 and A02
-- ⚪ **Rivers as named reaches (D4)** — validate still-water with users first → register
+- ⚪ **Rivers as named reaches (D4)** — validate still-water with users first → register. **Demand measured 2026-09-19:** the LLM inventory over three seasons of community email has Connecticut River 61 messages (24 skated), Dead Creek 21, Ompompanoosuc 8, Pemigewasset River 6, plus Magalloway, Waits, Boquet, Chazy, Missisquoi, West River — [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md)
 
 ## Phase 02a — Map + reports (the MVP)
 🟢 **Complete** 2026-07-16 · PRs #12 #13 #16 · [plan](./phases/02a-map-and-reports.md) · D9 D13 D20 D30 D31 D41 D42 D49
@@ -667,6 +667,41 @@ launches.*
 #### Deferred
 - ⚪ **Weather shelter index and station-bias study** — scoped at kickoff, post-alpha → [`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md), [`backlog/weather-stations.md`](./backlog/weather-stations.md)
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
+
+## Phase A10 — Reporting: one sheet, three doors
+⚪ **Scoped** 2026-09-18 · [plan](./phases/A10-reporting-flow.md) · D186–D200
+
+The report form becomes a report sheet: one fixed-order scroll that a skater can fill by tapping
+chips, by writing prose, or by opening it from a track, with every section collapsing to a summary
+and *How was it?* pinned at the top. A **Post** wraps one or more per-body **Reports** and carries
+the narrative and photos, so a multi-lake day or a before-and-after-work pair is one post without
+touching any read keyed on a body. The corpus drove the vocabulary: half of reports locate
+something by compass, so chips gain a `where`; pokes, lower bounds and "supportable" join the
+thickness methods; snow becomes coverage, impediment and drifts; 96% of emails never give an end
+time, so the picker pins the minute the sheet opened and steps back by half hours. Suggestions
+from other skaters render as ghost chips that never select themselves, while values read from
+the author's own prose arrive pre-selected with their evidence; a Claude-then-Jev pipeline does
+the reading, kept only where the eval earns it; reports older than a week are refused. *A skater posts a complete report in under a
+minute from a track, and the app never loses one for lack of signal.*
+
+#### Data runs
+- **2026-09-19 — corpus re-parse + LLM mention inventory:** 2,472 messages (Dec 2023–Jun 2026), 745 named bodies, Haiku 4.5, $5.68
+- **2026-09-19/20 — corpus curatedBoost seed:** 137 boosts on dev (122 bodies + 15 sub-areas, graded 0.1/0.2/0.3), campaigns `a10-corpus-seed-20260919` + `-ambiguous-20260920`; the 76 undrawn bays split 16 destinations / 23 landmarks → [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md)
+
+#### Deferred
+- ⚪ **Named landmarks** (OSM/GNIS islands, points, reference bays) as labels + `where: point(name)` → [`features/named-landmarks.md`](./features/named-landmarks.md), with A10-2
+- ⚪ **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page → [`features/subarea-chord-editor.md`](./features/subarea-chord-editor.md), before A10-3
+- ⚪ **Vision-suggested hazard types** on a photo the skater already tagged — after §1's eval pattern exists
+- ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
+
+#### Ruled out
+- **A wizard** — order defeats muscle memory and the bop-around requirement
+- **A part-of-day end time** — vaguer than the half-hour estimate every downstream read wants
+- **Relay as a report kind** — provenance the reader sees (D191), not a kind with its own decay
+
+#### Owed
+- The §1 extraction eval's value tier (~150 field-labeled reports) before ghost chips are gated
+- A Jev key, if the beta admits us; the harness takes any engine
 
 ## Deferred register
 
