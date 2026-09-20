@@ -156,9 +156,9 @@ so this app is the native adapter:
   `reports.create` on `reports.idempotencyKey`; `waterBodies.resolveBodyForCoord` for a coord-only
   draft) + storage upload; flushes on `@react-native-community/netinfo` reconnect + app-foreground +
   a manual "Sync now" (D12).
-- **Capture/edit UI:** the ＋ Report tab is the offline capture entry + drafts list; `draft/new`
-  (GPS auto-select) and `draft/[id]` (edit) modal routes; the put-in degrades to "use my current
-  location" off-map.
+- **Capture/edit UI:** the ＋ Report tab *is* the capture form (GPS auto-select, no second tap)
+  with the drafts list below it; `draft/[id]` is the edit modal; the put-in degrades to "use my
+  current location" off-map.
 
 **Offline basemap tiles ("Layer 3") are deferred to Phase 09a** — report capture needs only *which
 lake* + GPS, not a visible basemap; accurate hazard pins will need it. The body cache is designed to
