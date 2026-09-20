@@ -60,7 +60,6 @@ import {
   reactivatesOnEvidence,
   referenceLinkError,
   resolveUpsert,
-  retainsActive,
   SATELLITE_IMAGERY_MODES,
   satelliteImageryAvailable,
   searchTextFor,

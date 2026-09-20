@@ -4,6 +4,13 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+
+/** A value the test's setup guarantees exists — throws with a message instead of a `!` (Biome). */
+function must<T>(value: T | null | undefined, what = 'a value'): T {
+  if (value === null || value === undefined) throw new Error(`expected ${what}`);
+  return value;
+}
+
 import schema from './schema';
 import { WEATHER_WINDOW_MAX_LOOKBACK_MS } from './weather';
 
@@ -374,7 +381,10 @@ describe('weather.getForecastForBody (A06c §2.5b)', () => {
     expect(forecast?.hours.at(-1)?.weatherCode).toBe(75);
     expect(forecast?.hours.at(-1)?.windDirectionDeg).toBe(310);
     // The strip is now a client-side derivation over the same hours, at its own 12-hour horizon.
-    const strip = summarizeForecast(forecast!.hours, now + forecast!.utcOffsetMs);
+    const strip = summarizeForecast(
+      must(forecast, 'a forecast').hours,
+      now + must(forecast, 'a forecast').utcOffsetMs,
+    );
     expect(strip.precipStartsMs).toBeDefined();
     expect(strip.precipIsSnow).toBe(true);
     expect(forecast?.arrivalBandMinutes).toBeNull(); // a viewer with no home has no band
@@ -412,9 +422,12 @@ describe('weather.getForecastForBody (A06c §2.5b)', () => {
     expect(starts).not.toContain(bucket - HOUR_MS); // elapsed: not
     expect(starts).toHaveLength(5);
     // The strip's own filter still admits nothing that began before now.
-    const strip = summarizeForecast(forecast!.hours, now + forecast!.utcOffsetMs);
+    const strip = summarizeForecast(
+      must(forecast, 'a forecast').hours,
+      now + must(forecast, 'a forecast').utcOffsetMs,
+    );
     for (const h of strip.hours)
-      expect(h.startMs - forecast!.utcOffsetMs).toBeGreaterThanOrEqual(now);
+      expect(h.startMs - must(forecast, 'a forecast').utcOffsetMs).toBeGreaterThanOrEqual(now);
   });
 
   test('shifts each hour by the offset in force AT that hour, so a week across DST keeps its clocks', async () => {
@@ -462,13 +475,15 @@ describe('weather.getForecastForBody (A06c §2.5b)', () => {
 
       // Local clocks read back with UTC getters: 1 AM, then 3 AM — the hour that does not exist is
       // skipped by the clock, not invented by the shift.
-      const clocks = forecast!.hours.map((h) => new Date(h.startMs).getUTCHours());
+      const clocks = must(forecast, 'a forecast').hours.map((h) =>
+        new Date(h.startMs).getUTCHours(),
+      );
       expect(clocks).toEqual([1, 3, 4, 5, 6]);
       // The instants are untouched and one hour apart, which is how the planner knows the run is whole.
-      const instants = forecast!.hours.map((h) => h.utcMs);
+      const instants = must(forecast, 'a forecast').hours.map((h) => h.utcMs);
       expect(instants).toEqual([-1, 0, 1, 2, 3].map((k) => transition + k * HOUR_MS));
       // The payload's offset is the one at `now`, before the change, so a client shifts its clock right.
-      expect(forecast!.utcOffsetMs).toBe(-5 * HOUR_MS);
+      expect(must(forecast, 'a forecast').utcOffsetMs).toBe(-5 * HOUR_MS);
     } finally {
       vi.useRealTimers();
     }
@@ -508,7 +523,7 @@ describe('weather.getForecastForBody (A06c §2.5b)', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     // Age the row back to the pre-planner shape.
     await t.run(async (ctx) => {
-      const row = (await ctx.db.query('weatherForecastCache').collect())[0]!;
+      const row = must((await ctx.db.query('weatherForecastCache').collect())[0], 'a cached row');
       await ctx.db.replace(row._id, {
         samplePointKey: row.samplePointKey,
         forecastBucketMs: row.forecastBucketMs,
