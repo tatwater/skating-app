@@ -12,10 +12,20 @@ import type { Id } from './_generated/dataModel';
 import { retainOrphanedBundle } from './lib/exportBundles';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 function harness() {
   vi.useFakeTimers();
+  // Pinned to `T0` so a fixture dated `T0` is a fresh report — the freshness window (D199, A10-2)
+  // refuses one more than a week old at the write, whatever the wall clock says on the day.
+  vi.setSystemTime(T0);
   return convexTest(schema, modules);
 }
 
@@ -123,6 +133,7 @@ describe('collect — what a bundle carries', () => {
     const user = await seedUser(t, 'exporter');
     const bodyId = await seedBody(t);
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
       iceTypes: [{ type: 'black_ice' as const }],

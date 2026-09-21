@@ -1,6 +1,6 @@
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { legacyPostFor } from './posts';
 import { a10ShapePatch } from './reports';
@@ -20,12 +20,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function seedProfile(t: ReturnType<typeof convexTest>): Promise<Id<'profiles'>> {
+async function seedProfile(
+  t: ReturnType<typeof convexTest>,
+  subject = 'clerk_a',
+): Promise<Id<'profiles'>> {
   return t.run((ctx) =>
     ctx.db.insert('profiles', {
-      clerkUserId: 'clerk_a',
-      displayName: 'a',
-      username: 'a',
+      clerkUserId: subject,
+      displayName: subject,
+      username: subject,
       driveTimePrefMinutes: 60,
       profileVisibility: 'public',
       notificationPrefs: {
@@ -44,6 +47,28 @@ async function seedProfile(t: ReturnType<typeof convexTest>): Promise<Id<'profil
       reputationPoints: 0,
       role: 'member',
       status: 'active',
+      createdAt: T0,
+    }),
+  );
+}
+
+/** A signed-in adult contributor, for the mutations. */
+async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
+  const id = await seedProfile(t, subject);
+  return { id, as: t.withIdentity({ subject }) };
+}
+
+/** An uploaded photo row owned by `uploaderId`, unattached. */
+async function seedPhoto(
+  t: ReturnType<typeof convexTest>,
+  uploaderId: Id<'profiles'>,
+): Promise<Id<'photos'>> {
+  return t.run((ctx) =>
+    ctx.db.insert('photos', {
+      storageId: 's',
+      thumbStorageId: 't',
+      uploaderId,
+      placeOnMap: false,
       createdAt: T0,
     }),
   );
@@ -293,5 +318,213 @@ describe('reports.backfillA10Shapes (A10-1)', () => {
       patched: 0,
       isDone: true,
     });
+  });
+});
+
+describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+  test('writes the Post and its Reports together: order kept, postId on each, sort key the max, photos the union', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const p1 = await seedPhoto(t, author.id);
+    const p2 = await seedPhoto(t, author.id);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: '  Morey and the pond, 1/10 ',
+      body: 'Glass on Morey; the pond was a mess.',
+      idempotencyKey: 'post-1',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3 * 3_600_000, photoIds: [p1] },
+        {
+          ...FRESH,
+          waterBodyId: bodyB,
+          skateEndTime: T0,
+          photoIds: [p2],
+          idempotencyKey: 'report-b',
+        },
+      ],
+    });
+    expect(reportIds).toHaveLength(2);
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post).toMatchObject({
+      authorId: author.id,
+      title: 'Morey and the pond, 1/10',
+      body: 'Glass on Morey; the pond was a mess.',
+      reportIds,
+      photoIds: [p1, p2],
+      latestSkateEndTime: T0,
+      moderationStatus: 'visible',
+      idempotencyKey: 'post-1',
+    });
+    for (const [i, reportId] of reportIds.entries()) {
+      const report = await t.run((ctx) => ctx.db.get(reportId));
+      expect(report?.postId).toBe(postId);
+      expect(report?.waterBodyId).toBe(i === 0 ? bodyA : bodyB);
+    }
+    // The second Report's own key is stored beside the Post's.
+    const second = reportIds[1];
+    if (!second) throw new Error('no second report');
+    expect((await t.run((ctx) => ctx.db.get(second)))?.idempotencyKey).toBe('report-b');
+    // One photo, one report: `photos.reportId` names the member that listed it.
+    expect((await t.run((ctx) => ctx.db.get(p1)))?.reportId).toBe(reportIds[0]);
+    expect((await t.run((ctx) => ctx.db.get(p2)))?.reportId).toBe(second);
+  });
+
+  test('a photo one member lists cannot be listed by another — one photo, one report', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const p1 = await seedPhoto(t, author.id);
+    await expect(
+      author.as.mutation(api.posts.create, {
+        reports: [
+          { ...FRESH, waterBodyId: bodyId, skateEndTime: T0, photoIds: [p1] },
+          { ...FRESH, waterBodyId: bodyId, skateEndTime: T0 - 3_600_000, photoIds: [p1] },
+        ],
+      }),
+    ).rejects.toThrow(/already belongs to another report/);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(0);
+  });
+
+  test('a Post key replays to the same Post; another author reusing it is refused', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const other = await seedUser(t, 'clerk_other');
+    const bodyId = await seedBody(t);
+    const args = {
+      idempotencyKey: 'post-retry',
+      reports: [{ ...FRESH, waterBodyId: bodyId, skateEndTime: T0 }],
+    };
+    const first = await author.as.mutation(api.posts.create, args);
+    const second = await author.as.mutation(api.posts.create, args);
+    expect(second).toEqual(first);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toHaveLength(1);
+    await expect(other.as.mutation(api.posts.create, args)).rejects.toThrow(/Idempotency key/);
+  });
+
+  test('a Report key can never name two Reports', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const report = { ...FRESH, waterBodyId: bodyId, skateEndTime: T0, idempotencyKey: 'r-1' };
+    await author.as.mutation(api.posts.create, { idempotencyKey: 'p-1', reports: [report] });
+    await expect(
+      author.as.mutation(api.posts.create, { idempotencyKey: 'p-2', reports: [report] }),
+    ).rejects.toThrow(/Idempotency key conflict/);
+  });
+
+  test('nothing lands when a later Report fails — the first is rolled back with it', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    await expect(
+      author.as.mutation(api.posts.create, {
+        reports: [
+          { ...FRESH, waterBodyId: bodyId, skateEndTime: T0 },
+          { waterBodyId: bodyId, skateEndTime: T0, notes: 'nothing observed' },
+        ],
+      }),
+    ).rejects.toThrow(/minimum_set/);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toHaveLength(0);
+  });
+
+  test('the minimum set (D189) names its gaps; a hazard is an observation; a sighting needs a shore', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const gapsOf = async (report: Record<string, unknown>) => {
+      try {
+        await author.as.mutation(api.posts.create, {
+          reports: [{ waterBodyId: bodyId, skateEndTime: T0, ...report }],
+        } as never);
+        return [];
+      } catch (e) {
+        return (e as { data?: { gaps?: string[] } }).data?.gaps ?? ['<other error>'];
+      }
+    };
+    expect(await gapsOf({ notes: 'don\'t skate here' })).toEqual(['howWasIt', 'observation']);
+    expect(await gapsOf({ skateQuality: 'poor' })).toEqual(['observation']);
+    expect(await gapsOf({ iceTypes: ['black_ice'] })).toEqual(['howWasIt']);
+    expect(
+      await gapsOf({
+        suitability: 'dont_go',
+        hazards: [
+          {
+            type: 'open_water',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [0.5, 0.5] },
+            radiusMeters: 40,
+          },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      await gapsOf({ suitability: 'dont_go', observedFrom: 'shore', sighting: 'open' }),
+    ).toEqual([]);
+  });
+
+  test('the freshness window (D199): a week is inside, a week and a minute is not, the future is not', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const now = Date.now();
+    const week = 7 * 24 * 3_600_000;
+    const post = (skateEndTime: number) =>
+      author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: bodyId, skateEndTime }],
+      });
+    await expect(post(now - week)).resolves.toBeTruthy();
+    await expect(post(now - week - 60_000)).rejects.toThrow(/up to a week/);
+    await expect(post(now + 2 * 3_600_000)).rejects.toThrow(/in the future/);
+  });
+
+  test('a Post needs a Report, takes at most POST_MAX_REPORTS, and bounds its title', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    await expect(author.as.mutation(api.posts.create, { reports: [] })).rejects.toThrow(
+      /at least one report/,
+    );
+    const one = { ...FRESH, waterBodyId: bodyId, skateEndTime: T0 };
+    await expect(
+      author.as.mutation(api.posts.create, { reports: Array.from({ length: 11 }, () => one) }),
+    ).rejects.toThrow(/at most 10/);
+    await expect(
+      author.as.mutation(api.posts.create, { title: 'x'.repeat(121), reports: [one] }),
+    ).rejects.toThrow(/invalid_post/);
+  });
+
+  test('reports.create is the one-Report form of the same path', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const reportId = await author.as.mutation(api.reports.create, {
+      ...FRESH,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+      idempotencyKey: 'legacy-key',
+    });
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.postId).toBeDefined();
+    const post = report?.postId ? await t.run((ctx) => ctx.db.get(report.postId!)) : null;
+    expect(post).toMatchObject({
+      reportIds: [reportId],
+      latestSkateEndTime: T0,
+      idempotencyKey: 'legacy-key',
+    });
+    expect(post?.title).toBeUndefined();
+    // The same key replays to the same Report through the Post's key.
+    expect(
+      await author.as.mutation(api.reports.create, {
+        ...FRESH,
+        waterBodyId: bodyId,
+        skateEndTime: T0,
+        idempotencyKey: 'legacy-key',
+      }),
+    ).toBe(reportId);
   });
 });

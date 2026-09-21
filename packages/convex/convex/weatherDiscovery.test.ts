@@ -11,6 +11,13 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 const DAY_MS = 86_400_000;
 const today = () => Math.floor(Date.now() / DAY_MS) * DAY_MS;
@@ -359,6 +366,7 @@ describe('a digest the sweep stopped updating is not an answer (Greptile, PR #54
     await rebuild(t, A);
     const filters = { weather: { thresholdF: 20, minNights: 3 } };
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: cold,
       skateEndTime: Date.now() - 60 * 60 * 1000,
     });
@@ -633,14 +641,17 @@ describe('reports.listFeed under a weather filter (D165)', () => {
     for (const p of [A, B]) await rebuild(t, p);
     const now = Date.now();
     const coldReport = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: cold,
       skateEndTime: now - 3 * 60 * 60 * 1000,
     });
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: mild,
       skateEndTime: now - 2 * 60 * 60 * 1000,
     });
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: unswept,
       skateEndTime: now - 60 * 60 * 1000,
     });

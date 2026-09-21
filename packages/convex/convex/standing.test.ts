@@ -9,13 +9,26 @@
  * surface fails silently and permissively.
  */
 
-import { DORMANT_MIN_VISIBLE_ZOOM, isActive, seasonStartMs, standingOf } from '@skating/core';
+import {
+  DORMANT_MIN_VISIBLE_ZOOM,
+  isActive,
+  seasonOf,
+  seasonStartMs,
+  standingOf,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
+
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -34,7 +47,9 @@ const POLYGON: Polygon = {
   ],
 };
 const VIEWPORT = { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 };
-const SKATE_TIME = Date.UTC(2026, 0, 10);
+// Three hours ago, against the real clock: the freshness window (D199, A10-2) refuses an end time
+// more than a week old at the write, so a fixed January date would stop posting a week later.
+const SKATE_TIME = Date.now() - 3 * 3_600_000;
 
 const BASE_PREFS = {
   activityDetected: true,
@@ -295,6 +310,7 @@ describe('the campaign walk — one body per state, through importCanonical and 
     const ids = await seedEveryState(t);
     const skater = await seedUser(t, 'skater');
     await skater.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: ids.removed,
       skateEndTime: SKATE_TIME,
     });
@@ -522,7 +538,11 @@ describe('evidence hooks', () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t, 'osm/1', dormant('inactive'));
-    await skater.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await skater.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     const body = (await get(t, id)) as Doc<'waterBodies'>;
     expect(standingOf(body).standing).toBe('active');
     expect(body.includedByRequest).toBeUndefined();
@@ -541,7 +561,11 @@ describe('evidence hooks', () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t, 'osm/1', dormant('not_in_campaign'));
-    await skater.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await skater.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     const body = (await get(t, id)) as Doc<'waterBodies'>;
     expect(standingOf(body).standing).toBe('active');
     expect(body.includedByRequest).toBe(true);
@@ -566,7 +590,11 @@ describe('evidence hooks', () => {
     });
     const removed = await seedBody(t, 'osm/removed', { removedAt: Date.now() });
     for (const id of [byMod, none, removed]) {
-      await skater.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+      await skater.as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+      });
     }
     expect(standingOf((await get(t, byMod)) as Doc<'waterBodies'>)).toMatchObject({
       standing: 'dormant',
@@ -658,6 +686,7 @@ describe('push surfaces', () => {
     const none = await seedBody(t, 'osm/none', NONE(mod.id));
     await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: none });
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: none,
       skateEndTime: SKATE_TIME,
     });
@@ -672,6 +701,7 @@ describe('push surfaces', () => {
     await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: removed });
     await t.run((ctx) => ctx.db.patch(removed, { removedAt: Date.now() }));
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: removed,
       skateEndTime: SKATE_TIME,
     });
@@ -687,16 +717,18 @@ describe('push surfaces', () => {
     });
     const removed = await seedBody(t, 'osm/removed', { removedAt: Date.now() });
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: dormant,
       skateEndTime: SKATE_TIME,
     });
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: removed,
       skateEndTime: SKATE_TIME,
     });
     const page = await t.query(api.reports.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
-      season: 2025,
+      season: seasonOf(SKATE_TIME),
     });
     expect(page.page.map((c) => c.waterBodyId)).toEqual([dormant]);
   });
@@ -788,6 +820,7 @@ describe('seedStanding — the partition by evidence of access or use', () => {
     });
     const withReport = await seedBody(t, 'osm/report');
     await skater.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: withReport,
       skateEndTime: SKATE_TIME,
     });
@@ -980,7 +1013,11 @@ describe('the standing lists', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t, 'osm/1', { dormant: { since: Date.now(), reason: 'inactive' } });
-    await skater.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await skater.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     const rows = await mod.as.query(api.standing.listRecentActivations, {});
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ _id: id, via: 'report' });

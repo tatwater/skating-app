@@ -1,10 +1,11 @@
 /**
  * Posts (A10 / D186) — the narrative, the photo set, the ordering, and one or more Reports.
  *
- * A10-1 lands the table, the backfill that gives every existing Report a Post of its own, and the
- * shape backfill for the A10 report fields. The transactional `posts.create` (Reports inline, one
- * Post key, per-Report idempotency keys), the Post feed, moderation, purge and export are A10-2
- * (§2.4) — see `plans/phases/A10-reporting-flow.md`.
+ * A10-1 landed the table, the backfill that gives every existing Report a Post of its own, and the
+ * shape backfill for the A10 report fields. A10-2 added the transactional `create` (Reports inline,
+ * one Post key, per-Report idempotency keys — the path is `lib/reportWrite.ts`), the Post feed and
+ * the profile history, and the moderation / purge / export paths — see
+ * `plans/phases/A10-reporting-flow.md` §2.4.
  *
  * ## Why a Post per existing Report, rather than leaving `postId` absent
  *
@@ -18,7 +19,8 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx } from './_generated/server';
+import { internalMutation, mutation } from './_generated/server';
+import { createPost, postArgs } from './lib/reportWrite';
 
 /**
  * The Post a legacy Report gets: the one-body Post `posts.create` would have written. Pure, so the
@@ -38,27 +40,16 @@ export function legacyPostFor(report: Doc<'reports'>): Omit<Doc<'posts'>, '_id' 
 }
 
 /**
- * Keep `posts.latestSkateEndTime` — the D28 sort key — current after a member Report's end time
- * moves. Every writer that changes a Report's `skateEndTime` calls this with the value it is about
- * to store (`reports.update` today; `posts.create` and its editor in A10-2), so the Post never
- * sorts on a stale time. Reads the Post's other members — a handful — and takes the max.
+ * The transactional Post create (A10 §2.4 / D186): the title, the prose and one or more Reports
+ * inline, one Post key for the offline queue, a per-Report key beside each member. All in one
+ * transaction — a Post-less Report can never exist, and "a Post requires a Report" is enforced
+ * rather than hoped. The create-only rules (D189, D199) apply to every member; see
+ * `lib/reportWrite.ts` for the path and `reports.create` for the one-Report form of it.
  */
-export async function refreshPostLatestSkateEnd(
-  ctx: MutationCtx,
-  postId: Id<'posts'>,
-  changed: { reportId: Id<'reports'>; skateEndTime: number },
-): Promise<void> {
-  const post = await ctx.db.get(postId);
-  if (!post) return;
-  let latest = changed.skateEndTime;
-  for (const id of post.reportIds) {
-    if (id === changed.reportId) continue;
-    const sibling = await ctx.db.get(id);
-    if (sibling && sibling.skateEndTime > latest) latest = sibling.skateEndTime;
-  }
-  if (latest !== post.latestSkateEndTime)
-    await ctx.db.patch(postId, { latestSkateEndTime: latest });
-}
+export const create = mutation({
+  args: postArgs,
+  handler: (ctx, args) => createPost(ctx, args),
+});
 
 /**
  * One Post per Report that has none (A10-1 backfill). Paginated over the report table and

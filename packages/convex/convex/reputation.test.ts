@@ -1,5 +1,5 @@
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -105,6 +105,9 @@ async function seedReport(
     waterBodyId,
     skateEndTime: opts.skateEndTime ?? Date.now(),
     iceTypes: opts.iceTypes ?? ['black_ice'],
+    // D189's *How was it?* (A10-2), in the axis `reportsAgree` does not read, so the corroboration
+    // arithmetic below stays on the quality the test chose (or left unset).
+    suitability: 'experienced_only' as const,
     ...(opts.skateQuality ? { skateQuality: opts.skateQuality } : {}),
     ...(method ? { iceThickness: { readings: [{ valueCm: 12, method }] } } : {}),
     ...(photoIds ? { photoIds } : {}),
@@ -208,10 +211,15 @@ describe('corroboration', () => {
     const a = await seedUser(t, 'a');
     const b = await seedUser(t, 'b');
     const waterBodyId = await seedBody(t);
-    const old = Date.now() - 8 * 24 * 60 * 60 * 1000; // 8 days ago, past the 7-day window
-
-    await seedReport(t, a, waterBodyId, { skateEndTime: old, iceTypes: ['black_ice'] });
+    // 8 days ago, past the 7-day window — posted *then*, with the clock moved back for the write,
+    // because the freshness window (D199, A10-2) refuses a back-dated end time at `posts.create`.
+    const now = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(now - 8 * 24 * 60 * 60 * 1000);
+    await seedReport(t, a, waterBodyId, { iceTypes: ['black_ice'] });
+    vi.setSystemTime(now);
     await seedReport(t, b, waterBodyId, { iceTypes: ['black_ice'] });
+    vi.useRealTimers();
 
     expect(await eventCount(t, b.id, 'report_corroborated')).toBe(0);
   });

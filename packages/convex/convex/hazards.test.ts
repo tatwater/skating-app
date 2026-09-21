@@ -5,6 +5,13 @@ import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 /** `reports.create` resolves a place label through the adminAreas cell index. */
@@ -582,6 +589,7 @@ describe('hazards.listBundleCandidates (D55)', () => {
     const waterBodyId = await seedBody(t);
     const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       attachHazardIds: [hazardId],
@@ -671,6 +679,7 @@ describe('hazards.listBundleCandidates (D55)', () => {
     );
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       attachHazardIds: [loser?._id as Id<'hazards'>],
@@ -691,6 +700,7 @@ describe('reports.create with hazards', () => {
     const waterBodyId = await seedBody(t);
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       hazards: [
@@ -725,6 +735,7 @@ describe('reports.create with hazards', () => {
     const standing = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
 
     const reportId = await sam.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       hazards: [
@@ -758,6 +769,7 @@ describe('reports.create with hazards', () => {
     });
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       hazards: [hazard(0), hazard(5)],
@@ -776,6 +788,7 @@ describe('reports.create with hazards', () => {
     const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       attachHazardIds: [hazardId],
@@ -797,6 +810,7 @@ describe('reports.create with hazards', () => {
     const foreignId = await other.as.mutation(api.hazards.create, createArgs(waterBodyId));
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       attachHazardIds: [foreignId],
@@ -814,11 +828,13 @@ describe('reports.create with hazards', () => {
     const waterBodyId = await seedBody(t);
     const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
     const firstReport = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       attachHazardIds: [hazardId],
     });
     const secondReport = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
       skateEndTime: Date.now(),
       attachHazardIds: [hazardId],

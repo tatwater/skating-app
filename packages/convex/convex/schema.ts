@@ -2170,7 +2170,7 @@ export default defineSchema({
     /**
      * The photo set. A photo is tagged to the Post *and* to the Report it belongs to
      * (`photos.reportId`), so a body page can show its photos without the Post; one writer
-     * (`lib/postPhotos.ts`, A10-2) keeps the three from drifting on an edit.
+     * (`lib/postSync.ts`) keeps the three from drifting on an edit.
      */
     photoIds: v.array(v.id('photos')),
     /** `max(report.skateEndTime)` over the members — the D28 sort key, never `createdAt`. */
@@ -2863,7 +2863,7 @@ export default defineSchema({
     /**
      * The Report this photo documents (A10 / D186) — the back-link beside `posts.photoIds`, so a
      * body page shows its photos without loading the Post. Set by `posts.create` and kept by the
-     * one photo writer (`lib/postPhotos.ts`, A10-2). Absent on a hazard or access photo, and on
+     * one photo writer (`lib/postSync.ts`). Absent on a hazard or access photo, and on
      * every pre-A10 report photo until the Post backfill stamps it.
      */
     reportId: v.optional(v.id('reports')),
