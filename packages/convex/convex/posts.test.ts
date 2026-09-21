@@ -668,6 +668,8 @@ describe('posts.getForReport (A10 §12.1) — the words a Report was posted with
       reason: 'wrong lake',
     });
     expect((await t.query(api.posts.getForReport, { reportId: first }))?.siblings).toEqual([]);
+    // And the hidden Report's own id is not a handle to the Post's words.
+    expect(await t.query(api.posts.getForReport, { reportId: second })).toBeNull();
     // A hidden Post is null, words included.
     await mod.as.mutation(api.moderation.setModerationStatus, {
       targetType: 'post',

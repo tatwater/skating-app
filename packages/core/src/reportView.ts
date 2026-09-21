@@ -111,8 +111,12 @@ export function describeSnow(snow: Snow): string | null {
     snow.coverage && humanizeEnum(snow.coverage),
     snow.impediment && humanizeEnum(snow.impediment).toLowerCase(),
     snow.drifts && snow.drifts !== 'none' && `drifts ${humanizeEnum(snow.drifts).toLowerCase()}`,
+    // Zero is "no snow" (a pre-A10 report whose author typed 0), not a dusting — only a depth
+    // under the dusting mark that is actually *some* snow reads as one.
     snow.depthCm !== undefined &&
-      (snow.depthCm <= SNOW_DUSTING_CM ? 'a dusting' : formatSnowCoverInches(snow.depthCm)),
+      (snow.depthCm > 0 && snow.depthCm <= SNOW_DUSTING_CM
+        ? 'a dusting'
+        : formatSnowCoverInches(snow.depthCm)),
     snow.plowedPath && 'plowed path',
   ].filter((x): x is string => typeof x === 'string' && x.length > 0);
   return parts.length > 0 ? parts.join(' · ') : null;

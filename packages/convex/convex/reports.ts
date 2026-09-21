@@ -67,6 +67,20 @@ import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 export const create = mutation({
   args: inlineReportArgs,
   handler: async (ctx, args) => {
+    // The pre-A10-2 replay rule, kept for the Reports that predate it (Phase 02a §6.2 / D30): a
+    // Report written before every create went through a Post carries its key on the *row* and none
+    // on the Post the backfill gave it, so `createPost`'s Post-key lookup misses and the per-Report
+    // check would refuse the retry as a second Post claiming the Report — a lost-ack flush from
+    // before the deploy would park for ever instead of returning the Report it already made.
+    // Author-scoped like every other short-circuit; a stranger's key is still a conflict, below.
+    if (args.idempotencyKey !== undefined) {
+      const profile = await requireContributor(ctx);
+      const existing = await ctx.db
+        .query('reports')
+        .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', args.idempotencyKey))
+        .unique();
+      if (existing && existing.authorId === profile._id) return existing._id;
+    }
     const { reportIds } = await createPost(ctx, {
       ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
       reports: [args],

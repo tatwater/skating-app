@@ -259,8 +259,15 @@ export async function flushDraft(
     // Asked before the uploads, in the words the server would refuse with, so an expired item is
     // surfaced to the skater rather than spending its photos first. The queue carries no hazard
     // ids yet (§9.1, A10-2b), so a hazard cannot satisfy the observation term from here.
-    const refusal = formCreateRefusal(validation.normalized, 0, now);
-    if (refusal !== null) throw new PermanentFlushError(refusal);
+    //
+    // **Not for a draft found in `creating`.** That draft's create was already sent once and the
+    // ack was lost; its photos are spent, and the server's idempotent short-circuit (D30) is the
+    // only thing that can tell "posted at day 6.9, retried at 7.1" from "never posted" — refusing
+    // it here would show an error for a report that is live, and invite a second by hand.
+    if (draft.status !== 'creating') {
+      const refusal = formCreateRefusal(validation.normalized, 0, now);
+      if (refusal !== null) throw new PermanentFlushError(refusal);
+    }
 
     // 3. Upload photos, checkpointing each storageId / photoId the instant it lands (so a partial
     //    failure keeps what uploaded and a retry reuses it — the durable form of web's in-memory

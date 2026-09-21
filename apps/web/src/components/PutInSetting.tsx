@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import {
+  isLeaving,
   resolveShowPutInDefault,
   SHOW_PUT_IN_HEADING,
   SHOW_PUT_IN_LABEL,
@@ -43,7 +44,7 @@ export function PutInSettingView({
 export function PutInSetting() {
   const profile = useQuery(api.profiles.current, {});
   const setDefault = useMutation(api.profiles.setShowPutInDefault);
-  if (!profile || profile.deletionRequestedAt !== undefined) return null;
+  if (!profile || isLeaving(profile)) return null;
 
   return (
     <PutInSettingView

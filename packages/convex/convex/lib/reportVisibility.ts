@@ -85,9 +85,11 @@ export async function redactPutIn(
   ctx: QueryCtx,
   report: Doc<'reports'>,
   viewer: Pick<Doc<'profiles'>, '_id' | 'role'> | null,
+  /** The report's body when the caller already holds it, so the substitute costs no second read. */
+  loadedBody?: Doc<'waterBodies'> | null,
 ): Promise<Doc<'reports'>> {
   if (report.showPutIn !== false || canSeePutIn(viewer, report)) return report;
-  const body = await ctx.db.get(report.waterBodyId);
+  const body = loadedBody !== undefined ? loadedBody : await ctx.db.get(report.waterBodyId);
   if (body === null) return report;
   return { ...report, point: defaultSampleAnchor(body) };
 }

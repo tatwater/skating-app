@@ -10,6 +10,7 @@ import {
   CHANNEL_PREF_LABELS,
   DRIVE_TIME_BANDS,
   effectiveChannelPrefs,
+  isLeaving,
   NOTIFICATION_PREF_LABELS,
   NOTIFICATION_PREF_ORDER,
   type NotificationPrefKey,
@@ -444,7 +445,7 @@ function SwitchSetting({
 function PutInSetting() {
   const profile = useQuery(api.profiles.current, {});
   const setDefault = useMutation(api.profiles.setShowPutInDefault);
-  if (!profile || profile.deletionRequestedAt !== undefined) return null;
+  if (!profile || isLeaving(profile)) return null;
 
   return (
     <SwitchSetting

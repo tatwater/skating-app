@@ -9,6 +9,7 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
+  flushErrorMessage,
   formatSkateTime,
   formCreateRefusal,
   hasFutureSkateTimeError,
@@ -37,7 +38,6 @@ import {
   validateReportInput,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -731,13 +731,10 @@ export function ReportForm({
       router.navigate({ pathname: '/report/[id]', params: { id: reportId } });
     } catch (err) {
       submittedRef.current = false; // creation didn't complete — these uploads are reclaimable again
-      setError(
-        err instanceof ConvexError
-          ? String(err.data)
-          : err instanceof Error
-            ? err.message
-            : 'Could not post your report',
-      );
+      // `flushErrorMessage` reads the sentence out of a `ConvexError`'s `data` — the server's
+      // `stale_report` / `minimum_set` / `invalid_report` refusals are objects, and `String()` of
+      // one is "[object Object]", not words a skater can act on.
+      setError(flushErrorMessage(err));
       setSubmitting(false);
     }
   }

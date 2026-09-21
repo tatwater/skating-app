@@ -241,8 +241,8 @@ export async function redactAgedContent(
   //
   // Exactly the typed-text bucket D62 clears: the Post is where the author's words live now, and
   // the Reports under it keep the observation. Aged on `latestSkateEndTime` — the Post's own clock,
-  // the freshest of its members — with the same both-sides bound and the same `final` rule as the
-  // reports below. The Reports stay in their own category, since a Post-less Report cannot exist
+  // the freshest of its members — bounded the way the reports below are (an equality on the author,
+  // an upper bound on the clock) and under the same `final` rule. The Reports stay in their own category, since a Post-less Report cannot exist
   // but a legacy one still carries its `notes`.
   async function redactPosts(): Promise<string | null> {
     const page = await ctx.db

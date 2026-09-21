@@ -222,7 +222,7 @@ export type PostArgs = Infer<typeof postValidator>;
  * may post) and checks the create-only rules on what this returns.
  *
  * Born with its `postId`: `createPost` inserts the Post first and fills its members in afterward,
- * so every side effect that reads the inserted row (notifications coalesce on the Post) sees it.
+ * so every side effect that reads the inserted row sees a Report that already knows its Post.
  */
 export async function createReportRow(
   ctx: MutationCtx,

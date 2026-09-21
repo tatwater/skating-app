@@ -146,6 +146,9 @@ export const getForReport = query({
   handler: async (ctx, { reportId }) => {
     const report = await ctx.db.get(reportId);
     if (!report || report.postId === undefined) return null;
+    // Gated here as well as on `reports.get`: this is its own public query, and a hidden Report's
+    // id must not be a handle to the Post's words and its siblings.
+    if (report.moderationStatus !== 'visible') return null;
     const post = await ctx.db.get(report.postId);
     if (post?.moderationStatus !== 'visible') return null;
     const siblings: { reportId: Id<'reports'>; bodyName: string; skateEndTime: number }[] = [];

@@ -183,6 +183,8 @@ describe('describeSnow (D194, one line for the sheet and the detail)', () => {
   });
   it('a dusting is a dusting, "no drifts" is not news, and nothing is null', () => {
     expect(describeSnow({ depthCm: 0.5 })).toBe('a dusting');
+    // A typed zero (a pre-A10 report) is no snow, not a dusting.
+    expect(describeSnow({ depthCm: 0 })).toBe('0″');
     expect(describeSnow({ coverage: 'none', drifts: 'none' })).toBe('None');
     expect(describeSnow({})).toBeNull();
   });

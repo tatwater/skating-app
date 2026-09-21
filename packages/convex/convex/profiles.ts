@@ -751,7 +751,7 @@ export const getPublicProfile = query({
         const body = await ctx.db.get(report.waterBodyId);
         // A history card is a served report too — the put-in opt-out is honored here as on `reports.get`.
         return {
-          report: await redactPutIn(ctx, report, viewer),
+          report: await redactPutIn(ctx, report, viewer, body),
           waterBodyName: body?.name ?? 'Unknown water body',
         };
       }),

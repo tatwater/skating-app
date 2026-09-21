@@ -1246,6 +1246,31 @@ describe('reports.create idempotency (Phase 02a §6.2 offline flush, D30)', () =
     expect(all[0]?.idempotencyKey).toBe('draft-abc');
   });
 
+  test('a key on a pre-A10-2 Report (no key on its backfilled Post) still replays to that Report', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    const args = {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      idempotencyKey: 'draft-legacy',
+    };
+    const reportId = await asUser.mutation(api.reports.create, args);
+    // The shape a Report written before every create went through a Post has after the A10-1
+    // backfill: its own key on the row, none on the Post.
+    const legacyPostId = await t.run(async (ctx) => {
+      const report = await ctx.db.get(reportId);
+      if (!report?.postId) throw new Error('seed');
+      await ctx.db.patch(report.postId, { idempotencyKey: undefined });
+      return report.postId;
+    });
+    expect(await asUser.mutation(api.reports.create, args)).toBe(reportId);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(1);
+    expect((await t.run((ctx) => ctx.db.get(legacyPostId)))?.reportIds).toEqual([reportId]);
+  });
+
   test('a different author reusing a key is rejected (never hands back another user report)', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);

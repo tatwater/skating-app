@@ -330,6 +330,14 @@ describe('the create-only rules at flush (A10 §9.4)', () => {
     expect(calls.reports).toEqual([]);
   });
 
+  it('a draft already sent once (found in `creating`) is left to the server’s dedup, not refused here', async () => {
+    const { effects, calls } = makeEffects();
+    const resumed = draftWith({ status: 'creating' });
+    const res = await flushDraft(resumed, effects, NOW + 8 * 24 * 60 * 60 * 1000);
+    expect(res.ok).toBe(true);
+    expect(calls.reports).toHaveLength(1); // the server answers with the existing report (D30)
+  });
+
   it('a draft that says nothing is parked with what to add', async () => {
     const { effects, calls } = makeEffects();
     const res = await flushDraft(draftWith({}, emptyReportForm(NOW)), effects, NOW);

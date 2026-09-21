@@ -6,6 +6,7 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
+  flushErrorMessage,
   formCreateRefusal,
   hasFutureSkateTimeError,
   humanizeEnum,
@@ -32,7 +33,6 @@ import {
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { datetimeLocalToMs, toDatetimeLocal } from '../lib/reportForm';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
@@ -778,13 +778,10 @@ export function ReportForm({
       navigate({ to: '/report/$id', params: { id: reportId } });
     } catch (err) {
       photoDrafts.setCommitted(false); // creation didn't complete — uploads are reclaimable again
-      setError(
-        err instanceof ConvexError
-          ? String(err.data)
-          : err instanceof Error
-            ? err.message
-            : 'Could not post your report',
-      );
+      // `flushErrorMessage` reads the sentence out of a `ConvexError`'s `data` — the server's
+      // `stale_report` / `minimum_set` / `invalid_report` refusals are objects, and `String()` of
+      // one is "[object Object]", not words a skater can act on.
+      setError(flushErrorMessage(err));
       setSubmitting(false);
     }
   }
