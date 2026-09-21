@@ -155,7 +155,8 @@ scoring feeds the Phase 07 merge queue, which until now had nothing flowing into
 - **24–72h** → *aging* (visibly lighter).
 - **> 72h** → *stale* (heavily faded; hidden by default behind a "show older" toggle).
 - A **"still there" confirmation resets the clock** to fresh.
-- **"Gone" reports** (small threshold, e.g. 2 independent; later reputation-weighted)
+- **"Gone" reports** (small threshold, e.g. 2 independent; later reputation-weighted — *the D50
+  amendment of 2026-09-20 gives that its bounds*)
   **archive** the hazard (not hard-delete, so it can resurface if re-reported).
 - Confirmation is **opportunistic** (per D12): on app-open near the hazard, when
   drafting a report on that water body, or via post-hoc Strava-path proximity.
@@ -562,8 +563,10 @@ actual inbox of record. Alert emails deep-link into the `/admin` queue.
   just another server-side action.
 **Boundaries.** Resend is for **app transactional/operator** mail. **Clerk still owns auth
 emails** (verification, magic links, password reset — D26); we don't duplicate those.
-User-facing product email (digests, etc.) stays deferred; in-app `notifications` (D16)
-remain the primary user channel. Wire alongside the D37 admin surface in **Phase 07**.
+User-facing product email arrived in **A08 PR 3** (D174): the digest-class types over Resend
+with a one-click unsubscribe; the inbox (D167) stays the primary channel and mail is a transport
+over the same rows. *(This paragraph said "stays deferred" until 2026-09-20.)* The operator half
+was wired alongside the D37 admin surface in **Phase 07**.
 
 ## D39 — Monorepo tooling: Turborepo
 **Decided.** The monorepo is a **Turborepo** workspace (pnpm workspaces underneath),
@@ -653,9 +656,10 @@ posture around collecting minors' birthdates is flagged for the ToS/legal review
   the hard 16+ minimum server-side (`meetsMinimumAge`, `@skating/core`); minor status is
   derived, so it self-corrects at 18 with no job. `parseDateOfBirth` (mobile) now rejects
   implausibly ancient years (< 1900) so junk dates can't sail past the gate as "very old".
-- **⏳ Still to come:** like the acknowledgment (see D45's status note), the mobile client
-  doesn't yet *call* `upsertFromClerk`, so the client-side age gate is UX-level until the
-  auth-provisioning PR wires it through the enforced mutation path.
+- **Done (status corrected 2026-09-20 — shipped in PR #5, 2026-07-12):** the mobile client calls
+  `upsertFromClerk` from `apps/mobile/app/onboarding.tsx` with DOB + the acknowledgment, so the
+  age gate runs through the enforced mutation path; the mirrors are refreshed by `syncFromClerk`
+  and the A08 `user.updated` webhook.
 - **Done — timezone birthday boundary (was review finding 4):** the signup gate
   (`meetsMinimumAge`) previously compared a **UTC-midnight DOB** against the **current
   instant**, so a user already 16 on their *local* calendar in a timezone ahead of UTC was
@@ -742,13 +746,10 @@ honest, and directly on-mission.
   (only re-stamped when the user accepts a bumped version). So a profile **cannot exist
   without a recorded, current acceptance** — regardless of what any client does.
 - **Done — mobile UI:** the sign-up screen shows the blocking acknowledgment + collects DOB.
-- **⏳ Still to come (auth-provisioning PR):** the mobile client does **not yet call
-  `upsertFromClerk`** — at signup it only *stages* DOB + the acknowledgment in Clerk
-  `unsafeMetadata` (client-writable, read by nothing server-side). So today the age/risk
-  gates are **UX-level on the client**, backed by a ready-and-safe server contract that
-  isn't invoked yet. Wiring provisioning requires the username/displayName collection UI,
-  so it's scoped with that work — the client must pass DOB + the acknowledgment **from the
-  enforced mutation path**, never trusting `unsafeMetadata`. Tracked in roadmap Phase 00.
+- **Done (status corrected 2026-09-20 — shipped in PR #5, 2026-07-12):** the mobile client
+  calls `upsertFromClerk` from the onboarding screen, passing DOB + the acknowledgment through
+  the enforced mutation path; `unsafeMetadata` is client-side staging only, read by nothing
+  server-side. *(This bullet said "⏳ Still to come" until the audit.)*
 
 ## D46 — Lint + format: Biome (repo-wide)
 **Decided.** **Biome** is the single lint + format tool for the whole repo (one
@@ -778,7 +779,9 @@ Newsfeed** (D28) — but does **not** give Report or Bounties their own top-leve
   `/water/:id`) for full detail views — but there are **no top-level `/report` or
   `/bounties` browse pages**: `/` (Map) and `/feed` are expected to cover the browse +
   create need, with these child routes reached from there. Built as the in-place content
-  proves it needs a dedicated view; deferred until we know how complex each gets.
+  proves it needs a dedicated view; deferred until we know how complex each gets. *(Built as map
+  drawers: `/report/:id` and `/water/:id` in Phase 02a, `/hazard/:id` in 09a, `/bounty/:id` in
+  Phase 06 — D42's drawer, not a dedicated page, turned out to be the view.)*
 **Why:** The founder wants the web surface information-dense and powerful (FUI, 00-vision):
 fold the *actions* (report) and *spatial asks* (bounties) into the pages the user is
 already reading, and spend dedicated routes only where identity or depth demands them.
@@ -820,9 +823,12 @@ review-after**" by hiding freshly-created `pending` bodies. `listed` fixes both.
 **Scope.** A **minimal admin `remove`/`restore` mutation lands in Phase 01** — data hygiene
 for curating the fresh OSM import the moment we look at it, and cheap given `listed`
 already exists. The **takedown *request* intake** (a form → a work queue an admin triages)
-rides with the **Phase 07** operator surface (D37), not hand-rolled now.
+rides with the **Phase 07** operator surface (D37), not hand-rolled now. *(Shipped as the
+`takedown` request kind in A07b, D179 — Phase 07 built the queue, A07b the intake.)*
 **Deferred edges (logged, not built):** (a) a landowner's pond **re-created as a user body**
-(D14) — teaching dedup to honor a suppression list is future hardening; (b) the exact
+(D14) — teaching dedup to honor a suppression list is future hardening *(D176 answered most of
+it: a removed body keeps its cell rows at the dormant rung, so match-on-create finds it; the
+explicit suppression list stays an L11 hardening item)*; (b) the exact
 takedown **wording/obligation** is **legal-gated (Q10)** — we ship the mechanism now,
 settle the policy later.
 **Why:** A map that can't be curated fills with unskateable clutter, and a safety app that
@@ -861,6 +867,15 @@ raw material) and uses a soft viewport cap with truncation logging (see D5). The
 Morey from the state view; a score that combines area with (later) popularity and an
 admin-curated boost keeps the map legible at every zoom without under-populating the data.
 
+**Amended 2026-07-23 (Phase 07 decision 1; recorded 2026-09-20).** The "D49-style tuning surface"
+every later decision points at (D52–D57, D69 and the phase docs that cite them as *admin-tunable*
+or *admin-editable in Phase 07*) shipped **read-only**: constants stay in `@skating/core`,
+`/admin/tuning` shows each live value beside the chart that tunes it, and edit means redeploy —
+the redeploy is the review. Only per-row data is editable in-dash (`curatedBoost`,
+`weatherSamplePoints`, `canPost*`, `activeBountyPostLimit`, ban / suspend / role, `bodyFeatures`).
+Re-affirmed in D59 and at A06c's scoping. Every "admin-tunable" sentence downstream of D49 reads
+under this amendment; none is rewritten.
+
 ## D50 — Trust score (reputation signal; the asymmetric stand-in for the removed social graph)
 **Decided (2026-07-15); built in Phase 06 with bounties.** When the follow/friend graph was
 removed (D13), the one benefit worth keeping was **trust** — in a safety-critical, perishable-
@@ -891,6 +906,16 @@ existing model: `reportRatings` (D17) already exists, and corroboration is deriv
 on the same body within a window (no new social edges). See **Phase 06** (`07-roadmap.md`) and the
 `reportRatings` / `pointEvents` notes in `06-data-model.md`.
 
+**Amended 2026-09-20 (founder call) — trust may weight a hazard vote, bounded and asymmetric.**
+D15 and D54 promised "reputation-weighted" confirm and removal thresholds "later (D50)", which
+this decision's hard constraints appeared to forbid. The founder's reading: the constraints stand —
+trust **never gates visibility or ranking** of safety content — but a trusted skater's *vote* may
+count for more, with the lift capped and the removal side held lower than the confirmation side:
+a confirmation up to **~1.5×**, a removal (or `never_existed`) up to **~1.25×** — half the lift,
+because archiving a hazard is the direction a false "all clear" comes from (D3). The numbers are
+to be played with once real confirmation history exists (register: *Trust-weighted hazard votes*).
+Hazard creation still awards no points, so D55's no-double-count rule holds by construction.
+
 ## D51 — Hazard authoring: geometry-per-type, dual paths, both platforms
 **Decided (2026-07-18; built in Phase 09a).** The hazard-drawing UX is designed around the fact that
 most people **cannot** hand-draw an accurately shaped/sized blob on a phone map from what they see on
@@ -913,7 +938,8 @@ the schema and all three **render** in v1, but *authoring* lands in two steps in
    Done + a `bufferMeters` stepper — no vertex dragging, which is what makes it cheap.
 3. **Freeform polygon authoring is deferred** past Phase 09a (schema + render only). It is the expensive
    one precisely because it needs vertex dragging and self-intersection handling, and it is the
-   primitive this decision already calls opt-in/advanced.
+   primitive this decision already calls opt-in/advanced. *(Built in A05b, D67: a vertex editor on
+   web, close-the-ring on mobile.)*
 **Photos are plural (2026-07-21).** Hazards carry `photoIds: ref(photos)[]`, not a single `photoId` —
 the research found photos load-bearing (~40% of corpus posts carry them; "folded ridges are hard to see"
 is a recurring cause of death), and a ridge or a lead often needs two angles to read. This reuses the
@@ -931,7 +957,8 @@ legal (D41); a `TODO(16+)` marker on the create gate is the single place that pa
 **Deferred, designed-for (post-density / Phase 08+):** non-destructive **consensus rendering** (cluster
 same-type hazards in the same place into one footprint while keeping the underlying rows so each ages
 and confirms independently — never average-and-overwrite, which would break lifecycle and let a wrong
-report drag a correct one off-target), and **GPS negative-evidence** (Q11): recent tracks crossing
+report drag a correct one off-target — *built in A05c, D80, with reversible auto-merge*), and **GPS
+negative-evidence** (Q11; *still in the register*): recent tracks crossing
 *through* a reported hazard nudge its *confidence/lifecycle* down (human still confirms removal) — it
 must **never** auto-move, shrink, or clear a safety hazard, because a false "all clear" is the worst
 outcome (D3).
@@ -1052,7 +1079,8 @@ with no cell signal** (the alert is computed and fired locally). Layers:
   hence the latest/biggest privacy call. Decide mechanics at build.
 **Admin-tunable (Phase 07).** Confirm threshold (1 now) and removal threshold (2 "fully healed" now) are
 count/score constants with **no reputation yet**; both must be easily adjustable in `/admin` (D49-style
-tuning surface), and reputation-weighting integrates later (D50).
+tuning surface — *read-only as shipped, D49 amendment*), and reputation-weighting integrates later
+(*the shape is now the D50 amendment of 2026-09-20: ≤1.5× confirmations, ≤1.25× removals*).
 **Why:** Honors D12 and privacy, removes the scary server fan-out, and the on-device cache turns the
 "they'll have no signal" problem into a non-issue for already-cached hazards.
 
@@ -1084,8 +1112,8 @@ deferring so long as Layer 2 comes soon."*).
 when they start (not an always-on background permission), which adds, in one bundle:
 - `expo-notifications` + a local-notification path (no server push, no token registration — the alert is
   computed and fired entirely on-device, so D12 still holds).
-- Background/foreground-service location for the duration of the session only, plus keep-awake, with an
-  obvious persistent "on-ice mode is on" affordance and a one-tap off.
+- Background/foreground-service location for the duration of the session only — *no keep-awake, per the
+  2026-07-21 amendment below* — with an obvious persistent "on-ice mode is on" affordance and a one-tap off.
 - **Directional projection** — path forward from heading + speed, intersect cached hazard buffers, fire
   at time-to-encounter ∈ [30s, 60s], per-session lap-dedup (the original Layer 2 content above).
 - **Server-push-to-a-sleeping-phone** stays separate and later — it is the only variant needing live
@@ -1099,6 +1127,15 @@ only ever been quiet is the most dangerous signal we could emit, and it gets *mo
 foreground-only coverage. So the copy layer states it outright wherever alerting is surfaced or
 configured: **no alert does not mean the ice is clear** (D3). This is not optional polish; it is the
 reason foreground-only is acceptable to ship at all.
+
+### Amendment (2026-07-21, Phase 09b; recorded 2026-09-20) — the Layer 2 founder calls
+
+Five calls made at the 09b build, recorded in its plan doc and never promoted here: **no keep-awake,
+ever** — the screen sleeps at its normal pace and the OS's own location indicator is the "on-ice mode
+is on" affordance; heading is **course-over-ground** from the fix history, not the magnetometer; the
+re-alert cadence is a **user setting** on the dock, not a constant; notifications are **local only**
+(no server push — the D12 line holds); and the re-alert is gated on an *approached* set (enter, then
+leave) rather than distance hysteresis, which spammed. `app.config.ts` carries the first as a comment.
 
 ## D55 — On-ice hazards auto-bundle into the skater's later report
 **Decided (2026-07-21, founder call at Phase 09a kickoff).** A hazard flagged from the ice is a standalone
@@ -1115,7 +1152,9 @@ before `skateEndTime`. Tunable alongside the other Phase 07 constants.
 **Rules.** Always **visible and dismissible**, never silent: attaching changes how the hazard is
 attributed and how it presents in the feed, so it is a shown choice, not a background merge. Gated on
 ownership + same body + not-already-attached, and idempotent. Must not double-count toward D50 points
-once reputation lands. Works offline — the draft holds local hazard ids and resolves them at flush.
+once reputation lands. Works offline — the draft holds local hazard ids and resolves them at flush
+*(not built: the offline draft carries no hazard ids and bundling runs only on the live create path;
+A10-2 §9.1 builds it — register, "On-ice path debts")*.
 **Why:** On the ice you want the fastest possible capture (two taps, no typing, no report); at home you
 want a coherent story. Bundling gets both without asking the skater to re-enter anything, and it turns
 the standalone quick-flag path (D51) from a parallel silo into the front half of the report flow.
@@ -1219,7 +1258,10 @@ generalizes, but the *shape* of each lever must match the abuse it answers — n
   incentive to spam). The fitting lever is therefore a per-user override of that rolling cap
   (`activeBountyPostLimit ?? 3`; `0` ⇒ effectively can't post), which **subsumes** a boolean and allows a
   graduated response. Since the existing cap already does ~all of the work, this is a **noted seam, deferred**
-  until a real spammer earns it — not built speculatively.
+  until a real spammer earns it — not built speculatively. *(Status corrected 2026-09-20: ✅ built in
+  A02, PR #28 — the trigger was overridden at kickoff because 07-2's cap-hit-rate metric already
+  existed to judge it; a sibling mutation in `moderation.ts`, the effective limit read by `BountyForm`
+  on both clients.)*
 - **Shape guardrail:** keep the per-capability-boolean form (plus that one bounty int); do **not** graduate to a
   `postingRestrictions` object/framework for 3–4 fields — that would break the clean `assertCanPost*` pattern
   and is the actual over-engineering risk here.
@@ -3365,6 +3407,8 @@ module implementing D110's four levels and its review-queue predicate — and it
 as three lines of terminal text in a run that had already ended. A **1,388-body review queue** (664
 class-conflict, 512 name-conflict, 159 bay-without-parent, 92 same-source-duplicate) could never be
 opened by anyone, and the per-attribute design that makes the queue workable had no consumer at all.
+*(Surfaced at `/admin/water/review` in PR #39; a decided row still leaves the queue only at the next
+campaign — register, "A07a moderator queues".)*
 
 **2. `inRegionFraction` is stored.** `inRegion` admits on a **single** in-region vertex, which is what
 keeps Beau Lake — most of which is in Québec. The cost of that generosity is that the corpus also
@@ -5040,7 +5084,9 @@ stops being plainly non-commercial, at which point the free license no longer co
 
 **⚠ There is no request counter anywhere in the weather path today** — no token bucket, no rate
 limiter, no metric. Trigger (1) cannot fire until one exists, so the counter is **in scope for A06h**,
-not deferred.
+not deferred. *(Shipped in A06h PR 1: `lib/apiMeter.ts` → `externalApiCalls`, read by
+`iceCalibration.apiCallBudget` on `/admin/ice-calibration`; the 25-site season checker's fetch is the
+one call site it does not meter.)*
 
 **Related:** D152, D154, [`00-vision`](./00-vision.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
 
@@ -5782,7 +5828,8 @@ zoom bucket. That is the founder's *"I'd hate to not have a body someone cares a
 on `externalId` rather than a column on `waterBodies`: coverage is a property of the **tileset**, so
 re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped water body cannot leave a stale
 flag claiming a survey we no longer draw. It records the **2,022** bodies that produced a visible
-contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d.**
+contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d** — they
+fired in the 2026-08-14 `backfillCells` run.
 
 **Related:** [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
 

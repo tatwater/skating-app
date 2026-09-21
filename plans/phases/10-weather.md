@@ -244,7 +244,9 @@ must not make a real hazard disappear on a forecast's say-so.
 plain `elapsed`). Weather trouble can never make a hazard *less* visible.
 
 **Admin-tunable, Phase 07.** The multiplier constants ship as tuned `@skating/core` defaults and get
-lifted behind `/admin` in Phase 07, same pattern as the D52 `HAZARD_DECAY` tiers (D49).
+lifted behind `/admin` in Phase 07, same pattern as the D52 `HAZARD_DECAY` tiers (D49). *(Shipped
+read-only — D49 amendment; the "refresh now" button §5 asks for was not built: the skater path can't
+show weather more than an hour old by the cache key, and the cron's lag can only slow decay.)*
 
 **Magnitude calibration.** Signs are locked; magnitudes are literature/anecdote defaults (Ashton's 15
 FDD/inch, thaw ~30% faster) and are **explicitly tunable** — refit against real in-app hazard rows once
@@ -427,10 +429,12 @@ No backfill needed anywhere.
   - **Do this when** the decay model is proven and we want to sharpen it — the manual bodyFeature is the
     Phase 10 deliverable; the depth data is a follow-on.
 - **Ridge-crossing "switch sides" hinting** — the richer v2 of the `ridge_crossing` passage marker
-  (suggest crossing spots where overlap switches). Deferred from Phase 09a (research §8).
+  (suggest crossing spots where overlap switches). Deferred from Phase 09a (research §8). *(Replaced
+  by A05a's crossing-lifecycle inversion, D64.)*
 - **Shore-band "snap to shoreline" affordance** — "thin ice along the shore" / "ice edge" hazards are
   linear-along-shore; a one-tap snap-to-shoreline was logged in the hazard research (§4) as a Phase-10
   idea, but it's a geometry/UX feature, not a weather one. Log; build with a later hazard-authoring pass.
+  *(Built in A05b, D67.)*
 - **Decay-magnitude refit from a real in-app corpus** — once real hazard rows exist, refit the
   `HAZARD_DECAY` constants *and* the `decayMultiplier` magnitudes against observed confirm/re-report
   intervals (research §8). The signs are locked; the numbers are tunable defaults.
@@ -449,16 +453,21 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
   this entry didn't see (a `pointEvents` scan per clustered report, an N+1 multiplying the first) — and
   `bountyFreshnessInputs` isn't itself a scan; it reads through `recentReports`, which is where the cap
   went. See [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md).
-- **`weatherCache` TTL / prune.** No pruner today; a new row per `(samplePoint, windowStart, hourBucket)`
+- **`weatherCache` TTL / prune.** ~~No pruner today~~ *(A03: `pruneWeatherCache`, a 6 h cron with 24 h
+  retention, and `pruneForecastCache`)*; a new row per `(samplePoint, windowStart, hourBucket)`
   accumulates as the `now`-bucket advances. It's a *disk-growth* concern, not staleness (served summaries
-  are ≤1 hour old by the bucket key). A tiny prune cron (drop rows older than N days) clears it.
+  are ≤1 hour old by the bucket key).
 - **Sample-point admin surface (Phase 07).** `waterBodies.weatherSamplePoints[]` is wired end-to-end
   (cron + strip now resolve the **same** nearest point via `lib/sampling`, so they can't diverge), but
   nothing populates it. The Phase-07 admin UI should let a mod place/preview/bundle sample points on a
-  flagged giant (Champlain, Winnipesaukee) on a map, spaced at grid resolution.
+  flagged giant (Champlain, Winnipesaukee) on a map, spaced at grid resolution. *(A02 shipped the editor
+  — `suggestSamplePoints` + `setWeatherSamplePoints` on `/admin/water/$id`; still unpopulated. Champlain
+  is answered by sub-areas (A06h §8); Memphremagog and Connecticut River Reservoir are owed a grid —
+  register.)*
 - **Contradiction re-flag bundling.** The auto-flag dedups only on an *open* flag, so a user parked above
   threshold files a fresh `/admin` row on each further contradiction after a mod resolves the prior one.
-  Bundle repeated auto-flags into one queue entry in the Phase-07 moderation surface. (The escalation
+  Bundle repeated auto-flags into one queue entry in the Phase-07 moderation surface *(built in A02:
+  `lib/autoFlag.ts`, `occurrences` / `supersedesFlagId`, a 30 d cooldown)*. (The escalation
   *targeting* was fixed in the review — §7b now escalates the un-corroborated minority, order-independent,
   and self-corrects — so this is purely the mod-queue UX, not a correctness item.)
 

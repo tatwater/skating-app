@@ -23,7 +23,7 @@
 > **Fast-follow — ✅ done.** The deferred **D54 Layer 2** on-ice live-alerting bundle (plus the smaller
 > deferred threads: `?action=confirm`, the reporter/author line, clip-footprint-to-body, and auto-suggest
 > skate times) shipped as its own build plan — **[`phases/09b-on-ice-alerting.md`](./09b-on-ice-alerting.md)**,
-> ✅ **complete 2026-07-22** (branch `phase-09b-on-ice-alerting`; pending PR + dev deploy). The deferred
+> ✅ **complete 2026-07-22** (PR #21, merged the same day; on dev). The deferred
 > items below are annotated inline with what 9.5 delivered; **silent-push stays deferred** even so.
 >
 > **Prerequisites already in place.** The Phase 02a §6.2 offline substrate hazards depend on is **built**: the
@@ -58,7 +58,8 @@ Short form here; full rationale in the decisions doc.
 - **D54 — On-ice alerts, client-side.** Server syncs hazard *data*; each phone evaluates its own GPS.
   Layers 0–1 (silent sync + on-ice proximity alert whose confirm-gate *is* the confirmation) ship in
   v1; Layer 2 (directional, opt-in live "on-ice mode") + server-push-to-sleeping-phone deferred.
-  Confirm/removal thresholds (1 / 2) are admin-tunable, no reputation yet.
+  Confirm/removal thresholds (1 / 2) are admin-tunable *(read-only as shipped — D49 amendment)*, no
+  reputation yet *(the D50 amendment of 2026-09-20 sets its bounds)*.
 
 ---
 
@@ -315,10 +316,9 @@ The modules:
 - **Hazard detail** — type, age/freshness, confirmCount, description, **photos**, and the **three-tier
   confirm control** (Still here / Healing but unsafe / Fully healed & safe; relabeled for
   `ridge_crossing`) + flag. The "fully healed" verdict is de-emphasized and confirmed — it's the only
-  destructive one (D3). **Not shipped: the reporter/author line.** The component *supports* a
-  `reporterName` prop (rendered "… by \<name\>" when present), but the backend's `hazards.get` `toView`
-  returns **no reporter**, so the container leaves it undefined and the author line is simply omitted —
-  the block-respecting author display is a remaining thread, not a shipped feature.
+  destructive one (D3). **Not shipped here: the reporter/author line** — the component *supports* a
+  `reporterName` prop, but this phase's `hazards.get` returned no reporter. *Shipped in Phase 09b
+  (PR #21, `106cd7d8`), and Phase 06 added the `TrustAvatar`.*
 - **Auto-bundle prompt (D55)** — when the report form opens for a body where the author has unattached
   hazards from the matching skate window, it offers to include them (pre-checked, itemized, dismissible).
 - Advisory, non-authoritative copy throughout (D3); a11y + dark mode (D34).
@@ -393,8 +393,8 @@ modals** — blocking the map of someone moving on ice is unacceptable.
 
 ### Confirming
 Two entry points: the banner above, or tapping the pin → a hazard drawer (the same bottom sheet as
-water body/report detail) with type, freshness copy, photos (no reporter line yet — `hazards.get` returns no
-reporter; see the web detail note above), and three stacked full-width buttons —
+water body/report detail) with type, freshness copy, photos (the reporter line shipped in 09b), and three
+stacked full-width buttons —
 **Still here** / **Healing — still unsafe** / *Fully healed & safe*. The third is deliberately
 de-emphasized and gets a confirmation step: it is the only destructive verdict (2 votes archive the pin),
 and the asymmetry is the point (D3 — a false all-clear is the worst outcome). Relabels to *Still
@@ -542,6 +542,7 @@ evidence rather than re-deriving it:
   needing live location *uploaded*, hence the biggest privacy call.
 - **Freeform polygon authoring** (call 5) — schema + render ship in v1; the vertex-dragging editor does
   not. Revisit if real usage shows people wanting shapes neither a circle nor a polyline can express.
+  *(Built in A05b, D67: a vertex editor on web, close-the-ring on mobile.)*
 - **Per-body summary cards on the map at zoom** — deferred to the roadmap's "Later / deferred" with a
   design sketch (needs cross-viewport aggregation + a denormalized per-body summary; call 6).
 - **Consensus rendering** (non-destructive cluster of same-type hazards) + **GPS negative-evidence**
@@ -556,7 +557,9 @@ evidence rather than re-deriving it:
   D12, and iOS throttles it — a shaky base for safety content), so the recommendation below stands. It is
   not
   a Phase 09a loose end; it's the first user of a push stack this project has deliberately deferred
-  twice. Concretely, the repo has **no push infrastructure at all**: `expo-notifications` isn't
+  twice. *(The push layer has since shipped — A08 PR 3, D174: tokens, an Expo sender, receipts, email.
+  What remains for silent push is the privacy decision, iOS throttling and a background handler; the
+  paragraph below is the state at the time.)* Concretely, the repo has **no push infrastructure at all**: `expo-notifications` isn't
   installed (build-kickoff call 4 explicitly kept new native deps out of v1), there are no device
   push tokens, no APNs/FCM credentials, and `notifications.ts` says outright that "push delivery
   itself is deferred" — Phase 03 and Phase 04 both land **in-app rows only**, and Phase 04's
@@ -661,8 +664,9 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
   "hazard ahead" 30–60s out via an opt-in live-position "on-ice mode" — a conscious safety exception to
   D12) and **server-push-to-a-sleeping-phone** are **deferred/designed-for**.
 - **Deferred, designed-for:** non-destructive **consensus rendering** (cluster same-type hazards, keep
-  the rows) + **GPS negative-evidence** (Q11 — tracks through a hazard nudge its *confidence*, never
-  auto-clear it). Both post-density / Phase 08+.
+  the rows — *built in A05c, D80, with reversible auto-merge*) + **GPS negative-evidence** (Q11 — tracks
+  through a hazard nudge its *confidence*, never auto-clear it — *still in the register*). Both
+  post-density / Phase 08+.
 - **Done:** hazards are drawn (right primitive per type), age per type, can be confirmed via the
   three-tier vote / cleared; permanent body features persist without re-marking; skaters on that ice get
   a client-local alert (offline-capable) gated behind one confirmation.

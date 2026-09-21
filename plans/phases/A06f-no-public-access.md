@@ -5,7 +5,7 @@ expires, or a body that vanishes — and needed a third: **on the map, and marke
 
 > **Status:** ✅ **COMPLETE — built 2026-08-16, review fixes 2026-08-17, merged as PR #44
 > (`phase-n6e-n6f-access-and-qol`) 2026-08-17; the follow-up that closed the phase's one gap merged
-> as PR #56 on 2026-09-16.** On dev since #44; #56's client changes ride the next deploy. Prod
+> as PR #56 on 2026-09-16.** On dev since #44; #56's server side since the A07b deploy (2026-09-17). Prod
 > deferred, as every phase since 2.5. Suites at #44: core 1,945 · convex 1,303 · web 352 · mobile 97;
 > at #56: web 539 · mobile 111, `lint` and `check-types` clean on both.
 > **This document was written after the fact (2026-09-14, PR #56).** The phase shipped without a
@@ -390,7 +390,8 @@ red run teaches anyone is to re-run it.
   member on the phone could not file, see the pending count, or read a ruling's note, and the phone
   is where a skater is standing when they get turned away.
 - **A live moderator render has not been verified.** MCP cannot authenticate as a moderator, so
-  ruling on Tomhannock (`m9761xrcwchdgky9g8gxvyz8hx8ajcz3`, seeded on dev) via `/admin/flags` and
+  ruling on Tomhannock (`m9761xrcwchdgky9g8gxvyz8hx8ajcz3`; the seeded flag has since been cleared —
+  re-file before ruling) via `/admin/flags` and
   the drawer's three states were reasoned about rather than seen — and #56's mobile section has not
   been on a device. Put-in placement *was* click-tested by hand. Both want a look on the next
   preview build; neither is code.

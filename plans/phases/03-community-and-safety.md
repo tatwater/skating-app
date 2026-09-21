@@ -57,7 +57,8 @@ These refine the roadmap bullets; they are the "don't code into a corner" calls.
   to the reply tier). A moderation-hidden or blocked-author parent renders as a `[hidden]`
   placeholder so its visible child replies don't disappear (D25).
 - **No notification delivery in this phase.** The `report_commented` type is *documented* now
-  (see below) so it isn't forgotten; delivery infra lands with the broader notifications work.
+  (see below) so it isn't forgotten; delivery infra lands with the broader notifications work
+  (A08, D167/D174).
 
 ---
 
@@ -148,8 +149,8 @@ Every mutation gates at the trust boundary (D37): `requireProfile` for active-ac
   `requireRole('moderator')`, patches the target's `moderationStatus` and writes exactly one
   `moderationActions` row (`hide`/`remove`/`restore`). `resolveFlag({ flagId, resolution, reason })`
   sets the flag `status` + writes an audit row. Hiding a report should also hide its dependent
-  comments' visibility at read time (they hang off a hidden report) — decide: cascade vs. read-time
-  short-circuit (lean read-time: a comment on a hidden report is unreachable anyway).
+  comments' visibility at read time (they hang off a hidden report) — decided and built read-time:
+  a comment on a hidden report is unreachable (`moderation.ts` header; `comments.listThread`).
 - **`profiles.ts` (extend):**
   - `upsertFromClerk`: also mirror `identity` picture → `profileImageUrl` (decision #2).
   - `updateProfile({ bio?, homeTownLabel?, profileVisibility? })`: `requireProfile`; reject a minor

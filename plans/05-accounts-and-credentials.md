@@ -34,14 +34,14 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | **GitHub** — the repo, Actions, Greptile app | CI, review | ✅ | — | Actions secret `FONTAWESOME_NPM_AUTH_TOKEN` | Greptile reviews are metered — one PR per phase |
 | **FontAwesome Pro** 💰 one seat | icons | ✅ | — | npm token in `~/.npmrc` (local) + EAS envs + the Actions secret | [`docs/fontawesome-pro.md`](../docs/fontawesome-pro.md); the one recurring paid line item |
 | **Figma** | the design system | ✅ | — | — | exports via the SVG pipeline; no key in the repo |
-| **Resend** | transactional email | ✅ dev, 2026-09-16 | ⬜ prod needs its own key | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `OPERATOR_ALERT_EMAIL` on Convex | sending domain `skating.teaganatwater.com`, CNAME-verified — **no MX, on purpose** (§ 3d) |
+| **Resend** | transactional email | ✅ dev, 2026-09-11 | ⬜ prod needs its own key | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `OPERATOR_ALERT_EMAIL` on Convex | sending domain `skating.teaganatwater.com`, CNAME-verified — **no MX, on purpose** (§ 3d) |
 | **Squarespace** — DNS for `teaganatwater.com` | Resend's CNAMEs | ✅ | — | — | founder, 2026-09-17; the place to look when mail stops verifying |
 
 ### Infrastructure we operate
 
 | Account | For | Dev | Prod | Credential → where it lives | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **Cloudflare** — R2 | every static artifact and raw archive | ✅ | ⬜ `--prod` upload path exists, never run | one R2 API token per script, in gitignored config: `scripts/basemap/RCLONE_SETUP.md`, each `mirror-r2.sh`'s rclone remote, Fly's staged `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` | buckets: `skating-basemap` (basemap ×2, bathymetry, imagery archive; public `r2.dev` subdomain) · `skating-raw-lake-osm` · `skating-raw-lake-depth` · `skating-raw-wind-climate` |
+| **Cloudflare** — R2 | every static artifact and raw archive | ✅ | ⬜ no `prod/` key — `upload-r2.sh <file> prod/<dated-key>` per archive, or point prod at the dated `dev/` objects; the custom domain + cache rule are still on `r2.dev` | one R2 API token per script, in gitignored config: `scripts/basemap/RCLONE_SETUP.md`, each `mirror-r2.sh`'s rclone remote, Fly's staged `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` | buckets: `skating-basemap` (basemap ×2, bathymetry, imagery archive; public `r2.dev` subdomain) · `skating-raw-lake-osm` · `skating-raw-lake-depth` · `skating-raw-wind-climate` |
 | **Fly.io** 💰 ~$5/mo when cutting | the imagery granule box, per-job Machines | ✅ app `skating-imagery`, region `sjc` | — | `FLY_API_TOKEN` local; `R2_*` + `AWS_*` (anonymous Earth Search reads) staged on the app | read the imagery README's *six ways to get this wrong* before any `fly` command; secrets are `--stage`d and stay "Staged" forever, correctly |
 
 ### Data and API keys
@@ -50,7 +50,7 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | --- | --- | --- | --- | --- |
 | **OpenRouteService** (HeiGIT) | drive-time isochrones (Phase 04), `foot-hiking` approaches (A06d) | ✅ | `ORS_API_KEY` on Convex; the ETL reads the same key | portal is <https://account.heigit.org>; measured quotas in § 3a |
 | **NREL WIND Toolkit** | winter wind roses | ✅ | `WIND_TOOLKIT_API_KEY` + `WIND_TOOLKIT_EMAIL`, local `.env` in `scripts/wind-climate` | free, instant at <https://developer.nlr.gov/signup/>; the host moved from `developer.nrel.gov`, hence the variable name |
-| **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | ⚠ **callback domain not yet set** to the Convex `.site` host — no real OAuth round-trip has run; new apps carry an athlete cap until expansion is requested |
+| **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | callback domain `agile-bee-397.convex.site` — confirmed on the dashboard 2026-09-20; athlete cap lifted to 10 the same day (new apps start single-player); no real OAuth round-trip has run yet |
 
 ### No account, by design
 
@@ -145,8 +145,9 @@ backend, so it needs no deployment credential.
 
 **Secrets rule:** client secrets (Clerk secret, Strava secret, Resend, ORS, Expo token) live in
 Convex env vars, never in a client bundle; `.env.example` files document names, never values; the
-Convex MCP server has `envGet` / `envSet` disabled (⚠ `envList` returns values, not just names —
-treat it as a secret-reading tool). **Public-by-design identifiers** — deployment names, the Clerk
+Convex MCP server has `envGet` / `envSet` / `envRemove` / `envList` disabled (`envList` returned
+values, not just names — disabled 2026-09-20; "is `X` set yet?" is `pnpm exec convex env list`,
+whose output is also values). **Public-by-design identifiers** — deployment names, the Clerk
 instance domain, publishable keys — may appear in docs where they help tell dev from prod: they ship
 in every client bundle, and the deployment URL grants nothing on its own (every function checks
 auth). Nothing else does; an identifier that doesn't help someone act (an OAuth client id, a
@@ -239,8 +240,10 @@ Every line is a provisioning act, not code; the ordered checklist is
 2. **Convex** — the first `convex deploy` (needs a deploy key); every § 2a variable on prod; the
    `--prod` corpus load and `backfillCells`.
 3. **Resend** — a prod API key; the three email vars.
-4. **Cloudflare R2** — `upload.sh … --prod`, then the prod tile URLs on Vercel and in EAS
-   `production`.
+4. **Cloudflare R2** — `upload-r2.sh … prod/<key>` for each of the four archives (regional, world,
+   bathymetry, imagery base) or reuse the dated `dev/` objects, then all four URLs per surface on
+   Vercel and in EAS `production`; a Cloudflare zone for the custom domain (`upload.sh --prod` is
+   the retired Convex-storage host).
 5. **Expo / EAS** — fill the `production` environment; `EXPO_ACCESS_TOKEN` on prod Convex.
 6. **Strava** — the callback domain on the API app; `WEB_APP_URL` on prod.
 7. **Sentry** — prod DSNs if they're to be separate projects (or keep one per surface).

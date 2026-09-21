@@ -22,15 +22,15 @@ L13).
 
 | Source | Obligation | Rendered |
 | --- | --- | --- |
-| OpenStreetMap (outlines, boundaries, access features, the basemap) | **ODbL** — "© OpenStreetMap contributors", linked; share-alike bites only if we *publish* the derived database (L10) | every map view |
+| OpenStreetMap (outlines, boundaries, access features, the basemap) | **ODbL** — "© OpenStreetMap contributors", linked; share-alike bites only if we *publish* the derived database (L10) | every map view, as plain text — the copyright link is owed (register: *Data credits the apps don't render*) |
 | Open-Meteo | attribution; free tier is **non-commercial** (L13, D158) | every weather strip and panel |
 | Copernicus Sentinel data | free, full and open **with attribution** ("Contains modified Copernicus Sentinel data") | the imagery reveal and scrubber |
 | Each bathymetry agency | the credit line in its service descriptor (`copyrightText`), captured in the manifest and re-verified by `bathymetry verify`; VCGI's "Soundings digitised from NOAA nautical charts…" is an agreed wording | the contour layer's credit |
 | ALSC, NYSDEC CSLAP | **no published terms** — credited, never assumed permissive (L16) | the depth line's source |
 | Strava | brand guidelines wherever Strava is named: "Powered by Strava", the official "Connect with Strava" asset, approved marks (L7) | the connect / push surfaces |
-| US federal (NHD, 3DHP, GNIS, 3DEP, NAIP, NWS, TIGER), Natural Earth, GLOBathy (CC0) | public domain — credit as courtesy | the depth/elevation/imagery source lines |
-| HydroLAKES | CC-BY 4.0 | the depth line's source |
-| NREL WIND Toolkit | open data, API key; credit as courtesy | the wind rose |
+| US federal (NHD, 3DHP, GNIS, 3DEP, NAIP, NWS, TIGER), Natural Earth, GLOBathy (CC0) | public domain — credit as courtesy | NAIP and NWS rendered; GLOBathy as the depth label; NHD / 3DHP / GNIS / TIGER / Natural Earth / 3DEP not yet (courtesy; register) |
+| HydroLAKES, LAGOS-US | CC-BY 4.0 | the depth line names the dataset; the CC BY credit (`requiredDepthCredits`) is not rendered yet (register) |
+| NREL WIND Toolkit | open data, API key; credit as courtesy | not yet — the wind rose names the grid cell, not NREL (register) |
 
 ---
 
@@ -85,7 +85,7 @@ Every depth carries its source, and the drawer says *measured* or *estimated* ac
 | 1 | operator entry (`/admin/water/:id`) | a published chart or local knowledge | mean + max | — |
 | 2 | **state agency surveys** (the bathymetry sources below, read as soundings) | a boat and a depth sounder — 3,033 measurements | max (+ mean where surveyed) | per agency |
 | 3 | **NYSDEC CSLAP** (Citizens Statewide Lake Assessment Program) | volunteer sampling through 2024; 278 lakes | mean only | no published terms |
-| 4 | **LAGOS-US DEPTH v1.0** (EDI) | ~65 compiled monitoring programs; > 1 ha | 17,675 max · 6,137 mean | ⚠ confirm the EDI rights statement |
+| 4 | **LAGOS-US DEPTH v1.0** (EDI) | ~65 compiled monitoring programs; > 1 ha | 17,675 max · 6,137 mean | CC BY 4.0 — the fetcher refuses to run if the served rights statement differs (L16) |
 | 5 | **Adirondack Lakes Survey** 1984–87 | one survey, 1,345 ponds, pre-GPS coordinates (depth only — the coordinates are ±340 m) | max + mean | no published terms; scraped once, serially, archived |
 | 6 | **HydroLAKES v1.0** `Depth_avg` | volume / area; ≥ 10 ha | mean | CC-BY 4.0 |
 | 7 | **GLOBathy** `Dmax` | a random forest over shoreline / area / elevation; validated on 1,503 lakes globally | max | CC0 |
@@ -161,7 +161,7 @@ season-two decision with a written trigger (D158).
 | Source | Role | Terms |
 | --- | --- | --- |
 | **Sentinel-2 L2A** and **Sentinel-1 GRD** via **AWS Earth Search** (`earth-search.aws.element84.com`, anonymous STAC; S1 from the AWS open-data bucket) | a season of passes per body, cut to its outline on Fly, published as masked raster PMTiles on R2; the freeze-up scrubber | Copernicus: free, full, open, with attribution; AWS open data: no account |
-| **USGS / The National Map — NAIP** (`basemap.nationalmap.gov`, `USGSImageryOnly`) | the aerial reveal — ~0.6 m summer orthoimagery, for reading *access*, never ice | public domain, no key, no quota; grid-snap every URL (a 29 s cold render otherwise) |
+| **USGS / The National Map — NAIP** (`imagery.nationalmap.gov`, `USGSNAIPPlus` `exportImage`, behind CloudFront) | the aerial reveal — 0.3 m summer orthoimagery (D147), for reading *access*, never ice; web only — mobile has no aerial tier (register) | public domain, no key, no quota; grid-snap every URL (a 29 s cold render otherwise) |
 
 *Considered:* **Copernicus Data Space (CDSE)** — serves both missions from one place, but needs an
 account, sits in Europe, and Earth Search needed neither; the Sentinel Hub–compatible API's 10k
@@ -175,7 +175,7 @@ rejected: the trigger is the free imagery seeing real use **and** a freeze event
 demonstrably missed. Full entry: [`research/imagery-and-weather-vendors.md`](./research/imagery-and-weather-vendors.md)
 § 16. **Esri World Imagery**
 (off-platform use restricted), **Mapbox / Maxar** (metered per tile), **state orthoimagery** (five
-integrations for a marginal gain over 0.6 m), **tasked commercial imagery** (~$200–400 per body per
+integrations for a marginal gain over 0.3 m), **tasked commercial imagery** (~$200–400 per body per
 capture). The physics is the real limit (D147): NAIP will never show ice, and 10 m Sentinel can't show
 a 1–3 m ridge.
 
@@ -229,11 +229,13 @@ Strava so recording here costs them nothing they already had. Built in Phase 08 
 `convex/http.ts` and `oauthStates`, the upload action, a sandbox upload still owed.
 
 **Brand checklist** (build-time acceptance criteria; re-verify against current guidelines before launch):
-- [ ] "Connect with Strava" uses Strava's official button asset — never hand-rolled.
-- [ ] "Powered by Strava" wherever Strava is named as the destination.
-- [ ] Marks in approved colors and clear space; no implied endorsement.
-- [ ] No competing segment / leaderboard features; respect storage and retention limits; delete on
-      termination.
+- [ ] "Connect with Strava" uses Strava's official button asset — never hand-rolled. *(Still a
+      text button in brand orange; register: *Data credits the apps don't render*.)*
+- [x] "Powered by Strava" wherever Strava is named as the destination (`StravaConnect.tsx`).
+- [x] Marks in approved colors and clear space; no implied endorsement (`STRAVA_BRAND_COLOR`).
+- [x] No competing segment / leaderboard features; respect storage and retention limits; delete on
+      termination — N/A by construction (no Strava data is displayed); tokens are deleted on
+      disconnect, though `/oauth/deauthorize` is not yet called (register).
 
 **Cross-user display, the stance:** display comes from tracks *we own* — the native recorder, a GPX
 the skater imported, or (later) a watch provider whose terms permit it — gated by D58

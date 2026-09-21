@@ -33,8 +33,9 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   a QA gap and stay conservative in the iOS background-mode copy.
 - **Push credentials + store credentials.** ~~Remote push delivery — no token registration, no
   APNs/FCM credentials, no server sender.~~ **Built in A08 PR 3 (D174):** token registration, an Expo
-  push sender with receipt handling, and email. What remains is the founder's: the FCM key +
-  `google-services.json` (Android, now) and the APNs key (iOS, `eas credentials`). **Silent
+  push sender with receipt handling, and email. ~~What remains is the founder's: the FCM key +
+  `google-services.json` (Android, now) and the APNs key (iOS, `eas credentials`).~~ **Both in place
+  2026-09-14 (A08 PR 3).** **Silent
   background-refresh push to a closed app** (D54) is still deferred: it needs a privacy decision (the
   biggest departure from D12) *plus* accepting that iOS throttles silent pushes at its discretion — a
   shaky base for safety content.

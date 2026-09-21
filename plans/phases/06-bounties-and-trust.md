@@ -19,7 +19,7 @@
 > convex 348 · web 137 · mobile 54 tests, all typecheck + biome clean). Bounties, the boost-only trust
 > score, polymorphic thumbs, badges, the class chip / `TrustAvatar` ring, and the recommended
 > filter-breaking feed all ship on **web + mobile**. Dev-only; **prod deferred** (same posture as phases
-> 3–5). In-app notification rows only — **push delivery stays deferred** repo-wide.
+> 3–5). In-app notification rows here; the push/email transports are A08's (D174).
 >
 > **Shipped-vs-plan deltas (logged so they aren't lost):**
 > - **Trust class is derived server-side** for the many-author read surfaces (feed cards, comments,
@@ -52,7 +52,8 @@ D3/D13 hard constraints they all inherit.
 
 Everything below was settled with the founder on 2026-07-21. Point weights, windows, and thresholds
 ship as **tunable constants in one file** (single-sourced the way D49's display curve is), so the
-Phase 07 admin UI can bind controls to them and the founder can retune without an engineer. The
+Phase 07 admin UI can bind controls to them and the founder can retune without an engineer *(as
+shipped, Phase 07's control-room is read-only — D49 amendment; retuning is a redeploy)*. The
 **backfill script (§2)** recomputes every derived value from the ledger, so retuning mid-alpha is safe.
 
 ### Trust score (D50) — reputation model
@@ -355,7 +356,7 @@ their consumers:
 - **Admin tuning UI** for weights/windows/thresholds/bounty-lifetime — Phase 07; Phase 06 ships them as
   single-sourced constants + the backfill replay.
 - **"This never existed" hazard confirmation verdict** — deferred (would touch `deriveHazardLifecycle`);
-  polymorphic thumbs cover the thumbs-down need for now.
+  polymorphic thumbs cover the thumbs-down need for now. *(Shipped as `never_existed` in A05a, D65.)*
 - **Per-hour-of-browsing recommended pacing** — start per-day; add session pacing only if too sparse.
 - **Server-tracked recommended caps/dedup (decision 15 stateful half)** — Phase 06 ships `feed.recommended`
   **stateless** (`selectRecommended` caps ≤2 bodies per fetch). The per-user impressions store +
@@ -379,7 +380,7 @@ their consumers:
   filters in JS (fine at alpha). A dedicated bounties **geospatial** instance is only needed if the live
   open-bounty set ever grows past the `OPEN_BOUNTY_SCAN_CAP` (200) — and unlike `listInViewport` it would
   degrade gracefully (logged truncation) long before crashing.
-- **Push delivery** — deferred repo-wide; Phase 06 bounty/rating notices are in-app rows.
+- **Push delivery** — deferred repo-wide; Phase 06 bounty/rating notices are in-app rows → A08 PR 3 (D174).
 - **Prod cutover** — deferred with the rest of Phases 03–05.
 
 

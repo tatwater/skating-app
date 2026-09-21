@@ -37,5 +37,6 @@ live-OAuth hazard attached, so it should ride a phase that has reason to touch a
 likely the `@clerk/clerk-expo` → `@clerk/expo` Core 3 migration, which is separately unavoidable
 (the package is deprecated outright) and already lands in the same files.
 
-> The `@clerk/clerk-expo` → `@clerk/expo` migration this rides on has a row in
-> `03-tech-stack-options.md` § Deferred tech — flip it when it lands.
+> The `@clerk/clerk-expo` → `@clerk/expo` migration this rides on has its own row in the roadmap's
+> deferred register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it), beside
+> this doc's — flip both when they land.

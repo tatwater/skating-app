@@ -14,4 +14,5 @@ Phase 04 ships drive-time on the
   request. **Do this when** the 90-min band's accuracy matters or hosted quota bites; until then the
   radius fallback is fine for the outer, aspirational ring. *(Context: Phase 04 discussion 2026-07-17.)*
 
-> Register row: `03-tech-stack-options.md` § Deferred tech — flip it when this lands.
+> Register row: *Self-hosted ORS* in the roadmap's deferred register (`07-roadmap.md`;
+> `03-tech-stack-options.md` § Deferred tech mirrors it) — flip it when this lands.

@@ -46,8 +46,8 @@ prose `Phase A06e`, branch `phase-a06e-<slug>`, commit scope `feat(a06e):`.
 | Era | Prefix | Range | What it was |
 | --- | --- | --- | --- |
 | the roadmap | *(none)* | `00` – `10` | the scaffold: every feature the product needed to exist |
-| enrichment | `A` | `A01` – `A09` | data, depth, imagery, access, weather, notifications — the app knowing its water bodies |
-| launch readiness | `B` | `B01` – … | the current era |
+| enrichment | `A` | `A01` – `A10` | data, depth, imagery, access, weather, notifications, reporting — the app knowing its water bodies |
+| launch readiness | `B` | `B01` – … | the next era |
 
 Rules that fell out of the history and are worth keeping:
 
@@ -97,6 +97,11 @@ a phase doc fails the build.
   (`unrecognised` hides past `recognise`; `judgement`, `artefact`, `ageing`, `centimetre` were never
   on the list), and a regex literal is code to a tokenizer — check by hand any regex that parses
   third-party text.
+
+Nothing here is code; where a doc and the code disagree, the code is right and the doc is the bug —
+`06` maps `schema.ts` rather than restating it, and `05` maps the deployments, each with a test
+that says so. The deferred register in `07` is the one list of what is deliberately not done;
+`03` § *Deferred tech* mirrors its stack-shaped rows.
 
 ### Renumbering pass
 

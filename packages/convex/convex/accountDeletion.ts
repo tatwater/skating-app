@@ -502,8 +502,10 @@ async function lockAccount(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<
  *
  * Every table here is either indexed by user or (blocks) by both directions of the pair. What's
  * deliberately *absent* is as much the point as what's present: reports, comments, hazards,
- * confirmations, ratings, bounties, flags, point events, put-ins and body features are all bucket 2,
+ * confirmations, ratings, flags, point events, put-ins and body features are all bucket 2,
  * anonymized by the tombstone rather than deleted, because they're the community's ice record.
+ * Bounties are absent for the opposite reason: they *are* bucket 1, but `lib/contentPurge` erases
+ * them in the ghost sweep at the request, so by finalization there are none left to erase here.
  *
  * `supportTickets` are erased rather than anonymized: they're private correspondence between one
  * person and the operator, free text likely to carry a name or an email, and not community record.
@@ -748,8 +750,9 @@ async function erasePhotos(
 /**
  * Bucket 2 — **anonymize**, which is a single write. Every `v.id('profiles')` pointer in the app keeps
  * pointing here; what changes is that "here" no longer identifies anyone. Reports, comments, hazards,
- * ratings, bounties, flags and point events are untouched, which is the whole D33 posture: the ice
- * record belongs to the community even when the person leaves.
+ * ratings, flags and point events are untouched, which is the whole D33 posture: the ice record
+ * belongs to the community even when the person leaves. (Bounties are not on that list: a standing
+ * ask with nobody asking is erased at the request — see `lib/contentPurge`.)
  *
  * The two sentinels are per-row-unique by construction (see `@skating/core`), because
  * `by_clerk_user_id` and `by_username` are read with `.unique()` and a shared constant would break

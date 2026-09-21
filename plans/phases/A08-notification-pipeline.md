@@ -4,7 +4,7 @@
 > dev: **PR 1** (inbox + settled queue + producers §2.1–§2.3) #52; **PR 2** (§2.4/§2.4a, §1.5 purge, §3
 > timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55; **PR 4** (the coverage
 > audit's findings: the Clerk mirror refresh, change-email on both clients + the Clerk webhook, the
-> Android small icon, the pipeline to 100% lines) — branch `phase-n8-notification-pipeline-4`. Push credentials
+> Android small icon, the pipeline to 100% lines) — #57. Push credentials
 > are in for both platforms; the Clerk webhook endpoint + secret are registered on dev. What is
 > still owed is listed under [Deferred](#deferred), and none of it is code this phase left unwritten.
 > Prod deferred with everything else. Scoped 2026-07-30 with a
@@ -391,7 +391,8 @@ sparse-index trap here.
 
 **Honest limit to record:** this is our own recorder only. The provider-detection half stays blocked on
 L8, and the type's description in `06-data-model.md:61` ("on ANY linked provider") should be corrected
-when this lands rather than left to imply a capability we cut.
+when this lands rather than left to imply a capability we cut. *(Corrected in PR 1, `dda68e77`; `06`
+has since been rewritten as the map over `schema.ts` (#68), which carries the docblock.)*
 
 #### §2.4a — One skate, several sources: dedup before the prompt (founder ask, 2026-07-30)
 
@@ -865,8 +866,9 @@ run, an install, a decision, or a scale trigger.
    the pipeline. One deliberate trigger from a second account: a thumb on a founder report (the
    push-only path) and a bounty on a water body the founder has reported (the email path, and the first
    real `/unsubscribe` link). Then check the stamps, the secret, and the inbox at `updates@…`.
-2. **Install preview build `a09708e6`** on the Pixel — it carries the small icon, `syncFromClerk`
-   and the post-Greptile JS. The first push after install is what shows the icon.
+2. **Install a preview build from `main`** on the Pixel — `a09708e6` carried the small icon,
+   `syncFromClerk` and the post-Greptile JS, `c6d59d47` superseded it the next day, and both predate
+   A09, A07b and D185. The first push after install is what shows the icon.
 3. **Change-email, exercised once for real** (founder chose to wait): change the address from web
    Settings, watch the endpoint's *Messages* tab in Clerk show a 200, confirm `profiles.email`
    moved and `clerkUpdatedAt` was stamped. Until then the webhook is verified only by signed
@@ -877,7 +879,7 @@ run, an install, a decision, or a scale trigger.
    at `diligent-guanaco-965.convex.site` and its own `CLERK_WEBHOOK_SIGNING_SECRET`;
    `EXPO_ACCESS_TOKEN`, `RESEND_API_KEY` / `RESEND_FROM_EMAIL` and `WEB_APP_URL` on prod Convex;
    the `production` EAS environment populated. Per-instance, nothing carries over from dev
-   (`docs/deployment-and-release.md`, cutover list 6–07-2).
+   (`docs/deployment-and-release.md`, cutover list 6–7b).
 6. **A `user.deleted` policy for a live account.** The webhook acknowledges and logs it; our own
    finalization deletes the Clerk user *after* the tombstone, so the ordinary arrival is a no-op.
    A founder deleting a live user from the Clerk dashboard leaves a profile the D62 lifecycle never

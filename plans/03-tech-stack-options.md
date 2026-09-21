@@ -116,20 +116,22 @@ Collected here from the decisions and phase docs, so the next person doesn't re-
 
 ## Deferred tech — not built, still intended or still possible
 
-Each row has a backlog or feature doc that points back here; when one ships, flip the row (or
-move the item into the tables above) in the same PR, so this list and the docs can't disagree.
+Each row mirrors a row in the roadmap's [deferred register](./07-roadmap.md#deferred-register),
+which is the canonical list; when one ships, flip it there, then here (or move the item into the
+tables above) in the same PR, so the two can't disagree. Each row's backlog or feature doc points
+at the register row.
 
 | Item | Status | Trigger |
 | --- | --- | --- |
-| **PostHog** (product analytics, flags, session replay) | not wired; the in-house Convex analytics cover the operator's questions | usage insight past the alpha; session replay is legal-gated (L12) → [`backlog/posthog.md`](./backlog/posthog.md) |
-| **Web Push** (VAPID) | not built — no service worker; web is inbox + email | a real ask → [`backlog/web-push.md`](./backlog/web-push.md) |
-| **End-to-end tests** — Playwright (web), Maestro (Expo) | not set up; the emulator's GPX playback is manual QA | flows stabilizing after the alpha → [`backlog/e2e-tests.md`](./backlog/e2e-tests.md) |
-| **Self-hosted OpenRouteService** | hosted ORS caps isochrones at 60 min (the 90-min band is a radius) | a cost/ops call, ~$15–50/mo → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md) |
-| **iOS builds / TestFlight** | no iOS build exists; Android via EAS internal distribution | the Apple account, with the prod cutover → [`backlog/ios-distribution.md`](./backlog/ios-distribution.md) |
-| **Production tier** — Convex prod, Clerk prod instance, prod tile URLs, Resend prod key, EAS `production` | never initialized; everything is dev | the prod cutover, [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) |
-| **`@clerk/clerk-expo` → `@clerk/expo`** (Core 3) | the current package is deprecated | nothing; rides the identifier cleanup in [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) |
-| **React Email in every sender** | the package and the first template exist; three senders still hand-build HTML | next mail design pass → [`features/react-email.md`](./features/react-email.md) |
-| **A hosted geocoder** — for the location anchor | none exists; every "near" is device or home | scoping the anchor → [`backlog/location-anchor.md`](./backlog/location-anchor.md), options in `04` § Geocoding |
+| **PostHog** (product analytics, flags, session replay) | not wired; the in-house Convex analytics cover the operator's questions | usage insight past the alpha; session replay is legal-gated (L12) → [`backlog/posthog.md`](./backlog/posthog.md) · register: *PostHog* |
+| **Web Push** (VAPID) | not built — no service worker; web is inbox + email | a real ask → [`backlog/web-push.md`](./backlog/web-push.md) · register: *Web push* |
+| **End-to-end tests** — Playwright (web), Maestro (Expo) | not set up; the emulator's GPX playback is manual QA | flows stabilizing after the alpha → [`backlog/e2e-tests.md`](./backlog/e2e-tests.md) · register: *End-to-end tests* |
+| **Self-hosted OpenRouteService** | hosted ORS caps isochrones at 60 min (the 90-min band is a radius) | a cost/ops call, ~$15–50/mo → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md) · register: *Self-hosted ORS* |
+| **iOS builds / TestFlight** | no iOS build exists; Android via EAS internal distribution | an iPhone (Apple is enrolled); a Play account (none yet) — with the prod cutover → [`backlog/ios-distribution.md`](./backlog/ios-distribution.md) · register: *The iOS build / TestFlight and the Play track* |
+| **Production tier** — Convex prod, Clerk prod instance, prod tile URLs, Resend prod key, EAS `production` | never initialized; everything is dev | the prod cutover, [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) · register: *The prod cutover* |
+| **`@clerk/clerk-expo` → `@clerk/expo`** (Core 3) | the current package is deprecated outright | nothing; the identifier cleanup in [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) rides *it* · register: *`@clerk/clerk-expo` → `@clerk/expo`* |
+| **React Email in every sender** | the package and the first template exist; three senders still hand-build HTML | next mail design pass → [`features/react-email.md`](./features/react-email.md) · register: *React Email in every sender* |
+| **A hosted geocoder** — for the location anchor | none exists; every "near" is device or home | scoping the anchor → [`backlog/location-anchor.md`](./backlog/location-anchor.md), options in `04` § Geocoding · register: *Location anchor (Q17) + a hosted geocoder* |
 
 ---
 

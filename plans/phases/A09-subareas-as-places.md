@@ -1,6 +1,6 @@
 # Phase A09 — A bay is a place: sub-areas become destinations, not labels
 
-> **Scoped 2026-08-07, unbuilt.** Founder ask, arrived out of the A07a Great Lakes question:
+> **Scoped 2026-08-07; built 2026-09-16 — see the status line below.** Founder ask, arrived out of the A07a Great Lakes question:
 > *"I would love if `waterBodySubAreas` could be favorited, supported put-ins, parking, bathrooms,
 > outlets, hazards/reports, etc… have their own maxDepth and windRose, and borrow cropped versions of
 > their parents' contours… Maybe they don't store much of this info themselves, but they should be
@@ -14,7 +14,7 @@
 > the Great Lakes case that surfaced it. That case took a different answer (see §The bay class,
 > below) and is not a dependency.
 >
-> **Status 2026-09-16: ✅ built, both PRs on dev (PR 1 = #58, PR 2 stacked on it); prod deferred.** See §Built record,
+> **Status 2026-09-16: ✅ built, both PRs on dev (PR 1 = #58, PR 2 = #59, both merged 2026-09-16); prod deferred.** See §Built record,
 > directly below, for what shipped and where it departs from the kickoff pass. The §Kickoff pass
 > after it is the build spec — every call it records supersedes the scoping prose after it where the
 > two disagree, and each such place is marked ⚠ inline.
@@ -111,7 +111,7 @@ away exactly the crossing contours a bay mouth has most of.
 ### Deferred / not built
 
 - The mobile bay view is type-checked and suite-green but not device-tested.
-- The shelter index, the station study, US spellings — post-alpha, as scoped.
+- The shelter index and the station study — post-alpha, as scoped. (US spellings, the third item here at build time, shipped as PR #67 on 2026-09-17 — D185.)
 
 ---
 
@@ -202,7 +202,7 @@ Plus three things that came up alongside:
   2026-09-17 (D185; the allowlist is in [`README.md` § Words](../README.md#words)). New text written
   for this phase used US spellings; the sweep took the rest.
 
-### The rule, settled — to be written as **D175** in `01-decisions.md` by PR 1
+### The rule, settled — written as **D175** in `01-decisions.md` (PR 1)
 
 > **A report belongs to the finest-grained place that contains it, and appears under every place
 > that contains that one — once.** Membership carries reach; the label carries specificity. Nothing

@@ -4,7 +4,8 @@
 > the transports shipped without it (A08 hand-built three HTML strings, each with its own text
 > twin). The founder call: the templates stop being "small enough" the moment mail gets a design
 > pass and the digest grows — so the package exists now, and this feat moves the senders onto it.
-> Register row: `03-tech-stack-options.md` § Backend → Email; delete this doc when it ships.
+> Register row: *React Email in every sender* in the roadmap's deferred register (`07-roadmap.md`;
+> `03-tech-stack-options.md` § Deferred tech mirrors it); delete this doc when it ships.
 
 ## What exists (2026-09-17)
 

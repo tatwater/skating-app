@@ -48,8 +48,8 @@ carry proper safety gear, skate with others, and know your rescue plan.
   the notification pipeline (inbox, push, email), and bays as places in their own right. Two phases
   are still open — **A06e** (satellite imagery of each water body: the reveal and the freeze-up
   scrubber ship; the multi-season backfill and its derived charts do not) and **A06h** (the weather
-  panel: radar remains) — **A07c** (water body corrections) is scoped, and the next era, **`B01`…
-  launch readiness**, is being scoped.
+  panel: radar remains) — **A07c** (water body corrections) and **A10** (the reporting flow) are
+  scoped, and the next era, **`B01`… launch readiness**, comes after them.
 - **Everything runs on the development deployment.** Production has never been initialized — the
   prod cutover is deliberately deferred — and a handful of native surfaces still await on-device
   verification.

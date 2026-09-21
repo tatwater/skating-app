@@ -226,8 +226,8 @@ is sent to a model provider for that purpose only.
 - Both behind one `Extractor` interface; a Claude-only extractor exists too. The eval runs both
   per field: if Claude-only matches Jev on the enums, Stage B is not earned and is dropped.
   Cost is under a cent per report either way; latency is two round trips, ~2–4 s per paragraph.
-- `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` live in Convex dev env and in the `05-accounts`
-  register (`credentialsRegister.test.ts` demands the row).
+- `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY` live in the Convex dev env; their `05-accounts` rows
+  land with §5.1, when code first reads them and `credentialsRegister.test.ts` demands the rows.
 
 ## The corpus replay (D200)
 
@@ -513,7 +513,10 @@ path, not a fallback.
 - **Snow texture** as a chip if prose shows it matters.
 - **Garmin / Coros / Health adapters** — `ACTIVITY_PROVIDERS` already reserves them.
 - **Outbound bridge** — posting a Post to the author's email list on their behalf (Q8's outbound
-  half) fits naturally once Posts exist.
+  half) fits naturally once Posts exist — scoped in
+  [`backlog/email-group-bridge.md`](../backlog/email-group-bridge.md).
+- **Water-body map in feed cards and the report sheet** (Phase 05 decision 6, never built on the
+  feed) — folded into this phase by founder call, 2026-09-20; a workstream to name when A10-1 opens.
 - **Subject-line reports** — a title field on the Post is cheap; whether extraction should read it
   is a §1 question.
 

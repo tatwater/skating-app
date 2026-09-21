@@ -7,7 +7,7 @@
 > Vercel Function) with Map + Newsfeed rendering behind the provisioning gate; CI (`pnpm lint`
 > + `turbo check-types test`) is green with coverage; crashes report to Sentry on both
 > surfaces (confirmed capturing a live server error). Getting the first deploy green took a
-> chain of fixes: a `build` task that runs Convex codegen (`_generated` is gitignored), the
+> chain of fixes: a `build` task that runs Convex codegen (`_generated` was gitignored then; committed since PR #49), the
 > Nitro plugin for a Vercel-servable server, an `apps/web`-local `@clerk/shared` v4 pin (the
 > web/mobile stacks need different majors under the hoisted linker), and piping the
 > `VITE_*`/`SENTRY_*` env vars through `turbo.json` so the build receives them.
@@ -55,7 +55,7 @@
   pages render; CI is green with coverage reporting; deploy is green; crashes report
   to Sentry.
 - Needs: Convex, Clerk, Vercel, Expo, Apple (dev build), Sentry.
-- **Follow-ups (non-blocking):** set `SENTRY_AUTH_TOKEN` on Vercel to enable build-time
-  source-map upload (runtime crash reporting already works without it); Apple dev-build
-  distribution for the mobile alpha crew is still pending its own track.
+- **Follow-ups (non-blocking):** `SENTRY_AUTH_TOKEN` on Vercel — done (confirmed 2026-09-16);
+  Apple dev-build distribution for the mobile alpha crew is still pending its own track (the
+  register's iOS row).
 

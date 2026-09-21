@@ -1,7 +1,7 @@
 # Phase A07a — The unified corpus: one record per water body, two catalogs behind it, and a full data campaign on top
 
 > **Status:** ✅ **Campaign `n7-3-20260809` COMPLETE** (2026-08-09) — every pass run, `regionStats` last. The corpus is live on dev and
-> the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session
+> the enrichment finished 2026-08-15 (the 250 m wind pass was the last lane). Originally written 2026-08-03 after a measurement session
 > that corrected four of its own findings; the numbers below are the survivors, and anything still
 > marked *unverified* is marked that way on purpose.
 >
@@ -945,7 +945,9 @@ must not let the count table imply otherwise.**
 
 ## D97 — The audit reports; only the prune deletes
 
-**Proposed.** A read-only pass names every stored body that fails the current rules, with the reason,
+**Settled by step 6** — `pruneNotInCampaign` is dry by default and names the bodies it would delete,
+so the reporter and the deleter became one mutation with two modes (see the ordering list). As
+proposed: a read-only pass names every stored body that fails the current rules, with the reason,
 so they can be reviewed and removed deliberately — the founder's ask: *"note which bodies Convex has
 already that do not meet our new criteria, so that we can go in and remove them manually."*
 
@@ -1207,11 +1209,11 @@ prune"* — and under the order below, nothing does.
  5  canonical re-import: the master list                 ✅ done (25,133 bodies, 0 conflicts)
  5b bays → waterBodySubAreas                            ✅ done (111 created; AFTER 5, BEFORE 6)
  6  PRUNE what step 5 did not re-affirm                 ✅ done (2,322 deleted, 64 protected)
- 7  audit report of non-conforming bodies                      (D97, read-only)          ← NEXT
- 9  depth + elevation                                          (scripts/body-depth; D101 for elevation)
-10  bathymetry: re-key → join → build → tile → coverage        (D95, in this order, always)
-11  wind climate                                               (scripts/wind-climate — the 7.7 h fetch)
-12  regionStats recompute                                      (derived from 9/11 — must run last)
+ 7  audit report of non-conforming bodies                ✅ subsumed — step 6's dry run is the D97 report
+ 9  depth + elevation                                    ✅ done (campaign n7-3-20260809 — the table at the top)
+10  bathymetry: re-key → join → build → tile → coverage  ✅ done (D95, 2026-08-09, +232 net-new)
+11  wind climate                                         ✅ done (2026-08-15; 11,114 roses)
+12  regionStats recompute                                ✅ done (last, then again after the A07b seed)
 ```
 
 Steps 1–4 are safe against a live corpus. Step 5 onward are not.
@@ -1585,6 +1587,9 @@ containment and *low* IoU, which is exactly the distinction that matters. Both c
 >    chips, so migrating unreviewed would offer a skater "Unclassified" as a choice. The picker needs
 >    a curated subset, which is a product call rather than a rename.
 >
+> *(All three landed in the D109 cut, `7104998f`: `isWetlandClass`, `WATER_BODY_CLASS_LABELS`,
+> `USER_SELECTABLE_WATER_BODY_CLASSES`.)*
+>
 > Nothing is indexed on `type`, no map style expression reads it, and no other table stores it — so
 > the migration is a value backfill, not an index rebuild.
 
@@ -1773,7 +1778,9 @@ search on bodies whose catalog entry is unnamed.
 > names are neither read from the gazetteer nor stored, so a body findable in GNIS under a second
 > spelling is not findable in our search under it. `waterBodySubAreas` already models this
 > (`aliases` + `searchText`); `waterBodies` has no equivalent field, which is what makes it a schema
-> change rather than an ETL one, and why it is filed rather than folded in here.
+> change rather than an ETL one, and why it is filed rather than folded in here. *(`nameClaims` +
+> `searchText` landed on `waterBodies` in A07a-3, so reading GNIS variants is now an ETL change into
+> an existing field — register, "A07a approved, unbuilt".)*
 
 Cheapest lane in the phase by a wide margin, and it needs no new bucket — it belongs beside the
 catalogs it resolves.
@@ -2244,7 +2251,7 @@ and [`docs/water-body-data.md`](../../docs/water-body-data.md) for the same stor
 Decisions **D92–D105** and **D109–D137**.
 
 Three PRs so far: **#39** (the merge, the master list, the review queue), **#40** (the audit and the
-referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data campaign).
+referee), and **#41** (the data campaign, merged 2026-08-10).
 
 **What it replaced.** The corpus was OSM-only, per-state, and a water body split across two features was two
 rows. A07a merges **OSM + NHD + 3DHP + GNIS** into one record per water body with our own minted key (D93),

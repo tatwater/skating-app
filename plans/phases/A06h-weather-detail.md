@@ -6,13 +6,13 @@
 > Greptile passes on the PR; suites at merge: core 2,460 · convex 1,437 · web 508 · mobile 108.
 > **PR 3 = Workstream 8 = [#50](https://github.com/tatwater/skating/pull/50), merged 2026-09-11**
 > (the three-tab drawer IA + sub-areas as the weather unit + the spread) — see *§What PR 3 shipped*.
-> **PR 4 = Workstream 4, built 2026-09-11 on `phase-n6h-weather-detail-4`** (two commits, deployed
-> to dev, verified in the running web app against Champlain; mobile by type-check + suite only —
-> founder checks the sheet) — see *§What PR 4 shipped*. Founder call 12 revised call 11's D+E bundle.
+> **PR 4 = Workstream 4 = #51, merged 2026-09-11** (two commits, deployed to dev, verified in the
+> running web app against Champlain; the founder has since used the weather tab on the Pixel) — see
+> *§What PR 4 shipped*. Founder call 12 revised call 11's D+E bundle.
 > ~~**Two PRs remain after this one: E → F.**~~
-> **PR 5 = Workstream 5, built 2026-09-11/12 on `phase-n6h-weather-detail-5`** (seven commits,
-> deployed to dev, the corpus-wide prime run, verified headlessly in the running web app, **= PR #54** — see
-> *§What PR 5 shipped*; mobile by type-check + suite, founder checks the sheet). **One PR remains: F.**
+> **PR 5 = Workstream 5 = #54, merged 2026-09-12** (seven commits, deployed to dev, the corpus-wide
+> prime run, verified headlessly in the running web app — see *§What PR 5 shipped*; the filter row and
+> the map dim on mobile are still a founder look). **One PR remains: F.**
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
@@ -235,7 +235,7 @@
 ## What PR 1 shipped, and where it differs from this plan
 
 **Built 2026-09-03: Workstreams 1 and 2 + C + G.** D (forecast panel), E (weather-first discovery) and
-F (radar) are untouched. ⚠ The subsections below were written on 2026-09-03; **the PR then grew for a
+F (radar) are untouched *(D and E have since shipped as PR 4 / PR 5; F remains)*. ⚠ The subsections below were written on 2026-09-03; **the PR then grew for a
 week before merging as #48** — see *§What PR 1 actually shipped* immediately after them.
 
 ### What PR 1 actually shipped — the week between this section and the merge (written 2026-09-11)
@@ -363,9 +363,8 @@ fixed one.
 
 **Built on `phase-n6h-weather-detail-3`, five commits:** the three-tab IA on both clients, sub-areas
 as the weather unit, and the spread. Suites at build: core 2,546 · convex 1,447 · web 515 · mobile
-108, all 13 tasks clean. Verified in the running web app against dev (Champlain); mobile verified by
-type-check and suite only — the emulator build runs but sign-in is email-code, so the founder checks
-the sheet by hand.
+108, all 13 tasks clean. Verified in the running web app against dev (Champlain); the founder's
+2026-09-11 device pass surfaced two defects (`98455aaf`), fixed in the same PR.
 
 ### Six things the build decided that the plan did not
 
@@ -394,7 +393,8 @@ the sheet by hand.
    the bay, so the Planning tab describes one place.
 5. **A bay carries no fetch profile.** The profile is the water body's; Malletts Bay is sheltered where
    Champlain's eleven miles of fetch is not. The wind lane draws flat on a bay until a per-bay
-   profile exists.
+   profile exists *(A09 now derives one per bay — `fetchProfileM` — but the bay branch of
+   `getWeatherDaysForBody` does not yet pass it; register, "A06h loose ends")*.
 6. **The spread's collapse thresholds:** 3 °C on lows (lapse-rate and lake-effect noise between two
    points 20 km apart), 2 cm on snow (a dusting). Bays are compared over the **intersection** of
    their days with a floor of three, and the in-progress today is dropped per cell by its own zone
@@ -529,7 +529,8 @@ and Greptile's first pass added two P1s. All four landed the same evening:
   7:1, so **`liquidMm = max(rain, precipitation − snowfall / 0.7)`** is exact to the provider's own
   rounding and free. The planner's amounts, floors and code-less fallback all read it. ⚠ **The
   archive's stored `rainMm` has the same gap** — Phase 10's `rain` variable, read by the D56 decay
-  model. Changing what a stored field means is not a render fix; it is in the register.
+  model. Changing what a stored field means is not a render fix; it is in the register (*Archive
+  `rainMm` excludes convective showers*, since 2026-09-20).
 - **Each hour is shifted by the offset in force *at that hour*** (Greptile P1). Open-Meteo stamps
   one `utc_offset_seconds` on a response, and a seven-day window in the week of a DST transition
   put every hour after it an hour off — labels, day cuts, episode clocks, day/night symbols. The
@@ -567,7 +568,7 @@ and Greptile's first pass added two P1s. All four landed the same evening:
 
 | hole | status |
 |---|---|
-| 9 · offline | ⚠ **Half.** `ForecastPayload` is the shape hole 9 was waiting on, and it is small (≤ 168 hours × 11 numbers). Caching it in the mobile offline body payload is **not** done here: it belongs with the on-ice/offline surface rather than the Planning tab, and the founder gave no call on it this pass. Recorded in the register, not silently. |
+| 9 · offline | ⚠ **Half.** `ForecastPayload` is the shape hole 9 was waiting on, and it is small (≤ 168 hours × 11 numbers). Caching it in the mobile offline body payload is **not** done here: it belongs with the on-ice/offline surface rather than the Planning tab, and the founder gave no call on it this pass. Recorded in the register (*On-ice path debts*, since 2026-09-20), not silently. |
 | D's `precipitation_probability` | ✅ Skipped, as inherited — `weather_code` plus amount carry the story, and the cards read fine without it on real data. |
 
 **Sequencing note for E.** The planner reads Tier A on open and nothing corpus-wide; E owes it
@@ -684,8 +685,8 @@ filter is unreachable (the cell pre-test drops it before the exemption can apply
 not a claim.
 
 **Sequencing note for F.** Nothing in E is in F's way. F's cutter is gated on `closesOn`/`opensOn`
-exactly like the sweep (`isSweepSeasonOpen` is the query to reuse), and the AGPL §13 note is owed to
-`08-legal-feasibility-checklist.md` *before* the first Fly deploy, not alongside it.
+exactly like the sweep (`isSweepSeasonOpen` is the query to reuse), and the AGPL §13 note is
+**L15** in `08-legal-feasibility-checklist.md` (dormant; flips if the cutter vendors LibreWXR code).
 
 ---
 
@@ -711,8 +712,8 @@ sentence.
    *since*: *"4.3 in of snow since Feb 6"* when 0.4 in fell since Feb 6. Now *"…of snow, last on
    Feb 4"*. D3 broken by grammar rather than by inference.
 
-**⚠ The panel was invisible on the running web app, and it was not a bug.** `weatherArchive` is not
-deployed to `agile-bee-397` — the branch is unpushed and undeployed, so the action throws, the
+**⚠ The panel was invisible on the running web app, and it was not a bug.** `weatherArchive` was not
+yet deployed to `agile-bee-397` — the branch was unpushed at the time, so the action threw, the
 component's deliberate fail-open-and-quiet `catch` swallows it, and `rows.length === 0` renders
 `null`. `pnpm convex-dev --once` from `packages/convex` fixes it. Worth knowing that **a missing
 deployment and a water body with no weather are indistinguishable on screen** by design.

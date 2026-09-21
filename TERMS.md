@@ -1,6 +1,6 @@
 # Terms of use (interim — friends alpha)
 
-**Last updated: 2026-07-10**
+**Last updated: 2026-09-20**
 
 > **Status: interim.** These are short, plain-language terms for the small,
 > friends-only alpha of this app. They are **not** a final, lawyer-reviewed agreement —
@@ -51,9 +51,11 @@ you have your parent's or guardian's permission.
   the Code of Conduct.
 
 ## 6. Third-party services
-The app connects to third-party services (e.g. your chosen fitness/GPS provider, maps,
-weather, authentication). Your use of those services is also governed by their own terms
-and privacy policies.
+The app connects to third-party services — maps and imagery (OpenStreetMap contributors,
+Protomaps, USGS, Copernicus Sentinel data), routing (OpenRouteService), weather (Open-Meteo,
+the National Weather Service), authentication (Clerk), email and push delivery, and, if you
+connect it, Strava. Your use of those services is also governed by their own terms and privacy
+policies.
 
 ## 7. Privacy
 See the [Privacy Notice](./PRIVACY.md) for how your data is handled.

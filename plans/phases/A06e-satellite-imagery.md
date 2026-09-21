@@ -13,7 +13,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an A06d follow-up (founder call) |
 > | **PR 1** — the reveal, web only | ✅ Merged 2026-08-23 | PR **#45** |
 > | **PR 2** — the producer | ✅ Merged 2026-08-25 | PR **#46** — the Fly box, the granule transform, the masked archive, the S1 pipeline, and the single-season backfill |
-> | **PR 3** — the consumer | ✅ **Built 2026-08-26**, branch `phase-n6e-satellite-imagery-3` — **no PR opened yet, undeployed** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
+> | **PR 3** — the consumer | ✅ **Merged 2026-08-26 — PR #47** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
 > | **PR 4** — phenology, derived dark | ⏳ Not started | Needs the nine-season backfill, which is a deliberate separate spend |
 > | **PR 5** — what the archive knows | ⏳ Not started | A06g's content; D150's real home |
 >
@@ -263,13 +263,15 @@ endpoint; MapLibre's **`{bbox-epsg-3857}`** token makes `exportImage` a drop-in 
 returning a 256×256 JPEG at a z18 extent over Burlington, in which individual cars are countable —
 which is this tier's use case exactly.
 
-**The trade:** dynamic rendering, no CDN. Courtesy load matters much more here than against a cached
-service, which is why §2.3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
+**The trade:** dynamic rendering. *(As built: `USGSNAIPPlus` `exportImage` behind CloudFront with a
+12 h TTL — grid-snap every URL, `imageryTiles`; the "no CDN" premise here was wrong, D147.)* Courtesy
+load matters much more here than against a cached service, which is why §2.3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
 `0.3 m` is what the phase is for.
 
 ⚠ **Confirm at build:** ArcGIS tile axis order is `/tile/{z}/{y}/{x}` — **y before x**. A swapped pair
 404'd in testing, but that is luck of the coordinate; elsewhere it returns tiles, just the wrong ones.
-Put the URL behind one function with a test.
+Put the URL behind one function with a test. *(Moot as built — `aerialImagery.ts` uses `exportImage`
+with a bbox, not the tile endpoint.)*
 
 ### §2.2 — The date stamp is queryable, per water body
 
@@ -887,8 +889,7 @@ Copernicus and all similar processing to what we've just built"* (founder, 2026-
 separate STAC collection, a separate id grammar and a single-band transform, but every one of those is
 producer work, and splitting it out would put server-side code in a client-side PR.
 
-**PR 3 — the consumer.** ✅ **Built 2026-08-26** on branch `phase-n6e-satellite-imagery-3`; **no PR
-opened, undeployed.** The Convex read path, the web scrubber, the band selector, **mobile's reveal**,
+**PR 3 — the consumer.** ✅ **Built 2026-08-26**, merged the same day as **PR #47**. The Convex read path, the web scrubber, the band selector, **mobile's reveal**,
 attribution, and the per-frame date and cloud caveat. Web and mobile belonged together here: they
 consume one archive contract, and splitting them would have meant reviewing that contract twice and
 risking two readings of it.
@@ -1240,8 +1241,9 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 > **Contract changes do not belong in this queue.** Their cost *grows* with every consumer line written
 > against the old shape, while an additive field's cost stays flat. That asymmetry is why
 > `icePct → snowIcePct` was renamed immediately rather than batched: four code sites, zero consumers,
-> and a re-run owed anyway. ⚠ **Until that re-run happens the 4,381 frames in R2 still carry `icePct`,
-> so a reader wants `snowIcePct ?? icePct`.**
+> and a re-run owed anyway. ⚠ ~~Until that re-run happens the 4,381 frames in R2 still carry `icePct`,
+> so a reader wants `snowIcePct ?? icePct`.~~ *The 2026-08-26 re-cut wrote `snowIcePct` on every
+> frame; `snowIceFractionOf` keeps the fallback for any older manifest.*
 
 ## Open questions
 
@@ -1289,11 +1291,13 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    `zonal-clear.py`'s zone raster, not a new pipeline.
 
    **The cost is that every statistic gets more expensive and more complicated**, and it rides a
-   re-run. Recorded because the winter's data and the founder's skate log pointed at the same seam
+   re-run *(the re-run happened 2026-08-26 and every manifest now carries per-bay rows; nothing reads
+   them yet — register, "Sub-area ice fractions on a screen")*. Recorded because the winter's data and the founder's skate log pointed at the same seam
    independently, which is the strongest reason to expect it back. See
    [`docs/reading-ice-from-orbit.md`](../../docs/reading-ice-from-orbit.md) ch. 9 for the measurement.
 
-8. **⚠ Radar is not terrain-corrected, and it is visible — new, 2026-08-25.** `cut-granule.sh`
+8. **⚠ Radar was not terrain-corrected, and it was visible — found 2026-08-25, built the same day
+   (`sar-geocode.py`, `sar-deshift.py`), carried by the 2026-08-26 re-cut.** As found: `cut-granule.sh`
    geocodes a GRD with `gdalwarp -tps` from its ground-control points, on the stated assumption that
    *"over a water body — flat, at a known elevation — that is accurate enough without terrain correction."*
    **A skater falsified that in the first session with the scrubber**: a pair of islands in the
@@ -1331,7 +1335,8 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    > is *stronger* evidence than a merged series, for the same reason two independent estimators are
    > what caught the S1C anomaly in question 7.
    >
-   > ⚠ **`sat:relative_orbit` is published by STAC and we do not record it.** Orbit direction is the
+   > ⚠ **`sat:relative_orbit` is published by STAC and we do not record it** *(recorded as
+   > `relativeOrbit` since the re-cut)*. Orbit direction is the
    > coarse key; two passes from the same direction on different tracks still differ in incidence
    > angle. Recording it costs nothing at cut time and is the finer comparability filter both this and
    > question 7 will want.
@@ -1341,6 +1346,8 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    for. The real fix is a terrain-corrected geocode against a DEM, which is producer work and should
    ride the re-run queue rather than a pass of its own. The corpus already carries elevation at 99.5%
    coverage, so a per-body reference height is available if a full DEM correction proves too costly.
+   *(That is the fix that shipped — a local-`h_ref` geocode from the corpus elevation, in the re-cut;
+   what remains is Q7's orbit pooling.)*
 
 **Still open on the producer side, carried forward from PR 2:**
 
@@ -1371,8 +1378,8 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 
    Worth attacking because the prize is real: pooling platforms is the difference between a 12-day and
    a 6-day look at a water body, and freeze-up happens on a timescale where that matters. Prime suspects are
-   S1C-specific calibration-annotation handling and incidence-angle differences the manifest does not
-   currently record. ⚠ **A fourth platform, S1D, is already appearing in the data** (4 passes, late
+   S1C-specific calibration-annotation handling and incidence-angle differences the manifest now
+   records (`incidenceDeg`, since the re-cut). ⚠ **A fourth platform, S1D, is already appearing in the data** (4 passes, late
    April 2026) — the id grammar accepts it, so this question will only get more crowded.
 
 
@@ -1390,8 +1397,7 @@ Gated behind A06d, which is complete on dev.
 
 **Four of six PRs done.** **PR 0** the way in (2026-08-21) · **PR 1** the web reveal (#45, 2026-08-23)
 · **PR 2** the producer (#46, 2026-08-25) · **PR 3** the consumer — both scrubbers, the band selector,
-mobile's reveal, attribution (built 2026-08-26 on `phase-n6e-satellite-imagery-3`, **no PR opened,
-undeployed**). **PR 4** (phenology, derived dark) and **PR 5** (the charts and the freeze-up
+mobile's reveal, attribution (#47, 2026-08-26). **PR 4** (phenology, derived dark) and **PR 5** (the charts and the freeze-up
 notification) are not started; both want the nine-season backfill, which is a deliberate separate
 spend. Only the **single season** (winter 2025-26) is in R2 today.
 

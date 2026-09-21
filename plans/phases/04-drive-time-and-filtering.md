@@ -16,8 +16,8 @@
 > digest, put-ins + directions, offline read-cache). Review follow-ups (2026-07-18): the digest now
 > consolidates per user into one notification grouped by body; profiles carry denormalized
 > `reportCount`/`commentCount` for true totals; per-body report lists paginate; the feed shows recency
-> scroll headers; minors are gated out of photo upload. **Push delivery is deferred** — the flush lands
-> an in-app `notifications` row (the `coalesceKey` seeds the eventual APNs collapse-id / Android tag).
+> scroll headers; minors are gated out of photo upload. **Push and email delivery landed in A08 PR 3**
+> (D174); here the flush landed an in-app `notifications` row (the `coalesceKey` became the collapse id).
 > Self-hosted ORS (true 90-min band) + "Recommended" filter-breaking posts remain deferred (see below).
 >
 > **Build order:** web first, then mobile (mirrors Phase 02a/3/5). Backend + `@skating/core` geometry
@@ -106,7 +106,8 @@ the feed, and highlighted on the map.
      ice"). Fires on `skateQuality == great`.
 
    **Delivery = a coalescing queue, not per-report fire-and-forget, and never "un-send":**
-   - **"All within X₁" → a once-daily digest at 8pm ET** (tunable), grouped by water body. Corpus check:
+   - **"All within X₁" → a once-daily digest at 8pm ET** (tunable; *8pm in each recipient's own zone
+     since A08, D173*), grouped by water body. Corpus check:
      ~87% of reports are submitted before 8pm ET; the after-8pm stragglers that miss the digest are, by
      construction, the lowest-priority slice (non-favorite, non-great). *(Per-user local-time / true-sunset
      offset is deferred — matters once we serve more than one timezone.)*
@@ -142,7 +143,7 @@ the feed, and highlighted on the map.
        the nearest shore/road edge** (a report `point` can be mid-lake / on-ice — it is *not* a true
        put-in, so derived markers are approximate).
      - `source: official` markers are **admin-set** (accurate; priority styling) from the operator
-       dashboard (Phase 07 surface; the data + mutation land here).
+       dashboard (shipped in A06f §5 on `/admin/water/$id`, not Phase 07; the data + mutation land here).
    - **Per-report `showPutIn` opt-out** (default on) for private-property access — hides the **precise
      pin** but keeps the **coarse town-level `place` label** (Phase 05); we suppress a marker, we don't
      scrub location.
@@ -283,10 +284,10 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 - **Reverse spatial index for notification fan-out** (per-body notify sets / indexed home-points) →
   future scaling; the per-report user-polygon scan is fine at alpha scale (decision #2).
 - **"Recommended" filter-breaking feed posts** → **Phase 06** (needs corroboration/trust, D50).
-- **Per-user local-time / true-sunset digest timing** → later (fixed 8pm ET for the single-timezone
-  pilot).
-- **Operator UI for official put-ins** lives in the **Phase 07** admin surface; the `putIns` data +
-  `setOfficial`/`hide` mutations land here.
+- **Per-user local-time / true-sunset digest timing** → A08 (D173): the zone per device, the hour
+  fixed at 20:00, true-sunset dropped.
+- **Operator UI for official put-ins** shipped in **A06f §5** on `/admin/water/$id` (the A02 editor),
+  not the Phase 07 route tree; the `putIns` data + `setOfficial`/`hide` mutations land here.
 
 
 ---
@@ -336,7 +337,7 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
   lowest-priority slice); favorites/great fire ~individually, coalesced per `(user, waterBody)` via APNs
   `collapse-id` / Android `tag` (replace, never un-send).
 - **Map put-ins + directions:** put-in markers **derived from report points** (+ admin-set official ones,
-  Phase 07 UI), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
+  the A06f §5 editor), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
   **Directions deep-link from the water body detail drawer button** (never a map tap), targeting a **put-in
   coord, not the on-water centroid**.
 - **Mobile offline read-cache** (reuse expo-sqlite): recently-read + opened-body + favorites' reports

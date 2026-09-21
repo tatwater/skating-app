@@ -1,12 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * The mobile app carries no unit tests of its own: all pure, safety-relevant logic lives in
- * `packages/*` (the DOB parser and the auth-route resolver were lifted to `@skating/core`,
- * D7/D40) and is covered there. Screens are RN components — `@testing-library/react-native`
- * rendering under Vitest is deferred until real screens land (needs extra RN transform
- * config). So we keep the runner wired (every surface stays test-ready) but pass when there
- * are no specs, rather than failing CI on an intentionally empty suite.
+ * The mobile app's own tests are the pure `src/lib/*.test.ts` specs (draft queue, on-ice, offline
+ * caches, …); the rest of its safety-relevant logic lives in `packages/*` (the DOB parser and the
+ * auth-route resolver were lifted to `@skating/core`, D7/D40) and is covered there. Screens are RN
+ * components — `@testing-library/react-native` rendering under Vitest was deferred "until real
+ * screens land"; they landed in Phase 02a and the harness (extra RN transform config) is still
+ * unbuilt, so there is no `.test.tsx` here — the roadmap register's *End-to-end tests* row carries
+ * it. `passWithNoTests` dates from when this suite was empty and is kept so a lib-less checkout
+ * (or a filtered run) stays green rather than failing CI on an empty suite.
  */
 export default defineConfig({
   test: {

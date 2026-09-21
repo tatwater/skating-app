@@ -1,7 +1,8 @@
 # End-to-end tests — Playwright (web) and Maestro (Expo)
 
 > **Backlog.** D40 named both as the E2E tier "as flows stabilize"; neither is set up as of
-> 2026-09-17. Register row: `03-tech-stack-options.md` § Deferred tech — flip it when this lands.
+> 2026-09-17. Register row: *End-to-end tests* in the roadmap's deferred register (`07-roadmap.md`;
+> `03-tech-stack-options.md` § Deferred tech mirrors it) — flip it when this lands.
 
 **Today:** unit and property tests in every package, `convex-test` for functions, Testing Library
 for components, and a **manual** device pass per phase (the *Owed* lines in the roadmap). The

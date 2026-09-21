@@ -1,9 +1,10 @@
 # The location anchor — search from wherever you'll actually be
 
 > **Backlog — founder ask, 2026-09-17.** Unscoped. The UX is open ([`02-open-questions.md`](../02-open-questions.md) § Q17);
-> the geocoder it needs is in `03-tech-stack-options.md` § Maps & routing and § Deferred tech, and
-> the geocoding source options are in `04-integrations.md` § Geocoding. Update all three when this
-> is scoped or built.
+> the register row is *Location anchor (Q17) + a hosted geocoder* in the roadmap's deferred register
+> (`07-roadmap.md`); the geocoder is also in `03-tech-stack-options.md` § Maps & routing and § Deferred
+> tech, and the geocoding source options are in `04-integrations.md` § Geocoding. Update all of them
+> when this is scoped or built.
 
 ## The ask
 
