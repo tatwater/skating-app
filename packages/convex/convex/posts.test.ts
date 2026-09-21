@@ -446,7 +446,7 @@ describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', ()
         return (e as { data?: { gaps?: string[] } }).data?.gaps ?? ['<other error>'];
       }
     };
-    expect(await gapsOf({ notes: 'don\'t skate here' })).toEqual(['howWasIt', 'observation']);
+    expect(await gapsOf({ notes: "don't skate here" })).toEqual(['howWasIt', 'observation']);
     expect(await gapsOf({ skateQuality: 'poor' })).toEqual(['observation']);
     expect(await gapsOf({ iceTypes: ['black_ice'] })).toEqual(['howWasIt']);
     expect(

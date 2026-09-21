@@ -44,11 +44,11 @@ import {
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import {
-  ACCESS_ALERT_REASONS,
   ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TARGETS,
   ACCESS_ALERT_VERDICTS,
   ACCESS_AMENITIES,
+  ACCESS_REASONS,
   ACTIVITY_PROMPT_STATES,
   ACTIVITY_PROVIDERS,
   ADMIN_AREA_LEVELS,
@@ -3247,7 +3247,7 @@ export default defineSchema({
      * *target*, not per body — the alert is about the lot, and the lot is what is blocked.
      */
     waterBodyId: v.id('waterBodies'),
-    reason: literals(ACCESS_ALERT_REASONS),
+    reason: literals(ACCESS_REASONS),
     /** Free text, and the one place in this phase it is allowed — bounded by the row's own expiry. */
     note: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
