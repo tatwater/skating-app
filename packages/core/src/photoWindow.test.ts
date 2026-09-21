@@ -92,8 +92,9 @@ describe('placePhoto', () => {
     fc.assert(
       fc.property(fc.integer({ min: START, max: START + 1_200_000 }), (t) => {
         const placed = placePhoto({ id: 'p', takenAtMs: t }, TRACK);
-        expect(placed?.source).toBe('path');
-        const { lat, lng } = placed?.coord as { lat: number; lng: number };
+        if (!placed) throw new Error('a dated photo on a non-empty track is always placed');
+        expect(placed.source).toBe('path');
+        const { lat, lng } = placed.coord;
         expect(lat).toBeGreaterThanOrEqual(44.0);
         expect(lat).toBeLessThanOrEqual(44.01);
         expect(lng).toBeGreaterThanOrEqual(-73.02);
