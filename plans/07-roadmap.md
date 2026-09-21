@@ -698,7 +698,7 @@ launches.*
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Phase A10 — Reporting: one sheet, three doors
-🟡 **In progress** 2026-09-21 · PRs #71 #72 · [plan](./phases/A10-reporting-flow.md) · D186–D200
+🟡 **In progress** 2026-09-21 · PRs #71 #72 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203
 
 The report form becomes a report sheet: one fixed-order scroll that a skater can fill by tapping
 chips, by writing prose, or by opening it from a track, with every section collapsing to a summary
@@ -724,8 +724,8 @@ minute from a track, and the app never loses one for lack of signal.*
 - ⚪ **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page → [`features/subarea-chord-editor.md`](./features/subarea-chord-editor.md), before A10-3
 - ⚪ **Vision-suggested hazard types** on a photo the skater already tagged — after §1's eval pattern exists
 - ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
-- ⚪ **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; named §12.3 at A10-1; a static silhouette (founder call 2026-09-21), with A10-2b
-- ⚪ **The offline queue around Posts** (§9.1–§9.3), **aggregates that learn `where`** (§12.2) and **the profile history as Posts** — split off A10-2 by the size rule → A10-2b
+- 🟢 **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; a still silhouette drawn from geometry, D203, A10-2b (2026-09-21)
+- 🟢 **The offline queue around Posts** (§9.1–§9.2), **aggregates that learn `where`** (§12.2) and **the profile history as Posts** — A10-2b (2026-09-21); §9.3 waits on extraction (A10-4)
 - ⚪ **The corpus replay** (§1.5) — after the founder's eval review decides the engine; its own deployment (a project, not a preview — those auto-delete in 5 / 14 days), a dev snapshot, `posts.importBackdated`
 - ❓ **Verified precision floors** — the founder's pass through the eval's `review.html` (147 emails, contested values first); A10-4 is gated on `basis: 'verified'`
 - ⚪ **A retry on Jev 503 / 529** (7 of 147 calls) and parallel per-unit votes — with A10-4
@@ -812,7 +812,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | **Tier-A weather precompute (D154)** — favorited / reported / hazard / bounty / tracked bodies get a complete `weatherHours` timeline ahead of first open; D153's lazy backfill made it latency, not data | ⚪ | nothing; size the job off the query (dev has 14 favorites) | A06h D154 |
 | **NWS zone rung** — `waterBodies.nwsZoneIds` from a `/zones` point-in-polygon pass; `alertsForBody` already prefers it and both id spaces are collected | ⚪ | nothing; the state rung over-shows, the safe direction | A06c §2.5 |
 | **A06h loose ends** — the bay wind lane reads the bay's own `fetchProfileM` (A09 writes it; `getWeatherDaysForBody`'s bay branch still draws flat) · the mobile tab-switch jolt · the four fossil fields on `weatherForecastCache` · the season checker's Open-Meteo fetch is unmetered | ⚪ | nothing | A06h, A09 |
-| **On-ice path debts** — a durable per-body hazard cache for a cold start with no signal (and A06h hole 9, the forecast payload in the offline body cache) · carry the server's `provisional` into `hazardProximity` / `hazardProjection` (the passage-marker threshold already diverges) · D55 bundling for an offline-drafted report (A10-2b §9.1 builds it) | ⚪ | nothing | A05c §9.5 / §19, 09a, A06h, A10 |
+| **On-ice path debts** — a durable per-body hazard cache for a cold start with no signal (and A06h hole 9, the forecast payload in the offline body cache) · carry the server's `provisional` into `hazardProximity` / `hazardProjection` (the passage-marker threshold already diverges) · ~~D55 bundling for an offline-drafted report~~ (built, A10-2b §9.1) | ⚪ | nothing | A05c §9.5 / §19, 09a, A06h, A10 |
 | **A07a approved, unbuilt** — D103 known outlets from 3DHP `landscape` (no `bodyFeatures.source`, no outlet type; inlets need the `network` layer measured first) · D105 GNIS variant names (`nameClaims` / `searchText` now exist, so it is an ETL change) · retire `externalId` in the tile stamp and `bathymetryCoverage` for `waterBodyKey` · the regression corpus fixture | ⚪ | outlets: a founder choice on who owns a seeded row; variants: nothing; `externalId`: the next re-tile; the fixture: "when it is wanted" | A07a D103 D105, A06b |
 | **A07a moderator queues** — `/admin/water/review` (2,010 rows: duplicate-candidate incl. the 283 IoU 0.30–0.49 pairs, same-source-duplicate, bay-without-parent, class-dissent, class-conflict, name-conflict) · `way/522157160` · the 8 previous-campaign sub-areas · the `GEOMETRY_OVERRIDES` pool (one entry; 140 two-metric disagreements unworked) · the A10 seed's 9 same-name-within-25 km pairs (Moore Reservoir ×2, Melvin Bay body + sub-area, …) — and a decided row only leaves the queue at the next campaign (`mergeFields` is the sole writer of `reviewReason`) | ⚪ | a moderator with hours; the clear-on-decision write is a small fix blocked on nothing | A07a, `/admin/water/review` |
 | **The re-cut season's unanalyzed questions** — A06g Lane 1's close-or-keep test (the SAR wind join) · a single-season Lane 3 pilot (Deduction 2 on Mascoma's log) · Q4, can SAR date freeze-up · pool both radar orbit directions (Q7 — re-measure the S1A−S1C offset on the denoised 2025-26 manifests) | ⚪ | nothing — an afternoon over the re-cut season and `weatherCache` | A06g, A06e Q4 Q7 |
