@@ -541,6 +541,15 @@ as Posts. Seven commits off `-2`, ~2,400 lines. Suites at build: core 2,947 · c
    track queue already had, and the sweep is the same shape (`sweepHazardItems` beside `sweepTracks`).
 4. **Contradiction stays by key** while corroboration reads `where` — asymmetric on purpose: fewer
    awards for different places, no more flags for them.
+5. **The flush resolves hazard refs before the create-only check and the uploads** (self-review),
+   so a ref that comes back empty cannot pass the minimum set and then fail the create after the
+   photos were spent; a hazard flushed on demand this way frees its photo files like one flushed by
+   the drain (`flushOneHazard`).
+6. **Reopening a draft applies its saved bundle choice** as the opt-outs once the candidates load —
+   the last explicit choice wins over D55's pre-checked default, including for a hazard that synced
+   in since. A call made at build; say so if the default should win instead.
+7. **The bundle window is one rule** (`bundleWindow` in core): the prompt's queued candidates and
+   `hazards.listBundleCandidates` read the same skate-window-or-24-hours.
 
 ### Owed
 
