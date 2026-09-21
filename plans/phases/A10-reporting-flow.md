@@ -475,6 +475,11 @@ decides what the pipeline stores — and ships with its run, `posts.importBackda
 
 - `convex dev --once` on dev before the app is used (the `accessAlerts.reason` widening).
 - A10-2b: §9.1–§9.3, §12.2, §12.3, the profile history as Posts.
+- **§7.2's client half (A10-3) must decide the cap:** conditions and blockers share
+  `MAX_ACCESS_ROWS_PER_BODY` (64) on `by_water_body_status_expires_at`, so a lake with many live
+  "plank needed" rows could push a live "gate locked" out of the window `blockedIds` is built from.
+  Nothing writes a condition until the sheet does; a reason column in the index or a second bounded
+  read for the blockers is the fix, and it lands with the first writer.
 - The replay PR (§1.5) after the founder's eval review: the deployment (a `skating-replay` project
   is the recommendation — preview deployments auto-delete after 5 / 14 days), the snapshot import,
   `posts.importBackdated`, the runner and `replay-summary.md`.
