@@ -24,6 +24,33 @@ function passing(overrides: Partial<RecommendableReport> = {}): RecommendableRep
   };
 }
 
+describe('isRecommendable — black ice claimed of the lake, not of a corner (A10 §12.2)', () => {
+  it('a located or patchy black-ice chip does not recommend the lake; a whole-lake one does', () => {
+    expect(
+      isRecommendable(passing({ iceTypes: [{ type: 'black_ice', where: { sector: 'N' } }] }), NOW),
+    ).toBe(false);
+    expect(
+      isRecommendable(
+        passing({ iceTypes: [{ type: 'black_ice', where: { subAreaId: 'bay' } }] }),
+        NOW,
+      ),
+    ).toBe(false);
+    expect(
+      isRecommendable(
+        passing({ iceTypes: [{ type: 'black_ice', where: { extent: 'patches' } }] }),
+        NOW,
+      ),
+    ).toBe(false);
+    expect(
+      isRecommendable(
+        passing({ iceTypes: [{ type: 'black_ice', where: { extent: 'mostly' } }] }),
+        NOW,
+      ),
+    ).toBe(true);
+    expect(isRecommendable(passing({ iceTypes: [{ type: 'black_ice' }] }), NOW)).toBe(true);
+  });
+});
+
 describe('isRecommendable', () => {
   it('accepts a report that clears every clause', () => {
     expect(isRecommendable(passing(), NOW)).toBe(true);

@@ -185,3 +185,36 @@ export function describeLocatedChip(
   const where = chip.where ? describeWhere(chip.where, bayNames) : '';
   return where ? `${label}, ${where}` : label;
 }
+
+/**
+ * Could two `where`s be about the same water? The aggregates' question (A10 §12.2): "black ice,
+ * north end" and "black ice, south end" are two observations, not one corroborated twice. Absent
+ * (the whole body) overlaps everything; two bays overlap only when they are the same bay, and a bay
+ * overlaps a claim with no bay; the eight compass wedges overlap only themselves, `middle` only
+ * itself (the partition), `near_shore` everything (the band runs the whole shore), and the
+ * bay-relative `head` / `mouth` anything — a still label cannot place them against a wedge. The
+ * extent never matters: patches in the north are still in the north. Conservative by design —
+ * when it cannot tell, it says yes.
+ */
+export function whereOverlaps(a: Where | undefined, b: Where | undefined): boolean {
+  if (!a || !b) return true;
+  if (a.subAreaId !== undefined && b.subAreaId !== undefined && a.subAreaId !== b.subAreaId)
+    return false;
+  const sa = a.sector;
+  const sb = b.sector;
+  if (sa === undefined || sb === undefined) return true;
+  if (sa === 'near_shore' || sb === 'near_shore') return true;
+  if (sa === 'head' || sa === 'mouth' || sb === 'head' || sb === 'mouth') return true;
+  return sa === sb;
+}
+
+/** Does a `where` claim the whole body — nothing narrower than "mostly"? Absent counts as whole. */
+export function whereCoversBody(where: Where | undefined): boolean {
+  if (!where) return true;
+  return (
+    where.subAreaId === undefined &&
+    where.sector === undefined &&
+    where.point === undefined &&
+    where.extent !== 'patches'
+  );
+}

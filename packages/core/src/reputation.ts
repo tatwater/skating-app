@@ -8,9 +8,10 @@
  * logic that reads them.
  */
 
-import { type ChipInput, iceTypeKeys } from './reportFields';
+import { type ChipInput, toLocatedChip } from './reportFields';
 import { NEW_ACCOUNT_WINDOW_MS, TRUST_CLASS_THRESHOLDS, type TrustClass } from './reputationConfig';
 import type { IceType, SkateQuality } from './types';
+import { whereOverlaps } from './where';
 
 /** Ascending skate-quality rank so "within one ordinal step" is `|rankA − rankB| <= 1` (great is best). */
 const QUALITY_RANK: Record<SkateQuality, number> = { poor: 0, fair: 1, good: 2, great: 3 };
@@ -42,13 +43,22 @@ export interface AgreeableReport {
   iceTypes?: readonly ChipInput<IceType>[];
 }
 
-/** Do two ice-type sets share at least one member (by key)? */
+/**
+ * Do two ice-type sets share a member **about the same water**? By key, and — since chips carry a
+ * `where` (A10 / D193, §12.2) — only where the two locations could overlap: "black ice, north end"
+ * and "black ice, south end" are two observations, not one corroborated twice. A bare key, or a
+ * chip with no `where`, is about the whole body and overlaps anything (`whereOverlaps`).
+ */
 function shareIceType(
   a: readonly ChipInput<IceType>[] = [],
   b: readonly ChipInput<IceType>[] = [],
 ): boolean {
-  const bKeys = iceTypeKeys(b);
-  return iceTypeKeys(a).some((t) => bKeys.includes(t));
+  const bChips = b.map(toLocatedChip);
+  return a
+    .map(toLocatedChip)
+    .some((chip) =>
+      bChips.some((other) => other.type === chip.type && whereOverlaps(chip.where, other.where)),
+    );
 }
 
 /**

@@ -11,7 +11,9 @@ import {
   WHERE_POINT_RADIUS_MIN_M,
   type Where,
   type WhereValidationError,
+  whereCoversBody,
   whereKind,
+  whereOverlaps,
 } from './where';
 
 function validate(where: Where): { normalized: Where | null; fields: string[] } {
@@ -171,5 +173,30 @@ describe('describeWhere / describeLocatedChip (A10 / D193, §12.1)', () => {
       'Black ice',
     );
     expect(describeLocatedChip({ type: 'black_ice' })).toBe('Black ice');
+  });
+});
+
+describe('whereOverlaps / whereCoversBody (A10 §12.2)', () => {
+  it('absent overlaps everything; a bay overlaps itself and a bay-less claim; wedges only themselves', () => {
+    expect(whereOverlaps(undefined, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ subAreaId: 'a' }, { subAreaId: 'b' })).toBe(false);
+    expect(whereOverlaps({ subAreaId: 'a' }, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ sector: 'N' }, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ sector: 'N' }, { sector: 'S' })).toBe(false);
+    expect(whereOverlaps({ sector: 'middle' }, { sector: 'N' })).toBe(false);
+    expect(whereOverlaps({ sector: 'near_shore' }, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ sector: 'head', subAreaId: 'a' }, { sector: 'N', subAreaId: 'a' })).toBe(
+      true,
+    );
+    expect(
+      whereOverlaps({ extent: 'patches', sector: 'N' }, { extent: 'whole', sector: 'N' }),
+    ).toBe(true);
+  });
+  it('a claim covers the body unless it names a place or says patches', () => {
+    expect(whereCoversBody(undefined)).toBe(true);
+    expect(whereCoversBody({ extent: 'mostly' })).toBe(true);
+    expect(whereCoversBody({ extent: 'patches' })).toBe(false);
+    expect(whereCoversBody({ sector: 'N' })).toBe(false);
+    expect(whereCoversBody({ subAreaId: 'a' })).toBe(false);
   });
 });

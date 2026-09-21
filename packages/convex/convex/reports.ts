@@ -397,7 +397,8 @@ export const recommended = query({
         waterBodyId: r.waterBodyId,
         skateEndTime: r.skateEndTime,
         ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-        iceTypes: iceTypeKeys(r.iceTypes),
+        // The located chips, so the bar can ask whether black ice was claimed of the lake (§12.2).
+        iceTypes: r.iceTypes,
         photoCount: r.photoIds.length,
         corroborationCount,
         authorTrust: trust,
