@@ -185,6 +185,16 @@ function segmentDistanceMeters(
  */
 export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
   if (pointInPolygon(point, polygon)) return 0;
+  return distanceToShorelineMeters(point, polygon);
+}
+
+/**
+ * Distance in meters from `point` to the nearest **edge** of `polygon`, whichever side of it the
+ * point is on — the "how far from the bank" a skater on the ice means (A10's `near_shore`), where
+ * `distanceToPolygonMeters` answers "how far from the water" and is 0 for everyone on it. Every
+ * ring counts, islands included: an island's shore is a shore.
+ */
+export function distanceToShorelineMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
   const rings = polygonRings(polygon);
   let min = Number.POSITIVE_INFINITY;
   for (const ring of rings) {

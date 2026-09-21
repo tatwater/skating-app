@@ -614,7 +614,7 @@ function componentContaining(geom: Polygon | MultiPolygon, point: LatLng): Posit
  * this lake" and the wrong one for "can I cast a ray from here". A meter of clearance is far below
  * any real shoreline feature and far above float noise.
  */
-function isStrictlyInside(geom: Polygon | MultiPolygon, point: LatLng): boolean {
+export function isStrictlyInside(geom: Polygon | MultiPolygon, point: LatLng): boolean {
   const rings = componentContaining(geom, point);
   if (!rings) return false;
   for (const ring of rings) {
