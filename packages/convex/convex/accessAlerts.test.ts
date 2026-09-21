@@ -850,6 +850,26 @@ describe('a live alert survives a lake full of settled ones', () => {
     // And the conditions are capped on their own, not silently dropped.
     expect(access.alerts.filter((a) => a.reason === 'plank_needed').length).toBeGreaterThan(0);
   });
+
+  test('a pinned condition is still live — a pin is not only for blockers', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const plank = await author.as.mutation(api.accessAlerts.create, {
+      ...ALERT,
+      putInId,
+      reason: 'plank_needed',
+    });
+    await mod.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: plank,
+      official: true,
+      reason: 'the club keeps one there',
+    });
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.find((a) => a.id === plank)).toMatchObject({ official: true });
+    // Pinned or not, a condition never demotes the launch.
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(access.blockedIds).toEqual([]);
+  });
 });
 
 /**

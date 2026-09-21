@@ -14,7 +14,7 @@
 import type { ReportConditionsInput } from './report';
 import { cToF, kphToMph, roundTo } from './units';
 import { precipTypeFrom, windDirToCompass } from './weatherConditions';
-import { utcOffsetSecondsAt } from './weatherDay';
+import { utcOffsetSecondsAt, utcOffsetSecondsInZone } from './weatherDay';
 import { precipitationKind, type TimelineHour } from './weatherTimeline';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -40,7 +40,7 @@ export interface WindowHour extends ArchivedHour {
  * a DST change keeps every hour on the wall clock the lake had (`utcOffsetSecondsAt`).
  */
 export function hourStartMs(dayMs: number, localHour: number, timeZone: string): number | null {
-  const dayOffset = utcOffsetSecondsAt(dayMs + 12 * HOUR_MS, timeZone);
+  const dayOffset = utcOffsetSecondsInZone(dayMs, timeZone);
   if (dayOffset === null) return null;
   const approx = dayMs - dayOffset * 1000 + localHour * HOUR_MS;
   const offset = utcOffsetSecondsAt(approx, timeZone);

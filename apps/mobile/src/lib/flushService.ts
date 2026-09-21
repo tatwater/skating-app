@@ -135,6 +135,7 @@ function effects(): PostFlushEffects {
           : {}),
         reason: input.reason as AccessReason,
         ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.observedAt !== undefined ? { observedAt: input.observedAt } : {}),
         reportId: input.reportId as Id<'reports'>,
         idempotencyKey: input.idempotencyKey,
       });

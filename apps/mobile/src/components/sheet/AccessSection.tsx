@@ -64,12 +64,24 @@ export function AccessSection({ report, body, dispatch, gaps, timeZone }: Sectio
     [body],
   );
   const choosePutIn = (id: string | undefined) => {
-    dispatch({ type: 'setScalar', key: 'putInId', value: id });
-    if (id !== undefined) {
-      const coord = body?.putIns.find((p) => p.id === id)?.coord;
-      dispatch({ type: 'setScalar', key: 'point', value: coord });
-      setPlacing(false);
+    if (id === undefined) {
+      // Un-choosing the launch un-places the pin with it: the point *was* the launch's coordinate,
+      // and left behind it would read as *Somewhere else · set* and post as a nameless proposal
+      // for a launch the corpus already has.
+      const chosen = body?.putIns.find((p) => p.id === putInId)?.coord;
+      const atLaunch =
+        point !== undefined &&
+        chosen !== undefined &&
+        point.lat === chosen.lat &&
+        point.lng === chosen.lng;
+      dispatch({ type: 'setScalar', key: 'putInId', value: undefined });
+      if (atLaunch) dispatch({ type: 'setScalar', key: 'point', value: undefined });
+      return;
     }
+    dispatch({ type: 'setScalar', key: 'putInId', value: id });
+    const coord = body?.putIns.find((p) => p.id === id)?.coord;
+    dispatch({ type: 'setScalar', key: 'point', value: coord });
+    setPlacing(false);
   };
   const chooseLot = (id: string | undefined) =>
     dispatch({ type: 'setScalar', key: 'parkingAreaId', value: id });

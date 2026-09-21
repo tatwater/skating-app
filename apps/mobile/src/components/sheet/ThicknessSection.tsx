@@ -214,11 +214,14 @@ function ReadingEditor({
     const hi = num(over.max ?? max);
     const count = num(over.pokes ?? pokes);
     const word = 'supportable' in over ? over.supportable : supportable;
+    const single = m === 'single' || (m === 'poke' && v !== undefined);
     const next: ThicknessReadingInput = {
       method: meth,
-      ...(m === 'single' && v !== undefined ? { valueCm: inchesToCm(v) } : {}),
-      ...(m !== 'single' && lo !== undefined ? { minCm: inchesToCm(lo) } : {}),
-      ...(m !== 'single' && hi !== undefined ? { maxCm: inchesToCm(hi) } : {}),
+      // A number in the single mode, and the poke mode's guess — the validator takes a `valueCm`
+      // beside a count, never beside a range — else whatever range the reading carries.
+      ...(single && v !== undefined ? { valueCm: inchesToCm(v) } : {}),
+      ...(!single && lo !== undefined ? { minCm: inchesToCm(lo) } : {}),
+      ...(!single && hi !== undefined ? { maxCm: inchesToCm(hi) } : {}),
       ...(meth === 'poke' && count !== undefined ? { pokeCount: Math.round(count) } : {}),
       ...(word !== undefined ? { supportable: word } : {}),
       ...(reading.where !== undefined ? { where: reading.where } : {}),

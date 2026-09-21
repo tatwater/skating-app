@@ -656,10 +656,12 @@ describe('authors edit and delete what they shared (A10-3)', () => {
         .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', postId))
         .collect(),
     );
-    expect(actions.map((a) => a.action)).toContain('author_delete');
-    expect(actions.find((a) => a.action === 'author_delete')?.metadata).toMatchObject({
-      newStatus: 'removed',
-      derivedFromReportId: second,
+    // Exactly one row on the Post, the author's own — never a `hide` in their name from the
+    // derived-visibility rule running first, and the prior status is what the Post really was.
+    expect(actions.map((a) => a.action)).toEqual(['author_delete']);
+    expect(actions[0]).toMatchObject({
+      actorId: author.id,
+      metadata: { priorStatus: 'visible', newStatus: 'removed', derivedFromReportId: second },
     });
     // Idempotent: deleting again changes nothing and writes nothing.
     await author.as.mutation(api.reports.remove, { reportId: second });

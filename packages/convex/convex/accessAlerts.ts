@@ -436,12 +436,13 @@ const REASONS_OF_KIND: Record<AlertKind, readonly string[]> = {
   condition: ACCESS_REASONS.filter((r) => isAccessCondition(r)),
 };
 
-/** The `(status, kind)` pages one live read takes: pinned rows are blockers by construction. */
-const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AlertKind }[] = [
-  { status: 'active', kind: 'blocker' },
-  { status: 'active', kind: 'condition' },
-  { status: 'official', kind: 'blocker' },
-];
+/**
+ * The `(status, kind)` pages one live read takes — every status × every kind, because `setOfficial`
+ * pins whatever row a moderator names, a condition as readily as a blocker; a page left out here is
+ * a pinned row that vanishes from the lake.
+ */
+const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AlertKind }[] =
+  LIVE_STATUSES.flatMap((status) => ALERT_KINDS.map((kind) => ({ status, kind })));
 
 async function liveAlertsByBody(
   ctx: QueryCtx,

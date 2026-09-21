@@ -534,6 +534,36 @@ describe('the create-only rules at flush (A10 §9.4)', () => {
     expect(calls.posts).toHaveLength(1); // the server answers with the existing Post (D30)
   });
 
+  it('a create that lost its ack stays `creating`, so the retry is the server’s call — not a refusal', async () => {
+    let attempts = 0;
+    const { effects, calls } = makeEffects({
+      createPost: async (input) => {
+        attempts++;
+        if (attempts === 1) throw new Error('Network request failed');
+        return { postId: 'post-1', reportIds: input.reports.map((_, i) => `report-${i + 1}`) };
+      },
+    });
+    const first = await flushPost(draftWith(), effects, NOW);
+    expect(first).toMatchObject({ ok: false, kind: 'transient' });
+    expect(first.draft.status).toBe('creating');
+    expect(isFlushable(first.draft)).toBe(true);
+    // Eight days on: a fresh create would be refused, but this one may already be live server-side.
+    const second = await flushPost(first.draft, effects, NOW + 8 * 24 * 60 * 60 * 1000);
+    expect(second.ok).toBe(true);
+    expect(calls.uploads).toEqual([]);
+  });
+
+  it('a transient failure before the create still resets to `pending`', async () => {
+    const { effects } = makeEffects({
+      uploadPhoto: async () => {
+        throw new Error('offline');
+      },
+    });
+    const res = await flushPost(draftWith({}, { photos: [photo('p1')] }), effects, NOW);
+    expect(res).toMatchObject({ ok: false, kind: 'transient' });
+    expect(res.draft.status).toBe('pending');
+  });
+
   it('a draft that says nothing is parked with what to add', async () => {
     const { effects, calls } = makeEffects();
     const res = await flushPost(draftWith({}, {}, emptyReportForm(NOW)), effects, NOW);
@@ -690,18 +720,46 @@ describe('the condition alerts file after the Post (D197 / §7.2)', () => {
         chips(observedSheet({ putInId: 'pi-1', accessNote: ' plank by the ramp ' })),
       ),
     ).toEqual([
-      { targetType: 'put_in', putInId: 'pi-1', reason: 'plank_needed', note: 'plank by the ramp' },
-      { targetType: 'put_in', putInId: 'pi-1', reason: 'icy_lot', note: 'plank by the ramp' },
+      {
+        targetType: 'put_in',
+        putInId: 'pi-1',
+        reason: 'plank_needed',
+        note: 'plank by the ramp',
+        observedAt: NOW - 60_000,
+      },
+      {
+        targetType: 'put_in',
+        putInId: 'pi-1',
+        reason: 'icy_lot',
+        note: 'plank by the ramp',
+        observedAt: NOW - 60_000,
+      },
     ]);
+    // Observed when the skater got off, not when the flush happens to run.
     expect(
       accessConditionFilings(chips(observedSheet({ putInId: 'pi-1', parkingAreaId: 'lot-1' }))),
     ).toEqual([
-      { targetType: 'put_in', putInId: 'pi-1', reason: 'plank_needed' },
-      { targetType: 'parking_area', parkingAreaId: 'lot-1', reason: 'icy_lot' },
+      { targetType: 'put_in', putInId: 'pi-1', reason: 'plank_needed', observedAt: NOW - 60_000 },
+      {
+        targetType: 'parking_area',
+        parkingAreaId: 'lot-1',
+        reason: 'icy_lot',
+        observedAt: NOW - 60_000,
+      },
     ]);
     expect(accessConditionFilings(chips(observedSheet({ parkingAreaId: 'lot-1' })))).toEqual([
-      { targetType: 'parking_area', parkingAreaId: 'lot-1', reason: 'plank_needed' },
-      { targetType: 'parking_area', parkingAreaId: 'lot-1', reason: 'icy_lot' },
+      {
+        targetType: 'parking_area',
+        parkingAreaId: 'lot-1',
+        reason: 'plank_needed',
+        observedAt: NOW - 60_000,
+      },
+      {
+        targetType: 'parking_area',
+        parkingAreaId: 'lot-1',
+        reason: 'icy_lot',
+        observedAt: NOW - 60_000,
+      },
     ]);
     expect(accessConditionKey('rkey-1', 'icy_lot')).toBe('rkey-1:access:icy_lot');
   });
@@ -738,6 +796,7 @@ describe('the condition alerts file after the Post (D197 / §7.2)', () => {
         targetType: 'put_in',
         putInId: 'pi-1',
         reason: 'plank_needed',
+        observedAt: NOW - 60_000,
         reportId: 'report-1',
         idempotencyKey: 'rkey-1:access:plank_needed',
       },
@@ -745,6 +804,7 @@ describe('the condition alerts file after the Post (D197 / §7.2)', () => {
         targetType: 'put_in',
         putInId: 'pi-1',
         reason: 'walk_in',
+        observedAt: NOW - 60_000,
         reportId: 'report-1',
         idempotencyKey: 'rkey-1:access:walk_in',
       },

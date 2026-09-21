@@ -61,7 +61,8 @@ export interface DraftPhoto {
  * reconnect, which made *Save draft* a slower *Post*. `pending` is queued. `uploading`/`creating`
  * are in-flight markers; a draft found in one at launch (app killed mid-flush) is treated as
  * resumable (`isFlushable`) — its checkpoints make the resume cheap. `error` is a *permanent*
- * failure needing the user; a transient failure resets to `pending`.
+ * failure needing the user; a transient failure resets to `pending`, except one that lost the
+ * create's ack, which stays `creating` (see the catch in `flushPost`).
  */
 export type DraftStatus = 'draft' | 'pending' | 'uploading' | 'creating' | 'done' | 'error';
 
@@ -243,6 +244,8 @@ export interface AccessConditionFiling {
   parkingAreaId?: string;
   reason: string;
   note?: string;
+  /** When the skater saw it — the Report's end time, so a flush days later does not read as fresh. */
+  observedAt?: number;
 }
 
 const LOT_SHAPED_REASONS: ReadonlySet<string> = new Set(['icy_lot', 'snowed_in', 'plowed_trail']);
@@ -251,6 +254,7 @@ export function accessConditionFilings(sheet: ReportSheetState): AccessCondition
   const { putInId, parkingAreaId } = sheet.scalars;
   if (putInId === undefined && parkingAreaId === undefined) return [];
   const note = sheet.scalars.accessNote?.trim() || undefined;
+  const [end] = selectedValues(sheet, 'endTime');
   return selectedValues(sheet, 'accessConditions')
     .filter((reason) => isAccessCondition(reason))
     .map((reason) => {
@@ -261,6 +265,7 @@ export function accessConditionFilings(sheet: ReportSheetState): AccessCondition
         ...(toLot ? { parkingAreaId: parkingAreaId as string } : { putInId: putInId as string }),
         reason,
         ...(note !== undefined ? { note } : {}),
+        ...(end !== undefined ? { observedAt: end.ms } : {}),
       };
     });
 }
@@ -643,9 +648,14 @@ export async function flushPost(
   } catch (error) {
     const kind = classifyFlushError(error);
     const message = flushErrorMessage(error);
-    // Permanent → park in `error` for the user; transient → back to `pending` for the next flush.
+    // Permanent → park in `error` for the user; transient → back to `pending` for the next flush —
+    // except a create that was sent and never answered (`creating`, no Post id yet), which stays
+    // `creating`: that is the one fact the retry's create-only check above reads to know it must
+    // leave the draft to the server's dedup, and resetting it to `pending` would let a lost ack at
+    // day 6.9 be refused at day 7.1 for a Post that is already live. Still flushable (`isFlushable`).
+    const sentUnanswered = d.status === 'creating' && d.postId === undefined;
     await save({
-      status: kind === 'permanent' ? 'error' : 'pending',
+      status: kind === 'permanent' ? 'error' : sentUnanswered ? 'creating' : 'pending',
       errorMessage: kind === 'permanent' ? message : undefined,
     });
     return { ok: false, draft: d, kind, message };

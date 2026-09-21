@@ -149,6 +149,26 @@ export async function authorRemoveReport(
   if (report.moderationStatus === 'removed') return;
   const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
   const priorStatus = report.moderationStatus;
+
+  // Whether this member empties its Post is decided — and the Post patched — **before** the
+  // member's own status moves: `applyReportStatus` runs the derived-visibility rule, which would
+  // otherwise find a Post with no visible member left, hide it, and write a `hide` row in the
+  // author's name, and the takedown below would then be the Post's second row with the wrong
+  // prior status. Removed first, the rule sees a Post that is not `visible` and leaves it alone.
+  const post = report.postId !== undefined ? await ctx.db.get(report.postId) : null;
+  let emptiesPost = post !== null && post.moderationStatus !== 'removed';
+  if (post && emptiesPost) {
+    for (const id of post.reportIds) {
+      if (id === report._id) continue;
+      const member = await ctx.db.get(id);
+      if (member && member.moderationStatus !== 'removed') {
+        emptiesPost = false;
+        break;
+      }
+    }
+    if (emptiesPost) await ctx.db.patch(post._id, { moderationStatus: 'removed' });
+  }
+
   await applyReportStatus(ctx, report, 'removed', audit);
   await ctx.db.insert('moderationActions', {
     actorId: author._id,
@@ -159,14 +179,7 @@ export async function authorRemoveReport(
     metadata: { priorStatus, newStatus: 'removed' },
     createdAt: now,
   });
-  if (report.postId !== undefined) {
-    const post = await ctx.db.get(report.postId);
-    if (!post || post.moderationStatus === 'removed') return;
-    for (const id of post.reportIds) {
-      const member = await ctx.db.get(id);
-      if (member && member.moderationStatus !== 'removed') return;
-    }
-    await ctx.db.patch(post._id, { moderationStatus: 'removed' });
+  if (post && emptiesPost) {
     await ctx.db.insert('moderationActions', {
       actorId: author._id,
       action: 'author_delete',

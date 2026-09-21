@@ -533,7 +533,7 @@ describe('sections', () => {
 
 // ── A10-3: verdicts, the quick thickness row, seeding from a stored report ─────────────────────
 
-import { validateReportInput } from './report';
+import { isValidThicknessReading, validateReportInput } from './report';
 import {
   confirmableVerdict,
   PASSED_VERDICTS,
@@ -559,9 +559,48 @@ describe('passed-hazard verdicts (D52 + didn’t look)', () => {
   });
 });
 
+describe('setBody', () => {
+  it('drops the previous lake’s peer ghosts and nothing else', () => {
+    const s = [
+      {
+        type: 'suggest' as const,
+        field: 'iceTypes' as const,
+        source: 'peer' as const,
+        values: [{ key: 'glass', value: { type: 'glass' } }],
+      },
+      {
+        type: 'suggest' as const,
+        field: 'surfaceTags' as const,
+        source: 'track' as const,
+        values: [{ key: 'snow_covered', value: { type: 'snow_covered' } }],
+      },
+      {
+        type: 'select' as const,
+        field: 'iceTypes' as const,
+        key: 'black_ice',
+        value: { type: 'black_ice' },
+      },
+      { type: 'setBody' as const, waterBodyId: 'wb-2' },
+    ].reduce(sheetReducer, emptySheet(T0, 'wb-1'));
+    expect(s.waterBodyId).toBe('wb-2');
+    expect(s.fields.iceTypes.chips.map((c) => c.key)).toEqual(['black_ice']);
+    expect(s.fields.surfaceTags.chips.map((c) => c.key)).toEqual(['snow_covered']);
+    // The same lake again is a no-op, ghosts included.
+    const same = [
+      {
+        type: 'suggest' as const,
+        field: 'quality' as const,
+        source: 'peer' as const,
+        values: [{ key: 'good', value: 'good' }],
+      },
+    ].reduce(sheetReducer, s);
+    expect(sheetReducer(same, { type: 'setBody', waterBodyId: 'wb-2' })).toBe(same);
+  });
+});
+
 describe('the quick thickness row (D195)', () => {
   it('a band is one estimated reading with the band’s edges; 6+ is a lower bound, under 2 an upper', () => {
-    expect(thicknessBandReading('under_2')).toEqual({ method: 'estimated', maxCm: 5.08 });
+    expect(thicknessBandReading('under_2')).toEqual({ method: 'estimated', minCm: 0, maxCm: 5.08 });
     expect(thicknessBandReading('6_plus')).toEqual({ method: 'estimated', minCm: 15.24 });
     expect(thicknessBandReading('3_4', { sector: 'N' })).toEqual({
       method: 'estimated',
@@ -572,6 +611,8 @@ describe('the quick thickness row (D195)', () => {
     for (const band of THICKNESS_BANDS) {
       expect(thicknessBandOf(thicknessBandReading(band))).toBe(band);
       expect(thicknessBandOfKey(thicknessBandKey(band))).toBe(band);
+      // Every band is a reading the validator takes — a bare `maxCm` is not (`minCm: 0` spells it).
+      expect(isValidThicknessReading(thicknessBandReading(band))).toBe(true);
     }
     expect(thicknessBandOfKey('reading:1')).toBeNull();
     expect(thicknessBandOfKey('band:nope')).toBeNull();

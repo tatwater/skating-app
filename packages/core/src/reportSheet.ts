@@ -343,8 +343,22 @@ function authorSolid(chip: SheetChip<unknown>): boolean {
 
 export function sheetReducer(state: ReportSheetState, action: SheetAction): ReportSheetState {
   switch (action.type) {
-    case 'setBody':
-      return { ...state, waterBodyId: action.waterBodyId };
+    case 'setBody': {
+      if (action.waterBodyId === state.waterBodyId) return state;
+      // A peer's ghost was about the lake it came from (§4.4): on another lake it is nobody's
+      // suggestion, so it goes; the author's own chips, and a ghost from their track or their
+      // writing, are about their skate and stay.
+      const fields = { ...state.fields };
+      for (const key of Object.keys(fields) as SheetFieldKey[]) {
+        const field = fields[key] as ChipField<unknown>;
+        if (!field.chips.some((c) => c.tier === 'ghost' && c.source === 'peer')) continue;
+        (fields as Record<SheetFieldKey, ChipField<unknown>>)[key] = {
+          ...field,
+          chips: field.chips.filter((c) => !(c.tier === 'ghost' && c.source === 'peer')),
+        };
+      }
+      return { ...state, waterBodyId: action.waterBodyId, fields };
+    }
 
     case 'select':
       return withField(state, action.field, (field) => {
@@ -529,7 +543,8 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
 
 /**
  * The chip row *under 2 / 2–3 / 3–4 / 4–6 / 6+* — a band is stored as one `estimated` reading with
- * the band's edges in cm (a lower bound only for *6+*, an upper bound only for *under 2*), so every
+ * the band's edges in cm (a lower bound only for *6+*; *under 2* is `0–2`, because the validator
+ * spells an upper bound alone as `minCm: 0` — a bare `maxCm` is refused as no range), so every
  * downstream reader sees a reading, not a new shape. `didn't check` is the absence of a band.
  */
 export const THICKNESS_BANDS = ['under_2', '2_3', '3_4', '4_6', '6_plus'] as const;
@@ -544,7 +559,7 @@ export const THICKNESS_BAND_LABELS: Record<ThicknessBand, string> = {
 };
 
 const BAND_INCHES: Record<ThicknessBand, { min?: number; max?: number }> = {
-  under_2: { max: 2 },
+  under_2: { min: 0, max: 2 },
   '2_3': { min: 2, max: 3 },
   '3_4': { min: 3, max: 4 },
   '4_6': { min: 4, max: 6 },
