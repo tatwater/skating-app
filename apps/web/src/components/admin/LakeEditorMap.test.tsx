@@ -195,6 +195,44 @@ describe('LakeEditorMap — what gets drawn', () => {
     expect(points.features.map((f) => f.properties?.suggested)).toEqual([false, true]);
   });
 
+  it('draws a chord bay’s mouth as its own line, and a free-drawn bay has none (D201)', () => {
+    render(
+      <LakeEditorMap
+        data={data({
+          subAreas: [
+            {
+              _id: 's1',
+              waterBodyId: 'b1',
+              name: 'Malletts Bay',
+              polygon: BAY,
+              centroid: { lat: 44.3, lng: -73.1 },
+            },
+            {
+              _id: 's2',
+              waterBodyId: 'b1',
+              name: 'Keeler Bay',
+              polygon: BAY,
+              centroid: { lat: 44.3, lng: -73.1 },
+              mouth: {
+                a: { lat: 44.2, lng: -73.2 },
+                b: { lat: 44.2, lng: -73.0 },
+                side: { lat: 44.3, lng: -73.1 },
+                sagittaM: 300,
+              },
+            },
+          ],
+        })}
+      />,
+    );
+    loadMap();
+    const mouths = sources.get('editor-mouths')?.data as GeoJSON.FeatureCollection;
+    expect(mouths.features).toHaveLength(1);
+    expect(mouths.features[0]?.properties?.subAreaId).toBe('s2');
+    // A bowed mouth is an arc, not the two-point chord.
+    const line = mouths.features[0]?.geometry as GeoJSON.LineString | undefined;
+    expect(line?.coordinates.length).toBeGreaterThan(3);
+  });
+
   /**
    * Parking (A06f) — drawn so the operator placing a lot can see the ones already there. Its own
    * source rather than sharing the put-in layer: the two are placed by two different tools and are

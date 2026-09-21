@@ -1,4 +1,4 @@
-import { type BBox, type LatLng, shapeSignature } from '@skating/core';
+import { type BBox, chordArc, type LatLng, type SubAreaMouth, shapeSignature } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
@@ -29,6 +29,8 @@ export interface LakeEditorData {
     name: string;
     polygon: GeoJSON.Geometry;
     centroid: LatLng;
+    /** The mouth a chord bay was derived from (D201) — drawn as its own line. */
+    mouth?: SubAreaMouth;
   }[];
   putIns: readonly { coord: LatLng; source: string }[];
   /** Lots serving this body (A06f) — context for placement, so a new one isn't a duplicate. */
@@ -166,6 +168,17 @@ export function LakeEditorMap({
         },
       });
 
+      // The stored mouths (D201): a chord bay's seaward edge is a judgment, and this is the line
+      // the A09 "skated past the mouth" count is about — so it reads as a line, not as a side of
+      // the dashed outline it happens to coincide with.
+      map.addSource('editor-mouths', { type: 'geojson', data: EMPTY });
+      map.addLayer({
+        id: 'editor-mouths',
+        type: 'line',
+        source: 'editor-mouths',
+        paint: { 'line-color': bays.outline, 'line-width': 2.5 },
+      });
+
       // The draft: whatever is being drawn or pasted, before it's saved. Deliberately the loudest
       // thing on the canvas — an operator has to be able to see at a glance that this shape is *not*
       // yet stored, since the difference between a preview and a save is the whole risk here.
@@ -282,6 +295,30 @@ export function LakeEditorMap({
         })),
       ),
     );
+    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
+  }, [loaded, data.subAreas, setData]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    setData('editor-mouths', {
+      type: 'FeatureCollection',
+      features: data.subAreas.flatMap((s) =>
+        s.mouth
+          ? [
+              {
+                type: 'Feature' as const,
+                geometry: {
+                  type: 'LineString' as const,
+                  coordinates: chordArc(s.mouth.a, s.mouth.b, s.mouth.side, s.mouth.sagittaM).map(
+                    (p) => [p.lng, p.lat],
+                  ),
+                },
+                properties: { subAreaId: s._id },
+              },
+            ]
+          : [],
+      ),
+    });
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
   }, [loaded, data.subAreas, setData]);
 
