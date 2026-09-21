@@ -419,13 +419,16 @@ A fresh-eyes review against the code, before any build. What it found and what c
   reports field-labeled (a Sonnet agent drafts, a human verifies) — labeled here, not assumed.
 - §1.3 Run three extractors — Claude-only (Haiku 4.5, then Sonnet 5) and Claude + Jev — and
   record precision/recall per field, latency and cost per report. The harness takes any
-  `Extractor`; the title is part of the input. ~~⚠ Fix the prompt-cache boundary first~~ —
-  **misdiagnosed** (build, 2026-09-21): the mention inventory's prefix order was right (system
-  block first, `cache_control` set); caching never engaged because **Haiku 4.5's minimum cacheable
-  prefix is 4,096 tokens** and the prompt was ~800 (every row has `cache_creation_input_tokens: 0`,
-  not just reads). Sonnet 5's minimum is 1,024. Caching would have saved ~$1.50 of the $5.68 —
-  4.37M input tokens were per-message body. Corpus-scale passes use the **Batch API** (50% off)
-  instead of chasing the cache; the sheet's per-paragraph calls are too short to cache on Haiku.
+  `Extractor`; the title is part of the input. ~~⚠ Fix the prompt-cache boundary first: the
+  2026-09-19 mention inventory (Haiku over 2,449 emails) cost $5.68 because the shared prefix
+  (system prompt + vocabulary) sat after the per-message text~~ — **misdiagnosed** (build,
+  2026-09-21): the inventory's prefix order was right (system block first, `cache_control` set);
+  caching never engaged because **Haiku 4.5's minimum cacheable prefix is 4,096 tokens** and the
+  prompt was ~800 (every row has `cache_creation_input_tokens: 0`, not just reads). Sonnet 5's
+  minimum is 1,024. Caching would have saved ~$1.50 of the $5.68 — 4.37M input tokens were
+  per-message body. Corpus-scale passes use the **Batch API** (50% off) instead of chasing the
+  cache; the sheet's per-paragraph calls are too short to cache on Haiku. Still confirm
+  `cache_read_input_tokens > 0` on the second call whenever a prompt is long enough to qualify.
 - §1.4 The go/no-go for ghost-chip extraction is a per-field precision floor — a wrong ghost chip
   is a tap to dismiss, but a wrong *confident* one on thickness is a claim we suggested. Floors are
   set from the first run, not before it.
