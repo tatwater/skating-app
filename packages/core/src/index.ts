@@ -92,6 +92,7 @@ export * from './report';
 export * from './reportFields';
 export * from './reportForm';
 export * from './reportFreshness';
+export * from './reportSheet';
 export * from './reportView';
 export * from './reputation';
 export * from './reputationConfig';

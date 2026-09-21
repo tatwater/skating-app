@@ -543,20 +543,18 @@ export type MinimumSetTerm = (typeof MINIMUM_SET_TERMS)[number];
  * change and `posts.create` runs once, on create only — `update` never calls this, so a
  * pre-A10 notes-only report stays editable (D189 amendment, D199).
  */
-export function minimumSetGaps(
-  report: Pick<
-    NormalizedReport,
-    | 'waterBodyId'
-    | 'skateEndTime'
-    | 'skateQuality'
-    | 'suitability'
-    | 'iceTypes'
-    | 'surfaceTags'
-    | 'iceThickness'
-    | 'sighting'
-  >,
-  hazardCount: number,
-): MinimumSetTerm[] {
+export interface MinimumSetReport {
+  waterBodyId: string;
+  skateEndTime: number;
+  skateQuality?: SkateQuality;
+  suitability?: Suitability;
+  iceTypes?: readonly ChipInput<IceType>[];
+  surfaceTags?: readonly ChipInput<SurfaceTag>[];
+  iceThickness?: { readings: readonly unknown[] };
+  sighting?: Sighting;
+}
+
+export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): MinimumSetTerm[] {
   const gaps: MinimumSetTerm[] = [];
   if (!report.waterBodyId) gaps.push('body');
   if (!Number.isFinite(report.skateEndTime) || report.skateEndTime <= 0) gaps.push('endTime');
