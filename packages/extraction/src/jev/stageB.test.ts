@@ -134,8 +134,28 @@ describe('reportFromAnswers', () => {
     ]);
   });
 
+  it('a sighting survives only off the ice', () => {
+    const shore = reportFromAnswers(
+      unit,
+      { observedFrom: choice('shore', 0.9), sighting: choice('open', 0.8) },
+      input,
+    );
+    expect(shore.fields.sighting.map((v) => v.value)).toEqual(['open']);
+    const onIce = reportFromAnswers(
+      unit,
+      { observedFrom: choice('on_ice', 0.9), sighting: choice('frozen', 0.9) },
+      input,
+    );
+    expect(onIce.fields.sighting).toEqual([]);
+    const unstated = reportFromAnswers(unit, { sighting: choice('frozen', 0.9) }, input);
+    expect(unstated.fields.sighting).toEqual([]);
+  });
+
   it('a measurement voted "none" or weakly is not a reading; an unlocated phrase becomes a place name', () => {
-    const placed: Unit = { ...unit, compassPhrases: [{ quote: 'by the boathouse' }] };
+    const placed: Unit = {
+      ...unit,
+      compassPhrases: [{ quote: 'by the boathouse', sector: 'NNE' }], // not a vocabulary sector
+    };
     const r = reportFromAnswers(
       placed,
       {

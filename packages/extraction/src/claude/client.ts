@@ -71,7 +71,7 @@ export async function callStructured<T>(
   schema: z.ZodType<T>,
   system: string,
   user: string,
-  maxTokens = 8192,
+  maxTokens = 16_000,
 ): Promise<StructuredCall<T>> {
   const response = await client.messages.parse({
     model: CLAUDE_MODELS[model],

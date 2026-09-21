@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultVocabulary, type ExtractionInput } from '../contract';
-import {
-  evidenceFor,
-  localTimeToMs,
-  locateQuote,
-  mapWireResult,
-  WireFieldsSchema,
-  type WireResult,
-} from './wire';
+import { evidenceFor, localTimeToMs, locateQuote, mapWireResult, type WireResult } from './wire';
 
 const TEXT =
   'Skated Morey this afternoon.  Black ice at the north end,\nabout 3-4 inches by the auger. Got off around 4.';
@@ -66,88 +59,126 @@ describe('localTimeToMs', () => {
 });
 
 describe('mapWireResult', () => {
+  const t = 'text' as const;
   const wire: WireResult = {
     reports: [
       {
         bodyRef: 'morey',
         visit: 0,
         note: 'Skated Morey this afternoon.',
-        fields: {
-          quality: [{ value: 'great', confidence: 0.9, quote: 'Skated Morey', quoteField: 'text' }],
-          suitability: [],
-          observedFrom: [
-            { value: 'on_ice', confidence: 0.95, quote: 'Skated', quoteField: 'text' },
-          ],
-          sighting: [{ value: 'melting', confidence: 0.4, quote: 'afternoon', quoteField: 'text' }],
-          endTime: [
-            {
-              value: { localTime: '16:00', precision: 'half_hour' },
-              confidence: 0.7,
-              quote: 'around 4',
-              quoteField: 'text',
-            },
-            {
-              value: { localTime: 'dusk', precision: 'half_hour' },
-              confidence: 0.7,
-              quote: 'around 4',
-              quoteField: 'text',
-            },
-          ],
-          iceTypes: [
-            {
-              value: { type: 'black_ice', where: { sector: 'N' } },
-              confidence: 0.95,
-              quote: 'Black ice at the north end',
-              quoteField: 'text',
-            },
-            {
-              value: { type: 'glass_ice' },
-              confidence: 0.6,
-              quote: 'Black ice',
-              quoteField: 'text',
-            },
-            {
-              value: { type: 'shell_ice', where: { sector: 'upstream', extent: 'patches' } },
-              confidence: 0.5,
-              quote: 'nowhere',
-              quoteField: 'text',
-            },
-          ],
-          surfaceTags: [],
-          snowCoverage: [],
-          snowImpediment: [],
-          snowDrifts: [],
-          snowDepthInches: [
-            { value: 0.2, confidence: 0.8, quote: 'dusting', quoteField: 'text' },
-            { value: -1, confidence: 0.8, quote: 'x', quoteField: 'text' },
-          ],
-          thickness: [
-            {
-              value: { method: 'measured', minInches: 3, maxInches: 4 },
-              confidence: 0.92,
-              quote: '3-4 inches by the auger',
-              quoteField: 'text',
-            },
-            {
-              value: { method: 'guessed', valueInches: 2 },
-              confidence: 0.5,
-              quote: 'x',
-              quoteField: 'text',
-            },
-          ],
-          hazards: [
-            {
-              value: { type: 'open_water', where: { placeName: 'the inlet' } },
-              confidence: 0.8,
-              quote: 'Got off',
-              quoteField: 'text',
-            },
-            { value: { type: 'bear' }, confidence: 0.8, quote: 'Got off', quoteField: 'text' },
-          ],
-          accessConditions: [
-            { value: 'plank_needed', confidence: 0.7, quote: 'Got off', quoteField: 'text' },
-          ],
-        },
+        values: [
+          {
+            field: 'quality',
+            value: 'great',
+            confidence: 0.9,
+            quote: 'Skated Morey',
+            quoteField: t,
+          },
+          {
+            field: 'observedFrom',
+            value: 'shore',
+            confidence: 0.95,
+            quote: 'Skated',
+            quoteField: t,
+          },
+          {
+            field: 'sighting',
+            value: 'melting',
+            confidence: 0.4,
+            quote: 'afternoon',
+            quoteField: t,
+          },
+          { field: 'sighting', value: 'open', confidence: 0.6, quote: 'afternoon', quoteField: t },
+          {
+            field: 'endTime',
+            value: '16:00',
+            precision: 'half_hour',
+            confidence: 0.7,
+            quote: 'around 4',
+            quoteField: t,
+          },
+          {
+            field: 'endTime',
+            value: 'dusk',
+            precision: 'half_hour',
+            confidence: 0.7,
+            quote: 'around 4',
+            quoteField: t,
+          },
+          {
+            field: 'iceTypes',
+            value: 'black_ice',
+            where: { sector: 'N' },
+            confidence: 0.95,
+            quote: 'Black ice at the north end',
+            quoteField: t,
+          },
+          {
+            field: 'iceTypes',
+            value: 'glass_ice',
+            confidence: 0.6,
+            quote: 'Black ice',
+            quoteField: t,
+          },
+          {
+            field: 'iceTypes',
+            value: 'shell_ice',
+            where: { sector: 'upstream', extent: 'patches' },
+            confidence: 0.5,
+            quote: 'nowhere',
+            quoteField: t,
+          },
+          {
+            field: 'snowDepthInches',
+            value: 'depth',
+            inches: 0.2,
+            confidence: 0.8,
+            quote: 'dusting',
+            quoteField: t,
+          },
+          {
+            field: 'snowDepthInches',
+            value: 'depth',
+            inches: -1,
+            confidence: 0.8,
+            quote: 'x',
+            quoteField: t,
+          },
+          {
+            field: 'thickness',
+            value: 'measured',
+            minInches: 3,
+            maxInches: 4,
+            confidence: 0.92,
+            quote: '3-4 inches by the auger',
+            quoteField: t,
+          },
+          {
+            field: 'thickness',
+            value: 'guessed',
+            inches: 2,
+            confidence: 0.5,
+            quote: 'x',
+            quoteField: t,
+          },
+          {
+            field: 'hazards',
+            value: 'open_water',
+            where: { placeName: 'the inlet' },
+            confidence: 0.8,
+            quote: 'Got off',
+            quoteField: t,
+          },
+          { field: 'hazards', value: 'bear', confidence: 0.8, quote: 'Got off', quoteField: t },
+          {
+            field: 'accessConditions',
+            value: 'plank_needed',
+            confidence: 0.7,
+            quote: 'Got off',
+            quoteField: t,
+          },
+          { field: 'wind', value: 'strong', confidence: 0.7, quote: 'Got off', quoteField: t },
+        ],
       },
     ],
     misses: [
@@ -167,7 +198,7 @@ describe('mapWireResult', () => {
         evidence: { field: 'text', start: 0, end: 12, text: 'Skated Morey', located: true },
       },
     ]);
-    expect(r?.fields.sighting).toEqual([]);
+    expect(r?.fields.sighting.map((v) => v.value)).toEqual(['open']);
     expect(r?.fields.endTime).toHaveLength(1);
     expect(r?.fields.endTime[0]?.value).toEqual({
       ms: Date.UTC(2026, 0, 10, 21, 0),
@@ -193,26 +224,56 @@ describe('mapWireResult', () => {
       { kind: 'enum_value', text: 'afternoon', wouldNeed: 'sighting: melting' },
       { kind: 'enum_value', text: 'Black ice', wouldNeed: 'iceTypes: glass_ice' },
       { kind: 'where', text: 'upstream', wouldNeed: 'a sector value' },
-      { kind: 'enum_value', text: 'Got off', wouldNeed: 'hazards: bear' },
       { kind: 'enum_value', text: 'x', wouldNeed: 'thickness method: guessed' },
+      { kind: 'enum_value', text: 'Got off', wouldNeed: 'hazards: bear' },
+      { kind: 'field', text: 'Got off', wouldNeed: 'a field named wind' },
       { kind: 'field', text: 'windy', wouldNeed: 'a wind field' },
       { kind: 'other', text: 'x', wouldNeed: 'y' },
     ]);
   });
 
-  it('keeps a null body ref with the name as written', () => {
-    const result = mapWireResult(
+  it('drops a sighting from an author on the ice, or with no vantage (D189)', () => {
+    const t = 'text' as const;
+    const sighting = {
+      field: 'sighting',
+      value: 'open',
+      confidence: 0.9,
+      quote: 'Skated',
+      quoteField: t,
+    };
+    const onIce = mapWireResult(
       {
         reports: [
           {
-            bodyRef: null,
-            bodyName: 'Halfmile Pond',
-            visit: 1,
-            fields: WireFieldsSchema.parse({}),
+            bodyRef: 'morey',
+            visit: 0,
+            values: [
+              {
+                field: 'observedFrom',
+                value: 'on_ice',
+                confidence: 1,
+                quote: 'Skated',
+                quoteField: t,
+              },
+              sighting,
+            ],
           },
         ],
         misses: [],
       },
+      input(),
+    );
+    expect(onIce.reports[0]?.fields.sighting).toEqual([]);
+    const unstated = mapWireResult(
+      { reports: [{ bodyRef: 'morey', visit: 0, values: [sighting] }], misses: [] },
+      input(),
+    );
+    expect(unstated.reports[0]?.fields.sighting).toEqual([]);
+  });
+
+  it('keeps a null body ref with the name as written', () => {
+    const result = mapWireResult(
+      { reports: [{ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1, values: [] }], misses: [] },
       input(),
     );
     expect(result.reports[0]).toMatchObject({ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1 });

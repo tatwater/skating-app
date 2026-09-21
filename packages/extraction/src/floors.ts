@@ -25,13 +25,23 @@ export interface PrecisionFloors {
 }
 
 /**
- * The current table. Empty until §1.3's first run fills it — see the phase doc's §1.4 record for
- * the numbers and the run they came from.
+ * The current table — §1.3's first run (2026-09-21): the Claude + Jev pipeline over the 147-email
+ * stratified sample, scored against Sonnet-drafted (unverified) value labels, loose match. Only
+ * fields that reached their target precision with ≥ 10 supporting values have a floor; the rest
+ * stay ghosts. Thickness reached 90% at 0.98 on one pass and lost it on the re-run (support 10 on
+ * the line), so it has no floor until the verified labels say. The phase doc's §1.4 record has the
+ * tables; `training_data/google_group/eval/` has the runs. Re-set from the verified labels.
  */
 export const PRECISION_FLOORS: PrecisionFloors = {
   setOn: '2026-09-21',
   basis: 'provisional',
-  fields: {},
+  fromRun: 'jev:haiku × sample-150 (seed 20260921) vs claude:sonnet draft labels',
+  fields: {
+    iceTypes: 0.93, // 81% precision, 121 values
+    surfaceTags: 0.99, // 82%, 38
+    hazards: 0.98, // 94%, 17
+    accessConditions: 0.66, // 80%, 10
+  },
 };
 
 /** The D188 tier a confidence earns for a field under a floors table. No floor ⇒ ghost. */

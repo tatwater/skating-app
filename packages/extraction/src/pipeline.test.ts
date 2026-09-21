@@ -45,16 +45,16 @@ describe('claudeOnlyExtractor', () => {
           {
             bodyRef: 'morey',
             visit: 0,
-            fields: {
-              iceTypes: [
-                {
-                  value: { type: 'black_ice', where: { sector: 'N' } },
-                  confidence: 0.9,
-                  quote: 'Black ice at the north end',
-                  quoteField: 'text',
-                },
-              ],
-            },
+            values: [
+              {
+                field: 'iceTypes',
+                value: 'black_ice',
+                where: { sector: 'N' },
+                confidence: 0.9,
+                quote: 'Black ice at the north end',
+                quoteField: 'text',
+              },
+            ],
           },
         ],
         misses: [],

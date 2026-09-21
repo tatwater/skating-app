@@ -77,10 +77,12 @@ Return one report per (body of water, visit). A visit is one time on or at one b
 
 For each report, "note" is the author's own sentences about that body, verbatim, joined — nothing rewritten.
 
-Each field value carries:
-- "value": the structured value.
+Each report carries a flat list "values". One entry per value, with:
+- "field": which field it is (the names below).
+- "value": the enum key (black_ice, dont_go, on_ice, …); for thickness, the method; for endTime, the local clock time; for snowDepthInches, the word "depth".
 - "confidence": 0 to 1 — how sure you are the author said or meant exactly this value. 0.95+ only when the words are unambiguous ("black ice", "3 inches by the auger"). 0.5–0.8 when you are inferring from paraphrase ("the good stuff" → black_ice). Below 0.5 when it is a guess.
 - "quote": the exact span of the author's text (or title) the value comes from — verbatim, no paraphrase, at most 160 characters. "quoteField" says whether it is from the title or the text.
+- optional "where" (below), "inches" / "minInches" / "maxInches" / "pokeCount" / "supportable" for thickness and snow depth, "precision" for endTime, and a short "note" when the author qualifies the value.
 
 ## Fields
 
@@ -88,11 +90,11 @@ Each field value carries:
 - suitability: one of ${list(vocab.suitabilities)} — who the author says should go. Only when the author says so.
 - observedFrom: one of ${list(vocab.observedFrom)}. Default is on_ice when the author skated; use shore for a drive-by, a look from a window, a drone, a webcam; secondhand for a relayed report.
 - sighting: one of ${list(vocab.sightings)} — what a shore or secondhand observer saw. Never for an author who was on the ice.
-- endTime: when the author got off the ice, as a local clock time "YYYY-MM-DDTHH:MM" (or "HH:MM" for today), with precision "minute" when stated exactly, "half_hour" when approximate ("around 4", "late afternoon" → do not guess a time for "afternoon"; only return a time when the author gives a clock time or a clear anchor like "sunset").
+- endTime: when the author got off the ice — value is a local clock time "YYYY-MM-DDTHH:MM" (or "HH:MM" for today), precision "minute" when stated exactly, "half_hour" when approximate ("around 4", "late afternoon" → do not guess a time for "afternoon"; only return a time when the author gives a clock time or a clear anchor like "sunset").
 - iceTypes: values from ${list(vocab.iceTypes)}. Each with an optional "where" (below) and a short note if the author qualifies it.
 - surfaceTags: values from ${list(vocab.surfaceTags)}. snow_covered and drifted here mean the author described the surface that way.
-- snowCoverage: one of ${list(vocab.snowCoverages)}; snowImpediment: one of ${list(vocab.snowImpediments)}; snowDrifts: one of ${list(vocab.snowDrifts)}; snowDepthInches: a number the author gave (a "dusting" is 0.2).
-- thickness: readings. method is one of ${list(vocab.thicknessMethods)}. measured = drilled, augered, tape, fishing hole measured by the author; estimated = eyeballed, from a crack, from fishing holes seen, from someone else's number; poke = a pole test — put the count in pokeCount and the author's inch guess (if any) in the inch fields. Numbers in inches: valueInches for a single number, minInches/maxInches for a range, minInches alone for "at least" / "4+". supportable true/false only when the author uses the word (supportable, unsupportable, held me, went through). "where" when the reading is located.
+- snowCoverage: one of ${list(vocab.snowCoverages)}; snowImpediment: one of ${list(vocab.snowImpediments)}; snowDrifts: one of ${list(vocab.snowDrifts)}; snowDepthInches: value "depth" with "inches" set to the number the author gave (a "dusting" is 0.2).
+- thickness: one entry per reading; value is the method, one of ${list(vocab.thicknessMethods)}. measured = drilled, augered, tape, fishing hole measured by the author; estimated = eyeballed, from a crack, from fishing holes seen, from someone else's number; poke = a pole test — put the count in pokeCount and the author's inch guess (if any) in the inch fields. Numbers in inches: "inches" for a single number, minInches/maxInches for a range, minInches alone for "at least" / "4+". supportable true/false only when the author uses the word (supportable, unsupportable, held me, went through). "where" when the reading is located.
 - hazards: values from ${list(vocab.hazardTypes)} — each with a "where" when located. open_water includes leads; pressure_ridge includes ridges and folds; wet_crack is a working crack; thin_ice when the author says thin.
 - accessConditions: values from ${list(vocab.accessConditions)} — conditions at the launch or lot, not blockers.
 

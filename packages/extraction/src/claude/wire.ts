@@ -32,14 +32,6 @@ import {
   type Vocabulary,
 } from '../contract';
 
-const wireValue = <V extends z.ZodTypeAny>(value: V) =>
-  z.object({
-    value,
-    confidence: z.number().min(0).max(1),
-    quote: z.string(),
-    quoteField: z.enum(['title', 'text']),
-  });
-
 export const WireWhereSchema = z.object({
   extent: z.string().optional(),
   subAreaId: z.string().optional(),
@@ -47,52 +39,40 @@ export const WireWhereSchema = z.object({
   placeName: z.string().optional(),
 });
 
-const WireChipSchema = z.object({
-  type: z.string(),
+/**
+ * One extracted value, flat. Every field uses this one shape — a structured-output grammar is
+ * compiled per request and a schema with fourteen differently-typed lists was "too large"
+ * (Anthropic 400, 2026-09-21); one object type reused across a list compiles small. `field` says
+ * which contract field it is; `value` is the enum key, the thickness method, or the local clock
+ * time; the optional numbers ride alongside for thickness and snow depth.
+ */
+export const WireValueSchema = z.object({
+  /** A contract field key: quality, suitability, observedFrom, sighting, endTime, iceTypes, surfaceTags, snowCoverage, snowImpediment, snowDrifts, snowDepthInches, thickness, hazards, accessConditions. */
+  field: z.string(),
+  /** The enum key (black_ice, dont_go, …); for thickness the method; for endTime the local time; for snowDepthInches "depth". */
+  value: z.string(),
+  confidence: z.number().min(0).max(1),
+  quote: z.string(),
+  quoteField: z.enum(['title', 'text']),
   where: WireWhereSchema.optional(),
-  note: z.string().optional(),
-});
-
-export const WireThicknessSchema = z.object({
-  method: z.string(),
-  valueInches: z.number().optional(),
+  /** Inches: a single number (thickness valueInches, or the snow depth). */
+  inches: z.number().optional(),
   minInches: z.number().optional(),
   maxInches: z.number().optional(),
   pokeCount: z.number().int().optional(),
   supportable: z.boolean().optional(),
-  where: WireWhereSchema.optional(),
+  /** endTime only: minute | half_hour. */
+  precision: z.string().optional(),
   note: z.string().optional(),
 });
-
-export const WireEndTimeSchema = z.object({
-  /** `YYYY-MM-DDTHH:MM` on the body's local clock. */
-  localTime: z.string(),
-  precision: z.string(),
-});
-
-export const WireFieldsSchema = z.object({
-  quality: z.array(wireValue(z.string())).default([]),
-  suitability: z.array(wireValue(z.string())).default([]),
-  observedFrom: z.array(wireValue(z.string())).default([]),
-  sighting: z.array(wireValue(z.string())).default([]),
-  endTime: z.array(wireValue(WireEndTimeSchema)).default([]),
-  iceTypes: z.array(wireValue(WireChipSchema)).default([]),
-  surfaceTags: z.array(wireValue(WireChipSchema)).default([]),
-  snowCoverage: z.array(wireValue(z.string())).default([]),
-  snowImpediment: z.array(wireValue(z.string())).default([]),
-  snowDrifts: z.array(wireValue(z.string())).default([]),
-  snowDepthInches: z.array(wireValue(z.number())).default([]),
-  thickness: z.array(wireValue(WireThicknessSchema)).default([]),
-  hazards: z.array(wireValue(WireChipSchema)).default([]),
-  accessConditions: z.array(wireValue(z.string())).default([]),
-});
+export type WireValue = z.infer<typeof WireValueSchema>;
 
 export const WireReportSchema = z.object({
   bodyRef: z.string().nullable(),
   bodyName: z.string().optional(),
   visit: z.number().int().min(0).default(0),
   note: z.string().optional(),
-  fields: WireFieldsSchema,
+  values: z.array(WireValueSchema).default([]),
 });
 
 export const WireMissSchema = z.object({
@@ -233,110 +213,93 @@ export function mapWireReport(
   misses: Miss[],
 ): ExtractedReport {
   const vocab = input.vocabulary;
-  const ev = (q: { quote: string; quoteField: 'title' | 'text' }) =>
-    evidenceFor(input, q.quote, q.quoteField);
   const fields: Record<string, unknown[]> = Object.fromEntries(
     EXTRACTED_FIELD_KEYS.map((k) => [k, []]),
   );
+  const cm = (x: number | undefined) =>
+    x !== undefined && Number.isFinite(x) && x >= 0 ? inchesToCm(x) : undefined;
 
-  for (const key of Object.keys(ENUM_VOCAB) as EnumKey[]) {
-    for (const v of wire.fields[key]) {
-      if (inVocab(vocab[ENUM_VOCAB[key]], v.value)) {
-        (fields[key] as unknown[]).push({
-          value: v.value,
-          confidence: v.confidence,
-          evidence: ev(v),
-        });
-      } else misses.push({ kind: 'enum_value', text: v.quote, wouldNeed: `${key}: ${v.value}` });
+  for (const v of wire.values) {
+    const evidence = evidenceFor(input, v.quote, v.quoteField);
+    const push = (key: ExtractedFieldKey, value: unknown) =>
+      (fields[key] as unknown[]).push({ value, confidence: v.confidence, evidence });
+    const miss = (wouldNeed: string, kind: Miss['kind'] = 'enum_value') =>
+      misses.push({ kind, text: v.quote, wouldNeed });
+
+    if (v.field in ENUM_VOCAB) {
+      const key = v.field as EnumKey;
+      if (inVocab(vocab[ENUM_VOCAB[key]], v.value)) push(key, v.value);
+      else miss(`${key}: ${v.value}`);
+      continue;
     }
-  }
-
-  for (const key of ['iceTypes', 'surfaceTags'] as const) {
-    const list = key === 'iceTypes' ? vocab.iceTypes : vocab.surfaceTags;
-    for (const v of wire.fields[key]) {
-      if (!inVocab(list, v.value.type)) {
-        misses.push({ kind: 'enum_value', text: v.quote, wouldNeed: `${key}: ${v.value.type}` });
-        continue;
-      }
-      const where = mapWhere(v.value.where, vocab, misses);
-      (fields[key] as unknown[]).push({
-        value: {
-          type: v.value.type,
+    switch (v.field) {
+      case 'iceTypes':
+      case 'surfaceTags': {
+        const list = v.field === 'iceTypes' ? vocab.iceTypes : vocab.surfaceTags;
+        if (!inVocab(list, v.value)) {
+          miss(`${v.field}: ${v.value}`);
+          break;
+        }
+        const where = mapWhere(v.where, vocab, misses);
+        push(v.field, {
+          type: v.value,
           ...(where ? { where } : {}),
-          ...(v.value.note ? { note: v.value.note } : {}),
-        },
-        confidence: v.confidence,
-        evidence: ev(v),
-      });
+          ...(v.note ? { note: v.note } : {}),
+        });
+        break;
+      }
+      case 'hazards': {
+        if (!inVocab(vocab.hazardTypes, v.value)) {
+          miss(`hazards: ${v.value}`);
+          break;
+        }
+        const where = mapWhere(v.where, vocab, misses);
+        push('hazards', {
+          type: v.value,
+          ...(where ? { where } : {}),
+          ...(v.note ? { note: v.note } : {}),
+        });
+        break;
+      }
+      case 'snowDepthInches': {
+        const depth = cm(v.inches ?? v.maxInches ?? v.minInches);
+        if (depth !== undefined) push('snowDepthCm', depth);
+        break;
+      }
+      case 'thickness': {
+        if (!inVocab(vocab.thicknessMethods, v.value)) {
+          miss(`thickness method: ${v.value}`);
+          break;
+        }
+        const where = mapWhere(v.where, vocab, misses);
+        push('thickness', {
+          method: v.value,
+          ...(cm(v.inches) !== undefined ? { valueCm: cm(v.inches) } : {}),
+          ...(cm(v.minInches) !== undefined ? { minCm: cm(v.minInches) } : {}),
+          ...(cm(v.maxInches) !== undefined ? { maxCm: cm(v.maxInches) } : {}),
+          ...(v.pokeCount !== undefined ? { pokeCount: v.pokeCount } : {}),
+          ...(v.supportable !== undefined ? { supportable: v.supportable } : {}),
+          ...(where ? { where } : {}),
+          ...(v.note ? { note: v.note } : {}),
+        });
+        break;
+      }
+      case 'endTime': {
+        const ms = localTimeToMs(v.value, input);
+        const precision = (v.precision ?? 'half_hour') as SkateEndPrecision;
+        if (ms === null || !['gps', 'minute', 'half_hour'].includes(precision)) break;
+        push('endTime', { ms, precision });
+        break;
+      }
+      default:
+        miss(`a field named ${v.field}`, 'field');
     }
   }
 
-  for (const v of wire.fields.hazards) {
-    if (!inVocab(vocab.hazardTypes, v.value.type)) {
-      misses.push({ kind: 'enum_value', text: v.quote, wouldNeed: `hazards: ${v.value.type}` });
-      continue;
-    }
-    const where = mapWhere(v.value.where, vocab, misses);
-    (fields.hazards as unknown[]).push({
-      value: {
-        type: v.value.type,
-        ...(where ? { where } : {}),
-        ...(v.value.note ? { note: v.value.note } : {}),
-      },
-      confidence: v.confidence,
-      evidence: ev(v),
-    });
-  }
-
-  for (const v of wire.fields.snowDepthInches) {
-    if (!Number.isFinite(v.value) || v.value < 0) continue;
-    (fields.snowDepthCm as unknown[]).push({
-      value: inchesToCm(v.value),
-      confidence: v.confidence,
-      evidence: ev(v),
-    });
-  }
-
-  for (const v of wire.fields.thickness) {
-    const r = v.value;
-    if (!inVocab(vocab.thicknessMethods, r.method)) {
-      misses.push({
-        kind: 'enum_value',
-        text: v.quote,
-        wouldNeed: `thickness method: ${r.method}`,
-      });
-      continue;
-    }
-    const where = mapWhere(r.where, vocab, misses);
-    const cm = (x: number | undefined) =>
-      x !== undefined && Number.isFinite(x) && x >= 0 ? inchesToCm(x) : undefined;
-    const reading = {
-      method: r.method,
-      ...(cm(r.valueInches) !== undefined ? { valueCm: cm(r.valueInches) } : {}),
-      ...(cm(r.minInches) !== undefined ? { minCm: cm(r.minInches) } : {}),
-      ...(cm(r.maxInches) !== undefined ? { maxCm: cm(r.maxInches) } : {}),
-      ...(r.pokeCount !== undefined ? { pokeCount: r.pokeCount } : {}),
-      ...(r.supportable !== undefined ? { supportable: r.supportable } : {}),
-      ...(where ? { where } : {}),
-      ...(r.note ? { note: r.note } : {}),
-    };
-    (fields.thickness as unknown[]).push({
-      value: reading,
-      confidence: v.confidence,
-      evidence: ev(v),
-    });
-  }
-
-  for (const v of wire.fields.endTime) {
-    const ms = localTimeToMs(v.value.localTime, input);
-    const precision = v.value.precision as SkateEndPrecision;
-    if (ms === null || !['gps', 'minute', 'half_hour'].includes(precision)) continue;
-    (fields.endTime as unknown[]).push({
-      value: { ms, precision },
-      confidence: v.confidence,
-      evidence: ev(v),
-    });
-  }
+  // A sighting is what someone *off* the ice saw (D189). The prompt says so; the model does not
+  // always listen, and the validator would refuse the pair — so the same rule is applied here.
+  const vantage = fields.observedFrom?.[0] as { value: string } | undefined;
+  if (vantage === undefined || vantage.value === 'on_ice') fields.sighting = [];
 
   return {
     bodyRef: wire.bodyRef,
@@ -360,8 +323,4 @@ export function mapWireResult(wire: WireResult, input: ExtractionInput): Extract
   return ExtractionResultSchema.parse({ reports, misses });
 }
 
-/** The field keys in the wire's snow-depth spelling, for prompts that list them. */
-export const WIRE_FIELD_KEYS = Object.keys(WireFieldsSchema.shape) as (keyof z.infer<
-  typeof WireFieldsSchema
->)[];
 export type { ExtractedFieldKey };

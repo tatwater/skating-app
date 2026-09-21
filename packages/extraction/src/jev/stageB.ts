@@ -10,7 +10,7 @@
  * Pure question-building and answer-mapping here; the request itself is `JevClient.ask`.
  */
 
-import { inchesToCm } from '@skating/core';
+import { inchesToCm, SECTORS } from '@skating/core';
 import type { Unit } from '../claude/stageA';
 import { unitEvidence, unitText } from '../claude/stageA';
 import { evidenceFor, localTimeToMs } from '../claude/wire';
@@ -154,9 +154,15 @@ function whereFor(
   const phrase = unit.compassPhrases[idx];
   if (!phrase) return undefined;
   const out: NonNullable<ExtractedFields['iceTypes'][number]['value']['where']> = {};
-  if (phrase.sector) out.sector = phrase.sector as NonNullable<typeof out.sector>;
+  // Stage A's sector is a free string ("NNE", "north shore"); only a vocabulary value is a sector,
+  // anything else is the phrase itself as a place name — never a failed parse.
+  const sector =
+    phrase.sector && (SECTORS as readonly string[]).includes(phrase.sector)
+      ? (phrase.sector as (typeof SECTORS)[number])
+      : undefined;
+  if (sector) out.sector = sector;
   if (phrase.subAreaId) out.subAreaId = phrase.subAreaId;
-  if (!phrase.sector && !phrase.subAreaId) out.placeName = phrase.quote;
+  if (!sector && !phrase.subAreaId) out.placeName = phrase.quote;
   return out;
 }
 
@@ -194,6 +200,10 @@ export function reportFromAnswers(
     if (p < CHOICE_DROP_BELOW) continue;
     fields[s.key].push({ value: a.choice, confidence: p, evidence: ev });
   }
+  // A sighting is what someone *off* the ice saw (D189): when the vantage vote says on the ice,
+  // the sighting vote is answering a question that was not asked. Mirrors the validator's rule.
+  const vantage = fields.observedFrom[0] as { value: string } | undefined;
+  if (vantage === undefined || vantage.value === 'on_ice') fields.sighting = [];
 
   for (const m of MULTI) {
     for (const v of vocab[m.vocab]) {
