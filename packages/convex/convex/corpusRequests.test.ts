@@ -3,7 +3,7 @@
  * what they perform, and the create-over-a-takedown refusal.
  */
 
-import { standingOf } from '@skating/core';
+import { describeRequestOutcome, standingOf } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
@@ -765,5 +765,312 @@ describe('a track over a removed body (D48 edge (a), closed)', () => {
         confirmedNew: true,
       }),
     ).rejects.toThrow(/already resolved to a known lake/i);
+  });
+});
+
+/**
+ * `name_bay` (D201): the sub-area queue as a request kind. The name is the question, the body page
+ * lists a lake's open asks by bay, approval needs the bay drawn, and the corpus seed files its rows
+ * through the same table.
+ */
+describe('name_bay — the sub-area queue', () => {
+  const NOTCH = { lat: 0.9, lng: 0.9 };
+
+  async function seedBay(
+    t: ReturnType<typeof convexTest>,
+    waterBodyId: Id<'waterBodies'>,
+    name: string,
+    aliases: string[] = [],
+  ) {
+    const actor = await seedUser(t, `drawer-${name}`, 'moderator');
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId,
+        name,
+        ...(aliases.length > 0 ? { aliases } : {}),
+        searchText: [name, ...aliases].join(' '),
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0.8, 0.8],
+              [1, 0.8],
+              [1, 1],
+              [0.8, 1],
+              [0.8, 0.8],
+            ],
+          ],
+        },
+        bbox: { minLat: 0.8, minLng: 0.8, maxLat: 1, maxLng: 1 },
+        centroid: NOTCH,
+        surfaceAreaSqM: 40_000,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: actor.id,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+  }
+
+  test('an active lake admits it; the name is required, and only on this kind', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const id = await seedBody(t);
+
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+      }),
+    ).rejects.toThrow(/Which bay/);
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'takedown',
+        coord: NOTCH,
+        waterBodyId: id,
+        name: 'Corner Bay',
+      }),
+    ).rejects.toThrow(/Only a bay request/);
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name: 'x'.repeat(81),
+      }),
+    ).rejects.toThrow(/under 80/);
+
+    const requestId = await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: '  Corner Bay ',
+      note: 'We skate it as its own trip.',
+    });
+    expect(await t.run((ctx) => ctx.db.get(requestId))).toMatchObject({
+      kind: 'name_bay',
+      status: 'open',
+      name: 'Corner Bay',
+      waterBodyId: id,
+    });
+  });
+
+  test('one open ask per person per bay — a second bay on the same lake is a second ask', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const id = await seedBody(t);
+    await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'St. Albans Bay',
+    });
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name: 'Saint Albans bay',
+      }),
+    ).rejects.toThrow(/already asked/);
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name: 'Maquam Bay',
+      }),
+    ).resolves.toBeTruthy();
+    expect(await t.run((ctx) => ctx.db.query('waterBodyRequests').collect())).toHaveLength(2);
+  });
+
+  test('the queue ranks by bay, not by lake: two people asking for one bay are one question', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
+    const id = await seedBody(t);
+    const ask = (who: typeof one, name: string) =>
+      who.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name,
+      });
+    await ask(one, 'St. Albans Bay');
+    await ask(two, 'Saint Albans Bay');
+    await ask(two, 'Maquam Bay');
+
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    const byName = Object.fromEntries(queue.map((r) => [r.name, r.askers]));
+    expect(byName).toEqual({ 'St. Albans Bay': 2, 'Saint Albans Bay': 2, 'Maquam Bay': 1 });
+    expect(queue.every((r) => r.drawnSubAreaId === undefined)).toBe(true);
+  });
+
+  test('the lake editor’s queue groups a lake’s asks by bay, pools the aliases and notes, and names a drawn bay', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
+    const id = await seedBody(t);
+    const other = await seedBody(t, 'osm/2');
+    const first = await one.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'St. Albans Bay',
+      note: 'North of the point.',
+    });
+    await two.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: { lat: 0.85, lng: 0.85 },
+      waterBodyId: id,
+      name: 'Saint Albans Bay',
+      note: 'We skate it as its own trip.',
+    });
+    await two.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'Maquam Bay',
+    });
+    await two.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: other,
+      name: 'Elsewhere Bay',
+    });
+    // Seed rows carry aliases; a skater's do not. The group pools whatever it has.
+    await t.run((ctx) => ctx.db.patch(first, { aliases: ['Saint Albans Bay', 'St Albans'] }));
+    await seedBay(t, id, 'Maquam Bay', ['Maquam']);
+
+    await expect(
+      one.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id }),
+    ).rejects.toThrow();
+    const rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      requestId: first,
+      name: 'St. Albans Bay',
+      aliases: ['Saint Albans Bay', 'St Albans'],
+      coord: NOTCH,
+      notes: ['North of the point.', 'We skate it as its own trip.'],
+      askers: 2,
+    });
+    expect(rows[0]?.drawnSubAreaId).toBeUndefined();
+    expect(rows[1]).toMatchObject({ name: 'Maquam Bay', askers: 1 });
+    expect(rows[1]?.drawnSubAreaId).toBeDefined();
+  });
+
+  test('approving from the queue needs the bay drawn by that name (or an alias), then closes the siblings', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
+    const id = await seedBody(t);
+    const first = await one.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'Corner Bay',
+    });
+    const second = await two.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'corner bay',
+    });
+
+    await expect(mod.as.mutation(api.corpusRequests.approve, { requestId: first })).rejects.toThrow(
+      /draw it in the lake editor first/,
+    );
+
+    await seedBay(t, id, 'The Corner', ['Corner Bay']);
+    const listed = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(listed.find((r) => r._id === first)?.drawnSubAreaId).toBeDefined();
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
+    const rows = await t.run((ctx) => Promise.all([first, second].map((r) => ctx.db.get(r))));
+    expect(rows.map((r) => r?.status)).toEqual(['approved', 'approved']);
+    expect(describeRequestOutcome(rows[0] as Doc<'waterBodyRequests'>)).toMatch(/drew this bay/);
+  });
+
+  test('the corpus seed files bays as asks — dry by default, idempotent, and it names every skip', async () => {
+    const t = harness();
+    const founder = await seedUser(t, 'founder', 'admin');
+    const id = await seedBody(t, 'osm/1', { states: ['VT'] });
+    await seedBody(t, 'osm/2', { states: ['NH'] }); // a same-named lake in another state
+    await seedBay(t, id, 'Maquam Bay');
+    const rows = [
+      {
+        name: 'Corner Bay',
+        aliases: ['SW Corner'],
+        state: 'VT',
+        parentName: 'Quiet Pond',
+        coord: NOTCH,
+        note: 'Corpus: 26 messages, 12 skated.',
+      },
+      {
+        name: 'Maquam Bay',
+        state: 'VT',
+        parentName: 'Quiet Pond',
+        coord: NOTCH,
+        note: 'Corpus: 11 messages, 5 skated.',
+      },
+      { name: 'Lost Bay', state: 'VT', parentName: 'No Such Lake', coord: NOTCH, note: '' },
+      { name: 'Nowhere Bay', state: 'ME', parentName: 'Quiet Pond', coord: NOTCH, note: '' },
+    ];
+
+    const dry = await t.mutation(internal.corpusRequests.seedBayRequests, {
+      requesterId: founder.id,
+      rows,
+    });
+    expect(dry.map((r) => r.status)).toEqual([
+      'would_file',
+      'already_drawn',
+      'no_parent',
+      'no_parent',
+    ]);
+    expect(await t.run((ctx) => ctx.db.query('waterBodyRequests').collect())).toHaveLength(0);
+
+    const applied = await t.mutation(internal.corpusRequests.seedBayRequests, {
+      requesterId: founder.id,
+      rows,
+      apply: true,
+    });
+    expect(applied[0]).toEqual({ name: 'Corner Bay', parent: 'Quiet Pond', status: 'filed' });
+    const filed = await t.run((ctx) => ctx.db.query('waterBodyRequests').collect());
+    expect(filed).toHaveLength(1);
+    expect(filed[0]).toMatchObject({
+      kind: 'name_bay',
+      status: 'open',
+      name: 'Corner Bay',
+      aliases: ['SW Corner'],
+      waterBodyId: id,
+      requesterId: founder.id,
+      note: 'Corpus: 26 messages, 12 skated.',
+    });
+
+    const again = await t.mutation(internal.corpusRequests.seedBayRequests, {
+      requesterId: founder.id,
+      rows,
+      apply: true,
+    });
+    expect(again[0]?.status).toBe('already_asked');
+    expect(await t.run((ctx) => ctx.db.query('waterBodyRequests').collect())).toHaveLength(1);
+
+    // Two active lakes by one name in one state: refuse to guess.
+    await t.run(async (ctx) => {
+      const twin = (await ctx.db.query('waterBodies').collect()).find(
+        (b) => b.externalId === 'osm/2',
+      );
+      if (twin) await ctx.db.patch(twin._id, { states: ['VT'] });
+    });
+    const ambiguous = await t.mutation(internal.corpusRequests.seedBayRequests, {
+      requesterId: founder.id,
+      rows: [{ name: 'Twin Bay', state: 'VT', parentName: 'Quiet Pond', coord: NOTCH, note: '' }],
+    });
+    expect(ambiguous[0]?.status).toBe('ambiguous_parent');
   });
 });

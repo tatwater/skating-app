@@ -3,9 +3,12 @@ import {
   catalogQueryUrl,
   describeRequestOutcome,
   parseCatalogResponse,
+  REQUEST_KINDS,
   requestKindLabel,
   requestKindsFor,
   requestKindTitle,
+  requestNameKey,
+  requestPrompt,
 } from './corpusRequests';
 
 const square = (lat: number, lng: number, half: number) => ({
@@ -25,9 +28,9 @@ const POINT = { lat: 44.5, lng: -72.5 };
 const NOW = Date.parse('2026-09-16T12:00:00Z');
 
 describe('requestKindsFor — what a standing lets you ask', () => {
-  it('nothing in the corpus ⇒ admit; active ⇒ takedown only', () => {
+  it('nothing in the corpus ⇒ admit; active ⇒ name a bay, or a takedown', () => {
     expect(requestKindsFor(undefined)).toEqual(['admit']);
-    expect(requestKindsFor({ standing: 'active' })).toEqual(['takedown']);
+    expect(requestKindsFor({ standing: 'active' })).toEqual(['name_bay', 'takedown']);
   });
 
   it('dormant ⇒ activate (or contest, under a ruling); removed ⇒ restore; unlisted ⇒ nothing', () => {
@@ -43,11 +46,21 @@ describe('requestKindsFor — what a standing lets you ask', () => {
     expect(requestKindsFor({ standing: 'unlisted' })).toEqual([]);
   });
 
-  it('every kind has a skater label and a moderator title', () => {
-    for (const kind of ['activate', 'admit', 'restore', 'contest_access', 'takedown'] as const) {
+  it('every kind has a skater label, a moderator title and a prompt; only name_bay asks for a name', () => {
+    for (const kind of REQUEST_KINDS) {
       expect(requestKindLabel(kind).length).toBeGreaterThan(0);
       expect(requestKindTitle(kind).length).toBeGreaterThan(0);
+      expect(requestPrompt(kind).title.length).toBeGreaterThan(0);
+      expect(requestPrompt(kind).name !== undefined).toBe(kind === 'name_bay');
     }
+  });
+
+  it('folds a bay name to the question it asks', () => {
+    expect(requestNameKey('St. Albans Bay')).toBe('st albans bay');
+    expect(requestNameKey('  Saint Albans  bay ')).toBe('st albans bay');
+    expect(requestNameKey("Mallett's Bay")).toBe('mallett s bay');
+    // Spelling variants are still two questions — an alias on the drawn bay joins them.
+    expect(requestNameKey('NW Bay')).not.toBe(requestNameKey('Northwest Bay'));
   });
 });
 
@@ -63,6 +76,9 @@ describe('describeRequestOutcome', () => {
     ).toBe('A moderator put this lake back on the active map. Welcome back.');
     expect(describeRequestOutcome({ kind: 'admit', status: 'approved' })).toBe(
       'A moderator added this water to the map.',
+    );
+    expect(describeRequestOutcome({ kind: 'name_bay', status: 'approved' })).toBe(
+      'A moderator drew this bay as a place of its own.',
     );
     expect(describeRequestOutcome({ kind: 'takedown', status: 'approved' })).toBe(
       'A moderator took this lake off the map.',

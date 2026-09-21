@@ -1362,6 +1362,26 @@ export default defineSchema({
      * (`geometryUpdatedAt > depthDerivedAt`). Nothing beats stale (D3).
      */
     geometryUpdatedAt: v.optional(v.number()),
+
+    // ── Sub-areas by chord (D201): the mouth ─────────────────────────────────────────────────────
+
+    /**
+     * The fact the polygon was derived from, when it was drawn with the chord tool: two points on
+     * the parent's outline, a point inside the chosen side, and a signed sagitta (positive bows
+     * the mouth line out into open water). `polygon` stays the stored geometry every reader uses;
+     * this is what the editor re-opens with and what the A09 mouth-line evidence is *about*. The
+     * server derives the polygon from it against the stored parent — never from a client's shape.
+     * Absent on a free-drawn bay, and **cleared by a free-draw redraw**: a polygon that no longer
+     * follows from the mouth must not claim to.
+     */
+    mouth: v.optional(
+      v.object({
+        a: latLng,
+        b: latLng,
+        side: latLng,
+        sagittaM: v.number(),
+      }),
+    ),
   })
     // Every non-map read is scoped to a parent already in hand — the report being created knows its
     // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
@@ -2632,6 +2652,14 @@ export default defineSchema({
     activityId: v.optional(v.id('gpsActivities')),
     /** The skater's sentence — why, or how to get in. Public to moderators only. */
     note: v.optional(v.string()),
+    /**
+     * For a `name_bay` (D201): the bay's name as the skater says it, and the spellings the corpus
+     * seed knows it by. The name is the *question* — two people asking for "St. Albans Bay" are
+     * one ask (`requestNameKey`), where two asks on the same lake for different bays are two — and
+     * it is what the chord editor prefills. Required for `name_bay`, absent on every other kind.
+     */
+    name: v.optional(v.string()),
+    aliases: v.optional(v.array(v.string())),
     /**
      * The resolver's answer for an `admit` (D106): the catalog polygon and its provenance. Absent
      * until the action has run; `resolveError` says why it could not, and `resolvedAt` says it did.
