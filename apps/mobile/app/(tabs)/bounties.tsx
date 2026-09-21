@@ -71,7 +71,7 @@ export default function BountiesScreen() {
         <YStack flex={1} gap="$4" padding="$4" backgroundColor="$background">
           <H1 color="$foreground">Bounties</H1>
           <Paragraph color="$foregroundMuted">
-            A bounty asks recent skaters to check a lake and post a fresh report. Post one from a
+            A bounty asks nearby skaters to check a lake and post a fresh report. Post one from a
             lake's page; fulfill one by skating and reporting.
           </Paragraph>
 

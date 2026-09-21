@@ -62,8 +62,8 @@ export function BountyForm({
     <YStack gap="$3">
       <H4 color="$foreground">Post a bounty on {bodyName}</H4>
       <Paragraph color="$foregroundMuted">
-        A bounty asks recent skaters to check {bodyName} and post a fresh report. When you mark a
-        fulfilling report helpful, its author earns {DEFAULT_BOUNTY_REWARD_POINTS} bounty points.
+        A bounty asks nearby skaters to check {bodyName} and post a fresh report. When you mark a
+        fulfilling report helpful, its author earns a reward.
       </Paragraph>
       {bays.length > 0 ? (
         <YStack gap="$2">

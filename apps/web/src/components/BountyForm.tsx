@@ -67,12 +67,8 @@ export function BountyForm({
         </DialogHeader>
         <div className="flex flex-col gap-3 text-sm">
           <p className="text-foreground-muted">
-            A bounty asks recent skaters to check {bodyName} and post a fresh report. When you mark
-            a fulfilling report helpful, its author earns{' '}
-            <span className="font-medium text-foreground">
-              {DEFAULT_BOUNTY_REWARD_POINTS} bounty points
-            </span>
-            .
+            A bounty asks nearby skaters to check {bodyName} and post a fresh report. When you mark
+            a fulfilling report helpful, its author earns a reward.
           </p>
           {bays.length > 0 ? (
             <label className="flex flex-col gap-1">

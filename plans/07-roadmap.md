@@ -498,7 +498,7 @@ whether the gate is locked.*
 - ⚪ **The 1,376 unmatched slipways** — an afternoon's sample, not a phase → [`backlog/unmatched-slipways.md`](./backlog/unmatched-slipways.md)
 - ⚪ **`matchBathymetryLakes` and `matchAndImportDepths`** (no `marginMeters`) **and `putIns.loadPutInRows`** (uncapped) — the same unbounded-read shape as the parking load, unfixed; `coveringBodyForPoints` was deleted 2026-08-09
 - ⚪ **A moved put-in's access alerts** — stop on the old body and never appear on the new one (pinned in the tests); a Move operation is A07c §5.1 → register
-- ⚪ **`accessAlerts.create` gains `reportId` + `idempotencyKey`** — a replayed offline flush files twice → A10-1 §2.1
+- 🟡 **`accessAlerts.create` gains `reportId` + `idempotencyKey`** — a replayed offline flush files twice; the fields landed in A10-1 §2.1, `create` reads them in A10-2 §9.1
 
 ## Phase A06e — Imagery, scoped to a water body
 🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phases/A06e-satellite-imagery.md) · D75 D84 D146–D151
@@ -716,13 +716,17 @@ minute from a track, and the app never loses one for lack of signal.*
 #### Data runs
 - **2026-09-19 — corpus re-parse + LLM mention inventory:** 2,472 messages (Dec 2023–Jun 2026), 745 named bodies, Haiku 4.5, $5.68
 - **2026-09-19/20 — corpus curatedBoost seed:** 137 boosts on dev (122 bodies + 15 sub-areas, graded 0.1/0.2/0.3), campaigns `a10-corpus-seed-20260919` + `-ambiguous-20260920`; the 76 undrawn bays split 16 destinations / 23 landmarks → [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md)
+- **2026-09-21 — extraction eval, first run (§1.3):** 147-email stratified sample + 60 negatives × three engines (Claude-only Haiku 0.64¢ / 4.4 s, Sonnet 5 4.22¢ / 37 s, Haiku + Jev 0.49¢ + Jev / 4.6 s); Sonnet-drafted value labels (1,474 values, 712 contested by Haiku); provisional floors from the Jev run on four fields; $8.3 Anthropic, Jev ~1.1M input tokens
+- **2026-09-21 — A10-1 dev backfills:** `reports.backfillA10Shapes` 2 rows, `posts.backfillFromReports` 2 Posts; schema narrowed
 
 #### Deferred
 - ⚪ **Named landmarks** (OSM/GNIS islands, points, reference bays) as labels + `where: point(name)` → [`features/named-landmarks.md`](./features/named-landmarks.md), with A10-2
 - ⚪ **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page → [`features/subarea-chord-editor.md`](./features/subarea-chord-editor.md), before A10-3
 - ⚪ **Vision-suggested hazard types** on a photo the skater already tagged — after §1's eval pattern exists
 - ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
-- ⚪ **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; a workstream to name when A10-1 opens
+- ⚪ **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; named §12.3 at A10-1, lands with A10-2
+- ❓ **Verified precision floors** — the founder's pass through the eval's `review.html` (147 emails, contested values first); A10-4 is gated on `basis: 'verified'`
+- ⚪ **Jev pricing** into `JEV_RATES`, and a retry on Jev 503 / 529 — with A10-4
 - ⚪ **Video** — a second pass (§8.3), R2 above a size threshold; a backlog doc when scoped
 - ⚪ **Season-one review** — D199's window, D189's set, `PUT_IN_SNAP_METERS`, the extraction floors, snow texture; on `reportTime − skateEndTime` and real tracks
 
