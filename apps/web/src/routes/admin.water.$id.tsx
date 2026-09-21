@@ -765,6 +765,7 @@ function SubAreaTool({
     _id: string;
     name: string;
     aliases: string[];
+    bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number };
     removed: boolean;
     systemDelistReason?: string;
     mouth?: SubAreaMouth;
@@ -867,11 +868,26 @@ function SubAreaTool({
   };
 
   /** Arm the chord tool — for a new bay, or to set / move an existing bay's mouth. */
-  const armChord = (target?: { subAreaId: string; mouth?: SubAreaMouth }) => {
+  const armChord = (target?: {
+    subAreaId: string;
+    mouth?: SubAreaMouth;
+    bbox?: { minLat: number; minLng: number; maxLat: number; maxLng: number };
+  }) => {
     disarmAll();
     const control = chordControl();
     if (!control) return;
     setChordTarget(target?.subAreaId ?? null);
+    // Frame the bay being edited: on a giant the camera is wherever the last tool left it, and a
+    // mouth loaded off-screen is a handle nobody can find.
+    if (target?.bbox) {
+      mapRef.current?.fitBounds(
+        [
+          [target.bbox.minLng, target.bbox.minLat],
+          [target.bbox.maxLng, target.bbox.maxLat],
+        ],
+        { padding: 80, maxZoom: 14 },
+      );
+    }
     if (target?.mouth) control.load(target.mouth);
     else control.start();
   };
@@ -999,7 +1015,7 @@ function SubAreaTool({
           </p>
         ) : (
           subAreas.map((bay) => (
-            <div key={bay._id} className="flex items-center justify-between gap-2 text-sm">
+            <div key={bay._id} className="flex flex-col gap-1 text-sm">
               <span
                 className={bay.removed ? 'text-foreground-muted line-through' : 'text-foreground'}
               >
@@ -1025,13 +1041,13 @@ function SubAreaTool({
                   ) : null;
                 })()}
               </span>
-              <span className="flex shrink-0 gap-1">
+              <span className="flex flex-wrap gap-1">
                 {/* The mouth is the fact a chord bay is derived from (D201): a chord bay re-opens
                     with it; a free-drawn one can be given one, after which the chord is its fact. */}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => armChord({ subAreaId: bay._id, mouth: bay.mouth })}
+                  onClick={() => armChord({ subAreaId: bay._id, mouth: bay.mouth, bbox: bay.bbox })}
                 >
                   {bay.mouth ? 'Edit mouth' : 'Redraw by chord'}
                 </Button>
