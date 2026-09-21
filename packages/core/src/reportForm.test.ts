@@ -3,13 +3,15 @@ import {
   buildReportInput,
   emptyReportForm,
   emptyThicknessReading,
+  FORM_THICKNESS_METHODS,
   isFormRoundTripOf,
   type ReportFormState,
   reportFormFromReport,
   resolveSkateWindow,
   type StoredReportForForm,
+  type ThicknessFormReading,
 } from './reportForm';
-import { cmToInches, cToF, fToC, kphToMph } from './units';
+import { cmToInches, cToF, fToC, inchesToCm, kphToMph } from './units';
 
 describe('emptyThicknessReading', () => {
   it('is a blank single measured reading (the "add reading" default)', () => {
@@ -109,7 +111,7 @@ describe('buildReportInput', () => {
 
   it('drops non-numeric numeric inputs (e.g. a stray snow-cover value)', () => {
     const input = buildReportInput({ ...BASE, snowCover: 'lots' }, 'wb1');
-    expect('snowCoverCm' in input).toBe(false);
+    expect('snow' in input).toBe(false);
   });
 
   it('supports a one-sided thickness range (max only)', () => {
@@ -166,7 +168,7 @@ describe('buildReportInput', () => {
     expect(input.iceTypes).toEqual(['black_ice']);
     expect(input.surfaceTags).toEqual(['glass', 'orange_peel']);
     expect(input.skateQuality).toBe('great');
-    expect(cmToInches(input.snowCoverCm ?? 0)).toBeCloseTo(1.5);
+    expect(cmToInches(input.snow?.depthCm ?? 0)).toBeCloseTo(1.5);
     expect(input.point).toEqual({ lat: 44.4, lng: -73.2 });
   });
 
@@ -247,12 +249,12 @@ describe('resolveSkateWindow', () => {
 describe('reportFormFromReport', () => {
   const SKATE_END = Date.UTC(2026, 0, 15, 20, 0, 0);
 
-  /** A report using every field the form can edit, so the round trip has something to lose. */
+  /** A report using every field the form can edit, in the shapes a stored row has, so the round trip has something to lose. */
   const FULL: StoredReportForForm = {
     skateEndTime: SKATE_END,
     skateStartTime: SKATE_END - 90 * 60_000,
-    iceTypes: ['black_ice'],
-    surfaceTags: ['glass'],
+    iceTypes: [{ type: 'black_ice' }],
+    surfaceTags: [{ type: 'glass' }],
     skateQuality: 'great',
     iceThickness: {
       readings: [
@@ -280,7 +282,7 @@ describe('reportFormFromReport', () => {
     expect(rebuilt.skateQuality).toBe(FULL.skateQuality);
     expect(rebuilt.notes).toBe(FULL.notes);
     // Imperial round trip, to the tenth of an inch the form displays.
-    expect(rebuilt.snowCoverCm).toBeCloseTo(FULL.snow?.depthCm as number, 2);
+    expect(rebuilt.snow?.depthCm).toBeCloseTo(FULL.snow?.depthCm as number, 2);
     expect(rebuilt.conditions?.airTempC).toBeCloseTo(-10, 1);
     expect(rebuilt.conditions?.windSpeedKph).toBeCloseTo(16.09, 1);
     expect(rebuilt.conditions?.windDir).toBe('NW');
@@ -410,10 +412,143 @@ describe('reportFormFromReport', () => {
     const once = reportFormFromReport(FULL);
     const twice = reportFormFromReport({
       ...FULL,
-      ...(buildReportInput(once, 'wb1').snowCoverCm !== undefined
-        ? { snowCoverCm: buildReportInput(once, 'wb1').snowCoverCm }
+      ...(buildReportInput(once, 'wb1').snow !== undefined
+        ? { snow: buildReportInput(once, 'wb1').snow }
         : {}),
     });
     expect(twice.snowCover).toBe(once.snowCover);
+  });
+
+  /**
+   * The A10 fields this form has no control for (Greptile P1 on PR #71). The sheet writes a chip's
+   * `where`, the snow facets, a vantage, a suitability, a precision — and the same last-write-wins
+   * rule that made `reportFormFromReport` necessary would have this form delete every one of them
+   * on an edit to the notes. They ride through `carried`.
+   */
+  describe('the fields the form cannot edit (A10)', () => {
+    const LOCATED: StoredReportForForm = {
+      skateEndTime: SKATE_END,
+      skateEndPrecision: 'minute',
+      observedFrom: 'shore',
+      sighting: 'frozen',
+      suitability: 'experienced_only',
+      iceTypes: [
+        { type: 'black_ice', where: { sector: 'N' }, note: 'past the point' },
+        { type: 'black_ice', where: { sector: 'S' } },
+        { type: 'snow_ice' },
+      ],
+      surfaceTags: [{ type: 'glass', note: 'until noon' }],
+      iceThickness: {
+        scope: 'at_spot',
+        readings: [
+          { method: 'poke', pokeCount: 2, supportable: true, note: 'by the launch' },
+          { valueCm: 12.7, method: 'measured', where: { extent: 'mostly' } },
+        ],
+      },
+      snow: {
+        coverage: 'patches',
+        impediment: 'slowed_me',
+        drifts: 'none',
+        plowedPath: true,
+        depthCm: 2.54,
+      },
+      notes: 'Two ends, two kinds of black ice.',
+    };
+
+    it('shows one key per chip type and sends every stored chip back under it', () => {
+      const form = reportFormFromReport(LOCATED);
+      expect(form.iceTypes).toEqual(['black_ice', 'snow_ice']);
+      const rebuilt = buildReportInput(form, 'wb1');
+      expect(rebuilt.iceTypes).toEqual(LOCATED.iceTypes);
+      expect(rebuilt.surfaceTags).toEqual(LOCATED.surfaceTags);
+    });
+
+    it('drops the stored chips of a key the author deselects, and adds a bare key for a new one', () => {
+      const form = reportFormFromReport(LOCATED);
+      const rebuilt = buildReportInput({ ...form, iceTypes: ['snow_ice', 'white_ice'] }, 'wb1');
+      expect(rebuilt.iceTypes).toEqual([{ type: 'snow_ice' }, 'white_ice']);
+    });
+
+    it('sends the vantage, sighting, suitability and precision back as they were', () => {
+      const rebuilt = buildReportInput(reportFormFromReport(LOCATED), 'wb1');
+      expect(rebuilt).toMatchObject({
+        skateEndPrecision: 'minute',
+        observedFrom: 'shore',
+        sighting: 'frozen',
+        suitability: 'experienced_only',
+      });
+    });
+
+    it('drops the precision when the end time it described has changed', () => {
+      const form = reportFormFromReport(LOCATED);
+      const rebuilt = buildReportInput({ ...form, skateEndTime: SKATE_END + 60_000 }, 'wb1');
+      expect(rebuilt).not.toHaveProperty('skateEndPrecision');
+      expect(rebuilt.observedFrom).toBe('shore');
+    });
+
+    it('joins the depth typed here to the stored snow facets, and keeps the facets when the depth is cleared', () => {
+      const form = reportFormFromReport(LOCATED);
+      expect(form.snowCover).toBe('1');
+      expect(buildReportInput(form, 'wb1').snow).toEqual(LOCATED.snow);
+      expect(buildReportInput({ ...form, snowCover: '' }, 'wb1').snow).toEqual({
+        coverage: 'patches',
+        impediment: 'slowed_me',
+        drifts: 'none',
+        plowedPath: true,
+      });
+    });
+
+    it('keeps a poke reading alive without an inch figure, with its facets, and the scope', () => {
+      const form = reportFormFromReport(LOCATED);
+      expect(form.thickness[0]).toMatchObject({
+        mode: 'range',
+        min: '',
+        max: '',
+        method: 'poke',
+        carried: { pokeCount: 2, supportable: true, note: 'by the launch' },
+      });
+      const rebuilt = buildReportInput(form, 'wb1');
+      expect(rebuilt.iceThickness?.scope).toBe('at_spot');
+      expect(rebuilt.iceThickness?.readings[0]).toEqual({
+        method: 'poke',
+        pokeCount: 2,
+        supportable: true,
+        note: 'by the launch',
+      });
+      expect(rebuilt.iceThickness?.readings[1]).toMatchObject({
+        method: 'measured',
+        where: { extent: 'mostly' },
+      });
+      expect(rebuilt.iceThickness?.readings[1]?.valueCm).toBeCloseTo(12.7, 2);
+    });
+
+    it('drops the count when the author changes a poke reading to a measurement', () => {
+      const form = reportFormFromReport(LOCATED);
+      const [poke, ...rest] = form.thickness as [ThicknessFormReading, ...ThicknessFormReading[]];
+      const rebuilt = buildReportInput(
+        {
+          ...form,
+          thickness: [{ ...poke, mode: 'single', method: 'measured', value: '3' }, ...rest],
+        },
+        'wb1',
+      );
+      expect(rebuilt.iceThickness?.readings[0]).not.toHaveProperty('pokeCount');
+      expect(rebuilt.iceThickness?.readings[0]).toMatchObject({
+        method: 'measured',
+        supportable: true,
+      });
+    });
+
+    it('does not offer the poke method: this form has no count field for it', () => {
+      expect(FORM_THICKNESS_METHODS).toEqual(['measured', 'estimated']);
+    });
+
+    it('carries nothing on a fresh form, so a create sends only what was typed', () => {
+      expect(emptyReportForm(NOW).carried).toBeUndefined();
+      const input = buildReportInput({ ...BASE, iceTypes: ['black_ice'], snowCover: '1' }, 'wb1');
+      expect(input.iceTypes).toEqual(['black_ice']);
+      expect(input.snow).toEqual({ depthCm: inchesToCm(1) });
+      expect(input).not.toHaveProperty('observedFrom');
+    });
   });
 });
