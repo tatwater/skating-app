@@ -36,6 +36,20 @@ describe('RequestButtonsView (A07b PR 2)', () => {
     expect(screen.getByRole('button', { name: /take it off the map/i })).toBeEnabled();
   });
 
+  it('a bay ask stays open to a second bay while the first is with the moderators (D201)', () => {
+    render(
+      <RequestButtonsView
+        kinds={['name_bay', 'takedown']}
+        pendingKind="name_bay"
+        outcome={null}
+        counts={{ name_bay: 3 }}
+        onAsk={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /name a bay/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /name a bay/i })).toHaveTextContent('3');
+  });
+
   it('reads the moderator’s answer back once there is one', () => {
     render(
       <RequestButtonsView

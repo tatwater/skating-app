@@ -249,6 +249,20 @@ describe('chordSubArea — refusals', () => {
     expect(result).toEqual({ ok: false, reason: 'side_ambiguous' });
   });
 
+  it('refuses an inward arc swept so far in that it leaves the lake through a shore corner', () => {
+    // The case fast-check found: from the lake's south-west corner to the basin's north-east
+    // corner, bowed 1,700 m inward, the arc grazes the vertex at (0, 3000) from the land side —
+    // no proper crossing, and a ring that encloses only land.
+    const mouth: SubAreaMouth = {
+      a: at(0, 0),
+      b: at(2600, 3799),
+      side: at(160, 1620),
+      sagittaM: -1700,
+    };
+    expect(chordSubArea(LAKE, { ...mouth, sagittaM: 0 }).ok).toBe(true);
+    expect(chordSubArea(LAKE, mouth)).toEqual({ ok: false, reason: 'crosses_shore' });
+  });
+
   it('refuses an inward arc that cuts the mouth channel walls', () => {
     // A 600 m chord on the lake shore either side of the 400 m channel, bowed 200 m in: R = 325 m
     // around (2000, 2875), so at y = 3100 the arc is at x = 2000 ± 234 — through both walls.

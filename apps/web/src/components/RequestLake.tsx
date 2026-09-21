@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   describeRequestOutcome,
+  MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
   type RequestKind,
   requestKindLabel,
@@ -24,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 
 /**
@@ -86,12 +88,13 @@ export function RequestButtons({
         <RequestDialog
           kind={asking}
           onClose={() => setAsking(null)}
-          onSubmit={async (note) => {
+          onSubmit={async (note, name) => {
             await create({
               kind: asking,
               coord: body.centroid,
               waterBodyId: body._id as Id<'waterBodies'>,
               ...(note ? { note } : {}),
+              ...(name ? { name } : {}),
             });
           }}
         />
@@ -133,7 +136,8 @@ export function RequestButtonsView({
             key={kind}
             size="sm"
             variant={kind === 'takedown' ? 'ghost' : 'outline'}
-            disabled={pendingKind === kind}
+            // A bay ask is per bay, not per lake (the server's rule): a second bay is a second ask.
+            disabled={pendingKind === kind && kind !== 'name_bay'}
             onClick={() => onAsk(kind)}
           >
             {requestKindLabel(kind)}
@@ -154,9 +158,10 @@ function RequestDialog({
 }: {
   kind: RequestKind;
   onClose: () => void;
-  onSubmit: (note: string) => Promise<void>;
+  onSubmit: (note: string, name?: string) => Promise<void>;
 }) {
   const [note, setNote] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const prompt = requestPrompt(kind);
@@ -167,6 +172,16 @@ function RequestDialog({
           <DialogTitle>{prompt.title}</DialogTitle>
           <DialogDescription>{prompt.description}</DialogDescription>
         </DialogHeader>
+        {/* A bay ask names the bay (D201): the name is the question a moderator answers. */}
+        {prompt.name ? (
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={prompt.name.placeholder}
+            maxLength={MAX_REQUEST_NAME_LENGTH}
+            aria-label={prompt.name.label}
+          />
+        ) : null}
         <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -180,12 +195,12 @@ function RequestDialog({
             Cancel
           </Button>
           <Button
-            disabled={busy}
+            disabled={busy || (prompt.name !== undefined && name.trim().length === 0)}
             onClick={async () => {
               setBusy(true);
               setError(null);
               try {
-                await onSubmit(note.trim());
+                await onSubmit(note.trim(), prompt.name ? name.trim() : undefined);
                 onClose();
               } catch (err) {
                 setError(messageOf(err));

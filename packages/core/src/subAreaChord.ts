@@ -518,6 +518,18 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
   // A keyhole bay's straight mouth line, or an arc dragged in past the shore, cuts the walked
   // shore and the ring would cross itself — a shape the clipper may accept and nobody meant.
   if (closingCrossesShore(chosen, closing)) return { ok: false, reason: 'crosses_shore' };
+  // An inward arc lives inside the region it is trimming, so every vertex of it is inside the
+  // candidate. The crossing test alone misses one case — an arc swept so far in that it leaves
+  // through a shore *vertex*, grazing the corner from the land side — and the clip of that ring
+  // is a sliver of nothing, not a refusal.
+  if (mouth.sagittaM < 0) {
+    const candidate: Polygon = { type: 'Polygon', coordinates: [closeRing(chosen)] };
+    for (const [lng, lat] of closing.slice(1, -1)) {
+      if (!pointInPolygon({ lat: lat as number, lng: lng as number }, candidate)) {
+        return { ok: false, reason: 'crosses_shore' };
+      }
+    }
+  }
 
   const constructed: Polygon = {
     type: 'Polygon',
