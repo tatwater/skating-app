@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { formatSkateTime } from '@skating/core';
+import { formatSkateTime, freshnessRefusal } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -44,8 +44,14 @@ export function UnreportedSkates() {
   // A skate is unreported when nothing links it to a report and the owner hasn't waved it off.
   // `linkedReportId` leads because it is the fact — `promptState` can lag a conversion that happened
   // on another device, and a row offering to report an already-reported skate is the worse error.
+  // And inside the freshness window (D199, A10 §9.4): a skate older than a week can no longer be
+  // reported, so offering it would be offering a refusal. The track stays; only the prompt goes.
+  const now = Date.now();
   const rows = (activities ?? []).filter(
-    (a) => a.linkedReportId === undefined && a.promptState !== 'dismissed',
+    (a) =>
+      a.linkedReportId === undefined &&
+      a.promptState !== 'dismissed' &&
+      freshnessRefusal(a.endTime ?? a.startTime, now) === null,
   );
 
   if (rows.length === 0) return null;
