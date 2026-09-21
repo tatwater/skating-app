@@ -1,6 +1,6 @@
 # Phase A10 — Reporting: one sheet, three doors
 
-> **Scoped 2026-09-18; A10-1, A10-2 and A10-2b built 2026-09-21.** Founder ask: the reporting flow must feel effortless while
+> **Scoped 2026-09-18; A10-1, A10-2, A10-2b and A10-3 built 2026-09-21.** Founder ask: the reporting flow must feel effortless while
 > collecting as much hard data as a skater can give — the least taps, no forced order, the
 > author's own voice kept, every report style the community already writes accepted (a one-line
 > hazard, a lake writeup, a multi-lake day, a before-and-after-work pair, a drive-by), suggested
@@ -557,6 +557,142 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
   *Waiting to send* line with airplane mode on and off.
 - The A10-3 sheet edits every member of a Post draft; the pre-sheet form edits the first.
 
+## Built record — A10-3 (2026-09-21, `phase-a10-reporting-flow-3`, stacked on `-2b`)
+
+§4.1, §4.3, §4.4, §6 and §7 — the mobile sheet, every door but GPX and the parking-lot detection —
+plus what the kickoff added: held drafts (D204), author edits with history and author deletes
+(D205), the weather beside the end time, the A10-2 owed alert cap, and `putInId` written at last.
+Founder calls at the kickoff, all settled before code: one full-screen sheet for every door (the
+drawer routes to it, never a form inside it); the Reports tab *is* the sheet, Drafts and *Waiting
+to send* behind its header; a draft never auto-posts; the end time fetches that hour's weather and
+a start shows the whole run; D52's verdicts + *didn't look*; no moderator put-in authoring exists
+(a feature doc, `features/access-point-authoring.md`, and the proposal queue is *derived* from the
+reports' points); no adding a Report to a Post; no Figma mocks — built to taste with the design
+skill, to be re-skinned. Suites at build: core 2,961 · convex 1,741 · web 573 · mobile 122. One
+schema change (`contentRevisions`, additive) and one enum widening (`author_delete`): a
+`convex dev --once` before the app is used against dev.
+
+### What shipped, by workstream
+
+- **§4.1 the sheet** — `apps/mobile/src/components/sheet/`: `ReportSheet` (the page: the words at
+  the top at most ~30% of the screen, one `ReportSections` stack per lake, *+ another lake* / *+ an
+  earlier visit*, *Save draft* / *Post*; *Cancel* / *Save changes* on the edit door), `SheetSection`
+  (the fixed-order header row with its one-line summary; collapse is the author's tap, never the
+  sheet's — a section that auto-collapsed after the first chip would yank the row the next chip is
+  on), `SheetChip` / `ChipRow` (the three tiers drawn: solid filled, ghost dashed with a `+`,
+  extracted hollow with a ✎ — A10-4's tier exists on screen already). The state is a module store
+  (`sheetStore.ts`) over a pure model (`sheetModel.ts`, tested): the Post sheet over core's Report
+  sheets; the doors; the draft round trip incl. a lifted pre-sheet `form` draft; the refusals
+  before Post (the set's gaps, then the validator's shapes, then the window), each Report named by
+  its lake. The doors (`sheetDoors.ts`) read the device: GPS → the cached lake (else a body-less
+  sheet with the coord, resolved at flush), the queued track's window stamped `gps` and its start
+  snapped (D198), the unreported skate's path from the author's own list, the dwell (Phase 09b),
+  the draft, the published Report and its Post's words.
+- **§4.2 the doors** — the drawer's *Add a report*, the finished-skate card, the unreported list, a
+  draft, a published Report's *Edit*, and the tab; the old `?track=` / `?activity=` on `/water/[id]`
+  redirect to the sheet so a notification still lands. `ReportForm` and `draft/[id]` are gone on
+  mobile; web's form stays for A10-5. **The search door landed here** (`BodyPicker`: the catalog's
+  search online, the lakes this phone has viewed offline) because §4.3 needs it.
+- **§4.3 multi-Report Posts** — one section stack per Report with the lake's name and silhouette as
+  its header; a lake added after the last, an earlier visit right after its source on the same body;
+  never the last one removed (D186); the put-in switch carries to the next lake.
+- **§4.4 peers** — `peerSuggestions` / `peerLine` in core over the body's recent cards (the
+  `recentCardsForBodies` read the drawer already makes; the offline report cache when it is not
+  back); one collapsed line per row, the values as ghosts, once per body.
+- **The sections** — *How was it?* (D190, *don't go* in the warning fill); *How did you see it?*
+  (D191; the sighting row only off the ice); *When did you get off?* (D192: the pinned minute, the
+  half-hour ladder, the picker bounded by the week, daylight preselect, the GPS chip from a track;
+  a start time or a duration; **the archive's weather for the hour under it, the whole window with
+  a start, *Not what you saw? Correct it* storing `source: 'user'`**); *Ice and surface* with the
+  `where` affordance under each selected chip (`WherePicker`: mostly / patches, the bays, the
+  compass sectors + middle + near shore + head / mouth in a bay, a point tapped on the silhouette);
+  *Snow* (D194; the depth as chips — a dusting, ~1"…~12" — and *plowed path*); *Thickness* (D195:
+  the band row stored as one `estimated` reading per band, the scope, precise readings — a number,
+  a range with either end optional, pokes with the skater's own inch guess — the method, *held me*
+  / *didn't hold*, a where per reading); *Hazards* (below); *Access* (below); *Photos* (today's
+  pipeline, held on the sheet until Post copies them into the draft's files; §8.1's window query
+  is A10-4); a per-lake note.
+- **§6 hazards** — *Mark one here* hands off to the map's `HazardCapture` (`requestHazardCapture`
+  on the map context; the capture places by map tap when the skater is not on that ice, since a
+  GPS fix from the couch would drop the pin on the couch, and returns to the sheet on Done; the new
+  pin arrives as a D55 bundle candidate). The D55 prompt as it was, its saved choice applied to a
+  reopened draft. The tick-through: **you skated past these** over the track ∩ each active
+  hazard's footprint (`passedHazards`, §3.4's first caller, with *you were in it / you crossed it /
+  N m off*), else **did you see any of these?** over the body's active hazards nearest the chosen
+  put-in (bounded to eight), the author's own pins excluded; the three D52 verdicts + *didn't
+  look*; only an answer files, at Post, through the hazard queue as `via: 'report_flow'` (D12's
+  second bullet, built) — observed at the end time. A crossing's *still there* reads *crossed here*.
+- **§7.1 the put-in picker** — the silhouette, larger and tappable (`LakeMap`; core gains
+  `Projection.fromXY`): A06d's launches as named dots (the nearest four as chips too), lots as
+  squares, a tap on a dot chooses, *somewhere else* takes a tap on the water as the report's
+  `point` with no `putInId`, *use my location* is the offline path; a track door snaps its start
+  inside `PUT_IN_SNAP_METERS` before the sheet opens. `reports.putInId` is written from here —
+  checked with the body in hand (`assertPutInOfBody`: live, this lake's), a string at the wire
+  like core's input, last-write-wins on an edit.
+- **§7.2 the client half** — the condition chips against the chosen put-in, or the lot for the
+  lot-shaped reasons (`icy_lot`, `snowed_in`, `plowed_trail`) when one is chosen, plus a one-line
+  note; filed **after the Post creates** with the Report as provenance, one idempotency key per
+  reason, checkpointed on the draft; a server refusal on one (a launch hidden since) is skipped, a
+  network failure retries through the idempotent create. **The owed cap** (A10-2): the live-alert
+  reads take blockers and conditions as separate pages over the same index range, so a lake of
+  planks cannot push a locked gate out of `blockedIds`; the test fails without the fix.
+- **D204 held drafts** — `DraftStatus` gains `draft`, the flush skips it, the tab's header counts
+  Drafts and Waiting; a dirty sheet a new door would replace is parked in Drafts first.
+- **D205 author edit and delete** — `posts.update` (the words, last-write-wins, `editedAt`);
+  `contentRevisions` written by `posts.update` and `reports.update` before the patch (typed at the
+  boundary, `lib/revisions.ts`; purged with the words by the departed-user sweep as a `revisions`
+  category; in the data export); `reports.remove` / `posts.remove` through the moderation cascade
+  (`authorRemoveReport` / `authorRemovePost`), audited `author_delete`; *Delete report* on both
+  surfaces' report pages; an *edited* mark on both surfaces' cards (`FeedCardData.edited`,
+  `PostCardData.edited`).
+- **Also** — `toReportArgs` in the mobile flush passes the content through whole: it had listed
+  fields by name and dropped a queued draft's snow depth, and every A10 field, at flush.
+
+### Deltas from the plan — read these before extending
+
+1. **The sheet is a full-screen route, not the drawer's form** (founder). The drawer's live-map
+   pin-drop is gone from the report path; the silhouette is the picker everywhere, online and
+   offline, and the put-in you tapped is the dot the card draws (D203's shape at both ends).
+2. **The words are at the top, not the bottom** (founder): the title and prose lead the page at
+   most ~30% of the screen; *How was it?* is the first section under them. `SHEET_SECTIONS` keeps
+   `writing` last as the per-lake note.
+3. **Weather beside the end time** (founder): a new use of the archive the panel already fetches
+   (`weatherWindow.ts`), no new Open-Meteo cost; a correction stores `source: 'user'`, an
+   uncorrected sheet leaves the block to the server's autofill as before, and an edit re-sends the
+   stored block with its source so `mergeEditedConditions` keeps the provenance.
+4. **§6 (d)'s verdicts are D52's three + *didn't look***; the reducer's `gone` is gone. A
+   tick-through "gone" would have been `fully_healed` under a softer label — the one vote D52
+   makes deliberately hard.
+5. **§7.1's "create-new falls through to the A06d put-in flow" — no such flow exists.** Put-ins are
+   the ETL's and `setPutInAccess` is moderator-only. *Somewhere else* stores the report's `point`
+   alone; the derived-cluster read is the proposal queue; the authoring tool is
+   `features/access-point-authoring.md`.
+6. **Confirmations from the sheet ride the hazard queue**, not `posts.create`: they are the
+   skater's votes on other people's pins, idempotent per user per hazard server-side, and the
+   hazard queue flushes first. A re-post of a reopened draft refreshes rather than double-counts.
+7. **Held drafts are a new status, not a flag** (D204), so every reader of the queue —
+   `flushablePosts`, the counts, the two screens — agrees by construction.
+8. **A Post never gains a Report** (D205); the sheet's *+ another lake* is create-only, and the
+   edit door is one Report and its Post's words.
+9. **The mobile capture places by tap when asked from the sheet off the ice**; the FAB's own rule
+   (on the ice you are standing on, and nowhere else) is untouched.
+10. **`reportSheet`'s `select` with a value replaces an existing chip's value** — a retyped reading
+    is a tap with a value, not a delete and an add.
+
+### Owed
+
+- **Device pass** on the Android preview build (the founder, on their own time): every door; a
+  two-lake Post saved offline, a queued hazard bundled, *Waiting to send* with airplane mode on and
+  off (the A10-2b owed pass, now on the sheet); the silhouette picker's tap accuracy on a real
+  outline; the weather line's latency on a cold cell.
+- The moderator's revision comparison (D205) — the web console, A10-5.
+- **Moderator put-in and lot authoring** — `features/access-point-authoring.md`, after A10.
+- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`).
+- The typed-routes artifact (`.expo/types/router.d.ts`, gitignored) regenerates on the next
+  `expo start`; `/drafts` and `/queue` were added to the local copy by hand.
+- RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register
+  row); the sheet's logic is in core and `sheetModel.ts` on purpose, and the components are thin.
+
 ## Review pass — 2026-09-19
 
 A fresh-eyes review against the code, before any build. What it found and what changed:
@@ -732,13 +868,15 @@ A fresh-eyes review against the code, before any build. What it found and what c
 - §6.1a D55 bundling: without a track the candidate window (author's own unattached hazards on
   the body) widens to the whole day when no start time is given, so a morning hazard reaches an
   evening write-up. The ids must ride the offline draft (§9.1).
-- §6.2 *You skated past these* tick-through, confirmations `via: 'report_flow'`.
+- §6.2 *You skated past these* tick-through, confirmations `via: 'report_flow'` — the three D52
+  verdicts plus *didn't look* (A10-3 delta 4).
 - §6.3 Ridge-crossing offer on crossed pressure ridges; photo → hazard pre-location.
 
 ### §7 — Access in the flow
 
-- §7.1 The put-in / lot picker over A06d points; snap radius (D198); create-new falls through to
-  the A06d put-in flow.
+- §7.1 The put-in / lot picker over A06d points; snap radius (D198); ~~create-new falls through to
+  the A06d put-in flow~~ — there is no such flow (A10-3 delta 5): *somewhere else* is the report's
+  `point`, and the moderator's tool is `features/access-point-authoring.md`.
 - §7.2 Condition chips → access alerts (D197) with Report provenance; the one-line note.
 
 ### §8 — Photos
@@ -810,9 +948,11 @@ Fewest sensible PRs; sub-workstreams are commits.
 - **The replay PR — §1.5.** After the founder's eval review decides the engine: the replay
   deployment, the snapshot import, `posts.importBackdated`, the runner, the miss list.
 - **A10-3 — §4.1, §4.3, §4.4 + §6 + §7.** The mobile sheet with the chips, page and
-  recording/unreported-skate doors; hazards; access. Device-tested on the Android preview build.
-- **A10-4 — §5 + §8.1–§8.2 + the rest of §4.2.** Extracted chips, photos, GPX import, the
-  parking-lot and search doors; gated on A10-1's eval floors.
+  recording/unreported-skate doors; hazards; access. *(Built 2026-09-21, stacked on `-2b`; the
+  search door and D204 / D205 came with it. Device-tested by the founder on the Android preview
+  build.)*
+- **A10-4 — §5 + §8.1–§8.2 + the rest of §4.2.** Extracted chips, photos, GPX import and the
+  parking-lot door (the search door landed in -3); gated on A10-1's eval floors.
 - **A10-5 — §10.** The web console. §8.3 (video) is a backlog doc, not a PR.
 
 ## Budgets

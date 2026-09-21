@@ -6200,3 +6200,45 @@ and a map invites the zoom it cannot give); a per-Report stored image; anything 
 implies the ice is good where the wash is (D3 — the wash says where the author looked).
 
 **Related:** D58, D186, D193, D3, Phase 05 decision 6.
+
+## D204 — A saved draft is held; *Post* is the one path that sends (A10-3)
+
+**Decided (2026-09-21, founder call at the A10-3 kickoff).** A draft is a Post the author saved to
+come back to, or quit the app in the middle of, and it is **never sent until they tap *Post***. The
+queue holds it under its own status (`draft`) that the flush skips; *Drafts* lists those, *Waiting
+to send* lists what was posted and is waiting on signal. *Post* is the one path: it queues the Post
+and flushes at once when there is signal, so it never fails for lack of bars (D187), and an edit of
+a published Report saves directly (A06f) and is not queued. The Reports tab is the sheet itself —
+no overview page, no second tap — with Drafts and Waiting behind its header.
+
+**Why:** before this a saved draft and a queued Post shared `pending`, and both flushed on
+reconnect — *Save draft* was a slower *Post*, and a half-written sheet saved to think about it
+posted itself the next time the phone found signal. The founder's rule is that a skater must never
+face "finish now or lose it"; the corollary is that "not done yet" must mean exactly that. A dirty
+sheet a new door would replace is parked in Drafts by the same rule.
+
+**Related:** D187, D189, D199, D12 (the reconnect flush), D30.
+
+## D205 — Authors edit and delete what they shared; the history is kept; a Post never gains a Report (A10-3)
+
+**Decided (2026-09-21, founder call).** An author may edit their Post's words and each Report's
+content, and delete a Report or a whole Post. **Edits keep their history**: what a Post or Report
+said before each edit is written to `contentRevisions` in the same transaction as the patch, the
+card and the detail say only *edited*, and the comparison is a moderator's (the web console,
+A10-5). **Deletes are soft**: the same `removed` status and the same cascade a moderator's remove
+takes — counter, body card, bay join, the Post's sort key — audited as `author_delete` with the
+author as actor, so what left and when is visible; nothing leaves the table (D62 keeps and
+redacts). A Post whose last Report is deleted is deleted with it (D186). The departed-user sweep
+clears an author's revisions on the same clock as the words they copied.
+
+**A Post never gains a Report after it is created.** New Reports come as new Posts. Notifications
+fire at create and a Report added later would either ping nobody or re-ping everyone; the Post's
+sort key would jump; and anything keyed on a Post later (read state, a thread) would muddy. A
+Report may be edited in its Post; the Post's membership is fixed at creation.
+
+**Why:** people need control over what they have shared with the community (the founder's word),
+and moderators need to know when that control was used — an edit that turns "don't go" into
+"beginner-friendly" is a thing to be able to see. Keeping the history rather than a flag is what
+makes that checkable; keeping the row rather than deleting it is D62's rule applied by the author.
+
+**Related:** D62, D186, D199, D32, D37, A06f.

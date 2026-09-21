@@ -499,6 +499,7 @@ whether the gate is locked.*
 - ⚪ **`matchBathymetryLakes` and `matchAndImportDepths`** (no `marginMeters`) **and `putIns.loadPutInRows`** (uncapped) — the same unbounded-read shape as the parking load, unfixed; `coveringBodyForPoints` was deleted 2026-08-09
 - ⚪ **A moved put-in's access alerts** — stop on the old body and never appear on the new one (pinned in the tests); a Move operation is A07c §5.1 → register
 - 🟢 **`accessAlerts.create` gains `reportId` + `idempotencyKey`** — the fields landed in A10-1 §2.1; `create` reads them since A10-2 §7.2 (2026-09-21), and `reason` widened to the D197 conditions
+- ⚪ **No moderator authoring of put-ins or lots** — the ETL is the only writer and `setPutInAccess` only re-associates; noticed at the A10-3 kickoff (2026-09-21) → [`features/access-point-authoring.md`](./features/access-point-authoring.md)
 
 ## Phase A06e — Imagery, scoped to a water body
 🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phases/A06e-satellite-imagery.md) · D75 D84 D146–D151
@@ -698,20 +699,22 @@ launches.*
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Phase A10 — Reporting: one sheet, three doors
-🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203
+🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #74 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205
 
-The report form becomes a report sheet: one fixed-order scroll that a skater can fill by tapping
-chips, by writing prose, or by opening it from a track, with every section collapsing to a summary
-and *How was it?* pinned at the top. A **Post** wraps one or more per-body **Reports** and carries
-the narrative and photos, so a multi-lake day or a before-and-after-work pair is one post without
-touching any read keyed on a body. The corpus drove the vocabulary: half of reports locate
-something by compass, so chips gain a `where`; pokes, lower bounds and "supportable" join the
-thickness methods; snow becomes coverage, impediment and drifts; 96% of emails never give an end
-time, so the picker pins the minute the sheet opened and steps back by half hours. Suggestions
-from other skaters render as ghost chips that never select themselves, while values read from
-the author's own prose arrive pre-selected with their evidence; a Claude-then-Jev pipeline does
-the reading, kept only where the eval earns it; reports older than a week are refused. *A skater posts a complete report in under a
-minute from a track, and the app never loses one for lack of signal.*
+The report form becomes a report sheet: one fixed-order scroll a skater fills by tapping chips,
+by writing prose, or by opening it from a track, every section collapsing to a summary. A **Post**
+wraps one or more per-body **Reports** and carries the narrative and photos, so a multi-lake day
+or a before-and-after-work pair is one post without touching any read keyed on a body. The corpus
+drove the vocabulary: half of reports locate something by compass, so chips gain a `where`; pokes,
+lower bounds and "supportable" join the thickness methods; snow becomes coverage, impediment and
+drifts; 96% of emails never give an end time, so the picker pins the minute the sheet opened and
+steps back by half hours. Peers' suggestions are ghost chips that never select themselves; the
+author's own prose arrives pre-selected with its evidence, read by a Claude-then-Jev pipeline kept
+only where the eval earns it; reports older than a week are refused. On mobile the sheet is the
+Reports tab itself, the lake a tappable silhouette for the put-in and the where; a draft is held
+until posted (D204); authors edit and delete their own, the history kept for a moderator (D205).
+*A skater posts a complete report in under a minute from a track, and the app never loses one for
+lack of signal.*
 
 #### Data runs
 - **2026-09-19 — corpus re-parse + LLM mention inventory:** 2,472 messages (Dec 2023–Jun 2026), 745 named bodies, Haiku 4.5, $5.68
@@ -726,6 +729,9 @@ minute from a track, and the app never loses one for lack of signal.*
 - ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
 - 🟢 **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; a still silhouette drawn from geometry, D203, A10-2b (2026-09-21)
 - 🟢 **The offline queue around Posts** (§9.1–§9.2), **aggregates that learn `where`** (§12.2) and **the profile history as Posts** — A10-2b (2026-09-21); §9.3 waits on extraction (A10-4)
+- 🟢 **The mobile sheet** (§4.1, §4.3, §4.4, §6, §7 + the search door), held drafts (D204), author edit and delete with history (D205), the weather beside the end time — A10-3 (2026-09-21); GPX import and the parking-lot door stay with A10-4
+- ⚪ **The moderator's revision comparison** (D205) — the web console, A10-5
+- ⚪ **Moderator put-in and lot authoring** + the proposal queue over the reports' points → [`features/access-point-authoring.md`](./features/access-point-authoring.md), after A10
 - ⚪ **The corpus replay** (§1.5) — after the founder's eval review decides the engine; its own deployment (a project, not a preview — those auto-delete in 5 / 14 days), a dev snapshot, `posts.importBackdated`
 - ❓ **Verified precision floors** — the founder's pass through the eval's `review.html` (147 emails, contested values first); A10-4 is gated on `basis: 'verified'`
 - ⚪ **A retry on Jev 503 / 529** (7 of 147 calls) and parallel per-unit votes — with A10-4
@@ -740,6 +746,7 @@ minute from a track, and the app never loses one for lack of signal.*
 #### Owed
 - The §1 extraction eval's value tier (~150 field-labeled reports) before ghost chips are gated
 - 🟢 Jev access granted 2026-09-19 (`TYPESAFE_API_KEY` on dev); the harness still takes any engine
+- The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Deferred register
 
