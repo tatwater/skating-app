@@ -10,6 +10,7 @@ import {
   type HazardQueueItem,
   isHazardItemFlushable,
   type QueuedHazard,
+  removableHazardItems,
 } from './hazardQueue';
 
 const AT: LatLng = { lat: 44.4759, lng: -73.2121 };
@@ -65,12 +66,31 @@ describe('flushableHazardItems', () => {
   });
 });
 
+describe('removableHazardItems — a flushed hazard outlives its flush while a draft bundles it (A10 §9.1)', () => {
+  it('keeps a done hazard a Post draft still points at, frees the rest, and never keeps a confirmation', () => {
+    const items: HazardQueueItem[] = [
+      hazard({ id: 'kept', status: 'done', hazardId: 'srv-1' }),
+      hazard({ id: 'free', status: 'done', hazardId: 'srv-2' }),
+      hazard({ id: 'pending' }),
+      {
+        ...hazard({ id: 'vote', status: 'done' }),
+        kind: 'confirmation_vote',
+      } as unknown as HazardQueueItem,
+    ];
+    expect(removableHazardItems(items, new Set(['kept'])).map((i) => i.id)).toEqual([
+      'free',
+      'vote',
+    ]);
+  });
+});
+
 describe('flushHazardItem — hazards', () => {
-  it('creates the hazard and marks the item done', async () => {
+  it('creates the hazard and marks the item done, with the server id checkpointed on the row', async () => {
     const { eff } = effects();
     const result = await flushHazardItem(hazard(), eff, NOW);
     expect(result.ok).toBe(true);
     expect(result.item.status).toBe('done');
+    expect((result.item as QueuedHazard).hazardId).toBe('hazard1');
     expect(eff.createHazard).toHaveBeenCalledWith(
       expect.objectContaining({ waterBodyId: 'body1', type: 'open_water', photoIds: [] }),
     );
