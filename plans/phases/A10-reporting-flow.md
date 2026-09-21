@@ -484,11 +484,11 @@ decides what the pipeline stores — and ships with its run, `posts.importBackda
   is the recommendation — preview deployments auto-delete after 5 / 14 days), the snapshot import,
   `posts.importBackdated`, the runner and `replay-summary.md`.
 
-## Built record — A10-2b (2026-09-21, `phase-a10-reporting-flow-2b`, stacked on PR #72)
+## Built record — A10-2b (2026-09-21, `phase-a10-reporting-flow-2b`, PR #73 stacked on #72)
 
 The half the size rule split off A10-2: §9.1–§9.2 (the queue around Posts, D55 offline, *Waiting
 to send*), §12.2 (aggregates learn `where`), §12.3 (the silhouette, D203), and the profile history
-as Posts. Seven commits off `-2`, ~2,400 lines. Suites at build: core 2,947 · convex 1,733 · web
+as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: core 2,947 · convex 1,733 · web
 576 · mobile 112. No schema change, no data run.
 
 ### What shipped, by workstream
