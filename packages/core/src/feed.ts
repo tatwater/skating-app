@@ -10,7 +10,14 @@
 
 import { formatSkateWindow, humanizeEnum, SKATE_QUALITY_LABELS } from './reportView';
 import type { TrustClass } from './reputationConfig';
-import type { IceType, SkateQuality, SurfaceTag } from './types';
+import type {
+  IceType,
+  ObservedFrom,
+  Sighting,
+  SkateQuality,
+  Suitability,
+  SurfaceTag,
+} from './types';
 
 /**
  * A feed/report author's public attribution + cosmetic trust (D50). `trustClass` drives the `TrustAvatar`
@@ -170,6 +177,12 @@ export interface FeedCardData {
   iceTypes: IceType[];
   surfaceTags: SurfaceTag[];
   skateQuality?: SkateQuality;
+  /** Who the ice is for, in the author's words (A10 / D190) — `dont_go` leads the card when set. */
+  suitability?: Suitability;
+  /** How the author saw it (A10 / D191). Absent means unstated. */
+  observedFrom?: ObservedFrom;
+  /** What a shore observer saw (A10 / D189) — the observation a from-shore report may carry. */
+  sighting?: Sighting;
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
@@ -184,6 +197,28 @@ export interface FeedCardData {
    * 55-minute drive plus a 25-minute walk is not an 80-minute drive (D72 amendment).
    */
   accessKind?: string;
+}
+
+/**
+ * The feed item the server (`posts.listFeed`) returns per Post (A10 / D186): the author's title and
+ * prose over the member Reports the viewer's filters matched, in the author's order. A legacy Post
+ * has one Report and no words, and renders exactly as the report card always did. `omittedCount`
+ * is the members the *filters* hid (never moderation — those are not counted), so the header can say
+ * so rather than let a two-lake day read as one.
+ */
+export interface PostCardData {
+  postId: string;
+  title?: string;
+  body?: string;
+  /** The D28 sort key — the freshest visible member's end time. */
+  latestSkateEndTime: number;
+  author: FeedAuthor;
+  blocked: boolean;
+  /** Any matched member is on a favorited body or bay (Phase 04 / A09) — the per-page boost. */
+  isFavorite: boolean;
+  /** Never empty: a Post with no matching Report is not in the page. */
+  reports: FeedCardData[];
+  omittedCount: number;
 }
 
 /** Render-ready feed card. `relativeTime` depends on `now`, so it's computed per render, not stored. */

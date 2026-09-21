@@ -7,6 +7,14 @@ import { syncReportSubAreas } from './lib/reportSubAreas';
 import schema from './schema';
 
 /**
+ * The member cards of a Post page (A10 / D186). Every Post here has one Report, so the report-era
+ * assertions read exactly as they did against the report feed.
+ */
+function cards<T>(res: { page: { reports: T[] }[] }): T[] {
+  return res.page.flatMap((p) => p.reports);
+}
+
+/**
  * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
  * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
  * so a fixture stays about what its test is about.
@@ -616,8 +624,10 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       author: Id<'profiles'>,
       waterBodyId: Id<'waterBodies'>,
     ) {
-      return t.run((ctx) =>
-        ctx.db.insert('reports', {
+      // Inserted directly (the window, D199, would refuse a create this old), inside the one-Report
+      // Post every report has (A10 / D186) so the Post feed can see it.
+      return t.run(async (ctx) => {
+        const reportId = await ctx.db.insert('reports', {
           authorId: author,
           waterBodyId,
           point: { lat: 0.5, lng: 0.5 },
@@ -631,8 +641,19 @@ describe('reports.listByWaterBody (all public, D13)', () => {
           hazardIdsCreated: [],
           createdAt: LAST_SEASON,
           updatedAt: LAST_SEASON,
-        }),
-      );
+        });
+        const postId = await ctx.db.insert('posts', {
+          authorId: author,
+          reportIds: [reportId],
+          photoIds: [],
+          latestSkateEndTime: LAST_SEASON,
+          moderationStatus: 'visible' as const,
+          createdAt: LAST_SEASON,
+          updatedAt: LAST_SEASON,
+        });
+        await ctx.db.patch(reportId, { postId });
+        return reportId;
+      });
     }
 
     test('a lake lists this season only, and the season arg is the way back', async () => {
@@ -693,8 +714,8 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       const lastSeason = await seedLastSeason(t, authorId, id);
 
       // Nothing has been skated this season — which, from July until first ice, is every year.
-      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
-      expect(feed.page.map((c) => c.reportId)).toEqual([lastSeason]);
+      const feed = await t.query(api.posts.listFeed, { paginationOpts: PAGE });
+      expect(cards(feed).map((c) => c.reportId)).toEqual([lastSeason]);
       expect(feed.season).toBe(2024);
       expect(feed.isPastSeason).toBe(true);
     });
@@ -702,7 +723,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
     test('an app with no reports at all serves this season, not a fallback to nowhere', async () => {
       const t = convexTestWithGeo();
       await seedBody(t);
-      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
+      const feed = await t.query(api.posts.listFeed, { paginationOpts: PAGE });
       expect(feed.page).toEqual([]);
       expect(feed.season).toBe(2025);
       expect(feed.isPastSeason).toBe(false);
@@ -724,8 +745,8 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         skateEndTime: SKATE_TIME,
       });
 
-      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
-      expect(feed.page.map((c) => c.reportId)).toEqual([thisSeason]);
+      const feed = await t.query(api.posts.listFeed, { paginationOpts: PAGE });
+      expect(cards(feed).map((c) => c.reportId)).toEqual([thisSeason]);
       expect(feed.season).toBe(2025);
       expect(feed.isPastSeason).toBe(false);
     });
@@ -1551,7 +1572,7 @@ describe('reports.create place stamp + skate window (Phase 05)', () => {
   });
 });
 
-describe('reports.listFeed (global newsfeed, Phase 05)', () => {
+describe('posts.listFeed (global newsfeed, Phase 05)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('orders by skate-end time desc across bodies; excludes hidden/removed (D28/D32)', async () => {
@@ -1576,15 +1597,25 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     });
     await t.run((ctx) => ctx.db.patch(hidden, { moderationStatus: 'hidden' }));
 
-    const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page.map((c) => c.reportId)).toEqual([newer, older]);
+    const res = await t.query(api.posts.listFeed, ALL);
+    expect(cards(res).map((c) => c.reportId)).toEqual([newer, older]);
   });
 
   test('hidden reports never consume page slots — a small page stays full of visible ones', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
+    const asMod = await seedUser(t, 'clerk_mod');
+    await t.run(async (ctx) => {
+      const mod = await ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'clerk_mod'))
+        .unique();
+      if (mod) await ctx.db.patch(mod._id, { role: 'moderator' });
+    });
     // Interleave hidden and visible so a naive filter-after-paginate would yield a short/empty page.
+    // Hidden through moderation, which is what keeps the Post's gate stored (A10-2): the last visible
+    // member going hides its Post, so the feed's index range never holds an empty Post.
     const created: { reportId: string; hidden: boolean }[] = [];
     for (let i = 0; i < 6; i++) {
       const reportId = await asUser.mutation(api.reports.create, {
@@ -1593,19 +1624,26 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
         skateEndTime: SKATE_TIME + i,
       });
       const hidden = i % 2 === 0;
-      if (hidden) await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }));
+      if (hidden) {
+        await asMod.mutation(api.moderation.setModerationStatus, {
+          targetType: 'report',
+          targetId: reportId,
+          status: 'hidden',
+          reason: 'test',
+        });
+      }
       created.push({ reportId, hidden });
     }
     const visibleIds = new Set(created.filter((c) => !c.hidden).map((c) => c.reportId));
 
     // A page of 2 must come back full — hidden rows are gated in-index, not after paginate.
-    const first = await t.query(api.reports.listFeed, {
+    const first = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: null },
     });
     expect(first.page).toHaveLength(2);
-    expect(first.page.every((c) => visibleIds.has(c.reportId))).toBe(true);
+    expect(cards(first).every((c) => visibleIds.has(c.reportId))).toBe(true);
 
-    const second = await t.query(api.reports.listFeed, {
+    const second = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: first.continueCursor },
     });
     expect(second.page).toHaveLength(1);
@@ -1634,13 +1672,13 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
       });
     });
 
-    const blocked = await asViewer.query(api.reports.listFeed, ALL);
+    const blocked = await asViewer.query(api.posts.listFeed, ALL);
     expect(blocked.page).toHaveLength(1);
-    expect(blocked.page[0]?.blocked).toBe(true);
+    expect(cards(blocked)[0]?.blocked).toBe(true);
 
     // An unrelated viewer (and anon) sees the same report, not de-emphasized.
-    const anon = await t.query(api.reports.listFeed, ALL);
-    expect(anon.page[0]?.blocked).toBe(false);
+    const anon = await t.query(api.posts.listFeed, ALL);
+    expect(cards(anon)[0]?.blocked).toBe(false);
   });
 
   test('enriches with body name, point-derived place, author, and photo thumbnails', async () => {
@@ -1663,8 +1701,8 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
       photoIds: [photoId],
     });
 
-    const res = await t.query(api.reports.listFeed, ALL);
-    const card = res.page[0];
+    const res = await t.query(api.posts.listFeed, ALL);
+    const card = cards(res)[0];
     expect(card?.bodyName).toBe('Lake Morey');
     expect(card?.place).toEqual(BURLINGTON_PLACE);
     // A freshly-seeded author (0 points, createdAt = now) derives the cosmetic `new` trust class (D50).
@@ -1690,12 +1728,12 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
         skateEndTime: SKATE_TIME + i,
       });
     }
-    const first = await t.query(api.reports.listFeed, {
+    const first = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: null },
     });
     expect(first.page).toHaveLength(2);
     expect(first.isDone).toBe(false);
-    const second = await t.query(api.reports.listFeed, {
+    const second = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: first.continueCursor },
     });
     expect(second.page).toHaveLength(1);
@@ -1717,8 +1755,8 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
       );
       if (author) await ctx.db.delete(author._id);
     });
-    const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page[0]?.author).toEqual({
+    const res = await t.query(api.posts.listFeed, ALL);
+    expect(cards(res)[0]?.author).toEqual({
       displayName: 'Unknown',
       username: '',
       trustClass: null,
@@ -1739,12 +1777,12 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     });
     await t.run((ctx) => ctx.db.patch(loser, { mergedIntoId: survivor, dedupStatus: 'merged' }));
 
-    const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page[0]?.bodyName).toBe('Survivor Lake');
+    const res = await t.query(api.posts.listFeed, ALL);
+    expect(cards(res)[0]?.bodyName).toBe('Survivor Lake');
   });
 });
 
-describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
+describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('quality floor narrows the feed but keeps reports missing a quality (include-unknown)', async () => {
@@ -1769,11 +1807,11 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
       skateEndTime: SKATE_TIME,
     });
 
-    const res = await asUser.query(api.reports.listFeed, {
+    const res = await asUser.query(api.posts.listFeed, {
       ...ALL,
       filters: { qualityFloor: 'good' },
     });
-    const ids = res.page.map((c) => c.reportId);
+    const ids = cards(res).map((c) => c.reportId);
     expect(ids).toContain(great);
     expect(ids).toContain(unrated); // missing quality ⇒ included
     expect(ids).not.toContain(poor);
@@ -1823,24 +1861,24 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     });
 
     // Radius filter at 30 keeps only the near body.
-    const filtered = await asUser.query(api.reports.listFeed, {
+    const filtered = await asUser.query(api.posts.listFeed, {
       ...ALL,
       filters: { radiusMinutes: 30 },
     });
-    expect(filtered.page.map((c) => c.reportId)).toEqual([nearReport]);
+    expect(cards(filtered).map((c) => c.reportId)).toEqual([nearReport]);
 
     // Favorite the far body → it's exempt from the distance filter and comes back (boosted).
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: far.id });
-    const withFav = await asUser.query(api.reports.listFeed, {
+    const withFav = await asUser.query(api.posts.listFeed, {
       ...ALL,
       filters: { radiusMinutes: 30 },
     });
-    const ids = withFav.page.map((c) => c.reportId);
+    const ids = cards(withFav).map((c) => c.reportId);
     expect(ids).toContain(nearReport);
     expect(ids).toContain(farReport);
     // The favorite is boosted to the top of the page and flagged.
-    expect(withFav.page[0]?.reportId).toBe(farReport);
-    expect(withFav.page[0]?.isFavorite).toBe(true);
+    expect(cards(withFav)[0]?.reportId).toBe(farReport);
+    expect(cards(withFav)[0]?.isFavorite).toBe(true);
   });
 
   test('favorites boost to the top of the page without changing the unfiltered set', async () => {
@@ -1860,10 +1898,10 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     });
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: b.id });
 
-    const res = await asUser.query(api.reports.listFeed, ALL);
+    const res = await asUser.query(api.posts.listFeed, ALL);
     // Both present; the favorited (older) report is boosted above the newer non-favorite.
-    expect(res.page.map((c) => c.reportId)).toEqual([oldestFav, newest]);
-    expect(res.page[0]?.isFavorite).toBe(true);
+    expect(cards(res).map((c) => c.reportId)).toEqual([oldestFav, newest]);
+    expect(cards(res)[0]?.isFavorite).toBe(true);
   });
 
   test('unfiltered feed for a viewer with no home/favorites is exactly Phase 05', async () => {
@@ -1875,9 +1913,9 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
-    const res = await asUser.query(api.reports.listFeed, ALL);
-    expect(res.page.map((c) => c.reportId)).toEqual([r]);
-    expect(res.page[0]?.isFavorite).toBe(false);
+    const res = await asUser.query(api.posts.listFeed, ALL);
+    expect(cards(res).map((c) => c.reportId)).toEqual([r]);
+    expect(cards(res)[0]?.isFavorite).toBe(false);
   });
 });
 

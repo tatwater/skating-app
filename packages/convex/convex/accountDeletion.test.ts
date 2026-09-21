@@ -18,6 +18,14 @@ import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 /**
+ * The member cards of a Post page (A10 / D186). Every Post here has one Report, so the report-era
+ * assertions read exactly as they did against the report feed.
+ */
+function cards<T>(res: { page: { reports: T[] }[] }): T[] {
+  return res.page.flatMap((p) => p.reports);
+}
+
+/**
  * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
  * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
  * so a fixture stays about what its test is about.
@@ -225,15 +233,15 @@ describe('the grace window', () => {
 
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
 
-    const feed = await viewer.as.query(api.reports.listFeed, {
+    const feed = await viewer.as.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
     });
     // The report is still there — it's recent, and it's the community's now.
     expect(feed.page).toHaveLength(1);
     // The author isn't. No name, no ring, and no handle to click through to a page that 404s.
-    expect(feed.page[0]?.author?.displayName).toBe(DELETED_DISPLAY_NAME);
-    expect(feed.page[0]?.author?.username).toBe('');
-    expect(feed.page[0]?.author?.trustClass ?? null).toBeNull();
+    expect(cards(feed)[0]?.author?.displayName).toBe(DELETED_DISPLAY_NAME);
+    expect(cards(feed)[0]?.author?.username).toBe('');
+    expect(cards(feed)[0]?.author?.trustClass ?? null).toBeNull();
   });
 
   /**
@@ -877,13 +885,13 @@ describe('the tombstone', () => {
 
     await finalize(t, user.id);
 
-    const feed = await viewer.as.query(api.reports.listFeed, {
+    const feed = await viewer.as.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
     });
     const thread = await viewer.as.query(api.comments.listByReport, { reportId });
     const byIds = await viewer.as.query(api.profiles.publicByIds, { profileIds: [user.id] });
 
-    const surfaces = [feed.page[0]?.author, thread[0]?.comment?.author, byIds[user.id]];
+    const surfaces = [cards(feed)[0]?.author, thread[0]?.comment?.author, byIds[user.id]];
     for (const author of surfaces) {
       expect(author?.displayName).toBe(DELETED_DISPLAY_NAME);
       expect(author?.trustClass ?? null).toBeNull();

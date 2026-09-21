@@ -10,20 +10,11 @@
  */
 
 import {
-  bandForCoord,
   type ChipInput,
-  type DriveTimeBands,
-  digestIsFresh,
-  type FeedAuthor,
   type FeedCardData,
   type IceType,
   iceTypeKeys,
-  isBrowsableSeason,
-  isFavoriteReport,
   isFormRoundTripOf,
-  type LatLng,
-  matchesFilters,
-  matchWeatherFilter,
   memberSubAreaIds,
   RECOMMENDED_MIN_PHOTOS,
   RECOMMENDED_RECENCY_HOURS,
@@ -31,30 +22,26 @@ import {
   resolveSeason,
   type Season,
   type SurfaceTag,
-  sanitizeFeedFilters,
   seasonEndMs,
   seasonOf,
   seasonStartMs,
   seasonsBetween,
   selectRecommended,
-  standingOf,
-  surfaceTagKeys,
   type TrustClass,
   toLocatedChip,
   validateReportInput,
-  type WeatherDiscoveryFilter,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
-import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
+import type { Doc } from './_generated/dataModel';
+import { internalMutation, mutation, query } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import { getCurrentProfile, requireContributor } from './lib/auth';
-import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
+import { type BodyInfo, bodyInfoFor, type FeedCardCaches, toFeedCard } from './lib/feedCards';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
 import { refreshPostLatestSkateEnd, syncPostPhotos } from './lib/postSync';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -67,8 +54,7 @@ import {
   toReportInput,
 } from './lib/reportWrite';
 import { trustClassFor } from './lib/reputation';
-import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
-import { resolveReportSubAreas, stampCandidates, subAreaDriveCoordFor } from './subAreas';
+import { resolveReportSubAreas, stampCandidates } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
 /**
@@ -252,333 +238,6 @@ export const seasonsForBody = query({
     return { seasons: seasonsBetween(Math.min(oldest?.skateEndTime ?? now, now), now), current };
   },
 });
-
-/** A resolved survivor body's feed-relevant fields: display name + on-water centroid (for band calc). */
-interface BodyInfo {
-  name: string;
-  centroid: LatLng;
-  /**
-   * The body's standing (A07b). The global feed shows a report on a *dormant* body (a report there is
-   * what brought it back, and the drawer explains the rest) but not on a *removed* one — a
-   * landowner's own skate on a taken-down pond is theirs and the pond's, not the feed's. The
-   * recommended strip, which *pushes*, wants `active` only.
-   */
-  standing: 'active' | 'dormant' | 'removed' | 'unlisted';
-  /** The body's easiest known approach (A06d/D144) — drives the feed card's Hike-In chip. */
-  accessKind?: string;
-  /**
-   * The body's `filter`-tier weather cell (A06h / D165), for the weather narrow. Absent for a
-   * dangling ref. Read off the body doc the cache already loaded, so the narrow costs no extra read
-   * beyond one digest per distinct cell on the page.
-   */
-  filterCellKey?: string;
-  /** The parent's elevation, so a report's bay can be keyed the way the registry keyed it. */
-  elevationM?: number;
-}
-
-/** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
-async function bodyInfoFor(
-  ctx: QueryCtx,
-  waterBodyId: Id<'waterBodies'>,
-  cache: Map<string, BodyInfo>,
-): Promise<BodyInfo> {
-  const cached = cache.get(waterBodyId);
-  if (cached !== undefined) return cached;
-  let body = await ctx.db.get(waterBodyId);
-  for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
-    body = await ctx.db.get(body.mergedIntoId);
-  }
-  const info: BodyInfo = {
-    name: body?.name ?? 'Unknown water body',
-    standing: body ? standingOf(body).standing : 'unlisted',
-    // A resolvable body always has a centroid; the fallback keeps the type total for a dangling ref.
-    centroid: body?.centroid ?? { lat: 0, lng: 0 },
-    // The Hike-In chip (A06d/D87). Free here — the body doc is already loaded and cached per query, so
-    // a page of thirty reports over five lakes costs five reads either way.
-    ...(body?.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
-    ...(body ? { filterCellKey: bodyWeatherCell(body, 'filter').key } : {}),
-    ...(body?.elevationM !== undefined ? { elevationM: body.elevationM } : {}),
-  };
-  cache.set(waterBodyId, info);
-  return info;
-}
-
-/**
- * Resolve a report author's public attribution + cosmetic trust (D13/D50); cached per query. Carries the
- * `TrustAvatar` ring inputs — `profileImageUrl` + the derived `trustClass` (never the raw score) — so a
- * feed card can ring its author. `now` is the per-query clock threaded into the class derivation.
- */
-async function authorFor(
-  ctx: QueryCtx,
-  authorId: Id<'profiles'>,
-  cache: Map<string, FeedAuthor>,
-  now: number,
-): Promise<FeedAuthor> {
-  const cached = cache.get(authorId);
-  if (cached !== undefined) return cached;
-  const author = publicAuthor(await ctx.db.get(authorId), now);
-  cache.set(authorId, author);
-  return author;
-}
-
-/** Per-query enrichment caches shared across a page of feed cards (body info + author attribution). */
-interface FeedCardCaches {
-  bodyInfo: Map<string, BodyInfo>;
-  authors: Map<string, FeedAuthor>;
-}
-
-/**
- * Does this report's lake satisfy the weather filter (A06h / D165, D166)?
- *
- * The report's own bay when it has one — a report from Malletts Bay is about Malletts Bay's cell,
- * which is not Champlain's — else the body's anchor cell, then one digest read per distinct cell on
- * the page. `undefined` when the cell has no digest: out of season, or a lake nobody has swept, and
- * `matchesFilters` treats that as not a match rather than as unknown-passes, because a weather
- * filter is a claim about the lake and a lake nobody checked cannot make it.
- */
-async function weatherMatchedFor(
-  ctx: QueryCtx,
-  r: Doc<'reports'>,
-  body: BodyInfo,
-  filter: WeatherDiscoveryFilter,
-  caches: { bayCells: Map<string, string | null>; digests: Map<string, boolean> },
-): Promise<boolean | undefined> {
-  let cellKey = body.filterCellKey;
-  if (r.subAreaId !== undefined) {
-    let bayCell = caches.bayCells.get(r.subAreaId);
-    if (bayCell === undefined) {
-      const bay = await ctx.db.get(r.subAreaId);
-      bayCell =
-        bay && bay.removedAt === undefined
-          ? subAreaWeatherCell(bay, { elevationM: body.elevationM }, 'filter').key
-          : null;
-      caches.bayCells.set(r.subAreaId, bayCell);
-    }
-    if (bayCell !== null) cellKey = bayCell;
-  }
-  if (cellKey === undefined) return undefined;
-  const cached = caches.digests.get(cellKey);
-  if (cached !== undefined) return cached;
-  const digest = await ctx.db
-    .query('weatherCellDigests')
-    .withIndex('by_key', (q) => q.eq('cellKey', cellKey))
-    .first();
-  // Fresh or nothing — a digest the sweep stopped updating in April must not narrow a July feed.
-  const matched =
-    digest !== null &&
-    digestIsFresh(digest, Date.now()) &&
-    matchWeatherFilter(digest, filter) !== null;
-  caches.digests.set(cellKey, matched);
-  return matched;
-}
-
-/**
- * Shape one visible report into a `FeedCardData` — the single source of truth for the feed-card
- * payload, shared by the global `listFeed` and the offline-cache `recentCardsForBodies` so the two
- * can never drift. `blocked` de-emphasizes a blocked author but never hides the report (D3); a block
- * is not moderation.
- */
-async function toFeedCard(
-  ctx: QueryCtx,
-  r: Doc<'reports'>,
-  caches: FeedCardCaches,
-  sets: { blocked: Set<string>; favorites: ViewerFavorites },
-  now: number,
-): Promise<FeedCardData> {
-  const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
-  return {
-    reportId: r._id,
-    waterBodyId: r.waterBodyId,
-    bodyName: body.name,
-    // The bay name, when the lake has one (A02/D60) — `buildFeedCardView` composes it ahead of the
-    // body and the town through `formatLocationLine`, so the card can't disagree with report detail.
-    ...(r.subAreaName !== undefined ? { subAreaName: r.subAreaName } : {}),
-    // The list form for a two-bay skate (A09) — the names travel with the report, so this costs no
-    // read; `formatLocationLine` prefers the list when it is present.
-    ...(r.subAreaNames !== undefined ? { subAreaNames: r.subAreaNames } : {}),
-    ...(r.place !== undefined ? { place: r.place } : {}),
-    skateEndTime: r.skateEndTime,
-    ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
-    // The card wants the keys; the located shape is a §12.2 read enhancement, later.
-    iceTypes: iceTypeKeys(r.iceTypes),
-    surfaceTags: surfaceTagKeys(r.surfaceTags),
-    ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-    photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
-    author: await authorFor(ctx, r.authorId, caches.authors, now),
-    blocked: sets.blocked.has(r.authorId),
-    // A lake favorite takes the whole lake; a bay favorite takes only the reports in the bay (A09).
-    isFavorite: isFavoriteReport(sets.favorites, r),
-    ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
-  };
-}
-
-/** Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files skipped. */
-async function thumbUrlsFor(
-  ctx: QueryCtx,
-  photoIds: Doc<'reports'>['photoIds'],
-): Promise<string[]> {
-  // Resolve every photo concurrently — a page of reports each carrying a few photos would otherwise
-  // serialize into dozens of round-trips per `listFeed` call. Missing files resolve to null, dropped.
-  const urls = await Promise.all(
-    photoIds.map(async (photoId) => {
-      const photo = await ctx.db.get(photoId);
-      if (!photo) return null;
-      return ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>);
-    }),
-  );
-  return urls.filter((url): url is string => url !== null);
-}
-
-/**
- * The global cross-body **newsfeed** (Phase 05, D28) — every visible report, newest **skate-end
- * time** first, paginated (`usePaginatedQuery`). All reports are public (D13) and a **block never
- * hides a report** (D3, safety-first), so the filter is moderation-only; a blocked author's report
- * is still returned, carrying `blocked: true` for author de-emphasis + the "Blocked" chip. Each page
- * item is enriched into a `FeedCardData` (survivor body name + point-derived place, author, photo
- * thumbnails) — bounded by page size. The feed ships global; Phase 04 layers an additive drive-time /
- * favorites narrow onto this same query.
- *
- * **Phase 04 (additive).** An optional `filters` blob narrows the page via the shared
- * `@skating/core` `matchesFilters` (include-unknown for optional attributes; distance is hard and
- * favorites are exempt), using the viewer's cached isochrone bands + favorite set. Favorites are
- * **boosted to the top of the page** (a stable per-page reorder) and carry `isFavorite: true` for the
- * badge. With no filters + no favorites the result is exactly the Phase 05 feed. Note: narrowing runs
- * *after* `paginate`, so a heavily filtered page can come back short (even empty) with `isDone: false`
- * — `usePaginatedQuery` keeps loading; the client requests the next page. (The moderation gate stays
- * in-index precisely because *it* could empty every page; user filters can't strand the same way since
- * the cursor still advances through visible reports.)
- */
-export const listFeed = query({
-  args: {
-    paginationOpts: paginationOptsValidator,
-    filters: v.optional(v.any()),
-    /** Browse one season explicitly. Absent ⇒ {@link servedFeedSeason} decides — see its note. */
-    season: v.optional(v.number()),
-  },
-  handler: async (ctx, { paginationOpts, filters: rawFilters, season }) => {
-    const viewer = await getCurrentProfile(ctx);
-    const viewerId = viewer?._id ?? '';
-    const [blocked, favorites] = await Promise.all([
-      loadBlockedAuthorIds(ctx, viewerId),
-      loadFavorites(ctx, viewerId),
-    ]);
-    const filters = sanitizeFeedFilters(rawFilters);
-    // Stored bands validate as the broad GeoJSON union, but ORS only ever writes Polygon/MultiPolygon;
-    // cast to the band shape `bandForCoord` consumes (same pattern as `adminAreas` polygon reads).
-    const bands = {
-      band30: viewer?.cachedIsochrones?.band30,
-      band60: viewer?.cachedIsochrones?.band60,
-      outerRadiusMeters: viewer?.outerRadiusMeters,
-    } as DriveTimeBands;
-    const home = viewer?.homeCoord;
-    const now = Date.now();
-
-    // Which season this page is actually serving (D63) — either the one asked for or the newest one
-    // that has anything in it. Resolved before the read so every page of a scroll agrees.
-    const current = seasonOf(now);
-    const served =
-      season !== undefined && isBrowsableSeason(season)
-        ? season
-        : await servedFeedSeason(ctx, current);
-
-    // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
-    // after `paginate`. A blocked author's report still comes through (D3), de-emphasized via `blocked`.
-    // The season bound rides the same index's range field, so it narrows the read rather than filtering
-    // its output — the one gate that could empty every page stays in-index for the documented reason.
-    const result = await ctx.db
-      .query('reports')
-      .withIndex('by_moderation_and_skate_end_time', (q) =>
-        q
-          .eq('moderationStatus', 'visible')
-          .gte('skateEndTime', seasonStartMs(served))
-          .lt('skateEndTime', seasonEndMs(served)),
-      )
-      .order('desc')
-      .paginate(paginationOpts);
-
-    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
-    const weatherCaches = {
-      bayCells: new Map<string, string | null>(),
-      digests: new Map<string, boolean>(),
-    };
-    // The bay's own drive-time coordinate (A09 kickoff call 2), one read per distinct bay on the
-    // page beside `bodyInfo`. `null` caches a bay that is gone, which bands on the lake instead.
-    const bayCoords = new Map<string, LatLng | null>();
-    const page: FeedCardData[] = [];
-    for (const r of result.page) {
-      const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
-      // A takedown reaches the feed (A07b) — see `BodyInfo.standing`.
-      if (body.standing === 'removed') continue;
-      const isFavorite = isFavoriteReport(favorites, r);
-      let coord: LatLng = body.centroid;
-      if (r.subAreaId !== undefined) {
-        let bayCoord = bayCoords.get(r.subAreaId);
-        if (bayCoord === undefined) {
-          bayCoord = await subAreaDriveCoordFor(ctx, r.subAreaId);
-          bayCoords.set(r.subAreaId, bayCoord);
-        }
-        if (bayCoord !== null) coord = bayCoord;
-      }
-      const band = bandForCoord(coord, bands, home);
-      // The weather narrow (D165): resolved here, applied inside `matchesFilters` with the rest.
-      const weatherMatched =
-        filters.weather === undefined
-          ? undefined
-          : await weatherMatchedFor(ctx, r, body, filters.weather, weatherCaches);
-      // The additive narrow — an empty `filters` matches everything (Phase 05 behavior preserved).
-      if (
-        !matchesFilters(
-          {
-            skateEndTime: r.skateEndTime,
-            ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-            iceTypes: iceTypeKeys(r.iceTypes),
-            surfaceTags: surfaceTagKeys(r.surfaceTags),
-            ...(r.iceThickness !== undefined ? { iceThickness: r.iceThickness } : {}),
-          },
-          filters,
-          { band, isFavorite, now, ...(weatherMatched !== undefined ? { weatherMatched } : {}) },
-        )
-      ) {
-        continue;
-      }
-      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }, now));
-    }
-    // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
-    page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false));
-    // `season` + `isPastSeason` are what let the client label the fallback instead of silently mixing
-    // two winters. Sent on every page so a client that started mid-scroll still knows what it's showing.
-    return { ...result, page, season: served, isPastSeason: served !== current };
-  },
-});
-
-/**
- * Which season the feed serves when nobody asked for one: **this season, or the newest one that has a
- * report in it** (D63, kickoff decision 3).
- *
- * Season-scoping the feed the way the lake list is scoped would empty the home screen on July 1 and
- * leave it empty until first ice — five months, not a July curiosity. The plain fix ("if the current
- * season is empty, show the previous one") is subtly wrong for a longer gap and needs a probe read to
- * decide. This is one read that answers both: the newest visible report in the app. If it's from this
- * season, that's what we serve; if the app has been asleep since March, we serve March's season rather
- * than an empty one behind it.
- *
- * **Stable across a paginated scroll**, which is what makes this safe to compute per page: it depends
- * only on the newest report in the app, not on the page being read. The one thing that changes it is
- * the *first* report of a new season landing mid-scroll, which reactively re-answers the feed to the
- * live season — the correct outcome for the one moment a year it can happen.
- */
-async function servedFeedSeason(ctx: QueryCtx, current: Season): Promise<Season> {
-  const newest = await ctx.db
-    .query('reports')
-    .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
-    .order('desc')
-    .first();
-  if (!newest) return current;
-  // Clamped to the current season because `SKATE_TIME_FUTURE_TOLERANCE_MS` allows an hour of overhang:
-  // within an hour of July 1 the newest report can legitimately be *next* season's, and serving a
-  // season that hasn't started would hide everything anyone skated in the one that has.
-  return Math.min(seasonOf(newest.skateEndTime), current);
-}
 
 /** Offline read-cache bounds (decision #8): the freshest few reports per body, within a recent window. */
 const OFFLINE_CACHE_MAX_PER_BODY = 5;

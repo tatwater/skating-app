@@ -58,6 +58,7 @@ async function applyReportStatus(
   ctx: MutationCtx,
   report: Doc<'reports'>,
   status: ModerationStatus,
+  audit: { actorId: Id<'profiles'>; reason: string; now: number },
 ): Promise<void> {
   await ctx.db.patch(report._id, { moderationStatus: status });
   await bumpContributionCount(
@@ -68,7 +69,63 @@ async function applyReportStatus(
   );
   await recomputeBodySummary(ctx, report.waterBodyId);
   await mirrorReportSubAreas(ctx, { ...report, moderationStatus: status });
-  if (report.postId !== undefined) await refreshPostLatestSkateEnd(ctx, report.postId);
+  if (report.postId !== undefined) {
+    await refreshPostLatestSkateEnd(ctx, report.postId);
+    await derivePostVisibility(ctx, report.postId, report._id, status, audit);
+  }
+}
+
+/**
+ * "Zero visible Reports ⇒ the Post is not shown" (A10 §2.4), kept as a **stored** fact rather than
+ * derived at read time, so the feed's moderation gate stays in the index (the `isDone: false`
+ * lesson: a filter after `paginate` can hand back short pages for ever). Hiding the last visible
+ * member hides the Post, with an audit row naming the member (`derivedFromReportId`); restoring a
+ * member of a Post that was hidden *that* way restores the Post. A Post a moderator hid on its own
+ * — no derivation on its latest action — stays hidden until they restore it.
+ */
+async function derivePostVisibility(
+  ctx: MutationCtx,
+  postId: Id<'posts'>,
+  reportId: Id<'reports'>,
+  status: ModerationStatus,
+  audit: { actorId: Id<'profiles'>; reason: string; now: number },
+): Promise<void> {
+  const post = await ctx.db.get(postId);
+  if (!post) return;
+  if (status !== 'visible') {
+    if (post.moderationStatus !== 'visible') return;
+    for (const id of post.reportIds) {
+      const member = await ctx.db.get(id);
+      if (member && member.moderationStatus === 'visible') return;
+    }
+    await ctx.db.patch(postId, { moderationStatus: 'hidden' });
+    await ctx.db.insert('moderationActions', {
+      actorId: audit.actorId,
+      action: 'hide',
+      targetType: 'post',
+      targetId: postId,
+      reason: audit.reason,
+      metadata: { priorStatus: 'visible', newStatus: 'hidden', derivedFromReportId: reportId },
+      createdAt: audit.now,
+    });
+  } else if (post.moderationStatus === 'hidden') {
+    const last = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', postId))
+      .order('desc')
+      .first();
+    if (last?.metadata?.derivedFromReportId === undefined) return;
+    await ctx.db.patch(postId, { moderationStatus: 'visible' });
+    await ctx.db.insert('moderationActions', {
+      actorId: audit.actorId,
+      action: 'restore',
+      targetType: 'post',
+      targetId: postId,
+      reason: audit.reason,
+      metadata: { priorStatus: 'hidden', newStatus: 'visible', derivedFromReportId: reportId },
+      createdAt: audit.now,
+    });
+  }
 }
 
 export const setModerationStatus = mutation({
@@ -91,8 +148,9 @@ export const setModerationStatus = mutation({
     const typedTarget = target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
     const priorStatus = typedTarget.moderationStatus;
 
+    const audit = { actorId: actor._id, reason: args.reason, now };
     if (args.targetType === 'report') {
-      await applyReportStatus(ctx, target as Doc<'reports'>, args.status);
+      await applyReportStatus(ctx, target as Doc<'reports'>, args.status, audit);
     } else if (args.targetType === 'post') {
       // A Post's verdict reaches its members (A10 §2.4): hidden ⇒ every visible Report hidden, each
       // with its own audit row naming the cascade; restored ⇒ only the Reports *this* hide took down
@@ -105,7 +163,7 @@ export const setModerationStatus = mutation({
         if (!report) continue;
         if (args.status !== 'visible') {
           if (report.moderationStatus !== 'visible') continue;
-          await applyReportStatus(ctx, report, args.status);
+          await applyReportStatus(ctx, report, args.status, audit);
           await ctx.db.insert('moderationActions', {
             actorId: actor._id,
             action: ACTION_FOR_STATUS[args.status],
@@ -127,7 +185,7 @@ export const setModerationStatus = mutation({
             .order('desc')
             .first();
           if (last?.metadata?.cascadedFromPostId !== post._id) continue;
-          await applyReportStatus(ctx, report, 'visible');
+          await applyReportStatus(ctx, report, 'visible', audit);
           await ctx.db.insert('moderationActions', {
             actorId: actor._id,
             action: 'restore',

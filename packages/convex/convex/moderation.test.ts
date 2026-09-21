@@ -274,6 +274,71 @@ describe('moderation.setModerationStatus (post target, A10 / D186)', () => {
     expect((await t.run((ctx) => ctx.db.get(author.id)))?.reportCount).toBe(1);
   });
 
+  test('hiding the last visible member hides the Post — stored, so the feed gate stays in-index', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { postId, reportIds } = await seedPost(t, author.id, 2);
+    const [first, second] = reportIds;
+    if (!first || !second) throw new Error('seed');
+    const hide = (targetId: Id<'reports'>) =>
+      mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'report',
+        targetId,
+        status: 'hidden',
+        reason: 'wrong lake',
+      });
+    await hide(first);
+    expect(await statusOf(t, postId)).toBe('visible');
+    await hide(second);
+    expect(await statusOf(t, postId)).toBe('hidden');
+    const derived = (await t.run((ctx) => ctx.db.query('moderationActions').collect())).filter(
+      (a) => a.targetType === 'post',
+    );
+    expect(derived).toHaveLength(1);
+    expect(derived[0]?.metadata).toMatchObject({ derivedFromReportId: second });
+
+    // Restoring a member of a Post hidden that way restores the Post; a Post a moderator hid on
+    // its own would not come back this way.
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: first,
+      status: 'visible',
+      reason: 'right lake after all',
+    });
+    expect(await statusOf(t, postId)).toBe('visible');
+    expect(await statusOf(t, second)).toBe('hidden');
+  });
+
+  test('a Post a moderator hid does not come back when a member is restored', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { postId, reportIds } = await seedPost(t, author.id, 1);
+    const only = reportIds[0];
+    if (!only) throw new Error('seed');
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: only,
+      status: 'hidden',
+      reason: 'first the report',
+    });
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'post',
+      targetId: postId,
+      status: 'hidden',
+      reason: 'then the post, on its own merits',
+    });
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: only,
+      status: 'visible',
+      reason: 'the report was fine',
+    });
+    expect(await statusOf(t, only)).toBe('visible');
+    expect(await statusOf(t, postId)).toBe('hidden');
+  });
+
   test('hiding one member leaves the Post and re-keys its sort on the visible rest', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');
@@ -295,7 +360,7 @@ describe('moderation.setModerationStatus (post target, A10 / D186)', () => {
     });
     expect(await statusOf(t, postId)).toBe('visible');
     expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(t1);
-    // The last visible member going leaves the key alone — the Post is not shown then anyway.
+    // The last visible member going leaves the key alone and hides the Post itself.
     await mod.as.mutation(api.moderation.setModerationStatus, {
       targetType: 'report',
       targetId: older,
@@ -303,6 +368,7 @@ describe('moderation.setModerationStatus (post target, A10 / D186)', () => {
       reason: 'wrong lake too',
     });
     expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(t1);
+    expect(await statusOf(t, postId)).toBe('hidden');
   });
 });
 

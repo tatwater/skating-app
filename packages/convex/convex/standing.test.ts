@@ -24,6 +24,14 @@ import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
 
 /**
+ * The member cards of a Post page (A10 / D186). Every Post here has one Report, so the report-era
+ * assertions read exactly as they did against the report feed.
+ */
+function cards<T>(res: { page: { reports: T[] }[] }): T[] {
+  return res.page.flatMap((p) => p.reports);
+}
+
+/**
  * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
  * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
  * so a fixture stays about what its test is about.
@@ -726,11 +734,11 @@ describe('push surfaces', () => {
       waterBodyId: removed,
       skateEndTime: SKATE_TIME,
     });
-    const page = await t.query(api.reports.listFeed, {
+    const page = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
       season: seasonOf(SKATE_TIME),
     });
-    expect(page.page.map((c) => c.waterBodyId)).toEqual([dormant]);
+    expect(cards(page).map((c) => c.waterBodyId)).toEqual([dormant]);
   });
 
   test('a bounty cannot be opened on a dormant or removed body', async () => {

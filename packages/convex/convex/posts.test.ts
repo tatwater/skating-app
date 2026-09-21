@@ -564,3 +564,71 @@ describe('a flagged Post is triageable (A10 / D186)', () => {
     expect(summary(bare)?.summary).toBe('Post');
   });
 });
+
+describe('posts.listFeed — a Post feed with per-Report filters (A10 §2.4)', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+  const ALL = { paginationOpts: { numItems: 50, cursor: null } };
+
+  test('a filter shows the Post with only its matching members and counts the rest; none matching ⇒ no Post', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: 'Two lakes',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000, skateQuality: 'great' },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0, skateQuality: 'poor' },
+      ],
+    });
+    const whole = await t.query(api.posts.listFeed, ALL);
+    expect(whole.page).toHaveLength(1);
+    expect(whole.page[0]).toMatchObject({ postId, title: 'Two lakes', omittedCount: 0 });
+    expect(whole.page[0]?.reports.map((r) => r.reportId)).toEqual(reportIds);
+    expect(whole.page[0]?.latestSkateEndTime).toBe(T0);
+
+    const narrowed = await t.query(api.posts.listFeed, {
+      ...ALL,
+      filters: { qualityFloor: 'good' },
+    });
+    expect(narrowed.page).toHaveLength(1);
+    expect(narrowed.page[0]?.reports.map((r) => r.reportId)).toEqual([reportIds[0]]);
+    expect(narrowed.page[0]?.omittedCount).toBe(1);
+
+    const none = await t.query(api.posts.listFeed, {
+      ...ALL,
+      filters: { thicknessFloorCm: 1, qualityFloor: 'great', recencyHours: 1 },
+    });
+    expect(none.page).toEqual([]);
+  });
+
+  test('a member a moderator hid is neither shown nor counted; the Post keeps its prose', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const mod = await seedUser(t, 'clerk_mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { reportIds } = await author.as.mutation(api.posts.create, {
+      body: 'The prose survives a member going.',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000 },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0 },
+      ],
+    });
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportIds[1] as Id<'reports'>,
+      status: 'hidden',
+      reason: 'wrong lake',
+    });
+    const feed = await t.query(api.posts.listFeed, ALL);
+    expect(feed.page).toHaveLength(1);
+    expect(feed.page[0]).toMatchObject({
+      body: 'The prose survives a member going.',
+      omittedCount: 0,
+      latestSkateEndTime: T0 - 3_600_000,
+    });
+    expect(feed.page[0]?.reports.map((r) => r.reportId)).toEqual([reportIds[0]]);
+  });
+});

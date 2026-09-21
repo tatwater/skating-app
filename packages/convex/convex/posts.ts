@@ -16,10 +16,26 @@
  * would have produced for a one-body post, so every reader after A10-2 has exactly one case.
  */
 
+import {
+  isBrowsableSeason,
+  type PostCardData,
+  seasonEndMs,
+  seasonOf,
+  seasonStartMs,
+  visiblePostReports,
+} from '@skating/core';
+import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, mutation } from './_generated/server';
+import { internalMutation, mutation, query } from './_generated/server';
+import {
+  bodyInfoFor,
+  loadFeedViewer,
+  reportMatchesFeed,
+  servedFeedSeason,
+  toFeedCard,
+} from './lib/feedCards';
 import { createPost, postArgs } from './lib/reportWrite';
 
 /**
@@ -50,6 +66,124 @@ export const create = mutation({
   args: postArgs,
   handler: (ctx, args) => createPost(ctx, args),
 });
+
+/**
+ * The global cross-body **newsfeed** (Phase 05, D28; a Post feed since A10 / D186) — every visible
+ * Post, freshest **skate-end time** first (`latestSkateEndTime`, the max over its visible members),
+ * paginated (`usePaginatedQuery`). All reports are public (D13) and a **block never hides a report**
+ * (D3, safety-first), so the gate is moderation-only; a blocked author's Post is still returned,
+ * carrying `blocked: true` for author de-emphasis + the "Blocked" chip. Each page item is a
+ * `PostCardData`: the author's title and prose over the member Reports as `FeedCardData` (survivor
+ * body name + point-derived place, author, photo thumbnails) — bounded by page size × members.
+ *
+ * **Filters stay per-Report (A10 §2.4).** An optional `filters` blob narrows each Post's members via
+ * the shared `reportMatchesFeed` (include-unknown for optional attributes; distance is hard and
+ * favorites are exempt). A Post appears with only its matching Reports under the header, and not at
+ * all when none match; the `posts` indexes carry no filter columns. Favorites are **boosted to the
+ * top of the page** (a stable per-page reorder) and carry `isFavorite: true` for the badge. With no
+ * filters + no favorites the result is exactly the Phase 05 feed, one Post per Report.
+ *
+ * Narrowing runs *after* `paginate`, so a heavily filtered page can come back short (even empty)
+ * with `isDone: false` — `usePaginatedQuery` keeps loading; the client requests the next page. (The
+ * moderation gate stays in-index precisely because *it* could empty every page; user filters can't
+ * strand the same way since the cursor still advances through visible Posts. A Post whose every
+ * member a moderator hid on its own is dropped here too — rare, and the cursor still advances.)
+ */
+export const listFeed = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    filters: v.optional(v.any()),
+    /** Browse one season explicitly. Absent ⇒ {@link servedFeedSeason} decides — see its note. */
+    season: v.optional(v.number()),
+  },
+  handler: async (ctx, { paginationOpts, filters: rawFilters, season }) => {
+    const viewer = await loadFeedViewer(ctx, rawFilters);
+
+    // Which season this page is actually serving (D63) — either the one asked for or the newest one
+    // that has anything in it. Resolved before the read so every page of a scroll agrees.
+    const current = seasonOf(viewer.now);
+    const served =
+      season !== undefined && isBrowsableSeason(season)
+        ? season
+        : await servedFeedSeason(ctx, current);
+
+    // Moderation-only gate (D32), applied *in* the index rather than after `paginate`. The season
+    // bound rides the same index's range field, so it narrows the read rather than filtering its
+    // output — the one gate that could empty every page stays in-index for the documented reason.
+    const result = await ctx.db
+      .query('posts')
+      .withIndex('by_moderation_and_latest_skate_end_time', (q) =>
+        q
+          .eq('moderationStatus', 'visible')
+          .gte('latestSkateEndTime', seasonStartMs(served))
+          .lt('latestSkateEndTime', seasonEndMs(served)),
+      )
+      .order('desc')
+      .paginate(paginationOpts);
+
+    const page: PostCardData[] = [];
+    for (const post of result.page) {
+      const card = await toPostCard(ctx, post, viewer);
+      if (card) page.push(card);
+    }
+    // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
+    page.sort((a, b) => Number(b.isFavorite) - Number(a.isFavorite));
+    // `season` + `isPastSeason` are what let the client label the fallback instead of silently mixing
+    // two winters. Sent on every page so a client that started mid-scroll still knows what it's showing.
+    return { ...result, page, season: served, isPastSeason: served !== current };
+  },
+});
+
+/**
+ * One Post as the feed shows it, or `null` when the viewer would see nothing under the header: the
+ * members a moderator hid are not shown and not counted (`visiblePostReports`); the members the
+ * viewer's filters hid are not shown and *are* counted; a body a takedown removed (A07b) drops its
+ * Report the way the report feed always did. Shared with the profile history.
+ */
+export async function toPostCard(
+  ctx: Parameters<typeof toFeedCard>[0],
+  post: Doc<'posts'>,
+  viewer: Awaited<ReturnType<typeof loadFeedViewer>>,
+): Promise<PostCardData | null> {
+  const members: Doc<'reports'>[] = [];
+  for (const id of post.reportIds) {
+    const member = await ctx.db.get(id);
+    if (member) members.push(member);
+  }
+  const reports = [];
+  let omittedCount = 0;
+  for (const r of visiblePostReports(post, members)) {
+    const body = await bodyInfoFor(ctx, r.waterBodyId, viewer.caches.bodyInfo);
+    // A takedown reaches the feed (A07b) — see `BodyInfo.standing`.
+    if (body.standing === 'removed') continue;
+    if (!(await reportMatchesFeed(ctx, r, body, viewer))) {
+      omittedCount++;
+      continue;
+    }
+    reports.push(
+      await toFeedCard(
+        ctx,
+        r,
+        viewer.caches,
+        { blocked: viewer.blocked, favorites: viewer.favorites },
+        viewer.now,
+      ),
+    );
+  }
+  const first = reports[0];
+  if (!first) return null;
+  return {
+    postId: post._id,
+    ...(post.title !== undefined ? { title: post.title } : {}),
+    ...(post.body !== undefined ? { body: post.body } : {}),
+    latestSkateEndTime: post.latestSkateEndTime,
+    author: first.author,
+    blocked: first.blocked,
+    isFavorite: reports.some((r) => r.isFavorite === true),
+    reports,
+    omittedCount,
+  };
+}
 
 /**
  * One Post per Report that has none (A10-1 backfill). Paginated over the report table and
