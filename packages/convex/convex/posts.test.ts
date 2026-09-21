@@ -509,8 +509,9 @@ describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', ()
       idempotencyKey: 'legacy-key',
     });
     const report = await t.run((ctx) => ctx.db.get(reportId));
-    expect(report?.postId).toBeDefined();
-    const post = report?.postId ? await t.run((ctx) => ctx.db.get(report.postId!)) : null;
+    const postId = report?.postId;
+    if (!postId) throw new Error('report born without a Post');
+    const post = await t.run((ctx) => ctx.db.get(postId));
     expect(post).toMatchObject({
       reportIds: [reportId],
       latestSkateEndTime: T0,
