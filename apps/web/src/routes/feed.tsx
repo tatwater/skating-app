@@ -6,14 +6,15 @@ import {
   hasWeatherFilter,
   interleaveLatest,
   seasonOf,
+  withoutRecommended,
 } from '@skating/core';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { BodyResultCard } from '../components/BodyResultCard';
-import { FeedCard } from '../components/FeedCard';
 import { FeedFilterBar } from '../components/FeedFilterBar';
 import { MapSelectionProvider } from '../components/MapSelectionContext';
 import { Panel } from '../components/Panel';
+import { PostCard } from '../components/PostCard';
 import { ProfileSearch } from '../components/ProfileSearch';
 import { RecommendedFeed } from '../components/RecommendedFeed';
 import { ReportDetail } from '../components/ReportDetail';
@@ -27,8 +28,9 @@ const PAGE_SIZE = 20;
 
 /**
  * Latest — the chronological, cross-water-body co-primary page (D28; Phase 05), renamed from
- * *Newsfeed* when it stopped being only reports (A06h / D159, D165). Reads `reports.listFeed`
- * (global, newest skate-end time first) via `usePaginatedQuery`, renders infinite `FeedCard`s, and
+ * *Newsfeed* when it stopped being only reports (A06h / D159, D165). Reads `posts.listFeed`
+ * (global, newest skate-end time first; a Post feed since A10 / D186) via `usePaginatedQuery`,
+ * renders infinite `PostCard`s, and
  * opens the report in a **drawer** (URL-backed `?report=<id>`) so the feed scroll position survives
  * — a deep-linkable overlay, not a full navigation. All reports are public (D13); a blocked author's
  * report still shows, de-emphasized (D3).
@@ -50,7 +52,7 @@ function FeedPage() {
   const navigate = useNavigate();
   const filters = useFeedFilters();
   const { results, status, loadMore } = usePaginatedQuery(
-    api.reports.listFeed,
+    api.posts.listFeed,
     { filters: filters.value },
     { initialNumItems: PAGE_SIZE },
   );
@@ -135,12 +137,12 @@ function FeedPage() {
               the interleaved list — a matched lake's event day buckets exactly like a skate-end. */}
           {groupFeedSections(
             interleaveLatest(
-              results.filter((d) => !recommendedIds.has(d.reportId)),
-              (d) => d.skateEndTime,
+              withoutRecommended(results, recommendedIds),
+              (d) => d.latestSkateEndTime,
               bodyResults?.results ?? [],
               status === 'Exhausted',
             ),
-            (item) => (item.kind === 'report' ? item.data.skateEndTime : item.data.eventMs),
+            (item) => (item.kind === 'report' ? item.data.latestSkateEndTime : item.data.eventMs),
             now,
           ).map((section) => (
             <div key={section.key} className="flex flex-col gap-3">
@@ -149,11 +151,11 @@ function FeedPage() {
               </h2>
               {section.items.map((item) =>
                 item.kind === 'report' ? (
-                  <FeedCard
-                    key={item.data.reportId}
+                  <PostCard
+                    key={item.data.postId}
                     data={item.data}
                     now={now}
-                    onOpen={() => openReport(item.data.reportId)}
+                    onOpenReport={openReport}
                   />
                 ) : (
                   <BodyResultCard
@@ -216,12 +218,12 @@ function PastSeasonNotice({
   results,
   now,
 }: {
-  results: readonly { skateEndTime: number }[];
+  results: readonly { latestSkateEndTime: number }[];
   now: number;
 }) {
   const first = results[0];
   if (!first) return null;
-  const season = seasonOf(first.skateEndTime);
+  const season = seasonOf(first.latestSkateEndTime);
   if (season === seasonOf(now)) return null;
   return (
     <Panel title={`From the ${formatSeason(season)} season`}>

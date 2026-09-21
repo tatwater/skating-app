@@ -11,9 +11,12 @@
 
 import type {
   ConditionSource,
+  ObservedFrom,
   PrecipType,
+  Sighting,
   SkateQuality,
   SkyCondition,
+  Suitability,
   ThicknessMethod,
 } from './types';
 import {
@@ -102,6 +105,32 @@ export const SKATE_QUALITY_LABELS: Record<SkateQuality, string> = {
   good: 'Good',
   fair: 'Fair',
   poor: 'Poor',
+};
+
+/**
+ * Who the ice is for (A10 / D190) — the author's claim about *who*, never ours about safety (D3).
+ * `dont_go` reads as the warning it is; the rest describe an audience, not a verdict.
+ */
+export const SUITABILITY_LABELS: Record<Suitability, string> = {
+  dont_go: "Don't go",
+  experienced_only: 'Experienced only',
+  not_for_beginners: 'Not for beginners',
+  beginner_friendly: 'Beginner-friendly',
+};
+
+/** How the author saw it (A10 / D191) — provenance the reader sees. */
+export const OBSERVED_FROM_LABELS: Record<ObservedFrom, string> = {
+  on_ice: 'On the ice',
+  shore: 'From shore',
+  secondhand: 'Secondhand',
+};
+
+/** What a shore observer saw (A10 / D189). */
+export const SIGHTING_LABELS: Record<Sighting, string> = {
+  open: 'Still open',
+  skim: 'Skim ice',
+  frozen: 'Frozen over',
+  snow_covered: 'Snow-covered',
 };
 
 export const SKY_LABELS: Record<SkyCondition, string> = {

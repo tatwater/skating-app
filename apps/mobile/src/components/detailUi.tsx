@@ -38,26 +38,35 @@ export function Section({ label, children }: { label: string; children: ReactNod
   );
 }
 
-/** An outline pill (chip). `tone="solid"` renders the filled variant used for skate quality. */
+/**
+ * An outline pill (chip). `tone="solid"` renders the filled variant used for skate quality;
+ * `tone="danger"` the warning fill an author's "Don't go" wears (A10 / D190, D3).
+ */
 export function Badge({
   children,
   tone = 'outline',
 }: {
   children: ReactNode;
-  tone?: 'outline' | 'solid';
+  tone?: 'outline' | 'solid' | 'danger';
 }) {
-  const solid = tone === 'solid';
+  const fill = tone === 'solid' ? '$primary' : tone === 'danger' ? '$danger' : 'transparent';
+  const text =
+    tone === 'solid'
+      ? '$primaryForeground'
+      : tone === 'danger'
+        ? '$dangerForeground'
+        : '$foreground';
   return (
     <XStack
       borderWidth={1}
-      borderColor={solid ? '$primary' : '$border'}
-      backgroundColor={solid ? '$primary' : 'transparent'}
+      borderColor={tone === 'outline' ? '$border' : fill}
+      backgroundColor={fill}
       borderRadius="$4"
       paddingHorizontal="$2.5"
       paddingVertical="$1"
       alignSelf="flex-start"
     >
-      <Text color={solid ? '$primaryForeground' : '$foreground'} fontSize={12}>
+      <Text color={text} fontSize={12}>
         {children}
       </Text>
     </XStack>

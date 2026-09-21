@@ -2,12 +2,15 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   buildFeedCardView,
+  buildPostCardView,
   type FeedCardData,
   feedSectionForTime,
   formatLocationLine,
   formatPlaceLabel,
   formatRelativeTime,
   groupFeedSections,
+  omittedReportsLabel,
+  type PostCardData,
   splitLocationLine,
 } from './feed';
 
@@ -219,6 +222,27 @@ describe('buildFeedCardView', () => {
     expect(view.isFavorite).toBe(false); // defaults false when the server omits it
   });
 
+  it('carries the A10 axes: suitability leads, the vantage only off the ice, the sighting (§12.1)', () => {
+    const plain = buildFeedCardView(CARD, now);
+    expect(plain.suitabilityLabel).toBeNull();
+    expect(plain.vantageLabel).toBeNull();
+    expect(plain.sightingLabel).toBeNull();
+    expect(plain.isDontGo).toBe(false);
+    const onIce = buildFeedCardView({ ...CARD, observedFrom: 'on_ice' }, now);
+    expect(onIce.vantageLabel).toBeNull(); // the default says nothing a reader needs
+    const shore = buildFeedCardView(
+      { ...CARD, suitability: 'dont_go', observedFrom: 'shore', sighting: 'open' },
+      now,
+    );
+    expect(shore.suitabilityLabel).toBe("Don't go");
+    expect(shore.isDontGo).toBe(true);
+    expect(shore.vantageLabel).toBe('From shore');
+    expect(shore.sightingLabel).toBe('Still open');
+    expect(buildFeedCardView({ ...CARD, observedFrom: 'secondhand' }, now).vantageLabel).toBe(
+      'Secondhand',
+    );
+  });
+
   it('carries the favorite flag through to the view (Phase 04)', () => {
     expect(buildFeedCardView({ ...CARD, isFavorite: true }, now).isFavorite).toBe(true);
   });
@@ -286,5 +310,46 @@ describe('the Hike-In chip on the feed card (A06d / D87)', () => {
           .isHikeIn,
       ).toBe(false);
     }
+  });
+});
+
+describe('buildPostCardView (A10 / D186)', () => {
+  const now = Date.UTC(2026, 0, 5, 12, 0);
+  const post = (over: Partial<PostCardData>): PostCardData => ({
+    postId: 'p1',
+    latestSkateEndTime: CARD.skateEndTime,
+    author: CARD.author,
+    blocked: false,
+    isFavorite: false,
+    reports: [CARD],
+    omittedCount: 0,
+    ...over,
+  });
+
+  it('a legacy Post — one Report, no words — draws no header: the card as it always was', () => {
+    const view = buildPostCardView(post({}), now);
+    expect(view.hasHeader).toBe(false);
+    expect(view.title).toBeNull();
+    expect(view.body).toBeNull();
+    expect(view.reports).toHaveLength(1);
+    expect(view.omittedLabel).toBeNull();
+  });
+
+  it('a title, prose, a second Report or an omitted one each earn the header', () => {
+    expect(buildPostCardView(post({ title: 'Morey 1/5' }), now).hasHeader).toBe(true);
+    expect(buildPostCardView(post({ body: 'Glass.' }), now).hasHeader).toBe(true);
+    expect(buildPostCardView(post({ reports: [CARD, CARD] }), now).hasHeader).toBe(true);
+    expect(buildPostCardView(post({ omittedCount: 1 }), now).hasHeader).toBe(true);
+  });
+
+  it('the header time is the Post’s sort key, and the omitted line counts lakes honestly', () => {
+    const view = buildPostCardView(
+      post({ latestSkateEndTime: now - 2 * 60 * 60 * 1000, omittedCount: 2 }),
+      now,
+    );
+    expect(view.relativeTime).toBe('2h ago');
+    expect(view.omittedLabel).toBe('2 more lakes outside your filters');
+    expect(omittedReportsLabel(1)).toBe('1 more lake outside your filters');
+    expect(omittedReportsLabel(0)).toBeNull();
   });
 });

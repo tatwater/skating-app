@@ -7,7 +7,10 @@ import {
   groupFeedSections,
   hasWeatherFilter,
   interleaveLatest,
+  type PostCardData,
+  postCardForCachedReport,
   seasonOf,
+  withoutRecommended,
 } from '@skating/core';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
@@ -16,9 +19,9 @@ import { FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { H1, Paragraph, Spinner, Text, useTheme, YStack } from 'tamagui';
 import { BodyResultCard } from '../../src/components/BodyResultCard';
-import { FeedCard } from '../../src/components/FeedCard';
 import { FeedFilterBar } from '../../src/components/FeedFilterBar';
 import { MapSelectionProvider } from '../../src/components/MapSelectionContext';
+import { PostCard } from '../../src/components/PostCard';
 import { ProfileSearch } from '../../src/components/ProfileSearch';
 import { RecommendedCard } from '../../src/components/RecommendedCard';
 import { ReportDetail } from '../../src/components/ReportDetail';
@@ -34,13 +37,13 @@ const PAGE_SIZE = 20;
  */
 type FeedListItem =
   | { kind: 'header'; key: string; label: string }
-  | { kind: 'card'; data: FeedCardData }
+  | { kind: 'card'; data: PostCardData }
   | { kind: 'body'; data: BodyResultData }
   | { kind: 'recommended'; key: string; cards: FeedCardData[] };
 
 /**
  * Latest tab (Phase 05, renamed from Newsfeed by A06h/D159) — the mobile mirror of web's `/feed`.
- * Reads `reports.listFeed` (global, newest skate-end time first) via `usePaginatedQuery` into a
+ * Reads `posts.listFeed` (global, newest skate-end time first; Posts since A10 / D186) via `usePaginatedQuery` into a
  * `FlatList` with pull-to-refresh and infinite scroll, and opens a tapped report in a
  * `@gorhom/bottom-sheet` (the Phase 02a drawer pattern, reusing the shared `ReportDetail`) so the
  * feed scroll position survives. All reports are public (D13); a blocked author's report still
@@ -61,7 +64,7 @@ export default function NewsfeedScreen() {
     weatherActive && !filters.value.onlyReports ? { filters: filters.value } : 'skip',
   );
   const { results, status, loadMore } = usePaginatedQuery(
-    api.reports.listFeed,
+    api.posts.listFeed,
     { filters: filters.value },
     { initialNumItems: PAGE_SIZE },
   );
@@ -69,9 +72,11 @@ export default function NewsfeedScreen() {
 
   // Offline read-cache (decision #8): cache the feed cards we render, and fall back to the cache when
   // the live query has nothing yet (on the ice with no signal). Cached cards load once on mount.
-  const [cached] = useState(() => loadCachedReports());
+  // The cache stays per Report (the per-body read wants it that way); a cached card comes back as
+  // the one-Report Post it belongs to (A10 / D186).
+  const [cached] = useState(() => loadCachedReports().map(postCardForCachedReport));
   useEffect(() => {
-    if (results.length > 0) cacheReports(results);
+    if (results.length > 0) cacheReports(results.flatMap((p) => p.reports));
   }, [results]);
 
   // Pre-cache the viewer's favorites' recent reports (decision #8) so a followed lake reads back
@@ -117,13 +122,13 @@ export default function NewsfeedScreen() {
     ...recommendedItems,
     ...groupFeedSections(
       interleaveLatest(
-        feedData.filter((d) => !recommendedIds.has(d.reportId)),
-        (d) => d.skateEndTime,
+        withoutRecommended(feedData, recommendedIds),
+        (d) => d.latestSkateEndTime,
         // Never from the offline cache: a cached report list has no matching body list.
         isOfflineFallback ? [] : (bodyResults?.results ?? []),
         status === 'Exhausted',
       ),
-      (item) => (item.kind === 'report' ? item.data.skateEndTime : item.data.eventMs),
+      (item) => (item.kind === 'report' ? item.data.latestSkateEndTime : item.data.eventMs),
       now,
     ).flatMap((section) => [
       { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
@@ -156,7 +161,7 @@ export default function NewsfeedScreen() {
         data={listItems}
         keyExtractor={(item) =>
           item.kind === 'card'
-            ? item.data.reportId
+            ? item.data.postId
             : item.kind === 'body'
               ? `body:${item.data.waterBodyId}`
               : item.key
@@ -223,13 +228,7 @@ export default function NewsfeedScreen() {
               />
             );
           }
-          return (
-            <FeedCard
-              data={item.data}
-              now={now}
-              onOpen={() => setSelectedReportId(item.data.reportId)}
-            />
-          );
+          return <PostCard data={item.data} now={now} onOpenReport={setSelectedReportId} />;
         }}
         ListEmptyComponent={
           status === 'LoadingFirstPage' ? (
@@ -293,12 +292,12 @@ function PastSeasonNotice({
   results,
   now,
 }: {
-  results: readonly { skateEndTime: number }[];
+  results: readonly { latestSkateEndTime: number }[];
   now: number;
 }) {
   const first = results[0];
   if (!first) return null;
-  const season = seasonOf(first.skateEndTime);
+  const season = seasonOf(first.latestSkateEndTime);
   if (season === seasonOf(now)) return null;
   return (
     <Text color="$foregroundMuted" fontSize={13}>

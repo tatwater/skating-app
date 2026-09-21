@@ -22,10 +22,16 @@ export function FeedCard({
   data,
   now,
   onOpen,
+  nested = false,
 }: {
   data: FeedCardData;
   now: number;
   onOpen: () => void;
+  /**
+   * Inside a `PostCard` (A10 / D186): no frame of its own and no author line — the Post already
+   * said who and when, and the frame is the Post's. Standing alone, the card is what it always was.
+   */
+  nested?: boolean;
 }) {
   const card = buildFeedCardView(data, now);
   const chips = card.chips.slice(0, MAX_CHIPS);
@@ -35,10 +41,10 @@ export function FeedCard({
     <YStack
       gap="$2"
       padding="$3"
-      borderWidth={1}
+      borderWidth={nested ? 0 : 1}
       borderColor="$border"
       borderRadius="$4"
-      backgroundColor="$surface"
+      backgroundColor={nested ? 'transparent' : '$surface'}
       pressStyle={{ opacity: 0.7 }}
       onPress={onOpen}
     >
@@ -72,27 +78,46 @@ export function FeedCard({
         </Text>
       </XStack>
 
-      <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
-        <TrustAvatar
-          displayName={card.author.displayName}
-          imageUrl={card.author.profileImageUrl}
-          trustClass={card.author.trustClass}
-          size={20}
-        />
-        <Text color={card.blocked ? '$foregroundMuted' : '$foreground'} fontSize={13}>
-          by {card.author.displayName}
-        </Text>
-        {card.blocked ? <BlockedChip /> : null}
-        {card.durationLabel ? (
+      {nested ? (
+        card.durationLabel ? (
           <Text color="$foregroundMuted" fontSize={13}>
-            · skated {card.durationLabel}
+            skated {card.durationLabel}
           </Text>
-        ) : null}
-      </XStack>
+        ) : null
+      ) : (
+        <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+          <TrustAvatar
+            displayName={card.author.displayName}
+            imageUrl={card.author.profileImageUrl}
+            trustClass={card.author.trustClass}
+            size={20}
+          />
+          <Text color={card.blocked ? '$foregroundMuted' : '$foreground'} fontSize={13}>
+            by {card.author.displayName}
+          </Text>
+          {card.blocked ? <BlockedChip /> : null}
+          {card.durationLabel ? (
+            <Text color="$foregroundMuted" fontSize={13}>
+              · skated {card.durationLabel}
+            </Text>
+          ) : null}
+        </XStack>
+      )}
 
-      {card.qualityLabel || chips.length > 0 ? (
+      {card.suitabilityLabel ||
+      card.qualityLabel ||
+      card.vantageLabel ||
+      card.sightingLabel ||
+      chips.length > 0 ? (
         <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
+          {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment. */}
+          {card.suitabilityLabel ? (
+            <Badge tone={card.isDontGo ? 'danger' : 'solid'}>{card.suitabilityLabel}</Badge>
+          ) : null}
           {card.qualityLabel ? <Badge tone="solid">{card.qualityLabel}</Badge> : null}
+          {/* Provenance a reader needs (D191): only off the ice, where it changes how a chip reads. */}
+          {card.vantageLabel ? <Badge>{card.vantageLabel}</Badge> : null}
+          {card.sightingLabel ? <Badge>{card.sightingLabel}</Badge> : null}
           {chips.map((chip) => (
             <Badge key={chip}>{chip}</Badge>
           ))}
