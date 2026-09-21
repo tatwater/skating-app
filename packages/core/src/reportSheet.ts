@@ -288,7 +288,7 @@ export interface ExtractedValue<V> {
 
 export type SheetAction =
   | { type: 'setBody'; waterBodyId: string }
-  /** The author taps a chip: a ghost or extracted chip becomes solid; a new value is added solid. */
+  /** The author taps a chip: a ghost or extracted chip becomes solid; a new value is added solid; a value with an existing key replaces it. */
   | { type: 'select'; field: SheetFieldKey; key: string; value?: unknown }
   /** The author deselects: solid → gone, extracted → ghost (still offered, never re-promoted). */
   | { type: 'deselect'; field: SheetFieldKey; key: string }
@@ -352,8 +352,17 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
         const existing = chips.find((c) => c.key === action.key);
         let next: SheetChip<unknown>[];
         if (existing) {
+          // A value with the tap replaces the chip's (a reading the author retyped); without one
+          // the tap only promotes the tier.
           next = chips.map((c) =>
-            c.key === action.key ? { ...c, tier: 'solid' as const, defaulted: undefined } : c,
+            c.key === action.key
+              ? {
+                  ...c,
+                  ...(action.value !== undefined ? { value: action.value } : {}),
+                  tier: 'solid' as const,
+                  defaulted: undefined,
+                }
+              : c,
           );
         } else {
           if (action.value === undefined) return field; // nothing to add

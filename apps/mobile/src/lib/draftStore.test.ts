@@ -178,7 +178,7 @@ describe('draftStore kind migration', () => {
     ensureSchema(db); // the backfill runs on every open; this is the one that matters
 
     const byId = Object.fromEntries(
-      readPostDrafts(db).map((d) => [d.id, d.reports[0]?.form.showPutIn]),
+      readPostDrafts(db).map((d) => [d.id, d.reports[0]?.form?.showPutIn]),
     );
     expect(byId).toEqual({ old: true, hidden: false, shown: true });
     // A real boolean in the blob, not the string 'true' — the form reads it as one.

@@ -207,6 +207,8 @@ export interface FeedCardData {
   accessKind?: string;
   /** The lake as a still image — outline, put-in, skate, the chips' where (A10 §12.3). */
   silhouette?: SilhouetteData;
+  /** The author changed this after posting (A10-3): the card says *edited*; the history is a moderator's. */
+  edited?: true;
 }
 
 /**
@@ -220,6 +222,8 @@ export interface PostCardData {
   postId: string;
   title?: string;
   body?: string;
+  /** The words were edited after posting (A10-3). */
+  edited?: true;
   /** The D28 sort key — the freshest visible member's end time. */
   latestSkateEndTime: number;
   author: FeedAuthor;
@@ -244,6 +248,8 @@ export interface PostCardView {
   title: string | null;
   body: string | null;
   relativeTime: string;
+  /** The words were edited after posting (A10-3) — the header says so. */
+  edited: boolean;
   author: FeedAuthor;
   blocked: boolean;
   isFavorite: boolean;
@@ -303,6 +309,7 @@ export function buildPostCardView(data: PostCardData, now: number): PostCardView
     title,
     body,
     relativeTime: formatRelativeTime(data.latestSkateEndTime, now),
+    edited: data.edited === true,
     author: data.author,
     blocked: data.blocked,
     isFavorite: data.isFavorite,
@@ -326,6 +333,8 @@ export interface FeedCardView {
   locationSecondary: string | null;
   skateEndTime: number;
   relativeTime: string;
+  /** Edited after posting (A10-3). */
+  edited: boolean;
   durationLabel: string | null;
   qualityLabel: string | null;
   /**
@@ -420,6 +429,7 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
     locationSecondary: location.secondary,
     skateEndTime: data.skateEndTime,
     relativeTime: formatRelativeTime(data.skateEndTime, now),
+    edited: data.edited === true,
     durationLabel: formatSkateWindow(data.skateEndTime, data.skateStartTime),
     qualityLabel: data.skateQuality ? SKATE_QUALITY_LABELS[data.skateQuality] : null,
     suitabilityLabel: data.suitability ? SUITABILITY_LABELS[data.suitability] : null,

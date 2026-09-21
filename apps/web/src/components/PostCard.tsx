@@ -51,7 +51,10 @@ export function PostCard({
             {view.author.displayName}
           </span>
           {view.blocked ? <BlockedChip /> : null}
-          <span className="ml-auto shrink-0 text-xs">{view.relativeTime}</span>
+          <span className="ml-auto shrink-0 text-xs">
+            {view.relativeTime}
+            {view.edited ? ' · edited' : null}
+          </span>
         </div>
         {view.title ? <h3 className="font-medium text-foreground">{view.title}</h3> : null}
         {view.body ? (

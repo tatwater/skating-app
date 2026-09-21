@@ -60,6 +60,25 @@ describe('select / deselect', () => {
     expect(selectedValues(s, 'iceTypes')).toEqual([{ type: 'shell_ice' }]);
   });
 
+  it('a tap with a value on an existing key replaces the value (a retyped reading)', () => {
+    const s = run([
+      {
+        type: 'select',
+        field: 'thickness',
+        key: 'reading:1',
+        value: { method: 'measured', valueCm: 10 },
+      },
+      {
+        type: 'select',
+        field: 'thickness',
+        key: 'reading:1',
+        value: { method: 'measured', valueCm: 12 },
+      },
+      { type: 'select', field: 'thickness', key: 'reading:1' },
+    ]);
+    expect(selectedValues(s, 'thickness')).toEqual([{ method: 'measured', valueCm: 12 }]);
+  });
+
   it('a ghost becomes solid on tap; selecting an unknown key with no value is a no-op', () => {
     const s = run([
       {

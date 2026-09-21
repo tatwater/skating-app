@@ -77,7 +77,10 @@ export function FeedCard({
             put-in, the skate and the chips' `where`, so the card shows the shape of the day without
             a map. Absent on a body with no usable outline, and on a cached card from before it. */}
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="text-foreground-muted text-xs">{card.relativeTime}</span>
+          <span className="text-foreground-muted text-xs">
+            {card.relativeTime}
+            {card.edited ? ' · edited' : null}
+          </span>
           {data.silhouette ? <BodySilhouette data={data.silhouette} size={56} /> : null}
         </div>
       </div>

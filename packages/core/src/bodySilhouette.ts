@@ -127,6 +127,8 @@ export interface Projection {
   width: number;
   height: number;
   toXY(point: LngLat): [number, number];
+  /** The inverse — a tap on the drawing back to a coordinate (the sheet's picker, A10 §7.1). */
+  fromXY(xy: [number, number]): LngLat;
   /** Pixels per meter at the fit — for radii. */
   pxPerMeter: number;
 }
@@ -157,6 +159,10 @@ export function silhouetteProjection(
     toXY: ([lng, lat]) => [
       offsetX + (lng - bbox.minLng) * cos * scale,
       offsetY + (bbox.maxLat - lat) * scale,
+    ],
+    fromXY: ([x, y]) => [
+      bbox.minLng + (x - offsetX) / (cos * scale),
+      bbox.maxLat - (y - offsetY) / scale,
     ],
     pxPerMeter: scale / metersPerDegLat,
   };

@@ -56,6 +56,7 @@ export function PostCard({
           {view.blocked ? <BlockedChip /> : null}
           <Text color="$foregroundMuted" fontSize={12} marginLeft="auto">
             {view.relativeTime}
+            {view.edited ? ' · edited' : ''}
           </Text>
         </XStack>
         {view.title ? (

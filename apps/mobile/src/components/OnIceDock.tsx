@@ -161,8 +161,8 @@ export function OnIceDock({
                   onReport={(bodyId, trackId) => {
                     setFinished(null);
                     router.navigate({
-                      pathname: '/water/[id]',
-                      params: { id: bodyId, track: trackId },
+                      pathname: '/report',
+                      params: { body: bodyId, track: trackId },
                     });
                   }}
                 />

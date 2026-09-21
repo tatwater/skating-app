@@ -19,7 +19,7 @@ import {
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import { useDetailTab } from '../lib/detailTabs';
@@ -41,7 +41,6 @@ import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
-import { ReportForm } from './ReportForm';
 import { RequestButtons } from './RequestLake';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
 import { StandingNotice } from './StandingNotice';
@@ -55,26 +54,23 @@ import { WindExposure } from './WindExposure';
  * silently lands on the canonical lake) and distinguishes not-found (`null`) from removed/unlisted
  * (`{ available: false }`) so each gets its own friendly state. Shows name, type, imperial area
  * (D25), and the report feed newest **skate time** first; the map flies to the lake's centroid on
- * open. "Add a report" swaps the feed for the create form in place (D47), kept mounted in this same
- * sheet so its state survives the put-in-pin peek.
+ * open. "Add a report" opens the report sheet with this lake picked (A10-3, founder call
+ * 2026-09-21: the sheet is always the full-screen page, never a form inside this drawer).
  */
 export function WaterBodyDetail({
   waterBodyId,
-  trackDraftId,
-  activityId,
   focusSubAreaId,
+  captureHazard = false,
 }: {
   waterBodyId: string;
   /** A named bay to frame instead of the whole lake (A02/D60) — set by a sub-area search hit. */
   focusSubAreaId?: string;
   /**
-   * A just-finished recording to file this report against (Phase 08). When present the form opens
-   * straight away — the skater tapped "Report this skate", and making them find the button again
-   * would be the moment the whole record→report loop leaks people.
+   * The report sheet's *mark one here* (A10 §6.1): open the hazard capture's type picker for this
+   * lake as soon as it is the map's highlighted body, so the pin lands on the lake the sheet is
+   * about. The capture returns to the sheet when the pin is filed.
    */
-  trackDraftId?: string;
-  /** A synced skate to attach (A06f) — the server id, from the You tab's unreported list. */
-  activityId?: string;
+  captureHazard?: boolean;
 }) {
   const router = useRouter();
   const result = useQuery(api.waterBodies.get, {
@@ -104,9 +100,24 @@ export function WaterBodyDetail({
   }, [focusSubAreaId]);
   const weatherBay =
     subAreas === undefined ? undefined : resolveWeatherSubArea(liveBays, focusSubAreaId);
-  const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
-  const [formOpen, setFormOpen] = useState(trackDraftId !== undefined || activityId !== undefined);
+  const {
+    setFocus,
+    setHighlightWaterBodyId,
+    setContourBodyKey,
+    contourCredit,
+    requestHazardCapture,
+    highlightWaterBodyId,
+  } = useMapSelection();
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
+  // The sheet asked for a hazard on this lake: once the map has it highlighted (the capture reads
+  // the highlighted body as its target), open the picker — once per arrival.
+  const captureAsked = useRef(false);
+  useEffect(() => {
+    if (!captureHazard || captureAsked.current) return;
+    if (!body || highlightWaterBodyId !== body._id) return;
+    captureAsked.current = true;
+    requestHazardCapture();
+  }, [captureHazard, body, highlightWaterBodyId, requestHazardCapture]);
   const leaving = useIsLeaving();
   const [tab, setTab] = useDetailTab();
   // The season selector lives on the Reporting tab, but the season it picks governs the whole lake
@@ -211,7 +222,7 @@ export function WaterBodyDetail({
   // every slot while a real skater never can.
   const reveal = revealEmptySections(profileRevealEnabled(env.convexUrl));
 
-  const formShowing = formOpen || bountyFormOpen;
+  const formShowing = bountyFormOpen;
 
   return (
     <>
@@ -310,7 +321,12 @@ export function WaterBodyDetail({
                   <Button
                     backgroundColor="$primary"
                     color="$primaryForeground"
-                    onPress={() => setFormOpen(true)}
+                    onPress={() =>
+                      router.navigate({
+                        pathname: '/report',
+                        params: { body: result.body._id, name: result.body.name },
+                      })
+                    }
                   >
                     Add a report
                   </Button>
@@ -349,15 +365,7 @@ export function WaterBodyDetail({
         </DrawerPinned>
       )}
       <YStack gap="$3">
-        {formOpen ? (
-          <ReportForm
-            waterBodyId={result.body._id}
-            bodyName={result.body.name}
-            {...(trackDraftId !== undefined ? { trackDraftId } : {})}
-            {...(activityId !== undefined ? { activityId } : {})}
-            onClose={() => setFormOpen(false)}
-          />
-        ) : bountyFormOpen ? (
+        {bountyFormOpen ? (
           <BountyForm
             waterBodyId={result.body._id}
             bodyName={result.body.name}

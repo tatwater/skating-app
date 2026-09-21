@@ -80,6 +80,7 @@ export function FeedCard({
         <YStack alignItems="flex-end" gap="$1">
           <Text color="$foregroundMuted" fontSize={12}>
             {card.relativeTime}
+            {card.edited ? ' · edited' : ''}
           </Text>
           {data.silhouette ? <BodySilhouette data={data.silhouette} size={56} /> : null}
         </YStack>

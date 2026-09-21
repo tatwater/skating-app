@@ -132,8 +132,9 @@ export interface PostDraft {
   body?: string;
   /** Never empty — a Post requires a Report (D186); the sheet cannot save one without. */
   reports: ReportDraft[];
-  /** Flush checkpoint: the server Post id, once created. */
+  /** Flush checkpoint: the server Post id, once created, and its Reports' ids in the author's order. */
   postId?: string;
+  reportIds?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -607,7 +608,7 @@ export async function flushPost(
       ...(d.body !== undefined ? { body: d.body } : {}),
       reports: prepared,
     });
-    await save({ postId });
+    await save({ postId, reportIds });
 
     // 7. The condition alerts (D197 / §7.2), now that each Report has an id to be their provenance.
     //    Checkpointed by reason so a retry files only what is missing. A server refusal on one — a

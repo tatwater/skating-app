@@ -76,8 +76,12 @@ export function UnreportedSkates() {
                     promptState: 'prompted',
                   }).catch(() => {});
                   router.navigate({
-                    pathname: '/water/[id]',
-                    params: { id: row.waterBodyId as string, activity: row.activityId },
+                    pathname: '/report',
+                    params: {
+                      body: row.waterBodyId as string,
+                      ...(row.waterBodyName ? { name: row.waterBodyName } : {}),
+                      activity: row.activityId,
+                    },
                   });
                 }}
               >
@@ -112,8 +116,8 @@ export function UnreportedSkates() {
                 onResolved={(waterBodyId) => {
                   setAdding(null);
                   router.navigate({
-                    pathname: '/water/[id]',
-                    params: { id: waterBodyId, activity: row.activityId },
+                    pathname: '/report',
+                    params: { body: waterBodyId, activity: row.activityId },
                   });
                 }}
                 onDismiss={() => setAdding(null)}

@@ -8,6 +8,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  type AccessReason,
   compactTrack,
   createCoalescedRunner,
   flushableHazardItems,
@@ -47,7 +48,15 @@ import {
   saveTrack,
 } from './draftStore';
 
-/** Map one core report input to `posts.create`'s inline Report args (branded Convex ids reapplied). */
+/**
+ * Map one core report input to `posts.create`'s inline Report args (branded Convex ids reapplied).
+ *
+ * The content goes through **whole**: the wire args are core's `ReportInput` plus the ids, so
+ * every field the sheet serializes — the vantage, the sighting, the suitability, the D194 snow
+ * object, the end time's precision, the put-in — reaches the server. An earlier version listed the
+ * fields by name and silently dropped what it did not list (a queued draft's snow depth never
+ * posted); naming them again is how the next field goes missing.
+ */
 function toReportArgs(
   input: ReportInput & {
     idempotencyKey: string;
@@ -56,26 +65,14 @@ function toReportArgs(
     attachHazardIds?: string[];
   },
 ) {
+  const { waterBodyId, photoIds, activityId, attachHazardIds, ...content } = input;
   return {
-    waterBodyId: input.waterBodyId as Id<'waterBodies'>,
-    idempotencyKey: input.idempotencyKey,
-    skateEndTime: input.skateEndTime,
-    skateStartTime: input.skateStartTime,
-    iceTypes: input.iceTypes,
-    surfaceTags: input.surfaceTags,
-    skateQuality: input.skateQuality,
-    iceThickness: input.iceThickness,
-    snowCoverCm: input.snowCoverCm,
-    conditions: input.conditions,
-    notes: input.notes,
-    point: input.point,
-    showPutIn: input.showPutIn,
-    photoIds: input.photoIds as Id<'photos'>[],
-    ...(input.activityId !== undefined
-      ? { activityId: input.activityId as Id<'gpsActivities'> }
-      : {}),
-    ...(input.attachHazardIds !== undefined
-      ? { attachHazardIds: input.attachHazardIds as Id<'hazards'>[] }
+    ...content,
+    waterBodyId: waterBodyId as Id<'waterBodies'>,
+    photoIds: photoIds as Id<'photos'>[],
+    ...(activityId !== undefined ? { activityId: activityId as Id<'gpsActivities'> } : {}),
+    ...(attachHazardIds !== undefined
+      ? { attachHazardIds: attachHazardIds as Id<'hazards'>[] }
       : {}),
   };
 }
@@ -125,6 +122,21 @@ function effects(): PostFlushEffects {
       if (queued?.kind !== 'hazard') return null;
       if (queued.hazardId !== undefined) return queued.hazardId;
       return (await flushOneHazard(localId, hazardEffects(), Date.now()))?.hazardId ?? null;
+    },
+    // The sheet's condition chips (D197 / A10 §7.2), filed once the Post exists with its Report as
+    // provenance and the queue's key per reason, so a replayed flush returns the same row.
+    createAccessAlert: async (input) => {
+      await convex.mutation(api.accessAlerts.create, {
+        targetType: input.targetType,
+        ...(input.putInId !== undefined ? { putInId: input.putInId as Id<'putIns'> } : {}),
+        ...(input.parkingAreaId !== undefined
+          ? { parkingAreaId: input.parkingAreaId as Id<'parkingAreas'> }
+          : {}),
+        reason: input.reason as AccessReason,
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        reportId: input.reportId as Id<'reports'>,
+        idempotencyKey: input.idempotencyKey,
+      });
     },
     persist: async (draft) => {
       saveDraft(draft);
