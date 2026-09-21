@@ -368,8 +368,12 @@ ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
 - The founder's verification pass (`training_data/google_group/eval/review.html`) → verified
   floors; A10-4 is gated on `basis: 'verified'`.
 - Jev pricing from the TypeSafe console, into `JEV_RATES`.
-- A retry on Jev 503 / 529 in the pipeline; the recall tier over the full 2,449 via the Batch API
-  when the corpus replay (A10-2 §1.5) needs it anyway.
+- A retry on Jev 503 / 529 in the pipeline, and Stage B's per-unit requests in parallel; the
+  recall tier over the full 2,449 via the Batch API when the corpus replay (A10-2 §1.5) needs it.
+- Two seams the self-review found for the next PRs: `ExtractedWhere.placeName` is structurally a
+  core `Where` with nothing set, so the sheet must map it to `point.name` when it applies an
+  extraction (A10-4), never pass it through; and `accessAlerts.reason` still narrows to the blocker
+  set until §7.2's write path lands (A10-2).
 
 ## Review pass — 2026-09-19
 

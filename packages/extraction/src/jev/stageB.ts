@@ -10,16 +10,29 @@
  * Pure question-building and answer-mapping here; the request itself is `JevClient.ask`.
  */
 
-import { inchesToCm, SECTORS } from '@skating/core';
+import {
+  type ObservedFrom,
+  SECTORS,
+  sightingAllowedFrom,
+  type ThicknessMethod,
+} from '@skating/core';
 import type { Unit } from '../claude/stageA';
 import { unitEvidence, unitText } from '../claude/stageA';
-import { evidenceFor, localTimeToMs } from '../claude/wire';
-import type {
-  Evidence,
-  ExtractedFields,
-  ExtractedReport,
-  ExtractionInput,
-  Vocabulary,
+import {
+  evidenceFor,
+  localTimeToMs,
+  thicknessMissReason,
+  thicknessReadingFrom,
+  wireInchesToCm,
+} from '../claude/wire';
+import {
+  type Evidence,
+  EXTRACTED_FIELD_KEYS,
+  type ExtractedFields,
+  type ExtractedReport,
+  type ExtractionInput,
+  type Miss,
+  type Vocabulary,
 } from '../contract';
 import type { JevAnswer, JevQuestion } from './client';
 
@@ -166,32 +179,21 @@ function whereFor(
   return out;
 }
 
-/** Map one unit's answers to a contract report. */
+/**
+ * Map one unit's answers to a contract report. A measurement whose method vote produces a reading
+ * the validator would refuse — `poke` with no count beside it, a number-less estimate — is dropped
+ * and counted in `misses` (the Stage A quote, what it would have needed), like the Claude engine.
+ */
 export function reportFromAnswers(
   unit: Unit,
   answers: Record<string, JevAnswer>,
   input: ExtractionInput,
+  misses: Miss[] = [],
 ): ExtractedReport {
   const vocab = input.vocabulary;
   const ev = unitEvidence(input, unit);
   const fields = {} as Record<keyof ExtractedFields, unknown[]>;
-  for (const key of Object.keys({
-    quality: 0,
-    suitability: 0,
-    observedFrom: 0,
-    sighting: 0,
-    endTime: 0,
-    iceTypes: 0,
-    surfaceTags: 0,
-    snowCoverage: 0,
-    snowImpediment: 0,
-    snowDrifts: 0,
-    snowDepthCm: 0,
-    thickness: 0,
-    hazards: 0,
-    accessConditions: 0,
-  }) as (keyof ExtractedFields)[])
-    fields[key] = [];
+  for (const key of EXTRACTED_FIELD_KEYS) fields[key] = [];
 
   for (const s of SINGLE) {
     const a = answers[s.key];
@@ -201,9 +203,9 @@ export function reportFromAnswers(
     fields[s.key].push({ value: a.choice, confidence: p, evidence: ev });
   }
   // A sighting is what someone *off* the ice saw (D189): when the vantage vote says on the ice,
-  // the sighting vote is answering a question that was not asked. Mirrors the validator's rule.
-  const vantage = fields.observedFrom[0] as { value: string } | undefined;
-  if (vantage === undefined || vantage.value === 'on_ice') fields.sighting = [];
+  // the sighting vote is answering a question that was not asked. The validator's own rule.
+  const vantage = fields.observedFrom[0] as { value: ObservedFrom } | undefined;
+  if (!sightingAllowedFrom(vantage?.value)) fields.sighting = [];
 
   for (const m of MULTI) {
     for (const v of vocab[m.vocab]) {
@@ -223,17 +225,17 @@ export function reportFromAnswers(
   }
 
   unit.measurements.forEach((m, i) => {
-    const cm = (x: number | undefined) => (x !== undefined && x >= 0 ? inchesToCm(x) : undefined);
     const evidence: Evidence = evidenceFor(input, m.quote, 'text');
     if (m.kind === 'snow_depth') {
-      const v = m.valueInches ?? m.maxInches ?? m.minInches;
-      if (v !== undefined)
-        fields.snowDepthCm.push({ value: inchesToCm(v), confidence: 0.9, evidence });
+      const depth = wireInchesToCm(m.valueInches ?? m.maxInches ?? m.minInches);
+      if (depth !== undefined) fields.snowDepthCm.push({ value: depth, confidence: 0.9, evidence });
       return;
     }
     if (m.kind !== 'ice_thickness') return;
     const a = answers[`m${i}.method`];
     if (a?.type !== 'choice' || a.choice === 'none') return;
+    if (!(vocab.thicknessMethods as readonly string[]).includes(a.choice)) return;
+    const method = a.choice as ThicknessMethod;
     const p = a.probabilities[a.choice] ?? 0;
     if (p < CHOICE_DROP_BELOW) return;
     const sup = answers[`m${i}.supportable`];
@@ -244,17 +246,18 @@ export function reportFromAnswers(
       (sup.probabilities[sup.choice] ?? 0) >= CHOICE_DROP_BELOW
         ? sup.choice === 'supportable'
         : undefined;
-    fields.thickness.push({
-      value: {
-        method: a.choice,
-        ...(cm(m.valueInches) !== undefined ? { valueCm: cm(m.valueInches) } : {}),
-        ...(cm(m.minInches) !== undefined ? { minCm: cm(m.minInches) } : {}),
-        ...(cm(m.maxInches) !== undefined ? { maxCm: cm(m.maxInches) } : {}),
-        ...(supportable !== undefined ? { supportable } : {}),
-      },
-      confidence: p,
-      evidence,
+    const reading = thicknessReadingFrom({
+      method,
+      inches: m.valueInches,
+      minInches: m.minInches,
+      maxInches: m.maxInches,
+      ...(supportable !== undefined ? { supportable } : {}),
     });
+    if (reading === null) {
+      misses.push({ kind: 'other', text: m.quote, wouldNeed: thicknessMissReason(method) });
+      return;
+    }
+    fields.thickness.push({ value: reading, confidence: p, evidence });
   });
   // When the author got off: Stage A's anchor, resolved on the body's clock (D192).
   for (const t of unit.clockTimes) {

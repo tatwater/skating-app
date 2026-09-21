@@ -16,7 +16,19 @@
  *   `enum_value` — which is exactly the coverage signal D200 wants.
  */
 
-import { inchesToCm, type SkateEndPrecision, zonedInstant, zonedParts } from '@skating/core';
+import {
+  inchesToCm,
+  isValidThicknessReading,
+  type ObservedFrom,
+  SKATE_END_PRECISIONS,
+  SKATE_TIME_FUTURE_TOLERANCE_MS,
+  type SkateEndPrecision,
+  sightingAllowedFrom,
+  type ThicknessMethod,
+  type ThicknessReadingInput,
+  zonedInstant,
+  zonedInstantOnDayOf,
+} from '@skating/core';
 import { z } from 'zod';
 import {
   type Evidence,
@@ -141,7 +153,13 @@ export function evidenceFor(
 
 // ── Mapping ─────────────────────────────────────────────────────────────────────────────────────
 
-/** Resolve a local clock time on the day the text was written. `null` for an unparseable string. */
+/**
+ * Resolve a local clock time. A full `YYYY-MM-DDTHH:MM` is taken as written; a bare `HH:MM` is
+ * read on the day the text was written — or the day before, when that clock time has not yet come
+ * round at the moment of writing: "got off at 4" in an email sent at 2 am is yesterday's four, and
+ * today's would be an end time in the future, which the validator refuses. `null` for an
+ * unparseable string, or a bare time with no written day to hang it on.
+ */
 export function localTimeToMs(
   localTime: string,
   input: Pick<ExtractionInput, 'writtenAtMs' | 'timeZone'>,
@@ -153,11 +171,69 @@ export function localTimeToMs(
   }
   const t = /^(\d{2}):(\d{2})$/.exec(localTime.trim());
   if (t && input.writtenAtMs !== undefined) {
-    const p = zonedParts(input.writtenAtMs, input.timeZone);
     const [, h, mi] = t.map(Number) as [number, number, number];
-    return zonedInstant(p.year, p.month, p.day, h * 60 + mi, input.timeZone);
+    const today = zonedInstantOnDayOf(input.writtenAtMs, h * 60 + mi, input.timeZone);
+    if (today <= input.writtenAtMs + SKATE_TIME_FUTURE_TOLERANCE_MS) return today;
+    return zonedInstantOnDayOf(input.writtenAtMs, h * 60 + mi, input.timeZone, -1);
   }
   return null;
+}
+
+/** A miss in the contract's shape: an engine's free-string `kind` outside `MISS_KINDS` is `other`. */
+export function toMiss(m: { kind: string; text: string; wouldNeed: string }): Miss {
+  const kind = (MISS_KINDS as readonly string[]).includes(m.kind)
+    ? (m.kind as Miss['kind'])
+    : 'other';
+  return { kind, text: m.text, wouldNeed: m.wouldNeed };
+}
+
+/** cm from a wire inches figure — `undefined` for an absent, negative or non-finite one. */
+export function wireInchesToCm(inches: number | undefined): number | undefined {
+  return inches !== undefined && Number.isFinite(inches) && inches >= 0
+    ? inchesToCm(inches)
+    : undefined;
+}
+
+/** The number part of a thickness reading as the wire carries it: inches, a count, the skater's word. */
+export interface WireThicknessParts {
+  method: ThicknessMethod;
+  inches?: number;
+  minInches?: number;
+  maxInches?: number;
+  pokeCount?: number;
+  supportable?: boolean;
+}
+
+/**
+ * A thickness reading in the validator's shape from the wire numbers, or `null` when the sheet
+ * could never post it — a `poke` with no count, an estimate with no number, a value beside a range.
+ * The rule is the validator's own (`isValidThicknessReading`), so the engines cannot hand the sheet
+ * a pre-selected chip that fails at *Post*. One repair, in the validator's documented spelling: an
+ * upper bound alone ("under 2 inches") becomes `minCm: 0, maxCm`.
+ */
+export function thicknessReadingFrom(
+  parts: WireThicknessParts,
+): Omit<ThicknessReadingInput, 'where' | 'coord' | 'note'> | null {
+  const valueCm = wireInchesToCm(parts.inches);
+  let minCm = wireInchesToCm(parts.minInches);
+  const maxCm = wireInchesToCm(parts.maxInches);
+  if (valueCm === undefined && minCm === undefined && maxCm !== undefined) minCm = 0;
+  const reading: Omit<ThicknessReadingInput, 'where' | 'coord' | 'note'> = {
+    method: parts.method,
+    ...(valueCm !== undefined ? { valueCm } : {}),
+    ...(minCm !== undefined ? { minCm } : {}),
+    ...(maxCm !== undefined ? { maxCm } : {}),
+    ...(parts.pokeCount !== undefined ? { pokeCount: parts.pokeCount } : {}),
+    ...(parts.supportable !== undefined ? { supportable: parts.supportable } : {}),
+  };
+  return isValidThicknessReading(reading) ? reading : null;
+}
+
+/** What a dropped reading would have needed — the miss's `wouldNeed`. */
+export function thicknessMissReason(method: ThicknessMethod): string {
+  return method === 'poke'
+    ? 'a poke count on the poke reading'
+    : 'a number on the thickness reading';
 }
 
 function inVocab(list: readonly string[], value: string): boolean {
@@ -216,8 +292,6 @@ export function mapWireReport(
   const fields: Record<string, unknown[]> = Object.fromEntries(
     EXTRACTED_FIELD_KEYS.map((k) => [k, []]),
   );
-  const cm = (x: number | undefined) =>
-    x !== undefined && Number.isFinite(x) && x >= 0 ? inchesToCm(x) : undefined;
 
   for (const v of wire.values) {
     const evidence = evidenceFor(input, v.quote, v.quoteField);
@@ -226,7 +300,9 @@ export function mapWireReport(
     const miss = (wouldNeed: string, kind: Miss['kind'] = 'enum_value') =>
       misses.push({ kind, text: v.quote, wouldNeed });
 
-    if (v.field in ENUM_VOCAB) {
+    // `hasOwn`, not `in`: the field name is the model's free string, and `'constructor' in {}` is
+    // true — a prototype key would reach `vocab[undefined]` and throw out of the whole mapping.
+    if (Object.hasOwn(ENUM_VOCAB, v.field)) {
       const key = v.field as EnumKey;
       if (inVocab(vocab[ENUM_VOCAB[key]], v.value)) push(key, v.value);
       else miss(`${key}: ${v.value}`);
@@ -262,7 +338,7 @@ export function mapWireReport(
         break;
       }
       case 'snowDepthInches': {
-        const depth = cm(v.inches ?? v.maxInches ?? v.minInches);
+        const depth = wireInchesToCm(v.inches ?? v.maxInches ?? v.minInches);
         if (depth !== undefined) push('snowDepthCm', depth);
         break;
       }
@@ -271,14 +347,22 @@ export function mapWireReport(
           miss(`thickness method: ${v.value}`);
           break;
         }
+        const method = v.value as ThicknessMethod;
+        const reading = thicknessReadingFrom({
+          method,
+          inches: v.inches,
+          minInches: v.minInches,
+          maxInches: v.maxInches,
+          pokeCount: v.pokeCount,
+          supportable: v.supportable,
+        });
+        if (reading === null) {
+          miss(thicknessMissReason(method), 'other');
+          break;
+        }
         const where = mapWhere(v.where, vocab, misses);
         push('thickness', {
-          method: v.value,
-          ...(cm(v.inches) !== undefined ? { valueCm: cm(v.inches) } : {}),
-          ...(cm(v.minInches) !== undefined ? { minCm: cm(v.minInches) } : {}),
-          ...(cm(v.maxInches) !== undefined ? { maxCm: cm(v.maxInches) } : {}),
-          ...(v.pokeCount !== undefined ? { pokeCount: v.pokeCount } : {}),
-          ...(v.supportable !== undefined ? { supportable: v.supportable } : {}),
+          ...reading,
           ...(where ? { where } : {}),
           ...(v.note ? { note: v.note } : {}),
         });
@@ -287,7 +371,7 @@ export function mapWireReport(
       case 'endTime': {
         const ms = localTimeToMs(v.value, input);
         const precision = (v.precision ?? 'half_hour') as SkateEndPrecision;
-        if (ms === null || !['gps', 'minute', 'half_hour'].includes(precision)) break;
+        if (ms === null || !(SKATE_END_PRECISIONS as readonly string[]).includes(precision)) break;
         push('endTime', { ms, precision });
         break;
       }
@@ -297,9 +381,9 @@ export function mapWireReport(
   }
 
   // A sighting is what someone *off* the ice saw (D189). The prompt says so; the model does not
-  // always listen, and the validator would refuse the pair — so the same rule is applied here.
-  const vantage = fields.observedFrom?.[0] as { value: string } | undefined;
-  if (vantage === undefined || vantage.value === 'on_ice') fields.sighting = [];
+  // always listen, and the validator would refuse the pair — so the validator's own rule is asked.
+  const vantage = fields.observedFrom?.[0] as { value: ObservedFrom } | undefined;
+  if (!sightingAllowedFrom(vantage?.value)) fields.sighting = [];
 
   return {
     bodyRef: wire.bodyRef,
@@ -314,12 +398,7 @@ export function mapWireReport(
 export function mapWireResult(wire: WireResult, input: ExtractionInput): ExtractionResult {
   const misses: Miss[] = [];
   const reports = wire.reports.map((r) => mapWireReport(r, input, misses));
-  for (const m of wire.misses) {
-    const kind = (MISS_KINDS as readonly string[]).includes(m.kind)
-      ? (m.kind as Miss['kind'])
-      : 'other';
-    misses.push({ kind, text: m.text, wouldNeed: m.wouldNeed });
-  }
+  for (const m of wire.misses) misses.push(toMiss(m));
   return ExtractionResultSchema.parse({ reports, misses });
 }
 

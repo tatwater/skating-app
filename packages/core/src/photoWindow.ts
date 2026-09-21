@@ -14,7 +14,7 @@
 
 import { haversineMeters, type LatLng } from './geometry';
 import type { PassedTrackPoint } from './passedHazards';
-import { zonedInstant, zonedParts } from './zonedTime';
+import { zonedInstantOnDayOf } from './zonedTime';
 
 /** The default pad either side of the activity — a photo of the launch, a photo of the car. */
 export const PHOTO_WINDOW_PAD_MS = 30 * 60_000;
@@ -38,10 +38,9 @@ export function photoWindow(activity: ActivityWindow, padMs = PHOTO_WINDOW_PAD_M
 
 /** The wider option: the whole local day of the activity's end, in the body's zone. */
 export function sameDayWindow(activity: ActivityWindow, timeZone: string): ActivityWindow {
-  const p = zonedParts(activity.endMs, timeZone);
   return {
-    startMs: zonedInstant(p.year, p.month, p.day, 0, timeZone),
-    endMs: zonedInstant(p.year, p.month, p.day, 24 * 60, timeZone),
+    startMs: zonedInstantOnDayOf(activity.endMs, 0, timeZone),
+    endMs: zonedInstantOnDayOf(activity.endMs, 24 * 60, timeZone),
   };
 }
 

@@ -18,7 +18,7 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation } from './_generated/server';
+import { internalMutation, type MutationCtx } from './_generated/server';
 
 /**
  * The Post a legacy Report gets: the one-body Post `posts.create` would have written. Pure, so the
@@ -35,6 +35,29 @@ export function legacyPostFor(report: Doc<'reports'>): Omit<Doc<'posts'>, '_id' 
     updatedAt: report.updatedAt,
     ...(report.editedAt !== undefined ? { editedAt: report.editedAt } : {}),
   };
+}
+
+/**
+ * Keep `posts.latestSkateEndTime` — the D28 sort key — current after a member Report's end time
+ * moves. Every writer that changes a Report's `skateEndTime` calls this with the value it is about
+ * to store (`reports.update` today; `posts.create` and its editor in A10-2), so the Post never
+ * sorts on a stale time. Reads the Post's other members — a handful — and takes the max.
+ */
+export async function refreshPostLatestSkateEnd(
+  ctx: MutationCtx,
+  postId: Id<'posts'>,
+  changed: { reportId: Id<'reports'>; skateEndTime: number },
+): Promise<void> {
+  const post = await ctx.db.get(postId);
+  if (!post) return;
+  let latest = changed.skateEndTime;
+  for (const id of post.reportIds) {
+    if (id === changed.reportId) continue;
+    const sibling = await ctx.db.get(id);
+    if (sibling && sibling.skateEndTime > latest) latest = sibling.skateEndTime;
+  }
+  if (latest !== post.latestSkateEndTime)
+    await ctx.db.patch(postId, { latestSkateEndTime: latest });
 }
 
 /**

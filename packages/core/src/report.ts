@@ -283,6 +283,25 @@ function validateReading(
   return normalized;
 }
 
+/**
+ * Would `validateReportInput` accept this reading? The same rule as `validateReading`, exposed for
+ * a caller that *builds* readings from somewhere other than the form — the extraction mappers — so
+ * a reading the sheet could never post (a poke with no count, an estimate with no number) is
+ * dropped at the source instead of failing the whole report at *Post*. One rule, one place.
+ */
+export function isValidThicknessReading(reading: ThicknessReadingInput): boolean {
+  return validateReading(reading, 'reading', []) !== null;
+}
+
+/**
+ * May a report from this vantage carry a `sighting` (D189)? "Still open" is what someone on the
+ * bank reports; from the ice it would be a surface chip, and with no vantage stated it is nobody's.
+ * The validator, both extraction engines and the sheet all ask this one function.
+ */
+export function sightingAllowedFrom(observedFrom: ObservedFrom | undefined): boolean {
+  return observedFrom !== undefined && observedFrom !== 'on_ice';
+}
+
 function validateConditions(
   conditions: ReportConditionsInput,
   errors: ReportValidationError[],
@@ -441,8 +460,7 @@ export function validateReportInput(
   if (input.sighting !== undefined) {
     if (!isMember(SIGHTINGS, input.sighting)) {
       errors.push({ field: 'sighting', message: 'is not a known sighting' });
-    } else if (input.observedFrom === undefined || input.observedFrom === 'on_ice') {
-      // "Still open" is what someone on the bank reports; from the ice it would be a surface chip.
+    } else if (!sightingAllowedFrom(input.observedFrom)) {
       errors.push({ field: 'sighting', message: 'is for a report from shore or secondhand' });
     }
   }
@@ -552,6 +570,28 @@ export interface MinimumSetReport {
   surfaceTags?: readonly ChipInput<SurfaceTag>[];
   iceThickness?: { readings: readonly unknown[] };
   sighting?: Sighting;
+}
+
+/**
+ * Every bay a report's `where`s name — on its chips and its readings — deduplicated, in order of
+ * first mention. `validateWhere` checks the shape; that each id is a live bay *of this body* is the
+ * server's check, made with the body's bays in hand (`reports.create` / `update`), and this is the
+ * list it checks.
+ */
+export function locatedSubAreaIds(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness'>,
+): string[] {
+  const ids: string[] = [];
+  const located: readonly { where?: Where }[] = [
+    ...report.iceTypes,
+    ...report.surfaceTags,
+    ...(report.iceThickness?.readings ?? []),
+  ];
+  for (const item of located) {
+    const id = item.where?.subAreaId;
+    if (id !== undefined && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): MinimumSetTerm[] {

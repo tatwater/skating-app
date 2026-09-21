@@ -28,6 +28,7 @@ import {
   isFormRoundTripOf,
   isMinor,
   type LatLng,
+  locatedSubAreaIds,
   matchesFilters,
   matchWeatherFilter,
   memberSubAreaIds,
@@ -102,6 +103,7 @@ import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { activateOnEvidence } from './lib/standing';
 import { chipInput, iceThickness, latLng, literals, snow } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
+import { refreshPostLatestSkateEnd } from './posts';
 import { resolveReportSubAreas, stampCandidates, subAreaDriveCoordFor } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
@@ -184,6 +186,26 @@ function toReportInput(
     notes: args.notes,
     point: args.point,
   };
+}
+
+/**
+ * A `where` may name a bay by id (D193). `validateWhere` checks the shape; this is the check made
+ * with the body in hand: every bay a chip or a reading names must be one of *this* body's live bays
+ * — never another lake's, never a removed one, never a string that is not a bay at all. Raised in
+ * the validator's own error shape so the sheet shows it beside the chip.
+ */
+function assertLocatedSubAreas(
+  normalized: Parameters<typeof locatedSubAreaIds>[0],
+  candidates: readonly { ref: Doc<'waterBodySubAreas'> }[],
+): void {
+  const live = new Set<string>(candidates.map((c) => c.ref._id));
+  const unknown = locatedSubAreaIds(normalized).filter((id) => !live.has(id));
+  if (unknown.length > 0) {
+    throw new ConvexError({
+      code: 'invalid_report',
+      errors: unknown.map((id) => `where.subAreaId: ${id} is not a bay of this water body`),
+    });
+  }
 }
 
 /**
@@ -277,6 +299,7 @@ export const create = mutation({
     // whatever you skated, was the bug this fixes. Costs one `by_parent` read on a body already in
     // hand, and returns immediately for the ~25k bodies with no sub-areas.
     const candidates = await stampCandidates(ctx, body._id);
+    assertLocatedSubAreas(n, candidates);
     const subAreas = await resolveReportSubAreas(
       ctx,
       {
@@ -1225,6 +1248,8 @@ export const update = mutation({
     // report keeps its track's list rather than collapsing to the pin's bay on its first edit.
     // Cleared to undefined when the new point sits in none.
     const body = await ctx.db.get(existing.waterBodyId);
+    const candidates = await stampCandidates(ctx, existing.waterBodyId);
+    assertLocatedSubAreas(n, candidates);
     const subAreas = await resolveReportSubAreas(
       ctx,
       {
@@ -1232,7 +1257,7 @@ export const update = mutation({
         point,
         ...(existing.activityId !== undefined ? { activityId: existing.activityId } : {}),
       },
-      await stampCandidates(ctx, existing.waterBodyId),
+      candidates,
       body?.polygon as unknown as Polygon | MultiPolygon,
     );
 
@@ -1275,6 +1300,15 @@ export const update = mutation({
       },
       memberSubAreaIds(subAreas),
     );
+    // And the Post's sort key (A10 / D186): `latestSkateEndTime` is the max over its Reports, so
+    // re-dating this one can move the Post in the feed. Absent only on a Report the backfill has
+    // not yet reached.
+    if (existing.postId !== undefined && n.skateEndTime !== existing.skateEndTime) {
+      await refreshPostLatestSkateEnd(ctx, existing.postId, {
+        reportId: args.reportId,
+        skateEndTime: n.skateEndTime,
+      });
+    }
 
     // **An edit changes the card's inputs, so the card is recomputed (A06c §5).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report

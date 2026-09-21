@@ -27,8 +27,15 @@
  * starts with what they were closest to.
  */
 
-import type { LineString, MultiPolygon, Polygon, Position } from 'geojson';
-import { type BBox, bboxIntersects, expandBBox, type LatLng, pointInPolygon } from './geometry';
+import type { LineString, MultiPolygon, Polygon } from 'geojson';
+import {
+  type BBox,
+  bboxIntersects,
+  expandBBox,
+  type LatLng,
+  pointInPolygon,
+  segmentsIntersect,
+} from './geometry';
 import { distanceToHazard, type HazardShape, hazardFootprint } from './hazardGeometry';
 import type { HazardType } from './types';
 
@@ -83,39 +90,15 @@ function trackBBox(track: readonly LatLng[]): BBox | null {
   return { minLat, minLng, maxLat, maxLng };
 }
 
-/** Do segments a–b and c–d intersect (proper or touching)? Plain 2-D on `[lng, lat]`, fine at a ridge's scale. */
-function segmentsIntersect(a: Position, b: Position, c: Position, d: Position): boolean {
-  const orient = (p: Position, q: Position, r: Position): number => {
-    const v =
-      ((q[1] as number) - (p[1] as number)) * ((r[0] as number) - (q[0] as number)) -
-      ((q[0] as number) - (p[0] as number)) * ((r[1] as number) - (q[1] as number));
-    return v === 0 ? 0 : v > 0 ? 1 : -1;
-  };
-  const onSegment = (p: Position, q: Position, r: Position): boolean =>
-    Math.min(p[0] as number, r[0] as number) <= (q[0] as number) &&
-    (q[0] as number) <= Math.max(p[0] as number, r[0] as number) &&
-    Math.min(p[1] as number, r[1] as number) <= (q[1] as number) &&
-    (q[1] as number) <= Math.max(p[1] as number, r[1] as number);
-  const o1 = orient(a, b, c);
-  const o2 = orient(a, b, d);
-  const o3 = orient(c, d, a);
-  const o4 = orient(c, d, b);
-  if (o1 !== o2 && o3 !== o4) return true;
-  if (o1 === 0 && onSegment(a, c, b)) return true;
-  if (o2 === 0 && onSegment(a, d, b)) return true;
-  if (o3 === 0 && onSegment(c, a, d)) return true;
-  if (o4 === 0 && onSegment(c, b, d)) return true;
-  return false;
-}
-
 /** Did any track segment cross the hazard's raw line? Linear hazards only; others are never "crossed". */
 function trackCrossesLine(track: readonly LatLng[], line: LineString): boolean {
-  const verts = line.coordinates;
+  const verts = line.coordinates as [number, number][];
   for (let i = 0; i + 1 < track.length; i++) {
-    const a: Position = [track[i]?.lng as number, track[i]?.lat as number];
-    const b: Position = [track[i + 1]?.lng as number, track[i + 1]?.lat as number];
+    const a: [number, number] = [track[i]?.lng as number, track[i]?.lat as number];
+    const b: [number, number] = [track[i + 1]?.lng as number, track[i + 1]?.lat as number];
     for (let j = 0; j + 1 < verts.length; j++) {
-      if (segmentsIntersect(a, b, verts[j] as Position, verts[j + 1] as Position)) return true;
+      if (segmentsIntersect(a, b, verts[j] as [number, number], verts[j + 1] as [number, number]))
+        return true;
     }
   }
   return false;
@@ -139,11 +122,16 @@ export function passedHazards(
     // Stage one: the stored bbox, grown by the pass distance, against the track's bbox.
     if (!bboxIntersects(expandBBox(hazard.bbox, passMeters), box)) continue;
 
-    // Stage two: the nearest point, measured against the same footprint the map draws.
+    // Stage two: the nearest point, measured against the same footprint the map draws. The
+    // footprint is built once per hazard, not once per fix: `distanceToHazard` buffers a line or
+    // polygon shape on every call when no clipped footprint is stored, and a track has thousands
+    // of fixes. A circle keeps its exact haversine path (no footprint), as on the watcher.
     let nearestMeters = Number.POSITIVE_INFINITY;
     let nearestAtMs = track[0]?.timestamp as number;
     let entered = false;
-    const footprint = hazard.clippedFootprint ?? null;
+    const footprint =
+      hazard.clippedFootprint ??
+      (hazard.shape.geometryKind === 'point_radius' ? null : hazardFootprint(hazard.shape));
     for (const point of track) {
       const d = distanceToHazard(point, hazard.shape, footprint);
       if (d < nearestMeters) {

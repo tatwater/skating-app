@@ -28,6 +28,7 @@ export function claudeThenJevExtractor(
       let jevOutput = 0;
       let jevCost = 0;
       const reports = [];
+      const misses = segmentationMisses(a.segmentation);
       for (const unit of a.segmentation.units) {
         const state = [input.title ? `Title: ${input.title}` : '', unitText(unit)]
           .filter(Boolean)
@@ -36,12 +37,9 @@ export function claudeThenJevExtractor(
         jevInput += response.usage.input_tokens;
         jevOutput += response.usage.output_tokens;
         jevCost += jevCostUsd(response.usage);
-        reports.push(reportFromAnswers(unit, response.answers, input));
+        reports.push(reportFromAnswers(unit, response.answers, input, misses));
       }
-      const result = ExtractionResultSchema.parse({
-        reports,
-        misses: segmentationMisses(a.segmentation),
-      });
+      const result = ExtractionResultSchema.parse({ reports, misses });
       return {
         result,
         usage: {

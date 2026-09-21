@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { defaultVocabulary, type ExtractionInput } from '../contract';
-import { evidenceFor, localTimeToMs, locateQuote, mapWireResult, type WireResult } from './wire';
+import {
+  evidenceFor,
+  localTimeToMs,
+  locateQuote,
+  mapWireResult,
+  thicknessReadingFrom,
+  type WireResult,
+} from './wire';
 
 const TEXT =
   'Skated Morey this afternoon.  Black ice at the north end,\nabout 3-4 inches by the auger. Got off around 4.';
@@ -55,6 +62,43 @@ describe('localTimeToMs', () => {
   it('is null when unparseable, or bare with no written day', () => {
     expect(localTimeToMs('around four', input())).toBeNull();
     expect(localTimeToMs('16:00', { timeZone: 'America/New_York' })).toBeNull();
+  });
+  it('reads a bare clock time that has not yet come round as yesterday’s', () => {
+    // Written at 2 am EST on the 11th: "got off at 4" is the 10th's four, not a future one.
+    const lateNight = input({ writtenAtMs: Date.UTC(2026, 0, 11, 7, 0) });
+    expect(localTimeToMs('16:00', lateNight)).toBe(Date.UTC(2026, 0, 10, 21, 0));
+    // A minute or two ahead of a fast clock stays today (the validator's own tolerance).
+    const justAfter = input({ writtenAtMs: Date.UTC(2026, 0, 10, 20, 58) });
+    expect(localTimeToMs('16:00', justAfter)).toBe(Date.UTC(2026, 0, 10, 21, 0));
+    // A full timestamp is taken as written, future or not.
+    expect(localTimeToMs('2026-01-11T16:00', lateNight)).toBe(Date.UTC(2026, 0, 11, 21, 0));
+  });
+});
+
+describe('thicknessReadingFrom — the validator’s rule at the source', () => {
+  it('keeps what the sheet can post, repairs an upper bound alone, drops the rest', () => {
+    expect(thicknessReadingFrom({ method: 'measured', inches: 4 })).toEqual({
+      method: 'measured',
+      valueCm: 10.16,
+    });
+    expect(thicknessReadingFrom({ method: 'estimated', minInches: 4 })).toEqual({
+      method: 'estimated',
+      minCm: 10.16,
+    });
+    // "Under 2 inches" — an upper bound alone is spelled with the zero the validator wants.
+    expect(thicknessReadingFrom({ method: 'estimated', maxInches: 2 })).toEqual({
+      method: 'estimated',
+      minCm: 0,
+      maxCm: 5.08,
+    });
+    expect(
+      thicknessReadingFrom({ method: 'poke', pokeCount: 5, minInches: 3, supportable: true }),
+    ).toEqual({ method: 'poke', pokeCount: 5, minCm: 7.62, supportable: true });
+    expect(thicknessReadingFrom({ method: 'poke', inches: 3 })).toBeNull(); // no count
+    expect(thicknessReadingFrom({ method: 'estimated' })).toBeNull(); // no number
+    expect(thicknessReadingFrom({ method: 'measured', inches: 4, minInches: 3 })).toBeNull();
+    expect(thicknessReadingFrom({ method: 'measured', pokeCount: 2, inches: 4 })).toBeNull();
+    expect(thicknessReadingFrom({ method: 'measured', inches: -1 })).toBeNull();
   });
 });
 
@@ -161,6 +205,30 @@ describe('mapWireResult', () => {
             quote: 'x',
             quoteField: t,
           },
+          // A poke with no count and an estimate with no number: the sheet could never post them.
+          {
+            field: 'thickness',
+            value: 'poke',
+            inches: 3,
+            confidence: 0.9,
+            quote: 'about 3-4 inches',
+            quoteField: t,
+          },
+          {
+            field: 'thickness',
+            value: 'estimated',
+            confidence: 0.6,
+            quote: 'thick enough',
+            quoteField: t,
+          },
+          // A prototype key as a field name must be a miss, not a crash.
+          {
+            field: 'constructor',
+            value: 'great',
+            confidence: 0.7,
+            quote: 'Got off',
+            quoteField: t,
+          },
           {
             field: 'hazards',
             value: 'open_water',
@@ -225,6 +293,9 @@ describe('mapWireResult', () => {
       { kind: 'enum_value', text: 'Black ice', wouldNeed: 'iceTypes: glass_ice' },
       { kind: 'where', text: 'upstream', wouldNeed: 'a sector value' },
       { kind: 'enum_value', text: 'x', wouldNeed: 'thickness method: guessed' },
+      { kind: 'other', text: 'about 3-4 inches', wouldNeed: 'a poke count on the poke reading' },
+      { kind: 'other', text: 'thick enough', wouldNeed: 'a number on the thickness reading' },
+      { kind: 'field', text: 'Got off', wouldNeed: 'a field named constructor' },
       { kind: 'enum_value', text: 'Got off', wouldNeed: 'hazards: bear' },
       { kind: 'field', text: 'Got off', wouldNeed: 'a field named wind' },
       { kind: 'field', text: 'windy', wouldNeed: 'a wind field' },

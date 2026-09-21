@@ -229,6 +229,50 @@ describe('reports.create', () => {
     expect(r?.snow).toEqual({ coverage: 'lanes', impediment: 'didnt_matter', plowedPath: false });
   });
 
+  test('a where may name only a live bay of this body (D193)', async () => {
+    const t = convexTestWithGeo();
+    const { id: morey } = await seedBody(t, 'osm/1');
+    const { id: champlain } = await seedBody(t, 'osm/2');
+    const asUser = await seedUser(t, 'clerk_a');
+    const bay = async (parent: Id<'waterBodies'>, removed = false) => {
+      const authorId = await t.run(async (ctx) => (await ctx.db.query('profiles').first())?._id);
+      if (!authorId) throw new Error('seed a profile first');
+      return t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: parent,
+          name: 'Bay',
+          searchText: 'bay',
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          surfaceAreaSqM: 100_000,
+          displayScore: 1,
+          minVisibleZoom: 10,
+          createdByUserId: authorId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          ...(removed ? { removedAt: Date.now() } : {}),
+        }),
+      );
+    };
+    const ownBay = await bay(morey);
+    const otherBay = await bay(champlain);
+    const goneBay = await bay(morey, true);
+    const post = (subAreaId: string) =>
+      asUser.mutation(api.reports.create, {
+        waterBodyId: morey,
+        skateEndTime: SKATE_TIME,
+        iceTypes: [{ type: 'black_ice', where: { subAreaId, sector: 'head' } }],
+        iceThickness: { readings: [{ method: 'estimated', minCm: 5, where: { subAreaId } }] },
+      });
+    await expect(post(otherBay)).rejects.toThrow(/not a bay of this water body/);
+    await expect(post(goneBay)).rejects.toThrow(/not a bay of this water body/);
+    await expect(post('not-an-id')).rejects.toThrow(/not a bay of this water body/);
+    const reportId = await post(ownBay);
+    const r = await t.run((ctx) => ctx.db.get(reportId));
+    expect(r?.iceTypes[0]?.where?.subAreaId).toBe(ownBay);
+  });
+
   test('a sighting from the ice is rejected at the trust boundary (D189)', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
@@ -776,6 +820,25 @@ describe('reports.update (author-only LWW, D25)', () => {
    * `updatedAt` hours after posting on nearly every report, so a byline derived from it would mark
    * the whole corpus as edited by authors who never touched it.
    */
+  test('re-dating a report moves its Post’s sort key (A10 / D186)', async () => {
+    const t = convexTestWithGeo();
+    const { asAuthor, reportId } = await seedReport(t);
+    // Give the report its legacy Post, as the A10-1 backfill does.
+    await t.mutation(internal.posts.backfillFromReports, {});
+    const postId = (await t.run((ctx) => ctx.db.get(reportId)))?.postId;
+    if (!postId) throw new Error('backfill gave the report no Post');
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(SKATE_TIME);
+
+    await asAuthor.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: SKATE_TIME + 3 * 60 * 60_000,
+      notes: 'actually got off at three',
+    });
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(
+      SKATE_TIME + 3 * 60 * 60_000,
+    );
+  });
+
   test('stamps editedAt, which a fresh report does not carry', async () => {
     const t = convexTestWithGeo();
     const { asAuthor, reportId } = await seedReport(t);

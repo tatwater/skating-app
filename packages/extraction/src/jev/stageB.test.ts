@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Unit } from '../claude/stageA';
-import { defaultVocabulary, type ExtractionInput } from '../contract';
+import { defaultVocabulary, type ExtractionInput, type Miss } from '../contract';
 import type { JevAnswer } from './client';
 import { CHOICE_DROP_BELOW, NOUL_DROP_BELOW, questionsForUnit, reportFromAnswers } from './stageB';
 
@@ -173,6 +173,24 @@ describe('reportFromAnswers', () => {
       where: { placeName: 'by the boathouse' },
     });
     expect(r.fields.surfaceTags[0]?.value).toEqual({ type: 'glass' });
+  });
+
+  it('a method vote the validator would refuse drops the reading and counts a miss', () => {
+    // Jev calls the auger range a poke: with no count beside it the sheet could not post it, so
+    // it is dropped; the "5 pokes" count reading stands on its own, and the miss says why.
+    const misses: Miss[] = [];
+    const r = reportFromAnswers(unit, { 'm0.method': choice('poke', 0.9) }, input, misses);
+    expect(r.fields.thickness.map((v) => v.value)).toEqual([{ method: 'poke', pokeCount: 5 }]);
+    expect(misses).toEqual([
+      {
+        kind: 'other',
+        text: '3-4 inches by the auger',
+        wouldNeed: 'a poke count on the poke reading',
+      },
+    ]);
+    // A method outside the offered vocabulary is not a reading either.
+    const off = reportFromAnswers(unit, { 'm0.method': choice('augered', 0.9) }, input);
+    expect(off.fields.thickness.map((v) => v.value)).toEqual([{ method: 'poke', pokeCount: 5 }]);
   });
 
   it('a half-hour clock time is half_hour precision; a bad one is skipped', () => {

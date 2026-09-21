@@ -190,6 +190,10 @@ describe('applyExtraction (D188, D196)', () => {
       ['on_ice', 'ghost'],
       ['shore', 'extracted'],
     ]);
+    // The section is filled by the extraction, untouched though it is — the default alone is not.
+    expect(sectionFilled(s, 'observedFrom')).toBe(true);
+    expect(sectionSummary(s, 'observedFrom', TZ)).toBe('Shore');
+    expect(sectionFilled(emptySheet(OPENED, 'wb1'), 'observedFrom')).toBe(false);
   });
 
   it('a single-select field keeps the most confident extraction; ties go to the earlier one', () => {

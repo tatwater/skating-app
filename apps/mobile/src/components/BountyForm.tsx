@@ -1,6 +1,5 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { DEFAULT_BOUNTY_REWARD_POINTS } from '@skating/core';
 import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useRouter } from 'expo-router';

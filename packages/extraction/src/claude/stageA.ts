@@ -14,7 +14,7 @@ import { z } from 'zod';
 import type { ExtractionInput, Miss } from '../contract';
 import { type ClaudeModelKey, type ClaudeUsage, callStructured } from './client';
 import { userPrompt } from './prompt';
-import { evidenceFor, WireMissSchema } from './wire';
+import { evidenceFor, toMiss, WireMissSchema } from './wire';
 
 export const MeasurementSchema = z.object({
   quote: z.string(),
@@ -114,13 +114,5 @@ export function unitEvidence(input: ExtractionInput, unit: Unit) {
 
 /** Stage A's misses in the contract's shape. */
 export function segmentationMisses(seg: Segmentation): Miss[] {
-  return seg.misses.map((m) => ({
-    kind: (['enum_value', 'field', 'where', 'report_kind', 'other'] as const).includes(
-      m.kind as Miss['kind'],
-    )
-      ? (m.kind as Miss['kind'])
-      : 'other',
-    text: m.text,
-    wouldNeed: m.wouldNeed,
-  }));
+  return seg.misses.map(toMiss);
 }

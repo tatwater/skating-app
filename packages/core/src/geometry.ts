@@ -618,8 +618,11 @@ function withinSegmentBox(
   );
 }
 
-/** Do segments `p1–p2` and `p3–p4` share any point? (CLRS, including the collinear-touch cases.) */
-function segmentsIntersect(
+/**
+ * Do segments `p1–p2` and `p3–p4` share any point? (CLRS, including the collinear-touch cases.)
+ * Plain 2-D on `[lng, lat]` — a topological test, fine at any lake's scale (see `ringSelfIntersects`).
+ */
+export function segmentsIntersect(
   p1: readonly [number, number],
   p2: readonly [number, number],
   p3: readonly [number, number],

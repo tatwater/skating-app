@@ -547,8 +547,11 @@ export function sectionFilled(state: ReportSheetState, section: SheetSection): b
     .some((k) => selectedValues(state, k).length > 0);
   switch (section) {
     case 'observedFrom':
-      // The default is a default, not a fill.
-      return state.fields.observedFrom.touched || selectedValues(state, 'sighting').length > 0;
+      // The default is a default, not a fill — but a tap or an extraction that moved it is one.
+      return (
+        selectedChips(state, 'observedFrom').some((c) => c.defaulted !== true) ||
+        selectedValues(state, 'sighting').length > 0
+      );
     case 'snow':
       return anySelected || s.snowDepthCm !== undefined || s.plowedPath !== undefined;
     case 'hazards':

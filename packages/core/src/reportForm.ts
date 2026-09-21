@@ -149,12 +149,16 @@ export function buildReportInput(
 export interface StoredReportForForm {
   skateEndTime: number;
   skateStartTime?: number;
-  /** Either shape (A10): this form edits the keys; `reports.update` keeps each chip's `where`. */
+  /**
+   * Either shape (A10): this form edits the keys only. **Lossy on edit** until A10-5 replaces the
+   * form — `reports.update` is last-write-wins over the whole content block, so a chip's `where`
+   * and `note` go back as a bare key (A10 phase doc, delta 3; owed to A10-2 §2.4).
+   */
   iceTypes?: readonly ChipInput<IceType>[];
   surfaceTags?: readonly ChipInput<SurfaceTag>[];
   skateQuality?: SkateQuality;
   iceThickness?: { readings: ThicknessReadingLike[] };
-  /** The D194 object; this form shows only its depth and `reports.update` keeps the facets. */
+  /** The D194 object; this form shows only its depth, and an edit sends only the depth (same caveat). */
   snow?: { depthCm?: number };
   conditions?: {
     airTempC?: number;

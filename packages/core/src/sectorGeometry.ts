@@ -162,15 +162,11 @@ function outerRadius(frame: SectorFrame, geom: Polygon | MultiPolygon): number {
 }
 
 /** The annular wedge for one compass sector — outer arc out, inner arc back — before clipping. */
-function wedgePolygon(
-  frame: SectorFrame,
-  geom: Polygon | MultiPolygon,
-  sector: CompassSector,
-): Polygon {
+function wedgePolygon(frame: SectorFrame, outerRadiusM: number, sector: CompassSector): Polygon {
   const center = COMPASS_SECTORS.indexOf(sector) * SECTOR_WEDGE_DEG;
   const from = center - SECTOR_WEDGE_DEG / 2;
   const to = center + SECTOR_WEDGE_DEG / 2;
-  const outer = arc(frame.origin, outerRadius(frame, geom), from, to, 12);
+  const outer = arc(frame.origin, outerRadiusM, from, to, 12);
   const inner = arc(frame.origin, frame.middleRadiusM, to, from, 6);
   const ring = [...outer, ...inner];
   ring.push(ring[0] as Position);
@@ -206,8 +202,9 @@ export function sectorPolygons(
   geom: Polygon | MultiPolygon,
 ): Record<PartitionSector, Polygon | MultiPolygon | null> {
   const out = {} as Record<PartitionSector, Polygon | MultiPolygon | null>;
+  const outerM = outerRadius(frame, geom); // one walk of the vertices, shared by the eight wedges
   for (const sector of COMPASS_SECTORS) {
-    out[sector] = clipToOutline(wedgePolygon(frame, geom, sector), geom);
+    out[sector] = clipToOutline(wedgePolygon(frame, outerM, sector), geom);
   }
   out.middle = clipToOutline(middlePolygon(frame), geom);
   return out;

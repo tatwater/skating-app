@@ -48,7 +48,9 @@ export type AccessAlertReason = (typeof ACCESS_ALERT_REASONS)[number];
  * puts the target of *every* live alert into `blockedIds`, and directions demote a blocked launch. A
  * plank is not a blocker; a muddy launch is not a locked gate. Keeping the two sets disjoint is what
  * lets the reader tell "you can't get in" from "bring a plank" without a flag on the row, and what
- * keeps a condition out of the blocker demotion by construction. `reason` on the row is the union.
+ * keeps a condition out of the blocker demotion by construction. The row's `reason` widens to the
+ * union when the sheet's condition chips get their write path (A10-2 §7.2); until then the schema
+ * still narrows to the blockers.
  */
 export const ACCESS_CONDITION_REASONS = [
   'icy_lot',

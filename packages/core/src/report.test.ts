@@ -1,9 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  isValidThicknessReading,
+  locatedSubAreaIds,
   minimumSetGaps,
   type ReportInput,
   SKATE_TIME_FUTURE_TOLERANCE_MS,
+  sightingAllowedFrom,
   type ThicknessReadingInput,
   validateReportInput,
 } from './report';
@@ -568,5 +571,58 @@ describe('minimumSetGaps (D189)', () => {
       'howWasIt',
       'observation',
     ]);
+  });
+});
+
+describe('isValidThicknessReading — the one rule, for a caller that builds readings', () => {
+  it('agrees with validateReportInput on every shape the mappers can produce', () => {
+    const cases: [ThicknessReadingInput, boolean][] = [
+      [{ method: 'measured', valueCm: 10 }, true],
+      [{ method: 'estimated', minCm: 5 }, true],
+      [{ method: 'estimated', minCm: 0, maxCm: 5 }, true],
+      [{ method: 'poke', pokeCount: 5 }, true],
+      [{ method: 'poke', pokeCount: 5, minCm: 7, supportable: true }, true],
+      [{ method: 'poke', minCm: 7 }, false], // a poke with no count
+      [{ method: 'estimated' }, false], // an estimate with no number
+      [{ method: 'measured', maxCm: 5 }, false], // an upper bound alone hides the zero
+      [{ method: 'measured', valueCm: 10, minCm: 5 }, false],
+      [{ method: 'measured', valueCm: 10, pokeCount: 2 }, false],
+      [{ method: 'guessed' as 'measured', valueCm: 10 }, false],
+    ];
+    for (const [reading, valid] of cases) {
+      expect(isValidThicknessReading(reading), JSON.stringify(reading)).toBe(valid);
+      const whole = validateReportInput(base({ iceThickness: { readings: [reading] } }), CTX);
+      expect(whole.ok, JSON.stringify(reading)).toBe(valid);
+    }
+  });
+});
+
+describe('sightingAllowedFrom (D189)', () => {
+  it('is the validator’s rule: shore or secondhand only, never unstated', () => {
+    expect(sightingAllowedFrom('shore')).toBe(true);
+    expect(sightingAllowedFrom('secondhand')).toBe(true);
+    expect(sightingAllowedFrom('on_ice')).toBe(false);
+    expect(sightingAllowedFrom(undefined)).toBe(false);
+  });
+});
+
+describe('locatedSubAreaIds', () => {
+  it('collects every bay a chip or reading names, once each, in order of first mention', () => {
+    expect(
+      locatedSubAreaIds({
+        iceTypes: [
+          { type: 'black_ice', where: { subAreaId: 'bay1', sector: 'N' } },
+          { type: 'shell_ice' },
+        ],
+        surfaceTags: [{ type: 'glass', where: { subAreaId: 'bay2' } }],
+        iceThickness: {
+          readings: [
+            { method: 'measured', valueCm: 10, where: { subAreaId: 'bay1' } },
+            { method: 'estimated', minCm: 5, where: { extent: 'patches' } },
+          ],
+        },
+      }),
+    ).toEqual(['bay1', 'bay2']);
+    expect(locatedSubAreaIds({ iceTypes: [], surfaceTags: [] })).toEqual([]);
   });
 });
