@@ -121,11 +121,12 @@ provider's own terms and privacy policy.
 - You can **export your data** (a JSON bundle of your own content plus your uploaded
   photos) and **delete your account** at any time.
 - When you ask to delete your account, your name, photo, bio, town, home location and email
-  are **erased immediately** and your profile disappears from the app. **Canceling does not
-  bring any of that back.** Your sign-in stays usable for **30 days** so you can change your
-  mind about the account itself; after that the deletion is final: your date of birth,
-  connected-account tokens, notifications, favorites and unpublished recordings are erased and
-  your login is removed.
+  are **erased immediately** and your profile disappears from the app. Every bounty you posted
+  — open ones included — is **removed** at the same time, since it is a standing request nobody
+  is making any more. **Canceling does not bring any of that back.** Your sign-in stays usable
+  for **30 days** so you can change your mind about the account itself; after that the deletion
+  is final: your date of birth, connected-account tokens, notifications, favorites and
+  unpublished recordings are erased and your login is removed.
 - Your past reports, comments, hazard reports and published skate paths are **kept, detached
   from your identity**, so the community's historical ice record is preserved. They show as
   "Deleted skater". This is **pseudonymization, not full anonymization**: each of those
