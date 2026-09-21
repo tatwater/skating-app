@@ -266,6 +266,9 @@ export const MODERATION_ACTIONS = [
   'hide',
   'remove',
   'restore',
+  // An author taking down their own Post or Report (A10-3): the same `removed` status, the same
+  // cascade, audited here with the author as actor so a moderator can see what left and when.
+  'author_delete',
   'ban',
   'suspend',
   'unban',

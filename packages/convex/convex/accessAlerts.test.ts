@@ -820,6 +820,36 @@ describe('a live alert survives a lake full of settled ones', () => {
     // And it sorts first, because a moderator's claim outranks a passer-by's.
     expect(live[0]?.id).toBe(pinned);
   });
+  test('a live blocker survives a cap of newer conditions, and the launch stays demoted (A10-3 §7.2)', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const gate = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+
+    // The sheet's planks: more than one cap of them, all fresher than the gate.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 80; i++) {
+        await ctx.db.insert('accessAlerts', {
+          targetType: 'put_in' as const,
+          putInId,
+          waterBodyId,
+          reason: 'plank_needed' as const,
+          createdByUserId: author.id as Id<'profiles'>,
+          createdAt: Date.now() + i,
+          season: seasonOf(Date.now()),
+          expiresAt: Date.now() + 30 * DAY_MS + i,
+          status: 'active' as const,
+          confirmCount: 0,
+          denyCount: 0,
+        });
+      }
+    });
+
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.map((a) => a.id)).toContain(gate);
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(access.blockedIds).toEqual([putInId]);
+    // And the conditions are capped on their own, not silently dropped.
+    expect(access.alerts.filter((a) => a.reason === 'plank_needed').length).toBeGreaterThan(0);
+  });
 });
 
 /**

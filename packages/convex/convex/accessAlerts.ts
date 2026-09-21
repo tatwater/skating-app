@@ -34,6 +34,7 @@ import {
   accessAlertIsLive,
   currentSeason,
   deriveAccessAlertLifecycle,
+  isAccessCondition,
   isMinor,
   seasonEndMs,
   seasonOf,
@@ -418,19 +419,44 @@ const LIVE_STATUSES = ['active', 'official'] as const;
  * The pinned read deliberately has no clock bound: a pin carries no expiry and outranks the
  * lifecycle rather than participating in it.
  */
+/**
+ * 4. **Blockers and conditions are capped separately** (A10-3 §7.2, the cap the A10-2 build
+ *    owed). Both kinds ride the same rows and the same index, so once the sheet files conditions a
+ *    lake with many live "plank needed" rows could push a live "gate locked" out of one shared
+ *    window — and `blockedIds` is built from that window. Two takes over the same `active` range,
+ *    each filtered to its reason set before the cap, bound each kind on its own. The filter runs
+ *    over the range the index already narrowed to provably-live rows, so the scan is bounded by
+ *    what is live on the lake either way; no reason column in the index, no schema change.
+ */
+const ALERT_KINDS = ['blocker', 'condition'] as const;
+type AlertKind = (typeof ALERT_KINDS)[number];
+
+const REASONS_OF_KIND: Record<AlertKind, readonly string[]> = {
+  blocker: ACCESS_REASONS.filter((r) => !isAccessCondition(r)),
+  condition: ACCESS_REASONS.filter((r) => isAccessCondition(r)),
+};
+
+/** The `(status, kind)` pages one live read takes: pinned rows are blockers by construction. */
+const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AlertKind }[] = [
+  { status: 'active', kind: 'blocker' },
+  { status: 'active', kind: 'condition' },
+  { status: 'official', kind: 'blocker' },
+];
+
 async function liveAlertsByBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   now: number,
 ): Promise<Doc<'accessAlerts'>[]> {
   const pages = await Promise.all(
-    LIVE_STATUSES.map((status) =>
+    LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
         .withIndex('by_water_body_status_expires_at', (q) => {
           const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
+        .filter((q) => q.or(...REASONS_OF_KIND[kind].map((r) => q.eq(q.field('reason'), r))))
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),
@@ -444,13 +470,14 @@ async function liveAlertsByParkingArea(
   now: number,
 ): Promise<Doc<'accessAlerts'>[]> {
   const pages = await Promise.all(
-    LIVE_STATUSES.map((status) =>
+    LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
         .withIndex('by_parking_area_status_expires_at', (q) => {
           const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
+        .filter((q) => q.or(...REASONS_OF_KIND[kind].map((r) => q.eq(q.field('reason'), r))))
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),

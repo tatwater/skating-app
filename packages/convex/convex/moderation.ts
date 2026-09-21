@@ -128,6 +128,102 @@ async function derivePostVisibility(
   }
 }
 
+/** The reason an author's own takedown carries — there is no free text to ask for. */
+const AUTHOR_DELETE_REASON = 'Deleted by the author';
+
+/**
+ * An author taking down their own Report (A10-3, founder call 2026-09-21: people control what
+ * they shared). The same `removed` status and the same moves as a moderator's remove — counter,
+ * body card, bay join, Post sort key — audited as `author_delete` with the author as actor, so a
+ * moderator can see what left and when. Nothing is deleted from the table (D62 keeps and redacts).
+ *
+ * The last member gone takes the Post with it: a Post requires a Report (D186), so a Post whose
+ * every member is removed is removed too, with its own audit row naming the member that emptied it.
+ */
+export async function authorRemoveReport(
+  ctx: MutationCtx,
+  report: Doc<'reports'>,
+  author: Doc<'profiles'>,
+  now: number,
+): Promise<void> {
+  if (report.moderationStatus === 'removed') return;
+  const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
+  const priorStatus = report.moderationStatus;
+  await applyReportStatus(ctx, report, 'removed', audit);
+  await ctx.db.insert('moderationActions', {
+    actorId: author._id,
+    action: 'author_delete',
+    targetType: 'report',
+    targetId: report._id,
+    reason: AUTHOR_DELETE_REASON,
+    metadata: { priorStatus, newStatus: 'removed' },
+    createdAt: now,
+  });
+  if (report.postId !== undefined) {
+    const post = await ctx.db.get(report.postId);
+    if (!post || post.moderationStatus === 'removed') return;
+    for (const id of post.reportIds) {
+      const member = await ctx.db.get(id);
+      if (member && member.moderationStatus !== 'removed') return;
+    }
+    await ctx.db.patch(post._id, { moderationStatus: 'removed' });
+    await ctx.db.insert('moderationActions', {
+      actorId: author._id,
+      action: 'author_delete',
+      targetType: 'post',
+      targetId: post._id,
+      reason: AUTHOR_DELETE_REASON,
+      metadata: {
+        priorStatus: post.moderationStatus,
+        newStatus: 'removed',
+        derivedFromReportId: report._id,
+      },
+      createdAt: now,
+    });
+  }
+}
+
+/**
+ * An author taking down their own Post: the Post and every member that is not already removed,
+ * each with its audit row naming the cascade — the moderator's Post remove, with the author as
+ * actor. A member a moderator removed on its own merits is left as it is.
+ */
+export async function authorRemovePost(
+  ctx: MutationCtx,
+  post: Doc<'posts'>,
+  author: Doc<'profiles'>,
+  now: number,
+): Promise<void> {
+  if (post.moderationStatus === 'removed') return;
+  const audit = { actorId: author._id, reason: AUTHOR_DELETE_REASON, now };
+  const priorStatus = post.moderationStatus;
+  await ctx.db.patch(post._id, { moderationStatus: 'removed' });
+  for (const reportId of post.reportIds) {
+    const report = await ctx.db.get(reportId);
+    if (!report || report.moderationStatus === 'removed') continue;
+    const memberPrior = report.moderationStatus;
+    await applyReportStatus(ctx, report, 'removed', audit);
+    await ctx.db.insert('moderationActions', {
+      actorId: author._id,
+      action: 'author_delete',
+      targetType: 'report',
+      targetId: report._id,
+      reason: AUTHOR_DELETE_REASON,
+      metadata: { priorStatus: memberPrior, newStatus: 'removed', cascadedFromPostId: post._id },
+      createdAt: now,
+    });
+  }
+  await ctx.db.insert('moderationActions', {
+    actorId: author._id,
+    action: 'author_delete',
+    targetType: 'post',
+    targetId: post._id,
+    reason: AUTHOR_DELETE_REASON,
+    metadata: { priorStatus, newStatus: 'removed' },
+    createdAt: now,
+  });
+}
+
 export const setModerationStatus = mutation({
   args: {
     targetType: literals(['report', 'post', 'comment', 'hazard']),

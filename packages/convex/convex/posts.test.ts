@@ -530,6 +530,180 @@ describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', ()
   });
 });
 
+describe('authors edit and delete what they shared (A10-3)', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+  async function twoLakePost(t: ReturnType<typeof convexTest>) {
+    const author = await seedUser(t, 'clerk_author');
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: 'Two lakes',
+      body: 'Glass on both.',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000 },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0 },
+      ],
+    });
+    return { author, bodyA, bodyB, postId, reportIds: reportIds as [Id<'reports'>, Id<'reports'>] };
+  }
+
+  test('posts.update rewrites the words, stamps editedAt, and keeps what they were', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId } = await twoLakePost(t);
+    await author.as.mutation(api.posts.update, {
+      postId,
+      title: ' Two lakes, revised ',
+      body: undefined,
+    });
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post).toMatchObject({ title: 'Two lakes, revised' });
+    expect(post?.body).toBeUndefined(); // last-write-wins: an omitted field is a cleared one
+    expect(post?.editedAt).toBeDefined();
+    const revisions = await t.run((ctx) =>
+      ctx.db
+        .query('contentRevisions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', postId))
+        .collect(),
+    );
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]?.snapshot).toEqual({ title: 'Two lakes', body: 'Glass on both.' });
+    expect(revisions[0]?.authorId).toBe(author.id);
+  });
+
+  test('posts.update refuses a stranger, a moderated Post, and a title past its bound', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId } = await twoLakePost(t);
+    const stranger = await seedUser(t, 'clerk_stranger');
+    await expect(
+      stranger.as.mutation(api.posts.update, { postId, title: 'Mine now' }),
+    ).rejects.toThrow(/Only the author/);
+    await expect(
+      author.as.mutation(api.posts.update, { postId, title: 'x'.repeat(200) }),
+    ).rejects.toThrow(/invalid_post/);
+    await t.run((ctx) => ctx.db.patch(postId, { moderationStatus: 'hidden' }));
+    await expect(author.as.mutation(api.posts.update, { postId, title: 'Still' })).rejects.toThrow(
+      /moderated/,
+    );
+  });
+
+  test('reports.update keeps the content block as it stood, once per edit', async () => {
+    const t = convexTest(schema, modules);
+    const { author, reportIds } = await twoLakePost(t);
+    const [reportId] = reportIds;
+    await author.as.mutation(api.reports.update, {
+      ...FRESH,
+      reportId,
+      skateEndTime: T0 - 3_600_000,
+      notes: 'Actually it was shell ice at the north end.',
+      iceTypes: [{ type: 'shell_ice', where: { sector: 'N' } }],
+    });
+    await author.as.mutation(api.reports.update, {
+      ...FRESH,
+      reportId,
+      skateEndTime: T0 - 3_600_000,
+      notes: 'Third thoughts.',
+    });
+    const revisions = await t.run((ctx) =>
+      ctx.db
+        .query('contentRevisions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', reportId))
+        .collect(),
+    );
+    expect(revisions.map((r) => r.snapshot)).toEqual([
+      expect.objectContaining({
+        surfaceTags: [{ type: 'glass' }],
+        iceTypes: [],
+        suitability: 'experienced_only',
+      }),
+      expect.objectContaining({
+        notes: 'Actually it was shell ice at the north end.',
+        iceTypes: [{ type: 'shell_ice', where: { sector: 'N' } }],
+      }),
+    ]);
+    // Stamps never travel in a snapshot.
+    expect(revisions[0]?.snapshot).not.toHaveProperty('authorId');
+    expect(revisions[0]?.snapshot).not.toHaveProperty('moderationStatus');
+    expect(revisions[0]?.snapshot).not.toHaveProperty('place');
+  });
+
+  test('deleting one Report removes it, keeps the Post; deleting the last removes the Post too', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId, reportIds, bodyA } = await twoLakePost(t);
+    const [first, second] = reportIds;
+    const stranger = await seedUser(t, 'clerk_stranger');
+    await expect(stranger.as.mutation(api.reports.remove, { reportId: first })).rejects.toThrow(
+      /Only the author/,
+    );
+
+    await author.as.mutation(api.reports.remove, { reportId: first });
+    expect((await t.run((ctx) => ctx.db.get(first)))?.moderationStatus).toBe('removed');
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.moderationStatus).toBe('visible');
+    // The Post's sort key follows its visible members, and the author's count moves.
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(T0);
+    expect((await t.run((ctx) => ctx.db.get(author.id)))?.reportCount).toBe(1);
+    const cardA = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: bodyA,
+      paginationOpts: { numItems: 5, cursor: null },
+    });
+    expect(cardA.page).toHaveLength(0);
+
+    await author.as.mutation(api.reports.remove, { reportId: second });
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.moderationStatus).toBe('removed');
+    const actions = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'post').eq('targetId', postId))
+        .collect(),
+    );
+    expect(actions.map((a) => a.action)).toContain('author_delete');
+    expect(actions.find((a) => a.action === 'author_delete')?.metadata).toMatchObject({
+      newStatus: 'removed',
+      derivedFromReportId: second,
+    });
+    // Idempotent: deleting again changes nothing and writes nothing.
+    await author.as.mutation(api.reports.remove, { reportId: second });
+    const again = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', second))
+        .collect(),
+    );
+    expect(again.filter((a) => a.action === 'author_delete')).toHaveLength(1);
+  });
+
+  test('deleting a Post removes every member with the cascade named, and leaves the feed', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId, reportIds } = await twoLakePost(t);
+    const stranger = await seedUser(t, 'clerk_stranger');
+    await expect(stranger.as.mutation(api.posts.remove, { postId })).rejects.toThrow(
+      /Only the author/,
+    );
+
+    await author.as.mutation(api.posts.remove, { postId });
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.moderationStatus).toBe('removed');
+    for (const id of reportIds) {
+      expect((await t.run((ctx) => ctx.db.get(id)))?.moderationStatus).toBe('removed');
+      const actions = await t.run((ctx) =>
+        ctx.db
+          .query('moderationActions')
+          .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', id))
+          .collect(),
+      );
+      expect(actions[0]).toMatchObject({
+        action: 'author_delete',
+        actorId: author.id,
+        metadata: { cascadedFromPostId: postId },
+      });
+    }
+    const feed = await author.as.query(api.posts.listFeed, {
+      paginationOpts: { numItems: 5, cursor: null },
+    });
+    expect(feed.page).toHaveLength(0);
+    expect((await t.run((ctx) => ctx.db.get(author.id)))?.reportCount).toBe(0);
+  });
+});
+
 describe('a flagged Post is triageable (A10 / D186)', () => {
   test('the queue resolves the Post to its author and its title, or its prose, or "Post"', async () => {
     const t = convexTest(schema, modules);

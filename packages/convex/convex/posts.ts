@@ -22,14 +22,18 @@ import {
   seasonEndMs,
   seasonOf,
   seasonStartMs,
+  validatePostInput,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
+import { requireContributor, requireProfile } from './lib/auth';
 import { bodyInfoFor, loadFeedViewer, servedFeedSeason, toPostCard } from './lib/feedCards';
 import { createPost, postArgs } from './lib/reportWrite';
+import { postSnapshotOf, recordRevision } from './lib/revisions';
+import { authorRemovePost } from './moderation';
 
 /**
  * The Post a legacy Report gets: the one-body Post `posts.create` would have written. Pure, so the
@@ -58,6 +62,64 @@ export function legacyPostFor(report: Doc<'reports'>): Omit<Doc<'posts'>, '_id' 
 export const create = mutation({
   args: postArgs,
   handler: (ctx, args) => createPost(ctx, args),
+});
+
+/**
+ * An author editing their Post's words (A10-3): the title and the prose, last-write-wins like
+ * `reports.update` — an omitted field is a cleared one, so the sheet sends both. What the Post
+ * said before goes to `contentRevisions` first, in the same transaction. Members are edited
+ * through `reports.update`; a Post never gains a Report after it is created (founder call
+ * 2026-09-21: new Reports come as new Posts — notifications fire at create, the sort key would
+ * jump, and anything keyed on a Post later would muddy).
+ */
+export const update = mutation({
+  args: { postId: v.id('posts'), title: v.optional(v.string()), body: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const profile = await requireContributor(ctx);
+    const existing = await ctx.db.get(args.postId);
+    if (!existing) throw new ConvexError('Post not found');
+    if (existing.authorId !== profile._id) throw new ConvexError('Only the author can edit a post');
+    if (existing.moderationStatus !== 'visible')
+      throw new ConvexError('This post has been moderated and can no longer be edited');
+    const words = validatePostInput({ title: args.title, body: args.body });
+    if (!words.ok) {
+      throw new ConvexError({
+        code: 'invalid_post',
+        errors: words.errors.map((e) => `${e.field}: ${e.message}`),
+      });
+    }
+    const now = Date.now();
+    await recordRevision(
+      ctx,
+      { targetType: 'post', targetId: existing._id, snapshot: postSnapshotOf(existing) },
+      profile._id,
+      now,
+    );
+    await ctx.db.patch(existing._id, {
+      title: words.normalized.title,
+      body: words.normalized.body,
+      editedAt: now,
+      updatedAt: now,
+    });
+    return existing._id;
+  },
+});
+
+/**
+ * An author deleting their own Post (A10-3): the Post and every member Report, soft, each with
+ * an `author_delete` audit row (see `authorRemovePost`).
+ */
+export const remove = mutation({
+  args: { postId: v.id('posts') },
+  handler: async (ctx, { postId }) => {
+    const profile = await requireProfile(ctx);
+    const existing = await ctx.db.get(postId);
+    if (!existing) throw new ConvexError('Post not found');
+    if (existing.authorId !== profile._id)
+      throw new ConvexError('Only the author can delete a post');
+    await authorRemovePost(ctx, existing, profile, Date.now());
+    return postId;
+  },
 });
 
 /**

@@ -2200,6 +2200,36 @@ export default defineSchema({
     .index('by_idempotency_key', ['idempotencyKey']),
 
   /**
+   * **What a Post or Report said before its author changed it** (A10-3, founder call 2026-09-21).
+   *
+   * Authors can edit and delete what they shared; a moderator can still see what changed. One row
+   * per author edit, holding the content block **as it stood before** the edit — the words of a
+   * Post, the whole content block of a Report — so the row that is live is always the latest and
+   * the history is the rows. Written only by `posts.update` and `reports.update`, before their
+   * patch; never by moderation (a moderator's action is a `moderationActions` row, and it changes
+   * status, not content). The card shows an *Edited* chip off `editedAt`; the diff is for
+   * moderators (the web console, A10-5).
+   *
+   * `snapshot` is `v.any()` like `moderationActions.metadata`: it is a copy of a row's typed
+   * fields at a moment, and typing it a second time here would be a second schema to keep in step
+   * with the first. Typed at the boundary (`lib/revisions.ts`).
+   *
+   * Typed text, so the departed-user sweep clears it (D62): `contentPurge` deletes a departed
+   * author's revisions past the cutoff by `by_author_replaced_at` — the audit purpose lapses with
+   * the words it was an audit of.
+   */
+  contentRevisions: defineTable({
+    targetType: literals(['post', 'report']),
+    targetId: v.string(),
+    authorId: v.id('profiles'),
+    snapshot: v.any(),
+    /** When the edit replaced this content — the moment it stopped being what was shown. */
+    replacedAt: v.number(),
+  })
+    .index('by_target', ['targetType', 'targetId'])
+    .index('by_author_replaced_at', ['authorId', 'replacedAt']),
+
+  /**
    * **A report's bay memberships, one row per (report, bay)** (A09 / D175) — the indexable copy of
    * `reports.subAreaIds`, because Convex cannot index an array and the bay-scoped feed and the bay
    * bounty gate must both find a spanning report under its *second* bay too. The

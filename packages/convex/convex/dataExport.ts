@@ -169,6 +169,11 @@ export const collect = internalQuery({
       .query('reports')
       .withIndex('by_author', (q) => q.eq('authorId', userId))
       .take(ROW_CAP);
+    // What their Posts and Reports said before each edit (A10-3) — theirs, so it goes in the bundle.
+    const revisions = await ctx.db
+      .query('contentRevisions')
+      .withIndex('by_author_replaced_at', (q) => q.eq('authorId', userId))
+      .take(ROW_CAP);
     const comments = await ctx.db
       .query('comments')
       .withIndex('by_author', (q) => q.eq('authorId', userId))
@@ -240,6 +245,7 @@ export const collect = internalQuery({
       profile: exportableProfile,
       posts: posts,
       reports: reports,
+      contentRevisions: revisions,
       comments: comments,
       hazards: hazards,
       hazardConfirmations: confirmations,
