@@ -8,6 +8,7 @@ import {
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
+  iceTypeKeys,
   isActive,
   profileRevealEnabled,
   resolveWeatherSubArea,
@@ -584,7 +585,7 @@ function ReportFeed({
               </XStack>
               {report.iceTypes.length > 0 ? (
                 <XStack gap="$1.5" flexWrap="wrap">
-                  {report.iceTypes.map((iceType) => (
+                  {iceTypeKeys(report.iceTypes).map((iceType) => (
                     <Badge key={iceType}>{humanizeEnum(iceType)}</Badge>
                   ))}
                 </XStack>

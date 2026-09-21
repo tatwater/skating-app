@@ -40,6 +40,34 @@ export const ACCESS_ALERT_REASONS = [
 export type AccessAlertReason = (typeof ACCESS_ALERT_REASONS)[number];
 
 /**
+ * What a skater found *at* a launch or lot that did not stop them (A10 / D197) — "plank needed at
+ * the boat launch", "pull-off is sheer ice, park on the road". These ride the same `accessAlerts`
+ * row as the blockers above, so they decay, corroborate and carry a Report as provenance for free.
+ *
+ * **A separate set from `ACCESS_ALERT_REASONS`, and the separation is load-bearing.** `accessPoints.ts`
+ * puts the target of *every* live alert into `blockedIds`, and directions demote a blocked launch. A
+ * plank is not a blocker; a muddy launch is not a locked gate. Keeping the two sets disjoint is what
+ * lets the reader tell "you can't get in" from "bring a plank" without a flag on the row, and what
+ * keeps a condition out of the blocker demotion by construction. The row's `reason` widens to the
+ * union when the sheet's condition chips get their write path (A10-2 §7.2); until then the schema
+ * still narrows to the blockers.
+ */
+export const ACCESS_CONDITION_REASONS = [
+  'icy_lot',
+  'mud_at_launch',
+  'plank_needed',
+  'walk_in',
+  'plowed_trail',
+  'snowed_in',
+] as const;
+export type AccessConditionReason = (typeof ACCESS_CONDITION_REASONS)[number];
+
+/** Is this reason a condition (rides along) rather than a blocker (demotes the launch)? */
+export function isAccessCondition(reason: string): reason is AccessConditionReason {
+  return (ACCESS_CONDITION_REASONS as readonly string[]).includes(reason);
+}
+
+/**
  * The lifecycle states, and the reason `official` is one of them rather than a boolean.
  *
  * A pinned alert never expires (founder call), so the expiry sweep must never see it. Convex indexes

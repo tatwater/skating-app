@@ -199,9 +199,122 @@ export const ICE_TYPES = [
 ] as const;
 export type IceType = (typeof ICE_TYPES)[number];
 
-/** Ice-thickness reading trust level (D22) — `estimated` is lower-trust than `measured`. */
-export const THICKNESS_METHODS = ['measured', 'estimated'] as const;
+/**
+ * Ice-thickness reading trust level (D22, widened in A10 / D195) — `estimated` is lower-trust than
+ * `measured`, and `poke` is the community's own lowest rung: a pole-test count that is person- and
+ * pole-relative, kept beside the skater's own inch estimate rather than converted into one.
+ *
+ * `observed_others` was proposed and dropped: whose eyes saw it is `observedFrom`'s job (D191), and
+ * "the fishing holes were 4 inches" is `estimated` with a note. **Only `measured` feeds D160's
+ * calibration instrument** (`iceCalibration.ts`); `poke` is excluded exactly like `estimated`.
+ */
+export const THICKNESS_METHODS = ['measured', 'estimated', 'poke'] as const;
 export type ThicknessMethod = (typeof THICKNESS_METHODS)[number];
+
+/**
+ * The scope of a thickness section (D195): the quick-path chip row asks *everywhere I tested* or
+ * *at this spot*; the latter carries a `where` on the reading itself, so the scope is the one bit
+ * that says whether the readings characterize the body or a point on it.
+ */
+export const THICKNESS_SCOPES = ['everywhere_tested', 'at_spot'] as const;
+export type ThicknessScope = (typeof THICKNESS_SCOPES)[number];
+
+/**
+ * How the author saw the ice (A10 / D191) — provenance the reader sees, never a report *kind*.
+ * `on_ice` is the default; `shore` is the corpus's 15% drive-by / scouting reports; `secondhand`
+ * is the 9% relayed from someone else, shown so a relayed thickness never reads as the poster's own.
+ */
+export const OBSERVED_FROM = ['on_ice', 'shore', 'secondhand'] as const;
+export type ObservedFrom = (typeof OBSERVED_FROM)[number];
+
+/**
+ * Who the ice is for (A10 / D190) — the second axis of *How was it?*, independent of `skateQuality`.
+ * **`dont_go` lives here and not at the bottom of the quality scale**: it is a claim about *who*
+ * should be out there, which D3 makes first-class, whereas a quality scale with "don't go" at one end
+ * would make "great" read as "safe". In display order, most cautious first.
+ */
+export const SUITABILITIES = [
+  'dont_go',
+  'experienced_only',
+  'not_for_beginners',
+  'beginner_friendly',
+] as const;
+export type Suitability = (typeof SUITABILITIES)[number];
+
+/**
+ * What a shore observer saw (A10 / D189 / D191) — the scouting substitute for the ice-or-surface
+ * term of the minimum set, because someone on the bank cannot honestly offer a surface chip.
+ * **Valid only off the ice** (`observedFrom !== 'on_ice'`); the validator enforces it.
+ */
+export const SIGHTINGS = ['open', 'skim', 'frozen', 'snow_covered'] as const;
+export type Sighting = (typeof SIGHTINGS)[number];
+
+/**
+ * How exact `skateEndTime` is (A10 / D192): `gps` from a track, `minute` when the sheet's pinned
+ * open-time chip was taken, `half_hour` from the ladder or the picker. **No part-of-day value on
+ * purpose** — "afternoon" is vaguer than the answer the freshness sort wants, and the half-hour
+ * ladder is nearly as cheap.
+ */
+export const SKATE_END_PRECISIONS = ['gps', 'minute', 'half_hour'] as const;
+export type SkateEndPrecision = (typeof SKATE_END_PRECISIONS)[number];
+
+/**
+ * Snow, as the corpus describes it (A10 / D194): coverage first, whether it mattered second, drifts
+ * third, and a depth only when someone measured one. Each row is in display order; `coverage` and
+ * `drifts` run none → everywhere so a chip row reads as a scale.
+ */
+export const SNOW_COVERAGES = ['none', 'patches', 'lanes', 'mostly', 'everywhere'] as const;
+export type SnowCoverage = (typeof SNOW_COVERAGES)[number];
+export const SNOW_IMPEDIMENTS = ['didnt_matter', 'slowed_me', 'avoided_areas'] as const;
+export type SnowImpediment = (typeof SNOW_IMPEDIMENTS)[number];
+export const SNOW_DRIFTS = ['none', 'avoidable', 'everywhere'] as const;
+export type SnowDrift = (typeof SNOW_DRIFTS)[number];
+
+/**
+ * The `where` of a located chip or reading (A10 / D193): how much of the scope it covers. `whole`
+ * is the plain claim; `mostly` and `patches` qualify it. Composes with a bay, a sector or a point —
+ * "patches, north end" is `{ extent: 'patches', sector: 'N' }`.
+ */
+export const WHERE_EXTENTS = ['whole', 'mostly', 'patches'] as const;
+export type WhereExtent = (typeof WHERE_EXTENTS)[number];
+
+/**
+ * The compass sectors a `where` may name (A10 / D193, amended 2026-09-21).
+ *
+ * The **eight wedges plus `middle` partition the outline** — cast from the body's interior point
+ * (never `centroid`, which sits on the shoreline for a concave lake — see `fetchOrigin`) and clipped
+ * to it; `sectorGeometry.ts` holds the fast-check property. `near_shore` is a ninth value that
+ * **overlaps** them: it is a ring, orthogonal to bearing, and a chip at the north end near the bank
+ * is honestly both `N` and `near_shore`, so it cannot be in the partition. `middle` rather than
+ * "center" (founder, 2026-09-21): center sounds precise, middle just means not-near-shore.
+ *
+ * `head` and `mouth` are the bay-relative pair — the back of the bay and its seaward opening — and
+ * are **valid only with a `subAreaId`**, computed from the bay's mouth line once the chord editor
+ * stores one. "Inner / outer", "the back of Malletts" is a locative grammar, not a name.
+ */
+export const SECTORS = [
+  'N',
+  'NE',
+  'E',
+  'SE',
+  'S',
+  'SW',
+  'W',
+  'NW',
+  'middle',
+  'near_shore',
+  'head',
+  'mouth',
+] as const;
+export type Sector = (typeof SECTORS)[number];
+
+/** The eight compass wedges — the bearing-derived subset of `SECTORS`, in clockwise order from N. */
+export const COMPASS_SECTORS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
+export type CompassSector = (typeof COMPASS_SECTORS)[number];
+
+/** The bay-relative sectors — legal only when the `where` also names a `subAreaId`. */
+export const BAY_SECTORS = ['head', 'mouth'] as const;
+export type BaySector = (typeof BAY_SECTORS)[number];
 
 /** How the ice *skates* (community vocabulary, D23). */
 export const SURFACE_TAGS = [

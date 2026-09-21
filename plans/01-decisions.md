@@ -6003,6 +6003,15 @@ side" are a locative grammar relative to a bay's shape, the way "north end" is r
 and belongs in the sector stage; extraction maps "the back of Malletts" to
 `{subArea: Malletts Bay, sector: head}`.
 
+**Amended 2026-09-21 (A10-1 build, founder call):** the sector value is `middle`, not `center` —
+center sounds precise, middle just means not-near-shore — and `near_shore` **overlaps** the
+compass wedges rather than partitioning with them. The eight wedges plus `middle` partition the
+outline (cast from the interior point, never `centroid`; `sectorGeometry.ts` holds the fast-check
+property over six real dev outlines); `near_shore` is a band inside the shoreline that a chip at
+the north end near the bank is honestly in as well as `N`. The stored `where` is one object,
+`{ extent?, subAreaId?, sector?, point? }`, at least one part present — the whole body is spelled
+by absence, never by an empty object.
+
 **Why:** half of corpus reports locate something, and mostly by compass — "north end", "west of the
 Broads" — not by bay name. Named bays are the right object where they exist and the wrong one
 where they don't; sectors are the honest 90% of painting without a brush, and extraction maps
@@ -6071,6 +6080,10 @@ decides the D188 tier. The split follows each engine's documented shape — Jev 
 it was not offered and is weak on indirection; Claude does not return calibrated per-value
 probabilities. Stage B is dropped if the eval shows Claude-only matching it on the enums. Extracted
 values are pre-selected per D188 (amended), not ghosts.
+
+**Noted at build (2026-09-21):** Jev's `noul` answers carry no `confidence` — the 0–1 probability
+*is* the number the tier reads; only `choice` and `score` answers carry a peakedness confidence.
+Jev has no TypeScript SDK (one REST endpoint); the engine lives in `packages/extraction`.
 
 **Related:** D3, D19, D188, D189, Q9, L6.
 

@@ -54,9 +54,37 @@ describe('formatThicknessReading', () => {
     ).toBe('3″ (measured)');
   });
 
-  it('returns null for a reading with neither a value nor a full range', () => {
+  it('returns null for a reading with nothing to show', () => {
     expect(formatThicknessReading({ method: 'measured' })).toBeNull();
-    expect(formatThicknessReading({ minCm: inchesToCm(2), method: 'measured' })).toBeNull();
+    expect(formatThicknessReading({ method: 'poke' })).toBeNull();
+  });
+
+  it('formats a lower bound as “4″+” (D195)', () => {
+    expect(formatThicknessReading({ minCm: inchesToCm(4), method: 'estimated' })).toBe(
+      '4″+ (estimated)',
+    );
+  });
+
+  it('leads a poke reading with its count, inches beside it when the skater guessed (D195)', () => {
+    expect(formatThicknessReading({ method: 'poke', pokeCount: 5 })).toBe('5 pokes (poke test)');
+    expect(formatThicknessReading({ method: 'poke', pokeCount: 1 })).toBe('1 poke (poke test)');
+    expect(
+      formatThicknessReading({
+        method: 'poke',
+        pokeCount: 3,
+        minCm: inchesToCm(3),
+        maxCm: inchesToCm(4),
+      }),
+    ).toBe('3 pokes, 3–4″ (poke test)');
+  });
+
+  it('appends supportable / unsupportable as the skater’s word', () => {
+    expect(
+      formatThicknessReading({ valueCm: inchesToCm(4), method: 'measured', supportable: true }),
+    ).toBe('4″ (measured), supportable');
+    expect(formatThicknessReading({ method: 'poke', pokeCount: 2, supportable: false })).toBe(
+      '2 pokes (poke test), unsupportable',
+    );
   });
 });
 

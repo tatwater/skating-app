@@ -11,6 +11,7 @@
 
 import {
   bandForCoord,
+  type ChipInput,
   CONDITION_SOURCES,
   CORROBORATION_MAX_PER_REPORT,
   CORROBORATION_WINDOW_MS,
@@ -20,14 +21,18 @@ import {
   type FeedCardData,
   hasMeasuredThickness,
   ICE_TYPES,
+  type IceType,
+  iceTypeKeys,
   isBrowsableSeason,
   isFavoriteReport,
   isFormRoundTripOf,
   isMinor,
   type LatLng,
+  locatedSubAreaIds,
   matchesFilters,
   matchWeatherFilter,
   memberSubAreaIds,
+  OBSERVED_FROM,
   PRECIP_TYPES,
   RECOMMENDED_MIN_PHOTOS,
   RECOMMENDED_RECENCY_HOURS,
@@ -36,9 +41,13 @@ import {
   reportsAgree,
   resolveSeason,
   type Season,
+  SIGHTINGS,
+  SKATE_END_PRECISIONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
+  SUITABILITIES,
   SURFACE_TAGS,
+  type SurfaceTag,
   sanitizeFeedFilters,
   seasonEndMs,
   seasonOf,
@@ -46,8 +55,9 @@ import {
   seasonsBetween,
   selectRecommended,
   standingOf,
-  THICKNESS_METHODS,
+  surfaceTagKeys,
   type TrustClass,
+  toLocatedChip,
   validateReportInput,
   type WeatherDiscoveryFilter,
 } from '@skating/core';
@@ -85,14 +95,15 @@ import { bumpContributionCount } from './lib/contributionCounts';
 import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
-import { assertOwnedPhotos } from './lib/photoAccess';
+import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
 import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { activateOnEvidence } from './lib/standing';
-import { latLng, literals } from './lib/validators';
+import { chipInput, iceThickness, latLng, literals, snow } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
+import { refreshPostLatestSkateEnd } from './posts';
 import { resolveReportSubAreas, stampCandidates, subAreaDriveCoordFor } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
@@ -102,23 +113,21 @@ const reportContent = {
   skateEndTime: v.number(),
   // Optional — when they got on the ice. Duration is derived (end − start), never stored (Phase 05).
   skateStartTime: v.optional(v.number()),
-  iceTypes: v.optional(v.array(literals(ICE_TYPES))),
-  surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
+  // How exact the end time is (A10 / D192). Absent from a client that predates the sheet.
+  skateEndPrecision: v.optional(literals(SKATE_END_PRECISIONS)),
+  // How the author saw it (A10 / D191); what a shore observer saw (D189). Absent means unstated.
+  observedFrom: v.optional(literals(OBSERVED_FROM)),
+  sighting: v.optional(literals(SIGHTINGS)),
+  // Chips arrive as the bare key (an un-updated phone, a queued draft, the quick-tap path) or the
+  // located object (A10 / D193); the core validator lifts every one to the object the schema stores.
+  iceTypes: v.optional(v.array(chipInput(ICE_TYPES))),
+  surfaceTags: v.optional(v.array(chipInput(SURFACE_TAGS))),
   skateQuality: v.optional(literals(SKATE_QUALITIES)),
-  iceThickness: v.optional(
-    v.object({
-      readings: v.array(
-        v.object({
-          valueCm: v.optional(v.number()),
-          minCm: v.optional(v.number()),
-          maxCm: v.optional(v.number()),
-          method: literals(THICKNESS_METHODS),
-          coord: v.optional(latLng),
-          note: v.optional(v.string()),
-        }),
-      ),
-    }),
-  ),
+  suitability: v.optional(literals(SUITABILITIES)),
+  iceThickness: v.optional(iceThickness),
+  // Snow as the D194 object, or the pre-A10 number — the validator folds the number into
+  // `snow.depthCm` and refuses two depths that disagree. Both stay accepted forever (see `iceTypes`).
+  snow: v.optional(snow),
   snowCoverCm: v.optional(v.number()),
   conditions: v.optional(
     v.object({
@@ -143,10 +152,15 @@ function toReportInput(
   args: {
     skateEndTime: number;
     skateStartTime?: number;
-    iceTypes?: string[];
-    surfaceTags?: string[];
-    skateQuality?: string;
+    skateEndPrecision?: ReportInput['skateEndPrecision'];
+    observedFrom?: ReportInput['observedFrom'];
+    sighting?: ReportInput['sighting'];
+    iceTypes?: ReportInput['iceTypes'];
+    surfaceTags?: ReportInput['surfaceTags'];
+    skateQuality?: ReportInput['skateQuality'];
+    suitability?: ReportInput['suitability'];
     iceThickness?: ReportInput['iceThickness'];
+    snow?: ReportInput['snow'];
     snowCoverCm?: number;
     conditions?: ReportInput['conditions'];
     notes?: string;
@@ -158,15 +172,40 @@ function toReportInput(
     waterBodyId,
     skateEndTime: args.skateEndTime,
     skateStartTime: args.skateStartTime,
-    iceTypes: args.iceTypes as ReportInput['iceTypes'],
-    surfaceTags: args.surfaceTags as ReportInput['surfaceTags'],
-    skateQuality: args.skateQuality as ReportInput['skateQuality'],
+    skateEndPrecision: args.skateEndPrecision,
+    observedFrom: args.observedFrom,
+    sighting: args.sighting,
+    iceTypes: args.iceTypes,
+    surfaceTags: args.surfaceTags,
+    skateQuality: args.skateQuality,
+    suitability: args.suitability,
     iceThickness: args.iceThickness,
+    snow: args.snow,
     snowCoverCm: args.snowCoverCm,
     conditions: args.conditions,
     notes: args.notes,
     point: args.point,
   };
+}
+
+/**
+ * A `where` may name a bay by id (D193). `validateWhere` checks the shape; this is the check made
+ * with the body in hand: every bay a chip or a reading names must be one of *this* body's live bays
+ * — never another lake's, never a removed one, never a string that is not a bay at all. Raised in
+ * the validator's own error shape so the sheet shows it beside the chip.
+ */
+function assertLocatedSubAreas(
+  normalized: Parameters<typeof locatedSubAreaIds>[0],
+  candidates: readonly { ref: Doc<'waterBodySubAreas'> }[],
+): void {
+  const live = new Set<string>(candidates.map((c) => c.ref._id));
+  const unknown = locatedSubAreaIds(normalized).filter((id) => !live.has(id));
+  if (unknown.length > 0) {
+    throw new ConvexError({
+      code: 'invalid_report',
+      errors: unknown.map((id) => `where.subAreaId: ${id} is not a bay of this water body`),
+    });
+  }
 }
 
 /**
@@ -245,8 +284,10 @@ export const create = mutation({
     }
     const n = result.normalized;
 
-    const photoIds = args.photoIds ?? [];
-    await assertOwnedPhotos(ctx, photoIds, profile._id);
+    // A new report's id is not known yet, so the claim is "no report": a photo already documenting
+    // one is refused rather than shared (A10 / D186 — one photo, one report).
+    const photoIds = [...new Set(args.photoIds ?? [])];
+    await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: null });
 
     // Stamp the point-derived location label (Phase 05) from the resolved put-in point (else the
     // body centroid) against the `adminAreas` boundaries — so the feed reads `{town/county, state}`
@@ -260,6 +301,7 @@ export const create = mutation({
     // whatever you skated, was the bug this fixes. Costs one `by_parent` read on a body already in
     // hand, and returns immediately for the ~25k bodies with no sub-areas.
     const candidates = await stampCandidates(ctx, body._id);
+    assertLocatedSubAreas(n, candidates);
     const subAreas = await resolveReportSubAreas(
       ctx,
       {
@@ -285,11 +327,15 @@ export const create = mutation({
       reportTime: now,
       source: args.activityId !== undefined ? 'activity' : 'native',
       ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
+      ...(n.skateEndPrecision !== undefined ? { skateEndPrecision: n.skateEndPrecision } : {}),
+      ...(n.observedFrom !== undefined ? { observedFrom: n.observedFrom } : {}),
+      ...(n.sighting !== undefined ? { sighting: n.sighting } : {}),
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       ...(n.skateQuality !== undefined ? { skateQuality: n.skateQuality } : {}),
+      ...(n.suitability !== undefined ? { suitability: n.suitability } : {}),
       ...(n.iceThickness !== undefined ? { iceThickness: n.iceThickness } : {}),
-      ...(n.snowCoverCm !== undefined ? { snowCoverCm: n.snowCoverCm } : {}),
+      ...(n.snow !== undefined ? { snow: n.snow } : {}),
       ...(n.conditions !== undefined ? { conditions: n.conditions } : {}),
       ...(n.notes !== undefined ? { notes: n.notes } : {}),
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
@@ -335,6 +381,9 @@ export const create = mutation({
     );
     const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
     if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
+
+    // The photos' back-link (A10 / D186), written beside the list it mirrors.
+    await syncReportPhotoLinks(ctx, reportId, [], photoIds);
 
     // The membership's indexable copy (A09) — one join row per bay, so the bay feed and the bay
     // bounty gate can find a spanning report under its second bay too.
@@ -819,8 +868,9 @@ async function toFeedCard(
     ...(r.place !== undefined ? { place: r.place } : {}),
     skateEndTime: r.skateEndTime,
     ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
-    iceTypes: r.iceTypes,
-    surfaceTags: r.surfaceTags,
+    // The card wants the keys; the located shape is a §12.2 read enhancement, later.
+    iceTypes: iceTypeKeys(r.iceTypes),
+    surfaceTags: surfaceTagKeys(r.surfaceTags),
     ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
     author: await authorFor(ctx, r.authorId, caches.authors, now),
@@ -950,8 +1000,8 @@ export const listFeed = query({
           {
             skateEndTime: r.skateEndTime,
             ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-            iceTypes: r.iceTypes,
-            surfaceTags: r.surfaceTags,
+            iceTypes: iceTypeKeys(r.iceTypes),
+            surfaceTags: surfaceTagKeys(r.surfaceTags),
             ...(r.iceThickness !== undefined ? { iceThickness: r.iceThickness } : {}),
           },
           filters,
@@ -1108,7 +1158,7 @@ export const recommended = query({
       // then the exact quality / ice / photo bar — so we only pay for trust + corroboration on survivors.
       if (blocked.has(r.authorId)) continue;
       if (r.skateQuality !== 'great') continue;
-      if (!r.iceTypes.includes('black_ice')) continue;
+      if (!iceTypeKeys(r.iceTypes).includes('black_ice')) continue;
       if (r.photoIds.length < RECOMMENDED_MIN_PHOTOS) continue;
       // The strip *recommends* a lake, so the lake has to be one we push (A07b). Cached per body
       // for the page, like the feed's own lookup.
@@ -1134,7 +1184,7 @@ export const recommended = query({
         waterBodyId: r.waterBodyId,
         skateEndTime: r.skateEndTime,
         ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-        iceTypes: r.iceTypes,
+        iceTypes: iceTypeKeys(r.iceTypes),
         photoCount: r.photoIds.length,
         corroborationCount,
         authorTrust: trust,
@@ -1191,8 +1241,8 @@ export const update = mutation({
     }
     const n = result.normalized;
 
-    const photoIds = args.photoIds ?? existing.photoIds;
-    await assertOwnedPhotos(ctx, photoIds, profile._id);
+    const photoIds = [...new Set(args.photoIds ?? existing.photoIds)];
+    await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: args.reportId });
 
     // Re-resolve the point-derived place (Phase 05) from the final point — an edited put-in pin moves
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
@@ -1203,6 +1253,8 @@ export const update = mutation({
     // report keeps its track's list rather than collapsing to the pin's bay on its first edit.
     // Cleared to undefined when the new point sits in none.
     const body = await ctx.db.get(existing.waterBodyId);
+    const candidates = await stampCandidates(ctx, existing.waterBodyId);
+    assertLocatedSubAreas(n, candidates);
     const subAreas = await resolveReportSubAreas(
       ctx,
       {
@@ -1210,7 +1262,7 @@ export const update = mutation({
         point,
         ...(existing.activityId !== undefined ? { activityId: existing.activityId } : {}),
       },
-      await stampCandidates(ctx, existing.waterBodyId),
+      candidates,
       body?.polygon as unknown as Polygon | MultiPolygon,
     );
 
@@ -1223,11 +1275,15 @@ export const update = mutation({
       subAreaName: subAreas.subAreaName,
       subAreaIds: subAreas.subAreaIds,
       subAreaNames: subAreas.subAreaNames,
+      skateEndPrecision: n.skateEndPrecision,
+      observedFrom: n.observedFrom,
+      sighting: n.sighting,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,
+      suitability: n.suitability,
       iceThickness: n.iceThickness,
-      snowCoverCm: n.snowCoverCm,
+      snow: n.snow,
       conditions: mergeEditedConditions(existing.conditions, n.conditions),
       notes: n.notes,
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
@@ -1238,6 +1294,8 @@ export const update = mutation({
       editedAt: now,
       updatedAt: now,
     });
+    // The list is replaced wholesale, so the back-links follow it both ways (A10 / D186).
+    await syncReportPhotoLinks(ctx, args.reportId, existing.photoIds, photoIds);
     // The join mirrors both things this edit can move — the membership and the skate time (A09).
     await syncReportSubAreas(
       ctx,
@@ -1249,6 +1307,15 @@ export const update = mutation({
       },
       memberSubAreaIds(subAreas),
     );
+    // And the Post's sort key (A10 / D186): `latestSkateEndTime` is the max over its Reports, so
+    // re-dating this one can move the Post in the feed. Absent only on a Report the backfill has
+    // not yet reached.
+    if (existing.postId !== undefined && n.skateEndTime !== existing.skateEndTime) {
+      await refreshPostLatestSkateEnd(ctx, existing.postId, {
+        reportId: args.reportId,
+        skateEndTime: n.skateEndTime,
+      });
+    }
 
     // **An edit changes the card's inputs, so the card is recomputed (A06c §5).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report
@@ -1362,5 +1429,62 @@ export const renameSkateTimeToSkateEndTime = internalMutation({
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
+  },
+});
+
+/**
+ * The A10-1 shape backfill: lift every bare-key chip to `{ type }`, fold `snowCoverCm` into
+ * `snow.depthCm`, and clear the old field — the "backfill" step of widen → deploy → backfill →
+ * narrow, after which the schema drops the string form and `snowCoverCm`. Pure, so the migration
+ * and its test agree on exactly what changes: returns the patch, or `null` for a row already in
+ * the new shape (the migration is idempotent by construction).
+ */
+export function a10ShapePatch(report: Doc<'reports'>): Partial<Doc<'reports'>> | null {
+  // The pre-A10 shapes are off the typed schema now (narrowed after the dev backfill), so the
+  // legacy forms are read through a narrow cast — the same move the `skateTime` rename made.
+  const legacy = report as unknown as {
+    iceTypes: ChipInput<IceType>[];
+    surfaceTags: ChipInput<SurfaceTag>[];
+    snowCoverCm?: number;
+  };
+  const patch: Record<string, unknown> = {};
+  if (legacy.iceTypes.some((chip) => typeof chip === 'string')) {
+    patch.iceTypes = legacy.iceTypes.map(toLocatedChip);
+  }
+  if (legacy.surfaceTags.some((chip) => typeof chip === 'string')) {
+    patch.surfaceTags = legacy.surfaceTags.map(toLocatedChip);
+  }
+  if (legacy.snowCoverCm !== undefined) {
+    // A row with both (an edit under the widened schema) keeps the object's depth.
+    patch.snow =
+      report.snow?.depthCm !== undefined
+        ? report.snow
+        : { ...(report.snow ?? {}), depthCm: legacy.snowCoverCm };
+    patch.snowCoverCm = undefined;
+  }
+  return Object.keys(patch).length > 0 ? (patch as Partial<Doc<'reports'>>) : null;
+}
+
+/** `pnpm exec convex run reports:backfillA10Shapes` — paginated, self-scheduling, idempotent. */
+export const backfillA10Shapes = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query('reports')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 200)) });
+    let patched = 0;
+    for (const r of page.page) {
+      const patch = a10ShapePatch(r);
+      if (patch === null) continue;
+      await ctx.db.patch(r._id, patch);
+      patched++;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.reports.backfillA10Shapes, {
+        cursor: page.continueCursor,
+        ...(batchSize !== undefined ? { batchSize } : {}),
+      });
+    }
+    return { scanned: page.page.length, patched, isDone: page.isDone };
   },
 });

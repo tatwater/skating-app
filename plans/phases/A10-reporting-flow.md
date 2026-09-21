@@ -255,6 +255,135 @@ archive already reaches past 92 days (D153); hazards in prose become hazards on 
 `where`. The replay deployment is disposable — wiped and re-run whenever the contract changes —
 and its data never migrates anywhere.
 
+## Built record — A10-1 (2026-09-21, `phase-a10-reporting-flow-1`)
+
+§1 (the eval and the contract), §2.1–§2.3 (the schema, widened → deployed → backfilled → narrowed
+on dev) and §3 (the core sheet model), in twelve commits off `main` at `b6ced1de`. Suites at build:
+core 2,858 · convex 1,698 · extraction 24 · web and mobile unchanged and green. Dev backfilled:
+`reports.backfillA10Shapes` lifted 2 rows, `posts.backfillFromReports` created 2 Posts. **Prod is
+deferred, as for every phase since A01.** Eval spend: $8.3 of the founder's $20 (Haiku $2.1,
+Sonnet 5 $6.2 including 28 failed calls); Jev $0.053 for 310 requests / 2.0M tokens — a blended
+2.7¢ per MTok, ~40× under Haiku's input rate (founder, from the console).
+
+### What shipped, by workstream
+
+- **§2.3 the vocabulary** in `@skating/core` (`OBSERVED_FROM`, `SUITABILITIES`, `SIGHTINGS`,
+  `SKATE_END_PRECISIONS`, `SNOW_*`, `THICKNESS_METHODS` + `poke`, `THICKNESS_SCOPES`,
+  `WHERE_EXTENTS`, `SECTORS`, `ACCESS_CONDITION_REASONS` disjoint from the blockers) and the `where`
+  union as one object (`where.ts`). `06-data-model.md`'s register and its guard test cover them.
+- **§2.1–§2.2 the schema**: `posts`; `reports.postId` / `putInId` / `skateEndPrecision` /
+  `observedFrom` / `sighting` / `suitability` / `snow` / located chips / widened readings;
+  `photos.reportId`; `accessAlerts.reportId` + `idempotencyKey`. `validateReportInput` accepts the
+  pre-A10 input shapes forever and normalizes at the contract; `minimumSetGaps` is D189 as a pure
+  check. Every reader goes through `iceTypeKeys` / `surfaceTagKeys`; the server DTOs keep the key
+  arrays, so the clients changed by one call each.
+- **§3.1** `reportSheet.ts` — the reducer: fixed sections, fill and summaries, the three tiers, the
+  touched-field rule, the sequence guard, the sheet's own `observedFrom` default that yields to the
+  author's prose, `confirmList` safety-first, `toReportInput`, `sheetGaps`.
+- **§3.2** `sectorGeometry.ts` — wedges + `middle` partition, `near_shore` overlapping, cast from
+  the interior point and clipped with turf; fast-check over six real dev outlines (a committed
+  fixture: Willoughby, Morey, Dunmore, Shelburne Pond, Waterbury Reservoir, Curtis Ponds).
+- **§3.3** `endTimeChips.ts` — the pinned minute, the local half-hour ladder, solar gating, the D199
+  predicate; fast-check across both 2026 DST transitions and the week boundary.
+- **§3.4** `passedHazards.ts` — bbox prefilter, footprint distance, segment crossing for linear
+  hazards; **§3.5** `photoWindow.ts` — the padded window, the same-day option, EXIF-then-path
+  placement.
+- **§1.1** `packages/extraction` — the contract (types + Zod, misses first-class), `Extractor`, the
+  floors table, and three engines: Claude-only, Stage A (segmentation) and Stage B (Jev voting).
+- **§1.2–§1.4** the harness under `training_data/tools/eval/` (gitignored): the stratified sample,
+  the runner with a dollar cap, the recall-tier and value-tier scorers, the floor sweep, the label
+  drafter, and `review.html` for the founder's pass.
+
+### What the eval found — first run, provisional
+
+The 147-email stratified sample (≥ 15 per report kind, seed 20260921) plus 60 non-report emails
+for the recall tier's false positives. Three engines: Claude-only Haiku 4.5, Claude-only Sonnet 5,
+Claude Haiku + Jev. Value labels are **Sonnet's draft, unverified** — the founder's pass through
+`review.html` is what turns these into floors that ship.
+
+| engine | ¢ / email | mean latency | has_report F-score | hazards F-score (recall tier) | thickness F-score | poke F-score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| claude-only Haiku 4.5 | 0.64 | 4.4 s | 93% | 83% | 88% | 93% |
+| claude-only Sonnet 5 | 4.22 | 37.4 s | 99% | 89% | 86% | 100% |
+| Haiku + Jev | 0.49 + Jev | 4.6 s | 96% | 84% | 83% | 96% |
+
+- **Sonnet is 7× the cost and 8× the latency of Haiku** for a few points of precision, and 28 of
+  147 calls failed on output length (`max_tokens` at 8,192 — raised to 16,000; three still fail on
+  journal-length emails). Not the sheet's engine.
+- **Jev's calibrated probabilities separate; Haiku's self-reported confidences mostly do not.**
+  Against the draft labels, Haiku's confidence reaches the target precision on one field
+  (`iceTypes` at 0.90); Jev reaches it on `iceTypes` (0.93 → 81%, 121 values), `surfaceTags`
+  (0.99 → 82%, 38), `hazards` (0.98 → 94%, 17) and `accessConditions` (0.66 → 80%, 10). **Stage B
+  is earning its place on the enums** — the plan's drop condition ("Claude-only matches Jev") did
+  not hold on this run. Thickness reached 90% at 0.98 on one pass and lost it on the re-run with
+  support exactly 10; no floor.
+- **The two Claude engines disagree on ~40% of values** (712 of 1,474 drafted values contested
+  between Sonnet and Haiku), and only a tenth of that is report-splitting (visit numbering, "the
+  Broads of Newfound" as its own body). That is the case for the verification pass in one number:
+  precision against a draft is precision against Sonnet's opinion.
+- **Jev is noisy below 0.5 and over-fires on `thin_ice`, `ridge_crossing`, `supportable` and the
+  snow facets** (a `noul` at 0.3 for every hazard type on a long unit is common); the floors
+  absorb it, but the sheet must never show a below-floor Jev value as anything but a ghost.
+  Jev's infrastructure returned 503 / 529 on 7 of 147 calls — the pipeline needs a retry.
+- **Haiku over-returns `quality`, `supportable`, `endTime` and same-day visits** on the recall
+  tier (supportability precision 7%: it infers "held me" where the author gave no word; end-time
+  precision 39%: it turns "this morning" into a clock time despite the prompt). Prompt work for
+  A10-4, measured against verified labels.
+- **The miss list is already informative** on three emails: air temperature, crowd size, snow
+  texture ("unbonded drifts"), time *on* the ice, "the surface changed color as the sun set" —
+  every one a real slot the sheet lacks, exactly what D200 wants at corpus scale.
+
+**Provisional floors** (`PRECISION_FLOORS`, `basis: 'provisional'`): `iceTypes` 0.93,
+`surfaceTags` 0.99, `hazards` 0.98, `accessConditions` 0.66 from the Jev run; everything else a
+ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
+
+### Deltas from the plan — read these before extending
+
+1. **The §1.3 cache warning was misdiagnosed** — the prefix order was right; Haiku 4.5's minimum
+   cacheable prefix is 4,096 tokens and the prompt was ~800. Corpus-scale passes use the Batch API.
+2. **Sectors: `middle`, and `near_shore` overlaps** (founder, 2026-09-21; D193 amended). The eight
+   wedges + `middle` carry the partition property; `near_shore` is a band.
+3. **The narrow happened in A10-1**, not A10-5: `iceTypes` / `surfaceTags` are objects only and
+   `snowCoverCm` is gone from the schema. The old forms keep working because the *mutation args*
+   stay wide and the validator lifts the bare shapes — the dual-write validator §2.4 budgeted is
+   the contract, not a second schema. The old forms' edit path was lossy for everything the sheet
+   adds (a chip's `where`, the snow facets, a poke's count, the vantage, the suitability) until the
+   PR #71 review: `reportFormFromReport` now carries all of it through `ReportFormState.carried`
+   and `buildReportInput` re-emits it, restoring the form's own round-trip contract. Client-side
+   rather than in `reports.update`, because the server cannot tell "this client has no control for
+   it" from "the author cleared it" — only the client knows. Both forms also offer only
+   `FORM_THICKNESS_METHODS` (no `poke`): they have no count field, so a poke reading could never
+   validate from them. **Installed clients are not a migration concern here:** prod has never been
+   initialized and the one APK is the founder's EAS preview, rebuilt from the branch, so the read
+   APIs return the stored objects with no compatibility shim (which would also block §12.1).
+4. **A structured-output schema with fourteen typed lists is "too large"** (Anthropic 400: the
+   compiled grammar); the Claude wire shape is one flat `values` list with a `field` discriminator,
+   and the wrapper validates enum-shaped strings against the vocabulary so an unknown value is a
+   `miss`, not a failed parse.
+5. **Jev `noul` answers carry no confidence** — the probability is the number (D196 note). Jev
+   has no TypeScript SDK; the client is one `fetch`.
+6. **A sighting needs a vantage off the ice** in both engines' mappings, mirroring the validator —
+   Sonnet returned `sighting: frozen` for on-ice authors 91 times before the gate.
+7. **§12.3 named**: the water-body map on feed cards and on the sheet, with A10-2.
+8. **The `reportSheet` reducer keeps a `defaulted` flag** on the sheet's own `observedFrom: on_ice`
+   chip: solid (serializes) but steps down to a ghost when the author's prose says otherwise — a
+   default is what stands until someone says so, and the author counts.
+
+### Owed
+
+- The founder's verification pass (`training_data/google_group/eval/review.html`) → verified
+  floors; A10-4 is gated on `basis: 'verified'`.
+- A retry on Jev 503 / 529 in the pipeline, and Stage B's per-unit requests in parallel; the
+  recall tier over the full 2,449 via the Batch API when the corpus replay (A10-2 §1.5) needs it.
+- `photos.reportId` is now written by `reports.create` / `reports.update` beside the list it
+  mirrors (`syncReportPhotoLinks`), and a photo another report claims is refused at the write —
+  so `posts.create` (A10-2) inherits one photo, one report, rather than having to establish it.
+  The backfill returns `photosShared` for any legacy pair that broke the rule (none on dev).
+- Two seams the self-review found for the next PRs: `ExtractedWhere.placeName` is structurally a
+  core `Where` with nothing set, so the sheet must map it to `point.name` when it applies an
+  extraction (A10-4), never pass it through; and `accessAlerts.reason` still narrows to the blocker
+  set until §7.2's write path lands (A10-2).
+
 ## Review pass — 2026-09-19
 
 A fresh-eyes review against the code, before any build. What it found and what changed:
@@ -290,7 +419,13 @@ A fresh-eyes review against the code, before any build. What it found and what c
   reports field-labeled (a Sonnet agent drafts, a human verifies) — labeled here, not assumed.
 - §1.3 Run three extractors — Claude-only (Haiku 4.5, then Sonnet 5) and Claude + Jev — and
   record precision/recall per field, latency and cost per report. The harness takes any
-  `Extractor`; the title is part of the input.
+  `Extractor`; the title is part of the input. ~~⚠ Fix the prompt-cache boundary first~~ —
+  **misdiagnosed** (build, 2026-09-21): the mention inventory's prefix order was right (system
+  block first, `cache_control` set); caching never engaged because **Haiku 4.5's minimum cacheable
+  prefix is 4,096 tokens** and the prompt was ~800 (every row has `cache_creation_input_tokens: 0`,
+  not just reads). Sonnet 5's minimum is 1,024. Caching would have saved ~$1.50 of the $5.68 —
+  4.37M input tokens were per-message body. Corpus-scale passes use the **Batch API** (50% off)
+  instead of chasing the cache; the sheet's per-paragraph calls are too short to cache on Haiku.
 - §1.4 The go/no-go for ghost-chip extraction is a per-field precision floor — a wrong ghost chip
   is a tap to dismiss, but a wrong *confident* one on thickness is a claim we suggested. Floors are
   set from the first run, not before it.
@@ -477,6 +612,11 @@ A fresh-eyes review against the code, before any build. What it found and what c
   **several** latest Reports, not one; the feed shows Posts.
 - §12.2 Aggregates that read `iceTypes` learn about `where` (a "black ice, north end" isn't
   "black ice everywhere").
+- §12.3 **The water-body map on feed cards and on the sheet** (Phase 05 decision 6, never built on
+  the feed; folded in by founder call 2026-09-20 — named here when A10-1 opened). The card gets the
+  body's outline as a small inline map with the Report's put-in and, when a `where` is set, the
+  sector highlight from `sectorGeometry.ts`; the sheet's mini-map (§4 / §7) is the same component.
+  Lands with A10-2's reading side.
 
 ## PR breakdown
 

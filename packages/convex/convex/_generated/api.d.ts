@@ -84,6 +84,7 @@ import type * as operatorAlerts from "../operatorAlerts.js";
 import type * as photoReconcile from "../photoReconcile.js";
 import type * as photos from "../photos.js";
 import type * as postedAccess from "../postedAccess.js";
+import type * as posts from "../posts.js";
 import type * as profiles from "../profiles.js";
 import type * as pushTokens from "../pushTokens.js";
 import type * as putIns from "../putIns.js";
@@ -187,6 +188,7 @@ declare const fullApi: ApiFromModules<{
   photoReconcile: typeof photoReconcile;
   photos: typeof photos;
   postedAccess: typeof postedAccess;
+  posts: typeof posts;
   profiles: typeof profiles;
   pushTokens: typeof pushTokens;
   putIns: typeof putIns;

@@ -10,15 +10,27 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { ACCESS_ALERT_REASONS, ACCESS_CONDITION_REASONS } from './accessAlert';
 import { STANDINGS } from './standing';
 import {
   HAZARD_TYPES,
   ICE_TYPES,
+  OBSERVED_FROM,
+  SECTORS,
+  SIGHTINGS,
+  SKATE_END_PRECISIONS,
   SKATE_QUALITIES,
+  SNOW_COVERAGES,
+  SNOW_DRIFTS,
+  SNOW_IMPEDIMENTS,
+  SUITABILITIES,
   SURFACE_TAGS,
   THICKNESS_METHODS,
+  THICKNESS_SCOPES,
   WATER_BODY_CLASSES,
+  WHERE_EXTENTS,
 } from './types';
+import { WHERE_KINDS } from './where';
 
 const REPO = resolve(__dirname, '../../..');
 const MAP = readFileSync(join(REPO, 'plans/06-data-model.md'), 'utf8');
@@ -68,7 +80,21 @@ describe('the data-model map matches the schema', () => {
       ...WATER_BODY_CLASSES,
       ...SKATE_QUALITIES,
       ...THICKNESS_METHODS,
+      ...THICKNESS_SCOPES,
       ...STANDINGS,
+      // A10 (D189–D197): the sheet's vocabulary.
+      ...SUITABILITIES,
+      ...OBSERVED_FROM,
+      ...SIGHTINGS,
+      ...SKATE_END_PRECISIONS,
+      ...SNOW_COVERAGES,
+      ...SNOW_IMPEDIMENTS,
+      ...SNOW_DRIFTS,
+      ...WHERE_EXTENTS,
+      ...SECTORS,
+      ...WHERE_KINDS,
+      ...ACCESS_CONDITION_REASONS,
+      ...ACCESS_ALERT_REASONS,
     ];
     const vocabulary = namedIn(section('## Vocabulary', '## Derived, not stored'));
     const missing = keys.filter((k) => !vocabulary.has(k));

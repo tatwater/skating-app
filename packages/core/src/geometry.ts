@@ -26,6 +26,18 @@ export interface LatLng {
   lng: number;
 }
 
+/** True when a coord's lat/lng are finite and within valid geographic ranges (D42 storage guard). */
+export function isValidCoord(coord: LatLng): boolean {
+  return (
+    Number.isFinite(coord.lat) &&
+    Number.isFinite(coord.lng) &&
+    coord.lat >= -90 &&
+    coord.lat <= 90 &&
+    coord.lng >= -180 &&
+    coord.lng <= 180
+  );
+}
+
 /** An axis-aligned bounding box — mirrors the Convex `bbox` validator. */
 export interface BBox {
   minLat: number;
@@ -173,6 +185,16 @@ function segmentDistanceMeters(
  */
 export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
   if (pointInPolygon(point, polygon)) return 0;
+  return distanceToShorelineMeters(point, polygon);
+}
+
+/**
+ * Distance in meters from `point` to the nearest **edge** of `polygon`, whichever side of it the
+ * point is on — the "how far from the bank" a skater on the ice means (A10's `near_shore`), where
+ * `distanceToPolygonMeters` answers "how far from the water" and is 0 for everyone on it. Every
+ * ring counts, islands included: an island's shore is a shore.
+ */
+export function distanceToShorelineMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
   const rings = polygonRings(polygon);
   let min = Number.POSITIVE_INFINITY;
   for (const ring of rings) {
@@ -596,8 +618,11 @@ function withinSegmentBox(
   );
 }
 
-/** Do segments `p1–p2` and `p3–p4` share any point? (CLRS, including the collinear-touch cases.) */
-function segmentsIntersect(
+/**
+ * Do segments `p1–p2` and `p3–p4` share any point? (CLRS, including the collinear-touch cases.)
+ * Plain 2-D on `[lng, lat]` — a topological test, fine at any lake's scale (see `ringSelfIntersects`).
+ */
+export function segmentsIntersect(
   p1: readonly [number, number],
   p2: readonly [number, number],
   p3: readonly [number, number],

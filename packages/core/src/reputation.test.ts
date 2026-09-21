@@ -142,3 +142,20 @@ describe('hasMeasuredThickness', () => {
     expect(hasMeasuredThickness({})).toBe(false);
   });
 });
+
+describe('reportsAgree / reportsContradict — located chips (A10)', () => {
+  it('agrees on the key whatever the where says', () => {
+    expect(
+      reportsAgree(
+        { iceTypes: [{ type: 'black_ice', where: { sector: 'N' } }] },
+        { iceTypes: ['black_ice'] },
+      ),
+    ).toBe(true);
+    expect(
+      reportsContradict(
+        { skateQuality: 'great', iceTypes: [{ type: 'black_ice' }] },
+        { skateQuality: 'poor', iceTypes: [{ type: 'black_ice', where: { extent: 'patches' } }] },
+      ),
+    ).toBe(false);
+  });
+});

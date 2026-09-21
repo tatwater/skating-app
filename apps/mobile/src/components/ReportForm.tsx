@@ -8,6 +8,7 @@ import {
   type DraftPhoto,
   emptyReportForm,
   emptyThicknessReading,
+  FORM_THICKNESS_METHODS,
   formatSkateTime,
   hasFutureSkateTimeError,
   humanizeEnum,
@@ -27,7 +28,6 @@ import {
   type StoredReportForForm,
   SURFACE_TAGS,
   THICKNESS_METHOD_LABELS,
-  THICKNESS_METHODS,
   type ThicknessFormReading,
   toggleBundleOptOut,
   validateReportInput,
@@ -911,9 +911,11 @@ export function ReportForm({
                   />
                 </XStack>
               )}
+              {/* Measured or estimated only: this form has no count field, so a poke reading
+                  could never validate here (D195). A stored poke still edits and round-trips. */}
               <SingleToggle
                 value={reading.method}
-                options={THICKNESS_METHODS}
+                options={FORM_THICKNESS_METHODS}
                 label={(m) => THICKNESS_METHOD_LABELS[m]}
                 onChange={(method) => method !== '' && updateReading(index, { method })}
                 allowEmpty={false}

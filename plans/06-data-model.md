@@ -69,7 +69,8 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `reports` | the center of the app: author, body (+ bay memberships), skate window, ice types, thickness readings with method, surface tags, quality, conditions, put-in pin, notes; always public — D4, D13, D21–D25 |
+| `posts` | the narrative, the photo set, the ordering, and one or more Reports; what the newsfeed and the profile show; requires a Report by construction — A10, D186 |
+| `reports` | the center of the app: author, body (+ bay memberships), skate window (+ its precision), how it was seen, ice types and surface tags as located chips, thickness readings with method (measured / estimated / poke), snow as facets, quality and suitability, conditions, put-in pin (+ the tapped access point), notes; always public — D4, D13, D21–D25, D190–D195 |
 | `reportSubAreas` | one row per (report, bay) — the indexable copy of `reports.subAreaIds` — D175 |
 | `photos` | EXIF-stripped on upload, geotag only on opt-in, `placeOnMap` gates pinning — D42 |
 | `comments` | threaded, arbitrary depth in data, capped in UI — D21, D25 |
@@ -166,8 +167,27 @@ hazard additions of 2026-07-21.
   `rubble` · `cracked_surface` · `snow_covered` · `drifted` · `slushy` · `wet` · `overflow` ·
   `frozen_chop` · `windswept`.
 - **Skate quality**: `great` · `good` · `fair` · `poor` — the coarse rating alongside the tags
-  (both kept, D25). **Thickness method**: `measured` · `estimated`, and the estimate is
-  lower-trust by construction.
+  (both kept, D25). **Suitability** (D190, the second axis of *How was it?*): `dont_go` ·
+  `experienced_only` · `not_for_beginners` · `beginner_friendly` — "don't go" lives here, never at
+  the bottom of the quality scale. **Thickness method**: `measured` · `estimated` · `poke`, and
+  the estimate is lower-trust by construction; a `poke` keeps its count and the skater's own inch
+  guess separately (D195). **Thickness scope**: `everywhere_tested` · `at_spot`.
+- **How it was seen** (D191, `OBSERVED_FROM`): `on_ice` · `shore` · `secondhand` — provenance the
+  reader sees, never a report kind. **Sighting** (D189, from shore only): `open` · `skim` ·
+  `frozen` · `snow_covered`. **End-time precision** (D192): `gps` · `minute` · `half_hour` — no
+  part-of-day value on purpose.
+- **Snow** (D194): coverage `none` · `patches` · `lanes` · `mostly` · `everywhere`; impediment
+  `didnt_matter` · `slowed_me` · `avoided_areas`; drifts `none` · `avoidable` · `everywhere`; plus
+  a depth and `plowedPath`. The corpus talks about snow as coverage and whether it mattered far
+  more than as a depth.
+- **`where`** (D193): an extent `whole` · `mostly` · `patches`, a bay, a sector, a tap — composed.
+  Sectors: `N` · `NE` · `E` · `SE` · `S` · `SW` · `W` · `NW` · `middle` (the nine that partition
+  the outline) · `near_shore` (a ring, overlapping them) · `head` · `mouth` (bay-relative, legal
+  only with a bay). Kinds for display: `whole` · `subArea` · `sector` · `point`.
+- **Access conditions** (D197, `ACCESS_CONDITION_REASONS`): `icy_lot` · `mud_at_launch` ·
+  `plank_needed` · `walk_in` · `plowed_trail` · `snowed_in` — a **separate set** from the blocker
+  reasons (`road_closed` · `gate_locked` · `not_plowed` · `lot_full` · `private_no_access` ·
+  `other`) on the same `accessAlerts` row; a condition never demotes a launch.
 - **Water body class** (stored): `lakePond` · `reservoir` · `bay` · `river` · `wetland` ·
   `unclassified` — the D109 vocabulary; the earlier eight-value list (`lake`, `pond`, `stream`,
   `marsh`, `other`…) was migrated one-way, and `lake` + `pond` → `lakePond` was its only lossy
@@ -247,6 +267,11 @@ The ones this schema learned the hard way; each has a longer story in the phase 
   explicit step moves reports, tracks, favorites and hazards to the survivor.
 - **Offline drafts are the client's** (`expo-sqlite`), idempotency-keyed; the server sees a report
   once, however many times the flush retries (D9, D30).
+- **Chips are read through the accessor, never the array** (`iceTypeKeys` / `surfaceTagKeys`, A10):
+  `iceTypes` and `surfaceTags` are located objects, the mutation args still accept the bare key
+  from an un-updated client, and a reader that maps the array itself is the one that breaks when
+  the shape moves again. A reader that *should* see the `where` is findable by the accessor it
+  bypasses.
 
 *Every modeling question the original draft listed as open has been decided; the decisions are the
 `D#`s cited above. Product-level open questions are [`02-open-questions.md`](./02-open-questions.md).*

@@ -85,7 +85,7 @@ const hazardArgs = (waterBodyId: Id<'waterBodies'>) => ({
 const reportArgs = (waterBodyId: Id<'waterBodies'>) => ({
   waterBodyId,
   skateEndTime: SKATE_TIME,
-  iceTypes: ['black_ice' as const],
+  iceTypes: [{ type: 'black_ice' as const }],
 });
 
 describe('D57 granular posting permissions', () => {

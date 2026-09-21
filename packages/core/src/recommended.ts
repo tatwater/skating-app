@@ -11,6 +11,7 @@
  * Thresholds live in `reputationConfig.ts`; callers may override per field for tests / Phase-07 tuning.
  */
 
+import { type ChipInput, iceTypeKeys } from './reportFields';
 import {
   RECOMMENDED_BUNDLE_SIZE,
   RECOMMENDED_MAX_BODIES_PER_DAY,
@@ -37,7 +38,7 @@ export interface RecommendableReport {
   /** Skate-end time (epoch ms) — drives the recency floor and ranking tie-break. */
   skateEndTime: number;
   skateQuality?: SkateQuality;
-  iceTypes?: readonly IceType[];
+  iceTypes?: readonly ChipInput<IceType>[];
   /** Number of photos on the report (photo-backed evidence gate). */
   photoCount: number;
   /** Independent in-window corroborators counted for this report (decision 14). */
@@ -81,7 +82,7 @@ export function isRecommendable(
     trustRank(report.authorTrust) >= trustRank(t.minTrustClass) &&
     report.photoCount >= t.minPhotos &&
     report.skateQuality === t.requiredQuality &&
-    (report.iceTypes?.includes(t.requiredIceType) ?? false) &&
+    iceTypeKeys(report.iceTypes).includes(t.requiredIceType) &&
     report.skateEndTime >= now - t.recencyHours * HOUR_MS
   );
 }

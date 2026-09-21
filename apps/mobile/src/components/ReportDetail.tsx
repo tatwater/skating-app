@@ -8,11 +8,13 @@ import {
   formatSkateWindow,
   formatSnowCoverInches,
   formatThicknessReading,
+  iceTypeKeys,
   isLeaving,
   type ReportConditions,
   reportStripState,
   SKATE_QUALITY_LABELS,
   seasonOf,
+  surfaceTagKeys,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
@@ -176,13 +178,13 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {report.iceTypes && report.iceTypes.length > 0 ? (
         <Section label="Ice types">
-          <Chips values={report.iceTypes} />
+          <Chips values={iceTypeKeys(report.iceTypes)} />
         </Section>
       ) : null}
 
       {report.surfaceTags && report.surfaceTags.length > 0 ? (
         <Section label="Surface">
-          <Chips values={report.surfaceTags} />
+          <Chips values={surfaceTagKeys(report.surfaceTags)} />
         </Section>
       ) : null}
 
@@ -202,9 +204,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         </Section>
       ) : null}
 
-      {report.snowCoverCm !== undefined ? (
+      {report.snow?.depthCm !== undefined ? (
         <Section label="Snow cover">
-          <Text color="$foreground">{formatSnowCoverInches(report.snowCoverCm)}</Text>
+          <Text color="$foreground">{formatSnowCoverInches(report.snow.depthCm)}</Text>
         </Section>
       ) : null}
 

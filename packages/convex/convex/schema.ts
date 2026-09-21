@@ -21,6 +21,7 @@ import {
   ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  OBSERVED_FROM,
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
@@ -28,10 +29,12 @@ import {
   REQUEST_KINDS,
   REQUEST_STATUSES,
   REVIEW_REASONS,
+  SIGHTINGS,
+  SKATE_END_PRECISIONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
+  SUITABILITIES,
   SURFACE_TAGS,
-  THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_CLASSES,
@@ -98,10 +101,13 @@ import {
   decileBlock,
   forecastHour,
   geoJson,
+  iceThickness,
   latLng,
   literals,
+  locatedChip,
   notificationTrigger,
   postedAccess,
+  snow,
   weatherSinceSummary,
 } from './lib/validators';
 
@@ -1989,25 +1995,60 @@ export default defineSchema({
     reportTime: v.number(), // when submitted (may be later, offline sync)
     source: literals(REPORT_SOURCES),
     activityId: v.optional(v.id('gpsActivities')), // set when source == activity
+    /**
+     * The Post this Report belongs to (A10 / D186). Optional only because the rows predate Posts —
+     * `posts.backfillFromReports` gives every existing report a Post of its own, and every create
+     * path after A10-2 writes one. **`eq()` reads only** on `by_post`: an optional field's index is
+     * not sparse, and a range would walk every un-backfilled row first.
+     */
+    postId: v.optional(v.id('posts')),
+    /**
+     * The A06d access point the skater tapped as their put-in (A10 §7). `point` stays the
+     * representative coordinate (the pin or the GPS start); this is the *named* thing it snapped
+     * to, when it did (D198), so a condition chip has a target and the card can say "from the boat
+     * launch". Absent when the point snapped to nothing.
+     */
+    putInId: v.optional(v.id('putIns')),
+    /**
+     * How exact `skateEndTime` is (A10 / D192): `gps` from a track, `minute` from the sheet's
+     * pinned open-time chip, `half_hour` from the ladder or the picker. Absent on every pre-A10 row
+     * and on a client that predates the sheet — the reader treats absent as "unstated".
+     */
+    skateEndPrecision: v.optional(literals(SKATE_END_PRECISIONS)),
+    /**
+     * How the author saw the ice (A10 / D191): on it, from shore, or secondhand. **No backfill** —
+     * absent means unstated, and stamping `on_ice` onto three seasons of rows would manufacture a
+     * claim nobody made. The sheet defaults to `on_ice` explicitly.
+     */
+    observedFrom: v.optional(literals(OBSERVED_FROM)),
+    /**
+     * What a shore observer saw (A10 / D189): still open, skim, frozen over, snow-covered — the
+     * scouting substitute for a surface chip. Valid only when `observedFrom` is not `on_ice`
+     * (enforced by `validateReportInput`, never assumed by a reader).
+     */
+    sighting: v.optional(literals(SIGHTINGS)),
     // --- Ice description (surface, NOT a safety verdict, D3) ---
-    iceTypes: v.array(literals(ICE_TYPES)),
-    surfaceTags: v.array(literals(SURFACE_TAGS)),
+    /**
+     * Located chips (A10 / D193): `{ type, where?, note? }` so "black ice, north end" is one chip.
+     * Every reader goes through `iceTypeKeys` / `surfaceTagKeys` in core, never the array itself.
+     * The mutation args still accept the bare key (an un-updated phone, a queued draft); the
+     * validator lifts it. Widened → deployed → backfilled (`reports.backfillA10Shapes`) → narrowed
+     * to the object, all in A10-1.
+     */
+    iceTypes: v.array(locatedChip(ICE_TYPES)),
+    surfaceTags: v.array(locatedChip(SURFACE_TAGS)),
     skateQuality: v.optional(literals(SKATE_QUALITIES)),
-    iceThickness: v.optional(
-      v.object({
-        readings: v.array(
-          v.object({
-            valueCm: v.optional(v.number()), // a single reading, OR
-            minCm: v.optional(v.number()), // a range
-            maxCm: v.optional(v.number()),
-            method: literals(THICKNESS_METHODS), // estimated = lower-trust
-            coord: v.optional(latLng),
-            note: v.optional(v.string()),
-          }),
-        ),
-      }),
-    ),
-    snowCoverCm: v.optional(v.number()),
+    /**
+     * Who the ice is for (A10 / D190) — the second axis of *How was it?*. `dont_go` lives here, not
+     * at the bottom of the quality scale, so that "great" can never read as "safe" (D3).
+     */
+    suitability: v.optional(literals(SUITABILITIES)),
+    iceThickness: v.optional(iceThickness),
+    /**
+     * Snow (A10 / D194): coverage, whether it mattered, drifts, a depth. The pre-A10 `snowCoverCm`
+     * was backfilled into `snow.depthCm` and dropped; the mutation args still accept the number.
+     */
+    snow: v.optional(snow),
     // --- Conditions AT skate time (may be auto-filled from Open-Meteo, D19) ---
     conditions: v.optional(
       v.object({
@@ -2085,7 +2126,70 @@ export default defineSchema({
     // and "what ice was skated today" are different questions and the photo-orphan sweep needs the
     // former (a photo is attached at create, whatever the skate time claims).
     .index('by_created_at', ['createdAt'])
-    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 02a §6.2/D30)
+    .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 02a §6.2/D30)
+    // The Post's Reports, in the Post's own `reportIds` order (A10). `eq()` only — see `postId`.
+    .index('by_post', ['postId']),
+
+  /**
+   * **A Post: the narrative, the photo set, the ordering, and one or more Reports** (A10 / D186).
+   *
+   * A Report stays what it is — one body, one visit, one `skateEndTime`, every downstream consumer
+   * unchanged. A Post is what the newsfeed and the profile show; the body page and the map show
+   * Reports. It resolves every multi-thing report the corpus writes with one move: the Champlain
+   * circumnavigation is one Post with several Reports; the before-and-after-work day is one Post
+   * with two Reports on one body and two end times, and the freshest-eyes sort just works.
+   *
+   * **A Post requires at least one Report**, enforced by `posts.create` being the one transactional
+   * writer that takes its Reports inline — a Post-less Report and a Report-less Post can never
+   * exist. The platform is for reports; questions and planning stay on the email lists (D186).
+   *
+   * `latestSkateEndTime` is denormalized from the Reports because it is the D28 sort key — the
+   * feed orders by whoever got off the ice last, never by `createdAt`. Kept current by every writer
+   * that changes a member Report's end time. `moderationStatus` leads both feed indexes for the
+   * same reason it leads the report feed's: the gate is applied *in* the index, so a page of
+   * all-hidden Posts cannot come back empty with `isDone: false`. The indexes carry **no filter
+   * columns** — feed filters stay per-Report (a Post appears with only its matching Reports under
+   * the header and not at all when none match), so nothing here needs a chip in the key.
+   */
+  posts: defineTable({
+    authorId: v.id('profiles'),
+    /** The community's subject-line habit — "Crystal Lake, Enfield 12/6". Extraction reads it too. */
+    title: v.optional(v.string()),
+    /** The prose, always the author's, in the author's voice. Lives here, not on a Report. */
+    body: v.optional(v.string()),
+    /** The member Reports, in the author's order. Never empty after `create`. */
+    reportIds: v.array(v.id('reports')),
+    /**
+     * The photo set. A photo is tagged to the Post *and* to the Report it belongs to
+     * (`photos.reportId`), so a body page can show its photos without the Post; one writer
+     * (`lib/postPhotos.ts`, A10-2) keeps the three from drifting on an edit.
+     */
+    photoIds: v.array(v.id('photos')),
+    /** `max(report.skateEndTime)` over the members — the D28 sort key, never `createdAt`. */
+    latestSkateEndTime: v.number(),
+    /**
+     * Post-level moderation (A10-2): hidden ⇒ every member Report hidden (and the `reportSubAreas`
+     * mirror); one Report hidden ⇒ the Post shows the rest with all its prose; zero visible Reports
+     * ⇒ the Post is not shown. Default `visible` (D32).
+     */
+    moderationStatus: literals(MODERATION_STATUSES),
+    /**
+     * The whole Post's dedup key for the mobile offline queue (§9.1) — one key per Post, and each
+     * member Report carries its own, so a flush whose ack was lost returns the same Post. Omitted by
+     * web/online callers, like `reports.idempotencyKey`.
+     */
+    idempotencyKey: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    /** When the author last edited the Post (the `reports.editedAt` rule: never `updatedAt`). */
+    editedAt: v.optional(v.number()),
+  })
+    // The newsfeed: newest skate-end first, moderation gate in the index (D28, D32).
+    .index('by_moderation_and_latest_skate_end_time', ['moderationStatus', 'latestSkateEndTime'])
+    // Profile history, newest first, bounded by a `.take()` (D13) — and the departed-user sweep.
+    .index('by_author_latest_skate_end_time', ['authorId', 'latestSkateEndTime'])
+    .index('by_author', ['authorId'])
+    .index('by_idempotency_key', ['idempotencyKey']),
 
   /**
    * **A report's bay memberships, one row per (report, bay)** (A09 / D175) — the indexable copy of
@@ -2748,6 +2852,13 @@ export default defineSchema({
     takenAt: v.optional(v.number()), // preserved from EXIF only if user opts in (D42)
     coord: v.optional(latLng), // preserved only if placeOnMap == true (D42)
     placeOnMap: v.boolean(), // opt-in: pin at coord vs. report-only (D42)
+    /**
+     * The Report this photo documents (A10 / D186) — the back-link beside `posts.photoIds`, so a
+     * body page shows its photos without loading the Post. Set by `posts.create` and kept by the
+     * one photo writer (`lib/postPhotos.ts`, A10-2). Absent on a hazard or access photo, and on
+     * every pre-A10 report photo until the Post backfill stamps it.
+     */
+    reportId: v.optional(v.id('reports')),
     createdAt: v.number(),
     /**
      * Scratch mark for `photoReconcile` — the determinate orphan check for an uploader too prolific
@@ -3132,6 +3243,18 @@ export default defineSchema({
     /** Free text, and the one place in this phase it is allowed — bounded by the row's own expiry. */
     note: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
+    /**
+     * The Report this alert was filed from (A10 / D197) — a condition chip on the sheet lands here
+     * with the Report as provenance, so the reader can see *whose skate* said "plank needed".
+     * Absent on an alert filed from the access layer directly.
+     */
+    reportId: v.optional(v.id('reports')),
+    /**
+     * Client dedup key for the offline queue (A10 §9.1). Today `create` has no idempotency, so a
+     * replayed flush would file a corroborable claim twice — and a claim that corroborates itself
+     * is exactly the shape the A06d vote counts exist to prevent. Omitted by online callers.
+     */
+    idempotencyKey: v.optional(v.string()),
     createdAt: v.number(),
     /** The A05a season this belongs to, from `createdAt`. What the hard-expire is measured against. */
     season: v.number(),
@@ -3205,7 +3328,9 @@ export default defineSchema({
      */
     .index('by_status_expires_at', ['status', 'expiresAt'])
     // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
-    .index('by_author', ['createdByUserId']),
+    .index('by_author', ['createdByUserId'])
+    // Offline-flush dedup (A10 §9.1) — `eq()` only, the optional-index rule.
+    .index('by_idempotency_key', ['idempotencyKey']),
 
   /**
    * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.

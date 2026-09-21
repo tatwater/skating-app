@@ -93,7 +93,7 @@ async function seedReport(
       reportTime: now,
       source: 'native' as const,
       skateQuality: quality,
-      iceTypes: iceTypes as never,
+      iceTypes: iceTypes.map((type) => ({ type }) as never),
       surfaceTags: [],
       moderationStatus: 'visible' as const,
       photoIds: [],

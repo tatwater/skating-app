@@ -36,6 +36,7 @@ import {
   localDayMsAt,
   localDayMsInZone,
   STEFAN_ALPHA_DEFAULT,
+  type ThicknessMethod,
   utcOffsetSecondsInZone,
 } from '@skating/core';
 import { v } from 'convex/values';
@@ -94,14 +95,16 @@ export interface CalibrationPair {
  * A reading is either a single `valueCm` or a `minCm`–`maxCm` range; a range is taken at its
  * midpoint, which is the only defensible reading of "between 3 and 4 inches" and is why the count is
  * reported alongside the mean. `estimated` readings are dropped here rather than filtered later, so
- * there is exactly one place that decides what counts as a measurement.
+ * there is exactly one place that decides what counts as a measurement — and `poke` (A10 / D195)
+ * is dropped by the same line: a pole-test count is the skater's own scale, not a centimeter. A
+ * lower bound (`minCm` alone, D195) is not a midpoint of anything and is dropped too.
  */
 function readingsToCm(
   readings: readonly {
     valueCm?: number;
     minCm?: number;
     maxCm?: number;
-    method: 'measured' | 'estimated';
+    method: ThicknessMethod;
   }[],
 ): number[] {
   const out: number[] = [];

@@ -8,6 +8,7 @@
  * logic that reads them.
  */
 
+import { type ChipInput, iceTypeKeys } from './reportFields';
 import { NEW_ACCOUNT_WINDOW_MS, TRUST_CLASS_THRESHOLDS, type TrustClass } from './reputationConfig';
 import type { IceType, SkateQuality } from './types';
 
@@ -30,15 +31,24 @@ export function deriveTrustClass(points: number, accountAgeMs: number): TrustCla
   return null;
 }
 
-/** The report fields corroboration reads — both attributes optional, since a report may omit either. */
+/**
+ * The report fields corroboration reads — both attributes optional, since a report may omit either.
+ * `iceTypes` in either shape (A10): agreement is on the *key* — two skaters who both saw black ice
+ * agree whether or not one of them said "north end", so the `where` is read through the accessor
+ * and ignored here on purpose.
+ */
 export interface AgreeableReport {
   skateQuality?: SkateQuality;
-  iceTypes?: readonly IceType[];
+  iceTypes?: readonly ChipInput<IceType>[];
 }
 
-/** Do two ice-type sets share at least one member? */
-function shareIceType(a: readonly IceType[] = [], b: readonly IceType[] = []): boolean {
-  return a.some((t) => b.includes(t));
+/** Do two ice-type sets share at least one member (by key)? */
+function shareIceType(
+  a: readonly ChipInput<IceType>[] = [],
+  b: readonly ChipInput<IceType>[] = [],
+): boolean {
+  const bKeys = iceTypeKeys(b);
+  return iceTypeKeys(a).some((t) => bKeys.includes(t));
 }
 
 /**

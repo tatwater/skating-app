@@ -142,7 +142,7 @@ scope by favorites and drive-time; put-ins and directions are on the map.*
 - 🟢 **"Recommended" filter-breaking posts** — Phase 06, gated on corroboration
 - ⚪ **Self-hosted ORS for a true 90-minute band** → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md)
 - ⚪ **Reverse spatial index for fan-out (D172)** — trigger ~1,000 profiles → A08
-- ⚪ **`showPutIn` has no client control** — the opt-out shipped server-side only; D58's clipping never fires → register
+- 🟡 **`showPutIn` has no client control** — the opt-out shipped server-side only; D58's clipping never fires; the toggle is built on a local branch and lands with A10-2 → register
 
 ## Phase 05 — Newsfeed
 🟢 **Complete** 2026-07-17 · PR #18 · [plan](./phases/05-newsfeed.md) · D28
@@ -498,7 +498,7 @@ whether the gate is locked.*
 - ⚪ **The 1,376 unmatched slipways** — an afternoon's sample, not a phase → [`backlog/unmatched-slipways.md`](./backlog/unmatched-slipways.md)
 - ⚪ **`matchBathymetryLakes` and `matchAndImportDepths`** (no `marginMeters`) **and `putIns.loadPutInRows`** (uncapped) — the same unbounded-read shape as the parking load, unfixed; `coveringBodyForPoints` was deleted 2026-08-09
 - ⚪ **A moved put-in's access alerts** — stop on the old body and never appear on the new one (pinned in the tests); a Move operation is A07c §5.1 → register
-- ⚪ **`accessAlerts.create` gains `reportId` + `idempotencyKey`** — a replayed offline flush files twice → A10-1 §2.1
+- 🟡 **`accessAlerts.create` gains `reportId` + `idempotencyKey`** — a replayed offline flush files twice; the fields landed in A10-1 §2.1, `create` reads them in A10-2 §9.1
 
 ## Phase A06e — Imagery, scoped to a water body
 🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phases/A06e-satellite-imagery.md) · D75 D84 D146–D151
@@ -698,7 +698,7 @@ launches.*
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Phase A10 — Reporting: one sheet, three doors
-⚪ **Scoped** 2026-09-18 · [plan](./phases/A10-reporting-flow.md) · D186–D200
+🟡 **In progress** 2026-09-21 · PR #71 · [plan](./phases/A10-reporting-flow.md) · D186–D200
 
 The report form becomes a report sheet: one fixed-order scroll that a skater can fill by tapping
 chips, by writing prose, or by opening it from a track, with every section collapsing to a summary
@@ -716,13 +716,17 @@ minute from a track, and the app never loses one for lack of signal.*
 #### Data runs
 - **2026-09-19 — corpus re-parse + LLM mention inventory:** 2,472 messages (Dec 2023–Jun 2026), 745 named bodies, Haiku 4.5, $5.68
 - **2026-09-19/20 — corpus curatedBoost seed:** 137 boosts on dev (122 bodies + 15 sub-areas, graded 0.1/0.2/0.3), campaigns `a10-corpus-seed-20260919` + `-ambiguous-20260920`; the 76 undrawn bays split 16 destinations / 23 landmarks → [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md)
+- **2026-09-21 — extraction eval, first run (§1.3):** 147-email stratified sample + 60 negatives × three engines (Claude-only Haiku 0.64¢ / 4.4 s, Sonnet 5 4.22¢ / 37 s, Haiku + Jev 0.49¢ + Jev / 4.6 s); Sonnet-drafted value labels (1,474 values, 712 contested by Haiku); provisional floors from the Jev run on four fields; $8.3 Anthropic, $0.05 Jev (2.0M tokens)
+- **2026-09-21 — A10-1 dev backfills:** `reports.backfillA10Shapes` 2 rows, `posts.backfillFromReports` 2 Posts; schema narrowed
 
 #### Deferred
 - ⚪ **Named landmarks** (OSM/GNIS islands, points, reference bays) as labels + `where: point(name)` → [`features/named-landmarks.md`](./features/named-landmarks.md), with A10-2
 - ⚪ **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page → [`features/subarea-chord-editor.md`](./features/subarea-chord-editor.md), before A10-3
 - ⚪ **Vision-suggested hazard types** on a photo the skater already tagged — after §1's eval pattern exists
 - ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
-- ⚪ **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; a workstream to name when A10-1 opens
+- ⚪ **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; named §12.3 at A10-1, lands with A10-2
+- ❓ **Verified precision floors** — the founder's pass through the eval's `review.html` (147 emails, contested values first); A10-4 is gated on `basis: 'verified'`
+- ⚪ **A retry on Jev 503 / 529** (7 of 147 calls) and parallel per-unit votes — with A10-4
 - ⚪ **Video** — a second pass (§8.3), R2 above a size threshold; a backlog doc when scoped
 - ⚪ **Season-one review** — D199's window, D189's set, `PUT_IN_SNAP_METERS`, the extraction floors, snow texture; on `reportTime − skateEndTime` and real tracks
 
@@ -799,7 +803,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | **`matchBathymetryLakes` and `matchAndImportDepths`** — `listedBodiesNearCoord` with no `marginMeters`; `putIns.loadPutInRows` uncapped `.collect()` | ⚪ | nothing; the A06d fix pattern applies (`coveringBodyForPoints` was deleted 2026-08-09) | A06d |
 | **`@clerk/clerk-expo` → `@clerk/expo` Core 3 migration** — the vehicle; the Gli identifiers ride it | ⚪ | nothing; the package is deprecated outright | [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) |
 | **Gli internal identifiers** — `scheme`, `slug`, `@skating/*`, the remote | ⚪ | the Clerk Core 3 migration above; the scheme wants a dual-scheme period (Strava callback + installed deep links) | `backlog/gli-identifiers.md` |
-| **`showPutIn` has no client control** — the per-report put-in opt-out (Phase 04) and the put-in-gated path clipping that hangs off it (D58; `listTracksForBody` clips only when `showPutIn === false`) can be set by no screen, so a published path always renders whole, launch and driveway included | ⚪ | nothing; a toggle on the report form on both clients | Phase 04, Phase 08 |
+| **`showPutIn` has no client control** — the per-report put-in opt-out (Phase 04) and the put-in-gated path clipping that hangs off it (D58; `listTracksForBody` clips only when `showPutIn === false`) can be set by no screen, so a published path always renders whole, launch and driveway included. **Built 2026-09-20** on the founder's local branch `phase-a10-reporting-flow-2` (the switch on both report forms, `profiles.showPutInDefault`, `redactPutIn` at `reports.get` / `listByWaterBody` / profile history, a `draftStore` migration) — lands as the first commits of A10-2, before the offline-queue reshape touches `draftStore.ts`; then flip this row and fix `PRIVACY.md`'s "paths are shown whole" sentence | 🟡 | A10-2 | Phase 04, Phase 08, A10 |
 | **GPS-skate half of bounty eligibility (D44)** — `fanOutEligibility` reads report authors only; no bounty path reads `gpsActivities.by_water_body` (its one reader is the attachment check in `waterBodies.ts`); the roadmap said this lit up with Phase 08 | ⚪ | nothing; one query | Phase 06 |
 | **Mobile summary cards** — the A06c §5 map cards (name, recent report count, the D86 dots, top hazard types) are web-only; mobile draws name labels; the logic is in `core/bodySummary.ts` | ⚪ | nothing; a mobile symbol layer over the same `summary` field (founder: parity, 2026-09-20) | A06c §5 |
 | **Sub-areas under the imagery reveal** — hidden today with no flag; §1.3 asked for one, hooked to a UI toggle; outline vs hatched/shaded TBD | ⚪ | nothing; a design detail | A06e §1.3 |

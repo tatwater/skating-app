@@ -13,16 +13,59 @@
  * are ever stored — duration is derived (`end − start`).
  */
 
-import type { ReportInput } from './report';
+import type { LatLng } from './geometry';
+import type { ReportInput, ThicknessReadingInput } from './report';
+import {
+  type ChipInput,
+  iceTypeKeys,
+  type LocatedIceType,
+  type LocatedSurfaceTag,
+  type Snow,
+  surfaceTagKeys,
+  toLocatedChip,
+} from './reportFields';
 import type {
   IceType,
+  ObservedFrom,
   PrecipType,
+  Sighting,
+  SkateEndPrecision,
   SkateQuality,
   SkyCondition,
+  Suitability,
   SurfaceTag,
   ThicknessMethod,
+  ThicknessScope,
 } from './types';
 import { cmToInches, cToF, fToC, inchesToCm, kphToMph, mphToKph, roundTo } from './units';
+import type { Where } from './where';
+
+/**
+ * The methods this form can complete (A10 / D195). `poke` is in `THICKNESS_METHODS` for the sheet,
+ * whose reading has a count field; this form has none, and a poke reading without a count is one
+ * the validator refuses — so offering it here is offering a reading that can never be posted. A
+ * stored poke reading still round-trips through an edit, via `ThicknessFormReading.carried`.
+ */
+export const FORM_THICKNESS_METHODS = [
+  'measured',
+  'estimated',
+] as const satisfies readonly ThicknessMethod[];
+
+/**
+ * The parts of a stored reading this form has no control for (D195): a poke's count, the skater's
+ * word, a place, a coordinate, a note. Seeded by `reportFormFromReport` and re-emitted by
+ * `buildReportInput` so an edit through this form is not a deletion — `reports.update` is
+ * last-write-wins over the whole content block (see `reportFormFromReport`). Kept on the reading
+ * rather than beside the list so a reading removed or reordered in the form takes its own facets
+ * with it.
+ */
+export interface ThicknessReadingCarried {
+  pokeCount?: number;
+  supportable?: boolean;
+  where?: Where;
+  coord?: LatLng;
+  note?: string;
+}
 
 /** One thickness reading as the form holds it: imperial strings + a single/range mode toggle. */
 export interface ThicknessFormReading {
@@ -31,6 +74,30 @@ export interface ThicknessFormReading {
   min: string; // inches (mode = range)
   max: string; // inches (mode = range)
   method: ThicknessMethod;
+  carried?: ThicknessReadingCarried;
+}
+
+/**
+ * What a stored report says that this form has no control for (A10) — carried through an edit
+ * untouched and re-emitted by `buildReportInput`. The form edits chips as bare keys, snow as a
+ * depth, thickness as a value or a range; everything the sheet adds beside those — a chip's
+ * `where` and `note`, the snow facets, a vantage, a sighting, a suitability, the end time's
+ * precision — would otherwise go back to `reports.update` as absent, and absent there means
+ * *cleared*. Absent on a form that is creating a report.
+ */
+export interface CarriedReportFields {
+  /** The end time `skateEndPrecision` describes: the precision goes back only while that time stands. */
+  skateEndTime: number;
+  skateEndPrecision?: SkateEndPrecision;
+  observedFrom?: ObservedFrom;
+  sighting?: Sighting;
+  suitability?: Suitability;
+  /** Every stored chip, located or not, keyed by its type in `buildReportInput` — a key still selected gets its chips back. */
+  iceTypes: LocatedIceType[];
+  surfaceTags: LocatedSurfaceTag[];
+  thicknessScope?: ThicknessScope;
+  /** The D194 facets beside the depth this form edits. */
+  snow?: Omit<Snow, 'depthCm'>;
 }
 
 export interface ReportFormState {
@@ -49,6 +116,7 @@ export interface ReportFormState {
     precip: PrecipType | '';
   };
   notes: string;
+  carried?: CarriedReportFields;
 }
 
 /** A fresh, empty reading (single measured) for the "add reading" affordance. */
@@ -81,21 +149,46 @@ function parseNumber(value: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** One form reading → the metric `ThicknessReadingInput`, or `null` if it carries no measurement. */
-function toThicknessReading(reading: ThicknessFormReading) {
-  if (reading.mode === 'single') {
-    const value = parseNumber(reading.value);
-    if (value === undefined) return null;
-    return { valueCm: inchesToCm(value), method: reading.method };
-  }
-  const min = parseNumber(reading.min);
-  const max = parseNumber(reading.max);
-  if (min === undefined && max === undefined) return null;
-  return {
-    ...(min !== undefined ? { minCm: inchesToCm(min) } : {}),
-    ...(max !== undefined ? { maxCm: inchesToCm(max) } : {}),
-    method: reading.method,
-  };
+/**
+ * One form reading → the metric `ThicknessReadingInput`, or `null` if it carries no measurement.
+ *
+ * The carried facets ride along unchanged, with one exception: a poke's count belongs to the `poke`
+ * method (the validator refuses it on any other), so switching the method in the form drops it.
+ * A poke reading is the one shape that stands with no cm figure at all — the count is the reading
+ * (D195) — so a carried count keeps the reading alive when the inch box is blank.
+ */
+function toThicknessReading(reading: ThicknessFormReading): ThicknessReadingInput | null {
+  const { pokeCount, ...facets } = reading.carried ?? {};
+  const carried = { ...facets, ...(reading.method === 'poke' ? { pokeCount } : {}) };
+  const cm = (() => {
+    if (reading.mode === 'single') {
+      const value = parseNumber(reading.value);
+      return value === undefined ? null : { valueCm: inchesToCm(value) };
+    }
+    const min = parseNumber(reading.min);
+    const max = parseNumber(reading.max);
+    if (min === undefined && max === undefined) return null;
+    return {
+      ...(min !== undefined ? { minCm: inchesToCm(min) } : {}),
+      ...(max !== undefined ? { maxCm: inchesToCm(max) } : {}),
+    };
+  })();
+  if (cm === null && carried.pokeCount === undefined) return null;
+  return { ...cm, method: reading.method, ...definedOnly(carried) };
+}
+
+/** The object without its `undefined` entries, so a carried block never emits a key it has no value for. */
+function definedOnly<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+/** The stored chips for a key the form still has selected — or the bare key, when nothing was stored. */
+function chipsForKey<T extends string>(
+  key: T,
+  stored: readonly { type: T; where?: Where; note?: string }[],
+): ChipInput<T>[] {
+  const own = stored.filter((chip) => chip.type === key);
+  return own.length > 0 ? own : [key];
 }
 
 /**
@@ -103,14 +196,30 @@ function toThicknessReading(reading: ThicknessFormReading) {
  * check and the `reports.create` args). Imperial inputs convert to metric (D25); empty optional
  * fields drop out entirely so a bare notes-only report stays valid (D3). `point` is the optional
  * put-in pin (else the server defaults it to the body centroid).
+ *
+ * The `carried` block (an edit) is re-emitted here: a chip key still selected goes back as the
+ * stored chips under that key, with their `where` and `note`; the snow depth typed here joins the
+ * stored facets; the vantage, sighting and suitability go back as they were; and the end time's
+ * precision goes back only while the end time it described is unchanged — a re-dated report has an
+ * end time this form knows nothing about the exactness of.
  */
 export function buildReportInput(
   form: ReportFormState,
   waterBodyId: string,
   point?: { lat: number; lng: number },
 ): ReportInput {
+  const carried = form.carried;
   const readings = form.thickness.map(toThicknessReading).filter((r) => r !== null);
+  const iceTypes = form.iceTypes.flatMap((key) => chipsForKey(key, carried?.iceTypes ?? []));
+  const surfaceTags = form.surfaceTags.flatMap((key) =>
+    chipsForKey(key, carried?.surfaceTags ?? []),
+  );
   const snowCoverInches = parseNumber(form.snowCover);
+  const snow = definedOnly({
+    ...carried?.snow,
+    depthCm: snowCoverInches !== undefined ? inchesToCm(snowCoverInches) : undefined,
+  });
+  const scope = carried?.thicknessScope;
   const airTempF = parseNumber(form.conditions.airTempF);
   const windMph = parseNumber(form.conditions.windMph);
   const windDir = form.conditions.windDir.trim();
@@ -128,11 +237,19 @@ export function buildReportInput(
     waterBodyId,
     skateEndTime: form.skateEndTime,
     ...(form.skateStartTime !== undefined ? { skateStartTime: form.skateStartTime } : {}),
-    ...(form.iceTypes.length > 0 ? { iceTypes: form.iceTypes } : {}),
-    ...(form.surfaceTags.length > 0 ? { surfaceTags: form.surfaceTags } : {}),
+    ...(carried?.skateEndPrecision !== undefined && carried.skateEndTime === form.skateEndTime
+      ? { skateEndPrecision: carried.skateEndPrecision }
+      : {}),
+    ...(carried?.observedFrom !== undefined ? { observedFrom: carried.observedFrom } : {}),
+    ...(carried?.sighting !== undefined ? { sighting: carried.sighting } : {}),
+    ...(iceTypes.length > 0 ? { iceTypes } : {}),
+    ...(surfaceTags.length > 0 ? { surfaceTags } : {}),
     ...(form.skateQuality !== '' ? { skateQuality: form.skateQuality } : {}),
-    ...(readings.length > 0 ? { iceThickness: { readings } } : {}),
-    ...(snowCoverInches !== undefined ? { snowCoverCm: inchesToCm(snowCoverInches) } : {}),
+    ...(carried?.suitability !== undefined ? { suitability: carried.suitability } : {}),
+    ...(readings.length > 0
+      ? { iceThickness: { readings, ...(scope !== undefined ? { scope } : {}) } }
+      : {}),
+    ...(Object.keys(snow).length > 0 ? { snow } : {}),
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
@@ -148,11 +265,20 @@ export function buildReportInput(
 export interface StoredReportForForm {
   skateEndTime: number;
   skateStartTime?: number;
-  iceTypes?: IceType[];
-  surfaceTags?: SurfaceTag[];
+  skateEndPrecision?: SkateEndPrecision;
+  observedFrom?: ObservedFrom;
+  sighting?: Sighting;
+  /**
+   * Either shape (A10): this form edits the keys only, and carries each chip's `where` and `note`
+   * through `ReportFormState.carried` so an edit that never touched them sends them back intact.
+   */
+  iceTypes?: readonly ChipInput<IceType>[];
+  surfaceTags?: readonly ChipInput<SurfaceTag>[];
   skateQuality?: SkateQuality;
-  iceThickness?: { readings: ThicknessReadingLike[] };
-  snowCoverCm?: number;
+  suitability?: Suitability;
+  iceThickness?: { readings: ThicknessReadingLike[]; scope?: ThicknessScope };
+  /** The D194 object; this form shows and edits only its depth, and carries the facets. */
+  snow?: Snow;
   conditions?: {
     airTempC?: number;
     windSpeedKph?: number;
@@ -163,7 +289,7 @@ export interface StoredReportForForm {
   notes?: string;
 }
 
-interface ThicknessReadingLike {
+interface ThicknessReadingLike extends ThicknessReadingCarried {
   valueCm?: number;
   minCm?: number;
   maxCm?: number;
@@ -184,23 +310,28 @@ function toInchesString(cm: number | undefined, decimals = 1): string {
 
 /** One stored reading → the form's imperial pair, choosing the mode the reading was actually made in. */
 function toFormReading(reading: ThicknessReadingLike): ThicknessFormReading {
+  const { valueCm, minCm, maxCm, method, ...facets } = reading;
+  const carried = definedOnly(facets);
+  const withCarried = Object.keys(carried).length > 0 ? { carried } : {};
   // `valueCm` present ⇒ a single measurement; otherwise it was entered as a range, even if only one
-  // end of it was filled in. `buildReportInput` produces exactly one of these two shapes.
-  if (reading.valueCm !== undefined) {
+  // end of it was filled in — or, for a poke, neither. `buildReportInput` produces exactly these shapes.
+  if (valueCm !== undefined) {
     return {
       mode: 'single',
-      value: toInchesString(reading.valueCm),
+      value: toInchesString(valueCm),
       min: '',
       max: '',
-      method: reading.method,
+      method,
+      ...withCarried,
     };
   }
   return {
     mode: 'range',
     value: '',
-    min: toInchesString(reading.minCm),
-    max: toInchesString(reading.maxCm),
-    method: reading.method,
+    min: toInchesString(minCm),
+    max: toInchesString(maxCm),
+    method,
+    ...withCarried,
   };
 }
 
@@ -262,6 +393,12 @@ export function isFormRoundTripOf(
  * keeps the stored source when the values come back unchanged (see `reports.update`), which is the
  * same decision made in the one place that can actually compare old and new.
  *
+ * **What it carries without a slot** (A10): the author's own claims this form predates — a chip's
+ * `where` and `note`, the snow facets, the thickness scope and each reading's facets, the vantage,
+ * the sighting, the suitability, the end time's precision. These are not provenance; they are what
+ * the author said, and the server cannot tell "this client has no control for it" from "the author
+ * cleared it". Only the client knows which it is, so the client says so, in `carried`.
+ *
  * ⚠ **The weather pair is the one lossy step**, because the fields are whole °F / whole mph and the
  * stored numbers are precise metric from Open-Meteo. `buildReportInput(reportFormFromReport(r))`
  * reproduces every other field exactly; those two come back within a rounding step, which is why the
@@ -269,14 +406,28 @@ export function isFormRoundTripOf(
  * practice — a user typed them in inches to begin with, so they round-trip to themselves.
  */
 export function reportFormFromReport(report: StoredReportForForm): ReportFormState {
+  const { depthCm, ...snowFacets } = report.snow ?? {};
+  const carried: CarriedReportFields = definedOnly({
+    skateEndTime: report.skateEndTime,
+    skateEndPrecision: report.skateEndPrecision,
+    observedFrom: report.observedFrom,
+    sighting: report.sighting,
+    suitability: report.suitability,
+    iceTypes: (report.iceTypes ?? []).map(toLocatedChip),
+    surfaceTags: (report.surfaceTags ?? []).map(toLocatedChip),
+    thicknessScope: report.iceThickness?.scope,
+    snow: Object.keys(definedOnly(snowFacets)).length > 0 ? definedOnly(snowFacets) : undefined,
+  }) as CarriedReportFields;
   return {
     skateEndTime: report.skateEndTime,
     ...(report.skateStartTime !== undefined ? { skateStartTime: report.skateStartTime } : {}),
-    iceTypes: [...(report.iceTypes ?? [])],
-    surfaceTags: [...(report.surfaceTags ?? [])],
+    // Keys once each: a lake with "black ice, north end" and "black ice, south bay" is one chip
+    // selected here, and both come back from `carried` while it stays selected.
+    iceTypes: [...new Set(iceTypeKeys(report.iceTypes))],
+    surfaceTags: [...new Set(surfaceTagKeys(report.surfaceTags))],
     skateQuality: report.skateQuality ?? '',
     thickness: (report.iceThickness?.readings ?? []).map(toFormReading),
-    snowCover: toInchesString(report.snowCoverCm),
+    snowCover: toInchesString(depthCm),
     conditions: {
       airTempF:
         report.conditions?.airTempC === undefined
@@ -291,6 +442,7 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
       precip: report.conditions?.precip ?? '',
     },
     notes: report.notes ?? '',
+    carried,
   };
 }
 

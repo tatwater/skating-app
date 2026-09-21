@@ -182,9 +182,117 @@ describe('reports.create', () => {
     const r = await t.run((ctx) => ctx.db.get(reportId));
     expect(r?.skateQuality).toBe('great');
     expect(r?.iceThickness?.readings[0]?.valueCm).toBe(12);
-    expect(r?.snowCoverCm).toBe(2);
+    // The pre-A10 number lands as the D194 depth (`snowCoverCm` is not a stored field any more).
+    expect(r?.snow).toEqual({ depthCm: 2 });
     expect(r?.conditions?.source).toBe('user'); // defaulted (D19)
     expect(r?.conditions?.sky).toBe('clear');
+  });
+
+  test('stores the A10 sheet fields: located chips, snow facets, a poke, How was it?, provenance', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    const reportId = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      skateEndPrecision: 'half_hour',
+      observedFrom: 'on_ice',
+      iceTypes: [{ type: 'black_ice', where: { sector: 'N', extent: 'mostly' } }, 'shell_ice'],
+      surfaceTags: [{ type: 'glass', note: ' except the middle ' }],
+      skateQuality: 'great',
+      suitability: 'not_for_beginners',
+      iceThickness: {
+        scope: 'at_spot',
+        readings: [
+          { method: 'poke', pokeCount: 5, minCm: 7, supportable: true },
+          { method: 'estimated', minCm: 10 },
+        ],
+      },
+      snow: { coverage: 'lanes', impediment: 'didnt_matter', plowedPath: false },
+    });
+    const r = await t.run((ctx) => ctx.db.get(reportId));
+    expect(r?.skateEndPrecision).toBe('half_hour');
+    expect(r?.observedFrom).toBe('on_ice');
+    expect(r?.iceTypes).toEqual([
+      { type: 'black_ice', where: { sector: 'N', extent: 'mostly' } },
+      { type: 'shell_ice' },
+    ]);
+    expect(r?.surfaceTags).toEqual([{ type: 'glass', note: 'except the middle' }]);
+    expect(r?.suitability).toBe('not_for_beginners');
+    expect(r?.iceThickness).toEqual({
+      scope: 'at_spot',
+      readings: [
+        { method: 'poke', pokeCount: 5, minCm: 7, supportable: true },
+        { method: 'estimated', minCm: 10 },
+      ],
+    });
+    expect(r?.snow).toEqual({ coverage: 'lanes', impediment: 'didnt_matter', plowedPath: false });
+  });
+
+  test('a where may name only a live bay of this body (D193)', async () => {
+    const t = convexTestWithGeo();
+    const { id: morey } = await seedBody(t, 'osm/1');
+    const { id: champlain } = await seedBody(t, 'osm/2');
+    const asUser = await seedUser(t, 'clerk_a');
+    const bay = async (parent: Id<'waterBodies'>, removed = false) => {
+      const authorId = await t.run(async (ctx) => (await ctx.db.query('profiles').first())?._id);
+      if (!authorId) throw new Error('seed a profile first');
+      return t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: parent,
+          name: 'Bay',
+          searchText: 'bay',
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          surfaceAreaSqM: 100_000,
+          displayScore: 1,
+          minVisibleZoom: 10,
+          createdByUserId: authorId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          ...(removed ? { removedAt: Date.now() } : {}),
+        }),
+      );
+    };
+    const ownBay = await bay(morey);
+    const otherBay = await bay(champlain);
+    const goneBay = await bay(morey, true);
+    const post = (subAreaId: string) =>
+      asUser.mutation(api.reports.create, {
+        waterBodyId: morey,
+        skateEndTime: SKATE_TIME,
+        iceTypes: [{ type: 'black_ice', where: { subAreaId, sector: 'head' } }],
+        iceThickness: { readings: [{ method: 'estimated', minCm: 5, where: { subAreaId } }] },
+      });
+    await expect(post(otherBay)).rejects.toThrow(/not a bay of this water body/);
+    await expect(post(goneBay)).rejects.toThrow(/not a bay of this water body/);
+    await expect(post('not-an-id')).rejects.toThrow(/not a bay of this water body/);
+    const reportId = await post(ownBay);
+    const r = await t.run((ctx) => ctx.db.get(reportId));
+    expect(r?.iceTypes[0]?.where?.subAreaId).toBe(ownBay);
+  });
+
+  test('a sighting from the ice is rejected at the trust boundary (D189)', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    await expect(
+      asUser.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sighting: 'open',
+      }),
+    ).rejects.toThrow(/sighting/);
+    const fromShore = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      observedFrom: 'shore',
+      sighting: 'open',
+    });
+    const r = await t.run((ctx) => ctx.db.get(fromShore));
+    expect(r?.sighting).toBe('open');
   });
 
   test('honors a dropped put-in pin as the report point', async () => {
@@ -712,6 +820,25 @@ describe('reports.update (author-only LWW, D25)', () => {
    * `updatedAt` hours after posting on nearly every report, so a byline derived from it would mark
    * the whole corpus as edited by authors who never touched it.
    */
+  test('re-dating a report moves its Post’s sort key (A10 / D186)', async () => {
+    const t = convexTestWithGeo();
+    const { asAuthor, reportId } = await seedReport(t);
+    // Give the report its legacy Post, as the A10-1 backfill does.
+    await t.mutation(internal.posts.backfillFromReports, {});
+    const postId = (await t.run((ctx) => ctx.db.get(reportId)))?.postId;
+    if (!postId) throw new Error('backfill gave the report no Post');
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(SKATE_TIME);
+
+    await asAuthor.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: SKATE_TIME + 3 * 60 * 60_000,
+      notes: 'actually got off at three',
+    });
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(
+      SKATE_TIME + 3 * 60 * 60_000,
+    );
+  });
+
   test('stamps editedAt, which a fresh report does not carry', async () => {
     const t = convexTestWithGeo();
     const { asAuthor, reportId } = await seedReport(t);
@@ -912,7 +1039,7 @@ describe('reports.update (author-only LWW, D25)', () => {
       // omit skateQuality + notes → LWW clears them
     });
     const after = await t.run((ctx) => ctx.db.get(reportId));
-    expect(after?.surfaceTags).toEqual(['glass']);
+    expect(after?.surfaceTags).toEqual([{ type: 'glass' }]);
     expect(after?.skateQuality).toBeUndefined();
     expect(after?.notes).toBeUndefined();
     expect(after?.updatedAt ?? 0).toBeGreaterThanOrEqual(before?.updatedAt ?? 0);
@@ -1035,6 +1162,85 @@ describe('reports.update / photos.create guards (review fixes)', () => {
       const { asUser, reportId, photoId } = await seedReportWithPhoto(t);
       await asUser.mutation(api.reports.update, { reportId, skateEndTime: SKATE_TIME });
       expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([photoId]);
+    });
+  });
+
+  /**
+   * `photos.reportId` is the back-link beside `reports.photoIds` (A10 / D186), and one id can only
+   * point one way — so a photo documents one report, held at the write (Greptile P1 on PR #71):
+   * both writers stamp the link, an edit clears it on a dropped photo, and a photo another report
+   * already claims is refused rather than shared.
+   */
+  describe('the photo back-link (A10 / D186)', () => {
+    async function seedUserWithPhoto(t: ReturnType<typeof convexTest>) {
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
+      const photoOf = () =>
+        asUser.mutation(api.photos.create, {
+          storageId,
+          thumbStorageId: storageId,
+          placeOnMap: false,
+        });
+      return { bodyId: id, asUser, photoOf };
+    }
+    // `null` for "no link": a function result cannot carry `undefined`.
+    const linkOf = (t: ReturnType<typeof convexTest>, photoId: Id<'photos'>) =>
+      t.run(async (ctx) => (await ctx.db.get(photoId))?.reportId ?? null);
+
+    test('create stamps it, and an edit moves it with the list', async () => {
+      const t = convexTestWithGeo();
+      const { bodyId, asUser, photoOf } = await seedUserWithPhoto(t);
+      const first = await photoOf();
+      const second = await photoOf();
+      const reportId = await asUser.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [first, first], // the same id twice is one photo
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([first]);
+      expect(await linkOf(t, first)).toBe(reportId);
+      expect(await linkOf(t, second)).toBeNull();
+
+      await asUser.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [second],
+      });
+      expect(await linkOf(t, first)).toBeNull();
+      expect(await linkOf(t, second)).toBe(reportId);
+    });
+
+    test('a photo another report already documents is refused, on create and on edit', async () => {
+      const t = convexTestWithGeo();
+      const { bodyId, asUser, photoOf } = await seedUserWithPhoto(t);
+      const shared = await photoOf();
+      const owner = await asUser.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [shared],
+      });
+      await expect(
+        asUser.mutation(api.reports.create, {
+          waterBodyId: bodyId,
+          skateEndTime: SKATE_TIME,
+          photoIds: [shared],
+        }),
+      ).rejects.toThrow(/another report/);
+      const other = await asUser.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: SKATE_TIME,
+      });
+      await expect(
+        asUser.mutation(api.reports.update, {
+          reportId: other,
+          skateEndTime: SKATE_TIME,
+          photoIds: [shared],
+        }),
+      ).rejects.toThrow(/another report/);
+      // The refusal is the whole transaction: nothing moved.
+      expect(await linkOf(t, shared)).toBe(owner);
+      expect((await t.run((ctx) => ctx.db.get(other)))?.photoIds).toEqual([]);
     });
   });
 
