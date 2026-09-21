@@ -49,3 +49,8 @@ Read, in this order: `plans/README.md` (conventions), the phase doc, its `07-roa
   and CI won't catch it.
 - **Device testing** is Android via EAS `preview` builds (standalone, not the dev client), with env
   vars in EAS environments. Clerk sign-in on dev is email-code only; password can never complete.
+- **Never display an env file or a variable's value** — not `cat`, `echo`, `env`, `printenv`, nor a
+  `grep -v` that keeps values; a transcript is forever, and one such dump rotated five secrets. To
+  learn which variables exist: `grep -o '^[A-Z_][A-Z0-9_]*=' <file>`. To load them:
+  `set -a; source <file> >/dev/null 2>&1; set +a`. Every sub-agent brief that touches credentials
+  carries this rule verbatim.

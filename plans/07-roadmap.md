@@ -142,7 +142,7 @@ scope by favorites and drive-time; put-ins and directions are on the map.*
 - 🟢 **"Recommended" filter-breaking posts** — Phase 06, gated on corroboration
 - ⚪ **Self-hosted ORS for a true 90-minute band** → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md)
 - ⚪ **Reverse spatial index for fan-out (D172)** — trigger ~1,000 profiles → A08
-- ⚪ **`showPutIn` has no client control** — the opt-out shipped server-side only; D58's clipping never fires → register
+- 🟡 **`showPutIn` has no client control** — the opt-out shipped server-side only; D58's clipping never fires; the toggle is built on a local branch and lands with A10-2 → register
 
 ## Phase 05 — Newsfeed
 🟢 **Complete** 2026-07-17 · PR #18 · [plan](./phases/05-newsfeed.md) · D28
@@ -799,7 +799,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | **`matchBathymetryLakes` and `matchAndImportDepths`** — `listedBodiesNearCoord` with no `marginMeters`; `putIns.loadPutInRows` uncapped `.collect()` | ⚪ | nothing; the A06d fix pattern applies (`coveringBodyForPoints` was deleted 2026-08-09) | A06d |
 | **`@clerk/clerk-expo` → `@clerk/expo` Core 3 migration** — the vehicle; the Gli identifiers ride it | ⚪ | nothing; the package is deprecated outright | [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) |
 | **Gli internal identifiers** — `scheme`, `slug`, `@skating/*`, the remote | ⚪ | the Clerk Core 3 migration above; the scheme wants a dual-scheme period (Strava callback + installed deep links) | `backlog/gli-identifiers.md` |
-| **`showPutIn` has no client control** — the per-report put-in opt-out (Phase 04) and the put-in-gated path clipping that hangs off it (D58; `listTracksForBody` clips only when `showPutIn === false`) can be set by no screen, so a published path always renders whole, launch and driveway included | ⚪ | nothing; a toggle on the report form on both clients | Phase 04, Phase 08 |
+| **`showPutIn` has no client control** — the per-report put-in opt-out (Phase 04) and the put-in-gated path clipping that hangs off it (D58; `listTracksForBody` clips only when `showPutIn === false`) can be set by no screen, so a published path always renders whole, launch and driveway included. **Built 2026-09-20** on the founder's local branch `phase-a10-reporting-flow-2` (the switch on both report forms, `profiles.showPutInDefault`, `redactPutIn` at `reports.get` / `listByWaterBody` / profile history, a `draftStore` migration) — lands as the first commits of A10-2, before the offline-queue reshape touches `draftStore.ts`; then flip this row and fix `PRIVACY.md`'s "paths are shown whole" sentence | 🟡 | A10-2 | Phase 04, Phase 08, A10 |
 | **GPS-skate half of bounty eligibility (D44)** — `fanOutEligibility` reads report authors only; no bounty path reads `gpsActivities.by_water_body` (its one reader is the attachment check in `waterBodies.ts`); the roadmap said this lit up with Phase 08 | ⚪ | nothing; one query | Phase 06 |
 | **Mobile summary cards** — the A06c §5 map cards (name, recent report count, the D86 dots, top hazard types) are web-only; mobile draws name labels; the logic is in `core/bodySummary.ts` | ⚪ | nothing; a mobile symbol layer over the same `summary` field (founder: parity, 2026-09-20) | A06c §5 |
 | **Sub-areas under the imagery reveal** — hidden today with no flag; §1.3 asked for one, hooked to a UI toggle; outline vs hatched/shaded TBD | ⚪ | nothing; a design detail | A06e §1.3 |

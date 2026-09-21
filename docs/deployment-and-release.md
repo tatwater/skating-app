@@ -135,7 +135,8 @@ pnpm exec eas build:view <id> --json          # poll; rejects --non-interactive
 Free-tier queue time is ~20 min before a ~20 min compile. The finished build's page has an
 **Install** button + QR code; the `applicationArchiveUrl` in `build:view --json` is a direct APK
 link that opens on the phone. Same package name (`com.teaganatwater.gli`) across profiles, so a
-preview install replaces a dev-client install.
+preview install replaces a dev-client install. Downloaded build logs are **brotli**-encoded —
+decode with node's `zlib.brotliDecompressSync`, not gunzip.
 
 ### Rebuild vs OTA update
 

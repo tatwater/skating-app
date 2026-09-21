@@ -290,7 +290,10 @@ A fresh-eyes review against the code, before any build. What it found and what c
   reports field-labeled (a Sonnet agent drafts, a human verifies) — labeled here, not assumed.
 - §1.3 Run three extractors — Claude-only (Haiku 4.5, then Sonnet 5) and Claude + Jev — and
   record precision/recall per field, latency and cost per report. The harness takes any
-  `Extractor`; the title is part of the input.
+  `Extractor`; the title is part of the input. ⚠ **Fix the prompt-cache boundary first:** the
+  2026-09-19 mention inventory (Haiku over 2,449 emails) cost $5.68 because caching never engaged —
+  the shared prefix (system prompt + vocabulary) sat after the per-message text. Confirm
+  `cache_read_input_tokens > 0` on the second call before running the corpus.
 - §1.4 The go/no-go for ghost-chip extraction is a per-field precision floor — a wrong ghost chip
   is a tap to dismiss, but a wrong *confident* one on thickness is a claim we suggested. Floors are
   set from the first run, not before it.
