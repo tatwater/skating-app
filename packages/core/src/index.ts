@@ -77,6 +77,7 @@ export * from './osm';
 export * from './passedHazards';
 export * from './pathToBody';
 export * from './photo';
+export * from './photoWindow';
 export * from './postedAccess';
 export * from './profile';
 export * from './profileReveal';
