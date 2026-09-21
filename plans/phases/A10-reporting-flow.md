@@ -384,15 +384,15 @@ ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
   extraction (A10-4), never pass it through; and `accessAlerts.reason` still narrows to the blocker
   set until §7.2's write path lands (A10-2).
 
-## Built record — A10-2 (2026-09-21, `phase-a10-reporting-flow-2`)
+## Built record — A10-2 (2026-09-21, `phase-a10-reporting-flow-2`, PR #72)
 
 §2.4 (the plumbing: `posts.create`, moderation, purge, export, the feed), §7.2's server half, §9.4,
 §12.1, the `showPutIn` switch that had waited on a local branch since 2026-09-20, and PRIVACY.md's
-sentence about it. Eleven commits off `main` at `8c53098c`. Suites at build: core 2,905 · convex
-1,727 · web 573 · mobile 112. No data runs; the schema change (`accessAlerts.reason` widens) needs a
+sentence about it. Eighteen commits off `main` at `8c53098c`, ~6,600 lines over 91 files. Suites at
+build: core 2,905 · convex 1,730 · web 573 · mobile 112. No data runs; the schema change (`accessAlerts.reason` widens) needs a
 `convex dev --once` before the app is used against dev.
 
-**Deferred to A10-2b by the founder's size rule** (this PR is ~7k lines with the switch; 9k was
+**Deferred to A10-2b by the founder's size rule** (this PR is ~6,600 lines with the switch; 9k was
 too many): §9.1–§9.3 (the queue reshaped around Posts, D55 ids in the draft, *Waiting to send*),
 §12.2 (aggregates learn `where`), §12.3 (the water-body silhouette on cards and the sheet), and the
 profile history as Posts. §1.5 (the corpus replay) waits on the founder's eval review — the engine
