@@ -64,7 +64,15 @@ export async function refreshPostLatestSkateEnd(
  * One Post per Report that has none (A10-1 backfill). Paginated over the report table and
  * self-scheduling; idempotent, because a Report with a `postId` is skipped, so a re-run after a
  * partial pass finishes the rest and a run on a finished deployment is a no-op. Also stamps
- * `photos.reportId` on the Report's photos — the back-link `posts.create` writes for new ones.
+ * `photos.reportId` on the Report's photos — the back-link `reports.create` and `reports.update`
+ * write for every list they store (`syncReportPhotoLinks`).
+ *
+ * **A photo two legacy reports both list** cannot be back-linked to both. Nothing before A10 stopped
+ * an author attaching one photo id to two of their reports, so the case is possible in principle,
+ * though no deployment holds one (dev: two reports, no photos; prod: uninitialized). The pass does
+ * not guess: the earlier report — table order is creation order — keeps the link, and the id is
+ * returned in `photosShared` so the operator sees it rather than a silent skip. `reports.update`
+ * refuses to add such a photo to a further report, so the set can only shrink.
  *
  * `pnpm exec convex run posts:backfillFromReports`.
  */
@@ -76,16 +84,21 @@ export const backfillFromReports = internalMutation({
       .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 100)) });
     let created = 0;
     let photosStamped = 0;
+    const photosShared: Id<'photos'>[] = [];
     for (const report of page.page) {
       if (report.postId !== undefined) continue;
       const postId: Id<'posts'> = await ctx.db.insert('posts', legacyPostFor(report));
       await ctx.db.patch(report._id, { postId });
       created++;
-      for (const photoId of report.photoIds) {
+      for (const photoId of new Set(report.photoIds)) {
         const photo = await ctx.db.get(photoId);
-        if (!photo || photo.reportId !== undefined) continue;
-        await ctx.db.patch(photoId, { reportId: report._id });
-        photosStamped++;
+        if (!photo) continue;
+        if (photo.reportId === undefined) {
+          await ctx.db.patch(photoId, { reportId: report._id });
+          photosStamped++;
+        } else if (photo.reportId !== report._id) {
+          photosShared.push(photoId);
+        }
       }
     }
     if (!page.isDone) {
@@ -94,6 +107,6 @@ export const backfillFromReports = internalMutation({
         ...(batchSize !== undefined ? { batchSize } : {}),
       });
     }
-    return { scanned: page.page.length, created, photosStamped, isDone: page.isDone };
+    return { scanned: page.page.length, created, photosStamped, photosShared, isDone: page.isDone };
   },
 });

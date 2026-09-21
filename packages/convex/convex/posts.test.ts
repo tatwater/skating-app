@@ -125,7 +125,13 @@ describe('posts.backfillFromReports (A10-1)', () => {
     const plain = await seedLegacyReport(t, authorId, bodyId);
 
     const result = await t.mutation(internal.posts.backfillFromReports, {});
-    expect(result).toEqual({ scanned: 2, created: 2, photosStamped: 1, isDone: true });
+    expect(result).toEqual({
+      scanned: 2,
+      created: 2,
+      photosStamped: 1,
+      photosShared: [],
+      isDone: true,
+    });
 
     const posts = await t.run((ctx) => ctx.db.query('posts').collect());
     expect(posts).toHaveLength(2);
@@ -154,13 +160,57 @@ describe('posts.backfillFromReports (A10-1)', () => {
     for (let i = 0; i < 5; i++) await seedLegacyReport(t, authorId, bodyId);
 
     const first = await t.mutation(internal.posts.backfillFromReports, { batchSize: 2 });
-    expect(first).toEqual({ scanned: 2, created: 2, photosStamped: 0, isDone: false });
+    expect(first).toEqual({
+      scanned: 2,
+      created: 2,
+      photosStamped: 0,
+      photosShared: [],
+      isDone: false,
+    });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(5);
 
     const again = await t.mutation(internal.posts.backfillFromReports, {});
-    expect(again).toEqual({ scanned: 5, created: 0, photosStamped: 0, isDone: true });
+    expect(again).toEqual({
+      scanned: 5,
+      created: 0,
+      photosStamped: 0,
+      photosShared: [],
+      isDone: true,
+    });
     expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(5);
+  });
+
+  /**
+   * Nothing before A10 stopped one photo id being listed on two of an author's reports. The pass
+   * links the earlier report and *says so* — a silent skip would leave the second report's Post
+   * listing a photo that documents another (Greptile P1 on PR #71).
+   */
+  test('reports a photo two legacy reports both list, and links the earlier one', async () => {
+    const t = convexTest(schema, modules);
+    const authorId = await seedProfile(t);
+    const bodyId = await seedBody(t);
+    const photoId = await t.run((ctx) =>
+      ctx.db.insert('photos', {
+        storageId: 's',
+        thumbStorageId: 't',
+        uploaderId: authorId,
+        placeOnMap: false,
+        createdAt: T0,
+      }),
+    );
+    const earlier = await seedLegacyReport(t, authorId, bodyId, { photoIds: [photoId] });
+    await seedLegacyReport(t, authorId, bodyId, { photoIds: [photoId, photoId] });
+
+    const result = await t.mutation(internal.posts.backfillFromReports, {});
+    expect(result).toEqual({
+      scanned: 2,
+      created: 2,
+      photosStamped: 1,
+      photosShared: [photoId],
+      isDone: true,
+    });
+    expect((await t.run((ctx) => ctx.db.get(photoId)))?.reportId).toBe(earlier);
   });
 
   test('legacyPostFor is exactly the one-body shape', () => {

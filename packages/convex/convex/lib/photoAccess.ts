@@ -12,17 +12,53 @@ import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
-/** Verify every photo id exists and belongs to the author (no attaching someone else's photo). */
+/**
+ * Verify every photo id exists and belongs to the author (no attaching someone else's photo).
+ *
+ * With `claim`, also that no photo is already the back-linked photo of a *different* report (A10 /
+ * D186): `photos.reportId` is one id, so one photo documents one report, and the place to hold
+ * that is here, at the write — not in a reader trying to pick between two reports that both list
+ * it. The same id sent twice in one list is folded rather than refused; it is one photo either way.
+ */
 export async function assertOwnedPhotos(
   ctx: MutationCtx,
   photoIds: readonly Id<'photos'>[],
   authorId: Doc<'profiles'>['_id'],
+  claim?: { reportId: Id<'reports'> | null },
 ): Promise<void> {
   for (const photoId of photoIds) {
     const photo = await ctx.db.get(photoId);
     if (!photo || photo.uploaderId !== authorId) {
       throw new ConvexError('Photo not found or not owned by the author');
     }
+    if (claim && photo.reportId !== undefined && photo.reportId !== claim.reportId) {
+      throw new ConvexError('Photo already belongs to another report');
+    }
+  }
+}
+
+/**
+ * Keep `photos.reportId` — the back-link beside `reports.photoIds` (A10 / D186) — in step with a
+ * report's photo list: stamped on every photo the list gains, cleared on every one it drops. Called
+ * by each writer of `reports.photoIds` in the same transaction as the list write, after
+ * `assertOwnedPhotos` with the claim, so the two never disagree. `posts.backfillFromReports` covers
+ * the rows written before this existed.
+ */
+export async function syncReportPhotoLinks(
+  ctx: MutationCtx,
+  reportId: Id<'reports'>,
+  before: readonly Id<'photos'>[],
+  after: readonly Id<'photos'>[],
+): Promise<void> {
+  const kept = new Set(after);
+  for (const photoId of new Set(before)) {
+    if (kept.has(photoId)) continue;
+    const photo = await ctx.db.get(photoId);
+    if (photo?.reportId === reportId) await ctx.db.patch(photoId, { reportId: undefined });
+  }
+  for (const photoId of kept) {
+    const photo = await ctx.db.get(photoId);
+    if (photo && photo.reportId !== reportId) await ctx.db.patch(photoId, { reportId });
   }
 }
 

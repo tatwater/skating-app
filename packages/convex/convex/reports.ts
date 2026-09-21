@@ -95,7 +95,7 @@ import { bumpContributionCount } from './lib/contributionCounts';
 import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
-import { assertOwnedPhotos } from './lib/photoAccess';
+import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
 import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
@@ -284,8 +284,10 @@ export const create = mutation({
     }
     const n = result.normalized;
 
-    const photoIds = args.photoIds ?? [];
-    await assertOwnedPhotos(ctx, photoIds, profile._id);
+    // A new report's id is not known yet, so the claim is "no report": a photo already documenting
+    // one is refused rather than shared (A10 / D186 — one photo, one report).
+    const photoIds = [...new Set(args.photoIds ?? [])];
+    await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: null });
 
     // Stamp the point-derived location label (Phase 05) from the resolved put-in point (else the
     // body centroid) against the `adminAreas` boundaries — so the feed reads `{town/county, state}`
@@ -379,6 +381,9 @@ export const create = mutation({
     );
     const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
     if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
+
+    // The photos' back-link (A10 / D186), written beside the list it mirrors.
+    await syncReportPhotoLinks(ctx, reportId, [], photoIds);
 
     // The membership's indexable copy (A09) — one join row per bay, so the bay feed and the bay
     // bounty gate can find a spanning report under its second bay too.
@@ -1236,8 +1241,8 @@ export const update = mutation({
     }
     const n = result.normalized;
 
-    const photoIds = args.photoIds ?? existing.photoIds;
-    await assertOwnedPhotos(ctx, photoIds, profile._id);
+    const photoIds = [...new Set(args.photoIds ?? existing.photoIds)];
+    await assertOwnedPhotos(ctx, photoIds, profile._id, { reportId: args.reportId });
 
     // Re-resolve the point-derived place (Phase 05) from the final point — an edited put-in pin moves
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
@@ -1289,6 +1294,8 @@ export const update = mutation({
       editedAt: now,
       updatedAt: now,
     });
+    // The list is replaced wholesale, so the back-links follow it both ways (A10 / D186).
+    await syncReportPhotoLinks(ctx, args.reportId, existing.photoIds, photoIds);
     // The join mirrors both things this edit can move — the membership and the skate time (A09).
     await syncReportSubAreas(
       ctx,

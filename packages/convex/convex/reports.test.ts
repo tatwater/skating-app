@@ -1165,6 +1165,85 @@ describe('reports.update / photos.create guards (review fixes)', () => {
     });
   });
 
+  /**
+   * `photos.reportId` is the back-link beside `reports.photoIds` (A10 / D186), and one id can only
+   * point one way — so a photo documents one report, held at the write (Greptile P1 on PR #71):
+   * both writers stamp the link, an edit clears it on a dropped photo, and a photo another report
+   * already claims is refused rather than shared.
+   */
+  describe('the photo back-link (A10 / D186)', () => {
+    async function seedUserWithPhoto(t: ReturnType<typeof convexTest>) {
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
+      const photoOf = () =>
+        asUser.mutation(api.photos.create, {
+          storageId,
+          thumbStorageId: storageId,
+          placeOnMap: false,
+        });
+      return { bodyId: id, asUser, photoOf };
+    }
+    // `null` for "no link": a function result cannot carry `undefined`.
+    const linkOf = (t: ReturnType<typeof convexTest>, photoId: Id<'photos'>) =>
+      t.run(async (ctx) => (await ctx.db.get(photoId))?.reportId ?? null);
+
+    test('create stamps it, and an edit moves it with the list', async () => {
+      const t = convexTestWithGeo();
+      const { bodyId, asUser, photoOf } = await seedUserWithPhoto(t);
+      const first = await photoOf();
+      const second = await photoOf();
+      const reportId = await asUser.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [first, first], // the same id twice is one photo
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([first]);
+      expect(await linkOf(t, first)).toBe(reportId);
+      expect(await linkOf(t, second)).toBeNull();
+
+      await asUser.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [second],
+      });
+      expect(await linkOf(t, first)).toBeNull();
+      expect(await linkOf(t, second)).toBe(reportId);
+    });
+
+    test('a photo another report already documents is refused, on create and on edit', async () => {
+      const t = convexTestWithGeo();
+      const { bodyId, asUser, photoOf } = await seedUserWithPhoto(t);
+      const shared = await photoOf();
+      const owner = await asUser.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [shared],
+      });
+      await expect(
+        asUser.mutation(api.reports.create, {
+          waterBodyId: bodyId,
+          skateEndTime: SKATE_TIME,
+          photoIds: [shared],
+        }),
+      ).rejects.toThrow(/another report/);
+      const other = await asUser.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: SKATE_TIME,
+      });
+      await expect(
+        asUser.mutation(api.reports.update, {
+          reportId: other,
+          skateEndTime: SKATE_TIME,
+          photoIds: [shared],
+        }),
+      ).rejects.toThrow(/another report/);
+      // The refusal is the whole transaction: nothing moved.
+      expect(await linkOf(t, shared)).toBe(owner);
+      expect((await t.run((ctx) => ctx.db.get(other)))?.photoIds).toEqual([]);
+    });
+  });
+
   test('photos.create rejects an out-of-range coord (range guard, D42)', async () => {
     const t = convexTestWithGeo();
     const asUser = await seedUser(t, 'clerk_a');
