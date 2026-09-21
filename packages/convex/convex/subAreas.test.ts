@@ -2717,7 +2717,7 @@ describe('sub-areas by chord (D201)', () => {
     const row = await t.run((ctx) => ctx.db.get(id));
     expect(row?.removedAt).toBeUndefined();
     expect(row?.mouth).toEqual(mouth); // the fact is kept; the shape follows it
-    const ring = (row?.polygon as { coordinates: number[][][] }).coordinates[0] ?? [];
+    const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
     expect(ring.some(([lng, lat]) => lng === -72.6 && lat === 44.2)).toBe(true);
     expect(ring.some(([lng, lat]) => lng === -72.6 && Math.abs((lat ?? 0) - 44.1) < 1e-6)).toBe(
       false,

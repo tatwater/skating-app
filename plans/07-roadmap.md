@@ -332,7 +332,7 @@ a place with a name, and an operator can curate a water body in place.*
 - **2026-07-26 — curation session:** the seeded sub-areas and the bay re-parenting recorded in the plan doc
 
 #### Deferred
-- ⚪ **Dillenbeck, Carry and Northwest Bay** — unplaced for want of local knowledge; now rows in the chord editor's queue → register (*Sub-areas by chord*)
+- 🟢 **Dillenbeck, Carry and Northwest Bay** — unplaced for want of local knowledge; rows in the lake editor's queue since *Sub-areas by chord* (D201) — a moderator session draws them
 - ⚪ **Per-track exclusion from the aggregate layer (D61)** — a second consent flag vs D58 → register
 
 ## Phase A03 / A04 — Account lifecycle + storage hygiene
@@ -721,7 +721,7 @@ minute from a track, and the app never loses one for lack of signal.*
 
 #### Deferred
 - ⚪ **Named landmarks** (OSM/GNIS islands, points, reference bays) as labels + `where: point(name)` → [`features/named-landmarks.md`](./features/named-landmarks.md), with A10-2
-- ⚪ **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page → [`features/subarea-chord-editor.md`](./features/subarea-chord-editor.md), before A10-3
+- 🟢 **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page; the queue is the `name_bay` request kind → register (*Sub-areas by chord*), D201
 - ⚪ **Vision-suggested hazard types** on a photo the skater already tagged — after §1's eval pattern exists
 - ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
 - ⚪ **Water-body map in feed cards** (Phase 05 decision 6) — folded in 2026-09-20; named §12.3 at A10-1, lands with A10-2
@@ -848,7 +848,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
 | **The design pass** — FUI on both apps via Figma → SVG; the a11y floor (dynamic type, a screen-reader pass); the *Explore* rename if it's real (both apps still say *Map*); Skia re-entry if the pass asks for effects RN can't draw; the Q17 anchor UX | ⚪ | the founder's design time | `00` § Look and feel, `03` § Considered (Skia) |
-| **Sub-areas by chord** (D201 at build) — two shoreline points, a side, a sagitta; the admin body page's queue of the 16 destination bays the corpus skates and the catalog has only as points (Northwest, Button, Dog Cove, Wolfeboro, Keeler, Maquam, Dillenbeck, Carry, Stevenson, St. Albans, Holcomb, City, Silver, Fishers, Huddle, Herrick) — incl. A02's three unplaced; 7 of the 76 also need a parent chosen by hand | ⚪ | the tool (before A10-3), then a moderator session | [`features/subarea-chord-editor.md`](./features/subarea-chord-editor.md), [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md) § 1 |
+| **Sub-areas by chord** (D201) — the tool shipped 2026-09-21 (PR TBD): two shoreline points, a side, a sagitta; the polygon derived on the server, the mouth stored beside it; the queue is a sixth request kind, `name_bay`, on the lake editor and `/admin/water/requests`. **Owed: the moderator session** — the 16 destination bays are filed by `pnpm --filter @skating/seed-destinations seed-bay-requests <bays.json> --requester=<profileId> --apply` after merge (the dev rows were removed with the smoke test), then drawn: Northwest, Button, Dog Cove, Wolfeboro, Keeler, Maquam, Dillenbeck, Carry, Stevenson, St. Albans, Holcomb, City, Silver, Fishers, Huddle, Herrick | ⚪ | a moderator session on dev | D201, [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md) § 1 |
 | **Named landmarks** (D202 at build) — `bodyLandmarks` from OSM + GNIS + the corpus's 194 places and 23 reference bays; labels at bay zoom; `where: point(name)` for the sheet and extraction | ⚪ | with A10-2 | [`features/named-landmarks.md`](./features/named-landmarks.md) |
 | **Location anchor (Q17) + a hosted geocoder** — Here / Home / Somewhere; Explore recenters, Latest re-weights, drive-time bands recompute per anchor (the D18 cache, one more entry); Home settable from an address | ⚪ | the design pass (where it lives; session vs setting; notifications stay on Home); the geocoder choice — leaning ORS `/geocode` from a Convex action | [`backlog/location-anchor.md`](./backlog/location-anchor.md), `04` § Geocoding |
 | **Outbound email-group bridge** — a skater's report posted to their regional list(s), opt-in per group, under their name; not legal-gated (L5 *Not gated*) | ⚪ | design: which lists per region and their posting rules, a sender the lists accept; `packages/email` templates; after A10's Posts | [`backlog/email-group-bridge.md`](./backlog/email-group-bridge.md), Q8 |

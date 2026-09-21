@@ -5750,7 +5750,8 @@ reachable-removed rule.
 request as *a coordinate plus a requester*, resolved against the archives, admitted by a moderator.
 Built with three changes the kickoff settled.
 
-**Five kinds, not one.** With standing (D176) a request is usually about a water body we already hold:
+**Five kinds, not one** *(six from D201: `name_bay`, a bay on an active lake that skaters treat
+as a place of its own — the sub-area queue)*. With standing (D176) a request is usually about a water body we already hold:
 `activate` a dormant body (the common case once the corpus is tiered — no geometry, one decision),
 `restore` a removed one, `contest_access` a `none` ruling, and the landowner's `takedown` D48
 deferred to Phase 07 and nobody built (*"we should add landowner takedown request as a fifth kind"*).
@@ -6152,3 +6153,39 @@ third parties is republishing (L5), whatever the byline says; on a private, disp
 it is testing.
 
 **Related:** D186, D196, D199, Q8, L5a.
+
+## D201 — A sub-area is two shoreline points, a side, and a sagitta; the polygon is derived (Sub-areas by chord)
+
+**Decided (2026-09-20, founder call at the A10 corpus seed; built 2026-09-21).** A bay's outline is
+the parent's own shoreline, and the only judgment in it is where the mouth is. So the default
+sub-area tool is a **chord**: two clicks that snap to the parent's outline (the outer ring, or an
+island's ring — Keeler, Carry, City and Holcomb are bays *of* Grand Isle and North Hero, which are
+inner rings of Champlain's polygon), a click on the side that is the bay, and an optional bow of
+the mouth line into a circular arc — out to take in the open water skaters treat as the bay's, in
+to leave it. The row stores the fact, `mouth: { a, b, side, sagittaM }`, beside the polygon it
+produced; **the server derives the polygon from the mouth against the stored parent** — a client
+previews, it never supplies the shape — and every reader keeps using the polygon. A free-draw
+redraw clears the mouth; a re-import re-derives a chord bay from its mouth, so the outline follows
+the new shoreline. The freehand tool stays for the shapes a chord cannot say.
+
+**The queue is the request lane, not a table of its own.** A sixth request kind, `name_bay`
+(D179 amended), carries a bay's name and a point; an active lake admits it from either client; the
+lake editor lists a body's open asks beside the map and drawing one approves it and every ask for
+the same bay; the requests page lists them across bodies. The corpus's sixteen destination bays
+were filed the same way (`corpusRequests.seedBayRequests`, from a gitignored `--input=` — a bay
+that the corpus *skates* in ≥ 2 messages; the rule reproduces the founder's list exactly), so the
+one-off list and every future ask are the same rows on the same pages. The implicit signal — a
+landmark whose reports keep naming it — belongs to the landmarks feature (D202) once
+`where: point` exists.
+
+**Why:** the automatic mouth (a disc around the point, then the narrowest chord) found a real mouth
+on 1 of 39 bays, and a person finds it in ten seconds. Storing the mouth rather than only the
+polygon is what lets a re-import move the shoreline under a bay without a redraw, and what the A09
+"skated past the mouth" evidence is about. Two points bound two regions, so `side` is required;
+a walk direction would not survive a re-import re-orienting the ring, where a point does. A chord
+between the mainland and an island is refused — its two sides are not defined. A closing line that
+properly crosses the walked shore is refused; one that only touches it (a click that snapped a few
+meters past a corner) is a zero-width spike the clipper drops, not a crossing. The queue reuses
+A07b because a corpus-shaped table would have been a second queue with no second answer.
+
+**Related:** D60, D175, D179, D202, A02 Decision 10, A09.

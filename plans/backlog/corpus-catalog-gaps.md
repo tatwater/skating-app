@@ -16,7 +16,9 @@ The parent matched; the bay is not drawn. **None has an OSM polygon** (A07a alre
 one that did); 39 exist as a point, the rest are spelling variants, landmarks or prose locatives.
 Automatic outlining from the point was tried (disc, then narrowest-chord) and found a real mouth
 on 1 of 39 — retired. The corpus splits the 39 by *skated* messages: **16 destinations** (skated in
-≥ 2 messages) are the queue for [`features/subarea-chord-editor.md`](../features/subarea-chord-editor.md);
+≥ 2 messages) are `name_bay` requests for the chord editor (D201, shipped 2026-09-21 —
+`seed-bay-requests` files them from `seed/bays/bay-requests.json`, built by `build-bay-requests`
+from `mentions.csv` + `classification.csv`, and the rule reproduces the sixteen exactly);
 **23 reference points** become labels through [`features/named-landmarks.md`](../features/named-landmarks.md).
 "The Broads" exists on **both** Sunapee and Winnipesaukee.
 
