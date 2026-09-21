@@ -24,7 +24,7 @@ import { uploadToStorage } from '../components/photoPipeline';
 import { convex } from './convex';
 import { isPersistedUri, persistDraftPhoto } from './draftPhotos';
 import { getDraft, saveDraft, saveHazardItem } from './draftStore';
-import { flushDrafts } from './flushService';
+import { flushDrafts, takeFlushResult } from './flushService';
 import { type PostSheet, type SheetReport, toPostDraft } from './sheetModel';
 
 /** Copy each picked photo out of the picker cache into the drafts dir, once. */
@@ -100,11 +100,14 @@ export async function postSheet(post: PostSheet, now: number): Promise<PostOutco
   saveDraft(toPostDraft(persisted, 'pending', now, getDraft(post.draftId)));
   queueConfirmations(persisted, now);
   await flushDrafts();
-  const after = getDraft(post.draftId);
-  if (after?.status === 'done' && after.reportIds?.[0] !== undefined) {
-    return { kind: 'posted', reportId: after.reportIds[0] };
+  const result = takeFlushResult(post.draftId);
+  if (result?.ok) {
+    const reportId = result.reportIds[0];
+    return reportId !== undefined ? { kind: 'posted', reportId } : { kind: 'queued' };
   }
-  if (after?.status === 'error') return { kind: 'refused', message: after.errorMessage ?? '' };
+  if (result && !result.ok && result.kind === 'permanent') {
+    return { kind: 'refused', message: result.message };
+  }
   return { kind: 'queued' };
 }
 

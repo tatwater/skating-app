@@ -22,6 +22,7 @@ import {
   isHazardItemFlushable,
   isTrackFlushable,
   type PostFlushEffects,
+  type PostFlushResult,
   postDraftPhotoUris,
   type ReportInput,
   referencedHazardLocalIds,
@@ -299,6 +300,20 @@ const drain = createCoalescedRunner(() => drainOnce(Date.now()));
  * snapshot) and held under `flushingIds` for the duration, so an edit saved after the snapshot is
  * either picked up fresh here or blocked by `isDraftFlushing` in the form — never silently lost.
  */
+/** The last outcome per draft from a drain, so the sheet can learn where its Post landed. */
+const lastResults = new Map<string, PostFlushResult>();
+
+/**
+ * What the last drain did with a draft — the sheet reads this after `flushDrafts()` to land on the
+ * Report it just posted, because a draft that posted is deleted from the queue and cannot say so
+ * itself. Cleared on read.
+ */
+export function takeFlushResult(id: string): PostFlushResult | null {
+  const result = lastResults.get(id) ?? null;
+  lastResults.delete(id);
+  return result;
+}
+
 async function drainOnce(now: number): Promise<void> {
   // Hazards first, deliberately. They're safety content that another skater may be about to need,
   // and a queue of report drafts with photos can take a while to drain on a weak connection —
@@ -317,6 +332,7 @@ async function drainOnce(now: number): Promise<void> {
       const fresh = getDraft(id);
       if (!fresh || !isFlushable(fresh)) continue;
       const result = await flushPost(fresh, eff, now);
+      lastResults.set(id, result);
       if (result.ok) {
         deleteDraftPhotoFiles(postDraftPhotoUris(result.draft));
         deleteDraft(result.draft.id);

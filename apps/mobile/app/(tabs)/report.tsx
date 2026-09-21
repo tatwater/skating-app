@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Paragraph, Spinner, YStack } from 'tamagui';
 import { ReportSheet } from '../../src/components/sheet/ReportSheet';
+import { saveSheetAsDraft } from '../../src/lib/sheetActions';
 import { type DoorParams, doorKey, openDoor } from '../../src/lib/sheetDoors';
 import { getSheet, setSheet } from '../../src/lib/sheetStore';
 
@@ -39,15 +40,24 @@ export default function ReportScreen() {
     let cancelled = false;
     openedFor.current = key;
     setState('opening');
-    void openDoor(paramsRef.current, profile?.showPutInDefault, Date.now()).then((sheet) => {
-      if (cancelled) return;
-      if (sheet === null) {
-        setState('gone');
-        return;
-      }
-      setSheet(sheet);
-      setState('open');
-    });
+    // A half-written sheet a new door would replace goes to Drafts first — a skater must never face
+    // "finish now or lose it", least of all by tapping a lake.
+    const current = getSheet();
+    const parked =
+      current?.dirty && current.mode.kind === 'create'
+        ? saveSheetAsDraft(current, Date.now()).catch(() => null)
+        : Promise.resolve(null);
+    void parked
+      .then(() => openDoor(paramsRef.current, profile?.showPutInDefault, Date.now()))
+      .then((sheet) => {
+        if (cancelled) return;
+        if (sheet === null) {
+          setState('gone');
+          return;
+        }
+        setSheet(sheet);
+        setState('open');
+      });
     return () => {
       cancelled = true;
     };

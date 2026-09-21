@@ -9,7 +9,7 @@ import {
   silhouetteProjection,
 } from '@skating/core';
 import { useId, useState } from 'react';
-import { type GestureResponderEvent, type LayoutChangeEvent, View } from 'react-native';
+import { type GestureResponderEvent, type LayoutChangeEvent, Pressable } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, G, Path, Text as SvgText } from 'react-native-svg';
 import { useTheme } from 'tamagui';
 
@@ -29,8 +29,8 @@ export interface LakeMapPin {
  * still not a map (D203): no tiles, no zoom — a shape you point at. That is what makes it the same
  * offline as online, and what makes the put-in you tapped here the dot you see on the card.
  *
- * Taps go through the wrapping `View`: `react-native-svg` fires press events on elements, but a
- * tap on the water between elements would be lost, and the sheet wants every tap. The dots are
+ * Taps go through the wrapping `Pressable`: `react-native-svg` fires press events on elements, but
+ * a tap on the water between elements would be lost, and the sheet wants every tap. The dots are
  * hit-tested here too, by distance, so a fat finger near a launch picks the launch.
  */
 export function LakeMap({
@@ -98,10 +98,12 @@ export function LakeMap({
   };
 
   return (
-    <View
+    <Pressable
       style={{ width: '100%', height }}
       onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}
-      onTouchEnd={onTap || onTapPin ? onPress : undefined}
+      // A press, not a touch-end: a scroll that happens to end over the lake must not place a pin.
+      onPress={onTap || onTapPin ? onPress : undefined}
+      disabled={!onTap && !onTapPin}
       accessibilityRole={onTap || onTapPin ? 'button' : undefined}
       accessibilityLabel="The lake. Tap a launch, or anywhere on the water."
     >
@@ -197,6 +199,6 @@ export function LakeMap({
           })}
         </Svg>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
