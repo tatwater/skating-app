@@ -656,7 +656,7 @@ const WMO_PRECIPITATION: Record<number, PrecipKind> = {
  * before `weather_code` was ever requested. Rows written before that variable was added therefore
  * still draw the hatch correctly rather than degrading to plain "rain".
  */
-export function precipitationKind(hour: TimelineHour): PrecipKind | null {
+export function precipitationKind(hour: Omit<TimelineHour, 'localDate'>): PrecipKind | null {
   const snowfallCm = hour.snowfallCm ?? 0;
   const rainMm = hour.rainMm ?? 0;
   // Snowfall is depth of snow (~10:1), so it is converted to water-equivalent before being compared

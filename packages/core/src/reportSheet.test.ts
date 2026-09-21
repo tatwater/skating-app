@@ -511,3 +511,246 @@ describe('sections', () => {
     }
   });
 });
+
+// ── A10-3: verdicts, the quick thickness row, seeding from a stored report ─────────────────────
+
+import { validateReportInput } from './report';
+import {
+  confirmableVerdict,
+  PASSED_VERDICTS,
+  sheetFromReport,
+  THICKNESS_BANDS,
+  thicknessBandKey,
+  thicknessBandOf,
+  thicknessBandOfKey,
+  thicknessBandReading,
+} from './reportSheet';
+import { ICE_TYPES, SKATE_QUALITIES, SURFACE_TAGS } from './types';
+
+describe('passed-hazard verdicts (D52 + didn’t look)', () => {
+  it('are the three confirmation verdicts plus didnt_look, and only didnt_look files nothing', () => {
+    expect(PASSED_VERDICTS).toEqual([
+      'still_there',
+      'healing_unsafe',
+      'fully_healed',
+      'didnt_look',
+    ]);
+    expect(confirmableVerdict('didnt_look')).toBeNull();
+    expect(confirmableVerdict('fully_healed')).toBe('fully_healed');
+  });
+});
+
+describe('the quick thickness row (D195)', () => {
+  it('a band is one estimated reading with the band’s edges; 6+ is a lower bound, under 2 an upper', () => {
+    expect(thicknessBandReading('under_2')).toEqual({ method: 'estimated', maxCm: 5.08 });
+    expect(thicknessBandReading('6_plus')).toEqual({ method: 'estimated', minCm: 15.24 });
+    expect(thicknessBandReading('3_4', { sector: 'N' })).toEqual({
+      method: 'estimated',
+      minCm: 7.62,
+      maxCm: 10.16,
+      where: { sector: 'N' },
+    });
+    for (const band of THICKNESS_BANDS) {
+      expect(thicknessBandOf(thicknessBandReading(band))).toBe(band);
+      expect(thicknessBandOfKey(thicknessBandKey(band))).toBe(band);
+    }
+    expect(thicknessBandOfKey('reading:1')).toBeNull();
+    expect(thicknessBandOfKey('band:nope')).toBeNull();
+    // A precise reading is never mistaken for a band, even at a band's edges.
+    expect(thicknessBandOf({ method: 'measured', minCm: 7.62, maxCm: 10.16 })).toBeNull();
+    expect(thicknessBandOf({ method: 'estimated', valueCm: 7.62 })).toBeNull();
+    expect(
+      thicknessBandOf({ method: 'estimated', minCm: 7.62, maxCm: 10.16, supportable: true }),
+    ).toBeNull();
+    expect(thicknessBandOf({ method: 'estimated', minCm: 8, maxCm: 10.16 })).toBeNull();
+  });
+
+  it('selecting a band replaces the previous band and leaves precise readings alone', () => {
+    const s = run([
+      {
+        type: 'select',
+        field: 'thickness',
+        key: 'reading:1',
+        value: { method: 'measured', valueCm: 10 },
+      },
+      { type: 'selectThicknessBand', band: '2_3' },
+      { type: 'selectThicknessBand', band: '4_6' },
+    ]);
+    expect(s.fields.thickness.chips.map((c) => c.key)).toEqual(['reading:1', 'band:4_6']);
+    expect(s.fields.thickness.touched).toBe(true);
+    const cleared = sheetReducer(s, { type: 'selectThicknessBand', band: null });
+    expect(cleared.fields.thickness.chips.map((c) => c.key)).toEqual(['reading:1']);
+  });
+});
+
+describe('sheetFromReport (the edit door, §4.1)', () => {
+  const stored = {
+    waterBodyId: 'wb1',
+    skateEndTime: OPENED - 3_600_000,
+    skateStartTime: OPENED - 7_200_000,
+    skateEndPrecision: 'gps' as const,
+    observedFrom: 'shore' as const,
+    sighting: 'frozen' as const,
+    iceTypes: [
+      { type: 'black_ice' as const, where: { sector: 'N' as const } },
+      { type: 'black_ice' as const, where: { sector: 'S' as const } },
+      'shell_ice' as const,
+    ],
+    surfaceTags: ['glass' as const],
+    skateQuality: 'good' as const,
+    suitability: 'experienced_only' as const,
+    iceThickness: {
+      readings: [{ method: 'poke' as const, pokeCount: 3 }, thicknessBandReading('4_6')],
+      scope: 'at_spot' as const,
+    },
+    snow: {
+      coverage: 'patches' as const,
+      impediment: 'didnt_matter' as const,
+      drifts: 'none' as const,
+      depthCm: 2,
+      plowedPath: true,
+    },
+    conditions: {
+      airTempC: -3,
+      windSpeedKph: 10,
+      windDir: 'NW',
+      sky: 'clear' as const,
+      precip: 'none' as const,
+      source: 'openmeteo' as const,
+    },
+    notes: 'Fine.',
+    point: { lat: 44, lng: -72 },
+    putInId: 'pi-1',
+    showPutIn: false,
+    photoIds: ['ph1'],
+    hazardIds: ['hz1'],
+  };
+
+  it('seeds every value solid and the author’s, keeps duplicate located chips, and round-trips', () => {
+    const s = sheetFromReport(stored, OPENED);
+    expect(s.openedAtMs).toBe(OPENED);
+    expect(selectedValues(s, 'observedFrom')).toEqual(['shore']);
+    expect(s.fields.observedFrom.chips[0]?.defaulted).toBeUndefined();
+    expect(s.fields.iceTypes.chips.map((c) => c.key)).toEqual([
+      'black_ice',
+      'black_ice#2',
+      'shell_ice',
+    ]);
+    expect(s.fields.thickness.chips.map((c) => c.key)).toEqual(['reading:1', 'band:4_6']);
+    expect(s.scalars.showPutIn).toBe(false);
+    expect(s.scalars.putInId).toBe('pi-1');
+    expect(s.scalars.conditions?.source).toBe('openmeteo');
+    expect(s.touchedScalars.notes).toBe(true);
+    expect(s.touchedScalars.passedVerdicts).toBeUndefined();
+    expect(sectionFilled(s, 'observedFrom')).toBe(true);
+    expect(sectionFilled(s, 'access')).toBe(true);
+
+    const out = toReportInput(s);
+    expect(out).toEqual({
+      waterBodyId: 'wb1',
+      skateEndTime: stored.skateEndTime,
+      skateEndPrecision: 'gps',
+      skateStartTime: stored.skateStartTime,
+      observedFrom: 'shore',
+      sighting: 'frozen',
+      iceTypes: [
+        { type: 'black_ice', where: { sector: 'N' } },
+        { type: 'black_ice', where: { sector: 'S' } },
+        { type: 'shell_ice' },
+      ],
+      surfaceTags: [{ type: 'glass' }],
+      skateQuality: 'good',
+      suitability: 'experienced_only',
+      iceThickness: { readings: stored.iceThickness.readings, scope: 'at_spot' },
+      snow: stored.snow,
+      notes: 'Fine.',
+      point: { lat: 44, lng: -72 },
+      putInId: 'pi-1',
+      showPutIn: false,
+      conditions: stored.conditions,
+    });
+    expect(validateReportInput(out, { now: OPENED }).ok).toBe(true);
+  });
+
+  it('a bare report seeds a sheet that reads as unfilled, with the default vantage', () => {
+    const s = sheetFromReport({ skateEndTime: OPENED }, OPENED);
+    expect(selectedValues(s, 'observedFrom')).toEqual(['on_ice']);
+    expect(sectionFilled(s, 'observedFrom')).toBe(false);
+    expect(selectedValues(s, 'endTime')).toEqual([{ ms: OPENED, precision: 'half_hour' }]);
+    expect(toReportInput(s).conditions).toBeUndefined();
+    expect(toReportInput(s).showPutIn).toBeUndefined();
+  });
+
+  it('round-trips any valid stored content (property)', () => {
+    const chip = <T extends string>(types: readonly T[]) =>
+      fc.record(
+        {
+          type: fc.constantFrom(...types),
+          where: fc.option(
+            fc.constantFrom({ sector: 'N' as const }, { extent: 'patches' as const }),
+            { nil: undefined },
+          ),
+        },
+        { requiredKeys: ['type'] },
+      );
+    fc.assert(
+      fc.property(
+        fc.record({
+          iceTypes: fc.array(chip(ICE_TYPES), { maxLength: 4 }),
+          surfaceTags: fc.array(chip(SURFACE_TAGS), { maxLength: 3 }),
+          skateQuality: fc.option(fc.constantFrom(...SKATE_QUALITIES), { nil: undefined }),
+          readings: fc.array(
+            fc.constantFrom(
+              { method: 'measured' as const, valueCm: 10 },
+              { method: 'poke' as const, pokeCount: 2 },
+              thicknessBandReading('2_3'),
+            ),
+            { maxLength: 3 },
+          ),
+        }),
+        ({ iceTypes, surfaceTags, skateQuality, readings }) => {
+          const input = {
+            waterBodyId: 'wb1',
+            skateEndTime: OPENED,
+            iceTypes,
+            surfaceTags,
+            ...(skateQuality !== undefined ? { skateQuality } : {}),
+            ...(readings.length > 0 ? { iceThickness: { readings } } : {}),
+          };
+          const out = toReportInput(sheetFromReport(input, OPENED));
+          expect(out.iceTypes).toEqual(
+            iceTypes.map((c) => ({ type: c.type, ...(c.where ? { where: c.where } : {}) })),
+          );
+          expect(out.surfaceTags).toEqual(
+            surfaceTags.map((c) => ({ type: c.type, ...(c.where ? { where: c.where } : {}) })),
+          );
+          expect(out.skateQuality).toBe(skateQuality);
+          expect(out.iceThickness?.readings ?? []).toEqual(readings);
+        },
+      ),
+    );
+  });
+});
+
+describe('the access and weather scalars serialize (A10-3)', () => {
+  it('putInId and the put-in opt-out travel; a corrected weather block is stamped user', () => {
+    const s = run([
+      { type: 'setScalar', key: 'putInId', value: 'pi-1' },
+      { type: 'setScalar', key: 'showPutIn', value: false },
+      { type: 'setScalar', key: 'conditions', value: { airTempC: -4 } },
+    ]);
+    expect(toReportInput(s)).toMatchObject({
+      putInId: 'pi-1',
+      showPutIn: false,
+      conditions: { airTempC: -4, source: 'user' },
+    });
+    expect(sectionFilled(s, 'access')).toBe(true);
+    expect(sectionSummary(s, 'access', TZ)).toBe('Put-in chosen');
+    const shown = run([
+      { type: 'setScalar', key: 'showPutIn', value: true },
+      { type: 'setScalar', key: 'conditions', value: { windDir: '' } },
+    ]);
+    expect(toReportInput(shown).showPutIn).toBeUndefined();
+    expect(toReportInput(shown).conditions).toBeUndefined();
+  });
+});

@@ -29,10 +29,12 @@
  * its own is still on the map; the report simply doesn't claim it.
  */
 
+import { type AccessAlertTarget, isAccessCondition } from './accessAlert';
 import type { LatLng } from './geometry';
 import { photoUploadCoord } from './photo';
 import { type ReportInput, validateReportInput } from './report';
 import { buildReportInput, formCreateRefusal, type ReportFormState } from './reportForm';
+import { type ReportSheetState, selectedValues, toReportInput } from './reportSheet';
 
 /**
  * A captured photo inside a draft. `fullUri`/`thumbUri` are **persistent** file-system paths (the
@@ -53,11 +55,15 @@ export interface DraftPhoto {
 }
 
 /**
- * Persisted status. `uploading`/`creating` are in-flight markers; a draft found in one at launch
- * (app killed mid-flush) is treated as resumable (`isFlushable`) — its checkpoints make the resume
- * cheap. `error` is a *permanent* failure needing the user; a transient failure resets to `pending`.
+ * Persisted status. `draft` is **held** (A10 §Post-and-draft, founder call 2026-09-21): a Post the
+ * author saved to come back to, or quit the app in the middle of, and it is never sent until they
+ * tap *Post* — before A10-3 a saved draft and a queued Post shared `pending` and both flushed on
+ * reconnect, which made *Save draft* a slower *Post*. `pending` is queued. `uploading`/`creating`
+ * are in-flight markers; a draft found in one at launch (app killed mid-flush) is treated as
+ * resumable (`isFlushable`) — its checkpoints make the resume cheap. `error` is a *permanent*
+ * failure needing the user; a transient failure resets to `pending`.
  */
-export type DraftStatus = 'pending' | 'uploading' | 'creating' | 'done' | 'error';
+export type DraftStatus = 'draft' | 'pending' | 'uploading' | 'creating' | 'done' | 'error';
 
 /**
  * One hazard a Report draft bundles (D55). `hazardId` when it was picked from the server's list
@@ -85,9 +91,15 @@ export interface ReportDraft {
   bodyName?: string;
   /** Device GPS at capture — resolves the lake at flush when `waterBodyId` is absent. */
   coord?: LatLng;
-  /** Optional put-in pin (offline this defaults to the capture location, D42/S1). */
+  /** Optional put-in pin (offline this defaults to the capture location, D42/S1). Pre-sheet drafts only. */
   putInPin?: LatLng;
-  form: ReportFormState;
+  /**
+   * The content, in one of two shapes: the sheet's state (A10-3, every draft the sheet saves) or
+   * the pre-sheet form's (rows queued before it, and the web form's mirror). Exactly one is set;
+   * `reportDraftInput` reads whichever it is, so the flush has one rule.
+   */
+  sheet?: ReportSheetState;
+  form?: ReportFormState;
   photos: DraftPhoto[];
   /**
    * The **local** id of a recorded track this report describes (Phase 08). Both may be captured offline
@@ -99,6 +111,12 @@ export interface ReportDraft {
   activityId?: string;
   /** The author's own hazards to bundle into this report (D55) — see `HazardRef`. */
   hazardRefs?: HazardRef[];
+  /**
+   * Flush checkpoint: the condition alerts (D197) already filed for this Report, by reason — filed
+   * after the Post exists (they carry its id as provenance), each on its own idempotency key, so a
+   * retry files the rest and never a second plank.
+   */
+  filedAccessReasons?: string[];
 }
 
 /** A queued offline Post draft: the words, and the Reports, flushed as one `posts.create`. */
@@ -158,7 +176,8 @@ export function postDraftFromLegacy(legacy: LegacyReportDraft): PostDraft {
 export function createReportDraft(args: {
   id: string;
   idempotencyKey: string;
-  form: ReportFormState;
+  form?: ReportFormState;
+  sheet?: ReportSheetState;
   waterBodyId?: string;
   bodyName?: string;
   coord?: LatLng;
@@ -169,6 +188,9 @@ export function createReportDraft(args: {
   activityId?: string;
   hazardRefs?: HazardRef[];
 }): ReportDraft {
+  if ((args.form === undefined) === (args.sheet === undefined)) {
+    throw new Error('A report draft carries a sheet or a form, and exactly one');
+  }
   return {
     id: args.id,
     idempotencyKey: args.idempotencyKey,
@@ -176,7 +198,8 @@ export function createReportDraft(args: {
     ...(args.bodyName !== undefined ? { bodyName: args.bodyName } : {}),
     ...(args.coord !== undefined ? { coord: args.coord } : {}),
     ...(args.putInPin !== undefined ? { putInPin: args.putInPin } : {}),
-    form: args.form,
+    ...(args.sheet !== undefined ? { sheet: args.sheet } : {}),
+    ...(args.form !== undefined ? { form: args.form } : {}),
     photos: args.photos ?? [],
     ...(args.trackDraftId !== undefined ? { trackDraftId: args.trackDraftId } : {}),
     ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
@@ -184,6 +207,66 @@ export function createReportDraft(args: {
       ? { hazardRefs: args.hazardRefs }
       : {}),
   };
+}
+
+/**
+ * The validator's input for one Report draft, whichever shape it carries: the sheet serializes
+ * itself; a pre-sheet form goes through `buildReportInput` with its pin. `null` for a row with
+ * neither, which no writer produces — the flush refuses it as permanent rather than guessing.
+ */
+export function reportDraftInput(r: ReportDraft, waterBodyId: string): ReportInput | null {
+  if (r.sheet !== undefined) return { ...toReportInput(r.sheet), waterBodyId };
+  if (r.form !== undefined) return buildReportInput(r.form, waterBodyId, r.putInPin);
+  return null;
+}
+
+/** When the Report draft says the skater got off — for the queue's rows and the Post's label. */
+export function reportDraftEndTime(r: ReportDraft): number {
+  if (r.sheet !== undefined) {
+    const [endTime] = selectedValues(r.sheet, 'endTime');
+    return endTime?.ms ?? Number.NaN;
+  }
+  return r.form?.skateEndTime ?? Number.NaN;
+}
+
+/**
+ * The condition alerts a sheet-shaped Report draft files once its Report exists (D197 / §7.2):
+ * every selected condition chip, each against the put-in or the lot the sheet chose. Lot-shaped
+ * reasons — an icy lot, a lot snowed in, a plowed trail from it — go to the lot when one was
+ * chosen; everything else goes to the put-in; with only one target chosen, everything goes there.
+ * With neither, nothing files: a condition needs a thing to be a condition of.
+ */
+export interface AccessConditionFiling {
+  targetType: AccessAlertTarget;
+  putInId?: string;
+  parkingAreaId?: string;
+  reason: string;
+  note?: string;
+}
+
+const LOT_SHAPED_REASONS: ReadonlySet<string> = new Set(['icy_lot', 'snowed_in', 'plowed_trail']);
+
+export function accessConditionFilings(sheet: ReportSheetState): AccessConditionFiling[] {
+  const { putInId, parkingAreaId } = sheet.scalars;
+  if (putInId === undefined && parkingAreaId === undefined) return [];
+  const note = sheet.scalars.accessNote?.trim() || undefined;
+  return selectedValues(sheet, 'accessConditions')
+    .filter((reason) => isAccessCondition(reason))
+    .map((reason) => {
+      const toLot =
+        parkingAreaId !== undefined && (putInId === undefined || LOT_SHAPED_REASONS.has(reason));
+      return {
+        targetType: toLot ? ('parking_area' as const) : ('put_in' as const),
+        ...(toLot ? { parkingAreaId: parkingAreaId as string } : { putInId: putInId as string }),
+        reason,
+        ...(note !== undefined ? { note } : {}),
+      };
+    });
+}
+
+/** The idempotency key one condition alert flushes under — the Report's key, the reason. */
+export function accessConditionKey(reportKey: string, reason: string): string {
+  return `${reportKey}:access:${reason}`;
 }
 
 /** Build a fresh Post draft over its Reports. Throws on zero Reports — the rule is the schema's. */
@@ -194,13 +277,15 @@ export function createPostDraft(args: {
   title?: string;
   body?: string;
   reports: ReportDraft[];
+  /** `draft` holds it (never sent until *Post*); `pending` (the default) queues it. */
+  status?: 'draft' | 'pending';
 }): PostDraft {
   if (args.reports.length === 0) throw new Error('A post draft needs at least one report');
   return {
     kind: 'post',
     id: args.id,
     idempotencyKey: args.idempotencyKey,
-    status: 'pending',
+    status: args.status ?? 'pending',
     ...(args.title !== undefined ? { title: args.title } : {}),
     ...(args.body !== undefined ? { body: args.body } : {}),
     reports: args.reports,
@@ -209,9 +294,14 @@ export function createPostDraft(args: {
   };
 }
 
-/** A draft still needs sending unless it's already `done` or parked in a permanent `error`. */
+/** A queued Post still needs sending unless it's held as a draft, already `done`, or parked in a permanent `error`. */
 export function isFlushable(draft: PostDraft): boolean {
-  return draft.status !== 'done' && draft.status !== 'error';
+  return draft.status !== 'draft' && draft.status !== 'done' && draft.status !== 'error';
+}
+
+/** Held by the author — never flushed, listed under *Drafts*, not *Waiting to send*. */
+export function isHeldDraft(draft: PostDraft): boolean {
+  return draft.status === 'draft';
 }
 
 /** The flushable subset of a queue, oldest first (capture order) — the reconnect-flush work list. */
@@ -328,6 +418,14 @@ export interface PostFlushEffects {
       attachHazardIds?: string[];
     })[];
   }): Promise<{ postId: string; reportIds: string[] }>;
+  /**
+   * File one condition alert (`accessAlerts.create`, D197) with the created Report as provenance,
+   * idempotent on its key. Optional: a client without it files nothing and the sheet's conditions
+   * stay in the draft.
+   */
+  createAccessAlert?(
+    input: AccessConditionFiling & { reportId: string; idempotencyKey: string },
+  ): Promise<void>;
   /** Persist the (checkpointed) draft back to sqlite — called after every state advance. */
   persist(draft: PostDraft): Promise<void>;
 }
@@ -397,7 +495,8 @@ export async function flushPost(
       }
 
       // 2. Rebuild + re-validate the report input (a permanently-invalid draft fails before uploads).
-      const input = buildReportInput(r.form, waterBodyId, r.putInPin);
+      const input = reportDraftInput(r, waterBodyId);
+      if (input === null) throw new PermanentFlushError(leg(r, 'This report has no content.'));
       const validation = validateReportInput(input, { now });
       if (!validation.ok) {
         throw new PermanentFlushError(
@@ -432,11 +531,13 @@ export async function flushPost(
       // surfaced to the skater rather than spending its photos first. A bundled hazard that resolved
       // counts as the observation (D189), as it does on the server.
       //
-      // **Not for a draft found in `creating`.** That draft's create was already sent once and the
-      // ack was lost; its photos are spent, and the server's idempotent short-circuit (D30) is the
-      // only thing that can tell "posted at day 6.9, retried at 7.1" from "never posted" — refusing
-      // it here would show an error for a post that is live, and invite a second by hand.
-      if (draft.status !== 'creating') {
+      // **Not for a draft found in `creating`, nor one that already has its Post id.** That draft's
+      // create was already sent once — the ack was lost, or the create went through and a later step
+      // (a condition alert) lost signal; its photos are spent, and the server's idempotent
+      // short-circuit (D30) is the only thing that can tell "posted at day 6.9, retried at 7.1" from
+      // "never posted" — refusing it here would show an error for a post that is live, and invite a
+      // second by hand.
+      if (draft.status !== 'creating' && draft.postId === undefined) {
         const refusal = formCreateRefusal(validation.normalized, attachHazardIds.length, now);
         if (refusal !== null) throw new PermanentFlushError(leg(r, refusal));
       }
@@ -506,7 +607,37 @@ export async function flushPost(
       ...(d.body !== undefined ? { body: d.body } : {}),
       reports: prepared,
     });
-    await save({ status: 'done', postId });
+    await save({ postId });
+
+    // 7. The condition alerts (D197 / §7.2), now that each Report has an id to be their provenance.
+    //    Checkpointed by reason so a retry files only what is missing. A server refusal on one — a
+    //    put-in a moderator hid since — skips it: the Post is live, and a plank nobody can file is
+    //    not a reason to show the skater an error for a post that went through. A network failure
+    //    throws as transient like any other, and the retry re-enters through the idempotent create.
+    if (effects.createAccessAlert) {
+      for (const [i, r] of d.reports.entries()) {
+        if (r.sheet === undefined) continue;
+        const reportId = reportIds[i];
+        if (reportId === undefined) continue;
+        const filed = new Set(r.filedAccessReasons ?? []);
+        for (const filing of accessConditionFilings(r.sheet)) {
+          if (filed.has(filing.reason)) continue;
+          try {
+            await effects.createAccessAlert({
+              ...filing,
+              reportId,
+              idempotencyKey: accessConditionKey(r.idempotencyKey, filing.reason),
+            });
+          } catch (error) {
+            if (classifyFlushError(error) === 'transient') throw error;
+          }
+          filed.add(filing.reason);
+          await saveReport({ ...r, filedAccessReasons: [...filed] });
+        }
+      }
+    }
+
+    await save({ status: 'done' });
     return { ok: true, draft: d, postId, reportIds };
   } catch (error) {
     const kind = classifyFlushError(error);

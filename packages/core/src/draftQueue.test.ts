@@ -561,3 +561,282 @@ describe('the create-only rules at flush (A10 §9.4)', () => {
     );
   });
 });
+
+// ── A10-3: held drafts, sheet-shaped Reports, the condition alerts ─────────────────────────────
+
+import {
+  accessConditionFilings,
+  accessConditionKey,
+  isHeldDraft,
+  reportDraftEndTime,
+  reportDraftInput,
+} from './draftQueue';
+import { emptySheet, type ReportSheetState, sheetReducer } from './reportSheet';
+
+/** A sheet that meets the minimum set: quality, one chip, an end time. */
+function observedSheet(extra: Partial<ReportSheetState['scalars']> = {}): ReportSheetState {
+  const base = emptySheet(NOW - 60_000, 'wb-1');
+  const s = [
+    { type: 'select' as const, field: 'quality' as const, key: 'good', value: 'good' },
+    {
+      type: 'select' as const,
+      field: 'iceTypes' as const,
+      key: 'black_ice',
+      value: { type: 'black_ice' },
+    },
+    {
+      type: 'select' as const,
+      field: 'endTime' as const,
+      key: 'pinned',
+      value: { ms: NOW - 60_000, precision: 'minute' },
+    },
+  ].reduce(sheetReducer, base);
+  return { ...s, scalars: { ...s.scalars, ...extra } };
+}
+
+describe('held drafts (A10-3 — a draft never auto-posts)', () => {
+  it('a draft is held: not flushable, not in the flush list, and says so', () => {
+    const held = createPostDraft({
+      id: 'd-held',
+      idempotencyKey: 'k-held',
+      now: NOW,
+      reports: [reportWith()],
+      status: 'draft',
+    });
+    expect(held.status).toBe('draft');
+    expect(isHeldDraft(held)).toBe(true);
+    expect(isFlushable(held)).toBe(false);
+    expect(flushablePosts([held, draftWith()])).toHaveLength(1);
+    expect(isHeldDraft(draftWith())).toBe(false);
+  });
+});
+
+describe('sheet-shaped Report drafts (A10-3)', () => {
+  it('a Report draft carries a sheet or a form, exactly one', () => {
+    expect(() => createReportDraft({ id: 'x', idempotencyKey: 'k' })).toThrow(/exactly one/);
+    expect(() =>
+      createReportDraft({
+        id: 'x',
+        idempotencyKey: 'k',
+        form: observedForm(),
+        sheet: observedSheet(),
+      }),
+    ).toThrow(/exactly one/);
+    const r = createReportDraft({ id: 'x', idempotencyKey: 'k', sheet: observedSheet() });
+    expect(r.sheet).toBeDefined();
+    expect(r.form).toBeUndefined();
+  });
+
+  it('reportDraftInput serializes the sheet with the resolved body; a form goes through buildReportInput', () => {
+    const sheet = observedSheet({ point: { lat: 44, lng: -72 } });
+    const r = createReportDraft({ id: 'x', idempotencyKey: 'k', sheet });
+    const input = reportDraftInput(r, 'wb-resolved');
+    expect(input?.waterBodyId).toBe('wb-resolved');
+    expect(input?.iceTypes).toEqual([{ type: 'black_ice' }]);
+    expect(input?.point).toEqual({ lat: 44, lng: -72 });
+    expect(reportDraftEndTime(r)).toBe(NOW - 60_000);
+    const legacy = reportWith();
+    expect(reportDraftInput(legacy, 'wb-1')?.skateEndTime).toBe(NOW);
+    expect(reportDraftEndTime(legacy)).toBe(NOW);
+    expect(reportDraftInput({ ...legacy, form: undefined }, 'wb-1')).toBeNull();
+    expect(reportDraftEndTime({ ...legacy, form: undefined })).toBeNaN();
+  });
+
+  it('a sheet draft flushes through the same path — one create, the sheet’s content', async () => {
+    const draft = draftWith(
+      {},
+      createReportDraft({
+        id: 'r1',
+        idempotencyKey: 'rkey-1',
+        sheet: observedSheet(),
+        waterBodyId: 'wb-1',
+      }),
+    );
+    const { effects, calls } = makeEffects();
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(calls.reports[0]).toMatchObject({ waterBodyId: 'wb-1', skateQuality: 'good' });
+  });
+
+  it('a row with neither shape parks as permanent, before any upload', async () => {
+    const draft = draftWith({}, { form: undefined, photos: [photo('p1')] });
+    const { effects, calls } = makeEffects();
+    const res = await flushPost(draft, effects, NOW);
+    expect(res).toMatchObject({ ok: false, kind: 'permanent' });
+    expect(calls.uploads).toEqual([]);
+  });
+});
+
+describe('the condition alerts file after the Post (D197 / §7.2)', () => {
+  it('accessConditionFilings targets the put-in, the lot for lot-shaped reasons, nothing with no target', () => {
+    const chips = (s: ReportSheetState) =>
+      [
+        {
+          type: 'select' as const,
+          field: 'accessConditions' as const,
+          key: 'plank_needed',
+          value: 'plank_needed',
+        },
+        {
+          type: 'select' as const,
+          field: 'accessConditions' as const,
+          key: 'icy_lot',
+          value: 'icy_lot',
+        },
+      ].reduce(sheetReducer, s);
+    expect(accessConditionFilings(chips(observedSheet()))).toEqual([]);
+    expect(
+      accessConditionFilings(
+        chips(observedSheet({ putInId: 'pi-1', accessNote: ' plank by the ramp ' })),
+      ),
+    ).toEqual([
+      { targetType: 'put_in', putInId: 'pi-1', reason: 'plank_needed', note: 'plank by the ramp' },
+      { targetType: 'put_in', putInId: 'pi-1', reason: 'icy_lot', note: 'plank by the ramp' },
+    ]);
+    expect(
+      accessConditionFilings(chips(observedSheet({ putInId: 'pi-1', parkingAreaId: 'lot-1' }))),
+    ).toEqual([
+      { targetType: 'put_in', putInId: 'pi-1', reason: 'plank_needed' },
+      { targetType: 'parking_area', parkingAreaId: 'lot-1', reason: 'icy_lot' },
+    ]);
+    expect(accessConditionFilings(chips(observedSheet({ parkingAreaId: 'lot-1' })))).toEqual([
+      { targetType: 'parking_area', parkingAreaId: 'lot-1', reason: 'plank_needed' },
+      { targetType: 'parking_area', parkingAreaId: 'lot-1', reason: 'icy_lot' },
+    ]);
+    expect(accessConditionKey('rkey-1', 'icy_lot')).toBe('rkey-1:access:icy_lot');
+  });
+
+  it('files each condition with the created Report as provenance, checkpointed by reason', async () => {
+    const sheet = [
+      {
+        type: 'select' as const,
+        field: 'accessConditions' as const,
+        key: 'plank_needed',
+        value: 'plank_needed',
+      },
+      {
+        type: 'select' as const,
+        field: 'accessConditions' as const,
+        key: 'walk_in',
+        value: 'walk_in',
+      },
+    ].reduce(sheetReducer, observedSheet({ putInId: 'pi-1' }));
+    const draft = draftWith(
+      {},
+      createReportDraft({ id: 'r1', idempotencyKey: 'rkey-1', sheet, waterBodyId: 'wb-1' }),
+    );
+    const filed: unknown[] = [];
+    const { effects, calls } = makeEffects({
+      createAccessAlert: async (input) => {
+        filed.push(input);
+      },
+    });
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(filed).toEqual([
+      {
+        targetType: 'put_in',
+        putInId: 'pi-1',
+        reason: 'plank_needed',
+        reportId: 'report-1',
+        idempotencyKey: 'rkey-1:access:plank_needed',
+      },
+      {
+        targetType: 'put_in',
+        putInId: 'pi-1',
+        reason: 'walk_in',
+        reportId: 'report-1',
+        idempotencyKey: 'rkey-1:access:walk_in',
+      },
+    ]);
+    const last = calls.persisted[calls.persisted.length - 1];
+    expect(last?.reports[0]?.filedAccessReasons).toEqual(['plank_needed', 'walk_in']);
+    expect(last?.status).toBe('done');
+  });
+
+  it('a network failure on an alert leaves the Post id checkpointed; the retry files only the rest and re-asks no create-only rule', async () => {
+    const sheet = [
+      {
+        type: 'select' as const,
+        field: 'accessConditions' as const,
+        key: 'plank_needed',
+        value: 'plank_needed',
+      },
+      {
+        type: 'select' as const,
+        field: 'accessConditions' as const,
+        key: 'walk_in',
+        value: 'walk_in',
+      },
+    ].reduce(sheetReducer, observedSheet({ putInId: 'pi-1' }));
+    const draft = draftWith(
+      {},
+      createReportDraft({ id: 'r1', idempotencyKey: 'rkey-1', sheet, waterBodyId: 'wb-1' }),
+    );
+    let attempts = 0;
+    const filed: string[] = [];
+    const { effects, calls } = makeEffects({
+      createAccessAlert: async (input) => {
+        attempts++;
+        if (attempts === 2) throw new Error('offline');
+        filed.push(input.reason);
+      },
+    });
+    const first = await flushPost(draft, effects, NOW);
+    expect(first).toMatchObject({ ok: false, kind: 'transient' });
+    expect(first.draft.postId).toBe('post-1');
+    expect(first.draft.status).toBe('pending');
+    expect(first.draft.reports[0]?.filedAccessReasons).toEqual(['plank_needed']);
+
+    // Eight days on: the window would refuse a fresh create, but this Post is live already.
+    const second = await flushPost(first.draft, effects, NOW + 8 * 24 * 60 * 60 * 1000);
+    expect(second.ok).toBe(true);
+    expect(filed).toEqual(['plank_needed', 'walk_in']);
+    expect(calls.posts).toHaveLength(2); // the idempotent create ran again and returned the same ids
+  });
+
+  it('a server refusal on one alert skips it — the Post is live, and a plank nobody can file is not an error', async () => {
+    const sheet = [
+      {
+        type: 'select' as const,
+        field: 'accessConditions' as const,
+        key: 'plank_needed',
+        value: 'plank_needed',
+      },
+    ].reduce(sheetReducer, observedSheet({ putInId: 'pi-hidden' }));
+    const draft = draftWith(
+      {},
+      createReportDraft({ id: 'r1', idempotencyKey: 'rkey-1', sheet, waterBodyId: 'wb-1' }),
+    );
+    const { effects } = makeEffects({
+      createAccessAlert: async () => {
+        const e = new Error('Put-in not found');
+        e.name = 'ConvexError';
+        throw e;
+      },
+    });
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(res.draft.status).toBe('done');
+    expect(res.draft.reports[0]?.filedAccessReasons).toEqual(['plank_needed']);
+  });
+
+  it('without the effect, nothing files and the flush is unchanged', async () => {
+    const sheet = [
+      {
+        type: 'select' as const,
+        field: 'accessConditions' as const,
+        key: 'plank_needed',
+        value: 'plank_needed',
+      },
+    ].reduce(sheetReducer, observedSheet({ putInId: 'pi-1' }));
+    const draft = draftWith(
+      {},
+      createReportDraft({ id: 'r1', idempotencyKey: 'rkey-1', sheet, waterBodyId: 'wb-1' }),
+    );
+    const { effects } = makeEffects();
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(res.draft.reports[0]?.filedAccessReasons).toBeUndefined();
+  });
+});
