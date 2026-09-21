@@ -50,6 +50,16 @@ lists it, it may be listed for scenery rather than for ice.
 `near` is a rough coordinate used only to disambiguate same-named bodies, within
 `MATCH_RADIUS_KM` (25 km). A name match in the right state but nowhere near the coordinate is
 reported as ambiguous rather than accepted — the coordinate says the author meant a different lake.
+An entry whose `near` is *on* the lake can set `radiusKm` to tighten that radius (never widen it):
+the corpus holds same-named rows closer than 25 km — Wentworth Pond sits 17.7 km from Lake
+Wentworth and normalizes to the same name — and a coordinate the author looked up is worth more
+than one inferred from a poster's town.
+
+`destinations.nh-gaps.json` — the seven NH bodies the founder's list and a group leader's seasonal
+journal name that the September corpus seed missed (2026-09-21): two naming collisions the radius
+resolves, two catalog spellings, the two alpine pre-season tarns, and Low Plains, an unnamed NHD
+row that took its community name from free text first. Run with
+`--input=destinations.nh-gaps.json`; its notes say what each entry depends on.
 
 ## Why the boost is 0.3
 

@@ -824,6 +824,89 @@ describe('waterBodies name claims and searchText (A07a)', () => {
     ).rejects.toThrow(/not one of this body's recorded names/);
   });
 
+  // The one case free text is right: nobody named it. Low Plains in Elkins is an unnamed NHD row
+  // the community has a name for; the moderator's word is the only attribution it will ever have.
+  test('names an unnamed body from free text, and the name survives a re-import', async () => {
+    const t = convexTestWithGeo();
+    const UNNAMED = { ...CANONICAL_ITEM, externalId: 'nhd/1', name: '', nameClaims: [] };
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [UNNAMED] });
+    const bodyId = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_name_mod2', 'moderator');
+
+    await asMod.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: bodyId,
+      name: '  Low Plains ',
+    });
+    const named = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(named?.name).toBe('Low Plains');
+    expect(named?.nameClaims).toEqual([{ source: 'user', value: 'Low Plains' }]);
+    expect(named?.searchText).toBe('Low Plains');
+    const audit = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(audit.at(-1)?.reason).toBe(
+      'Community name "Low Plains" for an unnamed body (no catalog claim)',
+    );
+
+    // The catalog still has nothing to say; the community name stays.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [UNNAMED] });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.name).toBe('Low Plains');
+
+    // A typo in a community name is fixable — the row is still "named only by a community claim".
+    await asMod.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: bodyId,
+      name: 'Low Plain',
+    });
+    const fixed = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(fixed?.name).toBe('Low Plain');
+    expect(fixed?.nameClaims).toEqual([{ source: 'user', value: 'Low Plain' }]);
+
+    // Clear returns it to nameless, not to the typed name.
+    await asMod.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: bodyId, name: null });
+    const cleared = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(cleared?.name).toBe('');
+    expect(cleared?.nameClaims).toBeUndefined();
+    expect(cleared?.searchText).toBe('');
+    const audit2 = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(audit2.at(-1)?.reason).toBe(
+      'Cleared the community name; back to unnamed (no catalog claim)',
+    );
+  });
+
+  test('refuses an empty community name', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, name: '', nameClaims: [] }],
+    });
+    const bodyId = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_name_mod3', 'moderator');
+    await expect(
+      asMod.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: bodyId, name: '   ' }),
+    ).rejects.toThrow(/name is required/);
+  });
+
+  // A skater-drawn body has a name and no catalog claim — free text must not reach it, or Clear
+  // would leave the drawn body nameless with nothing to restore.
+  test('a drawn body with a name and no claims is still the picker rule, not free text', async () => {
+    const t = convexTestWithGeo();
+    const asMod = await seedUser(t, 'clerk_name_mod4', 'moderator');
+    const bodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Drawn Pond',
+        searchText: 'Drawn Pond',
+        type: 'lakePond',
+        source: 'user',
+        polygon: SAMPLE_BODY.polygon,
+        bbox: SAMPLE_BODY.bbox,
+        centroid: SAMPLE_BODY.centroid,
+        surfaceAreaSqM: 1000,
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      }),
+    );
+    await expect(
+      asMod.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: bodyId, name: 'Other' }),
+    ).rejects.toThrow(/not one of this body's recorded names/);
+  });
+
   // **A stale value, not an absent one.** `searchText` is required now, so no row can lack it — the
   // backfill's remaining job is repair: recomputing every row after `searchTextFor` changes, which
   // is the one way the stored string can stop matching the claims beside it.

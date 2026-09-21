@@ -716,6 +716,7 @@ minute from a track, and the app never loses one for lack of signal.*
 #### Data runs
 - **2026-09-19 — corpus re-parse + LLM mention inventory:** 2,472 messages (Dec 2023–Jun 2026), 745 named bodies, Haiku 4.5, $5.68
 - **2026-09-19/20 — corpus curatedBoost seed:** 137 boosts on dev (122 bodies + 15 sub-areas, graded 0.1/0.2/0.3), campaigns `a10-corpus-seed-20260919` + `-ambiguous-20260920`; the 76 undrawn bays split 16 destinations / 23 landmarks → [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md)
+- **2026-09-21 — NH gaps seed:** 7 boosts on dev (campaign `nh-gaps-20260921`) for the bodies the founder's NH list and a group leader's seasonal journal named that the corpus seed missed; Pemigewasset Lake renamed over NHD's typo; Low Plains named from free text; Eagle Lake + Kinsman Pond join the season watcher as sentinels, Low Plains pinned → [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md), [`backlog/late-season-reveal.md`](./backlog/late-season-reveal.md)
 - **2026-09-21 — extraction eval, first run (§1.3):** 147-email stratified sample + 60 negatives × three engines (Claude-only Haiku 0.64¢ / 4.4 s, Sonnet 5 4.22¢ / 37 s, Haiku + Jev 0.49¢ + Jev / 4.6 s); Sonnet-drafted value labels (1,474 values, 712 contested by Haiku); provisional floors from the Jev run on four fields; $8.3 Anthropic, $0.05 Jev (2.0M tokens)
 - **2026-09-21 — A10-1 dev backfills:** `reports.backfillA10Shapes` 2 rows, `posts.backfillFromReports` 2 Posts; schema narrowed
 

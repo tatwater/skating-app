@@ -445,3 +445,126 @@ describe('season boundary alerts staff', () => {
     expect(res.sent).toBe(0);
   });
 });
+
+describe('gateSites — the roster', () => {
+  /** A named body in a state, with just enough geometry to be a site. */
+  async function seedNamed(
+    t: ReturnType<typeof convexTest>,
+    name: string,
+    state: string,
+    lat: number,
+    boost?: number,
+  ) {
+    return await t.run(async (ctx) =>
+      ctx.db.insert('waterBodies', {
+        name,
+        searchText: name,
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: square(0.001),
+        bbox: { minLat: lat - 0.001, minLng: -71.7, maxLat: lat + 0.001, maxLng: -71.6 },
+        centroid: { lat, lng: -71.65 },
+        interiorPoint: { lat, lng: -71.65 },
+        states: [state],
+        dedupStatus: 'clean' as const,
+        ...(boost !== undefined ? { curatedBoost: boost } : {}),
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  test('all three alpine sentinels are flagged, and a pinned site rides along unflagged', async () => {
+    const t = convexTest(schema, modules);
+    const clouds = await seedNamed(t, 'Upper Lake of the Clouds', 'NH', 44.258);
+    const eagle = await seedNamed(t, 'Eagle Lake', 'NH', 44.16);
+    const kinsman = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136);
+    const lowPlains = await seedNamed(t, 'Low Plains', 'NH', 43.411);
+    await seedSites(t, 2);
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    const byId = new Map(sites.map((s) => [s.siteId, s.sentinel]));
+    expect(byId.get(clouds)).toBe(true);
+    expect(byId.get(eagle)).toBe(true);
+    expect(byId.get(kinsman)).toBe(true);
+    expect(byId.get(lowPlains)).toBe(false);
+    // The boost sample is still there, and nothing is listed twice.
+    expect(sites).toHaveLength(6);
+    expect(new Set(sites.map((s) => s.siteId)).size).toBe(6);
+  });
+
+  test('a same-named body in another state is not the sentinel', async () => {
+    const t = convexTest(schema, modules);
+    // Eight Eagle Lakes on dev; only Lafayette's counts. Here: two decoys and the real one.
+    await seedNamed(t, 'Eagle Lake', 'ME', 44.35);
+    await seedNamed(t, 'Eagle Lake', 'NY', 44.2);
+    const real = await seedNamed(t, 'Eagle Lake', 'NH', 44.16);
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    const sentinels = sites.filter((s) => s.sentinel).map((s) => s.siteId);
+    expect(sentinels).toEqual([real]);
+  });
+
+  test('a roster name that resolves to two rows in the state is dropped, not doubled', async () => {
+    const t = convexTest(schema, modules);
+    await seedNamed(t, 'Kinsman Pond', 'NH', 44.136);
+    await seedNamed(t, 'Kinsman Pond', 'NH', 44.137);
+    const clouds = await seedNamed(t, 'Upper Lake of the Clouds', 'NH', 44.258);
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    // Both Kinsman rows still arrive through the boost sample — as ordinary sites, unflagged.
+    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([clouds]);
+    expect(sites).toHaveLength(3);
+  });
+
+  test('a merged tombstone beside the survivor does not drop the sentinel', async () => {
+    const t = convexTest(schema, modules);
+    // A merge tombstones the loser with its name and states intact (D36). Two exact-name rows,
+    // one of them the tombstone, must resolve to the survivor rather than to nothing.
+    const survivor = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136, 0.3);
+    const loser = await seedNamed(t, 'Kinsman Pond', 'NH', 44.137, 0.3);
+    await t.run((ctx) =>
+      ctx.db.patch(loser, { dedupStatus: 'merged' as const, mergedIntoId: survivor }),
+    );
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([survivor]);
+    // …and the tombstone is not in the boost sample either: it kept its boost, and its point is
+    // the survivor's own.
+    expect(sites.map((s) => s.siteId)).not.toContain(loser);
+  });
+
+  test("a moderator's display-name pick does not lose the sentinel — the roster name is a claim", async () => {
+    const t = convexTest(schema, modules);
+    const clouds = await seedNamed(t, 'Lakes of the Clouds', 'NH', 44.258);
+    await t.run((ctx) =>
+      ctx.db.patch(clouds, {
+        nameClaims: [
+          { source: 'user' as const, value: 'Lakes of the Clouds' },
+          { source: 'osm' as const, value: 'Upper Lake of the Clouds' },
+        ],
+        searchText: 'Lakes of the Clouds Upper Lake of the Clouds',
+      }),
+    );
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([clouds]);
+  });
+
+  test('a sentinel that also ranks in the boost sample keeps its flag', async () => {
+    const t = convexTest(schema, modules);
+    const kinsman = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136, 0.3);
+    await seedSites(t, 1);
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    expect(sites.find((s) => s.siteId === kinsman)?.sentinel).toBe(true);
+    expect(sites).toHaveLength(2);
+  });
+
+  test('with nothing on the roster, the boost sample carries the gate alone', async () => {
+    const t = convexTest(schema, modules);
+    await seedSites(t, 3);
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    expect(sites).toHaveLength(3);
+    expect(sites.some((s) => s.sentinel)).toBe(false);
+  });
+});
