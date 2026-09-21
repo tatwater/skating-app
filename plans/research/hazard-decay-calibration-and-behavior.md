@@ -29,6 +29,8 @@
 
 **Units: hours.** Admin-tunable integers (Phase 07), converted to ms only at comparison time via a
 `hoursToMs` helper — so tuning is human-legible and `deriveHazardFreshness` stays a two-line compare.
+*(Status corrected 2026-09-20: the Phase 07 tuning surface shipped read-only — D49 amendment; the
+constants below are in `@skating/core` and edit means redeploy.)*
 
 ```ts
 // @skating/core/hazardDecay.ts — TUNABLE DEFAULTS (admin-editable, Phase 07 / D49).
@@ -180,6 +182,7 @@ escalating structure" rather than "static persistent." Confirms the tier shape. 
   asserts safety** (D3): "reported crossable [time] — verify yourself; ridges change hour to hour."
 - **Shore band (deferred to Phase 10):** "thin ice along the shore" and "ice edge" hazards are
   linear-along-shore; a "snap to shoreline" affordance would make them one-tap. Log, don't build in v1.
+  *(Built in A05b, D67.)*
 
 ---
 
@@ -260,9 +263,11 @@ Use these for freshness/verdict labels so "healed" **never** reads as "safe."
 ## 8. Open follow-ups (not blocking Phase 09a)
 
 - **Ridge-crossing "switch sides" hinting** — the richer v2 of the passage marker (suggest crossing
-  spots where overlap switches). Deferred.
+  spots where overlap switches). Deferred. *(Replaced by A05a's crossing-lifecycle inversion, D64.)*
 - **Weather-since decay multipliers** — Phase 10 (signs above locked in; magnitudes still to fit).
+  *(Built, D56; the magnitude refit is in the register.)*
 - **Body-level depth/shallow attribute** — needs a data source (bathymetry / OSM depth tags); Phase 10.
+  *(Built in A06a, D68/D69, loaded by A07a-3.)*
 - **Decay-magnitude fitting from a future in-app corpus** — once real hazard rows exist, refit the
   `HAZARD_DECAY` constants against observed confirm/re-report intervals (the numbers here are
   literature+community-anecdote defaults, explicitly tunable).

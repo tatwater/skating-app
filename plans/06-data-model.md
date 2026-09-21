@@ -93,7 +93,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `gpsActivities` | a recorded skate — ours (`native`), an imported GPX, or one day a watch adapter's — resolved to the body it was on (D44), linked to a report, the substrate of the aggregate layer (D58) — Phase 08 |
+| `gpsActivities` | a recorded skate — ours (`native`); one day an imported GPX (backlog) or a watch adapter's — resolved to the body it was on (D44), linked to a report, the substrate of the aggregate layer (D58) — Phase 08 |
 | `activityConnections` | a person's link to a provider, tokens included; Strava push today — D24 |
 | `oauthStates` | short-lived OAuth `state` nonces — Phase 08 |
 

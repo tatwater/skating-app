@@ -4,7 +4,7 @@
 own entry (the old A04 and A03 respectively), bundled because **A04 creates exactly the storage problems
 A03 exists to solve**.*
 
-> **Status:** in build (2026-07-27). Kickoff decisions below are settled; the roadmap's A03/A04 entries
+> **Status:** ✅ complete on dev 2026-07-27 (PR #29) with the ghost + redaction pass the next day (PR #30); prod deferred. Kickoff decisions below are settled; the roadmap's A03/A04 entries
 > are merged into this one.
 
 ## Why these two are one phase

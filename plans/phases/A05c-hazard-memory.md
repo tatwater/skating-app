@@ -6,8 +6,8 @@ once is the only way the two can't disagree.*
 
 > **Status:** ✅ **Built, 2026-07-31 — both halves.** The within-season half (workstreams **A**, **B**,
 > **E**, the **D53 amendment** and the `shallow_early_thaw` rename) shipped as **PR #34**. The
-> cross-season half (**C**, **D**, **F**) is built on `phase-n5c-recurrence` and green across every
-> suite — **unpushed, undeployed, not device-tested**, and the skater-facing advisory ships **dark**
+> cross-season half (**C**, **D**, **F**) shipped as **PR #35** (merged 2026-07-31, on dev), green across
+> every suite — **not device-tested**, and the skater-facing advisory ships **dark**
 > behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended shipped state rather than an
 > unfinished one. See *§15 — What the build changed about the plan*, *§16 — What the review pass
 > found*, *§18 — What the cross-season half changed*, *§19 — What the second review pass found* and
@@ -957,8 +957,8 @@ merge makes, which is a residual tension worth a founder's eye. If it reads as o
 the lever is to carry `dismissedDuplicateOf` into `poolConsensus` as a cluster split, **not** to weaken
 the merge bar.
 
-**Not built here, and not started:** workstream 3 (the `hazardRecurrence` table, the rollover job, the
-ranking), D (the two-section water body card, the cross-body queue, suppression) and F (the skater-facing
+**Not built in PR #34, and not started when this was written** (built later the same day as PR #35 —
+§18)**:** workstream 3 (the `hazardRecurrence` table, the rollover job, the ranking), D (the two-section water body card, the cross-body queue, suppression) and F (the skater-facing
 advisory and its copy tests). §11's cut line held exactly as written — items 2–6, 11, 13 and 14 are the
 half that pays off this winter.
 
@@ -1581,8 +1581,8 @@ it, and the honest fix is always to make the predicate part of the key.
 **A05c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
 halves.** The within-season half shipped as **PR #34** (clustering, nudge, pooling, consensus
 rendering, auto-merge, manual authoring, the D53 amendment and the rename); the cross-season half —
-`hazardRecurrence`, the rollover job, the operator queue and the skater advisory — is built on
-`phase-n5c-recurrence`, green across every suite, **unpushed and undeployed**. The advisory ships
+`hazardRecurrence`, the rollover job, the operator queue and the skater advisory — shipped as PR #35
+(2026-07-31), green across every suite. The advisory ships
 **dark** behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended state: operators watch
 patterns form for two rollovers before anybody sets the public bar. Scoped 2026-07-30 —
 see [`phases/A05c-hazard-memory.md`](./A05c-hazard-memory.md); decisions **D77** (one clustering

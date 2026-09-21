@@ -17,7 +17,7 @@
 > spatial index for boundaries + `adminAreas.ts` import/`resolvePlaceForCoord` + `reports.create` place
 > stamp + `reports.listFeed` + `renameSkateTimeToSkateEndTime` migration + `scripts/admin-areas` OSM
 > boundary ETL, all `convex-test`ed); **§3** Web (`/feed` page, `FeedCard` + component tests, tap→drawer
-> `?report=` overlay, report-form relabel + optional start/duration); **D** Mobile (feed tab FlatList +
+> `?report=` overlay, report-form relabel + optional start/duration); **§4** Mobile (feed tab FlatList +
 > pull-to-refresh + `@gorhom/bottom-sheet` detail, `FeedCard` mirror + horizontal carousel, form
 > relabel).
 > **Operational (verified 2026-07-17 against `dev:agile-bee-…`):** (1) ✅ pushed to dev — the full
@@ -26,8 +26,9 @@
 > loaded — `adminAreas` populated and `resolvePlace` returns correct town/county/state at known points
 > across all five states (VT/NY/NH/ME/MA); (3) ✅ migration accounted for — the `reports` table on dev
 > is **empty** (zero docs), so `renameSkateTimeToSkateEndTime` is a no-op with no legacy `skateTime`
-> left; new reports write `skateEndTime` via the deployed schema; (4) ⏳ app-run verification — owned by
-> the founder. Prod stays uninitialized.
+> left; new reports write `skateEndTime` via the deployed schema; (4) ✅ app-run verification — the
+> feed has rendered real rows on every device session since Phase 09a and became *Latest* in A06h
+> PR 5. Prod stays uninitialized.
 >
 > **⚠️ Brought forward, ahead of Phase 04 (drive-time), by decision (2026-07-16).** The feed ships
 > **global** — *all* reports from *all* water bodies across the whole imported region, newest skate-end time
@@ -257,7 +258,7 @@ One Phase 05 PR; sub-workstreams as separate commits:
   enrichment + `convex-test`.
 - **C — Web**: `/feed` page, `FeedCard`, photo carousel, tap-to-drawer overlay, report-form relabel +
   start/duration input.
-- **D — Mobile**: the mirror — `feed` tab, pull-to-refresh, card + carousel, bottom-sheet detail,
+- **§4 — Mobile**: the mirror — `feed` tab, pull-to-refresh, card + carousel, bottom-sheet detail,
   report-form relabel + start/duration input.
 
 Push to the dev deployment (`convex dev --once`) + run the migration before app verification
@@ -272,8 +273,9 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
 - **GPS *wiring* of the skate window** — `gpsActivities.endTime`/`elapsedSeconds` are added to the
   schema now (prep), but populating them from a provider path + on-water tail trimming + mapping
   start/end → the report is **Phase 08**.
-- **Notification delivery** for feed activity → later (with the broader notifications work).
-- **Weather-since strips** on feed cards → **Phase 10** (D19).
+- **Notification delivery** for feed activity → A08.
+- **Weather-since strips** on feed cards → **Phase 10** (D19) put the strip on report detail and
+  ruled feed cards out (too dense).
 
 
 ---

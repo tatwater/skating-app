@@ -2,11 +2,12 @@
 
 > ### ✅ A06c-2 IS BUILT (2026-08-09) — and four things in this document are wrong
 >
-> Branch `phase-n6c-2-links-cards`, off `phase-n7-3-unified-corpus`. **Unpushed, undeployed, and
-> deliberately so:** a second session was mid-campaign against the dev deployment when this was
-> built, and the campaign's standing rule — *"do not run `convex dev --once` while any loader or
-> prune is running"*, since a redeploy swaps functions out from under a resumable pass — is the reason
-> nothing here has been deployed. See
+> Branch `phase-n6c-2-links-cards`, off `phase-n7-3-unified-corpus` — **merged as PR #42
+> (2026-08-10) and on dev** (the §4.2 re-score ran under A06d's `backfillCells`, 2026-08-14). *At build
+> time it was held unpushed and undeployed on purpose:* a second session was mid-campaign against the
+> dev deployment, and the campaign's standing rule — *"do not run `convex dev --once` while any loader
+> or prune is running"*, since a redeploy swaps functions out from under a resumable pass — was the
+> reason nothing was deployed then. See
 > [*§What the A06c-2 build found*](#what-the-a06c-2-build-found).
 >
 > Shipped: **§2** (reference links), **§2.5** (NWS alerts), **§2.5b** (the forward forecast), **§2.7** (the
@@ -75,21 +76,24 @@
 > - **A06c-1 — derived numbers.** Workstreams **§1** (geometry stats, elevation), **§1.5**
 >   (`regionStats`), **§3** (the caption) and **§4.2** (profile richness → prominence), plus **§1.4b**,
 >   the winter wind rose that came out of the build. ✅ **BUILT 2026-08-02** on branch
->   `phase-A06c-1-lake-profiles` — unpushed, undeployed, ETL passes **not yet run**. See
+>   `phase-A06c-1-lake-profiles`, merged as PR #38; the ETL passes ran in the A07a-2/A07a-3 campaign
+>   (the table at the top). See
 >   [*§What the A06c-1 build found*](#what-the-a06c-1-build-found).
 > - **A06c-2 — links, cards and observability.** Workstreams **§2** (reference links, NWS alerts, the
 >   short forecast), **§2.3a/§4** (the seed script), **§5** (per-body summary cards) and **§6.1** (the
->   per-body activity timeline). **Not built.** Everything below those headings stands as written
+>   per-body activity timeline). **Built 2026-08-09, PR #42** (the banner at the top). Everything
+>   below those headings stands as written
 >   except where *§What the A06c-1 build found* corrects it.
 >   — **except §6.2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
 >   is built: see [*§6.2 as built*](#62-as-built--the-run-history). Its own sequencing note asked for
 >   this and was nearly missed: *"§6.2 wants to exist **before** the A06a depth run, not after — the
 >   first real run is the one whose numbers matter most."*
 >
-> **Status:** 📋 Scoped, not built (2026-07-30). Founder ask, same day. **Workstream 5 (per-body map
+> **Status:** ✅ complete — A06c-1 2026-08-02 (#38), A06c-2 2026-08-09 (#42); scoped 2026-07-30,
+> founder ask the same day. **Workstream 5 (per-body map
 > summary cards) was folded in on 2026-07-30**, out of the roadmap's deferred design sketches.
-> **Depends on:** A06a (`meanDepthM`/`maxDepthM` + the depth ladder) — built and on dev, **ETL not yet
-> run**. That unrun loader is this phase's one scheduling constraint; see [Sequencing](#sequencing--and-the-one-time-sensitive-item).
+> **Depends on:** A06a (`meanDepthM`/`maxDepthM` + the depth ladder) — built and on dev; its ETL was
+> superseded by the A07a-3 campaign (2026-08-09), which retired this phase's one scheduling constraint; see [Sequencing](#sequencing--and-the-one-time-sensitive-item).
 > **Sibling of:** [A06d — water body access points](./A06d-body-access-points.md) (split out of this doc
 > at scoping, 2026-07-30: it was roughly the size of everything else here combined) and
 > [A06b — bathymetry contours](./A06b-bathymetry-layer.md) (complete 2026-08-01 — its coverage is
@@ -544,7 +548,7 @@ genuinely cannot tell a live loader from a dead one.
 The campaign's three orphaned rows are long gone, but **there is still no way to delete one**. If they
 become noise that is a small feature to add, not a bug to chase.
 
-### ⛔ `backfillCells` is still held until after A06d
+### ⛔ `backfillCells` is still held until after A06d — *ran 2026-08-14 under A06d, 24,961 bodies in 84 batches*
 
 Unchanged since the 2026-08-02 founder call, and the reason is unchanged too: §4.2's put-in terms
 (+0.06 derived, +0.12 official) are the strongest static signals in the richness model and stay dark
@@ -1659,7 +1663,7 @@ for all of it.)*
 > See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) for the campaign's final state.
 
 **A06c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
-2026-08-02** (branch `phase-A06c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
+2026-08-02** (branch `phase-A06c-1-lake-profiles`, merged as PR #38; the ETL passes ran in A07a-3)
 — see [`phases/A06c-expanded-body-profiles.md`](./A06c-expanded-body-profiles.md) *§What the
 A06c-1 build found*. New decision **D90** (wind exposure) plus **D85** and **D86** amendments, and **D184** (the §4.2 weights, re-derived).
 
@@ -1695,8 +1699,9 @@ everything above it.
 
 **A06c-2 — reference links, NWS alerts, the short forecast, the seed script, per-body summary cards,
 and the per-body timeline.** ✅ **BUILT 2026-08-09** on branch `phase-n6c-2-links-cards` (off
-`phase-n7-3-unified-corpus`; **unpushed and undeployed on purpose** — a second session was mid-campaign
-against dev, and a redeploy mid-pass is the one way to break an otherwise resumable run). Tests green:
+`phase-n7-3-unified-corpus`; merged as PR #42 on 2026-08-10 — held unpushed at the time on purpose,
+because a second session was mid-campaign against dev and a redeploy mid-pass is the one way to break
+an otherwise resumable run). Tests green:
 core 1,738+ · convex 1,141 · web 291+ · mobile 95 · seed-destinations 15. New decisions **D138–D142**.
 
 Shipped: **§2** (Windy + the regional community archive, derived and stored nowhere), **§2.5** (NWS

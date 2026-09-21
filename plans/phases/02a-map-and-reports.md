@@ -3,8 +3,9 @@
 > **✅ Phase 02a COMPLETE (2026-07-16).** All workstreams shipped: web MVP §1–§5 (2026-07-13),
 > mobile online loop §6.1 (2026-07-14, PR #13), regional expansion §8 → Phase 02b (2026-07-15, PR #14),
 > mobile offline draft queue §6.2 + docs §7 (2026-07-16). Convex **prod remains uninitialized** by
-> decision, so everything runs on the **dev** deployment; the prod cutover is a later pass. Native
-> mobile UI carries a pending emulator-verification pass (pure + Convex layers are tested).
+> decision, so everything runs on the **dev** deployment; the prod cutover is a later pass. The
+> online mobile loop was smoke-tested on the Android emulator in Phase 09a (2026-07-21); the §6.2
+> offline draft flush has still not been exercised on a device (register).
 >
 > **Spatial-mechanism note (A01, 2026-07-26):** D49's zoom-scored prominence is unchanged and still
 > live, but the machinery it rides on isn't — `minVisibleZoom` was the geospatial entry's `sortKey`
@@ -47,7 +48,7 @@ test plan.
   and a wintery-but-functional style (D6/D34). Home/water framing on open via **device
   geolocation** (D12/D20).
 - **D49 zoom-scored display prominence** — a derived `displayScore` (area + admin `curatedBoost`;
-  **no popularity term yet**) → a bucketed `minVisibleZoom`, stored **and indexed as a geospatial
+  **no popularity term yet** — *it landed as `RICHNESS_ACTIVITY` in A06c §4.2, D184*) → a bucketed `minVisibleZoom`, stored **and indexed as a geospatial
   filter key** so `listInViewport` filters `minVisibleZoom <= zoom` **inside the query** (not a
   post-fetch refine). This is the *real* fix for the Phase 01 soft-cap truncation stopgap: at wide
   zoom the query returns the *few prominent* bodies instead of an arbitrary read-capped slice, so a
@@ -127,6 +128,8 @@ before anything consumes them.
 > `SKY_CONDITIONS`, `PRECIP_TYPES`, `CONDITION_SOURCES` (were Convex-only in `lib/enums.ts`; the
 > schema now imports them from core), plus the `orange_peel` surface tag. Core: 138 tests, 100%
 > coverage; all packages typecheck.
+
+*(Constants named "tunable" below shipped read-only in Phase 07 — D49 amendment; edit = redeploy.)*
 
 - **`display.ts` (D49):**
   - `displayScore({ surfaceAreaSqM, curatedBoost? }): number` — `normalize(log(area)) +
@@ -596,8 +599,8 @@ doc once web is proven:
   only):** if the app is killed mid-flight, or a reclaim call itself fails (network), a blob/row can
   still be stranded. A **server-side GC cron** (sweep `photos` rows unreferenced by any report, and
   storage blobs with no `photos` row, older than a grace window) is the durable backstop —
-  **deferred to a future cleanup/polish phase**; tracked in `07-roadmap.md` → "Later / deferred".
-  Low urgency at alpha scale, but it should land before storage cost/quotas matter.
+  **deferred to a future cleanup/polish phase** *(built in A03: `crons.ts` "sweep orphan photos",
+  daily)*. Low urgency at alpha scale, but it should land before storage cost/quotas matter.
 
 - **Regional expansion = Phase 02b, Northeast skating states only (decided 2026-07-14).** After the
   mobile MVP (§6.1+§6.2), before Phase 03, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
@@ -694,8 +697,8 @@ doc once web is proven:
 > `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
 > on an additive `idempotencyKey`, and `waterBodies.resolveBodyForCoord` resolves a coord-only draft
 > at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (§6.2 "Layer 3") were
-> deferred to Phase 09a** (hazard pins need them; report capture doesn't). Native UI pending an emulator
-> verification pass (pure + Convex layers are tested).
+> deferred to Phase 09a** (hazard pins need them; report capture doesn't). The online loop was
+> emulator-tested in Phase 09a; the offline draft flush still has no device pass (register).
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived

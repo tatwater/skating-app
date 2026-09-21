@@ -67,7 +67,8 @@ sets:**
   no public surface). They can't post reports (D41), so their paths never link to a public report
   and never aggregate — automatic.
 - **iOS + Android both**, this cycle. Founder is enrolled in the Apple Developer Program; no owned
-  iPhone, but iOS record-mode/background verified on friends' devices.
+  iPhone, so iOS record-mode/background is to be verified on a friend's device *(never done — no iOS
+  build has ever been made; the register's iOS row)*.
 - **GPX (not FIT) for the Strava upload**, and a **per-session "also upload to Strava?" toggle**
   (default off when a watch provider is connected — deferred detection, so v1 default = on for
   phone-only) — both are the research doc's v1 calls.
@@ -330,8 +331,8 @@ B; 08-5 needs B producing tracks + 08-1's opacity.
 
 ## Build outcome (2026-07-24) — ✅ complete; what shipped, and where it differs from this plan
 
-All five PR slices are built on `phase-08-native-capture` (unmerged, not yet deployed or
-device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
+All five PR slices are built on `phase-08-native-capture` (merged as PR #26 on 2026-07-26 and on
+dev; device verification still owed — roadmap Phase 08 § Owed). Suites green: core 752 / convex 540 / web 152 / mobile 76.
 
 **Founder calls taken at kickoff:**
 1. **Freshness is internal in v1** — it drives path opacity and the shared bounty primitives; report
@@ -341,7 +342,8 @@ device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
    skate, so adjacency is what makes that legible.
 3. **Full offline record→report linkage** — a report draft carries the track's *local* id and the
    flush resolves it to an `activityId`.
-4. Strava app registered; **callback domain still to be set** to the Convex `.site` host.
+4. Strava app registered; **callback domain still to be set** to the Convex `.site` host (the record
+   disagreed with itself on this until 2026-09-20; treated as unset until confirmed on the dashboard).
 
 **Deltas the build found (this section supersedes the plan above where they conflict):**
 - **§`reportFreshness` — D59's premise was partly wrong.** `bounties.ts` has **no recency-decay curve**
@@ -465,7 +467,8 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 > (derivable from `path` exactly).
 >
 > **Outstanding:** device verification (Android-emulator GPX playback + a friend's iPhone for iOS
-> background/battery parity), a real Strava sandbox upload (callback domain now set), and the prod
+> background/battery parity), a real Strava sandbox upload (the callback domain first — see §Strava
+> above), and the prod
 > cutover.
 
 > **Detailed build plan:** [`phases/08-native-capture.md`](./08-native-capture.md) (scoped

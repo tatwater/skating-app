@@ -1,8 +1,9 @@
 # iOS — the first build, TestFlight, and the store track
 
 > **Backlog.** No iOS build has ever been made (2026-09-17); Android ships via EAS `preview`
-> internal distribution. Register row: `03-tech-stack-options.md` § Deferred tech — flip it when
-> the first iOS build exists. The accounts are in `05-accounts-and-credentials.md` § 1 — Apple
+> internal distribution. Register row: *The iOS build / TestFlight and the Play track* in the
+> roadmap's deferred register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors
+> it) — flip it when the first iOS build exists. The accounts are in `05-accounts-and-credentials.md` § 1 — Apple
 > Developer is **enrolled**; Google Play does not exist yet.
 
 **What exists:** the APNs push key is uploaded to EAS (2026-09-14), `app.config.ts` carries the

@@ -1,8 +1,9 @@
 # PostHog — product analytics, flags, session replay
 
 > **Backlog.** Decided in D29 as the "later" half of observability (Sentry now, PostHog when we
-> want usage insight); still not wired as of 2026-09-17. Register row: `03-tech-stack-options.md`
-> § Deferred tech — flip it when this lands.
+> want usage insight); still not wired as of 2026-09-17. Register row: *PostHog* in the roadmap's deferred
+> register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it) — flip it when
+> this lands.
 
 **What it's for:** the questions the in-house operator analytics (07-2, `metricSnapshots`) don't
 answer — funnels, retention, which surfaces skaters actually touch — plus feature flags for the

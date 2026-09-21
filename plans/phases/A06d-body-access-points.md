@@ -2,7 +2,7 @@
 
 > **Status:** ✅ **COMPLETE on dev 2026-08-13** — all five workstreams, every UI surface, and the ETL
 > run end to end (3,588 put-ins · 11,375 parking areas · 4,209 bodies with access; routing 99.4%).
-> Unpushed; prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
+> Merged as PR #43 (2026-08-15); prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
 > re-scored in 84 batches, closing the pass A06c had held since 2026-08-02. —
 > scoped 2026-07-30, kickoff re-read against the post-A07a codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the

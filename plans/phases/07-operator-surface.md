@@ -1,7 +1,7 @@
 # Phase 07 — Operator surface (admin, moderation, dedup review, analytics)
 
 > **Status:** ✅ Complete on dev (prod deferred), 2026-07-24. PR 07-1 (operator core) merged as #24;
-> PR 07-2 (analytics & tuning) on branch `phase-07-2-analytics-tuning`. All green: core 653 / convex 480 /
+> PR 07-2 (analytics & tuning) merged as #25, the same day. All green: core 653 / convex 480 /
 > web 152 / mobile 76. Detailed build plan for the roadmap's Phase 07 (D37/D38 + the D49/D52/D56/D57
 > tuning surfaces). Decisions settled with the founder in the 2026-07-23 planning session — see
 > **Settled decisions** below; **build deltas are recorded in `07-roadmap.md` → Phase 07**.
@@ -236,7 +236,7 @@ than a read-cap guard — a viewport read is bounded by the cell index, not by t
 - **[CORE-lite]** **Viewport-truncation frequency** — the D5 truncation log **already exists**;
   surfacing how often it fires flags when the render budget / curve is dropping bodies. Cheap.
   *(`waterBodies:viewportReadStats` gives the same answer on demand for one viewport.)*
-- **[LATER]** Body distribution by `minVisibleZoom` band.
+- **[CORE]** Body distribution by `minVisibleZoom` band — shipped as `zoom_band_distribution` (the delta below).
 
 **Recommended feed** — `RECOMMENDED_MIN_CORROBORATION=3`, `_MIN_PHOTOS=2`, `_RECENCY_HOURS=48`,
 `RECOMMENDED_MAX_BODIES_PER_DAY=2`
@@ -253,7 +253,7 @@ rates; low tuning value until notification volume exists.
 
 **Additional stats flagged during planning (track the number even before charting):**
 - Bounty **daily-cap hit rate** (`MAX_OPEN_BOUNTIES_PER_DAY`) — the empirical case for the deferred
-  `activeBountyPostLimit` lever (D57).
+  `activeBountyPostLimit` lever (D57; *built in A02, PR #28*).
 - **Photo-orphan count** — feeds the deferred GC cron decision (roadmap Later).
 - **Weather-since strip** render vs `aged` split (`minAgeHours=6`, `maxAgeDays=14`) — low priority.
 - **Report-rejected-for-future-skate-time** rate (`SKATE_TIME_FUTURE_TOLERANCE_MS=1h`) — low priority.
@@ -508,6 +508,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
     volumetric, so the lever is a per-user override of `MAX_OPEN_BOUNTIES_PER_DAY` (`?? 3`; `0` ⇒ can't post),
     which subsumes a `canPostBounties` flag. Built only if a real spammer earns it — the existing cap does most
     of the work. Keep the boolean-per-capability shape; don't build a `postingRestrictions` framework for 3–4 fields.
+    *(Status corrected: built in A02, PR #28 — the trigger was overridden at kickoff.)*
 - Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
   audit row.
 - **Operator alerts (D38):** Resend + React Email — email the founder on new

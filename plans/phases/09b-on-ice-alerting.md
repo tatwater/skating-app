@@ -8,9 +8,9 @@
 > **Naming.** `9.5` mirrors `2.5` (the Phase 02a offline fast-follow): a same-phase follow-on, not a new
 > roadmap phase.
 >
-> **Status:** ✅ **Complete (2026-07-22)** on branch `phase-09b-on-ice-alerting` — all nine build items
-> landed, full test suite green (core / mobile / backend), code-reviewed. Pending PR + Greptile review,
-> then dev deploy; prod deferred (never deployed). One code-review fix folded in: the every-approach
+> **Status:** ✅ **Complete (2026-07-22)** — merged as PR #21 the same day and on dev; all nine build
+> items landed, full test suite green (core / mobile / backend), code-reviewed. Prod deferred (never
+> deployed). One code-review fix folded in: the every-approach
 > directional re-alert used a distance-only hysteresis that machine-gunned notifications while a skater
 > approached a far "ahead" hazard — now gated on an `approached` set (a hazard can only be *left*, and
 > re-armed, once its vicinity has been *entered*). The `file://` pmtiles offline-basemap path is built
@@ -29,8 +29,9 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ## Decisions locked this session (2026-07-21)
 
-Founder calls made while scoping this fast-follow. They **amend D54 a second time** and should be
-promoted to `01-decisions.md` as a *D54 Layer-2 amendment* alongside the existing kickoff amendment.
+Founder calls made while scoping this fast-follow. They **amend D54 a second time** and are recorded
+in `01-decisions.md` as the *D54 amendment (2026-07-21, Phase 09b)* beneath the kickoff amendment
+(promoted 2026-09-20).
 
 - **No keep-awake, ever.** The screen sleeps at the standard device pace. On-ice mode does **not** hold
   the display on (`expo-keep-awake` is *not* added). Real-world model: the phone is face-down in a jacket
@@ -91,8 +92,9 @@ promoted to `01-decisions.md` as a *D54 Layer-2 amendment* alongside the existin
 ### Out
 - **Server-push-to-a-sleeping-phone — deferred.** It is the only
   variant that *uploads* live location — the biggest privacy departure from D12, deserving its own
-  decision, not a ride-along on a large PR. It needs a whole net-new stack nothing else here touches
-  (device push-token registration, **APNs + FCM credentials on both stores**, a server-side sender),
+  decision, not a ride-along on a large PR. It needed a whole net-new stack nothing else here touched
+  (device push-token registration, **APNs + FCM credentials on both stores**, a server-side sender —
+  *since built, A08 D174; what remains is the privacy decision and a background handler*),
   iOS throttles silent pushes so it's best-effort *by design* (a shaky base for safety content), and the
   on-ice-mode design makes it nearly moot: while a session is armed the app is already alive in the
   background syncing reactively. Local notifications (in scope) need none of that stack. Revisit as its
@@ -240,7 +242,8 @@ added (course-over-ground decision).
   confirmers** — naming everyone who confirmed would attach identities to "was standing on this ice,"
   a location-privacy exposure the reporter (a content author) has already accepted but a confirmer
   hasn't. `listForHazard` already returns the confirmer rows if we later want a tap-to-expand list; the
-  count-only default sidesteps the privacy call for now. Copy stays present-tense-safe (a `fully_healed`
+  count-only default sidesteps the privacy call for now *(decided in A05a, D65: public-profile
+  confirmers are named inline; private ones counted)*. Copy stays present-tense-safe (a `fully_healed`
   vote is not a "confirmation"; D3).
 - **Clip-footprint-to-body (own commit, safety-critical path).** Add `clippedFootprint?` (a stored
   polygon) to `hazards`, computed at `create` by intersecting `hazardFootprint(shape)` with the resolved

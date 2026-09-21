@@ -14,7 +14,7 @@ than in a workstream.*
 > body elimination idea into A06g as well."*
 >
 > **Hard prerequisite: partly met as of 2026-08-26.** A06e **PR 2** merged 2026-08-25 (#46) and **PR 3**
-> — the consumer, so there is now a scrubber to look at frames in — was built 2026-08-26. So the
+> — the consumer, so there is now a scrubber to look at frames in — merged 2026-08-26 (#47). So the
 > **granule pipeline exists** and one season is in R2.
 >
 > ⚠ **The other two halves do not.** The **nine-season archive** (2017-18 → 2025-26) and the

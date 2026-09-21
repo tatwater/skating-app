@@ -34,14 +34,14 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | **GitHub** — the repo, Actions, Greptile app | CI, review | ✅ | — | Actions secret `FONTAWESOME_NPM_AUTH_TOKEN` | Greptile reviews are metered — one PR per phase |
 | **FontAwesome Pro** 💰 one seat | icons | ✅ | — | npm token in `~/.npmrc` (local) + EAS envs + the Actions secret | [`docs/fontawesome-pro.md`](../docs/fontawesome-pro.md); the one recurring paid line item |
 | **Figma** | the design system | ✅ | — | — | exports via the SVG pipeline; no key in the repo |
-| **Resend** | transactional email | ✅ dev, 2026-09-16 | ⬜ prod needs its own key | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `OPERATOR_ALERT_EMAIL` on Convex | sending domain `skating.teaganatwater.com`, CNAME-verified — **no MX, on purpose** (§ 3d) |
+| **Resend** | transactional email | ✅ dev, 2026-09-11 | ⬜ prod needs its own key | `RESEND_API_KEY` + `RESEND_FROM_EMAIL` + `OPERATOR_ALERT_EMAIL` on Convex | sending domain `skating.teaganatwater.com`, CNAME-verified — **no MX, on purpose** (§ 3d) |
 | **Squarespace** — DNS for `teaganatwater.com` | Resend's CNAMEs | ✅ | — | — | founder, 2026-09-17; the place to look when mail stops verifying |
 
 ### Infrastructure we operate
 
 | Account | For | Dev | Prod | Credential → where it lives | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **Cloudflare** — R2 | every static artifact and raw archive | ✅ | ⬜ `--prod` upload path exists, never run | one R2 API token per script, in gitignored config: `scripts/basemap/RCLONE_SETUP.md`, each `mirror-r2.sh`'s rclone remote, Fly's staged `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` | buckets: `skating-basemap` (basemap ×2, bathymetry, imagery archive; public `r2.dev` subdomain) · `skating-raw-lake-osm` · `skating-raw-lake-depth` · `skating-raw-wind-climate` |
+| **Cloudflare** — R2 | every static artifact and raw archive | ✅ | ⬜ no `prod/` key — `upload-r2.sh <file> prod/<dated-key>` per archive, or point prod at the dated `dev/` objects; the custom domain + cache rule are still on `r2.dev` | one R2 API token per script, in gitignored config: `scripts/basemap/RCLONE_SETUP.md`, each `mirror-r2.sh`'s rclone remote, Fly's staged `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` | buckets: `skating-basemap` (basemap ×2, bathymetry, imagery archive; public `r2.dev` subdomain) · `skating-raw-lake-osm` · `skating-raw-lake-depth` · `skating-raw-wind-climate` |
 | **Fly.io** 💰 ~$5/mo when cutting | the imagery granule box, per-job Machines | ✅ app `skating-imagery`, region `sjc` | — | `FLY_API_TOKEN` local; `R2_*` + `AWS_*` (anonymous Earth Search reads) staged on the app | read the imagery README's *six ways to get this wrong* before any `fly` command; secrets are `--stage`d and stay "Staged" forever, correctly |
 
 ### Data and API keys
@@ -239,8 +239,10 @@ Every line is a provisioning act, not code; the ordered checklist is
 2. **Convex** — the first `convex deploy` (needs a deploy key); every § 2a variable on prod; the
    `--prod` corpus load and `backfillCells`.
 3. **Resend** — a prod API key; the three email vars.
-4. **Cloudflare R2** — `upload.sh … --prod`, then the prod tile URLs on Vercel and in EAS
-   `production`.
+4. **Cloudflare R2** — `upload-r2.sh … prod/<key>` for each of the four archives (regional, world,
+   bathymetry, imagery base) or reuse the dated `dev/` objects, then all four URLs per surface on
+   Vercel and in EAS `production`; a Cloudflare zone for the custom domain (`upload.sh --prod` is
+   the retired Convex-storage host).
 5. **Expo / EAS** — fill the `production` environment; `EXPO_ACCESS_TOKEN` on prod Convex.
 6. **Strava** — the callback domain on the API app; `WEB_APP_URL` on prod.
 7. **Sentry** — prod DSNs if they're to be separate projects (or keep one per surface).

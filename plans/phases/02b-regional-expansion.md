@@ -34,8 +34,9 @@ code changes, and the tuning knobs.
   over the `-79.9,41.2,-66.8,47.5` bbox, z0–14 → **948 MB** (275,750 tiles), verified. Uploaded via
   `upload-r2.sh` to `r2:skating-basemap/dev/northeast-20260715.pmtiles`; serving
   `https://pub-9cd145bf729f4c2d9c219ece527fccd9.r2.dev/dev/northeast-20260715.pmtiles` (public,
-  range-verified). **Still yours:** the bucket **CORS policy** (web only) + the custom-domain
-  hardening (documented, deferred).
+  range-verified). **Still yours:** ~~the bucket **CORS policy** (web only)~~ *(applied and
+  origin-scoped — verified 2026-09-17)* + the custom-domain hardening (documented, deferred; needs a
+  Cloudflare zone — the register's prod-cutover row).
 - **§4 Env — ✅ DONE (dev/local).** `VITE_PMTILES_URL` (`apps/web/.env.local`) +
   `EXPO_PUBLIC_PMTILES_URL` (`apps/mobile/.env.local`) point at the R2 object.
 - **§6 Bounds — ✅ DONE.** `VERMONT_MAX_BOUNDS` → `NORTHEAST_MAX_BOUNDS` (`[-79.9,41.2]..[-66.8,47.5]`)
@@ -53,7 +54,9 @@ code changes, and the tuning knobs.
   Pond → matched Maine namesakes; Mill Pond → a NY namesake) **mis-matched a same-named body
   elsewhere** — the seed has no coordinates, so the name→body map isn't clean. This is exactly the
   curation the **Phase 07 admin water-body UI** owns (set/adjust/remove per-body boost with the map in
-  front of you). Mechanism proven; data curation is Phase 07.
+  front of you). Mechanism proven; data curation is Phase 07. *(All five mis-boosts were found at
+  `curatedBoost: 0` in A02's curation session, 2026-07-26 — stripped; the seed itself was superseded
+  by `scripts/seed-destinations` and the A10 corpus campaigns.)*
 - **Prod — ⬜ DEFERRED** (Convex prod uninitialized, as planned).
 
 ## Status / prerequisites
@@ -286,8 +289,9 @@ that no wanted water body falls outside the box or south of the clip.
 > region, a **water body name-search box** (added when the big corpus made it near-essential) in both apps,
 > and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
 > flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
-> the Champlain/Lake George bays OSM lacks) via the **Phase 07 admin UI**, and the prod cutover
-> (Convex prod uninitialized).
+> the Champlain/Lake George bays OSM lacks) via the **Phase 07 admin UI** *(done in A02's editor; the
+> bays became sub-areas, D60; the seed was superseded by `scripts/seed-destinations` and the A10
+> campaigns)*, and the prod cutover (Convex prod uninitialized).
 
 Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
 - **Region scope (decided 2026-07-14):** **NY (upstate/northern only — exclude NYC + Long Island),

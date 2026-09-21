@@ -1,7 +1,8 @@
 # Web push
 
-> **Backlog.** Deferred in A08 (2026-09-15); the register row is `03-tech-stack-options.md`
-> § Deferred tech — flip it when this lands.
+> **Backlog.** Deferred in A08 (2026-09-15); the register row is *Web push* in the roadmap's
+> deferred register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it) — flip
+> it when this lands.
 
 **Today:** web is inbox + email (D174). Mobile push goes through Expo Push; web has no service
 worker, no VAPID key pair, and no second device-token type in the `pushTokens` shape.

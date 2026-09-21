@@ -33,11 +33,11 @@ consumer that makes it mean something. One ETL, one core change, one display sur
 > real defect and five smaller ones, and Greptile's pass on PR #33 found a seventh — all fixed on the
 > branch. See *§What the review found in the build*, which is where the D68 amendment 2 (the three-state
 > operator override) and the pair invariant are written up.
-> **The ETL has not been run yet**: it needs three
-> third-party downloads and a license/column confirmation on the first pass (see *§Open questions*), so
-> the code path is tested but no real depth is loaded. Not device-tested; prod deferred, as every phase
-> since 2.5.
+> **The ETL as scoped was never run** — the A07a-3 campaign (2026-08-09) loaded depth instead: 24.2%
+> of the corpus, 83–90% above 50 acres, 81.2% measured (roadmap A06a § Data runs). Not device-tested;
+> prod deferred, as every phase since 2.5.
 >
+> *(Gate retired 2026-08-09 — both passes ran in the A07a-3 campaign; kept as the reasoning.)*
 > ⛔ **Do not run the ETL until [A06c](./A06c-expanded-body-profiles.md) is complete** (founder call,
 > 2026-07-31). A06c's elevation pass wants to ride this same run, and running without it costs a second
 > full pass over 116,070 bodies. See *§Before the ETL runs — the ordering gate*.
@@ -568,7 +568,8 @@ audit metadata, so the timeline will have before/after from the day it renders.
 
 ## Before the ETL runs — the ordering gate
 
-> ⛔ **Founder call, 2026-07-31: hold the run until A06c is complete.**
+> ⛔ **Founder call, 2026-07-31: hold the run until A06c is complete.** *(Retired 2026-08-09: the run
+> happened as the A07a-3 campaign, elevation included. The section below is the reasoning as it stood.)*
 
 The loader is written, tested and deployed, and the instinct is to go get the data. Don't yet.
 
@@ -645,9 +646,10 @@ be chosen out loud rather than arrived at by someone running the script because 
    reasonable to the medium"*, and a fifteen-author citation inside a map drawer's depth line would
    make the common case unreadable to serve a requirement a sources line already meets.
 
-   **Still outstanding:** wiring `requiredDepthCredits` into the web and mobile drawers. Not yet
-   urgent — no depth is loaded — but it is the last thing between the ETL running and the values
-   being displayable.
+   **Still outstanding:** wiring `requiredDepthCredits` into the web and mobile drawers. Depth has
+   been loaded since A07a-3 (17,675 LAGOS max depths), so the "not yet urgent — no depth is loaded"
+   excuse this paragraph carried until 2026-09-20 has expired; the wiring is owed, blocked on nothing
+   (register: *Data credits the apps don't render*).
 
    Three further obligations fall out of the statement's own wording, none of them onerous:
    - *"required to cite it appropriately in any publication"* — our display caption is the citation

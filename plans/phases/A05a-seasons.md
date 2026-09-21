@@ -405,7 +405,9 @@ That is the substrate for two things the founder wants:
 hazard rows to mean anything; with one season it's noise dressed as insight, which is the D3 trap.
 Logged as a deferred-register entry with its trigger — *three seasons of in-app hazard data on at least
 a handful of bodies* — alongside the sibling calibration items (decay-magnitude refit, GPS-path hazard
-deduction) that wait on the same corpus.
+deduction) that wait on the same corpus. *(Built in A05c, D77/D78, by answering the gate rather than
+waiting it out: the engine is live, thin patterns are admin-only, and the skater-facing advisory ships
+dark behind `RECURRENCE_ADVISORIES_PUBLIC`.)*
 
 **Two design notes to carry forward so the option stays open.** First: the departure sweep must not
 silently destroy the record this depends on — which was a live risk under the first amendment, where a
@@ -658,7 +660,9 @@ reverification **even with a live session**; only then does the ghost state begi
 (session, password, mailbox) and — the part a re-auth alone can't do — a message arriving in the
 victim's inbox saying *this is happening*, with a "this wasn't me" link that burns the token.
 
-*Blocked on:* Resend provisioning (prod cutover). **Ship a fallback in the same pass:** if
+*Blocked on:* build time — Resend has been live on dev since 2026-09-11 (Phase 07 § Resend
+checklist); prod still rides the cutover, which the fallback below covers. **Ship a fallback in the
+same pass:** if
 `RESEND_API_KEY` is absent, fall back to reverification-only and log it — a mail outage must never
 strand somebody's right to erasure. Single-use token, 48h TTL, invalidated by a password change.
 
@@ -683,6 +687,8 @@ reports are *kept* now, so people go on commenting on them and the rows go on la
 stop **generating** notifications for an account with `deletionRequestedAt` set rather than to reopen
 the switch: a person who no longer exists on the platform shouldn't be receiving mail about it. Small,
 and only in-app rows today (push delivery is still deferred), which is why it's here rather than above.
+*(Built the next day in PR #30 — `canReceiveNotifications`, applied at enqueue and flush; A08 applies it
+at push and email delivery too.)*
 
 **4. Comment redaction is server-side and client-rendered; the moderator view isn't checked.** A
 redacted comment renders as *"This comment was deleted"* in both apps. Not yet audited: what the

@@ -2,7 +2,7 @@
 
 *Scoping doc — 2026-07-24. Extends [`04-integrations.md`](../04-integrations.md) (esp.
 "Cross-user map display — our stance") and [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md)
-(L7/L9). Not yet a numbered phase.*
+(L7/L9). Became Phase 08 (PR #26, 2026-07-26); the k-anonymity threshold and the new L-item asked for below were answered by D58 (rejected) and L14.*
 
 ## Why this exists
 

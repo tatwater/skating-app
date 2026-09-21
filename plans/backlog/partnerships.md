@@ -2,7 +2,7 @@
 
 > **Jotted 2026-09-16 at the founder's ask, as a reminder rather than a scope.** The roadmap has said
 > *"apply for Garmin / COROS / Polar partner programs now"* since Phase 00, and `05-accounts-and-
-> credentials.md` still records the answer as **❔ unknown whether applied**. Approval takes weeks;
+> credentials.md` records the answer: **not submitted** (founder, 2026-09-17). Approval takes weeks;
 > everything downstream (watch capture adapters, the watch-wins ingest path) is gated on it. This is
 > a backlog note that will most likely become a `B`-era phase; until then it exists so the
 > reminder outlives the roadmap rewrite that removes the "Start now" block it used to live in.
@@ -28,8 +28,8 @@
   [`phases/08-native-capture.md`](../phases/08-native-capture.md).
 - **L8** in [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) — per-provider
   ToS / brand / health-data review at integration time (D24).
-- **`05-accounts-and-credentials.md`** — the account table, ordered by lead time; update the ❔ once
-  the applications are in.
+- **`05-accounts-and-credentials.md`** — the account table, ordered by lead time; update its row
+  once the applications are in.
 
 ## When it becomes a phase
 

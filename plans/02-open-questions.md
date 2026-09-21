@@ -18,9 +18,9 @@ cold-start, and it's the most heavily gated thing in the plan: Google Groups has
 groups are members-only, Facebook's Graph API doesn't reach groups and scraping violates its terms,
 and turning a person's post into an attributed in-app report is a **consent** question before it's
 an access one. The data model has the hooks (`reports.source` / `comments.source` include
-`imported`) and the comment-vs-report classifier is spec'd in `04-integrations.md`; nothing is built.
+`imported`) and the comment-vs-report classifier is spec'd in D21; nothing is built.
 **Direction:** do it legally or not at all.
-**What's been done around it:** the one-time *private* corpus extraction (L5a, 🟡) happened —
+**What's been done around it:** the one-time *private* corpus extraction (L5a, 🟢 done) happened —
 1,197 posts, stored outside the repo, used only as design input (vocabulary, the `curatedBoost`
 seed, and the S1/S2 signals that became D72/D73 and D60). And A06c ships a pre-canned search link
 into the regional community for the water body you're looking at (D71): we store nothing and the

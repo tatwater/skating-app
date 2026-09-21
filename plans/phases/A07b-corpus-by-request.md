@@ -418,10 +418,12 @@ rule and tested it across states. Listed so the pass that picks this phase up sc
   penalty) and one removal (D48). Whether a moderator needs a *third* rung — "keep it but stop it
   ever surfacing wide" without the legal claim `none` makes — or whether `curatedBoost` already is
   that rung, is a founder call. The A02 editor's Prominence tool already exposes the boost.
-- **Keeping a removed body out of the next campaign.** `importCanonical` preserves `removedAt` and
+- **Keeping a removed body out of the next campaign.** *(Superseded by D178 — no path hard-deletes a
+  removed row, and the walk pins it.)* `importCanonical` preserves `removedAt` and
   the prune keeps delisted rows, so today this *works by upsert* — but only because the row still
   exists. If a removed body's row were ever hard-deleted, or its `externalId` changed under a
-  catalog re-key (A07a-3's D95 lane is still unbuilt), the next campaign re-admits it as new, with no
+  catalog re-key (D95's *contour* re-key ran 2026-08-09; a re-key of `externalId` itself is the case
+  meant), the next campaign re-admits it as new, with no
   memory of the takedown. A **tombstone keyed on `externalId`** (or a `removedExternalIds` set the
   loader consults) is the durable version. Wants a test: remove → hard-delete the row → re-import →
   assert absent.
@@ -454,7 +456,8 @@ the same as what is skateable — so this **complements** the named gap-fill rat
 water body nobody has tapped stays invisible either way.
 
 **Whether declines should be visible to the requester.** Telling someone "no" costs goodwill; telling
-them nothing costs more. Not decided.
+them nothing costs more. Decided (D179): visible in the drawer with the moderator's note; a
+notification type is deferred (register).
 
 ---
 

@@ -259,7 +259,7 @@ everything (it can't, and shouldn't — that's clutter).
 - **Query read size** — `listInViewport` returning many full polygons could get heavy at wide
   zoom; if so, return low-detail outlines + lazy-load detail on tap (a Phase 02a+ lever, noted).
 - **OSM attribute quality** — names/types vary; the `other` bucket + later NHD enrichment
-  (deferred) are the safety nets.
+  (landed as the A07a unified corpus, D92/D94) are the safety nets.
 - **Attribution is a launch gate** — ODbL, treat like "Powered by Strava."
 
 

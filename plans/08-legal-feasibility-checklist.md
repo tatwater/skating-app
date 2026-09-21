@@ -96,15 +96,23 @@ built. Direction and status: [`02-open-questions.md`](./02-open-questions.md) §
 - **Not gated:** the D71 search link into the community's own archive — we store nothing.
 
 ## L5a — The private corpus extraction 🟢 done
-Learning from the group's history as design input is not republishing it. Done: 1,197 posts,
-in `training_data/` (gitignored), used only for derived findings — vocabulary, the boost seed, and
-the access / sub-area signals that became D72/D73 and D60. Stays private, PII-aware, never fed
-wholesale to a third party; re-runnable by the founder's own membership.
+Learning from the group's history as design input is not republishing it. Done: 2,472 messages
+(three seasons, re-parsed 2026-09-19), in `training_data/` (gitignored), used only for derived
+findings — vocabulary, the boost seed, the access / sub-area signals that became D72/D73 and D60,
+and A10's report-corpus classification. Stays private and PII-aware; re-runnable by the founder's
+own membership. **What "private" means since 2026-09-18:** every message went through Claude
+(Sonnet for the field labels, Haiku for the mention inventory) under Anthropic's API terms; only
+the derived labels and counts are kept in the tree, no message text leaves `training_data/`, and
+nothing is republished. D200's replay of the corpus happens only on a private, disposable Convex
+deployment — testing, not publishing (a third *Not gated* case for L5 above).
 
 ## L6 — Machine summaries of human reports (Q9) ⛔
 "Weather since" is facts, not AI (D19). Two derived estimates exist and ship **dark, operator-only**
 — the ice-thickness instrument (D160) and imagery-derived freeze-up dates (D151) — which is the
-boundary holding. Anything that summarizes *reports* for a skater waits.
+boundary holding. Anything that summarizes *reports* for a skater waits. **Outside this gate by
+its shape (D196, A10):** the author-side extraction that reads a skater's *own* prose into fields
+they review and claim before posting — the author is the claimant, nothing is summarized *for* a
+reader. Recorded here so the lawyer sees the line the decision drew.
 - [ ] Liability review of any generated sentence that could read as a safety judgment (D3).
 
 ## L7 — Strava API terms 🟢 (read 2026-07-24)
@@ -112,7 +120,7 @@ Cross-user display of Strava data is forbidden even when public; AI/ML use is ba
 pull, ever**; tracks are recorded here (or imported by the skater) and **pushed** with
 `activity:write`. The binding privacy constraint moved to us (L14). Full read:
 [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md).
-- [x] Brand kit on the connect / push surface (mobile-only today; `@skating/core/strava.ts`).
+- [~] Brand kit on the connect / push surface (mobile-only today; `@skating/core/strava.ts`) — the wording and color, yes; the official button asset is still owed (register).
 - [x] The consent explainer says we upload on the skater's behalf and never read back.
 - [ ] Re-check the brand kit if a web connect surface is added.
 
@@ -128,7 +136,9 @@ the L14 privacy pass on *inferring* anything from clustered paths. Not before re
 
 ## L10 — OSM ODbL share-alike (D5) 🟡
 Attribution is met on every map view. Share-alike bites only on *redistributing* the derived
-`waterBodies` database; in-app display is a Produced Work.
+`waterBodies` database; in-app display is a Produced Work. The public region `.pmtiles` on R2 is
+Protomaps' own ODbL build, clipped by tile and served unmodified — a copy on a public bucket, under
+the license it already carries; one sentence for the lawyer, not a gate.
 - [ ] If the extract is ever published, publish it under ODbL (wording with Q10).
 
 ## L11 — Landowner takedown (D48, D179) 🟡
@@ -154,7 +164,13 @@ The full attribution table is `04-integrations.md` § Attribution; the rows that
   community use"* with mandatory credit — a size-dependent license to re-read past ~1,000 users;
   the Iowa Environmental Mesonet is academic courtesy (cache and proxy, never point clients at
   it); NWS/MRMS is public domain. Applies when the workstream lands.
-- **Copernicus** attribution is required and rendered (`copernicusCredit`, both clients) 🟢.
+- **Copernicus** attribution is required and rendered (`copernicusCredit`, both clients) 🟢 —
+  ESA's form is "Contains modified Copernicus Sentinel data"; the rendered string drops "Contains
+  modified" (register: *Data credits the apps don't render*).
+- **Synoptic / MesoWest** (the station-bias study, `backlog/weather-stations.md`): read the free
+  tier's terms before registering — an AGPL non-university app may not fit them.
+- **Lake Stewards of Maine** ice-in / ice-out data (A06e PR 4): "©", no license — validate our
+  phenology against it freely; ask before republishing any of it.
 
 ## L14 — Privacy of our own aggregate tracks (D58) 🟡
 The L7 pivot made *our* privacy model the only one protecting skaters. Decided and built
@@ -169,7 +185,8 @@ Running a *modified* AGPL program as a network service obliges us to offer its s
 service's users. D157 borrows LibreWXR's approach and deploys none of its code, so nothing applies.
 Flips to 🟡 if we deploy LibreWXR, vendor AGPL code into the cutter, or adopt any AGPL component in
 a server role. Cheap to satisfy if it ever bites — our own code is AGPL — the trap is deploying
-without noticing.
+without noticing. For our *own* §13 obligation the About screens' link to the public repository is
+the source offer.
 
 ## L16 — Datasets with no published terms 🟡
 - **Adirondack Lakes Survey** (D130): no terms anywhere on the site, a blanket `robots.txt`
