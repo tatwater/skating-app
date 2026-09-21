@@ -134,13 +134,18 @@ provider's own terms and privacy policy.
   than being scattered, so they can still be recognized as the work of one departed person, and
   a distinctive pattern of places and dates could in principle be recognizable to someone who
   already knew it was yours.
-- The free text you wrote (report notes, thickness-reading notes, hazard descriptions, photo
-  captions, comment bodies) is cleared **once it is 30 days past the skate it describes** (30
-  days past posting, for comments). In practice that means older text comes off right away when
-  you ask, text newer than that stays visible until it reaches 30 days, and whatever is left is
-  cleared when the deletion is finalized — so free text can remain public for up to 30 days after
-  your request. Published skate paths stay in the community layer only if you had left that on;
-  the links back to you (your Strava activity id, provider photo links) are removed either way.
+- The free text you wrote is cleared on a rolling **30-day** clock, and **everything still
+  standing is cleared when the deletion is finalized**, so no free text of yours remains public
+  more than 30 days after your request. What the clock runs from depends on the item: report
+  notes and thickness-reading notes are cleared 30 days after the **skate they describe**;
+  comments, photo captions, flag notes and access-alert notes 30 days after **you posted or
+  uploaded them**; and a hazard description 30 days after that hazard was **last confirmed by
+  anyone** — so if other skaters keep confirming a hazard you reported, its description stays up
+  until finalization rather than aging out sooner. In practice, older text comes off right away
+  when you ask and newer text stays visible until its own clock runs out or the deletion is
+  finalized, whichever comes first. Published skate paths stay in the community layer only if you
+  had left that on; the links back to you (your Strava activity id, provider photo links) are
+  removed either way.
 
 ## Security
 Provider secrets and access tokens are held **server-side** and are never shipped in the
