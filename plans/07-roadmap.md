@@ -24,7 +24,7 @@ the one or two calls that shaped it, ending with what a skater or operator can n
 - **<YYYY-MM-DD> — <what ran>:** <the numbers>
 
 #### Deferred
-- <🟢|⚪> **<item>** — <resolved where / what it waits on → pointer>
+- <🟢|⚪|❓> **<item>** — <resolved where / what it waits on → pointer>   (❓ = waits on a founder call, nothing else)
 
 #### Ruled out
 - **<item>** — <why>
@@ -142,6 +142,7 @@ scope by favorites and drive-time; put-ins and directions are on the map.*
 - 🟢 **"Recommended" filter-breaking posts** — Phase 06, gated on corroboration
 - ⚪ **Self-hosted ORS for a true 90-minute band** → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md)
 - ⚪ **Reverse spatial index for fan-out (D172)** — trigger ~1,000 profiles → A08
+- ⚪ **`showPutIn` has no client control** — the opt-out shipped server-side only; D58's clipping never fires → register
 
 ## Phase 05 — Newsfeed
 🟢 **Complete** 2026-07-17 · PR #18 · [plan](./phases/05-newsfeed.md) · D28
@@ -172,7 +173,7 @@ safety content before reputation. *A working bounty loop, and reporters accrue a
 class from corroboration and helpful marks.*
 
 #### Deferred
-- ⚪ **GPS-skate half of bounty eligibility (D44)** — never wired; `fanOutEligibility` reads report authors only and `gpsActivities.by_water_body` is unread → register
+- ⚪ **GPS-skate half of bounty eligibility (D44)** — never wired; `fanOutEligibility` reads report authors only; no bounty path reads `gpsActivities.by_water_body` (its one reader is the attachment check in `waterBodies.ts`) → register
 - 🟢 **Contradiction signal and weather-aware bounty freshness** — Phase 10
 - ⚪ **Server-tracked recommended caps** — trigger: real data showing it feels spammy → [`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md)
 - ⚪ **A dedicated bounties geospatial instance** — only past the 200-scan cap → register
@@ -748,7 +749,7 @@ here and defers to this table. The long-form register this table replaced is arc
 
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
-| **The prod cutover** — Convex prod init (a prod Clerk instance with the `convex` JWT template and email code as a first factor), every `05` § 2a var on prod (Clerk ×3, Resend ×3, `EXPO_ACCESS_TOKEN`, `ORS_API_KEY`, Strava ×2, `WEB_APP_URL`, `CONVEX_RUN_AS`), the corpus runbook (the dev passes in order — merge → bodies → sub-areas → prune, depths, enrichment, access, bathymetry, bay depths, `mintSubAreaKeys` / `restampAllParents`, the A07b standing seed, the A10 boost campaigns, `adminAreas`), the four tile URLs per surface (`prod/` keys or the dated `dev/` objects), the R2 custom domain + cache rule (needs a Cloudflare zone; DNS is at Squarespace), Vercel + EAS `production` env, the A08 webhook, Sentry (a prod project per surface or an `environment` tag — neither init sets one), Clerk session lifetime (multi-month; dev is on the 7-day default), a second staff account before the season's first alert, the `broadcastToStaff --prod` smoke, `_dmarc` → `p=quarantine` after a few weeks of aligned sends | ⚪ | a founder task; Clerk prod env vars first | [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) § Prod cutover · `05` § 4 |
+| **The prod cutover** — Convex prod init (a prod Clerk instance with the `convex` JWT template and email code as a first factor), every `05` § 2a var on prod (Clerk ×3, Resend ×3, `EXPO_ACCESS_TOKEN`, `ORS_API_KEY`, Strava ×2, `WEB_APP_URL`), the corpus runbook (the dev passes in order — merge → bodies → sub-areas → prune, depths, enrichment, access, bathymetry, bay depths, `mintSubAreaKeys` / `restampAllParents`, then `backfillCells` — the §4.2 richness terms are computed only there, not at import — the A07b standing seed, the A10 boost campaigns (`CONVEX_RUN_AS` in the shell, a `05` § 2e local), `adminAreas`), the four tile URLs per surface (`prod/` keys or the dated `dev/` objects), the R2 custom domain + cache rule (needs a Cloudflare zone; DNS is at Squarespace), Vercel + EAS `production` env, the A08 webhook, Sentry (a prod project per surface or an `environment` tag — none of the three inits sets one), Clerk session lifetime (multi-month; dev is on the 7-day default), a second staff account before the season's first alert, the `broadcastToStaff --prod` smoke, `_dmarc` → `p=quarantine` after a few weeks of aligned sends | ⚪ | a founder task; Clerk prod env vars first | [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) § Prod cutover · `05` § 4 |
 | **The iOS build / TestFlight and the Play track** — and every native surface's first iOS look (recorder background/battery, on-ice background location, APNs end-to-end, Layer-3, A05a/A05b), the HealthKit adapter (needs no approval, only the build), the store listing (which also waits on the name, Q15, and L4's exception text) | ⚪ | an iPhone (Apple is enrolled, APNs key on EAS, no iOS build has ever been made); a Play account (none yet) — with the prod cutover | [`backlog/ios-distribution.md`](./backlog/ios-distribution.md), `05` |
 | **Data credits the apps don't render** — `requiredDepthCredits` (HydroLAKES, LAGOS-US CC BY 4.0) has no consumer; the OSM credit isn't linked to openstreetmap.org/copyright; `copernicusCredit` lacks ESA's "Contains modified"; the courtesy rows `04` § Attribution marks rendered (NREL on the wind rose, 3DEP, NHD/GNIS/TIGER, Natural Earth) aren't; the Strava button is hand-rolled text and `/oauth/deauthorize` is never called. One About § Data surface closes most of it | ⚪ | nothing; an afternoon | A06a, `04` § Attribution |
 | **Weather sample grid on Lake Memphremagog and Connecticut River Reservoir** — `suggestSamplePoints` at 11 km, or bays drawn; Champlain is answered by sub-areas | ⚪ | an operator call in `/admin/water/$id`; one fetch + one row per point | A02, A06h |
@@ -798,7 +799,8 @@ here and defers to this table. The long-form register this table replaced is arc
 | **`matchBathymetryLakes` and `matchAndImportDepths`** — `listedBodiesNearCoord` with no `marginMeters`; `putIns.loadPutInRows` uncapped `.collect()` | ⚪ | nothing; the A06d fix pattern applies (`coveringBodyForPoints` was deleted 2026-08-09) | A06d |
 | **`@clerk/clerk-expo` → `@clerk/expo` Core 3 migration** — the vehicle; the Gli identifiers ride it | ⚪ | nothing; the package is deprecated outright | [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) |
 | **Gli internal identifiers** — `scheme`, `slug`, `@skating/*`, the remote | ⚪ | the Clerk Core 3 migration above; the scheme wants a dual-scheme period (Strava callback + installed deep links) | `backlog/gli-identifiers.md` |
-| **GPS-skate half of bounty eligibility (D44)** — `fanOutEligibility` reads report authors only; `gpsActivities.by_water_body` is unread; the roadmap said this lit up with Phase 08 | ⚪ | nothing; one query | Phase 06 |
+| **`showPutIn` has no client control** — the per-report put-in opt-out (Phase 04) and the put-in-gated path clipping that hangs off it (D58; `listTracksForBody` clips only when `showPutIn === false`) can be set by no screen, so a published path always renders whole, launch and driveway included | ⚪ | nothing; a toggle on the report form on both clients | Phase 04, Phase 08 |
+| **GPS-skate half of bounty eligibility (D44)** — `fanOutEligibility` reads report authors only; no bounty path reads `gpsActivities.by_water_body` (its one reader is the attachment check in `waterBodies.ts`); the roadmap said this lit up with Phase 08 | ⚪ | nothing; one query | Phase 06 |
 | **Mobile summary cards** — the A06c §5 map cards (name, recent report count, the D86 dots, top hazard types) are web-only; mobile draws name labels; the logic is in `core/bodySummary.ts` | ⚪ | nothing; a mobile symbol layer over the same `summary` field (founder: parity, 2026-09-20) | A06c §5 |
 | **Sub-areas under the imagery reveal** — hidden today with no flag; §1.3 asked for one, hooked to a UI toggle; outline vs hatched/shaded TBD | ⚪ | nothing; a design detail | A06e §1.3 |
 | **Tier-A weather precompute (D154)** — favorited / reported / hazard / bounty / tracked bodies get a complete `weatherHours` timeline ahead of first open; D153's lazy backfill made it latency, not data | ⚪ | nothing; size the job off the query (dev has 14 favorites) | A06h D154 |

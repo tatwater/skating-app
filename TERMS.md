@@ -55,7 +55,7 @@ The app connects to third-party services — maps and imagery (OpenStreetMap con
 Protomaps, USGS, Copernicus Sentinel data), routing (OpenRouteService), weather (Open-Meteo,
 the National Weather Service), authentication (Clerk), email and push delivery, and, if you
 connect it, Strava. Your use of those services is also governed by their own terms and privacy
-policies; where a service requires it, its credit appears in the app.
+policies.
 
 ## 7. Privacy
 See the [Privacy Notice](./PRIVACY.md) for how your data is handled.

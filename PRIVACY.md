@@ -48,9 +48,13 @@ your reports"). The app is not directed at children under 16.
   body you skated and to prompt you to make a report, and is shown on your report and on the
   water body's page. If you publish a report from a track, that track can also appear —
   without your name — in a faded **community skate-paths layer** on that water body, so others
-  can see where people have been going; the ends of every path are clipped near the shore so a
-  put-in or a private driveway is not pinpointed. You can turn the community layer off for your
-  own tracks in Settings. Users under 18 are never included in it.
+  can see where people have been going. A path is shown whole, including where you got on and
+  off the ice, so if you skated from private property, don't publish that track, or turn the
+  community layer off for your own tracks in Settings. Users under 18 are never included in it.
+- **Device location while the map is open** — with your permission, the app reads the phone's
+  location to frame the map, work out which water body you are on, and warn you near a
+  reported hazard. To work out the water body it sends that position, rounded to roughly
+  300 m, to our server; the lookup is not stored.
 - **On-ice mode (optional)** — if you turn on on-ice mode during a skate, the app keeps
   reading your location in the background for that session only, so it can warn you as you
   approach a reported hazard with the phone in your pocket. Those location readings stay on
@@ -116,13 +120,16 @@ provider's own terms and privacy policy.
 ## Retention, deletion, and export
 - You can **export your data** (a JSON bundle of your own content plus your uploaded
   photos) and **delete your account** at any time.
-- When you ask to delete your account, your home location, connected-account tokens, and
-  private details are **erased immediately**, your profile disappears from the app, and your
-  past reports, comments and hazard reports are **anonymized** (attributed to a "deleted
-  user") so the community's historical ice record is preserved. Your sign-in stays usable for
-  **30 days** so you can change your mind; after that the deletion is final, any free text you
-  wrote is cleared, and your login is removed. Published skate paths stay in the community layer
-  only if you had left that on; they are no longer linked to you either way.
+- When you ask to delete your account, your name, photo, bio, town, home location and email
+  are **erased immediately**, your profile disappears from the app, your past reports,
+  comments and hazard reports are **anonymized** (attributed to a "deleted user") so the
+  community's historical ice record is preserved, and the free text you wrote on them (notes,
+  captions, comments) starts being cleared right away. **Canceling does not bring any of that
+  back.** Your sign-in stays usable for **30 days** so you can change your mind about the
+  account itself; after that the deletion is final: your date of birth, connected-account
+  tokens, notifications, favorites and unpublished recordings are erased and your login is
+  removed. Published skate paths stay in the community layer only if you had left that on; the
+  links back to you (your Strava activity id, provider photo links) are removed either way.
 
 ## Security
 Provider secrets and access tokens are held **server-side** and are never shipped in the

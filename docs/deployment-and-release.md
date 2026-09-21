@@ -261,13 +261,15 @@ of every line is the founder — they are provisioning decisions, not code.
 2. **First `convex deploy`** — unblocked by (1). Then every `05` § 2a variable on prod, not only the
    ones named here (`ORS_API_KEY` — without it `isochrones.ts` silently skips polygons;
    `STRAVA_CLIENT_ID` / `_SECRET`; `WEB_APP_URL` — without it operator alerts build bare deep links
-   and the OAuth return is lost; `CONVEX_RUN_AS` for the seeds). Then the corpus, in the dev order —
-   `run-corpus.sh` is dev-only, so each loader with `--prod`: merge → bodies → sub-areas → prune;
-   depths; enrichment / elevation; access `parking` then `put-ins` `--batch=1`; bathymetry match;
-   bay depths; `mintSubAreaKeys`; `restampAllParents`; the A07b standing seed; the A10 boost
-   campaigns (`seed-destinations --apply`, run as a moderator profile that must exist on prod
-   first); `adminAreas`. `backfillCells` is a no-op on a fresh load — both imports write cells at
-   insert.
+   and the OAuth return is lost). Then the corpus, in the dev order — `run-corpus.sh` is dev-only,
+   so each loader with `--prod`: merge → bodies → sub-areas → prune; depths; enrichment /
+   elevation; access `parking` then `put-ins` `--batch=1`; bathymetry match; bay depths;
+   `mintSubAreaKeys`; `restampAllParents`; **then `backfillCells`** — the imports write cell rows
+   at insert, but the A06c §4.2 richness terms (put-ins, depth, contours, activity) are computed
+   only there (`lib/scoring.ts` `richnessFor`), so without it no body gets its enrichment
+   prominence; then the A07b standing seed; the A10 boost campaigns (`seed-destinations --apply`,
+   with `CONVEX_RUN_AS` in the *shell* naming a moderator profile that must exist on prod first —
+   it is a `05` § 2e local variable, not a deployment one); `adminAreas`.
 3. **Resend prod key** + the three email vars on prod; the checklist (including why there is
    deliberately no MX record) is in `plans/phases/07-operator-surface.md` § "Resend checklist".
    Then the `broadcastToStaff --prod` smoke (`sent` = `recipients`) before the season opens, and a
@@ -282,8 +284,8 @@ of every line is the founder — they are provisioning decisions, not code.
 6. **EAS `production` environment**: populate all vars (+ `GOOGLE_SERVICES_JSON`); the FCM key and
    APNs key are per-app, so they carry over.
 7. **Push**: `EXPO_ACCESS_TOKEN` on prod Convex. **Sentry**: a prod project per surface, or an
-   `environment` tag on both `Sentry.init` calls (neither sets one today) — one or the other, or
-   prod and dev events share a stream.
+   `environment` tag on all three `Sentry.init` calls (web client, web server, mobile — none sets
+   one today) — one or the other, or prod and dev events share a stream.
 7b. **Clerk webhook**: a new endpoint in the **prod** Clerk instance pointing at
    `https://diligent-guanaco-965.convex.site/clerk-webhook`, its signing secret as
    `CLERK_WEBHOOK_SIGNING_SECRET` on prod Convex. Per-instance, nothing carries over from dev —
