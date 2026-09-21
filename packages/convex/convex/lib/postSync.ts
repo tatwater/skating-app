@@ -14,24 +14,29 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 
 /**
- * Keep `posts.latestSkateEndTime` current after a member Report's end time moves. Called with the
- * value about to be stored, so the Post never sorts on a stale time. Reads the Post's other
- * members — a handful — and takes the max.
+ * Keep `posts.latestSkateEndTime` current: the max over the Post's **visible** members, so a Post
+ * whose freshest Report a moderator hid sorts on the freshest one a reader can still see. Called
+ * after a member's end time moves (`changed` carries the value about to be stored, so there is no
+ * read-after-write) and after a member's verdict changes. With no visible member the key is left
+ * alone — the Post is not shown then anyway (`visiblePostReports`). Reads the members, a handful.
  */
 export async function refreshPostLatestSkateEnd(
   ctx: MutationCtx,
   postId: Id<'posts'>,
-  changed: { reportId: Id<'reports'>; skateEndTime: number },
+  changed?: { reportId: Id<'reports'>; skateEndTime: number },
 ): Promise<void> {
   const post = await ctx.db.get(postId);
   if (!post) return;
-  let latest = changed.skateEndTime;
+  let latest: number | undefined;
   for (const id of post.reportIds) {
-    if (id === changed.reportId) continue;
-    const sibling = await ctx.db.get(id);
-    if (sibling && sibling.skateEndTime > latest) latest = sibling.skateEndTime;
+    const member = await ctx.db.get(id);
+    if (!member) continue;
+    const skateEndTime =
+      changed && id === changed.reportId ? changed.skateEndTime : member.skateEndTime;
+    if (member.moderationStatus !== 'visible') continue;
+    if (latest === undefined || skateEndTime > latest) latest = skateEndTime;
   }
-  if (latest !== post.latestSkateEndTime)
+  if (latest !== undefined && latest !== post.latestSkateEndTime)
     await ctx.db.patch(postId, { latestSkateEndTime: latest });
 }
 

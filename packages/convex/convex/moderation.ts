@@ -22,6 +22,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
+import { refreshPostLatestSkateEnd } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { literals } from './lib/validators';
 
@@ -39,13 +40,40 @@ const ACTION_FOR_STATUS = {
  */
 const MODERATION_TABLE = {
   report: 'reports',
+  post: 'posts',
   comment: 'comments',
   hazard: 'hazards',
 } as const;
 
+type ModerationStatus = (typeof MODERATION_STATUSES)[number];
+
+/**
+ * One Report's verdict, and everything that has to move with it: the row, the author's visible
+ * count, the body's map card (A06c §5 — a hidden report must leave the card, the one surface where
+ * a stale number reads as a live condition), the bay join (A09 — the bay feed and the bay bounty
+ * gate read the status off the join row, in-index) and the Post's sort key (A10 — over its visible
+ * members). Shared by the `report` target and the Post cascade so the two can never disagree.
+ */
+async function applyReportStatus(
+  ctx: MutationCtx,
+  report: Doc<'reports'>,
+  status: ModerationStatus,
+): Promise<void> {
+  await ctx.db.patch(report._id, { moderationStatus: status });
+  await bumpContributionCount(
+    ctx,
+    report.authorId,
+    'reportCount',
+    visibleDelta(report.moderationStatus, status),
+  );
+  await recomputeBodySummary(ctx, report.waterBodyId);
+  await mirrorReportSubAreas(ctx, { ...report, moderationStatus: status });
+  if (report.postId !== undefined) await refreshPostLatestSkateEnd(ctx, report.postId);
+}
+
 export const setModerationStatus = mutation({
   args: {
-    targetType: literals(['report', 'comment', 'hazard']),
+    targetType: literals(['report', 'post', 'comment', 'hazard']),
     targetId: v.string(),
     status: literals(MODERATION_STATUSES),
     reason: v.string(),
@@ -53,43 +81,82 @@ export const setModerationStatus = mutation({
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const now = Date.now();
 
     const targetId = ctx.db.normalizeId(MODERATION_TABLE[args.targetType], args.targetId);
     if (!targetId) throw new ConvexError('Target not found');
     const target = await ctx.db.get(targetId);
     if (!target) throw new ConvexError('Target not found');
 
-    const typedTarget = target as Doc<'reports'> | Doc<'comments'> | Doc<'hazards'>;
+    const typedTarget = target as Doc<'reports'> | Doc<'posts'> | Doc<'comments'> | Doc<'hazards'>;
     const priorStatus = typedTarget.moderationStatus;
-    await ctx.db.patch(targetId, { moderationStatus: args.status });
 
-    // Reports and comments carry a denormalized contribution counter to keep exact; hazards do not.
-    // Note we touch ONLY `moderationStatus` — the hazard's lifecycle `status` is deliberately left
-    // alone, so a moderator hide is never mistakable for the community archiving a healed hazard (D3).
-    if (args.targetType === 'report' || args.targetType === 'comment') {
-      const authored = target as Doc<'reports'> | Doc<'comments'>;
-      await bumpContributionCount(
-        ctx,
-        authored.authorId,
-        args.targetType === 'report' ? 'reportCount' : 'commentCount',
-        visibleDelta(priorStatus, args.status),
-      );
-    }
-
-    // A hidden report or hazard must leave the map card too (A06c §5) — otherwise moderating content
-    // away would still leave its count on the map, which is the one surface where a stale number
-    // reads as a live condition.
-    if (args.targetType === 'report' || args.targetType === 'hazard') {
-      const onBody = target as Doc<'reports'> | Doc<'hazards'>;
-      await recomputeBodySummary(ctx, onBody.waterBodyId);
-    }
-    // The bay join mirrors the verdict (A09): the bay feed and the bay bounty gate read the status
-    // off the join row, in-index, so a hidden report has to leave the bay's list here too.
     if (args.targetType === 'report') {
-      await mirrorReportSubAreas(ctx, {
-        ...(target as Doc<'reports'>),
-        moderationStatus: args.status,
-      });
+      await applyReportStatus(ctx, target as Doc<'reports'>, args.status);
+    } else if (args.targetType === 'post') {
+      // A Post's verdict reaches its members (A10 §2.4): hidden ⇒ every visible Report hidden, each
+      // with its own audit row naming the cascade; restored ⇒ only the Reports *this* hide took down
+      // come back, so a member a moderator hid on its own merits stays hidden. `removed` cascades
+      // the same way and is not restored by a Post restore — it is the stronger verdict.
+      const post = target as Doc<'posts'>;
+      await ctx.db.patch(post._id, { moderationStatus: args.status });
+      for (const reportId of post.reportIds) {
+        const report = await ctx.db.get(reportId);
+        if (!report) continue;
+        if (args.status !== 'visible') {
+          if (report.moderationStatus !== 'visible') continue;
+          await applyReportStatus(ctx, report, args.status);
+          await ctx.db.insert('moderationActions', {
+            actorId: actor._id,
+            action: ACTION_FOR_STATUS[args.status],
+            targetType: 'report',
+            targetId: report._id,
+            reason: args.reason,
+            metadata: {
+              priorStatus: 'visible',
+              newStatus: args.status,
+              cascadedFromPostId: post._id,
+            },
+            createdAt: now,
+          });
+        } else {
+          if (report.moderationStatus !== 'hidden') continue;
+          const last = await ctx.db
+            .query('moderationActions')
+            .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
+            .order('desc')
+            .first();
+          if (last?.metadata?.cascadedFromPostId !== post._id) continue;
+          await applyReportStatus(ctx, report, 'visible');
+          await ctx.db.insert('moderationActions', {
+            actorId: actor._id,
+            action: 'restore',
+            targetType: 'report',
+            targetId: report._id,
+            reason: args.reason,
+            metadata: { priorStatus: 'hidden', newStatus: 'visible', cascadedFromPostId: post._id },
+            createdAt: now,
+          });
+        }
+      }
+    } else {
+      await ctx.db.patch(targetId, { moderationStatus: args.status });
+      // Comments carry a denormalized contribution counter to keep exact; hazards do not. Note we
+      // touch ONLY `moderationStatus` — the hazard's lifecycle `status` is deliberately left alone,
+      // so a moderator hide is never mistakable for the community archiving a healed hazard (D3).
+      if (args.targetType === 'comment') {
+        const comment = target as Doc<'comments'>;
+        await bumpContributionCount(
+          ctx,
+          comment.authorId,
+          'commentCount',
+          visibleDelta(priorStatus, args.status),
+        );
+      }
+      // A hidden hazard must leave the map card too (A06c §5).
+      if (args.targetType === 'hazard') {
+        await recomputeBodySummary(ctx, (target as Doc<'hazards'>).waterBodyId);
+      }
     }
 
     await ctx.db.insert('moderationActions', {
@@ -99,7 +166,7 @@ export const setModerationStatus = mutation({
       targetId: args.targetId,
       reason: args.reason,
       metadata: { priorStatus, newStatus: args.status },
-      createdAt: Date.now(),
+      createdAt: now,
     });
     return targetId;
   },
@@ -211,6 +278,18 @@ async function resolveFlagTarget(
         exists: true,
         author: await loadQueueUser(ctx, doc.authorId),
         summary: snippet(doc.notes) || 'Ice report',
+        moderationStatus: doc.moderationStatus,
+      };
+    }
+    case 'post': {
+      // A10 (D186). The prose is the Post's; the summary leads with the title, then the body.
+      const id = ctx.db.normalizeId('posts', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        author: await loadQueueUser(ctx, doc.authorId),
+        summary: doc.title || snippet(doc.body) || 'Post',
         moderationStatus: doc.moderationStatus,
       };
     }

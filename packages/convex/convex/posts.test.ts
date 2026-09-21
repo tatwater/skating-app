@@ -529,3 +529,38 @@ describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', ()
     ).toBe(reportId);
   });
 });
+
+describe('a flagged Post is triageable (A10 / D186)', () => {
+  test('the queue resolves the Post to its author and its title, or its prose, or "Post"', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const flagger = await seedUser(t, 'clerk_flagger');
+    const mod = await seedUser(t, 'clerk_mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+    const bodyId = await seedBody(t);
+    const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+    const make = (post: { title?: string; body?: string }) =>
+      author.as.mutation(api.posts.create, {
+        ...post,
+        reports: [{ ...FRESH, waterBodyId: bodyId, skateEndTime: T0 }],
+      });
+    const titled = (await make({ title: 'Morey 1/10', body: 'Glass.' })).postId;
+    const prose = (await make({ body: 'A long paragraph about the north bay and the wind.' }))
+      .postId;
+    const bare = (await make({})).postId;
+    for (const targetId of [titled, prose, bare]) {
+      await flagger.as.mutation(api.contentFlags.flag, {
+        targetType: 'post',
+        targetId,
+        reason: 'spam',
+      });
+    }
+    const { priority, standard } = await mod.as.query(api.moderation.listFlags, {});
+    const rows = [...priority, ...standard];
+    const summary = (id: Id<'posts'>) => rows.find((f) => f.targetId === id)?.target;
+    expect(summary(titled)).toMatchObject({ exists: true, summary: 'Morey 1/10' });
+    expect(summary(titled)?.author?.username).toBe('clerk_author');
+    expect(summary(prose)?.summary).toBe('A long paragraph about the north bay and the wind.');
+    expect(summary(bare)?.summary).toBe('Post');
+  });
+});

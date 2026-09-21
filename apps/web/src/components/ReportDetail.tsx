@@ -406,6 +406,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         <div className="flex flex-wrap gap-1 px-4 pb-2">
           <FlagDialog targetType="report" targetId={report._id} label="Flag report" />
           <ModeratorActions targetType="report" targetId={report._id} />
+          {/* The Post is the other verdict (A10 / D186): hiding it hides every Report under it. */}
+          {report.postId ? (
+            <ModeratorActions targetType="post" targetId={report.postId} label="Moderate post" />
+          ) : null}
         </div>
       ) : null}
       {/* The author's own control (A06f), mirroring the comment thread's Edit. `reports.update` has

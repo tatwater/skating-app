@@ -231,6 +231,9 @@ export const FLAG_TARGET_TYPES = [
   // `contentFlags.ts`, and a `case` in `resolveFlagTarget` in `moderation.ts`. Skipping the third
   // renders every such flag as "(deleted)" in the queue.
   'waterbody',
+  // A10 (D186): the narrative and the photo set over one or more Reports. Flagging the prose is
+  // flagging the Post; flagging one body's data is still flagging the Report.
+  'post',
 ] as const;
 export const FLAG_REASONS = [
   'unsafe_false_report',
@@ -376,6 +379,7 @@ export const MODERATION_ACTIONS = [
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
+  'post', // A10 (D186): hidden ⇒ every member Report hidden; restored ⇒ the ones it hid come back
   'comment',
   'photo',
   'user',

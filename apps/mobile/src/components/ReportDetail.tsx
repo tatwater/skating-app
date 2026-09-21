@@ -305,6 +305,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         <XStack gap="$2" flexWrap="wrap" alignItems="flex-start">
           <FlagControl targetType="report" targetId={report._id} label="Flag report" />
           <ModeratorActions targetType="report" targetId={report._id} />
+          {/* The Post is the other verdict (A10 / D186): hiding it hides every Report under it. */}
+          {report.postId ? (
+            <ModeratorActions targetType="post" targetId={report.postId} label="Moderate post" />
+          ) : null}
         </XStack>
       ) : null}
 
