@@ -74,6 +74,7 @@ export * from './nwsAlerts';
 export * from './oauthRedirect';
 export * from './oauthSession';
 export * from './osm';
+export * from './passedHazards';
 export * from './pathToBody';
 export * from './photo';
 export * from './postedAccess';
