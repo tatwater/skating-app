@@ -4,6 +4,7 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
+  formCreateRefusal,
   isFormRoundTripOf,
   type ReportFormState,
   reportFormFromReport,
@@ -573,5 +574,34 @@ describe('reportFormFromReport', () => {
       expect(input.snow).toEqual({ depthCm: inchesToCm(1) });
       expect(input).not.toHaveProperty('observedFrom');
     });
+  });
+});
+
+describe('formCreateRefusal — the create-only rules as the pre-sheet forms ask them (A10-2)', () => {
+  const now = Date.UTC(2026, 1, 1, 12);
+  const base = { waterBodyId: 'wb', skateEndTime: now - 3_600_000 };
+  it('says what to add, in the server’s words', () => {
+    expect(formCreateRefusal({ ...base }, 0, now)).toBe(
+      'Before this can post, add how it was and one thing you saw — an ice or surface chip, a thickness, or a hazard.',
+    );
+    expect(formCreateRefusal({ ...base, skateQuality: 'good' }, 0, now)).toBe(
+      'Before this can post, add one thing you saw — an ice or surface chip, a thickness, or a hazard.',
+    );
+    expect(formCreateRefusal({ ...base, iceTypes: [{ type: 'black_ice' }] }, 0, now)).toBe(
+      'Before this can post, add how it was.',
+    );
+  });
+  it('a hazard is an observation; a week-old end time is refused first', () => {
+    expect(formCreateRefusal({ ...base, suitability: 'dont_go' }, 1, now)).toBeNull();
+    expect(
+      formCreateRefusal(
+        { ...base, skateEndTime: now - 8 * 24 * 3_600_000, skateQuality: 'good' },
+        1,
+        now,
+      ),
+    ).toBe('Reports can be posted up to a week after you got off the ice.');
+    expect(formCreateRefusal({ ...base, skateEndTime: now + 2 * 3_600_000 }, 1, now)).toBe(
+      'That end time is in the future.',
+    );
   });
 });

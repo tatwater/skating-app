@@ -10,6 +10,7 @@ import {
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
   formatSkateTime,
+  formCreateRefusal,
   hasFutureSkateTimeError,
   humanizeEnum,
   ICE_TYPES,
@@ -618,6 +619,17 @@ export function ReportForm({
         void recordSignal({ signal: 'report_rejected_future_skate' }).catch(() => {});
       }
       return;
+    }
+    // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
+    // the server would refuse with, so the form says what to add rather than what failed. Never on
+    // an edit (what is posted stays editable), and never on *Save draft* — a draft is "not done
+    // yet" by definition; the queue's flush asks again when it posts.
+    if (!editing) {
+      const refusal = formCreateRefusal(result.normalized, bundleHazardIds.length, Date.now());
+      if (refusal) {
+        setError(refusal);
+        return;
+      }
     }
 
     setSubmitting(true);

@@ -21,6 +21,7 @@ import {
   CONDITION_SOURCES,
   CORROBORATION_MAX_PER_REPORT,
   CORROBORATION_WINDOW_MS,
+  FUTURE_REPORT_MESSAGE,
   freshnessRefusal,
   hasMeasuredThickness,
   ICE_TYPES,
@@ -28,6 +29,7 @@ import {
   locatedSubAreaIds,
   memberSubAreaIds,
   minimumSetGaps,
+  minimumSetMessage,
   OBSERVED_FROM,
   POST_MAX_REPORTS,
   PRECIP_TYPES,
@@ -38,6 +40,7 @@ import {
   SKATE_END_PRECISIONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
+  STALE_REPORT_MESSAGE,
   SUITABILITIES,
   SURFACE_TAGS,
   validatePostInput,
@@ -457,21 +460,14 @@ export async function createReportRow(
 export function assertMayPost(report: Doc<'reports'>, hazardCount: number, now: number): void {
   const refusal = freshnessRefusal(report.skateEndTime, now);
   if (refusal === 'too_old') {
-    throw new ConvexError({
-      code: 'stale_report',
-      message: 'Reports can be posted up to a week after you got off the ice.',
-    });
+    throw new ConvexError({ code: 'stale_report', message: STALE_REPORT_MESSAGE });
   }
   if (refusal === 'in_future') {
-    throw new ConvexError({ code: 'stale_report', message: 'That end time is in the future.' });
+    throw new ConvexError({ code: 'stale_report', message: FUTURE_REPORT_MESSAGE });
   }
   const gaps = minimumSetGaps(report, hazardCount);
   if (gaps.length > 0) {
-    throw new ConvexError({
-      code: 'minimum_set',
-      message: 'A report needs how it was and one thing you saw before it can post.',
-      gaps,
-    });
+    throw new ConvexError({ code: 'minimum_set', message: minimumSetMessage(gaps), gaps });
   }
 }
 

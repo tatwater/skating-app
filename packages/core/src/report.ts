@@ -615,3 +615,29 @@ export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): M
   if (!observed) gaps.push('observation');
   return gaps;
 }
+
+// ── The create-only refusals, in words (A10-2) ────────────────────────────────────────────────────
+
+/** D199's two refusals, as `posts.create` says them and as a form says them before asking. */
+export const STALE_REPORT_MESSAGE = 'Reports can be posted up to a week after you got off the ice.';
+export const FUTURE_REPORT_MESSAGE = 'That end time is in the future.';
+
+/**
+ * The minimum set's gaps as one sentence a skater can act on — what to add, not what failed. The
+ * server sends this beside the structured `gaps`; a form that runs `minimumSetGaps` itself shows
+ * the same words, so the two never describe the rule differently.
+ */
+export function minimumSetMessage(gaps: readonly MinimumSetTerm[]): string {
+  const parts: string[] = [];
+  if (gaps.includes('body')) parts.push('a water body');
+  if (gaps.includes('endTime')) parts.push('when you got off the ice');
+  if (gaps.includes('howWasIt')) parts.push('how it was');
+  if (gaps.includes('observation'))
+    parts.push('one thing you saw — an ice or surface chip, a thickness, or a hazard');
+  if (parts.length === 0) return '';
+  const list =
+    parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `Before this can post, add ${list}.`;
+}

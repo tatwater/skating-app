@@ -13,8 +13,17 @@
  * are ever stored — duration is derived (`end − start`).
  */
 
+import { freshnessRefusal } from './endTimeChips';
 import type { LatLng } from './geometry';
-import type { ReportInput, ThicknessReadingInput } from './report';
+import {
+  FUTURE_REPORT_MESSAGE,
+  type MinimumSetReport,
+  minimumSetGaps,
+  minimumSetMessage,
+  type ReportInput,
+  STALE_REPORT_MESSAGE,
+  type ThicknessReadingInput,
+} from './report';
 import {
   type ChipInput,
   iceTypeKeys,
@@ -505,4 +514,22 @@ export function resolveSkateWindow(input: SkateWindowInput): SkateWindowResult {
   return skateStartTime !== undefined
     ? { ok: true, skateEndTime: end, skateStartTime }
     : { ok: true, skateEndTime: end };
+}
+
+/**
+ * The create-only rules as the pre-sheet forms ask them before posting (A10-2): the freshness
+ * window (D199) and the minimum set (D189), in the same words `posts.create` would refuse with.
+ * `null` when the report may post. Never run on an edit — `reports.update` keeps today's rule so
+ * no existing report becomes uneditable.
+ */
+export function formCreateRefusal(
+  report: MinimumSetReport,
+  hazardCount: number,
+  now: number,
+): string | null {
+  const refusal = freshnessRefusal(report.skateEndTime, now);
+  if (refusal === 'too_old') return STALE_REPORT_MESSAGE;
+  if (refusal === 'in_future') return FUTURE_REPORT_MESSAGE;
+  const gaps = minimumSetGaps(report, hazardCount);
+  return gaps.length > 0 ? minimumSetMessage(gaps) : null;
 }

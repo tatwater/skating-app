@@ -6,6 +6,7 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
+  formCreateRefusal,
   hasFutureSkateTimeError,
   humanizeEnum,
   ICE_TYPES,
@@ -726,6 +727,16 @@ export function ReportForm({
         void recordSignal({ signal: 'report_rejected_future_skate' }).catch(() => {});
       }
       return;
+    }
+    // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
+    // the server would refuse with, so the form says what to add rather than what failed. Never on
+    // an edit: what is posted stays editable.
+    if (!editing) {
+      const refusal = formCreateRefusal(result.normalized, bundleHazardIds.length, Date.now());
+      if (refusal) {
+        setError(refusal);
+        return;
+      }
     }
 
     setSubmitting(true);
