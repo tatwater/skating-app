@@ -121,15 +121,25 @@ provider's own terms and privacy policy.
 - You can **export your data** (a JSON bundle of your own content plus your uploaded
   photos) and **delete your account** at any time.
 - When you ask to delete your account, your name, photo, bio, town, home location and email
-  are **erased immediately**, your profile disappears from the app, your past reports,
-  comments and hazard reports are **anonymized** (attributed to a "deleted user") so the
-  community's historical ice record is preserved, and the free text you wrote on them (notes,
-  captions, comments) starts being cleared right away. **Canceling does not bring any of that
-  back.** Your sign-in stays usable for **30 days** so you can change your mind about the
-  account itself; after that the deletion is final: your date of birth, connected-account
-  tokens, notifications, favorites and unpublished recordings are erased and your login is
-  removed. Published skate paths stay in the community layer only if you had left that on; the
-  links back to you (your Strava activity id, provider photo links) are removed either way.
+  are **erased immediately** and your profile disappears from the app. **Canceling does not
+  bring any of that back.** Your sign-in stays usable for **30 days** so you can change your
+  mind about the account itself; after that the deletion is final: your date of birth,
+  connected-account tokens, notifications, favorites and unpublished recordings are erased and
+  your login is removed.
+- Your past reports, comments, hazard reports and published skate paths are **kept, detached
+  from your identity**, so the community's historical ice record is preserved. They show as
+  "Deleted skater". This is **pseudonymization, not full anonymization**: each of those
+  contributions stays linked to a single anonymous placeholder for your former account rather
+  than being scattered, so they can still be recognized as the work of one departed person, and
+  a distinctive pattern of places and dates could in principle be recognizable to someone who
+  already knew it was yours.
+- The free text you wrote (report notes, thickness-reading notes, hazard descriptions, photo
+  captions, comment bodies) is cleared **once it is 30 days past the skate it describes** (30
+  days past posting, for comments). In practice that means older text comes off right away when
+  you ask, text newer than that stays visible until it reaches 30 days, and whatever is left is
+  cleared when the deletion is finalized — so free text can remain public for up to 30 days after
+  your request. Published skate paths stay in the community layer only if you had left that on;
+  the links back to you (your Strava activity id, provider photo links) are removed either way.
 
 ## Security
 Provider secrets and access tokens are held **server-side** and are never shipped in the
