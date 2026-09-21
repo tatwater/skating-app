@@ -6,9 +6,7 @@ import {
   SHOW_PUT_IN_SETTING_EXPLAINER,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import { Card, CardContent } from './ui/card';
-import { Checkbox } from './ui/checkbox';
-import { Label } from './ui/label';
+import { SwitchSettingView } from './SwitchSetting';
 
 /**
  * The remembered default for the report form's put-in switch (Phase 04 decision #7;
@@ -24,33 +22,28 @@ export function PutInSettingView({
   onToggle: (next: boolean) => void;
 }) {
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-        {SHOW_PUT_IN_HEADING}
-      </h2>
-      <Card>
-        <CardContent className="flex flex-col gap-2">
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="show-put-in-default"
-              checked={shown}
-              onCheckedChange={(v) => onToggle(v === true)}
-            />
-            <Label htmlFor="show-put-in-default" className="text-foreground text-sm">
-              {SHOW_PUT_IN_LABEL}
-            </Label>
-          </div>
-          <p className="text-foreground-muted text-xs">{SHOW_PUT_IN_SETTING_EXPLAINER}</p>
-        </CardContent>
-      </Card>
-    </section>
+    <SwitchSettingView
+      id="show-put-in-default"
+      heading={SHOW_PUT_IN_HEADING}
+      label={SHOW_PUT_IN_LABEL}
+      explainer={SHOW_PUT_IN_SETTING_EXPLAINER}
+      checked={shown}
+      onToggle={onToggle}
+    />
   );
 }
 
+/**
+ * Container: reads the caller's own default and writes it through `profiles.setShowPutInDefault`.
+ *
+ * Not rendered for a ghost (deletion pending, D62): the mutation is contributor-gated because a
+ * person who can no longer post has no next report for a default to seed, and a switch that rejects
+ * every flip is worse than no switch.
+ */
 export function PutInSetting() {
   const profile = useQuery(api.profiles.current, {});
   const setDefault = useMutation(api.profiles.setShowPutInDefault);
-  if (!profile) return null;
+  if (!profile || profile.deletionRequestedAt !== undefined) return null;
 
   return (
     <PutInSettingView

@@ -44,7 +44,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
-import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
@@ -749,7 +749,11 @@ export const getPublicProfile = query({
     const reports: ProfileReport[] = await Promise.all(
       visibleReports.map(async (report) => {
         const body = await ctx.db.get(report.waterBodyId);
-        return { report, waterBodyName: body?.name ?? 'Unknown water body' };
+        // A history card is a served report too — the put-in opt-out is honored here as on `reports.get`.
+        return {
+          report: await redactPutIn(ctx, report, viewer),
+          waterBodyName: body?.name ?? 'Unknown water body',
+        };
       }),
     );
 

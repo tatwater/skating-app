@@ -1079,7 +1079,7 @@ export function ReportForm({
         {/* The per-report put-in opt-out (Phase 04 decision #7) — offered whether or not a pin is
             set (the server derives a put-in either way), and it also clips a track posted with
             this report (D58). Copy in `@skating/core`. */}
-        <XStack gap="$2" alignItems="center" marginTop="$2">
+        <XStack marginTop="$2">
           <ChipToggle
             selected={form.showPutIn}
             label={SHOW_PUT_IN_LABEL}

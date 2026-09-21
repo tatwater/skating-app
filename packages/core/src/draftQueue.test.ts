@@ -145,6 +145,14 @@ describe('flushDraft — happy path', () => {
     expect(calls.rows[0]?.coord).toEqual(geo); // opted in
     expect(calls.rows[1]?.coord).toBeUndefined(); // not opted in
   });
+
+  it('carries the put-in opt-out to the server, and only the opt-out (Phase 04 #7)', async () => {
+    const { effects, calls } = makeEffects();
+    await flushDraft(draftWith({}, emptyReportForm(NOW, { showPutIn: false })), effects, NOW);
+    await flushDraft(draftWith({ id: 'd2' }, emptyReportForm(NOW)), effects, NOW);
+    expect(calls.reports[0]?.showPutIn).toBe(false); // the choice made offline reaches the row
+    expect(calls.reports[1]).not.toHaveProperty('showPutIn'); // shown is the stored default
+  });
 });
 
 describe('flushDraft — coord-only resolution (Layer-2 fallback)', () => {

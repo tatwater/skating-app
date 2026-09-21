@@ -308,6 +308,24 @@ describe('reports.create', () => {
     expect((await t.run((ctx) => ctx.db.get(reportId)))?.point).toEqual(point);
   });
 
+  test('stores the put-in opt-out, and leaves it unset when the form does not send it', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    // Only the opt-out travels (`buildReportInput`); a shown put-in is the field's unset default.
+    const hidden = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      showPutIn: false,
+    });
+    const shown = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    expect((await t.run((ctx) => ctx.db.get(hidden)))?.showPutIn).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(shown)))?.showPutIn).toBeUndefined();
+  });
+
   test('a minor cannot create a report — read-only (D13/D41)', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
@@ -760,6 +778,69 @@ describe('reports.listByWaterBody (all public, D13)', () => {
 });
 
 describe('reports.get (single, moderation-checked)', () => {
+  /**
+   * The put-in opt-out (Phase 04 #7) is honored at the API: a served report with `showPutIn: false`
+   * carries the body's anchor point in place of its own for anyone but the author and moderators —
+   * otherwise the drawer's camera, the profile's history cards and a lake's list would fly every
+   * viewer to the launch the switch promised to keep off the map. The row itself keeps the point.
+   */
+  test('substitutes the body point for a hidden put-in — except for the author and moderators', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asAuthor = await seedUser(t, 'clerk_author');
+    const launch = { lat: 0.9, lng: 0.1 }; // inside the polygon, far from the anchor
+    const reportId = await asAuthor.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: launch,
+      showPutIn: false,
+    });
+    const asOther = await seedUser(t, 'clerk_other');
+    const asMod = await seedUser(t, 'clerk_mod');
+    await t.run(async (ctx) => {
+      const mod = await ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'clerk_mod'))
+        .unique();
+      if (mod) await ctx.db.patch(mod._id, { role: 'moderator' });
+    });
+
+    const served = await asOther.query(api.reports.get, { reportId });
+    expect(served?.point).not.toEqual(launch);
+    expect(served?.point).toBeDefined();
+    expect(served?.showPutIn).toBe(false);
+    expect(served?.place).toEqual((await t.run((ctx) => ctx.db.get(reportId)))?.place);
+    // Anonymous viewers get the same substitution.
+    expect((await t.query(api.reports.get, { reportId }))?.point).not.toEqual(launch);
+    // The author and a moderator see the real point.
+    expect((await asAuthor.query(api.reports.get, { reportId }))?.point).toEqual(launch);
+    expect((await asMod.query(api.reports.get, { reportId }))?.point).toEqual(launch);
+    // The row is untouched — hide a marker, never scrub a location.
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.point).toEqual(launch);
+
+    // The lake's report list and the author's public history serve the same redaction.
+    const listed = await asOther.query(api.reports.listByWaterBody, {
+      waterBodyId: id,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(listed.page.map((r) => r.point)).not.toContainEqual(launch);
+    expect(listed.page).toHaveLength(1);
+    const profile = await asOther.query(api.profiles.getPublicProfile, {
+      username: 'clerk_author',
+    });
+    if (!profile || profile.private) throw new Error('expected a public profile');
+    expect(profile.reports.map((r) => r.report.point)).not.toContainEqual(launch);
+    expect(profile.reports).toHaveLength(1);
+
+    // A report that shows its put-in is served as stored.
+    const shown = await asAuthor.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME - 60_000,
+      point: launch,
+    });
+    expect((await asOther.query(api.reports.get, { reportId: shown }))?.point).toEqual(launch);
+  });
+
   test('hides a moderation-hidden report from everyone', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
@@ -837,6 +918,39 @@ describe('reports.update (author-only LWW, D25)', () => {
     expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(
       SKATE_TIME + 3 * 60 * 60_000,
     );
+  });
+
+  /**
+   * The put-in switch (Phase 04 decision #7) round-trips through the edit form in both directions.
+   * The form only ever *sends* the opt-out (`buildReportInput` omits `showPutIn` when shown), so
+   * `update` has to read absence as "shown" — the LWW rule every other content field follows — or a
+   * hidden put-in could never be re-shown by its author.
+   */
+  test('the put-in opt-out is set, and cleared again, through the edit form round trip', async () => {
+    const t = convexTestWithGeo();
+    const { asAuthor, reportId } = await seedReport(t);
+    const stored = async () => (await t.run((ctx) => ctx.db.get(reportId)))?.showPutIn;
+    expect(await stored()).toBeUndefined();
+
+    // Exactly what the edit form does: seed from the stored row, flip the switch, submit the whole
+    // content block (`update` takes no `waterBodyId` — a report can't change lakes).
+    const submit = async (showPutIn: boolean) => {
+      const row = await t.run((ctx) => ctx.db.get(reportId));
+      if (!row) throw new Error('seeded report vanished');
+      const { waterBodyId: _body, ...content } = buildReportInput(
+        { ...reportFormFromReport(row), showPutIn },
+        'unused',
+      );
+      await asAuthor.mutation(api.reports.update, { reportId, ...content });
+    };
+
+    await submit(false);
+    expect(await stored()).toBe(false);
+
+    // Back on: the form sends no `showPutIn` at all (only the opt-out travels), which must read as
+    // shown — otherwise this is the edit that silently never lands.
+    await submit(true);
+    expect(await stored()).toBeUndefined();
   });
 
   test('stamps editedAt, which a fresh report does not carry', async () => {

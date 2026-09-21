@@ -132,7 +132,8 @@ export function emptyThicknessReading(): ThicknessFormReading {
 /**
  * A blank form defaulted for `now`. Skate time defaults to now (editable to the past for offline
  * reports, D9); no ice fields are required (an observation-only report, D3). All reports are public
- * (D13), so there's no visibility to default.
+ * (D13), so there's no visibility to default. `opts.showPutIn` is the profile's remembered put-in
+ * switch (`resolveShowPutInDefault`); omitted, the switch starts shown, the stored field's default.
  */
 export function emptyReportForm(now: number, opts: { showPutIn?: boolean } = {}): ReportFormState {
   return {

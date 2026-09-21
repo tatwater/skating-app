@@ -401,42 +401,66 @@ function RadiusRow({
 }
 
 /**
- * Notification preferences (Phase 04, decision #4) — favorites (default on, any distance), a daily
- * "all reports nearby" digest within X₁, and "great reports nearby" within X₂ (X₂ ≥ X₁, clamped here
- * and re-enforced server-side). The radii need a home set above to take effect.
+ * One on/off setting with its own section heading and a line of explainer — the shape the two
+ * privacy switches below share. The words come from `@skating/core` (the same control ships on web,
+ * and two surfaces wording one privacy promise differently means one of them is describing behavior
+ * the app doesn't have); the layout comes from here so a fix to one switch is a fix to both.
  */
-/**
- * The D58 aggregate opt-out. The copy lives in `@skating/core` (`trackPrivacy.ts`) because the same
- * control ships on web — and two surfaces wording one privacy promise differently means one of them
- * is describing behavior the app doesn't have. The reasoning behind the wording is documented there.
- */
-/**
- * The remembered default for the report form's put-in switch (Phase 04 decision #7;
- * `profiles.showPutInDefault`). The switch itself is on the report form — the choice is per report;
- * this is where the default is visible without opening one. Copy in `@skating/core` (`putInPrivacy.ts`).
- */
-function PutInSetting() {
-  const profile = useQuery(api.profiles.current, {});
-  const setDefault = useMutation(api.profiles.setShowPutInDefault);
-  if (!profile) return null;
-
+function SwitchSetting({
+  heading,
+  label,
+  explainer,
+  value,
+  onToggle,
+}: {
+  heading: string;
+  label: string;
+  explainer: string;
+  value: boolean;
+  onToggle: (next: boolean) => void;
+}) {
   return (
     <YStack gap="$2">
       <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
-        {SHOW_PUT_IN_HEADING}
+        {heading}
       </Text>
-      <ToggleRow
-        label={SHOW_PUT_IN_LABEL}
-        value={resolveShowPutInDefault(profile.showPutInDefault)}
-        onToggle={(v) => void setDefault({ showPutIn: v })}
-      />
+      <ToggleRow label={label} value={value} onToggle={onToggle} />
       <Paragraph color="$foregroundMuted" fontSize={11}>
-        {SHOW_PUT_IN_SETTING_EXPLAINER}
+        {explainer}
       </Paragraph>
     </YStack>
   );
 }
 
+/**
+ * The remembered default for the report form's put-in switch (Phase 04 decision #7;
+ * `profiles.showPutInDefault`). The switch itself is on the report form — the choice is per report;
+ * this is where the default is visible without opening one. Copy in `@skating/core` (`putInPrivacy.ts`).
+ *
+ * Not rendered for a ghost (deletion pending, D62): the mutation is contributor-gated because a
+ * person who can no longer post has no next report for a default to seed, and a switch that rejects
+ * every flip is worse than no switch.
+ */
+function PutInSetting() {
+  const profile = useQuery(api.profiles.current, {});
+  const setDefault = useMutation(api.profiles.setShowPutInDefault);
+  if (!profile || profile.deletionRequestedAt !== undefined) return null;
+
+  return (
+    <SwitchSetting
+      heading={SHOW_PUT_IN_HEADING}
+      label={SHOW_PUT_IN_LABEL}
+      explainer={SHOW_PUT_IN_SETTING_EXPLAINER}
+      value={resolveShowPutInDefault(profile.showPutInDefault)}
+      onToggle={(v) => void setDefault({ showPutIn: v })}
+    />
+  );
+}
+
+/**
+ * The D58 aggregate opt-out. The reasoning behind the wording is documented with the copy in
+ * `@skating/core` (`trackPrivacy.ts`).
+ */
 function AggregateTracksSetting() {
   const profile = useQuery(api.profiles.current, {});
   // `setAggregateTracksOptOut`, not `updateProfile`: this is the one profile setting a ghost keeps
@@ -445,19 +469,13 @@ function AggregateTracksSetting() {
   if (!profile) return null;
 
   return (
-    <YStack gap="$2">
-      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
-        {AGGREGATE_OPT_OUT_HEADING}
-      </Text>
-      <ToggleRow
-        label={AGGREGATE_OPT_OUT_LABEL}
-        value={profile.excludeTracksFromAggregate === true}
-        onToggle={(v) => void setOptOut({ excludeTracksFromAggregate: v })}
-      />
-      <Paragraph color="$foregroundMuted" fontSize={11}>
-        {AGGREGATE_OPT_OUT_EXPLAINER}
-      </Paragraph>
-    </YStack>
+    <SwitchSetting
+      heading={AGGREGATE_OPT_OUT_HEADING}
+      label={AGGREGATE_OPT_OUT_LABEL}
+      explainer={AGGREGATE_OPT_OUT_EXPLAINER}
+      value={profile.excludeTracksFromAggregate === true}
+      onToggle={(v) => void setOptOut({ excludeTracksFromAggregate: v })}
+    />
   );
 }
 

@@ -97,7 +97,7 @@ import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
 import { syncReportSubAreas } from './lib/reportSubAreas';
-import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
+import { getViewableReport, loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { activateOnEvidence } from './lib/standing';
@@ -610,6 +610,7 @@ export const listByWaterBody = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, { waterBodyId, subAreaId, season, paginationOpts }) => {
+    const viewer = await getCurrentProfile(ctx);
     // `v.number()` admits `NaN` and `1e15`; both become index bounds that match nothing, so an empty
     // lake would be the answer to a malformed question. `resolveSeason` lands those on the same
     // default as no argument at all.
@@ -657,11 +658,13 @@ export const listByWaterBody = query({
         const report = await ctx.db.get(row.reportId);
         // A mirror that has fallen behind the row it mirrors is the only way to reach here; the
         // report's own status is the authority, so it is re-checked rather than trusted.
-        if (report && report.moderationStatus === 'visible') page.push(report);
+        if (report && report.moderationStatus === 'visible') {
+          page.push(await redactPutIn(ctx, report, viewer));
+        }
       }
       return { ...joined, page };
     }
-    return ctx.db
+    const result = await ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
         q
@@ -672,6 +675,11 @@ export const listByWaterBody = query({
       )
       .order('desc')
       .paginate(paginationOpts);
+    // Served docs honor the put-in opt-out (`redactPutIn`); the rows themselves are untouched.
+    return {
+      ...result,
+      page: await Promise.all(result.page.map((r) => redactPutIn(ctx, r, viewer))),
+    };
   },
 });
 
@@ -685,7 +693,12 @@ export const listByWaterBody = query({
  */
 export const get = query({
   args: { reportId: v.id('reports') },
-  handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
+  handler: async (ctx, { reportId }) => {
+    const report = await getViewableReport(ctx, reportId);
+    if (report === null) return null;
+    // The put-in opt-out is honored at the API, not left to the drawer (`redactPutIn`).
+    return redactPutIn(ctx, report, await getCurrentProfile(ctx));
+  },
 });
 
 /**
@@ -1286,7 +1299,10 @@ export const update = mutation({
       snow: n.snow,
       conditions: mergeEditedConditions(existing.conditions, n.conditions),
       notes: n.notes,
-      ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
+      // Last-write-wins like every other content field, not "keep unless sent": the form only ever
+      // sends the opt-out (`buildReportInput` omits `showPutIn` when shown), so preserving the stored
+      // value on absence would make hidden → shown an edit that silently never lands.
+      showPutIn: args.showPutIn,
       photoIds,
       // Distinct from `updatedAt` on purpose (A06f). `updatedAt` moves for reasons the author had
       // nothing to do with — the conditions autofill backfills the weather hours later — so a byline

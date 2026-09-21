@@ -1,4 +1,4 @@
-import { emptyReportForm, type ReportFormState } from '@skating/core';
+import { emptyReportForm, type ReportFormState, SHOW_PUT_IN_LABEL } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -125,7 +125,7 @@ describe('ReportFormFields', () => {
     // Base UI renders the visible control plus a hidden native input; drive the visible one.
     const box = () =>
       screen
-        .getAllByRole('checkbox', { name: 'Show where I got on the ice' })
+        .getAllByRole('checkbox', { name: SHOW_PUT_IN_LABEL })
         .find((el) => el.getAttribute('data-slot') === 'checkbox') as HTMLElement;
     expect(box()).toBeChecked();
     expect(getForm().showPutIn).toBe(true);
