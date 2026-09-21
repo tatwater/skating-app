@@ -147,13 +147,13 @@ export const getForReport = query({
     const report = await ctx.db.get(reportId);
     if (!report || report.postId === undefined) return null;
     const post = await ctx.db.get(report.postId);
-    if (!post || post.moderationStatus !== 'visible') return null;
+    if (post?.moderationStatus !== 'visible') return null;
     const siblings: { reportId: Id<'reports'>; bodyName: string; skateEndTime: number }[] = [];
     const bodyInfo = new Map();
     for (const id of post.reportIds) {
       if (id === reportId) continue;
       const sibling = await ctx.db.get(id);
-      if (!sibling || sibling.moderationStatus !== 'visible') continue;
+      if (sibling?.moderationStatus !== 'visible') continue;
       const body = await bodyInfoFor(ctx, sibling.waterBodyId, bodyInfo);
       if (body.standing === 'removed') continue;
       siblings.push({ reportId: id, bodyName: body.name, skateEndTime: sibling.skateEndTime });
