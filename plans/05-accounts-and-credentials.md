@@ -50,7 +50,7 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | --- | --- | --- | --- | --- |
 | **OpenRouteService** (HeiGIT) | drive-time isochrones (Phase 04), `foot-hiking` approaches (A06d) | ✅ | `ORS_API_KEY` on Convex; the ETL reads the same key | portal is <https://account.heigit.org>; measured quotas in § 3a |
 | **NREL WIND Toolkit** | winter wind roses | ✅ | `WIND_TOOLKIT_API_KEY` + `WIND_TOOLKIT_EMAIL`, local `.env` in `scripts/wind-climate` | free, instant at <https://developer.nlr.gov/signup/>; the host moved from `developer.nrel.gov`, hence the variable name |
-| **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | ⚠ **callback domain not yet set** to the Convex `.site` host — no real OAuth round-trip has run; new apps carry an athlete cap until expansion is requested |
+| **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | callback domain `agile-bee-397.convex.site` — confirmed on the dashboard 2026-09-20; athlete cap lifted to 10 the same day (new apps start single-player); no real OAuth round-trip has run yet |
 
 ### No account, by design
 

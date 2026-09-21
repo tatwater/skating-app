@@ -342,8 +342,9 @@ dev; device verification still owed — roadmap Phase 08 § Owed). Suites green:
    skate, so adjacency is what makes that legible.
 3. **Full offline record→report linkage** — a report draft carries the track's *local* id and the
    flush resolves it to an `activityId`.
-4. Strava app registered; **callback domain still to be set** to the Convex `.site` host (the record
-   disagreed with itself on this until 2026-09-20; treated as unset until confirmed on the dashboard).
+4. Strava app registered; callback domain set to the Convex `.site` host (the record disagreed with
+   itself on this until the founder read it off the dashboard, 2026-09-20 — it is set); the athlete cap
+   lifted from single-player to 10 the same day.
 
 **Deltas the build found (this section supersedes the plan above where they conflict):**
 - **§`reportFreshness` — D59's premise was partly wrong.** `bounties.ts` has **no recency-decay curve**
@@ -467,8 +468,8 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 > (derivable from `path` exactly).
 >
 > **Outstanding:** device verification (Android-emulator GPX playback + a friend's iPhone for iOS
-> background/battery parity), a real Strava sandbox upload (the callback domain first — see §Strava
-> above), and the prod
+> background/battery parity), a real Strava sandbox upload (the callback domain is set; the cap is 10),
+> and the prod
 > cutover.
 
 > **Detailed build plan:** [`phases/08-native-capture.md`](./08-native-capture.md) (scoped
