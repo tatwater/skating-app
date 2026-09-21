@@ -42,8 +42,12 @@ export interface JevClient {
   ask(state: string, questions: Record<string, JevQuestion>): Promise<JevResponse>;
 }
 
-/** USD per MTok — unknown at build (2026-09-21); zero until the TypeSafe console says otherwise. */
-export const JEV_RATES = { inputPerMTok: 0, outputPerMTok: 0 };
+/**
+ * USD per MTok, from the TypeSafe console after the first eval run (2026-09-21): 310 requests,
+ * 1,993,299 tokens, $0.0532 — a blended 2.7¢ per MTok, ~40× under Haiku's input rate. The console
+ * reports one total, so input and output carry the same blended rate until it says otherwise.
+ */
+export const JEV_RATES = { inputPerMTok: 0.0267, outputPerMTok: 0.0267 };
 
 export function jevCostUsd(usage: JevResponse['usage']): number {
   return (

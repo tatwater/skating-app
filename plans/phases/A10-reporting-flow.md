@@ -262,8 +262,8 @@ on dev) and §3 (the core sheet model), in twelve commits off `main` at `b6ced1d
 core 2,858 · convex 1,698 · extraction 24 · web and mobile unchanged and green. Dev backfilled:
 `reports.backfillA10Shapes` lifted 2 rows, `posts.backfillFromReports` created 2 Posts. **Prod is
 deferred, as for every phase since A01.** Eval spend: $8.3 of the founder's $20 (Haiku $2.1,
-Sonnet 5 $6.2 including 28 failed calls); Jev ~1.1M input / 0.75M output tokens at a price the
-console has yet to say.
+Sonnet 5 $6.2 including 28 failed calls); Jev $0.053 for 310 requests / 2.0M tokens — a blended
+2.7¢ per MTok, ~40× under Haiku's input rate (founder, from the console).
 
 ### What shipped, by workstream
 
@@ -367,7 +367,6 @@ ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
 
 - The founder's verification pass (`training_data/google_group/eval/review.html`) → verified
   floors; A10-4 is gated on `basis: 'verified'`.
-- Jev pricing from the TypeSafe console, into `JEV_RATES`.
 - A retry on Jev 503 / 529 in the pipeline, and Stage B's per-unit requests in parallel; the
   recall tier over the full 2,449 via the Batch API when the corpus replay (A10-2 §1.5) needs it.
 - Two seams the self-review found for the next PRs: `ExtractedWhere.placeName` is structurally a
