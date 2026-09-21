@@ -38,6 +38,7 @@ import {
   type RequestKind,
   requestKindsFor,
   requestNameKey,
+  sameName,
   searchTextFor,
   standingOf,
 } from '@skating/core';
@@ -905,7 +906,7 @@ const seedBayRow = v.object({
 /**
  * File the corpus's destination bays as `name_bay` requests (D201) — the one-off that makes the
  * seed's list and a skater's ask the same queue. **Dry by default**; `apply` writes. Each row
- * resolves its parent by exact name within its state among listed bodies, and is skipped when the
+ * resolves its parent by name (word order aside) within its state among listed bodies, skipped when the
  * parent is missing or ambiguous, when the same bay is already asked for, or when a sub-area by
  * that name already exists — every skip named in the report, nothing guessed.
  *
@@ -937,11 +938,13 @@ export const seedBayRequests = internalMutation({
         .query('waterBodies')
         .withSearchIndex('search_name', (q) => q.search('searchText', row.parentName))
         .take(20);
+      // `sameName`, not equality: the corpus says "Lake Sunapee" and the catalog "Sunapee Lake",
+      // and word order is the one difference that is never two lakes. A typo still misses.
       const parents = hits.filter(
         (b) =>
           isListed(b) &&
           standingOf(b).standing === 'active' &&
-          b.name.toLowerCase() === row.parentName.toLowerCase() &&
+          sameName(b.name, row.parentName) &&
           (b.states ?? []).includes(row.state),
       );
       if (parents.length === 0) {

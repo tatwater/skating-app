@@ -1007,7 +1007,8 @@ describe('name_bay — the sub-area queue', () => {
         name: 'Corner Bay',
         aliases: ['SW Corner'],
         state: 'VT',
-        parentName: 'Quiet Pond',
+        // Word order aside: the corpus says "Pond Quiet" where the catalog says "Quiet Pond".
+        parentName: 'Pond Quiet',
         coord: NOTCH,
         note: 'Corpus: 26 messages, 12 skated.',
       },
