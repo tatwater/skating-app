@@ -8,7 +8,7 @@
  * logic that reads them.
  */
 
-import { type ChipInput, toLocatedChip } from './reportFields';
+import { type ChipInput, iceTypeKeys, toLocatedChip } from './reportFields';
 import { NEW_ACCOUNT_WINDOW_MS, TRUST_CLASS_THRESHOLDS, type TrustClass } from './reputationConfig';
 import type { IceType, SkateQuality } from './types';
 import { whereOverlaps } from './where';
@@ -48,6 +48,8 @@ export interface AgreeableReport {
  * `where` (A10 / D193, §12.2) — only where the two locations could overlap: "black ice, north end"
  * and "black ice, south end" are two observations, not one corroborated twice. A bare key, or a
  * chip with no `where`, is about the whole body and overlaps anything (`whereOverlaps`).
+ *
+ * The corroboration reading. The contradiction test reads `shareIceTypeKey` instead — see there.
  */
 function shareIceType(
   a: readonly ChipInput<IceType>[] = [],
@@ -59,6 +61,21 @@ function shareIceType(
     .some((chip) =>
       bChips.some((other) => other.type === chip.type && whereOverlaps(chip.where, other.where)),
     );
+}
+
+/**
+ * Do two ice-type sets share a member **by key, anywhere on the body**? The contradiction test's
+ * reading (A10 §12.2, deliberately asymmetric with `shareIceType`): a shared type in different
+ * parts of the lake is not agreement enough to *award* corroboration, but it is agreement enough to
+ * keep the pair out of the contradiction queue — "black ice north, great" and "black ice south,
+ * poor" are two places on one lake, not a conflict to disclose or escalate.
+ */
+function shareIceTypeKey(
+  a: readonly ChipInput<IceType>[] = [],
+  b: readonly ChipInput<IceType>[] = [],
+): boolean {
+  const bKeys = iceTypeKeys(b);
+  return iceTypeKeys(a).some((t) => bKeys.includes(t));
 }
 
 /**
@@ -87,7 +104,8 @@ export function reportsAgree(a: AgreeableReport, b: AgreeableReport): boolean {
 export function reportsContradict(a: AgreeableReport, b: AgreeableReport): boolean {
   if (a.skateQuality === undefined || b.skateQuality === undefined) return false;
   if (Math.abs(QUALITY_RANK[a.skateQuality] - QUALITY_RANK[b.skateQuality]) < 2) return false;
-  return !shareIceType(a.iceTypes, b.iceTypes);
+  // By key, not by `where` (§12.2): fewer awards for different places, no more flags for them.
+  return !shareIceTypeKey(a.iceTypes, b.iceTypes);
 }
 
 /** The hazard field the agreement test reads — a hazard carries exactly one `type` (Phase 09a). */

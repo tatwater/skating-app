@@ -195,11 +195,17 @@ export function describeLocatedChip(
  * bay-relative `head` / `mouth` anything — a still label cannot place them against a wedge. The
  * extent never matters: patches in the north are still in the north. Conservative by design —
  * when it cannot tell, it says yes.
+ *
+ * Sectors are compared only inside **one frame** — both on the body, or both in the same bay. A
+ * bay's north end is a bearing from the bay's own origin, and can lie in the lake's south; a still
+ * label cannot place one against the other, so a bay-relative wedge and a body-relative one are
+ * another case of "cannot tell".
  */
 export function whereOverlaps(a: Where | undefined, b: Where | undefined): boolean {
   if (!a || !b) return true;
   if (a.subAreaId !== undefined && b.subAreaId !== undefined && a.subAreaId !== b.subAreaId)
     return false;
+  if (a.subAreaId !== b.subAreaId) return true;
   const sa = a.sector;
   const sb = b.sector;
   if (sa === undefined || sb === undefined) return true;

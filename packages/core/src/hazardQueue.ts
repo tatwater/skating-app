@@ -364,10 +364,9 @@ export async function flushHazardItem(
         ? { dismissedDuplicateOf: h.dismissedDuplicateOf }
         : {}),
     });
-    // The server id is checkpointed on the row (a hazard's row outlives its flush while a draft
-    // bundles it); a confirmation carries the id it voted on already.
-    if (current.kind === 'hazard') await save({ status: 'done', hazardId });
-    else await save({ status: 'done' });
+    // The server id is checkpointed on the row: a hazard's row outlives its flush while a draft
+    // bundles it (a confirmation returned above — it carries the id it voted on already).
+    await save({ status: 'done', hazardId });
     return { ok: true, item: current, hazardId };
   } catch (error) {
     const kind = classifyFlushError(error);

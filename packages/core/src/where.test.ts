@@ -181,6 +181,12 @@ describe('whereOverlaps / whereCoversBody (A10 §12.2)', () => {
     expect(whereOverlaps(undefined, { sector: 'N' })).toBe(true);
     expect(whereOverlaps({ subAreaId: 'a' }, { subAreaId: 'b' })).toBe(false);
     expect(whereOverlaps({ subAreaId: 'a' }, { sector: 'N' })).toBe(true);
+    // A wedge in a bay and a wedge on the body are two frames: the bay's north can be the lake's
+    // south, so they are "cannot tell", not "no".
+    expect(whereOverlaps({ subAreaId: 'a', sector: 'N' }, { sector: 'S' })).toBe(true);
+    expect(whereOverlaps({ subAreaId: 'a', sector: 'N' }, { subAreaId: 'a', sector: 'S' })).toBe(
+      false,
+    );
     expect(whereOverlaps({ sector: 'N' }, { sector: 'N' })).toBe(true);
     expect(whereOverlaps({ sector: 'N' }, { sector: 'S' })).toBe(false);
     expect(whereOverlaps({ sector: 'middle' }, { sector: 'N' })).toBe(false);

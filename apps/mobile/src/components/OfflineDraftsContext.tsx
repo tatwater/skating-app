@@ -14,6 +14,7 @@ import {
   isFlushable,
   isHazardItemFlushable,
   type PostDraft,
+  postDraftPhotoUris,
 } from '@skating/core';
 import {
   createContext,
@@ -25,7 +26,7 @@ import {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
-import { deleteDraftPhotoFiles, draftPhotoUris } from '../lib/draftPhotos';
+import { deleteDraftPhotoFiles } from '../lib/draftPhotos';
 import {
   deleteDraft,
   deleteHazardItem,
@@ -81,7 +82,7 @@ export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
       // any already-uploaded blobs. Same guard the edit form uses (see `flushService` `flushingIds`).
       if (isDraftFlushing(id)) return false;
       const draft = getDraft(id);
-      if (draft) deleteDraftPhotoFiles(draftPhotoUris(draft));
+      if (draft) deleteDraftPhotoFiles(postDraftPhotoUris(draft));
       deleteDraft(id);
       refresh();
       return true;

@@ -66,12 +66,21 @@ export interface BodyInfo {
   /** The parent's elevation, so a report's bay can be keyed the way the registry keyed it. */
   elevationM?: number;
   /**
-   * The outline at card scale and the wedge apex (A10 §12.3), once per body per page. Absent for a
-   * dangling ref. Computed from the polygon the body doc already carried into this read — no extra
-   * fetch — and cached with the rest, so twenty cards on one lake simplify it once.
+   * The survivor doc itself, for what a *card* derives from it on demand (the silhouette). Held
+   * rather than re-read: it is in memory for this query already. Absent for a dangling ref.
    */
-  silhouette?: Pick<SilhouetteData, 'rings' | 'bbox' | 'origin' | 'middleRadiusM'>;
+  doc?: Doc<'waterBodies'>;
+  /**
+   * The outline at card scale and the wedge apex (A10 §12.3), once per body per page — filled by
+   * `silhouetteBaseOf` the first time a card on this body asks, not here: the standing check, the
+   * recommended scan and a Post's sibling list all resolve bodies through this cache and never draw
+   * one, and simplifying a big outline and casting its sector rays is the one expensive thing in
+   * it. `null` once asked and found unusable.
+   */
+  silhouette?: SilhouetteBase | null;
 }
+
+type SilhouetteBase = Pick<SilhouetteData, 'rings' | 'bbox' | 'origin' | 'middleRadiusM'>;
 
 /** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
 export async function bodyInfoFor(
@@ -95,16 +104,29 @@ export async function bodyInfoFor(
     ...(body?.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
     ...(body ? { filterCellKey: bodyWeatherCell(body, 'filter').key } : {}),
     ...(body?.elevationM !== undefined ? { elevationM: body.elevationM } : {}),
-    ...(body ? { silhouette: silhouetteBaseFor(body) } : {}),
+    ...(body ? { doc: body } : {}),
   };
   cache.set(waterBodyId, info);
   return info;
 }
 
-/** The per-body half of a card's silhouette: the simplified rings, the bbox, the apex, the middle. */
-function silhouetteBaseFor(body: Doc<'waterBodies'>): BodyInfo['silhouette'] {
+/** The per-body half of a card's silhouette, computed on first ask and memoized on the cache row. */
+function silhouetteBaseOf(info: BodyInfo): SilhouetteBase | null {
+  if (info.silhouette === undefined)
+    info.silhouette = info.doc ? silhouetteBaseFor(info.doc) : null;
+  return info.silhouette;
+}
+
+/**
+ * The simplified rings, the bbox, the apex, the middle. `null` for an outline that is not a
+ * polygon — the schema's `polygon` is the broad GeoJSON union, and a card must never be the read
+ * that fails the whole page over one odd row.
+ */
+function silhouetteBaseFor(body: Doc<'waterBodies'>): SilhouetteBase | null {
+  if (body.polygon.type !== 'Polygon' && body.polygon.type !== 'MultiPolygon') return null;
   const geom = body.polygon as unknown as Parameters<typeof silhouetteRings>[0];
   const { rings, bbox } = silhouetteRings(geom);
+  if (rings.length === 0) return null;
   // `sectorFrame` is what the sheet's `where` means by a sector, so the card's wedge agrees with it;
   // the interior point is honored when it is inside the water, else derived. `null` on a broken
   // outline, in which case the apex falls back to the interior point (or the shoreline centroid).
@@ -232,10 +254,19 @@ export async function toFeedCard(
     // A lake favorite takes the whole lake; a bay favorite takes only the reports in the bay (A09).
     isFavorite: isFavoriteReport(sets.favorites, r),
     ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
-    ...(body.silhouette
-      ? { silhouette: await silhouetteFor(ctx, r, body.silhouette, caches) }
-      : {}),
+    ...(await silhouetteFieldFor(ctx, r, body, caches)),
   };
+}
+
+/** `{ silhouette }` when the body has a usable outline, else nothing — the card's optional field. */
+async function silhouetteFieldFor(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  body: BodyInfo,
+  caches: FeedCardCaches,
+): Promise<{ silhouette?: SilhouetteData }> {
+  const base = silhouetteBaseOf(body);
+  return base ? { silhouette: await silhouetteFor(ctx, r, base, caches) } : {};
 }
 
 /**
@@ -248,7 +279,7 @@ export async function toFeedCard(
 async function silhouetteFor(
   ctx: QueryCtx,
   r: Doc<'reports'>,
-  base: NonNullable<BodyInfo['silhouette']>,
+  base: SilhouetteBase,
   caches: FeedCardCaches,
 ): Promise<SilhouetteData> {
   const viewer = caches.viewer ?? null;

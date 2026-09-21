@@ -124,9 +124,7 @@ function effects(): PostFlushEffects {
       const queued = getHazardItem(localId);
       if (queued?.kind !== 'hazard') return null;
       if (queued.hazardId !== undefined) return queued.hazardId;
-      if (!isHazardItemFlushable(queued)) return null;
-      const result = await flushHazardItem(queued, hazardEffects(), Date.now());
-      return result.ok && result.hazardId !== undefined ? result.hazardId : null;
+      return (await flushOneHazard(localId, hazardEffects(), Date.now()))?.hazardId ?? null;
     },
     persist: async (draft) => {
       saveDraft(draft);
@@ -363,9 +361,32 @@ function applyTrackRetention(now: number): void {
 }
 
 /**
- * Drain the hazard queue once, oldest first. A successful item is deleted; a transient failure is
- * left `pending` for the next flush and a permanent one parks in `error` — both persisted by
- * `flushHazardItem` itself.
+ * Flush one queued hazard or confirmation by local id, returning its result. Shared by the queue
+ * drain and by a Post draft that needs a bundled hazard's server id *now* (`resolveHazardId`), the
+ * way `flushOneTrack` serves a report's track — so the two paths cannot disagree about what a
+ * successful flush leaves behind: the photo files go at once, and the row waits for
+ * `sweepHazardItems`, because a report draft may still bundle this hazard by its local id and needs
+ * the server id the row now carries (D55).
+ */
+async function flushOneHazard(
+  id: string,
+  eff: HazardFlushEffects,
+  now: number,
+): Promise<{ hazardId?: string } | null> {
+  const fresh = getHazardItem(id);
+  if (!fresh || !isHazardItemFlushable(fresh)) return null;
+  const result = await flushHazardItem(fresh, eff, now);
+  if (!result.ok) return null;
+  if (result.item.kind === 'hazard') {
+    deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
+  }
+  return result.hazardId !== undefined ? { hazardId: result.hazardId } : {};
+}
+
+/**
+ * Drain the hazard queue once, oldest first. A transient failure is left `pending` for the next
+ * flush and a permanent one parks in `error` — both persisted by `flushHazardItem` itself; a
+ * successful one is settled by `flushOneHazard`.
  *
  * Unlike report drafts there's no edit-during-flush race to guard: a queued hazard is immutable once
  * captured (the capture bar is gone by then), so there's nothing for an edit to clobber.
@@ -373,16 +394,7 @@ function applyTrackRetention(now: number): void {
 async function flushHazardQueue(now: number): Promise<void> {
   const eff = hazardEffects();
   for (const { id } of flushableHazardItems(listHazardItems())) {
-    const fresh = getHazardItem(id);
-    if (!fresh || !isHazardItemFlushable(fresh)) continue;
-    const result = await flushHazardItem(fresh, eff, now);
-    if (result.ok) {
-      // The photo files go now; the row waits for `sweepHazardItems` — a report draft may still
-      // bundle this hazard by its local id and needs the server id the row now carries (D55).
-      if (result.item.kind === 'hazard') {
-        deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
-      }
-    }
+    await flushOneHazard(id, eff, now);
   }
 }
 

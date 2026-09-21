@@ -133,8 +133,12 @@ export interface LegacyReportDraft extends ReportDraft {
 
 /**
  * Lift a pre-A10-2b row into the one-Report Post it is. The Post takes the report's key as its own
- * (a retry of a flush that already landed still short-circuits: `reports.create` kept the row-key
- * rule for exactly these) and the report keeps it too, so the server sees the same key either way.
+ * and the report keeps it too, so the server sees the same key either way: a lost-ack retry of a
+ * flush that went through the A10-2 `reports.create` (which keyed the Post it made with the row's
+ * key) short-circuits on the Post's key. A retry of one that landed *before* A10-2 — a Report with
+ * the key on its row and a backfilled Post with none — is refused by `posts.create` as a key
+ * conflict and parks; only `reports.create` kept that older row-key rule, and this flush no longer
+ * goes through it. Dev-only exposure (prod was never initialized), noted rather than built around.
  */
 export function postDraftFromLegacy(legacy: LegacyReportDraft): PostDraft {
   const { status, errorMessage, createdAt, updatedAt, ...report } = legacy;
@@ -161,6 +165,8 @@ export function createReportDraft(args: {
   putInPin?: LatLng;
   photos?: DraftPhoto[];
   trackDraftId?: string;
+  /** A flush checkpoint an edit carries forward, so a re-save does not re-resolve the track. */
+  activityId?: string;
   hazardRefs?: HazardRef[];
 }): ReportDraft {
   return {
@@ -173,6 +179,7 @@ export function createReportDraft(args: {
     form: args.form,
     photos: args.photos ?? [],
     ...(args.trackDraftId !== undefined ? { trackDraftId: args.trackDraftId } : {}),
+    ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
     ...(args.hazardRefs !== undefined && args.hazardRefs.length > 0
       ? { hazardRefs: args.hazardRefs }
       : {}),
@@ -397,22 +404,44 @@ export async function flushPost(
           leg(r, validation.errors.map((e) => `${e.field}: ${e.message}`).join('; ')),
         );
       }
+      // 3. Resolve the bundled hazards (D55) — **before** the rules and the uploads: a server id passes
+      //    through; a local id is asked of the hazard queue (which flushes it first if it hasn't
+      //    landed — hazards go first in every drain anyway) and checkpointed onto the ref; one that
+      //    cannot resolve is left out. Resolving here is what lets the minimum-set check below count
+      //    only the hazards the Post will actually claim, so a ref that comes back empty cannot pass
+      //    the check and then fail the create after the photos were spent.
+      const attachHazardIds: string[] = [];
+      if (r.hazardRefs && r.hazardRefs.length > 0) {
+        const refs: HazardRef[] = [];
+        for (const ref of r.hazardRefs) {
+          let hazardId = ref.hazardId;
+          if (hazardId === undefined && ref.localId !== undefined && effects.resolveHazardId) {
+            hazardId = (await effects.resolveHazardId(ref.localId)) ?? undefined;
+          }
+          refs.push(hazardId !== undefined ? { ...ref, hazardId } : ref);
+          if (hazardId !== undefined && !attachHazardIds.includes(hazardId))
+            attachHazardIds.push(hazardId);
+        }
+        r = { ...r, hazardRefs: refs };
+        await saveReport(r);
+      }
+
       // The create-only rules at flush too (A10 §9.4): a phone that comes back online after a week
       // must not post a stale report, and a draft the sheet never finished must not post half-made.
       // Asked before the uploads, in the words the server would refuse with, so an expired item is
-      // surfaced to the skater rather than spending its photos first. A bundled hazard counts as the
-      // observation (D189), as it does on the server.
+      // surfaced to the skater rather than spending its photos first. A bundled hazard that resolved
+      // counts as the observation (D189), as it does on the server.
       //
       // **Not for a draft found in `creating`.** That draft's create was already sent once and the
       // ack was lost; its photos are spent, and the server's idempotent short-circuit (D30) is the
       // only thing that can tell "posted at day 6.9, retried at 7.1" from "never posted" — refusing
       // it here would show an error for a post that is live, and invite a second by hand.
       if (draft.status !== 'creating') {
-        const refusal = formCreateRefusal(validation.normalized, r.hazardRefs?.length ?? 0, now);
+        const refusal = formCreateRefusal(validation.normalized, attachHazardIds.length, now);
         if (refusal !== null) throw new PermanentFlushError(leg(r, refusal));
       }
 
-      // 3. Upload photos, checkpointing each storageId / photoId the instant it lands (so a partial
+      // 4. Upload photos, checkpointing each storageId / photoId the instant it lands (so a partial
       //    failure keeps what uploaded and a retry reuses it — the durable form of web's in-memory
       //    recording). A photo with a `photoId` is already fully done from a prior attempt.
       const photoIds: string[] = [];
@@ -448,7 +477,7 @@ export async function flushPost(
         }
       }
 
-      // 4. Resolve a linked recorded track to its server id (Phase 08). Best-effort by design: a
+      // 5. Resolve a linked recorded track to its server id (Phase 08). Best-effort by design: a
       //    track that can't be sent must not hold back the report, so a null resolution drops the path.
       let activityId = r.activityId;
       if (activityId === undefined && r.trackDraftId !== undefined && effects.resolveActivityId) {
@@ -457,24 +486,6 @@ export async function flushPost(
           r = { ...r, activityId };
           await saveReport(r);
         }
-      }
-
-      // 5. Resolve the bundled hazards (D55): a server id passes through; a local id is asked of the
-      //    hazard queue and checkpointed onto the ref; one that cannot resolve is left out.
-      const attachHazardIds: string[] = [];
-      if (r.hazardRefs && r.hazardRefs.length > 0) {
-        const refs: HazardRef[] = [];
-        for (const ref of r.hazardRefs) {
-          let hazardId = ref.hazardId;
-          if (hazardId === undefined && ref.localId !== undefined && effects.resolveHazardId) {
-            hazardId = (await effects.resolveHazardId(ref.localId)) ?? undefined;
-          }
-          refs.push(hazardId !== undefined ? { ...ref, hazardId } : ref);
-          if (hazardId !== undefined && !attachHazardIds.includes(hazardId))
-            attachHazardIds.push(hazardId);
-        }
-        r = { ...r, hazardRefs: refs };
-        await saveReport(r);
       }
 
       prepared.push({

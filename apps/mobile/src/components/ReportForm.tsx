@@ -15,9 +15,12 @@ import {
   formCreateRefusal,
   type HazardRef,
   hasFutureSkateTimeError,
+  hazardRefFor,
   humanizeEnum,
   ICE_TYPES,
   isMinor,
+  localHazardIdOf,
+  optOutsFromSavedRefs,
   type PostDraft,
   PRECIP_LABELS,
   PRECIP_TYPES,
@@ -47,10 +50,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
-import { getTrack, saveDraft } from '../lib/draftStore';
+import { getHazardItem, getTrack, saveDraft } from '../lib/draftStore';
 import { getSuggestedSkateWindow } from '../lib/dwellTracker';
 import { isDraftFlushing } from '../lib/flushService';
-import { HazardBundlePrompt, hazardRefFor, isLocalHazardId } from './HazardBundlePrompt';
+import { HazardBundlePrompt } from './HazardBundlePrompt';
 import { useMapSelectionOptional } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 import { Input, TextArea } from './ThemedInputs';
@@ -416,6 +419,19 @@ export function ReportForm({
   const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([]);
   const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([]);
   const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds);
+  // Reopening a draft: the candidates arrive after mount, so the saved choice is applied when they
+  // do — once, from the refs the draft carried, so an opt-out survives the edit (A10 §9.1).
+  const savedRefsApplied = useRef(false);
+  const onBundleCandidates = useCallback(
+    (ids: string[]) => {
+      setBundleCandidateIds(ids);
+      if (draftReport?.hazardRefs && !savedRefsApplied.current && ids.length > 0) {
+        savedRefsApplied.current = true;
+        setUnbundledHazardIds(optOutsFromSavedRefs(ids, draftReport.hazardRefs));
+      }
+    },
+    [draftReport?.hazardRefs],
+  );
 
   const noopPinDrop = useCallback(() => {}, []);
   const putInPin = mapSelection ? mapSelection.putInPin : localPutIn;
@@ -630,8 +646,19 @@ export function ReportForm({
     // the server would refuse with, so the form says what to add rather than what failed. Never on
     // an edit (what is posted stays editable), and never on *Save draft* — a draft is "not done
     // yet" by definition; the queue's flush asks again when it posts.
+    // The hazards this post can attach *now*: a server id as it is; one still in the phone's queue
+    // by the server id its row carries once flushed, else not at all — it has no id to attach yet,
+    // and posts on its own when the queue drains (the draft path carries it by local id instead).
+    // Resolved before the create-only check below so the observation count the form asks about is
+    // the one the server will see: a hazard that cannot be attached is not an observation here.
+    const attachHazardIds = bundleHazardIds.flatMap((id) => {
+      const localId = localHazardIdOf(id);
+      if (localId === null) return [id];
+      const queued = getHazardItem(localId);
+      return queued?.kind === 'hazard' && queued.hazardId !== undefined ? [queued.hazardId] : [];
+    });
     if (!editing) {
-      const refusal = formCreateRefusal(result.normalized, bundleHazardIds.length, Date.now());
+      const refusal = formCreateRefusal(result.normalized, attachHazardIds.length, Date.now());
       if (refusal) {
         setError(refusal);
         return;
@@ -727,14 +754,8 @@ export function ReportForm({
         ...(resolvedActivityId !== undefined
           ? { activityId: resolvedActivityId as Id<'gpsActivities'> }
           : {}),
-        // Server ids only: a hazard still in the phone's queue has no id to attach yet, and posts on
-        // its own when the queue flushes (the draft path carries it by local id instead).
-        ...(bundleHazardIds.filter((id) => !isLocalHazardId(id)).length > 0
-          ? {
-              attachHazardIds: bundleHazardIds.filter(
-                (id) => !isLocalHazardId(id),
-              ) as Id<'hazards'>[],
-            }
+        ...(attachHazardIds.length > 0
+          ? { attachHazardIds: attachHazardIds as Id<'hazards'>[] }
           : {}),
       });
       setPutInPin(null);
@@ -1147,7 +1168,7 @@ export function ReportForm({
           onToggle={(hazardId, checked) =>
             setUnbundledHazardIds((prev) => toggleBundleOptOut(prev, hazardId, checked))
           }
-          onCandidates={setBundleCandidateIds}
+          onCandidates={onBundleCandidates}
         />
       ) : null}
 

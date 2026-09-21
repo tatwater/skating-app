@@ -67,12 +67,15 @@ export function silhouetteRings(geom: Geom): { rings: LngLat[][]; bbox: BBox } {
     1,
   );
   const source: number[][][] = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
+  // Converted once; a coarsening pass re-simplifies, it does not re-read the outline.
+  const sourcePoints = source.map((ring) =>
+    ring.map(([lng, lat]): LatLng => ({ lat: lat as number, lng: lng as number })),
+  );
   let tolerance = spanM / SILHOUETTE_MAX_POINTS;
   let rings: LngLat[][] = [];
   for (let pass = 0; pass < 8; pass++) {
     rings = [];
-    for (const ring of source) {
-      const points = ring.map(([lng, lat]) => ({ lat: lat as number, lng: lng as number }));
+    for (const points of sourcePoints) {
       const kept = simplifyPath(points, tolerance);
       if (kept.length < MIN_RING_POINTS) continue;
       rings.push(kept.map((p): LngLat => [p.lng, p.lat]));

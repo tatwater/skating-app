@@ -5,7 +5,6 @@
  * store that persistent uri in the draft. Untested native glue (like `photoPipeline`).
  */
 
-import { type PostDraft, postDraftPhotoUris } from '@skating/core';
 import { Directory, File, Paths } from 'expo-file-system';
 
 const DRAFTS_DIRNAME = 'report-drafts';
@@ -26,11 +25,6 @@ export async function persistDraftPhoto(sourceUri: string, filename: string): Pr
   if (dest.exists) dest.delete();
   await new File(sourceUri).copy(dest);
   return dest.uri;
-}
-
-/** Every persistent photo file a Post draft owns (full + thumb per photo, every Report) — for cleanup on flush/delete. */
-export function draftPhotoUris(draft: PostDraft): string[] {
-  return postDraftPhotoUris(draft);
 }
 
 /** Delete a draft's persisted photo files (best-effort — a stale file must never block the queue). */

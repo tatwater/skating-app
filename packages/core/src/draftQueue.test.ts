@@ -11,6 +11,7 @@ import {
   type PostDraft,
   type PostFlushEffects,
   postDraftFromLegacy,
+  postDraftLabel,
   postDraftPhotoUris,
   type ReportDraft,
   referencedHazardLocalIds,
@@ -165,6 +166,23 @@ describe('createPostDraft / createReportDraft / isFlushable / flushablePosts', (
     expect(postDraftPhotoUris(d)).toEqual(['p1-full', 'p1-thumb', 'p2-full', 'p2-thumb']);
     expect([...referencedTrackIds([d])]).toEqual(['t1', 't2']);
     expect([...referencedHazardLocalIds([d])]).toEqual(['h1', 'h2']);
+  });
+
+  it('carries an edit’s activityId checkpoint, so a re-save does not re-resolve the track', () => {
+    const r = reportWith({ trackDraftId: 't1' });
+    expect(createReportDraft({ ...r, activityId: 'act-1' }).activityId).toBe('act-1');
+    expect(createReportDraft(r)).not.toHaveProperty('activityId');
+  });
+
+  it('labels a queued Post by its title, else by its lakes in the author’s order (§9.2)', () => {
+    const d = draftWith();
+    d.reports = [
+      reportWith({ id: 'a', bodyName: 'Lake Morey' }),
+      reportWith({ id: 'b', bodyName: undefined }),
+    ];
+    expect(postDraftLabel(d)).toBe('Lake Morey · Unknown lake');
+    expect(postDraftLabel({ ...d, title: 'Two lakes, one day' })).toBe('Two lakes, one day');
+    expect(postDraftLabel({ ...d, title: '' })).toBe('Lake Morey · Unknown lake');
   });
 });
 
@@ -467,6 +485,21 @@ describe('flushPost — the bundled hazards ride the draft (D55 / A10 §9.1)', (
     const res = await flushPost(draft, effects, NOW);
     expect(res.ok).toBe(true);
     expect(calls.reports[0]).not.toHaveProperty('attachHazardIds');
+  });
+
+  it('a ref that resolves to nothing does not count toward the minimum set — refused before the uploads', async () => {
+    const dontGo = { ...emptyReportForm(NOW), skateQuality: 'poor' as const };
+    const draft = draftWith(
+      {},
+      { hazardRefs: [{ localId: 'gone' }], photos: [photo('p1')] },
+      dontGo,
+    );
+    const { effects, calls } = makeEffects({ resolveHazardId: async () => null });
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/^Before this can post/);
+    expect(calls.uploads).toEqual([]);
+    expect(calls.posts).toEqual([]);
   });
 
   it('a bundled hazard is the observation the minimum set asks for (D189)', async () => {
