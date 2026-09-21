@@ -20,6 +20,7 @@ import {
   type LngLat,
   matchesFilters,
   matchWeatherFilter,
+  type PostCardData,
   PUT_IN_CLIP_M,
   reportWhereSummary,
   type Season,
@@ -31,6 +32,7 @@ import {
   silhouetteRings,
   standingOf,
   surfaceTagKeys,
+  visiblePostReports,
   type WeatherDiscoveryFilter,
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -418,4 +420,55 @@ export async function servedFeedSeason(ctx: QueryCtx, current: Season): Promise<
   // within an hour of July 1 the newest Post can legitimately be *next* season's, and serving a
   // season that hasn't started would hide everything anyone skated in the one that has.
   return Math.min(seasonOf(newest.latestSkateEndTime), current);
+}
+
+/**
+ * One Post as the feed shows it, or `null` when the viewer would see nothing under the header: the
+ * members a moderator hid are not shown and not counted (`visiblePostReports`); the members the
+ * viewer's filters hid are not shown and *are* counted; a body a takedown removed (A07b) drops its
+ * Report the way the report feed always did. Shared by the feed and the profile history.
+ */
+export async function toPostCard(
+  ctx: QueryCtx,
+  post: Doc<'posts'>,
+  viewer: FeedViewer,
+): Promise<PostCardData | null> {
+  const members: Doc<'reports'>[] = [];
+  for (const id of post.reportIds) {
+    const member = await ctx.db.get(id);
+    if (member) members.push(member);
+  }
+  const reports = [];
+  let omittedCount = 0;
+  for (const r of visiblePostReports(post, members)) {
+    const body = await bodyInfoFor(ctx, r.waterBodyId, viewer.caches.bodyInfo);
+    // A takedown reaches the feed (A07b) — see `BodyInfo.standing`.
+    if (body.standing === 'removed') continue;
+    if (!(await reportMatchesFeed(ctx, r, body, viewer))) {
+      omittedCount++;
+      continue;
+    }
+    reports.push(
+      await toFeedCard(
+        ctx,
+        r,
+        viewer.caches,
+        { blocked: viewer.blocked, favorites: viewer.favorites },
+        viewer.now,
+      ),
+    );
+  }
+  const first = reports[0];
+  if (!first) return null;
+  return {
+    postId: post._id,
+    ...(post.title !== undefined ? { title: post.title } : {}),
+    ...(post.body !== undefined ? { body: post.body } : {}),
+    latestSkateEndTime: post.latestSkateEndTime,
+    author: first.author,
+    blocked: first.blocked,
+    isFavorite: reports.some((r) => r.isFavorite === true),
+    reports,
+    omittedCount,
+  };
 }

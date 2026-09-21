@@ -890,8 +890,9 @@ describe('reports.get (single, moderation-checked)', () => {
       username: 'clerk_author',
     });
     if (!profile || profile.private) throw new Error('expected a public profile');
-    expect(profile.reports.map((r) => r.report.point)).not.toContainEqual(launch);
-    expect(profile.reports).toHaveLength(1);
+    // The history card's silhouette carries no pin for a withheld put-in (A10 §12.3).
+    expect(profile.posts).toHaveLength(1);
+    expect(profile.posts[0]?.reports[0]?.silhouette?.putIn).toBeUndefined();
 
     // A report that shows its put-in is served as stored.
     const shown = await asAuthor.mutation(api.reports.create, {

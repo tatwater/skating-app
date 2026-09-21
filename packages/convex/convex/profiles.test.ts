@@ -688,8 +688,10 @@ describe('profiles.getPublicProfile (D13)', () => {
     );
     const mkReport = (moderationStatus: 'visible' | 'hidden') => {
       const now = Date.now();
-      return t.run((ctx) =>
-        ctx.db.insert('reports', {
+      // Inside the one-Report Post every report has (A10 / D186) — the history is Posts now, and a
+      // hidden one is hidden at both levels, as moderation leaves it.
+      return t.run(async (ctx) => {
+        const reportId = await ctx.db.insert('reports', {
           authorId: id,
           waterBodyId,
           point: { lat: 0.5, lng: 0.5 },
@@ -703,8 +705,19 @@ describe('profiles.getPublicProfile (D13)', () => {
           hazardIdsCreated: [],
           createdAt: now,
           updatedAt: now,
-        }),
-      );
+        });
+        const postId = await ctx.db.insert('posts', {
+          authorId: id,
+          reportIds: [reportId],
+          photoIds: [],
+          latestSkateEndTime: now,
+          moderationStatus,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.patch(reportId, { postId });
+        return reportId;
+      });
     };
     await mkReport('visible');
     await mkReport('hidden');
@@ -722,8 +735,8 @@ describe('profiles.getPublicProfile (D13)', () => {
     expect(profile.reputationPoints).toBeUndefined();
     expect(profile.reportCount).toBe(7); // the maintained counter, not the window length
     expect(profile.commentCount).toBe(3);
-    expect(profile.reports).toHaveLength(1); // history still the visible window (1 visible report)
-    expect(profile.reports[0]?.waterBodyName).toBe('Lake Morey');
+    expect(profile.posts).toHaveLength(1); // history still the visible window (1 visible Post)
+    expect(profile.posts[0]?.reports[0]?.bodyName).toBe('Lake Morey');
     // No PII leaks in the payload.
     expect(JSON.stringify(profile)).not.toContain('dateOfBirth');
     expect(JSON.stringify(profile)).not.toContain('homeCoord');

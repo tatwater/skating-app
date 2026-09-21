@@ -1,16 +1,14 @@
 import { api } from '@skating/convex/api';
-import { formatSkateTime, humanizeEnum } from '@skating/core';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { ProfileModeratorPanel } from '../components/admin/ProfileModeratorPanel';
 import { UnavailableState } from '../components/DrawerStates';
 import { useIsLeaving } from '../components/LeavingNotice';
 import { useIsModerator } from '../components/ModeratorActions';
+import { PostCard } from '../components/PostCard';
 import { ProfileView } from '../components/ProfileView';
 import { BlockButton, FlagDialog } from '../components/SafetyControls';
-import { Badge } from '../components/ui/badge';
 import { buttonVariants } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
 
 // Profiles get their own page (D47), including the current user's own.
 export const Route = createFileRoute('/u/$username')({ component: ProfilePage });
@@ -20,6 +18,8 @@ function ProfilePage() {
   const profile = useQuery(api.profiles.getPublicProfile, { username });
   const leaving = useIsLeaving();
   const isModerator = useIsModerator();
+  const navigate = useNavigate();
+  const now = Date.now();
 
   if (profile === undefined) {
     return <div className="mx-auto max-w-2xl py-8 text-foreground-muted">Loading…</div>;
@@ -72,25 +72,18 @@ function ProfilePage() {
         }}
         actions={actions}
         reportHistory={
-          !profile.private && profile.reports.length > 0 ? (
-            <ul className="flex flex-col gap-2">
-              {profile.reports.map(({ report, waterBodyName }) => (
-                <li key={report._id}>
-                  <Link to="/report/$id" params={{ id: report._id }}>
-                    <Card className="transition-colors hover:border-primary">
-                      <CardContent className="flex items-center justify-between gap-2 py-3">
-                        <div className="flex flex-col">
-                          <span className="text-foreground text-sm">{waterBodyName}</span>
-                          <span className="text-foreground-muted text-xs">
-                            {formatSkateTime(report.skateEndTime)}
-                          </span>
-                        </div>
-                        {report.skateQuality ? (
-                          <Badge variant="secondary">{humanizeEnum(report.skateQuality)}</Badge>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  </Link>
+          !profile.private && profile.posts.length > 0 ? (
+            // The person's Posts as the feed shows them (A10 / D186) — one card builder, one look.
+            <ul className="flex flex-col gap-3">
+              {profile.posts.map((post) => (
+                <li key={post.postId}>
+                  <PostCard
+                    data={post}
+                    now={now}
+                    onOpenReport={(reportId) =>
+                      navigate({ to: '/report/$id', params: { id: reportId } })
+                    }
+                  />
                 </li>
               ))}
             </ul>

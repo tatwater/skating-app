@@ -27,6 +27,7 @@ import {
   normalizeDisplayName,
   normalizeTownLabel,
   normalizeUsername,
+  type PostCardData,
   PROFILE_VISIBILITIES,
   sanitizeFeedFilters,
   type TrustClass,
@@ -44,7 +45,8 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
-import { loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
+import { loadFeedViewer, toPostCard } from './lib/feedCards';
+import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
@@ -646,10 +648,6 @@ export const setNotificationPrefs = mutation({
 const PROFILE_HISTORY_LIMIT = 50;
 
 /** One entry in a public profile's report history — the report plus its lake name for the card. */
-interface ProfileReport {
-  report: Doc<'reports'>;
-  waterBodyName: string;
-}
 
 /**
  * The full public payload; `private: true` collapses it to name + avatar only (D13). `trustClass` (the
@@ -685,7 +683,8 @@ type PublicProfile =
       badges: string[]; // earned BadgeType families in stable order (decision 6)
       reportCount: number;
       commentCount: number;
-      reports: ProfileReport[];
+      /** The person's Posts, newest skate first, as the feed shows them (A10 / D186). */
+      posts: PostCardData[];
     };
 
 /**
@@ -736,31 +735,28 @@ export const getPublicProfile = query({
       return { ...base, private: true };
     }
 
-    // Visible report **history cards**, newest skate-end time first — **bounded** (D13). We `.take()`
-    // a small window off the skate-end-time index rather than `.collect()`ing every report, so a
-    // prolific reporter's page can't trigger an arbitrarily large read. The displayed totals come from
-    // the denormalized counters below, not this window.
+    // The person's **Posts**, newest skate-end time first — **bounded** (D13). We `.take()` a small
+    // window off the sort-key index rather than `.collect()`ing everything, so a prolific reporter's
+    // page can't trigger an arbitrarily large read. The displayed totals come from the denormalized
+    // counters below, not this window. Each Post is the card the feed shows (A10 / D186), through
+    // the same builder — the put-in opt-out, the blocks and the member visibility all ride with it.
     const authored = await ctx.db
-      .query('reports')
-      .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', target._id))
+      .query('posts')
+      .withIndex('by_author_latest_skate_end_time', (q) => q.eq('authorId', target._id))
       .order('desc')
       .take(PROFILE_HISTORY_LIMIT);
-    const visibleReports = authored.filter((r) => r.moderationStatus === 'visible');
-    const reports: ProfileReport[] = await Promise.all(
-      visibleReports.map(async (report) => {
-        const body = await ctx.db.get(report.waterBodyId);
-        // A history card is a served report too — the put-in opt-out is honored here as on `reports.get`.
-        return {
-          report: await redactPutIn(ctx, report, viewer, body),
-          waterBodyName: body?.name ?? 'Unknown water body',
-        };
-      }),
-    );
+    const feedViewer = await loadFeedViewer(ctx, undefined);
+    const posts: PostCardData[] = [];
+    for (const post of authored) {
+      if (post.moderationStatus !== 'visible') continue;
+      const card = await toPostCard(ctx, post, feedViewer);
+      if (card) posts.push(card);
+    }
 
     // True lifetime totals from the denormalized counters (maintained on the create/moderation/remove
     // paths, seeded by `backfillContributionCounts`). A legacy row that predates the counter falls back
     // to the visible window length so it never shows a spuriously low 0 before the backfill runs.
-    const reportCount = target.reportCount ?? visibleReports.length;
+    const reportCount = target.reportCount ?? posts.reduce((n, p) => n + p.reports.length, 0);
     const commentCount = target.commentCount ?? 0;
 
     return {
@@ -774,7 +770,7 @@ export const getPublicProfile = query({
       badges: target.badges ?? [],
       reportCount,
       commentCount,
-      reports,
+      posts,
     };
   },
 });
