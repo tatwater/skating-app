@@ -146,6 +146,9 @@ describe('collect — what a bundle carries', () => {
 
     expect(data.reports).toHaveLength(1);
     expect(data.reports[0]?.notes).toBe('Glass.');
+    // The Post the report was born inside (A10 / D186) travels beside it.
+    expect(data.posts).toHaveLength(1);
+    expect(data.posts[0]?.reportIds).toEqual([reportId]);
     expect(data.comments).toHaveLength(1);
     expect(data.profile.displayName).toBe('exporter');
     expect(data.profile.homeCoord).toEqual({ lat: 44.5, lng: -73.2 });

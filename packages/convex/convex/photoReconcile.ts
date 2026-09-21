@@ -33,6 +33,7 @@
  * per transaction and unbounded in total, which is exactly the property the one-shot scan lacks. The
  * soundness argument is inherited unchanged from `lib/photoOrphans`: `assertOwnedPhotos` means only the
  * uploader's *own* reports and hazards can ever reference their photos, so phases 2–3 are complete.
+ * A Post's album (A10 / D186) is the union of its members' lists, so the reports phase covers it.
  *
  * **It is strictly more conservative than the fast path**, which matters because this is a delete path.
  * A photo is removed only if a *complete* pass over every possible referrer named nothing, and only if

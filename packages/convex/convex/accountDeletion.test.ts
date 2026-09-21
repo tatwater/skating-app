@@ -314,6 +314,40 @@ describe('the grace window', () => {
     expect(report?.iceThickness?.readings[1]?.method).toBe('estimated');
   });
 
+  test('redaction reaches a located chip’s note and the Post’s title and prose, and spares the where (A10)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    const { postId, reportIds } = await postedLongAgo(() =>
+      user.as.mutation(api.posts.create, {
+        title: 'Morey, the north end',
+        body: 'Glass all the way up, one ridge to step over.',
+        reports: [
+          {
+            ...OBSERVED,
+            waterBodyId: bodyId,
+            skateEndTime: T0 - LONG_AGO,
+            iceTypes: [
+              { type: 'black_ice', where: { sector: 'N' }, note: 'past my cousin’s dock' },
+            ],
+            surfaceTags: [{ type: 'glass', note: 'like a mirror' }],
+          },
+        ],
+      }),
+    );
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post?.title).toBeUndefined();
+    expect(post?.body).toBeUndefined();
+    expect(post?.reportIds).toEqual(reportIds);
+    const report = await t.run((ctx) => ctx.db.get(reportIds[0] as Id<'reports'>));
+    expect(report?.iceTypes).toEqual([{ type: 'black_ice', where: { sector: 'N' } }]);
+    expect(report?.surfaceTags).toEqual([{ type: 'glass' }]);
+  });
+
   /**
    * Comments keep their shell so the thread keeps its shape (D62 second amendment). A reply whose
    * parent vanished is unreachable — the thread is keyed by `reportId` — so the row survives, marked,
