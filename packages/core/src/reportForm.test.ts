@@ -260,7 +260,7 @@ describe('reportFormFromReport', () => {
         { minCm: 10.16, maxCm: 15.24, method: 'estimated' }, // 4.0–6.0 in
       ],
     },
-    snowCoverCm: 2.54, // 1.0 in
+    snow: { depthCm: 2.54 }, // 1.0 in
     conditions: {
       airTempC: -10,
       windSpeedKph: 16.09344,
@@ -280,7 +280,7 @@ describe('reportFormFromReport', () => {
     expect(rebuilt.skateQuality).toBe(FULL.skateQuality);
     expect(rebuilt.notes).toBe(FULL.notes);
     // Imperial round trip, to the tenth of an inch the form displays.
-    expect(rebuilt.snowCoverCm).toBeCloseTo(FULL.snowCoverCm as number, 2);
+    expect(rebuilt.snowCoverCm).toBeCloseTo(FULL.snow?.depthCm as number, 2);
     expect(rebuilt.conditions?.airTempC).toBeCloseTo(-10, 1);
     expect(rebuilt.conditions?.windSpeedKph).toBeCloseTo(16.09, 1);
     expect(rebuilt.conditions?.windDir).toBe('NW');

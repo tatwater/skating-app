@@ -204,11 +204,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         </Section>
       ) : null}
 
-      {(report.snow?.depthCm ?? report.snowCoverCm) !== undefined ? (
+      {report.snow?.depthCm !== undefined ? (
         <Section label="Snow cover">
-          <Text color="$foreground">
-            {formatSnowCoverInches((report.snow?.depthCm ?? report.snowCoverCm) as number)}
-          </Text>
+          <Text color="$foreground">{formatSnowCoverInches(report.snow.depthCm)}</Text>
         </Section>
       ) : null}
 

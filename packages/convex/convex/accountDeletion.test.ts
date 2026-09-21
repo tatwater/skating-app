@@ -786,7 +786,7 @@ describe('the tombstone', () => {
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
     await user.as.mutation(api.comments.create, { reportId, body: 'Still good.' });
@@ -976,7 +976,7 @@ describe('bucket 2 — anonymize (the public ice record)', () => {
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       notes: 'Glass from shore to shore.',
     });
@@ -1073,7 +1073,7 @@ describe('finalize redacts unconditionally (the age cutoff is a ghost-window rul
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0 + 30 * 60_000,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       notes: 'Filed from the ice with a fast watch clock.',
     });
@@ -1093,7 +1093,7 @@ describe('finalize redacts unconditionally (the age cutoff is a ghost-window rul
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       iceThickness: {
         readings: [
@@ -1217,7 +1217,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
 
@@ -1262,7 +1262,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       notes: 'Skated the whole north shore, glass.',
     });
@@ -1316,7 +1316,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
     await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' as const }));
@@ -1351,7 +1351,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
           waterBodyId: bodyId,
           activityId,
           skateEndTime: T0 + i,
-          iceTypes: ['black_ice' as const],
+          iceTypes: [{ type: 'black_ice' as const }],
           surfaceTags: [],
         });
         publishedIds.push(activityId);

@@ -125,7 +125,7 @@ describe('collect — what a bundle carries', () => {
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       notes: 'Glass.',
     });

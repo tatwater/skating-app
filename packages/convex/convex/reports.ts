@@ -11,6 +11,7 @@
 
 import {
   bandForCoord,
+  type ChipInput,
   CONDITION_SOURCES,
   CORROBORATION_MAX_PER_REPORT,
   CORROBORATION_WINDOW_MS,
@@ -20,6 +21,7 @@ import {
   type FeedCardData,
   hasMeasuredThickness,
   ICE_TYPES,
+  type IceType,
   iceTypeKeys,
   isBrowsableSeason,
   isFavoriteReport,
@@ -44,6 +46,7 @@ import {
   SKY_CONDITIONS,
   SUITABILITIES,
   SURFACE_TAGS,
+  type SurfaceTag,
   sanitizeFeedFilters,
   seasonEndMs,
   seasonOf,
@@ -1251,9 +1254,6 @@ export const update = mutation({
       suitability: n.suitability,
       iceThickness: n.iceThickness,
       snow: n.snow,
-      // The pre-A10 number is folded into `snow.depthCm` by the validator; an edit clears the old
-      // field so a row never carries two depths.
-      snowCoverCm: undefined,
       conditions: mergeEditedConditions(existing.conditions, n.conditions),
       notes: n.notes,
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
@@ -1399,22 +1399,29 @@ export const renameSkateTimeToSkateEndTime = internalMutation({
  * the new shape (the migration is idempotent by construction).
  */
 export function a10ShapePatch(report: Doc<'reports'>): Partial<Doc<'reports'>> | null {
-  const patch: Partial<Doc<'reports'>> = {};
-  if (report.iceTypes.some((chip) => typeof chip === 'string')) {
-    patch.iceTypes = report.iceTypes.map(toLocatedChip);
+  // The pre-A10 shapes are off the typed schema now (narrowed after the dev backfill), so the
+  // legacy forms are read through a narrow cast — the same move the `skateTime` rename made.
+  const legacy = report as unknown as {
+    iceTypes: ChipInput<IceType>[];
+    surfaceTags: ChipInput<SurfaceTag>[];
+    snowCoverCm?: number;
+  };
+  const patch: Record<string, unknown> = {};
+  if (legacy.iceTypes.some((chip) => typeof chip === 'string')) {
+    patch.iceTypes = legacy.iceTypes.map(toLocatedChip);
   }
-  if (report.surfaceTags.some((chip) => typeof chip === 'string')) {
-    patch.surfaceTags = report.surfaceTags.map(toLocatedChip);
+  if (legacy.surfaceTags.some((chip) => typeof chip === 'string')) {
+    patch.surfaceTags = legacy.surfaceTags.map(toLocatedChip);
   }
-  if (report.snowCoverCm !== undefined) {
+  if (legacy.snowCoverCm !== undefined) {
     // A row with both (an edit under the widened schema) keeps the object's depth.
     patch.snow =
       report.snow?.depthCm !== undefined
         ? report.snow
-        : { ...(report.snow ?? {}), depthCm: report.snowCoverCm };
+        : { ...(report.snow ?? {}), depthCm: legacy.snowCoverCm };
     patch.snowCoverCm = undefined;
   }
-  return Object.keys(patch).length > 0 ? patch : null;
+  return Object.keys(patch).length > 0 ? (patch as Partial<Doc<'reports'>>) : null;
 }
 
 /** `pnpm exec convex run reports:backfillA10Shapes` — paginated, self-scheduling, idempotent. */

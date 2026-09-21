@@ -156,8 +156,6 @@ export interface StoredReportForForm {
   iceThickness?: { readings: ThicknessReadingLike[] };
   /** The D194 object; this form shows only its depth and `reports.update` keeps the facets. */
   snow?: { depthCm?: number };
-  /** @deprecated pre-A10 rows only; `snow.depthCm` wins when both are present. */
-  snowCoverCm?: number;
   conditions?: {
     airTempC?: number;
     windSpeedKph?: number;
@@ -281,7 +279,7 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
     surfaceTags: surfaceTagKeys(report.surfaceTags),
     skateQuality: report.skateQuality ?? '',
     thickness: (report.iceThickness?.readings ?? []).map(toFormReading),
-    snowCover: toInchesString(report.snow?.depthCm ?? report.snowCoverCm),
+    snowCover: toInchesString(report.snow?.depthCm),
     conditions: {
       airTempF:
         report.conditions?.airTempC === undefined

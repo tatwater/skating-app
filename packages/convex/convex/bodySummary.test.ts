@@ -91,7 +91,7 @@ async function seedReport(
       skateEndTime,
       reportTime: now,
       source: 'native' as const,
-      iceTypes: ['black_ice'] as const,
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       photoIds: [],
       moderationStatus: over.hidden ? ('hidden' as const) : ('visible' as const),

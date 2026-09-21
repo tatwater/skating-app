@@ -76,7 +76,7 @@ async function seedBody(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodi
   );
 }
 
-/** A pre-A10 report row: bare-key chips, a `snowCoverCm`, no Post. */
+/** A report row with no Post (the Post backfill's input); chips in the stored shape. */
 async function seedLegacyReport(
   t: ReturnType<typeof convexTest>,
   authorId: Id<'profiles'>,
@@ -91,9 +91,8 @@ async function seedLegacyReport(
       skateEndTime: T0,
       reportTime: T0 + 1000,
       source: 'native',
-      iceTypes: ['black_ice'],
-      surfaceTags: ['glass', 'orange_peel'],
-      snowCoverCm: 3,
+      iceTypes: [{ type: 'black_ice' }],
+      surfaceTags: [{ type: 'glass' }, { type: 'orange_peel' }],
       photoIds: [],
       hazardIdsCreated: [],
       moderationStatus: 'visible',
@@ -187,49 +186,62 @@ describe('posts.backfillFromReports (A10-1)', () => {
 });
 
 describe('reports.backfillA10Shapes (A10-1)', () => {
-  test('lifts bare chips, folds snowCoverCm into snow.depthCm, and is a no-op on a lifted row', async () => {
+  // The schema is narrowed, so convex-test refuses to insert a pre-A10 row; the migration's
+  // decision is the pure `a10ShapePatch`, tested here over the legacy shape through a cast, and
+  // the mutation's paging is the same loop `backfillFromReports` exercises above.
+  const legacyRow = (over: Record<string, unknown>) =>
+    ({ iceTypes: [], surfaceTags: [], ...over }) as unknown as Doc<'reports'>;
+
+  test('lifts bare chips and folds snowCoverCm into snow.depthCm', () => {
+    expect(
+      a10ShapePatch(
+        legacyRow({
+          iceTypes: ['black_ice'],
+          surfaceTags: ['glass', 'orange_peel'],
+          snowCoverCm: 3,
+        }),
+      ),
+    ).toEqual({
+      iceTypes: [{ type: 'black_ice' }],
+      surfaceTags: [{ type: 'glass' }, { type: 'orange_peel' }],
+      snow: { depthCm: 3 },
+      snowCoverCm: undefined,
+    });
+  });
+
+  test('leaves a located chip alone, and the object depth wins over a stale number', () => {
+    expect(
+      a10ShapePatch(
+        legacyRow({
+          iceTypes: [{ type: 'black_ice', where: { sector: 'N' } }, 'shell_ice'],
+          snowCoverCm: 9,
+          snow: { coverage: 'lanes', depthCm: 4 },
+        }),
+      ),
+    ).toEqual({
+      iceTypes: [{ type: 'black_ice', where: { sector: 'N' } }, { type: 'shell_ice' }],
+      snow: { coverage: 'lanes', depthCm: 4 },
+      snowCoverCm: undefined,
+    });
+  });
+
+  test('keeps facets when folding the number in, and returns null for a lifted row', () => {
+    expect(a10ShapePatch(legacyRow({ iceTypes: [{ type: 'black_ice' }] }))).toBeNull();
+    expect(a10ShapePatch(legacyRow({ snowCoverCm: 2, snow: { coverage: 'patches' } }))).toEqual({
+      snow: { coverage: 'patches', depthCm: 2 },
+      snowCoverCm: undefined,
+    });
+  });
+
+  test('the mutation is a no-op over lifted rows', async () => {
     const t = convexTest(schema, modules);
     const authorId = await seedProfile(t);
     const bodyId = await seedBody(t);
-    const legacy = await seedLegacyReport(t, authorId, bodyId);
-    const mixed = await seedLegacyReport(t, authorId, bodyId, {
-      iceTypes: [{ type: 'black_ice', where: { sector: 'N' } }, 'shell_ice'],
-      surfaceTags: [],
-      snowCoverCm: 9,
-      snow: { coverage: 'lanes', depthCm: 4 },
-    });
-
-    const result = await t.mutation(internal.reports.backfillA10Shapes, {});
-    expect(result).toEqual({ scanned: 2, patched: 2, isDone: true });
-
-    const a = await t.run((ctx) => ctx.db.get(legacy));
-    expect(a?.iceTypes).toEqual([{ type: 'black_ice' }]);
-    expect(a?.surfaceTags).toEqual([{ type: 'glass' }, { type: 'orange_peel' }]);
-    expect(a?.snow).toEqual({ depthCm: 3 });
-    expect(a?.snowCoverCm).toBeUndefined();
-
-    // The located chip is untouched; the object's depth wins over the stale number.
-    const b = await t.run((ctx) => ctx.db.get(mixed));
-    expect(b?.iceTypes).toEqual([
-      { type: 'black_ice', where: { sector: 'N' } },
-      { type: 'shell_ice' },
-    ]);
-    expect(b?.snow).toEqual({ coverage: 'lanes', depthCm: 4 });
-    expect(b?.snowCoverCm).toBeUndefined();
-
-    const again = await t.mutation(internal.reports.backfillA10Shapes, {});
-    expect(again).toEqual({ scanned: 2, patched: 0, isDone: true });
-  });
-
-  test('a10ShapePatch keeps facets when folding the number in, and returns null for a clean row', () => {
-    const base = {
-      iceTypes: [{ type: 'black_ice' }],
-      surfaceTags: [],
-    } as unknown as Doc<'reports'>;
-    expect(a10ShapePatch(base)).toBeNull();
-    expect(a10ShapePatch({ ...base, snowCoverCm: 2, snow: { coverage: 'patches' } })).toEqual({
-      snow: { coverage: 'patches', depthCm: 2 },
-      snowCoverCm: undefined,
+    await seedLegacyReport(t, authorId, bodyId);
+    expect(await t.mutation(internal.reports.backfillA10Shapes, {})).toEqual({
+      scanned: 1,
+      patched: 0,
+      isDone: true,
     });
   });
 });

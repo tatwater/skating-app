@@ -257,7 +257,7 @@ describe('linking a track to a report', () => {
     activityId,
     skateEndTime: T0 + 45 * 60_000,
     skateStartTime: T0,
-    iceTypes: ['black_ice' as const],
+    iceTypes: [{ type: 'black_ice' as const }],
     surfaceTags: [],
   });
 
@@ -309,7 +309,7 @@ describe('linking a track to a report', () => {
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
     const report = await t.run((ctx) => ctx.db.get(reportId));
@@ -329,7 +329,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
 
@@ -346,7 +346,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
     expect(await user.as.query(api.gpsActivities.getForReport, { reportId })).toBeNull();
@@ -362,7 +362,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
     });
     await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' as const }));
@@ -385,7 +385,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
         waterBodyId: bodyId,
         activityId,
         skateEndTime: T0,
-        iceTypes: ['black_ice' as const],
+        iceTypes: [{ type: 'black_ice' as const }],
         surfaceTags: [],
         showPutIn: false,
       });
@@ -445,7 +445,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
           waterBodyId: bodyId,
           activityId,
           skateEndTime: T0,
-          iceTypes: ['black_ice' as const],
+          iceTypes: [{ type: 'black_ice' as const }],
           surfaceTags: [],
           ...(showPutIn !== undefined ? { showPutIn } : {}),
         });
@@ -524,7 +524,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
       // Defaults to "just now" — a minute before the pinned clock, two hours after the track it
       // belongs to — so the freshness assertions read a live value rather than the D59 floor.
       skateEndTime: over.skateEndTime ?? Date.now() - 60_000,
-      iceTypes: ['black_ice' as const],
+      iceTypes: [{ type: 'black_ice' as const }],
       surfaceTags: [],
       ...(over.showPutIn !== undefined ? { showPutIn: over.showPutIn } : {}),
     });
@@ -733,7 +733,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
       minor.as.mutation(api.reports.create, {
         waterBodyId: bodyId,
         skateEndTime: T0,
-        iceTypes: ['black_ice' as const],
+        iceTypes: [{ type: 'black_ice' as const }],
         surfaceTags: [],
       }),
     ).rejects.toThrow(/under 18/i);

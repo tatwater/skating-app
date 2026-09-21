@@ -182,9 +182,8 @@ describe('reports.create', () => {
     const r = await t.run((ctx) => ctx.db.get(reportId));
     expect(r?.skateQuality).toBe('great');
     expect(r?.iceThickness?.readings[0]?.valueCm).toBe(12);
-    // The pre-A10 number lands as the D194 depth (`snowCoverCm` is never written again).
+    // The pre-A10 number lands as the D194 depth (`snowCoverCm` is not a stored field any more).
     expect(r?.snow).toEqual({ depthCm: 2 });
-    expect(r?.snowCoverCm).toBeUndefined();
     expect(r?.conditions?.source).toBe('user'); // defaulted (D19)
     expect(r?.conditions?.sky).toBe('clear');
   });

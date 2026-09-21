@@ -2032,10 +2032,11 @@ export default defineSchema({
      * Located chips (A10 / D193): `{ type, where?, note? }` so "black ice, north end" is one chip.
      * Every reader goes through `iceTypeKeys` / `surfaceTagKeys` in core, never the array itself.
      * The mutation args still accept the bare key (an un-updated phone, a queued draft); the
-     * validator lifts it. Widened → deployed → backfilled → narrowed in A10-1.
+     * validator lifts it. Widened → deployed → backfilled (`reports.backfillA10Shapes`) → narrowed
+     * to the object, all in A10-1.
      */
-    iceTypes: v.array(v.union(literals(ICE_TYPES), locatedChip(ICE_TYPES))),
-    surfaceTags: v.array(v.union(literals(SURFACE_TAGS), locatedChip(SURFACE_TAGS))),
+    iceTypes: v.array(locatedChip(ICE_TYPES)),
+    surfaceTags: v.array(locatedChip(SURFACE_TAGS)),
     skateQuality: v.optional(literals(SKATE_QUALITIES)),
     /**
      * Who the ice is for (A10 / D190) — the second axis of *How was it?*. `dont_go` lives here, not
@@ -2044,12 +2045,10 @@ export default defineSchema({
     suitability: v.optional(literals(SUITABILITIES)),
     iceThickness: v.optional(iceThickness),
     /**
-     * Snow (A10 / D194): coverage, whether it mattered, drifts, a depth. The old `snowCoverCm`
-     * backfills into `snow.depthCm` and is then dropped from this schema.
+     * Snow (A10 / D194): coverage, whether it mattered, drifts, a depth. The pre-A10 `snowCoverCm`
+     * was backfilled into `snow.depthCm` and dropped; the mutation args still accept the number.
      */
     snow: v.optional(snow),
-    /** @deprecated A10 — backfilled into `snow.depthCm`; kept only until the narrow deploy. */
-    snowCoverCm: v.optional(v.number()),
     // --- Conditions AT skate time (may be auto-filled from Open-Meteo, D19) ---
     conditions: v.optional(
       v.object({

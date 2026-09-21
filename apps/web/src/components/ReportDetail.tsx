@@ -368,7 +368,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           iceTypes: iceTypeKeys(report.iceTypes),
           surfaceTags: surfaceTagKeys(report.surfaceTags),
           iceThickness: report.iceThickness,
-          snowCoverCm: report.snow?.depthCm ?? report.snowCoverCm,
+          snowCoverCm: report.snow?.depthCm,
           conditions: report.conditions,
           notes: report.notes,
           conflicting: report.conflicting,
