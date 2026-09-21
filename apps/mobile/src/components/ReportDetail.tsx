@@ -1,20 +1,22 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  describeLocatedChip,
+  describeSnow,
   formatConditions,
   formatLocationLine,
   formatSeason,
   formatSkateTime,
   formatSkateWindow,
-  formatSnowCoverInches,
   formatThicknessReading,
-  iceTypeKeys,
   isLeaving,
+  OBSERVED_FROM_LABELS,
   type ReportConditions,
   reportStripState,
+  SIGHTING_LABELS,
   SKATE_QUALITY_LABELS,
+  SUITABILITY_LABELS,
   seasonOf,
-  surfaceTagKeys,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
@@ -42,6 +44,8 @@ import { WeatherStrip } from './WeatherStrip';
 export function ReportDetail({ reportId }: { reportId: string }) {
   const router = useRouter();
   const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
+  // The Post's words and its other lakes (A10 / D186); `null` until it loads or when not visible.
+  const post = useQuery(api.posts.getForReport, { reportId: reportId as Id<'reports'> });
   const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
   // The author's own edit sheet (A06f). With the other hooks, above the early returns.
   const [editing, setEditing] = useState(false);
@@ -115,6 +119,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const authorBlocked = (blockedIds ?? []).includes(report.authorId);
   const isOwn = me?._id === report.authorId;
   const readings = report.iceThickness?.readings ?? [];
+  const snow = report.snow ? describeSnow(report.snow) : null;
   const conditions = report.conditions
     ? formatConditions({
         ...report.conditions,
@@ -167,24 +172,62 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         ) : null}
       </YStack>
 
-      {report.skateQuality || report.conflicting ? (
+      {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment;
+          then the vantage when it was not the ice (D191), and what a shore observer saw. */}
+      {report.suitability ||
+      report.skateQuality ||
+      (report.observedFrom && report.observedFrom !== 'on_ice') ||
+      report.sighting ||
+      report.conflicting ? (
         <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
+          {report.suitability ? (
+            <Badge tone={report.suitability === 'dont_go' ? 'danger' : 'solid'}>
+              {SUITABILITY_LABELS[report.suitability]}
+            </Badge>
+          ) : null}
           {report.skateQuality ? (
             <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
           ) : null}
+          {report.observedFrom && report.observedFrom !== 'on_ice' ? (
+            <Badge>{OBSERVED_FROM_LABELS[report.observedFrom]}</Badge>
+          ) : null}
+          {report.sighting ? <Badge>{SIGHTING_LABELS[report.sighting]}</Badge> : null}
           {report.conflicting ? <Badge>Conflicting reports</Badge> : null}
         </XStack>
       ) : null}
 
+      {/* The words this Report was posted with (A10 / D186) — the author's, over the data. */}
+      {post?.title || post?.body ? (
+        <YStack gap="$1">
+          {post.title ? (
+            <Text color="$foreground" fontWeight="600" fontSize={16}>
+              {post.title}
+            </Text>
+          ) : null}
+          {post.body ? (
+            <Paragraph color="$foreground" lineHeight={21}>
+              {post.body}
+            </Paragraph>
+          ) : null}
+        </YStack>
+      ) : null}
+
       {report.iceTypes && report.iceTypes.length > 0 ? (
         <Section label="Ice types">
-          <Chips values={iceTypeKeys(report.iceTypes)} />
+          {/* Each chip with its `where`, in words (A10 §12.1) — the bays by name, from the server. */}
+          <Chips
+            values={report.iceTypes.map((chip) => describeLocatedChip(chip, report.bayNames))}
+            humanize={false}
+          />
         </Section>
       ) : null}
 
       {report.surfaceTags && report.surfaceTags.length > 0 ? (
         <Section label="Surface">
-          <Chips values={surfaceTagKeys(report.surfaceTags)} />
+          <Chips
+            values={report.surfaceTags.map((chip) => describeLocatedChip(chip, report.bayNames))}
+            humanize={false}
+          />
         </Section>
       ) : null}
 
@@ -204,9 +247,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         </Section>
       ) : null}
 
-      {report.snow?.depthCm !== undefined ? (
-        <Section label="Snow cover">
-          <Text color="$foreground">{formatSnowCoverInches(report.snow.depthCm)}</Text>
+      {snow ? (
+        <Section label="Snow">
+          <Text color="$foreground">{snow}</Text>
         </Section>
       ) : null}
 
@@ -236,6 +279,26 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       {report.notes ? (
         <Section label="Notes">
           <Paragraph color="$foreground">{report.notes}</Paragraph>
+        </Section>
+      ) : null}
+
+      {/* The other legs of the same day (A10 / D186), in the author's order. */}
+      {post && post.siblings.length > 0 ? (
+        <Section label="Also in this post">
+          <XStack gap="$1.5" flexWrap="wrap">
+            {post.siblings.map((sibling) => (
+              <Button
+                key={sibling.reportId}
+                size="$2"
+                variant="outlined"
+                onPress={() =>
+                  router.navigate({ pathname: '/report/[id]', params: { id: sibling.reportId } })
+                }
+              >
+                {sibling.bodyName}
+              </Button>
+            ))}
+          </XStack>
         </Section>
       ) : null}
 

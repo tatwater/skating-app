@@ -73,12 +73,12 @@ export function Badge({
   );
 }
 
-/** A wrapped row of humanized enum chips (ice types, surface tags). */
-export function Chips({ values }: { values: string[] }) {
+/** A wrapped row of chips — enum keys humanized, or lines already in words (`humanize={false}`). */
+export function Chips({ values, humanize = true }: { values: string[]; humanize?: boolean }) {
   return (
     <XStack gap="$1.5" flexWrap="wrap">
       {values.map((value) => (
-        <Badge key={value}>{humanizeEnum(value)}</Badge>
+        <Badge key={value}>{humanize ? humanizeEnum(value) : value}</Badge>
       ))}
     </XStack>
   );

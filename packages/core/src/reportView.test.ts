@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeSnow,
   formatConditions,
   formatDurationLabel,
   formatSkateTime,
@@ -165,5 +166,24 @@ describe('formatSkateWindow', () => {
     const end = Date.UTC(2026, 0, 5, 16, 0);
     expect(formatSkateWindow(end, end)).toBeNull();
     expect(formatSkateWindow(end, end + 60_000)).toBeNull();
+  });
+});
+
+describe('describeSnow (D194, one line for the sheet and the detail)', () => {
+  it('reads coverage, impediment, drifts, depth and the plowed path in that order', () => {
+    expect(
+      describeSnow({
+        coverage: 'lanes',
+        impediment: 'slowed_me',
+        drifts: 'avoidable',
+        depthCm: 2.54,
+        plowedPath: true,
+      }),
+    ).toBe('Lanes · slowed me · drifts avoidable · 1″ · plowed path');
+  });
+  it('a dusting is a dusting, "no drifts" is not news, and nothing is null', () => {
+    expect(describeSnow({ depthCm: 0.5 })).toBe('a dusting');
+    expect(describeSnow({ coverage: 'none', drifts: 'none' })).toBe('None');
+    expect(describeSnow({})).toBeNull();
   });
 });

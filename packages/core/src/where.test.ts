@@ -2,6 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { BAY_SECTORS, COMPASS_SECTORS, SECTORS, WHERE_EXTENTS } from './types';
 import {
+  describeLocatedChip,
+  describeWhere,
   isCompassSector,
   validateWhere,
   WHERE_KINDS,
@@ -135,5 +137,39 @@ describe('isCompassSector', () => {
     for (const s of SECTORS) {
       expect(isCompassSector(s)).toBe((COMPASS_SECTORS as readonly string[]).includes(s));
     }
+  });
+});
+
+describe('describeWhere / describeLocatedChip (A10 / D193, §12.1)', () => {
+  const bays = { bay1: 'Malletts Bay' };
+  it('composes extent, sector and bay the way a skater says it', () => {
+    expect(describeWhere({ sector: 'N' })).toBe('north end');
+    expect(describeWhere({ extent: 'patches', sector: 'N', subAreaId: 'bay1' }, bays)).toBe(
+      'patches north end of Malletts Bay',
+    );
+    expect(describeWhere({ sector: 'head', subAreaId: 'bay1' }, bays)).toBe(
+      'the head of Malletts Bay',
+    );
+    expect(describeWhere({ sector: 'near_shore' })).toBe('near shore');
+    expect(describeWhere({ subAreaId: 'bay1' }, bays)).toBe('Malletts Bay');
+    expect(
+      describeWhere({
+        point: { coord: { lat: 44, lng: -73 }, radiusMeters: 50, name: 'Shelburne Point' },
+      }),
+    ).toBe('Shelburne Point');
+  });
+  it('leaves a bay unsaid rather than showing an id, and says nothing for `whole`', () => {
+    expect(describeWhere({ subAreaId: 'bay1' })).toBe('');
+    expect(describeWhere({ sector: 'N', subAreaId: 'gone' }, bays)).toBe('north end');
+    expect(describeWhere({ extent: 'whole' })).toBe('');
+  });
+  it('a chip reads as its type, then where — the type alone when the where says nothing', () => {
+    expect(describeLocatedChip({ type: 'black_ice', where: { sector: 'N' } })).toBe(
+      'Black ice, north end',
+    );
+    expect(describeLocatedChip({ type: 'black_ice', where: { extent: 'whole' } })).toBe(
+      'Black ice',
+    );
+    expect(describeLocatedChip({ type: 'black_ice' })).toBe('Black ice');
   });
 });

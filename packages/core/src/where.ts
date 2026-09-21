@@ -19,6 +19,7 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
+import { humanizeEnum } from './reportView';
 import {
   BAY_SECTORS,
   COMPASS_SECTORS,
@@ -137,4 +138,50 @@ export function validateWhere(
 /** Is this sector one of the eight compass wedges (as opposed to middle, near shore, head, mouth)? */
 export function isCompassSector(sector: Sector): sector is (typeof COMPASS_SECTORS)[number] {
   return (COMPASS_SECTORS as readonly string[]).includes(sector);
+}
+
+/**
+ * A `where` in words — "patches, north end of Malletts Bay", "near shore", "off Shelburne Point" —
+ * for a chip's or a reading's line on the sheet and on the detail. `bayNames` resolves a bay id
+ * to its name; without it (or for a bay that is gone) the bay is left unsaid rather than shown as
+ * an id. Empty string for a `where` that says nothing the reader can use.
+ */
+const COMPASS_WORDS: Record<(typeof COMPASS_SECTORS)[number], string> = {
+  N: 'north',
+  NE: 'northeast',
+  E: 'east',
+  SE: 'southeast',
+  S: 'south',
+  SW: 'southwest',
+  W: 'west',
+  NW: 'northwest',
+};
+
+export function describeWhere(where: Where, bayNames?: Readonly<Record<string, string>>): string {
+  const parts: string[] = [];
+  if (where.extent && where.extent !== 'whole') parts.push(where.extent);
+  const bay = where.subAreaId !== undefined ? bayNames?.[where.subAreaId] : undefined;
+  if (where.sector) {
+    const sector =
+      where.sector === 'middle' || where.sector === 'near_shore'
+        ? humanizeEnum(where.sector).toLowerCase()
+        : where.sector === 'head' || where.sector === 'mouth'
+          ? `the ${where.sector}`
+          : `${COMPASS_WORDS[where.sector]} end`;
+    parts.push(bay ? `${sector} of ${bay}` : sector);
+  } else if (bay) {
+    parts.push(bay);
+  }
+  if (where.point?.name) parts.push(where.point.name);
+  return parts.join(' ');
+}
+
+/** A located chip's line — "Black ice, north end". The type alone when the `where` says nothing. */
+export function describeLocatedChip(
+  chip: { type: string; where?: Where },
+  bayNames?: Readonly<Record<string, string>>,
+): string {
+  const label = humanizeEnum(chip.type);
+  const where = chip.where ? describeWhere(chip.where, bayNames) : '';
+  return where ? `${label}, ${where}` : label;
 }

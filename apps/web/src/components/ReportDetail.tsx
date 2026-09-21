@@ -2,22 +2,27 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import type { TrustClass } from '@skating/core';
 import {
+  describeLocatedChip,
+  describeSnow,
   formatConditions,
   formatLocationLine,
   formatSeason,
   formatSkateTime,
   formatSkateWindow,
-  formatSnowCoverInches,
   formatThicknessReading,
-  humanizeEnum,
-  iceTypeKeys,
   isLeaving,
+  OBSERVED_FROM_LABELS,
+  type ObservedFrom,
   type ReportConditions,
   reportStripState,
+  SIGHTING_LABELS,
+  type Sighting,
   SKATE_QUALITY_LABELS,
   type SkateQuality,
+  type Snow,
+  SUITABILITY_LABELS,
+  type Suitability,
   seasonOf,
-  surfaceTagKeys,
   type ThicknessReading,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
@@ -56,12 +61,26 @@ export interface ReportViewData {
   /** Optional — when they got on; renders the derived duration alongside the end (Phase 05). */
   skateStartTime?: number;
   skateQuality?: SkateQuality;
+  /** The A10 axes (D190, D191, D189): who it is for, how they saw it, what a shore observer saw. */
+  suitability?: Suitability;
+  observedFrom?: ObservedFrom;
+  sighting?: Sighting;
+  /** Chip lines, already in words — "Black ice, north end of Malletts Bay" (`describeLocatedChip`). */
   iceTypes: string[];
   surfaceTags: string[];
   iceThickness?: { readings: ThicknessReading[] };
-  snowCoverCm?: number;
+  snow?: Snow;
   conditions?: ReportConditions;
   notes?: string;
+  /**
+   * The Post this Report was posted in (A10 / D186): the author's title and prose, and the other
+   * lakes of the same day. Absent while loading or when the Post is not visible.
+   */
+  post?: {
+    title?: string;
+    body?: string;
+    siblings: { reportId: string; bodyName: string }[];
+  };
   /**
    * Another recent report on this body strongly disagreed AND the weather-since didn't explain the change
    * (Phase 10 / D56 §7) — a soft disclosure for the reader, never a verdict or a hidden report (D3).
@@ -93,6 +112,7 @@ export function ReportView({
 }) {
   const conditions = data.conditions ? formatConditions(data.conditions) : [];
   const readings = data.iceThickness?.readings ?? [];
+  const snow = data.snow ? describeSnow(data.snow) : null;
   const duration = formatSkateWindow(data.skateEndTime, data.skateStartTime);
 
   return (
@@ -134,12 +154,43 @@ export function ReportView({
         </div>
       ) : null}
       <div className="flex flex-col gap-4 px-4 pb-4">
-        {data.skateQuality || data.conflicting ? (
+        {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment;
+            then the vantage when it was not the ice (D191), and what a shore observer saw. */}
+        {data.suitability ||
+        data.skateQuality ||
+        (data.observedFrom && data.observedFrom !== 'on_ice') ||
+        data.sighting ||
+        data.conflicting ? (
           <div className="flex flex-wrap items-center gap-1">
+            {data.suitability ? (
+              <Badge variant={data.suitability === 'dont_go' ? 'destructive' : 'secondary'}>
+                {SUITABILITY_LABELS[data.suitability]}
+              </Badge>
+            ) : null}
             {data.skateQuality ? (
               <Badge variant="secondary">{SKATE_QUALITY_LABELS[data.skateQuality]}</Badge>
             ) : null}
+            {data.observedFrom && data.observedFrom !== 'on_ice' ? (
+              <Badge variant="outline">{OBSERVED_FROM_LABELS[data.observedFrom]}</Badge>
+            ) : null}
+            {data.sighting ? (
+              <Badge variant="outline">{SIGHTING_LABELS[data.sighting]}</Badge>
+            ) : null}
             {data.conflicting ? <Badge variant="outline">Conflicting reports</Badge> : null}
+          </div>
+        ) : null}
+
+        {/* The words this Report was posted with (A10 / D186) — the author's, over the data. */}
+        {data.post?.title || data.post?.body ? (
+          <div className="flex flex-col gap-1">
+            {data.post.title ? (
+              <h3 className="font-medium text-foreground">{data.post.title}</h3>
+            ) : null}
+            {data.post.body ? (
+              <p className="whitespace-pre-wrap text-foreground text-sm leading-relaxed">
+                {data.post.body}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -169,11 +220,9 @@ export function ReportView({
           </Section>
         ) : null}
 
-        {data.snowCoverCm !== undefined ? (
-          <Section label="Snow cover">
-            <span className="text-foreground text-sm">
-              {formatSnowCoverInches(data.snowCoverCm)}
-            </span>
+        {snow ? (
+          <Section label="Snow">
+            <span className="text-foreground text-sm">{snow}</span>
           </Section>
         ) : null}
 
@@ -195,6 +244,25 @@ export function ReportView({
         {data.notes ? (
           <Section label="Notes">
             <p className="whitespace-pre-wrap text-foreground text-sm">{data.notes}</p>
+          </Section>
+        ) : null}
+
+        {/* The other legs of the same day (A10 / D186), in the author's order. */}
+        {data.post && data.post.siblings.length > 0 ? (
+          <Section label="Also in this post">
+            <ul className="flex flex-wrap gap-1">
+              {data.post.siblings.map((sibling) => (
+                <li key={sibling.reportId}>
+                  <Link
+                    to="/feed"
+                    search={{ report: sibling.reportId }}
+                    className="rounded border border-border px-2 py-0.5 text-foreground text-sm hover:bg-surface-muted"
+                  >
+                    {sibling.bodyName}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </Section>
         ) : null}
 
@@ -248,7 +316,7 @@ function Chips({ values }: { values: string[] }) {
     <div className="flex flex-wrap gap-1">
       {values.map((value) => (
         <Badge key={value} variant="outline">
-          {humanizeEnum(value)}
+          {value}
         </Badge>
       ))}
     </div>
@@ -262,6 +330,8 @@ function Chips({ values }: { values: string[] }) {
  */
 export function ReportDetail({ reportId }: { reportId: string }) {
   const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
+  // The Post's words and its other lakes (A10 / D186); `null` until it loads or when not visible.
+  const post = useQuery(api.posts.getForReport, { reportId: reportId as Id<'reports'> });
   const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
   const authors = useQuery(
     api.profiles.publicByIds,
@@ -364,13 +434,17 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           skateEndTime: report.skateEndTime,
           skateStartTime: report.skateStartTime,
           skateQuality: report.skateQuality,
-          // The keys for now; rendering each chip's `where` is A10 §12.1.
-          iceTypes: iceTypeKeys(report.iceTypes),
-          surfaceTags: surfaceTagKeys(report.surfaceTags),
+          suitability: report.suitability,
+          observedFrom: report.observedFrom,
+          sighting: report.sighting,
+          // Each chip with its `where`, in words (A10 §12.1) — the bays by name, from the server.
+          iceTypes: report.iceTypes.map((chip) => describeLocatedChip(chip, report.bayNames)),
+          surfaceTags: report.surfaceTags.map((chip) => describeLocatedChip(chip, report.bayNames)),
           iceThickness: report.iceThickness,
-          snowCoverCm: report.snow?.depthCm,
+          snow: report.snow,
           conditions: report.conditions,
           notes: report.notes,
+          ...(post ? { post } : {}),
           conflicting: report.conflicting,
           editedAt: report.editedAt,
           photos: photos ?? [],

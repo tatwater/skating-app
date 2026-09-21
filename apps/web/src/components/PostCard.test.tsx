@@ -70,7 +70,9 @@ describe('PostCard (A10 / D186)', () => {
   });
 
   it('the A10 axes show on the nested card: the who-claim first, the vantage, the sighting', () => {
-    render(<PostCard data={{ ...POST, reports: [REPORT, SECOND] }} now={NOW} onOpenReport={() => {}} />);
+    render(
+      <PostCard data={{ ...POST, reports: [REPORT, SECOND] }} now={NOW} onOpenReport={() => {}} />,
+    );
     expect(screen.getByText("Don't go")).toBeInTheDocument();
     expect(screen.getByText('From shore')).toBeInTheDocument();
     expect(screen.getByText('Still open')).toBeInTheDocument();

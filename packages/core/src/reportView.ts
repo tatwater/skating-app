@@ -9,6 +9,7 @@
  * map.
  */
 
+import { SNOW_DUSTING_CM, type Snow } from './reportFields';
 import type {
   ConditionSource,
   ObservedFrom,
@@ -97,6 +98,24 @@ export function formatThicknessReading(reading: ThicknessReading, decimals = 1):
 /** Snow cover depth in inches, e.g. `1.5″` — same imperial format as an ice-thickness value. */
 export function formatSnowCoverInches(cm: number, decimals = 1): string {
   return formatThicknessInches(cm, decimals);
+}
+
+/**
+ * Snow in a line (D194): the coverage, how much it got in the way, the drifts when there were any,
+ * a depth when one was given, a plowed path when there is one. The sheet's own summary and the
+ * detail's snow row both read from this so they cannot say it two ways. `null` when the object
+ * carries nothing a reader can use.
+ */
+export function describeSnow(snow: Snow): string | null {
+  const parts = [
+    snow.coverage && humanizeEnum(snow.coverage),
+    snow.impediment && humanizeEnum(snow.impediment).toLowerCase(),
+    snow.drifts && snow.drifts !== 'none' && `drifts ${humanizeEnum(snow.drifts).toLowerCase()}`,
+    snow.depthCm !== undefined &&
+      (snow.depthCm <= SNOW_DUSTING_CM ? 'a dusting' : formatSnowCoverInches(snow.depthCm)),
+    snow.plowedPath && 'plowed path',
+  ].filter((x): x is string => typeof x === 'string' && x.length > 0);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** Coarse skating quality (D23) — never a safety verdict (D3). */

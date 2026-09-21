@@ -632,3 +632,90 @@ describe('posts.listFeed — a Post feed with per-Report filters (A10 §2.4)', (
     expect(feed.page[0]?.reports.map((r) => r.reportId)).toEqual([reportIds[0]]);
   });
 });
+
+describe('posts.getForReport (A10 §12.1) — the words a Report was posted with, and its other lakes', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+  test('returns the title, the prose and the visible siblings; null for a hidden Post', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const mod = await seedUser(t, 'clerk_mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: 'Two lakes',
+      body: 'Morey first, then the pond.',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000 },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0 },
+      ],
+    });
+    const [first, second] = reportIds;
+    if (!first || !second) throw new Error('seed');
+    const forFirst = await t.query(api.posts.getForReport, { reportId: first });
+    expect(forFirst).toMatchObject({
+      postId,
+      title: 'Two lakes',
+      body: 'Morey first, then the pond.',
+    });
+    expect(forFirst?.siblings.map((s) => s.reportId)).toEqual([second]);
+    // A hidden sibling is not offered.
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: second,
+      status: 'hidden',
+      reason: 'wrong lake',
+    });
+    expect((await t.query(api.posts.getForReport, { reportId: first }))?.siblings).toEqual([]);
+    // A hidden Post is null, words included.
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'post',
+      targetId: postId,
+      status: 'hidden',
+      reason: 'spam',
+    });
+    expect(await t.query(api.posts.getForReport, { reportId: first })).toBeNull();
+  });
+
+  test('reports.get names the bays a chip’s where points at', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const bayId = await t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: bodyId,
+        name: 'North Bay',
+        searchText: 'north bay',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0.5],
+              [0, 1],
+              [1, 1],
+              [1, 0.5],
+              [0, 0.5],
+            ],
+          ],
+        },
+        bbox: { minLat: 0.5, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.75, lng: 0.5 },
+        surfaceAreaSqM: 100_000,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: author.id,
+        createdAt: T0,
+        updatedAt: T0,
+      }),
+    );
+    const reportId = await author.as.mutation(api.reports.create, {
+      ...FRESH,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+      iceTypes: [{ type: 'black_ice', where: { sector: 'N', subAreaId: bayId } }],
+    });
+    const report = await t.query(api.reports.get, { reportId });
+    expect(report?.bayNames).toEqual({ [bayId]: 'North Bay' });
+  });
+});

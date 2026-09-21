@@ -135,6 +135,39 @@ export const listFeed = query({
 });
 
 /**
+ * The Post a Report belongs to, as the report detail shows it (A10 §12.1): the author's title and
+ * prose — the words the Report was posted with — and the other lakes in the same Post, so a reader
+ * on one leg of a multi-lake day can step to the others. Moderation-gated like the Report itself:
+ * a hidden Post (or one whose Report is hidden) is `null`, and hidden siblings are not listed. The
+ * Report's own visibility is the caller's check (`reports.get`); this only adds to it.
+ */
+export const getForReport = query({
+  args: { reportId: v.id('reports') },
+  handler: async (ctx, { reportId }) => {
+    const report = await ctx.db.get(reportId);
+    if (!report || report.postId === undefined) return null;
+    const post = await ctx.db.get(report.postId);
+    if (!post || post.moderationStatus !== 'visible') return null;
+    const siblings: { reportId: Id<'reports'>; bodyName: string; skateEndTime: number }[] = [];
+    const bodyInfo = new Map();
+    for (const id of post.reportIds) {
+      if (id === reportId) continue;
+      const sibling = await ctx.db.get(id);
+      if (!sibling || sibling.moderationStatus !== 'visible') continue;
+      const body = await bodyInfoFor(ctx, sibling.waterBodyId, bodyInfo);
+      if (body.standing === 'removed') continue;
+      siblings.push({ reportId: id, bodyName: body.name, skateEndTime: sibling.skateEndTime });
+    }
+    return {
+      postId: post._id,
+      ...(post.title !== undefined ? { title: post.title } : {}),
+      ...(post.body !== undefined ? { body: post.body } : {}),
+      siblings,
+    };
+  },
+});
+
+/**
  * One Post as the feed shows it, or `null` when the viewer would see nothing under the header: the
  * members a moderator hid are not shown and not counted (`visiblePostReports`); the members the
  * viewer's filters hid are not shown and *are* counted; a body a takedown removed (A07b) drops its

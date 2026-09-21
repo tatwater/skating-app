@@ -15,6 +15,7 @@ import {
   type IceType,
   iceTypeKeys,
   isFormRoundTripOf,
+  locatedSubAreaIds,
   memberSubAreaIds,
   RECOMMENDED_MIN_PHOTOS,
   RECOMMENDED_RECENCY_HOURS,
@@ -200,8 +201,16 @@ export const get = query({
   handler: async (ctx, { reportId }) => {
     const report = await getViewableReport(ctx, reportId);
     if (report === null) return null;
+    // The bays the chips and readings name (A10 / D193), as names — a `where` is stored by id and
+    // the detail says "north end of Malletts Bay", never the id. A bay that is gone is left out.
+    const bayNames: Record<string, string> = {};
+    for (const id of locatedSubAreaIds(report)) {
+      const bayId = ctx.db.normalizeId('waterBodySubAreas', id);
+      const bay = bayId ? await ctx.db.get(bayId) : null;
+      if (bay && bay.removedAt === undefined) bayNames[id] = bay.name;
+    }
     // The put-in opt-out is honored at the API, not left to the drawer (`redactPutIn`).
-    return redactPutIn(ctx, report, await getCurrentProfile(ctx));
+    return { ...(await redactPutIn(ctx, report, await getCurrentProfile(ctx))), bayNames };
   },
 });
 
