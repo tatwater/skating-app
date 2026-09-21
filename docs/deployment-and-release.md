@@ -40,7 +40,7 @@ up.** Production is a cutover still ahead of us (see [Prod cutover](#prod-cutove
 | Clerk | dev instance `polite-lemming-64` (`pk_test_…`, email-code sign-in only) | prod instance — not yet configured |
 | Vercel | preview deployments per PR | `skating-app` project (root `apps/web`) under `teagan-atwaters-projects` — currently *also* points at dev Convex |
 | EAS environments | `development`, `preview` — both fully populated, both point at dev Convex + dev Clerk | `production` — **empty** |
-| Tiles (R2) | `dev/…pmtiles` keys | `--prod` upload path exists in `scripts/basemap/upload.sh`, never run |
+| Tiles (R2) | `dev/…pmtiles` keys | no `prod/` key exists; the R2 path is `upload-r2.sh <file> prod/<key>` (`upload.sh --prod` is the retired Convex-storage host) |
 | Email (Resend) | `skating.teaganatwater.com` sending domain, keys on dev Convex only | prod needs its own key |
 
 So today a "preview" phone build, the Vercel production URL and the dev Convex deployment are all
@@ -191,8 +191,8 @@ need an explicit `environment` field in `eas.json` or EAS loads no variables at 
 
 | Credential | Status | Notes |
 |---|---|---|
-| Android keystore | ✅ on EAS (`Build Credentials Q16AvUyj_E`) | no local copy — losing EAS access means a new signing identity |
-| FCM V1 service-account key (Android push) | ✅ uploaded 2026-09-14 | Firebase project → Service accounts → key; org policy `iam.managed.disableServiceAccountKeyCreation` had to be overridden at the project level to create it (and the project moved under the org first). Existing keys survive re-enforcing the policy. |
+| Android keystore | ✅ on EAS (`Build Credentials Q16AvUyj_E`) | no local copy — losing EAS access means a new signing identity. **Owed:** `eas credentials` → Android → download a backup, and record where it lives |
+| FCM V1 service-account key (Android push) | ✅ uploaded 2026-09-14 | Firebase project → Service accounts → key; org policy `iam.managed.disableServiceAccountKeyCreation` had to be overridden at the project level to create it (and the project moved under the org first). Existing keys survive re-enforcing the policy. **Owed:** confirm the policy was re-enforced at the project after the key was made (nobody recorded it). |
 | `google-services.json` | ✅ local + `development` + `preview` | see the both-sides rule above |
 | APNs push key (iOS push) | ✅ uploaded 2026-09-14 | created manually at developer.apple.com and pasted into `eas credentials` (the Apple-login path failed with `iTunes service key is empty`, an Apple-side error, not a bad password). One key per Apple team, covers every app. |
 | iOS distribution cert / provisioning | ⬜ | no iOS build exists yet; needs `eas device:create` for ad-hoc installs |
@@ -254,17 +254,36 @@ Everything below is unstarted; it's the list that turns "one dev system" into tw
 of every line is the founder — they are provisioning decisions, not code.
 
 1. **Clerk production instance** → `CLERK_JWT_ISSUER_DOMAIN` + `CLERK_SECRET_KEY` on prod Convex
-   (`convex env set --prod`), never dev's values.
-2. **First `convex deploy`** — unblocked by (1). Then the ETL `--prod` corpus load (prod has no
-   bodies), and `backfillCells`.
+   (`convex env set --prod`), never dev's values; the JWT template named `convex`
+   (`auth.config.ts` `applicationID`); email code as a first factor (mobile sign-in is
+   `email_code`, and password can never complete); a multi-month session lifetime (dev is on the
+   7-day default, which bounces auth-gated deep links).
+2. **First `convex deploy`** — unblocked by (1). Then every `05` § 2a variable on prod, not only the
+   ones named here (`ORS_API_KEY` — without it `isochrones.ts` silently skips polygons;
+   `STRAVA_CLIENT_ID` / `_SECRET`; `WEB_APP_URL` — without it operator alerts build bare deep links
+   and the OAuth return is lost; `CONVEX_RUN_AS` for the seeds). Then the corpus, in the dev order —
+   `run-corpus.sh` is dev-only, so each loader with `--prod`: merge → bodies → sub-areas → prune;
+   depths; enrichment / elevation; access `parking` then `put-ins` `--batch=1`; bathymetry match;
+   bay depths; `mintSubAreaKeys`; `restampAllParents`; the A07b standing seed; the A10 boost
+   campaigns (`seed-destinations --apply`, run as a moderator profile that must exist on prod
+   first); `adminAreas`. `backfillCells` is a no-op on a fresh load — both imports write cells at
+   insert.
 3. **Resend prod key** + the three email vars on prod; the checklist (including why there is
    deliberately no MX record) is in `plans/phases/07-operator-surface.md` § "Resend checklist".
-4. **Tiles**: `scripts/basemap/upload.sh … --prod`, then the prod tile URLs on Vercel and in the
-   `production` EAS environment.
+   Then the `broadcastToStaff --prod` smoke (`sent` = `recipients`) before the season opens, and a
+   second staff account (moderator) promoted on prod; after a few weeks of aligned sends, move
+   `_dmarc` from `p=none` to `p=quarantine`.
+4. **Tiles**: `upload-r2.sh … prod/<key>` for each of the four archives (regional, world, bathymetry,
+   imagery base) or reuse the dated `dev/` objects, then all four URLs per surface on Vercel and in
+   the `production` EAS environment. Custom domain + a Cache Rule before real traffic — needs the
+   zone on Cloudflare (DNS is at Squarespace today). A blank tile var does not fail closed: it falls
+   to the expiring demo bucket.
 5. **Vercel**: point production at prod Convex/Clerk; keep previews on dev.
 6. **EAS `production` environment**: populate all vars (+ `GOOGLE_SERVICES_JSON`); the FCM key and
    APNs key are per-app, so they carry over.
-7. **Push**: `EXPO_ACCESS_TOKEN` on prod Convex.
+7. **Push**: `EXPO_ACCESS_TOKEN` on prod Convex. **Sentry**: a prod project per surface, or an
+   `environment` tag on both `Sentry.init` calls (neither sets one today) — one or the other, or
+   prod and dev events share a stream.
 7b. **Clerk webhook**: a new endpoint in the **prod** Clerk instance pointing at
    `https://diligent-guanaco-965.convex.site/clerk-webhook`, its signing secret as
    `CLERK_WEBHOOK_SIGNING_SECRET` on prod Convex. Per-instance, nothing carries over from dev —

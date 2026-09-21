@@ -115,10 +115,11 @@ and read function logs — instead of deploying a throwaway query to answer a qu
 It authenticates with whatever `packages/convex/.env.local` already grants you, so it can't reach
 anything you couldn't reach with the CLI, and it's configured deliberately narrowly:
 
-- **`envGet` / `envSet` / `envRemove` are disabled** — deployment env vars hold Clerk, Strava and
-  Resend secrets, and no assistant needs to read or change them. `envList` stays on for "is
-  `CLERK_SECRET_KEY` set yet?" — ⚠ but it **returns values, not just names** (observed 2026-09-17),
-  so treat it as a secret-reading tool and never paste its output anywhere.
+- **`envGet` / `envSet` / `envRemove` / `envList` are disabled** — deployment env vars hold Clerk,
+  Strava and Resend secrets, and no assistant needs to read or change them. `envList` was on for
+  "is `CLERK_SECRET_KEY` set yet?" until 2026-09-20, when it turned out to **return values, not
+  just names**; that question is now `pnpm exec convex env list` from `packages/convex` (also
+  values — don't paste its output anywhere).
 - **Production is off by default** — the server refuses production deployments unless explicitly
   started with `--dangerously-enable-production-deployments`. Don't.
 

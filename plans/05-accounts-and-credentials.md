@@ -145,8 +145,9 @@ backend, so it needs no deployment credential.
 
 **Secrets rule:** client secrets (Clerk secret, Strava secret, Resend, ORS, Expo token) live in
 Convex env vars, never in a client bundle; `.env.example` files document names, never values; the
-Convex MCP server has `envGet` / `envSet` disabled (⚠ `envList` returns values, not just names —
-treat it as a secret-reading tool). **Public-by-design identifiers** — deployment names, the Clerk
+Convex MCP server has `envGet` / `envSet` / `envRemove` / `envList` disabled (`envList` returned
+values, not just names — disabled 2026-09-20; "is `X` set yet?" is `pnpm exec convex env list`,
+whose output is also values). **Public-by-design identifiers** — deployment names, the Clerk
 instance domain, publishable keys — may appear in docs where they help tell dev from prod: they ship
 in every client bundle, and the deployment URL grants nothing on its own (every function checks
 auth). Nothing else does; an identifier that doesn't help someone act (an OAuth client id, a

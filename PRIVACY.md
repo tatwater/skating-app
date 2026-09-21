@@ -1,6 +1,6 @@
 # Privacy notice (interim — friends alpha)
 
-**Last updated: 2026-09-11**
+**Last updated: 2026-09-20**
 
 > **Status: interim.** This is a plain-language privacy notice for the small,
 > friends-only alpha of this app. It is written to be honest and cover the alpha
@@ -42,10 +42,25 @@ your reports"). The app is not directed at children under 16.
   only metadata we may keep is the photo's **timestamp** and **GPS coordinate**, and
   **only if you opt in** to placing that photo on the map. If you don't, the coordinate
   is not retained.
-- **Connected fitness/GPS accounts (optional)** — if you connect a provider (e.g.
-  Strava, Garmin, COROS, Polar, Apple Health, Google Health Connect), we receive
-  detected ice-skate activities and their GPS track so we can prompt you to make a
-  report and show your route. You control these connections and can disconnect them.
+- **Recorded skates (optional)** — the app can record your GPS track while you skate,
+  using the phone's own location. Recording is something you start and stop; it never runs
+  on its own. A recorded track is stored with your account, is used to work out which water
+  body you skated and to prompt you to make a report, and is shown on your report and on the
+  water body's page. If you publish a report from a track, that track can also appear —
+  without your name — in a faded **community skate-paths layer** on that water body, so others
+  can see where people have been going; the ends of every path are clipped near the shore so a
+  put-in or a private driveway is not pinpointed. You can turn the community layer off for your
+  own tracks in Settings. Users under 18 are never included in it.
+- **On-ice mode (optional)** — if you turn on on-ice mode during a skate, the app keeps
+  reading your location in the background for that session only, so it can warn you as you
+  approach a reported hazard with the phone in your pocket. Those location readings stay on
+  the phone, are used only for the warning, and are not uploaded. The mode turns off when the
+  session ends, and the phone's own location indicator shows while it is on.
+- **Connected fitness accounts (optional)** — if you connect Strava, we can **push** a
+  recorded skate to your Strava account on your behalf. We never read activities or data
+  from Strava. You control the connection and can disconnect it, which deletes the token we
+  hold. Other providers (Garmin, COROS, Polar, Apple Health, Google Health Connect) are not
+  connected in the alpha.
 - **Device & diagnostic data** — for crash, error, and performance monitoring (Sentry)
   we collect technical data like app version, device model, OS, and error details, plus
   timing information about how the app performs: how long screens and pages take to
@@ -63,7 +78,9 @@ your reports"). The app is not directed at children under 16.
 ## How we use it
 - To show peer ice reports on a map and feed, filtered to your drive-time range.
 - To let you share reports, comments, and hazards with the community.
-- To detect ice-skate activities from connected providers and prompt reports.
+- To turn a recorded skate into a prompt for a report, and to show where people have skated.
+- To send you the notifications you choose (in-app, push, or a daily email digest) about the
+  water bodies you follow; every email carries a one-click unsubscribe.
 - To keep the app working (crash/error diagnostics) and safe (moderation of flagged
   content).
 
@@ -89,18 +106,23 @@ profile your individual reports are still public and show your name — a privat
 
 ## Sharing with third parties (processors)
 We use these services to run the app; they process data on our behalf:
-Convex (database & file storage), Clerk (authentication), your connected GPS provider(s),
-map/geocoding providers (MapLibre/Protomaps, geocoding, OpenRouteService), Open-Meteo
-(weather), Sentry (crash/error), Resend (operator email), and Apple/Google (app
-distribution & push). Data shared with a fitness provider is also governed by that
+Convex (database & file storage), Clerk (authentication), Cloudflare (map tiles and the
+satellite-imagery archive), OpenRouteService (drive-time and walking routes), Open-Meteo and
+the US National Weather Service (weather), Sentry (crash/error), Resend (email notifications
+and operator email), Expo and Apple/Google (app distribution & push), and — only if you
+connect it — Strava. Data you push to a fitness provider is also governed by that
 provider's own terms and privacy policy.
 
 ## Retention, deletion, and export
 - You can **export your data** (a JSON bundle of your own content plus your uploaded
   photos) and **delete your account** at any time.
-- On deletion, we **scrub your personal information** (name, home location, town, bio, date of
-  birth) and **anonymize** your past reports and comments (attributed to a "deleted user") so the
-  community's historical ice record is preserved. Connected-provider tokens are deleted.
+- When you ask to delete your account, your home location, connected-account tokens, and
+  private details are **erased immediately**, your profile disappears from the app, and your
+  past reports, comments and hazard reports are **anonymized** (attributed to a "deleted
+  user") so the community's historical ice record is preserved. Your sign-in stays usable for
+  **30 days** so you can change your mind; after that the deletion is final, any free text you
+  wrote is cleared, and your login is removed. Published skate paths stay in the community layer
+  only if you had left that on; they are no longer linked to you either way.
 
 ## Security
 Provider secrets and access tokens are held **server-side** and are never shipped in the
