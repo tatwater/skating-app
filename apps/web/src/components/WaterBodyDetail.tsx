@@ -12,6 +12,7 @@ import {
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
+  iceTypeKeys,
   isActive,
   isLeaving,
   profileRevealEnabled,
@@ -587,7 +588,7 @@ function ReportFeed({
               </div>
               {report.iceTypes.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
-                  {report.iceTypes.map((iceType) => (
+                  {iceTypeKeys(report.iceTypes).map((iceType) => (
                     <Badge key={iceType} variant="outline">
                       {humanizeEnum(iceType)}
                     </Badge>

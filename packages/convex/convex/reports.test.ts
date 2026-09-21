@@ -182,9 +182,74 @@ describe('reports.create', () => {
     const r = await t.run((ctx) => ctx.db.get(reportId));
     expect(r?.skateQuality).toBe('great');
     expect(r?.iceThickness?.readings[0]?.valueCm).toBe(12);
-    expect(r?.snowCoverCm).toBe(2);
+    // The pre-A10 number lands as the D194 depth (`snowCoverCm` is never written again).
+    expect(r?.snow).toEqual({ depthCm: 2 });
+    expect(r?.snowCoverCm).toBeUndefined();
     expect(r?.conditions?.source).toBe('user'); // defaulted (D19)
     expect(r?.conditions?.sky).toBe('clear');
+  });
+
+  test('stores the A10 sheet fields: located chips, snow facets, a poke, How was it?, provenance', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    const reportId = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      skateEndPrecision: 'half_hour',
+      observedFrom: 'on_ice',
+      iceTypes: [{ type: 'black_ice', where: { sector: 'N', extent: 'mostly' } }, 'shell_ice'],
+      surfaceTags: [{ type: 'glass', note: ' except the middle ' }],
+      skateQuality: 'great',
+      suitability: 'not_for_beginners',
+      iceThickness: {
+        scope: 'at_spot',
+        readings: [
+          { method: 'poke', pokeCount: 5, minCm: 7, supportable: true },
+          { method: 'estimated', minCm: 10 },
+        ],
+      },
+      snow: { coverage: 'lanes', impediment: 'didnt_matter', plowedPath: false },
+    });
+    const r = await t.run((ctx) => ctx.db.get(reportId));
+    expect(r?.skateEndPrecision).toBe('half_hour');
+    expect(r?.observedFrom).toBe('on_ice');
+    expect(r?.iceTypes).toEqual([
+      { type: 'black_ice', where: { sector: 'N', extent: 'mostly' } },
+      { type: 'shell_ice' },
+    ]);
+    expect(r?.surfaceTags).toEqual([{ type: 'glass', note: 'except the middle' }]);
+    expect(r?.suitability).toBe('not_for_beginners');
+    expect(r?.iceThickness).toEqual({
+      scope: 'at_spot',
+      readings: [
+        { method: 'poke', pokeCount: 5, minCm: 7, supportable: true },
+        { method: 'estimated', minCm: 10 },
+      ],
+    });
+    expect(r?.snow).toEqual({ coverage: 'lanes', impediment: 'didnt_matter', plowedPath: false });
+  });
+
+  test('a sighting from the ice is rejected at the trust boundary (D189)', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    await expect(
+      asUser.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sighting: 'open',
+      }),
+    ).rejects.toThrow(/sighting/);
+    const fromShore = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      observedFrom: 'shore',
+      sighting: 'open',
+    });
+    const r = await t.run((ctx) => ctx.db.get(fromShore));
+    expect(r?.sighting).toBe('open');
   });
 
   test('honors a dropped put-in pin as the report point', async () => {
@@ -912,7 +977,7 @@ describe('reports.update (author-only LWW, D25)', () => {
       // omit skateQuality + notes → LWW clears them
     });
     const after = await t.run((ctx) => ctx.db.get(reportId));
-    expect(after?.surfaceTags).toEqual(['glass']);
+    expect(after?.surfaceTags).toEqual([{ type: 'glass' }]);
     expect(after?.skateQuality).toBeUndefined();
     expect(after?.notes).toBeUndefined();
     expect(after?.updatedAt ?? 0).toBeGreaterThanOrEqual(before?.updatedAt ?? 0);

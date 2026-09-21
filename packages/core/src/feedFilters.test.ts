@@ -114,6 +114,50 @@ describe('matchesFilters — thickness floor (include-unknown)', () => {
     ).toBe(false);
   });
 
+  it('a lower bound reaches the floor when its bound does, and is unknown otherwise (D195)', () => {
+    // "At least 12 cm" reaches a 10 cm floor.
+    expect(
+      matchesFilters(report({ iceThickness: { readings: [{ minCm: 12 }] } }), filters, ctx()),
+    ).toBe(true);
+    // "At least 2 cm" alone says nothing about 10 — include-unknown, passes.
+    expect(
+      matchesFilters(report({ iceThickness: { readings: [{ minCm: 2 }] } }), filters, ctx()),
+    ).toBe(true);
+    // …but it cannot rescue a report whose measured reading fell short.
+    expect(
+      matchesFilters(
+        report({ iceThickness: { readings: [{ valueCm: 4 }, { minCm: 2 }] } }),
+        filters,
+        ctx(),
+      ),
+    ).toBe(false);
+    // A reaching lower bound beside a short measurement still reaches.
+    expect(
+      matchesFilters(
+        report({ iceThickness: { readings: [{ valueCm: 4 }, { minCm: 11 }] } }),
+        filters,
+        ctx(),
+      ),
+    ).toBe(true);
+  });
+
+  it('matches chips by key in either shape (A10)', () => {
+    const wantBlack: FeedFilters = { iceTypes: ['black_ice'] };
+    expect(
+      matchesFilters(
+        report({ iceTypes: [{ type: 'black_ice', where: { sector: 'N' } }] }),
+        wantBlack,
+        ctx(),
+      ),
+    ).toBe(true);
+    expect(matchesFilters(report({ iceTypes: [{ type: 'shell_ice' }] }), wantBlack, ctx())).toBe(
+      false,
+    );
+    expect(
+      matchesFilters(report({ surfaceTags: [{ type: 'drifted' }] }), { noSnow: true }, ctx()),
+    ).toBe(false);
+  });
+
   it('takes the max across multiple readings', () => {
     expect(
       matchesFilters(

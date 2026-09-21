@@ -30,39 +30,65 @@ export function humanizeEnum(token: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-/** Thickness reading measurement trust (D22) — `estimated` is lower-trust than `measured`. */
+/**
+ * Thickness reading measurement trust (D22, D195) — `estimated` is lower-trust than `measured`, and
+ * a `poke` is the skater's pole test, labeled as such so it never reads as a drilled number.
+ */
 export const THICKNESS_METHOD_LABELS: Record<ThicknessMethod, string> = {
   measured: 'measured',
   estimated: 'estimated',
+  poke: 'poke test',
 };
 
-/** One thickness reading as stored: a single value XOR a min/max range (validated in core). */
+/** One thickness reading as stored: a single value XOR a range (min-only = lower bound), validated in core. */
 export interface ThicknessReading {
   valueCm?: number;
   minCm?: number;
   maxCm?: number;
   method: ThicknessMethod;
+  pokeCount?: number;
+  supportable?: boolean;
   note?: string;
 }
 
-/**
- * Format a thickness reading in inches with its measurement method, e.g. `4″ (measured)` or
- * `2–4″ (estimated)`. Returns `null` for a reading that carries neither a value nor a full range
- * (the core validator forbids that, but the display layer never assumes clean input).
- */
-export function formatThicknessReading(reading: ThicknessReading, decimals = 1): string | null {
-  const method = ` (${THICKNESS_METHOD_LABELS[reading.method]})`;
-  if (reading.valueCm !== undefined) {
-    return `${formatThicknessInches(reading.valueCm, decimals)}${method}`;
-  }
-  if (reading.minCm !== undefined && reading.maxCm !== undefined) {
+/** The cm part of a reading in inches — `4″`, `2–4″`, or `4″+` for a lower bound; `null` when there is none. */
+function formatThicknessCm(reading: ThicknessReading, decimals: number): string | null {
+  if (reading.valueCm !== undefined) return formatThicknessInches(reading.valueCm, decimals);
+  if (reading.minCm !== undefined) {
     // A range shares one ″ glyph ("2–4″"), so it formats the endpoints inline rather than via
     // formatThicknessInches (which would double the glyph).
     const min = roundTo(cmToInches(reading.minCm), decimals);
+    if (reading.maxCm === undefined) return `${min}″+`;
     const max = roundTo(cmToInches(reading.maxCm), decimals);
-    return `${min}–${max}″${method}`;
+    return `${min}–${max}″`;
   }
   return null;
+}
+
+/**
+ * Format a thickness reading in inches with its measurement method, e.g. `4″ (measured)`,
+ * `2–4″ (estimated)`, `4″+ (estimated)` for a lower bound, or `5 pokes, 3–4″ (poke test)` — a poke
+ * reading leads with its count, because the count is the reading and the inches are the skater's
+ * guess beside it (D195). "Supportable" / "unsupportable" is appended as the skater's word, never
+ * ours (D3). Returns `null` for a reading that carries nothing (the core validator forbids that,
+ * but the display layer never assumes clean input).
+ */
+export function formatThicknessReading(reading: ThicknessReading, decimals = 1): string | null {
+  const cm = formatThicknessCm(reading, decimals);
+  const parts: string[] = [];
+  if (reading.method === 'poke' && reading.pokeCount !== undefined) {
+    parts.push(`${reading.pokeCount} ${reading.pokeCount === 1 ? 'poke' : 'pokes'}`);
+  }
+  if (cm !== null) parts.push(cm);
+  if (parts.length === 0) return null;
+  const method = ` (${THICKNESS_METHOD_LABELS[reading.method]})`;
+  const supportable =
+    reading.supportable === undefined
+      ? ''
+      : reading.supportable
+        ? ', supportable'
+        : ', unsupportable';
+  return `${parts.join(', ')}${method}${supportable}`;
 }
 
 /** Snow cover depth in inches, e.g. `1.5″` — same imperial format as an ice-thickness value. */

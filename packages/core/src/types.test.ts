@@ -42,7 +42,7 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
   });
 
   it('thickness methods match the confirmed list', () => {
-    expect([...THICKNESS_METHODS]).toEqual(['measured', 'estimated']);
+    expect([...THICKNESS_METHODS]).toEqual(['measured', 'estimated', 'poke']);
   });
 
   it('conditions vocab matches the confirmed lists (D19)', () => {

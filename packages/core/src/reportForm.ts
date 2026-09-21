@@ -14,6 +14,7 @@
  */
 
 import type { ReportInput } from './report';
+import { type ChipInput, iceTypeKeys, surfaceTagKeys } from './reportFields';
 import type {
   IceType,
   PrecipType,
@@ -148,10 +149,14 @@ export function buildReportInput(
 export interface StoredReportForForm {
   skateEndTime: number;
   skateStartTime?: number;
-  iceTypes?: IceType[];
-  surfaceTags?: SurfaceTag[];
+  /** Either shape (A10): this form edits the keys; `reports.update` keeps each chip's `where`. */
+  iceTypes?: readonly ChipInput<IceType>[];
+  surfaceTags?: readonly ChipInput<SurfaceTag>[];
   skateQuality?: SkateQuality;
   iceThickness?: { readings: ThicknessReadingLike[] };
+  /** The D194 object; this form shows only its depth and `reports.update` keeps the facets. */
+  snow?: { depthCm?: number };
+  /** @deprecated pre-A10 rows only; `snow.depthCm` wins when both are present. */
   snowCoverCm?: number;
   conditions?: {
     airTempC?: number;
@@ -272,11 +277,11 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
   return {
     skateEndTime: report.skateEndTime,
     ...(report.skateStartTime !== undefined ? { skateStartTime: report.skateStartTime } : {}),
-    iceTypes: [...(report.iceTypes ?? [])],
-    surfaceTags: [...(report.surfaceTags ?? [])],
+    iceTypes: iceTypeKeys(report.iceTypes),
+    surfaceTags: surfaceTagKeys(report.surfaceTags),
     skateQuality: report.skateQuality ?? '',
     thickness: (report.iceThickness?.readings ?? []).map(toFormReading),
-    snowCover: toInchesString(report.snowCoverCm),
+    snowCover: toInchesString(report.snow?.depthCm ?? report.snowCoverCm),
     conditions: {
       airTempF:
         report.conditions?.airTempC === undefined

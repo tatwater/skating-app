@@ -15,6 +15,7 @@
  */
 
 import { bandWithinRadius, type DriveTimeBand, isDriveTimeBand } from './driveTime';
+import { type ChipInput, iceTypeKeys, surfaceTagKeys } from './reportFields';
 import {
   ICE_TYPES,
   type IceType,
@@ -31,12 +32,17 @@ export const SNOW_SURFACE_TAGS: readonly SurfaceTag[] = ['snow_covered', 'drifte
 /** Ascending skate-quality rank so a floor comparison is a simple `>=` (great is best). */
 const QUALITY_RANK: Record<SkateQuality, number> = { poor: 0, fair: 1, good: 2, great: 3 };
 
-/** The report fields the filters read. All attribute fields optional — a report may omit any of them. */
+/**
+ * The report fields the filters read. All attribute fields optional — a report may omit any of them.
+ * The chips arrive in either shape (A10) and are matched by key: a filter for black ice matches a
+ * report that says "black ice, patches, north end", which is the include-unknown spirit of every
+ * narrow here — the filter finds candidates, the card says where.
+ */
 export interface FilterableReport {
   skateEndTime: number;
   skateQuality?: SkateQuality;
-  iceTypes?: IceType[];
-  surfaceTags?: SurfaceTag[];
+  iceTypes?: readonly ChipInput<IceType>[];
+  surfaceTags?: readonly ChipInput<SurfaceTag>[];
   iceThickness?: { readings: { valueCm?: number; minCm?: number; maxCm?: number }[] };
 }
 
@@ -133,27 +139,35 @@ export function matchesFilters(
   }
 
   // Thickness floor — include-unknown. A report with readings must have one reaching the floor;
-  // a report with no numeric reading passes (the field is simply unknown, not below).
+  // a report with no numeric reading passes (the field is simply unknown, not below). A lower-bound
+  // reading (`minCm` alone, D195) reaches the floor when its bound does, and is otherwise *unknown*
+  // rather than below — "at least 2 inches" says nothing about whether there were 4 — so it can
+  // neither fail the report on its own nor rescue one whose other readings all fell short.
   if (filters.thicknessFloorCm !== undefined) {
-    const uppers = (report.iceThickness?.readings ?? [])
-      .map(readingUpperCm)
-      .filter((cm): cm is number => cm !== undefined);
-    if (uppers.length > 0 && Math.max(...uppers) < filters.thicknessFloorCm) return false;
+    const floor = filters.thicknessFloorCm;
+    const readings = report.iceThickness?.readings ?? [];
+    const reaches = readings.some((r) => {
+      const upper = readingUpperCm(r);
+      return (upper !== undefined && upper >= floor) || (r.minCm !== undefined && r.minCm >= floor);
+    });
+    const known = readings.some((r) => readingUpperCm(r) !== undefined);
+    if (!reaches && known) return false;
   }
 
   // No snow — exclude only reports that explicitly tag snow (include-unknown: no tags ⇒ pass).
-  if (filters.noSnow && intersects(report.surfaceTags ?? [], SNOW_SURFACE_TAGS)) return false;
+  if (filters.noSnow && intersects(surfaceTagKeys(report.surfaceTags), SNOW_SURFACE_TAGS))
+    return false;
 
   // Ideal ice types — include-unknown: a report carrying no ice type passes; one carrying types must
   // intersect the wanted set.
   if (filters.iceTypes && filters.iceTypes.length > 0) {
-    const reported = report.iceTypes ?? [];
+    const reported = iceTypeKeys(report.iceTypes);
     if (reported.length > 0 && !intersects(reported, filters.iceTypes)) return false;
   }
 
   // Ideal surface types — same include-unknown intersection rule.
   if (filters.surfaceTags && filters.surfaceTags.length > 0) {
-    const reported = report.surfaceTags ?? [];
+    const reported = surfaceTagKeys(report.surfaceTags);
     if (reported.length > 0 && !intersects(reported, filters.surfaceTags)) return false;
   }
 

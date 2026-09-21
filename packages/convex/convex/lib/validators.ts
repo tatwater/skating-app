@@ -7,7 +7,16 @@
  * generated `DataModel` keeps exact string-literal field types.
  */
 
-import { HAZARD_LIFECYCLE_PHASES } from '@skating/core';
+import {
+  HAZARD_LIFECYCLE_PHASES,
+  SECTORS,
+  SNOW_COVERAGES,
+  SNOW_DRIFTS,
+  SNOW_IMPEDIMENTS,
+  THICKNESS_METHODS,
+  THICKNESS_SCOPES,
+  WHERE_EXTENTS,
+} from '@skating/core';
 import { v } from 'convex/values';
 
 /** Build a `v.union(v.literal(...))` from a readonly tuple, keeping literal types. */
@@ -48,6 +57,76 @@ export function partialBoolFlags<const T extends readonly [string, ...string[]]>
 
 /** A geographic point. Used for report points, centroids, and tested coords. */
 export const latLng = v.object({ lat: v.number(), lng: v.number() });
+
+// ── The A10 report shapes (D193–D195) ──────────────────────────────────────────────────────────
+//
+// Each mirrors a `@skating/core` interface (`Where`, `LocatedChip`, `Snow`, the thickness reading)
+// and is shared by the schema and the `reports` mutation args, so the stored shape and the accepted
+// shape cannot drift. `reportShapes.test.ts` carries the compile-time `Infer` drift checks.
+
+/**
+ * The `where` of a located chip or reading (D193): an extent, a bay, a sector, a tap — composed.
+ * Shape only; that at least one part is present, that `head` / `mouth` ride a bay, and that the
+ * bay belongs to the body are `validateWhere` (core) and the mutation's checks.
+ */
+export const where = v.object({
+  extent: v.optional(literals(WHERE_EXTENTS)),
+  subAreaId: v.optional(v.string()),
+  sector: v.optional(literals(SECTORS)),
+  point: v.optional(
+    v.object({
+      coord: latLng,
+      radiusMeters: v.number(),
+      name: v.optional(v.string()),
+    }),
+  ),
+});
+
+/** A located chip: the key, an optional `where`, an optional few words. */
+export function locatedChip<const T extends readonly [string, string, ...string[]]>(vocabulary: T) {
+  return v.object({
+    type: literals(vocabulary),
+    where: v.optional(where),
+    note: v.optional(v.string()),
+  });
+}
+
+/**
+ * A chip as a client may send it — the bare key or the located object — for mutation *args* only.
+ * The schema narrows to the object once the backfill has lifted every row (A10-1); the args stay
+ * wide forever, because a phone that has not updated keeps sending strings.
+ */
+export function chipInput<const T extends readonly [string, string, ...string[]]>(vocabulary: T) {
+  return v.union(literals(vocabulary), locatedChip(vocabulary));
+}
+
+/** Snow as three facets and a depth (D194). */
+export const snow = v.object({
+  coverage: v.optional(literals(SNOW_COVERAGES)),
+  impediment: v.optional(literals(SNOW_IMPEDIMENTS)),
+  drifts: v.optional(literals(SNOW_DRIFTS)),
+  depthCm: v.optional(v.number()),
+  plowedPath: v.optional(v.boolean()),
+});
+
+/** One thickness reading (D22, widened by D195): a value, a range or a lower bound; pokes; the skater's word. */
+export const thicknessReading = v.object({
+  valueCm: v.optional(v.number()), // a single reading, OR
+  minCm: v.optional(v.number()), // a range — `maxCm` absent ⇒ a lower bound (D195)
+  maxCm: v.optional(v.number()),
+  method: literals(THICKNESS_METHODS), // estimated = lower-trust; poke = the count is the reading
+  pokeCount: v.optional(v.number()), // `poke` only — person- and pole-relative, never cm
+  supportable: v.optional(v.boolean()), // the skater's word, never ours (D3)
+  where: v.optional(where),
+  coord: v.optional(latLng),
+  note: v.optional(v.string()),
+});
+
+/** The thickness section: readings plus the D195 scope (everywhere I tested / at this spot). */
+export const iceThickness = v.object({
+  readings: v.array(thicknessReading),
+  scope: v.optional(literals(THICKNESS_SCOPES)),
+});
 
 /** Axis-aligned bounding box — the cheap prefilter before precise Turf tests (D5). */
 /**

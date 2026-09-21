@@ -24,6 +24,8 @@
 import {
   CONTRADICTION_FLAG_THRESHOLD,
   CORROBORATION_WINDOW_MS,
+  type IceType,
+  iceTypeKeys,
   reportsContradict,
   weatherExplainsIceChange,
 } from '@skating/core';
@@ -61,7 +63,7 @@ interface ClusterReport {
   authorId: Id<'profiles'>;
   skateEndTime: number;
   skateQuality: Doc<'reports'>['skateQuality'];
-  iceTypes: Doc<'reports'>['iceTypes'];
+  iceTypes: IceType[];
   /** `report_corroborated` ledger rows keyed to this report — its community backing (D50). */
   corroborations: number;
   conflicting: boolean;
@@ -119,7 +121,7 @@ export const contradictionCluster = internalQuery({
         authorId: r.authorId,
         skateEndTime: r.skateEndTime,
         skateQuality: r.skateQuality,
-        iceTypes: r.iceTypes,
+        iceTypes: iceTypeKeys(r.iceTypes),
         corroborations: events.filter((e) => e.reason === 'report_corroborated').length,
         conflicting: r.conflicting ?? false,
         contradiction: r.contradiction ?? false,

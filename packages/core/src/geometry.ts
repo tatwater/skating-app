@@ -26,6 +26,18 @@ export interface LatLng {
   lng: number;
 }
 
+/** True when a coord's lat/lng are finite and within valid geographic ranges (D42 storage guard). */
+export function isValidCoord(coord: LatLng): boolean {
+  return (
+    Number.isFinite(coord.lat) &&
+    Number.isFinite(coord.lng) &&
+    coord.lat >= -90 &&
+    coord.lat <= 90 &&
+    coord.lng >= -180 &&
+    coord.lng <= 180
+  );
+}
+
 /** An axis-aligned bounding box — mirrors the Convex `bbox` validator. */
 export interface BBox {
   minLat: number;

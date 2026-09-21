@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'vitest';
 import {
+  ACCESS_ALERT_REASONS,
   ACCESS_ALERT_RESOLVE_VOTES,
   ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TTL_MS,
+  ACCESS_CONDITION_REASONS,
   type AccessAlertRecord,
   type AccessAlertVote,
   accessAlertExpiryFor,
   accessAlertIsLive,
   deriveAccessAlertLifecycle,
+  isAccessCondition,
 } from './accessAlert';
 import { seasonEndMs, seasonOf } from './season';
 
@@ -186,5 +189,15 @@ describe('deriveAccessAlertLifecycle', () => {
     expect(out.confirmCount).toBe(2);
     expect(out.lastConfirmedAt).toBe(JAN + 2);
     expect(out.expiresAt).toBeUndefined();
+  });
+});
+
+describe('ACCESS_CONDITION_REASONS (D197)', () => {
+  test('is disjoint from the blocker reasons — a condition never demotes a launch', () => {
+    for (const reason of ACCESS_CONDITION_REASONS) {
+      expect(ACCESS_ALERT_REASONS as readonly string[]).not.toContain(reason);
+      expect(isAccessCondition(reason)).toBe(true);
+    }
+    for (const reason of ACCESS_ALERT_REASONS) expect(isAccessCondition(reason)).toBe(false);
   });
 });

@@ -987,7 +987,7 @@ describe('bucket 2 — anonymize (the public ice record)', () => {
     const report = await t.run((ctx) => ctx.db.get(reportId));
     expect(report).not.toBeNull(); // the row stays — this is the ice record
     expect(report?.authorId).toBe(user.id); // the pointer stands; it just names nobody now
-    expect(report?.iceTypes).toEqual(['black_ice']); // the observation is untouched
+    expect(report?.iceTypes).toEqual([{ type: 'black_ice' }]); // the observation is untouched
     expect(report?.skateEndTime).toBe(T0);
     expect(report?.notes).toBeUndefined(); // ...and the words are gone, even at zero age
 
