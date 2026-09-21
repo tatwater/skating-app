@@ -721,3 +721,112 @@ describe('posts.getForReport (A10 §12.1) — the words a Report was posted with
     expect(report?.bayNames).toEqual({ [bayId]: 'North Bay' });
   });
 });
+
+describe('the silhouette on a card (A10 §12.3)', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+  const ALL = { paginationOpts: { numItems: 50, cursor: null } };
+  const track = {
+    type: 'LineString' as const,
+    // ~0.6° across a 1° square — long enough that D58's clip leaves a middle.
+    coordinates: Array.from({ length: 40 }, (_, i) => [0.2 + i * 0.015, 0.5]) as number[][],
+  };
+
+  test('carries the outline, the apex, the put-in, the skate, the chips’ sector and the bay ring', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const bayId = await t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: bodyId,
+        name: 'North Bay',
+        searchText: 'north bay',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0.5],
+              [0, 1],
+              [1, 1],
+              [1, 0.5],
+              [0, 0.5],
+            ],
+          ],
+        },
+        bbox: { minLat: 0.5, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.75, lng: 0.5 },
+        surfaceAreaSqM: 100_000,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: author.id,
+        createdAt: T0,
+        updatedAt: T0,
+      }),
+    );
+    const activityId = await author.as.mutation(api.gpsActivities.ingestTrack, {
+      idempotencyKey: 'session-1',
+      path: track,
+      startTime: T0 - 3_600_000,
+      endTime: T0,
+      elapsedSeconds: 3_600,
+    });
+    await author.as.mutation(api.posts.create, {
+      reports: [
+        {
+          ...FRESH,
+          waterBodyId: bodyId,
+          skateEndTime: T0,
+          activityId,
+          point: { lat: 0.5, lng: 0.2 },
+          iceTypes: [{ type: 'black_ice', where: { sector: 'N', subAreaId: bayId } }],
+        },
+      ],
+    });
+    const feed = await author.as.query(api.posts.listFeed, ALL);
+    const card = feed.page[0]?.reports[0];
+    const s = card?.silhouette;
+    expect(s).toBeDefined();
+    expect(s?.rings[0]?.length).toBe(5); // the square, whole
+    expect(s?.bbox).toEqual({ minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 });
+    expect(s?.origin.lat).toBeGreaterThan(0);
+    expect(s?.putIn).toEqual({ lat: 0.5, lng: 0.2 });
+    expect(s?.path?.[0]).toEqual([0.2, 0.5]); // whole: the author sees their own put-in
+    expect(s?.sector).toBe('N');
+    expect(s?.bayRing?.length).toBe(5);
+  });
+
+  test('a withheld put-in drops the pin and trims the skate for a stranger, not for the author', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const stranger = await seedUser(t, 'clerk_stranger');
+    const bodyId = await seedBody(t);
+    const activityId = await author.as.mutation(api.gpsActivities.ingestTrack, {
+      idempotencyKey: 'session-2',
+      path: track,
+      startTime: T0 - 3_600_000,
+      endTime: T0,
+      elapsedSeconds: 3_600,
+    });
+    await author.as.mutation(api.posts.create, {
+      reports: [
+        {
+          ...FRESH,
+          waterBodyId: bodyId,
+          skateEndTime: T0,
+          activityId,
+          point: { lat: 0.5, lng: 0.2 },
+          showPutIn: false,
+        },
+      ],
+    });
+    const mine = (await author.as.query(api.posts.listFeed, ALL)).page[0]?.reports[0]?.silhouette;
+    expect(mine?.putIn).toEqual({ lat: 0.5, lng: 0.2 });
+    expect(mine?.path?.[0]).toEqual([0.2, 0.5]);
+    const theirs = (await stranger.as.query(api.posts.listFeed, ALL)).page[0]?.reports[0]
+      ?.silhouette;
+    expect(theirs?.putIn).toBeUndefined();
+    expect(theirs?.path).toBeDefined();
+    expect(theirs?.path?.[0]).not.toEqual([0.2, 0.5]); // the ends are trimmed (D58)
+    expect(theirs?.sector).toBeUndefined();
+    expect(theirs?.bayRing).toBeUndefined();
+  });
+});

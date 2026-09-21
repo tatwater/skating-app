@@ -286,7 +286,7 @@ export const recentCardsForBodies = query({
     // but on exactly those days it's the difference between a phone that went offline in June coming
     // back with last season's ice on it and coming back honest. Whichever bound is later wins.
     const cutoff = Math.max(now - OFFLINE_CACHE_WINDOW_MS, seasonStartMs(seasonOf(now)));
-    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map(), viewer };
     const cards: FeedCardData[] = [];
     for (const waterBodyId of [...new Set(waterBodyIds)]) {
       const recent = await ctx.db
@@ -409,7 +409,7 @@ export const recommended = query({
 
     // Hydrate each winning report into a full `FeedCardData` so the client renders it like a feed card
     // (author ring, chips, thumbnails) inside the distinct "Recommended" wrapper. Reuses `toFeedCard`.
-    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map(), viewer };
     // Recommended breaks filters; the favorite boost is irrelevant here.
     const noFavorites: ViewerFavorites = { bodyIds: new Set(), subAreaIds: new Set() };
     const result: { waterBodyId: string; cards: FeedCardData[] }[] = [];

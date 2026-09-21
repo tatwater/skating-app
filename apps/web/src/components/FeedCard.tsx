@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
+import { BodySilhouette } from './BodySilhouette';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
@@ -72,7 +73,13 @@ export function FeedCard({
             </span>
           ) : null}
         </div>
-        <span className="shrink-0 text-foreground-muted text-xs">{card.relativeTime}</span>
+        {/* The right column: when, and where on the lake (A10 §12.3) — the silhouette carries the
+            put-in, the skate and the chips' `where`, so the card shows the shape of the day without
+            a map. Absent on a body with no usable outline, and on a cached card from before it. */}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="text-foreground-muted text-xs">{card.relativeTime}</span>
+          {data.silhouette ? <BodySilhouette data={data.silhouette} size={56} /> : null}
+        </div>
       </div>
 
       {nested ? (

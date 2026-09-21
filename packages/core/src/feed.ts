@@ -8,6 +8,7 @@
  * single source drives both surfaces.
  */
 
+import type { SilhouetteData } from './bodySilhouette';
 import {
   formatSkateWindow,
   humanizeEnum,
@@ -204,6 +205,8 @@ export interface FeedCardData {
    * 55-minute drive plus a 25-minute walk is not an 80-minute drive (D72 amendment).
    */
   accessKind?: string;
+  /** The lake as a still image — outline, put-in, skate, the chips' where (A10 §12.3). */
+  silhouette?: SilhouetteData;
 }
 
 /**
