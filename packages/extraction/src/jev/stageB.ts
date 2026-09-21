@@ -149,7 +149,7 @@ function whereFor(
   unit: Unit,
   answer: JevAnswer | undefined,
 ): ExtractedFields['iceTypes'][number]['value']['where'] {
-  if (!answer || answer.type !== 'choice' || answer.choice === 'none') return undefined;
+  if (answer?.type !== 'choice' || answer.choice === 'none') return undefined;
   const idx = Number(answer.choice.slice(1));
   const phrase = unit.compassPhrases[idx];
   if (!phrase) return undefined;
@@ -189,7 +189,7 @@ export function reportFromAnswers(
 
   for (const s of SINGLE) {
     const a = answers[s.key];
-    if (!a || a.type !== 'choice' || a.choice === 'none') continue;
+    if (a?.type !== 'choice' || a.choice === 'none') continue;
     const p = a.probabilities[a.choice] ?? 0;
     if (p < CHOICE_DROP_BELOW) continue;
     fields[s.key].push({ value: a.choice, confidence: p, evidence: ev });
@@ -198,7 +198,7 @@ export function reportFromAnswers(
   for (const m of MULTI) {
     for (const v of vocab[m.vocab]) {
       const a = answers[`${m.key}.${v}`];
-      if (!a || a.type !== 'noul' || a.noul <= NOUL_DROP_BELOW) continue;
+      if (a?.type !== 'noul' || a.noul <= NOUL_DROP_BELOW) continue;
       if (m.key === 'accessConditions') {
         fields[m.key].push({ value: v, confidence: a.noul, evidence: ev });
         continue;
@@ -223,7 +223,7 @@ export function reportFromAnswers(
     }
     if (m.kind !== 'ice_thickness') return;
     const a = answers[`m${i}.method`];
-    if (!a || a.type !== 'choice' || a.choice === 'none') return;
+    if (a?.type !== 'choice' || a.choice === 'none') return;
     const p = a.probabilities[a.choice] ?? 0;
     if (p < CHOICE_DROP_BELOW) return;
     const sup = answers[`m${i}.supportable`];
