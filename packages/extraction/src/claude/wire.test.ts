@@ -63,6 +63,18 @@ describe('localTimeToMs', () => {
     expect(localTimeToMs('around four', input())).toBeNull();
     expect(localTimeToMs('16:00', { timeZone: 'America/New_York' })).toBeNull();
   });
+  it('is null for a date or clock time that does not exist, rather than a normalized neighbor', () => {
+    // `Date.UTC` would read each of these as a real instant on another day (Greptile P2, PR #71).
+    expect(localTimeToMs('2026-02-30T16:00', input())).toBeNull();
+    expect(localTimeToMs('2026-13-01T16:00', input())).toBeNull();
+    expect(localTimeToMs('2026-01-00T16:00', input())).toBeNull();
+    expect(localTimeToMs('2026-01-10T25:99', input())).toBeNull();
+    expect(localTimeToMs('2026-01-10T16:60', input())).toBeNull();
+    expect(localTimeToMs('24:00', input())).toBeNull();
+    // The edges that do exist stay: a leap day, 23:59, midnight.
+    expect(localTimeToMs('2024-02-29T23:59', input())).toBe(Date.UTC(2024, 1, 30, 4, 59));
+    expect(localTimeToMs('00:00', input())).toBe(Date.UTC(2026, 0, 10, 5, 0));
+  });
   it('reads a bare clock time that has not yet come round as yesterday’s', () => {
     // Written at 2 am EST on the 11th: "got off at 4" is the 10th's four, not a future one.
     const lateNight = input({ writtenAtMs: Date.UTC(2026, 0, 11, 7, 0) });
@@ -348,5 +360,24 @@ describe('mapWireResult', () => {
       input(),
     );
     expect(result.reports[0]).toMatchObject({ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1 });
+  });
+
+  it('nulls a body ref that was never a candidate, keeping the string as the name (Greptile P2, PR #71)', () => {
+    const result = mapWireResult(
+      {
+        reports: [
+          { bodyRef: 'morey', visit: 0, values: [] },
+          { bodyRef: 'Lake Fairlee', visit: 0, values: [] },
+          { bodyRef: 'fairlee', bodyName: 'Fairlee', visit: 0, values: [] },
+        ],
+        misses: [],
+      },
+      input(),
+    );
+    expect(result.reports.map((r) => [r.bodyRef, r.bodyName])).toEqual([
+      ['morey', undefined],
+      [null, 'Lake Fairlee'],
+      [null, 'Fairlee'],
+    ]);
   });
 });

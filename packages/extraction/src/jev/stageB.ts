@@ -19,6 +19,7 @@ import {
 import type { Unit } from '../claude/stageA';
 import { unitEvidence, unitText } from '../claude/stageA';
 import {
+  bodyOf,
   evidenceFor,
   localTimeToMs,
   thicknessMissReason,
@@ -284,8 +285,7 @@ export function reportFromAnswers(
   }
 
   return {
-    bodyRef: unit.bodyRef,
-    ...(unit.bodyName ? { bodyName: unit.bodyName } : {}),
+    ...bodyOf(unit, input),
     visit: unit.visit,
     note: unitText(unit),
     fields: fields as unknown as ExtractedFields,

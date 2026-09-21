@@ -8,7 +8,7 @@ const TEXT =
   'Skated Morey. Black ice at the north end, 3-4 inches by the auger, 5 pokes for me. Got off at 4:15. A dusting of snow.';
 const input: ExtractionInput = {
   text: TEXT,
-  bodyCandidates: [],
+  bodyCandidates: [{ ref: 'morey', name: 'Lake Morey', aliases: [], subAreas: [] }],
   vocabulary: defaultVocabulary(),
   writtenAtMs: Date.UTC(2026, 0, 10, 22),
   timeZone: 'America/New_York',
@@ -132,6 +132,11 @@ describe('reportFromAnswers', () => {
         evidence: expect.objectContaining({ text: 'Got off at 4:15', located: true }),
       },
     ]);
+  });
+
+  it('a body ref outside the candidates is null with the ref as the name', () => {
+    const r = reportFromAnswers({ ...unit, bodyRef: 'not_offered' }, {}, input);
+    expect(r).toMatchObject({ bodyRef: null, bodyName: 'not_offered' });
   });
 
   it('a sighting survives only off the ice', () => {

@@ -346,10 +346,16 @@ ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
 3. **The narrow happened in A10-1**, not A10-5: `iceTypes` / `surfaceTags` are objects only and
    `snowCoverCm` is gone from the schema. The old forms keep working because the *mutation args*
    stay wide and the validator lifts the bare shapes — the dual-write validator §2.4 budgeted is
-   the contract, not a second schema. **What is still owed to A10-2 §2.4:** the old web
-   `ReportForm`'s edit path is lossy for a chip's `where`, the snow facets and a cm-less poke
-   reading until A10-5 replaces it; `reports.update` should preserve located data for chips whose
-   key is unchanged.
+   the contract, not a second schema. The old forms' edit path was lossy for everything the sheet
+   adds (a chip's `where`, the snow facets, a poke's count, the vantage, the suitability) until the
+   PR #71 review: `reportFormFromReport` now carries all of it through `ReportFormState.carried`
+   and `buildReportInput` re-emits it, restoring the form's own round-trip contract. Client-side
+   rather than in `reports.update`, because the server cannot tell "this client has no control for
+   it" from "the author cleared it" — only the client knows. Both forms also offer only
+   `FORM_THICKNESS_METHODS` (no `poke`): they have no count field, so a poke reading could never
+   validate from them. **Installed clients are not a migration concern here:** prod has never been
+   initialized and the one APK is the founder's EAS preview, rebuilt from the branch, so the read
+   APIs return the stored objects with no compatibility shim (which would also block §12.1).
 4. **A structured-output schema with fourteen typed lists is "too large"** (Anthropic 400: the
    compiled grammar); the Claude wire shape is one flat `values` list with a `field` discriminator,
    and the wrapper validates enum-shaped strings against the vocabulary so an unknown value is a
@@ -369,6 +375,10 @@ ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
   floors; A10-4 is gated on `basis: 'verified'`.
 - A retry on Jev 503 / 529 in the pipeline, and Stage B's per-unit requests in parallel; the
   recall tier over the full 2,449 via the Batch API when the corpus replay (A10-2 §1.5) needs it.
+- `photos.reportId` is now written by `reports.create` / `reports.update` beside the list it
+  mirrors (`syncReportPhotoLinks`), and a photo another report claims is refused at the write —
+  so `posts.create` (A10-2) inherits one photo, one report, rather than having to establish it.
+  The backfill returns `photosShared` for any legacy pair that broke the rule (none on dev).
 - Two seams the self-review found for the next PRs: `ExtractedWhere.placeName` is structurally a
   core `Where` with nothing set, so the sheet must map it to `point.name` when it applies an
   extraction (A10-4), never pass it through; and `accessAlerts.reason` still narrows to the blocker

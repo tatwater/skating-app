@@ -154,6 +154,26 @@ export function evidenceFor(
 // ── Mapping ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The body a report is about, held to the contract: `bodyRef` names one of the offered candidates
+ * or is `null`. A model can and does return a ref it was never given — a name, a slug it made up —
+ * and copying that through would make a hallucination a valid extraction, scored as a hit or a
+ * miss on a body that was never on the list. Here, while the list is in hand, such a ref becomes
+ * `null` with the string kept as `bodyName` (the model's best word for the body; never our
+ * invention) when the model gave none. Both engines map through this.
+ */
+export function bodyOf(
+  wire: { bodyRef: string | null; bodyName?: string },
+  input: Pick<ExtractionInput, 'bodyCandidates'>,
+): { bodyRef: string | null; bodyName?: string } {
+  const bodyName = wire.bodyName?.trim() || undefined;
+  if (wire.bodyRef === null) return { bodyRef: null, ...(bodyName ? { bodyName } : {}) };
+  if (input.bodyCandidates.some((c) => c.ref === wire.bodyRef)) {
+    return { bodyRef: wire.bodyRef, ...(bodyName ? { bodyName } : {}) };
+  }
+  return { bodyRef: null, bodyName: bodyName ?? wire.bodyRef };
+}
+
+/**
  * Resolve a local clock time. A full `YYYY-MM-DDTHH:MM` is taken as written; a bare `HH:MM` is
  * read on the day the text was written — or the day before, when that clock time has not yet come
  * round at the moment of writing: "got off at 4" in an email sent at 2 am is yesterday's four, and
@@ -167,16 +187,34 @@ export function localTimeToMs(
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(localTime.trim());
   if (m) {
     const [, y, mo, d, h, mi] = m.map(Number) as [number, number, number, number, number, number];
+    if (!isCalendarDate(y, mo, d) || !isClockTime(h, mi)) return null;
     return zonedInstant(y, mo, d, h * 60 + mi, input.timeZone);
   }
   const t = /^(\d{2}):(\d{2})$/.exec(localTime.trim());
   if (t && input.writtenAtMs !== undefined) {
     const [, h, mi] = t.map(Number) as [number, number, number];
+    if (!isClockTime(h, mi)) return null;
     const today = zonedInstantOnDayOf(input.writtenAtMs, h * 60 + mi, input.timeZone);
     if (today <= input.writtenAtMs + SKATE_TIME_FUTURE_TOLERANCE_MS) return today;
     return zonedInstantOnDayOf(input.writtenAtMs, h * 60 + mi, input.timeZone, -1);
   }
   return null;
+}
+
+/**
+ * A date that exists. The digits alone are not enough: `Date.UTC` normalizes February 30th into
+ * March 2nd and 25:99 into the next day, so a model's slip would come back as a real instant on
+ * the wrong day instead of a miss. The round trip through `Date.UTC` is the calendar check —
+ * a day that overflows its month reads back as a different one.
+ */
+function isCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
+function isClockTime(hour: number, minute: number): boolean {
+  return hour <= 23 && minute <= 59;
 }
 
 /** A miss in the contract's shape: an engine's free-string `kind` outside `MISS_KINDS` is `other`. */
@@ -386,8 +424,7 @@ export function mapWireReport(
   if (!sightingAllowedFrom(vantage?.value)) fields.sighting = [];
 
   return {
-    bodyRef: wire.bodyRef,
-    ...(wire.bodyName ? { bodyName: wire.bodyName } : {}),
+    ...bodyOf(wire, input),
     visit: wire.visit,
     ...(wire.note ? { note: wire.note } : {}),
     fields: fields as unknown as ExtractedFields,
