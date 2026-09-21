@@ -117,6 +117,11 @@ export interface ReportFormState {
   };
   notes: string;
   carried?: CarriedReportFields;
+  /**
+   * Whether this report's precise put-in may be shown (Phase 04 decision #7). Seeded from the
+   * profile's remembered default (`resolveShowPutInDefault`); an edit seeds from the stored report.
+   */
+  showPutIn: boolean;
 }
 
 /** A fresh, empty reading (single measured) for the "add reading" affordance. */
@@ -129,7 +134,7 @@ export function emptyThicknessReading(): ThicknessFormReading {
  * reports, D9); no ice fields are required (an observation-only report, D3). All reports are public
  * (D13), so there's no visibility to default.
  */
-export function emptyReportForm(now: number): ReportFormState {
+export function emptyReportForm(now: number, opts: { showPutIn?: boolean } = {}): ReportFormState {
   return {
     skateEndTime: now,
     iceTypes: [],
@@ -139,6 +144,7 @@ export function emptyReportForm(now: number): ReportFormState {
     snowCover: '',
     conditions: { airTempF: '', windMph: '', windDir: '', sky: '', precip: '' },
     notes: '',
+    showPutIn: opts.showPutIn ?? true,
   };
 }
 
@@ -253,6 +259,9 @@ export function buildReportInput(
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
+    // Only the opt-out travels: the stored field is optional-defaults-to-shown, and a draft saved
+    // before the toggle existed (no `showPutIn` at all) must keep reading as shown.
+    ...(form.showPutIn === false ? { showPutIn: false } : {}),
   };
 }
 
@@ -287,6 +296,7 @@ export interface StoredReportForForm {
     precip?: PrecipType;
   };
   notes?: string;
+  showPutIn?: boolean;
 }
 
 interface ThicknessReadingLike extends ThicknessReadingCarried {
@@ -443,6 +453,7 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
     },
     notes: report.notes ?? '',
     carried,
+    showPutIn: report.showPutIn !== false,
   };
 }
 

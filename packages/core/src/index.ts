@@ -83,6 +83,7 @@ export * from './profile';
 export * from './profileReveal';
 export * from './publicAccess';
 export * from './putIn';
+export * from './putInPrivacy';
 export * from './recommended';
 export * from './reconcile';
 export * from './referenceLinks';

@@ -34,12 +34,27 @@ describe('emptyReportForm', () => {
     expect(form.iceTypes).toEqual([]);
     expect(form.thickness).toEqual([]);
   });
+
+  it('shows the put-in unless the remembered default says otherwise', () => {
+    expect(emptyReportForm(NOW).showPutIn).toBe(true);
+    expect(emptyReportForm(NOW, { showPutIn: true }).showPutIn).toBe(true);
+    expect(emptyReportForm(NOW, { showPutIn: false }).showPutIn).toBe(false);
+  });
 });
 
 const NOW = Date.UTC(2026, 0, 5, 19, 30);
 const BASE: ReportFormState = emptyReportForm(NOW);
 
 describe('buildReportInput', () => {
+  it('sends the put-in opt-out only when it is off — shown is the stored default', () => {
+    expect(buildReportInput({ ...BASE, showPutIn: true }, 'wb1')).not.toHaveProperty('showPutIn');
+    expect(buildReportInput({ ...BASE, showPutIn: false }, 'wb1').showPutIn).toBe(false);
+    // A draft persisted before the switch existed carries no `showPutIn` at all; it must read as shown.
+    const legacy = { ...BASE } as Partial<ReportFormState> as ReportFormState;
+    delete (legacy as { showPutIn?: boolean }).showPutIn;
+    expect(buildReportInput(legacy, 'wb1')).not.toHaveProperty('showPutIn');
+  });
+
   it('keeps a notes-only report minimal — no empty optional fields (D3)', () => {
     const input = buildReportInput({ ...BASE, notes: '  did not skate  ' }, 'wb1');
     expect(input).toEqual({
@@ -288,6 +303,14 @@ describe('reportFormFromReport', () => {
     expect(rebuilt.conditions?.windDir).toBe('NW');
     expect(rebuilt.conditions?.sky).toBe('clear');
     expect(rebuilt.conditions?.precip).toBe('none');
+  });
+
+  it('seeds the put-in switch from the stored report, defaulting to shown', () => {
+    expect(reportFormFromReport(FULL).showPutIn).toBe(true);
+    expect(reportFormFromReport({ ...FULL, showPutIn: true }).showPutIn).toBe(true);
+    const hidden = reportFormFromReport({ ...FULL, showPutIn: false });
+    expect(hidden.showPutIn).toBe(false);
+    expect(buildReportInput(hidden, 'wb1').showPutIn).toBe(false);
   });
 
   it('keeps each reading in the mode it was measured in', () => {

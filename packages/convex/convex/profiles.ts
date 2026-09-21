@@ -517,6 +517,21 @@ export const unsubscribeEmailBySecret = internalMutation({
   },
 });
 
+/**
+ * Remember the report form's put-in switch as the default for the next report (`schema.ts`
+ * `profiles.showPutInDefault`). `requireContributor`, not `requireProfile`: a ghost cannot post, so
+ * a remembered default has nothing left to seed — unlike the aggregate opt-out below, which governs
+ * data that outlives the account.
+ */
+export const setShowPutInDefault = mutation({
+  args: { showPutIn: v.boolean() },
+  handler: async (ctx, { showPutIn }) => {
+    const profile = await requireContributor(ctx);
+    await ctx.db.patch(profile._id, { showPutInDefault: showPutIn });
+    return profile._id;
+  },
+});
+
 export const setAggregateTracksOptOut = mutation({
   args: { excludeTracksFromAggregate: v.boolean() },
   handler: async (ctx, { excludeTracksFromAggregate }) => {

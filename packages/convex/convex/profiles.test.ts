@@ -1021,3 +1021,34 @@ describe('profiles.backfillContributionCounts', () => {
     expect((await t.mutation(internal.profiles.backfillContributionCounts, {})).patched).toBe(0);
   });
 });
+
+describe('profiles.setShowPutInDefault', () => {
+  test('remembers the report form switch; unset reads as shown', async () => {
+    const t = convexTest(schema, modules);
+    const asAda = t.withIdentity({ subject: 'clerk_ada' });
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    );
+    expect((await asAda.query(api.profiles.current, {}))?.showPutInDefault).toBeUndefined();
+
+    await asAda.mutation(api.profiles.setShowPutInDefault, { showPutIn: false });
+    expect((await asAda.query(api.profiles.current, {}))?.showPutInDefault).toBe(false);
+
+    await asAda.mutation(api.profiles.setShowPutInDefault, { showPutIn: true });
+    expect((await asAda.query(api.profiles.current, {}))?.showPutInDefault).toBe(true);
+  });
+
+  test('a ghost has nothing to seed — the mutation is contributor-gated (D62)', async () => {
+    const t = convexTest(schema, modules);
+    const asGhost = t.withIdentity({ subject: 'clerk_ghost' });
+    await asGhost.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ghost', username: 'ghost', dateOfBirth: ADULT_DOB }),
+    );
+    await asGhost.mutation(api.accountDeletion.requestDeletion, {});
+    await expect(
+      asGhost.mutation(api.profiles.setShowPutInDefault, { showPutIn: false }),
+    ).rejects.toThrow();
+  });
+});

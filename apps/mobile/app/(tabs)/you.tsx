@@ -13,6 +13,10 @@ import {
   NOTIFICATION_PREF_LABELS,
   NOTIFICATION_PREF_ORDER,
   type NotificationPrefKey,
+  resolveShowPutInDefault,
+  SHOW_PUT_IN_HEADING,
+  SHOW_PUT_IN_LABEL,
+  SHOW_PUT_IN_SETTING_EXPLAINER,
 } from '@skating/core';
 import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
@@ -150,6 +154,8 @@ export default function YouScreen() {
           <Separator borderColor="$border" />
           <HomeLocation />
           <NotificationSettings />
+
+          <PutInSetting />
 
           <AggregateTracksSetting />
 
@@ -404,6 +410,33 @@ function RadiusRow({
  * control ships on web — and two surfaces wording one privacy promise differently means one of them
  * is describing behavior the app doesn't have. The reasoning behind the wording is documented there.
  */
+/**
+ * The remembered default for the report form's put-in switch (Phase 04 decision #7;
+ * `profiles.showPutInDefault`). The switch itself is on the report form — the choice is per report;
+ * this is where the default is visible without opening one. Copy in `@skating/core` (`putInPrivacy.ts`).
+ */
+function PutInSetting() {
+  const profile = useQuery(api.profiles.current, {});
+  const setDefault = useMutation(api.profiles.setShowPutInDefault);
+  if (!profile) return null;
+
+  return (
+    <YStack gap="$2">
+      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+        {SHOW_PUT_IN_HEADING}
+      </Text>
+      <ToggleRow
+        label={SHOW_PUT_IN_LABEL}
+        value={resolveShowPutInDefault(profile.showPutInDefault)}
+        onToggle={(v) => void setDefault({ showPutIn: v })}
+      />
+      <Paragraph color="$foregroundMuted" fontSize={11}>
+        {SHOW_PUT_IN_SETTING_EXPLAINER}
+      </Paragraph>
+    </YStack>
+  );
+}
+
 function AggregateTracksSetting() {
   const profile = useQuery(api.profiles.current, {});
   // `setAggregateTracksOptOut`, not `updateProfile`: this is the one profile setting a ghost keeps

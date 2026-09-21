@@ -114,6 +114,13 @@ export interface ReportInput {
   notes?: string;
   /** Optional put-in pin the skater dropped (access point); becomes `reports.point`. */
   point?: LatLng;
+  /**
+   * The per-report put-in opt-out (Phase 04 decision #7): `false` keeps the precise put-in off the map
+   * and, for a report published from a track, clips the path's ends (D58). Omitted means shown — the
+   * stored field is optional with that default, so the form only sends the opt-out. See
+   * `putInPrivacy.ts` for the copy and the remembered default.
+   */
+  showPutIn?: boolean;
 }
 
 export interface NormalizedThicknessReading {

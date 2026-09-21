@@ -172,6 +172,14 @@ export default defineSchema({
      * whether their path draws on a lake's community map. Optional ⇒ migration-free.
      */
     excludeTracksFromAggregate: v.optional(v.boolean()),
+    /**
+     * The remembered starting position of the report form's "show where I got on the ice" switch
+     * (Phase 04 decision #7's `reports.showPutIn`, which had no client control until 2026-09-20).
+     * Per profile because the choice is about the person's launch, not one report; per *report* on
+     * the row, because each report keeps what was chosen when it was posted — changing this never
+     * rewrites history. Unset ⇒ shown, the same default the report field has. Optional ⇒ migration-free.
+     */
+    showPutInDefault: v.optional(v.boolean()),
     notificationPrefs, // every type toggleable (D16)
     /**
      * The device's IANA timezone, refreshed on app open (A08 §3). Only the 8pm digest reads it: the
