@@ -265,7 +265,8 @@ async function silhouetteFor(
   const where = reportWhereSummary(r);
   if (where.sector !== undefined) out.sector = where.sector;
   if (where.subAreaId !== undefined) {
-    const bayRings = caches.bayRings ?? (caches.bayRings = new Map());
+    if (!caches.bayRings) caches.bayRings = new Map();
+    const bayRings = caches.bayRings;
     let ring = bayRings.get(where.subAreaId);
     if (ring === undefined) {
       const bayId = ctx.db.normalizeId('waterBodySubAreas', where.subAreaId);
