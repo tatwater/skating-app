@@ -20,6 +20,7 @@ export default defineConfig({
       // `types.ts` is type-only. Mirrors the water ETL and admin-areas configs.
       exclude: [
         'src/archiveCli.ts',
+        'src/bayRequestsCli.ts',
         'src/**/*.test.ts',
         'src/cli.ts',
         'src/buildInputCli.ts', // the build-input CLI; its transform is buildFromMentions.ts and covered
