@@ -701,7 +701,7 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
 - RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register
   row); the sheet's logic is in core and `sheetModel.ts` on purpose, and the components are thin.
 
-## Built record — A10-5 (2026-09-22, `phase-a10-reporting-flow-5`, stacked on `-3`)
+## Built record — A10-5 (2026-09-22, `phase-a10-reporting-flow-5`, PR #77 stacked on #75)
 
 §10 (the web console), §8.2 (the browser's photo half) and D205's moderator comparison. Built
 **ahead of A10-4** on a founder call (2026-09-22): §10 depends on §3 (A10-1) and the section set
