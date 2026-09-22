@@ -70,6 +70,7 @@ import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as lib_reportSubAreas from "../lib/reportSubAreas.js";
 import type * as lib_reportVisibility from "../lib/reportVisibility.js";
 import type * as lib_reputation from "../lib/reputation.js";
+import type * as lib_requestDecisions from "../lib/requestDecisions.js";
 import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sampling from "../lib/sampling.js";
 import type * as lib_scan from "../lib/scan.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   "lib/reportSubAreas": typeof lib_reportSubAreas;
   "lib/reportVisibility": typeof lib_reportVisibility;
   "lib/reputation": typeof lib_reputation;
+  "lib/requestDecisions": typeof lib_requestDecisions;
   "lib/resend": typeof lib_resend;
   "lib/sampling": typeof lib_sampling;
   "lib/scan": typeof lib_scan;
