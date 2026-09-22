@@ -82,6 +82,7 @@ export * from './photo';
 export * from './photoWindow';
 export * from './post';
 export * from './postedAccess';
+export * from './postSheet';
 export * from './profile';
 export * from './profileReveal';
 export * from './publicAccess';

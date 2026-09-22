@@ -1,14 +1,21 @@
 import { useNetInfo } from '@react-native-community/netinfo';
 import { api } from '@skating/convex/api';
 import {
+  addEarlierVisit,
+  addLake,
   isFlushable,
   isHazardItemFlushable,
   isHeldDraft,
   isMinor,
   type MinimumSetTerm,
   POST_TITLE_MAX_CHARS,
+  type PostSheet,
+  postRefusals,
+  type ReportRefusal,
+  removeReport,
   type SheetSection,
   sheetReducer,
+  updateReport,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { randomUUID } from 'expo-crypto';
@@ -22,15 +29,6 @@ import {
   saveSheetAsDraft,
   saveSheetEdit,
 } from '../../lib/sheetActions';
-import {
-  addEarlierVisit,
-  addLake,
-  type PostSheet,
-  postRefusals,
-  type ReportRefusal,
-  removeReport,
-  updateReport,
-} from '../../lib/sheetModel';
 import { setSheet, updateSheet, useSheet } from '../../lib/sheetStore';
 import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
 import { useOfflineDrafts } from '../OfflineDraftsContext';

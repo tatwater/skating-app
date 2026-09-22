@@ -1,38 +1,46 @@
 /**
  * The Post sheet's state (A10-3 / D186, D187) — pure, so the doors, the draft round trip and the
  * *Post* decision are unit-tested without a screen. A **Post sheet** is the words (title, prose)
- * over one or more **Report sheets** (`ReportSheetState` from core, one per lake or visit), each
- * with the things a sheet carries beside its chips: the photos not yet uploaded, the track it
- * describes, the D55 bundle choice.
+ * over one or more **Report sheets** (`ReportSheetState`, one per lake or visit), each with the
+ * things a sheet carries beside its chips: the photos not yet uploaded, the track it describes,
+ * the D55 bundle choice.
  *
  * One sheet, every door (D187): a body (chips first), the tab (prose first), a finished recording,
  * an unreported skate, a saved draft, a published Report or Post to edit. Every door lands on the
  * same state shape; only what is pre-filled differs. `mode` says what *Post* does — queue a new
  * Post, or update what is published — and nothing else branches on the door.
+ *
+ * It lives in core, not on a surface (lifted from mobile at A10-5): the mobile sheet and the web
+ * console are two compositions of this one model, and a rule that differed between them — which
+ * gaps refuse a Post, what *Save changes* addresses — would be a rule with two answers. Ids are
+ * plain strings here as everywhere in core; each surface casts at its own wire.
  */
 
-import type { Id } from '@skating/convex/dataModel';
 import {
   createPostDraft,
   createReportDraft,
   type DraftPhoto,
-  emptySheet,
-  formCreateRefusal,
   type HazardRef,
-  hazardRefFor,
-  type LatLng,
+  type PostDraft,
+  type ReportDraft,
+  reportDraftInput,
+} from './draftQueue';
+import type { LatLng } from './geometry';
+import { hazardRefFor } from './hazardBundle';
+import {
   type MinimumSetTerm,
   minimumSetGaps,
   minimumSetMessage,
-  type PostDraft,
-  type ReportDraft,
+  validateReportInput,
+} from './report';
+import { formCreateRefusal } from './reportForm';
+import {
+  emptySheet,
   type ReportSheetState,
-  reportDraftInput,
   type SheetSeed,
   sheetFromReport,
   toReportInput,
-  validateReportInput,
-} from '@skating/core';
+} from './reportSheet';
 
 /** One Report on the sheet: its chips (core) and what rides beside them on this device. */
 export interface SheetReport {
@@ -60,7 +68,7 @@ export interface SheetReport {
 export type SheetMode =
   | { kind: 'create' }
   /** A published Report opened from its page: *Save changes* runs `reports.update` (and `posts.update` for the words). */
-  | { kind: 'edit'; reportId: Id<'reports'>; postId?: Id<'posts'> };
+  | { kind: 'edit'; reportId: string; postId?: string };
 
 /** Which door opened the sheet — only the layout reads it (the tab focuses the prose). */
 export type SheetDoor = 'body' | 'page' | 'track' | 'activity' | 'draft' | 'edit';
@@ -80,7 +88,7 @@ export interface PostSheet {
   dirty: boolean;
 }
 
-/** Ids are minted by the caller (the mobile layer uses `expo-crypto`); the model never guesses one. */
+/** Ids are minted by the caller (mobile uses `expo-crypto`, web `crypto.randomUUID`); the model never guesses one. */
 export type Mint = () => string;
 
 export interface OpenReportArgs {
@@ -206,8 +214,8 @@ export function postSheetFromDraft(draft: PostDraft, openedAtMs: number): PostSh
 
 /** The edit door: a published Report (and its Post's words) as a one-Report sheet. */
 export function postSheetForEdit(
-  report: SheetSeed & { reportId: Id<'reports'>; bodyName?: string; photoIds: string[] },
-  post: { postId: Id<'posts'>; title?: string; body?: string } | null,
+  report: SheetSeed & { reportId: string; bodyName?: string; photoIds: string[] },
+  post: { postId: string; title?: string; body?: string } | null,
   openedAtMs: number,
   mint: Mint,
 ): PostSheet {

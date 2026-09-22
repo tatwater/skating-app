@@ -1,12 +1,5 @@
-import type { Id } from '@skating/convex/dataModel';
-import {
-  createPostDraft,
-  createReportDraft,
-  emptyReportForm,
-  selectedValues,
-  sheetReducer,
-} from '@skating/core';
 import { describe, expect, it } from 'vitest';
+import { createPostDraft, createReportDraft } from './draftQueue';
 import {
   addEarlierVisit,
   addLake,
@@ -19,7 +12,9 @@ import {
   sheetLabel,
   toPostDraft,
   updateReport,
-} from './sheetModel';
+} from './postSheet';
+import { emptyReportForm } from './reportForm';
+import { selectedValues, sheetReducer } from './reportSheet';
 
 const NOW = Date.UTC(2026, 0, 10, 20);
 let seq = 0;
@@ -77,6 +72,21 @@ describe('openPostSheet', () => {
     ]);
     expect(sheet?.scalars.skateStartTime).toBe(NOW - 7200e3);
     expect(post.reports[0]?.trackDraftId).toBe('t1');
+  });
+
+  it('a GPS end with no start leaves the start unasked, not zero', () => {
+    const post = openPostSheet(
+      'track',
+      { waterBodyId: 'wb1', gpsWindow: { endMs: NOW - 3600e3 } },
+      NOW,
+      mint,
+    );
+    const sheet = post.reports[0]?.sheet;
+    expect(selectedValues(sheet as NonNullable<typeof sheet>, 'endTime')).toEqual([
+      { ms: NOW - 3600e3, precision: 'gps' },
+    ]);
+    expect(sheet?.scalars.skateStartTime).toBeUndefined();
+    expect(sheet?.touchedScalars.skateStartTime).toBeUndefined();
   });
 });
 
@@ -168,6 +178,22 @@ describe('toPostDraft / postSheetFromDraft — the round trip', () => {
     expect(queued.reports[0]?.hazardRefs).toEqual([{ localId: 'q1' }]);
   });
 
+  it('saves a body-less capture by its coord, and labels the lake it cannot name', () => {
+    const post = filled(openPostSheet('body', { coord: { lat: 43.9, lng: -72.1 } }, NOW, mint));
+    const draft = toPostDraft(post, 'draft', NOW);
+    expect(draft.reports[0]?.coord).toEqual({ lat: 43.9, lng: -72.1 });
+    expect(draft.reports[0]?.waterBodyId).toBeUndefined();
+    expect(draft.reports[0]?.bodyName).toBeUndefined();
+    expect(sheetLabel(post)).toBe('Unknown lake');
+  });
+
+  it("carries the sheet's own activity to a first save, with no prior row to read", () => {
+    const post = filled(
+      openPostSheet('activity', { waterBodyId: 'wb1', activityId: 'act-9' }, NOW, mint),
+    );
+    expect(toPostDraft(post, 'draft', NOW).reports[0]?.activityId).toBe('act-9');
+  });
+
   it('lifts a pre-sheet form draft into a sheet, keeping the pin and a body-less capture body-less', () => {
     const form = {
       ...emptyReportForm(NOW),
@@ -213,14 +239,14 @@ describe('postSheetForEdit', () => {
   it('seeds from the published Report and its Post, keeps the attached photos, and edits rather than posts', () => {
     const post = postSheetForEdit(
       {
-        reportId: 'rep-1' as Id<'reports'>,
+        reportId: 'rep-1',
         waterBodyId: 'wb1',
         bodyName: 'Morey',
         skateEndTime: NOW - 3600e3,
         skateQuality: 'good',
         photoIds: ['ph1'],
       },
-      { postId: 'post-1' as Id<'posts'>, title: 'Morey', body: 'Words.' },
+      { postId: 'post-1', title: 'Morey', body: 'Words.' },
       NOW,
       mint,
     );
@@ -231,7 +257,7 @@ describe('postSheetForEdit', () => {
     // An edit is never held to the create-only rules — an old skate stays editable (D199).
     expect(postRefusals(post, NOW + 30 * 24 * 3600e3)).toEqual([]);
     const noPost = postSheetForEdit(
-      { reportId: 'rep-1' as Id<'reports'>, skateEndTime: NOW, photoIds: [] },
+      { reportId: 'rep-1', skateEndTime: NOW, photoIds: [] },
       null,
       NOW,
       mint,

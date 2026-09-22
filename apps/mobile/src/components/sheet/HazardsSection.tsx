@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import {
+  bundledIds,
   haversineMeters,
   hazardTypeLabel,
   isPassageMarker,
@@ -19,7 +20,6 @@ import { useRouter } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
 import { getTrack } from '../../lib/draftStore';
-import { bundledIds } from '../../lib/sheetModel';
 import { HazardBundlePrompt } from '../HazardBundlePrompt';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetSection, SubLabel } from './SheetSection';

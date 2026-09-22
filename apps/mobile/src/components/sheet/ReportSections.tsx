@@ -11,6 +11,7 @@ import {
   peerSuggestions,
   type SheetAction,
   type SheetFieldKey,
+  type SheetReport,
   SIGHTING_LABELS,
   SIGHTINGS,
   type Sighting,
@@ -34,11 +35,11 @@ import {
   selectedValues,
   sheetReducer,
   sightingAllowedFrom,
+  updateReport,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
-import { type SheetReport, updateReport } from '../../lib/sheetModel';
 import { updateSheet } from '../../lib/sheetStore';
 import { TextArea } from '../ThemedInputs';
 import { AccessSection } from './AccessSection';

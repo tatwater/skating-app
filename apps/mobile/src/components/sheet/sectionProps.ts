@@ -1,5 +1,4 @@
-import type { SheetAction, SheetSection } from '@skating/core';
-import type { SheetReport } from '../../lib/sheetModel';
+import type { SheetAction, SheetReport, SheetSection } from '@skating/core';
 import type { SheetBody } from './useSheetBody';
 
 /**

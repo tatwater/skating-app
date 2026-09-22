@@ -678,6 +678,14 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
    (on the ice you are standing on, and nowhere else) is untouched.
 10. **`reportSheet`'s `select` with a value replaces an existing chip's value** — a retyped reading
     is a tap with a value, not a delete and an add.
+11. **The Post sheet's model lives in core, not on mobile** (added to this PR at the A10-5 kickoff,
+    2026-09-22): `apps/mobile/src/lib/sheetModel.ts` → `packages/core/src/postSheet.ts`, because the
+    web console (§10) is a second composition of the same model and a rule that differed between the
+    two surfaces — which gaps refuse a Post, what *Save changes* addresses — would be one rule with
+    two answers. The move is mechanical: ids are plain `string` in core as everywhere else, and each
+    surface casts at its own wire (mobile already did this for `photoIds` and the storage ids). What
+    stays on mobile is what is native — `sheetStore` (the module singleton), `sheetDoors` (the GPS
+    fix, the queued track, the cached lake) and `sheetActions` (upload, queue, flush).
 
 ### Owed
 

@@ -4,7 +4,7 @@
  * "one Post button, and a draft"). An edit of a published Report saves through `reports.update`
  * and `posts.update` directly — edits are not queued, as before (A06f).
  *
- * Native glue over the pure model (`sheetModel.ts`) and the queue (`draftStore`, `flushService`);
+ * Native glue over the pure model (core's `postSheet`) and the queue (`draftStore`, `flushService`);
  * every decision is made in core or the model, and this only carries it out.
  */
 
@@ -15,8 +15,11 @@ import {
   createQueuedConfirmation,
   type DraftPhoto,
   flushErrorMessage,
+  type PostSheet,
   photoUploadCoord,
+  type SheetReport,
   selectedValues,
+  toPostDraft,
   toReportInput,
 } from '@skating/core';
 import { randomUUID } from 'expo-crypto';
@@ -25,7 +28,6 @@ import { convex } from './convex';
 import { isPersistedUri, persistDraftPhoto } from './draftPhotos';
 import { getDraft, saveDraft, saveHazardItem } from './draftStore';
 import { flushDrafts, isDraftFlushing, takeFlushResult } from './flushService';
-import { type PostSheet, type SheetReport, toPostDraft } from './sheetModel';
 
 /** Copy each picked photo out of the picker cache into the drafts dir, once. */
 async function persistPhotos(draftId: string, report: SheetReport): Promise<DraftPhoto[]> {
@@ -153,7 +155,9 @@ async function uploadPhoto(p: DraftPhoto): Promise<Id<'photos'>> {
  */
 export async function saveSheetEdit(post: PostSheet, now: number): Promise<string> {
   if (post.mode.kind !== 'edit') throw new Error('Not an edit');
-  const { reportId, postId } = post.mode;
+  // Core's model holds ids as plain strings; the cast is this surface's wire, like the photos'.
+  const reportId = post.mode.reportId as Id<'reports'>;
+  const postId = post.mode.postId as Id<'posts'> | undefined;
   const report = post.reports[0];
   if (!report) throw new Error('Nothing to save');
   try {

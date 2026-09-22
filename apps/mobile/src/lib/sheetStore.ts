@@ -7,11 +7,11 @@
  * process; *Save draft* is the durable copy (`draftStore`), and a sheet that was opened from a
  * draft is re-saved under the same id.
  *
- * Nothing here decides anything: the pure model (`sheetModel.ts`) does, and this holds it.
+ * Nothing here decides anything: the pure model (core's `postSheet`) does, and this holds it.
  */
 
+import type { PostSheet } from '@skating/core';
 import { useSyncExternalStore } from 'react';
-import type { PostSheet } from './sheetModel';
 
 let current: PostSheet | null = null;
 const listeners = new Set<() => void>();
