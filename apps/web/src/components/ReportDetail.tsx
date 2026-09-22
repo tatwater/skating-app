@@ -33,6 +33,7 @@ import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
+import { RevisionHistory } from './RevisionHistory';
 import { BlockedChip, FlagDialog } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
@@ -485,6 +486,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {report.postId ? (
             <ModeratorActions targetType="post" targetId={report.postId} label="Moderate post" />
           ) : null}
+          {/* What the author changed since it went up (D205, A10-5) — the other end of the
+              *Edited* mark a skater sees. Renders nothing for a non-moderator, and for a row
+              that has never been edited. */}
+          <RevisionHistory targetType="report" targetId={report._id} />
+          {report.postId ? <RevisionHistory targetType="post" targetId={report.postId} /> : null}
         </div>
       ) : null}
       {/* The author's own control (A06f), mirroring the comment thread's Edit. `reports.update` has

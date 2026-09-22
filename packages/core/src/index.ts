@@ -19,6 +19,7 @@ export * from './coalesce';
 export * from './coldChain';
 export * from './comment';
 export * from './confidence';
+export * from './contentRevision';
 export * from './contourLayer';
 export * from './corpusRequests';
 export * from './dedup';
