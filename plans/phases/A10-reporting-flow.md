@@ -557,7 +557,7 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
   *Waiting to send* line with airplane mode on and off.
 - The A10-3 sheet edits every member of a Post draft; the pre-sheet form edits the first.
 
-## Built record — A10-3 (2026-09-21, `phase-a10-reporting-flow-3`, stacked on `-2b`)
+## Built record — A10-3 (2026-09-21, `phase-a10-reporting-flow-3`, PR #75 stacked on #73)
 
 §4.1, §4.3, §4.4, §6 and §7 — the mobile sheet, every door but GPX and the parking-lot detection —
 plus what the kickoff added: held drafts (D204), author edits with history and author deletes

@@ -699,7 +699,7 @@ launches.*
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Phase A10 — Reporting: one sheet, three doors
-🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #74 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205
+🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #75 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205
 
 The report form becomes a report sheet: one fixed-order scroll a skater fills by tapping chips,
 by writing prose, or by opening it from a track, every section collapsing to a summary. A **Post**
