@@ -564,6 +564,26 @@ describe('the create-only rules at flush (A10 §9.4)', () => {
     expect(res.draft.status).toBe('pending');
   });
 
+  it('a retry of a `creating` draft keeps the mark through a transient failure before the create', async () => {
+    let calls = 0;
+    const { effects, calls: made } = makeEffects({
+      resolveHazardId: async () => {
+        calls++;
+        if (calls === 1) throw new Error('Network request failed');
+        return 'srv-1';
+      },
+    });
+    const resumed = draftWith({ status: 'creating' }, { hazardRefs: [{ localId: 'q1' }] });
+    const again = await flushPost(resumed, effects, NOW);
+    expect(again).toMatchObject({ ok: false, kind: 'transient' });
+    // Still `creating`: the fact that the create was sent survives, and every persisted step said so.
+    expect(again.draft.status).toBe('creating');
+    expect(made.persisted.every((d) => d.status === 'creating')).toBe(true);
+    // So the next retry, past the window, is still the server's call rather than a refusal.
+    const third = await flushPost(again.draft, effects, NOW + 8 * 24 * 60 * 60 * 1000);
+    expect(third.ok).toBe(true);
+  });
+
   it('a draft that says nothing is parked with what to add', async () => {
     const { effects, calls } = makeEffects();
     const res = await flushPost(draftWith({}, {}, emptyReportForm(NOW)), effects, NOW);

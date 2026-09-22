@@ -24,7 +24,7 @@ import { uploadToStorage } from '../components/photoPipeline';
 import { convex } from './convex';
 import { isPersistedUri, persistDraftPhoto } from './draftPhotos';
 import { getDraft, saveDraft, saveHazardItem } from './draftStore';
-import { flushDrafts, takeFlushResult } from './flushService';
+import { flushDrafts, isDraftFlushing, takeFlushResult } from './flushService';
 import { type PostSheet, type SheetReport, toPostDraft } from './sheetModel';
 
 /** Copy each picked photo out of the picker cache into the drafts dir, once. */
@@ -49,9 +49,25 @@ async function withPersistedPhotos(post: PostSheet): Promise<PostSheet> {
   return { ...post, reports };
 }
 
+/** The sentence a save over a draft that is sending right now refuses with. */
+export const DRAFT_SYNCING_MESSAGE = 'This post is sending right now — try again in a moment.';
+
+/**
+ * Refuse to write over a draft the flush is working on. The flush's checkpoint writes would clobber
+ * the edit and its success would delete the row; the idempotent create then re-serves the pre-edit
+ * Post, and the change is lost without a word. Checked synchronously right before `saveDraft`, with
+ * no `await` in between, so a drain cannot claim the id between the check and the write (the guard
+ * the pre-sheet form kept; see `flushService`'s `flushingIds`).
+ */
+function assertNotFlushing(post: PostSheet): void {
+  if (isDraftFlushing(post.draftId)) throw new Error(DRAFT_SYNCING_MESSAGE);
+}
+
 /** Hold the sheet as a draft on the phone. Returns the sheet with its photos on durable paths. */
 export async function saveSheetAsDraft(post: PostSheet, now: number): Promise<PostSheet> {
+  assertNotFlushing(post);
   const persisted = await withPersistedPhotos(post);
+  assertNotFlushing(post);
   saveDraft(toPostDraft(persisted, 'draft', now, getDraft(post.draftId)));
   return { ...persisted, dirty: false };
 }
@@ -96,7 +112,9 @@ export type PostOutcome =
  * the server's sentence, which is returned so the sheet can show it in place.
  */
 export async function postSheet(post: PostSheet, now: number): Promise<PostOutcome> {
+  if (isDraftFlushing(post.draftId)) return { kind: 'refused', message: DRAFT_SYNCING_MESSAGE };
   const persisted = await withPersistedPhotos(post);
+  if (isDraftFlushing(post.draftId)) return { kind: 'refused', message: DRAFT_SYNCING_MESSAGE };
   saveDraft(toPostDraft(persisted, 'pending', now, getDraft(post.draftId)));
   queueConfirmations(persisted, now);
   await flushDrafts();

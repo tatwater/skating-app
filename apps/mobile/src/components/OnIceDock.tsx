@@ -15,6 +15,7 @@ import {
   stopRecording,
   useRecorder,
 } from '../lib/recorder';
+import { doorHref } from '../lib/sheetDoors';
 import { useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 
@@ -160,10 +161,7 @@ export function OnIceDock({
                   onDismiss={() => setFinished(null)}
                   onReport={(bodyId, trackId) => {
                     setFinished(null);
-                    router.navigate({
-                      pathname: '/report',
-                      params: { body: bodyId, track: trackId },
-                    });
+                    router.navigate(doorHref({ body: bodyId, track: trackId }));
                   }}
                 />
               ) : (

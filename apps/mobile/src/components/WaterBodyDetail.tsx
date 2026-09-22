@@ -25,6 +25,7 @@ import { cacheBody } from '../lib/bodyCache';
 import { useDetailTab } from '../lib/detailTabs';
 import { env } from '../lib/env';
 import { cacheReports } from '../lib/reportCache';
+import { doorHref } from '../lib/sheetDoors';
 import { AccessSection } from './AccessSection';
 import { AlertStrip } from './AlertStrip';
 import { BountyForm } from './BountyForm';
@@ -60,7 +61,7 @@ import { WindExposure } from './WindExposure';
 export function WaterBodyDetail({
   waterBodyId,
   focusSubAreaId,
-  captureHazard = false,
+  captureHazard,
 }: {
   waterBodyId: string;
   /** A named bay to frame instead of the whole lake (A02/D60) — set by a sub-area search hit. */
@@ -68,9 +69,10 @@ export function WaterBodyDetail({
   /**
    * The report sheet's *mark one here* (A10 §6.1): open the hazard capture's type picker for this
    * lake as soon as it is the map's highlighted body, so the pin lands on the lake the sheet is
-   * about. The capture returns to the sheet when the pin is filed.
+   * about. The capture returns to the sheet when the pin is filed. The value is the ask's own
+   * stamp — each new one opens the picker once, however long this drawer has been mounted.
    */
-  captureHazard?: boolean;
+  captureHazard?: string;
 }) {
   const router = useRouter();
   const result = useQuery(api.waterBodies.get, {
@@ -110,12 +112,12 @@ export function WaterBodyDetail({
   } = useMapSelection();
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   // The sheet asked for a hazard on this lake: once the map has it highlighted (the capture reads
-  // the highlighted body as its target), open the picker — once per arrival.
-  const captureAsked = useRef(false);
+  // the highlighted body as its target), open the picker — once per ask, keyed on the ask's stamp.
+  const captureAsked = useRef<string | null>(null);
   useEffect(() => {
-    if (!captureHazard || captureAsked.current) return;
+    if (!captureHazard || captureAsked.current === captureHazard) return;
     if (!body || highlightWaterBodyId !== body._id) return;
-    captureAsked.current = true;
+    captureAsked.current = captureHazard;
     requestHazardCapture();
   }, [captureHazard, body, highlightWaterBodyId, requestHazardCapture]);
   const leaving = useIsLeaving();
@@ -322,10 +324,7 @@ export function WaterBodyDetail({
                     backgroundColor="$primary"
                     color="$primaryForeground"
                     onPress={() =>
-                      router.navigate({
-                        pathname: '/report',
-                        params: { body: result.body._id, name: result.body.name },
-                      })
+                      router.navigate(doorHref({ body: result.body._id, name: result.body.name }))
                     }
                   >
                     Add a report

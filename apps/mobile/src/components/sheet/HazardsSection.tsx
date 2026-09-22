@@ -112,17 +112,21 @@ export function HazardsSection({
   const bundle = bundledIds(report);
   const onCandidates = useCallback(
     (ids: string[]) =>
-      setReport((r) => {
-        const applySaved =
-          r.savedHazardRefs !== undefined && r.bundleCandidateIds.length === 0 && ids.length > 0;
-        return {
-          ...r,
-          bundleCandidateIds: ids,
-          ...(applySaved
-            ? { unbundledHazardIds: optOutsFromSavedRefs(ids, r.savedHazardRefs ?? []) }
-            : {}),
-        };
-      }),
+      setReport(
+        (r) => {
+          const applySaved =
+            r.savedHazardRefs !== undefined && r.bundleCandidateIds.length === 0 && ids.length > 0;
+          return {
+            ...r,
+            bundleCandidateIds: ids,
+            ...(applySaved
+              ? { unbundledHazardIds: optOutsFromSavedRefs(ids, r.savedHazardRefs ?? []) }
+              : {}),
+          };
+        },
+        // The candidates arriving is the prompt's doing, not an edit.
+        { quiet: true },
+      ),
     [setReport],
   );
 
@@ -148,7 +152,8 @@ export function HazardsSection({
           onPress={() =>
             router.navigate({
               pathname: '/water/[id]',
-              params: { id: body.waterBodyId, hazard: '1' },
+              // A fresh stamp per tap: the drawer stays mounted, and only a new value reopens the picker.
+              params: { id: body.waterBodyId, hazard: String(Date.now()) },
             })
           }
         >

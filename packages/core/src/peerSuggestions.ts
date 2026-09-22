@@ -79,10 +79,15 @@ export function peerSuggestions(
 }
 
 /**
- * The collapsed line for a section — *"2 people said black ice, glass earlier today — same?"* —
- * or `null` when nobody said anything the section could offer. Names up to three values; the
- * chips carry the rest. "Earlier today" is the window in words; a 24-hour window reaching into
- * yesterday evening still reads as recent to a skater, and the chips carry no time.
+ * The collapsed line for a section — *"Someone said glass earlier today — same?"*, *"2 people
+ * reported earlier today: black ice, glass — same?"* — or `null` when nobody said anything the
+ * section could offer. Names up to three values; the chips carry the rest. "Earlier today" is the
+ * window in words; a 24-hour window reaching into yesterday evening still reads as recent to a
+ * skater, and the chips carry no time.
+ *
+ * `reporters` is everyone who reported, not everyone who said each value, so the plural is worded
+ * as *reported: …* rather than *said …* — "5 people said don't go" when one of five did would be a
+ * claim nobody made (D3).
  */
 export function peerLine(values: readonly PeerValue<string>[], reporters: number): string | null {
   if (values.length === 0 || reporters === 0) return null;
@@ -90,6 +95,7 @@ export function peerLine(values: readonly PeerValue<string>[], reporters: number
     .slice(0, 3)
     .map((v) => humanizeEnum(v.key).toLowerCase())
     .join(', ');
-  const who = reporters === 1 ? 'Someone' : `${reporters} people`;
-  return `${who} said ${said} earlier today — same?`;
+  return reporters === 1
+    ? `Someone said ${said} earlier today — same?`
+    : `${reporters} people reported earlier today: ${said} — same?`;
 }

@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Badge } from '../src/components/detailUi';
 import { useOfflineDrafts } from '../src/components/OfflineDraftsContext';
+import { doorHref } from '../src/lib/sheetDoors';
 
 /**
  * *Waiting to send* (A10 §9.2): the signal state in one sentence from core, the queued hazards
@@ -71,7 +72,7 @@ export default function QueueScreen() {
             <DraftRow
               key={draft.id}
               draft={draft}
-              onEdit={() => router.navigate({ pathname: '/report', params: { draft: draft.id } })}
+              onEdit={() => router.navigate(doorHref({ draft: draft.id }))}
               onDelete={() => removeDraft(draft.id)}
             />
           ))}

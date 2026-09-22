@@ -110,6 +110,10 @@ describe('the multi-Report sheet (§4.3)', () => {
     expect(updateReport(post, id, (r) => r)).toBe(post);
     expect(updateReport(post, 'other', (r) => ({ ...r })).dirty).toBe(false);
     expect(updateReport(post, id, (r) => ({ ...r, bodyName: 'X' })).dirty).toBe(true);
+    // The sheet's own doing — a ghost offered, a default preselected — applies but is not the author's.
+    const quiet = updateReport(post, id, (r) => ({ ...r, bodyName: 'X' }), { quiet: true });
+    expect(quiet.reports[0]?.bodyName).toBe('X');
+    expect(quiet.dirty).toBe(false);
   });
 });
 

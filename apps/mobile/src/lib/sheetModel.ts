@@ -238,10 +238,16 @@ export function postSheetForEdit(
 
 // ── Editing the sheet ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * Advance one Report. `quiet` is the sheet's own doing — a peer ghost offered, the pinned minute
+ * preselected, the bundle candidates arriving — and leaves `dirty` as it was: only the author
+ * makes a sheet worth parking or worth a leave prompt.
+ */
 export function updateReport(
   post: PostSheet,
   reportId: string,
   update: (report: SheetReport) => SheetReport,
+  opts: { quiet?: boolean } = {},
 ): PostSheet {
   let changed = false;
   const reports = post.reports.map((r) => {
@@ -250,7 +256,8 @@ export function updateReport(
     if (next !== r) changed = true;
     return next;
   });
-  return changed ? { ...post, reports, dirty: true } : post;
+  if (!changed) return post;
+  return opts.quiet ? { ...post, reports } : { ...post, reports, dirty: true };
 }
 
 /** *Add another lake* (§4.3): a fresh Report sheet after the last, on another body. */

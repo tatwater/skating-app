@@ -36,7 +36,10 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
   const chips = sheet.fields.thickness.chips;
   const band = chips.map((c) => thicknessBandOfKey(c.key)).find((b) => b !== null) ?? null;
   const precise = chips.filter((c) => thicknessBandOfKey(c.key) === null && c.tier !== 'ghost');
-  const [adding, setAdding] = useState(false);
+  // The reading being typed, by the key it will be stored under: minted when *+ A measurement* is
+  // tapped, so the fresh editor stays the same editor from the first digit to the last rather than
+  // closing on the first keystroke and reopening as the chip's own (which drops the keyboard).
+  const [addingKey, setAddingKey] = useState<string | null>(null);
   const [whereFor, setWhereFor] = useState<string | null>(null);
   const scope = sheet.scalars.thicknessScope;
   const nextKey = () => {
@@ -44,6 +47,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
     while (chips.some((c) => c.key === `reading:${n}`)) n++;
     return `reading:${n}`;
   };
+  const adding = addingKey === null ? null : (precise.find((c) => c.key === addingKey) ?? null);
 
   return (
     <SheetSection
@@ -99,6 +103,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
       ) : null}
 
       {precise.map((chip) => {
+        if (chip.key === addingKey) return null; // drawn below, as the editor that is typing it
         const r = chip.value;
         return (
           <YStack
@@ -136,23 +141,53 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
         );
       })}
 
-      {adding ? (
+      {addingKey !== null ? (
         <YStack gap="$2" padding="$3" borderRadius="$4" backgroundColor="$surfaceMuted">
           <ReadingEditor
-            reading={{ method: 'measured' }}
-            onChange={(next) => {
-              dispatch({ type: 'select', field: 'thickness', key: nextKey(), value: next });
-              setAdding(false);
+            key={addingKey}
+            // The stored chip once there is one, so a `where` set beside it rides the next keystroke.
+            reading={adding?.value ?? { method: 'measured' }}
+            onChange={(next) =>
+              dispatch({ type: 'select', field: 'thickness', key: addingKey, value: next })
+            }
+            onRemove={() => {
+              if (adding) dispatch({ type: 'deselect', field: 'thickness', key: addingKey });
+              setAddingKey(null);
             }}
-            onRemove={() => setAdding(false)}
             fresh
           />
+          {adding ? (
+            <XStack gap="$2">
+              <SheetChip
+                compact
+                label={adding.value.where ? 'Where: set' : 'Where?'}
+                tier={adding.value.where ? 'solid' : undefined}
+                onPress={() => setWhereFor(whereFor === addingKey ? null : addingKey)}
+              />
+            </XStack>
+          ) : null}
+          {adding && whereFor === addingKey ? (
+            <WherePicker
+              where={adding.value.where}
+              body={body}
+              onChange={(where) =>
+                dispatch({ type: 'setWhere', field: 'thickness', key: addingKey, where })
+              }
+            />
+          ) : null}
         </YStack>
-      ) : (
-        <Button size="$2" alignSelf="flex-start" chromeless onPress={() => setAdding(true)}>
-          + A measurement
-        </Button>
-      )}
+      ) : null}
+      <Button
+        size="$2"
+        alignSelf="flex-start"
+        chromeless
+        // A second measurement: the one being typed settles into the list as its chip and a fresh
+        // editor opens under the next key. With nothing typed yet, `nextKey()` is the key already
+        // open, and the tap is a no-op.
+        onPress={() => setAddingKey(nextKey())}
+      >
+        + A measurement
+      </Button>
     </SheetSection>
   );
 }

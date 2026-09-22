@@ -568,7 +568,7 @@ to send* behind its header; a draft never auto-posts; the end time fetches that 
 a start shows the whole run; D52's verdicts + *didn't look*; no moderator put-in authoring exists
 (a feature doc, `features/access-point-authoring.md`, and the proposal queue is *derived* from the
 reports' points); no adding a Report to a Post; no Figma mocks — built to taste with the design
-skill, to be re-skinned. Suites at build: core 2,961 · convex 1,741 · web 573 · mobile 122. One
+skill, to be re-skinned. Suites at build: core 2,967 · convex 1,742 · web 573 · mobile 122. One
 schema change (`contentRevisions`, additive) and one enum widening (`author_delete`): a
 `convex dev --once` before the app is used against dev.
 

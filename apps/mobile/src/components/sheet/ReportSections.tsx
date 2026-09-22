@@ -47,7 +47,7 @@ import { HazardsSection } from './HazardsSection';
 import { PhotosSection } from './PhotosSection';
 import { ChipRow, SheetChip } from './SheetChip';
 import { SheetHint, SheetSection, SubLabel } from './SheetSection';
-import type { SectionProps } from './sectionProps';
+import type { DispatchOpts, SectionProps } from './sectionProps';
 import { ThicknessSection } from './ThicknessSection';
 import { type SheetBody, useSheetBody } from './useSheetBody';
 import { WherePicker } from './WherePicker';
@@ -70,15 +70,15 @@ export function ReportSections({
   const timeZone = body?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const id = report.id;
   const dispatch = useCallback(
-    (action: SheetAction) =>
+    (action: SheetAction, opts?: DispatchOpts) =>
       updateSheet((post) =>
-        updateReport(post, id, (r) => ({ ...r, sheet: sheetReducer(r.sheet, action) })),
+        updateReport(post, id, (r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }), opts),
       ),
     [id],
   );
   const setReport = useCallback(
-    (update: (r: SheetReport) => SheetReport) =>
-      updateSheet((post) => updateReport(post, id, update)),
+    (update: (r: SheetReport) => SheetReport, opts?: DispatchOpts) =>
+      updateSheet((post) => updateReport(post, id, update, opts)),
     [id],
   );
   const props: SectionProps = { report, body, dispatch, setReport, gaps, editing, timeZone };
@@ -482,6 +482,7 @@ function usePeerGhosts({ dispatch, report }: SectionProps, body: SheetBody | nul
   useEffect(() => {
     if (offered.current === key) return;
     offered.current = key;
-    for (const action of batchesRef.current) dispatch(action);
+    // Quiet: an offer is the sheet's, and must not make an untouched sheet read as the author's work.
+    for (const action of batchesRef.current) dispatch(action, { quiet: true });
   });
 }

@@ -24,6 +24,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable } from 'react-native';
 import { Button, H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { doorHref } from '../lib/sheetDoors';
 import { Comments } from './CommentThread';
 import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi';
 import { useMapSelection } from './MapSelectionContext';
@@ -384,7 +385,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           <Button
             size="$2"
             chromeless
-            onPress={() => router.navigate({ pathname: '/report', params: { edit: report._id } })}
+            onPress={() => router.navigate(doorHref({ edit: report._id }))}
           >
             Edit report
           </Button>

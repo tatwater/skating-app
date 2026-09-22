@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Paragraph, Spinner, YStack } from 'tamagui';
 import { ReportSheet } from '../../src/components/sheet/ReportSheet';
 import { saveSheetAsDraft } from '../../src/lib/sheetActions';
-import { type DoorParams, doorKey, openDoor } from '../../src/lib/sheetDoors';
+import { type DoorParams, doorHref, doorKey, openDoor } from '../../src/lib/sheetDoors';
 import { getSheet, setSheet } from '../../src/lib/sheetStore';
 
 /**
@@ -18,7 +18,10 @@ import { getSheet, setSheet } from '../../src/lib/sheetStore';
  *
  * The sheet's state lives in `sheetStore`, not here, so leaving for the map (*mark one here*) and
  * coming back finds it as it was. A door only opens a new sheet when it is a *different* door
- * from the one open — returning to the tab never wipes a half-written report.
+ * from the one open — returning to the tab never wipes a half-written report. Every navigate to a
+ * door carries its own stamp (`doorHref`'s `at`), because the tab keeps its last params: without
+ * it, the same lake's *Add a report* after a Post would be the door already consumed, and the
+ * focus path below would open the tab's own door in its place.
  */
 export default function ReportScreen() {
   const router = useRouter();
@@ -82,7 +85,7 @@ export default function ReportScreen() {
       {state === 'gone' ? (
         <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
           <Paragraph color="$foregroundMuted">That report is no longer available.</Paragraph>
-          <Button onPress={() => router.navigate('/report')}>Start a new one</Button>
+          <Button onPress={() => router.navigate(doorHref({}))}>Start a new one</Button>
         </YStack>
       ) : state === 'opening' && getSheet() === null ? (
         <YStack flex={1} alignItems="center" justifyContent="center" gap="$3">

@@ -34,7 +34,7 @@ const NAMED_PUT_INS = 4;
  * or lot, riding A06d's decaying, corroborated alerts with this Report as provenance (D197), and a
  * one-line note. Never blockers: the chips here say what to bring, not that the launch is closed.
  */
-export function AccessSection({ report, body, dispatch, gaps, timeZone }: SectionProps) {
+export function AccessSection({ report, body, dispatch, gaps, editing, timeZone }: SectionProps) {
   const sheet = report.sheet;
   const { putInId, parkingAreaId, point } = sheet.scalars;
   const [placing, setPlacing] = useState(false);
@@ -206,7 +206,15 @@ export function AccessSection({ report, body, dispatch, gaps, timeZone }: Sectio
 
       <YStack gap="$1.5">
         <SubLabel>At the launch</SubLabel>
-        {target ? (
+        {editing ? (
+          // The chips file alerts when a Post creates (D197, the flush's step 7, with the new Report
+          // as provenance); an edit has no such step, so offering them here would take a plank the
+          // author tapped and quietly file nothing. The alerts already filed stand on their own.
+          <SheetHint>
+            Conditions at the launch are filed when a report posts; this edit leaves what was filed
+            as it is.
+          </SheetHint>
+        ) : target ? (
           <>
             <XStack gap="$2" flexWrap="wrap">
               {ACCESS_CONDITION_REASONS.map((reason) => {

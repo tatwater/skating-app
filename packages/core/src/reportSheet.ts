@@ -288,8 +288,14 @@ export interface ExtractedValue<V> {
 
 export type SheetAction =
   | { type: 'setBody'; waterBodyId: string }
-  /** The author taps a chip: a ghost or extracted chip becomes solid; a new value is added solid; a value with an existing key replaces it. */
-  | { type: 'select'; field: SheetFieldKey; key: string; value?: unknown }
+  /**
+   * The author taps a chip: a ghost or extracted chip becomes solid; a new value is added solid; a
+   * value with an existing key replaces it. `defaulted` is the *sheet* selecting on the author's
+   * behalf (the pinned end-time preselect, D192, the way `observedFrom: on_ice` is set at open):
+   * the chip is solid but `defaulted`, and the field is not `touched` — a default stands until
+   * someone says otherwise, and the author's prose counts (D191).
+   */
+  | { type: 'select'; field: SheetFieldKey; key: string; value?: unknown; defaulted?: true }
   /** The author deselects: solid → gone, extracted → ghost (still offered, never re-promoted). */
   | { type: 'deselect'; field: SheetFieldKey; key: string }
   /** Attach or change a `where` on a located chip (ice, surface) or a reading. */
@@ -364,6 +370,7 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
       return withField(state, action.field, (field) => {
         const chips = field.chips as SheetChip<unknown>[];
         const existing = chips.find((c) => c.key === action.key);
+        const defaulted = action.defaulted === true ? true : undefined;
         let next: SheetChip<unknown>[];
         if (existing) {
           // A value with the tap replaces the chip's (a reading the author retyped); without one
@@ -374,13 +381,21 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
                   ...c,
                   ...(action.value !== undefined ? { value: action.value } : {}),
                   tier: 'solid' as const,
-                  defaulted: undefined,
+                  defaulted,
                 }
               : c,
           );
         } else {
           if (action.value === undefined) return field; // nothing to add
-          next = [...chips, { key: action.key, value: action.value, tier: 'solid' }];
+          next = [
+            ...chips,
+            {
+              key: action.key,
+              value: action.value,
+              tier: 'solid',
+              ...(defaulted ? { defaulted } : {}),
+            },
+          ];
         }
         // A single-select field: the other selections step down — extracted to ghost, solid gone.
         if (!field.multi) {
@@ -389,7 +404,8 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
             return c.tier === 'extracted' ? [{ ...c, tier: 'ghost' as const }] : [];
           });
         }
-        return { ...field, chips: next, touched: true } as typeof field;
+        // A default is the sheet's doing, not the author's: the field stays untouched.
+        return { ...field, chips: next, touched: defaulted ? field.touched : true } as typeof field;
       });
 
     case 'deselect':

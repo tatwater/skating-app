@@ -31,9 +31,15 @@ export interface DoorParams {
   activity?: string;
   draft?: string;
   edit?: string;
+  /**
+   * The opening's own stamp (`doorHref` mints it): the tab keeps its last params, so the same lake's
+   * *Add a report* after a Post, or *Edit report* twice on one Report, would otherwise be the door
+   * that is already open and never reopen. Absent on a bare link, which is a door once.
+   */
+  at?: string;
 }
 
-/** A door's identity, so the tab reopens the sheet only when the door changes. */
+/** A door's identity, so the tab reopens the sheet only when the door — or the opening — changes. */
 export function doorKey(p: DoorParams): string {
   return [
     p.edit && `edit:${p.edit}`,
@@ -41,9 +47,20 @@ export function doorKey(p: DoorParams): string {
     p.track && `track:${p.track}`,
     p.activity && `activity:${p.activity}`,
     p.body && `body:${p.body}`,
+    p.at && `at:${p.at}`,
   ]
     .filter(Boolean)
     .join('|');
+}
+
+/** Where a door navigates: the tab, the door's params, and a fresh stamp for this opening. */
+export function doorHref(params: Omit<DoorParams, 'at'>): {
+  pathname: '/report';
+  params: Record<string, string>;
+} {
+  const out: Record<string, string> = { at: String(Date.now()) };
+  for (const [key, value] of Object.entries(params)) if (value !== undefined) out[key] = value;
+  return { pathname: '/report', params: out };
 }
 
 /**

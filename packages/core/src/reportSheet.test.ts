@@ -110,6 +110,40 @@ describe('select / deselect', () => {
     expect(again.fields.iceTypes.chips[0]?.tier).toBe('ghost');
   });
 
+  it('a defaulted select is the sheet’s, not the author’s: solid, untouched, and an extraction may step it down', () => {
+    const pinned = { ms: OPENED, precision: 'minute' as const };
+    const s = run([
+      { type: 'select', field: 'endTime', key: 'pinned', value: pinned, defaulted: true },
+    ]);
+    expect(selectedValues(s, 'endTime')).toEqual([pinned]);
+    expect(s.fields.endTime.chips[0]?.defaulted).toBe(true);
+    expect(s.fields.endTime.touched).toBe(false);
+    // The author's own tap on the same key clears the mark and touches the field.
+    const tapped = sheetReducer(s, { type: 'select', field: 'endTime', key: 'pinned' });
+    expect(tapped.fields.endTime.chips[0]?.defaulted).toBeUndefined();
+    expect(tapped.fields.endTime.touched).toBe(true);
+    // Untouched, the default yields to a confident extraction the way the vantage default does.
+    const read = sheetReducer(s, {
+      type: 'applyExtraction',
+      seq: 1,
+      floors: { endTime: 0.5 },
+      fields: {
+        endTime: [
+          {
+            key: 'read',
+            value: { ms: OPENED - 3_600_000, precision: 'half_hour' },
+            confidence: 0.9,
+            evidence,
+          },
+        ],
+      },
+    });
+    expect(selectedValues(read, 'endTime')).toEqual([
+      { ms: OPENED - 3_600_000, precision: 'half_hour' },
+    ]);
+    expect(read.fields.endTime.chips.find((c) => c.key === 'pinned')?.tier).toBe('ghost');
+  });
+
   it('setWhere attaches, replaces and clears a where on a located chip', () => {
     const s = run([
       { type: 'select', field: 'iceTypes', key: 'black_ice', value: { type: 'black_ice' } },
@@ -581,7 +615,7 @@ describe('setBody', () => {
         value: { type: 'black_ice' },
       },
       { type: 'setBody' as const, waterBodyId: 'wb-2' },
-    ].reduce(sheetReducer, emptySheet(T0, 'wb-1'));
+    ].reduce(sheetReducer, emptySheet(OPENED, 'wb-1'));
     expect(s.waterBodyId).toBe('wb-2');
     expect(s.fields.iceTypes.chips.map((c) => c.key)).toEqual(['black_ice']);
     expect(s.fields.surfaceTags.chips.map((c) => c.key)).toEqual(['snow_covered']);

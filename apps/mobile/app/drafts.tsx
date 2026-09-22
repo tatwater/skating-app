@@ -5,6 +5,7 @@ import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { useOfflineDrafts } from '../src/components/OfflineDraftsContext';
+import { doorHref } from '../src/lib/sheetDoors';
 
 /**
  * *Drafts* (A10-3): the Posts the author saved to come back to. Never sent until they open one and
@@ -64,12 +65,7 @@ export default function DraftsScreen() {
                   <Button size="$2" chromeless onPress={() => removeDraft(draft.id)}>
                     Delete
                   </Button>
-                  <Button
-                    size="$2"
-                    onPress={() =>
-                      router.navigate({ pathname: '/report', params: { draft: draft.id } })
-                    }
-                  >
+                  <Button size="$2" onPress={() => router.navigate(doorHref({ draft: draft.id }))}>
                     Open
                   </Button>
                 </XStack>

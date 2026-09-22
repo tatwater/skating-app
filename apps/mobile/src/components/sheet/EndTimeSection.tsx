@@ -54,17 +54,23 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
   const gps = chosen?.precision === 'gps';
   const [pickerMode, setPickerMode] = useState<'date' | 'time' | null>(null);
 
-  // Preselect the pinned minute in daylight, once, for a sheet that has nothing chosen yet.
+  // Preselect the pinned minute in daylight, once, for a sheet that has nothing chosen yet. The
+  // sheet's doing, not the author's: `defaulted` (so an extraction may step it down, D191) and
+  // quiet (so an untouched sheet is not dirty the moment it opens).
   useEffect(() => {
     if (chosen !== undefined || sheet.fields.endTime.touched) return;
     const pre = row.preselected !== undefined ? row.chips[row.preselected] : undefined;
     if (!pre) return;
-    dispatch({
-      type: 'select',
-      field: 'endTime',
-      key: 'pinned',
-      value: { ms: pre.ms, precision: pre.precision },
-    });
+    dispatch(
+      {
+        type: 'select',
+        field: 'endTime',
+        key: 'pinned',
+        value: { ms: pre.ms, precision: pre.precision },
+        defaulted: true,
+      },
+      { quiet: true },
+    );
   }, [chosen, dispatch, row, sheet.fields.endTime.touched]);
 
   const choose = (ms: number) =>

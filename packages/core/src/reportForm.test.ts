@@ -306,6 +306,16 @@ describe('reportFormFromReport', () => {
     expect(rebuilt.conditions?.precip).toBe('none');
   });
 
+  it('carries the stored put-in through an edit, and drops it under a new pin (A10 §7.1)', () => {
+    // `reports.update` is last-write-wins over `putInId`: a form with no picker for it must send it
+    // back, or a typo fix on the web silently unlinks the launch the sheet chose.
+    const form = reportFormFromReport({ ...FULL, putInId: 'put-in-1' });
+    expect(buildReportInput(form, 'wb1').putInId).toBe('put-in-1');
+    // A new pin is "somewhere else": the point is its own, the launch is not named.
+    expect(buildReportInput(form, 'wb1', { lat: 44, lng: -72 })).not.toHaveProperty('putInId');
+    expect(buildReportInput(reportFormFromReport(FULL), 'wb1')).not.toHaveProperty('putInId');
+  });
+
   it('seeds the put-in switch from the stored report, defaulting to shown', () => {
     expect(reportFormFromReport(FULL).showPutIn).toBe(true);
     expect(reportFormFromReport({ ...FULL, showPutIn: true }).showPutIn).toBe(true);

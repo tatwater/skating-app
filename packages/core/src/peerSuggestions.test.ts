@@ -48,7 +48,7 @@ describe('peerSuggestions (§4.4 / D188)', () => {
 });
 
 describe('peerLine', () => {
-  it('names up to three values and the number of people; null with nothing to say', () => {
+  it('names up to three values and the number of people — as reporters, never as a count who said each; null with nothing to say', () => {
     expect(peerLine([], 3)).toBeNull();
     expect(peerLine([{ key: 'glass', count: 1 }], 0)).toBeNull();
     expect(peerLine([{ key: 'glass', count: 1 }], 1)).toBe(
@@ -64,6 +64,10 @@ describe('peerLine', () => {
         ],
         2,
       ),
-    ).toBe('2 people said black ice, glass, shell ice earlier today — same?');
+    ).toBe('2 people reported earlier today: black ice, glass, shell ice — same?');
+    // One of five said it: the line must not say five did.
+    expect(peerLine([{ key: 'dont_go', count: 1 }], 5)).toBe(
+      '5 people reported earlier today: dont go — same?',
+    );
   });
 });

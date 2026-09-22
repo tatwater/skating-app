@@ -301,8 +301,23 @@ const drain = createCoalescedRunner(() => drainOnce(Date.now()));
  * snapshot) and held under `flushingIds` for the duration, so an edit saved after the snapshot is
  * either picked up fresh here or blocked by `isDraftFlushing` in the form — never silently lost.
  */
-/** The last outcome per draft from a drain, so the sheet can learn where its Post landed. */
+/**
+ * The last outcome per draft from a drain, so the sheet can learn where its Post landed. Bounded:
+ * every reconnect drain writes one per draft and only the sheet's own Post ever reads one, and a
+ * result holds the whole draft — its sheet state, its photo list — so the oldest go when the map
+ * outgrows the few a session can be waiting on.
+ */
 const lastResults = new Map<string, PostFlushResult>();
+const LAST_RESULTS_MAX = 16;
+
+function rememberResult(id: string, result: PostFlushResult): void {
+  lastResults.delete(id); // re-insert last, so the map's order is recency
+  lastResults.set(id, result);
+  for (const key of lastResults.keys()) {
+    if (lastResults.size <= LAST_RESULTS_MAX) break;
+    lastResults.delete(key);
+  }
+}
 
 /**
  * What the last drain did with a draft — the sheet reads this after `flushDrafts()` to land on the
@@ -333,7 +348,7 @@ async function drainOnce(now: number): Promise<void> {
       const fresh = getDraft(id);
       if (!fresh || !isFlushable(fresh)) continue;
       const result = await flushPost(fresh, eff, now);
-      lastResults.set(id, result);
+      rememberResult(id, result);
       if (result.ok) {
         deleteDraftPhotoFiles(postDraftPhotoUris(result.draft));
         deleteDraft(result.draft.id);

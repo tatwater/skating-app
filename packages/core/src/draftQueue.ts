@@ -475,7 +475,14 @@ export async function flushPost(
 
   try {
     if (d.reports.length === 0) throw new PermanentFlushError('This post has no report in it.');
-    await save({ status: 'uploading', errorMessage: undefined });
+    // A draft found in `creating` keeps the mark through its retry: it is the one fact that says
+    // the create was sent (the check below, and the catch's reset, both read it), and downgrading it
+    // to `uploading` here would lose it to a transient failure — or an app kill — before step 6,
+    // after which the next retry would refuse a stale draft for a Post the server already has.
+    await save({
+      status: d.status === 'creating' ? 'creating' : 'uploading',
+      errorMessage: undefined,
+    });
 
     const prepared: Parameters<PostFlushEffects['createPost']>[0]['reports'] = [];
     for (const original of d.reports) {
