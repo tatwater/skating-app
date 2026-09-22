@@ -102,12 +102,23 @@ export async function openWebDoor(
   return openPostSheet('page', { showPutIn }, now, mint);
 }
 
-/** Does a restored sheet still answer this door? A `?body=` or `?edit=` the restore disagrees with wins. */
+/**
+ * Does a restored sheet still answer this door? A `?body=` or `?edit=` the restore disagrees with
+ * wins — **unless the author has touched it**. A URL is a door, not a command, and a door must
+ * never destroy work: change the lake in the console, hand off to the map to draw a hazard, come
+ * back, and the `?body=` in the address bar now names a lake the Post is no longer about. Rebuilding
+ * there would throw away everything typed. A `dirty` create sheet therefore answers every create
+ * door; only an untouched one is replaced.
+ *
+ * An edit is exempt from the leniency: a different `?edit=` is a different published Report, and
+ * serving one Report's half-written edit under another's id would save it over the wrong row.
+ */
 export function restoreMatchesDoor(restored: PostSheet, params: WebDoorParams): boolean {
   if (params.edit !== undefined) {
     return restored.mode.kind === 'edit' && restored.mode.reportId === params.edit;
   }
   if (restored.mode.kind === 'edit') return false;
   if (params.body === undefined) return true;
+  if (restored.dirty) return true;
   return restored.reports.some((r) => r.sheet.waterBodyId === params.body);
 }

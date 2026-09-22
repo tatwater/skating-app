@@ -29,7 +29,7 @@ import { BodyPicker } from './BodyPicker';
 import { LakeMap } from './LakeMap';
 import { ReportPanels } from './ReportPanels';
 import { SheetHint } from './SheetPanel';
-import { useSheetBody } from './useSheetBody';
+import { type SheetBody, useSheetBody } from './useSheetBody';
 
 /** Which section a minimum-set term points at, for the *needed* mark (D189). */
 const TERM_SECTION: Record<MinimumSetTerm, SheetSection | null> = {
@@ -81,6 +81,10 @@ function Console({ post }: { post: PostSheet }) {
 
   // The tab a removed Report leaves behind falls back to the first.
   const active = post.reports.find((r) => r.id === activeId) ?? post.reports[0];
+  // The active Report's lake, read **once** for the whole console and handed down: the map column,
+  // the header and the panels all want the same body, and each calling `useSheetBody` itself is
+  // five more query subscriptions and three `SheetBody` identities for one lake.
+  const body = useSheetBody(active?.sheet.waterBodyId);
   useEffect(() => {
     if (active && active.id !== activeId) setActiveId(active.id);
   }, [active, activeId]);
@@ -206,7 +210,7 @@ function Console({ post }: { post: PostSheet }) {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(20rem,26rem)_1fr]">
         <aside className="flex h-fit flex-col gap-4 lg:sticky lg:top-6">
-          <MapColumn report={active} />
+          <MapColumn report={active} body={body} />
           <PhotoRail report={active} />
         </aside>
 
@@ -242,10 +246,20 @@ function Console({ post }: { post: PostSheet }) {
           <ReportHeader
             post={post}
             reportId={active.id}
+            body={body}
             onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
           />
 
-          <ReportPanels report={active} gaps={gapsFor(active.id)} editing={editing} />
+          {/* Keyed by the Report: the panels hold their own affordance state (which reading is
+              being typed, which chip's *where* is open, the archive's hours for this lake), and an
+              unkeyed swap would carry the previous leg's state — and its weather — onto this one. */}
+          <ReportPanels
+            key={active.id}
+            report={active}
+            body={body}
+            gaps={gapsFor(active.id)}
+            editing={editing}
+          />
 
           {editing ? null : (
             <div className="flex flex-wrap gap-2 pt-2">
@@ -371,14 +385,15 @@ function ReportTabs({
 function ReportHeader({
   post,
   reportId,
+  body,
   onPickBody,
 }: {
   post: PostSheet;
   reportId: string;
+  body: SheetBody | null;
   onPickBody: () => void;
 }) {
   const report = post.reports.find((r) => r.id === reportId);
-  const body = useSheetBody(report?.sheet.waterBodyId);
   const editing = post.mode.kind === 'edit';
   if (!report) return null;
   const name = report.bodyName ?? (body?.name || undefined);
@@ -410,8 +425,13 @@ function ReportHeader({
 }
 
 /** The map column (§10.1): the lake, its chosen put-in, the skate's path, and the placed photos. */
-function MapColumn({ report }: { report: PostSheet['reports'][number] }) {
-  const body = useSheetBody(report.sheet.waterBodyId);
+function MapColumn({
+  report,
+  body,
+}: {
+  report: PostSheet['reports'][number];
+  body: SheetBody | null;
+}) {
   const placed = report.photos.filter((p) => p.placeOnMap && p.coord !== undefined);
   if (!body?.silhouette) {
     return (
@@ -474,8 +494,9 @@ function PhotoRail({ report }: { report: PostSheet['reports'][number] }) {
       <div className="flex flex-wrap gap-2">
         {report.photos.map((photo) => {
           const preview = sheetPhotoPreview(photo.id);
-          if (!preview) return null;
-          return (
+          // A photo whose blob died with a reload still counts and still has to be re-added; the
+          // rail draws it as itself rather than dropping it and disagreeing with its own count.
+          return preview ? (
             <img
               key={photo.id}
               src={preview}
@@ -485,6 +506,13 @@ function PhotoRail({ report }: { report: PostSheet['reports'][number] }) {
                 photo.placeOnMap ? 'ring-2 ring-primary' : undefined,
               )}
             />
+          ) : (
+            <span
+              key={photo.id}
+              className="flex size-14 items-center justify-center rounded-md bg-surface-muted text-center text-[0.625rem] text-foreground-muted"
+            >
+              Re-add
+            </span>
           );
         })}
         {report.keptPhotoIds.map((photoId) => (

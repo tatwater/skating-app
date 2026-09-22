@@ -57,6 +57,13 @@ describe('describeRevisionValue', () => {
     expect(describeRevisionValue('snow', {})).toBeNull();
   });
 
+  it('leaves the author’s own prose alone — the underscores are the enums’, not the writing’s', () => {
+    expect(describeRevisionValue('notes', 'the plank_by the ramp')).toBe('the plank_by the ramp');
+    expect(describeRevisionValue('title', 'Crystal_Lake 12/6')).toBe('Crystal_Lake 12/6');
+    // …and an edit that only opened one out is still an edit, not a no-op.
+    expect(diffContentBlocks({ title: 'Crystal_Lake' }, { title: 'Crystal Lake' })).toHaveLength(1);
+  });
+
   it('is null for what was never said, and for an empty string', () => {
     expect(describeRevisionValue('notes', undefined)).toBeNull();
     expect(describeRevisionValue('notes', '   ')).toBeNull();

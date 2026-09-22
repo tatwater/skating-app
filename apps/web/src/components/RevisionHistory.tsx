@@ -90,13 +90,13 @@ function HistoryBody({
         {author ? `, by ${author}` : ''}. Newest last — each block is what that edit moved.
       </p>
       {steps.map((step) => (
-        <Step key={step.replacedAt} step={step} />
+        <Step key={step.replacedAt} step={step} targetType={targetType} />
       ))}
     </div>
   );
 }
 
-function Step({ step }: { step: RevisionStep }) {
+function Step({ step, targetType }: { step: RevisionStep; targetType: 'post' | 'report' }) {
   return (
     <section className="rounded-lg border border-border p-3">
       <p className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
@@ -106,7 +106,7 @@ function Step({ step }: { step: RevisionStep }) {
         // A revision with no visible change is a save that touched nothing the block carries —
         // worth showing as itself rather than as an empty row a moderator has to interpret.
         <p className="pt-2 text-foreground-muted text-sm">
-          Nothing in the report's content changed.
+          Nothing in the {targetType === 'post' ? "post's words" : "report's content"} changed.
         </p>
       ) : (
         <dl className="flex flex-col gap-2 pt-2">

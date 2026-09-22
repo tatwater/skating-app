@@ -781,8 +781,45 @@ D205's comparison rides here as its own commit; and `sheetModel.ts` was lifted i
    body and report caches, and a desk has signal. Otherwise it is the same shape from the same
    queries.
 
+### The self-review pass — what it caught
+
+Fifteen findings, eleven fixed in the branch. Worth naming, because three were the sort that ship:
+
+1. **The tick-through's votes were never filed on web.** The panel says *Only what you answer is
+   sent*, and nothing was: `postSheetOnWeb` called `flushPost`, and `flushPost` has never read
+   `passedVerdicts` — that is the phone's `queueConfirmations`, which the console had no twin for.
+   Now `fileConfirmations`, best-effort after the Post lands and after an edit saves. **A safety
+   vote silently discarded is the worst defect class this phase can produce**, and a chip row that
+   looks right is exactly how it hides.
+2. **The door rebuilt the Post under the author.** `sheet` was in the effect's deps, so picking a
+   different lake than the URL named made the restore disagree with the URL and the half-written
+   Post was replaced. A door is now answered once per mount (`answered` ref), and — separately — a
+   **dirty** sheet answers every create door: a URL is a door, not a command, and a door must never
+   destroy work.
+3. **One `ReportPanels` instance served every tab.** No `key`, so `SkateWeather`'s fetched hours
+   carried across a tab switch and lake A's weather printed under lake B until the refetch landed.
+   `key={active.id}` — which also fixed the same-lake-two-legs peer-ghost case the review found
+   separately.
+
+The rest: free text run through `humanizeEnum`'s underscore replace in the revision diff (an
+underscore-only edit read as *no change*); the own-pin filter passing everything while the profile
+loaded; the duration input dropping what was typed when nothing had set an end time; `useSheetBody`
+called three times for one lake; an `Intl` formatter per ladder chip per render.
+
+**Skipped, with reasons:** the `photoIds` diff counts rather than lists (deliberate — a moderator
+wants *three became one*); the per-keystroke `localStorage` write (debouncing trades the refresh
+fidelity §10.3 exists for against a sub-millisecond saving).
+
 ### Owed
 
+- **The future-skate telemetry is dead on both surfaces.** Deleting the web `ReportForm` removed
+  the last caller of `analytics.recordClientSignal('report_rejected_future_skate')` (Phase 07-2);
+  mobile lost it in A10-3 when `ReportForm` went there. `hasFutureSkateTimeError` has no caller
+  either. The sheet refuses a future end time client-side through `postRefusals`, so the server
+  never sees the case the signal exists to measure, and `SKATE_TIME_FUTURE_TOLERANCE_MS` can no
+  longer be tuned on evidence. Re-establishing it is a **scope call** — where in the sheet pipeline
+  a refusal becomes a signal, on both surfaces — not a patch, so it is named here rather than
+  guessed at.
 - **A10-4's half of the console**: the extraction wiring (§5) must light up *both* surfaces when
   the floors land, and §8.1's window logic applied to a desktop drop by `takenAt` (§8.2's other
   half). The chip's `extracted` tier is already drawn on both.

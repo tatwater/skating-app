@@ -188,6 +188,69 @@ describe('postSheetOnWeb', () => {
     });
     expect(filed?.args.idempotencyKey).toEqual(expect.any(String));
   });
+
+  /**
+   * §6.2 / §6 (d): the tick-through's answers are confirmation votes, filed at Post with the end
+   * time as the moment. *Didn't look* files nothing — silence is never a vote — and a vote that
+   * fails must not turn a Post that landed into a refusal.
+   */
+  it("files the tick-through's verdicts after the Post, and never *didn't look*", async () => {
+    const post = filled();
+    const first = post.reports[0] as NonNullable<(typeof post.reports)[0]>;
+    const ticked: PostSheet = {
+      ...post,
+      reports: [
+        {
+          ...first,
+          sheet: [
+            { type: 'answerPassed' as const, hazardId: 'hz-1', verdict: 'still_there' as const },
+            { type: 'answerPassed' as const, hazardId: 'hz-2', verdict: 'didnt_look' as const },
+          ].reduce(sheetReducer, first.sheet),
+        },
+      ],
+    };
+    const { client, find } = recorder({
+      'posts:create': () => ({ postId: 'post-1', reportIds: ['rep-1'] }),
+    });
+    expect((await postSheetOnWeb(client, ticked, NOW)).kind).toBe('posted');
+    const votes = find('hazardConfirmations:confirm');
+    expect(votes).toHaveLength(1);
+    expect(votes[0]?.args).toMatchObject({
+      hazardId: 'hz-1',
+      verdict: 'still_there',
+      via: 'report_flow',
+      observedAt: NOW - 60_000,
+    });
+  });
+
+  it('a vote that fails does not un-post the Post', async () => {
+    const post = filled();
+    const first = post.reports[0] as NonNullable<(typeof post.reports)[0]>;
+    const ticked: PostSheet = {
+      ...post,
+      reports: [
+        {
+          ...first,
+          sheet: sheetReducer(first.sheet, {
+            type: 'answerPassed',
+            hazardId: 'hz-1',
+            verdict: 'fully_healed',
+          }),
+        },
+      ],
+    };
+    const { client } = recorder({
+      'posts:create': () => ({ postId: 'post-1', reportIds: ['rep-1'] }),
+      'hazardConfirmations:confirm': () => {
+        throw new Error('Hazard not found');
+      },
+    });
+    expect(await postSheetOnWeb(client, ticked, NOW)).toEqual({
+      kind: 'posted',
+      postId: 'post-1',
+      reportId: 'rep-1',
+    });
+  });
 });
 
 describe('saveSheetEditOnWeb', () => {

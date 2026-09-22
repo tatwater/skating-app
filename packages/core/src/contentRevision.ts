@@ -62,6 +62,14 @@ const FIELDS: { key: string; label: string; claim: boolean }[] = [
 
 type Block = Record<string, unknown>;
 
+/**
+ * The fields that hold the author's own prose. Every other string on the block is an enum — a
+ * `dont_go`, a `black_ice` — which reads better with its underscores opened out. Prose must not
+ * get that treatment: it would show a moderator words the author never wrote, and an edit that
+ * only changed `a_b` to `a b` would render identically at both ends and report as no change.
+ */
+const FREE_TEXT = new Set(['title', 'body', 'notes']);
+
 function isLocated(
   value: unknown,
 ): value is { type: string; where?: Parameters<typeof describeWhere>[0] } {
@@ -116,7 +124,10 @@ export function describeRevisionValue(
       : null;
   }
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
-  if (typeof value === 'string') return value.trim() === '' ? null : value.replace(/_/g, ' ');
+  if (typeof value === 'string') {
+    if (value.trim() === '') return null;
+    return FREE_TEXT.has(field) ? value : value.replace(/_/g, ' ');
+  }
   if (typeof value === 'number') return String(value);
   // Snow, the weather block, anything else object-shaped: its set fields, in a stable order.
   if (typeof value === 'object') {

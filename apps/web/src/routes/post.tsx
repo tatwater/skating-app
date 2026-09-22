@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { useConvex, useConvexAuth, useQuery } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AuthGate } from '../components/AuthGate';
 import { ReportConsole } from '../components/sheet/ReportConsole';
 import { openWebDoor, restoreMatchesDoor } from '../lib/sheetDoors';
@@ -51,17 +51,27 @@ function PostConsole() {
   const [error, setError] = useState<string | null>(null);
 
   const doorKey = `${params.body ?? ''}|${params.edit ?? ''}`;
-  // Open the door once per (door, session). The profile is awaited because the put-in opt-out
+  /**
+   * The door this mount has already answered. A door is opened **once**: the sheet it opened is
+   * then the author's, and what they do to it — picking a different lake than the URL names,
+   * dropping the leg the URL named — must never be read back as a door that wants reopening. Before
+   * this ref, changing the lake on a `?body=` door made the restore disagree with the URL and the
+   * Post was silently rebuilt under the author's hands.
+   */
+  const answered = useRef<string | null>(null);
+  // Open the door once per (door, mount). The profile is awaited because the put-in opt-out
   // default (Phase 04 #7) is the author's, and a sheet opened before it lands would default the
   // switch the other way and read as a change they made.
-  // `params` and `sheet` are read but must not re-trigger: this opens a *door*, and re-running on
-  // every keystroke in the sheet it opened would rebuild the Post under the author's hands. The
-  // door's identity is `doorKey`.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  // `params` and `sheet` are read for the opening itself; `answered` is what stops a re-run.
   useEffect(() => {
     if (!isAuthenticated || profile === undefined) return;
-    let cancelled = false;
+    if (answered.current === doorKey) return;
+    const key = doorKey;
+    answered.current = key;
+    // A door that opens is a door whose last failure is over.
+    setError(null);
     // A sheet already open for this door is the one being written — never rebuilt under the author.
+    // (The store outlives this route, so a hand-off to the lake's map and back lands here.)
     if (sheet !== null && restoreMatchesDoor(sheet, params)) return;
     const restored = readStoredSheet(Date.now());
     if (restored !== null && restoreMatchesDoor(restored, params)) {
@@ -69,16 +79,14 @@ function PostConsole() {
       return;
     }
     void openWebDoor(convex, params, profile?.showPutInDefault, Date.now()).then((next) => {
-      if (cancelled) return;
+      // A door the author has since left: what it built is not the sheet in front of them.
+      if (answered.current !== key) return;
       if (next === null) {
         setError("That report isn't yours to edit, or it's no longer there.");
         return;
       }
       setSheet(next);
     });
-    return () => {
-      cancelled = true;
-    };
   }, [convex, doorKey, isAuthenticated, profile, params, sheet]);
 
   if (error) {

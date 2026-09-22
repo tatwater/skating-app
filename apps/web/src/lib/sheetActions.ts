@@ -9,6 +9,8 @@
  * each photo with its id checkpointed, create the Post, then file the condition alerts with the
  * new Report as provenance) is a dozen rules that must not have two answers. Mobile and web differ
  * in where the draft is kept and whether a failure waits; they do not differ in what a Post is.
+ * The tick-through's hazard verdicts are filed after the Post lands, as the phone files them
+ * (`fileConfirmations`, the queue-less twin of mobile's `queueConfirmations`).
  *
  * The checkpointed draft a failed attempt returns is handed back to the caller, so a retry reuses
  * every photo that already landed instead of uploading it twice. A tab closed mid-attempt leaves
@@ -20,11 +22,13 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   type AccessConditionFiling,
   type AccessReason,
+  confirmableVerdict,
   flushErrorMessage,
   flushPost,
   type PostDraft,
   type PostSheet,
   photoUploadCoord,
+  selectedValues,
   toPostDraft,
   toReportInput,
 } from '@skating/core';
@@ -73,12 +77,46 @@ export async function postSheetOnWeb(
 
   const result = await flushPost(resumed, webEffects(convex), now);
   if (result.ok) {
+    await fileConfirmations(convex, post);
     const reportId = result.reportIds[0];
     return reportId !== undefined
       ? { kind: 'posted', postId: result.postId, reportId }
       : { kind: 'refused', message: 'That post came back without a report.', draft: result.draft };
   }
   return { kind: 'refused', message: result.message, draft: result.draft };
+}
+
+/**
+ * The tick-through's answers (§6.2 / §6 (d)) as confirmation votes — `via: 'report_flow'`, observed
+ * at the end time — filed at Post, never before. *Didn't look* files nothing, so silence is never a
+ * vote. The phone's `queueConfirmations` does this through the hazard queue; web has no queue
+ * (§10.3), so each vote goes straight to the mutation.
+ *
+ * **Best effort, after the Post has landed.** One vote row per user per hazard server-side, so a
+ * re-post of a resumed draft refreshes rather than double-counts. A vote that fails must not turn a
+ * Post that succeeded into a refusal — the Report is up, and the author has nothing to retry.
+ */
+async function fileConfirmations(convex: ConvexReactClient, post: PostSheet): Promise<number> {
+  let filed = 0;
+  for (const report of post.reports) {
+    const [end] = selectedValues(report.sheet, 'endTime');
+    for (const [hazardId, verdict] of Object.entries(report.sheet.scalars.passedVerdicts)) {
+      const v = confirmableVerdict(verdict);
+      if (v === null) continue;
+      try {
+        await convex.mutation(api.hazardConfirmations.confirm, {
+          hazardId: hazardId as Id<'hazards'>,
+          verdict: v,
+          via: 'report_flow',
+          ...(end !== undefined ? { observedAt: end.ms } : {}),
+        });
+        filed++;
+      } catch {
+        // The hazard was merged away, archived, or the connection dropped. The Report stands.
+      }
+    }
+  }
+  return filed;
 }
 
 function webEffects(convex: ConvexReactClient) {
@@ -217,6 +255,7 @@ export async function saveSheetEditOnWeb(
         ...(post.body.trim() ? { body: post.body.trim() } : {}),
       });
     }
+    await fileConfirmations(convex, post);
     return reportId;
   } catch (error) {
     throw new Error(flushErrorMessage(error));

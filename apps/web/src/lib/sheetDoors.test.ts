@@ -88,8 +88,27 @@ describe('restoreMatchesDoor', () => {
     expect(restoreMatchesDoor(onMorey(), { body: 'wb1' })).toBe(true);
   });
 
-  it('a different lake in the URL wins over what was restored', () => {
+  it('a different lake in the URL wins over an untouched restore', () => {
     expect(restoreMatchesDoor(onMorey(), { body: 'wb2' })).toBe(false);
+  });
+
+  /**
+   * The case that costs real work: change the lake in the console, hand off to the map to draw a
+   * hazard, come back — and the `?body=` in the address bar names a lake the Post is no longer
+   * about. A URL is a door, not a command.
+   */
+  it('never overrules a sheet the author has touched', () => {
+    expect(restoreMatchesDoor({ ...onMorey(), dirty: true }, { body: 'wb2' })).toBe(true);
+  });
+
+  it('but a dirty edit is still only its own Report’s', () => {
+    const edit = postSheetForEdit(
+      { reportId: 'rep-1', waterBodyId: 'wb1', skateEndTime: NOW, photoIds: [] },
+      null,
+      NOW,
+      mint,
+    );
+    expect(restoreMatchesDoor({ ...edit, dirty: true }, { edit: 'rep-2' })).toBe(false);
   });
 
   it('an edit door only accepts that Report’s own sheet', () => {

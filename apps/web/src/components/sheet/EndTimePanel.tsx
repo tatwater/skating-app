@@ -16,7 +16,7 @@ import {
   type WindowHour,
 } from '@skating/core';
 import { useAction } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { datetimeLocalToMs, toDatetimeLocal } from '../../lib/reportForm';
 import { Input } from '../ui/input';
 import { SheetChip } from './SheetChip';
@@ -79,8 +79,13 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
       key: 'chosen',
       value: { ms, precision: precisionForChoice(row, ms) },
     });
-  const clock = (ms: number) =>
-    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }).format(ms);
+  // One formatter for the whole ladder — building one per chip per render is the expensive half of
+  // `Intl`, and the ladder redraws on every keystroke elsewhere in the sheet.
+  const clockFormat = useMemo(
+    () => new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }),
+    [timeZone],
+  );
+  const clock = (ms: number) => clockFormat.format(ms);
   const offLadder = chosen !== undefined && !row.chips.some((c) => c.ms === chosen.ms);
 
   return (
@@ -221,7 +226,9 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
           }}
         />
       ) : null}
-      {mode === 'duration' ? (
+      {/* Both controls wait on the end time: a duration resolves *back* from it, so typing one
+          without it would be silently dropped by `resolve` and read as a field that does nothing. */}
+      {mode === 'duration' && end ? (
         <Input
           inputMode="numeric"
           className="max-w-40"
@@ -241,6 +248,8 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
       ) : null}
       {error ? (
         <p className="text-danger text-xs">{error}</p>
+      ) : mode !== 'none' && !end ? (
+        <SheetHint>Say when you got off first — a start time is read back from it.</SheetHint>
       ) : minutes !== undefined && minutes > 0 ? (
         <SheetHint>About {minutes} minutes on the ice.</SheetHint>
       ) : null}

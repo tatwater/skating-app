@@ -76,10 +76,16 @@ export function HazardsPanel({
     }));
   }, [report.activityId, mine]);
 
-  // Never ask about the author's own pins — bundling is their door (D55).
+  // Never ask about the author's own pins — bundling is their door (D55). Nothing is offered until
+  // the viewer is known: a list that briefly included their own hazards would ask them to confirm
+  // a pin they drew, and a tick-through that reshuffles a beat later is worse than one that waits.
+  const myId = me?._id;
   const others = useMemo(
-    () => (body?.hazards ?? []).filter((h) => me === undefined || h.createdByUserId !== me?._id),
-    [body?.hazards, me],
+    () =>
+      me === undefined
+        ? []
+        : (body?.hazards ?? []).filter((h) => myId === undefined || h.createdByUserId !== myId),
+    [body?.hazards, me, myId],
   );
   const passed = useMemo<PassedHazard[]>(
     () => (track.length > 0 ? passedHazards(track, others) : []),

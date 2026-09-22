@@ -120,6 +120,11 @@ export function WaterBodyDetail({
   // learn which state to ask about.
   const regionStats = useQuery(api.regionStats.list, {});
   const [hazardFormOpen, setHazardFormOpen] = useState(openHazardForm);
+  // …and again when a later hand-off arrives at a drawer that is already open: an initial-state
+  // read alone would swallow the console's *mark one here* whenever this component is still mounted.
+  useEffect(() => {
+    if (openHazardForm) setHazardFormOpen(true);
+  }, [openHazardForm]);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const [tab, setTab] = useDetailTab();
   // The season selector lives on the Reporting tab, but the season it picks governs the whole lake

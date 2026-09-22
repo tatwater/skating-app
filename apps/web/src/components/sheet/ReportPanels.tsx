@@ -49,7 +49,7 @@ import { ChipRow, SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { DispatchOpts, SectionProps } from './sectionProps';
 import { ThicknessPanel } from './ThicknessPanel';
-import { type SheetBody, useSheetBody } from './useSheetBody';
+import type { SheetBody } from './useSheetBody';
 import { WherePicker } from './WherePicker';
 
 /**
@@ -64,14 +64,16 @@ import { WherePicker } from './WherePicker';
  */
 export function ReportPanels({
   report,
+  body,
   gaps,
   editing,
 }: {
   report: SheetReport;
+  /** The Report's lake, read once by the console and handed down (one body, one subscription set). */
+  body: SheetBody | null;
   gaps: SectionProps['gaps'];
   editing: boolean;
 }) {
-  const body = useSheetBody(report.sheet.waterBodyId);
   const timeZone = body?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const id = report.id;
   const dispatch = useCallback(
@@ -484,7 +486,10 @@ function usePeerGhosts({ dispatch, report }: SectionProps, body: SheetBody | nul
       ),
     ];
   }, [peers]);
-  // Once per (body, set of reporters): a re-render with the same peers offers nothing new.
+  // Once per (body, set of reporters): a re-render with the same peers offers nothing new. The
+  // console keys `ReportPanels` by the Report, so this ref is one leg's memory — two legs on the
+  // same lake (*+ an earlier visit*) each get the offer, which a body-only key would deny the
+  // second of.
   const key = `${report.sheet.waterBodyId ?? ''}:${peers?.reporters ?? 0}`;
   const batchesRef = useRef(batches);
   batchesRef.current = batches;
