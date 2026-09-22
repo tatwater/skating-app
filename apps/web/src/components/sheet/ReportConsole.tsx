@@ -226,7 +226,10 @@ function Console({ post }: { post: PostSheet }) {
               onChange={(e) => updateSheet((p) => ({ ...p, title: e.target.value, dirty: true }))}
             />
             <Textarea
-              className="min-h-32 border-0 bg-transparent px-0 focus-visible:ring-0"
+              // `dark:bg-transparent` and `dark:border-0` explicitly: the base Textarea carries
+              // `dark:bg-input/30` and `border-input`, which otherwise draw a filled, outlined box
+              // inside the card the words already live in.
+              className="min-h-32 border-0 bg-transparent px-0 focus-visible:ring-0 dark:border-0 dark:bg-transparent"
               placeholder="How was it? Write it the way you'd tell a friend — the chips below are for the hard numbers."
               aria-label="The story"
               value={post.body}

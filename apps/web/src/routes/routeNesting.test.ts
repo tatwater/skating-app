@@ -65,3 +65,25 @@ describe('route nesting', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * **`__root` is the only place that mounts the `AuthGate`**, and the gate is what renders the
+ * `AppShell`. A route that mounts a second one renders a second navbar *inside the page* — which
+ * is what `/post` did when the console landed (A10-5). It is an easy mistake to make, because a
+ * route that wants authentication looks like a route that should say so, and it fails silently:
+ * the page works, the gate resolves the same way twice, and the only symptom is a duplicated
+ * header a long way down the screen.
+ *
+ * A mention in a comment is fine — several routes explain what the gate does with them.
+ */
+describe('the auth gate is mounted once', () => {
+  it.each(routeFiles.filter((f) => f !== '__root.tsx'))('%s does not render its own', (file) => {
+    const source = readFileSync(resolve(ROUTES_DIR, file), 'utf8');
+    expect(
+      source.includes('<AuthGate'),
+      `${file} renders its own <AuthGate/>, but __root already wraps every route in one — this ` +
+        'draws a second AppShell (navbar and all) inside the page. Remove it; the root gate ' +
+        'already redirects an unauthenticated visitor.',
+    ).toBe(false);
+  });
+});

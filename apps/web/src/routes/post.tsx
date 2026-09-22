@@ -2,7 +2,6 @@ import { api } from '@skating/convex/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { useConvex, useConvexAuth, useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
-import { AuthGate } from '../components/AuthGate';
 import { ReportConsole } from '../components/sheet/ReportConsole';
 import { openWebDoor, restoreMatchesDoor } from '../lib/sheetDoors';
 import { readStoredSheet, setSheet, useSheet } from '../lib/sheetStore';
@@ -31,16 +30,11 @@ export const Route = createFileRoute('/post')({
     if (typeof search.edit === 'string' && search.edit.length > 0) out.edit = search.edit;
     return out;
   },
-  component: PostRoute,
+  // No `AuthGate` here: `__root` already wraps every route in one, and the gate is what renders
+  // the `AppShell` — a second gate drew a second navbar down the page. `routeNesting.test.ts`
+  // guards it now.
+  component: PostConsole,
 });
-
-function PostRoute() {
-  return (
-    <AuthGate>
-      <PostConsole />
-    </AuthGate>
-  );
-}
 
 function PostConsole() {
   const params = Route.useSearch();
