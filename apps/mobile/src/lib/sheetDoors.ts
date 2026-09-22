@@ -221,21 +221,41 @@ export async function openDoor(
     return withDwell(post, params.body);
   }
 
-  // The tab itself: the lake under your feet if the cache knows it, else a body-less sheet the
-  // picker fills — the coord rides along so the flush can still resolve it (D30).
+  // The tab itself: a body-less sheet, at once. The lake under your feet is found afterwards
+  // (`locateTabSheet`) — a GPS fix can take seconds, or never come on an emulator, and a page that
+  // waits on it is a spinner where the sheet should be.
+  return openPostSheet('page', { showPutIn }, now, randomUUID);
+}
+
+/**
+ * The second half of the tab door: find the lake under your feet and put it on the open sheet —
+ * only while the sheet is still the one that asked and the author has not touched it or picked a
+ * lake. The coord rides along either way, so a capture the cache cannot name still resolves at
+ * flush (D30). Bounded: a fix that has not come in `LOCATE_TIMEOUT_MS` is not waited for.
+ */
+export async function locateTabSheet(
+  draftId: string,
+  read: () => PostSheet | null,
+  write: (update: (sheet: PostSheet) => PostSheet) => void,
+): Promise<void> {
   const located = await locate();
-  const match = located ? resolveCachedBody(located) : null;
-  const post = openPostSheet(
-    'page',
-    {
-      ...(match ? { waterBodyId: match.waterBodyId, bodyName: match.name } : {}),
-      ...(located ? { coord: located } : {}),
-      showPutIn,
-    },
-    now,
-    randomUUID,
-  );
-  return match ? withDwell(post, match.waterBodyId) : post;
+  if (!located) return;
+  const current = read();
+  if (current === null || current.draftId !== draftId || current.dirty) return;
+  const first = current.reports[0];
+  if (!first || first.sheet.waterBodyId !== undefined) return;
+  const match = resolveCachedBody(located);
+  write((sheet) => {
+    const filled = updateReport(sheet, first.id, (r) => ({
+      ...r,
+      coord: located,
+      ...(match
+        ? { bodyName: match.name, sheet: { ...r.sheet, waterBodyId: match.waterBodyId } }
+        : {}),
+    }));
+    const withEnd = match ? withDwell(filled, match.waterBodyId) : filled;
+    return { ...withEnd, dirty: false };
+  });
 }
 
 /** Today's dwell on the lake (Phase 09b) as the end time — editable, never authoritative. */
@@ -286,13 +306,20 @@ async function snapStart(
   return hit?.id ?? null;
 }
 
+/** How long the tab waits for a fresh fix before going on without one. */
+export const LOCATE_TIMEOUT_MS = 6_000;
+
 async function locate(): Promise<{ lat: number; lng: number } | null> {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return null;
     const last = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000 });
-    const pos = last ?? (await Location.getCurrentPositionAsync({}));
-    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    if (last) return { lat: last.coords.latitude, lng: last.coords.longitude };
+    const pos = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), LOCATE_TIMEOUT_MS)),
+    ]);
+    return pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : null;
   } catch {
     return null;
   }

@@ -6,8 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Paragraph, Spinner, YStack } from 'tamagui';
 import { ReportSheet } from '../../src/components/sheet/ReportSheet';
 import { saveSheetAsDraft } from '../../src/lib/sheetActions';
-import { type DoorParams, doorHref, doorKey, openDoor } from '../../src/lib/sheetDoors';
-import { getSheet, setSheet } from '../../src/lib/sheetStore';
+import {
+  type DoorParams,
+  doorHref,
+  doorKey,
+  locateTabSheet,
+  openDoor,
+} from '../../src/lib/sheetDoors';
+import { getSheet, setSheet, updateSheet } from '../../src/lib/sheetStore';
 
 /**
  * The center "＋ Report" tab (D28) — **the report sheet is the page** (A10-3, founder call
@@ -60,6 +66,8 @@ export default function ReportScreen() {
         }
         setSheet(sheet);
         setState('open');
+        // The tab's own door: the lake under your feet arrives after the sheet, never before it.
+        if (sheet.door === 'page') void locateTabSheet(sheet.draftId, getSheet, updateSheet);
       });
     return () => {
       cancelled = true;
@@ -75,6 +83,7 @@ export default function ReportScreen() {
         void openDoor({}, profile?.showPutInDefault, Date.now()).then((sheet) => {
           if (sheet) setSheet(sheet);
           setState(sheet ? 'open' : 'gone');
+          if (sheet) void locateTabSheet(sheet.draftId, getSheet, updateSheet);
         });
       }
     }, [state, profile?.showPutInDefault]),
