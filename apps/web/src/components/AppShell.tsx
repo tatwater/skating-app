@@ -92,6 +92,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link to="/feed" className={navLinkClass} activeProps={{ className: navActiveClass }}>
             Latest
           </Link>
+          {/* The report console (A10-5). A blank Post from here; the lake's drawer and a published
+              report's page open it on their own doors. */}
+          <Link
+            to="/post"
+            search={{}}
+            className={navLinkClass}
+            activeProps={{ className: navActiveClass }}
+          >
+            Post
+          </Link>
           {profile?.role === 'moderator' || profile?.role === 'admin' ? (
             <Link to="/admin" className={navLinkClass} activeProps={{ className: navActiveClass }}>
               Admin
