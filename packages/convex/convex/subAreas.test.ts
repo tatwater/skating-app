@@ -2609,6 +2609,51 @@ describe('sub-areas by chord (D201)', () => {
     expect(audit?.metadata).toMatchObject({ kind: 'name_bay', subAreaId: id });
   });
 
+  test('a request decided while the bay was being drawn does not roll the drawing back', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const requestId = await bayRequest(t, one.id, body, 'Corner Bay');
+    await t.run((ctx) =>
+      ctx.db.patch(requestId, {
+        status: 'declined',
+        decidedAt: Date.now(),
+        decidedByUserId: mod.id,
+      }),
+    );
+    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId,
+    });
+    expect(await t.run((ctx) => ctx.db.get(id))).not.toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('declined');
+  });
+
+  test('stores the mouth as used — points snapped onto the shore, the sagitta clamped — never the raw click', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      // Ten meters off each shore, and a sagitta far past a semicircle.
+      mouth: {
+        ...CORNER,
+        a: { lat: 44.2, lng: -73.4999 },
+        b: { lat: 44.0001, lng: -73.3 },
+        sagittaM: 1e9,
+      },
+    });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.mouth?.a.lng).toBeCloseTo(-73.5, 9);
+    expect(row?.mouth?.b.lat).toBeCloseTo(44.0, 9);
+    expect(row?.mouth?.sagittaM).toBeLessThan(20_000);
+    expect(row?.mouth?.sagittaM).toBeGreaterThan(0);
+  });
+
   test('refuses a request that is not a bay ask on this lake, and draws nothing', async () => {
     const t = harness();
     const here = await seedCanonicalBody(t);

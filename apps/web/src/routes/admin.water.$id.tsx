@@ -5,7 +5,7 @@ import {
   BODY_FEATURE_TYPES,
   type BodyFeatureType,
   CHORD_MESSAGES,
-  chordSubArea,
+  type ChordResult,
   DEFAULT_SAMPLE_SPACING_KM,
   DEPTH_SOURCE_LABELS,
   type DepthSource,
@@ -798,8 +798,10 @@ function SubAreaTool({
   const controlRef = useRef<PolygonDrawControl | null>(null);
 
   // The chord tool's state, mirrored from the control so the card can render the instruction, the
-  // refusal and the save button; `mouth` is set only when the gesture is complete.
-  const chordRef = useRef<ChordDrawControl | null>(null);
+  // refusal and the save button; `mouth` is set only when the gesture is complete. The control is
+  // remembered *with the map it was built on*: `useMapCanvas` rebuilds the map on a theme change
+  // or a bounds change, and a control kept across that would drive a removed map.
+  const chordRef = useRef<{ map: maplibregl.Map; control: ChordDrawControl } | null>(null);
   const [chord, setChord] = useState<ChordState | null>(null);
   const [mouth, setMouth] = useState<SubAreaMouth | null>(null);
   /** The bay whose mouth is being set or moved; absent for a new one. */
@@ -809,24 +811,37 @@ function SubAreaTool({
   /** Why the current mouth makes no polygon — the derivation's own message, inline. */
   const [chordRefusal, setChordRefusal] = useState<string | null>(null);
 
+  /** Tear a control down without letting a map that is already gone turn it into a throw. */
+  const dropChord = () => {
+    try {
+      chordRef.current?.control.destroy();
+    } catch {
+      // The map was removed first (a rebuild, or the route's unmount order); nothing to detach.
+    }
+    chordRef.current = null;
+  };
+
   useEffect(() => {
     return () => {
       controlRef.current?.destroy();
       controlRef.current = null;
-      chordRef.current?.destroy();
+      try {
+        chordRef.current?.control.destroy();
+      } catch {
+        // The map is removed before this cleanup runs (LakeEditorMap's own effect); nothing to detach.
+      }
       chordRef.current = null;
     };
   }, []);
 
-  /** The preview: the same derivation the server runs, so the draft is the stored shape. */
-  const preview = (next: SubAreaMouth | null) => {
+  /** The tool's own derivation — the same one the server runs — becomes the yellow draft. */
+  const preview = (next: SubAreaMouth | null, result: ChordResult | null) => {
     setMouth(next);
-    if (!next) {
+    if (!next || !result) {
       setDraft(null);
       setChordRefusal(null);
       return;
     }
-    const result = chordSubArea(parentPolygon, next);
     if (result.ok) {
       setDraft(result.polygon);
       setChordRefusal(null);
@@ -836,28 +851,37 @@ function SubAreaTool({
     }
   };
 
+  /** The control on the map that is live now — rebuilt if the map was. */
   const chordControl = (): ChordDrawControl | null => {
     const map = mapRef.current;
     if (!map) return null;
+    if (chordRef.current && chordRef.current.map !== map) dropChord();
     if (!chordRef.current) {
       // The tool drives the slice of the map it declares; MapLibre's `on` overloads are wider
       // than that slice, which is the only reason for the cast.
-      chordRef.current = createChordDraw(map as unknown as ChordMap, {
+      const control = createChordDraw(map as unknown as ChordMap, {
         parent: parentPolygon,
-        onChange: (state, next) => {
+        onChange: (state, next, result) => {
           setChord({ ...state });
-          preview(next);
+          preview(next, result);
         },
       });
+      chordRef.current = { map, control };
     }
-    return chordRef.current;
+    return chordRef.current.control;
   };
+
+  /** The live control, or nothing — never one bound to a map that has been rebuilt. */
+  const liveChord = (): ChordDrawControl | null =>
+    chordRef.current && chordRef.current.map === mapRef.current ? chordRef.current.control : null;
 
   const disarmAll = () => {
     controlRef.current?.clear();
     controlRef.current?.stopDrawing();
     setDrawing(false);
-    chordRef.current?.clear();
+    const live = liveChord();
+    if (live) live.clear();
+    else dropChord();
     setChord(null);
     setMouth(null);
     setChordRefusal(null);

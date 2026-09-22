@@ -93,7 +93,8 @@ export interface BayRequestSeedRow {
 /** Skated in at least this many messages: a place people go to, not one they steer by (D202). */
 export const DESTINATION_MIN_SKATED = 2;
 
-const NEAREST_PARENT = /nearest known parent lake:\s*([^;.]+)/i;
+/** Up to the `;` that separates clauses in a classification note — a `.` is "Lake St. Catherine". */
+const NEAREST_PARENT = /nearest known parent lake:\s*([^;]+)/i;
 
 export interface BayRequestsBuild {
   rows: BayRequestSeedRow[];

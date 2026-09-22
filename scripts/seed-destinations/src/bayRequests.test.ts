@@ -6,7 +6,7 @@ const CSV = [
   'name,state,parent,messages,class,id,lat,lng,note',
   'Northwest Bay,VT,Lake Champlain,26,b,node/1,44.185053,-73.417627,"near declared parent; source spelling: ""North West Bay"""',
   'NW Bay,VT,Lake Champlain,4,b,node/1,44.185053,-73.417627,near declared parent',
-  'Holcomb Bay,VT,,3,b,node/2,44.853603,-73.330741,no parent captured in corpus — nearest known parent lake: Lake Champlain; matched by proximity',
+  'Holcomb Bay,VT,,3,b,node/2,44.853603,-73.330741,no parent captured in corpus — nearest known parent lake: Lake St. Champlain; matched by proximity',
   'Missisquoi Bay,VT,Lake Champlain,7,b,node/3,45.0,-73.1,near declared parent',
   'Lost Bay,VT,Lake Nowhere,3,b,node/4,44.0,-73.0,no parent captured in corpus',
   'Carrie Bay,VT,Lake Champlain,4,c,,,,no OSM/GNIS bay feature found',
@@ -80,7 +80,8 @@ describe('buildBayRequests', () => {
 
   it('takes the nearest known parent from the note when the classification captured none', () => {
     const holcomb = build().rows.find((r) => r.name === 'Holcomb Bay');
-    expect(holcomb?.parentName).toBe('Lake Champlain');
+    // Through the abbreviation's period; only the clause separator ends the name.
+    expect(holcomb?.parentName).toBe('Lake St. Champlain');
     expect(holcomb?.aliases).toBeUndefined();
   });
 

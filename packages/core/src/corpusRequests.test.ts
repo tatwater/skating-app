@@ -58,7 +58,8 @@ describe('requestKindsFor — what a standing lets you ask', () => {
   it('folds a bay name to the question it asks', () => {
     expect(requestNameKey('St. Albans Bay')).toBe('st albans bay');
     expect(requestNameKey('  Saint Albans  bay ')).toBe('st albans bay');
-    expect(requestNameKey("Mallett's Bay")).toBe('mallett s bay');
+    expect(requestNameKey("Mallett's Bay")).toBe('malletts bay');
+    expect(requestNameKey('Mallett’s Bay')).toBe(requestNameKey('Malletts Bay'));
     // Spelling variants are still two questions — an alias on the drawn bay joins them.
     expect(requestNameKey('NW Bay')).not.toBe(requestNameKey('Northwest Bay'));
   });

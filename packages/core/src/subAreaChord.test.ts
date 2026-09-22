@@ -226,10 +226,22 @@ describe('chordSubArea — the straight chord', () => {
   });
 
   it('re-snaps points that are near, not on, the shore — a moved shoreline does not orphan a mouth', () => {
-    const near = chordSubArea(LAKE, { ...BAY_MOUTH, a: at(1800, 2990), b: at(2200, 3015) });
+    const near = chordSubArea(LAKE, {
+      ...BAY_MOUTH,
+      a: at(1800, 2990),
+      b: at(2200, 3015),
+      sagittaM: 5000,
+    });
     expect(near.ok).toBe(true);
     if (!near.ok) return;
-    expectArea(surfaceAreaSqM(near.polygon), BAY_AREA);
+    // The mouth handed back is the one used: snapped points, clamped sagitta — what gets stored.
+    expect(haversineMeters(near.mouth.a, at(1800, 3000))).toBeLessThan(1);
+    // (2200, 3015) is already on the channel's east wall, so it snaps to itself.
+    expect(haversineMeters(near.mouth.b, at(2200, 3015))).toBeLessThan(1);
+    expect(near.mouth.sagittaM).toBeCloseTo(200, 0);
+    expect(near.mouth.side).toEqual(BAY_MOUTH.side);
+    const straight = chordSubArea(LAKE, { ...BAY_MOUTH, a: at(1800, 2990), b: at(2200, 3015) });
+    if (straight.ok) expectArea(surfaceAreaSqM(straight.polygon), BAY_AREA);
   });
 });
 

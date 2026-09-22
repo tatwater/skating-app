@@ -7,7 +7,7 @@
  * step leaves the map showing what the moderator needs next.
  */
 
-import type { LatLng, SubAreaMouth } from '@skating/core';
+import type { ChordResult, LatLng, SubAreaMouth } from '@skating/core';
 import type { Polygon, Position } from 'geojson';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -120,7 +120,7 @@ const LAKE: Polygon = {
 };
 
 let map: FakeMap;
-let changes: { state: ChordState; mouth: SubAreaMouth | null }[];
+let changes: { state: ChordState; mouth: SubAreaMouth | null; preview: ChordResult | null }[];
 
 beforeEach(() => {
   map = new FakeMap();
@@ -130,11 +130,16 @@ beforeEach(() => {
 function tool() {
   return createChordDraw(map, {
     parent: LAKE,
-    onChange: (state, mouth) => changes.push({ state, mouth }),
+    onChange: (state, mouth, preview) => changes.push({ state, mouth, preview }),
   });
 }
 
-const last = () => changes[changes.length - 1] as { state: ChordState; mouth: SubAreaMouth | null };
+const last = () =>
+  changes[changes.length - 1] as {
+    state: ChordState;
+    mouth: SubAreaMouth | null;
+    preview: ChordResult | null;
+  };
 const coords = (f: GeoJSON.Feature) => (f.geometry as GeoJSON.Point).coordinates;
 
 describe('the gesture', () => {
@@ -199,6 +204,8 @@ describe('the gesture', () => {
     expect(last().state.step).toBe('done');
     expect(last().mouth).toMatchObject({ sagittaM: 0 });
     expect(last().mouth?.side).toEqual(at(2000, 3500));
+    // The derivation rides along, so the card previews without deriving again.
+    expect(last().preview?.ok).toBe(true);
     // The shading is gone; the mouth line and its handle are up.
     expect(map.features('chord-candidates')).toEqual([]);
     expect(map.features('chord-line')).toHaveLength(1);
@@ -226,9 +233,13 @@ describe('the gesture', () => {
 
     map.fire('mousedown', at(2000, 3000), 'chord-handle');
     expect(map.dragPan.disable).toHaveBeenCalled();
+    const reported = changes.length;
     map.fire('mousemove', at(2000, 2850)); // 150 m out, away from the bay
-    expect(last().state.sagittaM).toBeCloseTo(150, 0);
+    // The line follows live; the card hears nothing until the pointer lifts.
+    expect(changes.length).toBe(reported);
+    expect(control.state().sagittaM).toBeCloseTo(150, 0);
     map.fire('mouseup', at(2000, 2850));
+    expect(changes.length).toBe(reported + 1);
     expect(map.dragPan.enable).toHaveBeenCalled();
     expect(last().mouth?.sagittaM).toBeCloseTo(150, 0);
     // The line is now an arc, with its apex where the handle was dropped.
@@ -247,18 +258,43 @@ describe('the gesture', () => {
     expect(last().mouth?.side).toEqual(at(2000, 3500));
   });
 
-  it('dragging a point until the side no longer fits steps back to choosing', () => {
+  it('a point dragged somewhere the chord refuses goes back where it was, with the reason', () => {
     const control = tool();
     control.start();
     map.fire('click', at(1800, 3000));
     map.fire('click', at(2200, 3000));
     map.fire('click', at(2000, 3500));
-    // Move `a` onto the island: the pair is refused, so there is no side to keep.
+    // Move `a` onto the island: the pair is refused; `a` returns and the gesture stays complete.
     map.fire('mousedown', at(1800, 3000), 'chord-points');
     map.fire('mousemove', at(1190, 900));
     map.fire('mouseup', at(1190, 900));
-    expect(last().state).toMatchObject({ step: 'side', refusal: 'different_rings' });
+    expect(last().state).toMatchObject({ step: 'done', refusal: 'different_rings' });
+    expect(last().mouth?.a.lat).toBeCloseTo(at(1800, 3000).lat, 7);
+    expect(last().preview?.ok).toBe(true);
+    // Still adjustable — the next drag works and clears the message.
+    map.fire('mousedown', at(2000, 3000), 'chord-handle');
+    map.fire('mousemove', at(2000, 2900));
+    map.fire('mouseup', at(2000, 2900));
+    expect(last().state.refusal).toBeUndefined();
+    expect(last().mouth?.sagittaM).toBeCloseTo(100, 0);
+  });
+
+  it('a point dragged so the side no longer fits steps back to choosing', () => {
+    const control = tool();
+    control.start();
+    // The island's notch: both points on the island ring, the side in the notch water.
+    map.fire('click', at(1200, 800));
+    map.fire('click', at(1200, 1000));
+    map.fire('click', at(1100, 900));
+    expect(last().state.step).toBe('done');
+    // Drag `b` round to the island's west side: the chord no longer spans the notch, and the
+    // old side point is in neither candidate.
+    map.fire('mousedown', at(1200, 1000), 'chord-points');
+    map.fire('mousemove', at(600, 900));
+    map.fire('mouseup', at(600, 900));
+    expect(last().state.step).toBe('side');
     expect(last().mouth).toBeNull();
+    expect(map.features('chord-candidates')).toHaveLength(2);
   });
 
   it('loads a stored mouth ready to adjust, re-snapping its points', () => {

@@ -425,8 +425,10 @@ describe('decide — what approving performs', () => {
     await seedOpen('activate', QUEUE_CAP + 30, base + 1);
     await seedOpen('contest_access', 5, base + 1_000);
 
+    // People, not rows (the fixture wrote every row under one requester): the public count says
+    // how many skaters are asking, which one person filing many rows must not inflate.
     const counts = await t.query(api.corpusRequests.openCountsForBody, { waterBodyId: id });
-    expect(counts).toEqual({ activate: QUEUE_CAP, contest_access: 5 });
+    expect(counts).toEqual({ activate: 1, contest_access: 1 });
     // The queue is a backlog: the rank counts the page it holds and says so.
     const queue = await mod.as.query(api.corpusRequests.listQueue, {});
     expect(queue).toHaveLength(QUEUE_CAP);
@@ -996,6 +998,53 @@ describe('name_bay — the sub-area queue', () => {
     expect(describeRequestOutcome(rows[0] as Doc<'waterBodyRequests'>)).toMatch(/drew this bay/);
   });
 
+  test('a bay ask is not counted against the per-person cap, and does not count others toward it', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const id = await seedBody(t);
+    for (let i = 0; i < 12; i++) {
+      await skater.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name: `Bay ${i}`,
+      });
+    }
+    // Twelve open bay asks, and a lake ask still goes through; the cap counts lake asks alone.
+    const other = await seedBody(t, 'osm/2', dormant);
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'activate',
+        coord: INSIDE,
+        waterBodyId: other,
+      }),
+    ).resolves.toBeTruthy();
+  });
+
+  test('approving from the queue records which sub-area answered the ask', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const id = await seedBody(t);
+    const requestId = await one.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'Corner Bay',
+    });
+    const bay = await seedBay(t, id, 'Corner Bay');
+    await mod.as.mutation(api.corpusRequests.approve, { requestId });
+    const audit = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodyRequest').eq('targetId', requestId as string),
+        )
+        .first(),
+    );
+    expect(audit?.metadata).toMatchObject({ kind: 'name_bay', subAreaId: bay });
+  });
+
   test('the corpus seed files bays as asks — dry by default, idempotent, and it names every skip', async () => {
     const t = harness();
     const founder = await seedUser(t, 'founder', 'admin');
@@ -1033,6 +1082,16 @@ describe('name_bay — the sub-area queue', () => {
       'no_parent',
       'no_parent',
     ]);
+    // A parent the corpus holds but has shelved is its own status: activate it, not rename it.
+    const shelved = await seedBody(t, 'osm/3', { ...dormant, states: ['ME'] });
+    expect(shelved).toBeTruthy();
+    const dormantParent = await t.mutation(internal.corpusRequests.seedBayRequests, {
+      requesterId: founder.id,
+      rows: [
+        { name: 'Shelved Bay', state: 'ME', parentName: 'Quiet Pond', coord: NOTCH, note: '' },
+      ],
+    });
+    expect(dormantParent[0]).toMatchObject({ parent: 'Quiet Pond', status: 'parent_not_active' });
     expect(await t.run((ctx) => ctx.db.query('waterBodyRequests').collect())).toHaveLength(0);
 
     const applied = await t.mutation(internal.corpusRequests.seedBayRequests, {

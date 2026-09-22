@@ -32,6 +32,7 @@ import {
   polygonBBox,
   polygonIoU,
   representativePoint,
+  requestNameKey,
   resolveTrackSubAreas,
   SUB_AREA_CLIP_MESSAGES,
   SUB_AREA_MIN_RENDER_ZOOM,
@@ -61,13 +62,14 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { approveNamedBayRequest } from './corpusRequests';
+
 import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
+import { approveNamedBayRequest } from './lib/requestDecisions';
 import { hazardCenter } from './lib/sampling';
 import { bbox, geoJson, latLng } from './lib/validators';
 
@@ -400,9 +402,19 @@ export async function reclipSubAreasToParent(
       if (chord.ok) {
         // By overlap, not by coordinates: the clipper may start the ring at a different vertex
         // when the parent's other shores change, and that is the same shape, not a moved one.
-        const unchanged =
-          polygonIoU(subArea.polygon as unknown as Polygon | MultiPolygon, chord.polygon) >
-          1 - 1e-6;
+        // The overlap is a turf intersect of two near-coincident outlines — the case the clipper
+        // can choke on — and this runs inside an ETL chunk that must not abort for one bay, so a
+        // throw reads as "changed" and the bay is simply re-derived.
+        const unchanged = (() => {
+          try {
+            return (
+              polygonIoU(subArea.polygon as unknown as Polygon | MultiPolygon, chord.polygon) >
+              1 - 1e-6
+            );
+          } catch {
+            return false;
+          }
+        })();
         if (!unchanged) {
           await rederiveSubArea(ctx, subArea, {
             polygon: chord.polygon,
@@ -754,10 +766,13 @@ async function assertNameFree(
   name: string,
   exceptId?: Id<'waterBodySubAreas'>,
 ): Promise<void> {
-  const key = name.trim().toLowerCase();
+  // The same fold the bay queue uses (`requestNameKey`): "Mallett's Bay" and "Malletts Bay" are
+  // one bay, and two rows for it would compete for the stamp exactly as two exact copies would.
+  const key = requestNameKey(name);
   const siblings = await subAreasForBody(ctx, waterBodyId);
   const clash = siblings.find(
-    (row) => row._id !== exceptId && row.removedAt === undefined && row.name.toLowerCase() === key,
+    (row) =>
+      row._id !== exceptId && row.removedAt === undefined && requestNameKey(row.name) === key,
   );
   if (clash) throw new ConvexError(`This lake already has a sub-area called "${clash.name}"`);
 }
@@ -926,7 +941,8 @@ export const createFromChord = mutation({
       name,
       aliases: normalizeAliases(args.aliases),
       polygon: geometry.polygon,
-      mouth: args.mouth,
+      // As used, not as sent: points snapped onto the outline, the sagitta clamped.
+      mouth: geometry.mouth,
       ...(args.curatedBoost !== undefined ? { curatedBoost: args.curatedBoost } : {}),
       createdByUserId: actor._id,
       now: Date.now(),
@@ -934,7 +950,7 @@ export const createFromChord = mutation({
     await audit(ctx, actor._id, 'create_sub_area', subAreaId, `Drew "${name}" on ${parent.name}`, {
       waterBodyId: args.waterBodyId,
       via: 'chord',
-      sagittaM: args.mouth.sagittaM,
+      sagittaM: geometry.mouth.sagittaM,
       clipped: geometry.clipped,
       ...(args.requestId !== undefined ? { requestId: args.requestId } : {}),
     });
@@ -964,12 +980,12 @@ export const updateChord = mutation({
       polygon: geometry.polygon,
       listed: subAreaListed(subArea, parent),
       clearDelistReason: true,
-      mouth,
+      mouth: geometry.mouth,
     });
     await audit(ctx, actor._id, 'redraw_sub_area', subAreaId, `Redrew "${subArea.name}" by chord`, {
       waterBodyId: subArea.waterBodyId,
       via: 'chord',
-      sagittaM: mouth.sagittaM,
+      sagittaM: geometry.mouth.sagittaM,
       clipped: geometry.clipped,
       geometryChanged,
     });

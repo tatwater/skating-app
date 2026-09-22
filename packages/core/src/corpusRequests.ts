@@ -90,6 +90,7 @@ export const MAX_REQUEST_NAME_LENGTH = 80;
 export function requestNameKey(name: string): string {
   return name
     .toLowerCase()
+    .replace(/[’']/g, '') // Mallett's → malletts, as `sameName` folds it
     .replace(/\bsaint\b/g, 'st')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();

@@ -24,8 +24,10 @@
 import {
   arcApex,
   type ChordRejection,
+  type ChordResult,
   chordArc,
   chordCandidates,
+  chordSubArea,
   type LatLng,
   pointInPolygon,
   type SubAreaMouth,
@@ -83,8 +85,13 @@ export interface ChordDrawControl {
 export interface ChordDrawOptions {
   /** The parent's polygon — what the points snap to and the candidates are cut from. */
   parent: Polygon | MultiPolygon;
-  /** Every change of state, with the mouth when the gesture is complete. */
-  onChange: (state: ChordState, mouth: SubAreaMouth | null) => void;
+  /**
+   * Every settled change of state — a click, the end of a drag, a load — with the mouth and its
+   * derivation once the gesture is complete. **Not on every pointer move during a drag**: the
+   * derivation clips against the whole parent, and a handle drag on Champlain would run it per
+   * event; the tool redraws its own line and handle live and reports once the pointer lifts.
+   */
+  onChange: (state: ChordState, mouth: SubAreaMouth | null, preview: ChordResult | null) => void;
 }
 
 const SOURCES = ['chord-candidates', 'chord-line', 'chord-points', 'chord-handle', 'chord-cursor'];
@@ -189,7 +196,8 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
       ? { a: state.a, b: state.b, side: state.side, sagittaM: state.sagittaM }
       : null;
 
-  const render = () => {
+  /** Redraw the tool's own layers; report to the card unless a drag is in flight. */
+  const render = (report = true) => {
     const { a, b, side } = state;
     setData('chord-points', [
       ...(a ? [point(a, { which: 'a' })] : []),
@@ -210,7 +218,9 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
       setData('chord-line', []);
       setData('chord-handle', []);
     }
-    options.onChange(state, mouth());
+    if (!report) return;
+    const m = mouth();
+    options.onChange(state, m, m ? chordSubArea(parent, m) : null);
   };
 
   /** Cut the candidates for `a`/`b` and shade them, or report why there are none. */
@@ -243,12 +253,13 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
     return true;
   };
 
-  /** Which candidate a side click lands in — the smaller one when it is in both (an island). */
-  const sideFor = (p: LatLng): boolean => {
-    if (!candidates) return false;
-    const hits = candidates.filter((c) => pointInPolygon(p, c));
-    return hits.length > 0;
-  };
+  /**
+   * Is a side click inside a candidate at all? Which of the two it names is the derivation's call
+   * (the smallest containing candidate, which matters on an island where they nest); the tool
+   * only refuses a click that is in neither.
+   */
+  const inACandidate = (p: LatLng): boolean =>
+    candidates?.some((c) => pointInPolygon(p, c)) ?? false;
 
   const onMouseMove = (e: ChordMapEvent) => {
     if (!armed) return;
@@ -262,7 +273,7 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
         const hit = snapToOutline(parent, at);
         if (hit) state = { ...state, [dragging]: hit.point };
       }
-      render();
+      render(false);
       return;
     }
     if (state.step === 'a' || state.step === 'b') {
@@ -311,16 +322,19 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
       return;
     }
     if (state.step === 'side') {
-      if (!sideFor(at)) return; // a click on neither region is not a choice
+      if (!inACandidate(at)) return; // a click on neither region is not a choice
       state = { ...state, side: at, step: 'done' };
       render();
     }
   };
 
+  /** The state a drag started from — restored when the drag ends somewhere the chord refuses. */
+  let beforeDrag: ChordState | null = null;
   const startDrag = (which: 'a' | 'b' | 'handle') => (e: ChordMapEvent) => {
     if (!armed || state.step !== 'done') return;
     e.preventDefault?.();
     dragging = which;
+    beforeDrag = state;
     map.dragPan.disable();
     map.getCanvas().style.cursor = 'grabbing';
   };
@@ -339,15 +353,25 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
     dragging = null;
     map.dragPan.enable();
     map.getCanvas().style.cursor = 'crosshair';
+    state = { ...state, refusal: undefined };
     if (was !== 'handle') {
-      // A moved point re-cuts the candidates; the side survives when it is still in one of them,
-      // and the gesture steps back to choosing when it is not.
-      if (cut() && state.side && sideFor(state.side)) {
+      // A moved point re-cuts the candidates. A refused pair (dragged onto an island, say) puts
+      // the point back where it was and says why — the moderator keeps the gesture, not a wedge
+      // whose only exit is Discard. A pair that cut fine keeps the side if it is still in a
+      // candidate and steps back to choosing when it is not.
+      if (!cut()) {
+        const refusal = state.refusal;
+        if (beforeDrag) state = { ...beforeDrag, refusal };
+        cut();
+        state = { ...state, refusal };
+        setData('chord-candidates', []);
+      } else if (state.side && inACandidate(state.side)) {
         setData('chord-candidates', []);
       } else {
         state = { ...state, side: undefined, step: 'side' };
       }
     }
+    beforeDrag = null;
     render();
   };
 
@@ -388,7 +412,7 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
       reset();
       armed = false;
       map.getCanvas().style.cursor = '';
-      options.onChange(state, null);
+      options.onChange(state, null, null);
     },
     destroy: () => {
       reset();

@@ -83,6 +83,11 @@ export type ChordResult =
       ok: true;
       /** What to store — the walked shore, the closing line, clipped to the parent. */
       polygon: Polygon | MultiPolygon;
+      /**
+       * The mouth as it was actually used — `a` and `b` snapped onto the outline, the sagitta
+       * clamped — which is what a writer stores, so a stored mouth is never a raw click.
+       */
+      mouth: SubAreaMouth;
       /** The un-clipped construction, for the editor's preview of what the clip removed. */
       constructed: Polygon;
       clipped: boolean;
@@ -158,15 +163,20 @@ function polygonsOf(geom: Polygon | MultiPolygon): Position[][][] {
  */
 export function snapToOutline(parent: Polygon | MultiPolygon, p: LatLng): OutlinePoint | null {
   let best: OutlinePoint | null = null;
+  // Projected inline rather than mapped into a copy: this runs on every pointer move over a
+  // parent with tens of thousands of vertices, and the allocation was the cost, not the math.
+  const kx = DEG * EARTH_RADIUS_M * Math.cos(p.lat * DEG);
+  const ky = DEG * EARTH_RADIUS_M;
   polygonsOf(parent).forEach((rings, polygonIndex) => {
     rings.forEach((ring, ringIndex) => {
       if (ring.length < 4) return;
-      const local = ring.map((position) =>
-        toLocal({ lat: position[1] as number, lng: position[0] as number }, p),
-      );
-      for (let i = 0; i + 1 < local.length; i++) {
-        const [ax, ay] = local[i] as [number, number];
-        const [bx, by] = local[i + 1] as [number, number];
+      for (let i = 0; i + 1 < ring.length; i++) {
+        const pa = ring[i] as Position;
+        const pb = ring[i + 1] as Position;
+        const ax = ((pa[0] as number) - p.lng) * kx;
+        const ay = ((pa[1] as number) - p.lat) * ky;
+        const bx = ((pb[0] as number) - p.lng) * kx;
+        const by = ((pb[1] as number) - p.lat) * ky;
         const dx = bx - ax;
         const dy = by - ay;
         const len2 = dx * dx + dy * dy;
@@ -540,5 +550,11 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
   // island ring most of it is the island — which the clip is *for*. Only "nothing left" refuses.
   const clip = clipSubAreaToParent(constructed, parent, 0);
   if (!clip.ok) return { ok: false, reason: clip.reason };
-  return { ok: true, polygon: clip.polygon, constructed, clipped: clip.clipped };
+  return {
+    ok: true,
+    polygon: clip.polygon,
+    mouth: { a, b, side: mouth.side, sagittaM: clampSagitta(a, b, mouth.sagittaM) },
+    constructed,
+    clipped: clip.clipped,
+  };
 }
