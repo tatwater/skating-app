@@ -701,6 +701,97 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
 - RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register
   row); the sheet's logic is in core and `sheetModel.ts` on purpose, and the components are thin.
 
+## Built record — A10-5 (2026-09-22, `phase-a10-reporting-flow-5`, stacked on `-3`)
+
+§10 (the web console), §8.2 (the browser's photo half) and D205's moderator comparison. Built
+**ahead of A10-4** on a founder call (2026-09-22): §10 depends on §3 (A10-1) and the section set
+(A10-3), not on §1.4's floors, and a keyboard surface is how the reading side gets exercised by
+something other than the two backfilled Posts on dev. The cost of jumping was named and accepted:
+if §1.5's miss list asks for a new *field* or *section* it now costs two surfaces. An enum value
+costs nothing — every chip row reads the core array.
+
+Founder calls at the kickoff, all settled before code: build the whole console, not a testable
+half; §8.2's plain attach comes forward, its EXIF window stays with A10-4; the old web `ReportForm`
+dies and the lake links to the console; design to taste with the design skill (no Figma frame);
+D205's comparison rides here as its own commit; and `sheetModel.ts` was lifted into core on the
+`-3` branch first, so #75 carries the move and this PR only uses it.
+
+### What shipped, by workstream
+
+- **The lift (on `-3`, PR #75)** — `apps/mobile/src/lib/sheetModel.ts` → `packages/core/src/postSheet.ts`
+  with its test. Ids are plain `string` in core as everywhere else and each surface casts at its own
+  wire; `saveSheetEdit` gained two casts and nothing else moved. What stayed on mobile is what is
+  native: `sheetStore`, `sheetDoors`, `sheetActions`.
+- **§10.1 the authoring view** — `/post` (a full-screen route; `apps/web/src/components/sheet/`).
+  Two columns: the lake's map and the photo rail sticky on the left, the words and the ten sections
+  as panels on the right. `ReportConsole` holds the Post; `ReportPanels` is mobile's
+  `ReportSections` in web's clothes — the same sections, order, sub-labels and conditional rows,
+  because the sheet is one thing with two compositions. `LakeMap` is mobile's SVG over the same
+  core helpers (`silhouetteProjection`, `sectorHighlightPath`), clickable, wrapped in a real button
+  so it is focusable; every launch, bay and sector it can pick is also a chip beside it, so the map
+  is the pointer's shortcut and never the only way to say where.
+- **§10.2 tabs over one map** — a tab per Report, the active one's lake drawn on the left; a
+  *Post* refusal switches to the leg it names and marks it.
+- **§10.3 state** — a module store (`lib/sheetStore.ts`) over core's reducer, with `localStorage`
+  under it: a reload restores the words and the chips. **Not TanStack Form** — see delta 1.
+- **§8.2 photos** — drag-and-drop or the picker, through the same `processPhoto` the old form used;
+  the blobs live beside the sheet (`lib/sheetPhotos.ts`) so the sheet itself stays JSON, and the
+  upload is `flushPost`'s step 4. A placed photo draws on the map and wears a ring on the rail.
+- **The post path** — `lib/sheetActions.ts` runs core's `flushPost` with browser effects injected.
+  Web has no queue (§10.3), so `persist` is a no-op and a failure returns the checkpointed draft,
+  which the next attempt resumes from: a photo that landed is never uploaded twice. Everything
+  ordered — resolve the lake, re-validate, resolve bundled hazards, ask D189/D199 in the server's
+  words, upload, one transactional `posts.create`, then the D197 alerts — is core's, unchanged.
+- **The doors** — `?body=` from a lake, `?edit=` from a published Report, nothing for a blank Post
+  (`lib/sheetDoors.ts`). A restore only serves a door it still answers.
+- **Hand-offs** — *Mark one here* links to `/water/$id?hazard`, the drawer's existing
+  `HazardForm` over the real map; the Post waits in the store and the new pin returns as a D55
+  candidate through the prompt's own window query. `/water/$id` gained the `?hazard` param for it.
+- **The old form is gone** — `ReportForm.tsx` (854 lines) and its test deleted; `/water/$id` links
+  to the console, a published report's *Edit* opens its edit door, and *Post* is in the nav.
+- **D205 the moderator comparison** — `contentRevision.ts` in core (the per-field diff, the
+  descriptions, the history that pairs each snapshot with what replaced it),
+  `contentRevisions.listForTarget` / `countForTarget` (moderator-only, over `by_target`), and
+  `RevisionHistory` on the report page for the Report and its Post. Claims are **marked, never
+  ranked** (D3). A skater still sees only *Edited*.
+
+### Deltas from the plan — read these before extending
+
+1. **No TanStack Form** (§10.3 named it). The plan named it before the sheet had a model. It has
+   one now — a reducer in core, with `validateReportInput` and `postRefusals` already written — and
+   the console's fields are chips, not inputs with their own validation. A form library over that
+   would be a second home for field state and a second answer to *is this Post postable*. The one
+   free-text field that wants care is a `<textarea>`. §10.3's `localStorage` half is built.
+2. **No *use my location*** (the phone's `AccessSection` has it). A browser's fix at a desk places
+   the put-in at the author's desk. The lake is the picker on web.
+3. **The route is `/post`, not `/report`.** `/report/$id` is the published Report's page; a console
+   one segment above it would read as the same thing. A Post is what is being written (D186).
+4. **A restored sheet has no photos**, and says so by having none. The `File` behind a picked photo
+   dies with the tab; a thumbnail that cannot be uploaded is worse than none. The words and the
+   chips are what is expensive to lose.
+5. **An edit is never restored from storage.** The published Report is the durable copy, and a
+   stale draft of it restored over a later save would undo that save without a word.
+6. **A tab closed mid-upload leaves its objects to the 30-day orphan sweep** (`photoOrphans`),
+   which is what that sweep is for. Web's reclaim-on-abandon lives in `usePhotoDrafts`, which the
+   console does not use — the sheet's photos go through `flushPost` like the phone's, so there is
+   one upload path and one set of checkpoints rather than two.
+7. **Photos are addressed by the Report on an edit.** `photos.getUrls` takes a `reportId`, and on
+   the edit door the sheet's own id *is* the Report's (`postSheetForEdit` seeds it that way).
+8. **`useSheetBody` on web has no offline cache** — there is no browser equivalent of the phone's
+   body and report caches, and a desk has signal. Otherwise it is the same shape from the same
+   queries.
+
+### Owed
+
+- **A10-4's half of the console**: the extraction wiring (§5) must light up *both* surfaces when
+  the floors land, and §8.1's window logic applied to a desktop drop by `takenAt` (§8.2's other
+  half). The chip's `extracted` tier is already drawn on both.
+- **Playwright over the console** — the flows this PR adds are the first web flows worth an E2E
+  pass (`backlog/e2e-tests.md`); the panels' logic is in core on purpose and the components are
+  thin, but *post a two-lake Post* is a click path no unit test covers.
+- The founder's pass through the console on a real lake with real data, and a re-skin if the
+  to-taste dark mode is not the Figma language.
+
 ## Review pass — 2026-09-19
 
 A fresh-eyes review against the code, before any build. What it found and what changed:
@@ -959,9 +1050,13 @@ Fewest sensible PRs; sub-workstreams are commits.
   recording/unreported-skate doors; hazards; access. *(Built 2026-09-21, stacked on `-2b`; the
   search door and D204 / D205 came with it. Device-tested by the founder on the Android preview
   build.)*
-- **A10-4 — §5 + §8.1–§8.2 + the rest of §4.2.** Extracted chips, photos, GPX import and the
-  parking-lot door (the search door landed in -3); gated on A10-1's eval floors.
-- **A10-5 — §10.** The web console. §8.3 (video) is a backlog doc, not a PR.
+- **A10-4 — §5 + §8.1 + the rest of §4.2.** Extracted chips, the camera-roll window, GPX import
+  and the parking-lot door (the search door landed in -3); gated on A10-1's eval floors. When it
+  lands, §5 wires **both** surfaces — the console shipped first.
+- **A10-5 — §10 + §8.2 + D205's comparison.** The web console. Built ahead of A10-4 on a founder
+  call (2026-09-22) because §10 is gated on nothing the eval decides, and §8.2's plain attach came
+  forward with it so the console has no missing section. *(Built 2026-09-22, stacked on `-3`.)*
+  §8.3 (video) is a backlog doc, not a PR.
 
 ## Budgets
 
