@@ -3,6 +3,7 @@ import {
   describeStravaPush,
   formatDistanceMiles,
   type QueuedTrack,
+  referencedTrackIds,
   requestStravaPush,
   trackSummary,
 } from '@skating/core';
@@ -51,13 +52,7 @@ export function TrackHistory() {
     );
     // Which tracks an unflushed report draft still points at, by local id. Those rows can't be
     // deleted: the draft resolves its path through them (see `canRemoveTrack`).
-    setReferencedIds(
-      new Set(
-        listDrafts()
-          .map((d) => d.trackDraftId)
-          .filter((id): id is string => id !== undefined),
-      ),
-    );
+    setReferencedIds(referencedTrackIds(listDrafts()));
   }, []);
 
   useEffect(refresh, [refresh]);

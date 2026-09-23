@@ -7,8 +7,9 @@ import { ReportForm } from '../../src/components/ReportForm';
 import { getDraft } from '../../src/lib/draftStore';
 
 /**
- * Edit a queued offline draft (Phase 02a §6.2). Hydrates the `ReportForm` from the stored draft (fields, photos,
- * put-in); saving re-upserts it under the same id + idempotencyKey, so a later flush stays deduped.
+ * Edit a queued offline Post draft (Phase 02a §6.2; Posts since A10 §9.1). Hydrates the `ReportForm`
+ * from the stored draft (fields, photos, put-in); saving re-upserts it under the same id +
+ * idempotencyKey, so a later flush stays deduped.
  * Rendered off the map (no-map put-in fallback). Fully offline-capable.
  */
 export default function EditDraftScreen() {
@@ -32,13 +33,15 @@ export default function EditDraftScreen() {
     );
   }
 
+  // The pre-sheet form edits the Post draft's first Report (A10 §9.1); the sheet edits them all.
+  const report = draft.reports[0];
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }} style={{ backgroundColor: 'transparent' }}>
       <ReportForm
         draft={draft}
-        waterBodyId={draft.waterBodyId as Id<'waterBodies'> | undefined}
-        bodyName={draft.bodyName}
-        coord={draft.coord}
+        waterBodyId={report?.waterBodyId as Id<'waterBodies'> | undefined}
+        bodyName={report?.bodyName}
+        coord={report?.coord}
         onClose={() => router.back()}
         onSaved={() => router.back()}
       />

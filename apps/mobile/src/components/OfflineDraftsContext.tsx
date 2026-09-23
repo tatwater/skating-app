@@ -1,5 +1,5 @@
 /**
- * Offline draft queue provider (Phase 02a §6.2) — owns the flush triggers and exposes the queue to the UI.
+ * Offline draft queue provider (Phase 02a §6.2; Posts since A10 §9.1) — owns the flush triggers and exposes the queue to the UI.
  *
  * Flush fires on **NetInfo reconnect + app-foreground + a manual "Sync now"** (NetInfo transitions
  * can be missed, so we don't rely on one signal), all funneling through the re-entrancy-guarded
@@ -13,7 +13,8 @@ import {
   type HazardQueueItem,
   isFlushable,
   isHazardItemFlushable,
-  type ReportDraft,
+  type PostDraft,
+  postDraftPhotoUris,
 } from '@skating/core';
 import {
   createContext,
@@ -25,7 +26,7 @@ import {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
-import { deleteDraftPhotoFiles, draftPhotoUris } from '../lib/draftPhotos';
+import { deleteDraftPhotoFiles } from '../lib/draftPhotos';
 import {
   deleteDraft,
   deleteHazardItem,
@@ -37,7 +38,8 @@ import {
 import { flushDrafts, isDraftFlushing } from '../lib/flushService';
 
 interface OfflineDraftsValue {
-  drafts: ReportDraft[];
+  /** The queued Post drafts (A10 §9.1) — a pre-sheet draft is a Post with one Report. */
+  drafts: PostDraft[];
   /**
    * Queued on-ice hazards + confirmations (Phase 09a). Surfaced alongside report drafts so one that
    * hits a permanent rejection on flush is *visible and dismissible* rather than parked in `error`
@@ -57,12 +59,14 @@ interface OfflineDraftsValue {
 const OfflineDraftsContext = createContext<OfflineDraftsValue | null>(null);
 
 export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
-  const [drafts, setDrafts] = useState<ReportDraft[]>([]);
+  const [drafts, setDrafts] = useState<PostDraft[]>([]);
   const [hazardItems, setHazardItems] = useState<HazardQueueItem[]>([]);
 
   const refresh = useCallback(() => {
     setDrafts(listDrafts());
-    setHazardItems(listHazardItems());
+    // A flushed hazard's row is kept while a draft still bundles it (A10 §9.1) — sent, not waiting,
+    // so it is not a queue item to show or to count.
+    setHazardItems(listHazardItems().filter((item) => item.status !== 'done'));
   }, []);
 
   const flushNow = useCallback(async () => {
@@ -78,7 +82,7 @@ export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
       // any already-uploaded blobs. Same guard the edit form uses (see `flushService` `flushingIds`).
       if (isDraftFlushing(id)) return false;
       const draft = getDraft(id);
-      if (draft) deleteDraftPhotoFiles(draftPhotoUris(draft));
+      if (draft) deleteDraftPhotoFiles(postDraftPhotoUris(draft));
       deleteDraft(id);
       refresh();
       return true;

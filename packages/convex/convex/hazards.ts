@@ -16,6 +16,8 @@
  */
 
 import {
+  BUNDLE_LOOKBACK_MS,
+  bundleWindow,
   type ConsensusVote,
   clipFootprintToBody,
   clusterConsensus,
@@ -882,7 +884,7 @@ export const listBundleCandidates = query({
     const profile = await requireProfile(ctx);
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
-    const from = skateStartTime ?? skateEndTime - (lookbackMs ?? DEFAULT_BUNDLE_LOOKBACK_MS);
+    const { from } = bundleWindow(skateEndTime, skateStartTime, lookbackMs);
     // A hazard flagged from the ice is stamped when it was *captured*, but an offline draft can flush
     // well after the skate ended — so the window is checked against `firstReportedAt`, not `createdAt`.
     const now = Date.now();
@@ -911,8 +913,12 @@ export const listBundleCandidates = query({
   },
 });
 
-/** Default auto-bundle lookback when a report gives no start time (D55) — tunable in Phase 07. */
-export const DEFAULT_BUNDLE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+/**
+ * Default auto-bundle lookback when a report gives no start time (D55) — tunable in Phase 07. The
+ * value lives in core (`BUNDLE_LOOKBACK_MS`) so the phone's queue offers the same window
+ * (`queuedBundleCandidates`); this is the name the tests knew it by.
+ */
+export const DEFAULT_BUNDLE_LOOKBACK_MS = BUNDLE_LOOKBACK_MS;
 
 /**
  * Attach the author's own unattached hazards to their report (D55). Idempotent and ownership-gated:

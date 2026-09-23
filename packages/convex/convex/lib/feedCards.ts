@@ -8,6 +8,7 @@
 
 import {
   bandForCoord,
+  clipPathEnds,
   type DriveTimeBands,
   digestIsFresh,
   type FeedAuthor,
@@ -16,13 +17,22 @@ import {
   iceTypeKeys,
   isFavoriteReport,
   type LatLng,
+  type LngLat,
   matchesFilters,
   matchWeatherFilter,
+  type PostCardData,
+  PUT_IN_CLIP_M,
+  reportWhereSummary,
   type Season,
+  type SilhouetteData,
   sanitizeFeedFilters,
   seasonOf,
+  sectorFrame,
+  silhouettePath,
+  silhouetteRings,
   standingOf,
   surfaceTagKeys,
+  visiblePostReports,
   type WeatherDiscoveryFilter,
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -31,7 +41,7 @@ import { subAreaDriveCoordFor } from '../subAreas';
 import { loadFavorites, type ViewerFavorites } from '../waterBodyFavorites';
 import { getCurrentProfile } from './auth';
 import { publicAuthor } from './authorView';
-import { loadBlockedAuthorIds } from './reportVisibility';
+import { canSeePutIn, loadBlockedAuthorIds } from './reportVisibility';
 import { bodyWeatherCell, subAreaWeatherCell } from './sampling';
 
 /** A resolved survivor body's feed-relevant fields: display name + on-water centroid (for band calc). */
@@ -55,7 +65,22 @@ export interface BodyInfo {
   filterCellKey?: string;
   /** The parent's elevation, so a report's bay can be keyed the way the registry keyed it. */
   elevationM?: number;
+  /**
+   * The survivor doc itself, for what a *card* derives from it on demand (the silhouette). Held
+   * rather than re-read: it is in memory for this query already. Absent for a dangling ref.
+   */
+  doc?: Doc<'waterBodies'>;
+  /**
+   * The outline at card scale and the wedge apex (A10 §12.3), once per body per page — filled by
+   * `silhouetteBaseOf` the first time a card on this body asks, not here: the standing check, the
+   * recommended scan and a Post's sibling list all resolve bodies through this cache and never draw
+   * one, and simplifying a big outline and casting its sector rays is the one expensive thing in
+   * it. `null` once asked and found unusable.
+   */
+  silhouette?: SilhouetteBase | null;
 }
+
+type SilhouetteBase = Pick<SilhouetteData, 'rings' | 'bbox' | 'origin' | 'middleRadiusM'>;
 
 /** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
 export async function bodyInfoFor(
@@ -79,9 +104,39 @@ export async function bodyInfoFor(
     ...(body?.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
     ...(body ? { filterCellKey: bodyWeatherCell(body, 'filter').key } : {}),
     ...(body?.elevationM !== undefined ? { elevationM: body.elevationM } : {}),
+    ...(body ? { doc: body } : {}),
   };
   cache.set(waterBodyId, info);
   return info;
+}
+
+/** The per-body half of a card's silhouette, computed on first ask and memoized on the cache row. */
+function silhouetteBaseOf(info: BodyInfo): SilhouetteBase | null {
+  if (info.silhouette === undefined)
+    info.silhouette = info.doc ? silhouetteBaseFor(info.doc) : null;
+  return info.silhouette;
+}
+
+/**
+ * The simplified rings, the bbox, the apex, the middle. `null` for an outline that is not a
+ * polygon — the schema's `polygon` is the broad GeoJSON union, and a card must never be the read
+ * that fails the whole page over one odd row.
+ */
+function silhouetteBaseFor(body: Doc<'waterBodies'>): SilhouetteBase | null {
+  if (body.polygon.type !== 'Polygon' && body.polygon.type !== 'MultiPolygon') return null;
+  const geom = body.polygon as unknown as Parameters<typeof silhouetteRings>[0];
+  const { rings, bbox } = silhouetteRings(geom);
+  if (rings.length === 0) return null;
+  // `sectorFrame` is what the sheet's `where` means by a sector, so the card's wedge agrees with it;
+  // the interior point is honored when it is inside the water, else derived. `null` on a broken
+  // outline, in which case the apex falls back to the interior point (or the shoreline centroid).
+  const frame = sectorFrame(geom as never, body.interiorPoint ?? undefined);
+  return {
+    rings,
+    bbox,
+    origin: frame?.origin ?? body.interiorPoint ?? body.centroid,
+    ...(frame ? { middleRadiusM: frame.middleRadiusM } : {}),
+  };
 }
 
 /**
@@ -106,6 +161,10 @@ async function authorFor(
 export interface FeedCardCaches {
   bodyInfo: Map<string, BodyInfo>;
   authors: Map<string, FeedAuthor>;
+  /** A named bay's ring at card scale, per bay id; `null` caches a bay that is gone (A10 §12.3). */
+  bayRings?: Map<string, LngLat[] | null>;
+  /** The viewer, for the put-in rule (Phase 04 #7): author and moderators see it regardless. */
+  viewer?: Doc<'profiles'> | null;
 }
 
 /**
@@ -195,7 +254,65 @@ export async function toFeedCard(
     // A lake favorite takes the whole lake; a bay favorite takes only the reports in the bay (A09).
     isFavorite: isFavoriteReport(sets.favorites, r),
     ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
+    ...(await silhouetteFieldFor(ctx, r, body, caches)),
   };
+}
+
+/** `{ silhouette }` when the body has a usable outline, else nothing — the card's optional field. */
+async function silhouetteFieldFor(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  body: BodyInfo,
+  caches: FeedCardCaches,
+): Promise<{ silhouette?: SilhouetteData }> {
+  const base = silhouetteBaseOf(body);
+  return base ? { silhouette: await silhouetteFor(ctx, r, base, caches) } : {};
+}
+
+/**
+ * The per-report half of the silhouette (A10 §12.3): the put-in only when the viewer may see it
+ * (Phase 04 #7 — the author and moderators always, everyone else unless withheld), the recorded
+ * skate with its ends trimmed when the put-in is withheld (D58, the same clip the map applies), the
+ * chips' sector, and the named bay's ring. One activity read per report that has one; one bay read
+ * per distinct bay on the page.
+ */
+async function silhouetteFor(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  base: SilhouetteBase,
+  caches: FeedCardCaches,
+): Promise<SilhouetteData> {
+  const viewer = caches.viewer ?? null;
+  const privileged = canSeePutIn(viewer, r);
+  const withheld = r.showPutIn === false && !privileged;
+  const out: SilhouetteData = { ...base };
+  if (!withheld) out.putIn = r.point;
+  if (r.activityId !== undefined) {
+    const activity = await ctx.db.get(r.activityId);
+    if (activity?.path?.type === 'LineString') {
+      const line = activity.path as { type: 'LineString'; coordinates: number[][] };
+      const path = withheld ? clipPathEnds(line, PUT_IN_CLIP_M) : line;
+      if (path) out.path = silhouettePath(path.coordinates, base.bbox);
+    }
+  }
+  const where = reportWhereSummary(r);
+  if (where.sector !== undefined) out.sector = where.sector;
+  if (where.subAreaId !== undefined) {
+    if (!caches.bayRings) caches.bayRings = new Map();
+    const bayRings = caches.bayRings;
+    let ring = bayRings.get(where.subAreaId);
+    if (ring === undefined) {
+      const bayId = ctx.db.normalizeId('waterBodySubAreas', where.subAreaId);
+      const bay = bayId ? await ctx.db.get(bayId) : null;
+      ring =
+        bay && bay.removedAt === undefined
+          ? (silhouetteRings(bay.polygon as never).rings[0] ?? null)
+          : null;
+      bayRings.set(where.subAreaId, ring);
+    }
+    if (ring) out.bayRing = ring;
+  }
+  return out;
 }
 
 /** Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files skipped. */
@@ -253,7 +370,7 @@ export async function loadFeedViewer(ctx: QueryCtx, rawFilters: unknown): Promis
     home: viewer?.homeCoord,
     filters: sanitizeFeedFilters(rawFilters),
     now: Date.now(),
-    caches: { bodyInfo: new Map(), authors: new Map() },
+    caches: { bodyInfo: new Map(), authors: new Map(), bayRings: new Map(), viewer },
     weatherCaches: { bayCells: new Map(), digests: new Map() },
     bayCoords: new Map(),
   };
@@ -334,4 +451,55 @@ export async function servedFeedSeason(ctx: QueryCtx, current: Season): Promise<
   // within an hour of July 1 the newest Post can legitimately be *next* season's, and serving a
   // season that hasn't started would hide everything anyone skated in the one that has.
   return Math.min(seasonOf(newest.latestSkateEndTime), current);
+}
+
+/**
+ * One Post as the feed shows it, or `null` when the viewer would see nothing under the header: the
+ * members a moderator hid are not shown and not counted (`visiblePostReports`); the members the
+ * viewer's filters hid are not shown and *are* counted; a body a takedown removed (A07b) drops its
+ * Report the way the report feed always did. Shared by the feed and the profile history.
+ */
+export async function toPostCard(
+  ctx: QueryCtx,
+  post: Doc<'posts'>,
+  viewer: FeedViewer,
+): Promise<PostCardData | null> {
+  const members: Doc<'reports'>[] = [];
+  for (const id of post.reportIds) {
+    const member = await ctx.db.get(id);
+    if (member) members.push(member);
+  }
+  const reports = [];
+  let omittedCount = 0;
+  for (const r of visiblePostReports(post, members)) {
+    const body = await bodyInfoFor(ctx, r.waterBodyId, viewer.caches.bodyInfo);
+    // A takedown reaches the feed (A07b) — see `BodyInfo.standing`.
+    if (body.standing === 'removed') continue;
+    if (!(await reportMatchesFeed(ctx, r, body, viewer))) {
+      omittedCount++;
+      continue;
+    }
+    reports.push(
+      await toFeedCard(
+        ctx,
+        r,
+        viewer.caches,
+        { blocked: viewer.blocked, favorites: viewer.favorites },
+        viewer.now,
+      ),
+    );
+  }
+  const first = reports[0];
+  if (!first) return null;
+  return {
+    postId: post._id,
+    ...(post.title !== undefined ? { title: post.title } : {}),
+    ...(post.body !== undefined ? { body: post.body } : {}),
+    latestSkateEndTime: post.latestSkateEndTime,
+    author: first.author,
+    blocked: first.blocked,
+    isFavorite: reports.some((r) => r.isFavorite === true),
+    reports,
+    omittedCount,
+  };
 }

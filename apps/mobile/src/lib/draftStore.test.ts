@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { ReportDraft } from '@skating/core';
+import type { LegacyReportDraft } from '@skating/core';
 import { describe, expect, it, vi } from 'vitest';
 
 // `draftStore` imports `expo-sqlite` at module load (→ react-native, which Vitest can't transform).
@@ -11,7 +11,7 @@ vi.mock('expo-sqlite', () => ({
   },
 }));
 
-import { ensureSchema, readHazardItems, readReportDrafts, type SqliteLike } from './draftStore';
+import { ensureSchema, readHazardItems, readPostDrafts, type SqliteLike } from './draftStore';
 
 /**
  * Covers the one part of `draftStore` that touches *existing on-device user data*: the `kind`
@@ -36,13 +36,13 @@ function adapt(db: DatabaseSync): SqliteLike {
   };
 }
 
-function reportDraft(id: string, createdAt: number): ReportDraft {
+function reportDraft(id: string, createdAt: number): LegacyReportDraft {
   return {
     id,
     idempotencyKey: `key-${id}`,
     status: 'pending',
     bodyName: `Lake ${id}`,
-    form: {} as ReportDraft['form'],
+    form: {} as LegacyReportDraft['form'],
     photos: [],
     createdAt,
     updatedAt: createdAt,
@@ -50,7 +50,7 @@ function reportDraft(id: string, createdAt: number): ReportDraft {
 }
 
 /** Insert a row into the *pre-migration* table shape (no `kind` column), as an old install would. */
-function insertLegacyRow(db: DatabaseSync, draft: ReportDraft): void {
+function insertLegacyRow(db: DatabaseSync, draft: LegacyReportDraft): void {
   db.prepare(
     'INSERT INTO report_drafts (id, status, createdAt, updatedAt, data) VALUES (?, ?, ?, ?, ?)',
   ).run(draft.id, draft.status, draft.createdAt, draft.updatedAt, JSON.stringify(draft));
@@ -75,13 +75,21 @@ describe('draftStore kind migration', () => {
     const db = adapt(raw);
     ensureSchema(db);
 
-    // Migration is what makes the pre-existing rows readable through the kind-filtered query.
-    const drafts = readReportDrafts(db);
+    // Migration is what makes the pre-existing rows readable through the kind-filtered query —
+    // first as `report` rows, then lifted to the one-Report `post` each of them is (A10 §9.1).
+    const drafts = readPostDrafts(db);
     expect(drafts.map((d) => d.id)).toEqual(['a', 'b']); // oldest first (capture order)
+    expect(drafts[0]).toMatchObject({ kind: 'post', idempotencyKey: 'key-a', status: 'pending' });
+    expect(drafts[0]?.reports).toHaveLength(1);
+    expect(drafts[0]?.reports[0]).toMatchObject({
+      id: 'a',
+      idempotencyKey: 'key-a',
+      bodyName: 'Lake a',
+    });
 
-    // Every backfilled row got the default kind, so none was lost to the filter.
+    // Every backfilled row is now a post, so none was lost to the filter and none is still a report.
     const kinds = raw.prepare('SELECT kind FROM report_drafts').all() as { kind: string }[];
-    expect(kinds).toEqual([{ kind: 'report' }, { kind: 'report' }]);
+    expect(kinds).toEqual([{ kind: 'post' }, { kind: 'post' }]);
 
     raw.close();
   });
@@ -161,15 +169,17 @@ describe('draftStore kind migration', () => {
     insertLegacyRow(raw, reportDraft('old', 1000));
     // Two drafts saved after: each carries an explicit choice that the backfill must not overwrite.
     const opted = reportDraft('hidden', 2000);
-    opted.form = { showPutIn: false } as ReportDraft['form'];
+    opted.form = { showPutIn: false } as LegacyReportDraft['form'];
     insertLegacyRow(raw, opted);
     const shown = reportDraft('shown', 3000);
-    shown.form = { showPutIn: true } as ReportDraft['form'];
+    shown.form = { showPutIn: true } as LegacyReportDraft['form'];
     insertLegacyRow(raw, shown);
 
     ensureSchema(db); // the backfill runs on every open; this is the one that matters
 
-    const byId = Object.fromEntries(readReportDrafts(db).map((d) => [d.id, d.form.showPutIn]));
+    const byId = Object.fromEntries(
+      readPostDrafts(db).map((d) => [d.id, d.reports[0]?.form.showPutIn]),
+    );
     expect(byId).toEqual({ old: true, hidden: false, shown: true });
     // A real boolean in the blob, not the string 'true' — the form reads it as one.
     expect(typeof byId.old).toBe('boolean');
@@ -183,9 +193,11 @@ describe('draftStore kind migration', () => {
     ensureSchema(db); // fresh install: creates the table already carrying `kind`
     expect(() => ensureSchema(db)).not.toThrow();
 
-    // A row inserted without an explicit kind still takes the column default, so it lists.
+    // A row inserted without an explicit kind takes the column default (`report`) and is lifted to
+    // a post on the next open, so it lists.
     insertLegacyRow(raw, reportDraft('c', 3000));
-    expect(readReportDrafts(db).map((d) => d.id)).toEqual(['c']);
+    ensureSchema(db);
+    expect(readPostDrafts(db).map((d) => d.id)).toEqual(['c']);
 
     raw.close();
   });

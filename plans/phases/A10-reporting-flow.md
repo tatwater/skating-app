@@ -1,6 +1,6 @@
 # Phase A10 — Reporting: one sheet, three doors
 
-> **Scoped 2026-09-18; A10-1 and A10-2 built 2026-09-21.** Founder ask: the reporting flow must feel effortless while
+> **Scoped 2026-09-18; A10-1, A10-2 and A10-2b built 2026-09-21.** Founder ask: the reporting flow must feel effortless while
 > collecting as much hard data as a skater can give — the least taps, no forced order, the
 > author's own voice kept, every report style the community already writes accepted (a one-line
 > hazard, a lake writeup, a multi-lake day, a before-and-after-work pair, a drive-by), suggested
@@ -474,7 +474,7 @@ decides what the pipeline stores — and ships with its run, `posts.importBackda
 ### Owed
 
 - `convex dev --once` on dev before the app is used (the `accessAlerts.reason` widening).
-- A10-2b: §9.1–§9.3, §12.2, §12.3, the profile history as Posts.
+- ~~A10-2b: §9.1–§9.3, §12.2, §12.3, the profile history as Posts.~~ Built, stacked on #72.
 - **§7.2's client half (A10-3) must decide the cap:** conditions and blockers share
   `MAX_ACCESS_ROWS_PER_BODY` (64) on `by_water_body_status_expires_at`, so a lake with many live
   "plank needed" rows could push a live "gate locked" out of the window `blockedIds` is built from.
@@ -483,6 +483,105 @@ decides what the pipeline stores — and ships with its run, `posts.importBackda
 - The replay PR (§1.5) after the founder's eval review: the deployment (a `skating-replay` project
   is the recommendation — preview deployments auto-delete after 5 / 14 days), the snapshot import,
   `posts.importBackdated`, the runner and `replay-summary.md`.
+
+## Built record — A10-2b (2026-09-21, `phase-a10-reporting-flow-2b`, PR #73 stacked on #72)
+
+The half the size rule split off A10-2: §9.1–§9.2 (the queue around Posts, D55 offline, *Waiting
+to send*), §12.2 (aggregates learn `where`), §12.3 (the silhouette, D203), and the profile history
+as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: core 2,947 · convex 1,733 · web
+576 · mobile 112. No schema change, no data run.
+
+### What shipped, by workstream
+
+- **§9.1 the queue is Posts** — core `draftQueue.ts`: `PostDraft` (the words plus one or more
+  `ReportDraft`s, each with its own key, body, form, photos, track and `hazardRefs`) flushed by
+  `flushPost` as one `posts.create`. Every Report is resolved, validated and held to the create-only
+  rules before any Report uploads; then the uploads; then one create — one bad leg parks the whole
+  Post, named by its lake, and a sound first leg spends nothing on it.
+  `postDraftFromLegacy` lifts a pre-A10-2b row; the mobile store's fourth migration runs it row by
+  row under the `post` kind (tested against real sqlite). The pre-sheet form saves a one-Report
+  Post and edits a Post's first Report; the sheet (A10-3) edits them all.
+- **§9.1 D55 offline** — `hazardRefs` carry a server id or the queue's local id; the bundle prompt
+  offers the phone's queued hazards beside the server's (`local:`-prefixed); the flush resolves a
+  local ref through the hazard queue, which now **keeps a flushed hazard's row** (`done`, with
+  `hazardId`) while a draft points at it and sweeps it after (`removableHazardItems`) — the rule a
+  flushed track's row already followed. A bundled hazard is the observation the minimum set asks
+  for at flush. Online, a checked hazard still in the queue is **flushed at submit** and attached
+  by the id it lands with (`resolveBundledHazardIds` over `resolveQueuedHazardId`); one that cannot
+  be sent stops the post with a sentence (`UNSENT_HAZARD_REFUSAL`), never a silent omission.
+- **§9.2 *Waiting to send*** — the Report tab's queue: the signal state in one sentence from core
+  (`WAITING_TO_SEND_COPY`; offline: "…it's safe to close the app"), hazards first, then the Posts
+  labeled by title or lakes (`postDraftLabel`), *Sync now* only with signal.
+- **§9.3** — nothing to build until extraction exists (A10-4); the prose already rides the draft
+  (`PostDraft.title` / `body`).
+- **§12.2 aggregates learn `where`** — `whereOverlaps` / `whereCoversBody` in core. Corroboration
+  (`shareIceType`) needs a shared type *about the same water*; the contradiction test keeps the
+  by-key reading (a shared type anywhere keeps a pair out of the queue); the recommended bar wants
+  black ice claimed of the lake — not one bay, one sector or "patches". Feed filters stay
+  by key on purpose: black ice in the north is black ice on the lake.
+- **§12.3 the silhouette (D203)** — core `bodySilhouette.ts` (payload, ring simplification to a
+  240-point budget, the equirectangular fit, the SVG path builders; fast-check over the fit, the six
+  real outlines over the budget); the server builds the per-body half once per page in
+  `bodyInfoFor` from the polygon the card read already carried and the per-report half in
+  `toFeedCard` (put-in only when the viewer may see it, the skate trimmed under D58's clip, the
+  first located chip's `where` — its sector and its bay together, never one chip's sector beside
+  another's bay); `BodySilhouette` on web and mobile draws the same paths. The card's right column
+  is the time over the silhouette.
+- **§12.1 the profile history** — `getPublicProfile` returns `posts: PostCardData[]` through the
+  feed's `toPostCard`, bounded in Posts *and* in member Reports hydrated (one number, cut at a Post
+  boundary); both profile pages render `PostCard`s.
+
+### Deltas from the plan — read these before extending
+
+1. **The silhouette is computed per page, not stored** — the body doc's polygon is already in the
+   card's read, so simplifying it costs CPU and no bytes; a stored `cardRing` would have meant a
+   backfill plus five writer sites. If a profile ever says otherwise, the per-body half is one
+   function and can move to the row.
+2. **The card carries the skate's path** (the founder's "the report track is static") — simplified
+   to the same budget, D58-clipped for a stranger. The plan's §12.3 named only the put-in and the
+   sector.
+3. **A flushed hazard's row is kept, not deleted** — the plan said "the ids must ride the offline
+   draft" and left the resolution unsaid; keeping the row with its server id is the same rule the
+   track queue already had, and the sweep is the same shape (`sweepHazardItems` beside `sweepTracks`).
+4. **Contradiction stays by key** while corroboration reads `where` — asymmetric on purpose: fewer
+   awards for different places, no more flags for them.
+5. **The flush resolves hazard refs before the create-only check and the uploads** (self-review),
+   so a ref that comes back empty cannot pass the minimum set and then fail the create after the
+   photos were spent; a hazard flushed on demand this way frees its photo files like one flushed by
+   the drain (`flushOneHazard`).
+6. **Reopening a draft applies its saved bundle choice** as the opt-outs once the candidates load —
+   the last explicit choice wins over D55's pre-checked default, including for a hazard that synced
+   in since. A call made at build; say so if the default should win instead.
+7. **The bundle window is one rule** (`bundleWindow` in core): the prompt's queued candidates and
+   `hazards.listBundleCandidates` read the same skate-window-or-24-hours.
+8. **An online post flushes a checked queued hazard at submit** (PR #73 review). The build had it
+   silently unattached — "no id yet, posts on its own" — which lost the author's explicit, shown
+   choice (D55: never silent) whenever a transient sync failure or an unfinished drain left the row
+   without a server id. Now the form asks the queue for the id, flushing the row if it must, and a
+   hazard that cannot go stops the post with what to do; the posted form then runs the drain's
+   sweep (`sweepFlushedHazards`) so the spent row is not re-offered to the next report on the lake.
+   The draft path is unchanged. Because the submit and a reconnect drain can now reach one row
+   together, every per-hazard flush runs through one keyed guard (`createKeyedSingleFlight` in
+   core): a second caller joins the flush already running, and one that arrives just after it
+   settled is handed the row's server id — never two uploads of one hazard's photos.
+9. **The flush checks every leg before any leg uploads** (PR #73 review): two passes over the
+   Post's Reports, so a two-lake Post whose second leg is stale or under-observed spends none of
+   the first leg's photos. The on-demand hazard flush stays in the first pass — it is not an upload
+   spent on this Post, and the minimum-set count needs it.
+10. **The silhouette draws one chip's `where`, whole** (PR #73 review): the first located chip's
+    sector and bay together, never a sector from one chip beside a bay from another — a wash and a
+    ring that composed "the south end of North Bay" out of "black ice, south" and a reading in
+    North Bay was a place no one claimed.
+11. **The profile history is bounded in Reports, not only Posts** (PR #73 review): the fifty-Post
+    window could hydrate five hundred cards (a Post is up to ten), each with every thumbnail URL —
+    `photoIds` has no per-report cap on the write path. One number bounds both, cut at a Post
+    boundary. A paged history is the next step if a profile ever wants more than the window.
+
+### Owed
+
+- A10-3 device pass of the queue: a two-lake Post saved offline, a queued hazard bundled, the
+  *Waiting to send* line with airplane mode on and off.
+- The A10-3 sheet edits every member of a Post draft; the pre-sheet form edits the first.
 
 ## Review pass — 2026-09-19
 
@@ -733,7 +832,7 @@ Fewest sensible PRs; sub-workstreams are commits.
   split the rest off.)*
 - **A10-2b — §9.1–§9.3 + §12.2 + §12.3 + the profile history as Posts.** The offline queue
   reshaped around Posts (D55 ids in the draft, *Waiting to send*), aggregates that learn `where`,
-  the water-body silhouette on cards and the sheet.
+  the water-body silhouette on cards (D203). *(Built 2026-09-21, stacked on #72.)*
 - **The replay PR — §1.5.** After the founder's eval review decides the engine: the replay
   deployment, the snapshot import, `posts.importBackdated`, the runner, the miss list.
 - **A10-3 — §4.1, §4.3, §4.4 + §6 + §7.** The mobile sheet with the chips, page and

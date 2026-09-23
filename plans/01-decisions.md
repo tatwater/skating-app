@@ -1153,8 +1153,11 @@ before `skateEndTime`. Tunable alongside the other Phase 07 constants.
 attributed and how it presents in the feed, so it is a shown choice, not a background merge. Gated on
 ownership + same body + not-already-attached, and idempotent. Must not double-count toward D50 points
 once reputation lands. Works offline — the draft holds local hazard ids and resolves them at flush
-*(not built: the offline draft carries no hazard ids and bundling runs only on the live create path;
-A10-2 §9.1 builds it — register, "On-ice path debts")*.
+*(built 2026-09-21, A10-2b §9.1: a Report draft carries `hazardRefs` — a server id for a hazard
+picked from the server's list, the queue's local id for one captured on the ice — the bundle prompt
+offers the phone's queued hazards beside the server's, and the flush resolves a local ref through
+the hazard queue, which keeps a flushed hazard's row with its server id while a draft points at it;
+a ref that cannot resolve is dropped and never blocks the Post)*.
 **Why:** On the ice you want the fastest possible capture (two taps, no typing, no report); at home you
 want a coherent story. Bundling gets both without asking the skater to re-enter anything, and it turns
 the standalone quick-flag path (D51) from a parallel silo into the front half of the report flow.
@@ -6173,3 +6176,27 @@ third parties is republishing (L5), whatever the byline says; on a private, disp
 it is testing.
 
 **Related:** D186, D196, D199, Q8, L5a.
+
+## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
+
+**Decided (2026-09-21, founder call; Phase 05 decision 6 folded into A10 on 2026-09-20).** A report
+card carries the water body as a small still image: the outline as a shape, the put-in as a dot,
+the recorded skate as a line, and the chips' `where` (D193) as a soft wash clipped to the water. It
+is **not a map** — no tiles, no zoom, no tap of its own; the card is the button and the detail page
+has the real map — and it is **not a picture**: the server sends geometry (the outline simplified
+to a ~240-point budget, once per body per page, from the polygon the card read already carried)
+and the two SVG components draw it at render time from the same core path builders.
+
+**Why:** a MapLibre view per row in a scrolling list is the one thing a phone feed cannot afford,
+and a silhouette says what the card needs — which lake, what shape, where on it — for a few
+hundred points that also render from the offline cache. Minting an image per Report would have
+baked in things that change under it: the theme, the author flipping the put-in switch (the pin
+goes and the skate's ends are trimmed for a stranger, D58), an outline redraw, a highlight color.
+Drawing from geometry follows all of them for free. The wedge's apex is `sectorFrame`'s origin, so
+the card's north end is the sheet's north end.
+
+**Not this:** a static tile render behind the outline (a basemap is what makes it read as a map,
+and a map invites the zoom it cannot give); a per-Report stored image; anything on the card that
+implies the ice is good where the wash is (D3 — the wash says where the author looked).
+
+**Related:** D58, D186, D193, D3, Phase 05 decision 6.

@@ -1,3 +1,4 @@
+import { useNetInfo } from '@react-native-community/netinfo';
 import type { Id } from '@skating/convex/dataModel';
 import {
   formatSkateTime,
@@ -5,7 +6,9 @@ import {
   hazardTypeLabel,
   isFlushable,
   isHazardItemFlushable,
-  type ReportDraft,
+  type PostDraft,
+  postDraftLabel,
+  WAITING_TO_SEND_COPY,
 } from '@skating/core';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -23,9 +26,10 @@ import { resolveCachedBody } from '../../src/lib/bodyCache';
  * The center "＋ Report" tab (D28). Online, reports are also created in place from a lake's detail
  * drawer (D47); here the form is **the page** — no second tap to reach it (founder, 2026-09-20; this
  * absorbed the old `draft/new` modal). It's the offline capture entry point (Phase 02a §6.2): your GPS
- * binds the report to the nearest cached lake (or it resolves at sync), and below the form sit your
- * queued drafts (pending / errored) with sync + edit + delete. Drafts flush automatically on
- * reconnect (D12); "Sync now" forces it. Picking the lake by name when you're not on it is Phase A10.
+ * binds the report to the nearest cached lake (or it resolves at sync), and below the form sits
+ * **Waiting to send** (A10 §9.2): the signal state, the queued hazards first, then the queued Posts,
+ * each with sync + edit + delete. Drafts flush automatically on reconnect (D12); "Sync now" forces
+ * it. Picking the lake by name when you're not on it is the sheet (A10-3).
  *
  * While a deletion is pending the form goes (D62 amendment) but **the queue stays**: those drafts are
  * the skater's own unsent work, and this is the only screen that can show or delete them. A draft
@@ -37,6 +41,8 @@ export default function ReportScreen() {
   const { drafts, hazardItems, pendingCount, refresh, flushNow, removeDraft, removeHazardItem } =
     useOfflineDrafts();
   const leaving = useIsLeaving();
+  // `isConnected` is `null` while unknown; only a definite `false` reads as no signal.
+  const offline = useNetInfo().isConnected === false;
   // Bumped to remount the capture block: Cancel and Save both want a clean form *and* a fresh GPS
   // fix, and a key does both at once. Tab switches don't bump it, so a half-typed report survives a
   // glance at the map.
@@ -82,14 +88,21 @@ export default function ReportScreen() {
             <YStack gap="$2">
               <XStack justifyContent="space-between" alignItems="center">
                 <Text color="$foreground" fontWeight="600">
-                  Queued{pendingCount > 0 ? ` · ${pendingCount} to send` : ''}
+                  {pendingCount > 0 ? `Waiting to send · ${pendingCount}` : 'Queued'}
                 </Text>
-                {pendingCount > 0 ? (
+                {pendingCount > 0 && !offline ? (
                   <Button size="$2" onPress={() => void flushNow()}>
                     Sync now
                   </Button>
                 ) : null}
               </XStack>
+              {/* The signal line (A10 §9.2): what the queue is waiting on, and that closing the app is
+                  fine. One sentence, from core, so the promise is worded once. */}
+              {pendingCount > 0 ? (
+                <Paragraph color="$foregroundMuted" fontSize={13}>
+                  {offline ? WAITING_TO_SEND_COPY.offline : WAITING_TO_SEND_COPY.online}
+                </Paragraph>
+              ) : null}
               {/* Hazards first — they're safety content and flush first (see `flushDrafts`). A queued
                   hazard that hit a permanent rejection lives here until dismissed, so it can't silently
                   vanish after "it'll post when you're back in signal". */}
@@ -214,16 +227,18 @@ function ReportCapture({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   );
 }
 
+/** One queued Post (A10 §9.1): its title or its lakes, the latest skate, its state. */
 function DraftRow({
   draft,
   onEdit,
   onDelete,
 }: {
-  draft: ReportDraft;
+  draft: PostDraft;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const pending = isFlushable(draft);
+  const latest = Math.max(...draft.reports.map((r) => r.form.skateEndTime));
   return (
     <YStack
       gap="$2"
@@ -235,14 +250,15 @@ function DraftRow({
     >
       <XStack justifyContent="space-between" alignItems="center" gap="$2">
         <Text color="$foreground" flex={1}>
-          {draft.bodyName ?? 'Unknown lake'}
+          {postDraftLabel(draft)}
         </Text>
         <Badge tone={draft.status === 'error' ? 'solid' : undefined}>
-          {draft.status === 'error' ? 'Needs attention' : pending ? 'Pending' : 'Sent'}
+          {draft.status === 'error' ? 'Needs attention' : pending ? 'Waiting' : 'Sent'}
         </Badge>
       </XStack>
       <Text color="$foregroundMuted" fontSize={12}>
-        Skated {formatSkateTime(draft.form.skateEndTime)}
+        Skated {formatSkateTime(latest)}
+        {draft.reports.length > 1 ? ` · ${draft.reports.length} lakes` : ''}
       </Text>
       {draft.status === 'error' && draft.errorMessage ? (
         <Text color="$danger" fontSize={12}>
@@ -284,7 +300,7 @@ function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: ()
           {title}
         </Text>
         <Badge tone={item.status === 'error' ? 'solid' : undefined}>
-          {item.status === 'error' ? 'Needs attention' : pending ? 'Pending' : 'Sent'}
+          {item.status === 'error' ? 'Needs attention' : pending ? 'Waiting' : 'Sent'}
         </Badge>
       </XStack>
       {item.status === 'error' && item.errorMessage ? (

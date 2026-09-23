@@ -3,6 +3,7 @@ import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
 import { Image, ScrollView } from 'react-native';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
+import { BodySilhouette } from './BodySilhouette';
 import { Badge } from './detailUi';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
@@ -73,9 +74,15 @@ export function FeedCard({
             </Text>
           ) : null}
         </YStack>
-        <Text color="$foregroundMuted" fontSize={12}>
-          {card.relativeTime}
-        </Text>
+        {/* The right column: when, and where on the lake (A10 §12.3) — the silhouette carries the
+            put-in, the skate and the chips' `where`, so the card shows the shape of the day without
+            a map. Absent on a body with no usable outline, and on a cached card from before it. */}
+        <YStack alignItems="flex-end" gap="$1">
+          <Text color="$foregroundMuted" fontSize={12}>
+            {card.relativeTime}
+          </Text>
+          {data.silhouette ? <BodySilhouette data={data.silhouette} size={56} /> : null}
+        </YStack>
       </XStack>
 
       {nested ? (

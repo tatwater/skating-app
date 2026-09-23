@@ -4,7 +4,8 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   buildReportInput,
   bundledHazardIds,
-  createDraft,
+  createPostDraft,
+  createReportDraft,
   type DraftPhoto,
   emptyReportForm,
   emptyThicknessReading,
@@ -12,16 +13,20 @@ import {
   flushErrorMessage,
   formatSkateTime,
   formCreateRefusal,
+  type HazardRef,
   hasFutureSkateTimeError,
+  hazardRefFor,
   humanizeEnum,
   ICE_TYPES,
   isMinor,
+  optOutsFromSavedRefs,
+  type PostDraft,
   PRECIP_LABELS,
   PRECIP_TYPES,
   photoUploadCoord,
-  type ReportDraft,
   type ReportFormState,
   reportFormFromReport,
+  resolveBundledHazardIds,
   resolveShowPutInDefault,
   resolveSkateWindow,
   SHOW_PUT_IN_EXPLAINER,
@@ -35,6 +40,7 @@ import {
   THICKNESS_METHOD_LABELS,
   type ThicknessFormReading,
   toggleBundleOptOut,
+  UNSENT_HAZARD_REFUSAL,
   validateReportInput,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
@@ -47,7 +53,7 @@ import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
 import { getTrack, saveDraft } from '../lib/draftStore';
 import { getSuggestedSkateWindow } from '../lib/dwellTracker';
-import { isDraftFlushing } from '../lib/flushService';
+import { isDraftFlushing, resolveQueuedHazardId, sweepFlushedHazards } from '../lib/flushService';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
 import { useMapSelectionOptional } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
@@ -351,8 +357,11 @@ export function ReportForm({
   bodyName?: string;
   /** Device GPS at capture — carried on a coord-only draft so the flush can resolve the lake. */
   coord?: { lat: number; lng: number };
-  /** An existing draft to hydrate + update (offline edit); absent = a fresh report/draft. */
-  draft?: ReportDraft;
+  /**
+   * An existing Post draft to hydrate + update (offline edit); absent = a fresh report/draft. This
+   * form edits its **first** Report — the one a pre-sheet draft has; the sheet (A10-3) edits them all.
+   */
+  draft?: PostDraft;
   /**
    * The **local** id of a recording this report describes (Phase 08), when the form was opened from a
    * finished skate. Local rather than server, because both may have been captured with no signal: the
@@ -399,8 +408,9 @@ export function ReportForm({
   // off the map (the offline capture/edit routes, outside the `(map)` layout) there's no map, so the
   // put-in falls back to local state + a "use my current location" button.
   const mapSelection = useMapSelectionOptional();
+  const draftReport = draft?.reports[0];
   const [localPutIn, setLocalPutIn] = useState<{ lat: number; lng: number } | null>(
-    draft?.putInPin ?? null,
+    draftReport?.putInPin ?? null,
   );
   // Off-map, there's no pin-drop mode — but the no-op MUST be stable (a fresh `() => {}` each render
   // would change the clear-effect's deps every render, re-running its cleanup and wiping the pin).
@@ -410,6 +420,19 @@ export function ReportForm({
   const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([]);
   const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([]);
   const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds);
+  // Reopening a draft: the candidates arrive after mount, so the saved choice is applied when they
+  // do — once, from the refs the draft carried, so an opt-out survives the edit (A10 §9.1).
+  const savedRefsApplied = useRef(false);
+  const onBundleCandidates = useCallback(
+    (ids: string[]) => {
+      setBundleCandidateIds(ids);
+      if (draftReport?.hazardRefs && !savedRefsApplied.current && ids.length > 0) {
+        savedRefsApplied.current = true;
+        setUnbundledHazardIds(optOutsFromSavedRefs(ids, draftReport.hazardRefs));
+      }
+    },
+    [draftReport?.hazardRefs],
+  );
 
   const noopPinDrop = useCallback(() => {}, []);
   const putInPin = mapSelection ? mapSelection.putInPin : localPutIn;
@@ -418,10 +441,10 @@ export function ReportForm({
   const hasMap = mapSelection !== null;
 
   // Hydrate from a draft when editing; else start empty once the profile loads (below).
-  const [form, setForm] = useState<ReportFormState | null>(draft ? draft.form : null);
+  const [form, setForm] = useState<ReportFormState | null>(draftReport ? draftReport.form : null);
   const [photos, setPhotos] = useState<PhotoDraft[]>(
-    draft
-      ? draft.photos.map((p) => ({
+    draftReport
+      ? draftReport.photos.map((p) => ({
           id: p.id,
           fullUri: p.fullUri,
           thumbUri: p.thumbUri,
@@ -620,20 +643,36 @@ export function ReportForm({
       }
       return;
     }
-    // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
-    // the server would refuse with, so the form says what to add rather than what failed. Never on
-    // an edit (what is posted stays editable), and never on *Save draft* — a draft is "not done
-    // yet" by definition; the queue's flush asks again when it posts.
-    if (!editing) {
-      const refusal = formCreateRefusal(result.normalized, bundleHazardIds.length, Date.now());
-      if (refusal) {
-        setError(refusal);
-        return;
-      }
-    }
-
     setSubmitting(true);
     try {
+      // The hazards this post attaches (D55): a server id as it is; one still in the phone's queue
+      // by the server id its row carries — flushed **now** if it hasn't landed, since this is an
+      // online post and the phone has signal. One that cannot be sent stops the post with a
+      // sentence, never a silent omission: the prompt showed it checked, and a report that posted
+      // without it would have lost the author's explicit choice. Never on an edit — bundling is a
+      // create-time act. The draft path carries the ref by local id and the flush resolves it.
+      const bundled = editing
+        ? { ok: true as const, hazardIds: [] as string[] }
+        : await resolveBundledHazardIds(bundleHazardIds, resolveQueuedHazardId);
+      if (!bundled.ok) {
+        setError(UNSENT_HAZARD_REFUSAL);
+        setSubmitting(false);
+        return;
+      }
+      const attachHazardIds = bundled.hazardIds;
+      // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
+      // the server would refuse with, so the form says what to add rather than what failed. Never on
+      // an edit (what is posted stays editable), and never on *Save draft* — a draft is "not done
+      // yet" by definition; the queue's flush asks again when it posts. Asked after the hazards
+      // resolved, so the observation count is the one the server will see.
+      if (!editing) {
+        const refusal = formCreateRefusal(result.normalized, attachHazardIds.length, Date.now());
+        if (refusal) {
+          setError(refusal);
+          setSubmitting(false);
+          return;
+        }
+      }
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
           if (photo.uploadedId) return photo.uploadedId;
@@ -721,10 +760,13 @@ export function ReportForm({
         ...(resolvedActivityId !== undefined
           ? { activityId: resolvedActivityId as Id<'gpsActivities'> }
           : {}),
-        ...(bundleHazardIds.length > 0
-          ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
+        ...(attachHazardIds.length > 0
+          ? { attachHazardIds: attachHazardIds as Id<'hazards'>[] }
           : {}),
       });
+      // A queued hazard flushed at submit has done its job; drop its row now rather than offering
+      // it to the next report on this lake until a drain happens to sweep it.
+      sweepFlushedHazards();
       setPutInPin(null);
       setPinDropMode(false);
       onClose();
@@ -763,6 +805,8 @@ export function ReportForm({
     try {
       const id = draft?.id ?? randomUUID();
       const idempotencyKey = draft?.idempotencyKey ?? randomUUID();
+      const reportId = draftReport?.id ?? randomUUID();
+      const reportKey = draftReport?.idempotencyKey ?? randomUUID();
       const draftPhotos: DraftPhoto[] = await Promise.all(
         photos.map(async (p) => ({
           id: p.id,
@@ -789,18 +833,32 @@ export function ReportForm({
         setSavingDraft(false);
         return;
       }
+      // The bundled hazards ride the draft (D55 / A10 §9.1): a server id for one picked from the
+      // server's list, the queue's local id for one captured on the ice with no signal.
+      const hazardRefs: HazardRef[] = bundleHazardIds.map(hazardRefFor);
+      const report = createReportDraft({
+        id: reportId,
+        idempotencyKey: reportKey,
+        form,
+        ...(waterBodyId !== undefined ? { waterBodyId } : {}),
+        ...(bodyName !== undefined ? { bodyName } : {}),
+        ...(coord !== undefined ? { coord } : {}),
+        ...(putInPin ? { putInPin } : {}),
+        photos: draftPhotos,
+        ...(trackDraftId !== undefined ? { trackDraftId } : {}),
+        ...(draftReport?.activityId !== undefined ? { activityId: draftReport.activityId } : {}),
+        hazardRefs,
+      });
+      // One Report per pre-sheet draft; an edit keeps any other members a sheet draft may carry.
+      const others = (draft?.reports ?? []).filter((r) => r.id !== reportId);
       saveDraft(
-        createDraft({
+        createPostDraft({
           id,
           idempotencyKey,
           now: Date.now(),
-          form,
-          waterBodyId,
-          bodyName,
-          coord,
-          putInPin: putInPin ?? undefined,
-          photos: draftPhotos,
-          ...(trackDraftId !== undefined ? { trackDraftId } : {}),
+          ...(draft?.title !== undefined ? { title: draft.title } : {}),
+          ...(draft?.body !== undefined ? { body: draft.body } : {}),
+          reports: [report, ...others],
         }),
       );
       // These photos now belong to the saved draft — skip the unmount reclaim sweep. (They carry no
@@ -1119,7 +1177,7 @@ export function ReportForm({
           onToggle={(hazardId, checked) =>
             setUnbundledHazardIds((prev) => toggleBundleOptOut(prev, hazardId, checked))
           }
-          onCandidates={setBundleCandidateIds}
+          onCandidates={onBundleCandidates}
         />
       ) : null}
 
