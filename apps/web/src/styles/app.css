@@ -50,7 +50,9 @@
   --warning-foreground: #0b1016;
   --success: #137138;
   --success-foreground: #ffffff;
-  --radius: 0.5rem;
+  /* Two pixels, app-wide (A10-6 / D206; `radius.xs` in @skating/design): blocky, not rounded.
+     shadcn derives `sm`/`md` from this by subtraction, and CSS clamps the negatives to zero. */
+  --radius: 0.125rem;
 }
 
 .dark {

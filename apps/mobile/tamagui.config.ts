@@ -42,6 +42,16 @@ function baseScale<T extends Record<string, unknown>>(created: T): Unprefixed<T>
   ) as Unprefixed<T>;
 }
 
+/** Every key of `scale` set to `value`, with the keys kept in the type so `borderRadius="$4"` still checks. */
+function allTo<T extends Record<string, unknown>>(
+  scale: T,
+  value: number,
+): { [K in keyof T]: number } {
+  return Object.fromEntries(Object.keys(scale).map((k) => [k, value])) as {
+    [K in keyof T]: number;
+  };
+}
+
 const baseTokens = {
   space: baseScale(defaultConfig.tokens.space),
   size: baseScale(defaultConfig.tokens.size),
@@ -116,7 +126,12 @@ export const config = createTamagui({
     size: baseTokens.size,
     // Named keys (`sm`, `full`, `overlay`) that don't collide with Tamagui's numeric ones, so these
     // two are genuinely additive rather than overriding.
-    radius: { ...baseTokens.radius, ...radius },
+    /**
+     * Every numeric radius step is the sheet's two pixels (A10-6 / D206, `radius.xs`): the app is
+     * blocky app-wide by one token change, as the founder asked, and `$full` stays round for the
+     * avatars and dots that are drawn round on purpose. The named keys ride on top as before.
+     */
+    radius: { ...allTo(baseTokens.radius, radius.xs), ...radius },
     zIndex: { ...baseTokens.zIndex, ...zIndex },
   },
 });
