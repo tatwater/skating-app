@@ -22,10 +22,7 @@ describe('SheetPanel', () => {
         <p>body</p>
       </SheetPanel>,
     );
-    expect(screen.getByRole('button', { name: /needed/ })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(screen.getByRole('button', { name: /needed/ })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('body')).toBeInTheDocument();
   });
 

@@ -836,8 +836,9 @@ asked for it to read as an instrument — FUI (00-vision), Resolve-like on a des
 on a phone, black and white with color only where it means something. Designed first as static
 mockups (headless Chrome renders, kept outside the repo in `skating-mockups/a10-sheet/`) through
 three founder rounds, then built as the first of two PRs; the second (A10-7) is photos that assign
-themselves, place-mode and the track import. Four commits off `-5`, ~3,900 lines over 45 files.
-Suites at build: core 3,001 · convex 1,742 · web 610 · mobile 112. No schema change, no data run.
+themselves, place-mode and the track import. Five commits off `-5`, ~6,600 changed lines over 61
+files. Suites at build: core 3,018 · convex 1,748 · web 645 · mobile 112. No schema change, no
+data run.
 
 Founder calls, all before code: no new typefaces yet (Saira is the wider Figma redesign's; the
 sheet ships in the apps' current faces plus a `$mono` token); the console is a viewport-locked
