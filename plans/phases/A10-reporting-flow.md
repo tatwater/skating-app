@@ -560,7 +560,10 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
    without a server id. Now the form asks the queue for the id, flushing the row if it must, and a
    hazard that cannot go stops the post with what to do; the posted form then runs the drain's
    sweep (`sweepFlushedHazards`) so the spent row is not re-offered to the next report on the lake.
-   The draft path is unchanged.
+   The draft path is unchanged. Because the submit and a reconnect drain can now reach one row
+   together, every per-hazard flush runs through one keyed guard (`createKeyedSingleFlight` in
+   core): a second caller joins the flush already running, and one that arrives just after it
+   settled is handed the row's server id — never two uploads of one hazard's photos.
 9. **The flush checks every leg before any leg uploads** (PR #73 review): two passes over the
    Post's Reports, so a two-lake Post whose second leg is stale or under-observed spends none of
    the first leg's photos. The on-demand hazard flush stays in the first pass — it is not an upload

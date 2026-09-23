@@ -10,6 +10,7 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   compactTrack,
   createCoalescedRunner,
+  createKeyedSingleFlight,
   flushableHazardItems,
   flushablePosts,
   flushableTracks,
@@ -138,7 +139,7 @@ export async function resolveQueuedHazardId(localId: string): Promise<string | n
   const queued = getHazardItem(localId);
   if (queued?.kind !== 'hazard') return null;
   if (queued.hazardId !== undefined) return queued.hazardId;
-  return (await flushOneHazard(localId, hazardEffects(), Date.now()))?.hazardId ?? null;
+  return (await flushOneHazard(localId))?.hazardId ?? null;
 }
 
 /**
@@ -300,7 +301,7 @@ async function drainOnce(now: number): Promise<void> {
   // Hazards first, deliberately. They're safety content that another skater may be about to need,
   // and a queue of report drafts with photos can take a while to drain on a weak connection —
   // sending the ridge before the trip write-up is the right order to lose a connection in.
-  await flushHazardQueue(now);
+  await flushHazardQueue();
   // Then tracks, before reports: a report draft linked to one needs its `activityId`. A report
   // whose track is still queued resolves it on demand anyway (`resolveActivityId`), so this is an
   // ordering optimization, not a correctness requirement.
@@ -374,20 +375,27 @@ function applyTrackRetention(now: number): void {
 
 /**
  * Flush one queued hazard or confirmation by local id, returning its result. Shared by the queue
- * drain and by a Post draft that needs a bundled hazard's server id *now* (`resolveHazardId`), the
- * way `flushOneTrack` serves a report's track — so the two paths cannot disagree about what a
- * successful flush leaves behind: the photo files go at once, and the row waits for
- * `sweepHazardItems`, because a report draft may still bundle this hazard by its local id and needs
- * the server id the row now carries (D55).
+ * drain and by every caller that needs a bundled hazard's server id *now* — a Post draft's flush
+ * (`resolveHazardId`) and the online form's submit (`resolveQueuedHazardId`) — the way
+ * `flushOneTrack` serves a report's track, so the paths cannot disagree about what a successful
+ * flush leaves behind: the photo files go at once, and the row waits for `sweepFlushedHazards`,
+ * because a report draft may still bundle this hazard by its local id and needs the server id the
+ * row now carries (D55).
+ *
+ * **One flush per row at a time** (`createKeyedSingleFlight`). The form's submit and a reconnect or
+ * foreground drain can reach the same row together; unguarded, both would upload its photos, create
+ * photo rows and race each other's checkpoint writes — the server's idempotency keeps one hazard,
+ * but not the orphaned rows or the clobbered queue state. A second caller joins the flush already
+ * running and gets its result. One that arrives just after it settled finds the row `done` and is
+ * handed the server id the row carries, not a `null` that would read as "could not be sent".
  */
-async function flushOneHazard(
-  id: string,
-  eff: HazardFlushEffects,
-  now: number,
-): Promise<{ hazardId?: string } | null> {
+const flushOneHazard = createKeyedSingleFlight(flushHazardNow);
+
+async function flushHazardNow(id: string): Promise<{ hazardId?: string } | null> {
   const fresh = getHazardItem(id);
+  if (fresh?.kind === 'hazard' && fresh.hazardId !== undefined) return { hazardId: fresh.hazardId };
   if (!fresh || !isHazardItemFlushable(fresh)) return null;
-  const result = await flushHazardItem(fresh, eff, now);
+  const result = await flushHazardItem(fresh, hazardEffects(), Date.now());
   if (!result.ok) return null;
   if (result.item.kind === 'hazard') {
     deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
@@ -403,10 +411,9 @@ async function flushOneHazard(
  * Unlike report drafts there's no edit-during-flush race to guard: a queued hazard is immutable once
  * captured (the capture bar is gone by then), so there's nothing for an edit to clobber.
  */
-async function flushHazardQueue(now: number): Promise<void> {
-  const eff = hazardEffects();
+async function flushHazardQueue(): Promise<void> {
   for (const { id } of flushableHazardItems(listHazardItems())) {
-    await flushOneHazard(id, eff, now);
+    await flushOneHazard(id);
   }
 }
 
