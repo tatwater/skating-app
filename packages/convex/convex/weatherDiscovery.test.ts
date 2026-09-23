@@ -11,6 +11,21 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * The member cards of a Post page (A10 / D186). Every Post here has one Report, so the report-era
+ * assertions read exactly as they did against the report feed.
+ */
+function cards<T>(res: { page: { reports: T[] }[] }): T[] {
+  return res.page.flatMap((p) => p.reports);
+}
+
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 const DAY_MS = 86_400_000;
 const today = () => Math.floor(Date.now() / DAY_MS) * DAY_MS;
@@ -359,6 +374,7 @@ describe('a digest the sweep stopped updating is not an answer (Greptile, PR #54
     await rebuild(t, A);
     const filters = { weather: { thresholdF: 20, minNights: 3 } };
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: cold,
       skateEndTime: Date.now() - 60 * 60 * 1000,
     });
@@ -373,7 +389,7 @@ describe('a digest the sweep stopped updating is not an answer (Greptile, PR #54
     );
     expect(
       (
-        await t.query(api.reports.listFeed, {
+        await t.query(api.posts.listFeed, {
           paginationOpts: { numItems: 10, cursor: null },
           filters,
         })
@@ -392,7 +408,7 @@ describe('a digest the sweep stopped updating is not an answer (Greptile, PR #54
     );
     expect(
       (
-        await t.query(api.reports.listFeed, {
+        await t.query(api.posts.listFeed, {
           paginationOpts: { numItems: 10, cursor: null },
           filters,
         })
@@ -621,7 +637,7 @@ describe('listBodyResults — the feed read (D165)', () => {
   });
 });
 
-describe('reports.listFeed under a weather filter (D165)', () => {
+describe('posts.listFeed under a weather filter (D165)', () => {
   test('narrows reports to lakes whose cell matches, and drops those nobody checked', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'author');
@@ -633,29 +649,32 @@ describe('reports.listFeed under a weather filter (D165)', () => {
     for (const p of [A, B]) await rebuild(t, p);
     const now = Date.now();
     const coldReport = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: cold,
       skateEndTime: now - 3 * 60 * 60 * 1000,
     });
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: mild,
       skateEndTime: now - 2 * 60 * 60 * 1000,
     });
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: unswept,
       skateEndTime: now - 60 * 60 * 1000,
     });
 
-    const all = await t.query(api.reports.listFeed, {
+    const all = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
       filters: {},
     });
     expect(all.page).toHaveLength(3);
 
-    const narrowed = await t.query(api.reports.listFeed, {
+    const narrowed = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
       filters: { weather: { thresholdF: 20, minNights: 3 } },
     });
-    expect(narrowed.page.map((c) => c.reportId)).toEqual([coldReport]);
+    expect(cards(narrowed).map((c) => c.reportId)).toEqual([coldReport]);
   });
 });
 

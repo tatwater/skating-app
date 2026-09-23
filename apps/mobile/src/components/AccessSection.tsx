@@ -1,22 +1,19 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { chooseAccessTarget, describeApproach, isHikeIn } from '@skating/core';
+import {
+  ACCESS_ALERT_REASONS,
+  ACCESS_REASON_LABELS,
+  type AccessReason,
+  chooseAccessTarget,
+  describeApproach,
+  isHikeIn,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { AccessPhotos } from './AccessPhotos';
 import { Badge, Section } from './detailUi';
 import { PostedAccessLine } from './PostedAccess';
-
-/** How each alert reason reads. Short, because it sits beside a launch name on a phone. */
-const REASON_LABELS: Record<string, string> = {
-  road_closed: 'Road closed',
-  gate_locked: 'Gate locked',
-  not_plowed: 'Not plowed',
-  lot_full: 'Lot full',
-  private_no_access: 'Private — no access',
-  other: 'Access problem',
-};
 
 const AMENITY_LABELS: Record<string, string> = {
   toilets: 'Toilets',
@@ -120,7 +117,7 @@ export function AccessSection({
       {target ? (
         reporting ? (
           <YStack gap="$1.5">
-            {Object.entries(REASON_LABELS).map(([value, label]) => (
+            {ACCESS_ALERT_REASONS.map((value) => (
               <Button
                 key={value}
                 size="$2"
@@ -134,7 +131,7 @@ export function AccessSection({
                     await createAlert({
                       targetType: 'put_in',
                       putInId: target.putIn.id as Id<'putIns'>,
-                      reason: value as 'gate_locked',
+                      reason: value,
                     });
                     setReporting(false);
                   } finally {
@@ -142,7 +139,7 @@ export function AccessSection({
                   }
                 }}
               >
-                <Text>{label}</Text>
+                <Text>{ACCESS_REASON_LABELS[value]}</Text>
               </Button>
             ))}
             <Button size="$2" chromeless onPress={() => setReporting(false)}>
@@ -172,7 +169,8 @@ export function AccessSection({
           borderRadius="$2"
         >
           <Text fontWeight="600">
-            {REASON_LABELS[alert.reason] ?? 'Access problem'} — {nameFor(alert)}
+            {ACCESS_REASON_LABELS[alert.reason as AccessReason] ?? 'Access problem'} —{' '}
+            {nameFor(alert)}
             {alert.official ? ' (confirmed by a moderator)' : ''}
           </Text>
           {alert.note ? <Paragraph color="$foregroundMuted">{alert.note}</Paragraph> : null}

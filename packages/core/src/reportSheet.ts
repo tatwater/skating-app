@@ -58,7 +58,7 @@ import type {
   Suitability,
   ThicknessScope,
 } from './types';
-import type { Where } from './where';
+import { describeLocatedChip, type Where } from './where';
 
 // ── Sections ────────────────────────────────────────────────────────────────────────────────────
 
@@ -577,23 +577,6 @@ function formatEndTime(value: EndTimeValue, timeZone: string): string {
   return value.precision === 'half_hour' ? `about ${time}` : time;
 }
 
-/** A located chip's summary — "Black ice, north end". */
-function locatedLabel(chip: { type: string; where?: Where }): string {
-  const label = humanizeEnum(chip.type);
-  const w = chip.where;
-  if (!w) return label;
-  const parts: string[] = [];
-  if (w.extent && w.extent !== 'whole') parts.push(w.extent);
-  if (w.sector)
-    parts.push(
-      w.sector === 'middle' || w.sector === 'near_shore'
-        ? humanizeEnum(w.sector).toLowerCase()
-        : `${w.sector} end`,
-    );
-  if (w.point?.name) parts.push(w.point.name);
-  return parts.length > 0 ? `${label}, ${parts.join(' ')}` : label;
-}
-
 /**
  * The one-line summary a filled section collapses to. Never a safety verdict (D3): it repeats the
  * author's own chips and nothing more. Empty string for an unfilled section.
@@ -624,7 +607,7 @@ export function sectionSummary(
     }
     case 'iceAndSurface':
       return [...selectedValues(state, 'iceTypes'), ...selectedValues(state, 'surfaceTags')]
-        .map(locatedLabel)
+        .map((chip) => describeLocatedChip(chip))
         .join(' · ');
     case 'snow': {
       const [c] = selectedValues(state, 'snowCoverage');

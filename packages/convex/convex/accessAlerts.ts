@@ -49,7 +49,7 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
-import { ACCESS_ALERT_REASONS, ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS } from './lib/enums';
+import { ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS, ACCESS_REASONS } from './lib/enums';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -81,7 +81,9 @@ async function recomputeAlert(
 }
 
 /**
- * Post an access alert on a put-in or a parking area.
+ * Post an access alert on a put-in or a parking area — a blocker from the access layer, or a
+ * condition from the report sheet (A10 / D197): the same row, so a plank and a locked gate decay
+ * and corroborate the same way, and only `blockedIds` tells them apart.
  *
  * Rides **D57's existing posting permission** rather than inventing one — the same call D88 made for
  * access photos, and for the same reason: a permission that is always equal to another permission is
@@ -92,15 +94,41 @@ export const create = mutation({
     targetType: literals(ACCESS_ALERT_TARGETS),
     putInId: v.optional(v.id('putIns')),
     parkingAreaId: v.optional(v.id('parkingAreas')),
-    reason: literals(ACCESS_ALERT_REASONS),
+    reason: literals(ACCESS_REASONS),
     note: v.optional(v.string()),
     observedAt: v.optional(v.number()),
+    /** The author's own Report this was filed from (A10 §7.2) — provenance the reader can see. */
+    reportId: v.optional(v.id('reports')),
+    /** The offline queue's dedup key (A10 §9.1): a replayed flush returns the same row. */
+    idempotencyKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const profile = await requireContributor(ctx);
     const now = Date.now();
+
+    // A replayed flush returns the row it already filed (the `reports.create` rule, D30): a claim
+    // that corroborates itself is exactly the shape the vote counts exist to prevent. Author-scoped.
+    if (args.idempotencyKey !== undefined) {
+      const existing = await ctx.db
+        .query('accessAlerts')
+        .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', args.idempotencyKey))
+        .unique();
+      if (existing) {
+        if (existing.createdByUserId !== profile._id)
+          throw new ConvexError('Idempotency key conflict');
+        return existing._id;
+      }
+    }
+
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post access alerts');
+    }
+
+    // Provenance is the author's own Report, on the body the alert is about (checked below once the
+    // target resolves) — never someone else's skate lent to a claim.
+    const report = args.reportId !== undefined ? await ctx.db.get(args.reportId) : null;
+    if (args.reportId !== undefined && report?.authorId !== profile._id) {
+      throw new ConvexError('Not your report');
     }
 
     // ⚠ **The off-target id is refused, not ignored** (PR #43 review, security).
@@ -147,6 +175,10 @@ export const create = mutation({
       waterBodyId = link.waterBodyId;
     }
 
+    if (report && report.waterBodyId !== waterBodyId) {
+      throw new ConvexError('That report is about another water body');
+    }
+
     const note = args.note?.trim().slice(0, MAX_ALERT_NOTE_LENGTH) || undefined;
     // Clamped rather than trusted: a future timestamp is device skew, or a client trying to freeze an
     // alert as permanently fresh.
@@ -163,6 +195,8 @@ export const create = mutation({
       reason: args.reason,
       note,
       createdByUserId: profile._id,
+      ...(report ? { reportId: report._id } : {}),
+      ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
       createdAt: at,
       season,
       expiresAt: accessAlertExpiryFor(at, seasonEndMs(season)),

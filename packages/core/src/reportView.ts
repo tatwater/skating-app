@@ -9,11 +9,15 @@
  * map.
  */
 
+import { SNOW_DUSTING_CM, type Snow } from './reportFields';
 import type {
   ConditionSource,
+  ObservedFrom,
   PrecipType,
+  Sighting,
   SkateQuality,
   SkyCondition,
+  Suitability,
   ThicknessMethod,
 } from './types';
 import {
@@ -96,12 +100,60 @@ export function formatSnowCoverInches(cm: number, decimals = 1): string {
   return formatThicknessInches(cm, decimals);
 }
 
+/**
+ * Snow in a line (D194): the coverage, how much it got in the way, the drifts when there were any,
+ * a depth when one was given, a plowed path when there is one. The sheet's own summary and the
+ * detail's snow row both read from this so they cannot say it two ways. `null` when the object
+ * carries nothing a reader can use.
+ */
+export function describeSnow(snow: Snow): string | null {
+  const parts = [
+    snow.coverage && humanizeEnum(snow.coverage),
+    snow.impediment && humanizeEnum(snow.impediment).toLowerCase(),
+    snow.drifts && snow.drifts !== 'none' && `drifts ${humanizeEnum(snow.drifts).toLowerCase()}`,
+    // Zero is "no snow" (a pre-A10 report whose author typed 0), not a dusting — only a depth
+    // under the dusting mark that is actually *some* snow reads as one.
+    snow.depthCm !== undefined &&
+      (snow.depthCm > 0 && snow.depthCm <= SNOW_DUSTING_CM
+        ? 'a dusting'
+        : formatSnowCoverInches(snow.depthCm)),
+    snow.plowedPath && 'plowed path',
+  ].filter((x): x is string => typeof x === 'string' && x.length > 0);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 /** Coarse skating quality (D23) — never a safety verdict (D3). */
 export const SKATE_QUALITY_LABELS: Record<SkateQuality, string> = {
   great: 'Great',
   good: 'Good',
   fair: 'Fair',
   poor: 'Poor',
+};
+
+/**
+ * Who the ice is for (A10 / D190) — the author's claim about *who*, never ours about safety (D3).
+ * `dont_go` reads as the warning it is; the rest describe an audience, not a verdict.
+ */
+export const SUITABILITY_LABELS: Record<Suitability, string> = {
+  dont_go: "Don't go",
+  experienced_only: 'Experienced only',
+  not_for_beginners: 'Not for beginners',
+  beginner_friendly: 'Beginner-friendly',
+};
+
+/** How the author saw it (A10 / D191) — provenance the reader sees. */
+export const OBSERVED_FROM_LABELS: Record<ObservedFrom, string> = {
+  on_ice: 'On the ice',
+  shore: 'From shore',
+  secondhand: 'Secondhand',
+};
+
+/** What a shore observer saw (A10 / D189). */
+export const SIGHTING_LABELS: Record<Sighting, string> = {
+  open: 'Still open',
+  skim: 'Skim ice',
+  frozen: 'Frozen over',
+  snow_covered: 'Snow-covered',
 };
 
 export const SKY_LABELS: Record<SkyCondition, string> = {

@@ -1,4 +1,4 @@
-import { emptyReportForm, type ReportFormState } from '@skating/core';
+import { emptyReportForm, type ReportFormState, SHOW_PUT_IN_LABEL } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -120,6 +120,22 @@ describe('ReportFormFields', () => {
     expect(spies.onRequestPin).toHaveBeenCalledOnce();
   });
 
+  it('carries the put-in switch in form state, on by default (Phase 04 #7)', () => {
+    const { getForm } = renderFields();
+    // Base UI renders the visible control plus a hidden native input; drive the visible one.
+    const box = () =>
+      screen
+        .getAllByRole('checkbox', { name: SHOW_PUT_IN_LABEL })
+        .find((el) => el.getAttribute('data-slot') === 'checkbox') as HTMLElement;
+    expect(box()).toBeChecked();
+    expect(getForm().showPutIn).toBe(true);
+    fireEvent.click(box());
+    expect(box()).not.toBeChecked();
+    expect(getForm().showPutIn).toBe(false);
+    fireEvent.click(box());
+    expect(getForm().showPutIn).toBe(true);
+  });
+
   it('shows a set put-in pin with a clear control', () => {
     const { spies } = renderFields({ putInPin: { lat: 44.4, lng: -73.2 } });
     expect(screen.getByText(/Pin set at 44\.4000, -73\.2000/)).toBeInTheDocument();
@@ -134,9 +150,11 @@ describe('ReportFormFields', () => {
         { id: 'p2', previewUrl: 'blob:b', placeOnMap: false },
       ],
     });
-    expect(screen.getAllByRole('checkbox')).toHaveLength(1); // only the geotagged photo gets the toggle
+    // Only the geotagged photo gets the toggle (the form's own put-in switch is the other checkbox).
+    const geotag = screen.getAllByRole('checkbox', { name: /Place this photo's location/ });
+    expect(geotag).toHaveLength(1);
     expect(screen.getByText('No location in this photo.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(geotag[0] as HTMLElement);
     expect(spies.onTogglePlaceOnMap).toHaveBeenCalledWith('p1', true);
   });
 

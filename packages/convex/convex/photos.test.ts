@@ -1,15 +1,30 @@
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 function convexTestWithGeo() {
+  // Pinned beside `SKATE` so the fixture is a fresh report: the freshness window (D199, A10-2)
+  // refuses an end time more than a week old at the write, whatever day the suite runs.
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.UTC(2026, 0, 15, 12));
   const t = convexTest(schema, modules);
   return t;
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const POLYGON = {
   type: 'Polygon' as const,
@@ -55,6 +70,7 @@ async function seedReport(
   photoIds: Id<'photos'>[],
 ) {
   return asAuthor.mutation(api.reports.create, {
+    ...OBSERVED,
     waterBodyId,
     skateEndTime: SKATE,
     photoIds,

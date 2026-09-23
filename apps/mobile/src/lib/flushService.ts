@@ -60,6 +60,7 @@ function toCreateArgs(
     conditions: input.conditions,
     notes: input.notes,
     point: input.point,
+    showPutIn: input.showPutIn,
     photoIds: input.photoIds as Id<'photos'>[],
     ...(input.activityId !== undefined
       ? { activityId: input.activityId as Id<'gpsActivities'> }

@@ -34,6 +34,7 @@ import {
   distanceToPolygonMeters,
   HIKE_IN_ASSERT_M,
   haversineMeters,
+  isAccessCondition,
   isMinor,
   type LatLng,
   MAX_ACCESS_PHOTOS,
@@ -824,8 +825,11 @@ export const accessForBody = query({
       putIns,
       parking,
       // Flattened to the ids the resolver tests against, so the client does not re-derive "is this
-      // launch blocked" from two shapes and get it subtly different from the server.
+      // launch blocked" from two shapes and get it subtly different from the server. **Blockers
+      // only** (A10 / D197): a condition — a plank, a muddy launch — rides the same row and is shown
+      // beside the launch, but it never demotes it.
       blockedIds: alerts
+        .filter((a) => !isAccessCondition(a.reason))
         .map((a) => a.putInId ?? a.parkingAreaId)
         .filter((id): id is NonNullable<typeof id> => id !== undefined),
       alerts,

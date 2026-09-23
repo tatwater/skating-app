@@ -44,7 +44,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
-import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
@@ -517,6 +517,21 @@ export const unsubscribeEmailBySecret = internalMutation({
   },
 });
 
+/**
+ * Remember the report form's put-in switch as the default for the next report (`schema.ts`
+ * `profiles.showPutInDefault`). `requireContributor`, not `requireProfile`: a ghost cannot post, so
+ * a remembered default has nothing left to seed — unlike the aggregate opt-out below, which governs
+ * data that outlives the account.
+ */
+export const setShowPutInDefault = mutation({
+  args: { showPutIn: v.boolean() },
+  handler: async (ctx, { showPutIn }) => {
+    const profile = await requireContributor(ctx);
+    await ctx.db.patch(profile._id, { showPutInDefault: showPutIn });
+    return profile._id;
+  },
+});
+
 export const setAggregateTracksOptOut = mutation({
   args: { excludeTracksFromAggregate: v.boolean() },
   handler: async (ctx, { excludeTracksFromAggregate }) => {
@@ -734,7 +749,11 @@ export const getPublicProfile = query({
     const reports: ProfileReport[] = await Promise.all(
       visibleReports.map(async (report) => {
         const body = await ctx.db.get(report.waterBodyId);
-        return { report, waterBodyName: body?.name ?? 'Unknown water body' };
+        // A history card is a served report too — the put-in opt-out is honored here as on `reports.get`.
+        return {
+          report: await redactPutIn(ctx, report, viewer, body),
+          waterBodyName: body?.name ?? 'Unknown water body',
+        };
       }),
     );
 

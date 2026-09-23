@@ -12,6 +12,7 @@ import {
   ACCESS_ALERT_STATUSES as CORE_ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TARGETS as CORE_ACCESS_ALERT_TARGETS,
   ACCESS_ALERT_VERDICTS as CORE_ACCESS_ALERT_VERDICTS,
+  ACCESS_REASONS as CORE_ACCESS_REASONS,
   APPROACH_KINDS as CORE_APPROACH_KINDS,
   BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
   DORMANCY_REASONS as CORE_DORMANCY_REASONS,
@@ -230,6 +231,9 @@ export const FLAG_TARGET_TYPES = [
   // `contentFlags.ts`, and a `case` in `resolveFlagTarget` in `moderation.ts`. Skipping the third
   // renders every such flag as "(deleted)" in the queue.
   'waterbody',
+  // A10 (D186): the narrative and the photo set over one or more Reports. Flagging the prose is
+  // flagging the Post; flagging one body's data is still flagging the Report.
+  'post',
 ] as const;
 export const FLAG_REASONS = [
   'unsafe_false_report',
@@ -375,6 +379,7 @@ export const MODERATION_ACTIONS = [
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
+  'post', // A10 (D186): hidden ⇒ every member Report hidden; restored ⇒ the ones it hid come back
   'comment',
   'photo',
   'user',
@@ -489,6 +494,8 @@ export const SATELLITE_IMAGERY_MODES = CORE_SATELLITE_IMAGERY_MODES;
 
 /** Access-alert vocabulary (A06d / D73) — all four re-exported from `@skating/core` for the same reason. */
 export const ACCESS_ALERT_REASONS = CORE_ACCESS_ALERT_REASONS;
+/** The blockers plus the D197 conditions — what the row stores (A10-2 §7.2). */
+export const ACCESS_REASONS = CORE_ACCESS_REASONS;
 export const ACCESS_ALERT_STATUSES = CORE_ACCESS_ALERT_STATUSES;
 export const ACCESS_ALERT_VERDICTS = CORE_ACCESS_ALERT_VERDICTS;
 export const ACCESS_ALERT_TARGETS = CORE_ACCESS_ALERT_TARGETS;

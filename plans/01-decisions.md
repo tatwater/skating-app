@@ -5877,6 +5877,15 @@ freshest-eyes sort works without a special case. "Post" rather than "outing" bec
 need not be one trip. Requiring a Report keeps the platform for reports; questions and planning
 stay on the email lists for now.
 
+**Amended 2026-09-21 (A10-2 build):** "a Post requires a Report" is enforced by construction —
+`posts.create` is one transaction with its Reports inline, and `reports.create` is the one-Report
+form of the same path, so a Post-less Report cannot be written. The Post's album is **derived**:
+the ordered union of its members' photo lists, so one photo belongs to one Report and the sweeps
+need no `posts` arm. And "zero visible Reports ⇒ the Post is not shown" is **stored**, not read at
+query time: hiding the last visible member hides the Post (an audit row names the member), and
+restoring a member of a Post hidden that way restores it — so the feed's moderation gate stays in
+the index, as it was for Reports. A Post a moderator hid on its own stays hidden.
+
 **Related:** D4, D13, D28, D59, D175.
 
 ## D187 — One sheet, fixed order, three doors — never a wizard (A10)
@@ -5935,6 +5944,12 @@ re-runs the same validator today, and `report.ts` deliberately accepts a notes-o
 here" report — making the floor retroactive would leave every such report uneditable, which D199
 forbids. Under the new sheet a don't-skate report still posts in two taps: *don't go* satisfies
 *How was it?* and a hazard satisfies the last term.
+
+**Amended 2026-09-21 (A10-2 build):** **no version gate.** Prod has never been initialized and the
+one APK is rebuilt from the branch, so there is no installed client to spare; the set binds every
+create — the sheet, the pre-sheet forms on both surfaces, and the offline queue at flush — through
+one path (`lib/reportWrite.ts`) and one sentence (`minimumSetMessage`), so no two entrances answer
+the rule differently. The pre-sheet forms ask it client-side before posting and say what to add.
 
 **Why:** the founder wants the structured data that helps other skaters without making the
 no-AI path hostile. Making the floor identical regardless of engine means opting out costs four
@@ -6131,6 +6146,12 @@ writing Saturday" and a Monday post about Friday is exactly three days. D59 deca
 the card already make a five-day report *read* as old; the window's only job is to stop pointless
 ones. `reportTime − skateEndTime` is stored on every report, so the distribution is measurable
 after a season and the window can be tightened on evidence rather than instinct.
+
+**Amended 2026-09-21 (A10-2 build):** binds every create through the same path as D189 (no version
+gate, same reasoning); the queue asks it **before the uploads**, so an expired item costs no
+photos; `UnreportedSkates` stops offering a skate outside the window. Test fixtures that need an
+old report move the clock for the write rather than back-dating the argument — the window refuses
+that exactly as it would a skater's.
 
 **Related:** D9, D28, D59, D192.
 

@@ -5,9 +5,7 @@ import {
   AGGREGATE_OPT_OUT_LABEL,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import { Card, CardContent } from './ui/card';
-import { Checkbox } from './ui/checkbox';
-import { Label } from './ui/label';
+import { SwitchSettingView } from './SwitchSetting';
 
 /**
  * The D58 aggregate-tracks opt-out — the web mirror of mobile's setting.
@@ -30,26 +28,14 @@ export function AggregateTracksSettingView({
   onToggle: (next: boolean) => void;
 }) {
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-        {AGGREGATE_OPT_OUT_HEADING}
-      </h2>
-      <Card>
-        <CardContent className="flex flex-col gap-2">
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="exclude-tracks"
-              checked={excluded}
-              onCheckedChange={(v) => onToggle(v === true)}
-            />
-            <Label htmlFor="exclude-tracks" className="text-foreground text-sm">
-              {AGGREGATE_OPT_OUT_LABEL}
-            </Label>
-          </div>
-          <p className="text-foreground-muted text-xs">{AGGREGATE_OPT_OUT_EXPLAINER}</p>
-        </CardContent>
-      </Card>
-    </section>
+    <SwitchSettingView
+      id="exclude-tracks"
+      heading={AGGREGATE_OPT_OUT_HEADING}
+      label={AGGREGATE_OPT_OUT_LABEL}
+      explainer={AGGREGATE_OPT_OUT_EXPLAINER}
+      checked={excluded}
+      onToggle={onToggle}
+    />
   );
 }
 

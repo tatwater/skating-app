@@ -17,6 +17,21 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * The member cards of a Post page (A10 / D186). Every Post here has one Report, so the report-era
+ * assertions read exactly as they did against the report feed.
+ */
+function cards<T>(res: { page: { reports: T[] }[] }): T[] {
+  return res.page.flatMap((p) => p.reports);
+}
+
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 /**
@@ -57,6 +72,21 @@ const ADULT_DOB = Date.UTC(1990, 0, 1);
 const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);
 /** Comfortably past the 30-day purge line, for content a test wants erased. */
 const LONG_AGO = 60 * 24 * 3600_000;
+
+/**
+ * Post a report `LONG_AGO` — by moving the clock there for the write, not by back-dating the
+ * argument: the freshness window (D199, A10-2) refuses an end time more than a week old at
+ * `posts.create`, exactly as it would refuse a skater's, so an aged fixture is a report that was
+ * fresh when it was posted.
+ */
+async function postedLongAgo<R>(write: () => Promise<R>): Promise<R> {
+  vi.setSystemTime(T0 - LONG_AGO);
+  try {
+    return await write();
+  } finally {
+    vi.setSystemTime(T0);
+  }
+}
 
 /** What `seedUser` hands back: the profile id plus a client bound to that identity. */
 type SeededUser = Awaited<ReturnType<typeof seedUser>>;
@@ -194,20 +224,24 @@ describe('the grace window', () => {
     const user = await seedUser(t, 'leaver');
     const viewer = await seedUser(t, 'viewer');
     const bodyId = await seedBody(t);
-    await user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 });
+    await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+    });
     await t.run((ctx) => ctx.db.patch(user.id, { reputationPoints: 500 }));
 
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
 
-    const feed = await viewer.as.query(api.reports.listFeed, {
+    const feed = await viewer.as.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
     });
     // The report is still there — it's recent, and it's the community's now.
     expect(feed.page).toHaveLength(1);
     // The author isn't. No name, no ring, and no handle to click through to a page that 404s.
-    expect(feed.page[0]?.author?.displayName).toBe(DELETED_DISPLAY_NAME);
-    expect(feed.page[0]?.author?.username).toBe('');
-    expect(feed.page[0]?.author?.trustClass ?? null).toBeNull();
+    expect(cards(feed)[0]?.author?.displayName).toBe(DELETED_DISPLAY_NAME);
+    expect(cards(feed)[0]?.author?.username).toBe('');
+    expect(cards(feed)[0]?.author?.trustClass ?? null).toBeNull();
   });
 
   /**
@@ -223,12 +257,16 @@ describe('the grace window', () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
-    const old = await user.as.mutation(api.reports.create, {
-      waterBodyId: bodyId,
-      skateEndTime: T0 - LONG_AGO,
-      notes: 'Ridge across the north bay, water in the crack.',
-    });
+    const old = await postedLongAgo(() =>
+      user.as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: bodyId,
+        skateEndTime: T0 - LONG_AGO,
+        notes: 'Ridge across the north bay, water in the crack.',
+      }),
+    );
     const recent = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 - 24 * 3600_000,
       notes: 'Glass all the way out.',
@@ -260,16 +298,19 @@ describe('the grace window', () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
-    const reportId = await user.as.mutation(api.reports.create, {
-      waterBodyId: bodyId,
-      skateEndTime: T0 - LONG_AGO,
-      iceThickness: {
-        readings: [
-          { valueCm: 12, method: 'measured' as const, note: 'by the boat launch, my usual spot' },
-          { valueCm: 9, method: 'estimated' as const },
-        ],
-      },
-    });
+    const reportId = await postedLongAgo(() =>
+      user.as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: bodyId,
+        skateEndTime: T0 - LONG_AGO,
+        iceThickness: {
+          readings: [
+            { valueCm: 12, method: 'measured' as const, note: 'by the boat launch, my usual spot' },
+            { valueCm: 9, method: 'estimated' as const },
+          ],
+        },
+      }),
+    );
 
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
@@ -279,6 +320,40 @@ describe('the grace window', () => {
     expect(report?.iceThickness?.readings[0]?.valueCm).toBe(12);
     expect(report?.iceThickness?.readings[0]?.note).toBeUndefined();
     expect(report?.iceThickness?.readings[1]?.method).toBe('estimated');
+  });
+
+  test('redaction reaches a located chip’s note and the Post’s title and prose, and spares the where (A10)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    const { postId, reportIds } = await postedLongAgo(() =>
+      user.as.mutation(api.posts.create, {
+        title: 'Morey, the north end',
+        body: 'Glass all the way up, one ridge to step over.',
+        reports: [
+          {
+            ...OBSERVED,
+            waterBodyId: bodyId,
+            skateEndTime: T0 - LONG_AGO,
+            iceTypes: [
+              { type: 'black_ice', where: { sector: 'N' }, note: 'past my cousin’s dock' },
+            ],
+            surfaceTags: [{ type: 'glass', note: 'like a mirror' }],
+          },
+        ],
+      }),
+    );
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post?.title).toBeUndefined();
+    expect(post?.body).toBeUndefined();
+    expect(post?.reportIds).toEqual(reportIds);
+    const report = await t.run((ctx) => ctx.db.get(reportIds[0] as Id<'reports'>));
+    expect(report?.iceTypes).toEqual([{ type: 'black_ice', where: { sector: 'N' } }]);
+    expect(report?.surfaceTags).toEqual([{ type: 'glass' }]);
   });
 
   /**
@@ -292,6 +367,7 @@ describe('the grace window', () => {
     const other = await seedUser(t, 'stayer');
     const bodyId = await seedBody(t);
     const reportId = await other.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 - 24 * 3600_000,
     });
@@ -332,11 +408,14 @@ describe('the grace window', () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
-    await user.as.mutation(api.reports.create, {
-      waterBodyId: bodyId,
-      skateEndTime: T0 - LONG_AGO,
-      point: { lat: 0.5, lng: 0.02 },
-    });
+    await postedLongAgo(() =>
+      user.as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: bodyId,
+        skateEndTime: T0 - LONG_AGO,
+        point: { lat: 0.5, lng: 0.02 },
+      }),
+    );
 
     const before = await user.as.query(api.putIns.listForBody, { waterBodyId: bodyId });
     expect(before).toHaveLength(1);
@@ -358,12 +437,15 @@ describe('the grace window', () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
-    await user.as.mutation(api.reports.create, {
-      waterBodyId: bodyId,
-      skateEndTime: T0 - LONG_AGO,
-      point: { lat: 0.5, lng: 0.02 },
-      showPutIn: false,
-    });
+    await postedLongAgo(() =>
+      user.as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: bodyId,
+        skateEndTime: T0 - LONG_AGO,
+        point: { lat: 0.5, lng: 0.02 },
+        showPutIn: false,
+      }),
+    );
 
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
@@ -516,7 +598,7 @@ describe('read-only while a deletion is pending', () => {
     const user = await pendingUser(t);
 
     await expect(
-      user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 }),
+      user.as.mutation(api.reports.create, { ...OBSERVED, waterBodyId: bodyId, skateEndTime: T0 }),
     ).rejects.toThrow(/scheduled for deletion/i);
   });
 
@@ -525,6 +607,7 @@ describe('read-only while a deletion is pending', () => {
     const bodyId = await seedBody(t);
     const author = await seedUser(t, 'author');
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
     });
@@ -558,6 +641,7 @@ describe('read-only while a deletion is pending', () => {
     const bodyId = await seedBody(t);
     const author = await seedUser(t, 'author');
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
     });
@@ -590,7 +674,7 @@ describe('read-only while a deletion is pending', () => {
     await user.as.mutation(api.accountDeletion.cancelDeletion, {});
 
     await expect(
-      user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 }),
+      user.as.mutation(api.reports.create, { ...OBSERVED, waterBodyId: bodyId, skateEndTime: T0 }),
     ).resolves.toBeDefined();
   });
 
@@ -607,7 +691,11 @@ describe('read-only while a deletion is pending', () => {
     const requestedAt = (await t.run((ctx) => ctx.db.get(user.id)))?.deletionRequestedAt ?? 0;
 
     await expect(
-      user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: requestedAt + 1 }),
+      user.as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: bodyId,
+        skateEndTime: requestedAt + 1,
+      }),
     ).rejects.toThrow(/scheduled for deletion/i);
 
     const reports = await t.run((ctx) =>
@@ -784,6 +872,7 @@ describe('the tombstone', () => {
     const viewer = await seedUser(t, 'viewer');
     const bodyId = await seedBody(t);
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
       iceTypes: [{ type: 'black_ice' as const }],
@@ -796,13 +885,13 @@ describe('the tombstone', () => {
 
     await finalize(t, user.id);
 
-    const feed = await viewer.as.query(api.reports.listFeed, {
+    const feed = await viewer.as.query(api.posts.listFeed, {
       paginationOpts: { numItems: 10, cursor: null },
     });
     const thread = await viewer.as.query(api.comments.listByReport, { reportId });
     const byIds = await viewer.as.query(api.profiles.publicByIds, { profileIds: [user.id] });
 
-    const surfaces = [feed.page[0]?.author, thread[0]?.comment?.author, byIds[user.id]];
+    const surfaces = [cards(feed)[0]?.author, thread[0]?.comment?.author, byIds[user.id]];
     for (const author of surfaces) {
       expect(author?.displayName).toBe(DELETED_DISPLAY_NAME);
       expect(author?.trustClass ?? null).toBeNull();
@@ -974,6 +1063,7 @@ describe('bucket 2 — anonymize (the public ice record)', () => {
     const bodyId = await seedBody(t);
 
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
       iceTypes: [{ type: 'black_ice' as const }],
@@ -1071,6 +1161,7 @@ describe('finalize redacts unconditionally (the age cutoff is a ghost-window rul
     // `SKATE_TIME_FUTURE_TOLERANCE_MS` allows an hour of clock skew, so "a ghost's newest skateEndTime
     // can't postdate their request" was only true ±1h — and the overhang was never due, on any pass.
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 30 * 60_000,
       iceTypes: [{ type: 'black_ice' as const }],
@@ -1091,6 +1182,7 @@ describe('finalize redacts unconditionally (the age cutoff is a ghost-window rul
     const bodyId = await seedBody(t);
 
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
       iceTypes: [{ type: 'black_ice' as const }],
@@ -1124,6 +1216,7 @@ describe('flags: the row is about content and survives, the note is prose and do
     const bodyId = await seedBody(t);
     const author = await seedUser(t, 'author');
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
     });
@@ -1214,6 +1307,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     const bodyId = await seedBody(t);
     const activityId = await seedTrack(user, 'published');
     await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
@@ -1259,6 +1353,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     const bodyId = await seedBody(t);
     const activityId = await seedTrack(user, 'published');
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
@@ -1313,6 +1408,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     const bodyId = await seedBody(t);
     const activityId = await seedTrack(user, 'hidden');
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
@@ -1348,6 +1444,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
       const activityId = await seedTrack(user, `paged-${i}`);
       if (i < 2) {
         await user.as.mutation(api.reports.create, {
+          ...OBSERVED,
           waterBodyId: bodyId,
           activityId,
           skateEndTime: T0 + i,
@@ -1413,7 +1510,11 @@ describe('a ghost is a ghost everywhere (PR #30 review)', () => {
     await leaver.as.mutation(api.accountDeletion.requestDeletion, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
-    await author.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 });
+    await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+    });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     // Their reports are kept, so people go on posting about lakes they follow — but a person who no
@@ -1435,7 +1536,11 @@ describe('a ghost is a ghost everywhere (PR #30 review)', () => {
     const leaver = await seedUser(t, 'leaver');
 
     await leaver.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: bodyId });
-    await author.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 });
+    await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+    });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     // Queued while they were an ordinary user — the row outlives the state it was queued against.

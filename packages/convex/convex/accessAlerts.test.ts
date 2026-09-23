@@ -119,6 +119,71 @@ describe('accessAlerts.create', () => {
     );
   });
 
+  test('a condition rides the same row with its Report as provenance, and never blocks the launch (A10 / D197)', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const reportId = await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: author.id,
+        waterBodyId,
+        point: { lat: 0.5, lng: 0.5 },
+        skateEndTime: Date.now() - 3_600_000,
+        reportTime: Date.now(),
+        source: 'native',
+        iceTypes: [],
+        surfaceTags: [],
+        photoIds: [],
+        hazardIdsCreated: [],
+        moderationStatus: 'visible',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    const id = await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'plank_needed',
+      reportId,
+      idempotencyKey: 'flush-1',
+    });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row).toMatchObject({ reason: 'plank_needed', reportId, idempotencyKey: 'flush-1' });
+
+    // Live and listed beside the launch — but the launch is not blocked by a plank.
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(access.alerts.map((a) => a.reason)).toEqual(['plank_needed']);
+    expect(access.blockedIds).toEqual([]);
+    await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    const blocked = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(blocked.blockedIds).toEqual([putInId]);
+
+    // A replayed flush returns the row it already filed; another author's replay is refused.
+    const again = await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'plank_needed',
+      idempotencyKey: 'flush-1',
+    });
+    expect(again).toBe(id);
+    const other = await seedUser(t, 'other');
+    await expect(
+      other.as.mutation(api.accessAlerts.create, {
+        targetType: 'put_in',
+        putInId,
+        reason: 'plank_needed',
+        idempotencyKey: 'flush-1',
+      }),
+    ).rejects.toThrow(/Idempotency key/);
+    // Provenance has to be the author's own Report, on this body.
+    await expect(
+      other.as.mutation(api.accessAlerts.create, {
+        targetType: 'put_in',
+        putInId,
+        reason: 'icy_lot',
+        reportId,
+      }),
+    ).rejects.toThrow(/Not your report/);
+  });
+
   test('minors are read-only here, as everywhere else that moves public content', async () => {
     const { t, putInId } = await setup();
     const minor = await seedUser(t, 'kid', 'member', Date.now() - 15 * 365 * DAY_MS);

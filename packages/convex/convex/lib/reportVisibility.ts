@@ -14,6 +14,7 @@
 import { canViewReport } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
+import { defaultSampleAnchor } from './sampling';
 
 /**
  * The set of author profile ids blocked from `viewerId`, unioned across **both** directions — I
@@ -53,4 +54,42 @@ export async function getViewableReport(
   const report = await ctx.db.get(reportId);
   if (report === null) return null;
   return canViewReport(report.moderationStatus) ? report : null;
+}
+
+/** Author, moderator or admin — the viewers who see a report's put-in regardless of the opt-out. */
+export function canSeePutIn(
+  viewer: Pick<Doc<'profiles'>, '_id' | 'role'> | null,
+  report: Pick<Doc<'reports'>, 'authorId'>,
+): boolean {
+  return (
+    (viewer !== null && viewer._id === report.authorId) ||
+    viewer?.role === 'moderator' ||
+    viewer?.role === 'admin'
+  );
+}
+
+/**
+ * The report as a viewer may see it: with `showPutIn === false` (Phase 04 decision #7), a non-author,
+ * non-moderator gets the **body's** anchor point in place of the report's own `point`. The report row
+ * is untouched — hide a marker, never scrub a location — but the served doc no longer carries the
+ * launch, because every consumer of a served report (the detail drawer's camera, the profile's history
+ * cards, a lake's report list) would otherwise fly straight to the spot the switch promised to keep
+ * off the map. The coarse `place` label stays: it names a town, not a driveway.
+ *
+ * The substitute is `defaultSampleAnchor` — the same interior point every other "where is this
+ * body" consumer uses, so a redacted report lands where the lake's own forecast does. A report whose
+ * body is gone (a dangling ref) keeps its point: there is nothing to substitute, and the row is
+ * unreachable from any surface anyway.
+ */
+export async function redactPutIn(
+  ctx: QueryCtx,
+  report: Doc<'reports'>,
+  viewer: Pick<Doc<'profiles'>, '_id' | 'role'> | null,
+  /** The report's body when the caller already holds it, so the substitute costs no second read. */
+  loadedBody?: Doc<'waterBodies'> | null,
+): Promise<Doc<'reports'>> {
+  if (report.showPutIn !== false || canSeePutIn(viewer, report)) return report;
+  const body = loadedBody !== undefined ? loadedBody : await ctx.db.get(report.waterBodyId);
+  if (body === null) return report;
+  return { ...report, point: defaultSampleAnchor(body) };
 }

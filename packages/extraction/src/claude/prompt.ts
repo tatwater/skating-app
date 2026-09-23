@@ -10,8 +10,8 @@
 
 import type { BodyCandidate, ExtractionInput, Vocabulary } from '../contract';
 
-/** Short glosses for the values whose community meaning a model may not know. */
-const GLOSS: Record<string, string> = {
+/** Short glosses for the values whose community meaning a model may not know. Exported so the eval reviewer can show them beside each option. */
+export const GLOSS: Record<string, string> = {
   black_ice: 'clear, dark, transparent new ice',
   snow_ice: 'white ice formed from snow slush freezing on top',
   white_ice: 'opaque white ice',

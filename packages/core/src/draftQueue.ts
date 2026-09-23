@@ -22,7 +22,7 @@
 import type { LatLng } from './geometry';
 import { photoUploadCoord } from './photo';
 import { type ReportInput, validateReportInput } from './report';
-import { buildReportInput, type ReportFormState } from './reportForm';
+import { buildReportInput, formCreateRefusal, type ReportFormState } from './reportForm';
 
 /**
  * A captured photo inside a draft. `fullUri`/`thumbUri` are **persistent** file-system paths (the
@@ -148,6 +148,26 @@ export function classifyFlushError(error: unknown): FlushErrorKind {
   return 'transient';
 }
 
+/**
+ * The words a parked draft shows. A `ConvexError` carries its payload in `data` — a plain string,
+ * or an object whose `message` is the sentence the server wrote for the skater (`stale_report`,
+ * `minimum_set`) — and its `message` is the wire form with a request id and the JSON, which is not
+ * for anyone to read. Everything else falls back to the error's message.
+ */
+export function flushErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.name === 'ConvexError' && 'data' in error) {
+    const data = (error as { data?: unknown }).data;
+    if (typeof data === 'string') return data;
+    if (
+      data &&
+      typeof data === 'object' &&
+      typeof (data as { message?: unknown }).message === 'string'
+    )
+      return (data as { message: string }).message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** External effects the flush needs, all injected so the orchestration is testable with fakes. */
 export interface DraftFlushEffects {
   /** Resolve a coord-only draft to a lake (`waterBodies.resolveBodyForCoord`); null ⇒ no match. */
@@ -234,6 +254,20 @@ export async function flushDraft(
         validation.errors.map((e) => `${e.field}: ${e.message}`).join('; '),
       );
     }
+    // The create-only rules at flush too (A10 §9.4): a phone that comes back online after a week
+    // must not post a stale report, and a draft the sheet never finished must not post half-made.
+    // Asked before the uploads, in the words the server would refuse with, so an expired item is
+    // surfaced to the skater rather than spending its photos first. The queue carries no hazard
+    // ids yet (§9.1, A10-2b), so a hazard cannot satisfy the observation term from here.
+    //
+    // **Not for a draft found in `creating`.** That draft's create was already sent once and the
+    // ack was lost; its photos are spent, and the server's idempotent short-circuit (D30) is the
+    // only thing that can tell "posted at day 6.9, retried at 7.1" from "never posted" — refusing
+    // it here would show an error for a report that is live, and invite a second by hand.
+    if (draft.status !== 'creating') {
+      const refusal = formCreateRefusal(validation.normalized, 0, now);
+      if (refusal !== null) throw new PermanentFlushError(refusal);
+    }
 
     // 3. Upload photos, checkpointing each storageId / photoId the instant it lands (so a partial
     //    failure keeps what uploaded and a retry reuses it — the durable form of web's in-memory
@@ -289,7 +323,7 @@ export async function flushDraft(
     return { ok: true, draft: d, reportId };
   } catch (error) {
     const kind = classifyFlushError(error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = flushErrorMessage(error);
     // Permanent → park in `error` for the user; transient → back to `pending` for the next flush.
     await save({
       status: kind === 'permanent' ? 'error' : 'pending',

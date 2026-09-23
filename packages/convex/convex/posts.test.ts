@@ -1,6 +1,6 @@
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { legacyPostFor } from './posts';
 import { a10ShapePatch } from './reports';
@@ -20,12 +20,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function seedProfile(t: ReturnType<typeof convexTest>): Promise<Id<'profiles'>> {
+async function seedProfile(
+  t: ReturnType<typeof convexTest>,
+  subject = 'clerk_a',
+): Promise<Id<'profiles'>> {
   return t.run((ctx) =>
     ctx.db.insert('profiles', {
-      clerkUserId: 'clerk_a',
-      displayName: 'a',
-      username: 'a',
+      clerkUserId: subject,
+      displayName: subject,
+      username: subject,
       driveTimePrefMinutes: 60,
       profileVisibility: 'public',
       notificationPrefs: {
@@ -44,6 +47,28 @@ async function seedProfile(t: ReturnType<typeof convexTest>): Promise<Id<'profil
       reputationPoints: 0,
       role: 'member',
       status: 'active',
+      createdAt: T0,
+    }),
+  );
+}
+
+/** A signed-in adult contributor, for the mutations. */
+async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
+  const id = await seedProfile(t, subject);
+  return { id, as: t.withIdentity({ subject }) };
+}
+
+/** An uploaded photo row owned by `uploaderId`, unattached. */
+async function seedPhoto(
+  t: ReturnType<typeof convexTest>,
+  uploaderId: Id<'profiles'>,
+): Promise<Id<'photos'>> {
+  return t.run((ctx) =>
+    ctx.db.insert('photos', {
+      storageId: 's',
+      thumbStorageId: 't',
+      uploaderId,
+      placeOnMap: false,
       createdAt: T0,
     }),
   );
@@ -293,5 +318,406 @@ describe('reports.backfillA10Shapes (A10-1)', () => {
       patched: 0,
       isDone: true,
     });
+  });
+});
+
+describe('posts.create (A10-2 §2.4 / D186) — one transaction, every rule', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+  test('writes the Post and its Reports together: order kept, postId on each, sort key the max, photos the union', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const p1 = await seedPhoto(t, author.id);
+    const p2 = await seedPhoto(t, author.id);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: '  Morey and the pond, 1/10 ',
+      body: 'Glass on Morey; the pond was a mess.',
+      idempotencyKey: 'post-1',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3 * 3_600_000, photoIds: [p1] },
+        {
+          ...FRESH,
+          waterBodyId: bodyB,
+          skateEndTime: T0,
+          photoIds: [p2],
+          idempotencyKey: 'report-b',
+        },
+      ],
+    });
+    expect(reportIds).toHaveLength(2);
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post).toMatchObject({
+      authorId: author.id,
+      title: 'Morey and the pond, 1/10',
+      body: 'Glass on Morey; the pond was a mess.',
+      reportIds,
+      photoIds: [p1, p2],
+      latestSkateEndTime: T0,
+      moderationStatus: 'visible',
+      idempotencyKey: 'post-1',
+    });
+    for (const [i, reportId] of reportIds.entries()) {
+      const report = await t.run((ctx) => ctx.db.get(reportId));
+      expect(report?.postId).toBe(postId);
+      expect(report?.waterBodyId).toBe(i === 0 ? bodyA : bodyB);
+    }
+    // The second Report's own key is stored beside the Post's.
+    const second = reportIds[1];
+    if (!second) throw new Error('no second report');
+    expect((await t.run((ctx) => ctx.db.get(second)))?.idempotencyKey).toBe('report-b');
+    // One photo, one report: `photos.reportId` names the member that listed it.
+    expect((await t.run((ctx) => ctx.db.get(p1)))?.reportId).toBe(reportIds[0]);
+    expect((await t.run((ctx) => ctx.db.get(p2)))?.reportId).toBe(second);
+  });
+
+  test('a photo one member lists cannot be listed by another — one photo, one report', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const p1 = await seedPhoto(t, author.id);
+    await expect(
+      author.as.mutation(api.posts.create, {
+        reports: [
+          { ...FRESH, waterBodyId: bodyId, skateEndTime: T0, photoIds: [p1] },
+          { ...FRESH, waterBodyId: bodyId, skateEndTime: T0 - 3_600_000, photoIds: [p1] },
+        ],
+      }),
+    ).rejects.toThrow(/already belongs to another report/);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(0);
+  });
+
+  test('a Post key replays to the same Post; another author reusing it is refused', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const other = await seedUser(t, 'clerk_other');
+    const bodyId = await seedBody(t);
+    const args = {
+      idempotencyKey: 'post-retry',
+      reports: [{ ...FRESH, waterBodyId: bodyId, skateEndTime: T0 }],
+    };
+    const first = await author.as.mutation(api.posts.create, args);
+    const second = await author.as.mutation(api.posts.create, args);
+    expect(second).toEqual(first);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toHaveLength(1);
+    await expect(other.as.mutation(api.posts.create, args)).rejects.toThrow(/Idempotency key/);
+  });
+
+  test('a Report key can never name two Reports', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const report = { ...FRESH, waterBodyId: bodyId, skateEndTime: T0, idempotencyKey: 'r-1' };
+    await author.as.mutation(api.posts.create, { idempotencyKey: 'p-1', reports: [report] });
+    await expect(
+      author.as.mutation(api.posts.create, { idempotencyKey: 'p-2', reports: [report] }),
+    ).rejects.toThrow(/Idempotency key conflict/);
+  });
+
+  test('nothing lands when a later Report fails — the first is rolled back with it', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    await expect(
+      author.as.mutation(api.posts.create, {
+        reports: [
+          { ...FRESH, waterBodyId: bodyId, skateEndTime: T0 },
+          { waterBodyId: bodyId, skateEndTime: T0, notes: 'nothing observed' },
+        ],
+      }),
+    ).rejects.toThrow(/minimum_set/);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toHaveLength(0);
+  });
+
+  test('the minimum set (D189) names its gaps; a hazard is an observation; a sighting needs a shore', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const gapsOf = async (report: Record<string, unknown>) => {
+      try {
+        await author.as.mutation(api.posts.create, {
+          reports: [{ waterBodyId: bodyId, skateEndTime: T0, ...report }],
+        } as never);
+        return [];
+      } catch (e) {
+        return (e as { data?: { gaps?: string[] } }).data?.gaps ?? ['<other error>'];
+      }
+    };
+    expect(await gapsOf({ notes: "don't skate here" })).toEqual(['howWasIt', 'observation']);
+    expect(await gapsOf({ skateQuality: 'poor' })).toEqual(['observation']);
+    expect(await gapsOf({ iceTypes: ['black_ice'] })).toEqual(['howWasIt']);
+    expect(
+      await gapsOf({
+        suitability: 'dont_go',
+        hazards: [
+          {
+            type: 'open_water',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [0.5, 0.5] },
+            radiusMeters: 40,
+          },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      await gapsOf({ suitability: 'dont_go', observedFrom: 'shore', sighting: 'open' }),
+    ).toEqual([]);
+  });
+
+  test('the freshness window (D199): a week is inside, a week and a minute is not, the future is not', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const now = Date.now();
+    const week = 7 * 24 * 3_600_000;
+    const post = (skateEndTime: number) =>
+      author.as.mutation(api.posts.create, {
+        reports: [{ ...FRESH, waterBodyId: bodyId, skateEndTime }],
+      });
+    await expect(post(now - week)).resolves.toBeTruthy();
+    await expect(post(now - week - 60_000)).rejects.toThrow(/up to a week/);
+    await expect(post(now + 2 * 3_600_000)).rejects.toThrow(/in the future/);
+  });
+
+  test('a Post needs a Report, takes at most POST_MAX_REPORTS, and bounds its title', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    await expect(author.as.mutation(api.posts.create, { reports: [] })).rejects.toThrow(
+      /at least one report/,
+    );
+    const one = { ...FRESH, waterBodyId: bodyId, skateEndTime: T0 };
+    await expect(
+      author.as.mutation(api.posts.create, { reports: Array.from({ length: 11 }, () => one) }),
+    ).rejects.toThrow(/at most 10/);
+    await expect(
+      author.as.mutation(api.posts.create, { title: 'x'.repeat(121), reports: [one] }),
+    ).rejects.toThrow(/invalid_post/);
+  });
+
+  test('reports.create is the one-Report form of the same path', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const reportId = await author.as.mutation(api.reports.create, {
+      ...FRESH,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+      idempotencyKey: 'legacy-key',
+    });
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    const postId = report?.postId;
+    if (!postId) throw new Error('report born without a Post');
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post).toMatchObject({
+      reportIds: [reportId],
+      latestSkateEndTime: T0,
+      idempotencyKey: 'legacy-key',
+    });
+    expect(post?.title).toBeUndefined();
+    // The same key replays to the same Report through the Post's key.
+    expect(
+      await author.as.mutation(api.reports.create, {
+        ...FRESH,
+        waterBodyId: bodyId,
+        skateEndTime: T0,
+        idempotencyKey: 'legacy-key',
+      }),
+    ).toBe(reportId);
+  });
+});
+
+describe('a flagged Post is triageable (A10 / D186)', () => {
+  test('the queue resolves the Post to its author and its title, or its prose, or "Post"', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const flagger = await seedUser(t, 'clerk_flagger');
+    const mod = await seedUser(t, 'clerk_mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+    const bodyId = await seedBody(t);
+    const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+    const make = (post: { title?: string; body?: string }) =>
+      author.as.mutation(api.posts.create, {
+        ...post,
+        reports: [{ ...FRESH, waterBodyId: bodyId, skateEndTime: T0 }],
+      });
+    const titled = (await make({ title: 'Morey 1/10', body: 'Glass.' })).postId;
+    const prose = (await make({ body: 'A long paragraph about the north bay and the wind.' }))
+      .postId;
+    const bare = (await make({})).postId;
+    for (const targetId of [titled, prose, bare]) {
+      await flagger.as.mutation(api.contentFlags.flag, {
+        targetType: 'post',
+        targetId,
+        reason: 'spam',
+      });
+    }
+    const { priority, standard } = await mod.as.query(api.moderation.listFlags, {});
+    const rows = [...priority, ...standard];
+    const summary = (id: Id<'posts'>) => rows.find((f) => f.targetId === id)?.target;
+    expect(summary(titled)).toMatchObject({ exists: true, summary: 'Morey 1/10' });
+    expect(summary(titled)?.author?.username).toBe('clerk_author');
+    expect(summary(prose)?.summary).toBe('A long paragraph about the north bay and the wind.');
+    expect(summary(bare)?.summary).toBe('Post');
+  });
+});
+
+describe('posts.listFeed — a Post feed with per-Report filters (A10 §2.4)', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+  const ALL = { paginationOpts: { numItems: 50, cursor: null } };
+
+  test('a filter shows the Post with only its matching members and counts the rest; none matching ⇒ no Post', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: 'Two lakes',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000, skateQuality: 'great' },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0, skateQuality: 'poor' },
+      ],
+    });
+    const whole = await t.query(api.posts.listFeed, ALL);
+    expect(whole.page).toHaveLength(1);
+    expect(whole.page[0]).toMatchObject({ postId, title: 'Two lakes', omittedCount: 0 });
+    expect(whole.page[0]?.reports.map((r) => r.reportId)).toEqual(reportIds);
+    expect(whole.page[0]?.latestSkateEndTime).toBe(T0);
+
+    const narrowed = await t.query(api.posts.listFeed, {
+      ...ALL,
+      filters: { qualityFloor: 'good' },
+    });
+    expect(narrowed.page).toHaveLength(1);
+    expect(narrowed.page[0]?.reports.map((r) => r.reportId)).toEqual([reportIds[0]]);
+    expect(narrowed.page[0]?.omittedCount).toBe(1);
+
+    const none = await t.query(api.posts.listFeed, {
+      ...ALL,
+      filters: { thicknessFloorCm: 1, qualityFloor: 'great', recencyHours: 1 },
+    });
+    expect(none.page).toEqual([]);
+  });
+
+  test('a member a moderator hid is neither shown nor counted; the Post keeps its prose', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const mod = await seedUser(t, 'clerk_mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { reportIds } = await author.as.mutation(api.posts.create, {
+      body: 'The prose survives a member going.',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000 },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0 },
+      ],
+    });
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportIds[1] as Id<'reports'>,
+      status: 'hidden',
+      reason: 'wrong lake',
+    });
+    const feed = await t.query(api.posts.listFeed, ALL);
+    expect(feed.page).toHaveLength(1);
+    expect(feed.page[0]).toMatchObject({
+      body: 'The prose survives a member going.',
+      omittedCount: 0,
+      latestSkateEndTime: T0 - 3_600_000,
+    });
+    expect(feed.page[0]?.reports.map((r) => r.reportId)).toEqual([reportIds[0]]);
+  });
+});
+
+describe('posts.getForReport (A10 §12.1) — the words a Report was posted with, and its other lakes', () => {
+  const FRESH = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+  test('returns the title, the prose and the visible siblings; null for a hidden Post', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const mod = await seedUser(t, 'clerk_mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' }));
+    const bodyA = await seedBody(t);
+    const bodyB = await seedBody(t);
+    const { postId, reportIds } = await author.as.mutation(api.posts.create, {
+      title: 'Two lakes',
+      body: 'Morey first, then the pond.',
+      reports: [
+        { ...FRESH, waterBodyId: bodyA, skateEndTime: T0 - 3_600_000 },
+        { ...FRESH, waterBodyId: bodyB, skateEndTime: T0 },
+      ],
+    });
+    const [first, second] = reportIds;
+    if (!first || !second) throw new Error('seed');
+    const forFirst = await t.query(api.posts.getForReport, { reportId: first });
+    expect(forFirst).toMatchObject({
+      postId,
+      title: 'Two lakes',
+      body: 'Morey first, then the pond.',
+    });
+    expect(forFirst?.siblings.map((s) => s.reportId)).toEqual([second]);
+    // A hidden sibling is not offered.
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: second,
+      status: 'hidden',
+      reason: 'wrong lake',
+    });
+    expect((await t.query(api.posts.getForReport, { reportId: first }))?.siblings).toEqual([]);
+    // And the hidden Report's own id is not a handle to the Post's words.
+    expect(await t.query(api.posts.getForReport, { reportId: second })).toBeNull();
+    // A hidden Post is null, words included.
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'post',
+      targetId: postId,
+      status: 'hidden',
+      reason: 'spam',
+    });
+    expect(await t.query(api.posts.getForReport, { reportId: first })).toBeNull();
+  });
+
+  test('reports.get names the bays a chip’s where points at', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'clerk_author');
+    const bodyId = await seedBody(t);
+    const bayId = await t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: bodyId,
+        name: 'North Bay',
+        searchText: 'north bay',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0.5],
+              [0, 1],
+              [1, 1],
+              [1, 0.5],
+              [0, 0.5],
+            ],
+          ],
+        },
+        bbox: { minLat: 0.5, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.75, lng: 0.5 },
+        surfaceAreaSqM: 100_000,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: author.id,
+        createdAt: T0,
+        updatedAt: T0,
+      }),
+    );
+    const reportId = await author.as.mutation(api.reports.create, {
+      ...FRESH,
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+      iceTypes: [{ type: 'black_ice', where: { sector: 'N', subAreaId: bayId } }],
+    });
+    const report = await t.query(api.reports.get, { reportId });
+    expect(report?.bayNames).toEqual({ [bayId]: 'North Bay' });
   });
 });

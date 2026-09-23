@@ -486,7 +486,9 @@ describe('sections', () => {
     expect(sectionSummary(s, 'howWasIt', TZ)).toBe('Great · Not for beginners');
     expect(sectionSummary(s, 'observedFrom', TZ)).toBe('Shore · Open');
     expect(sectionSummary(s, 'endTime', TZ)).toBe('about 4:12 PM');
-    expect(sectionSummary(s, 'iceAndSurface', TZ)).toBe('Black ice, patches N end · Glass, middle');
+    expect(sectionSummary(s, 'iceAndSurface', TZ)).toBe(
+      'Black ice, patches north end · Glass, middle',
+    );
     expect(sectionSummary(s, 'snow', TZ)).toBe(
       'Snow: lanes · didnt matter · drifts avoidable · plowed path',
     );

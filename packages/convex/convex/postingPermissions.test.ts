@@ -82,9 +82,11 @@ const hazardArgs = (waterBodyId: Id<'waterBodies'>) => ({
   radiusMeters: 40,
 });
 
+// `suitability` is D189's *How was it?* in the value nothing downstream reads (A10-2).
 const reportArgs = (waterBodyId: Id<'waterBodies'>) => ({
   waterBodyId,
   skateEndTime: SKATE_TIME,
+  suitability: 'experienced_only' as const,
   iceTypes: [{ type: 'black_ice' as const }],
 });
 

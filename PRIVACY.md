@@ -48,9 +48,13 @@ your reports"). The app is not directed at children under 16.
   body you skated and to prompt you to make a report, and is shown on your report and on the
   water body's page. If you publish a report from a track, that track can also appear —
   without your name — in a faded **community skate-paths layer** on that water body, so others
-  can see where people have been going. A path is shown whole, including where you got on and
-  off the ice, so if you skated from private property, don't publish that track, or turn the
-  community layer off for your own tracks in Settings. Users under 18 are never included in it.
+  can see where people have been going. Each report has a **"Show where I got on the ice"**
+  switch: leave it on and the path is shown whole, including where you got on and off the ice;
+  turn it off and the report keeps the water body's name but not the exact spot, and the ends of
+  the path are trimmed near the shore. The switch remembers your last choice for the next
+  report. If you skated from private property, turn it off, don't publish that track, or turn
+  the community layer off for all your own tracks in Settings. Users under 18 are never
+  included in it.
 - **Device location while the map is open** — with your permission, the app reads the phone's
   location to frame the map, work out which water body you are on, and warn you near a
   reported hazard. To work out the water body it sends that position, rounded to roughly

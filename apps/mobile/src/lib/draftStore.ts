@@ -56,6 +56,13 @@ export interface SqliteLike {
  * carrying the old name (a rerun matches nothing). A confirmation cast on the ice and left in the queue
  * across the app update is exactly the row this exists for: without it the flush would never select it,
  * and the vote would sit there forever, unsent and unlisted.
+ *
+ * The third backfills `form.showPutIn` on report drafts saved before the put-in switch existed
+ * (2026-09-20). `ReportFormState.showPutIn` is a required boolean and the form renders it as-is, so
+ * a draft with no field at all drew the switch *off* while `buildReportInput` (which reads only an
+ * explicit `false` as the opt-out) went on publishing the put-in — the one place the switch could
+ * say one thing and the report do the other. Filled in on disk, once, with the field's own default
+ * (shown), so every reader stays a plain `JSON.parse`.
  */
 export function ensureSchema(db: SqliteLike): void {
   db.execSync(
@@ -78,6 +85,14 @@ export function ensureSchema(db: SqliteLike): void {
        SET kind = ?, data = json_set(data, '$.kind', ?)
      WHERE kind = ?`,
     [CONFIRMATION_VOTE_KIND, CONFIRMATION_VOTE_KIND, LEGACY_CONFIRMATION_KIND],
+  );
+  // `json('true')`, not the string 'true': the form reads a boolean. `json_type` is NULL only when the
+  // path is absent, so a draft that already carries an explicit choice — either way — is untouched.
+  db.runSync(
+    `UPDATE report_drafts
+       SET data = json_set(data, '$.form.showPutIn', json('true'))
+     WHERE kind = ? AND json_type(data, '$.form.showPutIn') IS NULL`,
+    [KIND_REPORT],
   );
 }
 

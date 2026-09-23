@@ -6,6 +6,8 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
+  flushErrorMessage,
+  formCreateRefusal,
   hasFutureSkateTimeError,
   humanizeEnum,
   ICE_TYPES,
@@ -14,7 +16,10 @@ import {
   PRECIP_TYPES,
   type ReportFormState,
   reportFormFromReport,
+  resolveShowPutInDefault,
   resolveSkateWindow,
+  SHOW_PUT_IN_EXPLAINER,
+  SHOW_PUT_IN_LABEL,
   SKATE_QUALITIES,
   SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
@@ -28,7 +33,6 @@ import {
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { datetimeLocalToMs, toDatetimeLocal } from '../lib/reportForm';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
@@ -564,6 +568,21 @@ export function ReportFormFields({
             Set access point on the map
           </Button>
         )}
+        {/* The per-report put-in opt-out (Phase 04 decision #7) — shown regardless of whether a pin is
+            set, because the server derives a put-in from the report either way, and because a report
+            posted from a track clips its path on the same flag (D58). Copy in `@skating/core`. */}
+        <label
+          htmlFor="show-put-in"
+          className="mt-2 flex items-start gap-2 text-foreground text-sm"
+        >
+          <Checkbox
+            id="show-put-in"
+            checked={form.showPutIn}
+            onCheckedChange={(checked) => patch({ showPutIn: checked === true })}
+          />
+          {SHOW_PUT_IN_LABEL}
+        </label>
+        <p className="text-foreground-muted text-xs">{SHOW_PUT_IN_EXPLAINER}</p>
       </Field>
 
       <Field label="Notes">
@@ -623,6 +642,7 @@ export function ReportForm({
   const profile = useQuery(api.profiles.current, {});
   const createReport = useMutation(api.reports.create);
   const updateReport = useMutation(api.reports.update);
+  const setShowPutInDefault = useMutation(api.profiles.setShowPutInDefault);
   const recordSignal = useMutation(api.analytics.recordClientSignal);
   const { putInPin, setPutInPin, setPinDropMode, pinDropMode } = useMapSelection();
 
@@ -656,9 +676,25 @@ export function ReportForm({
   // from the stored report; a new report starts blank.
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
-      setForm(editing ? reportFormFromReport(editing.report) : emptyReportForm(Date.now()));
+      setForm(
+        editing
+          ? reportFormFromReport(editing.report)
+          : emptyReportForm(Date.now(), {
+              showPutIn: resolveShowPutInDefault(profile?.showPutInDefault),
+            }),
+      );
     }
   }, [profile, form, minor, editing]);
+
+  // The put-in switch is remembered the moment it's flipped (like the privacy toggles on Settings),
+  // not at submit — a choice about your launch is a choice, whether or not this report gets posted.
+  // Fire-and-forget: the form's own value is what this report will carry.
+  function onFormChange(next: ReportFormState) {
+    if (form && next.showPutIn !== form.showPutIn) {
+      void setShowPutInDefault({ showPutIn: next.showPutIn }).catch(() => {});
+    }
+    setForm(next);
+  }
 
   // Clear the map put-in-pin state when the form goes away — including an unmount from navigating
   // away mid-pin-drop, which would otherwise strand the map in crosshair/banner mode.
@@ -691,6 +727,16 @@ export function ReportForm({
         void recordSignal({ signal: 'report_rejected_future_skate' }).catch(() => {});
       }
       return;
+    }
+    // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
+    // the server would refuse with, so the form says what to add rather than what failed. Never on
+    // an edit: what is posted stays editable.
+    if (!editing) {
+      const refusal = formCreateRefusal(result.normalized, bundleHazardIds.length, Date.now());
+      if (refusal) {
+        setError(refusal);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -732,13 +778,10 @@ export function ReportForm({
       navigate({ to: '/report/$id', params: { id: reportId } });
     } catch (err) {
       photoDrafts.setCommitted(false); // creation didn't complete — uploads are reclaimable again
-      setError(
-        err instanceof ConvexError
-          ? String(err.data)
-          : err instanceof Error
-            ? err.message
-            : 'Could not post your report',
-      );
+      // `flushErrorMessage` reads the sentence out of a `ConvexError`'s `data` — the server's
+      // `stale_report` / `minimum_set` / `invalid_report` refusals are objects, and `String()` of
+      // one is "[object Object]", not words a skater can act on.
+      setError(flushErrorMessage(err));
       setSubmitting(false);
     }
   }
@@ -766,7 +809,7 @@ export function ReportForm({
         ) : form ? (
           <ReportFormFields
             form={form}
-            onFormChange={setForm}
+            onFormChange={onFormChange}
             putInPin={putInPin}
             onRequestPin={() => setPinDropMode(true)}
             onClearPin={() => setPutInPin(null)}

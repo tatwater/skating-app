@@ -152,6 +152,31 @@ describe('draftStore kind migration', () => {
     raw.close();
   });
 
+  it('backfills form.showPutIn on drafts saved before the switch existed, and only on those', () => {
+    const raw = new DatabaseSync(':memory:');
+    const db = adapt(raw);
+    ensureSchema(db);
+    // A draft from before 2026-09-20: the form has no `showPutIn` at all. The switch must read as
+    // *shown* — the same default the stored report field has — not render as off.
+    insertLegacyRow(raw, reportDraft('old', 1000));
+    // Two drafts saved after: each carries an explicit choice that the backfill must not overwrite.
+    const opted = reportDraft('hidden', 2000);
+    opted.form = { showPutIn: false } as ReportDraft['form'];
+    insertLegacyRow(raw, opted);
+    const shown = reportDraft('shown', 3000);
+    shown.form = { showPutIn: true } as ReportDraft['form'];
+    insertLegacyRow(raw, shown);
+
+    ensureSchema(db); // the backfill runs on every open; this is the one that matters
+
+    const byId = Object.fromEntries(readReportDrafts(db).map((d) => [d.id, d.form.showPutIn]));
+    expect(byId).toEqual({ old: true, hidden: false, shown: true });
+    // A real boolean in the blob, not the string 'true' — the form reads it as one.
+    expect(typeof byId.old).toBe('boolean');
+
+    raw.close();
+  });
+
   it('is idempotent — a second run neither throws nor re-adds the column', () => {
     const raw = new DatabaseSync(':memory:');
     const db = adapt(raw);

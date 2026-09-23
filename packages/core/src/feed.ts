@@ -8,9 +8,23 @@
  * single source drives both surfaces.
  */
 
-import { formatSkateWindow, humanizeEnum, SKATE_QUALITY_LABELS } from './reportView';
+import {
+  formatSkateWindow,
+  humanizeEnum,
+  OBSERVED_FROM_LABELS,
+  SIGHTING_LABELS,
+  SKATE_QUALITY_LABELS,
+  SUITABILITY_LABELS,
+} from './reportView';
 import type { TrustClass } from './reputationConfig';
-import type { IceType, SkateQuality, SurfaceTag } from './types';
+import type {
+  IceType,
+  ObservedFrom,
+  Sighting,
+  SkateQuality,
+  Suitability,
+  SurfaceTag,
+} from './types';
 
 /**
  * A feed/report author's public attribution + cosmetic trust (D50). `trustClass` drives the `TrustAvatar`
@@ -170,6 +184,12 @@ export interface FeedCardData {
   iceTypes: IceType[];
   surfaceTags: SurfaceTag[];
   skateQuality?: SkateQuality;
+  /** Who the ice is for, in the author's words (A10 / D190) — `dont_go` leads the card when set. */
+  suitability?: Suitability;
+  /** How the author saw it (A10 / D191). Absent means unstated. */
+  observedFrom?: ObservedFrom;
+  /** What a shore observer saw (A10 / D189) — the observation a from-shore report may carry. */
+  sighting?: Sighting;
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
@@ -184,6 +204,108 @@ export interface FeedCardData {
    * 55-minute drive plus a 25-minute walk is not an 80-minute drive (D72 amendment).
    */
   accessKind?: string;
+}
+
+/**
+ * The feed item the server (`posts.listFeed`) returns per Post (A10 / D186): the author's title and
+ * prose over the member Reports the viewer's filters matched, in the author's order. A legacy Post
+ * has one Report and no words, and renders exactly as the report card always did. `omittedCount`
+ * is the members the *filters* hid (never moderation — those are not counted), so the header can say
+ * so rather than let a two-lake day read as one.
+ */
+export interface PostCardData {
+  postId: string;
+  title?: string;
+  body?: string;
+  /** The D28 sort key — the freshest visible member's end time. */
+  latestSkateEndTime: number;
+  author: FeedAuthor;
+  blocked: boolean;
+  /** Any matched member is on a favorited body or bay (Phase 04 / A09) — the per-page boost. */
+  isFavorite: boolean;
+  /** Never empty: a Post with no matching Report is not in the page. */
+  reports: FeedCardData[];
+  omittedCount: number;
+}
+
+/**
+ * The Post header, render-ready (A10 / D186). `hasHeader` is the one decision both surfaces make
+ * the same way: a legacy Post — one Report, no words — draws no header at all and is the report
+ * card exactly as it always was; anything with a title, prose or a second Report gets the author
+ * and the time once, up top, and the Reports as blocks under it. `omittedLabel` names the members
+ * the viewer's own filters hid, so a two-lake day never silently reads as one.
+ */
+export interface PostCardView {
+  postId: string;
+  hasHeader: boolean;
+  title: string | null;
+  body: string | null;
+  relativeTime: string;
+  author: FeedAuthor;
+  blocked: boolean;
+  isFavorite: boolean;
+  reports: FeedCardView[];
+  omittedLabel: string | null;
+}
+
+export function omittedReportsLabel(count: number): string | null {
+  if (count <= 0) return null;
+  return count === 1
+    ? '1 more lake outside your filters'
+    : `${count} more lakes outside your filters`;
+}
+
+/**
+ * The Posts minus the Reports the recommended strip already shows (D50: a permissive-filter viewer
+ * must not see one twice). A member the strip took is removed from its Post; a Post left with no
+ * member is dropped. Not counted as omitted — the reader saw it, one card up.
+ */
+export function withoutRecommended(
+  posts: readonly PostCardData[],
+  recommendedReportIds: ReadonlySet<string>,
+): PostCardData[] {
+  const out: PostCardData[] = [];
+  for (const post of posts) {
+    const reports = post.reports.filter((r) => !recommendedReportIds.has(r.reportId));
+    if (reports.length === 0) continue;
+    out.push(reports.length === post.reports.length ? post : { ...post, reports });
+  }
+  return out;
+}
+
+/**
+ * A cached report card as the one-Report Post it belongs to — for the mobile offline read-cache,
+ * which stores `FeedCardData` per Report (the per-body cache reads it back that way too) and hands
+ * the feed Posts. Renders as the legacy card: no header, no words.
+ */
+export function postCardForCachedReport(report: FeedCardData): PostCardData {
+  return {
+    postId: `cached:${report.reportId}`,
+    latestSkateEndTime: report.skateEndTime,
+    author: report.author,
+    blocked: report.blocked,
+    isFavorite: report.isFavorite ?? false,
+    reports: [report],
+    omittedCount: 0,
+  };
+}
+
+export function buildPostCardView(data: PostCardData, now: number): PostCardView {
+  const reports = data.reports.map((r) => buildFeedCardView(r, now));
+  const title = data.title ?? null;
+  const body = data.body ?? null;
+  return {
+    postId: data.postId,
+    hasHeader: title !== null || body !== null || reports.length > 1 || data.omittedCount > 0,
+    title,
+    body,
+    relativeTime: formatRelativeTime(data.latestSkateEndTime, now),
+    author: data.author,
+    blocked: data.blocked,
+    isFavorite: data.isFavorite,
+    reports,
+    omittedLabel: omittedReportsLabel(data.omittedCount),
+  };
 }
 
 /** Render-ready feed card. `relativeTime` depends on `now`, so it's computed per render, not stored. */
@@ -203,6 +325,17 @@ export interface FeedCardView {
   relativeTime: string;
   durationLabel: string | null;
   qualityLabel: string | null;
+  /**
+   * The A10 axes (§12.1). `suitabilityLabel` leads the chip row when set — "Don't go" before
+   * "Great" (D3: the who-claim outranks the how-good). `vantageLabel` is set only off the ice: the
+   * default vantage says nothing a reader needs, while "From shore" and "Secondhand" change how a
+   * thickness reads. `sightingLabel` is the shore observer's one observation.
+   */
+  suitabilityLabel: string | null;
+  vantageLabel: string | null;
+  sightingLabel: string | null;
+  /** `true` when the author said don't go — the card leads with it, in the warning treatment. */
+  isDontGo: boolean;
   /** Humanized ice + surface vocabulary, ready as chip text (UI truncates if it wants). */
   chips: string[];
   photoThumbUrls: string[];
@@ -286,6 +419,13 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
     relativeTime: formatRelativeTime(data.skateEndTime, now),
     durationLabel: formatSkateWindow(data.skateEndTime, data.skateStartTime),
     qualityLabel: data.skateQuality ? SKATE_QUALITY_LABELS[data.skateQuality] : null,
+    suitabilityLabel: data.suitability ? SUITABILITY_LABELS[data.suitability] : null,
+    vantageLabel:
+      data.observedFrom && data.observedFrom !== 'on_ice'
+        ? OBSERVED_FROM_LABELS[data.observedFrom]
+        : null,
+    sightingLabel: data.sighting ? SIGHTING_LABELS[data.sighting] : null,
+    isDontGo: data.suitability === 'dont_go',
     chips,
     photoThumbUrls: data.photoThumbUrls,
     author: data.author,

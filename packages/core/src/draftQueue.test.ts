@@ -6,6 +6,7 @@ import {
   type DraftPhoto,
   flushableDrafts,
   flushDraft,
+  flushErrorMessage,
   isFlushable,
   type ReportDraft,
 } from './draftQueue';
@@ -17,13 +18,21 @@ function photo(id: string, extra: Partial<DraftPhoto> = {}): DraftPhoto {
   return { id, fullUri: `${id}-full`, thumbUri: `${id}-thumb`, placeOnMap: false, ...extra };
 }
 
+/**
+ * A form that meets the minimum set (D189, asked at flush since A10-2) — quality and one chip —
+ * so the fixtures stay about the queue, not about the rule.
+ */
+function observedForm(opts?: Parameters<typeof emptyReportForm>[1]): ReportFormState {
+  return { ...emptyReportForm(NOW, opts), skateQuality: 'good', iceTypes: ['black_ice'] };
+}
+
 function draftWith(overrides: Partial<ReportDraft> = {}, form?: ReportFormState): ReportDraft {
   return {
     ...createDraft({
       id: 'd1',
       idempotencyKey: 'key-1',
       now: NOW,
-      form: form ?? emptyReportForm(NOW),
+      form: form ?? observedForm(),
       waterBodyId: 'wb-1',
     }),
     ...overrides,
@@ -145,6 +154,14 @@ describe('flushDraft — happy path', () => {
     expect(calls.rows[0]?.coord).toEqual(geo); // opted in
     expect(calls.rows[1]?.coord).toBeUndefined(); // not opted in
   });
+
+  it('carries the put-in opt-out to the server, and only the opt-out (Phase 04 #7)', async () => {
+    const { effects, calls } = makeEffects();
+    await flushDraft(draftWith({}, observedForm({ showPutIn: false })), effects, NOW);
+    await flushDraft(draftWith({ id: 'd2' }, observedForm()), effects, NOW);
+    expect(calls.reports[0]?.showPutIn).toBe(false); // the choice made offline reaches the row
+    expect(calls.reports[1]).not.toHaveProperty('showPutIn'); // shown is the stored default
+  });
 });
 
 describe('flushDraft — coord-only resolution (Layer-2 fallback)', () => {
@@ -175,7 +192,7 @@ describe('flushDraft — coord-only resolution (Layer-2 fallback)', () => {
 describe('flushDraft — failures', () => {
   it('a permanently-invalid draft fails before any upload', async () => {
     // A far-future skate-end time is rejected by validateReportInput — a permanent failure.
-    const badForm = { ...emptyReportForm(NOW), skateEndTime: NOW + 30 * 24 * 60 * 60 * 1000 };
+    const badForm = { ...observedForm(), skateEndTime: NOW + 30 * 24 * 60 * 60 * 1000 };
     const draft = draftWith({ photos: [photo('p1')] }, badForm);
     const { effects, calls } = makeEffects();
     const res = await flushDraft(draft, effects, NOW);
@@ -296,5 +313,55 @@ describe('flushDraft — linked recorded track (Phase 08, offline linkage)', () 
     await flushDraft(draftWith(), effects, NOW);
     expect(called).toBe(false);
     expect(calls.reports[0]?.activityId).toBeUndefined();
+  });
+});
+
+describe('the create-only rules at flush (A10 §9.4)', () => {
+  it('a week-old draft is surfaced, not posted — and spends no uploads first', async () => {
+    const { effects, calls } = makeEffects();
+    const stale = draftWith({ photos: [photo('p1')] });
+    const res = await flushDraft(stale, effects, NOW + 8 * 24 * 60 * 60 * 1000);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.kind).toBe('permanent');
+      expect(res.message).toBe('Reports can be posted up to a week after you got off the ice.');
+    }
+    expect(calls.uploads).toEqual([]);
+    expect(calls.reports).toEqual([]);
+  });
+
+  it('a draft already sent once (found in `creating`) is left to the server’s dedup, not refused here', async () => {
+    const { effects, calls } = makeEffects();
+    const resumed = draftWith({ status: 'creating' });
+    const res = await flushDraft(resumed, effects, NOW + 8 * 24 * 60 * 60 * 1000);
+    expect(res.ok).toBe(true);
+    expect(calls.reports).toHaveLength(1); // the server answers with the existing report (D30)
+  });
+
+  it('a draft that says nothing is parked with what to add', async () => {
+    const { effects, calls } = makeEffects();
+    const res = await flushDraft(draftWith({}, emptyReportForm(NOW)), effects, NOW);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/^Before this can post, add how it was and one thing/);
+    expect(calls.reports).toEqual([]);
+  });
+
+  it('a server refusal parks the draft with the server’s sentence, not the wire form', () => {
+    const wire = new Error(
+      '[Request ID: abc] Server Error Uncaught ConvexError: {"code":"minimum_set","message":"Before this can post, add how it was."}',
+    );
+    wire.name = 'ConvexError';
+    (wire as Error & { data: unknown }).data = {
+      code: 'minimum_set',
+      message: 'Before this can post, add how it was.',
+    };
+    expect(flushErrorMessage(wire)).toBe('Before this can post, add how it was.');
+    const plain = new Error('Water body not found');
+    plain.name = 'ConvexError';
+    (plain as Error & { data: unknown }).data = 'Water body not found';
+    expect(flushErrorMessage(plain)).toBe('Water body not found');
+    expect(flushErrorMessage(new TypeError('Network request failed'))).toBe(
+      'Network request failed',
+    );
   });
 });
