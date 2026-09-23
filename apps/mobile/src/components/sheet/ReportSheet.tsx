@@ -13,7 +13,6 @@ import {
   postRefusals,
   type ReportRefusal,
   removeReport,
-  reportEndMs,
   reportsInTimeOrder,
   SHEET_SECTION_COUNT,
   type SheetReport,
@@ -533,19 +532,15 @@ function ReportTabs({
         minWidth={Dimensions.get('window').width}
       >
         <Tab label="✎ Post" onPress={onPost} />
-        {ordered.map((r, i) => {
-          const on = r.id === activeId;
-          const end = reportEndMs(r);
-          return (
-            <Tab
-              key={r.id}
-              label={`${ordered.length > 1 ? `${i + 1} ` : ''}${r.bodyName ?? 'Which lake?'}${end !== undefined && ordered.length > 1 ? '' : ''}`}
-              on={on}
-              needed={gapReportIds.has(r.id)}
-              onPress={() => onSelect(r.id)}
-            />
-          );
-        })}
+        {ordered.map((r, i) => (
+          <Tab
+            key={r.id}
+            label={`${ordered.length > 1 ? `${i + 1} ` : ''}${r.bodyName ?? 'Which lake?'}`}
+            on={r.id === activeId}
+            needed={gapReportIds.has(r.id)}
+            onPress={() => onSelect(r.id)}
+          />
+        ))}
         {editing ? null : <Tab label="+" onPress={onAdd} accessibilityLabel="Another report" />}
       </XStack>
     </ScrollView>

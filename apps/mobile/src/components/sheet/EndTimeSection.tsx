@@ -89,25 +89,21 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
   const hours = useSkateWeather(body?.waterBodyId, endMs, timeZone);
   const windowHours = useSkateWindowHours(hours, endMs, startMs);
   const model = useMemo(() => {
-    const others = post
-      ? post.reports
-          .filter((r) => r.id !== report.id)
-          .flatMap((r) => {
-            const e = reportEndMs(r);
-            if (e === undefined) return [];
-            const n = reportsInTimeOrder(post).findIndex((q) => q.id === r.id) + 1;
-            return [
-              {
-                id: r.id,
-                label: `${n} · ${(r.bodyName ?? 'lake').toUpperCase()}`,
-                ...(r.sheet.scalars.skateStartTime !== undefined
-                  ? { startMs: r.sheet.scalars.skateStartTime }
-                  : {}),
-                endMs: e,
-              },
-            ];
-          })
-      : [];
+    // The other Reports of the Post, numbered as their tabs are (time order).
+    const others = (post ? reportsInTimeOrder(post) : []).flatMap((r, i) => {
+      const e = r.id === report.id ? undefined : reportEndMs(r);
+      if (e === undefined) return [];
+      return [
+        {
+          id: r.id,
+          label: `${i + 1} · ${(r.bodyName ?? 'lake').toUpperCase()}`,
+          ...(r.sheet.scalars.skateStartTime !== undefined
+            ? { startMs: r.sheet.scalars.skateStartTime }
+            : {}),
+          endMs: e,
+        },
+      ];
+    });
     return timelineModel({
       timeZone,
       nowMs: now,
@@ -192,18 +188,15 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
       )}
       <StartWindow report={report} dispatch={dispatch} />
       {chosen !== undefined && body ? (
-        <>
-          <SubLabel>While you skated</SubLabel>
-          <WeatherCards
-            hours={hours}
-            windowHours={windowHours}
-            endMs={endMs}
-            timeZone={timeZone}
-            sun={body.sunAt(endMs ?? now)}
-            report={report}
-            dispatch={dispatch}
-          />
-        </>
+        <WeatherCards
+          hours={hours}
+          windowHours={windowHours}
+          endMs={endMs}
+          timeZone={timeZone}
+          sun={body.sunAt(endMs ?? now)}
+          report={report}
+          dispatch={dispatch}
+        />
       ) : null}
     </SheetSection>
   );

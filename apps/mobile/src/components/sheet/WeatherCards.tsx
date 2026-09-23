@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Text, useTheme, XStack, YStack } from 'tamagui';
 import { GLYPH_ICON } from '../weatherGlyphs';
-import { SheetHint } from './SheetSection';
+import { SheetHint, SubLabel } from './SheetSection';
 import type { SectionProps } from './sectionProps';
 import { WeatherCorrection } from './WeatherCorrection';
 
@@ -19,7 +19,8 @@ import { WeatherCorrection } from './WeatherCorrection';
  * The weather the skate had, on the phone (A10-6, founder call 2026-09-23): one card per archived
  * hour the skate touched, in the drawer's hourly lockup — symbol, temperature, amount, wind — in a
  * row under the timeline, and a line for what the weather did first to last. *Correct it* opens
- * the same correction as before; a correction stores as the author's own reading.
+ * the same correction as before; a correction stores as the author's own reading. Nothing draws —
+ * not even the label — until the archive has answered; an answer with no hours says so.
  *
  * Nothing here is a safety claim (D3 / D150): what the weather did, never what the ice is.
  */
@@ -44,10 +45,19 @@ export function WeatherCards({
   const summary = weatherRunSummary(cells);
   const corrected = report.sheet.scalars.conditions;
   const at = hours && endMs !== undefined ? hourAt(hours, endMs) : null;
-  if (endMs === undefined || hours === null || summary === null) return null;
+  if (endMs === undefined || hours === null) return null;
+  if (summary === null) {
+    return (
+      <YStack gap="$1.5">
+        <SubLabel>While you skated</SubLabel>
+        <SheetHint>No archived weather for these hours yet.</SheetHint>
+      </YStack>
+    );
+  }
 
   return (
     <YStack gap="$1.5">
+      <SubLabel>While you skated</SubLabel>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <XStack>
           {cells.map((cell, i) => (
@@ -124,7 +134,6 @@ export function WeatherCards({
           onDone={() => setCorrecting(false)}
         />
       ) : null}
-      {cells.length === 0 ? <SheetHint>No archived weather for these hours yet.</SheetHint> : null}
     </YStack>
   );
 }

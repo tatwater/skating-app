@@ -837,7 +837,7 @@ on a phone, black and white with color only where it means something. Designed f
 mockups (headless Chrome renders, kept outside the repo in `skating-mockups/a10-sheet/`) through
 three founder rounds, then built as the first of two PRs; the second (A10-7) is photos that assign
 themselves, place-mode and the track import. Five commits off `-5`, ~6,600 changed lines over 61
-files. Suites at build: core 3,018 · convex 1,748 · web 645 · mobile 112. No schema change, no
+files. Suites at build: core 3,019 · convex 1,748 · web 649 · mobile 112. No schema change, no
 data run.
 
 Founder calls, all before code: no new typefaces yet (Saira is the wider Figma redesign's; the
@@ -908,6 +908,27 @@ report* button.
 7. **The put-in mode's handlers ride a ref** (`AccessPanel`): they close over the render's sheet
    and the mode is armed once when the question opens, so Biome's dependency rule and the
    instrument's click agree.
+
+### The self-review pass — what it caught
+
+Fourteen findings, thirteen fixed in the branch, one retracted. Three worth naming:
+
+1. **The where cards re-armed the mode on every render.** `WhereCards` set the console's mode
+   from an effect keyed on the card's `onChange`, which the ice panel rebuilt per render, and the
+   console re-rendered on every mode change — a render loop, reproduced in a harness that never
+   finished. The mode is now armed on the card's identity and answer, and the callbacks ride a
+   ref (the pattern `AccessPanel` already used). The harness is the regression test.
+2. **Escape left the mode but not the question.** The ring went away and the block stayed open,
+   so the next click on a chip re-armed it. `ConsoleMode` carries `onExit`; the provider calls it
+   on Escape and the block closes with the mode.
+3. **A caret click committed a time.** Pointer down and up without movement wrote the caret's
+   own instant back as a `minute` end and dirtied the sheet; a drag now commits only on movement,
+   and its bounds are the panel's rules drawn (START ≤ END ≤ now, D199).
+
+The rest: the ladder filtered to the end time's day like everything else on the ruler; the
+where-mode wash showing the open card's answer only; the weather hook answering `[]` on a rejected
+fetch so the cards can say "no archived weather" rather than "reading" forever; one formatter per
+model; the ladder's accessible names zone-correct from core.
 
 ### Owed
 

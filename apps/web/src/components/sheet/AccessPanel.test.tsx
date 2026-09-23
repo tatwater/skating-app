@@ -9,6 +9,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { AccessPanel } from './AccessPanel';
+import { ConsoleModeProvider } from './ConsoleMode';
 import type { SheetBody } from './useSheetBody';
 
 const NOW = Date.UTC(2026, 0, 10, 20);
@@ -65,7 +66,11 @@ function renderPanel(opts: { editing?: boolean } = {}) {
       />
     );
   }
-  render(<Wrapper />);
+  render(
+    <ConsoleModeProvider>
+      <Wrapper />
+    </ConsoleModeProvider>,
+  );
   return { dispatched, get: () => latest as SheetReport };
 }
 
@@ -88,6 +93,15 @@ describe('the put-in (§7.1 / D198)', () => {
    * The point *was* the launch's coordinate. Left behind when the launch is un-chosen it reads as
    * *Somewhere else · set* and posts as a nameless proposal for a launch the corpus already has.
    */
+  it('Escape closes the question with the mode, so the block never outlives the lit launches', () => {
+    renderPanel();
+    openPutIn();
+    expect(screen.getByText(/The launches are lit on the lake/)).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByText(/The launches are lit on the lake/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choose on the lake' })).toBeInTheDocument();
+  });
+
   it('un-choosing the launch un-places the pin it placed', () => {
     const { get } = renderPanel();
     openPutIn();

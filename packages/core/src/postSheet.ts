@@ -438,13 +438,15 @@ export function reportEndMs(report: SheetReport): number | undefined {
  * author's and is what posts.
  */
 export function reportsInTimeOrder(post: PostSheet): SheetReport[] {
-  const timed = post.reports
-    .map((r, i) => ({ r, i, end: reportEndMs(r) }))
-    .filter((x): x is { r: SheetReport; i: number; end: number } => x.end !== undefined)
-    .sort((a, b) => a.end - b.end || a.i - b.i)
-    .map((x) => x.r);
-  const untimed = post.reports.filter((r) => reportEndMs(r) === undefined);
-  return [...timed, ...untimed];
+  const timed: { r: SheetReport; i: number; end: number }[] = [];
+  const untimed: SheetReport[] = [];
+  post.reports.forEach((r, i) => {
+    const end = reportEndMs(r);
+    if (end === undefined) untimed.push(r);
+    else timed.push({ r, i, end });
+  });
+  timed.sort((a, b) => a.end - b.end || a.i - b.i);
+  return [...timed.map((x) => x.r), ...untimed];
 }
 
 /** How many sections the sheet counts (the meter's denominator). */

@@ -97,7 +97,7 @@ describe('timelineModel', () => {
     expect(p1.fraction).toBeGreaterThan(p2.fraction);
   });
 
-  it('places the ladder ticks and stretches to the earliest of them', () => {
+  it('places the ladder ticks, labeled in the zone, and stretches to the earliest of them', () => {
     const m = timelineModel({
       timeZone: TZ,
       nowMs: local(16, 12),
@@ -110,6 +110,23 @@ describe('timelineModel', () => {
     expect(m.fromMs).toBeLessThanOrEqual(local(12, 30));
     expect(m.ladder).toHaveLength(2);
     expect(m.ladder[0]?.fraction).toBeGreaterThan(m.ladder[1]?.fraction as number);
+    expect(m.ladder.map((l) => l.label)).toEqual(['4:12', '1:00']);
+  });
+
+  it('drops a ladder from another day — a draft resumed tomorrow keeps yesterday as its ruler', () => {
+    const tomorrow = 24 * HOUR;
+    const m = timelineModel({
+      timeZone: TZ,
+      nowMs: local(18, 40) + tomorrow,
+      endMs: local(14),
+      sun,
+      ladder: [
+        { ms: local(18, 40) + tomorrow, pinned: true },
+        { ms: local(18, 30) + tomorrow, pinned: false },
+      ],
+    });
+    expect(m.ladder).toEqual([]);
+    expect(m.toMs).toBe(local(18));
   });
 
   it('caps the ruler at a day', () => {

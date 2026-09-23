@@ -82,6 +82,8 @@ export interface TimelinePhoto extends TimelinePhotoInput {
 export interface TimelineLadderTick {
   ms: number;
   pinned: boolean;
+  /** "4:30" in the zone, for the tick's accessible name. */
+  label: string;
   fraction: number;
 }
 
@@ -108,14 +110,16 @@ export function clockLabel(ms: number, timeZone: string): string {
     .replace(/\s?[AP]M$/i, '');
 }
 
-function hourLabel(ms: number, timeZone: string, first: boolean, previousHour: number): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: 'numeric',
-    hour12: true,
-  }).formatToParts(ms);
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
-  const period = (parts.find((p) => p.type === 'dayPeriod')?.value ?? '').toUpperCase();
+/** The tick's hour and period, from one formatter shared across the ruler. */
+function hourParts(fmt: Intl.DateTimeFormat, ms: number): { hour: number; period: string } {
+  const parts = fmt.formatToParts(ms);
+  return {
+    hour: Number(parts.find((p) => p.type === 'hour')?.value ?? '0'),
+    period: (parts.find((p) => p.type === 'dayPeriod')?.value ?? '').toUpperCase(),
+  };
+}
+
+function hourLabel(hour: number, period: string, first: boolean, previousHour: number): string {
   if (hour === 12) return period === 'PM' ? 'NOON' : '12 AM';
   const periodChanged = previousHour >= 0 && hour < previousHour;
   return first || periodChanged ? `${hour} ${period}` : String(hour);
@@ -141,23 +145,26 @@ export function timelineMsAt(
   return Math.round(ms / MINUTE_MS) * MINUTE_MS;
 }
 
-function sameLocalDay(a: number, b: number, timeZone: string): boolean {
-  const dtf = new Intl.DateTimeFormat('en-US', {
+export function timelineModel(input: TimelineInput): TimelineModel {
+  const { timeZone, nowMs, endMs, startMs, sun } = input;
+  const anchor = endMs ?? nowMs;
+  // One formatter each for the day test and the hour ticks: constructing `Intl` is the expensive
+  // half, and a ruler asks the day question of every photo and Report and the hour of every tick.
+  const dayFmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  return dtf.format(a) === dtf.format(b);
-}
-
-export function timelineModel(input: TimelineInput): TimelineModel {
-  const { timeZone, nowMs, endMs, startMs, sun } = input;
-  const others = input.others ?? [];
-  const photos = input.photos ?? [];
-  const ladder = input.ladder ?? [];
-  const anchor = endMs ?? nowMs;
-  const nowOnDay = sameLocalDay(nowMs, anchor, timeZone);
+  const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: true });
+  const anchorDay = dayFmt.format(anchor);
+  const onDay = (ms: number) => dayFmt.format(ms) === anchorDay;
+  // Everything the ruler draws is on the anchor's day: another day's Report, photo or ladder chip
+  // (a draft resumed tomorrow carries today's ladder) is not stretched to and not drawn.
+  const others = (input.others ?? []).filter((o) => onDay(o.endMs));
+  const photos = (input.photos ?? []).filter((ph) => onDay(ph.takenAtMs));
+  const ladder = (input.ladder ?? []).filter((l) => onDay(l.ms));
+  const nowOnDay = onDay(nowMs);
 
   const lows: number[] = [];
   const highs: number[] = [];
@@ -172,16 +179,12 @@ export function timelineModel(input: TimelineInput): TimelineModel {
   if (startMs !== undefined) lows.push(startMs - EDGE_MS);
   if (nowOnDay) highs.push(nowMs + EDGE_MS / 2);
   for (const o of others) {
-    if (sameLocalDay(o.endMs, anchor, timeZone)) {
-      lows.push((o.startMs ?? o.endMs) - EDGE_MS / 2);
-      highs.push(o.endMs + EDGE_MS / 2);
-    }
+    lows.push((o.startMs ?? o.endMs) - EDGE_MS / 2);
+    highs.push(o.endMs + EDGE_MS / 2);
   }
   for (const ph of photos) {
-    if (sameLocalDay(ph.takenAtMs, anchor, timeZone)) {
-      lows.push(ph.takenAtMs - EDGE_MS / 2);
-      highs.push(ph.takenAtMs + EDGE_MS / 2);
-    }
+    lows.push(ph.takenAtMs - EDGE_MS / 2);
+    highs.push(ph.takenAtMs + EDGE_MS / 2);
   }
   for (const l of ladder) lows.push(l.ms - EDGE_MS / 2);
   if (lows.length === 0) lows.push(anchor - MIN_SPAN_MS / 2);
@@ -201,12 +204,9 @@ export function timelineModel(input: TimelineInput): TimelineModel {
   const ticks: TimelineTick[] = [];
   let previousHour = -1;
   for (let ms = fromMs; ms <= toMs; ms += HOUR_MS) {
-    const label = hourLabel(ms, timeZone, ticks.length === 0, previousHour);
-    previousHour = Number(
-      new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: true })
-        .formatToParts(ms)
-        .find((p) => p.type === 'hour')?.value ?? '0',
-    );
+    const { hour, period } = hourParts(hourFmt, ms);
+    const label = hourLabel(hour, period, ticks.length === 0, previousHour);
+    previousHour = hour;
     ticks.push({ ms, label, fraction: timelineFraction(model, ms) });
   }
 
@@ -236,7 +236,6 @@ export function timelineModel(input: TimelineInput): TimelineModel {
     });
   }
   for (const o of others) {
-    if (!sameLocalDay(o.endMs, anchor, timeZone)) continue;
     const from = o.startMs ?? o.endMs - 30 * MINUTE_MS;
     spans.push({
       id: o.id,
@@ -253,9 +252,11 @@ export function timelineModel(input: TimelineInput): TimelineModel {
     ticks,
     marks,
     spans,
-    photos: photos
-      .filter((ph) => sameLocalDay(ph.takenAtMs, anchor, timeZone))
-      .map((ph) => ({ ...ph, fraction: timelineFraction(model, ph.takenAtMs) })),
-    ladder: ladder.map((l) => ({ ...l, fraction: timelineFraction(model, l.ms) })),
+    photos: photos.map((ph) => ({ ...ph, fraction: timelineFraction(model, ph.takenAtMs) })),
+    ladder: ladder.map((l) => ({
+      ...l,
+      label: clockLabel(l.ms, timeZone),
+      fraction: timelineFraction(model, l.ms),
+    })),
   };
 }

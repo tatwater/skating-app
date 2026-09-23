@@ -1,6 +1,6 @@
 import { timelineModel } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Timeline } from './Timeline';
 
 const TZ = 'America/New_York';
@@ -43,10 +43,57 @@ describe('Timeline', () => {
       ],
     });
     render(<Timeline model={model} onSetEnd={onSetEnd} />);
-    const ticks = screen.getAllByRole('button', { name: /Got off about/ });
+    const ticks = screen.getAllByRole('button', { name: /End about/ });
+    expect(ticks[1]).toHaveAccessibleName('End about 3:30');
     expect(ticks).toHaveLength(2);
     fireEvent.click(ticks[1] as HTMLElement);
     expect(onSetEnd).toHaveBeenCalledWith(local(15, 30));
+  });
+
+  describe('the carets', () => {
+    const model = timelineModel({
+      timeZone: TZ,
+      nowMs: local(18, 40),
+      endMs: local(16, 12),
+      startMs: local(14, 5),
+      sun,
+    });
+    afterEach(() => vi.restoreAllMocks());
+    /** The ruler is a thousand pixels wide in this test, from x = 0. */
+    const rulerOf = () =>
+      vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({ left: 0, width: 1000 } as DOMRect);
+
+    it('a click that does not move commits nothing — a press on the label is not an edit', () => {
+      rulerOf();
+      const onSetEnd = vi.fn();
+      const onSetStart = vi.fn();
+      render(<Timeline model={model} onSetEnd={onSetEnd} onSetStart={onSetStart} />);
+      const end = screen.getByRole('button', { name: /^END 4:12/ });
+      fireEvent.pointerDown(end, { clientX: 640, pointerId: 1 });
+      fireEvent.pointerUp(end, { clientX: 640, pointerId: 1 });
+      expect(onSetEnd).not.toHaveBeenCalled();
+      expect(onSetStart).not.toHaveBeenCalled();
+    });
+
+    it('a drag commits on release, clamped: the start never passes the end, the end never passes now', () => {
+      rulerOf();
+      const onSetEnd = vi.fn();
+      const onSetStart = vi.fn();
+      render(<Timeline model={model} onSetEnd={onSetEnd} onSetStart={onSetStart} />);
+      const start = screen.getByRole('button', { name: /^START 2:05/ });
+      fireEvent.pointerDown(start, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(start, { clientX: 1000, pointerId: 1 });
+      expect(screen.getByRole('button', { name: /^START …/ })).toBeInTheDocument();
+      fireEvent.pointerUp(start, { clientX: 1000, pointerId: 1 });
+      expect(onSetStart).toHaveBeenCalledWith(local(16, 12));
+      const end = screen.getByRole('button', { name: /^END 4:12/ });
+      fireEvent.pointerDown(end, { clientX: 600, pointerId: 1 });
+      fireEvent.pointerMove(end, { clientX: 1000, pointerId: 1 });
+      fireEvent.pointerUp(end, { clientX: 1000, pointerId: 1 });
+      expect(onSetEnd).toHaveBeenCalledWith(local(18, 40));
+    });
   });
 
   it('shows the other Reports of the day as labeled spans', () => {

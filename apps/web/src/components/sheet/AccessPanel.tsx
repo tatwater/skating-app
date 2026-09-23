@@ -89,6 +89,7 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
         handlers.current.dispatch({ type: 'setScalar', key: 'point', value: coord });
         setPlacing(false);
       },
+      onExit: () => setAsking(false),
     });
     return () => setMode(null);
   }, [asking, setMode]);

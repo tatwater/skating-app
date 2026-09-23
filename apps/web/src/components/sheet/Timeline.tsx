@@ -1,6 +1,26 @@
-import { type TimelineModel, timelineFraction, timelineMsAt } from '@skating/core';
+import {
+  type TimelineMark,
+  type TimelineModel,
+  timelineFraction,
+  timelineMsAt,
+} from '@skating/core';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
 import { cn } from '../../lib/utils';
+
+/**
+ * The instants a caret may be dragged between: the ruler's ends, the other caret (the start is
+ * before the end — the WHEN panel's own rule, `resolveSkateWindow`), and for the end, *now* when
+ * it is on the ruler (D199 refuses a future end). One rule, drawn and typed alike.
+ */
+function dragBounds(model: TimelineModel, kind: 'start' | 'end'): { min: number; max: number } {
+  const at = (k: TimelineMark['kind']) => model.marks.find((m) => m.kind === k)?.ms;
+  if (kind === 'start') return { min: model.fromMs, max: at('end') ?? model.toMs };
+  const now = at('now');
+  return {
+    min: at('start') ?? model.fromMs,
+    max: now !== undefined ? Math.min(now, model.toMs) : model.toMs,
+  };
+}
 
 /**
  * The timeline (A10-6 / D206): core's `timelineModel` drawn as a ruler. Hour ticks with their
@@ -11,8 +31,10 @@ import { cn } from '../../lib/utils';
  *
  * **The carets drag.** A pointer on START or END moves it along the ruler and hands the minute
  * back through `onSetStart` / `onSetEnd` on release — the WHEN section's fields are the keyboard's
- * way to the same values (founder call 2026-09-23: all three set from either). A tap on a ladder
- * tick chooses that half-hour as the end. Nothing here is a safety claim (D3).
+ * way to the same values (founder call 2026-09-23: all three set from either). A click that does
+ * not move commits nothing: the caret's own minute is where a drag starts from, so a press on the
+ * label is not an edit. A tap on a ladder tick chooses that half-hour as the end. Nothing here is
+ * a safety claim (D3).
  */
 export function Timeline({
   model,
@@ -29,27 +51,37 @@ export function Timeline({
   endLocked?: boolean;
 }) {
   const ref = useRef<HTMLFieldSetElement>(null);
-  const [drag, setDrag] = useState<{ kind: 'start' | 'end'; ms: number } | null>(null);
+  const [drag, setDrag] = useState<{ kind: 'start' | 'end'; ms: number; moved: boolean } | null>(
+    null,
+  );
 
   const fractionAt = (clientX: number): number => {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return 0;
     return (clientX - rect.left) / rect.width;
   };
-  const begin = (kind: 'start' | 'end') => (e: ReactPointerEvent<HTMLButtonElement>) => {
-    if (kind === 'end' && (endLocked || !onSetEnd)) return;
-    if (kind === 'start' && !onSetStart) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDrag({ kind, ms: timelineMsAt(model, fractionAt(e.clientX)) });
-  };
+  const begin =
+    (kind: 'start' | 'end', fromMs: number) => (e: ReactPointerEvent<HTMLButtonElement>) => {
+      if (kind === 'end' && (endLocked || !onSetEnd)) return;
+      if (kind === 'start' && !onSetStart) return;
+      // jsdom has no pointer capture; a browser does, and it keeps the drag when it leaves the caret.
+      if (typeof e.currentTarget.setPointerCapture === 'function') {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      setDrag({ kind, ms: fromMs, moved: false });
+    };
   const move = (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (!drag) return;
-    setDrag({ ...drag, ms: timelineMsAt(model, fractionAt(e.clientX)) });
+    const { min, max } = dragBounds(model, drag.kind);
+    const ms = Math.min(max, Math.max(min, timelineMsAt(model, fractionAt(e.clientX))));
+    setDrag({ ...drag, ms, moved: true });
   };
   const end = () => {
     if (!drag) return;
-    if (drag.kind === 'end') onSetEnd?.(drag.ms);
-    else onSetStart?.(drag.ms);
+    if (drag.moved) {
+      if (drag.kind === 'end') onSetEnd?.(drag.ms);
+      else onSetStart?.(drag.ms);
+    }
     setDrag(null);
   };
 
@@ -117,7 +149,7 @@ export function Timeline({
           key={l.ms}
           type="button"
           onClick={() => onSetEnd?.(l.ms)}
-          aria-label={`Got off about ${new Date(l.ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
+          aria-label={`End about ${l.label}`}
           className="-translate-x-1/2 absolute top-[30px] h-5 w-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           style={{ left: pct(l.fraction) }}
         >
@@ -180,7 +212,7 @@ export function Timeline({
             key={m.kind}
             type="button"
             aria-label={`${m.label}${draggable ? ', drag to change' : ''}`}
-            onPointerDown={begin(m.kind)}
+            onPointerDown={begin(m.kind, m.ms)}
             onPointerMove={move}
             onPointerUp={end}
             onPointerCancel={() => setDrag(null)}

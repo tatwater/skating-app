@@ -207,7 +207,7 @@ export function Timeline({
               key={`p${l.ms}`}
               onPress={() => onChooseEnd(l.ms)}
               accessibilityRole="button"
-              accessibilityLabel={`Got off about ${new Date(l.ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
+              accessibilityLabel={`End about ${l.label}`}
               style={{
                 position: 'absolute',
                 left: x(l.fraction) - 14,

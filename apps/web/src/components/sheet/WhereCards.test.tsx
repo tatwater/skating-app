@@ -79,10 +79,54 @@ describe('WhereCards', () => {
     expect(screen.getByTestId('mode')).toHaveTextContent('none');
   });
 
-  it('Escape leaves the mode from anywhere', () => {
+  it('Escape leaves the mode from anywhere, and closes the question that opened it', () => {
     render(<Harness />);
     expect(screen.getByTestId('mode')).toHaveTextContent('Black ice');
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('mode')).toHaveTextContent('none');
+    expect(screen.queryByText(/Where is the/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The console's real shape: the parent reads the mode (as `Console` and `Instrument` do) and
+ * rebuilds the cards — new `onChange` closures — on every render, as `IceAndSurface` does.
+ */
+function ConsoleShapedHarness() {
+  const { mode } = useConsoleMode();
+  const [wheres, setWheres] = useState<Record<string, Where | undefined>>({
+    'iceTypes:black_ice': undefined,
+  });
+  const cards: WhereCard[] = [
+    {
+      id: 'iceTypes:black_ice',
+      label: 'Black ice',
+      where: wheres['iceTypes:black_ice'],
+      onChange: (w) => setWheres((s) => ({ ...s, 'iceTypes:black_ice': w })),
+    },
+  ];
+  return (
+    <>
+      <output data-testid="mode">{mode?.kind === 'where' ? mode.label : 'none'}</output>
+      <WhereCards
+        cards={cards}
+        body={null}
+        open
+        onClose={() => {}}
+        activeId={null}
+        onActivate={() => {}}
+      />
+    </>
+  );
+}
+
+describe('WhereCards inside a mode-reading parent', () => {
+  it('settles: the mode is armed once, not on every render the arming itself causes', () => {
+    render(
+      <ConsoleModeProvider>
+        <ConsoleShapedHarness />
+      </ConsoleModeProvider>,
+    );
+    expect(screen.getByTestId('mode')).toHaveTextContent('Black ice');
   });
 });

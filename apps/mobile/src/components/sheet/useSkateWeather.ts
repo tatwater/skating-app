@@ -7,8 +7,9 @@ import { useEffect, useMemo, useState } from 'react';
 /**
  * The archive's hours for the skate (founder call 2026-09-21; the cards, A10-6): read through the
  * panel's action, which serves the hours the drawer already fetched and fetches the rest once.
- * `null` until the archive answers, and nothing is guessed — offline the action rejects and the
- * cards simply are not there. Keyed on the day the end time falls on, not on every minute chip.
+ * `null` until the archive answers; `[]` once it has answered with nothing — a cell with no
+ * archive yet, no signal (the action rejects), or no lake to ask about — so the cards can say so.
+ * Nothing is guessed. Keyed on the day the end time falls on, not on every minute chip.
  */
 export function useSkateWeather(
   waterBodyId: string | undefined,
@@ -29,17 +30,19 @@ export function useSkateWeather(
     let cancelled = false;
     getDays({ waterBodyId: waterBodyId as Id<'waterBodies'>, days })
       .then((res) => {
-        if (cancelled || !res) return;
-        setHours({ key, hours: placeHours(res.hours, timeZone) });
+        if (cancelled) return;
+        setHours({ key, hours: res ? placeHours(res.hours, timeZone) : [] });
       })
       .catch(() => {
-        // No signal, or no archive for this cell yet: the cards stay absent.
+        // No signal, or no archive for this cell yet: answered, with nothing.
+        if (!cancelled) setHours({ key, hours: [] });
       });
     return () => {
       cancelled = true;
     };
   }, [getDays, waterBodyId, days, timeZone, key]);
 
+  if (waterBodyId === undefined || days === 0) return [];
   return hours?.key === key ? hours.hours : null;
 }
 

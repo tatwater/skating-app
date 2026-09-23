@@ -1,5 +1,5 @@
 import type { Where } from '@skating/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../lib/utils';
 import { useConsoleMode } from './ConsoleMode';
 import { QuestionBlock } from './SheetPanel';
@@ -50,11 +50,18 @@ export function WhereCards({
 
   // The mode follows the open card: the instrument's ring lights this card's sector and a click
   // on it answers this card. Placing a point is the one click that lands inside the lake.
+  //
+  // The mode is armed on the card's *identity and answer*, never on its callbacks: the parent
+  // rebuilds the cards — new `onChange` closures — on every render, and the console re-renders
+  // on every mode change, so arming on the closure would arm again on the render the arming
+  // caused, without end. The closures ride a ref the mode reads through (as `AccessPanel` does).
+  const activeCardId = active?.id;
   const activeWhere = active?.where;
-  const activeChange = active?.onChange;
   const activeLabel = active?.label;
+  const handlers = useRef({ onChange: active?.onChange, onClose });
+  handlers.current = { onChange: active?.onChange, onClose };
   useEffect(() => {
-    if (!open || !activeChange || activeLabel === undefined) {
+    if (!open || activeCardId === undefined || activeLabel === undefined) {
       setMode(null);
       return;
     }
@@ -63,12 +70,13 @@ export function WhereCards({
       label: activeLabel,
       where: activeWhere,
       onChange: (next) => {
-        activeChange(next);
+        handlers.current.onChange?.(next);
         setPlacing(false);
       },
+      onExit: () => handlers.current.onClose(),
     });
     return () => setMode(null);
-  }, [open, activeWhere, activeChange, activeLabel, setMode]);
+  }, [open, activeCardId, activeWhere, activeLabel, setMode]);
 
   if (!open || !active) return null;
   const next = () => {

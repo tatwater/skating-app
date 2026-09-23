@@ -2,6 +2,8 @@ import { api } from '@skating/convex/api';
 import {
   addEarlierVisit,
   addLake,
+  type CompassSector,
+  endTimeRow,
   isMinor,
   isPassageMarker,
   type LatLng,
@@ -40,7 +42,7 @@ import { cn } from '../../lib/utils';
 import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
 import { Textarea } from '../ui/textarea';
 import { BodyPicker } from './BodyPicker';
-import { ConsoleModeProvider, modeSector, useConsoleMode } from './ConsoleMode';
+import { ConsoleModeProvider, useConsoleMode } from './ConsoleMode';
 import { LakeMap, type LakeMapHazard } from './LakeMap';
 import { ReportPanels } from './ReportPanels';
 import { Eyebrow, SheetHint, StatusSquare } from './SheetPanel';
@@ -259,6 +261,7 @@ function Console({ post }: { post: PostSheet }) {
         key={active.id}
         report={active}
         post={post}
+        ordered={ordered}
         body={body}
         ordinal={number(active.id)}
         onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
@@ -667,12 +670,14 @@ function clock(ms: number): string {
 function Instrument({
   report,
   post,
+  ordered,
   body,
   ordinal,
   onPickBody,
 }: {
   report: SheetReport;
   post: PostSheet;
+  ordered: readonly SheetReport[];
   body: SheetBody | null;
   ordinal: number;
   onPickBody: () => void;
@@ -696,33 +701,45 @@ function Instrument({
   const hours = useSkateWeather(body?.waterBodyId, endMs, timeZone);
   const windowHours = useSkateWindowHours(hours, endMs, startMs);
   const [now] = useState(() => Date.now());
+  const sun = useMemo(() => body?.sunAt(endMs ?? now) ?? null, [body, endMs, now]);
+  // D192's ladder as the ruler's tappable ticks, as on the phone — the WHEN panel's chips are the
+  // same instants for a keyboard. A track's end is exact and offers no ladder.
+  const ladder = useMemo(() => {
+    if (gps) return [];
+    const row = endTimeRow({
+      openedAtMs: sheet.openedAtMs,
+      nowMs: now,
+      timeZone,
+      sun: body?.sunAt(sheet.openedAtMs) ?? null,
+    });
+    return row.chips.map((c) => ({ ms: c.ms, pinned: c.pinned }));
+  }, [gps, sheet.openedAtMs, now, timeZone, body]);
   const model = useMemo(() => {
-    const others = post.reports
-      .filter((r) => r.id !== report.id)
-      .flatMap((r) => {
-        const e = reportEndMs(r);
-        if (e === undefined) return [];
-        const n = reportsInTimeOrder(post).findIndex((q) => q.id === r.id) + 1;
-        return [
-          {
-            id: r.id,
-            label: `${n} · ${(r.bodyName ?? 'lake').toUpperCase()}`,
-            ...(r.sheet.scalars.skateStartTime !== undefined
-              ? { startMs: r.sheet.scalars.skateStartTime }
-              : {}),
-            endMs: e,
-          },
-        ];
-      });
+    // The other Reports of the Post, numbered as their tabs are (time order).
+    const others = ordered.flatMap((r, i) => {
+      const e = r.id === report.id ? undefined : reportEndMs(r);
+      if (e === undefined) return [];
+      return [
+        {
+          id: r.id,
+          label: `${i + 1} · ${(r.bodyName ?? 'lake').toUpperCase()}`,
+          ...(r.sheet.scalars.skateStartTime !== undefined
+            ? { startMs: r.sheet.scalars.skateStartTime }
+            : {}),
+          endMs: e,
+        },
+      ];
+    });
     return timelineModel({
       timeZone,
       nowMs: now,
       ...(endMs !== undefined ? { endMs } : {}),
       ...(startMs !== undefined ? { startMs } : {}),
-      sun: body?.sunAt(endMs ?? now) ?? null,
+      sun,
       others,
+      ladder,
     });
-  }, [post, report.id, timeZone, now, endMs, startMs, body]);
+  }, [ordered, report.id, timeZone, now, endMs, startMs, sun, ladder]);
 
   const chosenPin = sheet.scalars.putInId ?? sheet.scalars.parkingAreaId;
   const placed = report.photos.filter((p) => p.placeOnMap && p.coord !== undefined);
@@ -737,8 +754,11 @@ function Instrument({
       })),
     [body?.hazards],
   );
-  const sector = modeSector(mode) ?? firstSector(report);
-  const where = mode?.kind === 'where' ? mode.where : undefined;
+  // In where-mode the lake shows the open card's answer and nothing else's: another chip's sector
+  // or the put-in's point drawn under an unanswered card would read as this card's answer.
+  const asking = mode?.kind === 'where';
+  const where = asking ? mode.where : undefined;
+  const sector = asking ? where?.sector : firstSector(report);
   const modePoint = where?.point
     ? {
         ...where.point.coord,
@@ -747,7 +767,7 @@ function Instrument({
           : {}),
       }
     : undefined;
-  const point = modePoint ?? (chosenPin === undefined ? sheet.scalars.point : undefined);
+  const point = asking ? modePoint : chosenPin === undefined ? sheet.scalars.point : undefined;
   const putInName = body?.putIns.find((p) => p.id === sheet.scalars.putInId)?.name;
   const dim = mode !== null;
 
@@ -857,9 +877,8 @@ function Instrument({
               litPins={mode?.kind === 'putIn'}
               {...(mode?.kind === 'where'
                 ? {
-                    onPickSector: (
-                      s: Parameters<NonNullable<Parameters<typeof LakeMap>[0]['onPickSector']>>[0],
-                    ) => mode.onChange({ ...(mode.where ?? {}), sector: s }),
+                    onPickSector: (s: CompassSector) =>
+                      mode.onChange({ ...(mode.where ?? {}), sector: s }),
                     onPick: (coord: LatLng) => mode.onChange(whereClickOnWater(mode.where, coord)),
                   }
                 : mode?.kind === 'putIn'
@@ -931,7 +950,7 @@ function Instrument({
           windowHours={windowHours}
           endMs={endMs}
           timeZone={timeZone}
-          sun={body?.sunAt(endMs ?? now) ?? null}
+          sun={sun}
           fractionOf={(ms) => timelineFraction(model, ms)}
           report={report}
           dispatch={dispatch}

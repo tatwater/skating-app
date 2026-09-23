@@ -1,13 +1,5 @@
-import type { Sector, Where } from '@skating/core';
-import {
-  createContext,
-  type ReactNode,
-  use,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import type { Where } from '@skating/core';
+import { createContext, type ReactNode, use, useEffect, useMemo, useState } from 'react';
 
 /**
  * The console's **mode** (A10-6 / D206): the transient state in which the instrument — the lake in
@@ -21,9 +13,10 @@ import {
  * A mode is entered by opening the question and left by *Done* or Escape. It is never entered by a
  * chip click alone (a five-chip reporter would be pulled into it five times), and it is never
  * permanent: the ring is a cursor, not a control. The mode holds the callbacks the instrument
- * needs, so the question block and the map agree on what a click means.
+ * needs, so the question block and the map agree on what a click means — and `onExit`, so that
+ * Escape closes the question that armed it rather than leaving a dead block open.
  */
-export type ConsoleMode =
+export type ConsoleMode = (
   | {
       kind: 'where';
       /** The chip the question is about, for the banner and the chip's own brackets. */
@@ -35,7 +28,11 @@ export type ConsoleMode =
       kind: 'putIn';
       onPickPin: (pinId: string, kind: 'putIn' | 'parking') => void;
       onPickShore: (coord: { lat: number; lng: number }) => void;
-    };
+    }
+) & {
+  /** The question's own close, run when the mode is left from outside it (Escape). */
+  onExit?: () => void;
+};
 
 interface ConsoleModeValue {
   mode: ConsoleMode | null;
@@ -45,18 +42,20 @@ interface ConsoleModeValue {
 const Ctx = createContext<ConsoleModeValue | null>(null);
 
 export function ConsoleModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ConsoleMode | null>(null);
-  const setMode = useCallback((next: ConsoleMode | null) => setModeState(next), []);
-  // Escape leaves the mode from anywhere on the page; the question's own *Done* is the pointer's way.
+  const [mode, setMode] = useState<ConsoleMode | null>(null);
+  // Escape leaves the mode from anywhere on the page — and closes the question that opened it, so
+  // the block and the instrument agree; the question's own *Done* is the pointer's way.
   useEffect(() => {
     if (mode === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setModeState(null);
+      if (e.key !== 'Escape') return;
+      mode.onExit?.();
+      setMode(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [mode]);
-  const value = useMemo(() => ({ mode, setMode }), [mode, setMode]);
+  const value = useMemo(() => ({ mode, setMode }), [mode]);
   return <Ctx value={value}>{children}</Ctx>;
 }
 
@@ -66,8 +65,3 @@ export function useConsoleMode(): ConsoleModeValue {
 }
 
 const NO_MODE: ConsoleModeValue = { mode: null, setMode: () => {} };
-
-/** The sector the where-mode's `where` names, for the ring to light. */
-export function modeSector(mode: ConsoleMode | null): Sector | undefined {
-  return mode?.kind === 'where' ? mode.where?.sector : undefined;
-}
