@@ -63,7 +63,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
       }
       gap={gaps.has('thickness')}
     >
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap={6} flexWrap="wrap">
         {THICKNESS_BANDS.map((b) => (
           <SheetChip
             key={b}
@@ -83,7 +83,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
         />
       </XStack>
       {band !== null || precise.length > 0 ? (
-        <XStack gap="$2" flexWrap="wrap" alignItems="center">
+        <XStack gap={6} flexWrap="wrap" alignItems="center">
           {(Object.keys(SCOPE_LABELS) as ThicknessScope[]).map((s) => (
             <SheetChip
               key={s}
@@ -110,7 +110,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
             key={chip.key}
             gap="$2"
             padding="$3"
-            borderRadius="$4"
+            borderRadius="$xs"
             backgroundColor="$surfaceMuted"
           >
             <ReadingEditor
@@ -142,7 +142,7 @@ export function ThicknessSection({ report, body, dispatch, gaps, timeZone }: Sec
       })}
 
       {addingKey !== null ? (
-        <YStack gap="$2" padding="$3" borderRadius="$4" backgroundColor="$surfaceMuted">
+        <YStack gap="$2" padding="$3" borderRadius="$xs" backgroundColor="$surfaceMuted">
           <ReadingEditor
             key={addingKey}
             // The stored chip once there is one, so a `where` set beside it rides the next keystroke.
@@ -272,7 +272,7 @@ function ReadingEditor({
 
   return (
     <YStack gap="$2">
-      <XStack gap="$2" flexWrap="wrap" alignItems="center">
+      <XStack gap={6} flexWrap="wrap" alignItems="center">
         {(['single', 'range', 'poke'] as const).map((m) => (
           <SheetChip
             key={m}
@@ -356,7 +356,7 @@ function ReadingEditor({
         </XStack>
       )}
       {mode !== 'poke' ? (
-        <XStack gap="$2" flexWrap="wrap">
+        <XStack gap={6} flexWrap="wrap">
           {THICKNESS_METHODS.filter((m) => m !== 'poke').map((m) => (
             <SheetChip
               key={m}
@@ -374,7 +374,7 @@ function ReadingEditor({
         <SheetHint>Pokes are yours and your pole's — the count is kept as a count.</SheetHint>
       )}
       <SubLabel>Did it hold you?</SubLabel>
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap={6} flexWrap="wrap">
         <SheetChip
           compact
           label="Held me"

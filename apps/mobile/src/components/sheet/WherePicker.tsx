@@ -20,7 +20,7 @@ const EXTENT_LABELS: Record<Exclude<WhereExtent, 'whole'>, string> = {
   patches: 'In patches',
 };
 
-const SECTOR_LABELS: Record<Sector, string> = {
+export const SECTOR_LABELS: Record<Sector, string> = {
   N: 'North end',
   NE: 'Northeast',
   E: 'East side',
@@ -36,7 +36,16 @@ const SECTOR_LABELS: Record<Sector, string> = {
 };
 
 /** A coarse tap's radius (D193 / A05b): "about here", not a survey. */
-const POINT_RADIUS_M = 75;
+export const POINT_RADIUS_M = 75;
+
+/** Compose a patch onto a `where`, dropping the keys it clears; `undefined` when nothing is left. */
+export function patchWhere(where: Where | undefined, patch: Partial<Where>): Where | undefined {
+  const next: Where = { ...where, ...patch };
+  for (const key of Object.keys(next) as (keyof Where)[]) {
+    if (next[key] === undefined) delete next[key];
+  }
+  return Object.keys(next).length === 0 ? undefined : next;
+}
 
 /**
  * The *where* affordance (A10 / D193) under a selected chip: how much of the lake, which bay, which
@@ -49,19 +58,26 @@ export function WherePicker({
   where,
   body,
   onChange,
+  instrument = false,
+  placing: placingProp = false,
+  onPlacing,
 }: {
   where: Where | undefined;
   body: SheetBody | null;
   onChange: (where: Where | undefined) => void;
+  /** The where cards: the lake with its ring is drawn beside these chips, not under them. */
+  instrument?: boolean;
+  placing?: boolean;
+  onPlacing?: (placing: boolean) => void;
 }) {
-  const [placing, setPlacing] = useState(false);
-  const set = (patch: Partial<Where>) => {
-    const next: Where = { ...where, ...patch };
-    for (const key of Object.keys(next) as (keyof Where)[]) {
-      if (next[key] === undefined) delete next[key];
-    }
-    onChange(Object.keys(next).length === 0 ? undefined : next);
+  const [localPlacing, setLocalPlacing] = useState(false);
+  const placing = instrument ? placingProp : localPlacing;
+  const setPlacing = (next: boolean | ((p: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(placing) : next;
+    if (instrument) onPlacing?.(value);
+    else setLocalPlacing(value);
   };
+  const set = (patch: Partial<Where>) => onChange(patchWhere(where, patch));
   const bayNames = Object.fromEntries((body?.bays ?? []).map((b) => [b.id, b.name]));
   const inBay = where?.subAreaId !== undefined;
   const sectors: readonly Sector[] = inBay
@@ -70,13 +86,7 @@ export function WherePicker({
   const words = where ? describeWhere(where, bayNames) : '';
 
   return (
-    <YStack
-      gap="$2.5"
-      padding="$3"
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
-      accessibilityLabel="Where on the lake"
-    >
+    <YStack gap="$2" accessibilityLabel="Where on the lake">
       <XStack gap="$2" flexWrap="wrap">
         {EXTENTS.map((extent) => (
           <SheetChip
@@ -116,22 +126,22 @@ export function WherePicker({
           <SheetChip
             key={sector}
             compact
-            label={SECTOR_LABELS[sector]}
+            label={`${where?.sector === sector ? '◆ ' : ''}${SECTOR_LABELS[sector]}`}
             tier={where?.sector === sector ? 'solid' : undefined}
             onPress={() => set({ sector: where?.sector === sector ? undefined : sector })}
           />
         ))}
         <SheetChip
           compact
-          label={where?.point ? 'Point placed' : 'A point'}
-          tier={where?.point ? 'solid' : undefined}
+          label={where?.point ? 'Point placed' : placing ? 'Tap the water…' : 'A point on the lake'}
+          tier={where?.point || placing ? 'solid' : undefined}
           onPress={() => {
             if (where?.point) set({ point: undefined });
             else setPlacing((p) => !p);
           }}
         />
       </XStack>
-      {body?.silhouette && (placing || where?.sector || where?.point) ? (
+      {!instrument && body?.silhouette && (placing || where?.sector || where?.point) ? (
         <YStack gap="$1.5">
           <LakeMap
             data={body.silhouette}

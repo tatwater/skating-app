@@ -1,7 +1,8 @@
 import type { Theme as DesignTheme } from '@skating/design';
 import { themes as designThemes, radius, space, zIndex } from '@skating/design';
 import { defaultConfig } from '@tamagui/config/v5';
-import { createTamagui } from 'tamagui';
+import { Platform } from 'react-native';
+import { createFont, createTamagui } from 'tamagui';
 
 /**
  * Tamagui config for the mobile app. Per D7 we share design *tokens*, not UI:
@@ -82,8 +83,23 @@ function toTamaguiTheme(t: DesignTheme) {
   };
 }
 
+/**
+ * The platform's monospace, as `$mono` (A10-6 / D206): the sheet's section labels, times, inches
+ * and counts are instrument readouts and want tabular figures. The v5 base ships no mono font;
+ * the body font's size scale is reused so a `$`-sized mono text lines up with the sans beside it.
+ * The brand faces (Saira, Martian Mono) wait for the wider redesign — founder call 2026-09-23.
+ */
+const monoFont = createFont({
+  family: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,
+  size: defaultConfig.fonts.body.size,
+  lineHeight: defaultConfig.fonts.body.lineHeight,
+  weight: defaultConfig.fonts.body.weight,
+  letterSpacing: defaultConfig.fonts.body.letterSpacing,
+});
+
 export const config = createTamagui({
   ...defaultConfig,
+  fonts: { ...defaultConfig.fonts, mono: monoFont },
   settings: {
     ...defaultConfig.settings,
     // The v5 base enforces shorthand-only style props; relax that so screens can use
