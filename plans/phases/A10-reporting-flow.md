@@ -495,8 +495,9 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
 
 - **§9.1 the queue is Posts** — core `draftQueue.ts`: `PostDraft` (the words plus one or more
   `ReportDraft`s, each with its own key, body, form, photos, track and `hazardRefs`) flushed by
-  `flushPost` as one `posts.create`. Every Report is resolved, validated, held to the create-only
-  rules and uploaded before any create; one bad leg parks the whole Post, named by its lake.
+  `flushPost` as one `posts.create`. Every Report is resolved, validated and held to the create-only
+  rules before any Report uploads; then the uploads; then one create — one bad leg parks the whole
+  Post, named by its lake, and a sound first leg spends nothing on it.
   `postDraftFromLegacy` lifts a pre-A10-2b row; the mobile store's fourth migration runs it row by
   row under the `post` kind (tested against real sqlite). The pre-sheet form saves a one-Report
   Post and edits a Post's first Report; the sheet (A10-3) edits them all.
@@ -505,8 +506,9 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
   local ref through the hazard queue, which now **keeps a flushed hazard's row** (`done`, with
   `hazardId`) while a draft points at it and sweeps it after (`removableHazardItems`) — the rule a
   flushed track's row already followed. A bundled hazard is the observation the minimum set asks
-  for at flush. Online, a hazard still in the queue is not attached (it has no id yet) and posts on
-  its own.
+  for at flush. Online, a checked hazard still in the queue is **flushed at submit** and attached
+  by the id it lands with (`resolveBundledHazardIds` over `resolveQueuedHazardId`); one that cannot
+  be sent stops the post with a sentence (`UNSENT_HAZARD_REFUSAL`), never a silent omission.
 - **§9.2 *Waiting to send*** — the Report tab's queue: the signal state in one sentence from core
   (`WAITING_TO_SEND_COPY`; offline: "…it's safe to close the app"), hazards first, then the Posts
   labeled by title or lakes (`postDraftLabel`), *Sync now* only with signal.
@@ -522,10 +524,12 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
   real outlines over the budget); the server builds the per-body half once per page in
   `bodyInfoFor` from the polygon the card read already carried and the per-report half in
   `toFeedCard` (put-in only when the viewer may see it, the skate trimmed under D58's clip, the
-  chips' sector, the named bay's ring); `BodySilhouette` on web and mobile draws the same paths.
-  The card's right column is the time over the silhouette.
+  first located chip's `where` — its sector and its bay together, never one chip's sector beside
+  another's bay); `BodySilhouette` on web and mobile draws the same paths. The card's right column
+  is the time over the silhouette.
 - **§12.1 the profile history** — `getPublicProfile` returns `posts: PostCardData[]` through the
-  feed's `toPostCard`; both profile pages render `PostCard`s.
+  feed's `toPostCard`, bounded in Posts *and* in member Reports hydrated (one number, cut at a Post
+  boundary); both profile pages render `PostCard`s.
 
 ### Deltas from the plan — read these before extending
 
@@ -550,6 +554,25 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
    in since. A call made at build; say so if the default should win instead.
 7. **The bundle window is one rule** (`bundleWindow` in core): the prompt's queued candidates and
    `hazards.listBundleCandidates` read the same skate-window-or-24-hours.
+8. **An online post flushes a checked queued hazard at submit** (PR #73 review). The build had it
+   silently unattached — "no id yet, posts on its own" — which lost the author's explicit, shown
+   choice (D55: never silent) whenever a transient sync failure or an unfinished drain left the row
+   without a server id. Now the form asks the queue for the id, flushing the row if it must, and a
+   hazard that cannot go stops the post with what to do; the posted form then runs the drain's
+   sweep (`sweepFlushedHazards`) so the spent row is not re-offered to the next report on the lake.
+   The draft path is unchanged.
+9. **The flush checks every leg before any leg uploads** (PR #73 review): two passes over the
+   Post's Reports, so a two-lake Post whose second leg is stale or under-observed spends none of
+   the first leg's photos. The on-demand hazard flush stays in the first pass — it is not an upload
+   spent on this Post, and the minimum-set count needs it.
+10. **The silhouette draws one chip's `where`, whole** (PR #73 review): the first located chip's
+    sector and bay together, never a sector from one chip beside a bay from another — a wash and a
+    ring that composed "the south end of North Bay" out of "black ice, south" and a reading in
+    North Bay was a place no one claimed.
+11. **The profile history is bounded in Reports, not only Posts** (PR #73 review): the fifty-Post
+    window could hydrate five hundred cards (a Post is up to ten), each with every thumbnail URL —
+    `photoIds` has no per-report cap on the write path. One number bounds both, cut at a Post
+    boundary. A paged history is the next step if a profile ever wants more than the window.
 
 ### Owed
 

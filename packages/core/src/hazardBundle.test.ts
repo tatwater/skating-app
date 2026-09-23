@@ -9,6 +9,7 @@ import {
   localHazardIdOf,
   optOutsFromSavedRefs,
   queuedBundleCandidates,
+  resolveBundledHazardIds,
   toggleBundleOptOut,
 } from './hazardBundle';
 import { pointRadiusShape } from './hazardGeometry';
@@ -163,5 +164,37 @@ describe('optOutsFromSavedRefs — a draft edit keeps the last choice (A10 §9.1
   });
   it('a fresh form keeps the default — nothing opted out', () => {
     expect(optOutsFromSavedRefs(['srv-1'], undefined)).toEqual([]);
+  });
+});
+
+describe('resolveBundledHazardIds — what an online post attaches (D55, A10 §9.1)', () => {
+  it('passes a server id through, resolves a local id through the queue, and dedupes — in prompt order', async () => {
+    const asked: string[] = [];
+    const res = await resolveBundledHazardIds(
+      ['srv-1', 'local:q7', 'local:q8', 'srv-1'],
+      async (id) => {
+        asked.push(id);
+        return id === 'q7' ? 'srv-7' : 'srv-1';
+      },
+    );
+    expect(res).toEqual({ ok: true, hazardIds: ['srv-1', 'srv-7'] });
+    expect(asked).toEqual(['q7', 'q8']);
+  });
+
+  it('a checked hazard the queue cannot send is a refusal naming the row, never a silent omission', async () => {
+    const res = await resolveBundledHazardIds(['srv-1', 'local:q7', 'local:q8'], async (id) =>
+      id === 'q8' ? 'srv-8' : null,
+    );
+    expect(res).toEqual({ ok: false, localId: 'q7' });
+  });
+
+  it('nothing checked is nothing attached, and asks the queue for nothing', async () => {
+    let asked = 0;
+    const res = await resolveBundledHazardIds([], async () => {
+      asked++;
+      return null;
+    });
+    expect(res).toEqual({ ok: true, hazardIds: [] });
+    expect(asked).toBe(0);
   });
 });

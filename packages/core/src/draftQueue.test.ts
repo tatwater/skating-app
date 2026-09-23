@@ -341,6 +341,31 @@ describe('flushPost — failures', () => {
     expect(calls.posts).toHaveLength(0);
   });
 
+  it('every leg is checked before any leg uploads — a sound first leg spends nothing on a Post its second leg sinks', async () => {
+    const draft = draftWith();
+    draft.reports = [
+      reportWith({ id: 'a', bodyName: 'Morey', photos: [photo('p1'), photo('p2')] }),
+      // The second leg fails the create-only rules (nothing observed) — known before any upload.
+      reportWith({ id: 'b', bodyName: 'Fairlee' }, emptyReportForm(NOW)),
+    ];
+    const { effects, calls } = makeEffects();
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/^Fairlee: /);
+    expect(calls.uploads).toEqual([]);
+    expect(calls.rows).toEqual([]);
+    expect(calls.posts).toEqual([]);
+    // And the same when the second leg is invalid rather than under-observed.
+    const invalid = draftWith();
+    invalid.reports = [
+      reportWith({ id: 'a', bodyName: 'Morey', photos: [photo('p1')] }),
+      reportWith({ id: 'b', bodyName: 'Fairlee', waterBodyId: undefined, coord: undefined }),
+    ];
+    const second = makeEffects();
+    expect((await flushPost(invalid, second.effects, NOW)).ok).toBe(false);
+    expect(second.calls.uploads).toEqual([]);
+  });
+
   it('a ConvexError from createPost is permanent (parks in error)', async () => {
     const draft = draftWith();
     const { effects } = makeEffects({

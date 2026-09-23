@@ -19,7 +19,6 @@ import {
   humanizeEnum,
   ICE_TYPES,
   isMinor,
-  localHazardIdOf,
   optOutsFromSavedRefs,
   type PostDraft,
   PRECIP_LABELS,
@@ -27,6 +26,7 @@ import {
   photoUploadCoord,
   type ReportFormState,
   reportFormFromReport,
+  resolveBundledHazardIds,
   resolveShowPutInDefault,
   resolveSkateWindow,
   SHOW_PUT_IN_EXPLAINER,
@@ -40,6 +40,7 @@ import {
   THICKNESS_METHOD_LABELS,
   type ThicknessFormReading,
   toggleBundleOptOut,
+  UNSENT_HAZARD_REFUSAL,
   validateReportInput,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
@@ -50,9 +51,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
-import { getHazardItem, getTrack, saveDraft } from '../lib/draftStore';
+import { getTrack, saveDraft } from '../lib/draftStore';
 import { getSuggestedSkateWindow } from '../lib/dwellTracker';
-import { isDraftFlushing } from '../lib/flushService';
+import { isDraftFlushing, resolveQueuedHazardId, sweepFlushedHazards } from '../lib/flushService';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
 import { useMapSelectionOptional } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
@@ -642,31 +643,36 @@ export function ReportForm({
       }
       return;
     }
-    // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
-    // the server would refuse with, so the form says what to add rather than what failed. Never on
-    // an edit (what is posted stays editable), and never on *Save draft* — a draft is "not done
-    // yet" by definition; the queue's flush asks again when it posts.
-    // The hazards this post can attach *now*: a server id as it is; one still in the phone's queue
-    // by the server id its row carries once flushed, else not at all — it has no id to attach yet,
-    // and posts on its own when the queue drains (the draft path carries it by local id instead).
-    // Resolved before the create-only check below so the observation count the form asks about is
-    // the one the server will see: a hazard that cannot be attached is not an observation here.
-    const attachHazardIds = bundleHazardIds.flatMap((id) => {
-      const localId = localHazardIdOf(id);
-      if (localId === null) return [id];
-      const queued = getHazardItem(localId);
-      return queued?.kind === 'hazard' && queued.hazardId !== undefined ? [queued.hazardId] : [];
-    });
-    if (!editing) {
-      const refusal = formCreateRefusal(result.normalized, attachHazardIds.length, Date.now());
-      if (refusal) {
-        setError(refusal);
-        return;
-      }
-    }
-
     setSubmitting(true);
     try {
+      // The hazards this post attaches (D55): a server id as it is; one still in the phone's queue
+      // by the server id its row carries — flushed **now** if it hasn't landed, since this is an
+      // online post and the phone has signal. One that cannot be sent stops the post with a
+      // sentence, never a silent omission: the prompt showed it checked, and a report that posted
+      // without it would have lost the author's explicit choice. Never on an edit — bundling is a
+      // create-time act. The draft path carries the ref by local id and the flush resolves it.
+      const bundled = editing
+        ? { ok: true as const, hazardIds: [] as string[] }
+        : await resolveBundledHazardIds(bundleHazardIds, resolveQueuedHazardId);
+      if (!bundled.ok) {
+        setError(UNSENT_HAZARD_REFUSAL);
+        setSubmitting(false);
+        return;
+      }
+      const attachHazardIds = bundled.hazardIds;
+      // The create-only rules (A10-2 — D189's minimum set, D199's window), asked here in the words
+      // the server would refuse with, so the form says what to add rather than what failed. Never on
+      // an edit (what is posted stays editable), and never on *Save draft* — a draft is "not done
+      // yet" by definition; the queue's flush asks again when it posts. Asked after the hazards
+      // resolved, so the observation count is the one the server will see.
+      if (!editing) {
+        const refusal = formCreateRefusal(result.normalized, attachHazardIds.length, Date.now());
+        if (refusal) {
+          setError(refusal);
+          setSubmitting(false);
+          return;
+        }
+      }
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
           if (photo.uploadedId) return photo.uploadedId;
@@ -758,6 +764,9 @@ export function ReportForm({
           ? { attachHazardIds: attachHazardIds as Id<'hazards'>[] }
           : {}),
       });
+      // A queued hazard flushed at submit has done its job; drop its row now rather than offering
+      // it to the next report on this lake until a drain happens to sweep it.
+      sweepFlushedHazards();
       setPutInPin(null);
       setPinDropMode(false);
       onClose();

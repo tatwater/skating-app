@@ -128,7 +128,7 @@ describe('sectorHighlightPath', () => {
 });
 
 describe('reportWhereSummary', () => {
-  it('takes the first sector and the first bay any chip or reading names', () => {
+  it('draws the first located chip’s where whole — its sector and bay together', () => {
     expect(
       reportWhereSummary({
         iceTypes: [{ where: { extent: 'patches' } }, { where: { sector: 'N', subAreaId: 'b1' } }],
@@ -137,5 +137,30 @@ describe('reportWhereSummary', () => {
       }),
     ).toEqual({ sector: 'N', subAreaId: 'b1' });
     expect(reportWhereSummary({ iceTypes: [], surfaceTags: [] })).toEqual({});
+  });
+
+  it('never composes a sector from one chip with a bay from another', () => {
+    // "Black ice, south" then a reading in bay b2: the south wedge alone — not "the south end of b2".
+    expect(
+      reportWhereSummary({
+        iceTypes: [{ where: { extent: 'patches' } }, { where: { sector: 'S' } }],
+        surfaceTags: [],
+        iceThickness: { readings: [{ where: { subAreaId: 'b2' } }] },
+      }),
+    ).toEqual({ sector: 'S' });
+    // A bay alone is the ring alone, even when a later chip names a sector.
+    expect(
+      reportWhereSummary({
+        iceTypes: [{ where: { subAreaId: 'b1' } }],
+        surfaceTags: [{ where: { sector: 'E' } }],
+      }),
+    ).toEqual({ subAreaId: 'b1' });
+    // A point-only where is not a highlight; the next located chip is.
+    expect(
+      reportWhereSummary({
+        iceTypes: [{ where: { point: { coord: { lat: 0, lng: 0 }, radiusMeters: 50 } } }],
+        surfaceTags: [{ where: { sector: 'W' } }],
+      }),
+    ).toEqual({ sector: 'W' });
   });
 });

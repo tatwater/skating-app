@@ -120,16 +120,25 @@ function effects(): PostFlushEffects {
     // had signal. The hazard queue runs first in every drain, so this usually finds the server id
     // already checkpointed on the row; if the row is still pending it is flushed now, and a hazard
     // that cannot be sent simply is not claimed — the report never waits on it.
-    resolveHazardId: async (localId) => {
-      const queued = getHazardItem(localId);
-      if (queued?.kind !== 'hazard') return null;
-      if (queued.hazardId !== undefined) return queued.hazardId;
-      return (await flushOneHazard(localId, hazardEffects(), Date.now()))?.hazardId ?? null;
-    },
+    resolveHazardId: resolveQueuedHazardId,
     persist: async (draft) => {
       saveDraft(draft);
     },
   };
+}
+
+/**
+ * The server id of a hazard captured on the ice (D55 offline, A10 §9.1): the queue row's, if it
+ * has flushed; else the row is flushed now. `null` when it cannot be sent — a row that is gone,
+ * parked in `error`, or whose flush failed just now. One rule for the queue's flush
+ * (`resolveHazardId`) and the online form's post, which flushes a checked hazard at submit rather
+ * than posting without it.
+ */
+export async function resolveQueuedHazardId(localId: string): Promise<string | null> {
+  const queued = getHazardItem(localId);
+  if (queued?.kind !== 'hazard') return null;
+  if (queued.hazardId !== undefined) return queued.hazardId;
+  return (await flushOneHazard(localId, hazardEffects(), Date.now()))?.hazardId ?? null;
 }
 
 /**
@@ -317,15 +326,18 @@ async function drainOnce(now: number): Promise<void> {
   // references, so a track finished with weeks ago — or a flushed hazard kept for a report that has
   // now gone out — is free to go on this pass rather than the next one.
   sweepTracks(now);
-  sweepHazardItems();
+  sweepFlushedHazards();
 }
 
 /**
  * Drop the flushed hazards no Post draft bundles any more (A10 §9.1). A flushed hazard's row is
  * kept — `done`, with its server id — while a draft still points at it by local id, the way a
  * flushed track's row is kept for the report it belongs to; this is the other half of that rule.
+ * Runs at the end of every drain, and after an online post that flushed a queued hazard at submit
+ * (`resolveQueuedHazardId`) — otherwise that row would be offered to the next report on the lake,
+ * pre-checked, until something else drained the queue.
  */
-function sweepHazardItems(): void {
+export function sweepFlushedHazards(): void {
   try {
     const referenced = referencedHazardLocalIds(listDrafts());
     for (const item of removableHazardItems(listHazardItems(), referenced)) {

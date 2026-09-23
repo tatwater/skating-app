@@ -1065,3 +1065,80 @@ describe('profiles.setShowPutInDefault', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('profiles.getPublicProfile — the history read is bounded in Reports, not only Posts (D13)', () => {
+  test('stops at the Post that would take the hydrated members past the budget', async () => {
+    const t = convexTest(schema, modules);
+    const { id } = await provision(t, 'clerk_prolific', 'prolific');
+    const waterBodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Morey',
+        searchText: 'Lake Morey',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    // Six ten-Report Posts: 60 members against a 50-Report budget. The Post window alone would
+    // hydrate all 60; the budget cuts the history at the fifth Post, on a Post boundary.
+    const base = Date.UTC(2026, 0, 10);
+    const seedPost = (index: number, members: number) =>
+      t.run(async (ctx) => {
+        const skateEndTime = base + index * 60_000;
+        const reportIds = [];
+        for (let i = 0; i < members; i++) {
+          reportIds.push(
+            await ctx.db.insert('reports', {
+              authorId: id,
+              waterBodyId,
+              point: { lat: 0.5, lng: 0.5 },
+              skateEndTime,
+              reportTime: skateEndTime,
+              source: 'native' as const,
+              iceTypes: [{ type: 'black_ice' as const }],
+              surfaceTags: [],
+              photoIds: [],
+              moderationStatus: 'visible' as const,
+              hazardIdsCreated: [],
+              createdAt: skateEndTime,
+              updatedAt: skateEndTime,
+            }),
+          );
+        }
+        const postId = await ctx.db.insert('posts', {
+          authorId: id,
+          reportIds,
+          photoIds: [],
+          latestSkateEndTime: skateEndTime,
+          moderationStatus: 'visible' as const,
+          createdAt: skateEndTime,
+          updatedAt: skateEndTime,
+        });
+        for (const reportId of reportIds) await ctx.db.patch(reportId, { postId });
+      });
+    for (let i = 0; i < 6; i++) await seedPost(i, 10);
+
+    const profile = await t.query(api.profiles.getPublicProfile, { username: 'prolific' });
+    if (!profile || profile.private) throw new Error('expected public profile');
+    expect(profile.posts).toHaveLength(5);
+    expect(profile.posts.reduce((n, p) => n + p.reports.length, 0)).toBe(50);
+    // Newest first: the oldest Post is the one left out.
+    expect(profile.posts[0]?.latestSkateEndTime).toBe(base + 5 * 60_000);
+    expect(profile.posts.at(-1)?.latestSkateEndTime).toBe(base + 1 * 60_000);
+  });
+});
