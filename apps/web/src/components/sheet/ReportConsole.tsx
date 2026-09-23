@@ -3,6 +3,8 @@ import {
   addEarlierVisit,
   addLake,
   isMinor,
+  isPassageMarker,
+  type LatLng,
   type MinimumSetTerm,
   POST_TITLE_MAX_CHARS,
   type PostDraft,
@@ -10,26 +12,46 @@ import {
   postRefusals,
   type ReportRefusal,
   removeReport,
+  reportEndMs,
+  reportsInTimeOrder,
+  SHEET_SECTION_COUNT,
+  type SheetReport,
   type SheetSection,
+  sectionsFilled,
+  selectedValues,
   sheetReducer,
+  timelineFraction,
+  timelineModel,
   updateReport,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useConvex, useQuery } from 'convex/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { postSheetOnWeb, saveSheetEditOnWeb } from '../../lib/sheetActions';
 import { releaseAllSheetPhotos, sheetPhotoPreview } from '../../lib/sheetPhotos';
-import { clearStoredSheet, setSheet, updateSheet, useSheet } from '../../lib/sheetStore';
+import {
+  clearStoredSheet,
+  setSheet,
+  updateSheet,
+  usePersistedAt,
+  useSheet,
+} from '../../lib/sheetStore';
 import { cn } from '../../lib/utils';
 import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { BodyPicker } from './BodyPicker';
-import { LakeMap } from './LakeMap';
+import { ConsoleModeProvider, modeSector, useConsoleMode } from './ConsoleMode';
+import { LakeMap, type LakeMapHazard } from './LakeMap';
 import { ReportPanels } from './ReportPanels';
-import { SheetHint } from './SheetPanel';
+import { Eyebrow, SheetHint, StatusSquare } from './SheetPanel';
+import { Timeline } from './Timeline';
 import { type SheetBody, useSheetBody } from './useSheetBody';
+import { useSkateWeather, useSkateWindowHours } from './useSkateWeather';
+import { WeatherBand } from './WeatherBand';
+import { whereClickOnWater } from './WhereCards';
+
+/** The meter's segments, one per section, keyed by their own number. */
+const METER_SEGMENTS = Array.from({ length: SHEET_SECTION_COUNT }, (_, k) => k);
 
 /** Which section a minimum-set term points at, for the *needed* mark (D189). */
 const TERM_SECTION: Record<MinimumSetTerm, SheetSection | null> = {
@@ -40,26 +62,33 @@ const TERM_SECTION: Record<MinimumSetTerm, SheetSection | null> = {
 };
 
 /**
- * The web console (A10-5 / §10.1) — the report sheet as a full-screen authoring view: the lake's
- * map and the photo rail on the left, the words and every section as a panel on the right, and a
- * tab per Report over the one map (§10.2).
+ * The web console (A10-5 / §10.1, re-composed A10-6 / D206) — the report sheet as an application
+ * surface: the whole viewport, three columns, nothing scrolls as a page.
+ *
+ * - **The Post** is the left column, full height: its title and prose, then every photo of the day
+ *   with the number of the lake it is on. The words belong to the Post, not to a lake (D186), and
+ *   the layout says so.
+ * - **The Reports** are tabs across the top of the work area, in time order (`reportsInTimeOrder`),
+ *   each with a ten-segment meter of its filled sections; *Another report* is one button with two
+ *   answers (the same lake at another time, or a different lake).
+ * - **The instrument** is the center: the active Report's lake, the timeline under it, the weather
+ *   band under that. In a mode (`ConsoleMode`) it becomes the input for the open question and
+ *   everything else dims.
+ * - **The inspector** is the right column: the ten sections in their fixed order, *Post* at its
+ *   foot. A status bar carries the draft's state and the meters.
  *
  * It is the **same sheet** the phone draws, not a second one: the model, the doors, which gaps
  * refuse a Post and what *Post* does all come from core's `postSheet` and `flushPost`. What is
- * web's is the composition — two columns instead of a scroll, a map that stays put while the
- * panels move, a keyboard — and the two things a desk has that a phone does not: width, and a
- * reload to survive (§10.3).
- *
- * **Not TanStack Form** (a delta from §10.3 as scoped, 2026-09-22): the plan named it before the
- * sheet had a model. It has one now — a reducer in core, with the validator and the refusals
- * already written — and the console's fields are chips, not inputs with their own validation. A
- * form library over that would be a second place for field state to live and a second answer to
- * "is this Post postable". The one free-text field that wants care (the prose) is a `<textarea>`.
+ * web's is the composition.
  */
 export function ReportConsole() {
   const post = useSheet();
   if (post === null) return null;
-  return <Console post={post} />;
+  return (
+    <ConsoleModeProvider>
+      <Console post={post} />
+    </ConsoleModeProvider>
+  );
 }
 
 function Console({ post }: { post: PostSheet }) {
@@ -67,6 +96,7 @@ function Console({ post }: { post: PostSheet }) {
   const navigate = useNavigate();
   const leaving = useIsLeaving();
   const profile = useQuery(api.profiles.current, {});
+  const { mode, setMode } = useConsoleMode();
   const [busy, setBusy] = useState(false);
   const [refusals, setRefusals] = useState<ReportRefusal[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -79,15 +109,22 @@ function Console({ post }: { post: PostSheet }) {
   const editing = post.mode.kind === 'edit';
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
 
+  const ordered = useMemo(() => reportsInTimeOrder(post), [post]);
   // The tab a removed Report leaves behind falls back to the first.
   const active = post.reports.find((r) => r.id === activeId) ?? post.reports[0];
-  // The active Report's lake, read **once** for the whole console and handed down: the map column,
-  // the header and the panels all want the same body, and each calling `useSheetBody` itself is
-  // five more query subscriptions and three `SheetBody` identities for one lake.
+  // The active Report's lake, read **once** for the whole console and handed down.
   const body = useSheetBody(active?.sheet.waterBodyId);
   useEffect(() => {
     if (active && active.id !== activeId) setActiveId(active.id);
   }, [active, activeId]);
+  // A tab switch leaves any mode: the question was about the other lake.
+  const switchTo = useCallback(
+    (id: string) => {
+      setMode(null);
+      setActiveId(id);
+    },
+    [setMode],
+  );
 
   // Leaving a half-written Post with the browser's own prompt — the console has no *Save draft* to
   // offer (§10.3: no queue on web), so the only honest thing is to ask before the tab goes.
@@ -135,7 +172,7 @@ function Console({ post }: { post: PostSheet }) {
           : first.message,
       );
       const gapReport = post.reports.find((r) => r.id === first.reportId);
-      if (gapReport) setActiveId(gapReport.id);
+      if (gapReport) switchTo(gapReport.id);
       return;
     }
     setBusy(true);
@@ -191,71 +228,47 @@ function Console({ post }: { post: PostSheet }) {
     );
   }
   if (!active) return null;
+  const dim = mode !== null;
+  const number = (id: string) => ordered.findIndex((r) => r.id === id) + 1;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-semibold text-foreground text-xl">
-          {editing ? 'Edit your report' : 'Post a report'}
-        </h1>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button onClick={() => void onPost()} disabled={busy}>
-            {busy ? (editing ? 'Saving…' : 'Posting…') : editing ? 'Save changes' : 'Post'}
-          </Button>
-        </div>
-      </header>
+    <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(0,1fr)_auto] lg:grid-cols-[372px_minmax(0,1fr)_452px] lg:grid-rows-[36px_minmax(0,1fr)_30px]">
+      <PostColumn post={post} ordered={ordered} activeId={active.id} editing={editing} dim={dim} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(20rem,26rem)_1fr]">
-        <aside className="flex h-fit flex-col gap-4 lg:sticky lg:top-6">
-          <MapColumn report={active} body={body} />
-          <PhotoRail report={active} />
-        </aside>
+      <ReportTabs
+        post={post}
+        ordered={ordered}
+        activeId={active.id}
+        onSelect={switchTo}
+        gapReportIds={new Set(refusals.map((r) => r.reportId))}
+        editing={editing}
+        dim={dim}
+        onAddLake={() => setPicking({ kind: 'add' })}
+        onAddVisit={() => {
+          let addedId: string | null = null;
+          updateSheet((p) => {
+            const next = addEarlierVisit(p, active.id, Date.now(), () => crypto.randomUUID());
+            addedId = next.reports.find((r) => !p.reports.some((q) => q.id === r.id))?.id ?? null;
+            return next;
+          });
+          if (addedId) switchTo(addedId);
+        }}
+      />
 
-        <main className="flex min-w-0 flex-col gap-4">
-          {/* The words: the community's subject-line habit, then the story (D186). */}
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
-            <Input
-              className="h-auto border-0 bg-transparent px-0 font-semibold text-base focus-visible:ring-0"
-              placeholder="Title — Crystal Lake, Enfield 12/6"
-              aria-label="Title"
-              maxLength={POST_TITLE_MAX_CHARS}
-              value={post.title}
-              onChange={(e) => updateSheet((p) => ({ ...p, title: e.target.value, dirty: true }))}
-            />
-            <Textarea
-              // `dark:bg-transparent` and `dark:border-0` explicitly: the base Textarea carries
-              // `dark:bg-input/30` and `border-input`, which otherwise draw a filled, outlined box
-              // inside the card the words already live in.
-              className="min-h-32 border-0 bg-transparent px-0 focus-visible:ring-0 dark:border-0 dark:bg-transparent"
-              placeholder="How was it? Write it the way you'd tell a friend — the chips below are for the hard numbers."
-              aria-label="The story"
-              value={post.body}
-              onChange={(e) => updateSheet((p) => ({ ...p, body: e.target.value, dirty: true }))}
-            />
-          </div>
+      <Instrument
+        key={active.id}
+        report={active}
+        post={post}
+        body={body}
+        ordinal={number(active.id)}
+        onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
+      />
 
-          {post.reports.length > 1 ? (
-            <ReportTabs
-              post={post}
-              activeId={active.id}
-              onSelect={setActiveId}
-              gapReportIds={new Set(refusals.map((r) => r.reportId))}
-            />
-          ) : null}
-
-          <ReportHeader
-            post={post}
-            reportId={active.id}
-            body={body}
-            onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
-          />
-
+      <aside className="flex min-h-0 min-w-0 flex-col border-border border-l bg-surface">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {/* Keyed by the Report: the panels hold their own affordance state (which reading is
-              being typed, which chip's *where* is open, the archive's hours for this lake), and an
-              unkeyed swap would carry the previous leg's state — and its weather — onto this one. */}
+              being typed, which where card is up), and an unkeyed swap would carry the previous
+              leg's state onto this one. */}
           <ReportPanels
             key={active.id}
             report={active}
@@ -263,74 +276,79 @@ function Console({ post }: { post: PostSheet }) {
             gaps={gapsFor(active.id)}
             editing={editing}
           />
-
-          {editing ? null : (
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button size="sm" variant="outline" onClick={() => setPicking({ kind: 'add' })}>
-                + Another lake
-              </Button>
-              {post.reports[post.reports.length - 1]?.sheet.waterBodyId !== undefined ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const last = post.reports[post.reports.length - 1];
-                    if (!last) return;
-                    updateSheet((p) =>
-                      addEarlierVisit(p, last.id, Date.now(), () => crypto.randomUUID()),
-                    );
-                  }}
-                >
-                  + An earlier visit
-                </Button>
-              ) : null}
+          {post.reports.length > 1 && !editing ? (
+            <div className={cn('px-3.5 py-3', dim && 'sheet-dim')}>
+              <button
+                type="button"
+                className="text-foreground-muted text-xs hover:text-foreground hover:underline"
+                onClick={() => updateSheet((p) => removeReport(p, active.id))}
+              >
+                Remove this report from the post
+              </button>
             </div>
+          ) : null}
+        </div>
+        <div
+          className={cn(
+            'flex flex-none flex-col gap-2 border-border border-t px-3.5 py-2.5',
+            dim && 'sheet-dim',
           )}
-
+        >
           {message ? (
-            <p role="alert" className="text-danger text-sm">
+            <p role="alert" className="text-danger text-xs">
               {message}
             </p>
           ) : null}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={onCancel} disabled={busy}>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={busy}
+              className="h-8 px-3 font-semibold text-[12px] text-foreground-muted uppercase tracking-[0.08em] hover:text-foreground disabled:opacity-50"
+            >
               Cancel
-            </Button>
-            <Button onClick={() => void onPost()} disabled={busy}>
+            </button>
+            <button
+              type="button"
+              onClick={() => void onPost()}
+              disabled={busy}
+              className="h-8 min-w-[132px] rounded-[2px] border border-foreground bg-foreground px-4 font-semibold text-[12px] text-background uppercase tracking-[0.08em] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
               {busy ? (editing ? 'Saving…' : 'Posting…') : editing ? 'Save changes' : 'Post'}
-            </Button>
+            </button>
           </div>
-        </main>
-      </div>
+        </div>
+      </aside>
+
+      <StatusBar post={post} ordered={ordered} editing={editing} dim={dim} />
 
       <BodyPicker
         open={picking !== null}
         onClose={() => setPicking(null)}
         title={picking?.kind === 'add' ? 'Which lake next?' : 'Which lake?'}
-        onPick={(body) => {
+        onPick={(picked) => {
           const now = Date.now();
           if (picking?.kind === 'add') {
             let addedId: string | null = null;
             updateSheet((p) => {
               const next = addLake(
                 p,
-                { waterBodyId: body.waterBodyId, bodyName: body.name },
+                { waterBodyId: picked.waterBodyId, bodyName: picked.name },
                 now,
                 () => crypto.randomUUID(),
               );
               addedId = next.reports[next.reports.length - 1]?.id ?? null;
               return next;
             });
-            if (addedId) setActiveId(addedId);
+            if (addedId) switchTo(addedId);
           } else if (picking?.kind === 'set') {
             const reportId = picking.reportId;
             updateSheet((p) =>
               updateReport(p, reportId, (r) => ({
                 ...r,
-                bodyName: body.name,
+                bodyName: picked.name,
                 // Through the reducer: another lake's peer ghosts go with the lake.
-                sheet: sheetReducer(r.sheet, { type: 'setBody', waterBodyId: body.waterBodyId }),
+                sheet: sheetReducer(r.sheet, { type: 'setBody', waterBodyId: picked.waterBodyId }),
                 coord: undefined,
               })),
             );
@@ -342,194 +360,681 @@ function Console({ post }: { post: PostSheet }) {
   );
 }
 
-/** A tab per Report, over the one map (§10.2). A leg the minimum set still wants is marked. */
-function ReportTabs({
+// ── The Post column ──────────────────────────────────────────────────────────────────────────────
+
+/** The Post: its words, then every photo of the day with the number of the lake it is on. */
+function PostColumn({
   post,
+  ordered,
   activeId,
-  onSelect,
-  gapReportIds,
+  editing,
+  dim,
 }: {
   post: PostSheet;
+  ordered: readonly SheetReport[];
   activeId: string;
-  onSelect: (id: string) => void;
-  gapReportIds: ReadonlySet<string>;
+  editing: boolean;
+  dim: boolean;
 }) {
+  const photoCount = post.reports.reduce((n, r) => n + r.photos.length + r.keptPhotoIds.length, 0);
+  const lakes = post.reports.length;
   return (
-    <div role="tablist" aria-label="The lakes in this post" className="flex flex-wrap gap-1">
-      {post.reports.map((report, i) => {
-        const selected = report.id === activeId;
-        return (
-          <button
-            key={report.id}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            onClick={() => onSelect(report.id)}
-            className={cn(
-              'rounded-t-lg border-b-2 px-3 py-1.5 text-sm',
-              selected
-                ? 'border-primary font-semibold text-foreground'
-                : 'border-transparent text-foreground-muted hover:text-foreground',
-            )}
-          >
-            {report.bodyName ?? `Lake ${i + 1}`}
-            {gapReportIds.has(report.id) ? <span className="text-warning"> ·</span> : null}
-          </button>
-        );
-      })}
-    </div>
+    <aside
+      className={cn(
+        'flex min-h-0 flex-col border-border border-b bg-surface lg:row-span-2 lg:border-r lg:border-b-0',
+        dim && 'sheet-dim',
+      )}
+    >
+      <div className="flex h-9 flex-none items-center gap-2.5 border-border border-b px-4">
+        <Eyebrow>{editing ? 'Editing a post' : 'Post'}</Eyebrow>
+        <span className="ml-auto font-mono text-[10px] text-foreground-muted uppercase">
+          {lakes} {lakes === 1 ? 'lake' : 'lakes'} · {photoCount}{' '}
+          {photoCount === 1 ? 'photo' : 'photos'}
+        </span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pt-3.5 pb-2.5">
+        <input
+          className="w-full bg-transparent font-semibold text-foreground text-lg placeholder:text-foreground-muted/70 focus:outline-none"
+          placeholder="Title — Crystal Lake, Enfield 12/6"
+          aria-label="Title"
+          maxLength={POST_TITLE_MAX_CHARS}
+          value={post.title}
+          onChange={(e) => updateSheet((p) => ({ ...p, title: e.target.value, dirty: true }))}
+        />
+        <Textarea
+          className="min-h-32 flex-1 resize-none border-0 bg-transparent px-0 text-sm leading-relaxed focus-visible:ring-0 dark:border-0 dark:bg-transparent"
+          placeholder="How was it? Write it the way you'd tell a friend — the chips on the right are for the hard numbers."
+          aria-label="The story"
+          value={post.body}
+          onChange={(e) => updateSheet((p) => ({ ...p, body: e.target.value, dirty: true }))}
+        />
+      </div>
+      <PhotoRail post={post} ordered={ordered} activeId={activeId} />
+    </aside>
   );
 }
 
 /**
- * The lake a Report is about: its name (a click picks or changes it, on a create) and *remove* when
- * the Post has more than one.
+ * Every photo of the day, in the Post column: each with the number of the lake it is on (the tab's
+ * number), the active Report's bright and the others dim, a corner mark on the ones placed on the
+ * water. Adding and removing is the Report's own Photos section; assignment by time and location,
+ * the `?` menu and place-mode are the next PR (§8.1).
  */
-function ReportHeader({
+function PhotoRail({
   post,
-  reportId,
-  body,
-  onPickBody,
+  ordered,
+  activeId,
 }: {
   post: PostSheet;
-  reportId: string;
-  body: SheetBody | null;
-  onPickBody: () => void;
+  ordered: readonly SheetReport[];
+  activeId: string;
 }) {
-  const report = post.reports.find((r) => r.id === reportId);
-  const editing = post.mode.kind === 'edit';
-  if (!report) return null;
-  const name = report.bodyName ?? (body?.name || undefined);
+  const all = ordered.flatMap((r, i) => [
+    ...r.photos.map((photo) => ({
+      key: photo.id,
+      reportId: r.id,
+      n: i + 1,
+      preview: sheetPhotoPreview(photo.id),
+      placed: photo.placeOnMap,
+      kept: false,
+    })),
+    ...r.keptPhotoIds.map((id) => ({
+      key: id,
+      reportId: r.id,
+      n: i + 1,
+      preview: null,
+      placed: false,
+      kept: true,
+    })),
+  ]);
+  if (all.length === 0) return null;
+  const many = post.reports.length > 1;
   return (
-    <div className="flex items-center gap-3">
-      {editing ? (
-        <h2 className="font-bold text-foreground text-lg">{name ?? 'This report'}</h2>
-      ) : (
-        <button
-          type="button"
-          onClick={onPickBody}
-          className="font-bold text-foreground text-lg hover:underline"
-        >
-          {name ?? 'Which lake?'} <span aria-hidden>›</span>
-        </button>
-      )}
-      <span className="flex-1" />
-      {post.reports.length > 1 && !editing ? (
-        <Button
-          size="xs"
-          variant="ghost"
-          onClick={() => updateSheet((p) => removeReport(p, reportId))}
-        >
-          Remove this lake
-        </Button>
+    <div className="flex-none border-border border-t px-4 py-3">
+      <div className="flex items-center gap-2.5">
+        <Eyebrow>Photos from the day</Eyebrow>
+        <span className="ml-auto font-mono text-[10px] text-foreground-muted uppercase">
+          {ordered
+            .map((r, i) => {
+              const n = r.photos.length + r.keptPhotoIds.length;
+              return n > 0 ? `${n} on ${many ? i + 1 : 'the lake'}` : null;
+            })
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+      </div>
+      <div className="mt-2.5 grid grid-cols-4 gap-1.5">
+        {all.map((ph) => (
+          <div
+            key={ph.key}
+            className={cn(
+              'relative aspect-square overflow-hidden rounded-[2px] border border-border bg-surface-muted',
+              ph.reportId !== activeId && 'opacity-45',
+            )}
+          >
+            {ph.preview ? (
+              <img src={ph.preview} alt="" className="size-full object-cover" />
+            ) : (
+              <span className="flex size-full items-center justify-center text-center text-[9px] text-foreground-muted">
+                {ph.kept ? 'On the report' : 'Re-add'}
+              </span>
+            )}
+            {many ? (
+              <span className="absolute top-[3px] left-[3px] h-3.5 min-w-3.5 rounded-[2px] bg-foreground px-[3px] text-center font-mono font-semibold text-[9px] text-background leading-[14px]">
+                {ph.n}
+              </span>
+            ) : null}
+            {ph.placed ? (
+              <span
+                title="Placed on the lake"
+                className="absolute right-1 bottom-1 size-1.5 bg-primary shadow-[0_0_5px_var(--ring)]"
+              >
+                <span className="sr-only">placed on the lake</span>
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {many ? (
+        <p className="mt-2 text-[11px] text-foreground-muted">
+          The number is the lake a photo is on.
+        </p>
       ) : null}
     </div>
   );
 }
 
-/** The map column (§10.1): the lake, its chosen put-in, the skate's path, and the placed photos. */
-function MapColumn({
-  report,
-  body,
+// ── The Report tabs ──────────────────────────────────────────────────────────────────────────────
+
+/** A tab per Report in time order, with its meter; *Another report* with its two answers. */
+function ReportTabs({
+  post,
+  ordered,
+  activeId,
+  onSelect,
+  gapReportIds,
+  editing,
+  dim,
+  onAddLake,
+  onAddVisit,
 }: {
-  report: PostSheet['reports'][number];
-  body: SheetBody | null;
+  post: PostSheet;
+  ordered: readonly SheetReport[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  gapReportIds: ReadonlySet<string>;
+  editing: boolean;
+  dim: boolean;
+  onAddLake: () => void;
+  onAddVisit: () => void;
 }) {
-  const placed = report.photos.filter((p) => p.placeOnMap && p.coord !== undefined);
-  if (!body?.silhouette) {
-    return (
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <SheetHint>
-          {report.sheet.waterBodyId === undefined
-            ? 'Pick the lake and it will be drawn here, with your put-in on it.'
-            : 'Drawing the lake…'}
-        </SheetHint>
-      </div>
-    );
-  }
-  const chosen = report.sheet.scalars.putInId;
+  const [menu, setMenu] = useState(false);
+  const activeName = post.reports.find((r) => r.id === activeId)?.bodyName;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
-      <LakeMap
-        data={body.silhouette}
-        pins={[
-          ...body.putIns.map((p) => ({
-            id: p.id,
-            ...p.coord,
-            label: p.name,
-            kind: 'putIn' as const,
-          })),
-          ...body.parking.map((p) => ({
-            id: p.id,
-            ...p.coord,
-            label: p.name,
-            kind: 'parking' as const,
-          })),
-        ]}
-        {...(chosen !== undefined ? { chosenPinId: chosen } : {})}
-        {...(chosen === undefined && report.sheet.scalars.point
-          ? { point: report.sheet.scalars.point }
-          : {})}
-        photos={placed.map((p) => ({
-          id: p.id,
-          lat: (p.coord as { lat: number; lng: number }).lat,
-          lng: (p.coord as { lat: number; lng: number }).lng,
-        }))}
-        height={300}
-        label={`${body.name || 'The lake'}, with your put-in and any photos you placed.`}
-      />
-      <p className="text-foreground-muted text-xs">
-        {body.name || 'This lake'} — the put-in is chosen under <em>Access</em>.
-      </p>
+    <div
+      className={cn(
+        'relative flex min-w-0 items-stretch overflow-x-auto border-border border-b bg-surface lg:col-span-2',
+        dim && 'sheet-dim',
+      )}
+    >
+      <div role="tablist" aria-label="The lakes in this post" className="flex items-stretch">
+        {ordered.map((report, i) => {
+          const selected = report.id === activeId;
+          const end = reportEndMs(report);
+          const filled = sectionsFilled(report.sheet);
+          const needed = gapReportIds.has(report.id);
+          return (
+            <button
+              key={report.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => onSelect(report.id)}
+              className={cn(
+                'relative flex items-center gap-2.5 whitespace-nowrap border-border border-r px-4 text-xs',
+                selected
+                  ? 'bg-background text-foreground after:absolute after:right-0 after:bottom-[-1px] after:left-0 after:h-0.5 after:bg-primary'
+                  : 'text-foreground-muted hover:text-foreground',
+              )}
+            >
+              <span
+                className={cn(
+                  'inline-flex size-4 items-center justify-center rounded-[2px] border font-mono font-semibold text-[10px]',
+                  selected
+                    ? 'border-foreground bg-foreground text-background'
+                    : 'border-border-strong',
+                )}
+              >
+                {i + 1}
+              </span>
+              <span className="font-semibold">{report.bodyName ?? 'Which lake?'}</span>
+              {end !== undefined ? (
+                <span className="font-mono text-[10.5px]">
+                  {report.sheet.scalars.skateStartTime !== undefined
+                    ? `${clock(report.sheet.scalars.skateStartTime)}–`
+                    : ''}
+                  {clock(end)}
+                </span>
+              ) : null}
+              <span
+                role="img"
+                className="flex gap-0.5"
+                aria-label={`${filled} of ${SHEET_SECTION_COUNT} sections filled`}
+              >
+                {METER_SEGMENTS.map((k) => (
+                  <i
+                    key={k}
+                    className={cn(
+                      'block h-2 w-[5px]',
+                      k < filled
+                        ? selected
+                          ? 'bg-foreground'
+                          : 'bg-foreground-muted'
+                        : 'bg-surface-muted',
+                    )}
+                  />
+                ))}
+              </span>
+              {needed ? (
+                <span className="font-mono text-[9.5px] text-warning uppercase">needed</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {editing ? null : (
+        <div className="relative flex items-stretch">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            onClick={() => setMenu((m) => !m)}
+            className="whitespace-nowrap px-4 font-semibold text-[12px] text-foreground-muted uppercase tracking-[0.06em] hover:text-foreground"
+          >
+            + Another report
+          </button>
+          {menu ? (
+            <div
+              role="menu"
+              className="absolute top-full left-0 z-20 mt-1 flex w-60 flex-col rounded-[2px] border border-border-strong bg-surface-muted p-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="rounded-[2px] px-2.5 py-1.5 text-left text-sm hover:bg-surface"
+                onClick={() => {
+                  setMenu(false);
+                  onAddVisit();
+                }}
+                disabled={activeName === undefined}
+              >
+                {activeName ? `${activeName}, another time` : 'The same lake, another time'}
+                <span className="block text-[11px] text-foreground-muted">
+                  A second visit to the lake this report is about
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="rounded-[2px] px-2.5 py-1.5 text-left text-sm hover:bg-surface"
+                onClick={() => {
+                  setMenu(false);
+                  onAddLake();
+                }}
+              >
+                A different lake
+                <span className="block text-[11px] text-foreground-muted">Pick it by name</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
 
-/** The thumbnail rail (§10.1): what this Report is carrying, beside the map rather than in the scroll. */
-function PhotoRail({ report }: { report: PostSheet['reports'][number] }) {
-  const count = report.photos.length + report.keptPhotoIds.length;
-  if (count === 0) return null;
+function clock(ms: number): string {
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(ms);
+}
+
+// ── The instrument ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The center column: the active Report's lake, the timeline, the weather band. In a mode the lake
+ * takes the click for the open question — the ring in where-mode, the lit launches in put-in mode
+ * — and the readouts around it dim with the rest.
+ */
+function Instrument({
+  report,
+  post,
+  body,
+  ordinal,
+  onPickBody,
+}: {
+  report: SheetReport;
+  post: PostSheet;
+  body: SheetBody | null;
+  ordinal: number;
+  onPickBody: () => void;
+}) {
+  const { mode } = useConsoleMode();
+  const sheet = report.sheet;
+  const timeZone = body?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [end] = selectedValues(sheet, 'endTime');
+  const endMs = end?.ms;
+  const startMs = sheet.scalars.skateStartTime;
+  const gps = end?.precision === 'gps';
+  const editing = post.mode.kind === 'edit';
+  const dispatch = useCallback(
+    (action: Parameters<typeof sheetReducer>[1]) =>
+      updateSheet((p) =>
+        updateReport(p, report.id, (r) => ({ ...r, sheet: sheetReducer(r.sheet, action) })),
+      ),
+    [report.id],
+  );
+
+  const hours = useSkateWeather(body?.waterBodyId, endMs, timeZone);
+  const windowHours = useSkateWindowHours(hours, endMs, startMs);
+  const [now] = useState(() => Date.now());
+  const model = useMemo(() => {
+    const others = post.reports
+      .filter((r) => r.id !== report.id)
+      .flatMap((r) => {
+        const e = reportEndMs(r);
+        if (e === undefined) return [];
+        const n = reportsInTimeOrder(post).findIndex((q) => q.id === r.id) + 1;
+        return [
+          {
+            id: r.id,
+            label: `${n} · ${(r.bodyName ?? 'lake').toUpperCase()}`,
+            ...(r.sheet.scalars.skateStartTime !== undefined
+              ? { startMs: r.sheet.scalars.skateStartTime }
+              : {}),
+            endMs: e,
+          },
+        ];
+      });
+    return timelineModel({
+      timeZone,
+      nowMs: now,
+      ...(endMs !== undefined ? { endMs } : {}),
+      ...(startMs !== undefined ? { startMs } : {}),
+      sun: body?.sunAt(endMs ?? now) ?? null,
+      others,
+    });
+  }, [post, report.id, timeZone, now, endMs, startMs, body]);
+
+  const chosenPin = sheet.scalars.putInId ?? sheet.scalars.parkingAreaId;
+  const placed = report.photos.filter((p) => p.placeOnMap && p.coord !== undefined);
+  const hazards: LakeMapHazard[] = useMemo(
+    () =>
+      (body?.hazards ?? []).map((h) => ({
+        id: h.id,
+        lat: (h.bbox.minLat + h.bbox.maxLat) / 2,
+        lng: (h.bbox.minLng + h.bbox.maxLng) / 2,
+        label: h.label,
+        passage: isPassageMarker(h.type),
+      })),
+    [body?.hazards],
+  );
+  const sector = modeSector(mode) ?? firstSector(report);
+  const where = mode?.kind === 'where' ? mode.where : undefined;
+  const modePoint = where?.point
+    ? {
+        ...where.point.coord,
+        ...(where.point.radiusMeters !== undefined
+          ? { radiusMeters: where.point.radiusMeters }
+          : {}),
+      }
+    : undefined;
+  const point = modePoint ?? (chosenPin === undefined ? sheet.scalars.point : undefined);
+  const putInName = body?.putIns.find((p) => p.id === sheet.scalars.putInId)?.name;
+  const dim = mode !== null;
+
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
-      <p className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-        {count} {count === 1 ? 'photo' : 'photos'}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {report.photos.map((photo) => {
-          const preview = sheetPhotoPreview(photo.id);
-          // A photo whose blob died with a reload still counts and still has to be re-added; the
-          // rail draws it as itself rather than dropping it and disagreeing with its own count.
-          return preview ? (
-            <img
-              key={photo.id}
-              src={preview}
-              alt=""
-              className={cn(
-                'size-14 rounded-md object-cover',
-                photo.placeOnMap ? 'ring-2 ring-primary' : undefined,
-              )}
-            />
-          ) : (
-            <span
-              key={photo.id}
-              className="flex size-14 items-center justify-center rounded-md bg-surface-muted text-center text-[0.625rem] text-foreground-muted"
-            >
-              Re-add
+    <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+        <div
+          className={cn('absolute top-3.5 left-[18px] flex flex-col gap-0.5', dim && 'sheet-dim')}
+        >
+          <Eyebrow>
+            Report {ordinal} of {post.reports.length}
+          </Eyebrow>
+          {editing ? (
+            <span className="font-semibold text-foreground text-xl leading-tight">
+              {report.bodyName ?? body?.name ?? 'This report'}
             </span>
-          );
-        })}
-        {report.keptPhotoIds.map((photoId) => (
-          <span
-            key={photoId}
-            className="flex size-14 items-center justify-center rounded-md bg-surface-muted text-center text-[0.625rem] text-foreground-muted"
-          >
-            On the report
+          ) : (
+            <button
+              type="button"
+              onClick={onPickBody}
+              className="text-left font-semibold text-foreground text-xl leading-tight hover:underline"
+            >
+              {report.bodyName ?? body?.name ?? 'Which lake?'} <span aria-hidden>›</span>
+            </button>
+          )}
+          {body?.frame ? (
+            <span className="font-mono text-[10.5px] text-foreground-muted">
+              {body.frame.origin.lat.toFixed(4)}°N {Math.abs(body.frame.origin.lng).toFixed(4)}°W
+            </span>
+          ) : report.coord ? (
+            <span className="text-foreground-muted text-xs">
+              Matched from your location when it posts.
+            </span>
+          ) : null}
+        </div>
+        <div
+          className={cn(
+            'absolute top-3.5 right-[18px] flex flex-col items-end gap-0.5 text-right',
+            dim && 'sheet-dim',
+          )}
+        >
+          {gps ? (
+            <>
+              <Eyebrow>Track</Eyebrow>
+              <span className="font-semibold text-foreground text-[13px]">
+                Your recording
+                {startMs !== undefined && endMs !== undefined
+                  ? ` · ${clock(startMs)}–${clock(endMs)}`
+                  : ''}
+              </span>
+            </>
+          ) : putInName ? (
+            <>
+              <Eyebrow>Put-in</Eyebrow>
+              <span className="font-semibold text-foreground text-[13px]">{putInName}</span>
+            </>
+          ) : null}
+        </div>
+        {mode ? (
+          <div className="-translate-x-1/2 absolute top-3.5 left-1/2 z-10 flex items-center gap-3 whitespace-nowrap rounded-[2px] border border-primary bg-background px-3 py-1.5 text-xs shadow-[0_0_0_4px_var(--ring)]/20">
+            <Eyebrow className="text-primary">
+              {mode.kind === 'where'
+                ? `Where is the ${mode.label.toLowerCase()}?`
+                : 'Where did you get on?'}
+            </Eyebrow>
+            <span className="text-foreground-muted">
+              {mode.kind === 'where'
+                ? 'Click a sector on the ring, a bay, or a point on the water'
+                : 'Click a launch, or the shore for somewhere else'}
+            </span>
+            <kbd className="rounded-[2px] border border-border-strong px-1 font-mono text-[10px] text-foreground-muted">
+              esc
+            </kbd>
+          </div>
+        ) : null}
+        {body?.silhouette ? (
+          <div className="w-full max-w-[520px] px-4">
+            <LakeMap
+              data={body.silhouette}
+              pins={[
+                ...body.putIns.map((p) => ({
+                  id: p.id,
+                  ...p.coord,
+                  label: p.name,
+                  kind: 'putIn' as const,
+                })),
+                ...body.parking.map((p) => ({
+                  id: p.id,
+                  ...p.coord,
+                  label: p.name,
+                  kind: 'parking' as const,
+                })),
+              ]}
+              {...(chosenPin !== undefined ? { chosenPinId: chosenPin } : {})}
+              {...(sector !== undefined ? { sector } : {})}
+              {...(point !== undefined ? { point } : {})}
+              {...(body.silhouette.path !== undefined ? { path: body.silhouette.path } : {})}
+              photos={placed.map((p) => ({
+                id: p.id,
+                lat: (p.coord as LatLng).lat,
+                lng: (p.coord as LatLng).lng,
+              }))}
+              hazards={mode ? [] : hazards}
+              width={480}
+              height={mode?.kind === 'where' ? 420 : 380}
+              ring={mode?.kind === 'where'}
+              litPins={mode?.kind === 'putIn'}
+              {...(mode?.kind === 'where'
+                ? {
+                    onPickSector: (
+                      s: Parameters<NonNullable<Parameters<typeof LakeMap>[0]['onPickSector']>>[0],
+                    ) => mode.onChange({ ...(mode.where ?? {}), sector: s }),
+                    onPick: (coord: LatLng) => mode.onChange(whereClickOnWater(mode.where, coord)),
+                  }
+                : mode?.kind === 'putIn'
+                  ? {
+                      onPickPin: (pin: { id: string; kind: 'putIn' | 'parking' }) =>
+                        mode.onPickPin(pin.id, pin.kind),
+                      onPick: (coord: LatLng) => mode.onPickShore(coord),
+                    }
+                  : {})}
+              label={`${body.name || 'The lake'}, with your put-in and any photos you placed.`}
+            />
+          </div>
+        ) : (
+          <div className="px-6">
+            <SheetHint>
+              {sheet.waterBodyId === undefined
+                ? 'Pick the lake and it will be drawn here, with your put-in on it.'
+                : 'Drawing the lake…'}
+            </SheetHint>
+          </div>
+        )}
+        <div
+          className={cn(
+            'absolute bottom-3 left-[18px] flex gap-3.5 text-[10.5px] text-foreground-muted',
+            dim && 'sheet-dim',
+          )}
+        >
+          <Legend swatch="rounded-full bg-primary">put-in</Legend>
+          <Legend swatch="border border-foreground-muted">lot</Legend>
+          <Legend swatch="h-0 w-3.5 border-foreground border-t border-dashed">your track</Legend>
+          <Legend swatch="border border-foreground">photo</Legend>
+          <Legend swatch="size-0 border-x-[5px] border-x-transparent border-b-[8px] border-b-danger">
+            hazard
+          </Legend>
+        </div>
+        {mode?.kind === 'where' && where?.sector ? (
+          <div className="absolute right-[18px] bottom-3 flex flex-col items-end">
+            <Eyebrow className="text-primary">{where.sector}</Eyebrow>
+            <span className="text-foreground text-xs">
+              {mode.label}
+              {where.extent ? ` · ${where.extent}` : ''}
+            </span>
+          </div>
+        ) : null}
+      </div>
+      <div className="flex-none border-border border-t">
+        <Timeline
+          model={model}
+          dim={dim}
+          endLocked={gps}
+          {...(!gps
+            ? {
+                onSetEnd: (ms: number) =>
+                  dispatch({
+                    type: 'select',
+                    field: 'endTime',
+                    key: 'chosen',
+                    value: { ms, precision: 'minute' },
+                  }),
+                onSetStart: (ms: number) =>
+                  dispatch({ type: 'setScalar', key: 'skateStartTime', value: ms }),
+              }
+            : {})}
+        />
+      </div>
+      <div className="flex-none border-border border-t">
+        <WeatherBand
+          hours={hours}
+          windowHours={windowHours}
+          endMs={endMs}
+          timeZone={timeZone}
+          sun={body?.sunAt(endMs ?? now) ?? null}
+          fractionOf={(ms) => timelineFraction(model, ms)}
+          report={report}
+          dispatch={dispatch}
+          dim={dim}
+        />
+      </div>
+    </main>
+  );
+}
+
+function Legend({ swatch, children }: { swatch: string; children: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <i className={cn('inline-block size-2', swatch)} />
+      {children}
+    </span>
+  );
+}
+
+/** The first sector any located chip names — the wash when no where question is open. */
+function firstSector(report: SheetReport) {
+  const located = [
+    ...selectedValues(report.sheet, 'iceTypes'),
+    ...selectedValues(report.sheet, 'surfaceTags'),
+  ];
+  return located.find((c) => c.where?.sector !== undefined)?.where?.sector;
+}
+
+// ── The status bar ───────────────────────────────────────────────────────────────────────────────
+
+function StatusBar({
+  post,
+  ordered,
+  editing,
+  dim,
+}: {
+  post: PostSheet;
+  ordered: readonly SheetReport[];
+  editing: boolean;
+  dim: boolean;
+}) {
+  const persistedAt = usePersistedAt();
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  void tick;
+  const photos = post.reports.reduce((n, r) => n + r.photos.length + r.keptPhotoIds.length, 0);
+  return (
+    <footer
+      className={cn(
+        'flex h-[30px] items-center gap-4 border-border border-t bg-surface px-3.5 font-mono text-[10.5px] text-foreground-muted uppercase lg:col-span-3',
+        dim && 'sheet-dim',
+      )}
+    >
+      <span className="inline-flex items-center gap-2">
+        <StatusSquare state={editing ? 'empty' : persistedAt !== null ? 'ice' : 'empty'} />
+        {editing
+          ? 'Editing the published report'
+          : persistedAt !== null
+            ? `Saved in this browser · ${ago(persistedAt)}`
+            : 'Not saved yet'}
+      </span>
+      <span className="flex items-center gap-4">
+        {ordered.map((r, i) => (
+          <span key={r.id}>
+            <span className="text-foreground-muted/70">
+              {ordered.length > 1 ? `${i + 1} ` : ''}
+              {(r.bodyName ?? 'lake').split(' ')[0]}{' '}
+            </span>
+            <span className="text-foreground">
+              {sectionsFilled(r.sheet)} / {SHEET_SECTION_COUNT}
+            </span>
           </span>
         ))}
-      </div>
-      <p className="text-foreground-muted text-xs">
-        A ring means the photo is placed on the map above.
-      </p>
-    </div>
+        {photos > 0 ? (
+          <span>
+            <span className="text-foreground-muted/70">Photos </span>
+            <span className="text-foreground">{photos}</span>
+          </span>
+        ) : null}
+      </span>
+      <span className="ml-auto">{online ? 'Online' : 'Offline — a post will not send'}</span>
+    </footer>
   );
+}
+
+function ago(ms: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return `${s} s ago`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasMapDrawer, isMapRoute, parseMapSelection } from './mapSelection';
+import { hasMapDrawer, isAppSurfaceRoute, isMapRoute, parseMapSelection } from './mapSelection';
 
 describe('parseMapSelection', () => {
   it('parses a water-body path', () => {
@@ -61,5 +61,18 @@ describe('hasMapDrawer', () => {
 
   it('is false off the map entirely', () => {
     expect(hasMapDrawer('/feed')).toBe(false);
+  });
+});
+
+describe('isAppSurfaceRoute', () => {
+  it('is every map route plus the report console, and nothing else', () => {
+    expect(isAppSurfaceRoute('/')).toBe(true);
+    expect(isAppSurfaceRoute('/water/abc')).toBe(true);
+    expect(isAppSurfaceRoute('/post')).toBe(true);
+    expect(isAppSurfaceRoute('/post/')).toBe(true);
+    expect(isAppSurfaceRoute('/feed')).toBe(false);
+    expect(isAppSurfaceRoute('/settings')).toBe(false);
+    // The console is an app surface but not a map route: no lake search in its header.
+    expect(isMapRoute('/post')).toBe(false);
   });
 });

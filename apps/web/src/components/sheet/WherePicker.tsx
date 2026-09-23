@@ -19,7 +19,7 @@ const EXTENT_LABELS: Record<Exclude<WhereExtent, 'whole'>, string> = {
   patches: 'In patches',
 };
 
-const SECTOR_LABELS: Record<Sector, string> = {
+export const SECTOR_LABELS: Record<Sector, string> = {
   N: 'North end',
   NE: 'Northeast',
   E: 'East side',
@@ -35,33 +35,51 @@ const SECTOR_LABELS: Record<Sector, string> = {
 };
 
 /** A coarse click's radius (D193 / A05b): "about here", not a survey. */
-const POINT_RADIUS_M = 75;
+export const POINT_RADIUS_M = 75;
+
+/** Compose a patch onto a `where`, dropping the keys it clears; `undefined` when nothing is left. */
+export function patchWhere(where: Where | undefined, patch: Partial<Where>): Where | undefined {
+  const next: Where = { ...where, ...patch };
+  for (const key of Object.keys(next) as (keyof Where)[]) {
+    if (next[key] === undefined) delete next[key];
+  }
+  return Object.keys(next).length === 0 ? undefined : next;
+}
 
 /**
  * The *where* affordance (A10 / D193) under a selected chip: how much of the lake, which bay,
  * which end, or a point clicked on the silhouette. Composes — "patches, north end of Malletts
  * Bay" is an extent, a bay and a sector at once. The chips choose; the lake shows.
  *
+ * In the console (`instrument`), the lake that shows is the instrument in the center column, put
+ * into where-mode by the question block around this picker (`WhereCards`); no map is drawn here.
  * Nothing here is required: a chip with no `where` is the whole lake, spelled by absence (D193).
  */
 export function WherePicker({
   where,
   body,
   onChange,
+  instrument = false,
+  placing = false,
+  onPlacing,
 }: {
   /** Absent is the whole lake, spelled by absence (D193) — never a required prop. */
   where?: Where;
   body: SheetBody | null;
   onChange: (where: Where | undefined) => void;
+  /** The console: the map is elsewhere. */
+  instrument?: boolean;
+  /** Controlled *a point* placement, when the instrument takes the click. */
+  placing?: boolean;
+  onPlacing?: (placing: boolean) => void;
 }) {
-  const [placing, setPlacing] = useState(false);
-  const set = (patch: Partial<Where>) => {
-    const next: Where = { ...where, ...patch };
-    for (const key of Object.keys(next) as (keyof Where)[]) {
-      if (next[key] === undefined) delete next[key];
-    }
-    onChange(Object.keys(next).length === 0 ? undefined : next);
+  const [localPlacing, setLocalPlacing] = useState(false);
+  const isPlacing = instrument ? placing : localPlacing;
+  const setPlacing = (next: boolean) => {
+    if (instrument) onPlacing?.(next);
+    else setLocalPlacing(next);
   };
+  const set = (patch: Partial<Where>) => onChange(patchWhere(where, patch));
   const bayNames = Object.fromEntries((body?.bays ?? []).map((b) => [b.id, b.name]));
   const inBay = where?.subAreaId !== undefined;
   const sectors: readonly Sector[] = inBay
@@ -70,11 +88,8 @@ export function WherePicker({
   const words = where ? describeWhere(where, bayNames) : '';
 
   return (
-    <fieldset
-      aria-label="Where on the lake"
-      className="flex flex-col gap-2.5 rounded-lg bg-surface-muted p-3"
-    >
-      <div className="flex flex-wrap gap-2">
+    <fieldset aria-label="Where on the lake" className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {EXTENTS.map((extent) => (
           <SheetChip
             key={extent}
@@ -85,50 +100,48 @@ export function WherePicker({
           />
         ))}
       </div>
-      {body && body.bays.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {body.bays.map((bay) => (
-            <SheetChip
-              key={bay.id}
-              compact
-              label={bay.name}
-              {...(where?.subAreaId === bay.id ? { tier: 'solid' as const } : {})}
-              onClick={() =>
-                set({
-                  subAreaId: where?.subAreaId === bay.id ? undefined : bay.id,
-                  // Head and mouth are the bay's words; they go when the bay does.
-                  sector:
-                    where?.subAreaId === bay.id &&
-                    (where.sector === 'head' || where.sector === 'mouth')
-                      ? undefined
-                      : where?.sector,
-                })
-              }
-            />
-          ))}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {sectors.map((sector) => (
           <SheetChip
             key={sector}
             compact
-            label={SECTOR_LABELS[sector]}
+            label={`${where?.sector === sector ? '◆ ' : ''}${SECTOR_LABELS[sector]}`}
             {...(where?.sector === sector ? { tier: 'solid' as const } : {})}
             onClick={() => set({ sector: where?.sector === sector ? undefined : sector })}
           />
         ))}
+        {(body?.bays ?? []).map((bay) => (
+          <SheetChip
+            key={bay.id}
+            compact
+            label={bay.name}
+            {...(where?.subAreaId === bay.id ? { tier: 'solid' as const } : {})}
+            onClick={() =>
+              set({
+                subAreaId: where?.subAreaId === bay.id ? undefined : bay.id,
+                // Head and mouth are the bay's words; they go when the bay does.
+                sector:
+                  where?.subAreaId === bay.id &&
+                  (where.sector === 'head' || where.sector === 'mouth')
+                    ? undefined
+                    : where?.sector,
+              })
+            }
+          />
+        ))}
         <SheetChip
           compact
-          label={where?.point ? 'Point placed' : 'A point'}
-          {...(where?.point ? { tier: 'solid' as const } : {})}
+          label={
+            where?.point ? 'Point placed' : isPlacing ? 'Click the water…' : 'A point on the lake'
+          }
+          {...(where?.point || isPlacing ? { tier: 'solid' as const } : {})}
           onClick={() => {
             if (where?.point) set({ point: undefined });
-            else setPlacing((p) => !p);
+            else setPlacing(!isPlacing);
           }}
         />
       </div>
-      {body?.silhouette && (placing || where?.sector || where?.point) ? (
+      {!instrument && body?.silhouette && (isPlacing || where?.sector || where?.point) ? (
         <div className="flex flex-col gap-1.5">
           <LakeMap
             data={body.silhouette}
@@ -145,7 +158,7 @@ export function WherePicker({
               : {})}
             height={200}
             label="The lake. Click the water where you mean."
-            {...(placing
+            {...(isPlacing
               ? {
                   onPick: (coord: { lat: number; lng: number }) => {
                     set({ point: { coord, radiusMeters: POINT_RADIUS_M } });
@@ -154,7 +167,7 @@ export function WherePicker({
                 }
               : {})}
           />
-          {placing ? <SheetHint>Click the water where you mean.</SheetHint> : null}
+          {isPlacing ? <SheetHint>Click the water where you mean.</SheetHint> : null}
         </div>
       ) : null}
       {words ? (

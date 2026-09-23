@@ -1,20 +1,5 @@
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faCarSide,
-  faCloud,
-  faCloudBolt,
-  faCloudDrizzle,
-  faCloudFog,
-  faCloudMoon,
-  faCloudRain,
-  faCloudSleet,
-  faCloudSnow,
-  faCloudSun,
-  faIcicles,
-  faMoon,
-  faSun,
-} from '@fortawesome/sharp-light-svg-icons';
+import { faCarSide } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -22,7 +7,6 @@ import {
   buildForecastPlan,
   CONDITION_LABEL,
   conditionGlyph,
-  type ForecastGlyph,
   type ForecastPayload,
   type ForecastPlan,
   type ForecastPlanDay,
@@ -35,6 +19,7 @@ import {
 } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConditionIcon } from './weatherGlyphs';
 
 /**
  * The forward forecast on a lake drawer (A06c §2.5b, grown into the planner by A06h Workstream 4).
@@ -144,43 +129,6 @@ export function ForecastPanel({
 }
 
 /** The symbol vocabulary, resolved to the Sharp Light set (the same family every drawer icon uses). */
-const GLYPH_ICON: Record<ForecastGlyph, IconDefinition> = {
-  sun: faSun,
-  moon: faMoon,
-  'cloud-sun': faCloudSun,
-  'cloud-moon': faCloudMoon,
-  cloud: faCloud,
-  fog: faCloudFog,
-  drizzle: faCloudDrizzle,
-  rain: faCloudRain,
-  // Icicles, not a hail cloud: freezing rain is the one condition a skater must not mistake for
-  // ordinary rain, and the glyph should look like nothing else on the row.
-  'freezing-rain': faIcicles,
-  sleet: faCloudSleet,
-  snow: faCloudSnow,
-  thunder: faCloudBolt,
-};
-
-function ConditionIcon({
-  glyph,
-  label,
-  size = 'text-base',
-}: {
-  glyph: ForecastGlyph;
-  label: string;
-  size?: string;
-}) {
-  return (
-    <FontAwesomeIcon
-      icon={GLYPH_ICON[glyph]}
-      className={`${size} text-foreground`}
-      title={label}
-      aria-label={label}
-      role="img"
-    />
-  );
-}
-
 /** `scrollTo` with a `scrollLeft` fallback — jsdom has no `Element.scrollTo`, and neither did Safari 13. */
 function scrollRow(el: HTMLElement, left: number, smooth: boolean) {
   if (typeof el.scrollTo === 'function')

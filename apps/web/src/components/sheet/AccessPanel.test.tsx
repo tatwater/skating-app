@@ -30,6 +30,11 @@ const body: SheetBody = {
   timeZone: 'America/New_York',
 };
 
+/** The launches are offered inside the put-in question (A10-6): open it, as the author would. */
+function openPutIn() {
+  fireEvent.click(screen.getByRole('button', { name: 'Choose on the lake' }));
+}
+
 /** Drive the real reducer, so the panel is asserted against the rules and not against a spy. */
 function renderPanel(opts: { editing?: boolean } = {}) {
   const dispatched: SheetAction[] = [];
@@ -67,8 +72,15 @@ function renderPanel(opts: { editing?: boolean } = {}) {
 describe('the put-in (§7.1 / D198)', () => {
   it('choosing a launch stores its id and its coordinate as the report’s point', () => {
     const { get } = renderPanel();
+    openPutIn();
     fireEvent.click(screen.getByRole('button', { name: 'State launch' }));
     expect(get().sheet.scalars.putInId).toBe('put-1');
+    // The question closes on *Done* and the answer reads back on the chip that opened it.
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.getByRole('button', { name: 'State launch' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(get().sheet.scalars.point).toEqual(LAUNCH);
   });
 
@@ -78,6 +90,7 @@ describe('the put-in (§7.1 / D198)', () => {
    */
   it('un-choosing the launch un-places the pin it placed', () => {
     const { get } = renderPanel();
+    openPutIn();
     fireEvent.click(screen.getByRole('button', { name: 'State launch' }));
     fireEvent.click(screen.getByRole('button', { name: 'State launch' }));
     expect(get().sheet.scalars.putInId).toBeUndefined();
@@ -89,12 +102,14 @@ describe('the conditions (§7.2 / D197)', () => {
   it('are offered only once a put-in or a lot is chosen', () => {
     renderPanel();
     expect(screen.getByText(/Pick your put-in or lot/)).toBeInTheDocument();
+    openPutIn();
     fireEvent.click(screen.getByRole('button', { name: 'State launch' }));
     expect(screen.getByRole('button', { name: 'Plank needed' })).toBeInTheDocument();
   });
 
   it('the one-line note appears only once a condition is chosen', () => {
     renderPanel();
+    openPutIn();
     fireEvent.click(screen.getByRole('button', { name: 'State launch' }));
     expect(screen.queryByLabelText(/what you found at the launch/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Plank needed' }));

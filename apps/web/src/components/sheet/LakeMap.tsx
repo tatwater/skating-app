@@ -1,6 +1,10 @@
 import {
+  type CompassSector,
+  compassRing,
   lineToPath,
   NEAR_SHORE_STROKE_PX,
+  onRing,
+  ringSectorAtXY,
   ringsToPath,
   ringToPath,
   type Sector,
@@ -26,15 +30,34 @@ export interface LakeMapPhoto {
   lng: number;
 }
 
+/** A live hazard on the body, drawn at its footprint's center (A10-6): the marks a skater passed. */
+export interface LakeMapHazard {
+  id: string;
+  lat: number;
+  lng: number;
+  label: string;
+  /** A passage marker (a pressure ridge crossing) draws as a cross; anything else as a triangle. */
+  passage: boolean;
+}
+
+/** How many hazards get their name beside the mark before the rest are marks alone. */
+const LABELED_HAZARDS = 4;
+
 /**
- * The lake as the console's map (A10-5 §10.1) — the same silhouette `BodySilhouette` draws on a
- * card, larger and **clickable**: the known put-ins as dots with their names, the chosen one
- * filled, the chips' sector as a wash, the recorded skate as a line, placed photos as small marks,
- * and a click anywhere on the water coming back as a coordinate.
+ * The lake as the console's instrument (A10-5 §10.1, A10-6 / D206) — the same silhouette
+ * `BodySilhouette` draws on a card, larger and **clickable**: the known put-ins as dots with their
+ * names, the chosen one lit, the chips' sector as a wash, the recorded skate as a line, placed
+ * photos as small squares, the live hazards as marks, and a click anywhere on the water coming
+ * back as a coordinate.
+ *
+ * **The compass ring is drawn only when asked** (`ring`), which the console does in where-mode:
+ * eight arcs from core's `compassRing`, cut on the wedges' own bearings, so a click on the N arc
+ * and the N wedge it lights are one fact. A click on the water inside it is a point. The ring is
+ * a cursor for a question, never a permanent control; the chips beside the map answer the same
+ * question for a keyboard.
  *
  * It is still not a map (D203): no tiles, no zoom — a shape you point at. Mobile's `LakeMap` draws
- * the same paths from the same core helpers with `react-native-svg`; the geometry lives in core
- * (`silhouetteProjection`, `sectorHighlightPath`) so the two cannot drift.
+ * the same paths from the same core helpers with `react-native-svg`.
  */
 export function LakeMap({
   data,
@@ -44,10 +67,14 @@ export function LakeMap({
   point,
   path,
   photos = [],
+  hazards = [],
   width = 420,
   height = 300,
+  ring = false,
+  litPins = false,
   onPick,
   onPickPin,
+  onPickSector,
   label = 'The lake. Click a launch, or anywhere on the water.',
 }: {
   data: SilhouetteData;
@@ -60,14 +87,22 @@ export function LakeMap({
   /** The recorded skate, when a track opened the sheet. */
   path?: SilhouetteData['path'];
   photos?: readonly LakeMapPhoto[];
+  hazards?: readonly LakeMapHazard[];
   width?: number;
   height?: number;
+  /** Draw the compass ring (where-mode). */
+  ring?: boolean;
+  /** Light every launch (put-in mode), not only the chosen one. */
+  litPins?: boolean;
   onPick?: (coord: { lat: number; lng: number }) => void;
   onPickPin?: (pin: LakeMapPin) => void;
+  /** A click on the ring's arc (or the water under it, when the ring is up). */
+  onPickSector?: (sector: CompassSector) => void;
   label?: string;
 }) {
   const clipId = useId();
-  const p = silhouetteProjection(data.bbox, width, height, 12);
+  const pad = ring ? 34 : 12;
+  const p = silhouetteProjection(data.bbox, width, height, pad);
   const outline = ringsToPath(data.rings, p);
   const highlight = sector ? sectorHighlightPath(data, sector, p) : null;
   const skate = path ? lineToPath(path, p) : '';
@@ -78,7 +113,8 @@ export function LakeMap({
   const placed = point ? p.toXY([point.lng, point.lat]) : null;
   const placedR =
     point?.radiusMeters !== undefined ? Math.max(6, point.radiusMeters * p.pxPerMeter) : 6;
-  const interactive = onPick !== undefined || onPickPin !== undefined;
+  const compass = ring ? compassRing(p, data.origin) : null;
+  const interactive = onPick !== undefined || onPickPin !== undefined || onPickSector !== undefined;
 
   const onClick = (e: MouseEvent<HTMLButtonElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -95,6 +131,14 @@ export function LakeMap({
       onPickPin(nearest.pin);
       return;
     }
+    // The ring's arc names a sector; so does anything outside the ring, by its bearing.
+    if (compass && onPickSector) {
+      const d = Math.hypot(x - compass.cx, y - compass.cy);
+      if (onRing(compass, [x, y]) || d > compass.r) {
+        onPickSector(ringSectorAtXY(compass, [x, y]));
+        return;
+      }
+    }
     const [lng, lat] = p.fromXY([x, y]);
     onPick?.({ lat, lng });
   };
@@ -106,6 +150,45 @@ export function LakeMap({
           <path d={outline} clipRule="evenodd" />
         </clipPath>
       </defs>
+      {compass ? (
+        <g aria-hidden>
+          {compass.segments.map((seg) => {
+            const lit = seg.sector === sector;
+            return (
+              <g key={seg.sector}>
+                <path
+                  d={seg.d}
+                  fill="none"
+                  stroke={lit ? 'var(--primary)' : 'var(--border-strong)'}
+                  strokeOpacity={lit ? 1 : 0.6}
+                  strokeWidth={lit ? 3 : 1}
+                  style={lit ? { filter: 'drop-shadow(0 0 5px var(--ring))' } : undefined}
+                />
+                <line
+                  x1={seg.tick[0][0]}
+                  y1={seg.tick[0][1]}
+                  x2={seg.tick[1][0]}
+                  y2={seg.tick[1][1]}
+                  stroke="var(--border-strong)"
+                  strokeWidth={1}
+                />
+                <text
+                  x={seg.label[0]}
+                  y={seg.label[1] + 3.5}
+                  textAnchor="middle"
+                  fontSize={9.5}
+                  fontFamily="ui-monospace, Menlo, monospace"
+                  fontWeight={lit ? 700 : 400}
+                  fill={lit ? 'var(--primary)' : 'var(--foreground-muted)'}
+                >
+                  {seg.sector}
+                </text>
+              </g>
+            );
+          })}
+          <circle cx={compass.cx} cy={compass.cy} r={3} fill="none" stroke="var(--border-strong)" />
+        </g>
+      ) : null}
       <path d={outline} fill="var(--surface-muted)" fillRule="evenodd" />
       <g clipPath={`url(#${clipId})`}>
         {data.bayRing ? (
@@ -126,14 +209,15 @@ export function LakeMap({
             d={skate}
             fill="none"
             stroke="var(--foreground)"
-            strokeOpacity={0.5}
-            strokeWidth={1.5}
+            strokeOpacity={0.85}
+            strokeWidth={1.4}
+            strokeDasharray="3 3"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         ) : null}
       </g>
-      <path d={outline} fill="none" stroke="var(--border-strong)" strokeWidth={1.25} />
+      <path d={outline} fill="none" stroke="var(--foreground)" strokeWidth={1.3} />
       {placed ? (
         <g>
           <circle
@@ -148,26 +232,68 @@ export function LakeMap({
           <circle cx={placed[0]} cy={placed[1]} r={2.5} fill="var(--primary)" />
         </g>
       ) : null}
+      {hazards.map((h, i) => {
+        const [x, y] = p.toXY([h.lng, h.lat]);
+        return (
+          <g key={h.id}>
+            {h.passage ? (
+              <>
+                <line
+                  x1={x - 6}
+                  y1={y - 3}
+                  x2={x + 6}
+                  y2={y + 3}
+                  stroke="var(--danger)"
+                  strokeWidth={1.6}
+                />
+                <line
+                  x1={x - 6}
+                  y1={y + 3}
+                  x2={x + 6}
+                  y2={y - 3}
+                  stroke="var(--danger)"
+                  strokeWidth={1.6}
+                  strokeOpacity={0.5}
+                />
+              </>
+            ) : (
+              <path
+                d={`M ${x} ${y - 6} L ${x + 6} ${y + 5} L ${x - 6} ${y + 5} Z`}
+                fill="var(--background)"
+                stroke="var(--danger)"
+                strokeWidth={1.4}
+              />
+            )}
+            {i < LABELED_HAZARDS ? (
+              <text x={x + 10} y={y + 4} fontSize={9.5} fill="var(--foreground-muted)">
+                {h.label}
+              </text>
+            ) : null}
+          </g>
+        );
+      })}
       {photos.map((photo) => {
         const [x, y] = p.toXY([photo.lng, photo.lat]);
         return (
-          <rect
-            key={photo.id}
-            x={x - 3.5}
-            y={y - 3.5}
-            width={7}
-            height={7}
-            rx={1.5}
-            fill="var(--surface)"
-            stroke="var(--foreground)"
-            strokeWidth={1.25}
-          />
+          <g key={photo.id}>
+            <rect
+              x={x - 4}
+              y={y - 4}
+              width={8}
+              height={8}
+              fill="var(--background)"
+              stroke="var(--foreground)"
+              strokeWidth={1.2}
+            />
+            <circle cx={x} cy={y} r={1.3} fill="var(--foreground)" />
+          </g>
         );
       })}
       {dots.map(({ pin, x, y }) => {
         const chosen = pin.id === chosenPinId;
-        const stroke = chosen ? 'var(--primary)' : 'var(--foreground-muted)';
-        const fill = chosen ? 'var(--primary)' : 'var(--surface)';
+        const lit = chosen || litPins;
+        const stroke = lit ? 'var(--primary)' : 'var(--foreground-muted)';
+        const fill = chosen ? 'var(--primary)' : 'var(--background)';
         return (
           <g key={pin.id}>
             {pin.kind === 'parking' ? (
@@ -181,10 +307,11 @@ export function LakeMap({
               <circle
                 cx={x}
                 cy={y}
-                r={chosen ? 6 : 4.5}
+                r={chosen ? 5 : litPins ? 6 : 4}
                 fill={fill}
                 stroke={stroke}
                 strokeWidth={1.25}
+                style={lit ? { filter: 'drop-shadow(0 0 5px var(--ring))' } : undefined}
               />
             )}
             {pin.label ? (
@@ -213,7 +340,7 @@ export function LakeMap({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="block w-full cursor-crosshair rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="block w-full cursor-crosshair rounded-[2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {svg}
     </button>

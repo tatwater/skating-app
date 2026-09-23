@@ -26,6 +26,8 @@ const STORAGE_KEY = 'skating.reportSheet.v1';
 const STORED_MAX_AGE_MS = 7 * 24 * 3600_000;
 
 let current: PostSheet | null = null;
+/** When the open sheet last reached `localStorage` — the status bar's "saved in this browser". */
+let persistedAt: number | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -59,6 +61,7 @@ function persist(post: PostSheet | null): void {
       return;
     }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable(post)));
+    persistedAt = Date.now();
   } catch {
     // A full or disabled store costs the restore, never the sheet in front of the author.
   }
@@ -115,8 +118,17 @@ export function useSheet(): PostSheet | null {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
+const getPersistedAt = () => persistedAt;
+const getServerPersistedAt = (): number | null => null;
+
+/** When the open sheet last reached storage, or `null` when it has not (an edit never does). */
+export function usePersistedAt(): number | null {
+  return useSyncExternalStore(subscribe, getPersistedAt, getServerPersistedAt);
+}
+
 /** Test seam: forget the open sheet without touching storage. */
 export function resetSheetStoreForTests(): void {
   current = null;
+  persistedAt = null;
   listeners.clear();
 }

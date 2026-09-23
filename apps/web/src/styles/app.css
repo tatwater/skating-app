@@ -132,6 +132,48 @@
   }
 }
 
+/*
+ * Bracket corners (A10-6 / D206): the sheet's one ornament, and it means something — the panel or
+ * chip a question is open on. Two L-shaped pseudo-elements on opposite corners, in the strong
+ * border; `.sheet-brackets-ice` is the where question's own chip. The element must position itself
+ * (the utility sets `relative`) and must not clip its overflow.
+ */
+.sheet-brackets {
+  position: relative;
+}
+.sheet-brackets::before,
+.sheet-brackets::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--color-border-strong);
+  pointer-events: none;
+}
+.sheet-brackets::before {
+  left: -1px;
+  top: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.sheet-brackets::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+/* Everything that is not the question, while a question is open (where-mode, put-in mode). */
+.sheet-dim {
+  opacity: 0.28;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.sheet-brackets-ice::before,
+.sheet-brackets-ice::after {
+  border-color: var(--color-primary);
+}
+
 /* The map's own attribution credit, pinned to 12px.
 
    MapLibre sizes it by inheritance from a `font` shorthand on `.maplibregl-map`, which the map now

@@ -65,7 +65,7 @@ export function WeatherCorrection({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-lg bg-surface-muted p-3">
+    <div className="flex flex-col gap-2.5 rounded-[2px] border border-border bg-background p-2.5">
       <div className="flex gap-2">
         <label
           htmlFor={`${id}-tempF`}

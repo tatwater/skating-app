@@ -46,6 +46,19 @@ export function isMapRoute(pathname: string): boolean {
 }
 
 /**
+ * Is this pathname an **application surface** — a route that owns the whole viewport and must not
+ * scroll as a page? The map routes are, and since A10-6 so is the report console: three columns,
+ * each scrolling on its own, with the instrument staying put while the panels move. The shell reads
+ * this for its frame; `isMapRoute` stays the narrower question ("is the map on screen"), which is
+ * what puts the lake search in the header — a search box over the console would be an invitation
+ * to leave the Post being written.
+ */
+export function isAppSurfaceRoute(pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
+  return isMapRoute(path) || path === '/post';
+}
+
+/**
  * Is a detail panel open over the map? `true` for every `_map` child except the bare map.
  *
  * The sidebar is always open on desktop (it shows what's in view when nothing is selected), so this
