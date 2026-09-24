@@ -531,6 +531,8 @@ export function HazardForm({
    * type, and the photo is the first attachment. The type is still the author's to say.
    */
   const prefillTaken = useRef(false);
+  // Once, on mount: `photoDrafts.addFiles` and `setHazardDraft` are the mount's own.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: consumed once on mount by design
   useEffect(() => {
     if (prefillTaken.current) return;
     prefillTaken.current = true;
@@ -540,8 +542,6 @@ export function HazardForm({
       setHazardDraft({ geometryKind: 'point_radius', coord: prefill.coord, radiusMeters: 25 });
     }
     if (prefill.files.length > 0) void photoDrafts.addFiles(filesList(prefill.files));
-    // Once, on mount: `photoDrafts.addFiles` and `setHazardDraft` are the mount's own.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: consumed once on mount by design
   }, []);
   /**
    * The photos near this pin (A10-7, hazard → photo): the open Post's photos within reach of the
