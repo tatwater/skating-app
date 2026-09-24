@@ -500,8 +500,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (
         <div className="flex flex-wrap gap-1 px-4 pb-2">
           {/* The console's edit door (A10-5), the same one the phone opens: the sheet seeded from
-              the published Report and its Post's words, saving through `reports.update` +
-              `posts.update`. */}
+              the published Report and its Post's words, saving both through one
+              `reports.update`. */}
           <Link
             to="/post"
             search={{ edit: report._id }}

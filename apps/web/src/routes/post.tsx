@@ -1,10 +1,11 @@
 import { api } from '@skating/convex/api';
+import { postCreateSent } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
 import { useConvex, useConvexAuth, useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
 import { ReportConsole } from '../components/sheet/ReportConsole';
 import { openWebDoor, restoreMatchesDoor } from '../lib/sheetDoors';
-import { readStoredSheet, setSheet, useSheet } from '../lib/sheetStore';
+import { getSheetAttempt, readStoredSheet, setSheet, useSheet } from '../lib/sheetStore';
 
 /**
  * `/post` — the report console (A10-5 / §10.1). A full-screen route rather than a form inside the
@@ -65,11 +66,21 @@ function PostConsole() {
     // A door that opens is a door whose last failure is over.
     setError(null);
     // A sheet already open for this door is the one being written — never rebuilt under the author.
-    // (The store outlives this route, so a hand-off to the lake's map and back lands here.)
-    if (sheet !== null && restoreMatchesDoor(sheet, params)) return;
+    // (The store outlives this route, so a hand-off to the lake's map and back lands here.) A sent
+    // Post is kept whatever the door (`postCreateSent`): it may be live, and only a retry finds out,
+    // so another door must not quietly write over the one copy that can.
+    if (
+      sheet !== null &&
+      (restoreMatchesDoor(sheet, params) || postCreateSent(getSheetAttempt()))
+    ) {
+      return;
+    }
     const restored = readStoredSheet(Date.now());
-    if (restored !== null && restoreMatchesDoor(restored, params)) {
-      setSheet(restored);
+    if (
+      restored !== null &&
+      (restoreMatchesDoor(restored.sheet, params) || postCreateSent(restored.attempt))
+    ) {
+      setSheet(restored.sheet, restored.attempt);
       return;
     }
     void openWebDoor(convex, params, profile?.showPutInDefault, Date.now()).then((next) => {

@@ -8,9 +8,10 @@ import {
   isPassageMarker,
   type LatLng,
   type MinimumSetTerm,
+  POST_SENT_COPY,
   POST_TITLE_MAX_CHARS,
-  type PostDraft,
   type PostSheet,
+  postCreateSent,
   postRefusals,
   type ReportRefusal,
   removeReport,
@@ -28,15 +29,17 @@ import {
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useConvex, useQuery } from 'convex/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { postSheetOnWeb, saveSheetEditOnWeb } from '../../lib/sheetActions';
 import { releaseAllSheetPhotos, sheetPhotoPreview } from '../../lib/sheetPhotos';
 import {
   clearStoredSheet,
   setSheet,
+  setSheetAttempt,
   updateSheet,
   usePersistedAt,
   useSheet,
+  useSheetAttempt,
 } from '../../lib/sheetStore';
 import { cn } from '../../lib/utils';
 import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
@@ -107,8 +110,23 @@ function Console({ post }: { post: PostSheet }) {
     { kind: 'add' } | { kind: 'set'; reportId: string } | null
   >(null);
   /** What a failed attempt already uploaded, so a retry resumes rather than repeats. */
-  const attemptRef = useRef<PostDraft | null>(null);
+  const attempt = useSheetAttempt();
+  /**
+   * The create went out and may have landed (`postCreateSent`): the sheet takes no change — the
+   * store refuses one, and the editing areas are `inert` so none is offered — and *Post* becomes a
+   * retry of what was sent. A change here would otherwise be dropped by the idempotent create.
+   */
+  const sent = postCreateSent(attempt);
   const editing = post.mode.kind === 'edit';
+  const actionLabel = busy
+    ? editing
+      ? 'Saving…'
+      : 'Posting…'
+    : editing
+      ? 'Save changes'
+      : sent
+        ? 'Try again'
+        : 'Post';
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
 
   const ordered = useMemo(() => reportsInTimeOrder(post), [post]);
@@ -153,7 +171,6 @@ function Console({ post }: { post: PostSheet }) {
   );
 
   const done = (to: { reportId: string }) => {
-    attemptRef.current = null;
     releaseAllSheetPhotos();
     setSheet(null);
     clearStoredSheet();
@@ -163,7 +180,9 @@ function Console({ post }: { post: PostSheet }) {
   const onPost = async () => {
     setMessage(null);
     const now = Date.now();
-    const found = postRefusals(post, now);
+    // A sent Post is not asked the create-only rules again: it may be live, and one that went out
+    // at day 6.9 must not be refused as stale at day 7.1 (`flushPost` skips them for the same reason).
+    const found = sent ? [] : postRefusals(post, now);
     setRefusals(found);
     if (found.length > 0) {
       const first = found[0] as ReportRefusal;
@@ -184,9 +203,9 @@ function Console({ post }: { post: PostSheet }) {
         done({ reportId });
         return;
       }
-      const outcome = await postSheetOnWeb(convex, post, now, attemptRef.current);
+      const outcome = await postSheetOnWeb(convex, post, now, attempt);
       if (outcome.kind === 'refused') {
-        attemptRef.current = outcome.draft;
+        setSheetAttempt(outcome.draft);
         setMessage(outcome.message);
         return;
       }
@@ -199,10 +218,10 @@ function Console({ post }: { post: PostSheet }) {
   };
 
   const onCancel = () => {
-    if (post.dirty && !window.confirm('Leave without posting? What you wrote here will be gone.')) {
-      return;
-    }
-    attemptRef.current = null;
+    const leave = sent
+      ? 'Leave without finding out? This post may already be up — check your profile before posting it again.'
+      : 'Leave without posting? What you wrote here will be gone.';
+    if ((post.dirty || sent) && !window.confirm(leave)) return;
     releaseAllSheetPhotos();
     setSheet(null);
     clearStoredSheet();
@@ -235,7 +254,14 @@ function Console({ post }: { post: PostSheet }) {
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(0,1fr)_auto] lg:grid-cols-[372px_minmax(0,1fr)_452px] lg:grid-rows-[36px_minmax(0,1fr)_30px]">
-      <PostColumn post={post} ordered={ordered} activeId={active.id} editing={editing} dim={dim} />
+      <PostColumn
+        post={post}
+        ordered={ordered}
+        activeId={active.id}
+        editing={editing}
+        sent={sent}
+        dim={dim}
+      />
 
       <ReportTabs
         post={post}
@@ -244,6 +270,7 @@ function Console({ post }: { post: PostSheet }) {
         onSelect={switchTo}
         gapReportIds={new Set(refusals.map((r) => r.reportId))}
         editing={editing}
+        sent={sent}
         dim={dim}
         onAddLake={() => setPicking({ kind: 'add' })}
         onAddVisit={() => {
@@ -259,6 +286,7 @@ function Console({ post }: { post: PostSheet }) {
 
       <Instrument
         key={active.id}
+        sent={sent}
         report={active}
         post={post}
         ordered={ordered}
@@ -269,27 +297,34 @@ function Console({ post }: { post: PostSheet }) {
 
       <aside className="flex min-h-0 min-w-0 flex-col border-border border-l bg-surface">
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* Keyed by the Report: the panels hold their own affordance state (which reading is
+          {sent ? (
+            <p role="status" className="border-border border-b px-3.5 py-3 text-foreground text-xs">
+              {POST_SENT_COPY}
+            </p>
+          ) : null}
+          <div inert={sent}>
+            {/* Keyed by the Report: the panels hold their own affordance state (which reading is
               being typed, which where card is up), and an unkeyed swap would carry the previous
               leg's state onto this one. */}
-          <ReportPanels
-            key={active.id}
-            report={active}
-            body={body}
-            gaps={gapsFor(active.id)}
-            editing={editing}
-          />
-          {post.reports.length > 1 && !editing ? (
-            <div className={cn('px-3.5 py-3', dim && 'sheet-dim')}>
-              <button
-                type="button"
-                className="text-foreground-muted text-xs hover:text-foreground hover:underline"
-                onClick={() => updateSheet((p) => removeReport(p, active.id))}
-              >
-                Remove this report from the post
-              </button>
-            </div>
-          ) : null}
+            <ReportPanels
+              key={active.id}
+              report={active}
+              body={body}
+              gaps={gapsFor(active.id)}
+              editing={editing}
+            />
+            {post.reports.length > 1 && !editing && !sent ? (
+              <div className={cn('px-3.5 py-3', dim && 'sheet-dim')}>
+                <button
+                  type="button"
+                  className="text-foreground-muted text-xs hover:text-foreground hover:underline"
+                  onClick={() => updateSheet((p) => removeReport(p, active.id))}
+                >
+                  Remove this report from the post
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
         <div
           className={cn(
@@ -317,7 +352,7 @@ function Console({ post }: { post: PostSheet }) {
               disabled={busy}
               className="h-8 min-w-[132px] rounded-[2px] border border-foreground bg-foreground px-4 font-semibold text-[12px] text-background uppercase tracking-[0.08em] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
-              {busy ? (editing ? 'Saving…' : 'Posting…') : editing ? 'Save changes' : 'Post'}
+              {actionLabel}
             </button>
           </div>
         </div>
@@ -371,12 +406,15 @@ function PostColumn({
   ordered,
   activeId,
   editing,
+  sent,
   dim,
 }: {
   post: PostSheet;
   ordered: readonly SheetReport[];
   activeId: string;
   editing: boolean;
+  /** The create went out: the words and photos are shown, not offered (`postCreateSent`). */
+  sent: boolean;
   dim: boolean;
 }) {
   const photoCount = post.reports.reduce((n, r) => n + r.photos.length + r.keptPhotoIds.length, 0);
@@ -395,7 +433,7 @@ function PostColumn({
           {photoCount === 1 ? 'photo' : 'photos'}
         </span>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pt-3.5 pb-2.5">
+      <div inert={sent} className="flex min-h-0 flex-1 flex-col gap-2 px-4 pt-3.5 pb-2.5">
         <input
           className="w-full bg-transparent font-semibold text-foreground text-lg placeholder:text-foreground-muted/70 focus:outline-none"
           placeholder="Title — Crystal Lake, Enfield 12/6"
@@ -412,7 +450,9 @@ function PostColumn({
           onChange={(e) => updateSheet((p) => ({ ...p, body: e.target.value, dirty: true }))}
         />
       </div>
-      <PhotoRail post={post} ordered={ordered} activeId={activeId} />
+      <div inert={sent} className="contents">
+        <PhotoRail post={post} ordered={ordered} activeId={activeId} />
+      </div>
     </aside>
   );
 }
@@ -517,6 +557,7 @@ function ReportTabs({
   onSelect,
   gapReportIds,
   editing,
+  sent,
   dim,
   onAddLake,
   onAddVisit,
@@ -527,6 +568,8 @@ function ReportTabs({
   onSelect: (id: string) => void;
   gapReportIds: ReadonlySet<string>;
   editing: boolean;
+  /** The create went out: the tabs still switch, but no Report is added (`postCreateSent`). */
+  sent: boolean;
   dim: boolean;
   onAddLake: () => void;
   onAddVisit: () => void;
@@ -605,7 +648,7 @@ function ReportTabs({
           );
         })}
       </div>
-      {editing ? null : (
+      {editing || sent ? null : (
         <div className="relative flex items-stretch">
           <button
             type="button"
@@ -668,6 +711,7 @@ function clock(ms: number): string {
  * — and the readouts around it dim with the rest.
  */
 function Instrument({
+  sent,
   report,
   post,
   ordered,
@@ -675,6 +719,8 @@ function Instrument({
   ordinal,
   onPickBody,
 }: {
+  /** The create went out: the lake, timeline and weather are shown, not offered (`postCreateSent`). */
+  sent: boolean;
   report: SheetReport;
   post: PostSheet;
   ordered: readonly SheetReport[];
@@ -772,7 +818,7 @@ function Instrument({
   const dim = mode !== null;
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+    <main inert={sent} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
         <div
           className={cn('absolute top-3.5 left-[18px] flex flex-col gap-0.5', dim && 'sheet-dim')}

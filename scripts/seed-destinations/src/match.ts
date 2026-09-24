@@ -33,6 +33,15 @@ export interface Destination {
   states?: string[];
   /** Roughly where it is, for disambiguating same-named bodies. */
   near?: { lat: number; lng: number };
+  /**
+   * Tightens {@link MATCH_RADIUS_KM} for this entry alone. For a `near` that is *on* the lake rather
+   * than in the nearest town — the author looked it up — 25 km is wider than it needs to be, and
+   * the corpus holds same-named rows closer than that: "Wentworth Pond" normalizes to "Lake
+   * Wentworth" 17.7 km away, and NHD names both Comerford and the McIndoes pool "Connecticut River
+   * Reservoir" 15.6 km apart. Never widens: a value above the default is clamped to it, so an
+   * entry cannot buy a match a coordinate does not support.
+   */
+  radiusKm?: number;
   /** Why it is on the list — the community corpus, the atlas survey, or both. */
   sources: ('community' | 'atlas')[];
   notes?: string;
@@ -123,6 +132,27 @@ export function looksLikeBay(destination: Destination): boolean {
 
 /** How far a candidate may sit from the shortlist's coordinate and still be the same lake. */
 export const MATCH_RADIUS_KM = 25;
+
+/**
+ * The radius an entry resolves under: its own, if tighter than the default; never wider.
+ *
+ * ⚠ **A malformed value throws rather than reading as absent** (Greptile, PR #74). The shortlist
+ * is JSON cast to `Destination[]` with no runtime check, so `"radiusKm": "10"` arrives as a
+ * string — and falling back to 25 km there would quietly re-admit the very namesake the author
+ * wrote the radius to exclude. A value above the default is well-formed and is clamped (the
+ * documented "never widens" rule); only a non-number, NaN, infinity or non-positive value is an
+ * error, and it stops the dry run before anything is reviewed or applied.
+ */
+export function radiusFor(destination: Destination): number {
+  const own: unknown = destination.radiusKm;
+  if (own === undefined) return MATCH_RADIUS_KM;
+  if (typeof own !== 'number' || !Number.isFinite(own) || own <= 0) {
+    throw new Error(
+      `${destination.name} (${destination.state}): radiusKm must be a positive number of km, got ${JSON.stringify(own)}`,
+    );
+  }
+  return Math.min(own, MATCH_RADIUS_KM);
+}
 
 /**
  * The boost a seeded destination receives.
@@ -240,14 +270,15 @@ export function resolveNearDistance(
   near: { lat: number; lng: number },
   candidate: MatchCandidate,
   options: MatchOptions = {},
+  radiusKm: number = MATCH_RADIUS_KM,
 ): ResolvedDistance | undefined {
   const point = candidatePoint(candidate);
   const pointKm = point ? distanceKm(near, point) : undefined;
-  if (pointKm !== undefined && pointKm <= MATCH_RADIUS_KM) return { km: pointKm, basis: 'point' };
+  if (pointKm !== undefined && pointKm <= radiusKm) return { km: pointKm, basis: 'point' };
   const box = candidate.bbox;
   if (!box) return pointKm === undefined ? undefined : { km: pointKm, basis: 'point' };
   const boxKm = bboxDistanceKm(near, box);
-  if (boxKm > MATCH_RADIUS_KM)
+  if (boxKm > radiusKm)
     return { km: pointKm ?? boxKm, basis: pointKm === undefined ? 'bbox' : 'point' };
   const outlineKm = options.outlineDistanceKm?.(candidate, near);
   if (outlineKm !== undefined) return { km: outlineKm, basis: 'outline' };
@@ -283,8 +314,9 @@ export type MatchOutcome =
  * candidate would reproduce exactly that, silently.
  *
  * Where a coordinate is supplied, it narrows first: same name *and* within {@link MATCH_RADIUS_KM}
- * is a match even when other same-named bodies exist elsewhere in the state, because the coordinate
- * is the disambiguation the shortlist author already did by hand.
+ * (or the entry's tighter {@link Destination.radiusKm}) is a match even when other same-named
+ * bodies exist elsewhere in the state, because the coordinate is the disambiguation the shortlist
+ * author already did by hand.
  *
  * **Sub-areas join the candidate pool only when {@link looksLikeBay} says so** — a plain lake name
  * has no business matching a bay row, and searching that pool for all ~200 shortlist entries when
@@ -301,6 +333,7 @@ export function matchDestination(
 ): MatchOutcome {
   const target = normalizeName(destination.name);
   const states = destination.states ?? [destination.state];
+  const radiusKm = radiusFor(destination);
   const inState = bodies.filter(
     (body) => body.states?.some((s) => states.includes(s)) && body.name !== undefined,
   );
@@ -328,7 +361,7 @@ export function matchDestination(
     const found = byName[0] as MatchCandidate;
     const inHeadlineState = found.states?.includes(destination.state) ?? false;
     const resolved = destination.near
-      ? resolveNearDistance(destination.near, found, options)
+      ? resolveNearDistance(destination.near, found, options, radiusKm)
       : undefined;
     const distance = resolved?.km;
     // One name match is not a match when a `near` says it is the wrong one: a corpus town centroid
@@ -339,7 +372,7 @@ export function matchDestination(
     // disambiguates, and a corpus `near` for a bay is often the sender's town rather than the
     // bay's (Little Eagle Bay's one mention came from Burlington, 30 km down the lake).
     const parentVouches = isSubArea(found) && parentTarget !== undefined;
-    if (distance !== undefined && distance > MATCH_RADIUS_KM && !parentVouches) {
+    if (distance !== undefined && distance > radiusKm && !parentVouches) {
       return { kind: 'ambiguous', destination, candidates: byName };
     }
     const narrowed = distance !== undefined;
@@ -356,12 +389,12 @@ export function matchDestination(
     const near = destination.near;
     const within = byName
       .map((candidate) => {
-        const r = resolveNearDistance(near, candidate, options);
+        const r = resolveNearDistance(near, candidate, options, radiusKm);
         return r === undefined ? null : { candidate, r };
       })
       .filter(
         (x): x is { candidate: MatchCandidate; r: ResolvedDistance } =>
-          x !== null && x.r.km <= MATCH_RADIUS_KM,
+          x !== null && x.r.km <= radiusKm,
       )
       .sort((a, b) => a.r.km - b.r.km);
     if (within.length === 1) {

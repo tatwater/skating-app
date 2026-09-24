@@ -42,3 +42,29 @@ export function createCoalescedRunner(run: () => Promise<void>): () => Promise<v
     return followUp;
   };
 }
+
+/**
+ * One run per key at a time, **joined** rather than queued: a call for a key already running gets
+ * that run's promise, and the key is free again the moment it settles, success or failure.
+ *
+ * For work whose result is the same no matter who asked — flushing one queued item, where the second
+ * caller wants exactly what the first is already doing. Two concurrent flushes of one item would
+ * each upload its photos, each create photo rows, and race each other's checkpoint writes; the
+ * server's idempotency saves the item itself but not the orphaned rows or the clobbered state.
+ * Unlike `createCoalescedRunner` there is no follow-up run: the item cannot have changed under the
+ * caller (a queued hazard is immutable once captured), so joining is the whole answer.
+ */
+export function createKeyedSingleFlight<T>(
+  run: (key: string) => Promise<T>,
+): (key: string) => Promise<T> {
+  const inFlight = new Map<string, Promise<T>>();
+  return function flight(key: string): Promise<T> {
+    const existing = inFlight.get(key);
+    if (existing) return existing;
+    const started = run(key).finally(() => {
+      if (inFlight.get(key) === started) inFlight.delete(key);
+    });
+    inFlight.set(key, started);
+    return started;
+  };
+}

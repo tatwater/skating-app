@@ -72,6 +72,7 @@ import { enqueueActorNotification } from './notificationQueue';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './photoAccess';
 import { syncReportSubAreas } from './reportSubAreas';
 import { awardPointEvent, checkAndAwardBadges } from './reputation';
+import { postSnapshotOf, recordRevision } from './revisions';
 import { activateOnEvidence } from './standing';
 import { chipInput, iceThickness, latLng, literals, snow } from './validators';
 
@@ -696,4 +697,47 @@ async function notifyCorroboration(
     targetId: priorReport._id,
     trigger: { kind: 'corroboration', reportId: priorReport._id, byReportIds: [byReport._id] },
   });
+}
+
+/** The Post's words an edit re-sends (last-write-wins: an omitted field is a cleared one). */
+export const postWordsArgs = v.object({
+  title: v.optional(v.string()),
+  body: v.optional(v.string()),
+});
+
+/**
+ * Rewrite a Post's words as its author (A10-3): the author and moderation gates, the D186 bounds,
+ * then the revision and the patch. Words that did not change write nothing — no revision, no
+ * *edited* mark — so an edit of a Report's chips that re-sends its Post's words unchanged does not
+ * claim the Post was edited. One helper for `posts.update` and the Report edit that carries its
+ * Post's words (`reports.update`'s `post`), so the two cannot disagree about what an edit is.
+ */
+export async function editPostWords(
+  ctx: MutationCtx,
+  postId: Id<'posts'>,
+  words: Infer<typeof postWordsArgs>,
+  profile: Doc<'profiles'>,
+  now: number,
+): Promise<void> {
+  const existing = await ctx.db.get(postId);
+  if (!existing) throw new ConvexError('Post not found');
+  if (existing.authorId !== profile._id) throw new ConvexError('Only the author can edit a post');
+  if (existing.moderationStatus !== 'visible')
+    throw new ConvexError('This post has been moderated and can no longer be edited');
+  const checked = validatePostInput({ title: words.title, body: words.body });
+  if (!checked.ok) {
+    throw new ConvexError({
+      code: 'invalid_post',
+      errors: checked.errors.map((e) => `${e.field}: ${e.message}`),
+    });
+  }
+  const { title, body } = checked.normalized;
+  if (title === existing.title && body === existing.body) return;
+  await recordRevision(
+    ctx,
+    { targetType: 'post', targetId: existing._id, snapshot: postSnapshotOf(existing) },
+    profile._id,
+    now,
+  );
+  await ctx.db.patch(existing._id, { title, body, editedAt: now, updatedAt: now });
 }

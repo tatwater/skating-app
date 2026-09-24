@@ -63,13 +63,28 @@ const TERM_SECTION: Record<MinimumSetTerm, SheetSection | null> = {
  * The state is the store's (`sheetStore`), not this screen's, so the hand-off to the map for
  * *mark one here* and the body picker over it leave nothing behind.
  */
-export function ReportSheet({ onDone }: { onDone: () => void }) {
+export function ReportSheet({
+  onDone,
+  notice = null,
+}: {
+  onDone: () => void;
+  /** Why another door did not replace this sheet — shown while its changes are still unsaved. */
+  notice?: string | null;
+}) {
   const post = useSheet();
   if (post === null) return null;
-  return <SheetBody post={post} onDone={onDone} />;
+  return <SheetBody post={post} onDone={onDone} notice={post.dirty ? notice : null} />;
 }
 
-function SheetBody({ post, onDone }: { post: PostSheet; onDone: () => void }) {
+function SheetBody({
+  post,
+  onDone,
+  notice,
+}: {
+  post: PostSheet;
+  onDone: () => void;
+  notice: string | null;
+}) {
   const router = useRouter();
   const leaving = useIsLeaving();
   const profile = useQuery(api.profiles.current, {});
@@ -370,6 +385,11 @@ function SheetBody({ post, onDone }: { post: PostSheet; onDone: () => void }) {
           editing={editing}
         />
 
+        {notice ? (
+          <Text color="$warning" fontSize={13} paddingHorizontal={14} paddingTop={12}>
+            {notice}
+          </Text>
+        ) : null}
         {message ? (
           <Text color="$danger" fontSize={13} paddingHorizontal={14} paddingTop={12}>
             {message}

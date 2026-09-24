@@ -6,7 +6,9 @@ import {
   isFlushable,
   isHazardItemFlushable,
   isHeldDraft,
+  POST_SENT_COPY,
   type PostDraft,
+  postCreateSent,
   postDraftLabel,
   reportDraftEndTime,
   WAITING_TO_SEND_COPY,
@@ -93,6 +95,9 @@ function DraftRow({
   onDelete: () => void;
 }) {
   const pending = isFlushable(draft);
+  // A sent Post may be live, and the queue resends it as it went: an edit here would be dropped by
+  // the server's idempotent create without a word (PR #77 review), so none is offered.
+  const sent = postCreateSent(draft);
   const latest = Math.max(...draft.reports.map(reportDraftEndTime).filter(Number.isFinite));
   return (
     <YStack
@@ -120,11 +125,16 @@ function DraftRow({
           {draft.errorMessage}
         </Text>
       ) : null}
+      {sent ? (
+        <Text color="$foregroundMuted" fontSize={12}>
+          {POST_SENT_COPY}
+        </Text>
+      ) : null}
       <XStack gap="$2" justifyContent="flex-end">
         <Button size="$2" chromeless onPress={onDelete}>
           Delete
         </Button>
-        {draft.status === 'done' ? null : (
+        {draft.status === 'done' || sent ? null : (
           <Button size="$2" onPress={onEdit}>
             Edit
           </Button>

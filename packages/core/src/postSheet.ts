@@ -70,7 +70,7 @@ export interface SheetReport {
 
 export type SheetMode =
   | { kind: 'create' }
-  /** A published Report opened from its page: *Save changes* runs `reports.update` (and `posts.update` for the words). */
+  /** A published Report opened from its page: *Save changes* runs one `reports.update`, the Post's words included. */
   | { kind: 'edit'; reportId: string; postId?: string };
 
 /** Which door opened the sheet — only the layout reads it (the tab focuses the prose). */

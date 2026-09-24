@@ -4,6 +4,8 @@ import {
   BODY_FEATURE_TYPE_LABELS,
   BODY_FEATURE_TYPES,
   type BodyFeatureType,
+  CHORD_MESSAGES,
+  type ChordResult,
   DEFAULT_SAMPLE_SPACING_KM,
   DEPTH_SOURCE_LABELS,
   type DepthSource,
@@ -18,6 +20,7 @@ import {
   referenceLinkError,
   SATELLITE_MIN_AREA_SQM,
   type SatelliteImageryMode,
+  type SubAreaMouth,
   satelliteImageryAvailable,
   seasonOf,
   snapToEdge,
@@ -32,6 +35,7 @@ import { ConvexError } from 'convex/values';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
+import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
@@ -40,6 +44,13 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import {
+  type ChordDrawControl,
+  type ChordMap,
+  type ChordState,
+  chordInstruction,
+  createChordDraw,
+} from '../lib/chordDraw';
 import { createPolygonDraw, type PolygonDrawControl, parsePastedPolygon } from '../lib/polygonDraw';
 
 /**
@@ -168,6 +179,8 @@ function LakeEditor() {
                   name: s.name,
                   polygon: s.polygon as GeoJSON.Geometry,
                   centroid: s.centroid,
+                  // A stale mouth is not the bay's edge any more — drawing it would say it was.
+                  ...(s.mouth && !s.mouthStale ? { mouth: s.mouth } : {}),
                 })),
               putIns: putIns ?? [],
               parkingAreas: access?.parking ?? [],
@@ -208,6 +221,7 @@ function LakeEditor() {
           <ProminenceTool body={body} onResult={setBanner} />
           <SubAreaTool
             waterBodyId={waterBodyId}
+            parentPolygon={body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon}
             subAreas={subAreas ?? []}
             draft={draft}
             setDraft={setDraft}
@@ -316,6 +330,11 @@ function ToolCard({ title, children }: { title: string; children: React.ReactNod
  * remaining claim, so both stay findable — what displays and what is searchable are different
  * questions. The caption below says so, because a moderator hesitating over "will this break
  * search?" is exactly the hesitation that leaves 463 rows unworked.
+ *
+ * **The one text field: a body no publisher named.** Low Plains in Elkins is an unnamed NHD row the
+ * community skates by name (founder call, 2026-09-21). With zero catalog claims there is no third
+ * name to invent beside two attributed ones — the moderator's word is the attribution — so the
+ * card offers a field instead of a picker, and the mutation accepts it only in that case.
  */
 function NameTool({
   body,
@@ -341,6 +360,10 @@ function NameTool({
     if (sources) sources.push(c.source);
     else options.set(key, [c.source]);
   }
+
+  // Nameless, or named only by a community claim: the mutation's free-text case, mirrored here.
+  const communityNamed = !claims.some((c) => c.source !== 'user') && (!body.name || overridden);
+  if (communityNamed) return <CommunityNameTool body={body} onResult={onResult} />;
 
   // A body every publisher agrees on has nothing to decide, and a card offering one button is noise
   // on 24,000 of 25,136 rows.
@@ -406,6 +429,76 @@ function NameTool({
               }}
             >
               Clear the override
+            </button>
+            .
+          </>
+        ) : null}
+      </p>
+    </ToolCard>
+  );
+}
+
+/** The free-text half of {@link NameTool}: a body with no catalog name, or only a community one. */
+function CommunityNameTool({
+  body,
+  onResult,
+}: {
+  body: { _id: string; name: string };
+  onResult: SetBanner;
+}) {
+  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const [draft, setDraft] = useState(body.name);
+  const trimmed = draft.trim();
+  const unchanged = trimmed === body.name;
+
+  return (
+    <ToolCard title="Name">
+      <div className="flex items-end gap-2">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Label htmlFor="community-name">Community name</Label>
+          <Input
+            id="community-name"
+            value={draft}
+            placeholder="What skaters call it"
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={trimmed.length === 0 || unchanged}
+          onClick={async () => {
+            try {
+              await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: trimmed });
+              onResult({ tone: 'ok', text: `Named "${trimmed}".` });
+            } catch (err) {
+              onResult({ tone: 'error', text: errorText(err) });
+            }
+          }}
+        >
+          {body.name ? 'Rename' : 'Name it'}
+        </Button>
+      </div>
+      <p className="text-foreground-muted text-sm">
+        No catalog names this body, so the name is yours to give — it is recorded against you and
+        survives the next import.
+        {body.name ? (
+          <>
+            {' '}
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={async () => {
+                try {
+                  await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
+                  setDraft('');
+                  onResult({ tone: 'ok', text: 'Back to unnamed.' });
+                } catch (err) {
+                  onResult({ tone: 'error', text: errorText(err) });
+                }
+              }}
+            >
+              Clear the name
             </button>
             .
           </>
@@ -725,15 +818,21 @@ function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner })
 }
 
 /**
- * Sub-areas (D60) — draw, paste, rename, delist.
+ * Sub-areas (D60, D201) — by chord, freehand, or pasted; rename, delist; and the queue.
  *
- * Drawing is lazy: the terra-draw import only happens when someone actually arms it, so the engine
- * never reaches a skater's bundle. Paste-GeoJSON sits beside it permanently rather than as a hidden
- * fallback — it's how a shape traced elsewhere gets in, and it's the break-glass path if the draw
- * control breaks.
+ * **The chord is the default** (D201): two clicks on the shore, a click on the side, a bow if the
+ * open water belongs to the bay. The card sends the *mouth* and the server derives the outline; the
+ * yellow draft on the map is that same derivation, run here, so what is previewed is what is
+ * stored. Freehand drawing stays for the shapes a chord cannot say (terra-draw, lazy — the engine
+ * never reaches a skater's bundle), and paste-GeoJSON beside it is the break-glass path.
+ *
+ * The queue at the bottom is this lake's open bay asks (`name_bay` requests): Draw prefills the
+ * name, flies to the point and arms the chord tool with the request attached, so saving the bay
+ * answers the ask in the same write.
  */
 function SubAreaTool({
   waterBodyId,
+  parentPolygon,
   subAreas,
   draft,
   setDraft,
@@ -741,12 +840,16 @@ function SubAreaTool({
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  parentPolygon: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   subAreas: readonly {
     _id: string;
     name: string;
     aliases: string[];
+    bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number };
     removed: boolean;
     systemDelistReason?: string;
+    mouth?: SubAreaMouth;
+    mouthStale?: string;
   }[];
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
@@ -754,12 +857,18 @@ function SubAreaTool({
   onResult: SetBanner;
 }) {
   const create = useMutation(api.subAreas.create);
+  const createFromChord = useMutation(api.subAreas.createFromChord);
+  const updateChord = useMutation(api.subAreas.updateChord);
   const redraw = useMutation(api.subAreas.redraw);
   const rename = useMutation(api.subAreas.rename);
   const remove = useMutation(api.subAreas.remove);
   const restore = useMutation(api.subAreas.restore);
+  const approveRequest = useMutation(api.corpusRequests.approve);
+  const declineRequest = useMutation(api.corpusRequests.decline);
   // Per-bay evidence beside the redraw control (A09): the mouth-line count and the depth's currency.
   const stats = useQuery(api.subAreas.adminStatsForBody, { waterBodyId });
+  // The lake's open bay asks (D201) — the queue the moderator works down.
+  const queue = useQuery(api.corpusRequests.openBayRequestsForBody, { waterBodyId });
 
   const [name, setName] = useState('');
   const [aliases, setAliases] = useState('');
@@ -769,16 +878,146 @@ function SubAreaTool({
   const [redrawTarget, setRedrawTarget] = useState<string | null>(null);
   const controlRef = useRef<PolygonDrawControl | null>(null);
 
+  // The chord tool's state, mirrored from the control so the card can render the instruction, the
+  // refusal and the save button; `mouth` is set only when the gesture is complete. The control is
+  // remembered *with the map it was built on*: `useMapCanvas` rebuilds the map on a theme change
+  // or a bounds change, and a control kept across that would drive a removed map.
+  const chordRef = useRef<{ map: maplibregl.Map; control: ChordDrawControl } | null>(null);
+  const [chord, setChord] = useState<ChordState | null>(null);
+  const [mouth, setMouth] = useState<SubAreaMouth | null>(null);
+  /** The bay whose mouth is being set or moved; absent for a new one. */
+  const [chordTarget, setChordTarget] = useState<string | null>(null);
+  /** The queue row being drawn — approved by the save. */
+  const [chordRequest, setChordRequest] = useState<string | null>(null);
+  /** Why the current mouth makes no polygon — the derivation's own message, inline. */
+  const [chordRefusal, setChordRefusal] = useState<string | null>(null);
+
+  /** Tear a control down without letting a map that is already gone turn it into a throw. */
+  const dropChord = () => {
+    try {
+      chordRef.current?.control.destroy();
+    } catch {
+      // The map was removed first (a rebuild, or the route's unmount order); nothing to detach.
+    }
+    chordRef.current = null;
+  };
+
   useEffect(() => {
     return () => {
       controlRef.current?.destroy();
       controlRef.current = null;
+      try {
+        chordRef.current?.control.destroy();
+      } catch {
+        // The map is removed before this cleanup runs (LakeEditorMap's own effect); nothing to detach.
+      }
+      chordRef.current = null;
     };
   }, []);
 
-  const arm = async () => {
+  /** The tool's own derivation — the same one the server runs — becomes the yellow draft. */
+  const preview = (next: SubAreaMouth | null, result: ChordResult | null) => {
+    setMouth(next);
+    if (!next || !result) {
+      setDraft(null);
+      setChordRefusal(null);
+      return;
+    }
+    if (result.ok) {
+      setDraft(result.polygon);
+      setChordRefusal(null);
+    } else {
+      setDraft(null);
+      setChordRefusal(CHORD_MESSAGES[result.reason]);
+    }
+  };
+
+  /** The control on the map that is live now — rebuilt if the map was. */
+  const chordControl = (): ChordDrawControl | null => {
+    const map = mapRef.current;
+    if (!map) return null;
+    if (chordRef.current && chordRef.current.map !== map) dropChord();
+    if (!chordRef.current) {
+      // The tool drives the slice of the map it declares; MapLibre's `on` overloads are wider
+      // than that slice, which is the only reason for the cast.
+      const control = createChordDraw(map as unknown as ChordMap, {
+        parent: parentPolygon,
+        onChange: (state, next, result) => {
+          setChord({ ...state });
+          preview(next, result);
+        },
+      });
+      chordRef.current = { map, control };
+    }
+    return chordRef.current.control;
+  };
+
+  /** The live control, or nothing — never one bound to a map that has been rebuilt. */
+  const liveChord = (): ChordDrawControl | null =>
+    chordRef.current && chordRef.current.map === mapRef.current ? chordRef.current.control : null;
+
+  /** Put the chord tool away — its layers, its mouth, the bay and the ask it was drawing for. */
+  const disarmChord = () => {
+    const live = liveChord();
+    if (live) live.clear();
+    else dropChord();
+    setChord(null);
+    setMouth(null);
+    setChordRefusal(null);
+    setChordTarget(null);
+    setChordRequest(null);
+  };
+
+  const disarmAll = () => {
+    controlRef.current?.clear();
+    controlRef.current?.stopDrawing();
+    setDrawing(false);
+    disarmChord();
+    setRedrawTarget(null);
+    setDraft(null);
+  };
+
+  /** Arm the chord tool — for a new bay, or to set / move an existing bay's mouth. */
+  const armChord = (target?: {
+    subAreaId: string;
+    mouth?: SubAreaMouth;
+    bbox?: { minLat: number; minLng: number; maxLat: number; maxLng: number };
+  }) => {
+    disarmAll();
+    const control = chordControl();
+    if (!control) return;
+    setChordTarget(target?.subAreaId ?? null);
+    // Frame the bay being edited: on a giant the camera is wherever the last tool left it, and a
+    // mouth loaded off-screen is a handle nobody can find.
+    if (target?.bbox) {
+      mapRef.current?.fitBounds(
+        [
+          [target.bbox.minLng, target.bbox.minLat],
+          [target.bbox.maxLng, target.bbox.maxLat],
+        ],
+        { padding: 80, maxZoom: 14 },
+      );
+    }
+    if (target?.mouth) control.load(target.mouth);
+    else control.start();
+  };
+
+  const drawFromQueue = (row: BayRequestRow) => {
+    armChord();
+    setName(row.name);
+    setAliases(row.aliases.join(', '));
+    setChordRequest(row.requestId);
+    // The camera is locked to the lake, so this can only land somewhere on it. An ask with no
+    // point of its own (a skater's, from the drawer) leaves the camera alone — the name is the lead.
+    if (row.coord) mapRef.current?.flyTo({ center: [row.coord.lng, row.coord.lat], zoom: 13 });
+  };
+
+  /** Arm freehand drawing — for a new bay, or to replace `target`'s outline. */
+  const arm = async (target?: string) => {
     const map = mapRef.current;
     if (!map) return;
+    disarmAll();
+    setRedrawTarget(target ?? null);
     try {
       if (!controlRef.current) {
         controlRef.current = await createPolygonDraw(map, {
@@ -795,6 +1034,49 @@ function SubAreaTool({
         tone: 'error',
         text: "Couldn't load the draw tool. Paste the outline as GeoJSON instead — it does the same thing.",
       });
+    }
+  };
+
+  const saveChord = async () => {
+    if (!mouth) return;
+    try {
+      if (chordTarget) {
+        await updateChord({ subAreaId: chordTarget as Id<'waterBodySubAreas'>, mouth });
+        onResult({ tone: 'ok', text: 'Mouth set. Reports and hazards are being re-stamped.' });
+      } else {
+        if (!name.trim()) {
+          onResult({ tone: 'error', text: 'A sub-area needs a name.' });
+          return;
+        }
+        const saved = await createFromChord({
+          waterBodyId,
+          name: name.trim(),
+          mouth,
+          ...(aliases.trim()
+            ? {
+                aliases: aliases
+                  .split(',')
+                  .map((a) => a.trim())
+                  .filter(Boolean),
+              }
+            : {}),
+          ...(chordRequest ? { requestId: chordRequest as Id<'waterBodyRequests'> } : {}),
+        });
+        onResult({
+          tone: 'ok',
+          text:
+            saved.request === 'approved'
+              ? `Drew “${name.trim()}” and answered the ask.`
+              : saved.request === 'already_decided'
+                ? `Drew “${name.trim()}”. The ask had already been answered elsewhere, and keeps that answer.`
+                : `Drew “${name.trim()}”.`,
+        });
+        setName('');
+        setAliases('');
+      }
+      disarmAll();
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
     }
   };
 
@@ -847,7 +1129,7 @@ function SubAreaTool({
           </p>
         ) : (
           subAreas.map((bay) => (
-            <div key={bay._id} className="flex items-center justify-between gap-2 text-sm">
+            <div key={bay._id} className="flex flex-col gap-1 text-sm">
               <span
                 className={bay.removed ? 'text-foreground-muted line-through' : 'text-foreground'}
               >
@@ -861,6 +1143,10 @@ function SubAreaTool({
                 {bay.systemDelistReason ? (
                   <span className="block text-warning text-xs">{bay.systemDelistReason}</span>
                 ) : null}
+                {/* A mouth the moved shoreline no longer fits (D201) — Edit mouth is the fix. */}
+                {bay.mouthStale ? (
+                  <span className="block text-warning text-xs">{bay.mouthStale}</span>
+                ) : null}
                 {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
                     automatic: a bay's seaward edge is a judgment a skater can prove wrong by
                     skating past it, and this is where the proof collects for a human to act on. */}
@@ -873,16 +1159,18 @@ function SubAreaTool({
                   ) : null;
                 })()}
               </span>
-              <span className="flex shrink-0 gap-1">
+              <span className="flex flex-wrap gap-1">
+                {/* The mouth is the fact a chord bay is derived from (D201): a chord bay re-opens
+                    with it; a free-drawn one can be given one, after which the chord is its fact. */}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setRedrawTarget(bay._id);
-                    void arm();
-                  }}
+                  onClick={() => armChord({ subAreaId: bay._id, mouth: bay.mouth, bbox: bay.bbox })}
                 >
-                  Redraw
+                  {bay.mouth ? 'Edit mouth' : 'Redraw by chord'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => void arm(bay._id)}>
+                  {bay.mouth ? 'Redraw freehand' : 'Redraw'}
                 </Button>
                 <Button
                   variant="outline"
@@ -931,7 +1219,7 @@ function SubAreaTool({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Malletts Bay"
-            disabled={redrawTarget !== null}
+            disabled={redrawTarget !== null || chordTarget !== null}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -941,7 +1229,7 @@ function SubAreaTool({
             value={aliases}
             onChange={(e) => setAliases(e.target.value)}
             placeholder="Mallets Bay, Inland Sea"
-            disabled={redrawTarget !== null}
+            disabled={redrawTarget !== null || chordTarget !== null}
           />
           <p className="text-foreground-muted text-xs">
             Aliases are what make search reach a bay — the corpus spells Malletts ten ways, and the
@@ -950,29 +1238,54 @@ function SubAreaTool({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant={drawing ? 'secondary' : 'outline'} size="sm" onClick={arm}>
-            {drawing ? 'Drawing — click the outline' : 'Draw outline'}
+          <Button
+            variant={chord ? 'secondary' : 'default'}
+            size="sm"
+            onClick={() => armChord()}
+            disabled={chord !== null}
+          >
+            {chord ? 'Drawing by chord' : 'Draw by chord'}
           </Button>
-          {draft ? (
-            <>
-              <Button size="sm" onClick={save}>
-                {redrawTarget ? 'Replace outline' : 'Save sub-area'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setDraft(null);
-                  setRedrawTarget(null);
-                  controlRef.current?.clear();
-                }}
-              >
-                Discard
-              </Button>
-            </>
+          <Button variant={drawing ? 'secondary' : 'outline'} size="sm" onClick={() => void arm()}>
+            {drawing ? 'Drawing — click the outline' : 'Draw freehand'}
+          </Button>
+          {chord && mouth && draft ? (
+            <Button size="sm" onClick={saveChord}>
+              {chordTarget ? 'Save mouth' : 'Save sub-area'}
+            </Button>
+          ) : null}
+          {!chord && draft ? (
+            <Button size="sm" onClick={save}>
+              {redrawTarget ? 'Replace outline' : 'Save sub-area'}
+            </Button>
+          ) : null}
+          {chord || draft ? (
+            <Button variant="outline" size="sm" onClick={disarmAll}>
+              Discard
+            </Button>
           ) : null}
         </div>
-        {redrawTarget ? (
+        {chord ? (
+          <p className="text-foreground-muted text-xs" data-testid="chord-instruction">
+            {chordInstruction(chord)}
+            {chord.refusal ? ` ${CHORD_MESSAGES[chord.refusal]}` : ''}
+          </p>
+        ) : null}
+        {chordRefusal ? (
+          <p className="text-warning text-xs" role="alert">
+            {chordRefusal}
+          </p>
+        ) : null}
+        {chord && mouth && draft ? (
+          <p className="text-foreground-muted text-xs">
+            The yellow shape is what will be stored — the shore exactly, the mouth line
+            {mouth.sagittaM === 0
+              ? ' straight'
+              : ` bowed ${Math.round(Math.abs(mouth.sagittaM))} m ${mouth.sagittaM > 0 ? 'out' : 'in'}`}
+            .
+          </p>
+        ) : null}
+        {redrawTarget || chordTarget ? (
           <p className="text-foreground-muted text-xs">
             Replacing an existing outline. Its name and aliases are untouched.
           </p>
@@ -995,6 +1308,11 @@ function SubAreaTool({
                 onResult({ tone: 'error', text: parsed.error });
                 return;
               }
+              // A pasted shape replaces an active chord rather than sitting beside it: with the
+              // chord still armed, Save would store the chord's polygon, not the one on screen
+              // (Greptile, PR #76). A freehand redraw target stays — pasting is how one replaces
+              // an outline too.
+              disarmChord();
               setDraft(parsed.polygon);
               setPaste('');
               onResult({ tone: 'ok', text: 'Loaded as a draft — check it on the map, then save.' });
@@ -1004,6 +1322,29 @@ function SubAreaTool({
           </Button>
         </details>
       </div>
+
+      <BayRequestQueue
+        rows={queue ?? []}
+        busy={chordRequest}
+        onDraw={drawFromQueue}
+        onApprove={async (row) => {
+          try {
+            await approveRequest({ requestId: row.requestId as Id<'waterBodyRequests'> });
+            onResult({ tone: 'ok', text: `Approved — “${row.name}” answers the ask.` });
+          } catch (err) {
+            onResult({ tone: 'error', text: errorText(err) });
+          }
+        }}
+        onDecline={async (row, note) => {
+          try {
+            await declineRequest({ requestId: row.requestId as Id<'waterBodyRequests'>, note });
+            onResult({ tone: 'ok', text: `Declined — “${row.name}” stays a reference point.` });
+          } catch (err) {
+            onResult({ tone: 'error', text: errorText(err) });
+            throw err;
+          }
+        }}
+      />
     </ToolCard>
   );
 }

@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
@@ -8,6 +7,7 @@ import { AuthCard } from '../components/AuthCard';
 import { RiskAckConsent } from '../components/RiskAckConsent';
 import { Button } from '../components/ui/button';
 import { RISK_ACK_VERSION } from '../lib/riskAck';
+import { useSignOut } from '../lib/sheetOwner';
 
 /**
  * Re-acceptance gate (D45). Reached when a signed-in user already has a profile but its
@@ -19,7 +19,7 @@ import { RISK_ACK_VERSION } from '../lib/riskAck';
 export const Route = createFileRoute('/reack')({ component: ReAckPage });
 
 function ReAckPage() {
-  const { signOut } = useAuth();
+  const signOut = useSignOut();
   const acceptCurrentRiskAck = useMutation(api.profiles.acceptCurrentRiskAck);
 
   const [ack, setAck] = useState(false);

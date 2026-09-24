@@ -1,3 +1,4 @@
+import { requestNameKey } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -831,6 +832,35 @@ describe('the parent-listing cascade', () => {
     // the stamp deterministically, and therefore silently wrongly.
     expect(row?.removedAt).toBeDefined();
     expect(await cellCount(t, dupe)).toBe(0);
+  });
+
+  test('a merge judges "the same bay" by the rule a create does — spelling folds and aliases too', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const survivor = await seedBody(t, 'Lake Champlain');
+    const loser = await seedBody(t, 'Champlain Lake');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: survivor,
+      name: 'Malletts Bay',
+      aliases: ['Inland Sea'],
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const apostrophe = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: loser,
+      name: "Mallett's Bay",
+      polygon: rect(-73.25, 44.15, -72.95, 44.45),
+    });
+    const byAlias = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: loser,
+      name: 'inland sea',
+      polygon: rect(-73.4, 44.6, -73.3, 44.7),
+    });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    await settle(t);
+    const rows = await t.run((ctx) =>
+      Promise.all([apostrophe, byAlias].map((id) => ctx.db.get(id))),
+    );
+    expect(rows.map((r) => r?.removedAt !== undefined)).toEqual([true, true]);
   });
 
   /** A canonical body with an `externalId`, so `importCanonical` upserts it rather than inserting. */
@@ -2507,4 +2537,482 @@ describe('the depth lane’s two ends (A09 PR 2)', () => {
     expect(fresh).toMatchObject({ written: 1, refused: [] });
     expect(snapshotAt).toBeLessThanOrEqual(Date.now());
   });
+});
+
+/**
+ * Sub-areas by chord (D201): the server derives the polygon from the mouth against the stored
+ * parent, the mouth rides the row, a free-draw redraw clears it, and a re-import re-derives from it.
+ */
+describe('sub-areas by chord (D201)', () => {
+  /** A chord across the lake's south-west corner: the east-going shore from `a`, the chord back. */
+  const CORNER = {
+    a: { lat: 44.2, lng: -73.5 }, // on the west shore
+    b: { lat: 44.0, lng: -73.3 }, // on the south shore
+    side: { lat: 44.05, lng: -73.45 }, // inside the corner triangle
+    sagittaM: 0,
+  };
+
+  async function seedCanonicalBody(t: ReturnType<typeof convexTest>) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Champlain',
+        searchText: 'Lake Champlain',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId: 'way/1',
+        osmId: 'way/1',
+        polygon: LAKE,
+        bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
+        centroid: { lat: 44.5, lng: -73.0 },
+        surfaceAreaSqM: 8.7e9,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  async function bayRequest(
+    t: ReturnType<typeof convexTest>,
+    requesterId: Id<'profiles'>,
+    waterBodyId: Id<'waterBodies'>,
+    name: string,
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_bay' as const,
+        status: 'open' as const,
+        requesterId,
+        coord: CORNER.side,
+        waterBodyId,
+        name,
+        nameKey: requestNameKey(name),
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  test('stores the mouth beside the derived polygon, on the lake’s own shore, and audits the chord', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      aliases: ['SW Corner'],
+      mouth: CORNER,
+    });
+
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.mouth).toEqual(CORNER);
+    // The polygon is the walked shoreline plus the chord: its extent is the corner, exactly.
+    expect(row?.bbox).toEqual({ minLat: 44.0, minLng: -73.5, maxLat: 44.2, maxLng: -73.3 });
+    expect(row?.subAreaKey).toMatch(/^sa_/);
+    expect(row?.fetchProfileM?.length).toBe(16);
+
+    const listed = await mod.as.query(api.subAreas.listForBody, { waterBodyId: body });
+    expect(listed[0]?.mouth).toEqual(CORNER);
+
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodySubArea').eq('targetId', id as string),
+        )
+        .collect(),
+    );
+    expect(audits.map((a) => a.action)).toEqual(['create_sub_area']);
+    expect(audits[0]?.metadata).toMatchObject({ via: 'chord', sagittaM: 0 });
+  });
+
+  test('a bay drawn from a request approves it — and every open ask for the same bay', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
+    const requestId = await bayRequest(t, one.id, body, 'Corner Bay');
+    const sibling = await bayRequest(t, two.id, body, 'corner bay');
+    const unrelated = await bayRequest(t, two.id, body, 'Other Bay');
+    // The decision closes the asks that existed when it was made: under fake timers every insert
+    // lands a hair after the frozen clock, so let the clock pass them first.
+    vi.advanceTimersByTime(1_000);
+
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId,
+    });
+
+    const rows = await t.run((ctx) =>
+      Promise.all([requestId, sibling, unrelated].map((r) => ctx.db.get(r))),
+    );
+    expect(rows.map((r) => r?.status)).toEqual(['approved', 'approved', 'open']);
+    const audit = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodyRequest').eq('targetId', requestId as string),
+        )
+        .first(),
+    );
+    expect(audit?.action).toBe('approve_request');
+    expect(audit?.metadata).toMatchObject({ kind: 'name_bay', subAreaId: id });
+  });
+
+  test('a request decided while the bay was being drawn does not roll the drawing back', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const requestId = await bayRequest(t, one.id, body, 'Corner Bay');
+    await t.run((ctx) =>
+      ctx.db.patch(requestId, {
+        status: 'declined',
+        decidedAt: Date.now(),
+        decidedByUserId: mod.id,
+      }),
+    );
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId,
+    });
+    expect(await t.run((ctx) => ctx.db.get(id))).not.toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('declined');
+  });
+
+  test('the save says what happened to the ask, so the editor never claims an answer it did not give', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const open = await bayRequest(t, one.id, body, 'Corner Bay');
+    const first = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId: open,
+    });
+    expect(first.request).toBe('approved');
+    const plain = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Other Bay',
+      mouth: {
+        ...CORNER,
+        a: { lat: 44.9, lng: -73.5 },
+        b: { lat: 45.0, lng: -73.4 },
+        side: { lat: 44.97, lng: -73.48 },
+      },
+    });
+    expect(plain.request).toBeUndefined();
+  });
+
+  test('a new bay is refused when another already answers to its name or an alias', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'NW Bay',
+      polygon: rect(-73.5, 44.8, -73.4, 44.9),
+    });
+    await expect(
+      mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Northwest Bay',
+        aliases: ['NW Bay'],
+        mouth: CORNER,
+      }),
+    ).rejects.toThrow(/already has a sub-area called "NW Bay"/);
+  });
+
+  test('restore re-derives a chord bay from its mouth — the shore it comes back to, not the one it left', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const mouth = {
+      a: { lat: 44.2, lng: -72.5 },
+      b: { lat: 44.0, lng: -72.7 },
+      side: { lat: 44.05, lng: -72.65 },
+      sagittaM: 0,
+    };
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth,
+    });
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+    // The east shore moves while the bay is retired; the re-clip skips delisted rows.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          osmId: 'way/1',
+          name: 'Lake Champlain',
+          type: 'lakePond' as const,
+          polygon: rect(-73.5, 44.0, -72.6, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.6 },
+          centroid: { lat: 44.5, lng: -73.05 },
+          surfaceAreaSqM: 7.8e9,
+        },
+      ],
+    });
+    await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
+    // Re-derived: the hypotenuse starts at the re-snapped point on the new shore.
+    expect(ring.some(([lng, lat]) => lng === -72.6 && lat === 44.2)).toBe(true);
+    expect(row?.mouthStale).toBeUndefined();
+  });
+
+  test('stores the mouth as used — points snapped onto the shore, the sagitta clamped — never the raw click', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      // Ten meters off each shore, and a sagitta far past a semicircle.
+      mouth: {
+        ...CORNER,
+        a: { lat: 44.2, lng: -73.4999 },
+        b: { lat: 44.0001, lng: -73.3 },
+        sagittaM: 1e9,
+      },
+    });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.mouth?.a.lng).toBeCloseTo(-73.5, 9);
+    expect(row?.mouth?.b.lat).toBeCloseTo(44.0, 9);
+    expect(row?.mouth?.sagittaM).toBeLessThan(20_000);
+    expect(row?.mouth?.sagittaM).toBeGreaterThan(0);
+  });
+
+  test('a bay saved under another name does not answer the ask — unless it keeps the asked name as an alias', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const requestId = await bayRequest(t, one.id, body, 'Keeler Bay');
+
+    await expect(
+      mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        mouth: CORNER,
+        requestId,
+      }),
+    ).rejects.toThrow(/doesn't carry the name that was asked for/);
+    // Nothing was written: the refusal rolls the whole save back.
+    expect(await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect())).toHaveLength(0);
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
+
+    await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      aliases: ['Keeler Bay'],
+      mouth: CORNER,
+      requestId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('approved');
+  });
+
+  test('refuses a request that is not a bay ask on this lake, and draws nothing', async () => {
+    const t = harness();
+    const here = await seedCanonicalBody(t);
+    const there = await seedBody(t, 'Lake George');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const elsewhere = await bayRequest(t, one.id, there, 'Corner Bay');
+
+    await expect(
+      mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: here,
+        name: 'Corner Bay',
+        mouth: CORNER,
+        requestId: elsewhere,
+      }),
+    ).rejects.toThrow(/not a bay request on this lake/);
+    expect(await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect())).toHaveLength(0);
+  });
+
+  test('a refused construction is a ConvexError the editor can render, by code', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await expect(
+      mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Nothing Bay',
+        mouth: { ...CORNER, b: CORNER.a },
+      }),
+    ).rejects.toMatchObject({
+      data: { code: 'sub_area_coincident', message: expect.stringMatching(/same spot/) },
+    });
+  });
+
+  test('a free-drawn bay can be redrawn by chord, and a chord bay redrawn freehand loses its mouth', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      polygon: rect(-73.5, 44.0, -73.4, 44.1),
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.mouth).toBeUndefined();
+
+    await mod.as.mutation(api.subAreas.updateChord, { subAreaId: id, mouth: CORNER });
+    let row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.mouth).toEqual(CORNER);
+    expect(row?.bbox.maxLng).toBe(-73.3);
+    // A geometry change: the derived depth is owed again (A09), as after any redraw.
+    expect(row?.geometryUpdatedAt).toBeDefined();
+
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: id,
+      polygon: rect(-73.5, 44.0, -73.4, 44.1),
+    });
+    row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.mouth).toBeUndefined();
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodySubArea').eq('targetId', id as string),
+        )
+        .collect(),
+    );
+    expect(audits.at(-1)?.metadata).toMatchObject({ mouthCleared: true });
+  });
+
+  test('a re-import that moves the shore re-derives a chord bay from its mouth, not from its old shape', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // Across the south-east corner: `a` on the east shore, `b` on the south shore.
+    const mouth = {
+      a: { lat: 44.2, lng: -72.5 },
+      b: { lat: 44.0, lng: -72.7 },
+      side: { lat: 44.05, lng: -72.65 },
+      sagittaM: 0,
+    };
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth,
+    });
+
+    // The refined outline pulls the east shore 0.1° west. `a` re-snaps to the new shore and the
+    // bay's hypotenuse now runs from (−72.6, 44.2) — a vertex a plain clip of the old triangle
+    // could never produce (the clip would cut the old hypotenuse at (−72.6, 44.1)).
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          osmId: 'way/1',
+          name: 'Lake Champlain',
+          type: 'lakePond' as const,
+          polygon: rect(-73.5, 44.0, -72.6, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.6 },
+          centroid: { lat: 44.5, lng: -73.05 },
+          surfaceAreaSqM: 7.8e9,
+        },
+      ],
+    });
+
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.removedAt).toBeUndefined();
+    expect(row?.mouth).toEqual(mouth); // the fact is kept; the shape follows it
+    const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
+    expect(ring.some(([lng, lat]) => lng === -72.6 && lat === 44.2)).toBe(true);
+    expect(ring.some(([lng, lat]) => lng === -72.6 && Math.abs((lat ?? 0) - 44.1) < 1e-6)).toBe(
+      false,
+    );
+  });
+
+  test('a re-import that leaves the mouth’s shore alone leaves the chord bay alone', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+    });
+    const before = await t.run((ctx) => ctx.db.get(id));
+
+    // Only the north shore moves; the south-west corner is untouched.
+    await reimportLake(t, rect(-73.5, 44.0, -72.5, 44.9), { maxLat: 44.9 });
+
+    const after = await t.run((ctx) => ctx.db.get(id));
+    expect(after?.polygon).toEqual(before?.polygon);
+    expect(after?.geometryUpdatedAt).toBe(before?.geometryUpdatedAt);
+    const cells = await t.run((ctx) =>
+      ctx.db
+        .query('waterBodySubAreaCells')
+        .withIndex('by_sub_area', (q) => q.eq('subAreaId', id))
+        .collect(),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+  });
+
+  test('when the mouth no longer works on the new outline, the bay is re-clipped and the mouth kept for the editor', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // The side point sits just inside the corner.
+    const mouth = { ...CORNER, side: { lat: 44.01, lng: -73.49 } };
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth,
+    });
+
+    // The south shore moves north past the side point: it is on land now, in neither candidate,
+    // and the construction refuses. The plain re-clip still trims the stored shape to the new
+    // outline (Decision 10 survives), and the mouth stays on the row as the editor's starting point.
+    await reimportLake(t, rect(-73.5, 44.02, -72.5, 45.0), { minLat: 44.02 });
+
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.removedAt).toBeUndefined();
+    expect(row?.mouth).toEqual(mouth);
+    expect(row?.bbox.minLat).toBeCloseTo(44.02, 6);
+    // Never silent (D5): the row says the mouth needs fixing, and the editor reads it.
+    expect(row?.mouthStale).toMatch(/no longer fits/);
+    const listed = await mod.as.query(api.subAreas.listForBody, { waterBodyId: body });
+    expect(listed.find((b) => b._id === id)?.mouthStale).toMatch(/Edit the mouth/);
+    // The fix is a mouth save, and it clears the note.
+    await mod.as.mutation(api.subAreas.updateChord, {
+      subAreaId: id,
+      mouth: { ...mouth, side: { lat: 44.05, lng: -73.45 } },
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.mouthStale).toBeUndefined();
+  });
+
+  function reimportLake(
+    t: ReturnType<typeof convexTest>,
+    polygon: ReturnType<typeof rect>,
+    box: Partial<{ minLat: number; minLng: number; maxLat: number; maxLng: number }>,
+  ) {
+    return t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          osmId: 'way/1',
+          name: 'Lake Champlain',
+          type: 'lakePond' as const,
+          polygon,
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5, ...box },
+          centroid: { lat: 44.5, lng: -73.0 },
+          surfaceAreaSqM: 7.8e9,
+        },
+      ],
+    });
+  }
 });

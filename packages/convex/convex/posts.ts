@@ -22,7 +22,6 @@ import {
   seasonEndMs,
   seasonOf,
   seasonStartMs,
-  validatePostInput,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
@@ -31,8 +30,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
 import { requireContributor, requireProfile } from './lib/auth';
 import { bodyInfoFor, loadFeedViewer, servedFeedSeason, toPostCard } from './lib/feedCards';
-import { createPost, postArgs } from './lib/reportWrite';
-import { postSnapshotOf, recordRevision } from './lib/revisions';
+import { createPost, editPostWords, postArgs } from './lib/reportWrite';
 import { authorRemovePost } from './moderation';
 
 /**
@@ -66,42 +64,19 @@ export const create = mutation({
 
 /**
  * An author editing their Post's words (A10-3): the title and the prose, last-write-wins like
- * `reports.update` — an omitted field is a cleared one, so the sheet sends both. What the Post
- * said before goes to `contentRevisions` first, in the same transaction. Members are edited
- * through `reports.update`; a Post never gains a Report after it is created (founder call
+ * `reports.update` — an omitted field is a cleared one. What the Post said before goes to
+ * `contentRevisions` first, in the same transaction (`editPostWords`). Members are edited through
+ * `reports.update`, which takes the Post's words too, so the sheet's *Save changes* is one
+ * transaction; a Post never gains a Report after it is created (founder call
  * 2026-09-21: new Reports come as new Posts — notifications fire at create, the sort key would
  * jump, and anything keyed on a Post later would muddy).
  */
 export const update = mutation({
   args: { postId: v.id('posts'), title: v.optional(v.string()), body: v.optional(v.string()) },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { postId, title, body }) => {
     const profile = await requireContributor(ctx);
-    const existing = await ctx.db.get(args.postId);
-    if (!existing) throw new ConvexError('Post not found');
-    if (existing.authorId !== profile._id) throw new ConvexError('Only the author can edit a post');
-    if (existing.moderationStatus !== 'visible')
-      throw new ConvexError('This post has been moderated and can no longer be edited');
-    const words = validatePostInput({ title: args.title, body: args.body });
-    if (!words.ok) {
-      throw new ConvexError({
-        code: 'invalid_post',
-        errors: words.errors.map((e) => `${e.field}: ${e.message}`),
-      });
-    }
-    const now = Date.now();
-    await recordRevision(
-      ctx,
-      { targetType: 'post', targetId: existing._id, snapshot: postSnapshotOf(existing) },
-      profile._id,
-      now,
-    );
-    await ctx.db.patch(existing._id, {
-      title: words.normalized.title,
-      body: words.normalized.body,
-      editedAt: now,
-      updatedAt: now,
-    });
-    return existing._id;
+    await editPostWords(ctx, postId, { title, body }, profile, Date.now());
+    return postId;
   },
 });
 

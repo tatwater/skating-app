@@ -29,12 +29,13 @@
 
 import {
   ACCESS_ALERT_TTL_MS,
+  type AccessAlertKind,
   type AccessAlertVote,
   accessAlertExpiryFor,
   accessAlertIsLive,
+  accessAlertKindOf,
   currentSeason,
   deriveAccessAlertLifecycle,
-  isAccessCondition,
   isMinor,
   seasonEndMs,
   seasonOf,
@@ -50,7 +51,12 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
-import { ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS, ACCESS_REASONS } from './lib/enums';
+import {
+  ACCESS_ALERT_KINDS,
+  ACCESS_ALERT_TARGETS,
+  ACCESS_ALERT_VERDICTS,
+  ACCESS_REASONS,
+} from './lib/enums';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -194,6 +200,7 @@ export const create = mutation({
         : { parkingAreaId: args.parkingAreaId }),
       waterBodyId,
       reason: args.reason,
+      kind: accessAlertKindOf(args.reason),
       note,
       createdByUserId: profile._id,
       ...(report ? { reportId: report._id } : {}),
@@ -420,29 +427,24 @@ const LIVE_STATUSES = ['active', 'official'] as const;
  * lifecycle rather than participating in it.
  */
 /**
- * 4. **Blockers and conditions are capped separately** (A10-3 §7.2, the cap the A10-2 build
- *    owed). Both kinds ride the same rows and the same index, so once the sheet files conditions a
- *    lake with many live "plank needed" rows could push a live "gate locked" out of one shared
- *    window — and `blockedIds` is built from that window. Two takes over the same `active` range,
- *    each filtered to its reason set before the cap, bound each kind on its own. The filter runs
- *    over the range the index already narrowed to provably-live rows, so the scan is bounded by
- *    what is live on the lake either way; no reason column in the index, no schema change.
+ * 4. **Blockers and conditions are capped separately, in the range** (A10-3 §7.2, the cap the
+ *    A10-2 build owed). Both kinds ride the same rows, so once the sheet files conditions a lake
+ *    with many live "plank needed" rows could push a live "gate locked" out of one shared window —
+ *    and `blockedIds` is built from that window. The first cut took two windows over one range,
+ *    each filtered to its reason set before the take; that bounded the answer but not the read —
+ *    a lake of live planks was a scan to find its gate (PR #75 review). `kind` is now an index key
+ *    (`accessAlerts.kind`), so each `(status, kind)` range holds only its kind and the take is the
+ *    whole read. Four ranges per target, as before — not one per reason, which the lot walk below
+ *    (up to `MAX_LOT_LINKS_SCANNED` lots) would multiply past a function's call budget.
  */
-const ALERT_KINDS = ['blocker', 'condition'] as const;
-type AlertKind = (typeof ALERT_KINDS)[number];
-
-const REASONS_OF_KIND: Record<AlertKind, readonly string[]> = {
-  blocker: ACCESS_REASONS.filter((r) => !isAccessCondition(r)),
-  condition: ACCESS_REASONS.filter((r) => isAccessCondition(r)),
-};
 
 /**
  * The `(status, kind)` pages one live read takes — every status × every kind, because `setOfficial`
  * pins whatever row a moderator names, a condition as readily as a blocker; a page left out here is
  * a pinned row that vanishes from the lake.
  */
-const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AlertKind }[] =
-  LIVE_STATUSES.flatMap((status) => ALERT_KINDS.map((kind) => ({ status, kind })));
+const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AccessAlertKind }[] =
+  LIVE_STATUSES.flatMap((status) => ACCESS_ALERT_KINDS.map((kind) => ({ status, kind })));
 
 async function liveAlertsByBody(
   ctx: QueryCtx,
@@ -453,11 +455,10 @@ async function liveAlertsByBody(
     LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_water_body_status_expires_at', (q) => {
-          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status);
+        .withIndex('by_water_body_status_kind_expires_at', (q) => {
+          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status).eq('kind', kind);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
-        .filter((q) => q.or(...REASONS_OF_KIND[kind].map((r) => q.eq(q.field('reason'), r))))
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),
@@ -474,11 +475,10 @@ async function liveAlertsByParkingArea(
     LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_parking_area_status_expires_at', (q) => {
-          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status);
+        .withIndex('by_parking_area_status_kind_expires_at', (q) => {
+          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status).eq('kind', kind);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
-        .filter((q) => q.or(...REASONS_OF_KIND[kind].map((r) => q.eq(q.field('reason'), r))))
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),

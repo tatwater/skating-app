@@ -3,14 +3,16 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Match a curated shortlist of regional skating destinations to corpus bodies and apply curatedBoost (A06c §2.3a/§4). Not built or deployed.",
+  "description": "Match a curated shortlist of regional skating destinations to corpus bodies and apply curatedBoost (A06c \u00a72.3a/\u00a74). Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "seed": "tsx src/cli.ts",
     "seed-standing": "tsx src/standing.ts",
-    "build-input": "tsx src/buildInputCli.ts"
+    "build-input": "tsx src/buildInputCli.ts",
+    "build-bay-requests": "tsx src/bayRequestsCli.ts build",
+    "seed-bay-requests": "tsx src/bayRequestsCli.ts seed"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

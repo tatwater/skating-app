@@ -1,0 +1,451 @@
+/**
+ * The chord tool — two clicks on the shore, a click on a side, a drag on the mouth line (D201).
+ *
+ * The drawing engine for a sub-area by chord, attached to the lake editor's map. Where
+ * `polygonDraw.ts` wraps terra-draw for a freeform ring, this needs no engine at all: the shape is
+ * never drawn, it is *derived* (`chordSubArea` in core), and the moderator's whole input is three
+ * points and a number. So the tool is a small state machine over map events and five GeoJSON
+ * sources it owns:
+ *
+ *  - `chord-cursor`      — the snapped shore point under the pointer, while a point is being placed
+ *  - `chord-candidates`  — the smaller region a chord bounds, shaded, while a side is being chosen
+ *  - `chord-line`        — the mouth line: the chord, or the arc of the current sagitta
+ *  - `chord-points`      — `a` and `b`, draggable once placed
+ *  - `chord-handle`      — the arc's apex, draggable to set the sagitta
+ *
+ * Everything the tool computes, it computes in core with the same functions the server runs, so
+ * the preview the moderator sees is the polygon the write will store. The tool itself never
+ * writes; the card beside the map does, with the mouth this reports.
+ *
+ * Typed against the slice of `maplibregl.Map` it touches, so a test can drive it with a fake and
+ * the module never imports `maplibre-gl` (the editor already has the map; this only borrows it).
+ */
+
+import {
+  arcApex,
+  type ChordRejection,
+  type ChordResult,
+  chordArc,
+  chordCandidates,
+  chordSubArea,
+  type LatLng,
+  mouthArcSide,
+  onCandidateWater,
+  type SubAreaMouth,
+  sagittaFromHandle,
+  snapToOutline,
+} from '@skating/core';
+import type { MultiPolygon, Polygon } from 'geojson';
+
+/** The slice of `maplibregl.Map` the tool drives. */
+export interface ChordMap {
+  on(type: string, handler: (e: ChordMapEvent) => void): unknown;
+  on(type: string, layer: string, handler: (e: ChordMapEvent) => void): unknown;
+  off(type: string, handler: (e: ChordMapEvent) => void): unknown;
+  off(type: string, layer: string, handler: (e: ChordMapEvent) => void): unknown;
+  addSource(id: string, spec: { type: 'geojson'; data: GeoJSON.FeatureCollection }): unknown;
+  addLayer(spec: Record<string, unknown>): unknown;
+  getSource(id: string): { setData: (data: GeoJSON.FeatureCollection) => void } | undefined;
+  getLayer(id: string): unknown;
+  removeLayer(id: string): unknown;
+  removeSource(id: string): unknown;
+  getCanvas(): { style: { cursor: string } };
+  dragPan: { enable(): void; disable(): void };
+}
+
+export interface ChordMapEvent {
+  lngLat: { lng: number; lat: number };
+  preventDefault?: () => void;
+}
+
+/** Where the moderator is in the gesture. */
+export type ChordStep = 'a' | 'b' | 'side' | 'done';
+
+export interface ChordState {
+  step: ChordStep;
+  a?: LatLng;
+  b?: LatLng;
+  side?: LatLng;
+  sagittaM: number;
+  /** Why the last click was refused — the two points on different rings, say. */
+  refusal?: ChordRejection;
+}
+
+export interface ChordDrawControl {
+  /** Arm from nothing: the next click on the shore is `a`. */
+  start(): void;
+  /** Re-open a stored mouth, ready to adjust. */
+  load(mouth: SubAreaMouth): void;
+  state(): ChordState;
+  /** Drop everything drawn and disarm. */
+  clear(): void;
+  /** `clear`, then take the layers and handlers off the map. */
+  destroy(): void;
+}
+
+export interface ChordDrawOptions {
+  /** The parent's polygon — what the points snap to and the candidates are cut from. */
+  parent: Polygon | MultiPolygon;
+  /**
+   * Every settled change of state — a click, the end of a drag, a load — with the mouth and its
+   * derivation once the gesture is complete. **Not on every pointer move during a drag**: the
+   * derivation clips against the whole parent, and a handle drag on Champlain would run it per
+   * event; the tool redraws its own line and handle live and reports once the pointer lifts.
+   */
+  onChange: (state: ChordState, mouth: SubAreaMouth | null, preview: ChordResult | null) => void;
+}
+
+const SOURCES = ['chord-candidates', 'chord-line', 'chord-points', 'chord-handle', 'chord-cursor'];
+const LAYERS = [
+  'chord-candidates-fill',
+  'chord-candidates-line',
+  'chord-line',
+  'chord-points',
+  'chord-handle',
+  'chord-cursor',
+];
+const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+/** One sentence for the card, per step — the tool's only copy. */
+export function chordInstruction(state: ChordState): string {
+  switch (state.step) {
+    case 'a':
+      return 'Click the shore on one side of the mouth.';
+    case 'b':
+      return 'Click the shore on the other side of the mouth — the same shore, or the same island.';
+    case 'side':
+      return 'Click the bay: the shaded side, or the water across the line if the bay is the other side.';
+    case 'done':
+      return 'Drag the handle to bow the mouth line — out to take in open water, in to leave it. Drag a point to move it.';
+  }
+}
+
+function point(p: LatLng, properties: Record<string, unknown> = {}): GeoJSON.Feature {
+  return { type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties };
+}
+
+export function createChordDraw(map: ChordMap, options: ChordDrawOptions): ChordDrawControl {
+  const { parent } = options;
+  let state: ChordState = { step: 'a', sagittaM: 0 };
+  let armed = false;
+  /**
+   * The two candidates, un-clipped. A side click counts only on *water* in one of them
+   * (`onCandidateWater`) — on an island ring the larger candidate is mostly island land, and a click
+   * there must not count (Greptile, PR #76) — and nothing is clipped to answer that.
+   */
+  let sides: Polygon[] | null = null;
+  /**
+   * Which way "out" is for the arc, judged at the mouth (`mouthArcSide`) rather than from the raw
+   * click, which in a hook-shaped bay can sit across the chord's line. Cached on the three points:
+   * a handle drag moves only the sagitta and must not re-walk the ring per pointer event.
+   */
+  let arcSideFor: { key: string; side: LatLng } | null = null;
+  const arcSide = (a: LatLng, b: LatLng, side: LatLng): LatLng => {
+    const key = [a.lat, a.lng, b.lat, b.lng, side.lat, side.lng].join(',');
+    if (arcSideFor?.key !== key) {
+      arcSideFor = { key, side: mouthArcSide(parent, { a, b, side, sagittaM: 0 }) };
+    }
+    return arcSideFor.side;
+  };
+  let dragging: 'a' | 'b' | 'handle' | null = null;
+
+  for (const id of SOURCES) map.addSource(id, { type: 'geojson', data: EMPTY });
+  map.addLayer({
+    id: 'chord-candidates-fill',
+    type: 'fill',
+    source: 'chord-candidates',
+    paint: {
+      'fill-color': ['case', ['boolean', ['get', 'smaller'], false], '#14b8a6', '#64748b'],
+      'fill-opacity': ['case', ['boolean', ['get', 'smaller'], false], 0.3, 0.15],
+    },
+  });
+  map.addLayer({
+    id: 'chord-candidates-line',
+    type: 'line',
+    source: 'chord-candidates',
+    paint: { 'line-color': '#14b8a6', 'line-width': 1, 'line-dasharray': [2, 2] },
+  });
+  map.addLayer({
+    id: 'chord-line',
+    type: 'line',
+    source: 'chord-line',
+    paint: { 'line-color': '#f97316', 'line-width': 3 },
+  });
+  map.addLayer({
+    id: 'chord-points',
+    type: 'circle',
+    source: 'chord-points',
+    paint: {
+      'circle-radius': 7,
+      'circle-color': '#ffffff',
+      'circle-stroke-color': '#f97316',
+      'circle-stroke-width': 3,
+    },
+  });
+  map.addLayer({
+    id: 'chord-handle',
+    type: 'circle',
+    source: 'chord-handle',
+    paint: {
+      'circle-radius': 8,
+      'circle-color': '#f97316',
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 2,
+    },
+  });
+  map.addLayer({
+    id: 'chord-cursor',
+    type: 'circle',
+    source: 'chord-cursor',
+    paint: {
+      'circle-radius': 6,
+      'circle-color': 'rgba(0,0,0,0)',
+      'circle-stroke-color': '#f97316',
+      'circle-stroke-width': 2,
+    },
+  });
+
+  const setData = (id: string, features: GeoJSON.Feature[]) => {
+    map.getSource(id)?.setData({ type: 'FeatureCollection', features });
+  };
+
+  const mouth = (): SubAreaMouth | null =>
+    state.step === 'done' && state.a && state.b && state.side
+      ? { a: state.a, b: state.b, side: state.side, sagittaM: state.sagittaM }
+      : null;
+
+  /** Redraw the tool's own layers; report to the card unless a drag is in flight. */
+  const render = (report = true) => {
+    const { a, b, side } = state;
+    setData('chord-points', [
+      ...(a ? [point(a, { which: 'a' })] : []),
+      ...(b ? [point(b, { which: 'b' })] : []),
+    ]);
+    if (a && b && state.step === 'done' && side) {
+      const out = arcSide(a, b, side);
+      const line = chordArc(a, b, out, state.sagittaM);
+      setData('chord-line', [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: line.map((p) => [p.lng, p.lat]) },
+          properties: {},
+        },
+      ]);
+      setData('chord-handle', [point(arcApex(a, b, out, state.sagittaM))]);
+      setData('chord-candidates', []);
+    } else {
+      setData('chord-line', []);
+      setData('chord-handle', []);
+    }
+    if (!report) return;
+    const m = mouth();
+    options.onChange(state, m, m ? chordSubArea(parent, m) : null);
+  };
+
+  /** Cut the candidates for `a`/`b` and shade them, or report why there are none. */
+  const cut = (): boolean => {
+    const { a, b } = state;
+    if (!a || !b) return false;
+    const result = chordCandidates(parent, a, b);
+    if (!result.ok) {
+      sides = null;
+      state = { ...state, refusal: result.reason };
+      setData('chord-candidates', []);
+      return false;
+    }
+    sides = result.sides;
+    state = { ...state, refusal: undefined };
+    // Only the smaller side is shaded — the default, and nearly always the bay. The other side is
+    // most of the lake; clipping it to shade it froze the editor on Champlain, and the lake's own
+    // fill already shows where it is. A click on it still counts.
+    setData(
+      'chord-candidates',
+      result.smallerWater
+        ? [
+            {
+              type: 'Feature' as const,
+              geometry: result.smallerWater,
+              properties: { side: result.smaller, smaller: true },
+            },
+          ]
+        : [],
+    );
+    return true;
+  };
+
+  /**
+   * Is a side click on water in either candidate? Which side it names is the derivation's call
+   * (the smallest containing candidate, which matters on an island where they nest); the tool only
+   * refuses a click on neither — or on land.
+   */
+  const inACandidate = (p: LatLng): boolean => sides !== null && onCandidateWater(parent, sides, p);
+
+  const onMouseMove = (e: ChordMapEvent) => {
+    if (!armed) return;
+    const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+    if (dragging) {
+      if (dragging === 'handle') {
+        if (state.a && state.b && state.side) {
+          const out = arcSide(state.a, state.b, state.side);
+          state = { ...state, sagittaM: sagittaFromHandle(state.a, state.b, out, at) };
+        }
+      } else {
+        const hit = snapToOutline(parent, at);
+        if (hit) state = { ...state, [dragging]: hit.point };
+      }
+      render(false);
+      return;
+    }
+    if (state.step === 'a' || state.step === 'b') {
+      const hit = snapToOutline(parent, at);
+      setData('chord-cursor', hit ? [point(hit.point)] : []);
+      if (state.step === 'b' && state.a && hit) {
+        setData('chord-line', [
+          {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [state.a.lng, state.a.lat],
+                [hit.point.lng, hit.point.lat],
+              ],
+            },
+            properties: {},
+          },
+        ]);
+      }
+    }
+  };
+
+  const onClick = (e: ChordMapEvent) => {
+    if (!armed || dragging) return;
+    const at = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+    if (state.step === 'a') {
+      const hit = snapToOutline(parent, at);
+      if (!hit) return;
+      state = { ...state, a: hit.point, step: 'b' };
+      render();
+      return;
+    }
+    if (state.step === 'b') {
+      const hit = snapToOutline(parent, at);
+      if (!hit) return;
+      state = { ...state, b: hit.point };
+      // A refused pair keeps `a` and waits for another `b`: the message says why.
+      if (cut()) {
+        state = { ...state, step: 'side' };
+        setData('chord-cursor', []);
+      } else {
+        state = { ...state, b: undefined };
+      }
+      render();
+      return;
+    }
+    if (state.step === 'side') {
+      if (!inACandidate(at)) return; // a click on neither region is not a choice
+      state = { ...state, side: at, step: 'done' };
+      render();
+    }
+  };
+
+  /** The state a drag started from — restored when the drag ends somewhere the chord refuses. */
+  let beforeDrag: ChordState | null = null;
+  const startDrag = (which: 'a' | 'b' | 'handle') => (e: ChordMapEvent) => {
+    if (!armed || state.step !== 'done') return;
+    e.preventDefault?.();
+    dragging = which;
+    beforeDrag = state;
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = 'grabbing';
+  };
+  const onPointsDown = (e: ChordMapEvent) => {
+    // Nearer of the two: MapLibre reports the layer hit, not which feature, and the tool keeps
+    // no feature ids — the pointer is on one of two circles and the closer one is it.
+    const { a, b } = state;
+    if (!a || !b) return;
+    const d = (p: LatLng) => Math.hypot(p.lng - e.lngLat.lng, p.lat - e.lngLat.lat);
+    startDrag(d(a) <= d(b) ? 'a' : 'b')(e);
+  };
+  const onHandleDown = startDrag('handle');
+  const onMouseUp = () => {
+    if (!dragging) return;
+    const was = dragging;
+    dragging = null;
+    map.dragPan.enable();
+    map.getCanvas().style.cursor = 'crosshair';
+    state = { ...state, refusal: undefined };
+    if (was !== 'handle') {
+      // A moved point re-cuts the candidates. A refused pair (dragged onto an island, say) puts
+      // the point back where it was and says why — the moderator keeps the gesture, not a wedge
+      // whose only exit is Discard. A pair that cut fine keeps the side if it is still in a
+      // candidate and steps back to choosing when it is not.
+      if (!cut()) {
+        const refusal = state.refusal;
+        if (beforeDrag) state = { ...beforeDrag, refusal };
+        cut();
+        state = { ...state, refusal };
+        setData('chord-candidates', []);
+      } else if (state.side && inACandidate(state.side)) {
+        setData('chord-candidates', []);
+      } else {
+        state = { ...state, side: undefined, step: 'side' };
+      }
+    }
+    beforeDrag = null;
+    render();
+  };
+
+  map.on('mousemove', onMouseMove);
+  map.on('click', onClick);
+  map.on('mousedown', 'chord-points', onPointsDown);
+  map.on('mousedown', 'chord-handle', onHandleDown);
+  map.on('mouseup', onMouseUp);
+
+  const reset = () => {
+    state = { step: 'a', sagittaM: 0 };
+    sides = null;
+    arcSideFor = null;
+    dragging = null;
+    for (const id of SOURCES) setData(id, []);
+  };
+
+  return {
+    start: () => {
+      reset();
+      armed = true;
+      map.getCanvas().style.cursor = 'crosshair';
+      render();
+    },
+    load: (stored) => {
+      reset();
+      armed = true;
+      map.getCanvas().style.cursor = 'crosshair';
+      // Re-snap: the shoreline may have moved since the mouth was stored.
+      const a = snapToOutline(parent, stored.a)?.point ?? stored.a;
+      const b = snapToOutline(parent, stored.b)?.point ?? stored.b;
+      state = { step: 'done', a, b, side: stored.side, sagittaM: stored.sagittaM };
+      cut();
+      setData('chord-candidates', []);
+      render();
+    },
+    state: () => state,
+    clear: () => {
+      reset();
+      armed = false;
+      map.getCanvas().style.cursor = '';
+      options.onChange(state, null, null);
+    },
+    destroy: () => {
+      reset();
+      armed = false;
+      map.getCanvas().style.cursor = '';
+      map.off('mousemove', onMouseMove);
+      map.off('click', onClick);
+      map.off('mousedown', 'chord-points', onPointsDown);
+      map.off('mousedown', 'chord-handle', onHandleDown);
+      map.off('mouseup', onMouseUp);
+      for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
+      for (const id of SOURCES) map.removeSource(id);
+    },
+  };
+}

@@ -16,7 +16,9 @@ The parent matched; the bay is not drawn. **None has an OSM polygon** (A07a alre
 one that did); 39 exist as a point, the rest are spelling variants, landmarks or prose locatives.
 Automatic outlining from the point was tried (disc, then narrowest-chord) and found a real mouth
 on 1 of 39 — retired. The corpus splits the 39 by *skated* messages: **16 destinations** (skated in
-≥ 2 messages) are the queue for [`features/subarea-chord-editor.md`](../features/subarea-chord-editor.md);
+≥ 2 messages) are `name_bay` requests for the chord editor (D201, shipped 2026-09-21 —
+`seed-bay-requests` files them from `seed/bays/bay-requests.json`, built by `build-bay-requests`
+from `mentions.csv` + `classification.csv`, and the rule reproduces the sixteen exactly);
 **23 reference points** become labels through [`features/named-landmarks.md`](../features/named-landmarks.md).
 "The Broads" exists on **both** Sunapee and Winnipesaukee.
 
@@ -246,4 +248,16 @@ pond. Kept so the day Q16 (what Québec needs) is answered, the demand list alre
   Stumpfield Marsh, Round Pond, Moose Pond, Horseshoe Pond, Lily Pond, Melvin Bay) — a dedup
   question for the catalog (D36/D92), not a naming one. 3 unresolved: Aziscohos Lake (lake vs
   pond 8 km apart), Half Moon Lake and Mill Pond (likely genuine gaps → list 2).
+- ✅ 2026-09-21 — seven NH bodies from the founder's list + a group leader's seasonal journal, **7
+  boosts applied** (campaign `nh-gaps-20260921`, `scripts/seed-destinations/destinations.nh-gaps.json`):
+  Lake Wentworth and Comerford resolved by a per-entry `radiusKm` (the 25 km default is what let
+  Wentworth Pond and the McIndoes pool — both NHD-named "Connecticut River Reservoir" — tie);
+  Pemigewasset Lake renamed to OSM's spelling over NHD's "Pemingewasset" (`setWaterBodyName`, a
+  `user` claim that outranks every campaign); Half Moon Lake is the catalog's one-word "Halfmoon
+  Lake" in Alton, not a gap; Eagle Lake's September `near` was the posters' town, 84 km off;
+  **Low Plains** is the unnamed NHD row `wb_f419b737…` south of Elkins (8 ha, 1.7 km of shore),
+  named from free text under the new no-catalog-claim rule and pinned on the season watcher.
+  Still open: the Lower Lake of the Clouds (no catalog row — a tap on the map through A07b's admit
+  path would try 3DHP), and "Comerford Reservoir" as a display name (NHD's generic name is a
+  catalog claim, so the picker rule holds).
 - ⚪ Lists 2, 3, 5 noted for later (founder, 2026-09-19).

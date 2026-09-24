@@ -15,12 +15,15 @@ import {
   createQueuedConfirmation,
   type DraftPhoto,
   flushErrorMessage,
+  POST_SENT_COPY,
   type PostSheet,
   photoUploadCoord,
+  postCreateSent,
   type SheetReport,
   selectedValues,
   toPostDraft,
   toReportInput,
+  updateReport,
 } from '@skating/core';
 import { randomUUID } from 'expo-crypto';
 import { uploadToStorage } from '../components/photoPipeline';
@@ -28,6 +31,7 @@ import { convex } from './convex';
 import { isPersistedUri, persistDraftPhoto } from './draftPhotos';
 import { getDraft, saveDraft, saveHazardItem } from './draftStore';
 import { flushDrafts, isDraftFlushing, takeFlushResult } from './flushService';
+import { updateSheet } from './sheetStore';
 
 /** Copy each picked photo out of the picker cache into the drafts dir, once. */
 async function persistPhotos(draftId: string, report: SheetReport): Promise<DraftPhoto[]> {
@@ -63,6 +67,7 @@ export const DRAFT_SYNCING_MESSAGE = 'This post is sending right now — try aga
  */
 function assertNotFlushing(post: PostSheet): void {
   if (isDraftFlushing(post.draftId)) throw new Error(DRAFT_SYNCING_MESSAGE);
+  if (postCreateSent(getDraft(post.draftId))) throw new Error(POST_SENT_COPY);
 }
 
 /** Hold the sheet as a draft on the phone. Returns the sheet with its photos on durable paths. */
@@ -114,9 +119,17 @@ export type PostOutcome =
  * the server's sentence, which is returned so the sheet can show it in place.
  */
 export async function postSheet(post: PostSheet, now: number): Promise<PostOutcome> {
-  if (isDraftFlushing(post.draftId)) return { kind: 'refused', message: DRAFT_SYNCING_MESSAGE };
+  const busy = () =>
+    isDraftFlushing(post.draftId)
+      ? DRAFT_SYNCING_MESSAGE
+      : postCreateSent(getDraft(post.draftId))
+        ? POST_SENT_COPY
+        : null;
+  const before = busy();
+  if (before !== null) return { kind: 'refused', message: before };
   const persisted = await withPersistedPhotos(post);
-  if (isDraftFlushing(post.draftId)) return { kind: 'refused', message: DRAFT_SYNCING_MESSAGE };
+  const after = busy();
+  if (after !== null) return { kind: 'refused', message: after };
   saveDraft(toPostDraft(persisted, 'pending', now, getDraft(post.draftId)));
   queueConfirmations(persisted, now);
   await flushDrafts();
@@ -131,50 +144,86 @@ export async function postSheet(post: PostSheet, now: number): Promise<PostOutco
   return { kind: 'queued' };
 }
 
-/** Upload one picked photo and create its row — the edit path's inline upload (no queue). */
-async function uploadPhoto(p: DraftPhoto): Promise<Id<'photos'>> {
+async function uploadBlob(uri: string): Promise<string> {
+  const url = await convex.mutation(api.photos.generateUploadUrl, {});
+  return uploadToStorage(url, uri);
+}
+
+/**
+ * Upload one picked photo and create its row — the edit path's inline upload (no queue), with the
+ * queue's checkpoints: each blob and the row are written onto the open sheet's photo the moment
+ * they land, so a *Save changes* retried after a partial failure re-sends only what is missing. A
+ * blob uploaded twice is a leak nothing can reclaim — a storage id no photo row names is invisible
+ * to `sweepOrphanPhotos` — while a row an abandoned edit never attaches is the sweep's to collect.
+ */
+async function uploadPhoto(
+  p: DraftPhoto,
+  checkpoint: (patch: Partial<DraftPhoto>) => void,
+): Promise<Id<'photos'>> {
   if (p.photoId !== undefined) return p.photoId as Id<'photos'>;
-  const [storageId, thumbStorageId] = await Promise.all(
-    [p.fullUri, p.thumbUri].map(async (uri) => {
-      const url = await convex.mutation(api.photos.generateUploadUrl, {});
-      return (await uploadToStorage(url, uri)) as Id<'_storage'>;
-    }),
-  );
-  return convex.mutation(api.photos.create, {
+  const landed = async (uri: string, field: 'fullStorageId' | 'thumbStorageId') => {
+    const id = await uploadBlob(uri);
+    checkpoint({ [field]: id });
+    return id;
+  };
+  const [storageId, thumbStorageId] = await Promise.all([
+    p.fullStorageId ?? landed(p.fullUri, 'fullStorageId'),
+    p.thumbStorageId ?? landed(p.thumbUri, 'thumbStorageId'),
+  ]);
+  const photoId = await convex.mutation(api.photos.create, {
     storageId: storageId as Id<'_storage'>,
     thumbStorageId: thumbStorageId as Id<'_storage'>,
     placeOnMap: p.placeOnMap,
     coord: photoUploadCoord(p.placeOnMap, p.coord),
   });
+  checkpoint({ photoId });
+  return photoId;
+}
+
+/** Write a landed upload onto the open sheet's photo — the sheet's doing, so not a dirty edit. */
+function checkpointPhoto(reportId: string, photoId: string, patch: Partial<DraftPhoto>): void {
+  updateSheet((sheet) =>
+    updateReport(
+      sheet,
+      reportId,
+      (r) => ({ ...r, photos: r.photos.map((p) => (p.id === photoId ? { ...p, ...patch } : p)) }),
+      { quiet: true },
+    ),
+  );
 }
 
 /**
  * *Save changes* on the edit door: the Report's whole content block (last-write-wins, so the kept
- * photos lead and the new uploads follow), then the Post's words when it has a Post. Online only —
- * an edit is not queued. Throws with the server's sentence on refusal.
+ * photos lead and the new uploads follow) and the Post's words when it has a Post, in one
+ * `reports.update`. Online only — an edit is not queued. Throws with the server's sentence on
+ * refusal.
  */
 export async function saveSheetEdit(post: PostSheet, now: number): Promise<string> {
   if (post.mode.kind !== 'edit') throw new Error('Not an edit');
   // Core's model holds ids as plain strings; the cast is this surface's wire, like the photos'.
   const reportId = post.mode.reportId as Id<'reports'>;
-  const postId = post.mode.postId as Id<'posts'> | undefined;
   const report = post.reports[0];
   if (!report) throw new Error('Nothing to save');
   try {
-    const uploaded = await Promise.all(report.photos.map(uploadPhoto));
+    const uploaded = await Promise.all(
+      report.photos.map((p) => uploadPhoto(p, (patch) => checkpointPhoto(report.id, p.id, patch))),
+    );
     const { waterBodyId: _body, ...content } = toReportInput(report.sheet);
+    // One mutation for both halves — the Report's content and its Post's words — so a refusal of
+    // either lands neither, and the sheet's "couldn't save" is always true of the whole edit.
     await convex.mutation(api.reports.update, {
       ...content,
       reportId,
       photoIds: [...(report.keptPhotoIds as Id<'photos'>[]), ...uploaded],
+      ...(post.mode.postId !== undefined
+        ? {
+            post: {
+              ...(post.title.trim() ? { title: post.title.trim() } : {}),
+              ...(post.body.trim() ? { body: post.body.trim() } : {}),
+            },
+          }
+        : {}),
     });
-    if (postId !== undefined) {
-      await convex.mutation(api.posts.update, {
-        postId,
-        ...(post.title.trim() ? { title: post.title.trim() } : {}),
-        ...(post.body.trim() ? { body: post.body.trim() } : {}),
-      });
-    }
     queueConfirmations(post, now);
     void flushDrafts();
     return reportId;

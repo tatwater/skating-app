@@ -74,6 +74,7 @@ import type * as lib_reportSubAreas from "../lib/reportSubAreas.js";
 import type * as lib_reportVisibility from "../lib/reportVisibility.js";
 import type * as lib_reportWrite from "../lib/reportWrite.js";
 import type * as lib_reputation from "../lib/reputation.js";
+import type * as lib_requestDecisions from "../lib/requestDecisions.js";
 import type * as lib_resend from "../lib/resend.js";
 import type * as lib_revisions from "../lib/revisions.js";
 import type * as lib_sampling from "../lib/sampling.js";
@@ -183,6 +184,7 @@ declare const fullApi: ApiFromModules<{
   "lib/reportVisibility": typeof lib_reportVisibility;
   "lib/reportWrite": typeof lib_reportWrite;
   "lib/reputation": typeof lib_reputation;
+  "lib/requestDecisions": typeof lib_requestDecisions;
   "lib/resend": typeof lib_resend;
   "lib/revisions": typeof lib_revisions;
   "lib/sampling": typeof lib_sampling;

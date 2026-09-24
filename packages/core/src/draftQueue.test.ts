@@ -7,6 +7,7 @@ import {
   flushablePosts,
   flushErrorMessage,
   flushPost,
+  type HazardRefResolution,
   isFlushable,
   type PostDraft,
   type PostFlushEffects,
@@ -341,6 +342,31 @@ describe('flushPost — failures', () => {
     expect(calls.posts).toHaveLength(0);
   });
 
+  it('every leg is checked before any leg uploads — a sound first leg spends nothing on a Post its second leg sinks', async () => {
+    const draft = draftWith();
+    draft.reports = [
+      reportWith({ id: 'a', bodyName: 'Morey', photos: [photo('p1'), photo('p2')] }),
+      // The second leg fails the create-only rules (nothing observed) — known before any upload.
+      reportWith({ id: 'b', bodyName: 'Fairlee' }, emptyReportForm(NOW)),
+    ];
+    const { effects, calls } = makeEffects();
+    const res = await flushPost(draft, effects, NOW);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/^Fairlee: /);
+    expect(calls.uploads).toEqual([]);
+    expect(calls.rows).toEqual([]);
+    expect(calls.posts).toEqual([]);
+    // And the same when the second leg is invalid rather than under-observed.
+    const invalid = draftWith();
+    invalid.reports = [
+      reportWith({ id: 'a', bodyName: 'Morey', photos: [photo('p1')] }),
+      reportWith({ id: 'b', bodyName: 'Fairlee', waterBodyId: undefined, coord: undefined }),
+    ];
+    const second = makeEffects();
+    expect((await flushPost(invalid, second.effects, NOW)).ok).toBe(false);
+    expect(second.calls.uploads).toEqual([]);
+  });
+
   it('a ConvexError from createPost is permanent (parks in error)', async () => {
     const draft = draftWith();
     const { effects } = makeEffects({
@@ -464,7 +490,7 @@ describe('flushPost — the bundled hazards ride the draft (D55 / A10 §9.1)', (
     const { effects, calls } = makeEffects({
       resolveHazardId: async (localId) => {
         resolveCalls++;
-        return localId === 'local-7' ? 'srv-7' : null;
+        return localId === 'local-7' ? { kind: 'sent', hazardId: 'srv-7' } : { kind: 'gone' };
       },
     });
     const first = await flushPost(draft, effects, NOW);
@@ -479,12 +505,75 @@ describe('flushPost — the bundled hazards ride the draft (D55 / A10 §9.1)', (
     expect(resolveCalls).toBe(1); // checkpointed, so a retry does not ask again
   });
 
-  it('a hazard that cannot be resolved is left out, and never blocks the Post', async () => {
+  it('a hazard the author deleted from the queue is left out — there is nothing left to attach', async () => {
     const draft = draftWith({}, { hazardRefs: [{ localId: 'gone' }] });
-    const { effects, calls } = makeEffects({ resolveHazardId: async () => null });
+    const { effects, calls } = makeEffects({ resolveHazardId: async () => ({ kind: 'gone' }) });
     const res = await flushPost(draft, effects, NOW);
     expect(res.ok).toBe(true);
     expect(calls.reports[0]).not.toHaveProperty('attachHazardIds');
+  });
+
+  it('a checked hazard still waiting holds the Post in the queue — never posted without it', async () => {
+    const draft = draftWith(
+      {},
+      { hazardRefs: [{ hazardId: 'srv-1' }, { localId: 'q7' }], photos: [photo('p1')] },
+    );
+    let sent = false;
+    const { effects, calls } = makeEffects({
+      resolveHazardId: async () =>
+        sent ? { kind: 'sent', hazardId: 'srv-7' } : { kind: 'waiting' },
+    });
+    const held = await flushPost(draft, effects, NOW);
+    expect(held).toMatchObject({ ok: false, kind: 'transient' });
+    expect(held.draft.status).toBe('pending');
+    expect(isFlushable(held.draft)).toBe(true);
+    expect(calls.uploads).toEqual([]);
+    expect(calls.posts).toEqual([]);
+    // The hazard sends; the next drain posts the Post with it.
+    sent = true;
+    const res = await flushPost(held.draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(calls.reports[0]?.attachHazardIds).toEqual(['srv-1', 'srv-7']);
+  });
+
+  it('a checked hazard the server refused parks the Post with a sentence, by lake on a two-lake day', async () => {
+    const refused = 'A hazard you checked (Pressure ridge) could not be sent.';
+    const base = draftWith({}, { hazardRefs: [{ localId: 'q7' }], photos: [photo('p1')] });
+    const [first] = base.reports;
+    if (!first) throw new Error('fixture');
+    const twoLakes: PostDraft = {
+      ...base,
+      reports: [
+        { ...first, id: 'r1', bodyName: 'Shelburne Pond', hazardRefs: [] },
+        { ...first, id: 'r2', bodyName: 'Lake Iroquois' },
+      ],
+    };
+    const { effects, calls } = makeEffects({
+      resolveHazardId: async () => ({ kind: 'refused', message: refused }),
+    });
+    const res = await flushPost(twoLakes, effects, NOW);
+    expect(res).toMatchObject({
+      ok: false,
+      kind: 'permanent',
+      message: `Lake Iroquois: ${refused}`,
+    });
+    expect(res.draft.status).toBe('error');
+    expect(res.draft.errorMessage).toBe(`Lake Iroquois: ${refused}`);
+    expect(calls.uploads).toEqual([]);
+    expect(calls.posts).toEqual([]);
+  });
+
+  it('a draft whose create was already sent is not held or parked for a hazard — it may be live', async () => {
+    for (const resolution of [
+      { kind: 'waiting' },
+      { kind: 'refused', message: 'no' },
+    ] as const satisfies readonly HazardRefResolution[]) {
+      const { effects, calls } = makeEffects({ resolveHazardId: async () => resolution });
+      const resumed = draftWith({ status: 'creating' }, { hazardRefs: [{ localId: 'q7' }] });
+      const res = await flushPost(resumed, effects, NOW);
+      expect(res.ok).toBe(true);
+      expect(calls.reports[0]).not.toHaveProperty('attachHazardIds');
+    }
   });
 
   it('a ref that resolves to nothing does not count toward the minimum set — refused before the uploads', async () => {
@@ -494,7 +583,7 @@ describe('flushPost — the bundled hazards ride the draft (D55 / A10 §9.1)', (
       { hazardRefs: [{ localId: 'gone' }], photos: [photo('p1')] },
       dontGo,
     );
-    const { effects, calls } = makeEffects({ resolveHazardId: async () => null });
+    const { effects, calls } = makeEffects({ resolveHazardId: async () => ({ kind: 'gone' }) });
     const res = await flushPost(draft, effects, NOW);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.message).toMatch(/^Before this can post/);
@@ -570,7 +659,7 @@ describe('the create-only rules at flush (A10 §9.4)', () => {
       resolveHazardId: async () => {
         calls++;
         if (calls === 1) throw new Error('Network request failed');
-        return 'srv-1';
+        return { kind: 'sent', hazardId: 'srv-1' };
       },
     });
     const resumed = draftWith({ status: 'creating' }, { hazardRefs: [{ localId: 'q1' }] });
@@ -618,6 +707,8 @@ import {
   accessConditionFilings,
   accessConditionKey,
   isHeldDraft,
+  POST_SENT_COPY,
+  postCreateSent,
   reportDraftEndTime,
   reportDraftInput,
 } from './draftQueue';
@@ -658,6 +749,25 @@ describe('held drafts (A10-3 — a draft never auto-posts)', () => {
     expect(isFlushable(held)).toBe(false);
     expect(flushablePosts([held, draftWith()])).toHaveLength(1);
     expect(isHeldDraft(draftWith())).toBe(false);
+  });
+});
+
+describe('a sent Post (PR #77 review — a change after the send would be dropped)', () => {
+  it('is sent once the create went out, answered or not, and not before', () => {
+    expect(postCreateSent(null)).toBe(false);
+    expect(postCreateSent(undefined)).toBe(false);
+    for (const status of ['draft', 'pending', 'uploading', 'error'] as const) {
+      expect(postCreateSent(draftWith({ status }))).toBe(false);
+    }
+    // Sent, no answer: the Post may be live.
+    expect(postCreateSent(draftWith({ status: 'creating' }))).toBe(true);
+    // Landed, then a later step failed and put it back to `pending`: the Post is live.
+    expect(postCreateSent(draftWith({ status: 'pending', postId: 'post-1' }))).toBe(true);
+  });
+
+  it('says it may be up, never that it is, and where a change goes instead', () => {
+    expect(POST_SENT_COPY).toMatch(/may already be up/);
+    expect(POST_SENT_COPY).toMatch(/edit it from its page/);
   });
 });
 

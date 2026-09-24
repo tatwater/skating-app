@@ -3846,11 +3846,28 @@ export const reviewQueueCounts = query({
  * `searchText` is rebuilt from the winner **plus every other claim**, so the refused name stays
  * findable. What displays and what is searchable are different questions, and conflating them is the
  * outage this whole field exists to end.
+ *
+ * ## The one case free text is right: nobody named it at all
+ *
+ * 19,610 of NHD's bodies in our region carry no name from any publisher, and some of them are
+ * places the community skates by a name of its own — Low Plains in Elkins, the valley season
+ * opener in a group leader's journal, is an unnamed 8 ha NHD row (founder call, 2026-09-21). The
+ * objection to free text is that it invents a *third* name beside two attributed ones; on a row
+ * with **zero** catalog claims there is no first, and the moderator's word is the only attribution
+ * there will be. So a body with no catalog claim accepts a typed name, stored as the same `user`
+ * claim a pick would be — it outranks every future campaign the same way, and Clear returns the
+ * row to nameless. The moment a catalog does publish a name for the row, the picker rule applies
+ * again and the typed one is one of the claims to pick between. A skater-drawn body is *not* this
+ * case: it has a name and no claim to restore it from, so the free-text path skips it.
  */
 export const setWaterBodyName = mutation({
   args: {
     waterBodyId: v.id('waterBodies'),
-    /** One of the body's existing claims. `null` clears the override back to the ranked default. */
+    /**
+     * One of the body's existing claims — or, on a row with no catalog claim at all, the community's
+     * name as free text (see the module note). `null` clears the override back to the ranked
+     * default, which for a community-named row is nameless.
+     */
     name: v.union(v.string(), v.null()),
   },
   handler: async (ctx, { waterBodyId, name }) => {
@@ -3872,8 +3889,9 @@ export const setWaterBodyName = mutation({
     if (name === null) {
       // Back to whatever the catalogs rank first. Nothing to do if no override was ever set —
       // returning quietly rather than throwing, because a double-click on Clear is not an error.
+      // A community-named row (no catalog claim) goes back to nameless, not to the typed name.
       if (!claims.some((c) => c.source === 'user')) return waterBodyId;
-      const restored = catalog[0]?.value ?? body.name;
+      const restored = catalog[0]?.value ?? '';
       await ctx.db.patch(waterBodyId, {
         name: restored,
         nameClaims: catalog.length > 0 ? catalog : undefined,
@@ -3884,7 +3902,9 @@ export const setWaterBodyName = mutation({
         action: 'set_water_body_name',
         targetType: 'waterbody',
         targetId: waterBodyId,
-        reason: `Cleared the name override; back to "${restored}"`,
+        reason: restored
+          ? `Cleared the name override; back to "${restored}"`
+          : 'Cleared the community name; back to unnamed (no catalog claim)',
         metadata: { name: restored, prev: { name: body.name } },
         createdAt: Date.now(),
       });
@@ -3892,10 +3912,40 @@ export const setWaterBodyName = mutation({
     }
 
     const chosen = name.trim();
-    // **Must be a claim some publisher actually made.** The whole value of this field is that every
-    // name on the row is traceable to a source; accepting free text would put an unattributable
-    // string in the one place that promises attribution — and it is also how a typo becomes the
-    // stored name of a lake with no way to tell it from a real variant.
+    // **Must be a claim some publisher actually made** — unless no publisher made one. The whole
+    // value of this field is that every name on the row is traceable to a source; accepting free
+    // text beside catalog claims would put an unattributable string in the one place that promises
+    // attribution — and it is also how a typo becomes the stored name of a lake with no way to
+    // tell it from a real variant. On a row with no catalog claim at all the moderator *is* the
+    // source (see the module note), and the audit row names them.
+    //
+    // A skater-drawn body (`source: 'user'`) also has no catalog claim, but it has a name its
+    // author typed and no claim row to restore it from — so it is not this path's to rename. The
+    // rule is "nameless, or named only by a community claim": that keeps a typo in a community
+    // name fixable while leaving a drawn body's name where the editor put it.
+    const communityNamed =
+      catalog.length === 0 && (!body.name || claims.some((c) => c.source === 'user'));
+    if (communityNamed) {
+      if (chosen.length === 0) throw new ConvexError('A name is required');
+      const next = composeNameClaims([{ source: 'user', value: chosen }], catalog);
+      await ctx.db.patch(waterBodyId, {
+        name: chosen,
+        nameClaims: next,
+        searchText: searchTextFor(chosen, aliasesFor(next, chosen)),
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: actor._id,
+        action: 'set_water_body_name',
+        targetType: 'waterbody',
+        targetId: waterBodyId,
+        reason: body.name
+          ? `Community name "${chosen}" instead of "${body.name}" (no catalog claim)`
+          : `Community name "${chosen}" for an unnamed body (no catalog claim)`,
+        metadata: { name: chosen, source: 'user', prev: { name: body.name } },
+        createdAt: Date.now(),
+      });
+      return waterBodyId;
+    }
     const match = claims.find((c) => c.value.toLowerCase() === chosen.toLowerCase());
     if (match === undefined) {
       throw new ConvexError(
