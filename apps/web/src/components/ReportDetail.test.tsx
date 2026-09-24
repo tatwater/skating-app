@@ -49,10 +49,10 @@ const FIXTURE: ReportViewData = {
   authorName: 'Ada',
   skateEndTime: Date.UTC(2026, 0, 5, 19, 30),
   skateQuality: 'great',
-  iceTypes: ['black_ice'],
-  surfaceTags: ['orange_peel'],
+  iceTypes: ['Black ice'],
+  surfaceTags: ['Orange peel'],
   iceThickness: { readings: [{ valueCm: inchesToCm(4), method: 'measured' }] },
-  snowCoverCm: inchesToCm(1.5),
+  snow: { coverage: 'patches', depthCm: inchesToCm(1.5) },
   conditions: { airTempC: 0, windSpeedKph: 16.09344, windDir: 'NW', source: 'user' },
   notes: 'Best ice of the year.',
   photos: [
@@ -80,10 +80,40 @@ describe('ReportView', () => {
     expect(screen.getByText('Great')).toBeInTheDocument();
   });
 
+  it('shows the A10 axes — the who-claim first, the vantage off the ice, the sighting — and the Post’s words', async () => {
+    renderInDrawer(
+      <ReportView
+        data={{
+          ...FIXTURE,
+          suitability: 'dont_go',
+          observedFrom: 'shore',
+          sighting: 'open',
+          post: {
+            title: 'Morey, from the road',
+            body: 'Open water off the launch, ice further up.',
+            siblings: [{ reportId: 'r2', bodyName: 'Lake Fairlee' }],
+          },
+        }}
+      />,
+    );
+    expect(await screen.findByText("Don't go")).toBeInTheDocument();
+    expect(screen.getByText('From shore')).toBeInTheDocument();
+    expect(screen.getByText('Still open')).toBeInTheDocument();
+    expect(screen.getByText('Morey, from the road')).toBeInTheDocument();
+    expect(screen.getByText('Open water off the launch, ice further up.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Lake Fairlee' })).toBeInTheDocument();
+  });
+
+  it('says nothing about the vantage when it was the ice — the default is not information', async () => {
+    renderInDrawer(<ReportView data={{ ...FIXTURE, observedFrom: 'on_ice' }} />);
+    await screen.findByText('Black ice');
+    expect(screen.queryByText('On the ice')).not.toBeInTheDocument();
+  });
+
   it('renders measurements in imperial (D25)', async () => {
     renderInDrawer(<ReportView data={FIXTURE} />);
     expect(await screen.findByText('4″ (measured)')).toBeInTheDocument();
-    expect(screen.getByText('1.5″')).toBeInTheDocument(); // snow cover
+    expect(screen.getByText('Patches · 1.5″')).toBeInTheDocument(); // snow, in one line (D194)
     expect(screen.getByText('32°F')).toBeInTheDocument();
     expect(screen.getByText('10 mph NW')).toBeInTheDocument();
   });

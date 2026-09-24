@@ -5,6 +5,13 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 function harness() {
@@ -253,6 +260,7 @@ describe('gpsActivities.ingestTrack', () => {
 
 describe('linking a track to a report', () => {
   const reportArgs = (waterBodyId: Id<'waterBodies'>, activityId: Id<'gpsActivities'>) => ({
+    ...OBSERVED,
     waterBodyId,
     activityId,
     skateEndTime: T0 + 45 * 60_000,
@@ -307,6 +315,7 @@ describe('linking a track to a report', () => {
     const user = await seedUser(t, 'skater');
     const bodyId = await seedBody(t);
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
       iceTypes: [{ type: 'black_ice' as const }],
@@ -326,6 +335,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
     const bodyId = await seedBody(t);
     const activityId = await author.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
@@ -344,6 +354,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
     const user = await seedUser(t, 'skater');
     const bodyId = await seedBody(t);
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0,
       iceTypes: [{ type: 'black_ice' as const }],
@@ -359,6 +370,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
     const bodyId = await seedBody(t);
     const activityId = await author.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       activityId,
       skateEndTime: T0,
@@ -382,6 +394,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
       const bodyId = await seedBody(t);
       const activityId = await author.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
       const reportId = await author.as.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: bodyId,
         activityId,
         skateEndTime: T0,
@@ -442,6 +455,7 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
           ingestArgs({ idempotencyKey: `putin-${key}` }),
         );
         const reportId = await author.as.mutation(api.reports.create, {
+          ...OBSERVED,
           waterBodyId: bodyId,
           activityId,
           skateEndTime: T0,
@@ -519,6 +533,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
       ingestArgs({ idempotencyKey: over.key ?? 'session-1' }),
     );
     const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       activityId,
       // Defaults to "just now" — a minute before the pinned clock, two hours after the track it
@@ -731,6 +746,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     // The minor cannot file the report the track would need to aggregate (D41)...
     await expect(
       minor.as.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: bodyId,
         skateEndTime: T0,
         iceTypes: [{ type: 'black_ice' as const }],
@@ -950,6 +966,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     // The watch copy is the one that got reported from (say, via a third client) — the link must
     // follow the winner.
     const reportId = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 44 * 60_000,
       iceTypes: ['black_ice'],
@@ -1082,12 +1099,14 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     // neither is due; a third, unreported copy of the same session coming due is what brings the
     // pair into a dedup.
     const phoneReport = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 45 * 60_000,
       iceTypes: ['black_ice'],
       activityId: phoneId,
     });
     const watchReport = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 44 * 60_000,
       iceTypes: ['black_ice'],
@@ -1263,6 +1282,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     });
     expect((await t.run((ctx) => ctx.db.get(watchId)))?.supersededByActivityId).toBe(phoneId);
     const reportId = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 44 * 60_000,
       iceTypes: ['black_ice'],
@@ -1308,6 +1328,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     });
     // The winner gets its own report first…
     const phoneReport = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 45 * 60_000,
       iceTypes: ['black_ice'],
@@ -1316,6 +1337,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     // …then a report is filed from the (superseded) watch copy. Not refused: it links the watch copy
     // itself, the state the sweep leaves when both copies were reported from.
     const watchReport = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 44 * 60_000,
       iceTypes: ['black_ice'],
@@ -1365,6 +1387,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
       }),
     );
     const trackReport = await other.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 44 * 60_000,
       iceTypes: ['black_ice'],
@@ -1411,6 +1434,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
       }),
     );
     const reportId = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 45 * 60_000,
       iceTypes: ['black_ice'],
@@ -1463,6 +1487,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
       }),
     );
     const reportId = await me.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: T0 + 44 * 60_000,
       iceTypes: ['black_ice'],

@@ -33,9 +33,12 @@ export function useCanModerate(): boolean {
 export function ModeratorActions({
   targetType,
   targetId,
+  label = 'Moderate',
 }: {
-  targetType: 'report' | 'comment';
+  targetType: 'report' | 'post' | 'comment';
   targetId: string;
+  /** The trigger's text — set when two of these sit side by side (a Report and its Post). */
+  label?: string;
 }) {
   const canModerate = useCanModerate();
   const setStatus = useMutation(api.moderation.setModerationStatus);
@@ -48,7 +51,7 @@ export function ModeratorActions({
   if (!open) {
     return (
       <Button size="$2" chromeless onPress={() => setOpen(true)}>
-        Moderate
+        {label}
       </Button>
     );
   }

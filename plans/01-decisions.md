@@ -1153,8 +1153,14 @@ before `skateEndTime`. Tunable alongside the other Phase 07 constants.
 attributed and how it presents in the feed, so it is a shown choice, not a background merge. Gated on
 ownership + same body + not-already-attached, and idempotent. Must not double-count toward D50 points
 once reputation lands. Works offline — the draft holds local hazard ids and resolves them at flush
-*(not built: the offline draft carries no hazard ids and bundling runs only on the live create path;
-A10-2 §9.1 builds it — register, "On-ice path debts")*.
+*(built 2026-09-21, A10-2b §9.1: a Report draft carries `hazardRefs` — a server id for a hazard
+picked from the server's list, the queue's local id for one captured on the ice — the bundle prompt
+offers the phone's queued hazards beside the server's, and the flush resolves a local ref through
+the hazard queue, which keeps a flushed hazard's row with its server id while a draft points at it;
+a ref that cannot resolve is dropped and never blocks the Post)*. **Amended 2026-09-23 (founder, A10-3):**
+a checked hazard is never dropped — one still queued holds the Post until it sends, one the server
+refused parks the Post with a sentence saying which, and only one the author deleted from the queue is
+left out (A10-3 delta 12).
 **Why:** On the ice you want the fastest possible capture (two taps, no typing, no report); at home you
 want a coherent story. Bundling gets both without asking the skater to re-enter anything, and it turns
 the standalone quick-flag path (D51) from a parallel silo into the front half of the report flow.
@@ -5878,6 +5884,15 @@ freshest-eyes sort works without a special case. "Post" rather than "outing" bec
 need not be one trip. Requiring a Report keeps the platform for reports; questions and planning
 stay on the email lists for now.
 
+**Amended 2026-09-21 (A10-2 build):** "a Post requires a Report" is enforced by construction —
+`posts.create` is one transaction with its Reports inline, and `reports.create` is the one-Report
+form of the same path, so a Post-less Report cannot be written. The Post's album is **derived**:
+the ordered union of its members' photo lists, so one photo belongs to one Report and the sweeps
+need no `posts` arm. And "zero visible Reports ⇒ the Post is not shown" is **stored**, not read at
+query time: hiding the last visible member hides the Post (an audit row names the member), and
+restoring a member of a Post hidden that way restores it — so the feed's moderation gate stays in
+the index, as it was for Reports. A Post a moderator hid on its own stays hidden.
+
 **Related:** D4, D13, D28, D59, D175.
 
 ## D187 — One sheet, fixed order, three doors — never a wizard (A10)
@@ -5936,6 +5951,12 @@ re-runs the same validator today, and `report.ts` deliberately accepts a notes-o
 here" report — making the floor retroactive would leave every such report uneditable, which D199
 forbids. Under the new sheet a don't-skate report still posts in two taps: *don't go* satisfies
 *How was it?* and a hazard satisfies the last term.
+
+**Amended 2026-09-21 (A10-2 build):** **no version gate.** Prod has never been initialized and the
+one APK is rebuilt from the branch, so there is no installed client to spare; the set binds every
+create — the sheet, the pre-sheet forms on both surfaces, and the offline queue at flush — through
+one path (`lib/reportWrite.ts`) and one sentence (`minimumSetMessage`), so no two entrances answer
+the rule differently. The pre-sheet forms ask it client-side before posting and say what to add.
 
 **Why:** the founder wants the structured data that helps other skaters without making the
 no-AI path hostile. Making the floor identical regardless of engine means opting out costs four
@@ -6133,6 +6154,12 @@ the card already make a five-day report *read* as old; the window's only job is 
 ones. `reportTime − skateEndTime` is stored on every report, so the distribution is measurable
 after a season and the window can be tightened on evidence rather than instinct.
 
+**Amended 2026-09-21 (A10-2 build):** binds every create through the same path as D189 (no version
+gate, same reasoning); the queue asks it **before the uploads**, so an expired item costs no
+photos; `UnreportedSkates` stops offering a skate outside the window. Test fixtures that need an
+old report move the clock for the write rather than back-dating the argument — the window refuses
+that exactly as it would a skater's.
+
 **Related:** D9, D28, D59, D192.
 
 ## D200 — The corpus replay runs on its own deployment, and the miss list is the coverage check (A10)
@@ -6189,3 +6216,69 @@ meters past a corner) is a zero-width spike the clipper drops, not a crossing. T
 A07b because a corpus-shaped table would have been a second queue with no second answer.
 
 **Related:** D60, D175, D179, D202, A02 Decision 10, A09.
+
+## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
+
+**Decided (2026-09-21, founder call; Phase 05 decision 6 folded into A10 on 2026-09-20).** A report
+card carries the water body as a small still image: the outline as a shape, the put-in as a dot,
+the recorded skate as a line, and the chips' `where` (D193) as a soft wash clipped to the water. It
+is **not a map** — no tiles, no zoom, no tap of its own; the card is the button and the detail page
+has the real map — and it is **not a picture**: the server sends geometry (the outline simplified
+to a ~240-point budget, once per body per page, from the polygon the card read already carried)
+and the two SVG components draw it at render time from the same core path builders.
+
+**Why:** a MapLibre view per row in a scrolling list is the one thing a phone feed cannot afford,
+and a silhouette says what the card needs — which lake, what shape, where on it — for a few
+hundred points that also render from the offline cache. Minting an image per Report would have
+baked in things that change under it: the theme, the author flipping the put-in switch (the pin
+goes and the skate's ends are trimmed for a stranger, D58), an outline redraw, a highlight color.
+Drawing from geometry follows all of them for free. The wedge's apex is `sectorFrame`'s origin, so
+the card's north end is the sheet's north end.
+
+**Not this:** a static tile render behind the outline (a basemap is what makes it read as a map,
+and a map invites the zoom it cannot give); a per-Report stored image; anything on the card that
+implies the ice is good where the wash is (D3 — the wash says where the author looked).
+
+**Related:** D58, D186, D193, D3, Phase 05 decision 6.
+
+## D204 — A saved draft is held; *Post* is the one path that sends (A10-3)
+
+**Decided (2026-09-21, founder call at the A10-3 kickoff).** A draft is a Post the author saved to
+come back to, or quit the app in the middle of, and it is **never sent until they tap *Post***. The
+queue holds it under its own status (`draft`) that the flush skips; *Drafts* lists those, *Waiting
+to send* lists what was posted and is waiting on signal. *Post* is the one path: it queues the Post
+and flushes at once when there is signal, so it never fails for lack of bars (D187), and an edit of
+a published Report saves directly (A06f) and is not queued. The Reports tab is the sheet itself —
+no overview page, no second tap — with Drafts and Waiting behind its header.
+
+**Why:** before this a saved draft and a queued Post shared `pending`, and both flushed on
+reconnect — *Save draft* was a slower *Post*, and a half-written sheet saved to think about it
+posted itself the next time the phone found signal. The founder's rule is that a skater must never
+face "finish now or lose it"; the corollary is that "not done yet" must mean exactly that. A dirty
+sheet a new door would replace is parked in Drafts by the same rule.
+
+**Related:** D187, D189, D199, D12 (the reconnect flush), D30.
+
+## D205 — Authors edit and delete what they shared; the history is kept; a Post never gains a Report (A10-3)
+
+**Decided (2026-09-21, founder call).** An author may edit their Post's words and each Report's
+content, and delete a Report or a whole Post. **Edits keep their history**: what a Post or Report
+said before each edit is written to `contentRevisions` in the same transaction as the patch, the
+card and the detail say only *edited*, and the comparison is a moderator's (the web console,
+A10-5). **Deletes are soft**: the same `removed` status and the same cascade a moderator's remove
+takes — counter, body card, bay join, the Post's sort key — audited as `author_delete` with the
+author as actor, so what left and when is visible; nothing leaves the table (D62 keeps and
+redacts). A Post whose last Report is deleted is deleted with it (D186). The departed-user sweep
+clears an author's revisions on the same clock as the words they copied.
+
+**A Post never gains a Report after it is created.** New Reports come as new Posts. Notifications
+fire at create and a Report added later would either ping nobody or re-ping everyone; the Post's
+sort key would jump; and anything keyed on a Post later (read state, a thread) would muddy. A
+Report may be edited in its Post; the Post's membership is fixed at creation.
+
+**Why:** people need control over what they have shared with the community (the founder's word),
+and moderators need to know when that control was used — an edit that turns "don't go" into
+"beginner-friendly" is a thing to be able to see. Keeping the history rather than a flag is what
+makes that checkable; keeping the row rather than deleting it is D62's rule applied by the author.
+
+**Related:** D62, D186, D199, D32, D37, A06f.

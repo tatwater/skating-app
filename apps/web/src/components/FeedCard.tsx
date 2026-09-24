@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
+import { BodySilhouette } from './BodySilhouette';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
@@ -19,10 +20,16 @@ export function FeedCard({
   data,
   now,
   onOpen,
+  nested = false,
 }: {
   data: FeedCardData;
   now: number;
   onOpen: () => void;
+  /**
+   * Inside a `PostCard` (A10 / D186): no frame of its own and no author line — the Post already
+   * said who and when, and the frame is the Post's. Standing alone, the card is what it always was.
+   */
+  nested?: boolean;
 }) {
   const card = buildFeedCardView(data, now);
   const chips = card.chips.slice(0, MAX_CHIPS);
@@ -31,7 +38,11 @@ export function FeedCard({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      className={
+        nested
+          ? 'flex w-full flex-col gap-2 rounded-md p-3 text-left transition-colors hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary'
+          : 'flex w-full flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary'
+      }
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -62,29 +73,57 @@ export function FeedCard({
             </span>
           ) : null}
         </div>
-        <span className="shrink-0 text-foreground-muted text-xs">{card.relativeTime}</span>
-      </div>
-
-      <div className="flex items-center gap-2 text-foreground-muted text-sm">
-        <TrustAvatar
-          displayName={card.author.displayName}
-          imageUrl={card.author.profileImageUrl}
-          trustClass={card.author.trustClass}
-          size={20}
-        />
-        <span className="min-w-0 truncate">
-          by{' '}
-          <span className={card.blocked ? 'text-foreground-muted' : 'text-foreground'}>
-            {card.author.displayName}
+        {/* The right column: when, and where on the lake (A10 §12.3) — the silhouette carries the
+            put-in, the skate and the chips' `where`, so the card shows the shape of the day without
+            a map. Absent on a body with no usable outline, and on a cached card from before it. */}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="text-foreground-muted text-xs">
+            {card.relativeTime}
+            {card.edited ? ' · edited' : null}
           </span>
-          {card.durationLabel ? ` · skated ${card.durationLabel}` : null}
-        </span>
-        {card.blocked ? <BlockedChip /> : null}
+          {data.silhouette ? <BodySilhouette data={data.silhouette} size={56} /> : null}
+        </div>
       </div>
 
-      {card.qualityLabel || chips.length > 0 ? (
+      {nested ? (
+        card.durationLabel ? (
+          <p className="text-foreground-muted text-sm">skated {card.durationLabel}</p>
+        ) : null
+      ) : (
+        <div className="flex items-center gap-2 text-foreground-muted text-sm">
+          <TrustAvatar
+            displayName={card.author.displayName}
+            imageUrl={card.author.profileImageUrl}
+            trustClass={card.author.trustClass}
+            size={20}
+          />
+          <span className="min-w-0 truncate">
+            by{' '}
+            <span className={card.blocked ? 'text-foreground-muted' : 'text-foreground'}>
+              {card.author.displayName}
+            </span>
+            {card.durationLabel ? ` · skated ${card.durationLabel}` : null}
+          </span>
+          {card.blocked ? <BlockedChip /> : null}
+        </div>
+      )}
+
+      {card.suitabilityLabel ||
+      card.qualityLabel ||
+      card.vantageLabel ||
+      card.sightingLabel ||
+      chips.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1">
+          {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment. */}
+          {card.suitabilityLabel ? (
+            <Badge variant={card.isDontGo ? 'destructive' : 'secondary'}>
+              {card.suitabilityLabel}
+            </Badge>
+          ) : null}
           {card.qualityLabel ? <Badge variant="secondary">{card.qualityLabel}</Badge> : null}
+          {/* Provenance a reader needs (D191): only off the ice, where it changes how a chip reads. */}
+          {card.vantageLabel ? <Badge variant="outline">{card.vantageLabel}</Badge> : null}
+          {card.sightingLabel ? <Badge variant="outline">{card.sightingLabel}</Badge> : null}
           {chips.map((chip) => (
             <Badge key={chip} variant="outline">
               {chip}

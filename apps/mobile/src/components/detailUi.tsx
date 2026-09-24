@@ -38,38 +38,47 @@ export function Section({ label, children }: { label: string; children: ReactNod
   );
 }
 
-/** An outline pill (chip). `tone="solid"` renders the filled variant used for skate quality. */
+/**
+ * An outline pill (chip). `tone="solid"` renders the filled variant used for skate quality;
+ * `tone="danger"` the warning fill an author's "Don't go" wears (A10 / D190, D3).
+ */
 export function Badge({
   children,
   tone = 'outline',
 }: {
   children: ReactNode;
-  tone?: 'outline' | 'solid';
+  tone?: 'outline' | 'solid' | 'danger';
 }) {
-  const solid = tone === 'solid';
+  const fill = tone === 'solid' ? '$primary' : tone === 'danger' ? '$danger' : 'transparent';
+  const text =
+    tone === 'solid'
+      ? '$primaryForeground'
+      : tone === 'danger'
+        ? '$dangerForeground'
+        : '$foreground';
   return (
     <XStack
       borderWidth={1}
-      borderColor={solid ? '$primary' : '$border'}
-      backgroundColor={solid ? '$primary' : 'transparent'}
+      borderColor={tone === 'outline' ? '$border' : fill}
+      backgroundColor={fill}
       borderRadius="$4"
       paddingHorizontal="$2.5"
       paddingVertical="$1"
       alignSelf="flex-start"
     >
-      <Text color={solid ? '$primaryForeground' : '$foreground'} fontSize={12}>
+      <Text color={text} fontSize={12}>
         {children}
       </Text>
     </XStack>
   );
 }
 
-/** A wrapped row of humanized enum chips (ice types, surface tags). */
-export function Chips({ values }: { values: string[] }) {
+/** A wrapped row of chips — enum keys humanized, or lines already in words (`humanize={false}`). */
+export function Chips({ values, humanize = true }: { values: string[]; humanize?: boolean }) {
   return (
     <XStack gap="$1.5" flexWrap="wrap">
       {values.map((value) => (
-        <Badge key={value}>{humanizeEnum(value)}</Badge>
+        <Badge key={value}>{humanize ? humanizeEnum(value) : value}</Badge>
       ))}
     </XStack>
   );

@@ -84,6 +84,13 @@ interface MapSelectionValue {
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;
   /**
+   * A request from the report sheet (A10 §6.1, *mark one here*) to open the capture's type
+   * picker for the drawer's lake — a nonce, like `drawerPeekNonce`, so every tap is its own
+   * request. The capture places by map tap rather than GPS when the skater is not on that ice.
+   */
+  hazardCaptureNonce: number;
+  requestHazardCapture: () => void;
+  /**
    * The two taps that become a shore band (A05b), or `null` when not snapping.
    *
    * `[]` means "armed, waiting for the first tap" — a state the map must be able to hold, since the
@@ -162,6 +169,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
   const [hazardDropMode, setHazardDropMode] = useState(false);
+  const [hazardCaptureNonce, setHazardCaptureNonce] = useState(0);
+  const requestHazardCapture = useCallback(() => setHazardCaptureNonce((n) => n + 1), []);
   const [hazardShoreTaps, setHazardShoreTaps] = useState<{ lat: number; lng: number }[] | null>(
     null,
   );
@@ -194,6 +203,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardDraftType,
       hazardDropMode,
       setHazardDropMode,
+      hazardCaptureNonce,
+      requestHazardCapture,
       hazardShoreTaps,
       setHazardShoreTaps,
       onIceWaterBodyId,
@@ -220,6 +231,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDraft,
       hazardDraftType,
       hazardDropMode,
+      hazardCaptureNonce,
+      requestHazardCapture,
       hazardShoreTaps,
       onIceWaterBodyId,
       onIceCoord,

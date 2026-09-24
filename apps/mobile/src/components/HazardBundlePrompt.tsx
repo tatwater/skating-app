@@ -1,9 +1,10 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type HazardType, hazardTypeLabel } from '@skating/core';
+import { type HazardType, hazardTypeLabel, queuedBundleCandidates } from '@skating/core';
 import { useQuery } from 'convex/react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { listHazardItems } from '../lib/draftStore';
 
 /**
  * The D55 auto-bundle prompt (mobile) — offer the author's own on-ice hazards into the report
@@ -94,18 +95,31 @@ export function HazardBundlePrompt({
       : 'skip',
   );
 
-  const candidateKey = (candidates ?? []).map((c) => c._id).join(',');
+  // The hazards captured on the ice and still on the phone (A10 §9.1): offered beside the server's,
+  // by local id, so a report written before the queue drains can still bundle them. One that has
+  // already flushed carries its server id and is offered under that — and deduped against the
+  // server's list, which would have it too. Same lake, same window as the server's rule
+  // (`queuedBundleCandidates`), so neither side pre-checks last week's hazard into today's report.
+  const queued = useMemo(
+    () =>
+      queuedBundleCandidates(listHazardItems(), {
+        waterBodyId,
+        skateEndTime,
+        ...(skateStartTime !== undefined ? { skateStartTime } : {}),
+        serverIds: new Set<string>((candidates ?? []).map((c) => c._id)),
+      }).map(
+        (c): BundleCandidate => ({ _id: c.id, type: c.type, firstReportedAt: c.firstReportedAt }),
+      ),
+    [candidates, waterBodyId, skateEndTime, skateStartTime],
+  );
+  const all = useMemo(() => [...(candidates ?? []), ...queued], [candidates, queued]);
+
+  const candidateKey = all.map((c) => c._id).join(',');
   // `candidateKey` is the stable content signature of the candidate set, so this only re-runs when
   // the actual hazards change — not on every query object identity.
   useEffect(() => {
     onCandidates(candidateKey ? candidateKey.split(',') : []);
   }, [candidateKey, onCandidates]);
 
-  return (
-    <HazardBundlePromptView
-      candidates={candidates ?? []}
-      selectedIds={selectedIds}
-      onToggle={onToggle}
-    />
-  );
+  return <HazardBundlePromptView candidates={all} selectedIds={selectedIds} onToggle={onToggle} />;
 }

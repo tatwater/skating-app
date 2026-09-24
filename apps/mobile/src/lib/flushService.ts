@@ -1,5 +1,5 @@
 /**
- * Reconnect flush for the offline draft queue (Phase 02a §6.2) — wires the pure `@skating/core` `flushDraft`
+ * Reconnect flush for the offline draft queue (Phase 02a §6.2; Posts since A10 §9.1) — wires the pure `@skating/core` `flushPost`
  * orchestration to the real effects (Convex mutations/queries + the storage upload + the sqlite
  * store). The hard logic (checkpointing, idempotency, transient-vs-permanent) lives in core; this is
  * the thin adapter. Untested native glue.
@@ -8,26 +8,35 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  type AccessReason,
   compactTrack,
   createCoalescedRunner,
-  type DraftFlushEffects,
-  flushableDrafts,
+  createKeyedSingleFlight,
   flushableHazardItems,
+  flushablePosts,
   flushableTracks,
-  flushDraft,
   flushHazardItem,
+  flushPost,
   flushTrack,
   type HazardFlushEffects,
+  type HazardRefResolution,
   isFlushable,
   isHazardItemFlushable,
   isTrackFlushable,
+  type PostFlushEffects,
+  type PostFlushResult,
+  postDraftPhotoUris,
+  queuedHazardResolution,
   type ReportInput,
+  referencedHazardLocalIds,
+  referencedTrackIds,
+  removableHazardItems,
   type TrackFlushEffects,
   trackRetention,
 } from '@skating/core';
 import { uploadToStorage } from '../components/photoPipeline';
 import { convex } from './convex';
-import { deleteDraftPhotoFiles, draftPhotoUris } from './draftPhotos';
+import { deleteDraftPhotoFiles } from './draftPhotos';
 import {
   deleteDraft,
   deleteHazardItem,
@@ -43,31 +52,36 @@ import {
   saveTrack,
 } from './draftStore';
 
-/** Map the core report input to `reports.create` args (branded Convex ids reapplied). */
-function toCreateArgs(
-  input: ReportInput & { idempotencyKey: string; photoIds: string[]; activityId?: string },
+/**
+ * Map one core report input to `posts.create`'s inline Report args (branded Convex ids reapplied).
+ *
+ * The content goes through **whole**: the wire args are core's `ReportInput` plus the ids, so
+ * every field the sheet serializes — the vantage, the sighting, the suitability, the D194 snow
+ * object, the end time's precision, the put-in — reaches the server. An earlier version listed the
+ * fields by name and silently dropped what it did not list (a queued draft's snow depth never
+ * posted); naming them again is how the next field goes missing.
+ */
+function toReportArgs(
+  input: ReportInput & {
+    idempotencyKey: string;
+    photoIds: string[];
+    activityId?: string;
+    attachHazardIds?: string[];
+  },
 ) {
+  const { waterBodyId, photoIds, activityId, attachHazardIds, ...content } = input;
   return {
-    waterBodyId: input.waterBodyId as Id<'waterBodies'>,
-    idempotencyKey: input.idempotencyKey,
-    skateEndTime: input.skateEndTime,
-    skateStartTime: input.skateStartTime,
-    iceTypes: input.iceTypes,
-    surfaceTags: input.surfaceTags,
-    skateQuality: input.skateQuality,
-    iceThickness: input.iceThickness,
-    snowCoverCm: input.snowCoverCm,
-    conditions: input.conditions,
-    notes: input.notes,
-    point: input.point,
-    photoIds: input.photoIds as Id<'photos'>[],
-    ...(input.activityId !== undefined
-      ? { activityId: input.activityId as Id<'gpsActivities'> }
+    ...content,
+    waterBodyId: waterBodyId as Id<'waterBodies'>,
+    photoIds: photoIds as Id<'photos'>[],
+    ...(activityId !== undefined ? { activityId: activityId as Id<'gpsActivities'> } : {}),
+    ...(attachHazardIds !== undefined
+      ? { attachHazardIds: attachHazardIds as Id<'hazards'>[] }
       : {}),
   };
 }
 
-function effects(): DraftFlushEffects {
+function effects(): PostFlushEffects {
   return {
     resolveBody: async (coord) => {
       const res = await convex.query(api.waterBodies.resolveBodyForCoord, { coord });
@@ -84,7 +98,14 @@ function effects(): DraftFlushEffects {
         placeOnMap,
         coord,
       }),
-    createReport: async (input) => convex.mutation(api.reports.create, toCreateArgs(input)),
+    // One `posts.create` for the whole Post (A10 §9.1 / D186) — the Post's key and each Report's.
+    createPost: async (input) =>
+      convex.mutation(api.posts.create, {
+        idempotencyKey: input.idempotencyKey,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.body !== undefined ? { body: input.body } : {}),
+        reports: input.reports.map(toReportArgs),
+      }),
     // Phase 08: resolve a report draft's LOCAL track id to a server activity id, flushing the track
     // first if it hasn't landed. Best-effort — see `flushOneTrack`: a track that can't be sent must
     // never hold back the report it belongs to (D24).
@@ -96,10 +117,44 @@ function effects(): DraftFlushEffects {
       const result = await flushOneTrack(queued.id, Date.now());
       return result?.activityId ?? null;
     },
+    // D55 offline (A10 §9.1): a hazard captured on the ice and bundled into a report before either
+    // had signal. The hazard queue runs first in every drain, so this usually finds the server id
+    // already checkpointed on the row; if the row is still pending it is flushed now, and one that
+    // cannot go yet holds the Post rather than being left out of it.
+    resolveHazardId: resolveQueuedHazard,
+    // The sheet's condition chips (D197 / A10 §7.2), filed once the Post exists with its Report as
+    // provenance and the queue's key per reason, so a replayed flush returns the same row.
+    createAccessAlert: async (input) => {
+      await convex.mutation(api.accessAlerts.create, {
+        targetType: input.targetType,
+        ...(input.putInId !== undefined ? { putInId: input.putInId as Id<'putIns'> } : {}),
+        ...(input.parkingAreaId !== undefined
+          ? { parkingAreaId: input.parkingAreaId as Id<'parkingAreas'> }
+          : {}),
+        reason: input.reason as AccessReason,
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.observedAt !== undefined ? { observedAt: input.observedAt } : {}),
+        reportId: input.reportId as Id<'reports'>,
+        idempotencyKey: input.idempotencyKey,
+      });
+    },
     persist: async (draft) => {
       saveDraft(draft);
     },
   };
+}
+
+/**
+ * What a Post draft's bundled local hazard is at flush (D55 offline, A10 §9.1): the row is flushed
+ * now if it hasn't landed, then read again — sent, still waiting, refused, or deleted by the
+ * author (core's `queuedHazardResolution` says which, and `flushPost` what each means for the Post).
+ */
+async function resolveQueuedHazard(localId: string): Promise<HazardRefResolution> {
+  const queued = getHazardItem(localId);
+  if (queued?.kind === 'hazard' && queued.hazardId === undefined && isHazardItemFlushable(queued)) {
+    await flushOneHazard(localId);
+  }
+  return queuedHazardResolution(getHazardItem(localId));
 }
 
 /**
@@ -257,35 +312,83 @@ const drain = createCoalescedRunner(() => drainOnce(Date.now()));
  * snapshot) and held under `flushingIds` for the duration, so an edit saved after the snapshot is
  * either picked up fresh here or blocked by `isDraftFlushing` in the form — never silently lost.
  */
+/**
+ * The last outcome per draft from a drain, so the sheet can learn where its Post landed. Bounded:
+ * every reconnect drain writes one per draft and only the sheet's own Post ever reads one, and a
+ * result holds the whole draft — its sheet state, its photo list — so the oldest go when the map
+ * outgrows the few a session can be waiting on.
+ */
+const lastResults = new Map<string, PostFlushResult>();
+const LAST_RESULTS_MAX = 16;
+
+function rememberResult(id: string, result: PostFlushResult): void {
+  lastResults.delete(id); // re-insert last, so the map's order is recency
+  lastResults.set(id, result);
+  for (const key of lastResults.keys()) {
+    if (lastResults.size <= LAST_RESULTS_MAX) break;
+    lastResults.delete(key);
+  }
+}
+
+/**
+ * What the last drain did with a draft — the sheet reads this after `flushDrafts()` to land on the
+ * Report it just posted, because a draft that posted is deleted from the queue and cannot say so
+ * itself. Cleared on read.
+ */
+export function takeFlushResult(id: string): PostFlushResult | null {
+  const result = lastResults.get(id) ?? null;
+  lastResults.delete(id);
+  return result;
+}
+
 async function drainOnce(now: number): Promise<void> {
   // Hazards first, deliberately. They're safety content that another skater may be about to need,
   // and a queue of report drafts with photos can take a while to drain on a weak connection —
   // sending the ridge before the trip write-up is the right order to lose a connection in.
-  await flushHazardQueue(now);
+  await flushHazardQueue();
   // Then tracks, before reports: a report draft linked to one needs its `activityId`. A report
   // whose track is still queued resolves it on demand anyway (`resolveActivityId`), so this is an
   // ordering optimization, not a correctness requirement.
   await flushTrackQueue(now);
   const eff = effects();
-  for (const { id } of flushableDrafts(listDrafts())) {
+  for (const { id } of flushablePosts(listDrafts())) {
     flushingIds.add(id);
     try {
       // Re-read the latest on-disk state — an edit between the snapshot and now must flush its
       // new content, not the stale snapshot.
       const fresh = getDraft(id);
       if (!fresh || !isFlushable(fresh)) continue;
-      const result = await flushDraft(fresh, eff, now);
+      const result = await flushPost(fresh, eff, now);
+      rememberResult(id, result);
       if (result.ok) {
-        deleteDraftPhotoFiles(draftPhotoUris(result.draft));
+        deleteDraftPhotoFiles(postDraftPhotoUris(result.draft));
         deleteDraft(result.draft.id);
       }
     } finally {
       flushingIds.delete(id);
     }
   }
-  // Last, deliberately: the drafts that just flushed have released their track references, so a
-  // track finished with weeks ago is free to go on this pass rather than the next one.
+  // Last, deliberately: the drafts that just flushed have released their track and hazard
+  // references, so a track finished with weeks ago — or a flushed hazard kept for a report that has
+  // now gone out — is free to go on this pass rather than the next one.
   sweepTracks(now);
+  sweepFlushedHazards();
+}
+
+/**
+ * Drop the flushed hazards no Post draft bundles any more (A10 §9.1). A flushed hazard's row is
+ * kept — `done`, with its server id — while a draft still points at it by local id, the way a
+ * flushed track's row is kept for the report it belongs to; this is the other half of that rule.
+ */
+function sweepFlushedHazards(): void {
+  try {
+    const referenced = referencedHazardLocalIds(listDrafts());
+    for (const item of removableHazardItems(listHazardItems(), referenced)) {
+      deleteHazardItem(item.id);
+    }
+  } catch {
+    // Housekeeping must never surface as a failed flush.
+  }
 }
 
 /**
@@ -306,36 +409,52 @@ function sweepTracks(now: number): void {
 }
 
 function applyTrackRetention(now: number): void {
-  const referencedIds = new Set(
-    listDrafts()
-      .map((d) => d.trackDraftId)
-      .filter((id): id is string => id !== undefined),
-  );
+  const referencedIds = referencedTrackIds(listDrafts());
   const { compact, remove } = trackRetention(listTracks(), { now, referencedIds });
   for (const track of compact) saveTrack(compactTrack(track, now));
   for (const track of remove) deleteTrack(track.id);
 }
 
 /**
- * Drain the hazard queue once, oldest first. A successful item is deleted; a transient failure is
- * left `pending` for the next flush and a permanent one parks in `error` — both persisted by
- * `flushHazardItem` itself.
+ * Flush one queued hazard or confirmation by local id, returning its result. Shared by the queue
+ * drain and by a Post draft's flush that needs a bundled hazard's server id *now*
+ * (`resolveHazardId`), the way `flushOneTrack` serves a report's track, so the paths cannot
+ * disagree about what a successful flush leaves behind: the photo files go at once, and the row waits for `sweepFlushedHazards`,
+ * because a report draft may still bundle this hazard by its local id and needs the server id the
+ * row now carries (D55).
+ *
+ * **One flush per row at a time** (`createKeyedSingleFlight`). Every caller runs inside the
+ * coalesced drain today, but two that reached one row together would each upload its photos, create
+ * photo rows and race each other's checkpoint writes — the server's idempotency keeps one hazard,
+ * but not the orphaned rows or the clobbered queue state — so the guard stays at the row, where a
+ * new entry point cannot miss it. A second caller joins the flush already running and gets its
+ * result. One that arrives just after it settled finds the row `done` and is handed its server id.
+ */
+const flushOneHazard = createKeyedSingleFlight(flushHazardNow);
+
+async function flushHazardNow(id: string): Promise<{ hazardId?: string } | null> {
+  const fresh = getHazardItem(id);
+  if (fresh?.kind === 'hazard' && fresh.hazardId !== undefined) return { hazardId: fresh.hazardId };
+  if (!fresh || !isHazardItemFlushable(fresh)) return null;
+  const result = await flushHazardItem(fresh, hazardEffects(), Date.now());
+  if (!result.ok) return null;
+  if (result.item.kind === 'hazard') {
+    deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
+  }
+  return result.hazardId !== undefined ? { hazardId: result.hazardId } : {};
+}
+
+/**
+ * Drain the hazard queue once, oldest first. A transient failure is left `pending` for the next
+ * flush and a permanent one parks in `error` — both persisted by `flushHazardItem` itself; a
+ * successful one is settled by `flushOneHazard`.
  *
  * Unlike report drafts there's no edit-during-flush race to guard: a queued hazard is immutable once
  * captured (the capture bar is gone by then), so there's nothing for an edit to clobber.
  */
-async function flushHazardQueue(now: number): Promise<void> {
-  const eff = hazardEffects();
+async function flushHazardQueue(): Promise<void> {
   for (const { id } of flushableHazardItems(listHazardItems())) {
-    const fresh = getHazardItem(id);
-    if (!fresh || !isHazardItemFlushable(fresh)) continue;
-    const result = await flushHazardItem(fresh, eff, now);
-    if (result.ok) {
-      if (result.item.kind === 'hazard') {
-        deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
-      }
-      deleteHazardItem(result.item.id);
-    }
+    await flushOneHazard(id);
   }
 }
 

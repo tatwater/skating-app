@@ -48,9 +48,8 @@ export type AccessAlertReason = (typeof ACCESS_ALERT_REASONS)[number];
  * puts the target of *every* live alert into `blockedIds`, and directions demote a blocked launch. A
  * plank is not a blocker; a muddy launch is not a locked gate. Keeping the two sets disjoint is what
  * lets the reader tell "you can't get in" from "bring a plank" without a flag on the row, and what
- * keeps a condition out of the blocker demotion by construction. The row's `reason` widens to the
- * union when the sheet's condition chips get their write path (A10-2 §7.2); until then the schema
- * still narrows to the blockers.
+ * keeps a condition out of the blocker demotion by construction. The row's `reason` is the union
+ * (`ACCESS_REASONS`, A10-2 §7.2); `blockedIds` is built from the blockers alone.
  */
 export const ACCESS_CONDITION_REASONS = [
   'icy_lot',
@@ -66,6 +65,41 @@ export type AccessConditionReason = (typeof ACCESS_CONDITION_REASONS)[number];
 export function isAccessCondition(reason: string): reason is AccessConditionReason {
   return (ACCESS_CONDITION_REASONS as readonly string[]).includes(reason);
 }
+
+/**
+ * The two kinds a reason falls in — stored on the row (`accessAlerts.kind`, A10-3) so the live reads
+ * can cap each kind in the index range itself rather than filtering a shared range by reason set.
+ */
+export const ACCESS_ALERT_KINDS = ['blocker', 'condition'] as const;
+export type AccessAlertKind = (typeof ACCESS_ALERT_KINDS)[number];
+
+/** The kind a reason is: a condition rides along, anything else blocks the way in. */
+export function accessAlertKindOf(reason: string): AccessAlertKind {
+  return isAccessCondition(reason) ? 'condition' : 'blocker';
+}
+
+/** Every reason an `accessAlerts` row may carry: the blockers, then the conditions (A10-2 §7.2). */
+export const ACCESS_REASONS = [...ACCESS_ALERT_REASONS, ...ACCESS_CONDITION_REASONS] as const;
+export type AccessReason = (typeof ACCESS_REASONS)[number];
+
+/**
+ * How each reason reads to a skater — short, because it sits beside a launch name. One map for
+ * both surfaces so a plank never renders as an "Access problem" on one of them.
+ */
+export const ACCESS_REASON_LABELS: Record<AccessReason, string> = {
+  road_closed: 'Road closed',
+  gate_locked: 'Gate locked',
+  not_plowed: 'Not plowed',
+  lot_full: 'Lot full',
+  private_no_access: 'Private — no access',
+  other: 'Access problem',
+  icy_lot: 'Icy lot',
+  mud_at_launch: 'Mud at the launch',
+  plank_needed: 'Plank needed',
+  walk_in: 'Walk in',
+  plowed_trail: 'Plowed trail',
+  snowed_in: 'Snowed in',
+};
 
 /**
  * The lifecycle states, and the reason `official` is one of them rather than a boolean.

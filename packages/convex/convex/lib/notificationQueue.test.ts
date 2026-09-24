@@ -12,6 +12,13 @@ import {
 } from './notificationQueue';
 import { parsePayload } from './notificationResolve';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const p = (s: string) => s as Id<'profiles'>;
 const r = (s: string) => s as Id<'reports'>;
 const c = (s: string) => s as Id<'comments'>;
@@ -270,18 +277,24 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
 const NOBODY: ReadonlySet<string> = new Set();
 
 describe('settleTrigger — every "deliver only if" clause has a drop', () => {
-  async function setup() {
+  async function setup(opts: { bountyFirst?: boolean } = {}) {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'author');
     const other = await seedUser(t, 'other');
     const waterBodyId = await seedBody(t);
+    // A bounty has to be asked before the report that answers it: the report is fresh (D199 holds
+    // every new one inside a week), and a fresh report makes the ask redundant.
+    const bountyId = opts.bountyFirst
+      ? await other.as.action(api.bounties.create, { waterBodyId })
+      : undefined;
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
-      skateEndTime: Date.UTC(2026, 0, 10),
+      skateEndTime: Date.now() - 3_600_000, // inside the freshness window (D199)
     } as never);
     const settle = (trigger: NotificationTrigger, blocked: ReadonlySet<string> = NOBODY) =>
       t.run((ctx) => settleTrigger(ctx, trigger, blocked));
-    return { t, author, other, waterBodyId, reportId, settle };
+    return { t, author, other, waterBodyId, reportId, bountyId, settle };
   }
 
   test('thumb: a hidden target, an unparseable id, and a rater blocked inside the window all drop', async () => {
@@ -332,8 +345,9 @@ describe('settleTrigger — every "deliver only if" clause has a drop', () => {
   test('corroboration: your own report hidden drops it, as does every corroborator being blocked', async () => {
     const { t, other, waterBodyId, reportId, settle } = await setup();
     const byReportId = await other.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId,
-      skateEndTime: Date.UTC(2026, 0, 10),
+      skateEndTime: Date.now() - 3_600_000, // inside the freshness window (D199)
     } as never);
     const trigger: NotificationTrigger = {
       kind: 'corroboration',
@@ -404,8 +418,10 @@ describe('settleTrigger — every "deliver only if" clause has a drop', () => {
   });
 
   test('bounty answered: every answering report hidden or from a blocked author drops it', async () => {
-    const { t, other, waterBodyId, reportId, settle } = await setup();
-    const bountyId = await other.as.action(api.bounties.create, { waterBodyId });
+    const { t, waterBodyId, reportId, bountyId, settle } = await setup({
+      bountyFirst: true,
+    });
+    if (!bountyId) throw new Error('setup opened no bounty');
     const trigger: NotificationTrigger = {
       kind: 'bounty_answered',
       bountyId,

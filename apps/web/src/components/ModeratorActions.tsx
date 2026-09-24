@@ -33,9 +33,12 @@ export function useIsModerator(): boolean {
 export function ModeratorActions({
   targetType,
   targetId,
+  label = 'Moderate',
 }: {
-  targetType: 'report' | 'comment' | 'hazard';
+  targetType: 'report' | 'post' | 'comment' | 'hazard';
   targetId: string;
+  /** The trigger's text — set when two of these sit side by side (a Report and its Post). */
+  label?: string;
 }) {
   const { canModerate } = useRole();
   const setStatus = useMutation(api.moderation.setModerationStatus);
@@ -63,7 +66,7 @@ export function ModeratorActions({
     <Dialog>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
         <FontAwesomeIcon icon={faShieldHalved} className="size-4" />
-        Moderate
+        {label}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

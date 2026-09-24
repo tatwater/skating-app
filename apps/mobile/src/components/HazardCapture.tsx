@@ -35,6 +35,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Modal } from 'react-native';
 import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui';
@@ -68,6 +69,7 @@ import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 
 /** Steppers, not a slider. Sliders are miserable with gloves on. */
 export function HazardCapture() {
+  const router = useRouter();
   // A pending deletion closes hazard authoring (D62 amendment). Checked before anything else so the
   // button never appears — being handed a draw tool and refused at submit is the failure this avoids.
   const leaving = useIsLeaving();
@@ -86,11 +88,25 @@ export function HazardCapture() {
     setHazardDraftType,
     hazardDropMode,
     setHazardDropMode,
+    hazardCaptureNonce,
     hazardShoreTaps,
     setHazardShoreTaps,
   } = useMapSelection();
 
   const [picking, setPicking] = useState(false);
+  /**
+   * Opened from the report sheet's *mark one here* (A10 §6.1). Two things differ from the FAB:
+   * the pin is placed by a map tap unless the skater is on that very ice (a GPS fix from the couch
+   * would drop the pin on the couch), and Done returns to the sheet, whose state waited in its
+   * store. The FAB's own rule — on the ice you are standing on, and nowhere else — is untouched:
+   * this is the sheet vouching for the lake, the way the drawer's report button always did.
+   */
+  const fromSheet = useRef(false);
+  useEffect(() => {
+    if (hazardCaptureNonce === 0) return;
+    fromSheet.current = true;
+    setPicking(true);
+  }, [hazardCaptureNonce]);
   const [showAllTypes, setShowAllTypes] = useState(false);
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -183,6 +199,13 @@ export function HazardCapture() {
     setDismissedDuplicateOf(null);
   }
 
+  /** Back to the sheet that asked for this pin (the bundle prompt will offer it, D55). */
+  function returnToSheet() {
+    if (!fromSheet.current) return;
+    fromSheet.current = false;
+    router.navigate('/report');
+  }
+
   /**
    * Full reset for an *abandoned* capture (Cancel, or the type sheet's `onRequestClose`): free the
    * persisted photo files too. Without this, photos picked then canceled leak their full+thumb copies
@@ -191,6 +214,7 @@ export function HazardCapture() {
   function reset() {
     deleteDraftPhotoFiles(photosRef.current.flatMap((p) => [p.fullUri, p.thumbUri]));
     resetDraftState();
+    fromSheet.current = false;
   }
 
   /**
@@ -303,6 +327,11 @@ export function HazardCapture() {
     const draft = pointDraftForType(type);
     setHazardDraft(draft);
     setHazardDropMode(true);
+    if (fromSheet.current && onIceWaterBodyId !== targetBodyId) {
+      // Not standing on it: the map tap is the placement, and a fix would be the wrong place.
+      setError('Tap the map where the hazard is.');
+      return;
+    }
     setLocating(true);
     try {
       const coord = await acquireCoord();
@@ -511,6 +540,7 @@ export function HazardCapture() {
       // A brief toast, never a blocking modal — the skater may be moving.
       setToast('Hazard posted. Thanks.');
       setTimeout(() => setToast(null), 3000);
+      returnToSheet();
     } catch (e) {
       if (classifyFlushError(e) === 'permanent') {
         // A real rejection (a minor posting, a removed lake) — retrying won't help, so reclaim the
@@ -549,6 +579,7 @@ export function HazardCapture() {
       resetDraftState();
       setToast('Saved — it’ll post when you’re back in signal.');
       setTimeout(() => setToast(null), 4000);
+      returnToSheet();
     } finally {
       setSaving(false);
     }

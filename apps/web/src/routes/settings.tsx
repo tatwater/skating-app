@@ -19,6 +19,7 @@ import { ChangeEmail } from '../components/ChangeEmail';
 import { ContactSupport } from '../components/ContactSupport';
 import { ProfileEdit } from '../components/ProfileEdit';
 import { Avatar } from '../components/ProfileView';
+import { PutInSetting } from '../components/PutInSetting';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Checkbox } from '../components/ui/checkbox';
@@ -76,6 +77,7 @@ function SettingsPage() {
 
       <HomeLocation />
       <NotificationSettings />
+      <PutInSetting />
       <AggregateTracksSetting />
       <BlockedUsers />
 

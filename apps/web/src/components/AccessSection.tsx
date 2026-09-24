@@ -1,6 +1,13 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { chooseAccessTarget, describeApproach, isHikeIn } from '@skating/core';
+import {
+  ACCESS_ALERT_REASONS,
+  ACCESS_REASON_LABELS,
+  type AccessReason,
+  chooseAccessTarget,
+  describeApproach,
+  isHikeIn,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
@@ -9,16 +16,6 @@ import { Panel } from './Panel';
 import { PostedAccessLine } from './PostedAccess';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
-
-/** How each alert reason reads to a skater. Short, because it sits beside a launch name. */
-const REASON_LABELS: Record<string, string> = {
-  road_closed: 'Road closed',
-  gate_locked: 'Gate locked',
-  not_plowed: 'Not plowed',
-  lot_full: 'Lot full',
-  private_no_access: 'Private — no access',
-  other: 'Access problem',
-};
 
 const AMENITY_LABELS: Record<string, string> = {
   toilets: 'Toilets',
@@ -188,9 +185,9 @@ export function AccessSectionView({
               onChange={(e) => setReason(e.target.value)}
               aria-label="What's the problem?"
             >
-              {Object.entries(REASON_LABELS).map(([value, label]) => (
+              {ACCESS_ALERT_REASONS.map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {ACCESS_REASON_LABELS[value]}
                 </option>
               ))}
             </select>
@@ -234,7 +231,8 @@ export function AccessSectionView({
           {alerts.map((alert) => (
             <li key={alert.id} className="rounded border border-amber-300 bg-amber-50 p-2 text-sm">
               <p className="font-medium">
-                {REASON_LABELS[alert.reason] ?? 'Access problem'} — {nameFor(alert)}
+                {ACCESS_REASON_LABELS[alert.reason as AccessReason] ?? 'Access problem'} —{' '}
+                {nameFor(alert)}
                 {alert.official ? (
                   <span className="ml-2 text-amber-900 text-xs">confirmed by a moderator</span>
                 ) : null}

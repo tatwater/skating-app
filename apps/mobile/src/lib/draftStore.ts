@@ -1,6 +1,6 @@
 /**
- * Persistent store for the offline report-draft queue (Phase 02a §6.2) — the `expo-sqlite` glue behind the pure
- * `@skating/core` draft-queue logic. Each draft is stored as a JSON blob (it's a nested, reopenable
+ * Persistent store for the offline draft queue (Phase 02a §6.2; Posts since A10 §9.1) — the
+ * `expo-sqlite` glue behind the pure `@skating/core` draft-queue logic. Each draft is stored as a JSON blob (it's a nested, reopenable
  * record) plus a few queryable columns. `saveDraft` is the `persist` effect the core `flushDraft`
  * calls after every checkpoint, so an interrupted flush always leaves a resumable draft on disk.
  * Untested native glue (like `photoPipeline`); the queue *logic* is tested in `@skating/core`.
@@ -9,8 +9,10 @@
 import {
   CONFIRMATION_VOTE_KIND,
   type HazardQueueItem,
+  type LegacyReportDraft,
+  type PostDraft,
+  postDraftFromLegacy,
   type QueuedTrack,
-  type ReportDraft,
 } from '@skating/core';
 import * as SQLite from 'expo-sqlite';
 
@@ -21,7 +23,9 @@ import * as SQLite from 'expo-sqlite';
  * keeping three copies of that in sync — and the flush has to drain them in **capture order**
  * anyway, which is trivial in one table and fiddly across three.
  */
+/** What a report draft was before A10 §9.1 made the Post the unit; only the migration reads it. */
 const KIND_REPORT = 'report';
+const KIND_POST = 'post';
 const HAZARD_KINDS = ['hazard', CONFIRMATION_VOTE_KIND] as const;
 const KIND_TRACK = 'track';
 /**
@@ -56,6 +60,19 @@ export interface SqliteLike {
  * carrying the old name (a rerun matches nothing). A confirmation cast on the ice and left in the queue
  * across the app update is exactly the row this exists for: without it the flush would never select it,
  * and the vote would sit there forever, unsent and unlisted.
+ *
+ * The third backfills `form.showPutIn` on report drafts saved before the put-in switch existed
+ * (2026-09-20). `ReportFormState.showPutIn` is a required boolean and the form renders it as-is, so
+ * a draft with no field at all drew the switch *off* while `buildReportInput` (which reads only an
+ * explicit `false` as the opt-out) went on publishing the put-in — the one place the switch could
+ * say one thing and the report do the other. Filled in on disk, once, with the field's own default
+ * (shown), so every reader stays a plain `JSON.parse`.
+ *
+ * The fourth (A10 §9.1) lifts every `report` row into the one-Report **Post** draft it is
+ * (`postDraftFromLegacy`), under the `post` kind, keeping its id, key, status and clock. Row by row
+ * in JS rather than in SQL, because the blob is restructured, not patched; a rerun finds no `report`
+ * rows. A draft queued on the ice the day before the update flushes as a Post after it, with the
+ * same key, so a lost ack from before still replays to the report it made.
  */
 export function ensureSchema(db: SqliteLike): void {
   db.execSync(
@@ -79,17 +96,35 @@ export function ensureSchema(db: SqliteLike): void {
      WHERE kind = ?`,
     [CONFIRMATION_VOTE_KIND, CONFIRMATION_VOTE_KIND, LEGACY_CONFIRMATION_KIND],
   );
+  // `json('true')`, not the string 'true': the form reads a boolean. `json_type` is NULL only when the
+  // path is absent, so a draft that already carries an explicit choice — either way — is untouched.
+  db.runSync(
+    `UPDATE report_drafts
+       SET data = json_set(data, '$.form.showPutIn', json('true'))
+     WHERE kind = ? AND json_type(data, '$.form.showPutIn') IS NULL`,
+    [KIND_REPORT],
+  );
+  for (const row of db.getAllSync<{ data: string }>(
+    'SELECT data FROM report_drafts WHERE kind = ?',
+    [KIND_REPORT],
+  )) {
+    const post = postDraftFromLegacy(JSON.parse(row.data) as LegacyReportDraft);
+    db.runSync(
+      `UPDATE report_drafts SET kind = ?, status = ?, updatedAt = ?, data = ? WHERE id = ?`,
+      [KIND_POST, post.status, post.updatedAt, JSON.stringify(post), post.id],
+    );
+  }
 }
 
-/** All **report** drafts, oldest first — the read half of `listDrafts`, factored out to test alongside
- *  `ensureSchema` (a migrated pre-Phase-09a row must still come back here). */
-export function readReportDrafts(db: SqliteLike): ReportDraft[] {
+/** All **Post** drafts, oldest first — the read half of `listDrafts`, factored out to test alongside
+ *  `ensureSchema` (a migrated pre-Phase-09a row, lifted to a Post, must still come back here). */
+export function readPostDrafts(db: SqliteLike): PostDraft[] {
   return db
     .getAllSync<{ data: string }>(
       'SELECT data FROM report_drafts WHERE kind = ? ORDER BY createdAt ASC',
-      [KIND_REPORT],
+      [KIND_POST],
     )
-    .map((r) => JSON.parse(r.data) as ReportDraft);
+    .map((r) => JSON.parse(r.data) as PostDraft);
 }
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -115,27 +150,27 @@ function upsert(
   );
 }
 
-/** Upsert a draft (the `persist` effect). Whole record serialized; status/timestamps kept queryable. */
-export function saveDraft(draft: ReportDraft): void {
-  upsert(KIND_REPORT, draft, draft);
+/** Upsert a Post draft (the `persist` effect). Whole record serialized; status/timestamps kept queryable. */
+export function saveDraft(draft: PostDraft): void {
+  upsert(KIND_POST, draft, draft);
 }
 
 /**
- * All **report** drafts, oldest first (capture order — the flush work list order).
+ * All **Post** drafts, oldest first (capture order — the flush work list order).
  *
- * Deliberately kind-filtered: the drafts list screen and the report flush both mean reports by
+ * Deliberately kind-filtered: the drafts list screen and the post flush both mean Posts by
  * "drafts", and a hazard silently appearing in either would be a bug rather than a feature.
  */
-export function listDrafts(): ReportDraft[] {
-  return readReportDrafts(getDb());
+export function listDrafts(): PostDraft[] {
+  return readPostDrafts(getDb());
 }
 
-export function getDraft(id: string): ReportDraft | null {
+export function getDraft(id: string): PostDraft | null {
   const row = getDb().getFirstSync<{ data: string }>(
     'SELECT data FROM report_drafts WHERE id = ? AND kind = ?',
-    [id, KIND_REPORT],
+    [id, KIND_POST],
   );
-  return row ? (JSON.parse(row.data) as ReportDraft) : null;
+  return row ? (JSON.parse(row.data) as PostDraft) : null;
 }
 
 export function deleteDraft(id: string): void {

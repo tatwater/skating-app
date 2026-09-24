@@ -159,9 +159,20 @@ export const collect = internalQuery({
     const profile = await ctx.db.get(userId);
     if (!profile) throw new ConvexError('No such profile');
 
+    // The Post is where the author's words live (A10 / D186): the title and the prose, over the
+    // Reports that carry the observation. Both go in the bundle, each in its own file.
+    const posts = await ctx.db
+      .query('posts')
+      .withIndex('by_author', (q) => q.eq('authorId', userId))
+      .take(ROW_CAP);
     const reports = await ctx.db
       .query('reports')
       .withIndex('by_author', (q) => q.eq('authorId', userId))
+      .take(ROW_CAP);
+    // What their Posts and Reports said before each edit (A10-3) — theirs, so it goes in the bundle.
+    const revisions = await ctx.db
+      .query('contentRevisions')
+      .withIndex('by_author_replaced_at', (q) => q.eq('authorId', userId))
       .take(ROW_CAP);
     const comments = await ctx.db
       .query('comments')
@@ -232,7 +243,9 @@ export const collect = internalQuery({
 
     return {
       profile: exportableProfile,
+      posts: posts,
       reports: reports,
+      contentRevisions: revisions,
       comments: comments,
       hazards: hazards,
       hazardConfirmations: confirmations,

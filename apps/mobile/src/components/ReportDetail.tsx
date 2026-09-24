@@ -1,32 +1,34 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  describeLocatedChip,
+  describeSnow,
   formatConditions,
   formatLocationLine,
   formatSeason,
   formatSkateTime,
   formatSkateWindow,
-  formatSnowCoverInches,
   formatThicknessReading,
-  iceTypeKeys,
   isLeaving,
+  OBSERVED_FROM_LABELS,
   type ReportConditions,
   reportStripState,
+  SIGHTING_LABELS,
   SKATE_QUALITY_LABELS,
+  SUITABILITY_LABELS,
   seasonOf,
-  surfaceTagKeys,
 } from '@skating/core';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Image, Pressable } from 'react-native';
+import { Alert, Image, Pressable } from 'react-native';
 import { Button, H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { doorHref } from '../lib/sheetDoors';
 import { Comments } from './CommentThread';
 import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
-import { ReportForm } from './ReportForm';
 import { BlockedChip, FlagControl } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
@@ -42,9 +44,12 @@ import { WeatherStrip } from './WeatherStrip';
 export function ReportDetail({ reportId }: { reportId: string }) {
   const router = useRouter();
   const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
+  // The Post's words and its other lakes (A10 / D186); `null` until it loads or when not visible.
+  const post = useQuery(api.posts.getForReport, { reportId: reportId as Id<'reports'> });
   const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
-  // The author's own edit sheet (A06f). With the other hooks, above the early returns.
-  const [editing, setEditing] = useState(false);
+  // The author's own takedown (A10-3): soft, audited, the Post with the last Report (D186).
+  const removeReport = useMutation(api.reports.remove);
+  const [deleting, setDeleting] = useState(false);
   const authors = useQuery(
     api.profiles.publicByIds,
     report ? { profileIds: [report.authorId] } : 'skip',
@@ -115,6 +120,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const authorBlocked = (blockedIds ?? []).includes(report.authorId);
   const isOwn = me?._id === report.authorId;
   const readings = report.iceThickness?.readings ?? [];
+  const snow = report.snow ? describeSnow(report.snow) : null;
   const conditions = report.conditions
     ? formatConditions({
         ...report.conditions,
@@ -167,24 +173,62 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         ) : null}
       </YStack>
 
-      {report.skateQuality || report.conflicting ? (
+      {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment;
+          then the vantage when it was not the ice (D191), and what a shore observer saw. */}
+      {report.suitability ||
+      report.skateQuality ||
+      (report.observedFrom && report.observedFrom !== 'on_ice') ||
+      report.sighting ||
+      report.conflicting ? (
         <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
+          {report.suitability ? (
+            <Badge tone={report.suitability === 'dont_go' ? 'danger' : 'solid'}>
+              {SUITABILITY_LABELS[report.suitability]}
+            </Badge>
+          ) : null}
           {report.skateQuality ? (
             <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
           ) : null}
+          {report.observedFrom && report.observedFrom !== 'on_ice' ? (
+            <Badge>{OBSERVED_FROM_LABELS[report.observedFrom]}</Badge>
+          ) : null}
+          {report.sighting ? <Badge>{SIGHTING_LABELS[report.sighting]}</Badge> : null}
           {report.conflicting ? <Badge>Conflicting reports</Badge> : null}
         </XStack>
       ) : null}
 
+      {/* The words this Report was posted with (A10 / D186) — the author's, over the data. */}
+      {post?.title || post?.body ? (
+        <YStack gap="$1">
+          {post.title ? (
+            <Text color="$foreground" fontWeight="600" fontSize={16}>
+              {post.title}
+            </Text>
+          ) : null}
+          {post.body ? (
+            <Paragraph color="$foreground" lineHeight={21}>
+              {post.body}
+            </Paragraph>
+          ) : null}
+        </YStack>
+      ) : null}
+
       {report.iceTypes && report.iceTypes.length > 0 ? (
         <Section label="Ice types">
-          <Chips values={iceTypeKeys(report.iceTypes)} />
+          {/* Each chip with its `where`, in words (A10 §12.1) — the bays by name, from the server. */}
+          <Chips
+            values={report.iceTypes.map((chip) => describeLocatedChip(chip, report.bayNames))}
+            humanize={false}
+          />
         </Section>
       ) : null}
 
       {report.surfaceTags && report.surfaceTags.length > 0 ? (
         <Section label="Surface">
-          <Chips values={surfaceTagKeys(report.surfaceTags)} />
+          <Chips
+            values={report.surfaceTags.map((chip) => describeLocatedChip(chip, report.bayNames))}
+            humanize={false}
+          />
         </Section>
       ) : null}
 
@@ -204,9 +248,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         </Section>
       ) : null}
 
-      {report.snow?.depthCm !== undefined ? (
-        <Section label="Snow cover">
-          <Text color="$foreground">{formatSnowCoverInches(report.snow.depthCm)}</Text>
+      {snow ? (
+        <Section label="Snow">
+          <Text color="$foreground">{snow}</Text>
         </Section>
       ) : null}
 
@@ -236,6 +280,26 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       {report.notes ? (
         <Section label="Notes">
           <Paragraph color="$foreground">{report.notes}</Paragraph>
+        </Section>
+      ) : null}
+
+      {/* The other legs of the same day (A10 / D186), in the author's order. */}
+      {post && post.siblings.length > 0 ? (
+        <Section label="Also in this post">
+          <XStack gap="$1.5" flexWrap="wrap">
+            {post.siblings.map((sibling) => (
+              <Button
+                key={sibling.reportId}
+                size="$2"
+                variant="outlined"
+                onPress={() =>
+                  router.navigate({ pathname: '/report/[id]', params: { id: sibling.reportId } })
+                }
+              >
+                {sibling.bodyName}
+              </Button>
+            ))}
+          </XStack>
         </Section>
       ) : null}
 
@@ -305,24 +369,61 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         <XStack gap="$2" flexWrap="wrap" alignItems="flex-start">
           <FlagControl targetType="report" targetId={report._id} label="Flag report" />
           <ModeratorActions targetType="report" targetId={report._id} />
+          {/* The Post is the other verdict (A10 / D186): hiding it hides every Report under it. */}
+          {report.postId ? (
+            <ModeratorActions targetType="post" targetId={report.postId} label="Moderate post" />
+          ) : null}
         </XStack>
       ) : null}
 
-      {/* The author's own control (A06f). `reports.update` shipped with D25 and had nothing calling
-          it, so posting was a one-way door: a mistyped thickness could only be fixed by asking a
-          moderator to remove the whole report. Hidden once moderated, which the server refuses. */}
+      {/* The author's own controls (A06f; A10-3). Edit opens the sheet on this Report — the same
+          sheet that wrote it — and its Post's words with it. Delete is soft and audited; what
+          left, and when, a moderator can still see (founder call, 2026-09-21). Hidden once
+          moderated, which the server refuses. */}
       {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (
-        <Button size="$2" chromeless onPress={() => setEditing(true)}>
-          Edit report
-        </Button>
-      ) : null}
-      {editing ? (
-        <ReportForm
-          {...(report.waterBodyId ? { waterBodyId: report.waterBodyId } : {})}
-          {...(body?.available ? { bodyName: body.body.name } : {})}
-          onClose={() => setEditing(false)}
-          editing={{ reportId: report._id, report, photoIds: report.photoIds }}
-        />
+        <XStack gap="$2" flexWrap="wrap">
+          <Button
+            size="$2"
+            chromeless
+            onPress={() => router.navigate(doorHref({ edit: report._id }))}
+          >
+            Edit report
+          </Button>
+          <Button
+            size="$2"
+            chromeless
+            color="$danger"
+            disabled={deleting}
+            onPress={() =>
+              Alert.alert(
+                'Delete this report?',
+                report.postId
+                  ? 'It comes off the lake and the feed. If it was the last report in its post, the post goes too.'
+                  : 'It comes off the lake and the feed.',
+                [
+                  { text: 'Keep it', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => {
+                      setDeleting(true);
+                      removeReport({ reportId: report._id })
+                        .then(() =>
+                          router.navigate({
+                            pathname: '/water/[id]',
+                            params: { id: report.waterBodyId },
+                          }),
+                        )
+                        .catch(() => setDeleting(false));
+                    },
+                  },
+                ],
+              )
+            }
+          >
+            {deleting ? 'Deleting…' : 'Delete report'}
+          </Button>
+        </XStack>
       ) : null}
 
       <Comments reportId={report._id} />

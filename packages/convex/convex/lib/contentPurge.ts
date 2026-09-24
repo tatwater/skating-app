@@ -86,6 +86,8 @@ export function redactCutoff(now: number): number {
  * because that's the part with a promise attached to it; the private leftovers can wait a tick.
  */
 const CATEGORIES = [
+  'posts',
+  'revisions',
   'reports',
   'hazards',
   'comments',
@@ -132,6 +134,7 @@ export interface RedactionResult {
   cursor?: string;
   /** Rows whose free text was cleared — kept, anonymized, still part of the ice record. */
   redacted: {
+    posts: number;
     reports: number;
     hazards: number;
     comments: number;
@@ -139,13 +142,16 @@ export interface RedactionResult {
     accessAlerts: number;
     photos: number;
   };
-  /** Rows removed outright — private, unpublished, or a standing ask nobody is making any more. */
-  erased: { bounties: number; recordings: number; photos: number };
+  /**
+   * Rows removed outright — private, unpublished, a standing ask nobody is making any more, or the
+   * edit history whose words are being cleared.
+   */
+  erased: { bounties: number; recordings: number; photos: number; revisions: number };
 }
 
 const EMPTY: Omit<RedactionResult, 'more' | 'cursor'> = {
-  redacted: { reports: 0, hazards: 0, comments: 0, flags: 0, accessAlerts: 0, photos: 0 },
-  erased: { bounties: 0, recordings: 0, photos: 0 },
+  redacted: { posts: 0, reports: 0, hazards: 0, comments: 0, flags: 0, accessAlerts: 0, photos: 0 },
+  erased: { bounties: 0, recordings: 0, photos: 0, revisions: 0 },
 };
 
 /** How one pass is scoped. See the `final` note in the file header — it is the load-bearing one. */
@@ -214,6 +220,10 @@ export async function redactAgedContent(
    */
   async function runCategory(which: Category): Promise<string | null> {
     switch (which) {
+      case 'posts':
+        return redactPosts();
+      case 'revisions':
+        return eraseRevisions();
       case 'reports':
         return redactReports();
       case 'hazards':
@@ -231,6 +241,50 @@ export async function redactAgedContent(
       case 'bounties':
         return eraseBounties();
     }
+  }
+
+  // ── Posts: the title and the prose (A10 / D186) ────────────────────────────────────────────────
+  //
+  // Exactly the typed-text bucket D62 clears: the Post is where the author's words live now, and
+  // the Reports under it keep the observation. Aged on `latestSkateEndTime` — the Post's own clock,
+  // the freshest of its members — bounded the way the reports below are (an equality on the author,
+  // an upper bound on the clock) and under the same `final` rule. The Reports stay in their own category, since a Post-less Report cannot exist
+  // but a legacy one still carries its `notes`.
+  async function redactPosts(): Promise<string | null> {
+    const page = await ctx.db
+      .query('posts')
+      .withIndex('by_author_latest_skate_end_time', (q) => {
+        const authored = q.eq('authorId', userId);
+        return final ? authored : authored.lt('latestSkateEndTime', cutoff);
+      })
+      .paginate({ cursor, numItems: pageSize });
+    for (const post of page.page) {
+      if (post.title === undefined && post.body === undefined) continue;
+      await ctx.db.patch(post._id, { title: undefined, body: undefined });
+      result.redacted.posts++;
+    }
+    return nextCursor(page);
+  }
+
+  // ── Revisions: what a Post or Report used to say (A10-3) ───────────────────────────────────────
+  //
+  // Typed text twice over — a snapshot of a title, a prose, a note — so it clears on the same clock
+  // as the words it copied. Deleted rather than redacted: a revision exists for a moderator to
+  // compare an edit against, and once the words are gone there is nothing to compare. Aged on
+  // `replacedAt` (when the edit happened), the row's own clock, by an author-led index.
+  async function eraseRevisions(): Promise<string | null> {
+    const page = await ctx.db
+      .query('contentRevisions')
+      .withIndex('by_author_replaced_at', (q) => {
+        const authored = q.eq('authorId', userId);
+        return final ? authored : authored.lt('replacedAt', cutoff);
+      })
+      .paginate({ cursor, numItems: pageSize });
+    for (const revision of page.page) {
+      await ctx.db.delete(revision._id);
+      result.erased.revisions++;
+    }
+    return nextCursor(page);
   }
 
   // ── Reports: kept whole, minus the words ───────────────────────────────────────────────────────
@@ -474,14 +528,20 @@ export async function redactAgedContent(
 /**
  * The free text on one report, or `null` if there is none left to clear.
  *
- * Two fields, and the second is the easy one to miss: every thickness reading carries its own `note`
- * ("through the ridge, water in the hole"), which is prose in a nested array rather than a column.
- * The readings themselves stay — a measurement is the single most valuable thing in a report.
+ * Four places, and three are the easy ones to miss: every thickness reading carries its own `note`
+ * ("through the ridge, water in the hole"), and since A10 so does every located ice or surface
+ * chip — prose in nested arrays rather than a column. The readings and the chips themselves stay,
+ * `where` included: a measurement is the single most valuable thing in a report, and a sector or a
+ * bay is a location label, not the person. (`where.name` stays for the same reason — it names a
+ * point on the lake, the way `subAreaName` does.)
  */
-function reportRedaction(report: Doc<'reports'>): Partial<Doc<'reports'>> | null {
+export function reportRedaction(report: Doc<'reports'>): Partial<Doc<'reports'>> | null {
   const readings = report.iceThickness?.readings ?? [];
   const hasReadingNotes = readings.some((r) => r.note !== undefined);
-  if (report.notes === undefined && !hasReadingNotes) return null;
+  const hasIceNotes = report.iceTypes.some((c) => c.note !== undefined);
+  const hasSurfaceNotes = report.surfaceTags.some((c) => c.note !== undefined);
+  if (report.notes === undefined && !hasReadingNotes && !hasIceNotes && !hasSurfaceNotes)
+    return null;
   return {
     notes: undefined,
     ...(hasReadingNotes
@@ -491,6 +551,12 @@ function reportRedaction(report: Doc<'reports'>): Partial<Doc<'reports'>> | null
             readings: readings.map(({ note: _dropped, ...rest }) => rest),
           },
         }
+      : {}),
+    ...(hasIceNotes
+      ? { iceTypes: report.iceTypes.map(({ note: _dropped, ...rest }) => rest) }
+      : {}),
+    ...(hasSurfaceNotes
+      ? { surfaceTags: report.surfaceTags.map(({ note: _dropped, ...rest }) => rest) }
       : {}),
   };
 }

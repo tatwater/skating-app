@@ -5,6 +5,13 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 function convexTestWithGeo() {
@@ -84,7 +91,9 @@ async function seedBody(t: ReturnType<typeof convexTest>, externalId = 'osm/1') 
   return body._id as Id<'waterBodies'>;
 }
 
-const SKATE_TIME = Date.UTC(2026, 0, 10);
+// Three hours ago, against the real clock: the freshness window (D199, A10-2) refuses an end time
+// more than a week old at the write, so a fixed January date would stop posting a week later.
+const SKATE_TIME = Date.now() - 3 * 3_600_000;
 
 describe('putIns.listForBody', () => {
   test('returns [] for an unknown body', async () => {
@@ -99,8 +108,16 @@ describe('putIns.listForBody', () => {
     const id = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     // Two reports at the centroid (default point) cluster into one marker.
-    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
-    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME + 1 });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+    });
 
     const markers = await t.query(api.putIns.listForBody, { waterBodyId: id });
     expect(markers).toHaveLength(1);
@@ -120,6 +137,7 @@ describe('putIns.listForBody', () => {
     const id = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -139,6 +157,7 @@ describe('putIns.listForBody', () => {
     const id = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       showPutIn: false,
@@ -151,7 +170,11 @@ describe('putIns.listForBody', () => {
     const id = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const asMod = await seedUser(t, 'clerk_mod', 'moderator');
-    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     // Official marker well away from the derived cluster's shore point.
     await asMod.mutation(api.putIns.setOfficial, {
       waterBodyId: id,
@@ -168,7 +191,11 @@ describe('putIns.listForBody', () => {
     const id = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const asMod = await seedUser(t, 'clerk_mod', 'moderator');
-    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
 
     const before = await t.query(api.putIns.listForBody, { waterBodyId: id });
     expect(before).toHaveLength(1);

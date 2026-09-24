@@ -11,7 +11,7 @@
  * Thresholds live in `reputationConfig.ts`; callers may override per field for tests / Phase-07 tuning.
  */
 
-import { type ChipInput, iceTypeKeys } from './reportFields';
+import { type ChipInput, toLocatedChip } from './reportFields';
 import {
   RECOMMENDED_BUNDLE_SIZE,
   RECOMMENDED_MAX_BODIES_PER_DAY,
@@ -23,6 +23,7 @@ import {
   type TrustClass,
 } from './reputationConfig';
 import type { IceType, SkateQuality } from './types';
+import { whereCoversBody } from './where';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -82,7 +83,12 @@ export function isRecommendable(
     trustRank(report.authorTrust) >= trustRank(t.minTrustClass) &&
     report.photoCount >= t.minPhotos &&
     report.skateQuality === t.requiredQuality &&
-    iceTypeKeys(report.iceTypes).includes(t.requiredIceType) &&
+    // The strip recommends a *lake* (D3: exceptional, corroborated ice), so the ice type has to be
+    // claimed of the lake — a chip located in one bay or one sector, or "patches", is a good part
+    // of a lake, not a recommendation (A10 §12.2).
+    (report.iceTypes ?? [])
+      .map(toLocatedChip)
+      .some((chip) => chip.type === t.requiredIceType && whereCoversBody(chip.where)) &&
     report.skateEndTime >= now - t.recencyHours * HOUR_MS
   );
 }

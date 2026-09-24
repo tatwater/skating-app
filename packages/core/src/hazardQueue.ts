@@ -101,6 +101,13 @@ export interface QueuedHazard {
    * ice must survive the round trip to signal unchanged.
    */
   dismissedDuplicateOf?: string;
+  /**
+   * Flush checkpoint: the server hazard id, once created (A10 §9.1). A flushed hazard's row is
+   * **kept**, `done`, while a Post draft still bundles it by local id (D55 offline) — the draft's
+   * flush resolves the ref through this field — and swept once nothing points at it
+   * (`removableHazardItems`), the way a flushed track's row is kept for the report it belongs to.
+   */
+  hazardId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -142,6 +149,21 @@ export function isHazardItemFlushable(item: HazardQueueItem): boolean {
 /** The flushable subset, oldest first (capture order) — the reconnect-flush work list. */
 export function flushableHazardItems(items: readonly HazardQueueItem[]): HazardQueueItem[] {
   return items.filter(isHazardItemFlushable).sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/**
+ * The flushed hazards whose rows may now go: `done`, and no Post draft bundles them by local id any
+ * more (A10 §9.1). A confirmation is never kept past its flush — nothing references one — so a
+ * `done` confirmation is always removable. Runs after every drain, like the track retention.
+ */
+export function removableHazardItems(
+  items: readonly HazardQueueItem[],
+  referencedLocalIds: ReadonlySet<string>,
+): HazardQueueItem[] {
+  return items.filter(
+    (item) =>
+      item.status === 'done' && (item.kind !== 'hazard' || !referencedLocalIds.has(item.id)),
+  );
 }
 
 export function createQueuedHazard(args: {
@@ -342,7 +364,9 @@ export async function flushHazardItem(
         ? { dismissedDuplicateOf: h.dismissedDuplicateOf }
         : {}),
     });
-    await save({ status: 'done' });
+    // The server id is checkpointed on the row: a hazard's row outlives its flush while a draft
+    // bundles it (a confirmation returned above — it carries the id it voted on already).
+    await save({ status: 'done', hazardId });
     return { ok: true, item: current, hazardId };
   } catch (error) {
     const kind = classifyFlushError(error);
