@@ -1,4 +1,11 @@
-import { type BBox, chordArc, type LatLng, type SubAreaMouth, shapeSignature } from '@skating/core';
+import {
+  type BBox,
+  chordArc,
+  type LatLng,
+  mouthArcSide,
+  type SubAreaMouth,
+  shapeSignature,
+} from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
@@ -309,9 +316,17 @@ export function LakeEditorMap({
                 type: 'Feature' as const,
                 geometry: {
                   type: 'LineString' as const,
-                  coordinates: chordArc(s.mouth.a, s.mouth.b, s.mouth.side, s.mouth.sagittaM).map(
-                    (p) => [p.lng, p.lat],
-                  ),
+                  // "Out" judged at the mouth, as the derivation judges it — the stored `side`
+                  // alone would bow a hook-shaped bay's line the wrong way.
+                  coordinates: chordArc(
+                    s.mouth.a,
+                    s.mouth.b,
+                    mouthArcSide(
+                      data.body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
+                      s.mouth,
+                    ),
+                    s.mouth.sagittaM,
+                  ).map((p) => [p.lng, p.lat]),
                 },
                 properties: { subAreaId: s._id },
               },
@@ -320,7 +335,7 @@ export function LakeEditorMap({
       ),
     });
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.subAreas, setData]);
+  }, [loaded, data.subAreas, data.body.polygon, setData]);
 
   useEffect(() => {
     if (!loaded) return;

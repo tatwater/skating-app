@@ -109,6 +109,7 @@ import {
   notificationTrigger,
   postedAccess,
   snow,
+  subAreaMouth,
   weatherSinceSummary,
 } from './lib/validators';
 
@@ -1383,14 +1384,14 @@ export default defineSchema({
      * Absent on a free-drawn bay, and **cleared by a free-draw redraw**: a polygon that no longer
      * follows from the mouth must not claim to.
      */
-    mouth: v.optional(
-      v.object({
-        a: latLng,
-        b: latLng,
-        side: latLng,
-        sagittaM: v.number(),
-      }),
-    ),
+    mouth: v.optional(subAreaMouth),
+    /**
+     * Set when a re-import moved the shoreline so the stored mouth no longer derives (a point now
+     * nearest an islet, say): the outline was re-clipped the plain way instead, and this is the
+     * reason, shown on the editor row where "Edit mouth" fixes it and cleared by any chord or
+     * freehand save. Never silent (D5) — a stale mouth drawn as the bay's edge would be a lie.
+     */
+    mouthStale: v.optional(v.string()),
   })
     // Every non-map read is scoped to a parent already in hand — the report being created knows its
     // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
@@ -2700,6 +2701,11 @@ export default defineSchema({
     name: v.optional(v.string()),
     aliases: v.optional(v.array(v.string())),
     /**
+     * `requestNameKey(name)`, stored so the asks for one bay are an index range rather than a scan
+     * and a fold (the `candidateExternalId` treatment). Written with `name`, never on its own.
+     */
+    nameKey: v.optional(v.string()),
+    /**
      * The resolver's answer for an `admit` (D106): the catalog polygon and its provenance. Absent
      * until the action has run; `resolveError` says why it could not, and `resolvedAt` says it did.
      */
@@ -2750,6 +2756,9 @@ export default defineSchema({
     // contiguous range a mutation can drain page by page, not a filter over a capped page of every
     // kind (Greptile, PR #63).
     .index('by_water_body', ['waterBodyId', 'kind', 'status'])
+    // The asks for one bay (D201): `eq` on all four, so the optional `nameKey` is never ranged —
+    // rows of other kinds lack it and would sort first under a bare range.
+    .index('by_water_body_name', ['waterBodyId', 'kind', 'status', 'nameKey'])
     // Every `admit` that resolved to the same catalog feature — the sibling set a decision closes.
     // `eq()` only: the field is optional and the index is not sparse.
     .index('by_candidate_external_id', ['candidateExternalId', 'status']),

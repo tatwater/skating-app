@@ -59,7 +59,10 @@ export function RequestButtons({
   if (kinds.length === 0) return null;
   const latest = mine?.[0];
   const outcome = latest ? describeRequestOutcome(latest) : null;
-  const pendingKind = mine?.find((r) => r.status === 'open')?.kind;
+  // Every open ask's kind, newest first: each disables its button (a newer bay ask must not
+  // re-enable an older takedown), and the newest is the one the line names.
+  const openKinds = (mine ?? []).filter((r) => r.status === 'open').map((r) => r.kind);
+  const pendingKind = openKinds[0];
 
   return (
     <YStack gap="$2" testID="request-lake">
@@ -80,7 +83,7 @@ export function RequestButtons({
             variant="outlined"
             chromeless={kind === 'takedown'}
             // A bay ask is per bay, not per lake (the server's rule): a second bay is a second ask.
-            disabled={pendingKind === kind && kind !== 'name_bay'}
+            disabled={openKinds.includes(kind) && kind !== 'name_bay'}
             onPress={() => setAsking(kind)}
           >
             {requestKindLabel(kind)}

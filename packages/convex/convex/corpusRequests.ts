@@ -70,7 +70,11 @@ import {
   decide,
   decisionArgs,
   drawnBay,
+  listedBaysOf,
+  matchBay,
   QUEUE_CAP,
+  requestKeyOf,
+  requestNames,
 } from './lib/requestDecisions';
 import { scoreFields } from './lib/scoring';
 import { activateBody, registerWeatherMembership } from './lib/standing';
@@ -211,7 +215,7 @@ export const create = mutation({
       (r) =>
         r.waterBodyId === waterBodyId &&
         r.kind === kind &&
-        (kind !== 'name_bay' || requestNameKey(r.name ?? '') === requestNameKey(bayName ?? '')),
+        (kind !== 'name_bay' || requestKeyOf(r) === requestNameKey(bayName ?? '')),
     );
     if (dupe) throw new ConvexError('You have already asked — it is with the moderators.');
 
@@ -223,7 +227,7 @@ export const create = mutation({
       waterBodyId,
       ...(activityId !== undefined ? { activityId } : {}),
       ...(trimmedNote ? { note: trimmedNote } : {}),
-      ...(bayName ? { name: bayName } : {}),
+      ...(bayName ? { name: bayName, nameKey: requestNameKey(bayName) } : {}),
       createdAt: now,
     });
   },
@@ -437,7 +441,7 @@ export const openCountsForBody = query({
  */
 function questionKey(r: Doc<'waterBodyRequests'>): string {
   if (r.kind === 'admit') return r.candidateExternalId ? `admit:${r.candidateExternalId}` : r._id;
-  if (r.kind === 'name_bay') return `name_bay:${r.waterBodyId}:${requestNameKey(r.name ?? '')}`;
+  if (r.kind === 'name_bay') return `name_bay:${r.waterBodyId}:${requestKeyOf(r)}`;
   return `${r.kind}:${r.waterBodyId}`;
 }
 
@@ -467,6 +471,16 @@ export const listQueue = query({
       const key = questionKey(r);
       askersByQuestion.set(key, (askersByQuestion.get(key) ?? 0) + 1);
     }
+    // A lake's bays are read once however many of its bay asks the page holds — Champlain's
+    // bays carry ~1,100-vertex outlines, and a read per ask repeats them.
+    const baysByBody = new Map<string, Doc<'waterBodySubAreas'>[]>();
+    const baysOf = async (waterBodyId: Id<'waterBodies'>) => {
+      const known = baysByBody.get(waterBodyId);
+      if (known) return known;
+      const bays = await listedBaysOf(ctx, waterBodyId);
+      baysByBody.set(waterBodyId, bays);
+      return bays;
+    };
     const out = [];
     for (const r of page) {
       const requester = await ctx.db.get(r.requesterId);
@@ -482,9 +496,9 @@ export const listQueue = query({
         ...(r.name !== undefined ? { name: r.name } : {}),
         ...(r.aliases !== undefined ? { aliases: r.aliases } : {}),
         // For a bay: the sub-area that already answers it, if a moderator has drawn one — the
-        // queue then offers "approve" rather than "draw". One bounded per-parent read per bay row.
+        // queue then offers "approve" rather than "draw".
         ...(r.kind === 'name_bay' && r.status === 'open' && body
-          ? { drawnSubAreaId: (await drawnBay(ctx, body._id, r.name ?? ''))?._id }
+          ? { drawnSubAreaId: matchBay(await baysOf(body._id), requestNames(r))?._id }
           : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
@@ -602,7 +616,7 @@ export const approve = mutation({
           // `createFromChord` with the request attached, which approves from there. Approving
           // from the queue is for a bay drawn before the ask, or drawn without the request in
           // hand; it needs the bay to exist by the name asked for.
-          const bay = await drawnBay(ctx, body._id, request.name ?? '');
+          const bay = await drawnBay(ctx, body._id, requestNames(request));
           if (!bay) {
             throw new ConvexError(
               `No sub-area called "${request.name}" on ${body.name} yet — draw it in the lake editor first, then approve.`,
@@ -693,46 +707,61 @@ export const openBayRequestsForBody = query({
         q.eq('waterBodyId', waterBodyId).eq('kind', 'name_bay').eq('status', 'open'),
       )
       .take(QUEUE_CAP);
+    const body = await ctx.db.get(waterBodyId);
     const byKey = new Map<
       string,
       {
         requestId: Id<'waterBodyRequests'>;
         name: string;
         aliases: string[];
-        coord: { lat: number; lng: number };
+        /** Where the bay is, when someone said — absent for an ask filed from the lake's drawer. */
+        coord?: { lat: number; lng: number };
         notes: string[];
         askers: number;
         createdAt: number;
       }
     >();
     for (const r of rows.sort((x, y) => x.createdAt - y.createdAt)) {
-      const key = requestNameKey(r.name ?? '');
+      const key = requestKeyOf(r);
+      // A skater's ask from the drawer carries the lake's own point, not the bay's: flying there
+      // would land the moderator somewhere on the lake, not at the bay. Only a real point is kept
+      // (the seed's GNIS/OSM point), and the first real one in the group wins.
+      const pointed = body ? !isLakePoint(r.coord, body) : true;
       const entry = byKey.get(key);
       if (entry) {
         entry.askers += 1;
         if (r.note) entry.notes.push(r.note);
         for (const alias of r.aliases ?? [])
           if (!entry.aliases.includes(alias)) entry.aliases.push(alias);
+        if (!entry.coord && pointed) entry.coord = r.coord;
         continue;
       }
       byKey.set(key, {
         requestId: r._id,
         name: r.name ?? '',
         aliases: [...(r.aliases ?? [])],
-        coord: r.coord,
+        ...(pointed ? { coord: r.coord } : {}),
         notes: r.note ? [r.note] : [],
         askers: 1,
         createdAt: r.createdAt,
       });
     }
+    const bays = await listedBaysOf(ctx, waterBodyId);
     const out = [];
     for (const entry of byKey.values()) {
-      const drawn = await drawnBay(ctx, waterBodyId, entry.name);
+      const drawn = matchBay(bays, [entry.name, ...entry.aliases]);
       out.push({ ...entry, ...(drawn ? { drawnSubAreaId: drawn._id } : {}) });
     }
     return out;
   },
 });
+
+/** Is this the lake's own representative point — what a drawer ask sends — rather than a place? */
+function isLakePoint(coord: { lat: number; lng: number }, body: Doc<'waterBodies'>): boolean {
+  return [body.centroid, body.representativePoint, body.interiorPoint].some(
+    (p) => p !== undefined && p.lat === coord.lat && p.lng === coord.lng,
+  );
+}
 
 /** One corpus bay, as the seed file lists it: the parent by name and state, never by a Convex id. */
 const seedBayRow = v.object({
@@ -801,18 +830,26 @@ export const seedBayRequests = internalMutation({
         continue;
       }
       const parent = parents[0] as Doc<'waterBodies'>;
-      if (await drawnBay(ctx, parent._id, row.name)) {
+      const names = [row.name, ...(row.aliases ?? [])];
+      if (await drawnBay(ctx, parent._id, names)) {
         report.push({ name: row.name, parent: parent.name, status: 'already_drawn' });
         continue;
       }
-      const key = requestNameKey(row.name);
-      const open = await ctx.db
-        .query('waterBodyRequests')
-        .withIndex('by_water_body', (q) =>
-          q.eq('waterBodyId', parent._id).eq('kind', 'name_bay').eq('status', 'open'),
-        )
-        .take(QUEUE_CAP);
-      if (open.some((r) => requestNameKey(r.name ?? '') === key)) {
+      let asked = false;
+      for (const key of new Set(names.map(requestNameKey))) {
+        const hit = await ctx.db
+          .query('waterBodyRequests')
+          .withIndex('by_water_body_name', (q) =>
+            q
+              .eq('waterBodyId', parent._id)
+              .eq('kind', 'name_bay')
+              .eq('status', 'open')
+              .eq('nameKey', key),
+          )
+          .first();
+        if (hit) asked = true;
+      }
+      if (asked) {
         report.push({ name: row.name, parent: parent.name, status: 'already_asked' });
         continue;
       }
@@ -824,6 +861,7 @@ export const seedBayRequests = internalMutation({
           coord: row.coord,
           waterBodyId: parent._id,
           name: row.name,
+          nameKey: requestNameKey(row.name),
           ...(row.aliases && row.aliases.length > 0 ? { aliases: row.aliases } : {}),
           note: row.note,
           createdAt: now,

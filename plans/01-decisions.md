@@ -6196,7 +6196,8 @@ redraw clears the mouth; a re-import re-derives a chord bay from its mouth, so t
 the new shoreline. The freehand tool stays for the shapes a chord cannot say.
 
 **The queue is the request lane, not a table of its own.** A sixth request kind, `name_bay`
-(D179 amended), carries a bay's name and a point; an active lake admits it from either client; the
+(D179 amended), carries a bay's name and a point; an active lake admits it from either client,
+ten open per person on a budget of their own beside the lake-ask cap; the
 lake editor lists a body's open asks beside the map and drawing one approves it and every ask for
 the same bay; the requests page lists them across bodies. The corpus's sixteen destination bays
 were filed the same way (`corpusRequests.seedBayRequests`, from a gitignored `--input=` — a bay

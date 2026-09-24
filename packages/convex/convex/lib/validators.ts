@@ -58,6 +58,12 @@ export function partialBoolFlags<const T extends readonly [string, ...string[]]>
 /** A geographic point. Used for report points, centroids, and tested coords. */
 export const latLng = v.object({ lat: v.number(), lng: v.number() });
 
+/**
+ * A chord-drawn sub-area's mouth (D201) — the one validator the table and the mutations share, so
+ * a field added to the mouth cannot be accepted by one and refused by the other.
+ */
+export const subAreaMouth = v.object({ a: latLng, b: latLng, side: latLng, sagittaM: v.number() });
+
 // ── The A10 report shapes (D193–D195) ──────────────────────────────────────────────────────────
 //
 // Each mirrors a `@skating/core` interface (`Where`, `LocatedChip`, `Snow`, the thickness reading)

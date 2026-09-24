@@ -32,7 +32,6 @@ import {
   polygonBBox,
   polygonIoU,
   representativePoint,
-  requestNameKey,
   resolveTrackSubAreas,
   SUB_AREA_CLIP_MESSAGES,
   SUB_AREA_MIN_RENDER_ZOOM,
@@ -69,9 +68,9 @@ import { rankCandidates, scanCells } from './lib/cellScan';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
-import { approveNamedBayRequest } from './lib/requestDecisions';
+import { approveNamedBayRequest, bayNames, namesMeet } from './lib/requestDecisions';
 import { hazardCenter } from './lib/sampling';
-import { bbox, geoJson, latLng } from './lib/validators';
+import { bbox, geoJson, subAreaMouth } from './lib/validators';
 
 /**
  * Rows re-stamped per scheduled batch. Small on purpose: each row costs a read, a point-in-polygon
@@ -397,8 +396,16 @@ export async function reclipSubAreasToParent(
     // rather than only the shape. Only when the mouth no longer works on the new outline (a point
     // now nearest an island, say) does it fall through to the plain re-clip, mouth kept for the
     // editor to fix from.
+    let mouthStale: string | undefined;
     if (subArea.mouth !== undefined) {
       const chord = chordSubArea(parentPolygon, subArea.mouth);
+      if (!chord.ok) {
+        // Never silent (D5): the outline below is re-clipped the plain way, and the row says the
+        // mouth needs fixing — the editor shows it on the bay and stops drawing the stale line.
+        mouthStale = `The shoreline moved and this bay's mouth no longer fits it (${chord.reason}). Edit the mouth.`;
+        console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${mouthStale} (D201)`);
+        if (subArea.mouthStale !== mouthStale) await ctx.db.patch(subArea._id, { mouthStale });
+      }
       if (chord.ok) {
         // By overlap, not by coordinates: the clipper may start the ring at a different vertex
         // when the parent's other shores change, and that is the same shape, not a moved one.
@@ -415,6 +422,9 @@ export async function reclipSubAreasToParent(
             return false;
           }
         })();
+        if (subArea.mouthStale !== undefined) {
+          await ctx.db.patch(subArea._id, { mouthStale: undefined });
+        }
         if (!unchanged) {
           await rederiveSubArea(ctx, subArea, {
             polygon: chord.polygon,
@@ -584,7 +594,8 @@ export async function rederiveSubArea(
   const derived = deriveSubAreaFields(next.polygon, subArea.curatedBoost);
   const geometryChanged = !sameOutline(subArea.polygon, next.polygon);
   await ctx.db.patch(subArea._id, {
-    ...(next.mouth === undefined ? {} : { mouth: next.mouth ?? undefined }),
+    // A mouth written (or cleared) by a moderator is the fix the stale note asked for.
+    ...(next.mouth === undefined ? {} : { mouth: next.mouth ?? undefined, mouthStale: undefined }),
     polygon: derived.polygon,
     bbox: derived.bbox,
     centroid: derived.centroid,
@@ -681,11 +692,11 @@ export async function repointSubAreasOnMerge(
   /** The moderator who ran the merge — a merge is somebody's click, so the audit row names them. */
   actorId?: Id<'profiles'>,
 ): Promise<{ repointed: number; delisted: number }> {
-  const existingNames = new Set(
-    (await subAreasForBody(ctx, survivor._id))
-      .filter((row) => row.removedAt === undefined)
-      .map((row) => row.name.toLowerCase()),
-  );
+  // The same-bay rule `assertNameFree` uses (`namesMeet`), so a merge and a create cannot disagree
+  // about whether "Mallett's Bay" and "Malletts Bay" are one bay.
+  const existing: string[][] = (await subAreasForBody(ctx, survivor._id))
+    .filter((row) => row.removedAt === undefined)
+    .map(bayNames);
   let repointed = 0;
   let delisted = 0;
 
@@ -693,14 +704,16 @@ export async function repointSubAreasOnMerge(
     await ctx.db.patch(subArea._id, { waterBodyId: survivor._id, updatedAt: Date.now() });
     repointed++;
     if (subArea.removedAt !== undefined) continue;
-    if (existingNames.has(subArea.name.toLowerCase())) {
-      const why = `${survivor.name} already has a bay called "${subArea.name}". The merged copy was delisted rather than left to compete for the stamp.`;
+    const names = bayNames(subArea);
+    const clash = existing.find((other) => namesMeet(names, other));
+    if (clash) {
+      const why = `${survivor.name} already has a bay called "${clash[0]}". The merged copy was delisted rather than left to compete for the stamp.`;
       console.warn(`subAreas: ${why} (A02/D60)`);
       await systemDelist(ctx, subArea, why, actorId);
       delisted++;
       continue;
     }
-    existingNames.add(subArea.name.toLowerCase());
+    existing.push(names);
   }
   // Now that they belong to the survivor, hold them to the survivor's outline and listing.
   const { delisted: reclipDelisted } = await reclipSubAreasToParent(
@@ -755,24 +768,23 @@ async function requireParent(
 }
 
 /**
- * Refuse a second sub-area with the same name on one lake. Not a database constraint — Convex has
- * none — but a live one on a bounded read, and the mistake it catches is real: the operator draws
- * "Malletts Bay" twice across two sessions and two overlapping rows then compete for the stamp under
- * Decision 9's area rule, which resolves *deterministically* and therefore silently wrongly.
+ * Refuse a second sub-area that is the same bay as one this lake already has. Not a database
+ * constraint — Convex has none — but a live one on a bounded read, and the mistake it catches is
+ * real: the operator draws "Malletts Bay" twice across two sessions and two overlapping rows then
+ * compete for the stamp under Decision 9's area rule, which resolves *deterministically* and
+ * therefore silently wrongly. "The same bay" is `namesMeet` — any name or alias of one folds to
+ * any of the other — the rule the bay queue and a merge use, so "Northwest Bay" is refused on a
+ * lake whose "NW Bay" already answers to it.
  */
 async function assertNameFree(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  name: string,
+  names: readonly string[],
   exceptId?: Id<'waterBodySubAreas'>,
 ): Promise<void> {
-  // The same fold the bay queue uses (`requestNameKey`): "Mallett's Bay" and "Malletts Bay" are
-  // one bay, and two rows for it would compete for the stamp exactly as two exact copies would.
-  const key = requestNameKey(name);
   const siblings = await subAreasForBody(ctx, waterBodyId);
   const clash = siblings.find(
-    (row) =>
-      row._id !== exceptId && row.removedAt === undefined && requestNameKey(row.name) === key,
+    (row) => row._id !== exceptId && row.removedAt === undefined && namesMeet(names, bayNames(row)),
   );
   if (clash) throw new ConvexError(`This lake already has a sub-area called "${clash.name}"`);
 }
@@ -832,13 +844,14 @@ export const create = mutation({
     const name = args.name.trim();
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
-    await assertNameFree(ctx, args.waterBodyId, name);
+    const aliases = normalizeAliases(args.aliases);
+    await assertNameFree(ctx, args.waterBodyId, [name, ...aliases]);
 
     const geometry = deriveGeometry(args.polygon as unknown as Polygon | MultiPolygon, parent);
     const subAreaId = await insertSubArea(ctx, {
       waterBodyId: args.waterBodyId,
       name,
-      aliases: normalizeAliases(args.aliases),
+      aliases,
       polygon: geometry.polygon,
       ...(args.curatedBoost !== undefined ? { curatedBoost: args.curatedBoost } : {}),
       createdByUserId: actor._id,
@@ -903,8 +916,6 @@ function deriveChordGeometry(mouth: SubAreaMouth, parent: Doc<'waterBodies'>) {
   return result;
 }
 
-const mouthArg = v.object({ a: latLng, b: latLng, side: latLng, sagittaM: v.number() });
-
 /**
  * Moderator: draw a new named sub-area by chord (D201) — two shoreline points, a side, a sagitta.
  *
@@ -924,7 +935,7 @@ export const createFromChord = mutation({
     waterBodyId: v.id('waterBodies'),
     name: v.string(),
     aliases: v.optional(v.array(v.string())),
-    mouth: mouthArg,
+    mouth: subAreaMouth,
     curatedBoost: v.optional(v.number()),
     requestId: v.optional(v.id('waterBodyRequests')),
   },
@@ -933,13 +944,14 @@ export const createFromChord = mutation({
     const name = args.name.trim();
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
-    await assertNameFree(ctx, args.waterBodyId, name);
+    const aliases = normalizeAliases(args.aliases);
+    await assertNameFree(ctx, args.waterBodyId, [name, ...aliases]);
 
     const geometry = deriveChordGeometry(args.mouth, parent);
     const subAreaId = await insertSubArea(ctx, {
       waterBodyId: args.waterBodyId,
       name,
-      aliases: normalizeAliases(args.aliases),
+      aliases,
       polygon: geometry.polygon,
       // As used, not as sent: points snapped onto the outline, the sagitta clamped.
       mouth: geometry.mouth,
@@ -954,11 +966,14 @@ export const createFromChord = mutation({
       clipped: geometry.clipped,
       ...(args.requestId !== undefined ? { requestId: args.requestId } : {}),
     });
-    if (args.requestId !== undefined) {
-      await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
-    }
+    const request =
+      args.requestId === undefined
+        ? undefined
+        : await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
     await scheduleRestamp(ctx, args.waterBodyId);
-    return subAreaId;
+    // What happened to the ask, so the editor says so: an ask decided elsewhere while this bay was
+    // being drawn keeps the answer it got, and "answered the ask" would be untrue.
+    return { subAreaId, ...(request !== undefined ? { request } : {}) };
   },
 });
 
@@ -968,7 +983,7 @@ export const createFromChord = mutation({
  * re-scores, re-cells, re-stamps, exactly as `redraw` does.
  */
 export const updateChord = mutation({
-  args: { subAreaId: v.id('waterBodySubAreas'), mouth: mouthArg },
+  args: { subAreaId: v.id('waterBodySubAreas'), mouth: subAreaMouth },
   handler: async (ctx, { subAreaId, mouth }) => {
     const actor = await requireContributorRole(ctx, 'moderator');
     const subArea = await ctx.db.get(subAreaId);
@@ -1018,7 +1033,7 @@ export const rename = mutation({
     const nextName = name === undefined ? subArea.name : name.trim();
     if (!nextName) throw new ConvexError('A sub-area needs a name');
     if (nextName.toLowerCase() !== subArea.name.toLowerCase()) {
-      await assertNameFree(ctx, subArea.waterBodyId, nextName, subAreaId);
+      await assertNameFree(ctx, subArea.waterBodyId, [nextName], subAreaId);
     }
     const nextAliases = aliases === undefined ? (subArea.aliases ?? []) : normalizeAliases(aliases);
 
@@ -1103,10 +1118,17 @@ export const restore = mutation({
     const parent = await ctx.db.get(subArea.waterBodyId);
     if (!parent) throw new ConvexError('Water body not found');
 
-    // Held to the parent's *current* outline. A refusal here is informative rather than obstructive:
-    // it means the lake moved under this bay while it was retired, and the answer is a redraw — which
-    // is the paste-GeoJSON / draw path, not a flag someone flips.
-    const geometry = deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
+    // Held to the parent's *current* outline. A chord bay is re-derived from its mouth first (D201)
+    // — the re-clip skips delisted rows, so a shore that moved while this bay was retired has not
+    // been followed yet, and the mouth is what follows it. Otherwise (or when the mouth no longer
+    // fits) the stored outline is re-clipped. A refusal here is informative rather than
+    // obstructive: the lake moved under this bay while it was retired, and the answer is a redraw.
+    const chord = subArea.mouth
+      ? chordSubArea(parent.polygon as unknown as Polygon | MultiPolygon, subArea.mouth)
+      : null;
+    const geometry = chord?.ok
+      ? chord
+      : deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
 
     await ctx.db.patch(subAreaId, {
       removedAt: undefined,
@@ -1126,9 +1148,16 @@ export const restore = mutation({
         clearDelistReason: true,
       },
     );
+    // Recorded, never silent: a mouth that no longer fits the outline the bay came back to.
+    if (subArea.mouth && chord && !chord.ok) {
+      await ctx.db.patch(subAreaId, {
+        mouthStale: `The shoreline moved while this bay was delisted and its mouth no longer fits (${chord.reason}). Edit the mouth.`,
+      });
+    }
     await audit(ctx, actor._id, 'restore', subAreaId, `Restored "${subArea.name}"`, {
       waterBodyId: subArea.waterBodyId,
       geometryChanged,
+      ...(chord ? { via: chord.ok ? 'chord' : 'reclip' } : {}),
     });
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1795,6 +1824,7 @@ export const listForBody = query({
           : {}),
         // The mouth a chord bay was derived from (D201) — what the editor re-opens with.
         ...(row.mouth !== undefined ? { mouth: row.mouth } : {}),
+        ...(row.mouthStale !== undefined ? { mouthStale: row.mouthStale } : {}),
         removed: row.removedAt !== undefined,
         // Why the *system* retired it, if it did — the editor renders this next to the row, which is
         // the whole point of storing it rather than logging it (A02).

@@ -337,6 +337,9 @@ describe('decide — what approving performs', () => {
       activate: 2,
     });
 
+    // convex-test can stamp a same-millisecond insert a hair past the clock; the decision closes
+    // what existed when it was made, so let the clock pass the second ask (a rare flake otherwise).
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await mod.as.mutation(api.corpusRequests.approve, { requestId: first, note: 'Welcome back.' });
     expect(standingOf((await get(t, id)) as Doc<'waterBodies'>).standing).toBe('active');
     const rows = await t.run((ctx) => ctx.db.query('waterBodyRequests').collect());
@@ -1047,11 +1050,82 @@ describe('name_bay — the sub-area queue', () => {
     const variant = await ask(two, 'NW Bay'); // no fold joins these; the bay's alias does
     const other = await ask(two, 'Button Bay');
     await seedBay(t, id, 'Northwest Bay', ['NW Bay']);
+    // A decision closes the asks that existed when it was made; convex-test stamps inserts in one
+    // millisecond a hair past the clock, so let the clock pass them (the subAreas suite's reason).
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
     const rows = await t.run((ctx) =>
       Promise.all([first, variant, other].map((r) => ctx.db.get(r))),
     );
     expect(rows.map((r) => r?.status)).toEqual(['approved', 'approved', 'open']);
+  });
+
+  test('a bay drawn under one of the ask’s other spellings still answers it', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const founder = await seedUser(t, 'founder', 'admin');
+    const id = await seedBody(t, 'osm/1', { states: ['VT'] });
+    await seedBay(t, id, 'NW Bay');
+    // The seed's row goes by "Northwest Bay" with "NW Bay" as an alias.
+    const report = await t.mutation(internal.corpusRequests.seedBayRequests, {
+      requesterId: founder.id,
+      rows: [
+        {
+          name: 'Northwest Bay',
+          aliases: ['NW Bay'],
+          state: 'VT',
+          parentName: 'Quiet Pond',
+          coord: NOTCH,
+          note: '',
+        },
+      ],
+    });
+    expect(report[0]?.status).toBe('already_drawn');
+    // A skater's ask by the full name, with the seed's spelling on an earlier row, still matches.
+    const requestId = await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_bay',
+        status: 'open',
+        requesterId: founder.id,
+        coord: NOTCH,
+        waterBodyId: id,
+        name: 'Northwest Bay',
+        nameKey: 'northwest bay',
+        aliases: ['NW Bay'],
+        createdAt: Date.now(),
+      }),
+    );
+    const rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    expect(rows[0]?.drawnSubAreaId).toBeDefined();
+    await mod.as.mutation(api.corpusRequests.approve, { requestId });
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('approved');
+  });
+
+  test('the editor’s queue flies only to a real point — a drawer ask carries the lake’s own', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const id = await seedBody(t);
+    // The drawer sends the lake's centroid — INSIDE, for this fixture.
+    await one.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: INSIDE,
+      waterBodyId: id,
+      name: 'Corner Bay',
+    });
+    let rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    expect(rows[0]?.coord).toBeUndefined();
+    // A later ask for the same bay with a real point supplies one.
+    const two = await seedUser(t, 'two');
+    await two.as.mutation(api.corpusRequests.create, {
+      kind: 'name_bay',
+      coord: NOTCH,
+      waterBodyId: id,
+      name: 'corner bay',
+    });
+    rows = await mod.as.query(api.corpusRequests.openBayRequestsForBody, { waterBodyId: id });
+    expect(rows[0]?.coord).toEqual(NOTCH);
+    expect(rows[0]?.askers).toBe(2);
   });
 
   test('approving from the queue records which sub-area answered the ask', async () => {

@@ -8,7 +8,7 @@
  * sources it owns:
  *
  *  - `chord-cursor`      — the snapped shore point under the pointer, while a point is being placed
- *  - `chord-candidates`  — the two regions a chord bounds, shaded, while a side is being chosen
+ *  - `chord-candidates`  — the smaller region a chord bounds, shaded, while a side is being chosen
  *  - `chord-line`        — the mouth line: the chord, or the arc of the current sagitta
  *  - `chord-points`      — `a` and `b`, draggable once placed
  *  - `chord-handle`      — the arc's apex, draggable to set the sagitta
@@ -29,7 +29,8 @@ import {
   chordCandidates,
   chordSubArea,
   type LatLng,
-  pointInPolygon,
+  mouthArcSide,
+  onCandidateWater,
   type SubAreaMouth,
   sagittaFromHandle,
   snapToOutline,
@@ -113,7 +114,7 @@ export function chordInstruction(state: ChordState): string {
     case 'b':
       return 'Click the shore on the other side of the mouth — the same shore, or the same island.';
     case 'side':
-      return 'Click the shaded region that is the bay.';
+      return 'Click the bay: the shaded side, or the water across the line if the bay is the other side.';
     case 'done':
       return 'Drag the handle to bow the mouth line — out to take in open water, in to leave it. Drag a point to move it.';
   }
@@ -128,12 +129,24 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
   let state: ChordState = { step: 'a', sagittaM: 0 };
   let armed = false;
   /**
-   * The candidates' *water* — each side clipped to the parent, exactly what the map shades. A side
-   * click is tested against this, never the un-clipped candidates: on an island ring the larger
-   * candidate is mostly island land nobody sees shaded, and a click there must not count
-   * (Greptile, PR #76).
+   * The two candidates, un-clipped. A side click counts only on *water* in one of them
+   * (`onCandidateWater`) — on an island ring the larger candidate is mostly island land, and a click
+   * there must not count (Greptile, PR #76) — and nothing is clipped to answer that.
    */
-  let shaded: (Polygon | MultiPolygon)[] | null = null;
+  let sides: Polygon[] | null = null;
+  /**
+   * Which way "out" is for the arc, judged at the mouth (`mouthArcSide`) rather than from the raw
+   * click, which in a hook-shaped bay can sit across the chord's line. Cached on the three points:
+   * a handle drag moves only the sagitta and must not re-walk the ring per pointer event.
+   */
+  let arcSideFor: { key: string; side: LatLng } | null = null;
+  const arcSide = (a: LatLng, b: LatLng, side: LatLng): LatLng => {
+    const key = [a.lat, a.lng, b.lat, b.lng, side.lat, side.lng].join(',');
+    if (arcSideFor?.key !== key) {
+      arcSideFor = { key, side: mouthArcSide(parent, { a, b, side, sagittaM: 0 }) };
+    }
+    return arcSideFor.side;
+  };
   let dragging: 'a' | 'b' | 'handle' | null = null;
 
   for (const id of SOURCES) map.addSource(id, { type: 'geojson', data: EMPTY });
@@ -209,7 +222,8 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
       ...(b ? [point(b, { which: 'b' })] : []),
     ]);
     if (a && b && state.step === 'done' && side) {
-      const line = chordArc(a, b, side, state.sagittaM);
+      const out = arcSide(a, b, side);
+      const line = chordArc(a, b, out, state.sagittaM);
       setData('chord-line', [
         {
           type: 'Feature',
@@ -217,7 +231,7 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
           properties: {},
         },
       ]);
-      setData('chord-handle', [point(arcApex(a, b, side, state.sagittaM))]);
+      setData('chord-handle', [point(arcApex(a, b, out, state.sagittaM))]);
       setData('chord-candidates', []);
     } else {
       setData('chord-line', []);
@@ -234,36 +248,37 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
     if (!a || !b) return false;
     const result = chordCandidates(parent, a, b);
     if (!result.ok) {
-      shaded = null;
+      sides = null;
       state = { ...state, refusal: result.reason };
       setData('chord-candidates', []);
       return false;
     }
-    shaded = result.water.filter((w): w is Polygon | MultiPolygon => w !== null);
+    sides = result.sides;
     state = { ...state, refusal: undefined };
+    // Only the smaller side is shaded — the default, and nearly always the bay. The other side is
+    // most of the lake; clipping it to shade it froze the editor on Champlain, and the lake's own
+    // fill already shows where it is. A click on it still counts.
     setData(
       'chord-candidates',
-      result.water.flatMap((water, index) =>
-        water
-          ? [
-              {
-                type: 'Feature' as const,
-                geometry: water,
-                properties: { side: index, smaller: index === result.smaller },
-              },
-            ]
-          : [],
-      ),
+      result.smallerWater
+        ? [
+            {
+              type: 'Feature' as const,
+              geometry: result.smallerWater,
+              properties: { side: result.smaller, smaller: true },
+            },
+          ]
+        : [],
     );
     return true;
   };
 
   /**
-   * Is a side click on shaded water? Which of the two sides it names is the derivation's call
-   * (the smallest containing candidate, which matters on an island where they nest); the tool
-   * only refuses a click that is on neither.
+   * Is a side click on water in either candidate? Which side it names is the derivation's call
+   * (the smallest containing candidate, which matters on an island where they nest); the tool only
+   * refuses a click on neither — or on land.
    */
-  const inACandidate = (p: LatLng): boolean => shaded?.some((w) => pointInPolygon(p, w)) ?? false;
+  const inACandidate = (p: LatLng): boolean => sides !== null && onCandidateWater(parent, sides, p);
 
   const onMouseMove = (e: ChordMapEvent) => {
     if (!armed) return;
@@ -271,7 +286,8 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
     if (dragging) {
       if (dragging === 'handle') {
         if (state.a && state.b && state.side) {
-          state = { ...state, sagittaM: sagittaFromHandle(state.a, state.b, state.side, at) };
+          const out = arcSide(state.a, state.b, state.side);
+          state = { ...state, sagittaM: sagittaFromHandle(state.a, state.b, out, at) };
         }
       } else {
         const hit = snapToOutline(parent, at);
@@ -387,7 +403,8 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
 
   const reset = () => {
     state = { step: 'a', sagittaM: 0 };
-    shaded = null;
+    sides = null;
+    arcSideFor = null;
     dragging = null;
     for (const id of SOURCES) setData(id, []);
   };

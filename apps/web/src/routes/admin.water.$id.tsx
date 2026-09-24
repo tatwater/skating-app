@@ -179,7 +179,8 @@ function LakeEditor() {
                   name: s.name,
                   polygon: s.polygon as GeoJSON.Geometry,
                   centroid: s.centroid,
-                  ...(s.mouth ? { mouth: s.mouth } : {}),
+                  // A stale mouth is not the bay's edge any more — drawing it would say it was.
+                  ...(s.mouth && !s.mouthStale ? { mouth: s.mouth } : {}),
                 })),
               putIns: putIns ?? [],
               parkingAreas: access?.parking ?? [],
@@ -848,6 +849,7 @@ function SubAreaTool({
     removed: boolean;
     systemDelistReason?: string;
     mouth?: SubAreaMouth;
+    mouthStale?: string;
   }[];
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
@@ -1005,8 +1007,9 @@ function SubAreaTool({
     setName(row.name);
     setAliases(row.aliases.join(', '));
     setChordRequest(row.requestId);
-    // The camera is locked to the lake, so this can only land somewhere on it.
-    mapRef.current?.flyTo({ center: [row.coord.lng, row.coord.lat], zoom: 13 });
+    // The camera is locked to the lake, so this can only land somewhere on it. An ask with no
+    // point of its own (a skater's, from the drawer) leaves the camera alone — the name is the lead.
+    if (row.coord) mapRef.current?.flyTo({ center: [row.coord.lng, row.coord.lat], zoom: 13 });
   };
 
   /** Arm freehand drawing — for a new bay, or to replace `target`'s outline. */
@@ -1045,7 +1048,7 @@ function SubAreaTool({
           onResult({ tone: 'error', text: 'A sub-area needs a name.' });
           return;
         }
-        await createFromChord({
+        const saved = await createFromChord({
           waterBodyId,
           name: name.trim(),
           mouth,
@@ -1061,9 +1064,12 @@ function SubAreaTool({
         });
         onResult({
           tone: 'ok',
-          text: chordRequest
-            ? `Drew “${name.trim()}” and answered the ask.`
-            : `Drew “${name.trim()}”.`,
+          text:
+            saved.request === 'approved'
+              ? `Drew “${name.trim()}” and answered the ask.`
+              : saved.request === 'already_decided'
+                ? `Drew “${name.trim()}”. The ask had already been answered elsewhere, and keeps that answer.`
+                : `Drew “${name.trim()}”.`,
         });
         setName('');
         setAliases('');
@@ -1136,6 +1142,10 @@ function SubAreaTool({
                     here because here is where the redraw happens; a server log is not a surface. */}
                 {bay.systemDelistReason ? (
                   <span className="block text-warning text-xs">{bay.systemDelistReason}</span>
+                ) : null}
+                {/* A mouth the moved shoreline no longer fits (D201) — Edit mouth is the fix. */}
+                {bay.mouthStale ? (
+                  <span className="block text-warning text-xs">{bay.mouthStale}</span>
                 ) : null}
                 {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
                     automatic: a bay's seaward edge is a judgment a skater can prove wrong by

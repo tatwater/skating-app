@@ -189,11 +189,10 @@ describe('the gesture', () => {
     map.fire('click', at(2210, 2990)); // the east corner
     expect(last().state.step).toBe('side');
     expect(last().mouth).toBeNull();
+    // Only the smaller side — the bay — is shaded; the rest of the lake is never clipped.
     const shaded = map.features('chord-candidates');
-    expect(shaded).toHaveLength(2);
-    // The bay is the smaller side, and it is flagged so the fill can say so.
-    const smaller = shaded.find((f) => f.properties?.smaller === true);
-    expect(smaller).toBeDefined();
+    expect(shaded).toHaveLength(1);
+    expect(shaded[0]?.properties?.smaller).toBe(true);
     expect(map.features('chord-cursor')).toEqual([]);
 
     // A click on open water outside both regions is not a choice.
@@ -211,6 +210,16 @@ describe('the gesture', () => {
     expect(map.features('chord-line')).toHaveLength(1);
     expect(map.features('chord-handle')).toHaveLength(1);
     expect(chordInstruction(last().state)).toMatch(/Drag the handle/);
+  });
+
+  it('the other side is a choice too, by a click on its water, though it is not shaded', () => {
+    const control = tool();
+    control.start();
+    map.fire('click', at(1800, 3000));
+    map.fire('click', at(2200, 3000));
+    map.fire('click', at(2000, 1500)); // the main lake: "everything but the bay"
+    expect(last().state.step).toBe('done');
+    expect(last().preview?.ok).toBe(true);
   });
 
   it('a side click on island land nobody sees shaded is not a choice — only the shaded water is', () => {
@@ -307,7 +316,7 @@ describe('the gesture', () => {
     map.fire('mouseup', at(600, 900));
     expect(last().state.step).toBe('side');
     expect(last().mouth).toBeNull();
-    expect(map.features('chord-candidates')).toHaveLength(2);
+    expect(map.features('chord-candidates')).toHaveLength(1);
   });
 
   it('loads a stored mouth ready to adjust, re-snapping its points', () => {

@@ -41,7 +41,9 @@ import { clipSubAreaToParent, type SubAreaClipRejection } from './subArea';
  * meters must not orphan the mouth); `side` is a point inside the chosen region, which is what
  * makes the mouth reconstructible — two shoreline points bound *two* regions, and a walk direction
  * would not survive a re-import re-orienting the ring, where a point does. `sagittaM` is signed:
- * positive bows the closing line **away** from `side` (out into open water), negative bows it in.
+ * positive bows the closing line **away from the chosen region** (out into open water), negative
+ * bows it in. "Away" is judged at the mouth itself (`mouthArcSide`), not by which side of the
+ * chord's infinite line the `side` click fell on — a hook-shaped bay reaches past that line.
  */
 export interface SubAreaMouth {
   a: LatLng;
@@ -118,9 +120,14 @@ export const CHORD_MESSAGES: Record<ChordRejection, string> = {
  */
 export const MAX_SAGITTA_RATIO = 0.5;
 
-/** How finely an arc is sampled: one vertex per this many meters, and never fewer than 16. */
+/**
+ * How finely an arc is sampled: one vertex per this many meters, never fewer than 16 and never more
+ * than 128 — a 10 km semicircle at 10 m would put 1,600 vertices on the stored row, and every one
+ * of them is checked against the walked shore on every preview, save and re-import.
+ */
 const ARC_SEGMENT_M = 10;
 const ARC_MIN_SEGMENTS = 16;
+const ARC_MAX_SEGMENTS = 128;
 
 /** Below this, a sagitta is a straight chord — sub-meter bows are drag noise, not a judgment. */
 const STRAIGHT_SAGITTA_M = 0.5;
@@ -284,10 +291,12 @@ function candidateRings(
 
 /**
  * The two regions a chord bounds — the ring walked each way from `a` to `b`, closed by the straight
- * chord — **un-clipped**, so on an island ring each candidate includes the island's land. The
- * editor shades both (clipped, so the moderator sees water) and the click on one becomes `side`.
+ * chord — **un-clipped**, so on an island ring each candidate includes the island's land.
  * `smaller` is the default the plan names: right for every bay, wrong only for "everything but this
- * bay", which nobody draws.
+ * bay", which nobody draws. Only the smaller side's water is clipped (`smallerWater`, what the
+ * editor shades): the other side is most of the lake, and clipping a ten-thousand-vertex ring
+ * against its parent on every click is what froze the editor on Champlain. A click on the other
+ * side is still a choice — `onCandidateWater` tests it without clipping anything.
  */
 export function chordCandidates(
   parent: Polygon | MultiPolygon,
@@ -297,8 +306,8 @@ export function chordCandidates(
   | {
       ok: true;
       sides: [Polygon, Polygon];
-      /** Each side clipped to the parent — what the editor shades. `null` where the clip failed. */
-      water: [Polygon | MultiPolygon | null, Polygon | MultiPolygon | null];
+      /** The smaller side clipped to the parent — what the editor shades. `null` if the clip failed. */
+      smallerWater: Polygon | MultiPolygon | null;
       smaller: 0 | 1;
     }
   | { ok: false; reason: ChordRejection } {
@@ -309,17 +318,23 @@ export function chordCandidates(
     { type: 'Polygon', coordinates: [closeRing(forward)] },
     { type: 'Polygon', coordinates: [closeRing(reverse)] },
   ];
-  const water = sides.map((side) => {
-    const clip = clipSubAreaToParent(side, parent, 0);
-    return clip.ok ? clip.polygon : null;
-  }) as [Polygon | MultiPolygon | null, Polygon | MultiPolygon | null];
   const areas = sides.map((s) => surfaceAreaSqM(s));
-  return {
-    ok: true,
-    sides,
-    water,
-    smaller: (areas[0] as number) <= (areas[1] as number) ? 0 : 1,
-  };
+  const smaller: 0 | 1 = (areas[0] as number) <= (areas[1] as number) ? 0 : 1;
+  const clip = clipSubAreaToParent(sides[smaller], parent, 0);
+  return { ok: true, sides, smallerWater: clip.ok ? clip.polygon : null, smaller };
+}
+
+/**
+ * Is `p` on water inside either candidate? The same answer as "inside a candidate's clipped
+ * water" — the clip *is* the intersection with the parent — without clipping anything. On an
+ * island ring the larger candidate is mostly island land; a click there is not on water.
+ */
+export function onCandidateWater(
+  parent: Polygon | MultiPolygon,
+  sides: readonly Polygon[],
+  p: LatLng,
+): boolean {
+  return pointInPolygon(p, parent) && sides.some((side) => pointInPolygon(p, side));
 }
 
 function snapPair(
@@ -376,6 +391,7 @@ export function maxSagittaM(a: LatLng, b: LatLng): number {
 
 /** A sagitta clamped to what the chord admits — the write path and the drag handle both use it. */
 export function clampSagitta(a: LatLng, b: LatLng, sagittaM: number): number {
+  if (!Number.isFinite(sagittaM)) return 0;
   const max = maxSagittaM(a, b);
   const clamped = Math.max(-max, Math.min(max, sagittaM));
   return Math.abs(clamped) < STRAIGHT_SAGITTA_M ? 0 : clamped;
@@ -410,7 +426,10 @@ export function chordArc(a: LatLng, b: LatLng, side: LatLng, sagittaM: number): 
     (center[1] + R * Math.sin(midAngle)) * bulge[1];
   if (midDot < 0) sweep = sweep > 0 ? sweep - 2 * Math.PI : sweep + 2 * Math.PI;
   const arcLength = Math.abs(sweep) * R;
-  const segments = Math.max(ARC_MIN_SEGMENTS, Math.ceil(arcLength / ARC_SEGMENT_M));
+  const segments = Math.min(
+    ARC_MAX_SEGMENTS,
+    Math.max(ARC_MIN_SEGMENTS, Math.ceil(arcLength / ARC_SEGMENT_M)),
+  );
   const points: LatLng[] = [a];
   for (let k = 1; k < segments; k++) {
     const angle = startAngle + (sweep * k) / segments;
@@ -481,7 +500,29 @@ function properlyCross(
 
 /** Does the closing line cut across the walked shore? */
 function closingCrossesShore(shore: readonly Position[], closing: readonly Position[]): boolean {
+  // Only shore segments that reach the closing line's box can cross it — on a long bay walk that
+  // is a handful of the thousands, and the pairwise test below is quadratic.
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const [x, y] of closing as [number, number][]) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
   for (let i = 0; i + 1 < shore.length; i++) {
+    const [px, py] = shore[i] as [number, number];
+    const [qx, qy] = shore[i + 1] as [number, number];
+    if (
+      Math.max(px, qx) < minX ||
+      Math.min(px, qx) > maxX ||
+      Math.max(py, qy) < minY ||
+      Math.min(py, qy) > maxY
+    ) {
+      continue;
+    }
     for (let j = 0; j + 1 < closing.length; j++) {
       if (
         properlyCross(
@@ -498,17 +539,24 @@ function closingCrossesShore(shore: readonly Position[], closing: readonly Posit
   return false;
 }
 
-/**
- * The polygon a mouth describes, against this parent. Re-snaps `a` and `b`, picks the candidate
- * that contains `side`, closes it with the chord or the arc, and clips to the parent. Pure and
- * deterministic: the server runs it on the stored parent, the editor runs it on the same polygon
- * for the preview, and both get the same shape.
- */
-export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth): ChordResult {
+/** Every coordinate and the sagitta are real numbers — `v.number()` lets NaN through. */
+function finiteMouth(mouth: SubAreaMouth): boolean {
+  return (
+    [mouth.a, mouth.b, mouth.side].every((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)) &&
+    Number.isFinite(mouth.sagittaM)
+  );
+}
+
+/** The snapped ends and the candidate the side picks — the half of the derivation both callers share. */
+function chooseCandidate(
+  parent: Polygon | MultiPolygon,
+  mouth: SubAreaMouth,
+):
+  | { ok: true; a: LatLng; b: LatLng; chosen: Position[]; polygon: Polygon }
+  | { ok: false; reason: ChordRejection } {
+  if (!finiteMouth(mouth)) return { ok: false, reason: 'degenerate' };
   const snapped = snapPair(parent, mouth.a, mouth.b);
   if (!snapped.ok) return snapped;
-  const a = snapped.a.point;
-  const b = snapped.b.point;
   const [forward, reverse] = candidateRings(parent, snapped.a, snapped.b);
   // The smallest candidate that contains `side`. On the outer ring the two partition the lake and
   // exactly one contains it; on an island ring they are *nested* — the long way round plus the
@@ -521,10 +569,59 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
       polygon: { type: 'Polygon', coordinates: [closeRing(path)] } as Polygon,
     }))
     .filter(({ polygon }) => pointInPolygon(mouth.side, polygon))
-    .sort((x, y) => surfaceAreaSqM(x.polygon) - surfaceAreaSqM(y.polygon))[0]?.path;
+    .sort((x, y) => surfaceAreaSqM(x.polygon) - surfaceAreaSqM(y.polygon))[0];
   if (!chosen) return { ok: false, reason: 'side_ambiguous' };
+  return {
+    ok: true,
+    a: snapped.a.point,
+    b: snapped.b.point,
+    chosen: chosen.path,
+    polygon: chosen.polygon,
+  };
+}
 
-  const closing = chordArc(b, a, mouth.side, mouth.sagittaM).map(toPosition);
+/**
+ * A point just inside the chosen region, beside the chord's midpoint — the reference every arc
+ * function takes as `side`. The chord is an edge of the chosen candidate, so right at its midpoint
+ * the region lies on exactly one side of it, whatever the bay does further in; the raw `side` click
+ * can sit across the chord's *infinite line* from the mouth (a hook-shaped bay), which would flip
+ * which way "out" is. Falls back to the raw click when the mouth does not derive.
+ */
+export function mouthArcSide(parent: Polygon | MultiPolygon, mouth: SubAreaMouth): LatLng {
+  const pick = chooseCandidate(parent, mouth);
+  if (!pick.ok) return mouth.side;
+  return regionSideAt(pick.a, pick.b, pick.polygon) ?? mouth.side;
+}
+
+function regionSideAt(a: LatLng, b: LatLng, region: Polygon): LatLng | null {
+  const origin = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+  const A = toLocal(a, origin);
+  const B = toLocal(b, origin);
+  const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  if (len === 0) return null;
+  const n: [number, number] = [-(B[1] - A[1]) / len, (B[0] - A[0]) / len];
+  const eps = Math.max(0.05, len * 1e-4);
+  for (const sign of [1, -1]) {
+    const probe = fromLocal([n[0] * eps * sign, n[1] * eps * sign], origin);
+    if (pointInPolygon(probe, region)) return probe;
+  }
+  return null;
+}
+
+/**
+ * The polygon a mouth describes, against this parent. Re-snaps `a` and `b`, picks the candidate
+ * that contains `side`, closes it with the chord or the arc, and clips to the parent. Pure and
+ * deterministic: the server runs it on the stored parent, the editor runs it on the same polygon
+ * for the preview, and both get the same shape.
+ */
+export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth): ChordResult {
+  const pick = chooseCandidate(parent, mouth);
+  if (!pick.ok) return pick;
+  const { a, b, chosen, polygon: candidate } = pick;
+  const arcSide = regionSideAt(a, b, candidate) ?? mouth.side;
+  const sagittaM = clampSagitta(a, b, mouth.sagittaM);
+
+  const closing = chordArc(b, a, arcSide, sagittaM).map(toPosition);
   // A keyhole bay's straight mouth line, or an arc dragged in past the shore, cuts the walked
   // shore and the ring would cross itself — a shape the clipper may accept and nobody meant.
   if (closingCrossesShore(chosen, closing)) return { ok: false, reason: 'crosses_shore' };
@@ -532,8 +629,7 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
   // candidate. The crossing test alone misses one case — an arc swept so far in that it leaves
   // through a shore *vertex*, grazing the corner from the land side — and the clip of that ring
   // is a sliver of nothing, not a refusal.
-  if (mouth.sagittaM < 0) {
-    const candidate: Polygon = { type: 'Polygon', coordinates: [closeRing(chosen)] };
+  if (sagittaM < 0) {
     for (const [lng, lat] of closing.slice(1, -1)) {
       if (!pointInPolygon({ lat: lat as number, lng: lng as number }, candidate)) {
         return { ok: false, reason: 'crosses_shore' };
@@ -553,7 +649,7 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
   return {
     ok: true,
     polygon: clip.polygon,
-    mouth: { a, b, side: mouth.side, sagittaM: clampSagitta(a, b, mouth.sagittaM) },
+    mouth: { a, b, side: mouth.side, sagittaM },
     constructed,
     clipped: clip.clipped,
   };

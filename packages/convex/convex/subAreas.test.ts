@@ -1,3 +1,4 @@
+import { requestNameKey } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -831,6 +832,35 @@ describe('the parent-listing cascade', () => {
     // the stamp deterministically, and therefore silently wrongly.
     expect(row?.removedAt).toBeDefined();
     expect(await cellCount(t, dupe)).toBe(0);
+  });
+
+  test('a merge judges "the same bay" by the rule a create does — spelling folds and aliases too', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const survivor = await seedBody(t, 'Lake Champlain');
+    const loser = await seedBody(t, 'Champlain Lake');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: survivor,
+      name: 'Malletts Bay',
+      aliases: ['Inland Sea'],
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const apostrophe = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: loser,
+      name: "Mallett's Bay",
+      polygon: rect(-73.25, 44.15, -72.95, 44.45),
+    });
+    const byAlias = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: loser,
+      name: 'inland sea',
+      polygon: rect(-73.4, 44.6, -73.3, 44.7),
+    });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    await settle(t);
+    const rows = await t.run((ctx) =>
+      Promise.all([apostrophe, byAlias].map((id) => ctx.db.get(id))),
+    );
+    expect(rows.map((r) => r?.removedAt !== undefined)).toEqual([true, true]);
   });
 
   /** A canonical body with an `externalId`, so `importCanonical` upserts it rather than inserting. */
@@ -2555,6 +2585,7 @@ describe('sub-areas by chord (D201)', () => {
         coord: CORNER.side,
         waterBodyId,
         name,
+        nameKey: requestNameKey(name),
         createdAt: Date.now(),
       }),
     );
@@ -2565,7 +2596,7 @@ describe('sub-areas by chord (D201)', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
 
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       aliases: ['SW Corner'],
@@ -2607,7 +2638,7 @@ describe('sub-areas by chord (D201)', () => {
     // lands a hair after the frozen clock, so let the clock pass them first.
     vi.advanceTimersByTime(1_000);
 
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       mouth: CORNER,
@@ -2643,7 +2674,7 @@ describe('sub-areas by chord (D201)', () => {
         decidedByUserId: mod.id,
       }),
     );
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       mouth: CORNER,
@@ -2653,11 +2684,96 @@ describe('sub-areas by chord (D201)', () => {
     expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('declined');
   });
 
+  test('the save says what happened to the ask, so the editor never claims an answer it did not give', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const open = await bayRequest(t, one.id, body, 'Corner Bay');
+    const first = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId: open,
+    });
+    expect(first.request).toBe('approved');
+    const plain = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Other Bay',
+      mouth: {
+        ...CORNER,
+        a: { lat: 44.9, lng: -73.5 },
+        b: { lat: 45.0, lng: -73.4 },
+        side: { lat: 44.97, lng: -73.48 },
+      },
+    });
+    expect(plain.request).toBeUndefined();
+  });
+
+  test('a new bay is refused when another already answers to its name or an alias', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'NW Bay',
+      polygon: rect(-73.5, 44.8, -73.4, 44.9),
+    });
+    await expect(
+      mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Northwest Bay',
+        aliases: ['NW Bay'],
+        mouth: CORNER,
+      }),
+    ).rejects.toThrow(/already has a sub-area called "NW Bay"/);
+  });
+
+  test('restore re-derives a chord bay from its mouth — the shore it comes back to, not the one it left', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const mouth = {
+      a: { lat: 44.2, lng: -72.5 },
+      b: { lat: 44.0, lng: -72.7 },
+      side: { lat: 44.05, lng: -72.65 },
+      sagittaM: 0,
+    };
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth,
+    });
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+    // The east shore moves while the bay is retired; the re-clip skips delisted rows.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          osmId: 'way/1',
+          name: 'Lake Champlain',
+          type: 'lakePond' as const,
+          polygon: rect(-73.5, 44.0, -72.6, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.6 },
+          centroid: { lat: 44.5, lng: -73.05 },
+          surfaceAreaSqM: 7.8e9,
+        },
+      ],
+    });
+    await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
+    // Re-derived: the hypotenuse starts at the re-snapped point on the new shore.
+    expect(ring.some(([lng, lat]) => lng === -72.6 && lat === 44.2)).toBe(true);
+    expect(row?.mouthStale).toBeUndefined();
+  });
+
   test('stores the mouth as used — points snapped onto the shore, the sagitta clamped — never the raw click', async () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       // Ten meters off each shore, and a sagitta far past a semicircle.
@@ -2784,7 +2900,7 @@ describe('sub-areas by chord (D201)', () => {
       side: { lat: 44.05, lng: -72.65 },
       sagittaM: 0,
     };
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       mouth,
@@ -2823,7 +2939,7 @@ describe('sub-areas by chord (D201)', () => {
     const t = harness();
     const body = await seedCanonicalBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       mouth: CORNER,
@@ -2851,7 +2967,7 @@ describe('sub-areas by chord (D201)', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     // The side point sits just inside the corner.
     const mouth = { ...CORNER, side: { lat: 44.01, lng: -73.49 } };
-    const id = await mod.as.mutation(api.subAreas.createFromChord, {
+    const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Corner Bay',
       mouth,
@@ -2866,6 +2982,16 @@ describe('sub-areas by chord (D201)', () => {
     expect(row?.removedAt).toBeUndefined();
     expect(row?.mouth).toEqual(mouth);
     expect(row?.bbox.minLat).toBeCloseTo(44.02, 6);
+    // Never silent (D5): the row says the mouth needs fixing, and the editor reads it.
+    expect(row?.mouthStale).toMatch(/no longer fits/);
+    const listed = await mod.as.query(api.subAreas.listForBody, { waterBodyId: body });
+    expect(listed.find((b) => b._id === id)?.mouthStale).toMatch(/Edit the mouth/);
+    // The fix is a mouth save, and it clears the note.
+    await mod.as.mutation(api.subAreas.updateChord, {
+      subAreaId: id,
+      mouth: { ...mouth, side: { lat: 44.05, lng: -73.45 } },
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.mouthStale).toBeUndefined();
   });
 
   function reimportLake(

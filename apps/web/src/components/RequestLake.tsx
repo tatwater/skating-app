@@ -79,7 +79,7 @@ export function RequestButtons({
     <>
       <RequestButtonsView
         kinds={kinds}
-        pendingKind={mine?.find((r) => r.status === 'open')?.kind}
+        openKinds={(mine ?? []).filter((r) => r.status === 'open').map((r) => r.kind)}
         outcome={latest ? describeRequestOutcome(latest) : null}
         counts={counts ?? {}}
         onAsk={setAsking}
@@ -106,14 +106,19 @@ export function RequestButtons({
 /** The view half — Convex-free, so the rules render under test. */
 export function RequestButtonsView({
   kinds,
-  pendingKind,
+  openKinds,
   outcome,
   counts,
   onAsk,
 }: {
   kinds: readonly RequestKind[];
   /** The kind of the viewer's own open ask, if any — its button is disabled and the line says so. */
-  pendingKind?: RequestKind | undefined;
+  /**
+   * The kinds of the viewer's own open asks, newest first. *Every* one disables its button — an
+   * active lake offers two kinds now, and a newer bay ask must not re-enable an older takedown the
+   * server would refuse as a duplicate. A bay ask never disables: the rule is per bay.
+   */
+  openKinds: readonly RequestKind[];
   /** The moderator's answer to the viewer's latest ask, once there is one. */
   outcome: string | null;
   /** Distinct people with an open ask, per kind — shown beside the button. */
@@ -122,9 +127,9 @@ export function RequestButtonsView({
 }) {
   return (
     <div className="flex flex-col gap-2" data-testid="request-lake">
-      {pendingKind ? (
+      {openKinds[0] ? (
         <p className="text-muted-foreground text-sm">
-          You asked — <em>{requestKindLabel(pendingKind).toLowerCase()}</em> — and it’s with the
+          You asked — <em>{requestKindLabel(openKinds[0]).toLowerCase()}</em> — and it’s with the
           moderators.
         </p>
       ) : outcome ? (
@@ -137,7 +142,7 @@ export function RequestButtonsView({
             size="sm"
             variant={kind === 'takedown' ? 'ghost' : 'outline'}
             // A bay ask is per bay, not per lake (the server's rule): a second bay is a second ask.
-            disabled={pendingKind === kind && kind !== 'name_bay'}
+            disabled={openKinds.includes(kind) && kind !== 'name_bay'}
             onClick={() => onAsk(kind)}
           >
             {requestKindLabel(kind)}

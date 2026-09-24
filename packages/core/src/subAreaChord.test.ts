@@ -19,6 +19,8 @@ import {
   clampSagitta,
   MAX_SAGITTA_RATIO,
   maxSagittaM,
+  mouthArcSide,
+  onCandidateWater,
   type SubAreaMouth,
   sagittaFromHandle,
   snapToOutline,
@@ -220,7 +222,7 @@ describe('chordSubArea — the straight chord', () => {
     ];
     expectArea(surfaceAreaSqM(small as Polygon), NOTCH_AREA);
     expectArea(surfaceAreaSqM(big as Polygon), 600 * 600);
-    const water = candidates.water[candidates.smaller];
+    const water = candidates.smallerWater;
     expect(water).not.toBeNull();
     expectArea(surfaceAreaSqM(water as Polygon), NOTCH_AREA);
   });
@@ -318,6 +320,63 @@ describe('chordSubArea — refusals', () => {
   });
 });
 
+describe('a hook-shaped bay', () => {
+  // A main lake west of x = 1600 and a bay entering it through a mouth on the line x = 1600, then
+  // running east, south, and back west *under* the lake behind a strip of land — so the bay's far
+  // foot lies on the lake's side of the mouth's infinite line.
+  const HOOK: Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        pos(0, 2000),
+        pos(1600, 2000),
+        pos(1600, 3400),
+        pos(2000, 3400),
+        pos(2000, 1600),
+        pos(800, 1600),
+        pos(800, 1200),
+        pos(2400, 1200),
+        pos(2400, 3800),
+        pos(1600, 3800),
+        pos(1600, 4000),
+        pos(0, 4000),
+        pos(0, 2000),
+      ],
+    ],
+  };
+  const HOOK_MOUTH: SubAreaMouth = {
+    a: at(1600, 3400),
+    b: at(1600, 3800),
+    side: at(1000, 1400), // the foot — west of the mouth line, like the lake
+    sagittaM: 0,
+  };
+  const area = (sagittaM: number) => areaOf({ ...HOOK_MOUTH, sagittaM }, HOOK);
+
+  it('"out" is judged at the mouth, not by which side of its infinite line the click fell on', () => {
+    // Positive bows west, out into the main lake, taking water in; negative bows into the bay.
+    expect(area(150)).toBeGreaterThan(area(0));
+    expect(area(-150)).toBeLessThan(area(0));
+    const side = mouthArcSide(HOOK, HOOK_MOUTH);
+    expect(side.lng).toBeGreaterThan(at(1600, 3600).lng); // just inside, on the bay's side
+  });
+
+  it('falls back to the raw click when the mouth does not derive', () => {
+    const bad = { ...HOOK_MOUTH, b: HOOK_MOUTH.a };
+    expect(mouthArcSide(HOOK, bad)).toEqual(bad.side);
+  });
+});
+
+describe('a mouth with a number that is not one', () => {
+  it('refuses NaN anywhere in the mouth rather than storing it', () => {
+    expect(chordSubArea(LAKE, { ...BAY_MOUTH, sagittaM: Number.NaN })).toEqual({
+      ok: false,
+      reason: 'degenerate',
+    });
+    expect(chordSubArea(LAKE, { ...BAY_MOUTH, a: { lat: Number.NaN, lng: -73 } }).ok).toBe(false);
+    expect(clampSagitta(BAY_MOUTH.a, BAY_MOUTH.b, Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
 describe('the arc', () => {
   it('a zero sagitta is the straight chord, and so is a side point on the chord line', () => {
     expect(chordArc(BAY_MOUTH.a, BAY_MOUTH.b, BAY_MOUTH.side, 0)).toEqual([
@@ -365,6 +424,9 @@ describe('the arc', () => {
       haversineMeters(arcApex(BAY_MOUTH.a, BAY_MOUTH.b, BAY_MOUTH.side, 5000), at(2000, 2800)),
     ).toBeLessThan(1);
     expect(semicircle.length).toBeGreaterThan(17);
+    // A long mouth is sampled at most 128 segments, however long the arc.
+    const far = chordArc(at(0, 0), at(20_000, 0), at(10_000, 5), 10_000);
+    expect(far.length).toBe(129);
   });
 
   it('the drag handle round-trips: the apex asks for the sagitta that put it there', () => {
@@ -406,9 +468,16 @@ describe('chordCandidates', () => {
       surfaceAreaSqM(c.sides[1 - c.smaller] as Polygon),
       LAKE_AREA - BAY_AREA + (600 * 600 - 200 * 200),
     );
-    // The shaded water of the big side has the island cut out; the bay's is the bay.
-    expectArea(surfaceAreaSqM(c.water[1 - c.smaller] as Polygon), LAKE_AREA - BAY_AREA);
-    expectArea(surfaceAreaSqM(c.water[c.smaller] as Polygon), BAY_AREA);
+    // Only the smaller side is clipped — the bay's water is the bay.
+    expectArea(surfaceAreaSqM(c.smallerWater as Polygon), BAY_AREA);
+  });
+
+  it('a click is on candidate water only where it is on the lake — never on island land', () => {
+    const c = chordCandidates(LAKE, NOTCH_MOUTH.a, NOTCH_MOUTH.b);
+    if (!c.ok) throw new Error('refused');
+    expect(onCandidateWater(LAKE, c.sides, at(1100, 900))).toBe(true); // the notch
+    expect(onCandidateWater(LAKE, c.sides, at(800, 900))).toBe(false); // the island
+    expect(onCandidateWater(LAKE, c.sides, at(3000, 1500))).toBe(false); // lake, neither side
   });
 
   it('refuses what the construction refuses', () => {
@@ -500,7 +569,7 @@ describe('properties', () => {
         if (!c.ok || degenerate(c)) return true;
         const side = sideOf(c.sides[c.smaller]);
         const result = chordSubArea(LAKE, { a, b, side, sagittaM: 0 });
-        const water = c.water[c.smaller];
+        const water = c.smallerWater;
         // A chord that clips a headland by a hair is refused — the candidates do not check that.
         if (!result.ok) return result.reason === 'crosses_shore';
         return water !== null && polygonIoU(result.polygon, water) > 0.999;

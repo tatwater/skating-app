@@ -6,7 +6,8 @@ export interface BayRequestRow {
   requestId: string;
   name: string;
   aliases: string[];
-  coord: { lat: number; lng: number };
+  /** Where the bay is, when someone said — a drawer ask carries only the lake, so none. */
+  coord?: { lat: number; lng: number };
   notes: string[];
   askers: number;
   createdAt: number;
@@ -86,9 +87,11 @@ export function BayRequestQueue({
               />
             </span>
           </div>
-          {row.notes.map((note) => (
+          {row.notes.map((note, index) => (
             <blockquote
-              key={note}
+              // Two askers can leave the same note; the position is the identity here.
+              // biome-ignore lint/suspicious/noArrayIndexKey: notes have no id and never reorder.
+              key={index}
               className="border-border border-l-2 pl-2 text-foreground-muted text-xs"
             >
               {note}

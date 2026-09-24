@@ -18,9 +18,6 @@ import { literals } from './validators';
 /** Cap on the moderator queue read — and the page a decision drains siblings by. */
 export const QUEUE_CAP = 200;
 
-/** How many open bay asks on one lake a decision reads through to find the same bay's siblings. */
-export const BAY_SIBLING_SCAN = 1_000;
-
 /**
  * Up to `limit` of the other open asks that share this one's question: the same kind on the same
  * body, or — for an `admit` — the same catalog feature (Greptile, PR #63: admits have no body to
@@ -57,14 +54,31 @@ export async function openSiblings(
           .lte('_creationTime', asOf),
       )
       .take(limit + 2);
+  } else if (request.kind === 'name_bay') {
+    // A bay's siblings are the asks for the *same bay* — every name the answering bay carries
+    // when there is one, else the ask's own — each an exact index range on the stored key.
+    const waterBodyId = request.waterBodyId;
+    if (waterBodyId === undefined) return none;
+    const keys = new Set([requestKeyOf(request)]);
+    for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKey(n));
+    rows = [];
+    for (const key of keys) {
+      rows.push(
+        ...(await ctx.db
+          .query('waterBodyRequests')
+          .withIndex('by_water_body_name', (q) =>
+            q
+              .eq('waterBodyId', waterBodyId)
+              .eq('kind', 'name_bay')
+              .eq('status', 'open')
+              .eq('nameKey', key)
+              .lte('_creationTime', asOf),
+          )
+          .take(limit + 2)),
+      );
+    }
   } else {
     if (request.waterBodyId === undefined) return none;
-    // A bay's siblings are the asks for the *same bay*: the index ranges over every open bay ask
-    // on the lake and the name key narrows it. The other bays' rows stay open, so a page-full
-    // signal could never converge (every next page would read them again); instead the scan is
-    // wider than a page and bounded — past `BAY_SIBLING_SCAN` open bay asks on one lake a sibling
-    // could sit beyond it, still open and still in the queue for a moderator to answer by hand.
-    const scan = request.kind === 'name_bay' ? BAY_SIBLING_SCAN : limit + 2;
     rows = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_water_body', (q) =>
@@ -74,12 +88,7 @@ export async function openSiblings(
           .eq('status', 'open')
           .lte('_creationTime', asOf),
       )
-      .take(scan);
-    if (request.kind === 'name_bay') {
-      const keys = new Set([requestNameKey(request.name ?? '')]);
-      for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKey(n));
-      rows = rows.filter((r) => keys.has(requestNameKey(r.name ?? '')));
-    }
+      .take(limit + 2);
   }
   // +2: one for the request itself if it is still open, one to learn whether there are more.
   const others = rows.filter((r) => r._id !== request._id);
@@ -190,26 +199,57 @@ export function bayNames(bay: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'>
   return [bay.name, ...(bay.aliases ?? [])];
 }
 
+/** A bay ask's question — the stored key, folded from the name for any row that predates it. */
+export function requestKeyOf(r: Pick<Doc<'waterBodyRequests'>, 'nameKey' | 'name'>): string {
+  return r.nameKey ?? requestNameKey(r.name ?? '');
+}
+
+/** Every name a bay ask goes by — the name and the spellings the seed filed with it. */
+export function requestNames(r: Pick<Doc<'waterBodyRequests'>, 'name' | 'aliases'>): string[] {
+  return [r.name ?? '', ...(r.aliases ?? [])].filter((n) => n.trim().length > 0);
+}
+
 /**
- * The listed sub-area on `waterBodyId` that answers a bay ask by name — its name or an alias folds
- * to the same key. Bounded by the handful of bays one lake has.
+ * **The one rule for "the same bay"** — any name of one folds to any name of the other. The queue's
+ * drawn-bay match, the name check on a new or renamed bay, and a merge's collision all ask it, so
+ * they cannot disagree about whether "NW Bay" and "Northwest Bay" (joined by an alias) are one bay.
  */
-export async function drawnBay(
+export function namesMeet(a: readonly string[], b: readonly string[]): boolean {
+  const keys = new Set(a.map(requestNameKey).filter((k) => k.length > 0));
+  return b.some((n) => keys.has(requestNameKey(n)));
+}
+
+/** A lake's listed bays — read once per body, for as many matches as a query needs. */
+export async function listedBaysOf(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-  name: string,
-): Promise<Doc<'waterBodySubAreas'> | null> {
-  const key = requestNameKey(name);
-  if (!key) return null;
+): Promise<Doc<'waterBodySubAreas'>[]> {
   const bays = await ctx.db
     .query('waterBodySubAreas')
     .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
     .collect();
-  return (
-    bays.find(
-      (bay) => bay.removedAt === undefined && bayNames(bay).some((n) => requestNameKey(n) === key),
-    ) ?? null
-  );
+  return bays.filter((bay) => bay.removedAt === undefined);
+}
+
+/** The bay among `bays` that answers an ask going by any of `names`. */
+export function matchBay(
+  bays: readonly Doc<'waterBodySubAreas'>[],
+  names: readonly string[],
+): Doc<'waterBodySubAreas'> | null {
+  return bays.find((bay) => namesMeet(names, bayNames(bay))) ?? null;
+}
+
+/**
+ * The listed sub-area on `waterBodyId` that answers a bay ask by any of its names. Bounded by the
+ * handful of bays one lake has; a query matching many asks should read `listedBaysOf` once and
+ * call `matchBay` per ask instead.
+ */
+export async function drawnBay(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  names: readonly string[],
+): Promise<Doc<'waterBodySubAreas'> | null> {
+  return matchBay(await listedBaysOf(ctx, waterBodyId), names);
 }
 
 /**
@@ -234,8 +274,7 @@ export async function approveNamedBayRequest(
   // called something else (Greptile, PR #76). The asked-for name as an alias is enough — that is
   // how a moderator says "same bay, better spelling".
   const bay = await ctx.db.get(subAreaId);
-  const asked = requestNameKey(request.name ?? '');
-  if (!bay || !bayNames(bay).some((n) => requestNameKey(n) === asked)) {
+  if (!bay || !namesMeet(requestNames(request), bayNames(bay))) {
     throw new ConvexError(
       `This bay doesn't carry the name that was asked for ("${request.name}"). Keep that name, add it as an alias, or save without the request.`,
     );
