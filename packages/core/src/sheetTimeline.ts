@@ -135,6 +135,29 @@ export function timelineFraction(
   return Math.min(1, Math.max(0, (ms - model.fromMs) / span));
 }
 
+/**
+ * The instants a caret may be set between — by a drag on the web, by a ladder tap on either
+ * client: the ruler's ends, the other caret (the start is before the end by at least the ruler's
+ * one-minute step — `resolveSkateWindow`'s rule, which refuses a zero-minute skate), and for the
+ * end, *now* when it is on the ruler (D199 refuses a future end). One rule, drawn and typed alike.
+ */
+export function timelineCaretBounds(
+  model: Pick<TimelineModel, 'fromMs' | 'toMs' | 'marks'>,
+  kind: 'start' | 'end',
+): { min: number; max: number } {
+  const at = (k: TimelineMark['kind']) => model.marks.find((m) => m.kind === k)?.ms;
+  if (kind === 'start') {
+    const end = at('end');
+    return { min: model.fromMs, max: end !== undefined ? end - MINUTE_MS : model.toMs };
+  }
+  const start = at('start');
+  const now = at('now');
+  return {
+    min: start !== undefined ? start + MINUTE_MS : model.fromMs,
+    max: now !== undefined ? Math.min(now, model.toMs) : model.toMs,
+  };
+}
+
 /** The instant under a fraction of the ruler, to the minute — what a drag hands back. */
 export function timelineMsAt(
   model: Pick<TimelineModel, 'fromMs' | 'toMs'>,

@@ -3,6 +3,7 @@ import {
   clockLabel,
   floorToLocalHour,
   MIN_SPAN_MS,
+  timelineCaretBounds,
   timelineFraction,
   timelineModel,
   timelineMsAt,
@@ -138,6 +139,42 @@ describe('timelineModel', () => {
       photos: [{ id: 'p', takenAtMs: local(-30), mine: true, placed: false }],
     });
     expect(m.toMs - m.fromMs).toBeLessThanOrEqual(24 * HOUR);
+  });
+});
+
+describe('timelineCaretBounds', () => {
+  it('keeps the carets a minute apart and the end at or before now', () => {
+    const model = timelineModel({
+      timeZone: TZ,
+      nowMs: local(18, 40),
+      endMs: local(16, 12),
+      startMs: local(14, 5),
+      sun,
+    });
+    expect(timelineCaretBounds(model, 'start')).toEqual({
+      min: model.fromMs,
+      max: local(16, 11),
+    });
+    expect(timelineCaretBounds(model, 'end')).toEqual({ min: local(14, 6), max: local(18, 40) });
+  });
+
+  it('falls back to the ruler’s ends where there is no start, and no now on the ruler', () => {
+    // A draft resumed two days on: the ruler is the skate's day, so now is not on it.
+    const model = timelineModel({
+      timeZone: TZ,
+      nowMs: local(18) + 48 * HOUR,
+      endMs: local(16, 12),
+      sun,
+    });
+    expect(model.marks.some((m) => m.kind === 'now')).toBe(false);
+    expect(timelineCaretBounds(model, 'start')).toEqual({
+      min: model.fromMs,
+      max: local(16, 11),
+    });
+    expect(timelineCaretBounds(model, 'end')).toEqual({ min: model.fromMs, max: model.toMs });
+    // And no end yet: the start may go anywhere on the ruler.
+    const open = timelineModel({ timeZone: TZ, nowMs: local(18), sun });
+    expect(timelineCaretBounds(open, 'start')).toEqual({ min: open.fromMs, max: open.toMs });
   });
 });
 

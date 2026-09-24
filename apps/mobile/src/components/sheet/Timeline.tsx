@@ -1,4 +1,4 @@
-import type { TimelineModel } from '@skating/core';
+import { type TimelineModel, timelineCaretBounds } from '@skating/core';
 import { useState } from 'react';
 import { type LayoutChangeEvent, Pressable, View } from 'react-native';
 import Svg, { Line, Path, Rect, Text as SvgText } from 'react-native-svg';
@@ -36,6 +36,10 @@ export function Timeline({
   const canvas = theme.background?.val ?? '#000';
   const x = (fraction: number) => PAD + fraction * Math.max(width - 2 * PAD, 1);
   const mine = model.spans.find((s) => s.mine);
+  // A half-hour at or before the start (or past *now*) would invert the skate: it is drawn faded
+  // and not offered — the same bounds the web's carets drag between.
+  const endBounds = timelineCaretBounds(model, 'end');
+  const offered = (ms: number) => ms >= endBounds.min && ms <= endBounds.max;
   const startMark = model.marks.find((m) => m.kind === 'start');
   const endMark = model.marks.find((m) => m.kind === 'end');
 
@@ -122,6 +126,7 @@ export function Timeline({
               x2={x(l.fraction)}
               y2={BASE_Y + 2}
               stroke={l.pinned ? ink : muted}
+              strokeOpacity={offered(l.ms) ? 1 : 0.4}
               strokeWidth={1.5}
             />
           ))}
@@ -206,8 +211,10 @@ export function Timeline({
             <Pressable
               key={`p${l.ms}`}
               onPress={() => onChooseEnd(l.ms)}
+              disabled={!offered(l.ms)}
               accessibilityRole="button"
               accessibilityLabel={`End about ${l.label}`}
+              accessibilityState={{ disabled: !offered(l.ms) }}
               style={{
                 position: 'absolute',
                 left: x(l.fraction) - 14,

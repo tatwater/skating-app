@@ -519,7 +519,10 @@ export function resolveSkateWindow(input: SkateWindowInput): SkateWindowResult {
     if (skateStartTime <= 0) return { ok: false, error: 'That duration is longer than possible.' };
   }
 
-  if (skateStartTime !== undefined && skateStartTime > end) {
+  // Strictly before: a zero-minute skate is no skate (the timeline's carets keep the same minute
+  // apart). The server's `validateReportInput` still accepts an equal pair, so no stored Report
+  // becomes uneditable over it.
+  if (skateStartTime !== undefined && skateStartTime >= end) {
     return { ok: false, error: 'The start must be before the end.' };
   }
   return skateStartTime !== undefined

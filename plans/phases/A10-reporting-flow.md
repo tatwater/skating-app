@@ -1017,12 +1017,40 @@ Fourteen findings, thirteen fixed in the branch, one retracted. Three worth nami
    on Escape and the block closes with the mode.
 3. **A caret click committed a time.** Pointer down and up without movement wrote the caret's
    own instant back as a `minute` end and dirtied the sheet; a drag now commits only on movement,
-   and its bounds are the panel's rules drawn (START ≤ END ≤ now, D199).
+   and its bounds are the panel's rules drawn (START < END ≤ now, D199 — strict since the PR #78
+   review).
 
 The rest: the ladder filtered to the end time's day like everything else on the ruler; the
 where-mode wash showing the open card's answer only; the weather hook answering `[]` on a rejected
 fetch so the cards can say "no archived weather" rather than "reading" forever; one formatter per
 model; the ladder's accessible names zone-correct from core.
+
+### The PR #78 review — what Greptile caught
+
+Three findings on the merge of `main`, all real; a fourth (the season-close alert is scheduled
+after the write, in a separate step, so a failure between the two loses it) is `imageryIngest`
+code from #74 that the merge brought in, not this PR's, and is left for its own fix.
+
+1. **A dry archived hour always drew clear.** `archivedHourCondition` used the precipitation rule
+   and nothing else, though the archive's hours carry the WMO code, the archive's only word for a
+   dry sky. An overcast or foggy hour got a sun or moon and read "clear" in the summary, on both
+   clients. The code now decides the sky when nothing fell (`wmoCondition`, the table
+   `hourCondition` already used, now shared); clear is left for a clear code, an unknown one, or a
+   row written before codes were requested.
+2. **The carets could meet — a zero-minute skate.** The drag bounds were START ≤ END, the rule
+   `resolveSkateWindow` also allowed, so either caret dropped on the other posted a skate of no
+   length. Worse, and in the same place: the ladder's ticks were never bounded at all, so a tap on
+   a half-hour at or before the start *inverted* the skate — on both clients. The bounds are core's
+   now (`timelineCaretBounds`: the carets a minute apart, the end at or before now), the web drag
+   and both ladders read them (a tick outside is drawn faded and not offered), and
+   `resolveSkateWindow` refuses an equal pair too, so the WHEN fields and the ruler agree. The
+   server's `validateReportInput` still accepts an equal pair, so no stored Report becomes
+   uneditable over it.
+3. **A failed weather read never retried.** The self-review's `[]` on a rejected fetch was final:
+   nothing in the effect's keys changed on reconnect, so a sheet opened without signal said "no
+   archived weather" until its lake or day changed. The hook now marks the failure and asks again
+   on the next reconnect (the browser's `online`; NetInfo's offline → online edge on the phone). A
+   real answer, empty or not, stays final, and a failure with signal does not loop.
 
 ### Owed
 

@@ -173,6 +173,15 @@ const WMO_CONDITION: Record<number, ForecastCondition> = {
   99: 'thunder',
 };
 
+/**
+ * The condition a WMO weather code names, or `undefined` for no code or one this table does not
+ * know. Shared by the forecast (`hourCondition`) and the archive's weather band
+ * (`archivedHourCondition`), so an hour's code reads as the same sky on both.
+ */
+export function wmoCondition(code: number | undefined): ForecastCondition | undefined {
+  return code === undefined ? undefined : WMO_CONDITION[code];
+}
+
 /** Cloud-cover edges for the fallback when there is no code: under 30 % reads clear, over 70 % cloudy. */
 const PARTLY_CLOUDY_PCT = 30;
 const CLOUDY_PCT = 70;
@@ -327,10 +336,8 @@ export function liquidMm(hour: ForecastHour): number {
  * timeline's fallback (liquid at or below 0 °C is freezing rain), then cloud cover picks a dry sky.
  */
 export function hourCondition(hour: ForecastHour): ForecastCondition {
-  if (hour.weatherCode !== undefined) {
-    const mapped = WMO_CONDITION[hour.weatherCode];
-    if (mapped) return mapped;
-  }
+  const coded = wmoCondition(hour.weatherCode);
+  if (coded) return coded;
   const snow = hour.snowfallCm;
   const rain = liquidMm(hour);
   const total = Math.max(hour.precipitationMm, rain + snow / SNOW_CM_PER_MM_WATER);

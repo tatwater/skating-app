@@ -63,6 +63,24 @@ describe('weatherCells', () => {
     ).toBe('rain');
     expect(archivedHourCondition(hour(1))).toBe('clear');
   });
+
+  it('reads a dry hour’s sky from its WMO code — overcast and fog are not clear', () => {
+    expect(archivedHourCondition(hour(1, { weatherCode: 3 }))).toBe('cloudy');
+    expect(archivedHourCondition(hour(1, { weatherCode: 2 }))).toBe('partly-cloudy');
+    expect(archivedHourCondition(hour(1, { weatherCode: 45 }))).toBe('fog');
+    expect(archivedHourCondition(hour(1, { weatherCode: 0 }))).toBe('clear');
+    // A code the table does not know, like a row written before codes were asked for, reads clear.
+    expect(archivedHourCondition(hour(1, { weatherCode: 42 }))).toBe('clear');
+    // Precipitation still wins over the code's sky.
+    expect(
+      archivedHourCondition(hour(1, { snowfallCm: 0.4, precipitationMm: 0.4, weatherCode: 3 })),
+    ).toBe('snow');
+    // The card's glyph and word follow: an overcast night is a cloud, not a moon.
+    const [cell] = weatherCells([hour(20, { weatherCode: 3 })], TZ, sun);
+    expect(cell?.condition).toBe('cloudy');
+    expect(cell?.conditionLabel).toBe('Cloudy');
+    expect(cell?.glyph).not.toBe('moon');
+  });
 });
 
 describe('weatherRunSummary', () => {

@@ -1,26 +1,11 @@
 import {
-  type TimelineMark,
   type TimelineModel,
+  timelineCaretBounds,
   timelineFraction,
   timelineMsAt,
 } from '@skating/core';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
 import { cn } from '../../lib/utils';
-
-/**
- * The instants a caret may be dragged between: the ruler's ends, the other caret (the start is
- * before the end — the WHEN panel's own rule, `resolveSkateWindow`), and for the end, *now* when
- * it is on the ruler (D199 refuses a future end). One rule, drawn and typed alike.
- */
-function dragBounds(model: TimelineModel, kind: 'start' | 'end'): { min: number; max: number } {
-  const at = (k: TimelineMark['kind']) => model.marks.find((m) => m.kind === k)?.ms;
-  if (kind === 'start') return { min: model.fromMs, max: at('end') ?? model.toMs };
-  const now = at('now');
-  return {
-    min: at('start') ?? model.fromMs,
-    max: now !== undefined ? Math.min(now, model.toMs) : model.toMs,
-  };
-}
 
 /**
  * The timeline (A10-6 / D206): core's `timelineModel` drawn as a ruler. Hour ticks with their
@@ -72,7 +57,7 @@ export function Timeline({
     };
   const move = (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (!drag) return;
-    const { min, max } = dragBounds(model, drag.kind);
+    const { min, max } = timelineCaretBounds(model, drag.kind);
     const ms = Math.min(max, Math.max(min, timelineMsAt(model, fractionAt(e.clientX))));
     setDrag({ ...drag, ms, moved: true });
   };
@@ -91,6 +76,7 @@ export function Timeline({
       ? { ...m, fraction: timelineFraction(model, drag.ms), label: `${m.label.split(' ')[0]} …` }
       : m,
   );
+  const endBounds = timelineCaretBounds(model, 'end');
   const mine = model.spans.find((s) => s.mine);
   const startMark = marks.find((m) => m.kind === 'start');
   const endMark = marks.find((m) => m.kind === 'end');
@@ -148,9 +134,12 @@ export function Timeline({
         <button
           key={l.ms}
           type="button"
+          // A half-hour at or before the start (or past *now*) would invert the skate; it is drawn
+          // but not offered.
+          disabled={l.ms < endBounds.min || l.ms > endBounds.max}
           onClick={() => onSetEnd?.(l.ms)}
           aria-label={`End about ${l.label}`}
-          className="-translate-x-1/2 absolute top-[30px] h-5 w-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="-translate-x-1/2 absolute top-[30px] h-5 w-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
           style={{ left: pct(l.fraction) }}
         >
           <span

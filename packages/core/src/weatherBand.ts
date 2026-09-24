@@ -14,6 +14,7 @@ import {
   conditionGlyph,
   type ForecastCondition,
   type ForecastGlyph,
+  wmoCondition,
 } from './forecastPlan';
 import type { SunTimes } from './solar';
 import { cmToInches, cToF, kphToMph, roundTo } from './units';
@@ -47,14 +48,15 @@ const PRECIP_LABEL_CONDITION: Record<string, ForecastCondition> = {
 };
 
 /**
- * An archived hour's condition: the precipitation rule the timeline already draws, else clear.
- * The archive carries no cloud cover, so a dry hour is drawn clear — the sentence beside it is
- * what says more.
+ * An archived hour's condition: the precipitation rule the timeline already draws, then the hour's
+ * own WMO code — the only word the archive has for a dry sky (overcast, fog), since it carries no
+ * cloud cover — and clear only when there is neither. A row written before the code was requested
+ * therefore still reads clear when dry.
  */
 export function archivedHourCondition(hour: WindowHour): ForecastCondition {
   const precip = precipitationKind(hour);
   if (precip) return PRECIP_LABEL_CONDITION[precip.label] ?? 'rain';
-  return 'clear';
+  return wmoCondition(hour.weatherCode) ?? 'clear';
 }
 
 function isNight(ms: number, sun: SunTimes | null | undefined): boolean {
