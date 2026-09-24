@@ -1,6 +1,6 @@
 # Phase A10 — Reporting: one sheet, three doors
 
-> **Scoped 2026-09-18, unbuilt.** Founder ask: the reporting flow must feel effortless while
+> **Scoped 2026-09-18; A10-1, A10-2, A10-2b and A10-3 built 2026-09-21.** Founder ask: the reporting flow must feel effortless while
 > collecting as much hard data as a skater can give — the least taps, no forced order, the
 > author's own voice kept, every report style the community already writes accepted (a one-line
 > hazard, a lake writeup, a multi-lake day, a before-and-after-work pair, a drive-by), suggested
@@ -384,6 +384,380 @@ ghost. Nothing ships to a skater on a provisional floor (A10-4 checks `basis`).
   extraction (A10-4), never pass it through; and `accessAlerts.reason` still narrows to the blocker
   set until §7.2's write path lands (A10-2).
 
+## Built record — A10-2 (2026-09-21, `phase-a10-reporting-flow-2`, PR #72)
+
+§2.4 (the plumbing: `posts.create`, moderation, purge, export, the feed), §7.2's server half, §9.4,
+§12.1, the `showPutIn` switch that had waited on a local branch since 2026-09-20, and PRIVACY.md's
+sentence about it. Eighteen commits off `main` at `8c53098c`, ~6,600 lines over 91 files. Suites at
+build: core 2,905 · convex 1,730 · web 573 · mobile 112. No data runs; the schema change (`accessAlerts.reason` widens) needs a
+`convex dev --once` before the app is used against dev.
+
+**Deferred to A10-2b by the founder's size rule** (this PR is ~6,600 lines with the switch; 9k was
+too many): §9.1–§9.3 (the queue reshaped around Posts, D55 ids in the draft, *Waiting to send*),
+§12.2 (aggregates learn `where`), §12.3 (the water-body silhouette on cards and the sheet), and the
+profile history as Posts. §1.5 (the corpus replay) waits on the founder's eval review — the engine
+decides what the pipeline stores — and ships with its run, `posts.importBackdated` included.
+
+### What shipped, by workstream
+
+- **§2.4 the write path** — `lib/reportWrite.ts`: `createReportRow` writes one Report with its
+  hazards, photos, bay membership, track link and side effects; `createPost` gates the author
+  once, dedups on the Post's key, validates the title and prose (`validatePostInput`, bounds in
+  core), inserts the Post first so each member is **born with its `postId`**, writes the members
+  in the author's order, and fills `reportIds`, `latestSkateEndTime` (the max) and `photoIds` (the
+  ordered union — `postPhotoIds`). `reports.create` is the one-Report form of the same path and
+  stays until A10-5 removes the last pre-sheet form; its key is both the Post's and the Report's.
+  A Report's own key is stored and a reuse refused, never shared.
+- **§2.4 the create-only rules** — `assertMayPost`: D199's window, then D189's set, per Report,
+  after its hazards are filed and before the Post is written; a throw rolls the transaction back.
+  The three sentences live in core and the pre-sheet forms ask them client-side
+  (`formCreateRefusal`) before posting — never on an edit, never on *Save draft*.
+- **§2.4 moderation** — `post` is a flag target and a moderation target. Hidden or removed
+  cascades to every visible member with an audit row each (`cascadedFromPostId`); a Post restore
+  brings back only what that cascade took down. `applyReportStatus` is the one place a Report's
+  verdict moves its counter, body card, bay join and Post sort key. **Zero visible members hides
+  the Post as a stored fact** (`derivePostVisibility`, audit row `derivedFromReportId`), and a
+  member restore brings a Post hidden *that* way back — the feed's gate stays in the index.
+- **§2.4 purge, export, sweeps** — `contentPurge` gains `posts` first (title + body, aged on
+  `latestSkateEndTime`); `reportRedaction` now also clears a located chip's `note` (missed since
+  A10-1); `dataExport` enumerates `posts`. The photo sweeps add no `posts` arm on purpose — the
+  album is derived from the members — and say so where each argues its completeness.
+- **§2.4 / §12.1 the feed** — `posts.listFeed` replaces `reports.listFeed`: Posts paginated on
+  `by_moderation_and_latest_skate_end_time` with the season bound in-range, then a `PostCardData`
+  per Post: the words over the members the viewer's filters matched, in the author's order, the
+  members the filters hid counted (`omittedCount`), the members a moderator hid neither shown nor
+  counted, a Post with nothing to show dropped. The card builder and the narrowing moved to
+  `lib/feedCards.ts`, shared with the offline cache and the recommended strip. `FeedCardData` gains
+  `suitability`, `observedFrom`, `sighting`.
+- **§12.1 the cards** — `PostCard` on both surfaces over one `buildPostCardView`: the author's
+  words (who, when, title, prose clamped with the rest a tap away in place) over one `FeedCard` per
+  Report, each a button to that Report; two or more lakes get a hairline rail with a mark per
+  lake, the day's itinerary in the author's order; a legacy Post (one Report, no words) draws no
+  header and *is* the card it always was. The report card leads with the author's suitability
+  ("Don't go" in the warning treatment), shows the vantage only off the ice, and a sighting.
+- **§12.1 the details** — both ReportDetails: the same axes; each chip with its `where` in words
+  (`describeLocatedChip`, lifted from the sheet reducer, compass words not letters; `reports.get`
+  returns `bayNames`); snow in one line (`describeSnow`, shared with the sheet); the Post's title
+  and prose over the data and the other lakes of the day one tap away (`posts.getForReport`).
+- **§7.2 the server half** — `accessAlerts.reason` widens to `ACCESS_REASONS`; `create` takes the
+  author's own `reportId` (theirs, about this body) and the queue's `idempotencyKey`;
+  `blockedIds` is built from the blockers alone; one label map in core replaces two client copies
+  that would have rendered a plank as "Access problem". The pickers still offer the blockers only —
+  the conditions' door is the sheet (A10-3).
+- **§9.4** — the queue asks the create-only rules at flush **before the uploads**; a server
+  refusal parks the draft with the server's sentence (`flushErrorMessage` reads
+  `ConvexError.data`), not the wire form; `UnreportedSkates` stops offering a skate outside the
+  window.
+- **The `showPutIn` switch** (Phase 04 debt) — rebased onto A10-1 (two additive conflicts) and
+  landed as the first two commits; PRIVACY.md now describes it.
+
+### Deltas from the plan — read these before extending
+
+1. **`reports.create` stays** as the one-Report form rather than being deleted: both pre-sheet
+   forms and ~180 test call sites use it, and one path underneath makes the two entrances one rule.
+2. **No version gate on D189/D199** (D189, D199 amended): the fixtures that posted notes-only or
+   January-dated reports spread a minimum-set constant nothing downstream reads (`suitability` +
+   `glass`) and post at a fresh time; an aged fixture moves the clock for the write.
+3. **The Post's album is derived**, so "one writer keeps three fields from drifting" became
+   `syncPostPhotos` (the union) + `syncReportPhotoLinks` (the back-link) — and the sweeps needed
+   nothing. `lib/postPhotos.ts` became `lib/postSync.ts`, with the sort-key writer beside it.
+4. **"Zero visible Reports ⇒ not shown" is stored** (D186 amended) — the read-side rule alone would
+   have re-opened the `isDone: false` short-page problem the in-index gate exists to close.
+5. **`refreshPostLatestSkateEnd` keys on visible members** — a Post whose freshest Report a
+   moderator hid sorts on the freshest one a reader can still see.
+6. **The body page already shows several latest Reports** (`listByWaterBody`, paginated); §12.1's
+   "several, not one" needed no change there. The profile history stays per Report until A10-2b
+   renders `PostCard`s.
+7. **Notifications needed no change**: a multi-body Post enqueues one candidate per body, which is
+   what a favoriter of one body should hear; the tap target was already the Report.
+
+### Owed
+
+- `convex dev --once` on dev before the app is used (the `accessAlerts.reason` widening).
+- ~~A10-2b: §9.1–§9.3, §12.2, §12.3, the profile history as Posts.~~ Built, stacked on #72.
+- **§7.2's client half (A10-3) must decide the cap:** conditions and blockers share
+  `MAX_ACCESS_ROWS_PER_BODY` (64) on `by_water_body_status_expires_at`, so a lake with many live
+  "plank needed" rows could push a live "gate locked" out of the window `blockedIds` is built from.
+  Nothing writes a condition until the sheet does; a reason column in the index or a second bounded
+  read for the blockers is the fix, and it lands with the first writer.
+- The replay PR (§1.5) after the founder's eval review: the deployment (a `skating-replay` project
+  is the recommendation — preview deployments auto-delete after 5 / 14 days), the snapshot import,
+  `posts.importBackdated`, the runner and `replay-summary.md`.
+
+## Built record — A10-2b (2026-09-21, `phase-a10-reporting-flow-2b`, PR #73 stacked on #72)
+
+The half the size rule split off A10-2: §9.1–§9.2 (the queue around Posts, D55 offline, *Waiting
+to send*), §12.2 (aggregates learn `where`), §12.3 (the silhouette, D203), and the profile history
+as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: core 2,947 · convex 1,733 · web
+576 · mobile 112. No schema change, no data run.
+
+### What shipped, by workstream
+
+- **§9.1 the queue is Posts** — core `draftQueue.ts`: `PostDraft` (the words plus one or more
+  `ReportDraft`s, each with its own key, body, form, photos, track and `hazardRefs`) flushed by
+  `flushPost` as one `posts.create`. Every Report is resolved, validated and held to the create-only
+  rules before any Report uploads; then the uploads; then one create — one bad leg parks the whole
+  Post, named by its lake, and a sound first leg spends nothing on it.
+  `postDraftFromLegacy` lifts a pre-A10-2b row; the mobile store's fourth migration runs it row by
+  row under the `post` kind (tested against real sqlite). The pre-sheet form saves a one-Report
+  Post and edits a Post's first Report; the sheet (A10-3) edits them all.
+- **§9.1 D55 offline** — `hazardRefs` carry a server id or the queue's local id; the bundle prompt
+  offers the phone's queued hazards beside the server's (`local:`-prefixed); the flush resolves a
+  local ref through the hazard queue, which now **keeps a flushed hazard's row** (`done`, with
+  `hazardId`) while a draft points at it and sweeps it after (`removableHazardItems`) — the rule a
+  flushed track's row already followed. A bundled hazard is the observation the minimum set asks
+  for at flush. Online, a checked hazard still in the queue is **flushed at submit** and attached
+  by the id it lands with (`resolveBundledHazardIds` over `resolveQueuedHazardId`); one that cannot
+  be sent stops the post with a sentence (`UNSENT_HAZARD_REFUSAL`), never a silent omission.
+- **§9.2 *Waiting to send*** — the Report tab's queue: the signal state in one sentence from core
+  (`WAITING_TO_SEND_COPY`; offline: "…it's safe to close the app"), hazards first, then the Posts
+  labeled by title or lakes (`postDraftLabel`), *Sync now* only with signal.
+- **§9.3** — nothing to build until extraction exists (A10-4); the prose already rides the draft
+  (`PostDraft.title` / `body`).
+- **§12.2 aggregates learn `where`** — `whereOverlaps` / `whereCoversBody` in core. Corroboration
+  (`shareIceType`) needs a shared type *about the same water*; the contradiction test keeps the
+  by-key reading (a shared type anywhere keeps a pair out of the queue); the recommended bar wants
+  black ice claimed of the lake — not one bay, one sector or "patches". Feed filters stay
+  by key on purpose: black ice in the north is black ice on the lake.
+- **§12.3 the silhouette (D203)** — core `bodySilhouette.ts` (payload, ring simplification to a
+  240-point budget, the equirectangular fit, the SVG path builders; fast-check over the fit, the six
+  real outlines over the budget); the server builds the per-body half once per page in
+  `bodyInfoFor` from the polygon the card read already carried and the per-report half in
+  `toFeedCard` (put-in only when the viewer may see it, the skate trimmed under D58's clip, the
+  first located chip's `where` — its sector and its bay together, never one chip's sector beside
+  another's bay); `BodySilhouette` on web and mobile draws the same paths. The card's right column
+  is the time over the silhouette.
+- **§12.1 the profile history** — `getPublicProfile` returns `posts: PostCardData[]` through the
+  feed's `toPostCard`, bounded in Posts *and* in member Reports hydrated (one number, cut at a Post
+  boundary); both profile pages render `PostCard`s.
+
+### Deltas from the plan — read these before extending
+
+1. **The silhouette is computed per page, not stored** — the body doc's polygon is already in the
+   card's read, so simplifying it costs CPU and no bytes; a stored `cardRing` would have meant a
+   backfill plus five writer sites. If a profile ever says otherwise, the per-body half is one
+   function and can move to the row.
+2. **The card carries the skate's path** (the founder's "the report track is static") — simplified
+   to the same budget, D58-clipped for a stranger. The plan's §12.3 named only the put-in and the
+   sector.
+3. **A flushed hazard's row is kept, not deleted** — the plan said "the ids must ride the offline
+   draft" and left the resolution unsaid; keeping the row with its server id is the same rule the
+   track queue already had, and the sweep is the same shape (`sweepHazardItems` beside `sweepTracks`).
+4. **Contradiction stays by key** while corroboration reads `where` — asymmetric on purpose: fewer
+   awards for different places, no more flags for them.
+5. **The flush resolves hazard refs before the create-only check and the uploads** (self-review),
+   so a ref that comes back empty cannot pass the minimum set and then fail the create after the
+   photos were spent; a hazard flushed on demand this way frees its photo files like one flushed by
+   the drain (`flushOneHazard`).
+6. **Reopening a draft applies its saved bundle choice** as the opt-outs once the candidates load —
+   the last explicit choice wins over D55's pre-checked default, including for a hazard that synced
+   in since. A call made at build; say so if the default should win instead.
+7. **The bundle window is one rule** (`bundleWindow` in core): the prompt's queued candidates and
+   `hazards.listBundleCandidates` read the same skate-window-or-24-hours.
+8. **An online post flushes a checked queued hazard at submit** (PR #73 review). The build had it
+   silently unattached — "no id yet, posts on its own" — which lost the author's explicit, shown
+   choice (D55: never silent) whenever a transient sync failure or an unfinished drain left the row
+   without a server id. Now the form asks the queue for the id, flushing the row if it must, and a
+   hazard that cannot go stops the post with what to do; the posted form then runs the drain's
+   sweep (`sweepFlushedHazards`) so the spent row is not re-offered to the next report on the lake.
+   The draft path is unchanged. Because the submit and a reconnect drain can now reach one row
+   together, every per-hazard flush runs through one keyed guard (`createKeyedSingleFlight` in
+   core): a second caller joins the flush already running, and one that arrives just after it
+   settled is handed the row's server id — never two uploads of one hazard's photos.
+9. **The flush checks every leg before any leg uploads** (PR #73 review): two passes over the
+   Post's Reports, so a two-lake Post whose second leg is stale or under-observed spends none of
+   the first leg's photos. The on-demand hazard flush stays in the first pass — it is not an upload
+   spent on this Post, and the minimum-set count needs it.
+10. **The silhouette draws one chip's `where`, whole** (PR #73 review): the first located chip's
+    sector and bay together, never a sector from one chip beside a bay from another — a wash and a
+    ring that composed "the south end of North Bay" out of "black ice, south" and a reading in
+    North Bay was a place no one claimed.
+11. **The profile history is bounded in Reports, not only Posts** (PR #73 review): the fifty-Post
+    window could hydrate five hundred cards (a Post is up to ten), each with every thumbnail URL —
+    `photoIds` has no per-report cap on the write path. One number bounds both, cut at a Post
+    boundary. A paged history is the next step if a profile ever wants more than the window.
+
+### Owed
+
+- A10-3 device pass of the queue: a two-lake Post saved offline, a queued hazard bundled, the
+  *Waiting to send* line with airplane mode on and off.
+- The A10-3 sheet edits every member of a Post draft; the pre-sheet form edits the first.
+
+## Built record — A10-3 (2026-09-21, `phase-a10-reporting-flow-3`, PR #75 stacked on #73)
+
+§4.1, §4.3, §4.4, §6 and §7 — the mobile sheet, every door but GPX and the parking-lot detection —
+plus what the kickoff added: held drafts (D204), author edits with history and author deletes
+(D205), the weather beside the end time, the A10-2 owed alert cap, and `putInId` written at last.
+Founder calls at the kickoff, all settled before code: one full-screen sheet for every door (the
+drawer routes to it, never a form inside it); the Reports tab *is* the sheet, Drafts and *Waiting
+to send* behind its header; a draft never auto-posts; the end time fetches that hour's weather and
+a start shows the whole run; D52's verdicts + *didn't look*; no moderator put-in authoring exists
+(a feature doc, `features/access-point-authoring.md`, and the proposal queue is *derived* from the
+reports' points); no adding a Report to a Post; no Figma mocks — built to taste with the design
+skill, to be re-skinned. Suites at build: core 2,967 · convex 1,742 · web 573 · mobile 122. One
+schema change (`contentRevisions`, additive) and one enum widening (`author_delete`): a
+`convex dev --once` before the app is used against dev.
+
+### What shipped, by workstream
+
+- **§4.1 the sheet** — `apps/mobile/src/components/sheet/`: `ReportSheet` (the page: the words at
+  the top at most ~30% of the screen, one `ReportSections` stack per lake, *+ another lake* / *+ an
+  earlier visit*, *Save draft* / *Post*; *Cancel* / *Save changes* on the edit door), `SheetSection`
+  (the fixed-order header row with its one-line summary; collapse is the author's tap, never the
+  sheet's — a section that auto-collapsed after the first chip would yank the row the next chip is
+  on), `SheetChip` / `ChipRow` (the three tiers drawn: solid filled, ghost dashed with a `+`,
+  extracted hollow with a ✎ — A10-4's tier exists on screen already). The state is a module store
+  (`sheetStore.ts`) over a pure model (`sheetModel.ts`, tested): the Post sheet over core's Report
+  sheets; the doors; the draft round trip incl. a lifted pre-sheet `form` draft; the refusals
+  before Post (the set's gaps, then the validator's shapes, then the window), each Report named by
+  its lake. The doors (`sheetDoors.ts`) read the device: GPS → the cached lake (else a body-less
+  sheet with the coord, resolved at flush), the queued track's window stamped `gps` and its start
+  snapped (D198), the unreported skate's path from the author's own list, the dwell (Phase 09b),
+  the draft, the published Report and its Post's words.
+- **§4.2 the doors** — the drawer's *Add a report*, the finished-skate card, the unreported list, a
+  draft, a published Report's *Edit*, and the tab; the old `?track=` / `?activity=` on `/water/[id]`
+  redirect to the sheet so a notification still lands. `ReportForm` and `draft/[id]` are gone on
+  mobile; web's form stays for A10-5. **The search door landed here** (`BodyPicker`: the catalog's
+  search online, the lakes this phone has viewed offline) because §4.3 needs it.
+- **§4.3 multi-Report Posts** — one section stack per Report with the lake's name and silhouette as
+  its header; a lake added after the last, an earlier visit right after its source on the same body;
+  never the last one removed (D186); the put-in switch carries to the next lake.
+- **§4.4 peers** — `peerSuggestions` / `peerLine` in core over the body's recent cards (the
+  `recentCardsForBodies` read the drawer already makes; the offline report cache when it is not
+  back); one collapsed line per row, the values as ghosts, once per body.
+- **The sections** — *How was it?* (D190, *don't go* in the warning fill); *How did you see it?*
+  (D191; the sighting row only off the ice); *When did you get off?* (D192: the pinned minute, the
+  half-hour ladder, the picker bounded by the week, daylight preselect, the GPS chip from a track;
+  a start time or a duration; **the archive's weather for the hour under it, the whole window with
+  a start, *Not what you saw? Correct it* storing `source: 'user'`**); *Ice and surface* with the
+  `where` affordance under each selected chip (`WherePicker`: mostly / patches, the bays, the
+  compass sectors + middle + near shore + head / mouth in a bay, a point tapped on the silhouette);
+  *Snow* (D194; the depth as chips — a dusting, ~1"…~12" — and *plowed path*); *Thickness* (D195:
+  the band row stored as one `estimated` reading per band, the scope, precise readings — a number,
+  a range with either end optional, pokes with the skater's own inch guess — the method, *held me*
+  / *didn't hold*, a where per reading); *Hazards* (below); *Access* (below); *Photos* (today's
+  pipeline, held on the sheet until Post copies them into the draft's files; §8.1's window query
+  is A10-4); a per-lake note.
+- **§6 hazards** — *Mark one here* hands off to the map's `HazardCapture` (`requestHazardCapture`
+  on the map context; the capture places by map tap when the skater is not on that ice, since a
+  GPS fix from the couch would drop the pin on the couch, and returns to the sheet on Done; the new
+  pin arrives as a D55 bundle candidate). The D55 prompt as it was, its saved choice applied to a
+  reopened draft. The tick-through: **you skated past these** over the track ∩ each active
+  hazard's footprint (`passedHazards`, §3.4's first caller, with *you were in it / you crossed it /
+  N m off*), else **did you see any of these?** over the body's active hazards nearest the chosen
+  put-in (bounded to eight), the author's own pins excluded; the three D52 verdicts + *didn't
+  look*; only an answer files, at Post, through the hazard queue as `via: 'report_flow'` (D12's
+  second bullet, built) — observed at the end time. A crossing's *still there* reads *crossed here*.
+- **§7.1 the put-in picker** — the silhouette, larger and tappable (`LakeMap`; core gains
+  `Projection.fromXY`): A06d's launches as named dots (the nearest four as chips too), lots as
+  squares, a tap on a dot chooses, *somewhere else* takes a tap on the water as the report's
+  `point` with no `putInId`, *use my location* is the offline path; a track door snaps its start
+  inside `PUT_IN_SNAP_METERS` before the sheet opens. `reports.putInId` is written from here —
+  checked with the body in hand (`assertPutInOfBody`: live, this lake's), a string at the wire
+  like core's input, last-write-wins on an edit.
+- **§7.2 the client half** — the condition chips against the chosen put-in, or the lot for the
+  lot-shaped reasons (`icy_lot`, `snowed_in`, `plowed_trail`) when one is chosen, plus a one-line
+  note; filed **after the Post creates** with the Report as provenance, one idempotency key per
+  reason, checkpointed on the draft; a server refusal on one (a launch hidden since) is skipped, a
+  network failure retries through the idempotent create. **The owed cap** (A10-2): the live-alert
+  reads take blockers and conditions as separate pages over the same index range, so a lake of
+  planks cannot push a locked gate out of `blockedIds`; the test fails without the fix.
+- **D204 held drafts** — `DraftStatus` gains `draft`, the flush skips it, the tab's header counts
+  Drafts and Waiting; a dirty sheet a new door would replace is parked in Drafts first.
+- **D205 author edit and delete** — `posts.update` (the words, last-write-wins, `editedAt`);
+  `contentRevisions` written by `posts.update` and `reports.update` before the patch (typed at the
+  boundary, `lib/revisions.ts`; purged with the words by the departed-user sweep as a `revisions`
+  category; in the data export); `reports.remove` / `posts.remove` through the moderation cascade
+  (`authorRemoveReport` / `authorRemovePost`), audited `author_delete`; *Delete report* on both
+  surfaces' report pages; an *edited* mark on both surfaces' cards (`FeedCardData.edited`,
+  `PostCardData.edited`).
+- **Also** — `toReportArgs` in the mobile flush passes the content through whole: it had listed
+  fields by name and dropped a queued draft's snow depth, and every A10 field, at flush.
+
+### Deltas from the plan — read these before extending
+
+1. **The sheet is a full-screen route, not the drawer's form** (founder). The drawer's live-map
+   pin-drop is gone from the report path; the silhouette is the picker everywhere, online and
+   offline, and the put-in you tapped is the dot the card draws (D203's shape at both ends).
+2. **The words are at the top, not the bottom** (founder): the title and prose lead the page at
+   most ~30% of the screen; *How was it?* is the first section under them. `SHEET_SECTIONS` keeps
+   `writing` last as the per-lake note.
+3. **Weather beside the end time** (founder): a new use of the archive the panel already fetches
+   (`weatherWindow.ts`), no new Open-Meteo cost; a correction stores `source: 'user'`, an
+   uncorrected sheet leaves the block to the server's autofill as before, and an edit re-sends the
+   stored block with its source so `mergeEditedConditions` keeps the provenance.
+4. **§6 (d)'s verdicts are D52's three + *didn't look***; the reducer's `gone` is gone. A
+   tick-through "gone" would have been `fully_healed` under a softer label — the one vote D52
+   makes deliberately hard.
+5. **§7.1's "create-new falls through to the A06d put-in flow" — no such flow exists.** Put-ins are
+   the ETL's and `setPutInAccess` is moderator-only. *Somewhere else* stores the report's `point`
+   alone; the derived-cluster read is the proposal queue; the authoring tool is
+   `features/access-point-authoring.md`.
+6. **Confirmations from the sheet ride the hazard queue**, not `posts.create`: they are the
+   skater's votes on other people's pins, idempotent per user per hazard server-side, and the
+   hazard queue flushes first. A re-post of a reopened draft refreshes rather than double-counts.
+7. **Held drafts are a new status, not a flag** (D204), so every reader of the queue —
+   `flushablePosts`, the counts, the two screens — agrees by construction.
+8. **A Post never gains a Report** (D205); the sheet's *+ another lake* is create-only, and the
+   edit door is one Report and its Post's words.
+9. **The mobile capture places by tap when asked from the sheet off the ice**; the FAB's own rule
+   (on the ice you are standing on, and nowhere else) is untouched.
+10. **`reportSheet`'s `select` with a value replaces an existing chip's value** — a retyped reading
+    is a tap with a value, not a delete and an add.
+11. **The Post sheet's model lives in core, not on mobile** (added to this PR at the A10-5 kickoff,
+    2026-09-22): `apps/mobile/src/lib/sheetModel.ts` → `packages/core/src/postSheet.ts`, because the
+    web console (§10) is a second composition of the same model and a rule that differed between the
+    two surfaces — which gaps refuse a Post, what *Save changes* addresses — would be one rule with
+    two answers. The move is mechanical: ids are plain `string` in core as everywhere else, and each
+    surface casts at its own wire (mobile already did this for `photoIds` and the storage ids). What
+    stays on mobile is what is native — `sheetStore` (the module singleton), `sheetDoors` (the GPS
+    fix, the queued track, the cached lake) and `sheetActions` (upload, queue, flush).
+12. **A checked queued hazard holds or parks the Post; it is never dropped** (founder, at the merge of
+    #73 into this branch, 2026-09-23). A10-2b delta 8 fixed the online form's submit, but the sheet
+    posts through the queue, and the queue's rule was still "a ref that cannot resolve is left out"
+    — the same silent loss on every *Post*. The rule now lives in `flushPost`, so the online and
+    offline paths are one: `resolveHazardId` answers with core's `queuedHazardResolution` — `sent`
+    (attach it), `waiting` (a transient failure: the Post stays queued and goes after the hazard,
+    so *Post* still never fails for lack of bars), `refused` (the row is parked in `error`: the Post
+    parks with a sentence naming the hazard and pointing at *Waiting to send*, where the row can be
+    deleted), `gone` (the author deleted the row: nothing left to attach). A draft whose create was
+    already sent is exempt, like the create-only rules — it may be live. The form's
+    `resolveBundledHazardIds` / `UNSENT_HAZARD_REFUSAL` went with the form; the keyed single-flight
+    stays as the row's guard though every caller now runs inside the coalesced drain. D55 amended.
+13. **A door that fails to open says so** (PR #75 review): the tab's `openDoor` chains had no
+    rejection handler, so an edit door whose query failed sat on "Opening your sheet…" for ever.
+    Both now land on a *Try again* that re-navigates the same door through `doorHref`'s fresh stamp.
+14. **An edit is one transaction** (PR #75 review): `reports.update` takes the Post's words
+    (`post`) and applies them through `editPostWords`, the helper `posts.update` is now a shell
+    over, so a refusal of either half lands neither. Words re-sent unchanged write nothing — no
+    revision, no *edited* mark — so a chip edit no longer claims the Post's words were edited.
+15. **The edit door's uploads checkpoint** (PR #75 review): each blob id and the photo row's id
+    are written onto the open sheet as they land, so a retried *Save changes* never re-uploads a
+    blob — one no photo row names is a leak `sweepOrphanPhotos` cannot see.
+16. **`accessAlerts.kind` is stored and indexed** (PR #75 review; founder call over a reason-keyed
+    index, which would have made the lot walk 24 ranges per lot — Champlain's 160 lots near a
+    function's call budget). The live reads range on `(target, status, kind, expiresAt)`, so each
+    kind is capped in its own range and the take is the whole read; before, one shared range was
+    filtered by reason set, bounding the answer but not the scan. Required from the start of its
+    life in the tree: it landed optional with a backfill, dev turned out to hold no alert rows
+    (checked 2026-09-23) and prod is uninitialized, so it was narrowed in this PR and the backfill
+    removed.
+
+### Owed
+
+- **Device pass** on the Android preview build (the founder, on their own time): every door; a
+  two-lake Post saved offline, a queued hazard bundled, *Waiting to send* with airplane mode on and
+  off (the A10-2b owed pass, now on the sheet); the silhouette picker's tap accuracy on a real
+  outline; the weather line's latency on a cold cell.
+- The moderator's revision comparison (D205) — the web console, A10-5.
+- **Moderator put-in and lot authoring** — `features/access-point-authoring.md`, after A10.
+- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`,
+  `accessAlerts.kind`).
+- The typed-routes artifact (`.expo/types/router.d.ts`, gitignored) regenerates on the next
+  `expo start`; `/drafts` and `/queue` were added to the local copy by hand.
+- RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register
+  row); the sheet's logic is in core and `sheetModel.ts` on purpose, and the components are thin.
+
 ## Review pass — 2026-09-19
 
 A fresh-eyes review against the code, before any build. What it found and what changed:
@@ -559,13 +933,15 @@ A fresh-eyes review against the code, before any build. What it found and what c
 - §6.1a D55 bundling: without a track the candidate window (author's own unattached hazards on
   the body) widens to the whole day when no start time is given, so a morning hazard reaches an
   evening write-up. The ids must ride the offline draft (§9.1).
-- §6.2 *You skated past these* tick-through, confirmations `via: 'report_flow'`.
+- §6.2 *You skated past these* tick-through, confirmations `via: 'report_flow'` — the three D52
+  verdicts plus *didn't look* (A10-3 delta 4).
 - §6.3 Ridge-crossing offer on crossed pressure ridges; photo → hazard pre-location.
 
 ### §7 — Access in the flow
 
-- §7.1 The put-in / lot picker over A06d points; snap radius (D198); create-new falls through to
-  the A06d put-in flow.
+- §7.1 The put-in / lot picker over A06d points; snap radius (D198); ~~create-new falls through to
+  the A06d put-in flow~~ — there is no such flow (A10-3 delta 5): *somewhere else* is the report's
+  `point`, and the moderator's tool is `features/access-point-authoring.md`.
 - §7.2 Condition chips → access alerts (D197) with Report provenance; the one-line note.
 
 ### §8 — Photos
@@ -627,14 +1003,21 @@ Fewest sensible PRs; sub-workstreams are commits.
 
 - **A10-1 — §1 + §2.1–§2.3 + §3.** The eval, the schema (widen half), the core model. Pure and
   testable; no UI. Deploy, backfill Posts and snow, narrow.
-- **A10-2 — §2.4 + §9 + §12 + §1.5.** The plumbing: `posts.create`, every consumer, the purge/export/
-  moderation paths, the offline queue reshaped around Posts, the reading side on both surfaces,
-  the dual-write validator for the old web form, and the corpus replay (its import needs
-  `posts.create`'s shape). What every later PR depends on.
+- **A10-2 — §2.4 + §7.2 (server) + §9.4 + §12.1.** The plumbing: `posts.create`, every consumer,
+  the purge/export/moderation paths, the Post feed and cards, the details, the pre-sheet forms
+  held to the create-only rules. What every later PR depends on. *(Built 2026-09-21; the size rule
+  split the rest off.)*
+- **A10-2b — §9.1–§9.3 + §12.2 + §12.3 + the profile history as Posts.** The offline queue
+  reshaped around Posts (D55 ids in the draft, *Waiting to send*), aggregates that learn `where`,
+  the water-body silhouette on cards (D203). *(Built 2026-09-21, stacked on #72.)*
+- **The replay PR — §1.5.** After the founder's eval review decides the engine: the replay
+  deployment, the snapshot import, `posts.importBackdated`, the runner, the miss list.
 - **A10-3 — §4.1, §4.3, §4.4 + §6 + §7.** The mobile sheet with the chips, page and
-  recording/unreported-skate doors; hazards; access. Device-tested on the Android preview build.
-- **A10-4 — §5 + §8.1–§8.2 + the rest of §4.2.** Extracted chips, photos, GPX import, the
-  parking-lot and search doors; gated on A10-1's eval floors.
+  recording/unreported-skate doors; hazards; access. *(Built 2026-09-21, stacked on `-2b`; the
+  search door and D204 / D205 came with it. Device-tested by the founder on the Android preview
+  build.)*
+- **A10-4 — §5 + §8.1–§8.2 + the rest of §4.2.** Extracted chips, photos, GPX import and the
+  parking-lot door (the search door landed in -3); gated on A10-1's eval floors.
 - **A10-5 — §10.** The web console. §8.3 (video) is a backlog doc, not a PR.
 
 ## Budgets

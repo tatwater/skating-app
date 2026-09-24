@@ -14,6 +14,13 @@ import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
 import { footprintMoved } from './waterBodies';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 /** A `convexTest` instance. (It used to register the geospatial component; A01 retired it.) */
@@ -1043,6 +1050,7 @@ describe('waterBodies profile-richness prominence (A06c / A06c §4.2)', () => {
 
     const author = await seedUser(t, 'clerk_reporter', 'member');
     await author.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: Date.now(),
       iceTypes: ['black_ice'],
@@ -1062,6 +1070,7 @@ describe('waterBodies profile-richness prominence (A06c / A06c §4.2)', () => {
     const bodyId = await onlyBodyId(t);
     const author = await seedUser(t, 'clerk_reporter2', 'member');
     await author.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: bodyId,
       skateEndTime: Date.now(),
       iceTypes: ['black_ice'],

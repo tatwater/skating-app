@@ -29,9 +29,11 @@
 
 import {
   ACCESS_ALERT_TTL_MS,
+  type AccessAlertKind,
   type AccessAlertVote,
   accessAlertExpiryFor,
   accessAlertIsLive,
+  accessAlertKindOf,
   currentSeason,
   deriveAccessAlertLifecycle,
   isMinor,
@@ -49,7 +51,12 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
-import { ACCESS_ALERT_REASONS, ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS } from './lib/enums';
+import {
+  ACCESS_ALERT_KINDS,
+  ACCESS_ALERT_TARGETS,
+  ACCESS_ALERT_VERDICTS,
+  ACCESS_REASONS,
+} from './lib/enums';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -81,7 +88,9 @@ async function recomputeAlert(
 }
 
 /**
- * Post an access alert on a put-in or a parking area.
+ * Post an access alert on a put-in or a parking area — a blocker from the access layer, or a
+ * condition from the report sheet (A10 / D197): the same row, so a plank and a locked gate decay
+ * and corroborate the same way, and only `blockedIds` tells them apart.
  *
  * Rides **D57's existing posting permission** rather than inventing one — the same call D88 made for
  * access photos, and for the same reason: a permission that is always equal to another permission is
@@ -92,15 +101,41 @@ export const create = mutation({
     targetType: literals(ACCESS_ALERT_TARGETS),
     putInId: v.optional(v.id('putIns')),
     parkingAreaId: v.optional(v.id('parkingAreas')),
-    reason: literals(ACCESS_ALERT_REASONS),
+    reason: literals(ACCESS_REASONS),
     note: v.optional(v.string()),
     observedAt: v.optional(v.number()),
+    /** The author's own Report this was filed from (A10 §7.2) — provenance the reader can see. */
+    reportId: v.optional(v.id('reports')),
+    /** The offline queue's dedup key (A10 §9.1): a replayed flush returns the same row. */
+    idempotencyKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const profile = await requireContributor(ctx);
     const now = Date.now();
+
+    // A replayed flush returns the row it already filed (the `reports.create` rule, D30): a claim
+    // that corroborates itself is exactly the shape the vote counts exist to prevent. Author-scoped.
+    if (args.idempotencyKey !== undefined) {
+      const existing = await ctx.db
+        .query('accessAlerts')
+        .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', args.idempotencyKey))
+        .unique();
+      if (existing) {
+        if (existing.createdByUserId !== profile._id)
+          throw new ConvexError('Idempotency key conflict');
+        return existing._id;
+      }
+    }
+
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post access alerts');
+    }
+
+    // Provenance is the author's own Report, on the body the alert is about (checked below once the
+    // target resolves) — never someone else's skate lent to a claim.
+    const report = args.reportId !== undefined ? await ctx.db.get(args.reportId) : null;
+    if (args.reportId !== undefined && report?.authorId !== profile._id) {
+      throw new ConvexError('Not your report');
     }
 
     // ⚠ **The off-target id is refused, not ignored** (PR #43 review, security).
@@ -147,6 +182,10 @@ export const create = mutation({
       waterBodyId = link.waterBodyId;
     }
 
+    if (report && report.waterBodyId !== waterBodyId) {
+      throw new ConvexError('That report is about another water body');
+    }
+
     const note = args.note?.trim().slice(0, MAX_ALERT_NOTE_LENGTH) || undefined;
     // Clamped rather than trusted: a future timestamp is device skew, or a client trying to freeze an
     // alert as permanently fresh.
@@ -161,8 +200,11 @@ export const create = mutation({
         : { parkingAreaId: args.parkingAreaId }),
       waterBodyId,
       reason: args.reason,
+      kind: accessAlertKindOf(args.reason),
       note,
       createdByUserId: profile._id,
+      ...(report ? { reportId: report._id } : {}),
+      ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
       createdAt: at,
       season,
       expiresAt: accessAlertExpiryFor(at, seasonEndMs(season)),
@@ -384,17 +426,37 @@ const LIVE_STATUSES = ['active', 'official'] as const;
  * The pinned read deliberately has no clock bound: a pin carries no expiry and outranks the
  * lifecycle rather than participating in it.
  */
+/**
+ * 4. **Blockers and conditions are capped separately, in the range** (A10-3 §7.2, the cap the
+ *    A10-2 build owed). Both kinds ride the same rows, so once the sheet files conditions a lake
+ *    with many live "plank needed" rows could push a live "gate locked" out of one shared window —
+ *    and `blockedIds` is built from that window. The first cut took two windows over one range,
+ *    each filtered to its reason set before the take; that bounded the answer but not the read —
+ *    a lake of live planks was a scan to find its gate (PR #75 review). `kind` is now an index key
+ *    (`accessAlerts.kind`), so each `(status, kind)` range holds only its kind and the take is the
+ *    whole read. Four ranges per target, as before — not one per reason, which the lot walk below
+ *    (up to `MAX_LOT_LINKS_SCANNED` lots) would multiply past a function's call budget.
+ */
+
+/**
+ * The `(status, kind)` pages one live read takes — every status × every kind, because `setOfficial`
+ * pins whatever row a moderator names, a condition as readily as a blocker; a page left out here is
+ * a pinned row that vanishes from the lake.
+ */
+const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AccessAlertKind }[] =
+  LIVE_STATUSES.flatMap((status) => ACCESS_ALERT_KINDS.map((kind) => ({ status, kind })));
+
 async function liveAlertsByBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   now: number,
 ): Promise<Doc<'accessAlerts'>[]> {
   const pages = await Promise.all(
-    LIVE_STATUSES.map((status) =>
+    LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_water_body_status_expires_at', (q) => {
-          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status);
+        .withIndex('by_water_body_status_kind_expires_at', (q) => {
+          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status).eq('kind', kind);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
         .order('desc')
@@ -410,11 +472,11 @@ async function liveAlertsByParkingArea(
   now: number,
 ): Promise<Doc<'accessAlerts'>[]> {
   const pages = await Promise.all(
-    LIVE_STATUSES.map((status) =>
+    LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_parking_area_status_expires_at', (q) => {
-          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status);
+        .withIndex('by_parking_area_status_kind_expires_at', (q) => {
+          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status).eq('kind', kind);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
         .order('desc')

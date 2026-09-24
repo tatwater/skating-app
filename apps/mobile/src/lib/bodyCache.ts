@@ -108,6 +108,21 @@ function loadAll(): CachedBody[] {
 }
 
 /**
+ * The recently viewed bodies by name — the sheet's body picker with no signal (A10-3). Every lake
+ * a skater has opened is here, which is every lake they are likely to be reporting on. Empty on
+ * any sqlite error.
+ */
+export function listCachedBodies(): { waterBodyId: string; name: string; states: string[] }[] {
+  try {
+    return loadAll()
+      .sort((a, b) => b.cachedAt - a.cachedAt)
+      .map((b) => ({ waterBodyId: b.waterBodyId, name: b.name, states: b.states }));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * The cached polygon for one body, or `null` if it isn't in the cache.
  *
  * Snap-to-shoreline (A05b) reads through here rather than through `waterBodies.get`, because the

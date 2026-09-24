@@ -2,6 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { BAY_SECTORS, COMPASS_SECTORS, SECTORS, WHERE_EXTENTS } from './types';
 import {
+  describeLocatedChip,
+  describeWhere,
   isCompassSector,
   validateWhere,
   WHERE_KINDS,
@@ -9,7 +11,9 @@ import {
   WHERE_POINT_RADIUS_MIN_M,
   type Where,
   type WhereValidationError,
+  whereCoversBody,
   whereKind,
+  whereOverlaps,
 } from './where';
 
 function validate(where: Where): { normalized: Where | null; fields: string[] } {
@@ -135,5 +139,70 @@ describe('isCompassSector', () => {
     for (const s of SECTORS) {
       expect(isCompassSector(s)).toBe((COMPASS_SECTORS as readonly string[]).includes(s));
     }
+  });
+});
+
+describe('describeWhere / describeLocatedChip (A10 / D193, §12.1)', () => {
+  const bays = { bay1: 'Malletts Bay' };
+  it('composes extent, sector and bay the way a skater says it', () => {
+    expect(describeWhere({ sector: 'N' })).toBe('north end');
+    expect(describeWhere({ extent: 'patches', sector: 'N', subAreaId: 'bay1' }, bays)).toBe(
+      'patches north end of Malletts Bay',
+    );
+    expect(describeWhere({ sector: 'head', subAreaId: 'bay1' }, bays)).toBe(
+      'the head of Malletts Bay',
+    );
+    expect(describeWhere({ sector: 'near_shore' })).toBe('near shore');
+    expect(describeWhere({ subAreaId: 'bay1' }, bays)).toBe('Malletts Bay');
+    expect(
+      describeWhere({
+        point: { coord: { lat: 44, lng: -73 }, radiusMeters: 50, name: 'Shelburne Point' },
+      }),
+    ).toBe('Shelburne Point');
+  });
+  it('leaves a bay unsaid rather than showing an id, and says nothing for `whole`', () => {
+    expect(describeWhere({ subAreaId: 'bay1' })).toBe('');
+    expect(describeWhere({ sector: 'N', subAreaId: 'gone' }, bays)).toBe('north end');
+    expect(describeWhere({ extent: 'whole' })).toBe('');
+  });
+  it('a chip reads as its type, then where — the type alone when the where says nothing', () => {
+    expect(describeLocatedChip({ type: 'black_ice', where: { sector: 'N' } })).toBe(
+      'Black ice, north end',
+    );
+    expect(describeLocatedChip({ type: 'black_ice', where: { extent: 'whole' } })).toBe(
+      'Black ice',
+    );
+    expect(describeLocatedChip({ type: 'black_ice' })).toBe('Black ice');
+  });
+});
+
+describe('whereOverlaps / whereCoversBody (A10 §12.2)', () => {
+  it('absent overlaps everything; a bay overlaps itself and a bay-less claim; wedges only themselves', () => {
+    expect(whereOverlaps(undefined, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ subAreaId: 'a' }, { subAreaId: 'b' })).toBe(false);
+    expect(whereOverlaps({ subAreaId: 'a' }, { sector: 'N' })).toBe(true);
+    // A wedge in a bay and a wedge on the body are two frames: the bay's north can be the lake's
+    // south, so they are "cannot tell", not "no".
+    expect(whereOverlaps({ subAreaId: 'a', sector: 'N' }, { sector: 'S' })).toBe(true);
+    expect(whereOverlaps({ subAreaId: 'a', sector: 'N' }, { subAreaId: 'a', sector: 'S' })).toBe(
+      false,
+    );
+    expect(whereOverlaps({ sector: 'N' }, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ sector: 'N' }, { sector: 'S' })).toBe(false);
+    expect(whereOverlaps({ sector: 'middle' }, { sector: 'N' })).toBe(false);
+    expect(whereOverlaps({ sector: 'near_shore' }, { sector: 'N' })).toBe(true);
+    expect(whereOverlaps({ sector: 'head', subAreaId: 'a' }, { sector: 'N', subAreaId: 'a' })).toBe(
+      true,
+    );
+    expect(
+      whereOverlaps({ extent: 'patches', sector: 'N' }, { extent: 'whole', sector: 'N' }),
+    ).toBe(true);
+  });
+  it('a claim covers the body unless it names a place or says patches', () => {
+    expect(whereCoversBody(undefined)).toBe(true);
+    expect(whereCoversBody({ extent: 'mostly' })).toBe(true);
+    expect(whereCoversBody({ extent: 'patches' })).toBe(false);
+    expect(whereCoversBody({ sector: 'N' })).toBe(false);
+    expect(whereCoversBody({ subAreaId: 'a' })).toBe(false);
   });
 });

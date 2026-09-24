@@ -16,8 +16,9 @@ import { Card, CardContent } from '../components/ui/card';
  */
 export const Route = createFileRoute('/admin/flags')({ component: AdminFlags });
 
-// The three target types that carry a `moderationStatus` and can be taken down via setModerationStatus.
-const TAKEDOWNABLE = new Set(['report', 'comment', 'hazard']);
+// The target types that carry a `moderationStatus` and can be taken down via setModerationStatus.
+// A hidden Post hides its member Reports too (A10 / D186).
+const TAKEDOWNABLE = new Set(['report', 'post', 'comment', 'hazard']);
 
 type FlagView = NonNullable<ReturnType<typeof useFlags>>['priority'][number];
 function useFlags() {
@@ -91,7 +92,7 @@ function FlagRow({ flag }: { flag: FlagView }) {
                 confirmVariant="secondary"
                 onConfirm={(reason) =>
                   setStatus({
-                    targetType: flag.targetType as 'report' | 'comment' | 'hazard',
+                    targetType: flag.targetType as 'report' | 'post' | 'comment' | 'hazard',
                     targetId: flag.targetId,
                     status: 'hidden',
                     reason,
@@ -109,7 +110,7 @@ function FlagRow({ flag }: { flag: FlagView }) {
                 confirmLabel="Remove"
                 onConfirm={(reason) =>
                   setStatus({
-                    targetType: flag.targetType as 'report' | 'comment' | 'hazard',
+                    targetType: flag.targetType as 'report' | 'post' | 'comment' | 'hazard',
                     targetId: flag.targetId,
                     status: 'removed',
                     reason,

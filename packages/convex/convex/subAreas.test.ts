@@ -5,6 +5,13 @@ import type { Id } from './_generated/dataModel';
 import schema from './schema';
 import { footprintMoved } from './waterBodies';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 /**
@@ -397,6 +404,7 @@ describe('the stamp at create', () => {
     });
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.1 },
@@ -418,6 +426,7 @@ describe('the stamp at create', () => {
     });
 
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.8, lng: -72.8 },
@@ -437,6 +446,7 @@ describe('the stamp at create', () => {
       polygon: rect(-73.2, 44.2, -73.0, 44.4),
     });
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.1 },
@@ -934,6 +944,7 @@ describe('sub-area bounty targeting', () => {
 
     // Far end of the lake — real ice, wrong ask.
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.9, lng: -72.7 },
@@ -943,6 +954,7 @@ describe('sub-area bounty targeting', () => {
 
     // In the bay — the ask, answered.
     const inBay = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.1 },
@@ -958,6 +970,7 @@ describe('sub-area bounty targeting', () => {
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId: body });
 
     const anywhere = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.9, lng: -72.7 },
@@ -973,6 +986,7 @@ describe('sub-area bounty targeting', () => {
 
     // Fresh eyes on the far end of the lake. That suppresses a *lake* bounty...
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.9, lng: -72.7 },
@@ -1896,6 +1910,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
     const { t, body, west, east, author } = await setup();
     const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       activityId,
@@ -1919,12 +1934,14 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
     const { t, body, west, east, author } = await setup();
     const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
     const spanning = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       activityId,
       point: { lat: 44.4, lng: -73.45 },
     });
     const westOnly = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now() - 1000,
       point: { lat: 44.3, lng: -73.4 },
@@ -1959,6 +1976,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
     });
     const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
     const spanning = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       activityId,
@@ -1972,6 +1990,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
   test('a moderation verdict and an edited skate time reach the join', async () => {
     const { t, body, west, mod, author } = await setup();
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.4 },
@@ -1999,6 +2018,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
     const { t, body, west, east, author } = await setup();
     const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       activityId,
@@ -2017,6 +2037,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
   test('the backfill seeds the join from existing stamps and is idempotent', async () => {
     const { t, body, west, author } = await setup();
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: body,
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.4 },

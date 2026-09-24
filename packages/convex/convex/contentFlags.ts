@@ -29,6 +29,7 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
   // many people can independently make about the same lake, and the per-(flagger, target) dedup below
   // turns that into a free corroboration count: N open rows is N distinct people.
   waterbody: 'waterBodies',
+  post: 'posts', // A10 (D186)
 };
 
 /**

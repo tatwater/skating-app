@@ -63,6 +63,30 @@ describe('reportsAgree', () => {
     ).toBe(true);
   });
 
+  it('a shared ice type in different parts of the lake is not agreement (A10 §12.2)', () => {
+    const north = { type: 'black_ice' as const, where: { sector: 'N' as const } };
+    const south = { type: 'black_ice' as const, where: { sector: 'S' as const } };
+    expect(reportsAgree(rep({ iceTypes: [north] }), rep({ iceTypes: [south] }))).toBe(false);
+    expect(reportsAgree(rep({ iceTypes: [north] }), rep({ iceTypes: [north] }))).toBe(true);
+    // A bare key, or a chip with no where, is about the whole lake and agrees with either.
+    expect(reportsAgree(rep({ iceTypes: ['black_ice'] }), rep({ iceTypes: [south] }))).toBe(true);
+    // The contradiction test keeps the by-key reading: a shared type anywhere is enough of an
+    // agreement signal to keep a pair out of the contradiction queue — and it still contradicts
+    // nothing it would not have before (`reportsContradict` stays inside `!reportsAgree`).
+    expect(
+      reportsContradict(
+        rep({ skateQuality: 'great', iceTypes: [north] }),
+        rep({ skateQuality: 'poor', iceTypes: [south] }),
+      ),
+    ).toBe(false);
+    expect(
+      reportsContradict(
+        rep({ skateQuality: 'great', iceTypes: [north] }),
+        rep({ skateQuality: 'poor', iceTypes: [{ type: 'snow_ice', where: { sector: 'N' } }] }),
+      ),
+    ).toBe(true);
+  });
+
   it('does not agree with no shared ice type and no comparable quality', () => {
     expect(reportsAgree(rep({ iceTypes: ['black_ice'] }), rep({ iceTypes: ['snow_ice'] }))).toBe(
       false,

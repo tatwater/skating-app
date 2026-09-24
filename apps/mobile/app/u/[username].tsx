@@ -1,12 +1,12 @@
 import { api } from '@skating/convex/api';
-import { formatSkateTime, humanizeEnum } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
-import { Text, XStack, YStack } from 'tamagui';
-import { Badge, DetailLoading, Unavailable } from '../../src/components/detailUi';
+import { Text, YStack } from 'tamagui';
+import { DetailLoading, Unavailable } from '../../src/components/detailUi';
 import { useIsLeaving } from '../../src/components/LeavingNotice';
 import { useIsModerator } from '../../src/components/ModeratorActions';
+import { PostCard } from '../../src/components/PostCard';
 import { ProfileView } from '../../src/components/ProfileView';
 import { BlockButton, FlagControl } from '../../src/components/SafetyControls';
 
@@ -14,6 +14,7 @@ import { BlockButton, FlagControl } from '../../src/components/SafetyControls';
 export default function ProfileRoute() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const router = useRouter();
+  const now = Date.now();
   const profile = useQuery(api.profiles.getPublicProfile, { username });
   const isModerator = useIsModerator();
   const leaving = useIsLeaving();
@@ -59,32 +60,18 @@ export default function ProfileRoute() {
         }}
         actions={actions}
         reportHistory={
-          !profile.private && profile.reports.length > 0 ? (
-            <YStack gap="$2">
-              {profile.reports.map(({ report, waterBodyName }) => (
-                <XStack
-                  key={report._id}
-                  justifyContent="space-between"
-                  alignItems="center"
-                  padding="$3"
-                  borderWidth={1}
-                  borderColor="$border"
-                  borderRadius="$4"
-                  pressStyle={{ backgroundColor: '$surfaceMuted' }}
-                  onPress={() =>
-                    router.navigate({ pathname: '/report/[id]', params: { id: report._id } })
+          !profile.private && profile.posts.length > 0 ? (
+            // The person's Posts as the feed shows them (A10 / D186) — one card builder, one look.
+            <YStack gap="$3">
+              {profile.posts.map((post) => (
+                <PostCard
+                  key={post.postId}
+                  data={post}
+                  now={now}
+                  onOpenReport={(reportId) =>
+                    router.navigate({ pathname: '/report/[id]', params: { id: reportId } })
                   }
-                >
-                  <YStack>
-                    <Text color="$foreground">{waterBodyName}</Text>
-                    <Text color="$foregroundMuted" fontSize="$1">
-                      {formatSkateTime(report.skateEndTime)}
-                    </Text>
-                  </YStack>
-                  {report.skateQuality ? (
-                    <Badge tone="solid">{humanizeEnum(report.skateQuality)}</Badge>
-                  ) : null}
-                </XStack>
+                />
               ))}
             </YStack>
           ) : !profile.private ? (

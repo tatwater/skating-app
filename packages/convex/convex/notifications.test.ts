@@ -7,6 +7,13 @@ import type { Id } from './_generated/dataModel';
 import { FLUSH_BATCH_CAP, FLUSH_READ_BUDGET } from './notifications';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 function convexTestWithGeo() {
@@ -118,7 +125,9 @@ async function seedBody(t: ReturnType<typeof convexTest>, externalId = 'osm/1') 
   return body._id as Id<'waterBodies'>;
 }
 
-const SKATE_TIME = Date.UTC(2026, 0, 10);
+// Three hours ago, against the real clock: the freshness window (D199, A10-2) refuses an end time
+// more than a week old at the write, so a fixed January date would stop posting a week later.
+const SKATE_TIME = Date.now() - 3 * 3_600_000;
 
 /** A bay covering the west half of the fixture lake (A09), drawn straight into the table. */
 async function seedBay(t: ReturnType<typeof convexTest>, waterBodyId: Id<'waterBodies'>) {
@@ -198,7 +207,7 @@ async function createReport(
   as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
   args: { waterBodyId: Id<'waterBodies'>; skateEndTime: number; skateQuality?: string },
 ) {
-  const reportId = await as.mutation(api.reports.create, args as never);
+  const reportId = await as.mutation(api.reports.create, { ...OBSERVED, ...args } as never);
   await t.mutation(internal.notifications.fanOutNearbyNotifications, { reportId });
   return reportId;
 }
@@ -233,6 +242,7 @@ describe('notifications — favorites', () => {
 
     // In the bay — both favorites apply, and the person is told once.
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       point: { lat: 0.5, lng: 0.25 },
@@ -252,6 +262,7 @@ describe('notifications — favorites', () => {
 
     // Open water on the east side: not the bay.
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       point: { lat: 0.5, lng: 0.75 },
@@ -259,6 +270,7 @@ describe('notifications — favorites', () => {
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
 
     await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME + 1,
       point: { lat: 0.5, lng: 0.25 },
@@ -714,7 +726,11 @@ describe('notifications — the fan-out is scheduled, not inline (A01)', () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
 
     const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
     expect(scheduled.map((s) => s.name)).toContain('notifications:fanOutNearbyNotifications');
@@ -747,6 +763,7 @@ describe('notifications — the fan-out is scheduled, not inline (A01)', () => {
       }
     });
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -785,6 +802,7 @@ describe('notifications — the fan-out is scheduled, not inline (A01)', () => {
       inBand: true,
     });
     const reportId = await author.as.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1059,6 +1077,9 @@ describe('notifications — the inbox read path', () => {
     const author = await seedProfile(t, 'author');
     const rater = await seedProfile(t, 'rater');
     const bodyId = await seedBody(t);
+    // The bounty first: a fresh report on the body (and `SKATE_TIME` is fresh, D199) would make
+    // the ask redundant and refuse it. Only the id is needed here — the rows are seeded by hand.
+    const bountyId = await rater.as.action(api.bounties.create, { waterBodyId: bodyId });
     const reportId = await createReport(t, author.as, {
       waterBodyId: bodyId,
       skateEndTime: SKATE_TIME,
@@ -1070,7 +1091,6 @@ describe('notifications — the inbox read path', () => {
       geometry: { type: 'Point', coordinates: [0.5, 0.5] },
       radiusMeters: 40,
     });
-    const bountyId = await rater.as.action(api.bounties.create, { waterBodyId: bodyId });
     const skateStart = Date.UTC(2026, 0, 10, 19, 0);
 
     const seed = (type: string, payload: Record<string, unknown>) =>

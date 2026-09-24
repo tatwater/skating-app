@@ -4,6 +4,7 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   FORM_THICKNESS_METHODS,
+  formCreateRefusal,
   isFormRoundTripOf,
   type ReportFormState,
   reportFormFromReport,
@@ -34,12 +35,27 @@ describe('emptyReportForm', () => {
     expect(form.iceTypes).toEqual([]);
     expect(form.thickness).toEqual([]);
   });
+
+  it('shows the put-in unless the remembered default says otherwise', () => {
+    expect(emptyReportForm(NOW).showPutIn).toBe(true);
+    expect(emptyReportForm(NOW, { showPutIn: true }).showPutIn).toBe(true);
+    expect(emptyReportForm(NOW, { showPutIn: false }).showPutIn).toBe(false);
+  });
 });
 
 const NOW = Date.UTC(2026, 0, 5, 19, 30);
 const BASE: ReportFormState = emptyReportForm(NOW);
 
 describe('buildReportInput', () => {
+  it('sends the put-in opt-out only when it is off — shown is the stored default', () => {
+    expect(buildReportInput({ ...BASE, showPutIn: true }, 'wb1')).not.toHaveProperty('showPutIn');
+    expect(buildReportInput({ ...BASE, showPutIn: false }, 'wb1').showPutIn).toBe(false);
+    // A draft persisted before the switch existed carries no `showPutIn` at all; it must read as shown.
+    const legacy = { ...BASE } as Partial<ReportFormState> as ReportFormState;
+    delete (legacy as { showPutIn?: boolean }).showPutIn;
+    expect(buildReportInput(legacy, 'wb1')).not.toHaveProperty('showPutIn');
+  });
+
   it('keeps a notes-only report minimal — no empty optional fields (D3)', () => {
     const input = buildReportInput({ ...BASE, notes: '  did not skate  ' }, 'wb1');
     expect(input).toEqual({
@@ -288,6 +304,24 @@ describe('reportFormFromReport', () => {
     expect(rebuilt.conditions?.windDir).toBe('NW');
     expect(rebuilt.conditions?.sky).toBe('clear');
     expect(rebuilt.conditions?.precip).toBe('none');
+  });
+
+  it('carries the stored put-in through an edit, and drops it under a new pin (A10 §7.1)', () => {
+    // `reports.update` is last-write-wins over `putInId`: a form with no picker for it must send it
+    // back, or a typo fix on the web silently unlinks the launch the sheet chose.
+    const form = reportFormFromReport({ ...FULL, putInId: 'put-in-1' });
+    expect(buildReportInput(form, 'wb1').putInId).toBe('put-in-1');
+    // A new pin is "somewhere else": the point is its own, the launch is not named.
+    expect(buildReportInput(form, 'wb1', { lat: 44, lng: -72 })).not.toHaveProperty('putInId');
+    expect(buildReportInput(reportFormFromReport(FULL), 'wb1')).not.toHaveProperty('putInId');
+  });
+
+  it('seeds the put-in switch from the stored report, defaulting to shown', () => {
+    expect(reportFormFromReport(FULL).showPutIn).toBe(true);
+    expect(reportFormFromReport({ ...FULL, showPutIn: true }).showPutIn).toBe(true);
+    const hidden = reportFormFromReport({ ...FULL, showPutIn: false });
+    expect(hidden.showPutIn).toBe(false);
+    expect(buildReportInput(hidden, 'wb1').showPutIn).toBe(false);
   });
 
   it('keeps each reading in the mode it was measured in', () => {
@@ -550,5 +584,34 @@ describe('reportFormFromReport', () => {
       expect(input.snow).toEqual({ depthCm: inchesToCm(1) });
       expect(input).not.toHaveProperty('observedFrom');
     });
+  });
+});
+
+describe('formCreateRefusal — the create-only rules as the pre-sheet forms ask them (A10-2)', () => {
+  const now = Date.UTC(2026, 1, 1, 12);
+  const base = { waterBodyId: 'wb', skateEndTime: now - 3_600_000 };
+  it('says what to add, in the server’s words', () => {
+    expect(formCreateRefusal({ ...base }, 0, now)).toBe(
+      'Before this can post, add how it was and one thing you saw — an ice or surface chip, a thickness, or a hazard.',
+    );
+    expect(formCreateRefusal({ ...base, skateQuality: 'good' }, 0, now)).toBe(
+      'Before this can post, add one thing you saw — an ice or surface chip, a thickness, or a hazard.',
+    );
+    expect(formCreateRefusal({ ...base, iceTypes: [{ type: 'black_ice' }] }, 0, now)).toBe(
+      'Before this can post, add how it was.',
+    );
+  });
+  it('a hazard is an observation; a week-old end time is refused first', () => {
+    expect(formCreateRefusal({ ...base, suitability: 'dont_go' }, 1, now)).toBeNull();
+    expect(
+      formCreateRefusal(
+        { ...base, skateEndTime: now - 8 * 24 * 3_600_000, skateQuality: 'good' },
+        1,
+        now,
+      ),
+    ).toBe('Reports can be posted up to a week after you got off the ice.');
+    expect(formCreateRefusal({ ...base, skateEndTime: now + 2 * 3_600_000 }, 1, now)).toBe(
+      'That end time is in the future.',
+    );
   });
 });

@@ -688,8 +688,10 @@ describe('profiles.getPublicProfile (D13)', () => {
     );
     const mkReport = (moderationStatus: 'visible' | 'hidden') => {
       const now = Date.now();
-      return t.run((ctx) =>
-        ctx.db.insert('reports', {
+      // Inside the one-Report Post every report has (A10 / D186) — the history is Posts now, and a
+      // hidden one is hidden at both levels, as moderation leaves it.
+      return t.run(async (ctx) => {
+        const reportId = await ctx.db.insert('reports', {
           authorId: id,
           waterBodyId,
           point: { lat: 0.5, lng: 0.5 },
@@ -703,8 +705,19 @@ describe('profiles.getPublicProfile (D13)', () => {
           hazardIdsCreated: [],
           createdAt: now,
           updatedAt: now,
-        }),
-      );
+        });
+        const postId = await ctx.db.insert('posts', {
+          authorId: id,
+          reportIds: [reportId],
+          photoIds: [],
+          latestSkateEndTime: now,
+          moderationStatus,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.patch(reportId, { postId });
+        return reportId;
+      });
     };
     await mkReport('visible');
     await mkReport('hidden');
@@ -722,8 +735,8 @@ describe('profiles.getPublicProfile (D13)', () => {
     expect(profile.reputationPoints).toBeUndefined();
     expect(profile.reportCount).toBe(7); // the maintained counter, not the window length
     expect(profile.commentCount).toBe(3);
-    expect(profile.reports).toHaveLength(1); // history still the visible window (1 visible report)
-    expect(profile.reports[0]?.waterBodyName).toBe('Lake Morey');
+    expect(profile.posts).toHaveLength(1); // history still the visible window (1 visible Post)
+    expect(profile.posts[0]?.reports[0]?.bodyName).toBe('Lake Morey');
     // No PII leaks in the payload.
     expect(JSON.stringify(profile)).not.toContain('dateOfBirth');
     expect(JSON.stringify(profile)).not.toContain('homeCoord');
@@ -1019,5 +1032,113 @@ describe('profiles.backfillContributionCounts', () => {
 
     // Idempotent — a second run rewrites the same totals and patches nothing.
     expect((await t.mutation(internal.profiles.backfillContributionCounts, {})).patched).toBe(0);
+  });
+});
+
+describe('profiles.setShowPutInDefault', () => {
+  test('remembers the report form switch; unset reads as shown', async () => {
+    const t = convexTest(schema, modules);
+    const asAda = t.withIdentity({ subject: 'clerk_ada' });
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    );
+    expect((await asAda.query(api.profiles.current, {}))?.showPutInDefault).toBeUndefined();
+
+    await asAda.mutation(api.profiles.setShowPutInDefault, { showPutIn: false });
+    expect((await asAda.query(api.profiles.current, {}))?.showPutInDefault).toBe(false);
+
+    await asAda.mutation(api.profiles.setShowPutInDefault, { showPutIn: true });
+    expect((await asAda.query(api.profiles.current, {}))?.showPutInDefault).toBe(true);
+  });
+
+  test('a ghost has nothing to seed — the mutation is contributor-gated (D62)', async () => {
+    const t = convexTest(schema, modules);
+    const asGhost = t.withIdentity({ subject: 'clerk_ghost' });
+    await asGhost.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ghost', username: 'ghost', dateOfBirth: ADULT_DOB }),
+    );
+    await asGhost.mutation(api.accountDeletion.requestDeletion, {});
+    await expect(
+      asGhost.mutation(api.profiles.setShowPutInDefault, { showPutIn: false }),
+    ).rejects.toThrow();
+  });
+});
+
+describe('profiles.getPublicProfile — the history read is bounded in Reports, not only Posts (D13)', () => {
+  test('stops at the Post that would take the hydrated members past the budget', async () => {
+    const t = convexTest(schema, modules);
+    const { id } = await provision(t, 'clerk_prolific', 'prolific');
+    const waterBodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Morey',
+        searchText: 'Lake Morey',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    // Six ten-Report Posts: 60 members against a 50-Report budget. The Post window alone would
+    // hydrate all 60; the budget cuts the history at the fifth Post, on a Post boundary.
+    const base = Date.UTC(2026, 0, 10);
+    const seedPost = (index: number, members: number) =>
+      t.run(async (ctx) => {
+        const skateEndTime = base + index * 60_000;
+        const reportIds = [];
+        for (let i = 0; i < members; i++) {
+          reportIds.push(
+            await ctx.db.insert('reports', {
+              authorId: id,
+              waterBodyId,
+              point: { lat: 0.5, lng: 0.5 },
+              skateEndTime,
+              reportTime: skateEndTime,
+              source: 'native' as const,
+              iceTypes: [{ type: 'black_ice' as const }],
+              surfaceTags: [],
+              photoIds: [],
+              moderationStatus: 'visible' as const,
+              hazardIdsCreated: [],
+              createdAt: skateEndTime,
+              updatedAt: skateEndTime,
+            }),
+          );
+        }
+        const postId = await ctx.db.insert('posts', {
+          authorId: id,
+          reportIds,
+          photoIds: [],
+          latestSkateEndTime: skateEndTime,
+          moderationStatus: 'visible' as const,
+          createdAt: skateEndTime,
+          updatedAt: skateEndTime,
+        });
+        for (const reportId of reportIds) await ctx.db.patch(reportId, { postId });
+      });
+    for (let i = 0; i < 6; i++) await seedPost(i, 10);
+
+    const profile = await t.query(api.profiles.getPublicProfile, { username: 'prolific' });
+    if (!profile || profile.private) throw new Error('expected public profile');
+    expect(profile.posts).toHaveLength(5);
+    expect(profile.posts.reduce((n, p) => n + p.reports.length, 0)).toBe(50);
+    // Newest first: the oldest Post is the one left out.
+    expect(profile.posts[0]?.latestSkateEndTime).toBe(base + 5 * 60_000);
+    expect(profile.posts.at(-1)?.latestSkateEndTime).toBe(base + 1 * 60_000);
   });
 });

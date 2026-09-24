@@ -7,6 +7,21 @@ import { syncReportSubAreas } from './lib/reportSubAreas';
 import schema from './schema';
 
 /**
+ * The member cards of a Post page (A10 / D186). Every Post here has one Report, so the report-era
+ * assertions read exactly as they did against the report feed.
+ */
+function cards<T>(res: { page: { reports: T[] }[] }): T[] {
+  return res.page.flatMap((p) => p.reports);
+}
+
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
+/**
  * Stamp a report into a bay by hand — the row *and* its `reportSubAreas` join row (A09), which is
  * what the bay-scoped read actually serves. A fixture that patched only the row would test a path
  * nothing reads any more.
@@ -140,7 +155,7 @@ describe('reports.create', () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     await expect(
-      t.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME }),
+      t.mutation(api.reports.create, { ...OBSERVED, waterBodyId: id, skateEndTime: SKATE_TIME }),
     ).rejects.toThrow(/not authenticated/i);
   });
 
@@ -150,6 +165,7 @@ describe('reports.create', () => {
     const asUser = await seedUser(t, 'clerk_a');
 
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       iceTypes: ['black_ice'],
@@ -260,6 +276,7 @@ describe('reports.create', () => {
     const goneBay = await bay(morey, true);
     const post = (subAreaId: string) =>
       asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: morey,
         skateEndTime: SKATE_TIME,
         iceTypes: [{ type: 'black_ice', where: { subAreaId, sector: 'head' } }],
@@ -279,6 +296,7 @@ describe('reports.create', () => {
     const asUser = await seedUser(t, 'clerk_a');
     await expect(
       asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
         observedFrom: 'on_ice',
@@ -286,6 +304,7 @@ describe('reports.create', () => {
       }),
     ).rejects.toThrow(/sighting/);
     const fromShore = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       observedFrom: 'shore',
@@ -301,11 +320,32 @@ describe('reports.create', () => {
     const asUser = await seedUser(t, 'clerk_a');
     const point = { lat: 0.4, lng: 0.6 };
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       point,
     });
     expect((await t.run((ctx) => ctx.db.get(reportId)))?.point).toEqual(point);
+  });
+
+  test('stores the put-in opt-out, and leaves it unset when the form does not send it', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    // Only the opt-out travels (`buildReportInput`); a shown put-in is the field's unset default.
+    const hidden = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      showPutIn: false,
+    });
+    const shown = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    expect((await t.run((ctx) => ctx.db.get(hidden)))?.showPutIn).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(shown)))?.showPutIn).toBeUndefined();
   });
 
   test('a minor cannot create a report — read-only (D13/D41)', async () => {
@@ -314,7 +354,11 @@ describe('reports.create', () => {
     const asMinor = await seedUser(t, 'clerk_minor', true);
     // All reports are public (D13), so an under-18 author is refused outright.
     await expect(
-      asMinor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME }),
+      asMinor.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+      }),
     ).rejects.toThrow(/under 18/i);
   });
 
@@ -324,6 +368,7 @@ describe('reports.create', () => {
     const asUser = await seedUser(t, 'clerk_a');
     await expect(
       asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME + 400 * 24 * 60 * 60 * 1000, // absurdly future
       }),
@@ -339,6 +384,7 @@ describe('reports.create', () => {
     );
     const asUser = await seedUser(t, 'clerk_a');
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: loser.id,
       skateEndTime: SKATE_TIME,
     });
@@ -351,7 +397,11 @@ describe('reports.create', () => {
     await t.run((ctx) => ctx.db.patch(id, { reviewStatus: 'rejected' }));
     const asUser = await seedUser(t, 'clerk_a');
     await expect(
-      asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME }),
+      asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+      }),
     ).rejects.toThrow(/not found/i);
   });
 
@@ -367,7 +417,11 @@ describe('reports.create', () => {
       ctx.db.patch(id, { removedAt: Date.now(), removalReason: 'landowner_request' }),
     );
     const asUser = await seedUser(t, 'clerk_a');
-    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     const body = await t.run((ctx) => ctx.db.get(id as Id<'waterBodies'>));
     expect(body?.removedAt).toBeDefined();
   });
@@ -385,11 +439,70 @@ describe('reports.create', () => {
     const asOther = await seedUser(t, 'clerk_other');
     await expect(
       asOther.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
         photoIds: [photoId],
       }),
     ).rejects.toThrow(/not owned/i);
+  });
+});
+
+describe('reports.putInId — the known put-in the pin snapped to (A10 §7.1 / D198)', () => {
+  async function seedPutIn(
+    t: ReturnType<typeof convexTest>,
+    waterBodyId: Id<'waterBodies'>,
+    status: 'visible' | 'hidden' = 'visible',
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.9, lng: 0.5 },
+        source: 'osm' as const,
+        status,
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  test('stores a live put-in of the body on create; an edit re-sends or clears it', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const putInId = await seedPutIn(t, id);
+    const asUser = await seedUser(t, 'clerk_a');
+    const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: Date.now() - 60_000,
+      putInId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.putInId).toBe(putInId);
+
+    await asUser.mutation(api.reports.update, {
+      ...OBSERVED,
+      reportId,
+      skateEndTime: Date.now() - 60_000,
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.putInId).toBeUndefined();
+  });
+
+  test('refuses a hidden put-in, another lake’s put-in, and a string that is no put-in', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const other = await seedBody(t, 'osm/2');
+    const hidden = await seedPutIn(t, id, 'hidden');
+    const foreign = await seedPutIn(t, other.id);
+    const asUser = await seedUser(t, 'clerk_a');
+    for (const putInId of [hidden, foreign, 'not-a-put-in']) {
+      await expect(
+        asUser.mutation(api.reports.create, {
+          ...OBSERVED,
+          waterBodyId: id,
+          skateEndTime: Date.now() - 60_000,
+          putInId,
+        }),
+      ).rejects.toThrow(/not a put-in of this water body/);
+    }
   });
 });
 
@@ -401,14 +514,17 @@ describe('reports.listByWaterBody (all public, D13)', () => {
 
     // Two public reports (different skate times) + one hidden by moderation.
     const older = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME - 1000,
     });
     const newer = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
     const hidden = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -438,6 +554,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
     for (let i = 0; i < 5; i++) {
       ids.push(
         await asAuthor.mutation(api.reports.create, {
+          ...OBSERVED,
           waterBodyId: id,
           skateEndTime: SKATE_TIME + i,
         }),
@@ -498,10 +615,12 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       // Reports first, then the bay, then the stamp by hand: the fixture bay covers the whole fixture
       // lake, so letting `create` resolve the stamp would put *both* reports in it.
       const inBay = await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: morey,
         skateEndTime: SKATE_TIME,
       });
       await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: morey,
         skateEndTime: SKATE_TIME - 1000,
       });
@@ -534,6 +653,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       // legitimate pair — it must not be rejected as a cross-lake one.
       await t.run((ctx) => ctx.db.patch(loser, { mergedIntoId: survivor }));
       const inBay = await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: survivor,
         skateEndTime: SKATE_TIME,
       });
@@ -562,8 +682,10 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       author: Id<'profiles'>,
       waterBodyId: Id<'waterBodies'>,
     ) {
-      return t.run((ctx) =>
-        ctx.db.insert('reports', {
+      // Inserted directly (the window, D199, would refuse a create this old), inside the one-Report
+      // Post every report has (A10 / D186) so the Post feed can see it.
+      return t.run(async (ctx) => {
+        const reportId = await ctx.db.insert('reports', {
           authorId: author,
           waterBodyId,
           point: { lat: 0.5, lng: 0.5 },
@@ -577,8 +699,19 @@ describe('reports.listByWaterBody (all public, D13)', () => {
           hazardIdsCreated: [],
           createdAt: LAST_SEASON,
           updatedAt: LAST_SEASON,
-        }),
-      );
+        });
+        const postId = await ctx.db.insert('posts', {
+          authorId: author,
+          reportIds: [reportId],
+          photoIds: [],
+          latestSkateEndTime: LAST_SEASON,
+          moderationStatus: 'visible' as const,
+          createdAt: LAST_SEASON,
+          updatedAt: LAST_SEASON,
+        });
+        await ctx.db.patch(reportId, { postId });
+        return reportId;
+      });
     }
 
     test('a lake lists this season only, and the season arg is the way back', async () => {
@@ -591,6 +724,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         return p._id;
       });
       const thisSeason = await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
       });
@@ -638,8 +772,8 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       const lastSeason = await seedLastSeason(t, authorId, id);
 
       // Nothing has been skated this season — which, from July until first ice, is every year.
-      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
-      expect(feed.page.map((c) => c.reportId)).toEqual([lastSeason]);
+      const feed = await t.query(api.posts.listFeed, { paginationOpts: PAGE });
+      expect(cards(feed).map((c) => c.reportId)).toEqual([lastSeason]);
       expect(feed.season).toBe(2024);
       expect(feed.isPastSeason).toBe(true);
     });
@@ -647,7 +781,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
     test('an app with no reports at all serves this season, not a fallback to nowhere', async () => {
       const t = convexTestWithGeo();
       await seedBody(t);
-      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
+      const feed = await t.query(api.posts.listFeed, { paginationOpts: PAGE });
       expect(feed.page).toEqual([]);
       expect(feed.season).toBe(2025);
       expect(feed.isPastSeason).toBe(false);
@@ -664,12 +798,13 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       });
       await seedLastSeason(t, authorId, id);
       const thisSeason = await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
       });
 
-      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
-      expect(feed.page.map((c) => c.reportId)).toEqual([thisSeason]);
+      const feed = await t.query(api.posts.listFeed, { paginationOpts: PAGE });
+      expect(cards(feed).map((c) => c.reportId)).toEqual([thisSeason]);
       expect(feed.season).toBe(2025);
       expect(feed.isPastSeason).toBe(false);
     });
@@ -734,6 +869,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         }),
       );
       const thisSeason = await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
       });
@@ -760,11 +896,78 @@ describe('reports.listByWaterBody (all public, D13)', () => {
 });
 
 describe('reports.get (single, moderation-checked)', () => {
+  /**
+   * The put-in opt-out (Phase 04 #7) is honored at the API: a served report with `showPutIn: false`
+   * carries the body's anchor point in place of its own for anyone but the author and moderators —
+   * otherwise the drawer's camera, the profile's history cards and a lake's list would fly every
+   * viewer to the launch the switch promised to keep off the map. The row itself keeps the point.
+   */
+  test('substitutes the body point for a hidden put-in — except for the author and moderators', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asAuthor = await seedUser(t, 'clerk_author');
+    const launch = { lat: 0.9, lng: 0.1 }; // inside the polygon, far from the anchor
+    const reportId = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: launch,
+      showPutIn: false,
+    });
+    const asOther = await seedUser(t, 'clerk_other');
+    const asMod = await seedUser(t, 'clerk_mod');
+    await t.run(async (ctx) => {
+      const mod = await ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'clerk_mod'))
+        .unique();
+      if (mod) await ctx.db.patch(mod._id, { role: 'moderator' });
+    });
+
+    const served = await asOther.query(api.reports.get, { reportId });
+    expect(served?.point).not.toEqual(launch);
+    expect(served?.point).toBeDefined();
+    expect(served?.showPutIn).toBe(false);
+    expect(served?.place).toEqual((await t.run((ctx) => ctx.db.get(reportId)))?.place);
+    // Anonymous viewers get the same substitution.
+    expect((await t.query(api.reports.get, { reportId }))?.point).not.toEqual(launch);
+    // The author and a moderator see the real point.
+    expect((await asAuthor.query(api.reports.get, { reportId }))?.point).toEqual(launch);
+    expect((await asMod.query(api.reports.get, { reportId }))?.point).toEqual(launch);
+    // The row is untouched — hide a marker, never scrub a location.
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.point).toEqual(launch);
+
+    // The lake's report list and the author's public history serve the same redaction.
+    const listed = await asOther.query(api.reports.listByWaterBody, {
+      waterBodyId: id,
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(listed.page.map((r) => r.point)).not.toContainEqual(launch);
+    expect(listed.page).toHaveLength(1);
+    const profile = await asOther.query(api.profiles.getPublicProfile, {
+      username: 'clerk_author',
+    });
+    if (!profile || profile.private) throw new Error('expected a public profile');
+    // The history card's silhouette carries no pin for a withheld put-in (A10 §12.3).
+    expect(profile.posts).toHaveLength(1);
+    expect(profile.posts[0]?.reports[0]?.silhouette?.putIn).toBeUndefined();
+
+    // A report that shows its put-in is served as stored.
+    const shown = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME - 60_000,
+      point: launch,
+    });
+    expect((await asOther.query(api.reports.get, { reportId: shown }))?.point).toEqual(launch);
+  });
+
   test('hides a moderation-hidden report from everyone', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asAuthor = await seedUser(t, 'clerk_author');
     const reportId = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -779,6 +982,7 @@ describe('reports.get (single, moderation-checked)', () => {
     const { id } = await seedBody(t);
     const asAuthor = await seedUser(t, 'clerk_author');
     const reportId = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -786,6 +990,7 @@ describe('reports.get (single, moderation-checked)', () => {
     expect(await t.query(api.reports.get, { reportId })).toBeNull(); // missing
 
     const live = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -798,6 +1003,7 @@ describe('reports.update (author-only LWW, D25)', () => {
     const { id } = await seedBody(t);
     const asAuthor = await seedUser(t, 'clerk_author');
     const reportId = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       skateQuality: 'good',
@@ -837,6 +1043,39 @@ describe('reports.update (author-only LWW, D25)', () => {
     expect((await t.run((ctx) => ctx.db.get(postId)))?.latestSkateEndTime).toBe(
       SKATE_TIME + 3 * 60 * 60_000,
     );
+  });
+
+  /**
+   * The put-in switch (Phase 04 decision #7) round-trips through the edit form in both directions.
+   * The form only ever *sends* the opt-out (`buildReportInput` omits `showPutIn` when shown), so
+   * `update` has to read absence as "shown" — the LWW rule every other content field follows — or a
+   * hidden put-in could never be re-shown by its author.
+   */
+  test('the put-in opt-out is set, and cleared again, through the edit form round trip', async () => {
+    const t = convexTestWithGeo();
+    const { asAuthor, reportId } = await seedReport(t);
+    const stored = async () => (await t.run((ctx) => ctx.db.get(reportId)))?.showPutIn;
+    expect(await stored()).toBeUndefined();
+
+    // Exactly what the edit form does: seed from the stored row, flip the switch, submit the whole
+    // content block (`update` takes no `waterBodyId` — a report can't change lakes).
+    const submit = async (showPutIn: boolean) => {
+      const row = await t.run((ctx) => ctx.db.get(reportId));
+      if (!row) throw new Error('seeded report vanished');
+      const { waterBodyId: _body, ...content } = buildReportInput(
+        { ...reportFormFromReport(row), showPutIn },
+        'unused',
+      );
+      await asAuthor.mutation(api.reports.update, { reportId, ...content });
+    };
+
+    await submit(false);
+    expect(await stored()).toBe(false);
+
+    // Back on: the form sends no `showPutIn` at all (only the opt-out travels), which must read as
+    // shown — otherwise this is the edit that silently never lands.
+    await submit(true);
+    expect(await stored()).toBeUndefined();
   });
 
   test('stamps editedAt, which a fresh report does not carry', async () => {
@@ -1019,6 +1258,7 @@ describe('reports.update (author-only LWW, D25)', () => {
     const asAuthor = await seedUser(t, 'clerk_author');
     // A well-formed report id created then deleted → a dangling reference.
     const reportId = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1051,7 +1291,12 @@ describe('reports.create idempotency (Phase 02a §6.2 offline flush, D30)', () =
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
-    const args = { waterBodyId: id, skateEndTime: SKATE_TIME, idempotencyKey: 'draft-abc' };
+    const args = {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      idempotencyKey: 'draft-abc',
+    };
     const first = await asUser.mutation(api.reports.create, args);
     const second = await asUser.mutation(api.reports.create, args);
     expect(second).toBe(first);
@@ -1060,18 +1305,45 @@ describe('reports.create idempotency (Phase 02a §6.2 offline flush, D30)', () =
     expect(all[0]?.idempotencyKey).toBe('draft-abc');
   });
 
+  test('a key on a pre-A10-2 Report (no key on its backfilled Post) still replays to that Report', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    const args = {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      idempotencyKey: 'draft-legacy',
+    };
+    const reportId = await asUser.mutation(api.reports.create, args);
+    // The shape a Report written before every create went through a Post has after the A10-1
+    // backfill: its own key on the row, none on the Post.
+    const legacyPostId = await t.run(async (ctx) => {
+      const report = await ctx.db.get(reportId);
+      if (!report?.postId) throw new Error('seed');
+      await ctx.db.patch(report.postId, { idempotencyKey: undefined });
+      return report.postId;
+    });
+    expect(await asUser.mutation(api.reports.create, args)).toBe(reportId);
+    expect(await t.run((ctx) => ctx.db.query('reports').collect())).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.query('posts').collect())).toHaveLength(1);
+    expect((await t.run((ctx) => ctx.db.get(legacyPostId)))?.reportIds).toEqual([reportId]);
+  });
+
   test('a different author reusing a key is rejected (never hands back another user report)', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asA = await seedUser(t, 'clerk_a');
     const asB = await seedUser(t, 'clerk_b');
     await asA.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       idempotencyKey: 'shared-key',
     });
     await expect(
       asB.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
         idempotencyKey: 'shared-key',
@@ -1084,10 +1356,12 @@ describe('reports.create idempotency (Phase 02a §6.2 offline flush, D30)', () =
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const a = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
     const b = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1101,6 +1375,7 @@ describe('reports.update / photos.create guards (review fixes)', () => {
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1127,6 +1402,7 @@ describe('reports.update / photos.create guards (review fixes)', () => {
         placeOnMap: false,
       });
       const reportId = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
         photoIds: [photoId],
@@ -1148,13 +1424,18 @@ describe('reports.update / photos.create guards (review fixes)', () => {
 
     test('an empty list detaches them — which is why the client must send the kept ids', async () => {
       const t = convexTestWithGeo();
-      const { asUser, reportId } = await seedReportWithPhoto(t);
+      const { asUser, reportId, photoId } = await seedReportWithPhoto(t);
+      const postId = (await t.run((ctx) => ctx.db.get(reportId)))?.postId;
+      if (!postId) throw new Error('report born without a Post');
+      // The Post's album is the union over its members (A10-2), so it follows the edit both ways.
+      expect((await t.run((ctx) => ctx.db.get(postId)))?.photoIds).toEqual([photoId]);
       await asUser.mutation(api.reports.update, {
         reportId,
         skateEndTime: SKATE_TIME,
         photoIds: [],
       });
       expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([]);
+      expect((await t.run((ctx) => ctx.db.get(postId)))?.photoIds).toEqual([]);
     });
 
     test('omitting the field entirely preserves them (the offline/partial-arg path)', async () => {
@@ -1194,6 +1475,7 @@ describe('reports.update / photos.create guards (review fixes)', () => {
       const first = await photoOf();
       const second = await photoOf();
       const reportId = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: bodyId,
         skateEndTime: SKATE_TIME,
         photoIds: [first, first], // the same id twice is one photo
@@ -1216,18 +1498,21 @@ describe('reports.update / photos.create guards (review fixes)', () => {
       const { bodyId, asUser, photoOf } = await seedUserWithPhoto(t);
       const shared = await photoOf();
       const owner = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: bodyId,
         skateEndTime: SKATE_TIME,
         photoIds: [shared],
       });
       await expect(
         asUser.mutation(api.reports.create, {
+          ...OBSERVED,
           waterBodyId: bodyId,
           skateEndTime: SKATE_TIME,
           photoIds: [shared],
         }),
       ).rejects.toThrow(/another report/);
       const other = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: bodyId,
         skateEndTime: SKATE_TIME,
       });
@@ -1319,6 +1604,7 @@ describe('reports.create place stamp + skate window (Phase 05)', () => {
     await seedAdminAreas(t);
     const asUser = await seedUser(t, 'clerk_a');
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1331,6 +1617,7 @@ describe('reports.create place stamp + skate window (Phase 05)', () => {
     const { id } = await seedBody(t); // no admin areas seeded
     const asUser = await seedUser(t, 'clerk_a');
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1344,6 +1631,7 @@ describe('reports.create place stamp + skate window (Phase 05)', () => {
     const asUser = await seedUser(t, 'clerk_a');
     const start = SKATE_TIME - 90 * 60 * 1000;
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       skateStartTime: start,
@@ -1359,6 +1647,7 @@ describe('reports.create place stamp + skate window (Phase 05)', () => {
     const asUser = await seedUser(t, 'clerk_a');
     await expect(
       asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
         skateStartTime: SKATE_TIME + 1000,
@@ -1367,7 +1656,7 @@ describe('reports.create place stamp + skate window (Phase 05)', () => {
   });
 });
 
-describe('reports.listFeed (global newsfeed, Phase 05)', () => {
+describe('posts.listFeed (global newsfeed, Phase 05)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('orders by skate-end time desc across bodies; excludes hidden/removed (D28/D32)', async () => {
@@ -1376,48 +1665,69 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     const { id: b } = await seedBody(t, 'osm/b');
     const asUser = await seedUser(t, 'clerk_a');
     const older = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: a,
       skateEndTime: SKATE_TIME - 5000,
     });
     const newer = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: b,
       skateEndTime: SKATE_TIME,
     });
     const hidden = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: a,
       skateEndTime: SKATE_TIME + 1000,
     });
     await t.run((ctx) => ctx.db.patch(hidden, { moderationStatus: 'hidden' }));
 
-    const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page.map((c) => c.reportId)).toEqual([newer, older]);
+    const res = await t.query(api.posts.listFeed, ALL);
+    expect(cards(res).map((c) => c.reportId)).toEqual([newer, older]);
   });
 
   test('hidden reports never consume page slots — a small page stays full of visible ones', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
+    const asMod = await seedUser(t, 'clerk_mod');
+    await t.run(async (ctx) => {
+      const mod = await ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'clerk_mod'))
+        .unique();
+      if (mod) await ctx.db.patch(mod._id, { role: 'moderator' });
+    });
     // Interleave hidden and visible so a naive filter-after-paginate would yield a short/empty page.
+    // Hidden through moderation, which is what keeps the Post's gate stored (A10-2): the last visible
+    // member going hides its Post, so the feed's index range never holds an empty Post.
     const created: { reportId: string; hidden: boolean }[] = [];
     for (let i = 0; i < 6; i++) {
       const reportId = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME + i,
       });
       const hidden = i % 2 === 0;
-      if (hidden) await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }));
+      if (hidden) {
+        await asMod.mutation(api.moderation.setModerationStatus, {
+          targetType: 'report',
+          targetId: reportId,
+          status: 'hidden',
+          reason: 'test',
+        });
+      }
       created.push({ reportId, hidden });
     }
     const visibleIds = new Set(created.filter((c) => !c.hidden).map((c) => c.reportId));
 
     // A page of 2 must come back full — hidden rows are gated in-index, not after paginate.
-    const first = await t.query(api.reports.listFeed, {
+    const first = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: null },
     });
     expect(first.page).toHaveLength(2);
-    expect(first.page.every((c) => visibleIds.has(c.reportId))).toBe(true);
+    expect(cards(first).every((c) => visibleIds.has(c.reportId))).toBe(true);
 
-    const second = await t.query(api.reports.listFeed, {
+    const second = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: first.continueCursor },
     });
     expect(second.page).toHaveLength(1);
@@ -1429,7 +1739,11 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     const { id } = await seedBody(t);
     const asAuthor = await seedUser(t, 'clerk_author');
     const asViewer = await seedUser(t, 'clerk_viewer');
-    await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     await t.run(async (ctx) => {
       const profs = await ctx.db.query('profiles').collect();
       const author = profs.find((p) => p.clerkUserId === 'clerk_author');
@@ -1442,13 +1756,13 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
       });
     });
 
-    const blocked = await asViewer.query(api.reports.listFeed, ALL);
+    const blocked = await asViewer.query(api.posts.listFeed, ALL);
     expect(blocked.page).toHaveLength(1);
-    expect(blocked.page[0]?.blocked).toBe(true);
+    expect(cards(blocked)[0]?.blocked).toBe(true);
 
     // An unrelated viewer (and anon) sees the same report, not de-emphasized.
-    const anon = await t.query(api.reports.listFeed, ALL);
-    expect(anon.page[0]?.blocked).toBe(false);
+    const anon = await t.query(api.posts.listFeed, ALL);
+    expect(cards(anon)[0]?.blocked).toBe(false);
   });
 
   test('enriches with body name, point-derived place, author, and photo thumbnails', async () => {
@@ -1471,8 +1785,8 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
       photoIds: [photoId],
     });
 
-    const res = await t.query(api.reports.listFeed, ALL);
-    const card = res.page[0];
+    const res = await t.query(api.posts.listFeed, ALL);
+    const card = cards(res)[0];
     expect(card?.bodyName).toBe('Lake Morey');
     expect(card?.place).toEqual(BURLINGTON_PLACE);
     // A freshly-seeded author (0 points, createdAt = now) derives the cosmetic `new` trust class (D50).
@@ -1492,14 +1806,18 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     for (let i = 0; i < 3; i++) {
-      await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME + i });
+      await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME + i,
+      });
     }
-    const first = await t.query(api.reports.listFeed, {
+    const first = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: null },
     });
     expect(first.page).toHaveLength(2);
     expect(first.isDone).toBe(false);
-    const second = await t.query(api.reports.listFeed, {
+    const second = await t.query(api.posts.listFeed, {
       paginationOpts: { numItems: 2, cursor: first.continueCursor },
     });
     expect(second.page).toHaveLength(1);
@@ -1509,7 +1827,11 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asAuthor = await seedUser(t, 'clerk_gone');
-    await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     // Hard-delete the author row (a raw teardown the app never does — deletion anonymizes, D33).
     await t.run(async (ctx) => {
       const author = (await ctx.db.query('profiles').collect()).find(
@@ -1517,8 +1839,8 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
       );
       if (author) await ctx.db.delete(author._id);
     });
-    const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page[0]?.author).toEqual({
+    const res = await t.query(api.posts.listFeed, ALL);
+    expect(cards(res)[0]?.author).toEqual({
       displayName: 'Unknown',
       username: '',
       trustClass: null,
@@ -1532,15 +1854,19 @@ describe('reports.listFeed (global newsfeed, Phase 05)', () => {
     await t.run((ctx) => ctx.db.patch(survivor, { name: 'Survivor Lake' }));
     const asUser = await seedUser(t, 'clerk_a');
     // Report attaches to the loser; then the loser is merged into the survivor.
-    await asUser.mutation(api.reports.create, { waterBodyId: loser, skateEndTime: SKATE_TIME });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: loser,
+      skateEndTime: SKATE_TIME,
+    });
     await t.run((ctx) => ctx.db.patch(loser, { mergedIntoId: survivor, dedupStatus: 'merged' }));
 
-    const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page[0]?.bodyName).toBe('Survivor Lake');
+    const res = await t.query(api.posts.listFeed, ALL);
+    expect(cards(res)[0]?.bodyName).toBe('Survivor Lake');
   });
 });
 
-describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
+describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('quality floor narrows the feed but keeps reports missing a quality (include-unknown)', async () => {
@@ -1548,25 +1874,28 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const great = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME + 2,
       skateQuality: 'great',
     });
     const poor = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME + 1,
       skateQuality: 'poor',
     });
     const unrated = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
 
-    const res = await asUser.query(api.reports.listFeed, {
+    const res = await asUser.query(api.posts.listFeed, {
       ...ALL,
       filters: { qualityFloor: 'good' },
     });
-    const ids = res.page.map((c) => c.reportId);
+    const ids = cards(res).map((c) => c.reportId);
     expect(ids).toContain(great);
     expect(ids).toContain(unrated); // missing quality ⇒ included
     expect(ids).not.toContain(poor);
@@ -1581,10 +1910,12 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     await t.run((ctx) => ctx.db.patch(far.id, { centroid: { lat: 40, lng: -100 } }));
     const asUser = await seedUser(t, 'clerk_a');
     const nearReport = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: near.id,
       skateEndTime: SKATE_TIME + 1,
     });
     const farReport = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: far.id,
       skateEndTime: SKATE_TIME,
     });
@@ -1614,24 +1945,24 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     });
 
     // Radius filter at 30 keeps only the near body.
-    const filtered = await asUser.query(api.reports.listFeed, {
+    const filtered = await asUser.query(api.posts.listFeed, {
       ...ALL,
       filters: { radiusMinutes: 30 },
     });
-    expect(filtered.page.map((c) => c.reportId)).toEqual([nearReport]);
+    expect(cards(filtered).map((c) => c.reportId)).toEqual([nearReport]);
 
     // Favorite the far body → it's exempt from the distance filter and comes back (boosted).
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: far.id });
-    const withFav = await asUser.query(api.reports.listFeed, {
+    const withFav = await asUser.query(api.posts.listFeed, {
       ...ALL,
       filters: { radiusMinutes: 30 },
     });
-    const ids = withFav.page.map((c) => c.reportId);
+    const ids = cards(withFav).map((c) => c.reportId);
     expect(ids).toContain(nearReport);
     expect(ids).toContain(farReport);
     // The favorite is boosted to the top of the page and flagged.
-    expect(withFav.page[0]?.reportId).toBe(farReport);
-    expect(withFav.page[0]?.isFavorite).toBe(true);
+    expect(cards(withFav)[0]?.reportId).toBe(farReport);
+    expect(cards(withFav)[0]?.isFavorite).toBe(true);
   });
 
   test('favorites boost to the top of the page without changing the unfiltered set', async () => {
@@ -1640,19 +1971,21 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     const b = await seedBody(t, 'osm/b');
     const asUser = await seedUser(t, 'clerk_a');
     const newest = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: a.id,
       skateEndTime: SKATE_TIME + 10,
     });
     const oldestFav = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: b.id,
       skateEndTime: SKATE_TIME,
     });
     await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: b.id });
 
-    const res = await asUser.query(api.reports.listFeed, ALL);
+    const res = await asUser.query(api.posts.listFeed, ALL);
     // Both present; the favorited (older) report is boosted above the newer non-favorite.
-    expect(res.page.map((c) => c.reportId)).toEqual([oldestFav, newest]);
-    expect(res.page[0]?.isFavorite).toBe(true);
+    expect(cards(res).map((c) => c.reportId)).toEqual([oldestFav, newest]);
+    expect(cards(res)[0]?.isFavorite).toBe(true);
   });
 
   test('unfiltered feed for a viewer with no home/favorites is exactly Phase 05', async () => {
@@ -1660,12 +1993,13 @@ describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
     const r = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
-    const res = await asUser.query(api.reports.listFeed, ALL);
-    expect(res.page.map((c) => c.reportId)).toEqual([r]);
-    expect(res.page[0]?.isFavorite).toBe(false);
+    const res = await asUser.query(api.posts.listFeed, ALL);
+    expect(cards(res).map((c) => c.reportId)).toEqual([r]);
+    expect(cards(res)[0]?.isFavorite).toBe(false);
   });
 });
 
@@ -1722,7 +2056,11 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 05 migration)', () => {
     await seedAdminAreas(t);
     const asUser = await seedUser(t, 'clerk_a');
     // A modern report (already has skateEndTime + place) is untouched by the migration.
-    await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
     const result = await t.mutation(internal.reports.renameSkateTimeToSkateEndTime, {});
     expect(result).toMatchObject({ total: 1, renamed: 0, placed: 0, isDone: true }); // paginated (A01)
   });
@@ -1736,6 +2074,7 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 05 migration)', () => {
     // `skateTime` — a half-applied earlier run. The migration should drop the stray field without
     // reporting a rename that didn't happen.
     const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
     });
@@ -1755,8 +2094,16 @@ describe('reports counters + offline read-cache', () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asAuthor = await seedUser(t, 'clerk_author');
-    await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
-    await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME + 1 });
+    await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+    });
     const author = await t.run((ctx) =>
       ctx.db
         .query('profiles')
@@ -1774,11 +2121,13 @@ describe('reports counters + offline read-cache', () => {
     // Six recent reports + one older than the 72h window.
     for (let i = 0; i < 6; i++) {
       await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
         waterBodyId: id,
         skateEndTime: now - i * 1000,
       });
     }
     await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: now - 100 * 60 * 60 * 1000, // ~100h ago — outside the window
     });
@@ -1822,6 +2171,7 @@ describe('reports.update refreshes the map summary (Greptile P1, 2026-08-10)', (
     const recent = Date.now() - 2 * DAY;
 
     const reportId = await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: id,
       skateEndTime: recent,
       skateQuality: 'good',
@@ -1850,6 +2200,7 @@ describe('reports.update refreshes the map summary (Greptile P1, 2026-08-10)', (
     for (const author of authors) {
       ids.push(
         await author.mutation(api.reports.create, {
+          ...OBSERVED,
           waterBodyId: id,
           skateEndTime: recent,
           skateQuality: 'poor',
@@ -1888,6 +2239,7 @@ describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-1
     const asAuthor = await seedUser(t, 'clerk_merged_card');
 
     await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
       waterBodyId: loser.id, // the stale id the draft was carrying
       skateEndTime: Date.now() - 2 * DAY,
       skateQuality: 'good',

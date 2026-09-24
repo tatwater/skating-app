@@ -1,10 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { formatSkateTime } from '@skating/core';
+import { formatSkateTime, freshnessRefusal } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { doorHref } from '../lib/sheetDoors';
 import { Section } from './detailUi';
 import { NewWaterPrompt } from './NewWaterPrompt';
 
@@ -44,8 +45,14 @@ export function UnreportedSkates() {
   // A skate is unreported when nothing links it to a report and the owner hasn't waved it off.
   // `linkedReportId` leads because it is the fact — `promptState` can lag a conversion that happened
   // on another device, and a row offering to report an already-reported skate is the worse error.
+  // And inside the freshness window (D199, A10 §9.4): a skate older than a week can no longer be
+  // reported, so offering it would be offering a refusal. The track stays; only the prompt goes.
+  const now = Date.now();
   const rows = (activities ?? []).filter(
-    (a) => a.linkedReportId === undefined && a.promptState !== 'dismissed',
+    (a) =>
+      a.linkedReportId === undefined &&
+      a.promptState !== 'dismissed' &&
+      freshnessRefusal(a.endTime ?? a.startTime, now) === null,
   );
 
   if (rows.length === 0) return null;
@@ -69,10 +76,13 @@ export function UnreportedSkates() {
                     activityId: row.activityId as Id<'gpsActivities'>,
                     promptState: 'prompted',
                   }).catch(() => {});
-                  router.navigate({
-                    pathname: '/water/[id]',
-                    params: { id: row.waterBodyId as string, activity: row.activityId },
-                  });
+                  router.navigate(
+                    doorHref({
+                      body: row.waterBodyId as string,
+                      ...(row.waterBodyName ? { name: row.waterBodyName } : {}),
+                      activity: row.activityId,
+                    }),
+                  );
                 }}
               >
                 Report this skate
@@ -105,10 +115,7 @@ export function UnreportedSkates() {
                 activityId={row.activityId}
                 onResolved={(waterBodyId) => {
                   setAdding(null);
-                  router.navigate({
-                    pathname: '/water/[id]',
-                    params: { id: waterBodyId, activity: row.activityId },
-                  });
+                  router.navigate(doorHref({ body: waterBodyId, activity: row.activityId }));
                 }}
                 onDismiss={() => setAdding(null)}
               />

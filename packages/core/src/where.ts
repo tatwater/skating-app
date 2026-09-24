@@ -19,6 +19,7 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
+import { humanizeEnum } from './reportView';
 import {
   BAY_SECTORS,
   COMPASS_SECTORS,
@@ -137,4 +138,89 @@ export function validateWhere(
 /** Is this sector one of the eight compass wedges (as opposed to middle, near shore, head, mouth)? */
 export function isCompassSector(sector: Sector): sector is (typeof COMPASS_SECTORS)[number] {
   return (COMPASS_SECTORS as readonly string[]).includes(sector);
+}
+
+/**
+ * A `where` in words — "patches, north end of Malletts Bay", "near shore", "off Shelburne Point" —
+ * for a chip's or a reading's line on the sheet and on the detail. `bayNames` resolves a bay id
+ * to its name; without it (or for a bay that is gone) the bay is left unsaid rather than shown as
+ * an id. Empty string for a `where` that says nothing the reader can use.
+ */
+const COMPASS_WORDS: Record<(typeof COMPASS_SECTORS)[number], string> = {
+  N: 'north',
+  NE: 'northeast',
+  E: 'east',
+  SE: 'southeast',
+  S: 'south',
+  SW: 'southwest',
+  W: 'west',
+  NW: 'northwest',
+};
+
+export function describeWhere(where: Where, bayNames?: Readonly<Record<string, string>>): string {
+  const parts: string[] = [];
+  if (where.extent && where.extent !== 'whole') parts.push(where.extent);
+  const bay = where.subAreaId !== undefined ? bayNames?.[where.subAreaId] : undefined;
+  if (where.sector) {
+    const sector =
+      where.sector === 'middle' || where.sector === 'near_shore'
+        ? humanizeEnum(where.sector).toLowerCase()
+        : where.sector === 'head' || where.sector === 'mouth'
+          ? `the ${where.sector}`
+          : `${COMPASS_WORDS[where.sector]} end`;
+    parts.push(bay ? `${sector} of ${bay}` : sector);
+  } else if (bay) {
+    parts.push(bay);
+  }
+  if (where.point?.name) parts.push(where.point.name);
+  return parts.join(' ');
+}
+
+/** A located chip's line — "Black ice, north end". The type alone when the `where` says nothing. */
+export function describeLocatedChip(
+  chip: { type: string; where?: Where },
+  bayNames?: Readonly<Record<string, string>>,
+): string {
+  const label = humanizeEnum(chip.type);
+  const where = chip.where ? describeWhere(chip.where, bayNames) : '';
+  return where ? `${label}, ${where}` : label;
+}
+
+/**
+ * Could two `where`s be about the same water? The aggregates' question (A10 §12.2): "black ice,
+ * north end" and "black ice, south end" are two observations, not one corroborated twice. Absent
+ * (the whole body) overlaps everything; two bays overlap only when they are the same bay, and a bay
+ * overlaps a claim with no bay; the eight compass wedges overlap only themselves, `middle` only
+ * itself (the partition), `near_shore` everything (the band runs the whole shore), and the
+ * bay-relative `head` / `mouth` anything — a still label cannot place them against a wedge. The
+ * extent never matters: patches in the north are still in the north. Conservative by design —
+ * when it cannot tell, it says yes.
+ *
+ * Sectors are compared only inside **one frame** — both on the body, or both in the same bay. A
+ * bay's north end is a bearing from the bay's own origin, and can lie in the lake's south; a still
+ * label cannot place one against the other, so a bay-relative wedge and a body-relative one are
+ * another case of "cannot tell".
+ */
+export function whereOverlaps(a: Where | undefined, b: Where | undefined): boolean {
+  if (!a || !b) return true;
+  if (a.subAreaId !== undefined && b.subAreaId !== undefined && a.subAreaId !== b.subAreaId)
+    return false;
+  if (a.subAreaId !== b.subAreaId) return true;
+  const sa = a.sector;
+  const sb = b.sector;
+  if (sa === undefined || sb === undefined) return true;
+  if (sa === 'near_shore' || sb === 'near_shore') return true;
+  if (sa === 'head' || sa === 'mouth' || sb === 'head' || sb === 'mouth') return true;
+  return sa === sb;
+}
+
+/** Does a `where` claim the whole body — nothing narrower than "mostly"? Absent counts as whole. */
+export function whereCoversBody(where: Where | undefined): boolean {
+  if (!where) return true;
+  return (
+    where.subAreaId === undefined &&
+    where.sector === undefined &&
+    where.point === undefined &&
+    where.extent !== 'patches'
+  );
 }

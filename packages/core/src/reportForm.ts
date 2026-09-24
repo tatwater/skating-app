@@ -13,8 +13,17 @@
  * are ever stored — duration is derived (`end − start`).
  */
 
+import { freshnessRefusal } from './endTimeChips';
 import type { LatLng } from './geometry';
-import type { ReportInput, ThicknessReadingInput } from './report';
+import {
+  FUTURE_REPORT_MESSAGE,
+  type MinimumSetReport,
+  minimumSetGaps,
+  minimumSetMessage,
+  type ReportInput,
+  STALE_REPORT_MESSAGE,
+  type ThicknessReadingInput,
+} from './report';
 import {
   type ChipInput,
   iceTypeKeys,
@@ -98,6 +107,12 @@ export interface CarriedReportFields {
   thicknessScope?: ThicknessScope;
   /** The D194 facets beside the depth this form edits. */
   snow?: Omit<Snow, 'depthCm'>;
+  /**
+   * The known put-in the stored pin names (A10 §7.1 / D198). This form has no picker for it, and
+   * `reports.update` is last-write-wins over it, so it goes back as it was — unless the edit drops a
+   * new pin, which is then a point of its own and no launch's.
+   */
+  putInId?: string;
 }
 
 export interface ReportFormState {
@@ -117,6 +132,11 @@ export interface ReportFormState {
   };
   notes: string;
   carried?: CarriedReportFields;
+  /**
+   * Whether this report's precise put-in may be shown (Phase 04 decision #7). Seeded from the
+   * profile's remembered default (`resolveShowPutInDefault`); an edit seeds from the stored report.
+   */
+  showPutIn: boolean;
 }
 
 /** A fresh, empty reading (single measured) for the "add reading" affordance. */
@@ -127,9 +147,10 @@ export function emptyThicknessReading(): ThicknessFormReading {
 /**
  * A blank form defaulted for `now`. Skate time defaults to now (editable to the past for offline
  * reports, D9); no ice fields are required (an observation-only report, D3). All reports are public
- * (D13), so there's no visibility to default.
+ * (D13), so there's no visibility to default. `opts.showPutIn` is the profile's remembered put-in
+ * switch (`resolveShowPutInDefault`); omitted, the switch starts shown, the stored field's default.
  */
-export function emptyReportForm(now: number): ReportFormState {
+export function emptyReportForm(now: number, opts: { showPutIn?: boolean } = {}): ReportFormState {
   return {
     skateEndTime: now,
     iceTypes: [],
@@ -139,6 +160,7 @@ export function emptyReportForm(now: number): ReportFormState {
     snowCover: '',
     conditions: { airTempF: '', windMph: '', windDir: '', sky: '', precip: '' },
     notes: '',
+    showPutIn: opts.showPutIn ?? true,
   };
 }
 
@@ -253,6 +275,12 @@ export function buildReportInput(
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
+    // The stored put-in stands while the pin does: a new pin is "somewhere else" (`putIns.listForBody`
+    // then derives the proposal); no pin keeps `reports.update`'s existing point, and its launch.
+    ...(!point && carried?.putInId !== undefined ? { putInId: carried.putInId } : {}),
+    // Only the opt-out travels: the stored field is optional-defaults-to-shown, and a draft saved
+    // before the toggle existed (no `showPutIn` at all) must keep reading as shown.
+    ...(form.showPutIn === false ? { showPutIn: false } : {}),
   };
 }
 
@@ -287,6 +315,8 @@ export interface StoredReportForForm {
     precip?: PrecipType;
   };
   notes?: string;
+  putInId?: string;
+  showPutIn?: boolean;
 }
 
 interface ThicknessReadingLike extends ThicknessReadingCarried {
@@ -417,6 +447,7 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
     surfaceTags: (report.surfaceTags ?? []).map(toLocatedChip),
     thicknessScope: report.iceThickness?.scope,
     snow: Object.keys(definedOnly(snowFacets)).length > 0 ? definedOnly(snowFacets) : undefined,
+    putInId: report.putInId,
   }) as CarriedReportFields;
   return {
     skateEndTime: report.skateEndTime,
@@ -443,6 +474,7 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
     },
     notes: report.notes ?? '',
     carried,
+    showPutIn: report.showPutIn !== false,
   };
 }
 
@@ -493,4 +525,22 @@ export function resolveSkateWindow(input: SkateWindowInput): SkateWindowResult {
   return skateStartTime !== undefined
     ? { ok: true, skateEndTime: end, skateStartTime }
     : { ok: true, skateEndTime: end };
+}
+
+/**
+ * The create-only rules as the pre-sheet forms ask them before posting (A10-2): the freshness
+ * window (D199) and the minimum set (D189), in the same words `posts.create` would refuse with.
+ * `null` when the report may post. Never run on an edit — `reports.update` keeps today's rule so
+ * no existing report becomes uneditable.
+ */
+export function formCreateRefusal(
+  report: MinimumSetReport,
+  hazardCount: number,
+  now: number,
+): string | null {
+  const refusal = freshnessRefusal(report.skateEndTime, now);
+  if (refusal === 'too_old') return STALE_REPORT_MESSAGE;
+  if (refusal === 'in_future') return FUTURE_REPORT_MESSAGE;
+  const gaps = minimumSetGaps(report, hazardCount);
+  return gaps.length > 0 ? minimumSetMessage(gaps) : null;
 }

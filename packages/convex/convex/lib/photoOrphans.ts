@@ -92,6 +92,9 @@ export async function referencedPhotoIds(
     .take(REFERENCE_SCAN_CAP);
   if (access.length >= REFERENCE_SCAN_CAP) return null;
 
+  // No `posts` arm on purpose (A10 / D186): `posts.photoIds` is the ordered union of its members'
+  // lists (`postPhotoIds`, kept by `lib/postSync.ts`), so every id a Post references is already in
+  // a report scanned above. A fourth scan would only re-read what the reports said.
   const referenced = new Set<string>();
   for (const r of reports) for (const id of r.photoIds) referenced.add(id);
   for (const h of hazards) for (const id of h.photoIds) referenced.add(id);

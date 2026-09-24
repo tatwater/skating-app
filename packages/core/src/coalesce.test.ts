@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCoalescedRunner } from './coalesce';
+import { createCoalescedRunner, createKeyedSingleFlight } from './coalesce';
 
 /** A promise you resolve by hand, so a "run" can be held open across assertions. */
 function deferred() {
@@ -129,5 +129,41 @@ describe('createCoalescedRunner', () => {
     second.resolve();
     await third;
     expect(run).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('createKeyedSingleFlight', () => {
+  it('a second call for a key already running joins it — one run, one result for both', async () => {
+    const gate = deferred();
+    const run = vi.fn(async (key: string) => {
+      await gate.promise;
+      return `done:${key}`;
+    });
+    const flight = createKeyedSingleFlight(run);
+    const first = flight('h1');
+    const second = flight('h1');
+    expect(second).toBe(first);
+    gate.resolve();
+    expect(await Promise.all([first, second])).toEqual(['done:h1', 'done:h1']);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('different keys run side by side', async () => {
+    const run = vi.fn(async (key: string) => key);
+    const flight = createKeyedSingleFlight(run);
+    expect(await Promise.all([flight('a'), flight('b')])).toEqual(['a', 'b']);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('the key is free again once the run settles — after success and after failure', async () => {
+    let calls = 0;
+    const flight = createKeyedSingleFlight(async () => {
+      calls++;
+      if (calls === 1) throw new Error('offline');
+      return calls;
+    });
+    await expect(flight('h1')).rejects.toThrow('offline');
+    expect(await flight('h1')).toBe(2);
+    expect(await flight('h1')).toBe(3);
   });
 });

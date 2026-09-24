@@ -4,6 +4,13 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
+/**
+ * D189's minimum set (A10-2: `posts.create` holds every new Report to it, and `reports.create` is
+ * that path) in the two values nothing downstream reads — no corroboration, no filter, no card —
+ * so a fixture stays about what its test is about.
+ */
+const OBSERVED = { suitability: 'experienced_only' as const, surfaceTags: ['glass' as const] };
+
 const modules = import.meta.glob('./**/*.*s');
 
 function harness() {
@@ -125,6 +132,7 @@ async function seedReport(
   skateEndTime = Date.now(),
 ): Promise<Id<'reports'>> {
   return actor.as.mutation(api.reports.create, {
+    ...OBSERVED,
     waterBodyId,
     skateEndTime,
     iceTypes: ['black_ice'],
