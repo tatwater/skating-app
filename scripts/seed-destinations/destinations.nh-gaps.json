@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Lake Wentworth",
+    "state": "NH",
+    "near": {
+      "lat": 43.5985,
+      "lng": -71.1624
+    },
+    "radiusKm": 10,
+    "sources": ["community"],
+    "curatedBoost": 0.3,
+    "notes": "Wolfeboro. 39 corpus messages, all tagged Wolfeboro — left ambiguous by the September seed because Wentworth Pond (17.7 km) normalizes to the same name; the radius is what resolves it."
+  },
+  {
+    "name": "Connecticut River Reservoir",
+    "state": "NH",
+    "states": ["NH", "VT"],
+    "near": {
+      "lat": 44.3365,
+      "lng": -71.9753
+    },
+    "radiusKm": 10,
+    "sources": ["community"],
+    "curatedBoost": 0.3,
+    "notes": "Comerford Reservoir, Monroe NH / Barnet VT — NHD names it generically, the same as the McIndoes pool 15.6 km downstream and the Wilder pool, which is why the community name never matched. Moore Reservoir next door is already 0.3."
+  },
+  {
+    "name": "Pemigewasset Lake",
+    "state": "NH",
+    "near": {
+      "lat": 43.6137,
+      "lng": -71.5946
+    },
+    "sources": ["community"],
+    "curatedBoost": 0.2,
+    "notes": "New Hampton. 17 corpus messages. Stored as NHD's misspelled 'Pemingewasset Lake' — pick the OSM claim with setWaterBodyName BEFORE this run, or the name will not match."
+  },
+  {
+    "name": "Halfmoon Lake",
+    "state": "NH",
+    "near": {
+      "lat": 43.392,
+      "lng": -71.2289
+    },
+    "sources": ["community"],
+    "curatedBoost": 0.2,
+    "notes": "Half Moon Lake, Alton (282 acres). The September seed searched 'Half Moon' and found two ponds near the MA border; the catalog spells this one as one word."
+  },
+  {
+    "name": "Eagle Lake",
+    "state": "NH",
+    "near": {
+      "lat": 44.1605,
+      "lng": -71.6591
+    },
+    "sources": ["community"],
+    "curatedBoost": 0.3,
+    "notes": "The tarn below Greenleaf Hut on Mt. Lafayette, 1,264 m. A pre-season destination (late October) in the group's seasonal journal; ~0.4 ha, so without a boost it never draws. The September seed's near was New London, where the posts came from, 84 km off."
+  },
+  {
+    "name": "Upper Lake of the Clouds",
+    "state": "NH",
+    "near": {
+      "lat": 44.2581,
+      "lng": -71.3173
+    },
+    "sources": ["community"],
+    "curatedBoost": 0.3,
+    "notes": "Lakes of the Clouds, Mt. Washington, 1,531 m — the earliest ice in the region and the imagery season's sentinel (D149). The only row the catalog holds for the pair; the Lower lake is a catalog gap."
+  },
+  {
+    "name": "Low Plains",
+    "state": "NH",
+    "near": {
+      "lat": 43.4111,
+      "lng": -71.9416
+    },
+    "sources": ["community"],
+    "curatedBoost": 0.1,
+    "notes": "Elkins. The journal's valley season opener (1 December): shallow, marshy, a mile around, two minutes from the lot. An unnamed NHD row until a moderator gave it its community name (2026-09-21); 10 corpus messages, so the lowest grade. Pinned on the season watcher's sample."
+  }
+]

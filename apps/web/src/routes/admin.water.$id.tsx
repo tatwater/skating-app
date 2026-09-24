@@ -316,6 +316,11 @@ function ToolCard({ title, children }: { title: string; children: React.ReactNod
  * remaining claim, so both stay findable — what displays and what is searchable are different
  * questions. The caption below says so, because a moderator hesitating over "will this break
  * search?" is exactly the hesitation that leaves 463 rows unworked.
+ *
+ * **The one text field: a body no publisher named.** Low Plains in Elkins is an unnamed NHD row the
+ * community skates by name (founder call, 2026-09-21). With zero catalog claims there is no third
+ * name to invent beside two attributed ones — the moderator's word is the attribution — so the
+ * card offers a field instead of a picker, and the mutation accepts it only in that case.
  */
 function NameTool({
   body,
@@ -341,6 +346,10 @@ function NameTool({
     if (sources) sources.push(c.source);
     else options.set(key, [c.source]);
   }
+
+  // Nameless, or named only by a community claim: the mutation's free-text case, mirrored here.
+  const communityNamed = !claims.some((c) => c.source !== 'user') && (!body.name || overridden);
+  if (communityNamed) return <CommunityNameTool body={body} onResult={onResult} />;
 
   // A body every publisher agrees on has nothing to decide, and a card offering one button is noise
   // on 24,000 of 25,136 rows.
@@ -406,6 +415,76 @@ function NameTool({
               }}
             >
               Clear the override
+            </button>
+            .
+          </>
+        ) : null}
+      </p>
+    </ToolCard>
+  );
+}
+
+/** The free-text half of {@link NameTool}: a body with no catalog name, or only a community one. */
+function CommunityNameTool({
+  body,
+  onResult,
+}: {
+  body: { _id: string; name: string };
+  onResult: SetBanner;
+}) {
+  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const [draft, setDraft] = useState(body.name);
+  const trimmed = draft.trim();
+  const unchanged = trimmed === body.name;
+
+  return (
+    <ToolCard title="Name">
+      <div className="flex items-end gap-2">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Label htmlFor="community-name">Community name</Label>
+          <Input
+            id="community-name"
+            value={draft}
+            placeholder="What skaters call it"
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={trimmed.length === 0 || unchanged}
+          onClick={async () => {
+            try {
+              await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: trimmed });
+              onResult({ tone: 'ok', text: `Named "${trimmed}".` });
+            } catch (err) {
+              onResult({ tone: 'error', text: errorText(err) });
+            }
+          }}
+        >
+          {body.name ? 'Rename' : 'Name it'}
+        </Button>
+      </div>
+      <p className="text-foreground-muted text-sm">
+        No catalog names this body, so the name is yours to give — it is recorded against you and
+        survives the next import.
+        {body.name ? (
+          <>
+            {' '}
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={async () => {
+                try {
+                  await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
+                  setDraft('');
+                  onResult({ tone: 'ok', text: 'Back to unnamed.' });
+                } catch (err) {
+                  onResult({ tone: 'error', text: errorText(err) });
+                }
+              }}
+            >
+              Clear the name
             </button>
             .
           </>
