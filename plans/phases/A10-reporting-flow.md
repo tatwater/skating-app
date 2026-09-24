@@ -1064,6 +1064,82 @@ code from #74 that the merge brought in, not this PR's, and is left for its own 
 - RN render tests for the sheet — the harness is still unbuilt; the timeline, ring and band math
   are in core and tested there, and the components are thin.
 
+## Built record — A10-7 (2026-09-23, `phase-a10-reporting-flow-7`, PR #79 stacked on #78)
+
+The second PR of the re-skin, the founder's approved split: what the sheet does with **photos and
+tracks**. Two commits off `-6`, ~2,400 changed lines over 34 files. Suites at build: core 3,036 ·
+convex 1,748 · web 651 · mobile 114. No schema change, no data run. **Two native
+modules** (`expo-media-library`, `expo-document-picker`) with their config plugins: the phone
+needs a new EAS preview build.
+
+### What shipped, by workstream
+
+- **§8.1 assignment (core `photoAssignment`)** — a photo lands on the Report whose skate window
+  holds its capture time (the window is [start − 30 min, end + 30 min], or two hours back from the
+  end without a start; the nearest end wins a tie between two visits to one lake), else on the
+  Report whose lake's bounding box (plus 250 m) holds its location, else in the Post's **pool**.
+  On a Report, a location on the lake places it (D42 amendment). `PostSheet.photos` is the pool;
+  `addPostPhotos`, `reassignPool` (quiet, when a lake's box arrives), `movePhotoToReport`,
+  `sendPhotoToAccess`, `dropPhoto`, `placePhotoByHand`, `photoCounts`; the pool rides the draft
+  round trip (`PostDraft.photos`, a JSON field — no migration). A pool photo nobody placed is the
+  Post's refusal (`unassignedPhotosMessage`), in the sheet and at flush alike; one sent to the
+  put-in or the lot is uploaded after the Post lands and attached (`accessPoints.attachPhoto`),
+  checkpointed like a Report's photo, a refusal skipped like a condition alert's (flush step 8).
+- **The capture time** — read on device from EXIF on both surfaces (`exifr`'s `DateTimeOriginal`
+  on web; the picker's EXIF or the library's `creationTime` on the phone, `exifTakenAt` parsing the
+  zone-less EXIF clock as the device's local time), carried as `DraftPhoto.takenAtMs`, never sent.
+- **Web** — the Post column's rail is the pool and every Report's photos: the lake's number in the
+  corner (a click opens the menu), an amber dashed `?` on the pool's, ● / □ on one bound for the
+  put-in or the lot, the placed mark, and ◎ on a Report photo with no location (place-mode: the
+  instrument's third mode, a click on the water). Drop or pick photos on the column; each lands
+  where the day says. `bodyBoxes` records every drawn lake's box so the pool re-runs for a tab
+  that is not active. *This is a hazard…* leaves the photo's location and file in `hazardPrefill`
+  and opens the lake's drawer with the form; the form takes it once on mount, and offers the open
+  Post's photos within 150 m of any pin (`photosNearPoint`). *+ Add your track* on the instrument:
+  a GPX file → `parseGpx` → `processTrack` → `gpsActivities.ingestTrack` → the Report's
+  `activityId`, its end stamped `gps` and its start set; the activity's path drawn on the lake.
+  The status bar reads *n of m assigned*.
+- **Mobile** — *Photos from your skate*: `expo-media-library` queried for the skate's window (core's
+  `photoWindow` / `sameDayWindow` / `photosInWindow`, built in A10-1 and unused until now), a tap
+  includes (EXIF read on device, files copied out of the roll, the roll untouched), a blue corner
+  for placed; a photo with no location on a recorded skate is placed along the track at its minute
+  (core's `placePhoto`, also A10-1's); *Place* opens the lake to tap; *Hazard* hands the photo and
+  its location to the map's capture through `hazardCapturePrefill` on the map context, which the
+  capture reads on its nonce (the pin lands at the photo once a type is chosen). The capture offers
+  the open sheet's photos near its pin. *+ Add your track* in WHEN: `expo-document-picker` → the
+  same parse, clean and ingest, online only.
+
+### Deltas from the plan — read these before extending
+
+1. **Strava import is not built**, and is a founder call. The connection is write-only by
+   decision (`strava.ts` says why); reading an activity means `activity:read` on the consent and a
+   re-connect for every linked account. The CTA says what Strava's own export does, and the roadmap
+   carries the question.
+2. **Assignment by location uses the lake's bounding box, not its polygon** — the box is what the
+   silhouette already carries on every surface; a polygon test would need the geometry for every
+   Report's lake in memory. Two lakes whose boxes overlap resolve to the first in the Post's order.
+3. **A photo added from a Report's own Photos section is that Report's** — the rules run on the
+   Post-level add (web's column, the phone's reel and picker); a section's picker is an explicit
+   choice of lake. The phone has no pool: with one Report on screen at a time, every photo has a
+   lake the moment it is added.
+4. **Place-mode is a third `ConsoleMode`**, not a where card: it has one photo and one answer.
+5. **Auto-placement is a D42 amendment**, recorded there: on-lake coordinates only.
+6. **The mobile hazard capture's prefill rides the map context**, not a route param: a `DraftPhoto`
+   is a pair of file URIs the sheet already copied out of the roll, and the capture's nonce is the
+   ask it belongs to.
+
+### Owed
+
+- **A new EAS preview build** (two native modules and their permission strings), then the device
+  pass: the reel on a real roll (permission, the *same day* toggle, a photo with EXIF GPS on the
+  lake landing placed), *Place*, *Hazard* landing the pin at the photo, a GPX from a watch.
+- The web pass: a drop of mixed photos on a two-lake Post (some by time, some by location, one
+  `?`), the menu's put-in target filing an access photo after Post, place-mode, a hazard opened
+  from a photo, a Strava GPX export.
+- **RN render tests** — the harness is still unbuilt; the rules are in core and tested.
+- **Photos near a hazard's pin** suggest from the *open* sheet only; a hazard drawn with no sheet
+  open has nothing to suggest, by design.
+
 ## Review pass — 2026-09-19
 
 A fresh-eyes review against the code, before any build. What it found and what changed:
@@ -1333,7 +1409,8 @@ Fewest sensible PRs; sub-workstreams are commits.
   phone with sticky tabs, the instrument, the timeline, the weather band, where-mode. *(Built
   2026-09-23, stacked on `-5`.)*
 - **A10-7 — photos and tracks.** §8.1 on both surfaces (assignment by time and location, the
-  camera-roll reel), place-mode, the `?` menu, photo ↔ hazard, GPX and Strava import with a CTA.
+  camera-roll reel), place-mode, the `?` menu, photo ↔ hazard, GPX import with a CTA. *(Built
+  2026-09-23, stacked on `-6`; Strava import is a founder call.)*
 
 ## Budgets
 

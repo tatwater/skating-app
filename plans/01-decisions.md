@@ -688,6 +688,18 @@ opt-in geotagging unlocks real value (spatial photo placement, and a corroborati
 signal for hazard location). Doing it during the existing D31 optimization pass costs
 nothing extra.
 
+### D42 amendment — a location on the lake pre-answers the opt-in (A10-7, 2026-09-23)
+A photo whose EXIF coordinate lies **on the lake** (its bounding box plus 250 m) is placed there
+by itself when it lands on a Report; one with no usable location on a Report opened from a
+recording is placed where the track was when the shutter fired. The opt-in stays the author's:
+every placed photo shows its mark, one tap un-places it, and the coordinate is sent only while it
+is placed. What changed is the default for the one case that reveals nothing — a point on the
+water is not a home — because the founder found that asking for a tap per photo is how photos end
+up unplaced (the same finding as D188's extracted chips). A coordinate **off** the lake is never
+placed by the app: it stays the author's to place by hand (place-mode), or to leave. The capture
+**timestamp** is now also read on device, to put a photo on the Report whose skate window it fell
+in; it is never sent.
+
 ## D43 — License: AGPL-3.0 + an App Store / Play distribution exception
 **Decided.** Keep the repo under **AGPL-3.0** (it's the right copyleft for a hosted
 service — it closes the SaaS loophole so nobody can run a closed fork of *this
