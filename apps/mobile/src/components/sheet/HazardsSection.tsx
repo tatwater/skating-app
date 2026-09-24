@@ -198,7 +198,7 @@ export function HazardsSection({
                     </Text>
                   ) : null}
                 </Text>
-                <XStack gap="$2" flexWrap="wrap">
+                <XStack gap={6} flexWrap="wrap">
                   {PASSED_VERDICTS.map((v) => (
                     <SheetChip
                       key={v}

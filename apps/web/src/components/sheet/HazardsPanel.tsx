@@ -202,7 +202,7 @@ export function HazardsPanel({
                     </span>
                   ) : null}
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {PASSED_VERDICTS.map((v) => (
                     <SheetChip
                       key={v}

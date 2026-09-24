@@ -64,7 +64,7 @@ export function WeatherCorrection({
   };
 
   return (
-    <YStack gap="$2.5" padding="$3" borderRadius="$4" backgroundColor="$surfaceMuted">
+    <YStack gap="$2.5" padding="$3" borderRadius="$xs" backgroundColor="$surfaceMuted">
       <XStack gap="$2">
         <YStack flex={1} gap="$1">
           <Text color="$foregroundMuted" fontSize={11}>
@@ -109,7 +109,7 @@ export function WeatherCorrection({
           />
         </YStack>
       </XStack>
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap={6} flexWrap="wrap">
         {SKY_CONDITIONS.map((s) => (
           <SheetChip
             key={s}
@@ -124,7 +124,7 @@ export function WeatherCorrection({
           />
         ))}
       </XStack>
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap={6} flexWrap="wrap">
         {PRECIP_TYPES.map((p) => (
           <SheetChip
             key={p}

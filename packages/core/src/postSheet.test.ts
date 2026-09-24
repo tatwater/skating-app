@@ -5,10 +5,16 @@ import {
   addLake,
   bundledIds,
   openPostSheet,
+  type PostSheet,
   postRefusals,
   postSheetForEdit,
   postSheetFromDraft,
   removeReport,
+  reportEndMs,
+  reportsInTimeOrder,
+  SHEET_SECTION_COUNT,
+  type SheetReport,
+  sectionsFilled,
   sheetLabel,
   toPostDraft,
   updateReport,
@@ -330,5 +336,53 @@ describe('postRefusals (D189 / D199 before Post)', () => {
       }),
     }));
     expect(postRefusals(future, NOW)[0]?.message).toMatch(/future/);
+  });
+});
+
+describe('reportsInTimeOrder / sectionsFilled (A10-6)', () => {
+  const NOW = Date.UTC(2026, 0, 10, 20);
+  const mint = (() => {
+    let n = 0;
+    return () => `id${++n}`;
+  })();
+  const withEnd = (post: PostSheet, reportId: string, ms: number): PostSheet =>
+    updateReport(post, reportId, (r) => ({
+      ...r,
+      sheet: sheetReducer(r.sheet, {
+        type: 'select',
+        field: 'endTime',
+        key: 'chosen',
+        value: { ms, precision: 'minute' },
+      }),
+    }));
+
+  it('sorts by end time, earliest first, and keeps untimed Reports after in their own order', () => {
+    let post = openPostSheet('body', { waterBodyId: 'a', bodyName: 'A' }, NOW, mint);
+    post = addLake(post, { waterBodyId: 'b', bodyName: 'B' }, NOW, mint);
+    post = addLake(post, { waterBodyId: 'c', bodyName: 'C' }, NOW, mint);
+    const [a, b, c] = post.reports as [SheetReport, SheetReport, SheetReport];
+    post = withEnd(post, a.id, NOW - 3600_000);
+    post = withEnd(post, c.id, NOW - 7200_000);
+    expect(reportsInTimeOrder(post).map((r) => r.bodyName)).toEqual(['C', 'A', 'B']);
+    expect(post.reports.map((r) => r.bodyName)).toEqual(['A', 'B', 'C']);
+    expect(reportEndMs(b)).toBeUndefined();
+  });
+
+  it('counts the sections with something in them', () => {
+    let post = openPostSheet('body', { waterBodyId: 'a', bodyName: 'A' }, NOW, mint);
+    const first = post.reports[0] as SheetReport;
+    expect(sectionsFilled(first.sheet)).toBe(0);
+    post = withEnd(post, first.id, NOW - 60_000);
+    post = updateReport(post, first.id, (r) => ({
+      ...r,
+      sheet: sheetReducer(r.sheet, {
+        type: 'select',
+        field: 'quality',
+        key: 'good',
+        value: 'good',
+      }),
+    }));
+    expect(sectionsFilled((post.reports[0] as SheetReport).sheet)).toBe(2);
+    expect(SHEET_SECTION_COUNT).toBe(10);
   });
 });

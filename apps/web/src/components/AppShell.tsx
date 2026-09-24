@@ -7,7 +7,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
 import logoBlack from '../assets/gli-black-duotone.svg';
 import logoWhite from '../assets/gli-white-duotone.svg';
-import { isMapRoute } from '../lib/mapSelection';
+import { isAppSurfaceRoute, isMapRoute } from '../lib/mapSelection';
 import { useSignOut } from '../lib/sheetOwner';
 import { LakeSearch } from './LakeSearch';
 import { ThemeToggle } from './theme-toggle';
@@ -66,10 +66,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     void syncFromClerk({}).catch(() => {});
   }, [hasProfile, syncFromClerk]);
   const mapRoute = isMapRoute(pathname);
+  // The console (A10-6) takes the map's frame — the whole viewport, no page scroll — without the
+  // map's search box.
+  const appSurface = isAppSurfaceRoute(pathname);
 
   return (
     <div
-      className={`flex flex-col bg-background ${mapRoute ? 'h-screen overflow-hidden' : 'min-h-screen'}`}
+      className={`flex flex-col bg-background ${appSurface ? 'h-screen overflow-hidden' : 'min-h-screen'}`}
     >
       <header className="sticky top-0 z-30 flex shrink-0 items-center gap-6 border-border border-b bg-surface px-4 py-3">
         {/* Both marks ship and CSS picks one. Swapping on `resolvedTheme` would mean rendering
@@ -148,7 +151,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <main
         className={
-          mapRoute ? 'flex min-h-0 w-full flex-1 flex-col' : 'mx-auto w-full max-w-6xl flex-1 p-4'
+          appSurface ? 'flex min-h-0 w-full flex-1 flex-col' : 'mx-auto w-full max-w-6xl flex-1 p-4'
         }
       >
         {children}

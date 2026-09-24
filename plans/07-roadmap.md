@@ -699,7 +699,7 @@ launches.*
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Phase A10 — Reporting: one sheet, three doors
-🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #75 #77 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205
+🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #75 #77 #78 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205 D206
 
 The report form becomes a report sheet: one fixed-order scroll a skater fills by tapping chips,
 by writing prose, or by opening it from a track, every section collapsing to a summary. A **Post**
@@ -733,6 +733,8 @@ lack of signal.*
 - 🟢 **The mobile sheet** (§4.1, §4.3, §4.4, §6, §7 + the search door), held drafts (D204), author edit and delete with history (D205), the weather beside the end time — A10-3 (2026-09-21); GPX import and the parking-lot door stay with A10-4
 - 🟢 **The web console** (§10) + the browser's photo half (§8.2) — A10-5 (2026-09-22), ahead of A10-4 on a founder call since §10 is gated on nothing the eval decides; the sheet's model moved from mobile into core (`postSheet`) so the surfaces are two compositions of one model, the old web `ReportForm` is gone, and §5 will wire both surfaces when it lands
 - 🟢 **The moderator's revision comparison** (D205) — A10-5 (2026-09-22): a per-field diff in core, a moderator-only read of `contentRevisions`, the history on the report page; claims marked, never ranked (D3), and a skater still sees only *Edited*
+- 🟢 **The sheet's re-skin** (D206) — A10-6 (2026-09-23): the web console as an application surface (the Post column, Report tabs in time order, the lake as an instrument with where-mode and put-in mode, the timeline with draggable carets, the weather band, a status bar), the phone with sticky report tabs and one Report at a time, inverted-ink chips and status squares on both, two-pixel radius app-wide by token, a `$mono` font token; the brand typefaces wait for the wider redesign
+- ⚪ **Photos that assign themselves, place-mode, GPX and Strava import** — A10-7, the second PR of the re-skin (founder call 2026-09-23): by time within a Report's window and by location on a lake; an amber `?` with a menu on the photo (the lakes, the put-in, the lot, *this is a hazard*, leave it out) for the rest; the camera-roll reel over the skate's window on the phone; photos near a hazard's pin suggested to it; a real call to action for a track when there is no recording. This is most of §8.1 and the GPX half of §4.2
 - ⚪ **The future-skate telemetry is dead on both surfaces** — deleting the two `ReportForm`s (A10-3, A10-5) removed the last caller of `recordClientSignal('report_rejected_future_skate')` (Phase 07-2) and of `hasFutureSkateTimeError`; the sheet refuses a future end time client-side, so the server never sees the case the signal measures and `SKATE_TIME_FUTURE_TOLERANCE_MS` can't be tuned on evidence. A scope call (where a refusal becomes a signal, on both surfaces), not a patch
 - ⚪ **Moderator put-in and lot authoring** + the proposal queue over the reports' points → [`features/access-point-authoring.md`](./features/access-point-authoring.md), after A10
 - ⚪ **The corpus replay** (§1.5) — after the founder's eval review decides the engine; its own deployment (a project, not a preview — those auto-delete in 5 / 14 days), a dev snapshot, `posts.importBackdated`

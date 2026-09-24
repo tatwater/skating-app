@@ -51,6 +51,8 @@ interface StoredRecord extends StoredSheet {
 let current: PostSheet | null = null;
 let attempt: PostDraft | null = null;
 let owner: string | null = null;
+/** When the open sheet last reached `localStorage` — the status bar's "saved in this browser". */
+let persistedAt: number | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -89,14 +91,19 @@ function persist(): void {
   // An edit is never restored: the published Report is the durable copy, and a stale draft of it
   // restored over a later edit would silently undo someone else's save.
   if (current === null || current.mode.kind === 'edit') {
+    persistedAt = null;
     removeStored();
     return;
   }
   // A sheet with no signed-in author to file it under is not written down for the next one.
-  if (owner === null) return;
+  if (owner === null) {
+    persistedAt = null;
+    return;
+  }
   const record: StoredRecord = { owner, sheet: serializable(current), attempt };
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+    persistedAt = Date.now();
   } catch {
     // A full or disabled store costs the restore, never the sheet in front of the author.
   }
@@ -121,6 +128,7 @@ export function bindSheetOwner(next: string | null): void {
   if (current === null && attempt === null) return;
   current = null;
   attempt = null;
+  persistedAt = null;
   releaseAllSheetPhotos();
   emit();
 }
@@ -161,6 +169,7 @@ export function clearStoredSheet(): void {
 export function forgetSheet(): void {
   current = null;
   attempt = null;
+  persistedAt = null;
   releaseAllSheetPhotos();
   removeStored();
   emit();
@@ -214,10 +223,19 @@ export function useSheetAttempt(): PostDraft | null {
   return useSyncExternalStore(subscribe, getAttemptSnapshot, getServerSnapshot);
 }
 
+const getPersistedAt = () => persistedAt;
+const getServerPersistedAt = (): number | null => null;
+
+/** When the open sheet last reached storage, or `null` when it has not (an edit never does). */
+export function usePersistedAt(): number | null {
+  return useSyncExternalStore(subscribe, getPersistedAt, getServerPersistedAt);
+}
+
 /** Test seam: forget the open sheet and its owner without touching storage. */
 export function resetSheetStoreForTests(): void {
   current = null;
   attempt = null;
   owner = null;
+  persistedAt = null;
   listeners.clear();
 }

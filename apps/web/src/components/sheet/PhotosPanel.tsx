@@ -87,7 +87,7 @@ export function PhotosPanel({ report, dispatch, setReport, gaps, editing }: Sect
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         className={cn(
-          'flex flex-col gap-3 rounded-lg border border-dashed p-3 transition-colors',
+          'flex flex-col gap-3 rounded-[2px] border border-dashed p-3 transition-colors',
           dragging ? 'border-primary bg-primary/5' : 'border-border',
         )}
       >
@@ -101,10 +101,10 @@ export function PhotosPanel({ report, dispatch, setReport, gaps, editing }: Sect
                     <img
                       src={url}
                       alt="Already on this report"
-                      className="size-20 rounded-md object-cover"
+                      className="size-20 rounded-[2px] object-cover"
                     />
                   ) : (
-                    <span className="flex size-20 items-center justify-center rounded-md bg-surface-muted text-center text-foreground-muted text-xs">
+                    <span className="flex size-20 items-center justify-center rounded-[2px] bg-surface-muted text-center text-foreground-muted text-xs">
                       On the report
                     </span>
                   )}
@@ -131,10 +131,10 @@ export function PhotosPanel({ report, dispatch, setReport, gaps, editing }: Sect
                     <img
                       src={preview}
                       alt="One you picked"
-                      className="size-20 rounded-md object-cover"
+                      className="size-20 rounded-[2px] object-cover"
                     />
                   ) : (
-                    <span className="flex size-20 items-center justify-center rounded-md bg-surface-muted text-center text-foreground-muted text-xs">
+                    <span className="flex size-20 items-center justify-center rounded-[2px] bg-surface-muted text-center text-foreground-muted text-xs">
                       Re-add
                     </span>
                   )}

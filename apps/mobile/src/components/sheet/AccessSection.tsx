@@ -14,7 +14,7 @@ import { Text, XStack, YStack } from 'tamagui';
 import { Input } from '../ThemedInputs';
 import { LakeMap, type LakeMapPin } from './LakeMap';
 import { SheetChip } from './SheetChip';
-import { SheetHint, SheetSection, SubLabel } from './SheetSection';
+import { QuestionBlock, SheetHint, SheetSection, SubLabel } from './SheetSection';
 import type { SectionProps } from './sectionProps';
 
 /** How many known launches the chip row names before the rest are "on the map" only. */
@@ -37,6 +37,7 @@ const NAMED_PUT_INS = 4;
 export function AccessSection({ report, body, dispatch, gaps, editing, timeZone }: SectionProps) {
   const sheet = report.sheet;
   const { putInId, parkingAreaId, point } = sheet.scalars;
+  const [asking, setAsking] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,60 +129,78 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
       }
       gap={gaps.has('access')}
     >
-      <SubLabel>Where did you get on?</SubLabel>
-      <XStack gap="$2" flexWrap="wrap">
-        {nearest.slice(0, NAMED_PUT_INS).map((p) => (
-          <SheetChip
-            key={p.id}
-            label={p.name}
-            tier={putInId === p.id ? 'solid' : undefined}
-            onPress={() => choosePutIn(putInId === p.id ? undefined : p.id)}
-          />
-        ))}
-        <SheetChip
-          label={
-            putInId === undefined && point !== undefined ? 'Somewhere else · set' : 'Somewhere else'
-          }
-          tier={putInId === undefined && point !== undefined ? 'solid' : undefined}
-          onPress={() => {
-            if (putInId === undefined && point !== undefined) {
-              dispatch({ type: 'setScalar', key: 'point', value: undefined });
-              setPlacing(false);
-            } else setPlacing((p) => !p);
-          }}
-        />
-        <SheetChip
-          label={locating ? 'Locating…' : 'Use my location'}
-          onPress={() => void locateMe()}
-        />
-      </XStack>
-      {body?.silhouette ? (
-        <YStack gap="$1.5">
-          <LakeMap
-            data={body.silhouette}
-            pins={pins}
-            chosenPinId={putInId ?? parkingAreaId}
-            point={putInId === undefined && point ? point : undefined}
-            onTapPin={(pin) => (pin.kind === 'putIn' ? choosePutIn(pin.id) : chooseLot(pin.id))}
-            onTap={
-              placing
-                ? (coord) => {
-                    dispatch({ type: 'setScalar', key: 'putInId', value: undefined });
-                    dispatch({ type: 'setScalar', key: 'point', value: coord });
-                    setPlacing(false);
-                  }
-                : undefined
-            }
-          />
+      {asking ? (
+        <QuestionBlock title="Where did you get on?" onDone={() => setAsking(false)}>
+          <XStack gap={6} flexWrap="wrap">
+            {nearest.slice(0, NAMED_PUT_INS).map((p) => (
+              <SheetChip
+                key={p.id}
+                compact
+                label={p.name}
+                tier={putInId === p.id ? 'solid' : undefined}
+                onPress={() => choosePutIn(putInId === p.id ? undefined : p.id)}
+              />
+            ))}
+            <SheetChip
+              compact
+              label={
+                putInId === undefined && point !== undefined
+                  ? 'Somewhere else · set'
+                  : placing
+                    ? 'Tap the shore…'
+                    : 'Somewhere else'
+              }
+              tier={(putInId === undefined && point !== undefined) || placing ? 'solid' : undefined}
+              onPress={() => {
+                if (putInId === undefined && point !== undefined) {
+                  dispatch({ type: 'setScalar', key: 'point', value: undefined });
+                  setPlacing(false);
+                } else setPlacing((p) => !p);
+              }}
+            />
+            <SheetChip
+              compact
+              label={locating ? 'Locating…' : 'Use my location'}
+              onPress={() => void locateMe()}
+            />
+          </XStack>
+          {body?.silhouette ? (
+            <LakeMap
+              data={body.silhouette}
+              pins={pins}
+              chosenPinId={putInId ?? parkingAreaId}
+              point={putInId === undefined && point ? point : undefined}
+              height={200}
+              litPins
+              onTapPin={(pin) => (pin.kind === 'putIn' ? choosePutIn(pin.id) : chooseLot(pin.id))}
+              onTap={
+                placing
+                  ? (coord) => {
+                      dispatch({ type: 'setScalar', key: 'putInId', value: undefined });
+                      dispatch({ type: 'setScalar', key: 'point', value: coord });
+                      setPlacing(false);
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
           <SheetHint>
             {placing
               ? 'Tap the shore where you got on.'
-              : chosenName
-                ? `Put-in: ${chosenName}.`
-                : 'Tap a launch on the lake, or choose one above.'}
+              : 'The launches are lit on the lake. Tap one, or tap the shore for somewhere else.'}
           </SheetHint>
-        </YStack>
-      ) : null}
+        </QuestionBlock>
+      ) : (
+        <XStack gap="$2" alignItems="center" flexWrap="wrap">
+          <SubLabel>Where did you get on?</SubLabel>
+          <SheetChip
+            compact
+            label={chosenName ?? 'Choose on the lake'}
+            tier={chosenName !== undefined ? 'solid' : undefined}
+            onPress={() => setAsking(true)}
+          />
+        </XStack>
+      )}
       {error ? (
         <Text color="$danger" fontSize={12}>
           {error}
@@ -189,8 +208,8 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
       ) : null}
       {body && body.parking.length > 0 ? (
         <YStack gap="$1.5">
-          <SubLabel>Parked at</SubLabel>
-          <XStack gap="$2" flexWrap="wrap">
+          <SubLabel>Where did you park?</SubLabel>
+          <XStack gap={6} flexWrap="wrap">
             {body.parking.map((lot) => (
               <SheetChip
                 key={lot.id}
@@ -205,7 +224,7 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
       ) : null}
 
       <YStack gap="$1.5">
-        <SubLabel>At the launch</SubLabel>
+        <SubLabel>What did you find there?</SubLabel>
         {editing ? (
           // The chips file alerts when a Post creates (D197, the flush's step 7, with the new Report
           // as provenance); an edit has no such step, so offering them here would take a plank the
@@ -216,7 +235,7 @@ export function AccessSection({ report, body, dispatch, gaps, editing, timeZone 
           </SheetHint>
         ) : target ? (
           <>
-            <XStack gap="$2" flexWrap="wrap">
+            <XStack gap={6} flexWrap="wrap">
               {ACCESS_CONDITION_REASONS.map((reason) => {
                 const selected = conditions.includes(reason);
                 return (

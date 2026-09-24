@@ -62,7 +62,7 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
       }
       gap={gaps.has('thickness')}
     >
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {THICKNESS_BANDS.map((b) => (
           <SheetChip
             key={b}
@@ -103,7 +103,10 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
         if (chip.key === addingKey) return null; // drawn below, as the editor that is typing it
         const r = chip.value;
         return (
-          <div key={chip.key} className="flex flex-col gap-2 rounded-lg bg-surface-muted p-3">
+          <div
+            key={chip.key}
+            className="flex flex-col gap-2 rounded-[2px] border border-border bg-background p-2.5"
+          >
             <ReadingEditor
               reading={r}
               onChange={(next) =>
@@ -138,7 +141,7 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
       })}
 
       {addingKey !== null ? (
-        <div className="flex flex-col gap-2 rounded-lg bg-surface-muted p-3">
+        <div className="flex flex-col gap-2 rounded-[2px] border border-border bg-background p-2.5">
           <ReadingEditor
             key={addingKey}
             // The stored chip once there is one, so a `where` set beside it rides the next keystroke.
@@ -354,7 +357,7 @@ function ReadingEditor({
         </div>
       )}
       {mode !== 'poke' ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {THICKNESS_METHODS.filter((m) => m !== 'poke').map((m) => (
             <SheetChip
               key={m}
@@ -372,7 +375,7 @@ function ReadingEditor({
         <SheetHint>Pokes are yours and your pole's — the count is kept as a count.</SheetHint>
       )}
       <SubLabel>Did it hold you?</SubLabel>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         <SheetChip
           compact
           label="Held me"

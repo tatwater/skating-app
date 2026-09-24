@@ -40,6 +40,7 @@ import {
 import { useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { updateSheet } from '../../lib/sheetStore';
+import { cn } from '../../lib/utils';
 import { Textarea } from '../ui/textarea';
 import { AccessPanel } from './AccessPanel';
 import { EndTimePanel } from './EndTimePanel';
@@ -50,7 +51,7 @@ import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { DispatchOpts, SectionProps } from './sectionProps';
 import { ThicknessPanel } from './ThicknessPanel';
 import type { SheetBody } from './useSheetBody';
-import { WherePicker } from './WherePicker';
+import { type WhereCard, WhereCards } from './WhereCards';
 
 /**
  * One Report's panels, in the order that never changes (D187): *How was it?* first, then how it
@@ -115,6 +116,7 @@ function HowWasIt({ report, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
   return (
     <SheetPanel
+      id="section-how"
       label="How was it?"
       summary={sectionSummary(sheet, 'howWasIt', timeZone)}
       collapsed={sheet.collapsed.howWasIt}
@@ -156,6 +158,7 @@ function ObservedFromPanel({ report, dispatch, gaps, timeZone }: SectionProps) {
   const [from] = selectedValues(sheet, 'observedFrom');
   return (
     <SheetPanel
+      id="section-seen"
       label="How did you see it?"
       summary={sectionSummary(sheet, 'observedFrom', timeZone)}
       collapsed={sheet.collapsed.observedFrom}
@@ -197,24 +200,46 @@ function ObservedFromPanel({ report, dispatch, gaps, timeZone }: SectionProps) {
 
 function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
-  const [whereFor, setWhereFor] = useState<{
-    field: 'iceTypes' | 'surfaceTags';
-    key: string;
-  } | null>(null);
+  // The where question: open or not, and which card is up. Never opened by a chip click alone — a
+  // five-chip reporter is not pulled into it five times — but a chip's *where* mark opens it on
+  // that chip (founder call 2026-09-23).
+  const [asking, setAsking] = useState(false);
+  const [activeCard, setActiveCard] = useState<string | null>(null);
   const peers = usePeers(body);
   const iceLine = peers ? peerLine(peers.iceTypes, peers.reporters) : null;
   const surfaceLine = peers ? peerLine(peers.surfaceTags, peers.reporters) : null;
   const selectedIce = selectedChips(sheet, 'iceTypes');
   const selectedSurface = selectedChips(sheet, 'surfaceTags');
-  const whereChip =
-    whereFor === null
-      ? null
-      : (whereFor.field === 'iceTypes' ? selectedIce : selectedSurface).find(
-          (c) => c.key === whereFor.key,
-        );
+  const cards: WhereCard[] = [
+    ...selectedIce.map((c) => ({ field: 'iceTypes' as const, c })),
+    ...selectedSurface.map((c) => ({ field: 'surfaceTags' as const, c })),
+  ].map(({ field, c }) => ({
+    id: `${field}:${c.key}`,
+    label: humanizeEnum(c.value.type),
+    where: c.value.where,
+    onChange: (where) =>
+      dispatch({ type: 'setWhere', field, key: c.key, ...(where !== undefined ? { where } : {}) }),
+  }));
+  const openOn = (id: string) => {
+    setActiveCard(id);
+    setAsking(true);
+  };
+  const activeKey = asking ? (activeCard ?? cards[0]?.id ?? null) : null;
+  // The mark a selected chip wears: ◆ with its sector once it has a where, ◇ until it does. It is
+  // read by the row's *Where?* chip, which opens the cards — a mark inside a button is not one.
+  const whereMark = (field: 'iceTypes' | 'surfaceTags') => (key: string) => {
+    const chip = (field === 'iceTypes' ? selectedIce : selectedSurface).find((c) => c.key === key);
+    const where = chip?.value.where;
+    return (
+      <span aria-hidden className={cn('text-[10px]', where ? 'opacity-90' : 'opacity-50')}>
+        {where?.sector ? `◆ ${where.sector}` : where ? '◆' : '◇'}
+      </span>
+    );
+  };
 
   return (
     <SheetPanel
+      id="section-ice"
       label="Ice and surface"
       summary={sectionSummary(sheet, 'iceAndSurface', timeZone)}
       collapsed={sheet.collapsed.iceAndSurface}
@@ -233,13 +258,16 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
         field="iceTypes"
         options={ICE_TYPES}
         label={humanizeEnum}
-        onSelect={(t) => {
-          dispatch({ type: 'select', field: 'iceTypes', key: t, value: { type: t } });
-          setWhereFor({ field: 'iceTypes', key: t });
-        }}
+        trailing={whereMark('iceTypes')}
+        emphasisKey={
+          activeKey?.startsWith('iceTypes:') ? activeKey.slice('iceTypes:'.length) : null
+        }
+        onSelect={(t) =>
+          dispatch({ type: 'select', field: 'iceTypes', key: t, value: { type: t } })
+        }
         onDeselect={(key) => {
           dispatch({ type: 'deselect', field: 'iceTypes', key });
-          if (whereFor?.key === key) setWhereFor(null);
+          if (activeCard === `iceTypes:${key}`) setActiveCard(null);
         }}
       />
       <SubLabel>Surface</SubLabel>
@@ -249,56 +277,42 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
         field="surfaceTags"
         options={SURFACE_TAGS}
         label={humanizeEnum}
-        onSelect={(t) => {
-          dispatch({ type: 'select', field: 'surfaceTags', key: t, value: { type: t } });
-          setWhereFor({ field: 'surfaceTags', key: t });
-        }}
+        trailing={whereMark('surfaceTags')}
+        emphasisKey={
+          activeKey?.startsWith('surfaceTags:') ? activeKey.slice('surfaceTags:'.length) : null
+        }
+        onSelect={(t) =>
+          dispatch({ type: 'select', field: 'surfaceTags', key: t, value: { type: t } })
+        }
         onDeselect={(key) => {
           dispatch({ type: 'deselect', field: 'surfaceTags', key });
-          if (whereFor?.key === key) setWhereFor(null);
+          if (activeCard === `surfaceTags:${key}`) setActiveCard(null);
         }}
       />
-      {selectedIce.length + selectedSurface.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-foreground-muted text-xs">Where?</span>
-            {[
-              ...selectedIce.map((c) => ({ field: 'iceTypes' as const, c })),
-              ...selectedSurface.map((c) => ({ field: 'surfaceTags' as const, c })),
-            ].map(({ field, c }) => (
-              <SheetChip
-                key={`${field}:${c.key}`}
-                compact
-                label={`${humanizeEnum(c.value.type)}${c.value.where ? ' ·' : ''}`}
-                {...(whereFor?.field === field && whereFor.key === c.key
-                  ? { tier: 'solid' as const }
-                  : {})}
-                onClick={() =>
-                  setWhereFor(
-                    whereFor?.field === field && whereFor.key === c.key
-                      ? null
-                      : { field, key: c.key },
-                  )
-                }
-              />
-            ))}
-          </div>
-          {whereFor && whereChip ? (
-            <WherePicker
-              {...(whereChip.value.where !== undefined ? { where: whereChip.value.where } : {})}
-              body={body}
-              onChange={(where) =>
-                dispatch({
-                  type: 'setWhere',
-                  field: whereFor.field,
-                  key: whereFor.key,
-                  ...(where !== undefined ? { where } : {}),
-                })
-              }
-            />
-          ) : null}
+      {cards.length > 0 && !asking ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <SubLabel>Where?</SubLabel>
+          <SheetChip
+            compact
+            label={
+              cards.every((c) => c.where !== undefined)
+                ? 'Every chip has a where'
+                : `${cards.filter((c) => c.where === undefined).length} of ${cards.length} to answer`
+            }
+            onClick={() =>
+              openOn(cards.find((c) => c.where === undefined)?.id ?? (cards[0] as WhereCard).id)
+            }
+          />
         </div>
       ) : null}
+      <WhereCards
+        cards={cards}
+        body={body}
+        open={asking && cards.length > 0}
+        onClose={() => setAsking(false)}
+        activeId={activeKey}
+        onActivate={setActiveCard}
+      />
     </SheetPanel>
   );
 }
@@ -331,6 +345,7 @@ function Snow({ report, dispatch, gaps, timeZone }: SectionProps) {
   const none = coverage === 'none';
   return (
     <SheetPanel
+      id="section-snow"
       label="Snow"
       summary={sectionSummary(sheet, 'snow', timeZone)}
       collapsed={sheet.collapsed.snow}
@@ -370,7 +385,7 @@ function Snow({ report, dispatch, gaps, timeZone }: SectionProps) {
             onDeselect={(key) => dispatch({ type: 'deselect', field: 'snowDrifts', key })}
           />
           <SubLabel>How deep?</SubLabel>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <SheetChip
               compact
               label="A dusting"
@@ -426,6 +441,7 @@ function Note({ report, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
   return (
     <SheetPanel
+      id="section-note"
       label="Anything else about this lake"
       summary={sectionSummary(sheet, 'writing', timeZone)}
       collapsed={sheet.collapsed.writing}

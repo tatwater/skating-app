@@ -8,11 +8,11 @@ import {
   sectionSummary,
   selectedValues,
 } from '@skating/core';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '../ui/input';
-import { LakeMap, type LakeMapPin } from './LakeMap';
+import { useConsoleMode } from './ConsoleMode';
 import { SheetChip } from './SheetChip';
-import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
+import { QuestionBlock, SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
 
 /** How many known launches the chip row names before the rest are "on the map" only. */
@@ -21,10 +21,12 @@ const NAMED_PUT_INS = 4;
 /**
  * *Access* (A10 §7 / D197, D198): the put-in and the lot, then what the skater found there.
  *
- * The picker is the lake itself — the known launches drawn on the silhouette with their names, the
- * nearest few as chips too — and a click on a dot chooses it. *Somewhere else* takes a click on the
- * water as a coarse point (the report's `point`, with no `putInId`), which is also how a launch the
- * corpus lacks gets proposed: every such point is a candidate for the moderator.
+ * The picker is the lake itself — the instrument in the center column, put into **put-in mode**
+ * while the question block here is open (A10-6 / D206): the known launches light up on the
+ * silhouette, a click on a dot chooses it, and *Somewhere else* takes a click on the shore as a
+ * coarse point (the report's `point`, with no `putInId`), which is also how a launch the corpus
+ * lacks gets proposed: every such point is a candidate for the moderator. The nearest launches are
+ * chips beside it, so a keyboard answers the same question.
  *
  * Then the conditions — a plank, a muddy launch, an icy lot — as chips against the chosen put-in or
  * lot, riding A06d's decaying, corroborated alerts with this Report as provenance (D197), and a
@@ -36,29 +38,14 @@ const NAMED_PUT_INS = 4;
 export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }: SectionProps) {
   const sheet = report.sheet;
   const { putInId, parkingAreaId, point } = sheet.scalars;
+  const [asking, setAsking] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const { setMode } = useConsoleMode();
 
   const from = point ?? body?.frame?.origin;
   const nearest = useMemo(
     () => (body && from ? putInsByDistance(body.putIns, from) : (body?.putIns ?? [])),
     [body, from],
-  );
-  const pins: LakeMapPin[] = useMemo(
-    () => [
-      ...(body?.putIns ?? []).map((p) => ({
-        id: p.id,
-        ...p.coord,
-        label: p.name,
-        kind: 'putIn' as const,
-      })),
-      ...(body?.parking ?? []).map((p) => ({
-        id: p.id,
-        ...p.coord,
-        label: p.name,
-        kind: 'parking' as const,
-      })),
-    ],
-    [body],
   );
   const choosePutIn = (id: string | undefined) => {
     if (id === undefined) {
@@ -86,6 +73,27 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
   const chooseLot = (id: string | undefined) =>
     dispatch({ type: 'setScalar', key: 'parkingAreaId', value: id });
 
+  // The instrument takes the click while the question is open: a launch chooses it, the shore is
+  // *somewhere else*. The handlers close over this render's sheet, so they ride a ref the mode
+  // reads through; the mode itself is armed once, when the question opens, and disarmed with it.
+  const handlers = useRef({ choosePutIn, chooseLot, dispatch });
+  handlers.current = { choosePutIn, chooseLot, dispatch };
+  useEffect(() => {
+    if (!asking) return;
+    setMode({
+      kind: 'putIn',
+      onPickPin: (id, kind) =>
+        kind === 'putIn' ? handlers.current.choosePutIn(id) : handlers.current.chooseLot(id),
+      onPickShore: (coord) => {
+        handlers.current.dispatch({ type: 'setScalar', key: 'putInId', value: undefined });
+        handlers.current.dispatch({ type: 'setScalar', key: 'point', value: coord });
+        setPlacing(false);
+      },
+      onExit: () => setAsking(false),
+    });
+    return () => setMode(null);
+  }, [asking, setMode]);
+
   const conditions = selectedValues(sheet, 'accessConditions');
   const target = putInId !== undefined || parkingAreaId !== undefined;
   const chosenName =
@@ -105,62 +113,57 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
       }
       gap={gaps.has('access')}
     >
-      <SubLabel>Where did you get on?</SubLabel>
-      <div className="flex flex-wrap gap-2">
-        {nearest.slice(0, NAMED_PUT_INS).map((p) => (
-          <SheetChip
-            key={p.id}
-            label={p.name}
-            {...(putInId === p.id ? { tier: 'solid' as const } : {})}
-            onClick={() => choosePutIn(putInId === p.id ? undefined : p.id)}
-          />
-        ))}
-        <SheetChip
-          label={
-            putInId === undefined && point !== undefined ? 'Somewhere else · set' : 'Somewhere else'
-          }
-          {...(putInId === undefined && point !== undefined ? { tier: 'solid' as const } : {})}
-          onClick={() => {
-            if (putInId === undefined && point !== undefined) {
-              dispatch({ type: 'setScalar', key: 'point', value: undefined });
-              setPlacing(false);
-            } else setPlacing((p) => !p);
-          }}
-        />
-      </div>
-      {body?.silhouette ? (
-        <div className="flex flex-col gap-1.5">
-          <LakeMap
-            data={body.silhouette}
-            pins={pins}
-            {...((putInId ?? parkingAreaId) ? { chosenPinId: putInId ?? parkingAreaId } : {})}
-            {...(putInId === undefined && point ? { point } : {})}
-            height={260}
-            label="The lake. Click a launch, or anywhere on the water."
-            onPickPin={(pin) => (pin.kind === 'putIn' ? choosePutIn(pin.id) : chooseLot(pin.id))}
-            {...(placing
-              ? {
-                  onPick: (coord: { lat: number; lng: number }) => {
-                    dispatch({ type: 'setScalar', key: 'putInId', value: undefined });
-                    dispatch({ type: 'setScalar', key: 'point', value: coord });
-                    setPlacing(false);
-                  },
-                }
-              : {})}
-          />
+      {asking ? (
+        <QuestionBlock title="Where did you get on?" onDone={() => setAsking(false)}>
+          <div className="flex flex-wrap gap-1.5">
+            {nearest.slice(0, NAMED_PUT_INS).map((p) => (
+              <SheetChip
+                key={p.id}
+                compact
+                label={p.name}
+                {...(putInId === p.id ? { tier: 'solid' as const } : {})}
+                onClick={() => choosePutIn(putInId === p.id ? undefined : p.id)}
+              />
+            ))}
+            <SheetChip
+              compact
+              label={
+                putInId === undefined && point !== undefined
+                  ? 'Somewhere else · set'
+                  : placing
+                    ? 'Click the shore…'
+                    : 'Somewhere else'
+              }
+              {...((putInId === undefined && point !== undefined) || placing
+                ? { tier: 'solid' as const }
+                : {})}
+              onClick={() => {
+                if (putInId === undefined && point !== undefined) {
+                  dispatch({ type: 'setScalar', key: 'point', value: undefined });
+                  setPlacing(false);
+                } else setPlacing((p) => !p);
+              }}
+            />
+          </div>
           <SheetHint>
-            {placing
-              ? 'Click the shore where you got on.'
-              : chosenName
-                ? `Put-in: ${chosenName}.`
-                : 'Click a launch on the lake, or choose one above.'}
+            The launches are lit on the lake. Click one, or click the shore for somewhere else.
           </SheetHint>
+        </QuestionBlock>
+      ) : (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <SubLabel>Where did you get on?</SubLabel>
+          <SheetChip
+            compact
+            label={chosenName ?? 'Choose on the lake'}
+            {...(chosenName !== undefined ? { tier: 'solid' as const } : {})}
+            onClick={() => setAsking(true)}
+          />
         </div>
-      ) : null}
+      )}
       {body && body.parking.length > 0 ? (
         <div className="flex flex-col gap-1.5">
-          <SubLabel>Parked at</SubLabel>
-          <div className="flex flex-wrap gap-2">
+          <SubLabel>Where did you park?</SubLabel>
+          <div className="flex flex-wrap gap-1.5">
             {body.parking.map((lot) => (
               <SheetChip
                 key={lot.id}
@@ -175,7 +178,7 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
       ) : null}
 
       <div className="flex flex-col gap-1.5">
-        <SubLabel>At the launch</SubLabel>
+        <SubLabel>What did you find there?</SubLabel>
         {editing ? (
           // The chips file alerts when a Post creates (D197, the flush's step 7, with the new Report
           // as provenance); an edit has no such step, so offering them here would take a plank the
@@ -186,7 +189,7 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
           </SheetHint>
         ) : target ? (
           <>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {ACCESS_CONDITION_REASONS.map((reason) => {
                 const selected = conditions.includes(reason);
                 return (

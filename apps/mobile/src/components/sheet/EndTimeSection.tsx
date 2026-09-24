@@ -1,43 +1,42 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { api } from '@skating/convex/api';
-import type { Id } from '@skating/convex/dataModel';
 import {
-  conditionsFromWindowHour,
-  describeWeatherHour,
   endTimeRow,
   formatSkateTime,
-  hourAt,
-  hoursInWindow,
-  placeHours,
   precisionForChoice,
+  reportEndMs,
+  reportsInTimeOrder,
   resolveSkateWindow,
   sectionSummary,
   selectedValues,
-  summarizeWeatherWindow,
-  type WindowHour,
+  timelineModel,
 } from '@skating/core';
-import { useAction } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Text, XStack, YStack } from 'tamagui';
+import { useSheet } from '../../lib/sheetStore';
 import { Input } from '../ThemedInputs';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetSection, SubLabel } from './SheetSection';
 import type { SectionProps } from './sectionProps';
-import { WeatherCorrection } from './WeatherCorrection';
+import { Timeline } from './Timeline';
+import { useSkateWeather, useSkateWindowHours } from './useSkateWeather';
+import { WeatherCards } from './WeatherCards';
 
 /**
- * *When did you get off?* (A10 / D192): the minute the sheet was opened, pinned; half-hour steps
- * back; a date picker bounded by the week (D199). Preselected only in daylight at the body; after
- * dark the ladder starts at sunset and nothing is chosen. A track door has already stamped the
- * GPS end exactly, and the row then shows it as the one chip.
+ * *When* (A10 / D192, re-composed A10-6): the day as a **timeline** first — sunrise and sunset,
+ * the start and end, now, the Post's other lakes as spans, D192's half-hour ladder as tappable
+ * ticks — then the three rows: **End** (required; the minute the sheet was opened, pinned; the
+ * half-hours back; a date picker bounded by the week, D199), **Started** and **How long**
+ * (optional; only the resolved start is stored). Under them, the weather the archive has for the
+ * hours you were out, as cards (founder call 2026-09-23).
  *
- * Under the chosen time, **the weather the archive has for that hour** at the body (founder call,
- * 2026-09-21); with a start time or a duration, the whole run — a reason to give both. *Not what
- * you saw?* opens the correction, which stores as the author's own reading.
+ * Preselected only in daylight at the body; after dark the ladder starts at sunset and nothing is
+ * chosen. A track door has already stamped the GPS end exactly, and the row then shows it as the
+ * one chip.
  */
 export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
+  const post = useSheet();
   const [chosen] = selectedValues(sheet, 'endTime');
   // Read once, at mount: the ladder must not tick under the finger.
   const [now] = useState(() => Date.now());
@@ -53,6 +52,8 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
   );
   const gps = chosen?.precision === 'gps';
   const [pickerMode, setPickerMode] = useState<'date' | 'time' | null>(null);
+  const endMs = chosen?.ms;
+  const startMs = sheet.scalars.skateStartTime;
 
   // Preselect the pinned minute in daylight, once, for a sheet that has nothing chosen yet. The
   // sheet's doing, not the author's: `defaulted` (so an extraction may step it down, D191) and
@@ -80,10 +81,47 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
       key: 'chosen',
       value: { ms, precision: precisionForChoice(row, ms) },
     });
+  const clockFormat = useMemo(
+    () => new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }),
+    [timeZone],
+  );
+
+  const hours = useSkateWeather(body?.waterBodyId, endMs, timeZone);
+  const windowHours = useSkateWindowHours(hours, endMs, startMs);
+  const model = useMemo(() => {
+    // The other Reports of the Post, numbered as their tabs are (time order).
+    const others = (post ? reportsInTimeOrder(post) : []).flatMap((r, i) => {
+      const e = r.id === report.id ? undefined : reportEndMs(r);
+      if (e === undefined) return [];
+      return [
+        {
+          id: r.id,
+          label: `${i + 1} · ${(r.bodyName ?? 'lake').toUpperCase()}`,
+          ...(r.sheet.scalars.skateStartTime !== undefined
+            ? { startMs: r.sheet.scalars.skateStartTime }
+            : {}),
+          endMs: e,
+        },
+      ];
+    });
+    return timelineModel({
+      timeZone,
+      nowMs: now,
+      ...(endMs !== undefined ? { endMs } : {}),
+      ...(startMs !== undefined ? { startMs } : {}),
+      sun: body?.sunAt(endMs ?? now) ?? null,
+      others,
+      ladder:
+        gps || row.reason === 'expired'
+          ? []
+          : row.chips.map((c) => ({ ms: c.ms, pinned: c.pinned })),
+    });
+  }, [post, report.id, timeZone, now, endMs, startMs, body, gps, row]);
+  const offLadder = chosen !== undefined && !row.chips.some((c) => c.ms === chosen.ms);
 
   return (
     <SheetSection
-      label="When did you get off?"
+      label="When"
       summary={sectionSummary(sheet, 'endTime', timeZone)}
       collapsed={sheet.collapsed.endTime}
       onToggle={() =>
@@ -91,6 +129,8 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
       }
       gap={gaps.has('endTime')}
     >
+      <Timeline model={model} onChooseEnd={gps ? undefined : choose} />
+      <SubLabel>End</SubLabel>
       {gps ? (
         <Text color="$foreground" fontSize={14}>
           {formatSkateTime(chosen.ms)}
@@ -105,37 +145,22 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
         </SheetHint>
       ) : (
         <YStack gap="$2">
-          <XStack gap="$2" flexWrap="wrap">
-            {row.chips.map((chip) => {
-              const selected = chosen?.ms === chip.ms;
-              return (
-                <SheetChip
-                  key={chip.ms}
-                  label={
-                    chip.pinned
-                      ? `${new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }).format(chip.ms)} · now`
-                      : new Intl.DateTimeFormat('en-US', {
-                          timeZone,
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        }).format(chip.ms)
-                  }
-                  tier={selected ? 'solid' : undefined}
-                  onPress={() => choose(chip.ms)}
-                />
-              );
-            })}
+          <XStack gap={6} flexWrap="wrap">
+            {row.chips.map((chip) => (
+              <SheetChip
+                key={chip.ms}
+                compact
+                label={
+                  chip.pinned ? `${clockFormat.format(chip.ms)} · now` : clockFormat.format(chip.ms)
+                }
+                tier={chosen?.ms === chip.ms ? 'solid' : undefined}
+                onPress={() => choose(chip.ms)}
+              />
+            ))}
             <SheetChip
-              label={
-                chosen !== undefined && !row.chips.some((c) => c.ms === chosen.ms)
-                  ? formatSkateTime(chosen.ms)
-                  : 'Another time'
-              }
-              tier={
-                chosen !== undefined && !row.chips.some((c) => c.ms === chosen.ms)
-                  ? 'solid'
-                  : undefined
-              }
+              compact
+              label={offLadder ? formatSkateTime(chosen.ms) : 'Another time'}
+              tier={offLadder ? 'solid' : undefined}
               onPress={() => setPickerMode('date')}
             />
           </XStack>
@@ -163,11 +188,12 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
       )}
       <StartWindow report={report} dispatch={dispatch} />
       {chosen !== undefined && body ? (
-        <SkateWeather
-          waterBodyId={body.waterBodyId}
-          endMs={chosen.ms}
-          startMs={sheet.scalars.skateStartTime}
+        <WeatherCards
+          hours={hours}
+          windowHours={windowHours}
+          endMs={endMs}
           timeZone={timeZone}
+          sun={body.sunAt(endMs ?? now)}
           report={report}
           dispatch={dispatch}
         />
@@ -176,7 +202,7 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
   );
 }
 
-/** *When did you get on?* — a start time or a duration; only the resolved start is stored. */
+/** *Started* and *How long* — a start time or a duration; only the resolved start is stored. */
 function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispatch'>) {
   const sheet = report.sheet;
   const [end] = selectedValues(sheet, 'endTime');
@@ -197,46 +223,55 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
       dispatch({ type: 'setScalar', key: 'skateStartTime', value: result.skateStartTime });
     } else setError(result.error);
   };
+  const clear = () => {
+    setMode('none');
+    dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
+  };
+  const minutes = start !== undefined && end ? Math.round((end.ms - start) / 60_000) : undefined;
+  const duration =
+    minutes !== undefined && minutes > 0
+      ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
+      : undefined;
 
   if (gpsStart) {
     return (
-      <Text color="$foregroundMuted" fontSize={12}>
-        On the ice from {formatSkateTime(start)}, from your track.
-      </Text>
+      <>
+        <SubLabel>Started</SubLabel>
+        <Text color="$foreground" fontSize={14}>
+          {formatSkateTime(start)}
+          <Text color="$foregroundMuted" fontSize={12}>
+            {'  '}from your track · {duration ?? ''} on the ice
+          </Text>
+        </Text>
+      </>
     );
   }
-  const minutes = start !== undefined && end ? Math.round((end.ms - start) / 60_000) : undefined;
   return (
     <YStack gap="$2">
-      <SubLabel>When did you get on? (optional)</SubLabel>
-      <XStack gap="$2" flexWrap="wrap">
+      <SubLabel>Started · how long</SubLabel>
+      <XStack gap={6} flexWrap="wrap">
         <SheetChip
-          label="A start time"
-          tier={mode === 'start' ? 'solid' : undefined}
+          compact
+          label={start !== undefined ? formatSkateTime(start) : 'A start time'}
+          tier={start !== undefined ? 'solid' : undefined}
           onPress={() => {
-            if (mode === 'start') {
-              setMode('none');
-              dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
-            } else {
+            if (mode === 'start') clear();
+            else {
               setMode('start');
               setPicker('date');
             }
           }}
         />
         <SheetChip
-          label="How long"
-          tier={mode === 'duration' ? 'solid' : undefined}
-          onPress={() => {
-            if (mode === 'duration') {
-              setMode('none');
-              dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
-            } else setMode('duration');
-          }}
+          compact
+          label={duration ?? 'How long'}
+          tier={duration !== undefined ? 'solid' : undefined}
+          onPress={() => (mode === 'duration' ? clear() : setMode('duration'))}
         />
       </XStack>
       {mode === 'start' ? (
         <XStack gap="$2" alignItems="center">
-          <Text color="$foreground" flex={1}>
+          <Text color="$foreground" flex={1} fontSize={13}>
             {start !== undefined ? formatSkateTime(start) : 'Not set'}
           </Text>
           <Button size="$2" onPress={() => setPicker('date')}>
@@ -280,92 +315,9 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
         <Text color="$danger" fontSize={12}>
           {error}
         </Text>
-      ) : minutes !== undefined && minutes > 0 ? (
-        <SheetHint>About {minutes} minutes on the ice.</SheetHint>
+      ) : mode !== 'none' && !end ? (
+        <SheetHint>Say when you got off first — a start time is read back from it.</SheetHint>
       ) : null}
-    </YStack>
-  );
-}
-
-/**
- * The archive's weather for the skate (founder call, 2026-09-21): the hour at the end time, or the
- * whole window once a start is known. Read through the panel's action, which serves the hours the
- * drawer already fetched and fetches the rest once; nothing shows until the archive answers, and
- * nothing is guessed. Offline the action rejects and the line simply is not there.
- */
-function SkateWeather({
-  waterBodyId,
-  endMs,
-  startMs,
-  timeZone,
-  report,
-  dispatch,
-}: {
-  waterBodyId: string;
-  endMs: number;
-  startMs: number | undefined;
-  timeZone: string;
-} & Pick<SectionProps, 'report' | 'dispatch'>) {
-  const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
-  const [hours, setHours] = useState<WindowHour[] | null>(null);
-  const [correcting, setCorrecting] = useState(false);
-  // Re-read when the day the end time falls on changes, not on every minute chip.
-  const dayMs = 24 * 3600_000;
-  const days = Math.min(92, Math.max(2, Math.ceil((Date.now() - endMs) / dayMs) + 2));
-
-  useEffect(() => {
-    let cancelled = false;
-    getDays({ waterBodyId: waterBodyId as Id<'waterBodies'>, days })
-      .then((res) => {
-        if (cancelled || !res) return;
-        setHours(placeHours(res.hours, timeZone));
-      })
-      .catch(() => {
-        // No signal, or no archive for this cell yet: the line stays absent.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [getDays, waterBodyId, timeZone, days]);
-
-  if (hours === null) return null;
-  const window = hoursInWindow(hours, endMs, startMs);
-  const at = hourAt(hours, endMs);
-  const summary = startMs !== undefined ? summarizeWeatherWindow(window, timeZone) : null;
-  const corrected = report.sheet.scalars.conditions;
-  if (!at && !summary) return null;
-
-  return (
-    <YStack gap="$1.5" paddingTop="$1">
-      <Text color="$foreground" fontSize={13}>
-        {summary ? summary.sentence : at ? describeWeatherHour(at) : ''}
-        {corrected !== undefined && corrected.source !== 'openmeteo' ? (
-          <Text color="$foregroundMuted" fontSize={12}>
-            {'  '}· corrected
-          </Text>
-        ) : null}
-      </Text>
-      {correcting ? (
-        <WeatherCorrection
-          initial={
-            corrected ??
-            (at ? { ...conditionsFromWindowHour(at), source: 'user' } : { source: 'user' })
-          }
-          onChange={(next) => dispatch({ type: 'setScalar', key: 'conditions', value: next })}
-          onDone={() => setCorrecting(false)}
-        />
-      ) : (
-        <XStack>
-          <Text
-            color="$primary"
-            fontSize={12}
-            onPress={() => setCorrecting(true)}
-            accessibilityRole="button"
-          >
-            Not what you saw? Correct it
-          </Text>
-        </XStack>
-      )}
     </YStack>
   );
 }

@@ -1,7 +1,8 @@
 import type { Theme as DesignTheme } from '@skating/design';
 import { themes as designThemes, radius, space, zIndex } from '@skating/design';
 import { defaultConfig } from '@tamagui/config/v5';
-import { createTamagui } from 'tamagui';
+import { Platform } from 'react-native';
+import { createFont, createTamagui } from 'tamagui';
 
 /**
  * Tamagui config for the mobile app. Per D7 we share design *tokens*, not UI:
@@ -42,6 +43,16 @@ function baseScale<T extends Record<string, unknown>>(created: T): Unprefixed<T>
   ) as Unprefixed<T>;
 }
 
+/** Every key of `scale` set to `value`, with the keys kept in the type so `borderRadius="$4"` still checks. */
+function allTo<T extends Record<string, unknown>>(
+  scale: T,
+  value: number,
+): { [K in keyof T]: number } {
+  return Object.fromEntries(Object.keys(scale).map((k) => [k, value])) as {
+    [K in keyof T]: number;
+  };
+}
+
 const baseTokens = {
   space: baseScale(defaultConfig.tokens.space),
   size: baseScale(defaultConfig.tokens.size),
@@ -72,8 +83,23 @@ function toTamaguiTheme(t: DesignTheme) {
   };
 }
 
+/**
+ * The platform's monospace, as `$mono` (A10-6 / D206): the sheet's section labels, times, inches
+ * and counts are instrument readouts and want tabular figures. The v5 base ships no mono font;
+ * the body font's size scale is reused so a `$`-sized mono text lines up with the sans beside it.
+ * The brand faces (Saira, Martian Mono) wait for the wider redesign — founder call 2026-09-23.
+ */
+const monoFont = createFont({
+  family: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,
+  size: defaultConfig.fonts.body.size,
+  lineHeight: defaultConfig.fonts.body.lineHeight,
+  weight: defaultConfig.fonts.body.weight,
+  letterSpacing: defaultConfig.fonts.body.letterSpacing,
+});
+
 export const config = createTamagui({
   ...defaultConfig,
+  fonts: { ...defaultConfig.fonts, mono: monoFont },
   settings: {
     ...defaultConfig.settings,
     // The v5 base enforces shorthand-only style props; relax that so screens can use
@@ -116,7 +142,12 @@ export const config = createTamagui({
     size: baseTokens.size,
     // Named keys (`sm`, `full`, `overlay`) that don't collide with Tamagui's numeric ones, so these
     // two are genuinely additive rather than overriding.
-    radius: { ...baseTokens.radius, ...radius },
+    /**
+     * Every numeric radius step is the sheet's two pixels (A10-6 / D206, `radius.xs`): the app is
+     * blocky app-wide by one token change, as the founder asked, and `$full` stays round for the
+     * avatars and dots that are drawn round on purpose. The named keys ride on top as before.
+     */
+    radius: { ...allTo(baseTokens.radius, radius.xs), ...radius },
     zIndex: { ...baseTokens.zIndex, ...zIndex },
   },
 });

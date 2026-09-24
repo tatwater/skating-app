@@ -26,9 +26,16 @@ export const space = {
   24: 96,
 } as const;
 
-/** Corner radii (px). `full` pills buttons/avatars. */
+/**
+ * Corner radii (px). `full` pills avatars and dots.
+ *
+ * `xs` is the sheet's radius (A10-6 / D206): two pixels reads as machined rather than either
+ * rounded or ruled, and it is what the web `--radius` token is set to app-wide. The larger steps
+ * stay for the surfaces that have not been re-skinned.
+ */
 export const radius = {
   none: 0,
+  xs: 2,
   sm: 4,
   md: 8,
   lg: 12,

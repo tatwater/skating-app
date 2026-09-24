@@ -80,13 +80,13 @@ export function PhotosSection({
       }
       gap={gaps.has('photos')}
     >
-      <XStack gap="$2" flexWrap="wrap">
+      <XStack gap={6} flexWrap="wrap">
         {report.keptPhotoIds.map((photoId) => (
           <YStack key={photoId} gap="$1" alignItems="center">
             <YStack
               width={72}
               height={72}
-              borderRadius="$3"
+              borderRadius="$xs"
               backgroundColor="$surfaceMuted"
               alignItems="center"
               justifyContent="center"
@@ -113,7 +113,7 @@ export function PhotosSection({
           <YStack key={photo.id} gap="$1" alignItems="center">
             <Image
               source={{ uri: photo.thumbUri }}
-              style={{ width: 72, height: 72, borderRadius: 8 }}
+              style={{ width: 72, height: 72, borderRadius: 2 }}
               accessibilityLabel="A photo you picked"
             />
             {photo.coord ? (

@@ -37,7 +37,10 @@ import { formCreateRefusal } from './reportForm';
 import {
   emptySheet,
   type ReportSheetState,
+  SHEET_SECTIONS,
   type SheetSeed,
+  sectionFilled,
+  selectedValues,
   sheetFromReport,
   toReportInput,
 } from './reportSheet';
@@ -420,6 +423,38 @@ export function postRefusals(post: PostSheet, now: number): ReportRefusal[] {
     if (refusal !== null) out.push({ reportId: r.id, bodyName, gaps: [], message: refusal });
   }
   return out;
+}
+
+/** The end time a Report's sheet holds, if any — the tabs sort on it. */
+export function reportEndMs(report: SheetReport): number | undefined {
+  const [end] = selectedValues(report.sheet, 'endTime');
+  return end?.ms;
+}
+
+/**
+ * The Post's Reports in **time order** (founder call 2026-09-23): by end time, earliest first; a
+ * Report with no end time yet keeps its place after the timed ones, in the order it was added. The
+ * tabs and the timeline's other-Report spans read this; the stored order (`post.reports`) is the
+ * author's and is what posts.
+ */
+export function reportsInTimeOrder(post: PostSheet): SheetReport[] {
+  const timed: { r: SheetReport; i: number; end: number }[] = [];
+  const untimed: SheetReport[] = [];
+  post.reports.forEach((r, i) => {
+    const end = reportEndMs(r);
+    if (end === undefined) untimed.push(r);
+    else timed.push({ r, i, end });
+  });
+  timed.sort((a, b) => a.end - b.end || a.i - b.i);
+  return [...timed.map((x) => x.r), ...untimed];
+}
+
+/** How many sections the sheet counts (the meter's denominator). */
+export const SHEET_SECTION_COUNT = SHEET_SECTIONS.length;
+
+/** How many of a Report's sections have something in them — the tab meter and the status bar. */
+export function sectionsFilled(sheet: ReportSheetState): number {
+  return SHEET_SECTIONS.filter((s) => sectionFilled(sheet, s)).length;
 }
 
 /** The chips a leave prompt or a label needs: which lakes this sheet is about. */

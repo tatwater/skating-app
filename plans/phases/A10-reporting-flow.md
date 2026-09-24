@@ -923,6 +923,147 @@ Three P1s, all outside the diff's lines, and all real.
 - The founder's pass through the console on a real lake with real data, and a re-skin if the
   to-taste dark mode is not the Figma language.
 
+## Built record — A10-6 (2026-09-23, `phase-a10-reporting-flow-6`, PR #78 stacked on #77)
+
+The re-skin (D206): the sheet built to spec in A10-3 and A10-5 read as a form, and the founder
+asked for it to read as an instrument — FUI (00-vision), Resolve-like on a desk, blocky and dense
+on a phone, black and white with color only where it means something. Designed first as static
+mockups (headless Chrome renders, kept outside the repo in `skating-mockups/a10-sheet/`) through
+three founder rounds, then built as the first of two PRs; the second (A10-7) is photos that assign
+themselves, place-mode and the track import. Five commits off `-5`, ~6,600 changed lines over 61
+files. Suites at build: core 3,019 · convex 1,748 · web 649 · mobile 112. No schema change, no
+data run.
+
+Founder calls, all before code: no new typefaces yet (Saira is the wider Figma redesign's; the
+sheet ships in the apps' current faces plus a `$mono` token); the console is a viewport-locked
+application surface; a WHEN section with end, start and duration, all three also set from the
+timeline; extracted chips are a *weaker inversion* of the selected style, never amber; two-pixel
+radius app-wide if it is a token change (it is, on both surfaces); sheet-only scope; the words
+belong to the Post; photos carry the lake they are on; the compass ring is transient and summoned
+by the question; the where cards are a carousel, not a stack; "end", not "got off"; the weather
+cards are vertical like the drawer's; the status bar loses the minimum-set lamps and gains the
+per-Report counts; the inspector loses its header; the tabs are in time order; one *Another
+report* button.
+
+### What shipped, by workstream
+
+- **Core** — `compassRing` (eight arcs around the silhouette's origin, cut on the wedges' own
+  bearings; `ringSectorAtXY` reads a click's bearing with the same rule the wedges use; `null`
+  when no ring ≥ 36 px fits), `sheetTimeline` (the day as a ruler: sunrise/sunset, start/end,
+  now on the same day only, the other Reports as spans, photos at their minute, the D192 ladder as
+  ticks; fraction ↔ instant to the minute; never shorter than six hours, never longer than a day),
+  `weatherBand` (one card per archived hour with the drawer's lockup; the run summary as ranges and
+  changes, "clear, snow after 4 pm"), `reportsInTimeOrder` / `sectionsFilled` on the Post sheet.
+  All tested; fast-check was not reached for because none of it is safety math.
+- **Tokens** — `radius.xs = 2` in `@skating/design`; the web `--radius` is 2 px (shadcn's `sm`/`md`
+  subtract from it and CSS clamps to zero); every numeric Tamagui radius step is 2 with `$full`
+  kept round; a `$mono` Tamagui font (Menlo / monospace) for the readouts.
+- **Web** — `/post` joins the map routes as an app surface (`isAppSurfaceRoute`; no lake search in
+  its header). `ReportConsole` is three columns: the Post column (title, prose, every photo with
+  its lake's number, the active Report's bright), the Report tabs in time order with a ten-segment
+  meter each and *Another report* (a menu: the same lake at another time / a different lake), the
+  instrument (`LakeMap` with hazards drawn at their footprints' centers, the timeline with
+  draggable carets, the weather band), the inspector (the ten panels, *Post* at its foot), a
+  status bar (saved in this browser · n s ago, each Report's n / 10, the photo count, online).
+  `ConsoleMode` is the transient state — `where` or `putIn` — that the question blocks set and
+  the instrument reads; `.sheet-dim` is everything else while one is open; Escape leaves.
+  `WhereCards` is the carousel; `WherePicker` gains `instrument` (no inline map; the console's lake
+  is the map). `EndTimePanel` is *When* with End / Started / How long rows and no weather (the
+  band has it). `AccessPanel`'s put-in question is a block that arms put-in mode. `SheetChip`,
+  `SheetPanel` (status square, eyebrow, brackets, `QuestionBlock`) re-drawn; the weather glyphs
+  lifted out of `ForecastPanel` into `weatherGlyphs.tsx` so both rows draw one symbol per word.
+- **Mobile** — `ReportSheet`: the header with boxed Drafts/Waiting counts; sticky report tabs
+  (`stickyHeaderIndices`) — *Post* scrolls to the words, a Report tab switches and scrolls past
+  them, *+* asks the two-answer question; one Report at a time; the action bar (n / 10, Save
+  draft, Post) above the tab bar. `EndTimeSection` is *When* with the `react-native-svg`
+  timeline (tap-to-choose on the ladder; no drag in a scrolling sheet), the three rows, and the
+  weather cards in a horizontal row. `WhereCards` puts the lake and its ring inside the block;
+  `LakeMap` gains `ring` / `litPins` / `onTapSector`. `AccessSection`'s put-in question is a block
+  with the launches lit. `SheetChip` / `SheetSection` re-drawn as on web.
+
+### Deltas from the mockups — read these before extending
+
+1. **The where mark on a chip is decorative**, not a button: a button inside a button is invalid
+   HTML, so the row's *Where?* chip ("2 of 3 to answer") opens the cards on the first unanswered
+   one. The mock's per-chip click is lost; the count is the affordance.
+2. **The track readout shows a recording when there is one and nothing otherwise.** The founder
+   asked for a real call to action (upload a GPX, import from Strava) when the app did not record;
+   that is A10-7's, with the import it calls.
+3. **Photos are still per Report on both surfaces.** The Post column's photo grid shows every
+   Report's photos with its number and dims the inactive Report's; adding and removing is the
+   Report's own Photos section. Assignment by time and location, the `?` menu, place-mode and the
+   camera-roll reel are A10-7.
+4. **The status bar's photo count is a count**, not "n of m assigned" — there is nothing
+   unassigned until A10-7.
+5. **The mobile timeline does not drag.** A caret in a `ScrollView` is a scroll waiting to happen;
+   the ladder ticks tap and the chips and pickers set all three exactly.
+6. **`ConsoleMode` is React context, not the sheet store** — it is view state, and a mode must not
+   survive a reload, a tab switch or a hand-off to the map.
+7. **The put-in mode's handlers ride a ref** (`AccessPanel`): they close over the render's sheet
+   and the mode is armed once when the question opens, so Biome's dependency rule and the
+   instrument's click agree.
+
+### The self-review pass — what it caught
+
+Fourteen findings, thirteen fixed in the branch, one retracted. Three worth naming:
+
+1. **The where cards re-armed the mode on every render.** `WhereCards` set the console's mode
+   from an effect keyed on the card's `onChange`, which the ice panel rebuilt per render, and the
+   console re-rendered on every mode change — a render loop, reproduced in a harness that never
+   finished. The mode is now armed on the card's identity and answer, and the callbacks ride a
+   ref (the pattern `AccessPanel` already used). The harness is the regression test.
+2. **Escape left the mode but not the question.** The ring went away and the block stayed open,
+   so the next click on a chip re-armed it. `ConsoleMode` carries `onExit`; the provider calls it
+   on Escape and the block closes with the mode.
+3. **A caret click committed a time.** Pointer down and up without movement wrote the caret's
+   own instant back as a `minute` end and dirtied the sheet; a drag now commits only on movement,
+   and its bounds are the panel's rules drawn (START < END ≤ now, D199 — strict since the PR #78
+   review).
+
+The rest: the ladder filtered to the end time's day like everything else on the ruler; the
+where-mode wash showing the open card's answer only; the weather hook answering `[]` on a rejected
+fetch so the cards can say "no archived weather" rather than "reading" forever; one formatter per
+model; the ladder's accessible names zone-correct from core.
+
+### The PR #78 review — what Greptile caught
+
+Three findings on the merge of `main`, all real; a fourth (the season-close alert is scheduled
+after the write, in a separate step, so a failure between the two loses it) is `imageryIngest`
+code from #74 that the merge brought in, not this PR's, and is left for its own fix.
+
+1. **A dry archived hour always drew clear.** `archivedHourCondition` used the precipitation rule
+   and nothing else, though the archive's hours carry the WMO code, the archive's only word for a
+   dry sky. An overcast or foggy hour got a sun or moon and read "clear" in the summary, on both
+   clients. The code now decides the sky when nothing fell (`wmoCondition`, the table
+   `hourCondition` already used, now shared); clear is left for a clear code, an unknown one, or a
+   row written before codes were requested.
+2. **The carets could meet — a zero-minute skate.** The drag bounds were START ≤ END, the rule
+   `resolveSkateWindow` also allowed, so either caret dropped on the other posted a skate of no
+   length. Worse, and in the same place: the ladder's ticks were never bounded at all, so a tap on
+   a half-hour at or before the start *inverted* the skate — on both clients. The bounds are core's
+   now (`timelineCaretBounds`: the carets a minute apart, the end at or before now), the web drag
+   and both ladders read them (a tick outside is drawn faded and not offered), and
+   `resolveSkateWindow` refuses an equal pair too, so the WHEN fields and the ruler agree. The
+   server's `validateReportInput` still accepts an equal pair, so no stored Report becomes
+   uneditable over it.
+3. **A failed weather read never retried.** The self-review's `[]` on a rejected fetch was final:
+   nothing in the effect's keys changed on reconnect, so a sheet opened without signal said "no
+   archived weather" until its lake or day changed. The hook now marks the failure and asks again
+   on the next reconnect (the browser's `online`; NetInfo's offline → online edge on the phone). A
+   real answer, empty or not, stays final, and a failure with signal does not loop.
+
+### Owed
+
+- **Screenshots and a device pass** (the founder): the console at 1440 and below the `lg`
+  breakpoint (it stacks), where-mode and put-in mode on a real lake with launches, a two-lake
+  Post's tabs and timeline spans; the Android preview build for the sticky tabs, the timeline's
+  tap targets, the weather cards' scroll, and the app-wide two-pixel radius (every Tamagui
+  `borderRadius="$n"` in the app is 2 dp now — the cards, the drawer, the bounty list).
+- A10-7: photos (§8.1), place-mode, the `?` menu with the put-in and lot targets, photo ↔ hazard
+  both ways with near-pin suggestions, GPX and Strava import with a real CTA, "n of m assigned".
+- RN render tests for the sheet — the harness is still unbuilt; the timeline, ring and band math
+  are in core and tested there, and the components are thin.
+
 ## Review pass — 2026-09-19
 
 A fresh-eyes review against the code, before any build. What it found and what changed:
@@ -1188,6 +1329,11 @@ Fewest sensible PRs; sub-workstreams are commits.
   call (2026-09-22) because §10 is gated on nothing the eval decides, and §8.2's plain attach came
   forward with it so the console has no missing section. *(Built 2026-09-22, stacked on `-3`.)*
   §8.3 (video) is a backlog doc, not a PR.
+- **A10-6 — the re-skin (D206).** Both surfaces re-composed: the console as an app surface, the
+  phone with sticky tabs, the instrument, the timeline, the weather band, where-mode. *(Built
+  2026-09-23, stacked on `-5`.)*
+- **A10-7 — photos and tracks.** §8.1 on both surfaces (assignment by time and location, the
+  camera-roll reel), place-mode, the `?` menu, photo ↔ hazard, GPX and Strava import with a CTA.
 
 ## Budgets
 

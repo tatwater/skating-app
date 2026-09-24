@@ -3,19 +3,21 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The sheet's chip on web (A10-5), in the three tiers mobile draws (A10-3 / D188). The tier is
- * whose words the value came from, and the drawing says so without a legend:
+ * The sheet's chip on web (A10-5, re-skinned A10-6 / D206), in the three tiers mobile draws
+ * (A10-3 / D188). The tier is whose words the value came from, and the drawing says so without a
+ * legend — and without a color, because color on this sheet is rationed by meaning (D206):
  *
- * - **solid** — the author clicked it: filled, primary.
+ * - **solid** — the author clicked it: **inverted ink**, the foreground as fill, the background as
+ *   text. Black and white carry the form.
+ * - **extracted** — read from the author's own writing (A10-4): the *same inversion, weaker* — the
+ *   muted foreground as fill — with a ✎. Pre-selected, so it draws as a selection, but visibly
+ *   less than a click (founder call 2026-09-23: a less-strong selected, never a different style).
  * - **ghost** — someone else implied it: a dashed outline and a leading `+`, muted. Reads as an
  *   offer, never as a fill; a click makes it solid.
- * - **extracted** — read from the author's own writing (A10-4): the primary outline and a small
- *   ✎ mark. Pre-selected, so it draws as a selection, but hollow, so the author sees which chips
- *   they typed rather than clicked.
+ * - **danger** — *don't go* (D190), the one chip that wears red, solid only.
  *
- * Deliberately not the shadcn `Toggle`: a chip is not a two-state control. Three tiers, a danger
- * treatment and an unselected-but-offerable state are more than a toggle's `pressed` can say, and
- * the two surfaces have to draw the same thing.
+ * Two pixels of radius, one hairline: blocky, as the rest of the sheet. Deliberately not the shadcn
+ * `Toggle`: three tiers, a danger treatment and an offerable state are more than `pressed` can say.
  */
 export function SheetChip({
   label,
@@ -24,6 +26,8 @@ export function SheetChip({
   danger = false,
   compact = false,
   title,
+  trailing,
+  emphasis = false,
 }: {
   label: string;
   /** `undefined` = an unselected, plain option (the row's own vocabulary, nobody suggested it). */
@@ -33,6 +37,10 @@ export function SheetChip({
   danger?: boolean;
   compact?: boolean;
   title?: string;
+  /** A small mark after the label — the `where` a chip carries, drawn by the caller. */
+  trailing?: ReactNode;
+  /** The chip a where question is open for: ice corner brackets, so the question and its chip read as one. */
+  emphasis?: boolean;
 }) {
   const selected = tier === 'solid' || tier === 'extracted';
   return (
@@ -49,20 +57,27 @@ export function SheetChip({
             : label
       }
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border transition-colors',
-        compact ? 'px-2.5 py-0.5 text-xs' : 'px-3 py-1 text-sm',
-        selected ? 'font-semibold' : 'font-normal',
-        tier === 'solid' && !danger && 'border-primary bg-primary text-primary-foreground',
+        'relative inline-flex items-center gap-1.5 rounded-[2px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        compact ? 'h-6 px-2 text-xs' : 'h-7 px-2.5 text-[13px]',
+        selected ? 'font-semibold' : 'font-medium',
+        tier === 'solid' && !danger && 'border-foreground bg-foreground text-background',
         tier === 'solid' && danger && 'border-danger bg-danger text-danger-foreground',
-        tier === 'extracted' && 'border-primary text-foreground',
+        tier === 'extracted' && 'border-foreground-muted bg-foreground-muted text-background',
         tier === 'ghost' && 'border-border-strong border-dashed text-foreground-muted',
-        tier === undefined && 'border-border text-foreground hover:bg-surface-muted',
+        tier === undefined && !danger && 'border-border text-foreground hover:bg-surface-muted',
+        tier === undefined && danger && 'border-danger text-danger hover:bg-danger/10',
+        emphasis && 'sheet-brackets',
       )}
     >
-      {tier === 'ghost' ? <span aria-hidden>+</span> : null}
+      {tier === 'ghost' ? (
+        <span aria-hidden className="text-foreground-muted">
+          +
+        </span>
+      ) : null}
       {label}
+      {trailing}
       {tier === 'extracted' ? (
-        <span aria-hidden className="text-[0.625rem] text-primary">
+        <span aria-hidden className="text-[0.625rem] opacity-70">
           ✎
         </span>
       ) : null}
@@ -85,6 +100,8 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   onDeselect,
   danger,
   children,
+  trailing,
+  emphasisKey,
 }: {
   sheet: ReportSheetState;
   field: K;
@@ -92,15 +109,19 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   label: (value: V) => string;
   onSelect: (value: V) => void;
   onDeselect: (key: string) => void;
-  /** Which option wears the warning treatment when solid. */
+  /** Which option wears the warning treatment. */
   danger?: V;
   /** Rendered after the row — a where affordance, a helper line. */
   children?: ReactNode;
+  /** A mark after a selected chip's label, by its key (the `where` it carries). */
+  trailing?: (key: string) => ReactNode;
+  /** The chip a where question is open for. */
+  emphasisKey?: string | null;
 }) {
   const chips = (sheet.fields[field] as ChipField<unknown>).chips;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {options.map((option) => {
           const chip = chips.find((c) => c.key === option);
           const tier = chip?.tier;
@@ -111,6 +132,8 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
               label={label(option)}
               {...(tier !== undefined ? { tier } : {})}
               danger={danger === option}
+              emphasis={emphasisKey === option}
+              {...(selected && trailing ? { trailing: trailing(option) } : {})}
               onClick={() => (selected ? onDeselect(option) : onSelect(option))}
             />
           );

@@ -13,16 +13,20 @@ import {
   postRefusals,
   type ReportRefusal,
   removeReport,
+  reportsInTimeOrder,
+  SHEET_SECTION_COUNT,
+  type SheetReport,
   type SheetSection,
+  sectionsFilled,
   sheetReducer,
   updateReport,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Dimensions, ScrollView } from 'react-native';
-import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { Text, XStack, YStack } from 'tamagui';
 import {
   DRAFT_SYNCING_MESSAGE,
   postSheet,
@@ -36,7 +40,7 @@ import { Input, TextArea } from '../ThemedInputs';
 import { BodyPicker } from './BodyPicker';
 import { LakeMap } from './LakeMap';
 import { ReportSections } from './ReportSections';
-import { SheetHint } from './SheetSection';
+import { Eyebrow, StatusSquare } from './SheetSection';
 import { useSheetBody } from './useSheetBody';
 
 /** Which section a minimum-set term points at, for the *needed* mark (D189). */
@@ -48,11 +52,13 @@ const TERM_SECTION: Record<MinimumSetTerm, SheetSection | null> = {
 };
 
 /**
- * The report sheet (A10 §4 / D187) — one page, every door. The author's words first (the title
- * and the prose, at most half the screen), then one stack of sections per lake in the fixed
- * order, *add another lake* / *an earlier visit* (§4.3), and the two buttons: *Save draft* holds
- * it; *Post* queues it and sends now if there is signal. On the edit door the buttons are
- * *Cancel* / *Save changes* and the words save with the Report.
+ * The report sheet (A10 §4 / D187, re-skinned A10-6 / D206) — one page, every door. The header
+ * with *Drafts* and *Waiting* as boxed counts; **sticky report tabs** under it — *Post* for the
+ * words, one tab per Report in time order, *+* for another — so the author always knows which
+ * lake they are describing and can switch at will (founder call 2026-09-23); the words; then
+ * **one Report at a time**: the active tab's lake header and its section stack. A sticky action
+ * bar — the active Report's filled count, *Save draft*, *Post* — above the tab bar, so posting
+ * never needs a scroll to the bottom. On the edit door the buttons are *Cancel* / *Save changes*.
  *
  * The state is the store's (`sheetStore`), not this screen's, so the hand-off to the map for
  * *mark one here* and the body picker over it leave nothing behind.
@@ -90,6 +96,9 @@ function SheetBody({
   const [picking, setPicking] = useState<
     { kind: 'add' } | { kind: 'set'; reportId: string } | null
   >(null);
+  const [activeId, setActiveId] = useState<string>(post.reports[0]?.id ?? '');
+  const scrollRef = useRef<ScrollView>(null);
+  const [wordsHeight, setWordsHeight] = useState(0);
   const editing = post.mode.kind === 'edit';
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
   const held = drafts.filter(isHeldDraft).length;
@@ -97,6 +106,13 @@ function SheetBody({
     drafts.filter((d) => isFlushable(d) || d.status === 'error').length +
     hazardItems.filter((i) => isHazardItemFlushable(i) || i.status === 'error').length;
   const proseMaxHeight = Math.round(Dimensions.get('window').height * 0.3);
+
+  const ordered = useMemo(() => reportsInTimeOrder(post), [post]);
+  // The tab a removed Report leaves behind falls back to the first.
+  const active = post.reports.find((r) => r.id === activeId) ?? post.reports[0];
+  useEffect(() => {
+    if (active && active.id !== activeId) setActiveId(active.id);
+  }, [active, activeId]);
 
   const gapsFor = useCallback(
     (reportId: string): ReadonlySet<SheetSection> => {
@@ -125,6 +141,8 @@ function SheetBody({
           ? `${first.bodyName}: ${first.message}`
           : first.message,
       );
+      // Land on the leg that needs something.
+      if (post.reports.some((r) => r.id === first.reportId)) setActiveId(first.reportId);
       return;
     }
     setBusy('post');
@@ -198,22 +216,55 @@ function SheetBody({
     ]);
   };
 
+  /** *+ Another report*: one button, two answers (founder call 2026-09-23). */
+  const onAnotherReport = () => {
+    const name = active?.bodyName;
+    Alert.alert('Another report', 'The same lake at another time, or a different lake?', [
+      {
+        text: name ? `${name}, another time` : 'The same lake, another time',
+        onPress: () => {
+          if (!active) return;
+          let addedId: string | null = null;
+          updateSheet((p) => {
+            const next = addEarlierVisit(p, active.id, Date.now(), randomUUID);
+            addedId = next.reports.find((r) => !p.reports.some((q) => q.id === r.id))?.id ?? null;
+            return next;
+          });
+          if (addedId) setActiveId(addedId);
+        },
+      },
+      { text: 'A different lake', onPress: () => setPicking({ kind: 'add' }) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   // The header's two doors — *Drafts* and *Waiting to send* — on every create sheet, the leaving
   // user's included: their queue is their own unsent work and this is the only screen that reaches
   // it (D62 amendment; the queue stays even when posting has closed).
-  const queueButtons = (
+  const queueBadges = (
     <XStack gap="$2">
-      <Button size="$2" chromeless onPress={() => router.navigate('/drafts')}>
-        Drafts{held > 0 ? ` · ${held}` : ''}
-      </Button>
-      <Button
-        size="$2"
-        chromeless
+      <CountBadge label="Drafts" count={held} onPress={() => router.navigate('/drafts')} />
+      <CountBadge
+        label="Waiting"
+        count={waiting}
+        live={waiting > 0}
         onPress={() => router.navigate('/queue')}
-        color={waiting > 0 ? '$primary' : undefined}
+      />
+    </XStack>
+  );
+  const header = (
+    <XStack alignItems="center" gap="$2" height={44} paddingHorizontal={14}>
+      <Text
+        color="$foreground"
+        fontSize={14}
+        fontWeight="600"
+        letterSpacing={1.4}
+        textTransform="uppercase"
       >
-        Waiting{waiting > 0 ? ` · ${waiting}` : ''}
-      </Button>
+        {editing ? 'Edit your report' : 'Post a report'}
+      </Text>
+      <XStack flex={1} />
+      {editing ? null : queueBadges}
     </XStack>
   );
 
@@ -229,35 +280,70 @@ function SheetBody({
   }
   if (leaving && !editing) {
     return (
-      <YStack padding="$4" gap="$3">
-        <XStack alignItems="center" justifyContent="space-between" gap="$2">
-          <H4 color="$foreground">Post a report</H4>
-          {queueButtons}
-        </XStack>
-        <LeavingNotice />
+      <YStack gap="$3">
+        {header}
+        <YStack paddingHorizontal={14}>
+          <LeavingNotice />
+        </YStack>
       </YStack>
     );
   }
+  if (!active) return null;
+  const filled = sectionsFilled(active.sheet);
+  const number = ordered.findIndex((r) => r.id === active.id) + 1;
 
   return (
-    <>
+    <YStack flex={1}>
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
+        ref={scrollRef}
+        // The first child is the header; the second — the report tabs — sticks under the top edge.
+        stickyHeaderIndices={[1]}
+        contentContainerStyle={{ paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
       >
-        <YStack gap="$3">
-          <XStack alignItems="center" justifyContent="space-between" gap="$2">
-            <H4 color="$foreground">{editing ? 'Edit your report' : 'Post a report'}</H4>
-            {editing ? null : queueButtons}
-          </XStack>
+        {header}
+        <ReportTabs
+          ordered={ordered}
+          activeId={active.id}
+          gapReportIds={new Set(refusals.map((r) => r.reportId))}
+          editing={editing}
+          onPost={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          onSelect={(id) => {
+            setActiveId(id);
+            scrollRef.current?.scrollTo({ y: wordsHeight, animated: true });
+          }}
+          onAdd={onAnotherReport}
+        />
+        <YStack onLayout={(e) => setWordsHeight(e.nativeEvent.layout.height + 44 + 34)}>
           {!editing && offline ? (
-            <SheetHint>
-              No signal — a post waits on your phone and sends on its own when you're back in range.
-            </SheetHint>
+            <XStack
+              gap="$2"
+              alignItems="center"
+              paddingHorizontal={14}
+              paddingVertical={6}
+              borderBottomWidth={1}
+              borderBottomColor="$border"
+              backgroundColor="$surface"
+            >
+              <StatusSquare state="needed" />
+              <Text color="$foregroundMuted" fontSize={11.5} flex={1}>
+                No signal — a post waits on your phone and sends on its own when you're back in
+                range.
+              </Text>
+            </XStack>
           ) : null}
-
-          {/* The words: the community's subject-line habit, then the story (D186). */}
-          <YStack gap="$2" padding="$3" borderRadius="$4" borderWidth={1} borderColor="$border">
+          {/* The words: the community's subject-line habit, then the story (D186). The Post's, not a lake's. */}
+          <YStack
+            gap="$1"
+            margin={12}
+            marginBottom={0}
+            padding={12}
+            paddingBottom={8}
+            borderRadius="$xs"
+            borderWidth={1}
+            borderColor="$border"
+            backgroundColor="$surface"
+          >
             <Input
               placeholder="Title — Crystal Lake, Enfield 12/6"
               value={post.title}
@@ -266,6 +352,7 @@ function SheetBody({
               borderWidth={0}
               paddingHorizontal={0}
               fontWeight="600"
+              fontSize={17}
             />
             <TextArea
               placeholder="How was it? Write it the way you'd tell a friend — the chips below are for the hard numbers."
@@ -274,95 +361,106 @@ function SheetBody({
               autoFocus={post.door === 'page' && !post.dirty}
               borderWidth={0}
               paddingHorizontal={0}
-              minHeight={96}
+              minHeight={88}
               maxHeight={proseMaxHeight}
+              fontSize={14}
             />
           </YStack>
-
-          {post.reports.map((report) => (
-            <YStack key={report.id} gap="$1">
-              <ReportHeader
-                post={post}
-                reportId={report.id}
-                onPickBody={() => setPicking({ kind: 'set', reportId: report.id })}
-              />
-              <ReportSections report={report} gaps={gapsFor(report.id)} editing={editing} />
-            </YStack>
-          ))}
-
-          {editing ? null : (
-            <XStack gap="$2" flexWrap="wrap" paddingTop="$2">
-              <Button size="$2" variant="outlined" onPress={() => setPicking({ kind: 'add' })}>
-                + Another lake
-              </Button>
-              {post.reports[post.reports.length - 1]?.sheet.waterBodyId !== undefined ? (
-                <Button
-                  size="$2"
-                  variant="outlined"
-                  onPress={() =>
-                    updateSheet((p) =>
-                      addEarlierVisit(
-                        p,
-                        p.reports[p.reports.length - 1]?.id ?? '',
-                        Date.now(),
-                        randomUUID,
-                      ),
-                    )
-                  }
-                >
-                  + An earlier visit
-                </Button>
-              ) : null}
-            </XStack>
-          )}
-
-          {notice ? (
-            <Paragraph color="$warning" fontSize={13}>
-              {notice}
-            </Paragraph>
-          ) : null}
-          {message ? (
-            <Paragraph color="$danger" fontSize={13}>
-              {message}
-            </Paragraph>
-          ) : null}
-
-          <XStack gap="$2" justifyContent="flex-end" flexWrap="wrap" paddingTop="$2">
-            {editing ? (
-              <Button chromeless onPress={onCancel} disabled={busy !== null}>
-                Cancel
-              </Button>
-            ) : (
-              <Button onPress={() => void onSaveDraft()} disabled={busy !== null}>
-                {busy === 'draft' ? 'Saving…' : 'Save draft'}
-              </Button>
-            )}
-            <Button
-              backgroundColor="$primary"
-              color="$primaryForeground"
-              onPress={() => void onPost()}
-              disabled={busy !== null}
-            >
-              {busy === 'post'
-                ? editing
-                  ? 'Saving…'
-                  : 'Posting…'
-                : editing
-                  ? 'Save changes'
-                  : 'Post'}
-            </Button>
-          </XStack>
         </YStack>
+
+        <ReportHeader
+          post={post}
+          reportId={active.id}
+          number={number}
+          filled={filled}
+          onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
+        />
+        {/* Keyed by the Report: the sections hold their own affordance state (which where card is
+            up, which reading is being typed), and an unkeyed swap would carry the previous leg's
+            state onto this one. */}
+        <ReportSections
+          key={active.id}
+          report={active}
+          gaps={gapsFor(active.id)}
+          editing={editing}
+        />
+
+        {notice ? (
+          <Text color="$warning" fontSize={13} paddingHorizontal={14} paddingTop={12}>
+            {notice}
+          </Text>
+        ) : null}
+        {message ? (
+          <Text color="$danger" fontSize={13} paddingHorizontal={14} paddingTop={12}>
+            {message}
+          </Text>
+        ) : null}
       </ScrollView>
+
+      {/* The action bar, above the tab bar: the active Report's count, then the two buttons. */}
+      <XStack
+        alignItems="center"
+        gap="$2"
+        paddingHorizontal={12}
+        paddingVertical={8}
+        borderTopWidth={1}
+        borderTopColor="$border"
+        backgroundColor="$surface"
+      >
+        <YStack width={64}>
+          <Text
+            color="$foregroundMuted"
+            fontFamily="$mono"
+            fontSize={9.5}
+            letterSpacing={1}
+            textTransform="uppercase"
+            numberOfLines={1}
+          >
+            {ordered.length > 1 ? `${number} ` : ''}
+            {(active.bodyName ?? 'lake').split(' ')[0]}
+          </Text>
+          <Text color="$foreground" fontFamily="$mono" fontSize={12} fontWeight="700">
+            {filled} / {SHEET_SECTION_COUNT}
+          </Text>
+        </YStack>
+        {editing ? (
+          <ActionButton label="Cancel" onPress={onCancel} disabled={busy !== null} />
+        ) : (
+          <ActionButton
+            label={busy === 'draft' ? 'Saving…' : 'Save draft'}
+            onPress={() => void onSaveDraft()}
+            disabled={busy !== null}
+          />
+        )}
+        <ActionButton
+          primary
+          flex={1.4}
+          label={
+            busy === 'post' ? (editing ? 'Saving…' : 'Posting…') : editing ? 'Save changes' : 'Post'
+          }
+          onPress={() => void onPost()}
+          disabled={busy !== null}
+        />
+      </XStack>
+
       <BodyPicker
         open={picking !== null}
         onClose={() => setPicking(null)}
         onPick={(body) => {
           const now = Date.now();
           if (picking?.kind === 'add') {
-            updateSheet((p) =>
-              addLake(p, { waterBodyId: body.waterBodyId, bodyName: body.name }, now, randomUUID),
-            );
+            let addedId: string | null = null;
+            updateSheet((p) => {
+              const next = addLake(
+                p,
+                { waterBodyId: body.waterBodyId, bodyName: body.name },
+                now,
+                randomUUID,
+              );
+              addedId = next.reports[next.reports.length - 1]?.id ?? null;
+              return next;
+            });
+            if (addedId) setActiveId(addedId);
           } else if (picking?.kind === 'set') {
             const reportId = picking.reportId;
             updateSheet((p) =>
@@ -378,22 +476,202 @@ function SheetBody({
           setPicking(null);
         }}
       />
-    </>
+    </YStack>
+  );
+}
+
+/** *Drafts 2* — a boxed count; lit in ice when there is something waiting to send. */
+function CountBadge({
+  label,
+  count,
+  live = false,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  live?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <XStack
+      height={24}
+      paddingHorizontal={8}
+      alignItems="center"
+      gap={6}
+      borderWidth={1}
+      borderRadius="$xs"
+      borderColor={live ? '$primary' : '$border'}
+      onPress={onPress}
+      pressStyle={{ opacity: 0.7 }}
+      accessibilityRole="button"
+      accessibilityLabel={count > 0 ? `${label}, ${count}` : label}
+    >
+      <Text
+        color={live ? '$primary' : '$foregroundMuted'}
+        fontSize={11}
+        fontWeight="700"
+        letterSpacing={0.8}
+        textTransform="uppercase"
+      >
+        {label}
+      </Text>
+      {count > 0 ? (
+        <Text color="$foreground" fontFamily="$mono" fontSize={11} fontWeight="600">
+          {count}
+        </Text>
+      ) : null}
+    </XStack>
+  );
+}
+
+/** The sticky tabs: *Post* (the words), one per Report in time order, *+*. */
+function ReportTabs({
+  ordered,
+  activeId,
+  gapReportIds,
+  editing,
+  onPost,
+  onSelect,
+  onAdd,
+}: {
+  ordered: readonly SheetReport[];
+  activeId: string;
+  gapReportIds: ReadonlySet<string>;
+  editing: boolean;
+  onPost: () => void;
+  onSelect: (id: string) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+      <XStack
+        height={34}
+        borderBottomWidth={1}
+        borderBottomColor="$border"
+        backgroundColor="$surface"
+        minWidth={Dimensions.get('window').width}
+      >
+        <Tab label="✎ Post" onPress={onPost} />
+        {ordered.map((r, i) => (
+          <Tab
+            key={r.id}
+            label={`${ordered.length > 1 ? `${i + 1} ` : ''}${r.bodyName ?? 'Which lake?'}`}
+            on={r.id === activeId}
+            needed={gapReportIds.has(r.id)}
+            onPress={() => onSelect(r.id)}
+          />
+        ))}
+        {editing ? null : <Tab label="+" onPress={onAdd} accessibilityLabel="Another report" />}
+      </XStack>
+    </ScrollView>
+  );
+}
+
+function Tab({
+  label,
+  on = false,
+  needed = false,
+  onPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  on?: boolean;
+  needed?: boolean;
+  onPress: () => void;
+  accessibilityLabel?: string;
+}) {
+  return (
+    <XStack
+      alignItems="center"
+      gap={4}
+      paddingHorizontal={12}
+      borderRightWidth={1}
+      borderRightColor="$border"
+      borderBottomWidth={2}
+      borderBottomColor={on ? '$primary' : 'transparent'}
+      marginBottom={-1}
+      backgroundColor={on ? '$background' : 'transparent'}
+      onPress={onPress}
+      pressStyle={{ opacity: 0.7 }}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: on }}
+      accessibilityLabel={accessibilityLabel ?? label}
+    >
+      <Text
+        color={on ? '$foreground' : '$foregroundMuted'}
+        fontSize={12}
+        fontWeight={on ? '600' : '400'}
+      >
+        {label}
+      </Text>
+      {needed ? (
+        <Text color="$warning" fontSize={12} accessibilityElementsHidden>
+          ·
+        </Text>
+      ) : null}
+    </XStack>
+  );
+}
+
+function ActionButton({
+  label,
+  onPress,
+  disabled = false,
+  primary = false,
+  flex = 1,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  flex?: number;
+}) {
+  return (
+    <XStack
+      flex={flex}
+      height={38}
+      alignItems="center"
+      justifyContent="center"
+      borderRadius="$xs"
+      borderWidth={1}
+      borderColor={primary ? '$foreground' : '$borderStrong'}
+      backgroundColor={primary ? '$foreground' : 'transparent'}
+      opacity={disabled ? 0.5 : 1}
+      onPress={disabled ? undefined : onPress}
+      pressStyle={{ opacity: 0.7 }}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      accessibilityLabel={label}
+    >
+      <Text
+        color={primary ? '$background' : '$foreground'}
+        fontSize={13}
+        fontWeight="700"
+        letterSpacing={1}
+        textTransform="uppercase"
+      >
+        {label}
+      </Text>
+    </XStack>
   );
 }
 
 /**
- * The lake a Report stack is about: its name (a tap picks or changes it, on a create), its
- * silhouette as a mark, and *remove* when the Post has more than one. A body-less capture reads
- * as what it is — resolved at flush — with the picker one tap away.
+ * The lake a Report stack is about: its number, its name (a tap picks or changes it, on a create),
+ * its silhouette as a mark, its section meter, and *remove* when the Post has more than one. A
+ * body-less capture reads as what it is — resolved at flush — with the picker one tap away.
  */
 function ReportHeader({
   post,
   reportId,
+  number,
+  filled,
   onPickBody,
 }: {
   post: PostSheet;
   reportId: string;
+  number: number;
+  filled: number;
   onPickBody: () => void;
 }) {
   const report = post.reports.find((r) => r.id === reportId);
@@ -403,17 +681,17 @@ function ReportHeader({
   const silhouette = useMemo(() => body?.silhouette ?? null, [body]);
   if (!report) return null;
   return (
-    <XStack alignItems="center" gap="$3" paddingTop="$3">
+    <XStack alignItems="center" gap={10} paddingHorizontal={12} paddingTop={14} paddingBottom={8}>
       {silhouette ? (
-        <YStack width={44} height={44}>
-          <LakeMap data={silhouette} height={44} />
+        <YStack width={46} height={38}>
+          <LakeMap data={silhouette} height={38} />
         </YStack>
       ) : null}
-      <YStack flex={1}>
+      <YStack flex={1} gap={2}>
         <Text
           color="$foreground"
-          fontSize={17}
-          fontWeight="700"
+          fontSize={16}
+          fontWeight="600"
           onPress={editing ? undefined : onPickBody}
           accessibilityRole={editing ? undefined : 'button'}
         >
@@ -421,15 +699,35 @@ function ReportHeader({
           {editing ? '' : '  ›'}
         </Text>
         {name === undefined && report.coord ? (
-          <Text color="$foregroundMuted" fontSize={12}>
+          <Text color="$foregroundMuted" fontSize={11}>
             Matched from your location when it posts — or pick it by name.
           </Text>
-        ) : null}
+        ) : (
+          <XStack gap={2}>
+            {Array.from({ length: SHEET_SECTION_COUNT }, (_, k) => k).map((k) => (
+              <YStack
+                key={k}
+                width={12}
+                height={3}
+                backgroundColor={k < filled ? '$foreground' : '$surfaceMuted'}
+              />
+            ))}
+          </XStack>
+        )}
       </YStack>
+      <Eyebrow>
+        {post.reports.length > 1 ? `${number} · ` : ''}
+        {filled} / {SHEET_SECTION_COUNT}
+      </Eyebrow>
       {post.reports.length > 1 && !editing ? (
-        <Button size="$2" chromeless onPress={() => updateSheet((p) => removeReport(p, reportId))}>
+        <Text
+          color="$foregroundMuted"
+          fontSize={12}
+          onPress={() => updateSheet((p) => removeReport(p, reportId))}
+          accessibilityRole="button"
+        >
           Remove
-        </Button>
+        </Text>
       ) : null}
     </XStack>
   );

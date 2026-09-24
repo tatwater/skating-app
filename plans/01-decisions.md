@@ -6283,3 +6283,49 @@ and moderators need to know when that control was used — an edit that turns "d
 makes that checkable; keeping the row rather than deleting it is D62's rule applied by the author.
 
 **Related:** D62, D186, D199, D32, D37, A06f.
+
+## D206 — The sheet's visual grammar: ink first, color by meaning, a mode for the lake (A10-6)
+
+**Decided (2026-09-23, founder review of the mockups).** The report sheet on both surfaces draws
+in one grammar, and the grammar is the spec the rest of the app grows into:
+
+- **Ink first, color rationed by meaning.** A selected chip is inverted ink (the foreground as
+  fill, the background as text); a chip extracted from the author's writing is the same inversion,
+  weaker (the muted foreground as fill), with a ✎ — never a different style, and never amber. Ghosts
+  are dashed. Only three hues appear, each with one job: **ice** for geography and the active thing
+  (the lit compass sector and its wash, the chosen put-in, the active tab, the caret on the
+  timeline); **amber** for a section the minimum set still wants (D189) and for sunrise and sunset;
+  **red** for *don't go* (D190) and hazards, nowhere else. Two pixels of radius, app-wide by one
+  token (`radius.xs`), one hairline between sections; bracket corners mean *this is the one being
+  edited*, and appear nowhere else.
+- **Structure encodes state.** Every section header wears a status square — hollow, filled, amber
+  for needed. Every Report shows a ten-segment meter of its filled sections. Nothing on the sheet
+  reads "ready": the count is the count.
+- **The lake is an instrument, and it takes input only in a mode.** The compass ring is a cursor for
+  the `where` question (D193), not a control: it appears when a where card opens, the rest of the
+  surface dims, a click on an arc or the water answers the open card, and Done or Escape leaves.
+  The Access section's put-in question does the same with the launches lit. The chips beside the
+  lake always answer the same question for a keyboard, so the ring is the pointer's shortcut and
+  never the only way. The where questions are a carousel of cards with visible peers and a dot on
+  each unanswered one — any order (D187 is not a wizard), with *Skip*.
+- **The day is a ruler.** Sunrise and sunset, the start and end of the Report as carets, *now*
+  (only on the same day), the Post's other Reports as faded spans, photos at their minute, and
+  D192's ladder as tappable ticks; on web the carets drag, on the phone the ladder taps. The weather
+  the skate had is one card per archived hour in the drawer's own lockup, and one line for what the
+  weather did first to last — ranges and changes, never a mean. "End" replaces "got off" on the
+  ruler and in the WHEN section (the euphemism).
+- **The Post owns the words.** On web the Post is a full-height column (title, prose, every photo
+  of the day with the number of the lake it is on) and the Reports are tabs in time order over the
+  instrument and the inspector; on the phone the words sit above one Report at a time under sticky
+  tabs that name every Report and the Post. One *Another report* button with two answers replaces
+  *another lake* and *an earlier visit*.
+
+**Why:** the sheet built to spec read as a form; the founder wanted it to read as an instrument —
+FUI (00-vision), Resolve-like on a desk, blocky and dense on a phone, black and white with color
+only where it says something. The mockups (kept outside the repo, `skating-mockups/a10-sheet/`)
+went through three founder rounds; the calls above are what survived them. The brand typefaces
+(Saira, Martian Mono) are deliberately **not** adopted yet — they belong to the wider Figma
+redesign — so the sheet ships in the apps' current faces plus a `$mono` token for the readouts.
+
+**Related:** D3 (nothing here says safe; the meters count sections, never grade ice), D7, D34,
+D186, D187, D188, D189, D190, D192, D193, D198, D203.

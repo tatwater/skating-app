@@ -1,41 +1,28 @@
-import { api } from '@skating/convex/api';
-import type { Id } from '@skating/convex/dataModel';
 import {
-  conditionsFromWindowHour,
-  describeWeatherHour,
   endTimeRow,
   formatSkateTime,
-  hourAt,
-  hoursInWindow,
-  placeHours,
   precisionForChoice,
   resolveSkateWindow,
   sectionSummary,
   selectedValues,
-  summarizeWeatherWindow,
-  type WindowHour,
 } from '@skating/core';
-import { useAction } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { datetimeLocalToMs, toDatetimeLocal } from '../../lib/reportForm';
 import { Input } from '../ui/input';
 import { SheetChip } from './SheetChip';
-import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
+import { SheetHint, SheetPanel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
-import { WeatherCorrection } from './WeatherCorrection';
 
 /**
- * *When did you get off?* (A10 / D192): the minute the console was opened, pinned; half-hour steps
- * back; a datetime field bounded by the week (D199). Preselected only in daylight at the body;
- * after dark the ladder starts at sunset and nothing is chosen.
+ * *When* (A10 / D192, re-composed A10-6): three rows — **End** (required; the minute the console
+ * was opened, pinned; half-hour steps back; a datetime bounded by the week, D199), **Started** and
+ * **How long** (optional; only the resolved start is stored) — every one of which the timeline in
+ * the center column also sets by a drag (founder call 2026-09-23). The weather that used to sit
+ * here is the band under the timeline now.
  *
- * Under the chosen time, **the weather the archive has for that hour** at the body (founder call,
- * 2026-09-21); with a start time or a duration, the whole run. *Not what you saw?* opens the
- * correction, which stores as the author's own reading.
- *
- * The ladder and its rules are core's `endTimeRow`, as on the phone; what is web's is the control
- * under *Another time* — a native `datetime-local` bounded by the same two instants, instead of a
- * platform picker.
+ * Preselected only in daylight at the body; after dark the ladder starts at sunset and nothing is
+ * chosen. A track door has already stamped the GPS end exactly, and the row then shows it as the
+ * one chip. The ladder and its rules are core's `endTimeRow`, as on the phone.
  */
 export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
@@ -79,8 +66,6 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
       key: 'chosen',
       value: { ms, precision: precisionForChoice(row, ms) },
     });
-  // One formatter for the whole ladder — building one per chip per render is the expensive half of
-  // `Intl`, and the ladder redraws on every keystroke elsewhere in the sheet.
   const clockFormat = useMemo(
     () => new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }),
     [timeZone],
@@ -90,7 +75,8 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
 
   return (
     <SheetPanel
-      label="When did you get off?"
+      id="section-when"
+      label="When"
       summary={sectionSummary(sheet, 'endTime', timeZone)}
       collapsed={sheet.collapsed.endTime}
       onToggle={() =>
@@ -98,68 +84,74 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
       }
       gap={gaps.has('endTime')}
     >
-      {gps ? (
-        <p className="text-foreground text-sm">
-          {formatSkateTime(chosen.ms)}
-          <span className="text-foreground-muted text-xs"> from your track</span>
-        </p>
-      ) : row.reason === 'expired' ? (
-        <SheetHint>
-          This sheet was opened more than a week ago. Reports post up to a week after you got off
-          the ice — start a new one.
-        </SheetHint>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-2">
-            {row.chips.map((chip) => (
+      <div className="grid grid-cols-[64px_1fr] items-start gap-x-3 gap-y-2">
+        <RowLabel>End</RowLabel>
+        {gps ? (
+          <p className="text-foreground text-sm">
+            {formatSkateTime(chosen.ms)}
+            <span className="text-foreground-muted text-xs"> · from your track</span>
+          </p>
+        ) : row.reason === 'expired' ? (
+          <SheetHint>
+            This sheet was opened more than a week ago. Reports post up to a week after you got off
+            the ice — start a new one.
+          </SheetHint>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {row.chips.map((chip) => (
+                <SheetChip
+                  key={chip.ms}
+                  compact
+                  label={chip.pinned ? `${clock(chip.ms)} · now` : clock(chip.ms)}
+                  {...(chosen?.ms === chip.ms ? { tier: 'solid' as const } : {})}
+                  onClick={() => choose(chip.ms)}
+                />
+              ))}
               <SheetChip
-                key={chip.ms}
-                label={chip.pinned ? `${clock(chip.ms)} · now` : clock(chip.ms)}
-                {...(chosen?.ms === chip.ms ? { tier: 'solid' as const } : {})}
-                onClick={() => choose(chip.ms)}
+                compact
+                label={offLadder ? formatSkateTime(chosen.ms) : 'Another time'}
+                {...(offLadder ? { tier: 'solid' as const } : {})}
+                onClick={() => setPicking((p) => !p)}
               />
-            ))}
-            <SheetChip
-              label={offLadder ? formatSkateTime(chosen.ms) : 'Another time'}
-              {...(offLadder ? { tier: 'solid' as const } : {})}
-              onClick={() => setPicking((p) => !p)}
-            />
+            </div>
+            {picking ? (
+              <Input
+                type="datetime-local"
+                className="max-w-64"
+                aria-label="The minute you got off the ice"
+                value={toDatetimeLocal(chosen?.ms ?? row.pickerMaxMs)}
+                min={toDatetimeLocal(row.pickerMinMs)}
+                max={toDatetimeLocal(row.pickerMaxMs)}
+                onChange={(e) => {
+                  const ms = datetimeLocalToMs(e.target.value);
+                  if (Number.isFinite(ms)) choose(ms);
+                }}
+              />
+            ) : null}
+            {row.reason === 'after_dark' && chosen === undefined ? (
+              <SheetHint>It's after dark — when did you come off?</SheetHint>
+            ) : null}
           </div>
-          {picking ? (
-            <Input
-              type="datetime-local"
-              className="max-w-64"
-              aria-label="The minute you got off the ice"
-              value={toDatetimeLocal(chosen?.ms ?? row.pickerMaxMs)}
-              min={toDatetimeLocal(row.pickerMinMs)}
-              max={toDatetimeLocal(row.pickerMaxMs)}
-              onChange={(e) => {
-                const ms = datetimeLocalToMs(e.target.value);
-                if (Number.isFinite(ms)) choose(ms);
-              }}
-            />
-          ) : null}
-          {row.reason === 'after_dark' && chosen === undefined ? (
-            <SheetHint>It's after dark — when did you come off?</SheetHint>
-          ) : null}
-        </div>
-      )}
-      <StartWindow report={report} dispatch={dispatch} />
-      {chosen !== undefined && body ? (
-        <SkateWeather
-          waterBodyId={body.waterBodyId}
-          endMs={chosen.ms}
-          startMs={sheet.scalars.skateStartTime}
-          timeZone={timeZone}
-          report={report}
-          dispatch={dispatch}
-        />
-      ) : null}
+        )}
+        <StartWindow report={report} dispatch={dispatch} />
+      </div>
+      <SheetHint>
+        Drag the marks on the timeline, or set them here. Sunrise and sunset are the lake's.
+      </SheetHint>
     </SheetPanel>
   );
 }
 
-/** *When did you get on?* — a start time or a duration; only the resolved start is stored. */
+function RowLabel({ children }: { children: string }) {
+  return (
+    <span className="pt-1.5 font-mono text-[10px] text-foreground-muted uppercase tracking-[0.1em]">
+      {children}
+    </span>
+  );
+}
+
+/** *Started* and *How long* — a start time or a duration; only the resolved start is stored. */
 function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispatch'>) {
   const sheet = report.sheet;
   const [end] = selectedValues(sheet, 'endTime');
@@ -179,158 +171,90 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
       dispatch({ type: 'setScalar', key: 'skateStartTime', value: result.skateStartTime });
     } else setError(result.error);
   };
+  const clear = () => {
+    setMode('none');
+    dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
+  };
+  const minutes = start !== undefined && end ? Math.round((end.ms - start) / 60_000) : undefined;
+  const duration =
+    minutes !== undefined && minutes > 0
+      ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
+      : undefined;
 
   if (gpsStart) {
     return (
-      <p className="text-foreground-muted text-xs">
-        On the ice from {formatSkateTime(start)}, from your track.
-      </p>
+      <>
+        <RowLabel>Started</RowLabel>
+        <p className="pt-1 text-foreground text-sm">
+          {formatSkateTime(start)}
+          <span className="text-foreground-muted text-xs"> · from your track</span>
+        </p>
+        <RowLabel>How long</RowLabel>
+        <p className="pt-1 text-foreground text-sm">{duration ?? '—'}</p>
+      </>
     );
   }
-  const minutes = start !== undefined && end ? Math.round((end.ms - start) / 60_000) : undefined;
   return (
-    <div className="flex flex-col gap-2">
-      <SubLabel>When did you get on? (optional)</SubLabel>
-      <div className="flex flex-wrap gap-2">
-        <SheetChip
-          label="A start time"
-          {...(mode === 'start' ? { tier: 'solid' as const } : {})}
-          onClick={() => {
-            if (mode === 'start') {
-              setMode('none');
-              dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
-            } else setMode('start');
-          }}
-        />
-        <SheetChip
-          label="How long"
-          {...(mode === 'duration' ? { tier: 'solid' as const } : {})}
-          onClick={() => {
-            if (mode === 'duration') {
-              setMode('none');
-              dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
-            } else setMode('duration');
-          }}
-        />
-      </div>
-      {mode === 'start' && end ? (
-        <Input
-          type="datetime-local"
-          className="max-w-64"
-          aria-label="The minute you got on the ice"
-          value={start !== undefined ? toDatetimeLocal(start) : ''}
-          max={toDatetimeLocal(end.ms)}
-          onChange={(e) => {
-            const ms = datetimeLocalToMs(e.target.value);
-            if (Number.isFinite(ms)) resolve({ start: ms });
-          }}
-        />
-      ) : null}
-      {/* Both controls wait on the end time: a duration resolves *back* from it, so typing one
-          without it would be silently dropped by `resolve` and read as a field that does nothing. */}
-      {mode === 'duration' && end ? (
-        <Input
-          inputMode="numeric"
-          className="max-w-40"
-          placeholder="minutes, e.g. 90"
-          aria-label="How long you were on the ice, in minutes"
-          value={durationStr}
-          onChange={(e) => {
-            const text = e.target.value;
-            setDurationStr(text);
-            if (text.trim() === '') {
-              dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
-              return;
-            }
-            resolve({ durationMinutes: Number(text) });
-          }}
-        />
-      ) : null}
-      {error ? (
-        <p className="text-danger text-xs">{error}</p>
-      ) : mode !== 'none' && !end ? (
-        <SheetHint>Say when you got off first — a start time is read back from it.</SheetHint>
-      ) : minutes !== undefined && minutes > 0 ? (
-        <SheetHint>About {minutes} minutes on the ice.</SheetHint>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * The archive's weather for the skate (founder call, 2026-09-21): the hour at the end time, or the
- * whole window once a start is known. Read through the panel's action, which serves the hours the
- * map already fetched and fetches the rest once; nothing shows until the archive answers, and
- * nothing is guessed.
- */
-function SkateWeather({
-  waterBodyId,
-  endMs,
-  startMs,
-  timeZone,
-  report,
-  dispatch,
-}: {
-  waterBodyId: string;
-  endMs: number;
-  startMs: number | undefined;
-  timeZone: string;
-} & Pick<SectionProps, 'report' | 'dispatch'>) {
-  const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
-  const [hours, setHours] = useState<WindowHour[] | null>(null);
-  const [correcting, setCorrecting] = useState(false);
-  // Re-read when the day the end time falls on changes, not on every minute chip.
-  const dayMs = 24 * 3600_000;
-  const days = Math.min(92, Math.max(2, Math.ceil((Date.now() - endMs) / dayMs) + 2));
-
-  useEffect(() => {
-    let cancelled = false;
-    getDays({ waterBodyId: waterBodyId as Id<'waterBodies'>, days })
-      .then((res) => {
-        if (cancelled || !res) return;
-        setHours(placeHours(res.hours, timeZone));
-      })
-      .catch(() => {
-        // No archive for this cell yet, or no connection: the line stays absent.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [getDays, waterBodyId, timeZone, days]);
-
-  if (hours === null) return null;
-  const window = hoursInWindow(hours, endMs, startMs);
-  const at = hourAt(hours, endMs);
-  const summary = startMs !== undefined ? summarizeWeatherWindow(window, timeZone) : null;
-  const corrected = report.sheet.scalars.conditions;
-  if (!at && !summary) return null;
-
-  return (
-    <div className="flex flex-col gap-1.5 pt-1">
-      <p className="text-foreground text-sm">
-        {summary ? summary.sentence : at ? describeWeatherHour(at) : ''}
-        {corrected !== undefined && corrected.source !== 'openmeteo' ? (
-          <span className="text-foreground-muted text-xs"> · corrected</span>
+    <>
+      <RowLabel>Started</RowLabel>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          <SheetChip
+            compact
+            label={start !== undefined ? formatSkateTime(start) : 'A start time'}
+            {...(start !== undefined ? { tier: 'solid' as const } : {})}
+            onClick={() => (mode === 'start' ? clear() : setMode('start'))}
+          />
+        </div>
+        {mode === 'start' && end ? (
+          <Input
+            type="datetime-local"
+            className="max-w-64"
+            aria-label="The minute you got on the ice"
+            value={start !== undefined ? toDatetimeLocal(start) : ''}
+            max={toDatetimeLocal(end.ms)}
+            onChange={(e) => {
+              const ms = datetimeLocalToMs(e.target.value);
+              if (Number.isFinite(ms)) resolve({ start: ms });
+            }}
+          />
         ) : null}
-      </p>
-      {correcting ? (
-        <WeatherCorrection
-          initial={
-            corrected ??
-            (at ? { ...conditionsFromWindowHour(at), source: 'user' } : { source: 'user' })
-          }
-          onChange={(next) => dispatch({ type: 'setScalar', key: 'conditions', value: next })}
-          onDone={() => setCorrecting(false)}
-        />
-      ) : (
-        <button
-          type="button"
-          className="self-start text-primary text-xs hover:underline"
-          onClick={() => setCorrecting(true)}
-        >
-          Not what you saw? Correct it
-        </button>
-      )}
-    </div>
+      </div>
+      <RowLabel>How long</RowLabel>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <SheetChip
+            compact
+            label={duration ?? 'How long'}
+            {...(duration !== undefined ? { tier: 'solid' as const } : {})}
+            onClick={() => (mode === 'duration' ? clear() : setMode('duration'))}
+          />
+          {/* Both controls wait on the end time: a duration resolves *back* from it. */}
+          {mode === 'duration' && end ? (
+            <Input
+              inputMode="numeric"
+              className="h-7 max-w-36"
+              placeholder="minutes, e.g. 90"
+              aria-label="How long you were on the ice, in minutes"
+              value={durationStr}
+              onChange={(e) => {
+                const text = e.target.value;
+                setDurationStr(text);
+                if (text.trim() === '') {
+                  dispatch({ type: 'setScalar', key: 'skateStartTime', value: undefined });
+                  return;
+                }
+                resolve({ durationMinutes: Number(text) });
+              }}
+            />
+          ) : null}
+        </div>
+        {error ? (
+          <p className="text-danger text-xs">{error}</p>
+        ) : mode !== 'none' && !end ? (
+          <SheetHint>Say when you got off first — a start time is read back from it.</SheetHint>
+        ) : null}
+      </div>
+    </>
   );
 }

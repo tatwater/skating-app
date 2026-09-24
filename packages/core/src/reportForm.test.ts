@@ -238,6 +238,14 @@ describe('resolveSkateWindow', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('rejects a start at the end — a zero-minute skate', () => {
+    expect(resolveSkateWindow({ end: END, start: END })).toEqual({
+      ok: false,
+      error: 'The start must be before the end.',
+    });
+    expect(resolveSkateWindow({ end: END, start: END - 60_000 }).ok).toBe(true);
+  });
+
   it('rejects a non-positive or non-finite duration', () => {
     expect(resolveSkateWindow({ end: END, durationMinutes: 0 }).ok).toBe(false);
     expect(resolveSkateWindow({ end: END, durationMinutes: -10 }).ok).toBe(false);

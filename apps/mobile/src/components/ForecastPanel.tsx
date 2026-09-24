@@ -1,20 +1,5 @@
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import {
-  faCarSide,
-  faCloud,
-  faCloudBolt,
-  faCloudDrizzle,
-  faCloudFog,
-  faCloudMoon,
-  faCloudRain,
-  faCloudSleet,
-  faCloudSnow,
-  faCloudSun,
-  faIcicles,
-  faMoon,
-  faSun,
-} from '@fortawesome/sharp-light-svg-icons';
+import { faCarSide } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -22,7 +7,6 @@ import {
   buildForecastPlan,
   CONDITION_LABEL,
   conditionGlyph,
-  type ForecastGlyph,
   type ForecastPayload,
   type ForecastPlan,
   type ForecastPlanDay,
@@ -38,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, ScrollView } from 'react-native';
 import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
 import { Section } from './detailUi';
+import { GLYPH_ICON } from './weatherGlyphs';
 
 /**
  * The forward forecast on a lake sheet — the mobile half of the web `ForecastPanel` (A06c §2.5b, the
@@ -138,21 +123,6 @@ export function ForecastPanel({
 }
 
 /** The symbol vocabulary, resolved to the same Sharp Light set the web panel uses. */
-const GLYPH_ICON: Record<ForecastGlyph, IconDefinition> = {
-  sun: faSun,
-  moon: faMoon,
-  'cloud-sun': faCloudSun,
-  'cloud-moon': faCloudMoon,
-  cloud: faCloud,
-  fog: faCloudFog,
-  drizzle: faCloudDrizzle,
-  rain: faCloudRain,
-  // Icicles, not a hail cloud — freezing rain must look like nothing else on the row.
-  'freezing-rain': faIcicles,
-  sleet: faCloudSleet,
-  snow: faCloudSnow,
-  thunder: faCloudBolt,
-};
 
 /** Hour-card geometry, in px. The row scrolls by these, so they are constants rather than measured. */
 const HOUR_CARD_WIDTH = 52;
