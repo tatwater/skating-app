@@ -150,31 +150,34 @@ async function uploadPhoto(p: DraftPhoto): Promise<Id<'photos'>> {
 
 /**
  * *Save changes* on the edit door: the Report's whole content block (last-write-wins, so the kept
- * photos lead and the new uploads follow), then the Post's words when it has a Post. Online only —
- * an edit is not queued. Throws with the server's sentence on refusal.
+ * photos lead and the new uploads follow) and the Post's words when it has a Post, in one
+ * `reports.update`. Online only — an edit is not queued. Throws with the server's sentence on
+ * refusal.
  */
 export async function saveSheetEdit(post: PostSheet, now: number): Promise<string> {
   if (post.mode.kind !== 'edit') throw new Error('Not an edit');
   // Core's model holds ids as plain strings; the cast is this surface's wire, like the photos'.
   const reportId = post.mode.reportId as Id<'reports'>;
-  const postId = post.mode.postId as Id<'posts'> | undefined;
   const report = post.reports[0];
   if (!report) throw new Error('Nothing to save');
   try {
     const uploaded = await Promise.all(report.photos.map(uploadPhoto));
     const { waterBodyId: _body, ...content } = toReportInput(report.sheet);
+    // One mutation for both halves — the Report's content and its Post's words — so a refusal of
+    // either lands neither, and the sheet's "couldn't save" is always true of the whole edit.
     await convex.mutation(api.reports.update, {
       ...content,
       reportId,
       photoIds: [...(report.keptPhotoIds as Id<'photos'>[]), ...uploaded],
+      ...(post.mode.postId !== undefined
+        ? {
+            post: {
+              ...(post.title.trim() ? { title: post.title.trim() } : {}),
+              ...(post.body.trim() ? { body: post.body.trim() } : {}),
+            },
+          }
+        : {}),
     });
-    if (postId !== undefined) {
-      await convex.mutation(api.posts.update, {
-        postId,
-        ...(post.title.trim() ? { title: post.title.trim() } : {}),
-        ...(post.body.trim() ? { body: post.body.trim() } : {}),
-      });
-    }
     queueConfirmations(post, now);
     void flushDrafts();
     return reportId;

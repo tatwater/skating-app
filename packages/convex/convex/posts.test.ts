@@ -627,6 +627,80 @@ describe('authors edit and delete what they shared (A10-3)', () => {
     expect(revisions[0]?.snapshot).not.toHaveProperty('place');
   });
 
+  test('reports.update carries its Post’s words in the same edit — both halves, one history row each', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId, reportIds } = await twoLakePost(t);
+    const [reportId] = reportIds;
+    await author.as.mutation(api.reports.update, {
+      ...FRESH,
+      reportId,
+      skateEndTime: T0 - 3_600_000,
+      notes: 'Shell ice by the north shore.',
+      post: { title: 'Two lakes, revised', body: 'Glass on one.' },
+    });
+    expect(await t.run((ctx) => ctx.db.get(reportId))).toMatchObject({
+      notes: 'Shell ice by the north shore.',
+    });
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post).toMatchObject({ title: 'Two lakes, revised', body: 'Glass on one.' });
+    expect(post?.editedAt).toBeDefined();
+    const history = await t.run((ctx) => ctx.db.query('contentRevisions').collect());
+    expect(history.map((r) => r.targetType).sort()).toEqual(['post', 'report']);
+  });
+
+  test('a refusal of either half lands neither — the Report edit rolls back with its Post’s words', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId, reportIds } = await twoLakePost(t);
+    const [reportId] = reportIds;
+    const edit = (post: { title?: string; body?: string }) =>
+      author.as.mutation(api.reports.update, {
+        ...FRESH,
+        reportId,
+        skateEndTime: T0 - 3_600_000,
+        notes: 'This should not land.',
+        post,
+      });
+    await expect(edit({ title: 'x'.repeat(200) })).rejects.toThrow(/invalid_post/);
+    // A Post taken down on its own (the Report still visible): the edit is refused whole.
+    await t.run((ctx) => ctx.db.patch(postId, { moderationStatus: 'hidden' }));
+    await expect(edit({ title: 'Still' })).rejects.toThrow(/moderated/);
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.notes).not.toBe('This should not land.');
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.editedAt).toBeUndefined();
+    expect(await t.run((ctx) => ctx.db.query('contentRevisions').collect())).toEqual([]);
+  });
+
+  test('words re-sent unchanged write nothing — no history row, no edited mark on the Post', async () => {
+    const t = convexTest(schema, modules);
+    const { author, postId, reportIds } = await twoLakePost(t);
+    const [reportId] = reportIds;
+    await author.as.mutation(api.reports.update, {
+      ...FRESH,
+      reportId,
+      skateEndTime: T0 - 3_600_000,
+      notes: 'Only the chips changed.',
+      post: { title: ' Two lakes ', body: 'Glass on both.' },
+    });
+    expect((await t.run((ctx) => ctx.db.get(postId)))?.editedAt).toBeUndefined();
+    const history = await t.run((ctx) => ctx.db.query('contentRevisions').collect());
+    expect(history.map((r) => r.targetType)).toEqual(['report']);
+  });
+
+  test('Post words on a Report with no Post are refused, not dropped', async () => {
+    const t = convexTest(schema, modules);
+    const { author, reportIds } = await twoLakePost(t);
+    const [reportId] = reportIds;
+    // A Report the Post backfill has not reached — the only kind without a `postId`.
+    await t.run((ctx) => ctx.db.patch(reportId, { postId: undefined }));
+    await expect(
+      author.as.mutation(api.reports.update, {
+        ...FRESH,
+        reportId,
+        skateEndTime: T0 - 3_600_000,
+        post: { title: 'Nowhere to go' },
+      }),
+    ).rejects.toThrow(/no post to edit/);
+  });
+
   test('deleting one Report removes it, keeps the Post; deleting the last removes the Post too', async () => {
     const t = convexTest(schema, modules);
     const { author, postId, reportIds, bodyA } = await twoLakePost(t);
