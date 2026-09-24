@@ -724,6 +724,22 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
     already sent is exempt, like the create-only rules — it may be live. The form's
     `resolveBundledHazardIds` / `UNSENT_HAZARD_REFUSAL` went with the form; the keyed single-flight
     stays as the row's guard though every caller now runs inside the coalesced drain. D55 amended.
+13. **A door that fails to open says so** (PR #75 review): the tab's `openDoor` chains had no
+    rejection handler, so an edit door whose query failed sat on "Opening your sheet…" for ever.
+    Both now land on a *Try again* that re-navigates the same door through `doorHref`'s fresh stamp.
+14. **An edit is one transaction** (PR #75 review): `reports.update` takes the Post's words
+    (`post`) and applies them through `editPostWords`, the helper `posts.update` is now a shell
+    over, so a refusal of either half lands neither. Words re-sent unchanged write nothing — no
+    revision, no *edited* mark — so a chip edit no longer claims the Post's words were edited.
+15. **The edit door's uploads checkpoint** (PR #75 review): each blob id and the photo row's id
+    are written onto the open sheet as they land, so a retried *Save changes* never re-uploads a
+    blob — one no photo row names is a leak `sweepOrphanPhotos` cannot see.
+16. **`accessAlerts.kind` is stored and indexed** (PR #75 review; founder call over a reason-keyed
+    index, which would have made the lot walk 24 ranges per lot — Champlain's 160 lots near a
+    function's call budget). The live reads range on `(target, status, kind, expiresAt)`, so each
+    kind is capped in its own range and the take is the whole read; before, one shared range was
+    filtered by reason set, bounding the answer but not the scan. Widened here, `create` writes it,
+    `accessAlerts:backfillKind` stamps the rest; narrowing to required is owed.
 
 ### Owed
 
@@ -733,7 +749,11 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
   outline; the weather line's latency on a cold cell.
 - The moderator's revision comparison (D205) — the web console, A10-5.
 - **Moderator put-in and lot authoring** — `features/access-point-authoring.md`, after A10.
-- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`).
+- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`), then
+  `pnpm exec convex run accessAlerts:backfillKind` at once — until it runs, alerts written before
+  `kind` existed are outside the live reads.
+- **Narrow `accessAlerts.kind` to required** once the backfill has run on every deployment (dev
+  only; prod is uninitialized and every row it writes carries one).
 - The typed-routes artifact (`.expo/types/router.d.ts`, gitignored) regenerates on the next
   `expo start`; `/drafts` and `/queue` were added to the local copy by hand.
 - RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register
