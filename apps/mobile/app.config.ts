@@ -71,6 +71,20 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    // The camera-roll reel on the report sheet (A10 §8.1 / A10-7): *Photos from your skate* queries
+    // the library for the skate's window; a tap includes one, nothing leaves the roll, and nothing
+    // uploads until Post. `isAccessMediaLocationEnabled` is what lets Android hand back a photo's
+    // EXIF location (the D42 opt-in reads it on device; it is sent only when placed on the lake).
+    [
+      'expo-media-library',
+      {
+        photosPermission:
+          'Gli shows the photos you took during a skate so you can add them to your report. Nothing is uploaded until you post, and nothing is removed from your library.',
+        isAccessMediaLocationEnabled: true,
+      },
+    ],
+    // A GPX file as a report's track (A10-7) — Strava, Garmin and most watches export one.
+    'expo-document-picker',
     'expo-secure-store',
     'expo-web-browser',
     // Native date/time picker for editing a report's skate time (D9 — past times for offline).

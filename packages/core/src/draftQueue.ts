@@ -49,6 +49,12 @@ export interface DraftPhoto {
   /** EXIF GPS if the original carried it — only ever *sent* on the `placeOnMap` opt-in (D42). */
   coord?: LatLng;
   placeOnMap: boolean;
+  /** EXIF capture time, epoch ms, when the original carried it — what assigns a photo to a Report (A10-7). Never sent. */
+  takenAtMs?: number;
+  /** A Post-pool photo the author sent to the put-in or the lot instead of a Report (A10-7): filed as an access photo after the Post lands. */
+  attachTo?: AccessPhotoTarget;
+  /** Flush checkpoint for an `attachTo` photo: the access row is filed (or refused and skipped). */
+  attachedAccess?: boolean;
   fullStorageId?: string;
   thumbStorageId?: string;
   photoId?: string;
@@ -133,6 +139,12 @@ export interface ReportDraft {
 }
 
 /** A queued offline Post draft: the words, and the Reports, flushed as one `posts.create`. */
+/** Where a pool photo goes when it documents infrastructure rather than ice (A06d's access photos). */
+export interface AccessPhotoTarget {
+  kind: 'put_in' | 'parking_area';
+  id: string;
+}
+
 export interface PostDraft {
   kind: 'post';
   id: string;
@@ -145,6 +157,12 @@ export interface PostDraft {
   body?: string;
   /** Never empty — a Post requires a Report (D186); the sheet cannot save one without. */
   reports: ReportDraft[];
+  /**
+   * The Post's own photos (A10-7): the pool the day could not put on a Report. A held draft keeps
+   * them so the author can still say; a flush refuses one without an `attachTo` and files the rest
+   * as access photos after the Post lands (step 8). Absent on drafts from before A10-7.
+   */
+  photos?: DraftPhoto[];
   /** Flush checkpoint: the server Post id, once created, and its Reports' ids in the author's order. */
   postId?: string;
   reportIds?: string[];
@@ -295,6 +313,8 @@ export function createPostDraft(args: {
   title?: string;
   body?: string;
   reports: ReportDraft[];
+  /** The Post's pool photos (A10-7). */
+  photos?: DraftPhoto[];
   /** `draft` holds it (never sent until *Post*); `pending` (the default) queues it. */
   status?: 'draft' | 'pending';
 }): PostDraft {
@@ -307,6 +327,7 @@ export function createPostDraft(args: {
     ...(args.title !== undefined ? { title: args.title } : {}),
     ...(args.body !== undefined ? { body: args.body } : {}),
     reports: args.reports,
+    ...(args.photos !== undefined && args.photos.length > 0 ? { photos: args.photos } : {}),
     createdAt: args.now,
     updatedAt: args.now,
   };
@@ -344,7 +365,8 @@ export function flushablePosts(drafts: readonly PostDraft[]): PostDraft[] {
 
 /** Every persistent photo file a Post draft owns (full + thumb per photo, every Report). */
 export function postDraftPhotoUris(draft: PostDraft): string[] {
-  return draft.reports.flatMap((r) => r.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
+  const photos = [...draft.reports.flatMap((r) => r.photos), ...(draft.photos ?? [])];
+  return photos.flatMap((p) => [p.fullUri, p.thumbUri]);
 }
 
 /** The local track ids a queue of Post drafts still points at — the retention guard's input. */
@@ -413,6 +435,13 @@ export function flushErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The one sentence for a pool photo nobody has placed (A10-7): the sheet and the flush both say it. */
+export function unassignedPhotosMessage(count: number): string {
+  return count === 1
+    ? "One photo isn't on a lake yet — say which, or leave it out."
+    : `${count} photos aren't on a lake yet — say which, or leave them out.`;
+}
+
 /** External effects the flush needs, all injected so the orchestration is testable with fakes. */
 export interface PostFlushEffects {
   /** Resolve a coord-only draft to a lake (`waterBodies.resolveBodyForCoord`); null ⇒ no match. */
@@ -460,6 +489,12 @@ export interface PostFlushEffects {
   createAccessAlert?(
     input: AccessConditionFiling & { reportId: string; idempotencyKey: string },
   ): Promise<void>;
+  /**
+   * Attach an uploaded photo to a put-in or a lot (`accessPoints.attachPhoto`, A06d), for a pool
+   * photo the author sent there (A10-7). Optional: a client without it leaves such photos in the
+   * draft. A refusal (the cap, a hidden launch) is skipped like a condition alert's.
+   */
+  attachAccessPhoto?(input: { photoId: string; target: AccessPhotoTarget }): Promise<void>;
   /** Persist the (checkpointed) draft back to sqlite — called after every state advance. */
   persist(draft: PostDraft): Promise<void>;
 }
@@ -508,6 +543,8 @@ export async function flushPost(
 
   try {
     if (d.reports.length === 0) throw new PermanentFlushError('This post has no report in it.');
+    const unassigned = (d.photos ?? []).filter((p) => p.attachTo === undefined).length;
+    if (unassigned > 0) throw new PermanentFlushError(unassignedPhotosMessage(unassigned));
     // A draft found in `creating` keeps the mark through its retry: it is the one fact that says
     // the create was sent (the check below, and the catch's reset, both read it), and downgrading it
     // to `uploading` here would lose it to a transient failure — or an app kill — before step 6,
@@ -708,6 +745,49 @@ export async function flushPost(
           filed.add(filing.reason);
           await saveReport({ ...r, filedAccessReasons: [...filed] });
         }
+      }
+    }
+
+    // 8. The Post's own photos that went to a put-in or a lot (A10-7): uploaded like a Report's,
+    //    checkpointed the same way, then attached as an access photo (A06d) — a refusal (the cap, a
+    //    launch a moderator hid since) is skipped, as a condition alert's is: the Post is live.
+    if (effects.attachAccessPhoto) {
+      for (const photo of d.photos ?? []) {
+        const target = photo.attachTo;
+        if (target === undefined || photo.attachedAccess === true) continue;
+        let p = photo;
+        const savePool = async (): Promise<void> => {
+          await save({ photos: (d.photos ?? []).map((q) => (q.id === p.id ? p : q)) });
+        };
+        if (p.photoId === undefined) {
+          let fullStorageId = p.fullStorageId;
+          if (fullStorageId === undefined) {
+            fullStorageId = await effects.uploadPhoto(p.fullUri);
+            p = { ...p, fullStorageId };
+            await savePool();
+          }
+          let thumbStorageId = p.thumbStorageId;
+          if (thumbStorageId === undefined) {
+            thumbStorageId = await effects.uploadPhoto(p.thumbUri);
+            p = { ...p, thumbStorageId };
+            await savePool();
+          }
+          // Never placed and never located: it documents a launch, whose location is the launch's.
+          const photoId = await effects.createPhotoRow({
+            storageId: fullStorageId,
+            thumbStorageId,
+            placeOnMap: false,
+          });
+          p = { ...p, photoId };
+          await savePool();
+        }
+        try {
+          await effects.attachAccessPhoto({ photoId: p.photoId as string, target });
+        } catch (error) {
+          if (classifyFlushError(error) === 'transient') throw error;
+        }
+        p = { ...p, attachedAccess: true };
+        await savePool();
       }
     }
 

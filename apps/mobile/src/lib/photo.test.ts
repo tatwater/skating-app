@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exifCoord } from './photo';
+import { exifCoord, exifTakenAt } from './photo';
 
 describe('exifCoord', () => {
   it('returns undefined for missing/empty EXIF', () => {
@@ -51,5 +51,22 @@ describe('exifCoord', () => {
   it('rejects out-of-range and null-island coordinates', () => {
     expect(exifCoord({ GPSLatitude: 200, GPSLongitude: 10 })).toBeUndefined();
     expect(exifCoord({ GPSLatitude: 0, GPSLongitude: 0 })).toBeUndefined();
+  });
+});
+
+describe('exifTakenAt (A10-7)', () => {
+  it('reads the EXIF clock as local time, honoring an offset when the camera wrote one', () => {
+    const local = new Date(2026, 0, 10, 14, 5, 30).getTime();
+    expect(exifTakenAt({ DateTimeOriginal: '2026:01:10 14:05:30' })).toBe(local);
+    expect(
+      exifTakenAt({ DateTimeOriginal: '2026:01:10 14:05:30', OffsetTimeOriginal: '-05:00' }),
+    ).toBe(Date.UTC(2026, 0, 10, 19, 5, 30));
+    expect(exifTakenAt({ DateTime: '2026:01:10 14:05:30' })).toBe(local);
+  });
+  it('is undefined for no EXIF, no date, or a date it cannot read', () => {
+    expect(exifTakenAt(undefined)).toBeUndefined();
+    expect(exifTakenAt({})).toBeUndefined();
+    expect(exifTakenAt({ DateTimeOriginal: 'yesterday' })).toBeUndefined();
+    expect(exifTakenAt({ DateTimeOriginal: 42 })).toBeUndefined();
   });
 });

@@ -21,7 +21,9 @@ import {
   type HazardShape,
   type HazardType,
   isPassageMarker,
+  type LatLng,
   offersShoreBand,
+  photosNearPoint,
   pointDraftForType,
   relativeWhen,
   resizeDraft,
@@ -36,12 +38,14 @@ import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Image, Modal } from 'react-native';
-import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Modal, Pressable } from 'react-native';
+import { Button, H4, Paragraph, ScrollView, Text, useTheme, XStack, YStack } from 'tamagui';
 import { cachedBodyPolygon } from '../lib/bodyCache';
 import { deleteDraftPhotoFiles, persistDraftPhoto } from '../lib/draftPhotos';
 import { saveHazardItem } from '../lib/draftStore';
+import { takeHazardPrefill } from '../lib/hazardPrefill';
+import { useSheet } from '../lib/sheetStore';
 import { useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
@@ -102,9 +106,21 @@ export function HazardCapture() {
    * this is the sheet vouching for the lake, the way the drawer's report button always did.
    */
   const fromSheet = useRef(false);
+  /** A photo that is the hazard (A10-7): its location becomes the pin once a type is chosen. */
+  const prefillCoord = useRef<LatLng | null>(null);
+  /** The open sheet's photos already attached here — the prefill's, and each suggestion taken. */
+  const [suggestedAdded, setSuggestedAdded] = useState<string[]>([]);
+  // The prefill rides the nonce: taken on the ask it came with (`hazardPrefill`, a module note —
+  // the sheet is on the Report tab, off this provider), never re-read on a re-render.
   useEffect(() => {
     if (hazardCaptureNonce === 0) return;
     fromSheet.current = true;
+    const prefill = takeHazardPrefill();
+    if (prefill) {
+      prefillCoord.current = prefill.coord ?? null;
+      if (prefill.photos.length > 0) setPhotos((p) => [...p, ...prefill.photos]);
+      if (prefill.sourceIds.length > 0) setSuggestedAdded((s) => [...s, ...prefill.sourceIds]);
+    }
     setPicking(true);
   }, [hazardCaptureNonce]);
   const [showAllTypes, setShowAllTypes] = useState(false);
@@ -174,6 +190,37 @@ export function HazardCapture() {
     targetBodyId ? { waterBodyId: targetBodyId as Id<'waterBodies'> } : 'skip',
   );
 
+  /**
+   * The open sheet's photos near this pin (A10-7, hazard → photo): a hazard with a location already
+   * knows which of the day's photos are of it. Offered, never attached on their own; a tap copies
+   * the file into the hazard's own storage like a picked one.
+   */
+  const pinCoord =
+    hazardDraft?.geometryKind === 'point_radius' && hazardDraft.coord ? hazardDraft.coord : null;
+  const openSheet = useSheet();
+  const theme = useTheme();
+  const primaryColor = theme.primary?.val ?? '#1fc9ec';
+  const nearby = useMemo(() => {
+    if (!openSheet || !pinCoord) return [];
+    const all = [...openSheet.reports.flatMap((r) => r.photos), ...(openSheet.photos ?? [])];
+    return photosNearPoint(all, pinCoord).filter((p) => !suggestedAdded.includes(p.id));
+  }, [openSheet, pinCoord, suggestedAdded]);
+  async function addSuggested(photo: DraftPhoto) {
+    setSuggestedAdded((s) => [...s, photo.id]);
+    const id = randomUUID();
+    try {
+      const [fullUri, thumbUri] = await Promise.all([
+        persistDraftPhoto(photo.fullUri, `hazard-${id}-full.jpg`),
+        persistDraftPhoto(photo.thumbUri, `hazard-${id}-thumb.jpg`),
+      ]);
+      setPhotos((p) => [...p, { id, fullUri, thumbUri, placeOnMap: false }]);
+    } catch {
+      // The copy failed: the photo is still on offer, and the sheet's own file is untouched.
+      setSuggestedAdded((s) => s.filter((x) => x !== photo.id));
+      setError("Couldn't attach that photo — try picking it instead.");
+    }
+  }
+
   /** Clear the draft state without touching photo files — the queue path keeps the files it owns. */
   function resetDraftState() {
     setPhotos([]);
@@ -197,6 +244,11 @@ export function HazardCapture() {
     // component, so nothing else clears it.
     setNudge(null);
     setDismissedDuplicateOf(null);
+    // The photo → hazard prefill (A10-7) is the same kind of leak: a capture canceled before its
+    // type was chosen never consumed the coordinate, and the next capture — the FAB, on another
+    // lake — would drop its pin at the canceled photo. It and the attached-photo ids end here.
+    prefillCoord.current = null;
+    setSuggestedAdded([]);
   }
 
   /** Back to the sheet that asked for this pin (the bundle prompt will offer it, D55). */
@@ -325,6 +377,14 @@ export function HazardCapture() {
     // a cold GPS receiver spins up: the sheet has closed and without this the screen would show only
     // the reappeared FAB, reading as "nothing happened" — and a gloved re-tap restarts the whole flow.
     const draft = pointDraftForType(type);
+    // A photo's location places the pin outright (A10-7): the skater is still free to move it.
+    const placed = prefillCoord.current;
+    prefillCoord.current = null;
+    if (placed && draft.geometryKind === 'point_radius') {
+      setHazardDraft({ ...draft, coord: placed });
+      setHazardDropMode(false);
+      return;
+    }
     setHazardDraft(draft);
     setHazardDropMode(true);
     if (fromSheet.current && onIceWaterBodyId !== targetBodyId) {
@@ -888,6 +948,42 @@ export function HazardCapture() {
               ridges are hard to see" is a recurring cause of death (research §2/§6) — so a picture is
               the highest-value thing one skater leaves the next. Encouraged, plural, and entirely
               skippable: the pin is already valid without one. */}
+          {nearby.length > 0 ? (
+            <YStack gap="$1.5">
+              <Text
+                color="$foregroundMuted"
+                fontSize={10}
+                letterSpacing={1}
+                textTransform="uppercase"
+              >
+                From your post, near this pin
+              </Text>
+              <XStack gap="$2" flexWrap="wrap">
+                {nearby.map((photo) => (
+                  <Pressable
+                    key={photo.id}
+                    onPress={() => void addSuggested(photo)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Attach this photo"
+                  >
+                    <Image
+                      source={{ uri: photo.thumbUri }}
+                      style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 2,
+                        borderWidth: 1,
+                        borderColor: primaryColor,
+                      }}
+                    />
+                    <Text color="$primary" fontSize={10} fontWeight="700" textAlign="center">
+                      + Add
+                    </Text>
+                  </Pressable>
+                ))}
+              </XStack>
+            </YStack>
+          ) : null}
           {photos.length > 0 ? (
             <XStack gap="$2" flexWrap="wrap">
               {photos.map((photo) => (

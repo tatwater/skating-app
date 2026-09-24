@@ -19,6 +19,7 @@ import { SheetChip } from './SheetChip';
 import { SheetHint, SheetSection, SubLabel } from './SheetSection';
 import type { SectionProps } from './sectionProps';
 import { Timeline } from './Timeline';
+import { TrackImport } from './TrackImport';
 import { useSkateWeather, useSkateWindowHours } from './useSkateWeather';
 import { WeatherCards } from './WeatherCards';
 
@@ -34,7 +35,7 @@ import { WeatherCards } from './WeatherCards';
  * chosen. A track door has already stamped the GPS end exactly, and the row then shows it as the
  * one chip.
  */
-export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: SectionProps) {
+export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone }: SectionProps) {
   const sheet = report.sheet;
   const post = useSheet();
   const [chosen] = selectedValues(sheet, 'endTime');
@@ -187,6 +188,9 @@ export function EndTimeSection({ report, body, dispatch, gaps, timeZone }: Secti
         </YStack>
       )}
       <StartWindow report={report} dispatch={dispatch} />
+      {!gps && !editing && row.reason !== 'expired' ? (
+        <TrackImport report={report} body={body} dispatch={dispatch} />
+      ) : null}
       {chosen !== undefined && body ? (
         <WeatherCards
           hours={hours}

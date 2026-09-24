@@ -21,6 +21,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   type AccessConditionFiling,
+  type AccessPhotoTarget,
   type AccessReason,
   confirmableVerdict,
   flushErrorMessage,
@@ -65,12 +66,19 @@ export async function postSheetOnWeb(
   } else {
     const draft = toPostDraft(post, 'pending', now, previous ?? null);
     // An attempt that failed before its create keeps only its uploads: each photo that already
-    // landed is reused by id rather than uploaded twice.
+    // landed — a Report's or the pool's (A10-7) — is reused by id rather than uploaded twice.
     attempt =
       previous == null
         ? draft
         : {
             ...draft,
+            ...(draft.photos !== undefined
+              ? {
+                  photos: draft.photos.map(
+                    (photo) => previous.photos?.find((p) => p.id === photo.id) ?? photo,
+                  ),
+                }
+              : {}),
             reports: draft.reports.map((r) => {
               const prior = previous.reports.find((p) => p.id === r.id);
               if (!prior) return r;
@@ -154,6 +162,16 @@ function webEffects(convex: ConvexReactClient) {
       }),
     createPost: async (input: Parameters<typeof toCreateArgs>[0]) =>
       convex.mutation(api.posts.create, toCreateArgs(input)),
+    attachAccessPhoto: async (input: { photoId: string; target: AccessPhotoTarget }) => {
+      await convex.mutation(api.accessPoints.attachPhoto, {
+        targetType: input.target.kind,
+        ...(input.target.kind === 'put_in' ? { putInId: input.target.id as Id<'putIns'> } : {}),
+        ...(input.target.kind === 'parking_area'
+          ? { parkingAreaId: input.target.id as Id<'parkingAreas'> }
+          : {}),
+        photoId: input.photoId as Id<'photos'>,
+      });
+    },
     createAccessAlert: async (
       input: AccessConditionFiling & { reportId: string; idempotencyKey: string },
     ) => {

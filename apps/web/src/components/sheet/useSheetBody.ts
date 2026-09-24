@@ -14,7 +14,8 @@ import {
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { recordBodyOutline } from '../../lib/bodyOutlines';
 
 /** A known launch or lot, as the picker and the map want it. */
 export interface SheetAccessPoint {
@@ -79,7 +80,7 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
   );
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  return useMemo(() => {
+  const result = useMemo<SheetBody | null>(() => {
     if (waterBodyId === undefined) return null;
     const body = bodyResult?.available ? bodyResult.body : null;
     const polygon = (body?.polygon as unknown as Polygon | MultiPolygon | undefined) ?? null;
@@ -133,4 +134,10 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       timeZone,
     };
   }, [waterBodyId, bodyResult, bays, access, hazardRows, recent, timeZone]);
+  // The outline, for the photo pool's location rules (A10-7): recorded the moment it lands.
+  const polygon = result?.polygon ?? null;
+  useEffect(() => {
+    if (waterBodyId !== undefined && polygon !== null) recordBodyOutline(waterBodyId, polygon);
+  }, [waterBodyId, polygon]);
+  return result;
 }
