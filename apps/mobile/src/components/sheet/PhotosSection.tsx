@@ -1,6 +1,6 @@
 import {
   type DraftPhoto,
-  onLake,
+  onWater,
   photosInWindow,
   photoWindow,
   placePhoto as placeAlongTrack,
@@ -65,7 +65,7 @@ export function PhotosSection({
   const [end] = selectedValues(sheet, 'endTime');
   const endMs = end?.ms;
   const startMs = sheet.scalars.skateStartTime;
-  const bbox = body?.silhouette?.bbox;
+  const outline = body?.polygon;
   const included = useMemo(() => new Set(report.photos.map((p) => p.id)), [report.photos]);
 
   // The window the library is asked for: the skate's, padded — or the whole local day.
@@ -139,12 +139,14 @@ export function PhotosSection({
         persistDraftPhoto(processed.thumbUri, `sheet-${id}-thumb.jpg`),
       ]);
       const takenAtMs = processed.takenAtMs ?? item.takenAtMs;
-      // Where it was taken: its own location if on the lake; else along the track at that minute.
+      // Where it was taken: its own location if on the water; else along the track at that minute
+      // — and that only on the water too, since a shutter before the first fix clamps to the
+      // track's first point, which may be the launch the author keeps to themselves (D58).
       let coord = exifCoord;
-      let placeOnMap = onLake(coord, bbox);
+      let placeOnMap = onWater(coord, outline);
       if (!placeOnMap && trackPoints.length > 1) {
         const along = placeAlongTrack({ id, takenAtMs, coord: undefined }, trackPoints);
-        if (along) {
+        if (along && onWater(along.coord, outline)) {
           coord = along.coord;
           placeOnMap = true;
         }
@@ -186,7 +188,7 @@ export function PhotosSection({
             thumbUri: processed.thumbUri,
             ...(coord ? { coord } : {}),
             ...(processed.takenAtMs !== undefined ? { takenAtMs: processed.takenAtMs } : {}),
-            placeOnMap: onLake(coord, bbox),
+            placeOnMap: onWater(coord, outline),
           };
         }),
       );
@@ -429,7 +431,7 @@ export function PhotosSection({
                         p.id === photo.id ? { ...p, placeOnMap: false } : p,
                       ),
                     }));
-                  } else if (onLake(photo.coord, bbox)) {
+                  } else if (onWater(photo.coord, outline)) {
                     setReport((r) => ({
                       ...r,
                       photos: r.photos.map((p) =>

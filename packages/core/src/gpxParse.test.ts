@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGpx, planGpxImport } from './gpxParse';
+import { GPX_MAX_BYTES, gpxSizeRefusal, parseGpx, planGpxImport } from './gpxParse';
 import { toGpx } from './track';
 
 const GPX = `<?xml version="1.0"?>
@@ -35,6 +35,36 @@ describe('parseGpx', () => {
       [43.64, -72.13],
       [43.65, -72.14],
     ]);
+  });
+
+  it('reads a document that prefixes the GPX namespace, and a prefix must close as it opened', () => {
+    const parsed = parseGpx(
+      '<?xml version="1.0"?><gpx:gpx xmlns:gpx="http://www.topografix.com/GPX/1/1">' +
+        '<gpx:trk><gpx:name>Prefixed</gpx:name><gpx:trkseg>' +
+        '<gpx:trkpt lat="43.64" lon="-72.13"><gpx:ele>140</gpx:ele><gpx:time>2026-01-10T19:05:00Z</gpx:time></gpx:trkpt>' +
+        '<gpx:trkpt lat="43.65" lon="-72.14"><gpx:time>2026-01-10T19:06:00Z</gpx:time></gpx:trkpt>' +
+        '</gpx:trkseg></gpx:trk></gpx:gpx>',
+    );
+    expect(parsed?.name).toBe('Prefixed');
+    expect(parsed?.points.map((p) => [p.lat, p.lng, p.elevation])).toEqual([
+      [43.64, -72.13, 140],
+      [43.65, -72.14, undefined],
+    ]);
+    // A mismatched close is not an element; the one well-formed point is not a track.
+    expect(
+      parseGpx(
+        '<gpx><trkpt lat="1" lon="2"><a:time>2026-01-10T19:05:00Z</b:time></trkpt>' +
+          '<trkpt lat="1" lon="2"><time>2026-01-10T19:06:00Z</time></trkpt></gpx>',
+      ),
+    ).toBeNull();
+    // An extension's element is not the root: `gpxtpx:` is a prefix, not `gpx`.
+    const points =
+      '<trkpt lat="1" lon="2"><time>2026-01-10T19:05:00Z</time></trkpt>' +
+      '<trkpt lat="1" lon="2"><time>2026-01-10T19:06:00Z</time></trkpt>';
+    expect(
+      parseGpx(`<gpxtpx:TrackPointExtension>${points}</gpxtpx:TrackPointExtension>`),
+    ).toBeNull();
+    expect(parseGpx(`<ns:gpx>${points}</ns:gpx>`)?.points).toHaveLength(2);
   });
 
   it('refuses what is not a track', () => {
@@ -95,5 +125,13 @@ describe('planGpxImport', () => {
       'r',
     );
     expect(still).toEqual({ ok: false, message: 'That track has too few usable points.' });
+  });
+});
+
+describe('gpxSizeRefusal', () => {
+  it('refuses a file past the cap before it is read, and reads one of unknown size', () => {
+    expect(gpxSizeRefusal(GPX_MAX_BYTES)).toBeNull();
+    expect(gpxSizeRefusal(GPX_MAX_BYTES + 1)).toMatch(/too big/);
+    expect(gpxSizeRefusal(undefined)).toBeNull();
   });
 });

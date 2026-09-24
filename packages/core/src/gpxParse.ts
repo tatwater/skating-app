@@ -1,9 +1,9 @@
 /**
  * A GPX file read back into track points (A10-7 / §4.2's GPX door). Strava, Garmin and most
  * watches export one; this reads `<trkpt lat lon>` with its `<time>` and `<ele>`, in document
- * order, and nothing else. Hand-rolled like `toGpx`: GPX is a handful of elements, and a regex
- * over the one element that matters is easier to keep honest than an XML library. A file with
- * fewer than two timed points is not a track.
+ * order, and nothing else, with or without a namespace prefix. Hand-rolled like `toGpx`: GPX is a
+ * handful of elements, and a regex over the one element that matters is easier to keep honest than
+ * an XML library. A file with fewer than two timed points is not a track.
  */
 
 import type { LineString } from 'geojson';
@@ -15,11 +15,29 @@ export interface ParsedGpx {
   name?: string;
 }
 
+/**
+ * The largest GPX file either surface reads. A three-hour skate logged every second is ~2 MB, and a
+ * watch's extensions (heart rate, cadence) might triple that; a file past this is not one skate.
+ * Checked **before** the file is read — the parse is synchronous on the UI thread.
+ */
+export const GPX_MAX_BYTES = 20 * 1024 * 1024;
+
+/** The sentence for a file over `GPX_MAX_BYTES`, or `null` for one that may be read. */
+export function gpxSizeRefusal(bytes: number | undefined): string | null {
+  return bytes !== undefined && bytes > GPX_MAX_BYTES
+    ? "That file is too big to be one skate's track."
+    : null;
+}
+
+// Every element may carry a namespace prefix (`<gpx:trkpt>` from a writer that declares GPX as a
+// prefixed namespace rather than the default one); a closing tag must repeat the opening's prefix.
+const NS = '((?:[A-Za-z_][\\w.-]*:)?)';
 // A self-closing `<trkpt …/>` (an untimed point some tools write) is its own match, not an opening
 // tag: otherwise the lazy body would run on through the *next* point's `</trkpt>` and swallow it.
-const TRKPT = /<trkpt\b([^>]*?)(?:\/>|>([\s\S]*?)<\/trkpt>)/gi;
+const TRKPT = new RegExp(`<${NS}trkpt\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/\\1trkpt>)`, 'gi');
 const attr = (name: string) => new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i');
-const tag = (name: string) => new RegExp(`<${name}\\b[^>]*>([^<]*)<\\/${name}>`, 'i');
+const tag = (name: string) => new RegExp(`<${NS}${name}\\b[^>]*>([^<]*)<\\/\\1${name}>`, 'i');
+const GPX_ROOT = new RegExp(`<${NS}gpx\\b`, 'i');
 // Built once: `exec` on a non-global regex is stateless, and a watch's file has thousands of points.
 const LAT = attr('lat');
 const LON = attr('lon');
@@ -28,23 +46,23 @@ const ELE = tag('ele');
 const NAME = tag('name');
 
 export function parseGpx(xml: string): ParsedGpx | null {
-  if (!/<gpx\b/i.test(xml)) return null;
+  if (!GPX_ROOT.test(xml)) return null;
   const points: TrackPoint[] = [];
   for (const m of xml.matchAll(TRKPT)) {
-    const attrs = m[1] ?? '';
-    const body = m[2] ?? '';
+    const attrs = m[2] ?? '';
+    const body = m[3] ?? '';
     const lat = Number(LAT.exec(attrs)?.[1]);
     const lng = Number(LON.exec(attrs)?.[1]);
-    const time = TIME.exec(body)?.[1];
+    const time = TIME.exec(body)?.[2];
     const t = time ? Date.parse(time.trim()) : Number.NaN;
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(t)) continue;
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
-    const ele = Number(ELE.exec(body)?.[1]);
+    const ele = Number(ELE.exec(body)?.[2]);
     points.push({ lat, lng, t, ...(Number.isFinite(ele) ? { elevation: ele } : {}) });
   }
   if (points.length < 2) return null;
   points.sort((a, b) => a.t - b.t);
-  const name = NAME.exec(xml)?.[1]?.trim();
+  const name = NAME.exec(xml)?.[2]?.trim();
   return { points, ...(name ? { name } : {}) };
 }
 

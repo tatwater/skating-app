@@ -10,6 +10,7 @@ import {
   type DraftPhoto,
   dropPhoto,
   endTimeRow,
+  gpxSizeRefusal,
   isMinor,
   isPassageMarker,
   type LatLng,
@@ -44,7 +45,7 @@ import {
 import { useNavigate } from '@tanstack/react-router';
 import { useConvex, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useBodyBoxes } from '../../lib/bodyBoxes';
+import { useBodyOutlines } from '../../lib/bodyOutlines';
 import { setHazardPrefill } from '../../lib/hazardPrefill';
 import { postSheetOnWeb, saveSheetEditOnWeb } from '../../lib/sheetActions';
 import {
@@ -177,13 +178,13 @@ function Console({ post }: { post: PostSheet }) {
     return () => window.removeEventListener('beforeunload', warn);
   }, [post.dirty]);
 
-  // The photo pool re-runs its rules when a lake's box arrives (A10-7): a photo added before the
-  // other tab's lake was drawn finds its lake now. Quiet — the sheet's doing.
-  const boxes = useBodyBoxes();
+  // The photo pool re-runs its rules when a lake's outline arrives (A10-7): a photo added before
+  // the other tab's lake was drawn finds its lake now. Quiet — the sheet's doing.
+  const outlines = useBodyOutlines();
   useEffect(() => {
     if (!post.photos || post.photos.length === 0) return;
-    updateSheet((p) => reassignPool(p, assignCandidates(p, boxes)));
-  }, [boxes, post.photos]);
+    updateSheet((p) => reassignPool(p, assignCandidates(p, outlines)));
+  }, [outlines, post.photos]);
 
   const gapsFor = useCallback(
     (reportId: string): ReadonlySet<SheetSection> => {
@@ -518,7 +519,7 @@ function PhotoRail({
   activeId: string;
   editing: boolean;
 }) {
-  const boxes = useBodyBoxes();
+  const outlines = useBodyOutlines();
   const { mode, setMode } = useConsoleMode();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -563,7 +564,7 @@ function PhotoRail({
     setBusy(true);
     try {
       const drafts: DraftPhoto[] = await Promise.all(picked.map(addSheetPhoto));
-      updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, boxes)));
+      updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines)));
     } catch {
       setError("Couldn't read one of those images — try a different file.");
     } finally {
@@ -576,7 +577,7 @@ function PhotoRail({
     setMenuFor(null);
   };
   const toLake = (id: string, reportId: string) => {
-    updateSheet((p) => movePhotoToReport(p, id, reportId, assignCandidates(p, boxes)));
+    updateSheet((p) => movePhotoToReport(p, id, reportId, assignCandidates(p, outlines)));
     setMenuFor(null);
   };
   const toAccess = (id: string, target: AccessPhotoTarget) => {
@@ -1385,6 +1386,12 @@ function TrackImport({
     setError(null);
     setBusy(true);
     try {
+      // Refused before it is read: the parse runs on this thread.
+      const tooBig = gpxSizeRefusal(file.size);
+      if (tooBig) {
+        setError(tooBig);
+        return;
+      }
       const plan = planGpxImport(await file.text(), report.id);
       if (!plan.ok) {
         setError(plan.message);

@@ -16,6 +16,7 @@
  * plain strings here as everywhere in core; each surface casts at its own wire.
  */
 
+import type { MultiPolygon, Polygon } from 'geojson';
 import {
   type AccessPhotoTarget,
   createPostDraft,
@@ -27,9 +28,9 @@ import {
   reportDraftInput,
   unassignedPhotosMessage,
 } from './draftQueue';
-import type { BBox, LatLng } from './geometry';
+import { type LatLng, polygonBBox } from './geometry';
 import { hazardRefFor } from './hazardBundle';
-import { type AssignCandidate, assignPhoto, onLake } from './photoAssignment';
+import { type AssignCandidate, assignPhoto, onWater } from './photoAssignment';
 import {
   type MinimumSetTerm,
   minimumSetGaps,
@@ -480,37 +481,41 @@ export function unassignedPhotos(post: PostSheet): DraftPhoto[] {
   return (post.photos ?? []).filter((p) => p.attachTo === undefined);
 }
 
-/** A Report as the assignment rules see it: its window and, when its lake's geometry is known, the box. */
+/**
+ * A Report as the assignment rules see it: its window and, when its lake's outline is known, the
+ * outline and its box. `outlines` is keyed by water body id.
+ */
 export function assignCandidates(
   post: PostSheet,
-  bboxes: Readonly<Record<string, BBox | undefined>>,
+  outlines: Readonly<Record<string, Polygon | MultiPolygon | undefined>>,
 ): AssignCandidate[] {
   return post.reports.map((r) => {
     const end = reportEndMs(r);
     const start = r.sheet.scalars.skateStartTime;
-    const bbox = r.sheet.waterBodyId !== undefined ? bboxes[r.sheet.waterBodyId] : undefined;
+    const polygon = r.sheet.waterBodyId !== undefined ? outlines[r.sheet.waterBodyId] : undefined;
     return {
       reportId: r.id,
       ...(start !== undefined ? { startMs: start } : {}),
       ...(end !== undefined ? { endMs: end } : {}),
-      ...(bbox !== undefined ? { bbox } : {}),
+      ...(polygon !== undefined ? { bbox: polygonBBox(polygon), polygon } : {}),
     };
   });
 }
 
 /**
- * A photo landing on a Report is placed when its location is on that lake (D42, pre-answered by
- * the water) — and only then: a placement from a previous lake does not ride along to one the
- * coordinate is not on, so a coordinate off the lake is never sent. The author places by hand.
+ * A photo landing on a Report is placed when its location is on that lake's water (D42, pre-answered
+ * by the water; `onWater`) — and only then: a placement from a previous lake does not ride along to
+ * one the coordinate is not on, so a coordinate off the water is never sent. The author places by
+ * hand.
  */
 function onReport(
   photo: DraftPhoto,
   reportId: string,
   candidates: readonly AssignCandidate[],
 ): DraftPhoto {
-  const bbox = candidates.find((c) => c.reportId === reportId)?.bbox;
+  const polygon = candidates.find((c) => c.reportId === reportId)?.polygon;
   const { attachTo: _attachTo, ...rest } = photo;
-  return { ...rest, placeOnMap: onLake(photo.coord, bbox) };
+  return { ...rest, placeOnMap: onWater(photo.coord, polygon) };
 }
 
 /**

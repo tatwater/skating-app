@@ -1,3 +1,4 @@
+import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import { createPostDraft, createReportDraft, type DraftPhoto } from './draftQueue';
 import {
@@ -402,7 +403,18 @@ describe('the photo pool (A10-7)', () => {
   const H = 3600_000;
   let n = 0;
   const mint = () => `p${++n}`;
-  const crystal = { minLat: 43.63, maxLat: 43.65, minLng: -72.15, maxLng: -72.12 };
+  const crystal: Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [-72.15, 43.63],
+        [-72.12, 43.63],
+        [-72.12, 43.65],
+        [-72.15, 43.65],
+        [-72.15, 43.63],
+      ],
+    ],
+  };
   const photo = (id: string, over: Partial<DraftPhoto> = {}): DraftPhoto => ({
     id,
     fullUri: `${id}:full`,
@@ -442,6 +454,8 @@ describe('the photo pool (A10-7)', () => {
       post,
       [
         photo('a', { takenAtMs: NOW - H, coord: { lat: 43.64, lng: -72.13 } }),
+        // On the lake by its box, ~150 m up the bank: Crystal's, and not placed (D42).
+        photo('bank', { coord: { lat: 43.6513, lng: -72.13 } }),
         photo('b', { takenAtMs: NOW - 4.5 * H }),
         photo('lunch', { takenAtMs: NOW - 3 * H }),
         photo('nowhere'),
@@ -450,11 +464,14 @@ describe('the photo pool (A10-7)', () => {
     );
     const onC = next.reports.find((r) => r.id === c.id)?.photos ?? [];
     const onM = next.reports.find((r) => r.id === m.id)?.photos ?? [];
-    expect(onC.map((p) => [p.id, p.placeOnMap])).toEqual([['a', true]]);
+    expect(onC.map((p) => [p.id, p.placeOnMap])).toEqual([
+      ['a', true],
+      ['bank', false],
+    ]);
     expect(onM.map((p) => p.id)).toEqual(['b']);
     expect(unassignedPhotos(next).map((p) => p.id)).toEqual(['lunch', 'nowhere']);
     expect(next.dirty).toBe(true);
-    expect(photoCounts(next)).toEqual({ total: 4, assigned: 2 });
+    expect(photoCounts(next)).toEqual({ total: 5, assigned: 3 });
     // The pool is the Post's refusal, ahead of any Report's.
     expect(postRefusals(next, NOW)[0]).toMatchObject({
       reportId: '',
@@ -462,7 +479,7 @@ describe('the photo pool (A10-7)', () => {
     });
   });
 
-  it('re-runs the rules quietly when a lake’s box arrives', () => {
+  it('re-runs the rules quietly when a lake’s outline arrives', () => {
     const { post, c } = twoLakes();
     const before = addPostPhotos(
       post,

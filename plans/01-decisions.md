@@ -689,9 +689,12 @@ signal for hazard location). Doing it during the existing D31 optimization pass 
 nothing extra.
 
 ### D42 amendment — a location on the lake pre-answers the opt-in (A10-7, 2026-09-23)
-A photo whose EXIF coordinate lies **on the lake** (its bounding box plus 250 m) is placed there
-by itself when it lands on a Report; one with no usable location on a Report opened from a
-recording is placed where the track was when the shutter fired. The opt-in stays the author's:
+A photo whose EXIF coordinate lies **on the water** — inside the lake's outline and at least
+50 m from every shore, an island's included (`onWater`) — is placed there by itself when it lands
+on a Report; one with no usable location on a Report opened from a recording is placed where the
+track was when the shutter fired, under the same test. The lake's bounding box (plus 250 m) only
+says *which* Report a photo is about; it never places one, because a box also holds the islands,
+the coves and the houses around them (PR #79 review). The opt-in stays the author's:
 every placed photo shows its mark, one tap un-places it, and the coordinate is sent only while it
 is placed. What changed is the default for the one case that reveals nothing — a point on the
 water is not a home — because the founder found that asking for a tap per photo is how photos end

@@ -1064,10 +1064,11 @@ code from #74 that the merge brought in, not this PR's, and is left for its own 
 - RN render tests for the sheet — the harness is still unbuilt; the timeline, ring and band math
   are in core and tested there, and the components are thin.
 
-## Built record — A10-7 (2026-09-23, `phase-a10-reporting-flow-7`, PR #79 stacked on #78)
+## Built record — A10-7 (2026-09-23, `phase-a10-reporting-flow-7`, PR #79)
 
 The second PR of the re-skin, the founder's approved split: what the sheet does with **photos and
-tracks**. Four commits off `-6`, ~2,700 changed lines over 38 files. Suites at build: core 3,040 ·
+tracks**. Four commits, built off `-6` and rebased onto `main` once #78 merged; ~2,700 changed
+lines over 38 files. Suites at build: core 3,040 ·
 convex 1,748 · web 651 · mobile 115. No schema change, no data run. **Two native
 modules** (`expo-media-library`, `expo-document-picker`) with their config plugins: the phone
 needs a new EAS preview build.
@@ -1078,7 +1079,8 @@ needs a new EAS preview build.
   holds its capture time (the window is [start − 30 min, end + 30 min], or two hours back from the
   end without a start; the nearest end wins a tie between two visits to one lake), else on the
   Report whose lake's bounding box (plus 250 m) holds its location, else in the Post's **pool**.
-  On a Report, a location on the lake places it (D42 amendment). `PostSheet.photos` is the pool;
+  On a Report, a location on the water — inside the outline, 50 m clear of every shore — places
+  it (D42 amendment, `onWater`); the box never does. `PostSheet.photos` is the pool;
   `addPostPhotos`, `reassignPool` (quiet, when a lake's box arrives), `movePhotoToReport`,
   `sendPhotoToAccess`, `dropPhoto`, `placePhotoByHand`, `photoCounts`; the pool rides the draft
   round trip (`PostDraft.photos`, a JSON field — no migration). A pool photo nobody placed is the
@@ -1092,7 +1094,7 @@ needs a new EAS preview build.
   corner (a click opens the menu), an amber dashed `?` on the pool's, ● / □ on one bound for the
   put-in or the lot, the placed mark, and ◎ on a Report photo with no location (place-mode: the
   instrument's third mode, a click on the water). Drop or pick photos on the column; each lands
-  where the day says. `bodyBoxes` records every drawn lake's box so the pool re-runs for a tab
+  where the day says. `bodyOutlines` records every drawn lake's outline so the pool re-runs for a tab
   that is not active. *This is a hazard…* leaves the photo's location and file in `hazardPrefill`
   and opens the lake's drawer with the form; the form takes it once on mount, and offers the open
   Post's photos within 150 m of any pin (`photosNearPoint`). *+ Add your track* on the instrument:
@@ -1103,7 +1105,7 @@ needs a new EAS preview build.
   `photoWindow` / `sameDayWindow` / `photosInWindow`, built in A10-1 and unused until now), a tap
   includes (EXIF read on device, files copied out of the roll, the roll untouched), a blue corner
   for placed; a photo with no location on a recorded skate is placed along the track at its minute
-  (core's `placePhoto`, also A10-1's); *Place* opens the lake to tap; *Hazard* hands the photo and
+  when that point is on the water (core's `placePhoto`, also A10-1's); *Place* opens the lake to tap; *Hazard* hands the photo and
   its location to the map's capture through `hazardCapturePrefill` on the map context, which the
   capture reads on its nonce (the pin lands at the photo once a type is chosen). The capture offers
   the open sheet's photos near its pin. *+ Add your track* in WHEN: `expo-document-picker` → the
@@ -1115,9 +1117,12 @@ needs a new EAS preview build.
    decision (`strava.ts` says why); reading an activity means `activity:read` on the consent and a
    re-connect for every linked account. The CTA says what Strava's own export does, and the roadmap
    carries the question.
-2. **Assignment by location uses the lake's bounding box, not its polygon** — the box is what the
-   silhouette already carries on every surface; a polygon test would need the geometry for every
-   Report's lake in memory. Two lakes whose boxes overlap resolve to the first in the Post's order.
+2. **Assignment by location uses the lake's bounding box; placement uses its outline.** A wrong
+   assignment moves a photo between the author's own tabs; a wrong placement publishes a
+   coordinate. So *which Report* reads the box plus 250 m (two lakes whose boxes overlap resolve to
+   the first in the Post's order), and *placed* reads the polygon both surfaces already hold for
+   the lake, 50 m clear of every shore (`onWater`, `PHOTO_PLACE_SHORE_SETBACK_M`). Built on the box
+   alone first; the PR #79 review caught it (below).
 3. **A photo added from a Report's own Photos section is that Report's** — the rules run on the
    Post-level add (web's column, the phone's reel and picker); a section's picker is an explicit
    choice of lake. The phone has no pool: with one Report on screen at a time, every photo has a
@@ -1147,6 +1152,30 @@ The rest: a self-closing `<trkpt/>` swallowed the next point; a reload restored 
 no blobs behind them; a retried web Post re-uploaded pool photos; place-mode offered on a photo
 whose lake was not the one drawn; the prefilled photo re-offered as a suggestion; a stale
 `placeOnMap` carried to a lake the coordinate is not on; the drop zone live on an edit.
+
+### The PR #79 review — what Greptile caught
+
+Two P1s and two P2s, all real.
+
+1. **The box placed photos the water would not have.** Auto-placement asked the lake's bounding
+   box plus 250 m, so on any lake that is not a rectangle an EXIF coordinate on an island, across
+   a cove or at a house on the bank read as *on the lake* — and a placed photo's coordinate is
+   stored and served. Placement now asks the outline (`onWater`: inside the polygon, 50 m clear
+   of every shore, an island's included), which both surfaces already held for the drawn lake;
+   the box is left to assignment, where a wrong answer only moves a photo between the author's own
+   tabs. Web's `bodyBoxes` became `bodyOutlines`. The phone's track fallback asks the same test of
+   the track point, since a shutter before the first fix clamps to the track's first point — the
+   launch, which the author may keep to themselves (D58).
+2. **A canceled photo → hazard left its pin armed.** `HazardCapture` stays mounted across the map's
+   routes, and Cancel before a type was chosen never consumed the prefill's coordinate — the next
+   capture, the FAB on another lake, would have dropped its pin at the canceled photo. The reset
+   that clears every per-capture field clears it and the attached-photo ids too. No test: the
+   phone still has no component harness (Owed).
+3. **A namespace-prefixed GPX was refused** (`<gpx:trkpt>`). The parser takes an optional prefix
+   on every element and requires a close to repeat its open's.
+4. **A GPX file of any size was read and parsed on the UI thread.** Both surfaces refuse a file
+   over `GPX_MAX_BYTES` (20 MB, ~10× a three-hour one-second log) before reading it
+   (`gpxSizeRefusal`).
 
 ### Owed
 

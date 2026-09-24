@@ -1,7 +1,7 @@
 import { useNetInfo } from '@react-native-community/netinfo';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { planGpxImport, updateReport } from '@skating/core';
+import { gpxSizeRefusal, planGpxImport, updateReport } from '@skating/core';
 import { useMutation } from 'convex/react';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
@@ -41,9 +41,17 @@ export function TrackImport({
         multiple: false,
       });
       if (picked.canceled) return;
-      const uri = picked.assets[0]?.uri;
-      if (!uri) return;
-      const plan = planGpxImport(await new File(uri).text(), report.id);
+      const asset = picked.assets[0];
+      if (!asset?.uri) return;
+      const file = new File(asset.uri);
+      // Refused before it is read: the parse runs on the JS thread. The picker's size, else the
+      // cached copy's own.
+      const tooBig = gpxSizeRefusal(asset.size ?? file.size ?? undefined);
+      if (tooBig) {
+        setError(tooBig);
+        return;
+      }
+      const plan = planGpxImport(await file.text(), report.id);
       if (!plan.ok) {
         setError(plan.message);
         return;

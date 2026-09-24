@@ -244,6 +244,11 @@ export function HazardCapture() {
     // component, so nothing else clears it.
     setNudge(null);
     setDismissedDuplicateOf(null);
+    // The photo → hazard prefill (A10-7) is the same kind of leak: a capture canceled before its
+    // type was chosen never consumed the coordinate, and the next capture — the FAB, on another
+    // lake — would drop its pin at the canceled photo. It and the attached-photo ids end here.
+    prefillCoord.current = null;
+    setSuggestedAdded([]);
   }
 
   /** Back to the sheet that asked for this pin (the bundle prompt will offer it, D55). */

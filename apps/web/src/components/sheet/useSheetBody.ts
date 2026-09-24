@@ -15,7 +15,7 @@ import {
 import { useQuery } from 'convex/react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { useEffect, useMemo } from 'react';
-import { recordBodyBox } from '../../lib/bodyBoxes';
+import { recordBodyOutline } from '../../lib/bodyOutlines';
 
 /** A known launch or lot, as the picker and the map want it. */
 export interface SheetAccessPoint {
@@ -134,10 +134,10 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       timeZone,
     };
   }, [waterBodyId, bodyResult, bays, access, hazardRows, recent, timeZone]);
-  // The box, for the photo pool's location rule (A10-7): recorded the moment the geometry lands.
-  const bbox = result?.silhouette?.bbox;
+  // The outline, for the photo pool's location rules (A10-7): recorded the moment it lands.
+  const polygon = result?.polygon ?? null;
   useEffect(() => {
-    if (waterBodyId !== undefined && bbox !== undefined) recordBodyBox(waterBodyId, bbox);
-  }, [waterBodyId, bbox]);
+    if (waterBodyId !== undefined && polygon !== null) recordBodyOutline(waterBodyId, polygon);
+  }, [waterBodyId, polygon]);
   return result;
 }
