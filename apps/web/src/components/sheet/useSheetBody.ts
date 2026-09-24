@@ -14,7 +14,8 @@ import {
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { recordBodyBox } from '../../lib/bodyBoxes';
 
 /** A known launch or lot, as the picker and the map want it. */
 export interface SheetAccessPoint {
@@ -79,7 +80,7 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
   );
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  return useMemo(() => {
+  const result = useMemo<SheetBody | null>(() => {
     if (waterBodyId === undefined) return null;
     const body = bodyResult?.available ? bodyResult.body : null;
     const polygon = (body?.polygon as unknown as Polygon | MultiPolygon | undefined) ?? null;
@@ -133,4 +134,10 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       timeZone,
     };
   }, [waterBodyId, bodyResult, bays, access, hazardRows, recent, timeZone]);
+  // The box, for the photo pool's location rule (A10-7): recorded the moment the geometry lands.
+  const bbox = result?.silhouette?.bbox;
+  useEffect(() => {
+    if (waterBodyId !== undefined && bbox !== undefined) recordBodyBox(waterBodyId, bbox);
+  }, [waterBodyId, bbox]);
+  return result;
 }

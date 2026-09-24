@@ -42,3 +42,30 @@ export function exifCoord(
   if (lat === 0 && lng === 0) return undefined; // null-island: almost always missing GPS, not a real fix
   return { lat, lng };
 }
+
+/**
+ * The capture time from an image-picker asset's EXIF, epoch ms, or `undefined` (A10-7). EXIF writes
+ * `DateTimeOriginal` as `YYYY:MM:DD HH:MM:SS` **in the camera's local time with no zone**; it is
+ * read as the device's local time, which is the skater's clock and the one the sheet's windows are
+ * on. A parseable `OffsetTimeOriginal` (`+05:00`) is honored when present.
+ */
+export function exifTakenAt(exif: Record<string, unknown> | null | undefined): number | undefined {
+  if (!exif) return undefined;
+  const raw = exif.DateTimeOriginal ?? exif.DateTimeDigitized ?? exif.DateTime;
+  if (typeof raw !== 'string') return undefined;
+  const m = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw.trim());
+  if (!m) return undefined;
+  const [, y, mo, d, h, mi, sec] = m as unknown as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  const offset = typeof exif.OffsetTimeOriginal === 'string' ? exif.OffsetTimeOriginal.trim() : '';
+  const iso = `${y}-${mo}-${d}T${h}:${mi}:${sec}${/^[+-]\d{2}:\d{2}$/.test(offset) ? offset : ''}`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+}

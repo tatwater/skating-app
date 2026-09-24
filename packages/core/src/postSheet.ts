@@ -17,6 +17,7 @@
  */
 
 import {
+  type AccessPhotoTarget,
   createPostDraft,
   createReportDraft,
   type DraftPhoto,
@@ -24,9 +25,11 @@ import {
   type PostDraft,
   type ReportDraft,
   reportDraftInput,
+  unassignedPhotosMessage,
 } from './draftQueue';
-import type { LatLng } from './geometry';
+import type { BBox, LatLng } from './geometry';
 import { hazardRefFor } from './hazardBundle';
+import { type AssignCandidate, assignPhoto, onLake } from './photoAssignment';
 import {
   type MinimumSetTerm,
   minimumSetGaps,
@@ -83,6 +86,12 @@ export interface PostSheet {
   title: string;
   body: string;
   reports: SheetReport[];
+  /**
+   * The Post's pool (A10-7): photos the day could not put on a Report — no time in a window, no
+   * location on a lake — waiting for the author to say. One with an `attachTo` is bound for the
+   * put-in or the lot and posts as an access photo. Absent on sheets from before A10-7.
+   */
+  photos?: DraftPhoto[];
   mode: SheetMode;
   door: SheetDoor;
   /** The minute the sheet was opened — the pinned end-time chip's instant (D192). */
@@ -208,6 +217,7 @@ export function postSheetFromDraft(draft: PostDraft, openedAtMs: number): PostSh
     title: draft.title ?? '',
     body: draft.body ?? '',
     reports,
+    ...(draft.photos !== undefined && draft.photos.length > 0 ? { photos: draft.photos } : {}),
     mode: { kind: 'create' },
     door: 'draft',
     openedAtMs,
@@ -370,6 +380,7 @@ export function toPostDraft(
     ...(post.title.trim() ? { title: post.title.trim() } : {}),
     ...(post.body.trim() ? { body: post.body.trim() } : {}),
     reports,
+    ...(post.photos !== undefined && post.photos.length > 0 ? { photos: post.photos } : {}),
     status,
   });
   return { ...draft, updatedAt: now };
@@ -391,6 +402,11 @@ export interface ReportRefusal {
  */
 export function postRefusals(post: PostSheet, now: number): ReportRefusal[] {
   const out: ReportRefusal[] = [];
+  // The pool first (A10-7): a photo nobody has placed is the Post's gap, not a Report's.
+  const unassigned = unassignedPhotos(post).length;
+  if (unassigned > 0 && post.mode.kind !== 'edit') {
+    out.push({ reportId: '', gaps: [], message: unassignedPhotosMessage(unassigned) });
+  }
   for (const r of post.reports) {
     const bodyName = r.bodyName;
     if (r.sheet.waterBodyId === undefined && r.coord === undefined) {
@@ -455,6 +471,174 @@ export const SHEET_SECTION_COUNT = SHEET_SECTIONS.length;
 /** How many of a Report's sections have something in them — the tab meter and the status bar. */
 export function sectionsFilled(sheet: ReportSheetState): number {
   return SHEET_SECTIONS.filter((s) => sectionFilled(sheet, s)).length;
+}
+
+// ── The photo pool (A10-7) ──────────────────────────────────────────────────────────────────────
+
+/** The pool photos still waiting for the author — not bound for a put-in or a lot. */
+export function unassignedPhotos(post: PostSheet): DraftPhoto[] {
+  return (post.photos ?? []).filter((p) => p.attachTo === undefined);
+}
+
+/** A Report as the assignment rules see it: its window and, when its lake's geometry is known, the box. */
+export function assignCandidates(
+  post: PostSheet,
+  bboxes: Readonly<Record<string, BBox | undefined>>,
+): AssignCandidate[] {
+  return post.reports.map((r) => {
+    const end = reportEndMs(r);
+    const start = r.sheet.scalars.skateStartTime;
+    const bbox = r.sheet.waterBodyId !== undefined ? bboxes[r.sheet.waterBodyId] : undefined;
+    return {
+      reportId: r.id,
+      ...(start !== undefined ? { startMs: start } : {}),
+      ...(end !== undefined ? { endMs: end } : {}),
+      ...(bbox !== undefined ? { bbox } : {}),
+    };
+  });
+}
+
+/** A photo landing on a Report is placed when its location is on that lake (D42, pre-answered by the water). */
+function onReport(
+  photo: DraftPhoto,
+  reportId: string,
+  candidates: readonly AssignCandidate[],
+): DraftPhoto {
+  const bbox = candidates.find((c) => c.reportId === reportId)?.bbox;
+  const { attachTo: _attachTo, ...rest } = photo;
+  return onLake(photo.coord, bbox) ? { ...rest, placeOnMap: true } : rest;
+}
+
+/**
+ * Add photos to the Post: each lands on the Report the day says (by time, then by location), placed
+ * when its location is on that lake, else in the pool. The author's hand, so the sheet is dirty.
+ */
+export function addPostPhotos(
+  post: PostSheet,
+  photos: readonly DraftPhoto[],
+  candidates: readonly AssignCandidate[],
+): PostSheet {
+  let next = post;
+  const pool: DraftPhoto[] = [...(post.photos ?? [])];
+  for (const photo of photos) {
+    const to = assignPhoto(photo, candidates);
+    if (to === null) {
+      pool.push(photo);
+      continue;
+    }
+    next = updateReport(next, to.reportId, (r) => ({
+      ...r,
+      photos: [...r.photos, onReport(photo, to.reportId, candidates)],
+    }));
+  }
+  return { ...next, photos: pool, dirty: true };
+}
+
+/**
+ * Re-run the rules over the pool — a lake's geometry arrived, a Report's window changed. Quiet: the
+ * sheet's doing. Only photos with no `attachTo`; what the author sent to a launch stays there.
+ */
+export function reassignPool(post: PostSheet, candidates: readonly AssignCandidate[]): PostSheet {
+  const pool = post.photos ?? [];
+  if (pool.length === 0) return post;
+  let next = post;
+  const kept: DraftPhoto[] = [];
+  let moved = false;
+  for (const photo of pool) {
+    const to = photo.attachTo === undefined ? assignPhoto(photo, candidates) : null;
+    if (to === null) {
+      kept.push(photo);
+      continue;
+    }
+    moved = true;
+    next = updateReport(
+      next,
+      to.reportId,
+      (r) => ({ ...r, photos: [...r.photos, onReport(photo, to.reportId, candidates)] }),
+      { quiet: true },
+    );
+  }
+  return moved ? { ...next, photos: kept } : post;
+}
+
+/** Every photo on the sheet with where it sits. */
+export function findPhoto(
+  post: PostSheet,
+  photoId: string,
+): { photo: DraftPhoto; reportId: string | null } | null {
+  for (const r of post.reports) {
+    const photo = r.photos.find((p) => p.id === photoId);
+    if (photo) return { photo, reportId: r.id };
+  }
+  const pooled = (post.photos ?? []).find((p) => p.id === photoId);
+  return pooled ? { photo: pooled, reportId: null } : null;
+}
+
+function withoutPhoto(post: PostSheet, photoId: string): PostSheet {
+  const reports = post.reports.map((r) =>
+    r.photos.some((p) => p.id === photoId)
+      ? { ...r, photos: r.photos.filter((p) => p.id !== photoId) }
+      : r,
+  );
+  return { ...post, reports, photos: (post.photos ?? []).filter((p) => p.id !== photoId) };
+}
+
+/** The author says: this photo is on that Report (the `?` menu's lake, or a move between tabs). */
+export function movePhotoToReport(
+  post: PostSheet,
+  photoId: string,
+  reportId: string,
+  candidates: readonly AssignCandidate[],
+): PostSheet {
+  const found = findPhoto(post, photoId);
+  if (!found || !post.reports.some((r) => r.id === reportId)) return post;
+  const stripped = withoutPhoto(post, photoId);
+  const next = updateReport(stripped, reportId, (r) => ({
+    ...r,
+    photos: [...r.photos, onReport(found.photo, reportId, candidates)],
+  }));
+  return { ...next, dirty: true };
+}
+
+/** The author says: this photo documents the put-in or the lot, not the ice (an access photo, A06d). */
+export function sendPhotoToAccess(
+  post: PostSheet,
+  photoId: string,
+  target: AccessPhotoTarget,
+): PostSheet {
+  const found = findPhoto(post, photoId);
+  if (!found) return post;
+  const stripped = withoutPhoto(post, photoId);
+  const { placeOnMap: _p, coord: _c, ...rest } = found.photo;
+  return {
+    ...stripped,
+    photos: [...(stripped.photos ?? []), { ...rest, placeOnMap: false, attachTo: target }],
+    dirty: true,
+  };
+}
+
+/** The author says: leave it out. The caller releases the file. */
+export function dropPhoto(post: PostSheet, photoId: string): PostSheet {
+  if (!findPhoto(post, photoId)) return post;
+  return { ...withoutPhoto(post, photoId), dirty: true };
+}
+
+/** The author placed a photo on the lake by hand (place-mode): its location is the click, and it is placed. */
+export function placePhotoByHand(post: PostSheet, photoId: string, coord: LatLng): PostSheet {
+  const found = findPhoto(post, photoId);
+  if (!found || found.reportId === null) return post;
+  return updateReport(post, found.reportId, (r) => ({
+    ...r,
+    photos: r.photos.map((p) => (p.id === photoId ? { ...p, coord, placeOnMap: true } : p)),
+  }));
+}
+
+/** How many photos the sheet holds, and how many of them have a home. */
+export function photoCounts(post: PostSheet): { total: number; assigned: number } {
+  const onReports = post.reports.reduce((n, r) => n + r.photos.length + r.keptPhotoIds.length, 0);
+  const pool = post.photos ?? [];
+  const bound = pool.filter((p) => p.attachTo !== undefined).length;
+  return { total: onReports + pool.length, assigned: onReports + bound };
 }
 
 /** The chips a leave prompt or a label needs: which lakes this sheet is about. */

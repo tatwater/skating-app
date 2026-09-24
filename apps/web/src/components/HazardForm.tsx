@@ -20,6 +20,7 @@ import {
   type HazardType,
   isPassageMarker,
   offersShoreBand,
+  photosNearPoint,
   relativeWhen,
   resizeDraft,
   retypeDraft,
@@ -32,7 +33,10 @@ import {
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { takeHazardPrefill } from '../lib/hazardPrefill';
+import { sheetPhotoBlob, sheetPhotoPreview } from '../lib/sheetPhotos';
+import { useSheet } from '../lib/sheetStore';
 import { useMapSelection } from './MapSelectionContext';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
@@ -126,6 +130,8 @@ export function HazardFormFields({
   error,
   submitting,
   photos,
+  suggestions = [],
+  onAddSuggested,
   shore,
   onChooseType,
   onChooseKind,
@@ -144,6 +150,9 @@ export function HazardFormFields({
   error: string | null;
   submitting: boolean;
   photos: PhotoDraftView[];
+  /** The open Post's photos near this pin (A10-7) — one tap attaches one. */
+  suggestions?: { id: string; previewUrl: string }[];
+  onAddSuggested?: (id: string) => void;
   shore?: ShoreBandState;
   onChooseType: (type: HazardType) => void;
   onChooseKind: (kind: HazardAuthorableKind) => void;
@@ -398,6 +407,29 @@ export function HazardFormFields({
         <p className="text-foreground-muted text-xs">
           Hard to describe, easy to show — a photo helps the next skater recognize it.
         </p>
+        {suggestions.length > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="font-mono text-[10px] text-foreground-muted uppercase tracking-[0.1em]">
+              From your post, near this pin
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onAddSuggested?.(s.id)}
+                  className="relative size-16 overflow-hidden rounded-[2px] border border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Attach this photo"
+                >
+                  <img src={s.previewUrl} alt="" className="size-full object-cover" />
+                  <span className="absolute right-0 bottom-0 bg-foreground px-1 font-semibold text-[10px] text-background">
+                    + Add
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <input
           id="hazard-photos"
           type="file"
@@ -493,6 +525,37 @@ export function HazardForm({
   // Same pipeline as report photos, so the same hook — it owns the checkpointed upload and the
   // reclaim-on-abandon sweep, which a hazard form abandoned mid-upload needs just as much.
   const photoDrafts = usePhotoDrafts();
+  /**
+   * A photo that *is* the hazard (A10-7): the console left the photo's location and its file here
+   * before handing off. Taken once on mount — the pin lands where the photo was taken, ready for a
+   * type, and the photo is the first attachment. The type is still the author's to say.
+   */
+  const prefillTaken = useRef(false);
+  useEffect(() => {
+    if (prefillTaken.current) return;
+    prefillTaken.current = true;
+    const prefill = takeHazardPrefill();
+    if (!prefill) return;
+    if (prefill.coord) {
+      setHazardDraft({ geometryKind: 'point_radius', coord: prefill.coord, radiusMeters: 25 });
+    }
+    if (prefill.files.length > 0) void photoDrafts.addFiles(filesList(prefill.files));
+    // Once, on mount: `photoDrafts.addFiles` and `setHazardDraft` are the mount's own.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: consumed once on mount by design
+  }, []);
+  /**
+   * The photos near this pin (A10-7, hazard → photo): the open Post's photos within reach of the
+   * draft's location, offered as one-tap attachments — a hazard with a pin already knows which of
+   * the day's photos are of it.
+   */
+  const openSheet = useSheet();
+  const pinCoord = hazardDraft?.geometryKind === 'point_radius' ? hazardDraft.coord : null;
+  const nearby = useMemo(() => {
+    if (!openSheet || !pinCoord) return [];
+    const all = [...openSheet.reports.flatMap((r) => r.photos), ...(openSheet.photos ?? [])];
+    return photosNearPoint(all, pinCoord).filter((p) => sheetPhotoPreview(p.id) !== null);
+  }, [openSheet, pinCoord]);
+  const [suggestedAdded, setSuggestedAdded] = useState<string[]>([]);
 
   /**
    * The snap's own state. It lives here rather than on the draft because Decision 3 stores a snapped
@@ -856,6 +919,15 @@ export function HazardForm({
           description={description}
           error={error ?? photoDrafts.error}
           photos={photoDrafts.photos}
+          suggestions={nearby
+            .filter((p) => !suggestedAdded.includes(p.id))
+            .map((p) => ({ id: p.id, previewUrl: sheetPhotoPreview(p.id) as string }))}
+          onAddSuggested={(id) => {
+            const file = sheetPhotoBlob(`${id}:full`);
+            if (!file) return;
+            setSuggestedAdded((s) => [...s, id]);
+            void photoDrafts.addFiles(filesList([file]));
+          }}
           onAddFiles={photoDrafts.addFiles}
           onRemovePhoto={photoDrafts.removePhoto}
           submitting={submitting}
@@ -885,4 +957,11 @@ export function HazardForm({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** A `FileList` from files — `addFiles` takes what an `<input type=file>` gives. */
+function filesList(files: readonly File[]): FileList {
+  const dt = new DataTransfer();
+  for (const f of files) dt.items.add(f);
+  return dt.files;
 }

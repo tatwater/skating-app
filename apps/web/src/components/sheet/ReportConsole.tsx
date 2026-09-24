@@ -1,19 +1,31 @@
 import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
+  type AccessPhotoTarget,
   addEarlierVisit,
   addLake,
+  addPostPhotos,
+  assignCandidates,
   type CompassSector,
+  type DraftPhoto,
+  dropPhoto,
   endTimeRow,
   isMinor,
   isPassageMarker,
   type LatLng,
   type MinimumSetTerm,
+  movePhotoToReport,
   POST_SENT_COPY,
   POST_TITLE_MAX_CHARS,
   type PostSheet,
+  parseGpx,
+  photoCounts,
+  placePhotoByHand,
   postCreateSent,
   postRefusals,
+  processTrack,
   type ReportRefusal,
+  reassignPool,
   removeReport,
   reportEndMs,
   reportsInTimeOrder,
@@ -22,16 +34,27 @@ import {
   type SheetSection,
   sectionsFilled,
   selectedValues,
+  sendPhotoToAccess,
   sheetReducer,
+  silhouettePath,
   timelineFraction,
   timelineModel,
+  unassignedPhotos,
   updateReport,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
-import { useConvex, useQuery } from 'convex/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useConvex, useMutation, useQuery } from 'convex/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useBodyBoxes } from '../../lib/bodyBoxes';
+import { setHazardPrefill } from '../../lib/hazardPrefill';
 import { postSheetOnWeb, saveSheetEditOnWeb } from '../../lib/sheetActions';
-import { releaseAllSheetPhotos, sheetPhotoPreview } from '../../lib/sheetPhotos';
+import {
+  addSheetPhoto,
+  releaseAllSheetPhotos,
+  releaseSheetPhoto,
+  sheetPhotoBlob,
+  sheetPhotoPreview,
+} from '../../lib/sheetPhotos';
 import {
   clearStoredSheet,
   setSheet,
@@ -155,6 +178,14 @@ function Console({ post }: { post: PostSheet }) {
     return () => window.removeEventListener('beforeunload', warn);
   }, [post.dirty]);
 
+  // The photo pool re-runs its rules when a lake's box arrives (A10-7): a photo added before the
+  // other tab's lake was drawn finds its lake now. Quiet — the sheet's doing.
+  const boxes = useBodyBoxes();
+  useEffect(() => {
+    if (!post.photos || post.photos.length === 0) return;
+    updateSheet((p) => reassignPool(p, assignCandidates(p, boxes)));
+  }, [boxes, post.photos]);
+
   const gapsFor = useCallback(
     (reportId: string): ReadonlySet<SheetSection> => {
       const set = new Set<SheetSection>();
@@ -192,6 +223,7 @@ function Console({ post }: { post: PostSheet }) {
           ? `${first.bodyName}: ${first.message}`
           : first.message,
       );
+      // A Post-level refusal (the photo pool) names no tab.
       const gapReport = post.reports.find((r) => r.id === first.reportId);
       if (gapReport) switchTo(gapReport.id);
       return;
@@ -417,7 +449,7 @@ function PostColumn({
   sent: boolean;
   dim: boolean;
 }) {
-  const photoCount = post.reports.reduce((n, r) => n + r.photos.length + r.keptPhotoIds.length, 0);
+  const counts = photoCounts(post);
   const lakes = post.reports.length;
   return (
     <aside
@@ -429,8 +461,8 @@ function PostColumn({
       <div className="flex h-9 flex-none items-center gap-2.5 border-border border-b px-4">
         <Eyebrow>{editing ? 'Editing a post' : 'Post'}</Eyebrow>
         <span className="ml-auto font-mono text-[10px] text-foreground-muted uppercase">
-          {lakes} {lakes === 1 ? 'lake' : 'lakes'} · {photoCount}{' '}
-          {photoCount === 1 ? 'photo' : 'photos'}
+          {lakes} {lakes === 1 ? 'lake' : 'lakes'} · {counts.total}{' '}
+          {counts.total === 1 ? 'photo' : 'photos'}
         </span>
       </div>
       <div inert={sent} className="flex min-h-0 flex-1 flex-col gap-2 px-4 pt-3.5 pb-2.5">
@@ -451,99 +483,388 @@ function PostColumn({
         />
       </div>
       <div inert={sent} className="contents">
-        <PhotoRail post={post} ordered={ordered} activeId={activeId} />
+        <PhotoRail post={post} ordered={ordered} activeId={activeId} editing={editing} />
       </div>
     </aside>
   );
 }
 
+/** One photo on the rail, wherever it sits. */
+interface RailPhoto {
+  photo: DraftPhoto;
+  /** The Report it is on, or `null` for the Post's pool. */
+  reportId: string | null;
+  /** The tab's number, when on a Report. */
+  n: number | null;
+  preview: string | null;
+  kept: boolean;
+}
+
 /**
- * Every photo of the day, in the Post column: each with the number of the lake it is on (the tab's
- * number), the active Report's bright and the others dim, a corner mark on the ones placed on the
- * water. Adding and removing is the Report's own Photos section; assignment by time and location,
- * the `?` menu and place-mode are the next PR (§8.1).
+ * Every photo of the day, in the Post column (A10-7): the ones the day put on a Report wear its
+ * number (the tab's), the active Report's bright and the others dim; a corner mark on the ones
+ * placed on the water; an amber `?` on the ones the day could not explain, whose menu is on the
+ * photo itself — the lakes with their windows, the put-in, the lot, *this is a hazard*, leave it
+ * out — never a drag to a tab. A photo on a Report with no usable location offers place-mode.
+ * Drop photos anywhere on the column, or pick them; each lands where the day says.
  */
 function PhotoRail({
   post,
   ordered,
   activeId,
+  editing,
 }: {
   post: PostSheet;
   ordered: readonly SheetReport[];
   activeId: string;
+  editing: boolean;
 }) {
-  const all = ordered.flatMap((r, i) => [
-    ...r.photos.map((photo) => ({
-      key: photo.id,
-      reportId: r.id,
-      n: i + 1,
+  const boxes = useBodyBoxes();
+  const { mode, setMode } = useConsoleMode();
+  const navigate = useNavigate();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  const all: RailPhoto[] = [
+    ...ordered.flatMap((r, i) => [
+      ...r.photos.map((photo) => ({
+        photo,
+        reportId: r.id,
+        n: i + 1,
+        preview: sheetPhotoPreview(photo.id),
+        kept: false,
+      })),
+      ...r.keptPhotoIds.map((id) => ({
+        photo: { id, fullUri: '', thumbUri: '', placeOnMap: false } as DraftPhoto,
+        reportId: r.id,
+        n: i + 1,
+        preview: null,
+        kept: true,
+      })),
+    ]),
+    ...(post.photos ?? []).map((photo) => ({
+      photo,
+      reportId: null,
+      n: null,
       preview: sheetPhotoPreview(photo.id),
-      placed: photo.placeOnMap,
       kept: false,
     })),
-    ...r.keptPhotoIds.map((id) => ({
-      key: id,
-      reportId: r.id,
-      n: i + 1,
-      preview: null,
-      placed: false,
-      kept: true,
-    })),
-  ]);
-  if (all.length === 0) return null;
+  ];
   const many = post.reports.length > 1;
+  const counts = photoCounts(post);
+  const needing = unassignedPhotos(post).length;
+
+  const add = async (files: FileList | File[]) => {
+    const picked = Array.from(files).filter((f) => f.type.startsWith('image/') || f.type === '');
+    if (picked.length === 0) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const drafts: DraftPhoto[] = await Promise.all(picked.map(addSheetPhoto));
+      updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, boxes)));
+    } catch {
+      setError("Couldn't read one of those images — try a different file.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = (id: string) => {
+    releaseSheetPhoto(id);
+    updateSheet((p) => dropPhoto(p, id));
+    setMenuFor(null);
+  };
+  const toLake = (id: string, reportId: string) => {
+    updateSheet((p) => movePhotoToReport(p, id, reportId, assignCandidates(p, boxes)));
+    setMenuFor(null);
+  };
+  const toAccess = (id: string, target: AccessPhotoTarget) => {
+    updateSheet((p) => sendPhotoToAccess(p, id, target));
+    setMenuFor(null);
+  };
+  const place = (id: string) => {
+    setMenuFor(null);
+    setMode({
+      kind: 'place',
+      photoId: id,
+      onPlace: (coord) => {
+        updateSheet((p) => placePhotoByHand(p, id, coord));
+        setMode(null);
+      },
+    });
+  };
+  /** Photo → hazard (A10-7): the lake's drawer with the pin where the photo was taken and the photo attached. */
+  const asHazard = (photo: DraftPhoto, reportId: string | null) => {
+    const report = post.reports.find((r) => r.id === (reportId ?? activeId));
+    const waterBodyId = report?.sheet.waterBodyId;
+    if (!waterBodyId) return;
+    const file = sheetPhotoBlob(photo.fullUri);
+    setHazardPrefill({
+      ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
+      files: file ? [file] : [],
+    });
+    setMenuFor(null);
+    void navigate({ to: '/water/$id', params: { id: waterBodyId }, search: { hazard: true } });
+  };
+  // The launches and lots the Post's Reports chose — a photo of the plank goes there, not on the ice.
+  const accessTargets = post.reports.flatMap((r) => {
+    const out: { target: AccessPhotoTarget; label: string }[] = [];
+    if (r.sheet.scalars.putInId !== undefined)
+      out.push({
+        target: { kind: 'put_in', id: r.sheet.scalars.putInId },
+        label: `The put-in${many ? ` · ${r.bodyName ?? ''}` : ''}`,
+      });
+    if (r.sheet.scalars.parkingAreaId !== undefined)
+      out.push({
+        target: { kind: 'parking_area', id: r.sheet.scalars.parkingAreaId },
+        label: `The lot${many ? ` · ${r.bodyName ?? ''}` : ''}`,
+      });
+    return out;
+  });
+
   return (
-    <div className="flex-none border-border border-t px-4 py-3">
+    // biome-ignore lint/a11y/noStaticElementInteractions: the drop zone is a convenience over the file input inside it, which is the keyboard path.
+    <div
+      className={cn(
+        'flex-none border-border border-t px-4 py-3 transition-colors',
+        dragging && 'bg-primary/5',
+      )}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        if (e.dataTransfer.files.length > 0) void add(e.dataTransfer.files);
+      }}
+    >
       <div className="flex items-center gap-2.5">
         <Eyebrow>Photos from the day</Eyebrow>
         <span className="ml-auto font-mono text-[10px] text-foreground-muted uppercase">
-          {ordered
-            .map((r, i) => {
-              const n = r.photos.length + r.keptPhotoIds.length;
-              return n > 0 ? `${n} on ${many ? i + 1 : 'the lake'}` : null;
-            })
-            .filter(Boolean)
-            .join(' · ')}
+          {counts.total === 0
+            ? 'none yet'
+            : needing > 0
+              ? `${counts.total} · ${needing} need${needing === 1 ? 's' : ''} you`
+              : `${counts.assigned} of ${counts.total} assigned`}
         </span>
       </div>
       <div className="mt-2.5 grid grid-cols-4 gap-1.5">
-        {all.map((ph) => (
-          <div
-            key={ph.key}
-            className={cn(
-              'relative aspect-square overflow-hidden rounded-[2px] border border-border bg-surface-muted',
-              ph.reportId !== activeId && 'opacity-45',
-            )}
+        {all.map((ph) => {
+          const active = ph.reportId === activeId;
+          const unassigned = ph.reportId === null && ph.photo.attachTo === undefined;
+          const bound = ph.photo.attachTo !== undefined;
+          const menuOpen = menuFor === ph.photo.id;
+          const placeable =
+            ph.reportId !== null && !ph.kept && !ph.photo.placeOnMap && mode?.kind !== 'place';
+          return (
+            <div
+              key={ph.photo.id}
+              className={cn(
+                'relative aspect-square rounded-[2px] border bg-surface-muted',
+                unassigned ? 'border-warning' : 'border-border',
+                !active && !unassigned && 'opacity-45',
+                mode?.kind === 'place' &&
+                  mode.photoId === ph.photo.id &&
+                  'opacity-100 ring-2 ring-primary',
+              )}
+            >
+              {ph.preview ? (
+                <img src={ph.preview} alt="" className="size-full rounded-[2px] object-cover" />
+              ) : (
+                <span className="flex size-full items-center justify-center text-center text-[9px] text-foreground-muted">
+                  {ph.kept ? 'On the report' : 'Re-add'}
+                </span>
+              )}
+              {/* The corner box: the lake's number, the launch, or the amber ? — a click opens the menu. */}
+              {ph.kept ? (
+                many ? (
+                  <span className="absolute top-[3px] left-[3px] h-3.5 min-w-3.5 rounded-[2px] bg-foreground px-[3px] text-center font-mono font-semibold text-[9px] text-background leading-[14px]">
+                    {ph.n}
+                  </span>
+                ) : null
+              ) : (
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label={
+                    unassigned
+                      ? 'This photo needs a home — say where it is from'
+                      : bound
+                        ? 'On the put-in or the lot — change'
+                        : `On lake ${ph.n} — change`
+                  }
+                  onClick={() => setMenuFor(menuOpen ? null : ph.photo.id)}
+                  className={cn(
+                    'absolute top-[3px] left-[3px] h-3.5 min-w-3.5 rounded-[2px] px-[3px] text-center font-mono font-semibold text-[9px] leading-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    unassigned
+                      ? 'border border-warning border-dashed text-warning'
+                      : bound
+                        ? 'border border-foreground-muted text-foreground-muted'
+                        : 'bg-foreground text-background',
+                  )}
+                >
+                  {unassigned
+                    ? '?'
+                    : bound
+                      ? ph.photo.attachTo?.kind === 'put_in'
+                        ? '●'
+                        : '□'
+                      : ph.n}
+                </button>
+              )}
+              {ph.photo.placeOnMap ? (
+                <span
+                  title="Placed on the lake"
+                  className="absolute right-1 bottom-1 size-1.5 bg-primary shadow-[0_0_5px_var(--ring)]"
+                >
+                  <span className="sr-only">placed on the lake</span>
+                </span>
+              ) : placeable ? (
+                <button
+                  type="button"
+                  title="No location. Click to place it on the lake."
+                  aria-label="Place this photo on the lake"
+                  onClick={() => place(ph.photo.id)}
+                  className="absolute right-0.5 bottom-0 text-[11px] text-foreground-muted hover:text-foreground"
+                >
+                  ◎
+                </button>
+              ) : null}
+              {menuOpen ? (
+                <div
+                  role="menu"
+                  className="absolute bottom-full left-0 z-20 mb-1 flex w-56 flex-col rounded-[2px] border border-border-strong bg-surface-muted p-2 text-left shadow-lg"
+                >
+                  <Eyebrow>This photo is from</Eyebrow>
+                  {ordered.map((r, i) => {
+                    const end = reportEndMs(r);
+                    const start = r.sheet.scalars.skateStartTime;
+                    return (
+                      <MenuItem
+                        key={r.id}
+                        mark={String(i + 1)}
+                        label={r.bodyName ?? 'Which lake?'}
+                        detail={
+                          end !== undefined
+                            ? `${start !== undefined ? `${clock(start)}–` : ''}${clock(end)}`
+                            : undefined
+                        }
+                        current={ph.reportId === r.id}
+                        onClick={() => toLake(ph.photo.id, r.id)}
+                      />
+                    );
+                  })}
+                  {accessTargets.length > 0 ? (
+                    <div className="my-1 border-border border-t" />
+                  ) : null}
+                  {accessTargets.map((t) => (
+                    <MenuItem
+                      key={`${t.target.kind}:${t.target.id}`}
+                      mark={t.target.kind === 'put_in' ? '●' : '□'}
+                      label={t.label}
+                      current={
+                        ph.photo.attachTo?.kind === t.target.kind &&
+                        ph.photo.attachTo?.id === t.target.id
+                      }
+                      onClick={() => toAccess(ph.photo.id, t.target)}
+                    />
+                  ))}
+                  <div className="my-1 border-border border-t" />
+                  <MenuItem
+                    mark="▲"
+                    danger
+                    label="This is a hazard…"
+                    onClick={() => asHazard(ph.photo, ph.reportId)}
+                  />
+                  <MenuItem label="Leave it out" muted onClick={() => remove(ph.photo.id)} />
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {editing ? null : (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            aria-label="Add photos"
+            className="flex aspect-square items-center justify-center rounded-[2px] border border-border border-dashed text-foreground-muted text-lg hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
-            {ph.preview ? (
-              <img src={ph.preview} alt="" className="size-full object-cover" />
-            ) : (
-              <span className="flex size-full items-center justify-center text-center text-[9px] text-foreground-muted">
-                {ph.kept ? 'On the report' : 'Re-add'}
-              </span>
-            )}
-            {many ? (
-              <span className="absolute top-[3px] left-[3px] h-3.5 min-w-3.5 rounded-[2px] bg-foreground px-[3px] text-center font-mono font-semibold text-[9px] text-background leading-[14px]">
-                {ph.n}
-              </span>
-            ) : null}
-            {ph.placed ? (
-              <span
-                title="Placed on the lake"
-                className="absolute right-1 bottom-1 size-1.5 bg-primary shadow-[0_0_5px_var(--ring)]"
-              >
-                <span className="sr-only">placed on the lake</span>
-              </span>
-            ) : null}
-          </div>
-        ))}
+            {busy ? '…' : '+'}
+          </button>
+        )}
       </div>
-      {many ? (
-        <p className="mt-2 text-[11px] text-foreground-muted">
-          The number is the lake a photo is on.
-        </p>
-      ) : null}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="sr-only"
+        onChange={(e) => {
+          if (e.target.files) void add(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      <p className="mt-2 text-[11px] text-foreground-muted">
+        {needing > 0
+          ? 'A photo taken between a lake’s start and end goes on that lake by itself; one with a location on the water is placed there. A ? is one the day can’t explain — click it to say.'
+          : many
+            ? 'The number is the lake a photo is on. Click it to change.'
+            : 'Drop photos here. A photo with a location on the water is placed there.'}
+      </p>
+      {error ? <p className="mt-1 text-danger text-xs">{error}</p> : null}
     </div>
+  );
+}
+
+function MenuItem({
+  mark,
+  label,
+  detail,
+  current = false,
+  danger = false,
+  muted = false,
+  onClick,
+}: {
+  mark?: string;
+  label: string;
+  detail?: string;
+  current?: boolean;
+  danger?: boolean;
+  muted?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        'flex h-7 items-center gap-2 rounded-[2px] px-1.5 text-left text-xs hover:bg-surface',
+        current && 'font-semibold',
+        muted && 'text-foreground-muted',
+      )}
+    >
+      {mark !== undefined ? (
+        <span
+          className={cn(
+            'inline-flex size-3.5 items-center justify-center rounded-[2px] border font-mono text-[9px]',
+            danger ? 'border-danger text-danger' : 'border-border-strong text-foreground-muted',
+          )}
+        >
+          {mark}
+        </span>
+      ) : null}
+      <span>{label}</span>
+      {detail ? (
+        <span className="ml-auto font-mono text-[10px] text-foreground-muted">{detail}</span>
+      ) : null}
+    </button>
   );
 }
 
@@ -787,6 +1108,16 @@ function Instrument({
     });
   }, [ordered, report.id, timeZone, now, endMs, startMs, sun, ladder]);
 
+  // The Report's track, when a server activity is linked (an import, an unreported skate): its
+  // path simplified to the silhouette's budget, drawn on the lake.
+  const mine = useQuery(api.gpsActivities.listMine, report.activityId !== undefined ? {} : 'skip');
+  const trackPath = useMemo(() => {
+    if (report.activityId === undefined || !body?.silhouette) return undefined;
+    const activity = mine?.find((a) => a.activityId === report.activityId);
+    const path = activity?.path;
+    if (path?.type !== 'LineString') return undefined;
+    return silhouettePath(path.coordinates as number[][], body.silhouette.bbox);
+  }, [report.activityId, mine, body?.silhouette]);
   const chosenPin = sheet.scalars.putInId ?? sheet.scalars.parkingAreaId;
   const placed = report.photos.filter((p) => p.placeOnMap && p.coord !== undefined);
   const hazards: LakeMapHazard[] = useMemo(
@@ -859,17 +1190,19 @@ function Instrument({
             <>
               <Eyebrow>Track</Eyebrow>
               <span className="font-semibold text-foreground text-[13px]">
-                Your recording
+                {report.trackDraftId !== undefined ? 'Your recording' : 'Your track'}
                 {startMs !== undefined && endMs !== undefined
                   ? ` · ${clock(startMs)}–${clock(endMs)}`
                   : ''}
               </span>
             </>
-          ) : putInName ? (
-            <>
-              <Eyebrow>Put-in</Eyebrow>
-              <span className="font-semibold text-foreground text-[13px]">{putInName}</span>
-            </>
+          ) : editing ? null : (
+            <TrackImport report={report} body={body} dispatch={dispatch} />
+          )}
+          {putInName ? (
+            <span className="mt-1 font-mono text-[10.5px] text-foreground-muted uppercase">
+              Put-in · {putInName}
+            </span>
           ) : null}
         </div>
         {mode ? (
@@ -877,12 +1210,16 @@ function Instrument({
             <Eyebrow className="text-primary">
               {mode.kind === 'where'
                 ? `Where is the ${mode.label.toLowerCase()}?`
-                : 'Where did you get on?'}
+                : mode.kind === 'place'
+                  ? 'Where was this photo taken?'
+                  : 'Where did you get on?'}
             </Eyebrow>
             <span className="text-foreground-muted">
               {mode.kind === 'where'
                 ? 'Click a sector on the ring, a bay, or a point on the water'
-                : 'Click a launch, or the shore for somewhere else'}
+                : mode.kind === 'place'
+                  ? 'Click the water where you took it'
+                  : 'Click a launch, or the shore for somewhere else'}
             </span>
             <kbd className="rounded-[2px] border border-border-strong px-1 font-mono text-[10px] text-foreground-muted">
               esc
@@ -910,7 +1247,7 @@ function Instrument({
               {...(chosenPin !== undefined ? { chosenPinId: chosenPin } : {})}
               {...(sector !== undefined ? { sector } : {})}
               {...(point !== undefined ? { point } : {})}
-              {...(body.silhouette.path !== undefined ? { path: body.silhouette.path } : {})}
+              {...(trackPath !== undefined ? { path: trackPath } : {})}
               photos={placed.map((p) => ({
                 id: p.id,
                 lat: (p.coord as LatLng).lat,
@@ -933,7 +1270,9 @@ function Instrument({
                         mode.onPickPin(pin.id, pin.kind),
                       onPick: (coord: LatLng) => mode.onPickShore(coord),
                     }
-                  : {})}
+                  : mode?.kind === 'place'
+                    ? { onPick: (coord: LatLng) => mode.onPlace(coord) }
+                    : {})}
               label={`${body.name || 'The lake'}, with your put-in and any photos you placed.`}
             />
           </div>
@@ -1007,6 +1346,128 @@ function Instrument({
   );
 }
 
+/**
+ * The track's call to action when the app did not record (A10-7, founder call 2026-09-23): a real
+ * button, not ink-colored text. **Upload a GPX file** — Strava, Garmin and most watches export one
+ * — parsed here (`parseGpx`), cleaned like a recording (`processTrack`), ingested as an activity
+ * (`gpsActivities.ingestTrack`, which resolves the lake and its bays), and linked to this Report
+ * with its start and end stamped exactly (`gps`). Nothing is pulled from any platform: the
+ * connection to Strava is write-only by decision, and a file the author chose is the author's.
+ */
+function TrackImport({
+  report,
+  body,
+  dispatch,
+}: {
+  report: SheetReport;
+  body: SheetBody | null;
+  dispatch: (action: Parameters<typeof sheetReducer>[1]) => void;
+}) {
+  const ingest = useMutation(api.gpsActivities.ingestTrack);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const importFile = async (file: File) => {
+    setError(null);
+    setBusy(true);
+    try {
+      const parsed = parseGpx(await file.text());
+      if (!parsed) {
+        setError("That file isn't a GPX track with times in it.");
+        return;
+      }
+      const processed = processTrack(parsed.points);
+      if (!processed.path) {
+        setError('That track has too few usable points.');
+        return;
+      }
+      const startTime = processed.points[0]?.t ?? parsed.points[0]?.t ?? 0;
+      const endTime =
+        processed.points[processed.points.length - 1]?.t ??
+        parsed.points[parsed.points.length - 1]?.t ??
+        0;
+      const activityId = await ingest({
+        idempotencyKey: `gpx:${report.id}:${crypto.randomUUID()}`,
+        path: processed.path,
+        startTime,
+        endTime,
+        ...(processed.stats.movingSeconds !== undefined
+          ? { elapsedSeconds: Math.round(processed.stats.movingSeconds) }
+          : {}),
+        ...(body?.waterBodyId !== undefined
+          ? { waterBodyId: body.waterBodyId as Id<'waterBodies'> }
+          : {}),
+      });
+      updateSheet((p) =>
+        updateReport(p, report.id, (r) => ({ ...r, activityId: activityId as string })),
+      );
+      dispatch({
+        type: 'select',
+        field: 'endTime',
+        key: 'gps',
+        value: { ms: endTime, precision: 'gps' },
+      });
+      dispatch({ type: 'setScalar', key: 'skateStartTime', value: startTime });
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="relative flex flex-col items-end gap-1">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        disabled={busy}
+        className="h-7 rounded-[2px] border border-foreground px-2.5 font-semibold text-[11px] text-foreground uppercase tracking-[0.08em] hover:bg-foreground hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+      >
+        {busy ? 'Reading the track…' : '+ Add your track'}
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute top-full right-0 z-20 mt-1 flex w-72 flex-col gap-1 rounded-[2px] border border-border-strong bg-surface-muted p-2 text-left shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => inputRef.current?.click()}
+            className="rounded-[2px] px-2 py-1.5 text-left text-sm hover:bg-surface"
+          >
+            Upload a GPX file
+            <span className="block text-[11px] text-foreground-muted">
+              Sets your start and end exactly, and draws the skate on the lake.
+            </span>
+          </button>
+          <p className="px-2 pb-1 text-[11px] text-foreground-muted">
+            From Strava: open the activity, ⋯ → <em>Export GPX</em>. Garmin, Coros and most watches
+            export one too. Nothing is pulled from any account.
+          </p>
+        </div>
+      ) : null}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".gpx,application/gpx+xml"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void importFile(file);
+          e.target.value = '';
+        }}
+      />
+      {error ? <p className="max-w-56 text-danger text-xs">{error}</p> : null}
+    </div>
+  );
+}
+
 function Legend({ swatch, children }: { swatch: string; children: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -1057,7 +1518,7 @@ function StatusBar({
     };
   }, []);
   void tick;
-  const photos = post.reports.reduce((n, r) => n + r.photos.length + r.keptPhotoIds.length, 0);
+  const photos = photoCounts(post);
   return (
     <footer
       className={cn(
@@ -1085,10 +1546,12 @@ function StatusBar({
             </span>
           </span>
         ))}
-        {photos > 0 ? (
+        {photos.total > 0 ? (
           <span>
             <span className="text-foreground-muted/70">Photos </span>
-            <span className="text-foreground">{photos}</span>
+            <span className={photos.assigned < photos.total ? 'text-warning' : 'text-foreground'}>
+              {photos.assigned} of {photos.total} assigned
+            </span>
           </span>
         ) : null}
       </span>

@@ -17,6 +17,8 @@ export interface ProcessedPhoto {
   /** Optimized, EXIF-stripped full image + thumbnail, ready to upload. */
   full: File;
   thumb: File;
+  /** EXIF capture time, epoch ms, when the original carried one (A10-7 assigns by it). Never sent. */
+  takenAtMs?: number;
   /** EXIF GPS, if the original carried it — surfaced for the opt-in `placeOnMap` toggle (D42). */
   coord?: { lat: number; lng: number };
 }
@@ -32,6 +34,7 @@ function toJpegName(name: string): string {
 export async function processPhoto(file: File): Promise<ProcessedPhoto> {
   // 1. EXIF GPS from the ORIGINAL, before the re-encode drops it. Failures are non-fatal (no coord).
   let coord: { lat: number; lng: number } | undefined;
+  let takenAtMs: number | undefined;
   try {
     const exifrMod = await import('exifr');
     const exifr = exifrMod.default ?? exifrMod;
@@ -39,8 +42,20 @@ export async function processPhoto(file: File): Promise<ProcessedPhoto> {
     if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)) {
       coord = { lat: gps.latitude, lng: gps.longitude };
     }
+    // The capture time, read from the same original (A10-7): what puts a photo on the Report whose
+    // window it fell in. exifr parses the EXIF date into a Date in the *browser's* zone, which is
+    // the author's — the same clock the sheet's windows are on.
+    const tags = (await exifr.parse(file, { pick: ['DateTimeOriginal', 'CreateDate'] })) as
+      | { DateTimeOriginal?: unknown; CreateDate?: unknown }
+      | undefined;
+    const when = tags?.DateTimeOriginal ?? tags?.CreateDate;
+    if (when instanceof Date && Number.isFinite(when.getTime())) takenAtMs = when.getTime();
+    else if (typeof when === 'string') {
+      const ms = Date.parse(when.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
+      if (Number.isFinite(ms)) takenAtMs = ms;
+    }
   } catch {
-    // No/unreadable EXIF — fine; coord stays undefined.
+    // No/unreadable EXIF — fine; coord and time stay undefined.
   }
 
   // 2. HEIC/HEIF → JPEG so the canvas re-encode below can read it (Chrome/Firefox can't decode HEIC).
@@ -69,7 +84,7 @@ export async function processPhoto(file: File): Promise<ProcessedPhoto> {
     }),
   ]);
 
-  return { full, thumb, coord };
+  return { full, thumb, coord, ...(takenAtMs !== undefined ? { takenAtMs } : {}) };
 }
 
 /** Upload a blob to a Convex storage upload URL; returns the resulting `storageId`. */

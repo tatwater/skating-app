@@ -41,6 +41,7 @@ export async function addSheetPhoto(file: File): Promise<DraftPhoto> {
     fullUri: `${id}:full`,
     thumbUri: `${id}:thumb`,
     ...(processed.coord ? { coord: processed.coord } : {}),
+    ...(processed.takenAtMs !== undefined ? { takenAtMs: processed.takenAtMs } : {}),
     placeOnMap: false,
   };
 }

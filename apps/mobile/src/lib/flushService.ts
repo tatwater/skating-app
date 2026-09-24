@@ -122,6 +122,18 @@ function effects(): PostFlushEffects {
     // already checkpointed on the row; if the row is still pending it is flushed now, and one that
     // cannot go yet holds the Post rather than being left out of it.
     resolveHazardId: resolveQueuedHazard,
+    // A pool photo the author sent to the put-in or the lot (A10-7): attached as an access photo
+    // (A06d) once uploaded, after the Post lands.
+    attachAccessPhoto: async (input) => {
+      await convex.mutation(api.accessPoints.attachPhoto, {
+        targetType: input.target.kind,
+        ...(input.target.kind === 'put_in' ? { putInId: input.target.id as Id<'putIns'> } : {}),
+        ...(input.target.kind === 'parking_area'
+          ? { parkingAreaId: input.target.id as Id<'parkingAreas'> }
+          : {}),
+        photoId: input.photoId as Id<'photos'>,
+      });
+    },
     // The sheet's condition chips (D197 / A10 §7.2), filed once the Post exists with its Report as
     // provenance and the queue's key per reason, so a replayed flush returns the same row.
     createAccessAlert: async (input) => {

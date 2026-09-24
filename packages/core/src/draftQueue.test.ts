@@ -1030,3 +1030,88 @@ describe('the condition alerts file after the Post (D197 / §7.2)', () => {
     expect(res.draft.reports[0]?.filedAccessReasons).toBeUndefined();
   });
 });
+
+describe('the Post’s own photos (A10-7, step 8)', () => {
+  const pool = (over: Partial<DraftPhoto>): DraftPhoto => ({
+    id: 'pool-1',
+    fullUri: 'file:///pool-full.jpg',
+    thumbUri: 'file:///pool-thumb.jpg',
+    placeOnMap: false,
+    ...over,
+  });
+
+  it('refuses a pool photo nobody has placed, before any upload', async () => {
+    const { effects, calls } = makeEffects();
+    const result = await flushPost(draftWith({ photos: [pool({})] }), effects, NOW);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('permanent');
+    expect(result.message).toMatch(/One photo isn't on a lake yet/);
+    expect(calls.uploads).toHaveLength(0);
+  });
+
+  it('uploads a put-in photo after the Post lands and attaches it, checkpointing as it goes', async () => {
+    const attached: Array<{ photoId: string; target: { kind: string; id: string } }> = [];
+    const { effects, calls } = makeEffects({
+      attachAccessPhoto: async (input) => {
+        attached.push(input);
+      },
+    });
+    const draft = draftWith({ photos: [pool({ attachTo: { kind: 'put_in', id: 'launch-1' } })] });
+    const result = await flushPost(draft, effects, NOW);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(calls.uploads).toEqual(['file:///pool-full.jpg', 'file:///pool-thumb.jpg']);
+    // Never placed and never located: the launch's location is the launch's.
+    expect(calls.rows[0]).toEqual({
+      storageId: 'storage-0',
+      thumbStorageId: 'storage-1',
+      placeOnMap: false,
+    });
+    expect(attached).toEqual([{ photoId: 'photo-0', target: { kind: 'put_in', id: 'launch-1' } }]);
+    expect(result.draft.photos?.[0]).toMatchObject({ photoId: 'photo-0', attachedAccess: true });
+    expect(result.draft.status).toBe('done');
+    // The Post's own photos are not the Report's.
+    expect(calls.reports[0]?.photoIds).toEqual([]);
+  });
+
+  it('skips a refused attach (the cap) but retries a transient one, resuming from the checkpoint', async () => {
+    let attempts = 0;
+    const { effects, calls } = makeEffects({
+      attachAccessPhoto: async () => {
+        attempts++;
+        if (attempts === 1) throw new TypeError('Failed to fetch');
+      },
+    });
+    const draft = draftWith({
+      photos: [pool({ attachTo: { kind: 'parking_area', id: 'lot-1' } })],
+    });
+    const first = await flushPost(draft, effects, NOW);
+    expect(first.ok).toBe(false);
+    if (first.ok) return;
+    expect(first.kind).toBe('transient');
+    // The photo is uploaded and its row exists; the retry attaches without re-uploading.
+    const second = await flushPost(first.draft, effects, NOW);
+    expect(second.ok).toBe(true);
+    expect(calls.uploads).toHaveLength(2);
+    expect(attempts).toBe(2);
+
+    const refusing = makeEffects({
+      attachAccessPhoto: async () => {
+        const e = new Error('An access point carries at most 4 photos');
+        e.name = 'ConvexError';
+        throw e;
+      },
+    });
+    const third = await flushPost(draft, refusing.effects, NOW);
+    expect(third.ok).toBe(true);
+    if (!third.ok) return;
+    expect(third.draft.photos?.[0]?.attachedAccess).toBe(true);
+  });
+
+  it('a photo the sheet never sent anywhere is not a refusal on a draft from before A10-7', async () => {
+    const { effects } = makeEffects();
+    const result = await flushPost(draftWith({}), effects, NOW);
+    expect(result.ok).toBe(true);
+  });
+});

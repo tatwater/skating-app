@@ -1,22 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { createPostDraft, createReportDraft } from './draftQueue';
+import { createPostDraft, createReportDraft, type DraftPhoto } from './draftQueue';
 import {
   addEarlierVisit,
   addLake,
+  addPostPhotos,
+  assignCandidates,
   bundledIds,
+  dropPhoto,
+  findPhoto,
+  movePhotoToReport,
   openPostSheet,
   type PostSheet,
+  photoCounts,
+  placePhotoByHand,
   postRefusals,
   postSheetForEdit,
   postSheetFromDraft,
+  reassignPool,
   removeReport,
   reportEndMs,
   reportsInTimeOrder,
   SHEET_SECTION_COUNT,
   type SheetReport,
   sectionsFilled,
+  sendPhotoToAccess,
   sheetLabel,
   toPostDraft,
+  unassignedPhotos,
   updateReport,
 } from './postSheet';
 import { emptyReportForm } from './reportForm';
@@ -384,5 +394,124 @@ describe('reportsInTimeOrder / sectionsFilled (A10-6)', () => {
     }));
     expect(sectionsFilled((post.reports[0] as SheetReport).sheet)).toBe(2);
     expect(SHEET_SECTION_COUNT).toBe(10);
+  });
+});
+
+describe('the photo pool (A10-7)', () => {
+  const NOW = Date.UTC(2026, 0, 10, 20);
+  const H = 3600_000;
+  let n = 0;
+  const mint = () => `p${++n}`;
+  const crystal = { minLat: 43.63, maxLat: 43.65, minLng: -72.15, maxLng: -72.12 };
+  const photo = (id: string, over: Partial<DraftPhoto> = {}): DraftPhoto => ({
+    id,
+    fullUri: `${id}:full`,
+    thumbUri: `${id}:thumb`,
+    placeOnMap: false,
+    ...over,
+  });
+  const twoLakes = () => {
+    let post = openPostSheet('body', { waterBodyId: 'c', bodyName: 'Crystal' }, NOW, mint);
+    post = addLake(post, { waterBodyId: 'm', bodyName: 'Mascoma' }, NOW, mint);
+    const [c, m] = post.reports as [SheetReport, SheetReport];
+    const end = (p: PostSheet, id: string, ms: number, start?: number) =>
+      updateReport(p, id, (r) => ({
+        ...r,
+        sheet: {
+          ...sheetReducer(r.sheet, {
+            type: 'select',
+            field: 'endTime',
+            key: 'chosen',
+            value: { ms, precision: 'minute' },
+          }),
+          scalars: {
+            ...r.sheet.scalars,
+            ...(start !== undefined ? { skateStartTime: start } : {}),
+          },
+        },
+      }));
+    post = end(post, c.id, NOW, NOW - 2 * H);
+    post = end(post, m.id, NOW - 4 * H, NOW - 5 * H);
+    return { post, c, m };
+  };
+
+  it('adds photos where the day says, places the ones on the lake, pools the rest', () => {
+    const { post, c, m } = twoLakes();
+    const candidates = assignCandidates(post, { c: crystal });
+    const next = addPostPhotos(
+      post,
+      [
+        photo('a', { takenAtMs: NOW - H, coord: { lat: 43.64, lng: -72.13 } }),
+        photo('b', { takenAtMs: NOW - 4.5 * H }),
+        photo('lunch', { takenAtMs: NOW - 3 * H }),
+        photo('nowhere'),
+      ],
+      candidates,
+    );
+    const onC = next.reports.find((r) => r.id === c.id)?.photos ?? [];
+    const onM = next.reports.find((r) => r.id === m.id)?.photos ?? [];
+    expect(onC.map((p) => [p.id, p.placeOnMap])).toEqual([['a', true]]);
+    expect(onM.map((p) => p.id)).toEqual(['b']);
+    expect(unassignedPhotos(next).map((p) => p.id)).toEqual(['lunch', 'nowhere']);
+    expect(next.dirty).toBe(true);
+    expect(photoCounts(next)).toEqual({ total: 4, assigned: 2 });
+    // The pool is the Post's refusal, ahead of any Report's.
+    expect(postRefusals(next, NOW)[0]).toMatchObject({
+      reportId: '',
+      message: expect.stringMatching(/2 photos aren't on a lake yet/),
+    });
+  });
+
+  it('re-runs the rules quietly when a lake’s box arrives', () => {
+    const { post, c } = twoLakes();
+    const before = addPostPhotos(
+      post,
+      [photo('x', { coord: { lat: 43.64, lng: -72.13 } })],
+      assignCandidates(post, {}),
+    );
+    expect(unassignedPhotos(before)).toHaveLength(1);
+    const clean = { ...before, dirty: false };
+    const after = reassignPool(clean, assignCandidates(clean, { c: crystal }));
+    expect(unassignedPhotos(after)).toHaveLength(0);
+    expect(after.reports.find((r) => r.id === c.id)?.photos[0]).toMatchObject({
+      id: 'x',
+      placeOnMap: true,
+    });
+    expect(after.dirty).toBe(false);
+    expect(reassignPool(after, assignCandidates(after, { c: crystal }))).toBe(after);
+  });
+
+  it('the author says: this lake, the put-in, leave it out, place it here', () => {
+    const { post, c, m } = twoLakes();
+    let next = addPostPhotos(post, [photo('q')], assignCandidates(post, {}));
+    next = movePhotoToReport(next, 'q', m.id, assignCandidates(next, {}));
+    expect(findPhoto(next, 'q')?.reportId).toBe(m.id);
+    expect(unassignedPhotos(next)).toHaveLength(0);
+    next = sendPhotoToAccess(next, 'q', { kind: 'put_in', id: 'launch-1' });
+    expect(findPhoto(next, 'q')?.reportId).toBeNull();
+    expect(next.photos?.[0]?.attachTo).toEqual({ kind: 'put_in', id: 'launch-1' });
+    expect(postRefusals(next, NOW).find((r) => r.reportId === '')).toBeUndefined();
+    expect(photoCounts(next)).toEqual({ total: 1, assigned: 1 });
+    next = movePhotoToReport(next, 'q', c.id, assignCandidates(next, {}));
+    expect(findPhoto(next, 'q')?.photo.attachTo).toBeUndefined();
+    next = placePhotoByHand(next, 'q', { lat: 43.64, lng: -72.13 });
+    expect(findPhoto(next, 'q')?.photo).toMatchObject({
+      coord: { lat: 43.64, lng: -72.13 },
+      placeOnMap: true,
+    });
+    next = dropPhoto(next, 'q');
+    expect(findPhoto(next, 'q')).toBeNull();
+    expect(dropPhoto(next, 'q')).toBe(next);
+  });
+
+  it('carries the pool through the draft round trip', () => {
+    const { post } = twoLakes();
+    const withPool = addPostPhotos(post, [photo('z')], assignCandidates(post, {}));
+    const draft = toPostDraft(withPool, 'draft', NOW);
+    expect(draft.photos?.map((p) => p.id)).toEqual(['z']);
+    const back = postSheetFromDraft(draft, NOW);
+    expect(back?.photos?.map((p) => p.id)).toEqual(['z']);
+    const empty = toPostDraft(post, 'draft', NOW);
+    expect(empty.photos).toBeUndefined();
   });
 });

@@ -21,6 +21,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   type AccessConditionFiling,
+  type AccessPhotoTarget,
   type AccessReason,
   confirmableVerdict,
   flushErrorMessage,
@@ -154,6 +155,16 @@ function webEffects(convex: ConvexReactClient) {
       }),
     createPost: async (input: Parameters<typeof toCreateArgs>[0]) =>
       convex.mutation(api.posts.create, toCreateArgs(input)),
+    attachAccessPhoto: async (input: { photoId: string; target: AccessPhotoTarget }) => {
+      await convex.mutation(api.accessPoints.attachPhoto, {
+        targetType: input.target.kind,
+        ...(input.target.kind === 'put_in' ? { putInId: input.target.id as Id<'putIns'> } : {}),
+        ...(input.target.kind === 'parking_area'
+          ? { parkingAreaId: input.target.id as Id<'parkingAreas'> }
+          : {}),
+        photoId: input.photoId as Id<'photos'>,
+      });
+    },
     createAccessAlert: async (
       input: AccessConditionFiling & { reportId: string; idempotencyKey: string },
     ) => {

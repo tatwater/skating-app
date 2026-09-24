@@ -29,6 +29,12 @@ export type ConsoleMode = (
       onPickPin: (pinId: string, kind: 'putIn' | 'parking') => void;
       onPickShore: (coord: { lat: number; lng: number }) => void;
     }
+  | {
+      /** Place-mode (A10-7): a photo with no usable location; a click on the water is where it was taken. */
+      kind: 'place';
+      photoId: string;
+      onPlace: (coord: { lat: number; lng: number }) => void;
+    }
 ) & {
   /** The question's own close, run when the mode is left from outside it (Escape). */
   onExit?: () => void;
