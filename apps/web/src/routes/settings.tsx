@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -31,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { useSignOut } from '../lib/sheetOwner';
 
 /**
  * Account hub — the web analog of mobile's "You" tab (D28). Who you're signed in as, profile
@@ -43,7 +43,7 @@ import {
 export const Route = createFileRoute('/settings')({ component: SettingsPage });
 
 function SettingsPage() {
-  const { signOut } = useAuth();
+  const signOut = useSignOut();
   const profile = useQuery(api.profiles.current, {});
 
   return (

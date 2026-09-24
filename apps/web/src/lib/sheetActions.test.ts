@@ -154,6 +154,60 @@ describe('postSheetOnWeb', () => {
     expect(reports[0]?.photoIds).toEqual(['photo-1']);
   });
 
+  /**
+   * PR #77 review: a create that went out may have landed, and the server answers its key with the
+   * Post it already has — so the retry resends what went, never a draft rebuilt from a changed sheet.
+   */
+  it('a retry after the create went out resends it as it went', async () => {
+    const post = filled();
+    const lost = recorder({
+      'posts:create': () => {
+        throw new Error('Network request failed');
+      },
+    });
+    const refused = await postSheetOnWeb(lost.client, post, NOW);
+    const draft = refused.kind === 'refused' ? refused.draft : null;
+    expect(draft?.status).toBe('creating');
+
+    const retry = recorder({ 'posts:create': () => ({ postId: 'post-1', reportIds: ['rep-1'] }) });
+    const changed: PostSheet = { ...post, title: 'Changed after the send' };
+    expect((await postSheetOnWeb(retry.client, changed, NOW, draft)).kind).toBe('posted');
+    const create = retry.find('posts:create')[0];
+    expect(create?.args.title).toBe('Morey');
+    expect(create?.args.idempotencyKey).toBe(post.idempotencyKey);
+  });
+
+  it('a retry after a failure before the create sends the sheet as it is now', async () => {
+    blobs.set('p1:full', new File([''], 'a.jpg'));
+    blobs.set('p1:thumb', new File([''], 'a-t.jpg'));
+    const base = filled();
+    const first = base.reports[0] as NonNullable<(typeof base.reports)[0]>;
+    const post: PostSheet = {
+      ...base,
+      reports: [
+        {
+          ...first,
+          photos: [{ id: 'p1', fullUri: 'p1:full', thumbUri: 'p1:thumb', placeOnMap: false }],
+        },
+      ],
+    };
+    // The photo's upload fails on the wire, so the create never went out.
+    const stale = recorder({
+      'photos:generateUploadUrl': () => {
+        throw new Error('Network request failed');
+      },
+    });
+    const refused = await postSheetOnWeb(stale.client, post, NOW);
+    const draft = refused.kind === 'refused' ? refused.draft : null;
+    expect(draft?.status).toBe('pending');
+    expect(stale.find('posts:create')).toHaveLength(0);
+
+    const retry = recorder({ 'posts:create': () => ({ postId: 'post-1', reportIds: ['rep-1'] }) });
+    const fixed: PostSheet = { ...post, title: 'Fixed before the send' };
+    expect((await postSheetOnWeb(retry.client, fixed, NOW, draft)).kind).toBe('posted');
+    expect(retry.find('posts:create')[0]?.args.title).toBe('Fixed before the send');
+  });
+
   /** D197: the chips file against the put-in once the Report exists to be their provenance. */
   it('files the access conditions after the create, with the new Report as provenance', async () => {
     const post = filled();

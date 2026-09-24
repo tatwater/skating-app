@@ -28,6 +28,7 @@ import {
   type PostDraft,
   type PostSheet,
   photoUploadCoord,
+  postCreateSent,
   selectedValues,
   toPostDraft,
   toReportInput,
@@ -44,6 +45,13 @@ export type WebPostOutcome =
 /**
  * Post the sheet. `previous` is the draft a prior failed attempt returned — pass it back to resume
  * from its checkpoints; omit it for a first try.
+ *
+ * **A sent attempt is resent as it went** (`postCreateSent`, PR #77 review). Its create may have
+ * landed, and the server answers a retry under the same key with the Post it already has — so a
+ * draft rebuilt from a sheet changed since would show the author their change and then drop it.
+ * The store refuses the change in the first place; this makes the retry not depend on that: the
+ * resend is `previous` itself, with its `creating` mark (a lost ack must not be refused as a
+ * stale report), its Post id and its filed conditions.
  */
 export async function postSheetOnWeb(
   convex: ConvexReactClient,
@@ -51,31 +59,32 @@ export async function postSheetOnWeb(
   now: number,
   previous?: PostDraft | null,
 ): Promise<WebPostOutcome> {
-  const draft = toPostDraft(post, 'pending', now, previous ?? null);
-  // A resumed attempt keeps the prior draft's checkpoints — its uploaded photo ids, and the
-  // `creating` mark that says the create was already sent once (a lost ack must not be refused as
-  // a stale report, nor posted twice; the server's idempotent key settles it).
-  const resumed: PostDraft =
-    previous == null
-      ? draft
-      : {
-          ...draft,
-          status: previous.status === 'creating' ? 'creating' : draft.status,
-          ...(previous.postId !== undefined ? { postId: previous.postId } : {}),
-          reports: draft.reports.map((r) => {
-            const prior = previous.reports.find((p) => p.id === r.id);
-            if (!prior) return r;
-            return {
-              ...r,
-              photos: r.photos.map((photo) => prior.photos.find((p) => p.id === photo.id) ?? photo),
-              ...(prior.filedAccessReasons !== undefined
-                ? { filedAccessReasons: prior.filedAccessReasons }
-                : {}),
-            };
-          }),
-        };
+  let attempt: PostDraft;
+  if (previous != null && postCreateSent(previous)) {
+    attempt = previous;
+  } else {
+    const draft = toPostDraft(post, 'pending', now, previous ?? null);
+    // An attempt that failed before its create keeps only its uploads: each photo that already
+    // landed is reused by id rather than uploaded twice.
+    attempt =
+      previous == null
+        ? draft
+        : {
+            ...draft,
+            reports: draft.reports.map((r) => {
+              const prior = previous.reports.find((p) => p.id === r.id);
+              if (!prior) return r;
+              return {
+                ...r,
+                photos: r.photos.map(
+                  (photo) => prior.photos.find((p) => p.id === photo.id) ?? photo,
+                ),
+              };
+            }),
+          };
+  }
 
-  const result = await flushPost(resumed, webEffects(convex), now);
+  const result = await flushPost(attempt, webEffects(convex), now);
   if (result.ok) {
     await fileConfirmations(convex, post);
     const reportId = result.reportIds[0];

@@ -4,9 +4,10 @@ import {
   addLake,
   isMinor,
   type MinimumSetTerm,
+  POST_SENT_COPY,
   POST_TITLE_MAX_CHARS,
-  type PostDraft,
   type PostSheet,
+  postCreateSent,
   postRefusals,
   type ReportRefusal,
   removeReport,
@@ -16,10 +17,17 @@ import {
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useConvex, useQuery } from 'convex/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { postSheetOnWeb, saveSheetEditOnWeb } from '../../lib/sheetActions';
 import { releaseAllSheetPhotos, sheetPhotoPreview } from '../../lib/sheetPhotos';
-import { clearStoredSheet, setSheet, updateSheet, useSheet } from '../../lib/sheetStore';
+import {
+  clearStoredSheet,
+  setSheet,
+  setSheetAttempt,
+  updateSheet,
+  useSheet,
+  useSheetAttempt,
+} from '../../lib/sheetStore';
 import { cn } from '../../lib/utils';
 import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
 import { Button } from '../ui/button';
@@ -75,8 +83,23 @@ function Console({ post }: { post: PostSheet }) {
     { kind: 'add' } | { kind: 'set'; reportId: string } | null
   >(null);
   /** What a failed attempt already uploaded, so a retry resumes rather than repeats. */
-  const attemptRef = useRef<PostDraft | null>(null);
+  const attempt = useSheetAttempt();
+  /**
+   * The create went out and may have landed (`postCreateSent`): the sheet takes no change — the
+   * store refuses one, and the editing areas are `inert` so none is offered — and *Post* becomes a
+   * retry of what was sent. A change here would otherwise be dropped by the idempotent create.
+   */
+  const sent = postCreateSent(attempt);
   const editing = post.mode.kind === 'edit';
+  const actionLabel = busy
+    ? editing
+      ? 'Saving…'
+      : 'Posting…'
+    : editing
+      ? 'Save changes'
+      : sent
+        ? 'Try again'
+        : 'Post';
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
 
   // The tab a removed Report leaves behind falls back to the first.
@@ -114,7 +137,6 @@ function Console({ post }: { post: PostSheet }) {
   );
 
   const done = (to: { reportId: string }) => {
-    attemptRef.current = null;
     releaseAllSheetPhotos();
     setSheet(null);
     clearStoredSheet();
@@ -124,7 +146,9 @@ function Console({ post }: { post: PostSheet }) {
   const onPost = async () => {
     setMessage(null);
     const now = Date.now();
-    const found = postRefusals(post, now);
+    // A sent Post is not asked the create-only rules again: it may be live, and one that went out
+    // at day 6.9 must not be refused as stale at day 7.1 (`flushPost` skips them for the same reason).
+    const found = sent ? [] : postRefusals(post, now);
     setRefusals(found);
     if (found.length > 0) {
       const first = found[0] as ReportRefusal;
@@ -145,9 +169,9 @@ function Console({ post }: { post: PostSheet }) {
         done({ reportId });
         return;
       }
-      const outcome = await postSheetOnWeb(convex, post, now, attemptRef.current);
+      const outcome = await postSheetOnWeb(convex, post, now, attempt);
       if (outcome.kind === 'refused') {
-        attemptRef.current = outcome.draft;
+        setSheetAttempt(outcome.draft);
         setMessage(outcome.message);
         return;
       }
@@ -160,10 +184,10 @@ function Console({ post }: { post: PostSheet }) {
   };
 
   const onCancel = () => {
-    if (post.dirty && !window.confirm('Leave without posting? What you wrote here will be gone.')) {
-      return;
-    }
-    attemptRef.current = null;
+    const leave = sent
+      ? 'Leave without finding out? This post may already be up — check your profile before posting it again.'
+      : 'Leave without posting? What you wrote here will be gone.';
+    if ((post.dirty || sent) && !window.confirm(leave)) return;
     releaseAllSheetPhotos();
     setSheet(null);
     clearStoredSheet();
@@ -203,20 +227,28 @@ function Console({ post }: { post: PostSheet }) {
             Cancel
           </Button>
           <Button onClick={() => void onPost()} disabled={busy}>
-            {busy ? (editing ? 'Saving…' : 'Posting…') : editing ? 'Save changes' : 'Post'}
+            {actionLabel}
           </Button>
         </div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(20rem,26rem)_1fr]">
-        <aside className="flex h-fit flex-col gap-4 lg:sticky lg:top-6">
+        <aside inert={sent} className="flex h-fit flex-col gap-4 lg:sticky lg:top-6">
           <MapColumn report={active} body={body} />
           <PhotoRail report={active} />
         </aside>
 
         <main className="flex min-w-0 flex-col gap-4">
+          {sent ? (
+            <p role="status" className="rounded-lg border border-border bg-surface p-4 text-sm">
+              {POST_SENT_COPY}
+            </p>
+          ) : null}
           {/* The words: the community's subject-line habit, then the story (D186). */}
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+          <div
+            inert={sent}
+            className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4"
+          >
             <Input
               className="h-auto border-0 bg-transparent px-0 font-semibold text-base focus-visible:ring-0"
               placeholder="Title — Crystal Lake, Enfield 12/6"
@@ -246,25 +278,28 @@ function Console({ post }: { post: PostSheet }) {
             />
           ) : null}
 
-          <ReportHeader
-            post={post}
-            reportId={active.id}
-            body={body}
-            onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
-          />
+          <div inert={sent} className="flex flex-col gap-4">
+            <ReportHeader
+              post={post}
+              reportId={active.id}
+              body={body}
+              onPickBody={() => setPicking({ kind: 'set', reportId: active.id })}
+            />
 
-          {/* Keyed by the Report: the panels hold their own affordance state (which reading is
-              being typed, which chip's *where* is open, the archive's hours for this lake), and an
-              unkeyed swap would carry the previous leg's state — and its weather — onto this one. */}
-          <ReportPanels
-            key={active.id}
-            report={active}
-            body={body}
-            gaps={gapsFor(active.id)}
-            editing={editing}
-          />
+            {/* Keyed by the Report: the panels hold their own affordance state (which reading is
+                being typed, which chip's *where* is open, the archive's hours for this lake), and
+                an unkeyed swap would carry the previous leg's state — and its weather — onto this
+                one. */}
+            <ReportPanels
+              key={active.id}
+              report={active}
+              body={body}
+              gaps={gapsFor(active.id)}
+              editing={editing}
+            />
+          </div>
 
-          {editing ? null : (
+          {editing || sent ? null : (
             <div className="flex flex-wrap gap-2 pt-2">
               <Button size="sm" variant="outline" onClick={() => setPicking({ kind: 'add' })}>
                 + Another lake
@@ -298,7 +333,7 @@ function Console({ post }: { post: PostSheet }) {
               Cancel
             </Button>
             <Button onClick={() => void onPost()} disabled={busy}>
-              {busy ? (editing ? 'Saving…' : 'Posting…') : editing ? 'Save changes' : 'Post'}
+              {actionLabel}
             </Button>
           </div>
         </main>
