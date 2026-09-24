@@ -867,6 +867,38 @@ called three times for one lake; an `Intl` formatter per ladder chip per render.
 wants *three became one*); the per-keystroke `localStorage` write (debouncing trades the refresh
 fidelity §10.3 exists for against a sub-millisecond saving).
 
+### The PR #77 review — what Greptile caught
+
+Three P1s, all outside the diff's lines, and all real.
+
+1. **A retry after a sent create dropped every change made since** (both surfaces). After a create
+   went out and no answer came back, the console kept the attempt, but the sheet stayed editable
+   and the retry rebuilt the draft from it under the same key. The server answers that key with the
+   Post it already has, so a change made in between was shown and then dropped without a word. The
+   phone had the same hole: *Waiting to send* offered **Edit** on a `creating` row, and re-saving
+   it also lost the `creating` mark. The same was true after a create that *landed* and a later
+   condition filing failed (a `postId`, status back to `pending`). The rule now lives in core,
+   `postCreateSent` (`creating`, or a Post id), with its sentence `POST_SENT_COPY`. On web the store
+   refuses an update to a sent sheet, the editing areas go `inert`, *Post* reads *Try again*, the
+   local refusals are skipped (as `flushPost` skips the create-only rules), and `postSheetOnWeb`
+   resends the attempt itself rather than a rebuild. The attempt is stored beside the sheet, so a
+   reload keeps the lock, and a stored sent Post is restored ahead of whatever door was opened: it
+   may be live, and only a retry can find out. On the phone, *Waiting to send* shows the sentence
+   instead of **Edit**, and `postSheet` / `saveSheetAsDraft` refuse a sent draft as they refuse
+   one that is mid-flush. Once the Post is up, its page's edit door is the way to change it.
+2. **A stored sheet crossed accounts.** It was one browser-wide `localStorage` record with no
+   owner, and sign-out cleared neither it nor the in-memory copy. The next account on a shared
+   browser could open `/post` and publish the last one's words under its own name. The record now
+   carries its Clerk owner (`skating.reportSheet.v2`; the ownerless v1 is removed on the first bind)
+   and restores only to that owner. `AuthGate` binds the owner (`useSheetOwnerBinding`), and a
+   change of account drops the open sheet and its photos. Every *Sign out* goes through
+   `useSignOut`, which forgets the sheet everywhere first. A lapsed session keeps the stored copy for
+   the same author: it is scoped to them, and losing a half-written Post to a token expiry would
+   be its own defect.
+3. **An edit could half-commit**: `reports.update`, then `posts.update`. Fixed by the merge of
+   `main`, which brought A10-3 delta 14's one-transaction edit: the console now sends the Post's
+   words inside `reports.update`, as the phone does.
+
 ### Owed
 
 - **The future-skate telemetry is dead on both surfaces.** Deleting the web `ReportForm` removed
@@ -883,6 +915,11 @@ fidelity §10.3 exists for against a sub-millisecond saving).
 - **Playwright over the console** — the flows this PR adds are the first web flows worth an E2E
   pass (`backlog/e2e-tests.md`); the panels' logic is in core on purpose and the components are
   thin, but *post a two-lake Post* is a click path no unit test covers.
+- **The web edit door's uploads do not checkpoint** (A10-3 delta 15's other half).
+  `saveSheetEditOnWeb` uploads each new photo in a loop, and a *Save changes* that fails after an
+  upload re-uploads it on retry. The first copy is a blob no photo row names, which
+  `sweepOrphanPhotos` cannot see. The phone writes each blob and row id onto the open sheet as it
+  lands; the web door wants the same, through `updateSheet`.
 - The founder's pass through the console on a real lake with real data, and a re-skin if the
   to-taste dark mode is not the Figma language.
 
