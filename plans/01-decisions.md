@@ -1157,7 +1157,10 @@ once reputation lands. Works offline — the draft holds local hazard ids and re
 picked from the server's list, the queue's local id for one captured on the ice — the bundle prompt
 offers the phone's queued hazards beside the server's, and the flush resolves a local ref through
 the hazard queue, which keeps a flushed hazard's row with its server id while a draft points at it;
-a ref that cannot resolve is dropped and never blocks the Post)*.
+a ref that cannot resolve is dropped and never blocks the Post)*. **Amended 2026-09-23 (founder, A10-3):**
+a checked hazard is never dropped — one still queued holds the Post until it sends, one the server
+refused parks the Post with a sentence saying which, and only one the author deleted from the queue is
+left out (A10-3 delta 12).
 **Why:** On the ice you want the fastest possible capture (two taps, no typing, no report); at home you
 want a coherent story. Bundling gets both without asking the skater to re-enter anything, and it turns
 the standalone quick-flag path (D51) from a parallel silo into the front half of the report flow.

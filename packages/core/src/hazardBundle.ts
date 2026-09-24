@@ -14,7 +14,8 @@
  * actually promises. Nothing is ever attached invisibly: the prompt itemises every candidate.
  */
 
-import type { HazardRef } from './draftQueue';
+import type { HazardRef, HazardRefResolution } from './draftQueue';
+import { hazardTypeLabel } from './hazardCopy';
 import type { HazardQueueItem } from './hazardQueue';
 import type { HazardType } from './types';
 
@@ -148,44 +149,23 @@ export function optOutsFromSavedRefs(
   return candidateIds.filter((id) => !kept.has(id));
 }
 
-// ── The online post's attachments (D55, A10 §9.1) ────────────────────────────────────────────────
+// ── A bundled queue row at flush (D55 offline, A10 §9.1) ─────────────────────────────────────────
 
 /**
- * The sentence the form shows when a checked hazard is still on the phone and could not be sent
- * just now. Not a drop: the author checked it, so the report waits for them, not the other way.
+ * What a Post draft's local hazard ref resolves to, read off its queue row after the row was given
+ * its chance to flush. The author checked it, so it is never quietly left out (D55 — attaching is
+ * a shown choice, so is not attaching): a row still waiting holds the Post; a row the server
+ * refused parks it, in words that say which hazard and what to do; only a row that is no longer
+ * there — the author deleted it on *Waiting to send* — has nothing left to attach.
  */
-export const UNSENT_HAZARD_REFUSAL =
-  "A hazard you checked is still waiting to send and couldn't go just now. Try again, uncheck it, or save this as a draft — it posts with the hazard when the queue sends.";
-
-export type BundledHazardResolution =
-  | { ok: true; hazardIds: string[] }
-  | { ok: false; localId: string };
-
-/**
- * The hazard ids an **online** post attaches, in prompt order: a server id as it is; a `local:` id
- * through `resolveLocal` — the queue row's server id if it has flushed, else flushed now, since the
- * phone has signal. One the queue cannot send is a refusal, never a silent omission: the prompt
- * showed it checked, and a report that posted without it would have lost the author's explicit
- * choice (D55 — attaching is a shown choice, so is not attaching). The draft path needs none of
- * this: the ref rides the draft and `flushPost` resolves it by the same rule at flush.
- */
-export async function resolveBundledHazardIds(
-  ids: readonly string[],
-  resolveLocal: (localId: string) => Promise<string | null>,
-): Promise<BundledHazardResolution> {
-  const hazardIds: string[] = [];
-  const claim = (hazardId: string): void => {
-    if (!hazardIds.includes(hazardId)) hazardIds.push(hazardId);
+export function queuedHazardResolution(item: HazardQueueItem | null): HazardRefResolution {
+  if (item?.kind !== 'hazard') return { kind: 'gone' };
+  if (item.hazardId !== undefined) return { kind: 'sent', hazardId: item.hazardId };
+  if (item.status !== 'error') return { kind: 'waiting' };
+  const reason = item.errorMessage?.trim();
+  const why = reason ? `: ${/[.!?]$/.test(reason) ? reason : `${reason}.`}` : '.';
+  return {
+    kind: 'refused',
+    message: `A hazard you checked (${hazardTypeLabel(item.type)}) couldn't be sent${why} Delete it on Waiting to send, then post this again without it.`,
   };
-  for (const id of ids) {
-    const localId = localHazardIdOf(id);
-    if (localId === null) {
-      claim(id);
-      continue;
-    }
-    const hazardId = await resolveLocal(localId);
-    if (hazardId === null) return { ok: false, localId };
-    claim(hazardId);
-  }
-  return { ok: true, hazardIds };
 }

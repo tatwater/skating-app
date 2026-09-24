@@ -9,11 +9,16 @@ import {
   localHazardIdOf,
   optOutsFromSavedRefs,
   queuedBundleCandidates,
-  resolveBundledHazardIds,
+  queuedHazardResolution,
   toggleBundleOptOut,
 } from './hazardBundle';
 import { pointRadiusShape } from './hazardGeometry';
-import { createQueuedHazard, type HazardQueueItem, type QueuedHazard } from './hazardQueue';
+import {
+  createQueuedConfirmation,
+  createQueuedHazard,
+  type HazardQueueItem,
+  type QueuedHazard,
+} from './hazardQueue';
 
 describe('bundledHazardIds', () => {
   it('includes every candidate by default (D55: pre-checked)', () => {
@@ -167,34 +172,67 @@ describe('optOutsFromSavedRefs — a draft edit keeps the last choice (A10 §9.1
   });
 });
 
-describe('resolveBundledHazardIds — what an online post attaches (D55, A10 §9.1)', () => {
-  it('passes a server id through, resolves a local id through the queue, and dedupes — in prompt order', async () => {
-    const asked: string[] = [];
-    const res = await resolveBundledHazardIds(
-      ['srv-1', 'local:q7', 'local:q8', 'srv-1'],
-      async (id) => {
-        asked.push(id);
-        return id === 'q7' ? 'srv-7' : 'srv-1';
-      },
-    );
-    expect(res).toEqual({ ok: true, hazardIds: ['srv-1', 'srv-7'] });
-    expect(asked).toEqual(['q7', 'q8']);
+describe('queuedHazardResolution — a checked queue row at flush is never quietly left out (D55)', () => {
+  const NOW = Date.UTC(2026, 0, 10, 12, 0);
+  const row = (overrides: Partial<QueuedHazard> = {}): QueuedHazard => ({
+    ...createQueuedHazard({
+      id: 'q1',
+      idempotencyKey: 'k',
+      now: NOW,
+      type: 'pressure_ridge',
+      shape: pointRadiusShape({ lat: 44.4759, lng: -73.2121 }, 40),
+      waterBodyId: 'body1',
+    }),
+    ...overrides,
   });
 
-  it('a checked hazard the queue cannot send is a refusal naming the row, never a silent omission', async () => {
-    const res = await resolveBundledHazardIds(['srv-1', 'local:q7', 'local:q8'], async (id) =>
-      id === 'q8' ? 'srv-8' : null,
-    );
-    expect(res).toEqual({ ok: false, localId: 'q7' });
-  });
-
-  it('nothing checked is nothing attached, and asks the queue for nothing', async () => {
-    let asked = 0;
-    const res = await resolveBundledHazardIds([], async () => {
-      asked++;
-      return null;
+  it('a flushed row is its server id', () => {
+    expect(queuedHazardResolution(row({ status: 'done', hazardId: 'srv-1' }))).toEqual({
+      kind: 'sent',
+      hazardId: 'srv-1',
     });
-    expect(res).toEqual({ ok: true, hazardIds: [] });
-    expect(asked).toBe(0);
+  });
+
+  it('a row still in the queue holds the Post, whatever step it stopped at', () => {
+    for (const status of ['pending', 'uploading', 'creating'] as const) {
+      expect(queuedHazardResolution(row({ status }))).toEqual({ kind: 'waiting' });
+    }
+  });
+
+  it('a refused row parks the Post, naming the hazard, the reason and the way out', () => {
+    const res = queuedHazardResolution(
+      row({
+        status: 'error',
+        errorMessage: "Couldn't match this hazard's location to a known lake.",
+      }),
+    );
+    expect(res).toEqual({
+      kind: 'refused',
+      message:
+        "A hazard you checked (Pressure ridge) couldn't be sent: Couldn't match this hazard's location to a known lake. Delete it on Waiting to send, then post this again without it.",
+    });
+  });
+
+  it('a server sentence without its full stop still reads as two sentences; no reason, one', () => {
+    const noStop = queuedHazardResolution(row({ status: 'error', errorMessage: 'Lake removed ' }));
+    expect(noStop).toMatchObject({
+      message: expect.stringContaining("couldn't be sent: Lake removed. Delete it"),
+    });
+    const none = queuedHazardResolution(row({ status: 'error' }));
+    expect(none).toMatchObject({
+      message: expect.stringContaining("couldn't be sent. Delete it"),
+    });
+  });
+
+  it('a row the author deleted — or a confirmation under the id — has nothing to attach', () => {
+    expect(queuedHazardResolution(null)).toEqual({ kind: 'gone' });
+    const vote = createQueuedConfirmation({
+      id: 'q1',
+      now: NOW,
+      hazardId: 'srv-9',
+      verdict: 'still_there',
+      via: 'report_flow',
+    });
+    expect(queuedHazardResolution(vote)).toEqual({ kind: 'gone' });
   });
 });

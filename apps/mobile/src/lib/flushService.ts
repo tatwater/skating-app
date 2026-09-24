@@ -19,12 +19,14 @@ import {
   flushPost,
   flushTrack,
   type HazardFlushEffects,
+  type HazardRefResolution,
   isFlushable,
   isHazardItemFlushable,
   isTrackFlushable,
   type PostFlushEffects,
   type PostFlushResult,
   postDraftPhotoUris,
+  queuedHazardResolution,
   type ReportInput,
   referencedHazardLocalIds,
   referencedTrackIds,
@@ -117,9 +119,9 @@ function effects(): PostFlushEffects {
     },
     // D55 offline (A10 §9.1): a hazard captured on the ice and bundled into a report before either
     // had signal. The hazard queue runs first in every drain, so this usually finds the server id
-    // already checkpointed on the row; if the row is still pending it is flushed now, and a hazard
-    // that cannot be sent simply is not claimed — the report never waits on it.
-    resolveHazardId: resolveQueuedHazardId,
+    // already checkpointed on the row; if the row is still pending it is flushed now, and one that
+    // cannot go yet holds the Post rather than being left out of it.
+    resolveHazardId: resolveQueuedHazard,
     // The sheet's condition chips (D197 / A10 §7.2), filed once the Post exists with its Report as
     // provenance and the queue's key per reason, so a replayed flush returns the same row.
     createAccessAlert: async (input) => {
@@ -143,17 +145,16 @@ function effects(): PostFlushEffects {
 }
 
 /**
- * The server id of a hazard captured on the ice (D55 offline, A10 §9.1): the queue row's, if it
- * has flushed; else the row is flushed now. `null` when it cannot be sent — a row that is gone,
- * parked in `error`, or whose flush failed just now. One rule for the queue's flush
- * (`resolveHazardId`) and the online form's post, which flushes a checked hazard at submit rather
- * than posting without it.
+ * What a Post draft's bundled local hazard is at flush (D55 offline, A10 §9.1): the row is flushed
+ * now if it hasn't landed, then read again — sent, still waiting, refused, or deleted by the
+ * author (core's `queuedHazardResolution` says which, and `flushPost` what each means for the Post).
  */
-export async function resolveQueuedHazardId(localId: string): Promise<string | null> {
+async function resolveQueuedHazard(localId: string): Promise<HazardRefResolution> {
   const queued = getHazardItem(localId);
-  if (queued?.kind !== 'hazard') return null;
-  if (queued.hazardId !== undefined) return queued.hazardId;
-  return (await flushOneHazard(localId))?.hazardId ?? null;
+  if (queued?.kind === 'hazard' && queued.hazardId === undefined && isHazardItemFlushable(queued)) {
+    await flushOneHazard(localId);
+  }
+  return queuedHazardResolution(getHazardItem(localId));
 }
 
 /**
@@ -378,11 +379,8 @@ async function drainOnce(now: number): Promise<void> {
  * Drop the flushed hazards no Post draft bundles any more (A10 §9.1). A flushed hazard's row is
  * kept — `done`, with its server id — while a draft still points at it by local id, the way a
  * flushed track's row is kept for the report it belongs to; this is the other half of that rule.
- * Runs at the end of every drain, and after an online post that flushed a queued hazard at submit
- * (`resolveQueuedHazardId`) — otherwise that row would be offered to the next report on the lake,
- * pre-checked, until something else drained the queue.
  */
-export function sweepFlushedHazards(): void {
+function sweepFlushedHazards(): void {
   try {
     const referenced = referencedHazardLocalIds(listDrafts());
     for (const item of removableHazardItems(listHazardItems(), referenced)) {
@@ -419,19 +417,18 @@ function applyTrackRetention(now: number): void {
 
 /**
  * Flush one queued hazard or confirmation by local id, returning its result. Shared by the queue
- * drain and by every caller that needs a bundled hazard's server id *now* — a Post draft's flush
- * (`resolveHazardId`) and the online form's submit (`resolveQueuedHazardId`) — the way
- * `flushOneTrack` serves a report's track, so the paths cannot disagree about what a successful
- * flush leaves behind: the photo files go at once, and the row waits for `sweepFlushedHazards`,
+ * drain and by a Post draft's flush that needs a bundled hazard's server id *now*
+ * (`resolveHazardId`), the way `flushOneTrack` serves a report's track, so the paths cannot
+ * disagree about what a successful flush leaves behind: the photo files go at once, and the row waits for `sweepFlushedHazards`,
  * because a report draft may still bundle this hazard by its local id and needs the server id the
  * row now carries (D55).
  *
- * **One flush per row at a time** (`createKeyedSingleFlight`). The form's submit and a reconnect or
- * foreground drain can reach the same row together; unguarded, both would upload its photos, create
+ * **One flush per row at a time** (`createKeyedSingleFlight`). Every caller runs inside the
+ * coalesced drain today, but two that reached one row together would each upload its photos, create
  * photo rows and race each other's checkpoint writes — the server's idempotency keeps one hazard,
- * but not the orphaned rows or the clobbered queue state. A second caller joins the flush already
- * running and gets its result. One that arrives just after it settled finds the row `done` and is
- * handed the server id the row carries, not a `null` that would read as "could not be sent".
+ * but not the orphaned rows or the clobbered queue state — so the guard stays at the row, where a
+ * new entry point cannot miss it. A second caller joins the flush already running and gets its
+ * result. One that arrives just after it settled finds the row `done` and is handed its server id.
  */
 const flushOneHazard = createKeyedSingleFlight(flushHazardNow);
 

@@ -712,6 +712,18 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
     surface casts at its own wire (mobile already did this for `photoIds` and the storage ids). What
     stays on mobile is what is native — `sheetStore` (the module singleton), `sheetDoors` (the GPS
     fix, the queued track, the cached lake) and `sheetActions` (upload, queue, flush).
+12. **A checked queued hazard holds or parks the Post; it is never dropped** (founder, at the merge of
+    #73 into this branch, 2026-09-23). A10-2b delta 8 fixed the online form's submit, but the sheet
+    posts through the queue, and the queue's rule was still "a ref that cannot resolve is left out"
+    — the same silent loss on every *Post*. The rule now lives in `flushPost`, so the online and
+    offline paths are one: `resolveHazardId` answers with core's `queuedHazardResolution` — `sent`
+    (attach it), `waiting` (a transient failure: the Post stays queued and goes after the hazard,
+    so *Post* still never fails for lack of bars), `refused` (the row is parked in `error`: the Post
+    parks with a sentence naming the hazard and pointing at *Waiting to send*, where the row can be
+    deleted), `gone` (the author deleted the row: nothing left to attach). A draft whose create was
+    already sent is exempt, like the create-only rules — it may be live. The form's
+    `resolveBundledHazardIds` / `UNSENT_HAZARD_REFUSAL` went with the form; the keyed single-flight
+    stays as the row's guard though every caller now runs inside the coalesced drain. D55 amended.
 
 ### Owed
 
