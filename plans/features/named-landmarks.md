@@ -39,7 +39,7 @@ put-ins (the reads the drawer already makes), never viewport-wide.
 2. **The corpus inventory** as a name-and-alias source: a landmark the ETL found gets the
    community's spelling as an alias ("bird poop rock" will not be in GNIS; a moderator adds it).
 3. **A moderator** on the admin body page — drop a point, name it, pick a kind. Same map as the
-   chord editor ([`subarea-chord-editor.md`](./subarea-chord-editor.md)).
+   chord editor (D201, shipped).
 
 **Two consumers:**
 

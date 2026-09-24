@@ -259,7 +259,8 @@ precedence, the retention arithmetic and the copy.
 ### PR 2 — requests (built the same day; D179)
 
 **Model** (`@skating/core` `corpusRequests.ts`, `convex/corpusRequests.ts`, `waterBodyRequests`
-table): five kinds — `activate` · `admit` · `restore` · `contest_access` · `takedown` — with
+table): five kinds — `activate` · `admit` · `restore` · `contest_access` · `takedown` (a sixth,
+`name_bay`, from D201: the sub-area queue rides this lane) — with
 `requestKindsFor(standing)` deciding which a water body admits; `create` (one open ask per person per water body
 per kind, ten open per person; an `admit` at a point we already hold is refused with `known_water`
 + the body and its standing); `resolveAdmit` (an action: one fetch of the 3DHP waterbody layer,

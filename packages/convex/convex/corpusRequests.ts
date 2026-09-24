@@ -1,11 +1,19 @@
 /**
  * Corpus requests (A07b PR 2 / D106–D108, D179) — a skater asks for a lake; a moderator answers.
  *
- * Five kinds (`REQUEST_KINDS` in `@skating/core`'s `corpusRequests.ts`, which also says why five):
+ * Six kinds (`REQUEST_KINDS` in `@skating/core`'s `corpusRequests.ts`, which also says why six):
  * `activate` a dormant body, `admit` water the corpus does not hold, `restore` a removed body,
- * `contest_access` a no-public-access ruling, and a landowner's `takedown`. The client offers exactly
- * the kinds the body's standing admits (`requestKindsFor`) and `create` refuses the rest, so the two
+ * `contest_access` a no-public-access ruling, a landowner's `takedown`, and `name_bay` — a bay on
+ * an active lake that skaters treat as a place of its own (D201). The client offers exactly the
+ * kinds the body's standing admits (`requestKindsFor`) and `create` refuses the rest, so the two
  * cannot disagree.
+ *
+ * **`name_bay` is the sub-area queue.** The ask carries the bay's name and a point; the lake
+ * editor's chord tool lists a body's open asks beside the map and approves one by drawing it
+ * (`subAreas.createFromChord` calls `approveNamedBayRequest`); the queue page lists them across
+ * bodies. The corpus seed's destination bays are filed through `seedBayRequests`, so the one-off
+ * list and every future ask are the same rows on the same pages, and nothing corpus-shaped has a
+ * table of its own.
  *
  * **The `admit` resolver is an action against the live catalog** (D106, order inverted from the
  * plan — see the core module). `create` schedules it; it fetches the 3DHP waterbody under the point
@@ -22,12 +30,15 @@ import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   catalogQueryUrl,
   isActive,
+  MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
   nearestBodyForPoint,
   parseCatalogResponse,
   REQUEST_KINDS,
   type RequestKind,
   requestKindsFor,
+  requestNameKey,
+  sameName,
   searchTextFor,
   standingOf,
 } from '@skating/core';
@@ -54,6 +65,17 @@ import {
 import { publicAuthor } from './lib/authorView';
 import { syncWaterBodyCells } from './lib/cellIndex';
 import { isListed } from './lib/listing';
+import {
+  closeSiblingPage,
+  decide,
+  decisionArgs,
+  drawnBay,
+  listedBaysOf,
+  matchBay,
+  QUEUE_CAP,
+  requestKeyOf,
+  requestNames,
+} from './lib/requestDecisions';
 import { scoreFields } from './lib/scoring';
 import { activateBody, registerWeatherMembership } from './lib/standing';
 import { latLng, literals } from './lib/validators';
@@ -68,8 +90,16 @@ import { listedBodiesNearCoord } from './waterBodies';
  */
 const MAX_OPEN_REQUESTS_PER_USER = 10;
 
+/**
+ * Open bay asks one person may hold at once — a budget of its own, beside the lake-ask cap, so
+ * naming the bays of one big lake does not use up the asks for ponds, and a distinct-name loop
+ * cannot fill the queue (Greptile, PR #76). The corpus seed files through an internal mutation
+ * and is not held to it.
+ */
+const MAX_OPEN_BAY_REQUESTS_PER_USER = 10;
+
 /** Cap on the moderator queue read. Past this the queue is a backlog, not a list. */
-export const QUEUE_CAP = 200;
+export { QUEUE_CAP } from './lib/requestDecisions';
 
 // ── Create ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -88,22 +118,43 @@ export const create = mutation({
     waterBodyId: v.optional(v.id('waterBodies')),
     activityId: v.optional(v.id('gpsActivities')),
     note: v.optional(v.string()),
+    /** The bay's name — required for `name_bay`, refused on every other kind. */
+    name: v.optional(v.string()),
   },
-  handler: async (ctx, { kind, coord, waterBodyId, activityId, note }) => {
+  handler: async (ctx, { kind, coord, waterBodyId, activityId, note, name }) => {
     const profile = await requireContributor(ctx);
     const now = Date.now();
     const trimmedNote = note?.trim();
     if (trimmedNote && trimmedNote.length > MAX_REQUEST_NOTE_LENGTH) {
       throw new ConvexError(`Keep the note under ${MAX_REQUEST_NOTE_LENGTH} characters.`);
     }
+    const bayName = name?.trim();
+    if (kind === 'name_bay') {
+      if (!bayName) throw new ConvexError('Which bay? Give the name skaters use for it.');
+      if (bayName.length > MAX_REQUEST_NAME_LENGTH) {
+        throw new ConvexError(`Keep the name under ${MAX_REQUEST_NAME_LENGTH} characters.`);
+      }
+    } else if (bayName) {
+      throw new ConvexError('Only a bay request carries a name');
+    }
 
+    // Two budgets: lake asks and bay asks are capped separately, so naming the bays of one big
+    // lake never uses up someone's asks for ponds, and neither kind is unbounded. The read is the
+    // queue cap, wide enough to hold both budgets and the seed's rows, so the dupe check below
+    // sees every open ask of theirs.
     const open = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_requester_status', (q) =>
         q.eq('requesterId', profile._id).eq('status', 'open'),
       )
-      .take(MAX_OPEN_REQUESTS_PER_USER);
-    if (open.length >= MAX_OPEN_REQUESTS_PER_USER) {
+      .take(QUEUE_CAP);
+    const openBayAsks = open.filter((r) => r.kind === 'name_bay').length;
+    const openLakeAsks = open.length - openBayAsks;
+    if (
+      kind === 'name_bay'
+        ? openBayAsks >= MAX_OPEN_BAY_REQUESTS_PER_USER
+        : openLakeAsks >= MAX_OPEN_REQUESTS_PER_USER
+    ) {
       throw new ConvexError(
         'You have a few requests waiting on a moderator already — give them a chance to catch up.',
       );
@@ -156,10 +207,16 @@ export const create = mutation({
           : 'That is not something that can be asked of this lake right now.',
       );
     }
-    // One open ask per person per lake per kind: the count of *distinct people* is the signal, and
-    // a second row from the same person would inflate it. `open` is every open ask of theirs — the
-    // cap above is the bound — so the dupe is in it if it exists.
-    const dupe = open.find((r) => r.waterBodyId === waterBodyId && r.kind === kind);
+    // One open ask per person per lake per question: the count of *distinct people* is the signal,
+    // and a second row from the same person would inflate it. `open` is every open ask of theirs
+    // (bounded by the queue cap) so the dupe is in it if it exists. For a bay the question is the
+    // bay, so two different bays on one lake are two asks.
+    const dupe = open.find(
+      (r) =>
+        r.waterBodyId === waterBodyId &&
+        r.kind === kind &&
+        (kind !== 'name_bay' || requestKeyOf(r) === requestNameKey(bayName ?? '')),
+    );
     if (dupe) throw new ConvexError('You have already asked — it is with the moderators.');
 
     return await ctx.db.insert('waterBodyRequests', {
@@ -170,6 +227,7 @@ export const create = mutation({
       waterBodyId,
       ...(activityId !== undefined ? { activityId } : {}),
       ...(trimmedNote ? { note: trimmedNote } : {}),
+      ...(bayName ? { name: bayName, nameKey: requestNameKey(bayName) } : {}),
       createdAt: now,
     });
   },
@@ -368,7 +426,10 @@ export const openCountsForBody = query({
           q.eq('waterBodyId', waterBodyId).eq('kind', kind).eq('status', 'open'),
         )
         .take(QUEUE_CAP);
-      if (rows.length > 0) counts[kind] = rows.length;
+      // People, not rows: one person may hold an open bay ask per bay, and the seed files sixteen
+      // under one profile — "16 asked" would read as sixteen skaters corroborating.
+      const people = new Set(rows.map((r) => r.requesterId)).size;
+      if (people > 0) counts[kind] = people;
     }
     return counts;
   },
@@ -380,6 +441,7 @@ export const openCountsForBody = query({
  */
 function questionKey(r: Doc<'waterBodyRequests'>): string {
   if (r.kind === 'admit') return r.candidateExternalId ? `admit:${r.candidateExternalId}` : r._id;
+  if (r.kind === 'name_bay') return `name_bay:${r.waterBodyId}:${requestKeyOf(r)}`;
   return `${r.kind}:${r.waterBodyId}`;
 }
 
@@ -409,6 +471,16 @@ export const listQueue = query({
       const key = questionKey(r);
       askersByQuestion.set(key, (askersByQuestion.get(key) ?? 0) + 1);
     }
+    // A lake's bays are read once however many of its bay asks the page holds — Champlain's
+    // bays carry ~1,100-vertex outlines, and a read per ask repeats them.
+    const baysByBody = new Map<string, Doc<'waterBodySubAreas'>[]>();
+    const baysOf = async (waterBodyId: Id<'waterBodies'>) => {
+      const known = baysByBody.get(waterBodyId);
+      if (known) return known;
+      const bays = await listedBaysOf(ctx, waterBodyId);
+      baysByBody.set(waterBodyId, bays);
+      return bays;
+    };
     const out = [];
     for (const r of page) {
       const requester = await ctx.db.get(r.requesterId);
@@ -421,6 +493,13 @@ export const listQueue = query({
         createdAt: r.createdAt,
         requester: publicAuthor(requester, now),
         ...(r.note !== undefined ? { note: r.note } : {}),
+        ...(r.name !== undefined ? { name: r.name } : {}),
+        ...(r.aliases !== undefined ? { aliases: r.aliases } : {}),
+        // For a bay: the sub-area that already answers it, if a moderator has drawn one — the
+        // queue then offers "approve" rather than "draw".
+        ...(r.kind === 'name_bay' && r.status === 'open' && body
+          ? { drawnSubAreaId: matchBay(await baysOf(body._id), requestNames(r))?._id }
+          : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
           ? {
@@ -501,6 +580,7 @@ export const approve = mutation({
     const trimmedNote = note?.trim();
 
     let admittedWaterBodyId: Id<'waterBodies'> | undefined;
+    let answeringSubAreaId: Id<'waterBodySubAreas'> | undefined;
     if (request.kind === 'admit') {
       admittedWaterBodyId = await admitCandidate(ctx, request, actor, now);
     } else {
@@ -531,6 +611,20 @@ export const approve = mutation({
             reason: 'landowner_request',
           });
           break;
+        case 'name_bay': {
+          // The act is the drawing, and it happens in the lake editor — usually through
+          // `createFromChord` with the request attached, which approves from there. Approving
+          // from the queue is for a bay drawn before the ask, or drawn without the request in
+          // hand; it needs the bay to exist by the name asked for.
+          const bay = await drawnBay(ctx, body._id, requestNames(request));
+          if (!bay) {
+            throw new ConvexError(
+              `No sub-area called "${request.name}" on ${body.name} yet — draw it in the lake editor first, then approve.`,
+            );
+          }
+          answeringSubAreaId = bay._id;
+          break;
+        }
       }
     }
 
@@ -554,7 +648,16 @@ export const approve = mutation({
       );
     }
 
-    await decide(ctx, request, 'approved', actor._id, now, trimmedNote, admittedWaterBodyId);
+    await decide(
+      ctx,
+      request,
+      'approved',
+      actor._id,
+      now,
+      trimmedNote,
+      admittedWaterBodyId,
+      answeringSubAreaId,
+    );
     return { requestId, ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}) };
   },
 });
@@ -579,117 +682,6 @@ export const decline = mutation({
   },
 });
 
-/**
- * Up to `limit` of the other open asks that share this one's question: the same kind on the same
- * body, or — for an `admit` — the same catalog feature (Greptile, PR #63: admits have no body to
- * group by, and two taps on one pond were two independent decisions). An unresolved admit has no
- * siblings yet. Both index ranges are exactly the sibling set, so `capped` means there are more,
- * not that a filter ate the page (second pass).
- *
- * `asOf` bounds the range to rows that existed then, on the index's implicit `_creationTime` tail:
- * a decision closes the group *as it stood when the moderator answered*, and an ask filed while
- * the pages were draining is a new question, left open for the next answer (fourth pass).
- */
-async function openSiblings(
-  ctx: QueryCtx,
-  request: Doc<'waterBodyRequests'>,
-  limit: number,
-  asOf: number = Number.POSITIVE_INFINITY,
-): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
-  const none = { rows: [], capped: false };
-  let rows: Doc<'waterBodyRequests'>[];
-  if (request.kind === 'admit') {
-    if (request.candidateExternalId === undefined) return none;
-    rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_candidate_external_id', (q) =>
-        q
-          .eq('candidateExternalId', request.candidateExternalId)
-          .eq('status', 'open')
-          .lte('_creationTime', asOf),
-      )
-      .take(limit + 2);
-  } else {
-    if (request.waterBodyId === undefined) return none;
-    rows = await ctx.db
-      .query('waterBodyRequests')
-      .withIndex('by_water_body', (q) =>
-        q
-          .eq('waterBodyId', request.waterBodyId)
-          .eq('kind', request.kind)
-          .eq('status', 'open')
-          .lte('_creationTime', asOf),
-      )
-      .take(limit + 2);
-  }
-  // +2: one for the request itself if it is still open, one to learn whether there are more.
-  const others = rows.filter((r) => r._id !== request._id);
-  return { rows: others.slice(0, limit), capped: others.length > limit };
-}
-
-/** What a decision writes on every row it closes — carried to the continuation unchanged. */
-const decisionArgs = {
-  requestId: v.id('waterBodyRequests'),
-  status: literals(['approved', 'declined'] as const),
-  actorId: v.id('profiles'),
-  now: v.number(),
-  note: v.optional(v.string()),
-  admittedWaterBodyId: v.optional(v.id('waterBodies')),
-};
-type Decision = {
-  requestId: Id<'waterBodyRequests'>;
-  status: 'approved' | 'declined';
-  actorId: Id<'profiles'>;
-  now: number;
-  note?: string;
-  admittedWaterBodyId?: Id<'waterBodies'>;
-};
-
-async function closeRow(
-  ctx: MutationCtx,
-  row: Doc<'waterBodyRequests'>,
-  { requestId, status, actorId, now, note, admittedWaterBodyId }: Decision,
-): Promise<void> {
-  await ctx.db.patch(row._id, {
-    status,
-    decidedAt: now,
-    decidedByUserId: actorId,
-    ...(note ? { decisionNote: note } : {}),
-    ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
-  });
-  await ctx.db.insert('moderationActions', {
-    actorId,
-    action: status === 'approved' ? 'approve_request' : 'decline_request',
-    targetType: 'waterBodyRequest',
-    targetId: row._id,
-    reason: note || `${status === 'approved' ? 'Approved' : 'Declined'} a ${row.kind} request`,
-    metadata: {
-      kind: row.kind,
-      ...(row.waterBodyId ? { waterBodyId: row.waterBodyId } : {}),
-      ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
-      ...(row._id !== requestId ? { withRequestId: requestId } : {}),
-    },
-    createdAt: now,
-  });
-}
-
-/**
- * One page of siblings closed with the decision; the next page scheduled if there is one. The page
- * is the transaction's bound — `QUEUE_CAP` patches plus as many audit rows — so a sibling group of
- * any size drains in bounded steps instead of one mutation that grows until it cannot commit
- * (Greptile, PR #63, third pass). Each page comes back empty of the rows the last one closed, and
- * the range ends at `decision.now`, so the drain converges on the group the moderator saw.
- */
-async function closeSiblingPage(
-  ctx: MutationCtx,
-  request: Doc<'waterBodyRequests'>,
-  decision: Decision,
-): Promise<void> {
-  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP, decision.now);
-  for (const row of rows) await closeRow(ctx, row, decision);
-  if (capped) await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, decision);
-}
-
 export const closeSiblings = internalMutation({
   args: decisionArgs,
   handler: async (ctx, decision) => {
@@ -700,31 +692,186 @@ export const closeSiblings = internalMutation({
 });
 
 /**
- * Close the request and every open sibling, with one audit row each. Siblings share the decision
- * because they share the question — and *every* sibling: the first page closes with the request,
- * and the rest follow in scheduled pages. Nothing is left open past a page boundary (Greptile,
- * PR #63).
+ * Moderator: the lake editor's queue — this body's open bay asks, one row per bay (the asks for
+ * one bay grouped by name key, oldest first), with what the chord tool needs to start: the name,
+ * the aliases the seed knows, the point to fly to, the notes, how many asked, and whether a bay by
+ * that name is already drawn (then the row offers "approve" rather than "draw").
  */
-async function decide(
-  ctx: MutationCtx,
-  request: Doc<'waterBodyRequests'>,
-  status: 'approved' | 'declined',
-  actorId: Id<'profiles'>,
-  now: number,
-  note: string | undefined,
-  admittedWaterBodyId?: Id<'waterBodies'>,
-): Promise<void> {
-  const decision: Decision = {
-    requestId: request._id,
-    status,
-    actorId,
-    now,
-    ...(note !== undefined ? { note } : {}),
-    ...(admittedWaterBodyId !== undefined ? { admittedWaterBodyId } : {}),
-  };
-  await closeRow(ctx, request, decision);
-  await closeSiblingPage(ctx, request, decision);
+export const openBayRequestsForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireRole(ctx, 'moderator');
+    const rows = await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_water_body', (q) =>
+        q.eq('waterBodyId', waterBodyId).eq('kind', 'name_bay').eq('status', 'open'),
+      )
+      .take(QUEUE_CAP);
+    const body = await ctx.db.get(waterBodyId);
+    const byKey = new Map<
+      string,
+      {
+        requestId: Id<'waterBodyRequests'>;
+        name: string;
+        aliases: string[];
+        /** Where the bay is, when someone said — absent for an ask filed from the lake's drawer. */
+        coord?: { lat: number; lng: number };
+        notes: string[];
+        askers: number;
+        createdAt: number;
+      }
+    >();
+    for (const r of rows.sort((x, y) => x.createdAt - y.createdAt)) {
+      const key = requestKeyOf(r);
+      // A skater's ask from the drawer carries the lake's own point, not the bay's: flying there
+      // would land the moderator somewhere on the lake, not at the bay. Only a real point is kept
+      // (the seed's GNIS/OSM point), and the first real one in the group wins.
+      const pointed = body ? !isLakePoint(r.coord, body) : true;
+      const entry = byKey.get(key);
+      if (entry) {
+        entry.askers += 1;
+        if (r.note) entry.notes.push(r.note);
+        for (const alias of r.aliases ?? [])
+          if (!entry.aliases.includes(alias)) entry.aliases.push(alias);
+        if (!entry.coord && pointed) entry.coord = r.coord;
+        continue;
+      }
+      byKey.set(key, {
+        requestId: r._id,
+        name: r.name ?? '',
+        aliases: [...(r.aliases ?? [])],
+        ...(pointed ? { coord: r.coord } : {}),
+        notes: r.note ? [r.note] : [],
+        askers: 1,
+        createdAt: r.createdAt,
+      });
+    }
+    const bays = await listedBaysOf(ctx, waterBodyId);
+    const out = [];
+    for (const entry of byKey.values()) {
+      const drawn = matchBay(bays, [entry.name, ...entry.aliases]);
+      out.push({ ...entry, ...(drawn ? { drawnSubAreaId: drawn._id } : {}) });
+    }
+    return out;
+  },
+});
+
+/** Is this the lake's own representative point — what a drawer ask sends — rather than a place? */
+function isLakePoint(coord: { lat: number; lng: number }, body: Doc<'waterBodies'>): boolean {
+  return [body.centroid, body.representativePoint, body.interiorPoint].some(
+    (p) => p !== undefined && p.lat === coord.lat && p.lng === coord.lng,
+  );
 }
+
+/** One corpus bay, as the seed file lists it: the parent by name and state, never by a Convex id. */
+const seedBayRow = v.object({
+  name: v.string(),
+  aliases: v.optional(v.array(v.string())),
+  state: v.string(),
+  parentName: v.string(),
+  coord: latLng,
+  note: v.string(),
+});
+
+/**
+ * File the corpus's destination bays as `name_bay` requests (D201) — the one-off that makes the
+ * seed's list and a skater's ask the same queue. **Dry by default**; `apply` writes. Each row
+ * resolves its parent by name (word order aside) within its state among listed bodies, skipped when the
+ * parent is missing or ambiguous, when the same bay is already asked for, or when a sub-area by
+ * that name already exists — every skip named in the report, nothing guessed.
+ *
+ *   pnpm --filter @skating/seed-destinations seed-bay-requests <bays.json> --requester=<profileId> [--apply]
+ */
+export const seedBayRequests = internalMutation({
+  args: {
+    requesterId: v.id('profiles'),
+    rows: v.array(seedBayRow),
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { requesterId, rows, apply }) => {
+    const requester = await ctx.db.get(requesterId);
+    if (!requester) throw new ConvexError('Requester profile not found');
+    const now = Date.now();
+    const report: {
+      name: string;
+      parent?: string;
+      status:
+        | 'filed'
+        | 'would_file'
+        | 'no_parent'
+        | 'parent_not_active'
+        | 'ambiguous_parent'
+        | 'already_asked'
+        | 'already_drawn';
+    }[] = [];
+    for (const row of rows) {
+      const hits = await ctx.db
+        .query('waterBodies')
+        .withSearchIndex('search_name', (q) => q.search('searchText', row.parentName))
+        .take(20);
+      // `sameName`, not equality: the corpus says "Lake Sunapee" and the catalog "Sunapee Lake",
+      // and word order is the one difference that is never two lakes. A typo still misses.
+      const named = hits.filter(
+        (b) => sameName(b.name, row.parentName) && (b.states ?? []).includes(row.state),
+      );
+      const parents = named.filter((b) => isListed(b) && standingOf(b).standing === 'active');
+      if (parents.length === 0) {
+        // A parent the corpus holds but has shelved is a different fix (activate it) from a
+        // parent it does not hold at all (a name mismatch, or a lake to request).
+        report.push({
+          name: row.name,
+          ...(named[0] ? { parent: named[0].name } : {}),
+          status: named.length > 0 ? 'parent_not_active' : 'no_parent',
+        });
+        continue;
+      }
+      if (parents.length > 1) {
+        report.push({ name: row.name, status: 'ambiguous_parent' });
+        continue;
+      }
+      const parent = parents[0] as Doc<'waterBodies'>;
+      const names = [row.name, ...(row.aliases ?? [])];
+      if (await drawnBay(ctx, parent._id, names)) {
+        report.push({ name: row.name, parent: parent.name, status: 'already_drawn' });
+        continue;
+      }
+      let asked = false;
+      for (const key of new Set(names.map(requestNameKey))) {
+        const hit = await ctx.db
+          .query('waterBodyRequests')
+          .withIndex('by_water_body_name', (q) =>
+            q
+              .eq('waterBodyId', parent._id)
+              .eq('kind', 'name_bay')
+              .eq('status', 'open')
+              .eq('nameKey', key),
+          )
+          .first();
+        if (hit) asked = true;
+      }
+      if (asked) {
+        report.push({ name: row.name, parent: parent.name, status: 'already_asked' });
+        continue;
+      }
+      if (apply) {
+        await ctx.db.insert('waterBodyRequests', {
+          kind: 'name_bay',
+          status: 'open',
+          requesterId,
+          coord: row.coord,
+          waterBodyId: parent._id,
+          name: row.name,
+          nameKey: requestNameKey(row.name),
+          ...(row.aliases && row.aliases.length > 0 ? { aliases: row.aliases } : {}),
+          note: row.note,
+          createdAt: now,
+        });
+      }
+      report.push({ name: row.name, parent: parent.name, status: apply ? 'filed' : 'would_file' });
+    }
+    return report;
+  },
+});
 
 /** The reachable body under a point, within the admit margin — the check `create` makes, repeated. */
 async function bodyUnder(

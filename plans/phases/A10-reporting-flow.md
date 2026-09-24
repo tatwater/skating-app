@@ -1032,7 +1032,7 @@ path, not a fallback.
 - **Named landmarks** — scoped as [`features/named-landmarks.md`](../features/named-landmarks.md)
   (2026-09-20), scheduled with A10-2: OSM/GNIS islands, points, beaches, narrows and reference bays
   as `bodyLandmarks`, map labels, and `where: point(name)`; extraction maps "off Shelburne Point"
-  onto them. Sub-areas by chord are [`features/subarea-chord-editor.md`](../features/subarea-chord-editor.md).
+  onto them. Sub-areas by chord shipped as D201 (2026-09-21).
 - **Painting** ice, surface or snow onto the body — web-only if ever (terra-draw has no RN
   adapter); the `where` union is the honest 90%.
 - **Vision-suggested hazard types** on a photo the skater already called a hazard.

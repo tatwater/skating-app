@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   describeRequestOutcome,
+  MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
   type RequestKind,
   requestKindLabel,
@@ -17,7 +18,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal } from 'react-native';
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
-import { TextArea } from './ThemedInputs';
+import { Input, TextArea } from './ThemedInputs';
 
 /**
  * Asking for a lake (A07b PR 2) — the mobile half of web's `RequestLake`: the drawer's buttons
@@ -58,7 +59,10 @@ export function RequestButtons({
   if (kinds.length === 0) return null;
   const latest = mine?.[0];
   const outcome = latest ? describeRequestOutcome(latest) : null;
-  const pendingKind = mine?.find((r) => r.status === 'open')?.kind;
+  // Every open ask's kind, newest first: each disables its button (a newer bay ask must not
+  // re-enable an older takedown), and the newest is the one the line names.
+  const openKinds = (mine ?? []).filter((r) => r.status === 'open').map((r) => r.kind);
+  const pendingKind = openKinds[0];
 
   return (
     <YStack gap="$2" testID="request-lake">
@@ -78,7 +82,8 @@ export function RequestButtons({
             size="$3"
             variant="outlined"
             chromeless={kind === 'takedown'}
-            disabled={pendingKind === kind}
+            // A bay ask is per bay, not per lake (the server's rule): a second bay is a second ask.
+            disabled={openKinds.includes(kind) && kind !== 'name_bay'}
             onPress={() => setAsking(kind)}
           >
             {requestKindLabel(kind)}
@@ -90,12 +95,13 @@ export function RequestButtons({
         <RequestSheet
           kind={asking}
           onClose={() => setAsking(null)}
-          onSubmit={async (note) => {
+          onSubmit={async (note, name) => {
             await create({
               kind: asking,
               coord: body.centroid,
               waterBodyId: body._id as Id<'waterBodies'>,
               ...(note ? { note } : {}),
+              ...(name ? { name } : {}),
             });
           }}
         />
@@ -111,12 +117,14 @@ function RequestSheet({
 }: {
   kind: RequestKind;
   onClose: () => void;
-  onSubmit: (note: string) => Promise<void>;
+  onSubmit: (note: string, name?: string) => Promise<void>;
 }) {
   const [note, setNote] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const prompt = requestPrompt(kind);
+  const needsName = prompt.name !== undefined && name.trim().length === 0;
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <YStack flex={1} justifyContent="flex-end" backgroundColor="rgba(0,0,0,0.35)">
@@ -131,6 +139,16 @@ function RequestSheet({
           <Paragraph color="$foregroundMuted" fontSize={13}>
             {prompt.description}
           </Paragraph>
+          {/* A bay ask names the bay (D201): the name is the question a moderator answers. */}
+          {prompt.name ? (
+            <Input
+              value={name}
+              onChangeText={setName}
+              placeholder={prompt.name.placeholder}
+              maxLength={MAX_REQUEST_NAME_LENGTH}
+              accessibilityLabel={prompt.name.label}
+            />
+          ) : null}
           <TextArea
             value={note}
             onChangeText={setNote}
@@ -149,12 +167,13 @@ function RequestSheet({
               flex={1}
               backgroundColor="$primary"
               color="$primaryForeground"
-              disabled={busy}
+              disabled={busy || needsName}
+              opacity={needsName ? 0.6 : 1}
               onPress={async () => {
                 setBusy(true);
                 setError(null);
                 try {
-                  await onSubmit(note.trim());
+                  await onSubmit(note.trim(), prompt.name ? name.trim() : undefined);
                   onClose();
                 } catch (err) {
                   setError(messageOf(err));

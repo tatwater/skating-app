@@ -8,6 +8,7 @@ describe('RequestButtonsView (A07b PR 2)', () => {
     render(
       <RequestButtonsView
         kinds={['activate', 'takedown']}
+        openKinds={[]}
         outcome={null}
         counts={{ activate: 3 }}
         onAsk={onAsk}
@@ -25,7 +26,7 @@ describe('RequestButtonsView (A07b PR 2)', () => {
     render(
       <RequestButtonsView
         kinds={['activate', 'takedown']}
-        pendingKind="activate"
+        openKinds={['activate']}
         outcome={null}
         counts={{}}
         onAsk={() => {}}
@@ -36,10 +37,39 @@ describe('RequestButtonsView (A07b PR 2)', () => {
     expect(screen.getByRole('button', { name: /take it off the map/i })).toBeEnabled();
   });
 
+  it('a bay ask stays open to a second bay while the first is with the moderators (D201)', () => {
+    render(
+      <RequestButtonsView
+        kinds={['name_bay', 'takedown']}
+        openKinds={['name_bay']}
+        outcome={null}
+        counts={{ name_bay: 3 }}
+        onAsk={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /name a bay/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /name a bay/i })).toHaveTextContent('3');
+  });
+
+  it('a newer bay ask does not re-enable an older open takedown', () => {
+    render(
+      <RequestButtonsView
+        kinds={['name_bay', 'takedown']}
+        openKinds={['name_bay', 'takedown']}
+        outcome={null}
+        counts={{}}
+        onAsk={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /take it off the map/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /name a bay/i })).toBeEnabled();
+  });
+
   it('reads the moderator’s answer back once there is one', () => {
     render(
       <RequestButtonsView
         kinds={['restore']}
+        openKinds={[]}
         outcome="A moderator reviewed your request and left things as they are. Drained since 2024."
         counts={{}}
         onAsk={() => {}}

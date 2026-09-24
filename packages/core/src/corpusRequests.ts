@@ -6,8 +6,8 @@
  * fallback never existed as anything but a sledgehammer. This is the scalpel: a skater points at
  * water — or at a lake we know but shelved — and asks. A moderator answers.
  *
- * Five kinds of request, because the corpus has four non-active standings and one more thing a person
- * can ask for (`standing.ts`):
+ * Six kinds of request — one per non-active standing, and two more things a person can ask for
+ * (`standing.ts`):
  *
  * - **`activate`** — the body is in the corpus and dormant. *"Put it back on the active map."* The
  *   common case once the corpus is tiered, and the cheapest: no geometry, no catalog, one decision.
@@ -18,6 +18,11 @@
  * - **`contest_access`** — a moderator ruled no public access. *"There is a way in, and here it is."*
  * - **`takedown`** — *"I own this; please take it off the map."* The intake D48 deferred to Phase 07
  *   and nobody built. Founder call 2026-09-16: the fifth kind, here.
+ * - **`name_bay`** — the lake is active and a part of it is a place of its own. *"We skate this bay
+ *   as its own trip; give it its own page."* The sub-area queue (D201): the ask carries the bay's
+ *   name and a point, a moderator draws it with the chord tool, and approving it is the record
+ *   that the bay was asked for. The corpus seed's sixteen destination bays are filed this way too,
+ *   so the one-off list and every future ask are the same queue, on the same page.
  *
  * ## Why a request is a proposal and a moderator admits (D107)
  *
@@ -59,6 +64,7 @@ export const REQUEST_KINDS = [
   'restore',
   'contest_access',
   'takedown',
+  'name_bay',
 ] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];
 
@@ -73,6 +79,23 @@ export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 /** A skater's note on a request — one sentence, rendered to a moderator. */
 export const MAX_REQUEST_NOTE_LENGTH = 280;
 
+/** The name a `name_bay` request carries — a place name, not a sentence. */
+export const MAX_REQUEST_NAME_LENGTH = 80;
+
+/**
+ * The key two `name_bay` asks share when they are the same question: the name folded to letters
+ * and digits, so "St. Albans Bay" and "Saint Albans bay" are not two bays but "NW Bay" and
+ * "Northwest Bay" still are — a moderator merges those with an alias when the bay is drawn.
+ */
+export function requestNameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[’']/g, '') // Mallett's → malletts, as `sameName` folds it
+    .replace(/\bsaint\b/g, 'st')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 /**
  * How far an `admit` coordinate may sit from a body we already hold and still be "new water". Inside
  * this, the ask is really about that body — the server refuses with `known_water` and the clients
@@ -84,7 +107,7 @@ export const ADMIT_KNOWN_WATER_MARGIN_M = 50;
  * Which kinds a body's standing admits. The drawer offers exactly these, and the server refuses the
  * rest, so the two cannot disagree about what can be asked of a lake.
  *
- * - active: only a takedown — there is nothing to ask *for*.
+ * - active: name a bay on it, or a takedown — there is nothing else to ask *for*.
  * - dormant on the machine's or a moderator's account: bring it back, or take it down.
  * - dormant on a `none` ruling: contest the ruling, or take it down.
  * - removed: ask for a restore. A takedown of a removed body is redundant.
@@ -96,7 +119,7 @@ export function requestKindsFor(
   if (!standing) return ['admit'];
   switch (standing.standing) {
     case 'active':
-      return ['takedown'];
+      return ['name_bay', 'takedown'];
     case 'dormant':
       return standing.reason === 'no_public_access'
         ? ['contest_access', 'takedown']
@@ -121,6 +144,8 @@ export function requestKindLabel(kind: RequestKind): string {
       return 'There is public access';
     case 'takedown':
       return 'I own this — take it off the map';
+    case 'name_bay':
+      return 'Name a bay on this lake';
   }
 }
 
@@ -129,6 +154,8 @@ export interface RequestPrompt {
   title: string;
   description: string;
   placeholder: string;
+  /** Present when the kind asks for a name as well as a note (`name_bay`). */
+  name?: { label: string; placeholder: string };
 }
 
 export function requestPrompt(kind: RequestKind): RequestPrompt {
@@ -168,6 +195,15 @@ export function requestPrompt(kind: RequestKind): RequestPrompt {
         placeholder:
           'I own the parcel; there is no public access and we’d rather not have visitors.',
       };
+    case 'name_bay':
+      return {
+        title: 'Name a bay on this lake',
+        description:
+          'A bay skaters go to as its own destination gets its own page, reports and conditions. ' +
+          'Say which bay — the name people use — and where on the lake it is.',
+        placeholder: 'The big bay north of the causeway; we skate it as its own trip.',
+        name: { label: 'The bay’s name', placeholder: 'Malletts Bay' },
+      };
   }
 }
 
@@ -184,6 +220,8 @@ export function requestKindTitle(kind: RequestKind): string {
       return 'Contest access ruling';
     case 'takedown':
       return 'Takedown';
+    case 'name_bay':
+      return 'Name a bay';
   }
 }
 
@@ -200,7 +238,9 @@ export function describeRequestOutcome(request: {
         ? 'A moderator took this lake off the map.'
         : request.kind === 'admit'
           ? 'A moderator added this water to the map.'
-          : 'A moderator put this lake back on the active map.'
+          : request.kind === 'name_bay'
+            ? 'A moderator drew this bay as a place of its own.'
+            : 'A moderator put this lake back on the active map.'
       : 'A moderator reviewed your request and left things as they are.';
   return request.decisionNote ? `${head} ${request.decisionNote}` : head;
 }

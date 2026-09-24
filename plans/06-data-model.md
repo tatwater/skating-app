@@ -47,9 +47,9 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | --- | --- |
 | `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176) — D14, D93–D137 |
 | `waterBodyCells` | the ladder-grid spatial index: one row per (body, cell) — the read path every viewport and "near" query walks — D5 as rebuilt in A01 |
-| `waterBodySubAreas` | a named region inside one polygon — a bay, an arm — with aliases for the ten spellings of Malletts Bay; a place in its own right since A09 — D60 |
+| `waterBodySubAreas` | a named region inside one polygon — a bay, an arm — with aliases for the ten spellings of Malletts Bay; a place in its own right since A09; since D201 usually derived from a stored `mouth` (two shoreline points, a side, a sagitta) — D60 |
 | `waterBodySubAreaCells` | the same cell index for bays — A09 |
-| `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown — D179 |
+| `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay — D179, D201 |
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
 | `bathymetryCoverage` | which bodies have contour tiles and whose credit line to render — A06b |

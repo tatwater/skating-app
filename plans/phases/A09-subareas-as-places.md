@@ -356,6 +356,11 @@ Per bay: *"N skates this season ran past the mouth line"* (`gpsActivities.by_sub
 `export-bay-depths`"* when `geometryUpdatedAt > depthDerivedAt`, and the stored `fetchProfileM`.
 Nothing automatic.
 
+*Since D201 (2026-09-21) the mouth line is a stored fact, not "whatever edge the polygon happens
+to have there": a chord bay's `mouth` draws as its own line on the editor map, and "Edit mouth"
+re-opens it with the handle on the arc. The count above is still against the derived polygon —
+nothing downstream changed.*
+
 ### §7 — every bay's weather, every day of the season
 
 `bodyWeatherCells.by_bay` already lists every live bay's browse cell (~128 rows). A daily internal
