@@ -738,8 +738,10 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
     index, which would have made the lot walk 24 ranges per lot — Champlain's 160 lots near a
     function's call budget). The live reads range on `(target, status, kind, expiresAt)`, so each
     kind is capped in its own range and the take is the whole read; before, one shared range was
-    filtered by reason set, bounding the answer but not the scan. Widened here, `create` writes it,
-    `accessAlerts:backfillKind` stamps the rest; narrowing to required is owed.
+    filtered by reason set, bounding the answer but not the scan. Required from the start of its
+    life in the tree: it landed optional with a backfill, dev turned out to hold no alert rows
+    (checked 2026-09-23) and prod is uninitialized, so it was narrowed in this PR and the backfill
+    removed.
 
 ### Owed
 
@@ -749,11 +751,8 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
   outline; the weather line's latency on a cold cell.
 - The moderator's revision comparison (D205) — the web console, A10-5.
 - **Moderator put-in and lot authoring** — `features/access-point-authoring.md`, after A10.
-- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`), then
-  `pnpm exec convex run accessAlerts:backfillKind` at once — until it runs, alerts written before
-  `kind` existed are outside the live reads.
-- **Narrow `accessAlerts.kind` to required** once the backfill has run on every deployment (dev
-  only; prod is uninitialized and every row it writes carries one).
+- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`,
+  `accessAlerts.kind`).
 - The typed-routes artifact (`.expo/types/router.d.ts`, gitignored) regenerates on the next
   `expo start`; `/drafts` and `/queue` were added to the local copy by hand.
 - RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register

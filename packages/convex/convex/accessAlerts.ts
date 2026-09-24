@@ -41,7 +41,6 @@ import {
   seasonOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -629,34 +628,5 @@ export const expireLapsedAlerts = internalMutation({
       if (alert.season < season) seasonExpired++;
     }
     return { expired, seasonExpired, ttlMs: ACCESS_ALERT_TTL_MS };
-  },
-});
-
-/**
- * Stamp `kind` on every alert written before it existed (A10-3). Paginated over the table and
- * self-scheduling; idempotent — a row that has its kind is skipped, so a re-run finishes a partial
- * pass and a run on a finished deployment is a no-op. **Run right after the deploy that adds the
- * column**: until then those rows are outside the live reads' `kind` ranges. Then `kind` narrows to
- * required. `pnpm exec convex run accessAlerts:backfillKind`.
- */
-export const backfillKind = internalMutation({
-  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
-  handler: async (ctx, { cursor, batchSize }) => {
-    const page = await ctx.db
-      .query('accessAlerts')
-      .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 200)) });
-    let stamped = 0;
-    for (const alert of page.page) {
-      if (alert.kind !== undefined) continue;
-      await ctx.db.patch(alert._id, { kind: accessAlertKindOf(alert.reason) });
-      stamped++;
-    }
-    if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.accessAlerts.backfillKind, {
-        cursor: page.continueCursor,
-        ...(batchSize !== undefined ? { batchSize } : {}),
-      });
-    }
-    return { scanned: page.page.length, stamped, isDone: page.isDone };
   },
 });

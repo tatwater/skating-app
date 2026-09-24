@@ -3283,12 +3283,10 @@ export default defineSchema({
      * `accessAlertKindOf(reason)`, stored (A10-3, PR #75 review) so the live reads cap blockers and
      * conditions in the index range itself — filtering one shared range by reason set made a lake of
      * live planks a scan to find its locked gate. Written at `create`; the reason never changes.
-     *
-     * ⚠ **Optional only until `accessAlerts:backfillKind` has run on every deployment**, then narrowed
-     * to required. A row without it is outside every `eq('kind', …)` range — invisible to the reads —
-     * so the backfill runs right after the deploy that adds it.
+     * Required, because a row without it would sit outside every `eq('kind', …)` range — invisible
+     * to the reads. (Added required: dev held no alert rows and prod is uninitialized.)
      */
-    kind: v.optional(literals(ACCESS_ALERT_KINDS)),
+    kind: literals(ACCESS_ALERT_KINDS),
     /** Free text, and the one place in this phase it is allowed — bounded by the row's own expiry. */
     note: v.optional(v.string()),
     createdByUserId: v.id('profiles'),

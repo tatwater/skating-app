@@ -8,7 +8,7 @@
 
 import { ACCESS_ALERT_TTL_MS, seasonEndMs, seasonOf } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -1224,57 +1224,8 @@ describe('a shared-lot alert is found however many lots the lake has', () => {
   });
 });
 
-/**
- * `kind` is an index key of the live reads (A10-3, PR #75 review), so a row written before the
- * column existed is outside every range until `backfillKind` stamps it — the reason it runs right
- * after the deploy that adds the column.
- */
-describe('backfillKind — the rows written before `kind` existed', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  test('stamps each row with its reason’s kind, after which the reads see it; a re-run is a no-op', async () => {
-    // Fake timers before the first schedule: convex-test leaves a `runAfter(0)` page pending until
-    // a timer fires (see `accountDeletion.test.ts`).
-    vi.useFakeTimers();
-    const { t, waterBodyId, putInId, author } = await setup();
-    const now = Date.now();
-    const legacy = (reason: 'gate_locked' | 'plank_needed') =>
-      t.run((ctx) =>
-        ctx.db.insert('accessAlerts', {
-          targetType: 'put_in' as const,
-          putInId,
-          waterBodyId,
-          reason,
-          createdByUserId: author.id as Id<'profiles'>,
-          createdAt: now - DAY_MS,
-          season: seasonOf(now),
-          expiresAt: now + DAY_MS,
-          status: 'active' as const,
-          confirmCount: 0,
-          denyCount: 0,
-        }),
-      );
-    const gate = await legacy('gate_locked');
-    const plank = await legacy('plank_needed');
-    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId })).toEqual([]);
-
-    const first = await t.mutation(internal.accessAlerts.backfillKind, { batchSize: 1 });
-    expect(first).toMatchObject({ scanned: 1, stamped: 1, isDone: false });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-    expect((await t.run((ctx) => ctx.db.get(gate)))?.kind).toBe('blocker');
-    expect((await t.run((ctx) => ctx.db.get(plank)))?.kind).toBe('condition');
-    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
-    expect(live.map((a) => a.id).sort()).toEqual([gate, plank].sort());
-
-    expect(await t.mutation(internal.accessAlerts.backfillKind, {})).toMatchObject({
-      stamped: 0,
-      isDone: true,
-    });
-  });
-
-  test('create stamps the kind itself', async () => {
+describe('accessAlerts.kind (A10-3, PR #75 review)', () => {
+  test('create stamps the kind itself — the live reads range on it', async () => {
     const { t, putInId, author } = await setup();
     const id = await author.as.mutation(api.accessAlerts.create, {
       targetType: 'put_in',
