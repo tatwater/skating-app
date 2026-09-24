@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -573,7 +574,9 @@ describe('gateSites — the roster', () => {
     const sites = await t.query(internal.imageryIngest.gateSites, {});
     expect(sites).toHaveLength(24);
     const names = await t.run(async (ctx) =>
-      Promise.all(sites.map(async (s) => (await ctx.db.get(s.siteId as never))?.name as string)),
+      Promise.all(
+        sites.map(async (s) => (await ctx.db.get(s.siteId as Id<'waterBodies'>))?.name as string),
+      ),
     );
     expect(names.every((n) => n.startsWith('Listed Pond'))).toBe(true);
   });
