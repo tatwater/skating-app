@@ -8,6 +8,7 @@
  */
 
 import {
+  ACCESS_ALERT_KINDS as CORE_ACCESS_ALERT_KINDS,
   ACCESS_ALERT_REASONS as CORE_ACCESS_ALERT_REASONS,
   ACCESS_ALERT_STATUSES as CORE_ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TARGETS as CORE_ACCESS_ALERT_TARGETS,
@@ -502,6 +503,8 @@ export const ACCESS_REASONS = CORE_ACCESS_REASONS;
 export const ACCESS_ALERT_STATUSES = CORE_ACCESS_ALERT_STATUSES;
 export const ACCESS_ALERT_VERDICTS = CORE_ACCESS_ALERT_VERDICTS;
 export const ACCESS_ALERT_TARGETS = CORE_ACCESS_ALERT_TARGETS;
+/** Blocker or condition, stored on the row so the live reads can range on it (A10-3). */
+export const ACCESS_ALERT_KINDS = CORE_ACCESS_ALERT_KINDS;
 
 /**
  * Coalescing-queue bucket (Phase 04, decision #4; widened in A08 / D169). The first three are the

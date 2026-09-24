@@ -29,17 +29,19 @@
 
 import {
   ACCESS_ALERT_TTL_MS,
+  type AccessAlertKind,
   type AccessAlertVote,
   accessAlertExpiryFor,
   accessAlertIsLive,
+  accessAlertKindOf,
   currentSeason,
   deriveAccessAlertLifecycle,
-  isAccessCondition,
   isMinor,
   seasonEndMs,
   seasonOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -50,7 +52,12 @@ import {
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
-import { ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS, ACCESS_REASONS } from './lib/enums';
+import {
+  ACCESS_ALERT_KINDS,
+  ACCESS_ALERT_TARGETS,
+  ACCESS_ALERT_VERDICTS,
+  ACCESS_REASONS,
+} from './lib/enums';
 import { literals } from './lib/validators';
 
 /** Free text has to be bounded somewhere; this is a sentence about a gate, not an essay. */
@@ -194,6 +201,7 @@ export const create = mutation({
         : { parkingAreaId: args.parkingAreaId }),
       waterBodyId,
       reason: args.reason,
+      kind: accessAlertKindOf(args.reason),
       note,
       createdByUserId: profile._id,
       ...(report ? { reportId: report._id } : {}),
@@ -420,29 +428,24 @@ const LIVE_STATUSES = ['active', 'official'] as const;
  * lifecycle rather than participating in it.
  */
 /**
- * 4. **Blockers and conditions are capped separately** (A10-3 §7.2, the cap the A10-2 build
- *    owed). Both kinds ride the same rows and the same index, so once the sheet files conditions a
- *    lake with many live "plank needed" rows could push a live "gate locked" out of one shared
- *    window — and `blockedIds` is built from that window. Two takes over the same `active` range,
- *    each filtered to its reason set before the cap, bound each kind on its own. The filter runs
- *    over the range the index already narrowed to provably-live rows, so the scan is bounded by
- *    what is live on the lake either way; no reason column in the index, no schema change.
+ * 4. **Blockers and conditions are capped separately, in the range** (A10-3 §7.2, the cap the
+ *    A10-2 build owed). Both kinds ride the same rows, so once the sheet files conditions a lake
+ *    with many live "plank needed" rows could push a live "gate locked" out of one shared window —
+ *    and `blockedIds` is built from that window. The first cut took two windows over one range,
+ *    each filtered to its reason set before the take; that bounded the answer but not the read —
+ *    a lake of live planks was a scan to find its gate (PR #75 review). `kind` is now an index key
+ *    (`accessAlerts.kind`), so each `(status, kind)` range holds only its kind and the take is the
+ *    whole read. Four ranges per target, as before — not one per reason, which the lot walk below
+ *    (up to `MAX_LOT_LINKS_SCANNED` lots) would multiply past a function's call budget.
  */
-const ALERT_KINDS = ['blocker', 'condition'] as const;
-type AlertKind = (typeof ALERT_KINDS)[number];
-
-const REASONS_OF_KIND: Record<AlertKind, readonly string[]> = {
-  blocker: ACCESS_REASONS.filter((r) => !isAccessCondition(r)),
-  condition: ACCESS_REASONS.filter((r) => isAccessCondition(r)),
-};
 
 /**
  * The `(status, kind)` pages one live read takes — every status × every kind, because `setOfficial`
  * pins whatever row a moderator names, a condition as readily as a blocker; a page left out here is
  * a pinned row that vanishes from the lake.
  */
-const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AlertKind }[] =
-  LIVE_STATUSES.flatMap((status) => ALERT_KINDS.map((kind) => ({ status, kind })));
+const LIVE_PAGES: readonly { status: (typeof LIVE_STATUSES)[number]; kind: AccessAlertKind }[] =
+  LIVE_STATUSES.flatMap((status) => ACCESS_ALERT_KINDS.map((kind) => ({ status, kind })));
 
 async function liveAlertsByBody(
   ctx: QueryCtx,
@@ -453,11 +456,10 @@ async function liveAlertsByBody(
     LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_water_body_status_expires_at', (q) => {
-          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status);
+        .withIndex('by_water_body_status_kind_expires_at', (q) => {
+          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status).eq('kind', kind);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
-        .filter((q) => q.or(...REASONS_OF_KIND[kind].map((r) => q.eq(q.field('reason'), r))))
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),
@@ -474,11 +476,10 @@ async function liveAlertsByParkingArea(
     LIVE_PAGES.map(({ status, kind }) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_parking_area_status_expires_at', (q) => {
-          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status);
+        .withIndex('by_parking_area_status_kind_expires_at', (q) => {
+          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status).eq('kind', kind);
           return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
         })
-        .filter((q) => q.or(...REASONS_OF_KIND[kind].map((r) => q.eq(q.field('reason'), r))))
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),
@@ -628,5 +629,34 @@ export const expireLapsedAlerts = internalMutation({
       if (alert.season < season) seasonExpired++;
     }
     return { expired, seasonExpired, ttlMs: ACCESS_ALERT_TTL_MS };
+  },
+});
+
+/**
+ * Stamp `kind` on every alert written before it existed (A10-3). Paginated over the table and
+ * self-scheduling; idempotent — a row that has its kind is skipped, so a re-run finishes a partial
+ * pass and a run on a finished deployment is a no-op. **Run right after the deploy that adds the
+ * column**: until then those rows are outside the live reads' `kind` ranges. Then `kind` narrows to
+ * required. `pnpm exec convex run accessAlerts:backfillKind`.
+ */
+export const backfillKind = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query('accessAlerts')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 200)) });
+    let stamped = 0;
+    for (const alert of page.page) {
+      if (alert.kind !== undefined) continue;
+      await ctx.db.patch(alert._id, { kind: accessAlertKindOf(alert.reason) });
+      stamped++;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.accessAlerts.backfillKind, {
+        cursor: page.continueCursor,
+        ...(batchSize !== undefined ? { batchSize } : {}),
+      });
+    }
+    return { scanned: page.page.length, stamped, isDone: page.isDone };
   },
 });

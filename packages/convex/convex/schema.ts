@@ -44,6 +44,7 @@ import {
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import {
+  ACCESS_ALERT_KINDS,
   ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TARGETS,
   ACCESS_ALERT_VERDICTS,
@@ -3278,6 +3279,16 @@ export default defineSchema({
      */
     waterBodyId: v.id('waterBodies'),
     reason: literals(ACCESS_REASONS),
+    /**
+     * `accessAlertKindOf(reason)`, stored (A10-3, PR #75 review) so the live reads cap blockers and
+     * conditions in the index range itself — filtering one shared range by reason set made a lake of
+     * live planks a scan to find its locked gate. Written at `create`; the reason never changes.
+     *
+     * ⚠ **Optional only until `accessAlerts:backfillKind` has run on every deployment**, then narrowed
+     * to required. A row without it is outside every `eq('kind', …)` range — invisible to the reads —
+     * so the backfill runs right after the deploy that adds it.
+     */
+    kind: v.optional(literals(ACCESS_ALERT_KINDS)),
     /** Free text, and the one place in this phase it is allowed — bounded by the row's own expiry. */
     note: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
@@ -3316,7 +3327,8 @@ export default defineSchema({
     retractedByUserId: v.optional(v.id('profiles')),
   })
     /**
-     * The two per-lake reads, and the status prefix is the point (PR #43 review).
+     * The two per-lake reads, and the status prefix is the point (PR #43 review). `kind` sits between
+     * status and the clock (A10-3) so each kind is capped in its own range — see `kind` above.
      *
      * An alert row is never deleted — expiring flips a status — so a lake accumulates them across
      * seasons for ever. These replaced bare `by_water_body` / `by_parking_area` indexes, over which a
@@ -3354,8 +3366,13 @@ export default defineSchema({
      * bucket that optional-field indexes sort first. Pinned rows, which *do* have no expiry, are read
      * by their own status and never touch this bound.
      */
-    .index('by_water_body_status_expires_at', ['waterBodyId', 'status', 'expiresAt'])
-    .index('by_parking_area_status_expires_at', ['parkingAreaId', 'status', 'expiresAt'])
+    .index('by_water_body_status_kind_expires_at', ['waterBodyId', 'status', 'kind', 'expiresAt'])
+    .index('by_parking_area_status_kind_expires_at', [
+      'parkingAreaId',
+      'status',
+      'kind',
+      'expiresAt',
+    ])
     /**
      * The expiry sweep, and the shape is the whole reason `official` is a status.
      *

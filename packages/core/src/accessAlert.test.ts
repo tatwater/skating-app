@@ -9,6 +9,7 @@ import {
   type AccessAlertVote,
   accessAlertExpiryFor,
   accessAlertIsLive,
+  accessAlertKindOf,
   deriveAccessAlertLifecycle,
   isAccessCondition,
 } from './accessAlert';
@@ -199,5 +200,11 @@ describe('ACCESS_CONDITION_REASONS (D197)', () => {
       expect(isAccessCondition(reason)).toBe(true);
     }
     for (const reason of ACCESS_ALERT_REASONS) expect(isAccessCondition(reason)).toBe(false);
+  });
+
+  test('every reason has the kind its set says — the kind the row stores', () => {
+    for (const reason of ACCESS_CONDITION_REASONS)
+      expect(accessAlertKindOf(reason)).toBe('condition');
+    for (const reason of ACCESS_ALERT_REASONS) expect(accessAlertKindOf(reason)).toBe('blocker');
   });
 });
