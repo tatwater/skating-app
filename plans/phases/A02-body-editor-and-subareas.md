@@ -637,6 +637,12 @@ a small fixture can't reproduce.
   clip against it runs comfortably inside a mutation's 1s budget alone and blows it at a dozen. The
   interactive path clips once, so it's fine; the batch seeder needs small batches, which is now noted
   on the function.
+- **The freehand tool is no longer the default** (2026-09-21, D201). A sub-area is drawn by
+  chord — two shoreline points, a side, a sagitta; the polygon is derived on the server and the
+  mouth is stored beside it (`waterBodySubAreas.mouth`, `subAreas.createFromChord` /
+  `updateChord`). Freehand and paste-GeoJSON stay for the shapes a chord cannot say; a freehand
+  redraw clears the mouth. The three bays this session left unplaced (Dillenbeck, Carry,
+  Northwest) are rows in the editor's queue — a lake's open `name_bay` requests.
 
 ---
 

@@ -118,6 +118,7 @@ export * from './spatialCells';
 export * from './standing';
 export * from './strava';
 export * from './subArea';
+export * from './subAreaChord';
 export * from './subAreaPlace';
 export * from './subAreaSpread';
 export * from './track';

@@ -66,6 +66,18 @@ export function isAccessCondition(reason: string): reason is AccessConditionReas
   return (ACCESS_CONDITION_REASONS as readonly string[]).includes(reason);
 }
 
+/**
+ * The two kinds a reason falls in — stored on the row (`accessAlerts.kind`, A10-3) so the live reads
+ * can cap each kind in the index range itself rather than filtering a shared range by reason set.
+ */
+export const ACCESS_ALERT_KINDS = ['blocker', 'condition'] as const;
+export type AccessAlertKind = (typeof ACCESS_ALERT_KINDS)[number];
+
+/** The kind a reason is: a condition rides along, anything else blocks the way in. */
+export function accessAlertKindOf(reason: string): AccessAlertKind {
+  return isAccessCondition(reason) ? 'condition' : 'blocker';
+}
+
 /** Every reason an `accessAlerts` row may carry: the blockers, then the conditions (A10-2 §7.2). */
 export const ACCESS_REASONS = [...ACCESS_ALERT_REASONS, ...ACCESS_CONDITION_REASONS] as const;
 export type AccessReason = (typeof ACCESS_REASONS)[number];

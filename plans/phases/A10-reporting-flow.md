@@ -495,8 +495,9 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
 
 - **§9.1 the queue is Posts** — core `draftQueue.ts`: `PostDraft` (the words plus one or more
   `ReportDraft`s, each with its own key, body, form, photos, track and `hazardRefs`) flushed by
-  `flushPost` as one `posts.create`. Every Report is resolved, validated, held to the create-only
-  rules and uploaded before any create; one bad leg parks the whole Post, named by its lake.
+  `flushPost` as one `posts.create`. Every Report is resolved, validated and held to the create-only
+  rules before any Report uploads; then the uploads; then one create — one bad leg parks the whole
+  Post, named by its lake, and a sound first leg spends nothing on it.
   `postDraftFromLegacy` lifts a pre-A10-2b row; the mobile store's fourth migration runs it row by
   row under the `post` kind (tested against real sqlite). The pre-sheet form saves a one-Report
   Post and edits a Post's first Report; the sheet (A10-3) edits them all.
@@ -505,8 +506,9 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
   local ref through the hazard queue, which now **keeps a flushed hazard's row** (`done`, with
   `hazardId`) while a draft points at it and sweeps it after (`removableHazardItems`) — the rule a
   flushed track's row already followed. A bundled hazard is the observation the minimum set asks
-  for at flush. Online, a hazard still in the queue is not attached (it has no id yet) and posts on
-  its own.
+  for at flush. Online, a checked hazard still in the queue is **flushed at submit** and attached
+  by the id it lands with (`resolveBundledHazardIds` over `resolveQueuedHazardId`); one that cannot
+  be sent stops the post with a sentence (`UNSENT_HAZARD_REFUSAL`), never a silent omission.
 - **§9.2 *Waiting to send*** — the Report tab's queue: the signal state in one sentence from core
   (`WAITING_TO_SEND_COPY`; offline: "…it's safe to close the app"), hazards first, then the Posts
   labeled by title or lakes (`postDraftLabel`), *Sync now* only with signal.
@@ -522,10 +524,12 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
   real outlines over the budget); the server builds the per-body half once per page in
   `bodyInfoFor` from the polygon the card read already carried and the per-report half in
   `toFeedCard` (put-in only when the viewer may see it, the skate trimmed under D58's clip, the
-  chips' sector, the named bay's ring); `BodySilhouette` on web and mobile draws the same paths.
-  The card's right column is the time over the silhouette.
+  first located chip's `where` — its sector and its bay together, never one chip's sector beside
+  another's bay); `BodySilhouette` on web and mobile draws the same paths. The card's right column
+  is the time over the silhouette.
 - **§12.1 the profile history** — `getPublicProfile` returns `posts: PostCardData[]` through the
-  feed's `toPostCard`; both profile pages render `PostCard`s.
+  feed's `toPostCard`, bounded in Posts *and* in member Reports hydrated (one number, cut at a Post
+  boundary); both profile pages render `PostCard`s.
 
 ### Deltas from the plan — read these before extending
 
@@ -550,6 +554,28 @@ as Posts. Nine commits off `-2`, ~2,900 lines over 44 files. Suites at build: co
    in since. A call made at build; say so if the default should win instead.
 7. **The bundle window is one rule** (`bundleWindow` in core): the prompt's queued candidates and
    `hazards.listBundleCandidates` read the same skate-window-or-24-hours.
+8. **An online post flushes a checked queued hazard at submit** (PR #73 review). The build had it
+   silently unattached — "no id yet, posts on its own" — which lost the author's explicit, shown
+   choice (D55: never silent) whenever a transient sync failure or an unfinished drain left the row
+   without a server id. Now the form asks the queue for the id, flushing the row if it must, and a
+   hazard that cannot go stops the post with what to do; the posted form then runs the drain's
+   sweep (`sweepFlushedHazards`) so the spent row is not re-offered to the next report on the lake.
+   The draft path is unchanged. Because the submit and a reconnect drain can now reach one row
+   together, every per-hazard flush runs through one keyed guard (`createKeyedSingleFlight` in
+   core): a second caller joins the flush already running, and one that arrives just after it
+   settled is handed the row's server id — never two uploads of one hazard's photos.
+9. **The flush checks every leg before any leg uploads** (PR #73 review): two passes over the
+   Post's Reports, so a two-lake Post whose second leg is stale or under-observed spends none of
+   the first leg's photos. The on-demand hazard flush stays in the first pass — it is not an upload
+   spent on this Post, and the minimum-set count needs it.
+10. **The silhouette draws one chip's `where`, whole** (PR #73 review): the first located chip's
+    sector and bay together, never a sector from one chip beside a bay from another — a wash and a
+    ring that composed "the south end of North Bay" out of "black ice, south" and a reading in
+    North Bay was a place no one claimed.
+11. **The profile history is bounded in Reports, not only Posts** (PR #73 review): the fifty-Post
+    window could hydrate five hundred cards (a Post is up to ten), each with every thumbnail URL —
+    `photoIds` has no per-report cap on the write path. One number bounds both, cut at a Post
+    boundary. A paged history is the next step if a profile ever wants more than the window.
 
 ### Owed
 
@@ -686,6 +712,36 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
     surface casts at its own wire (mobile already did this for `photoIds` and the storage ids). What
     stays on mobile is what is native — `sheetStore` (the module singleton), `sheetDoors` (the GPS
     fix, the queued track, the cached lake) and `sheetActions` (upload, queue, flush).
+12. **A checked queued hazard holds or parks the Post; it is never dropped** (founder, at the merge of
+    #73 into this branch, 2026-09-23). A10-2b delta 8 fixed the online form's submit, but the sheet
+    posts through the queue, and the queue's rule was still "a ref that cannot resolve is left out"
+    — the same silent loss on every *Post*. The rule now lives in `flushPost`, so the online and
+    offline paths are one: `resolveHazardId` answers with core's `queuedHazardResolution` — `sent`
+    (attach it), `waiting` (a transient failure: the Post stays queued and goes after the hazard,
+    so *Post* still never fails for lack of bars), `refused` (the row is parked in `error`: the Post
+    parks with a sentence naming the hazard and pointing at *Waiting to send*, where the row can be
+    deleted), `gone` (the author deleted the row: nothing left to attach). A draft whose create was
+    already sent is exempt, like the create-only rules — it may be live. The form's
+    `resolveBundledHazardIds` / `UNSENT_HAZARD_REFUSAL` went with the form; the keyed single-flight
+    stays as the row's guard though every caller now runs inside the coalesced drain. D55 amended.
+13. **A door that fails to open says so** (PR #75 review): the tab's `openDoor` chains had no
+    rejection handler, so an edit door whose query failed sat on "Opening your sheet…" for ever.
+    Both now land on a *Try again* that re-navigates the same door through `doorHref`'s fresh stamp.
+14. **An edit is one transaction** (PR #75 review): `reports.update` takes the Post's words
+    (`post`) and applies them through `editPostWords`, the helper `posts.update` is now a shell
+    over, so a refusal of either half lands neither. Words re-sent unchanged write nothing — no
+    revision, no *edited* mark — so a chip edit no longer claims the Post's words were edited.
+15. **The edit door's uploads checkpoint** (PR #75 review): each blob id and the photo row's id
+    are written onto the open sheet as they land, so a retried *Save changes* never re-uploads a
+    blob — one no photo row names is a leak `sweepOrphanPhotos` cannot see.
+16. **`accessAlerts.kind` is stored and indexed** (PR #75 review; founder call over a reason-keyed
+    index, which would have made the lot walk 24 ranges per lot — Champlain's 160 lots near a
+    function's call budget). The live reads range on `(target, status, kind, expiresAt)`, so each
+    kind is capped in its own range and the take is the whole read; before, one shared range was
+    filtered by reason set, bounding the answer but not the scan. Required from the start of its
+    life in the tree: it landed optional with a backfill, dev turned out to hold no alert rows
+    (checked 2026-09-23) and prod is uninitialized, so it was narrowed in this PR and the backfill
+    removed.
 
 ### Owed
 
@@ -695,7 +751,8 @@ schema change (`contentRevisions`, additive) and one enum widening (`author_dele
   outline; the weather line's latency on a cold cell.
 - The moderator's revision comparison (D205) — the web console, A10-5.
 - **Moderator put-in and lot authoring** — `features/access-point-authoring.md`, after A10.
-- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`).
+- `convex dev --once` on dev before the app is used (`contentRevisions`, `author_delete`,
+  `accessAlerts.kind`).
 - The typed-routes artifact (`.expo/types/router.d.ts`, gitignored) regenerates on the next
   `expo start`; `/drafts` and `/queue` were added to the local copy by hand.
 - RN render tests for the sheet — the harness is still unbuilt (the *End-to-end tests* register
@@ -1107,7 +1164,7 @@ path, not a fallback.
 - **Named landmarks** — scoped as [`features/named-landmarks.md`](../features/named-landmarks.md)
   (2026-09-20), scheduled with A10-2: OSM/GNIS islands, points, beaches, narrows and reference bays
   as `bodyLandmarks`, map labels, and `where: point(name)`; extraction maps "off Shelburne Point"
-  onto them. Sub-areas by chord are [`features/subarea-chord-editor.md`](../features/subarea-chord-editor.md).
+  onto them. Sub-areas by chord shipped as D201 (2026-09-21).
 - **Painting** ice, surface or snow onto the body — web-only if ever (terra-draw has no RN
   adapter); the `where` union is the honest 90%.
 - **Vision-suggested hazard types** on a photo the skater already called a hazard.

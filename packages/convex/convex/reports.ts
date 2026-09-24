@@ -51,7 +51,9 @@ import {
   assertLocatedSubAreas,
   assertPutInOfBody,
   createPost,
+  editPostWords,
   inlineReportArgs,
+  postWordsArgs,
   reportContent,
   toReportInput,
 } from './lib/reportWrite';
@@ -436,7 +438,16 @@ export const recommended = query({
  * preserves the existing `point` rather than silently clearing it.
  */
 export const update = mutation({
-  args: { reportId: v.id('reports'), ...reportContent },
+  args: {
+    reportId: v.id('reports'),
+    ...reportContent,
+    /**
+     * The words of the Post this Report belongs to, edited in the same transaction (A10-3): the
+     * sheet's *Save changes* is one edit, so a refusal of either half — a Post taken down since,
+     * a title past its bound — lands neither, and the history never holds half of it.
+     */
+    post: v.optional(postWordsArgs),
+  },
   handler: async (ctx, args) => {
     const profile = await requireContributor(ctx);
     const existing = await ctx.db.get(args.reportId);
@@ -483,6 +494,13 @@ export const update = mutation({
       candidates,
       body?.polygon as unknown as Polygon | MultiPolygon,
     );
+
+    // The Post's words, when the edit carries them — through the same helper as `posts.update`,
+    // inside this transaction, so a refusal there rolls back the Report's half too.
+    if (args.post !== undefined) {
+      if (existing.postId === undefined) throw new ConvexError('This report has no post to edit');
+      await editPostWords(ctx, existing.postId, args.post, profile, now);
+    }
 
     // What it said before this edit, for a moderator (A10-3) — written before the patch, in the
     // same transaction, so the history and the row can never disagree about the order of events.

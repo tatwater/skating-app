@@ -13,7 +13,7 @@ import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
-import { Button } from '../components/ui/button';
+import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
@@ -92,6 +92,8 @@ function RequestQueue() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium text-foreground">
                     {requestKindTitle(row.kind)}
+                    {/* The bay a `name_bay` asks for — the question itself (D201). */}
+                    {row.name ? <span className="ml-2">— {row.name}</span> : null}
                     {/* A capped count is a floor, shown even at "1+" — the queue is a backlog and
                         the rest of this lake's askers may sit past the page (Greptile, PR #63). */}
                     {row.askers > 1 || row.askersCapped ? (
@@ -175,9 +177,30 @@ function RequestQueue() {
 
                 {row.status === 'open' ? (
                   <div className="flex flex-wrap gap-2">
+                    {/* A bay is drawn, not approved: until a sub-area by that name exists on the
+                        lake the only act is the drawing, in the lake editor's chord tool, which
+                        approves the ask itself. Approve here is for a bay already drawn. */}
+                    {row.kind === 'name_bay' && row.body && !row.drawnSubAreaId ? (
+                      <Link
+                        to="/admin/water/$id"
+                        params={{ id: row.body._id }}
+                        className={buttonVariants({ size: 'sm' })}
+                      >
+                        Draw it in the lake editor
+                      </Link>
+                    ) : null}
                     <ReasonDialog
                       trigger={
-                        <Button size="sm" disabled={row.kind === 'admit' && !row.candidate}>
+                        <Button
+                          size="sm"
+                          variant={
+                            row.kind === 'name_bay' && !row.drawnSubAreaId ? 'outline' : 'default'
+                          }
+                          disabled={
+                            (row.kind === 'admit' && !row.candidate) ||
+                            (row.kind === 'name_bay' && !row.drawnSubAreaId)
+                          }
+                        >
                           Approve
                         </Button>
                       }
@@ -281,5 +304,7 @@ function approveDescription(kind: RequestKind): string {
       return 'Sets the access ruling to “open” with your note, which brings the lake back to the active map and closes the reports that led to the ruling.';
     case 'takedown':
       return 'Removes the lake at the landowner’s request (admin). It stays reachable when zoomed in, with the reason; it leaves search and every push surface.';
+    case 'name_bay':
+      return 'Records that the bay drawn on this lake answers the ask. Every other open ask for the same bay is approved with it; the skater reads that a moderator drew it.';
   }
 }

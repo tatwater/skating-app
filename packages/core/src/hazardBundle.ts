@@ -14,7 +14,8 @@
  * actually promises. Nothing is ever attached invisibly: the prompt itemises every candidate.
  */
 
-import type { HazardRef } from './draftQueue';
+import type { HazardRef, HazardRefResolution } from './draftQueue';
+import { hazardTypeLabel } from './hazardCopy';
 import type { HazardQueueItem } from './hazardQueue';
 import type { HazardType } from './types';
 
@@ -146,4 +147,25 @@ export function optOutsFromSavedRefs(
     if (ref.localId !== undefined) kept.add(localHazardCandidateId(ref.localId));
   }
   return candidateIds.filter((id) => !kept.has(id));
+}
+
+// ── A bundled queue row at flush (D55 offline, A10 §9.1) ─────────────────────────────────────────
+
+/**
+ * What a Post draft's local hazard ref resolves to, read off its queue row after the row was given
+ * its chance to flush. The author checked it, so it is never quietly left out (D55 — attaching is
+ * a shown choice, so is not attaching): a row still waiting holds the Post; a row the server
+ * refused parks it, in words that say which hazard and what to do; only a row that is no longer
+ * there — the author deleted it on *Waiting to send* — has nothing left to attach.
+ */
+export function queuedHazardResolution(item: HazardQueueItem | null): HazardRefResolution {
+  if (item?.kind !== 'hazard') return { kind: 'gone' };
+  if (item.hazardId !== undefined) return { kind: 'sent', hazardId: item.hazardId };
+  if (item.status !== 'error') return { kind: 'waiting' };
+  const reason = item.errorMessage?.trim();
+  const why = reason ? `: ${/[.!?]$/.test(reason) ? reason : `${reason}.`}` : '.';
+  return {
+    kind: 'refused',
+    message: `A hazard you checked (${hazardTypeLabel(item.type)}) couldn't be sent${why} Delete it on Waiting to send, then post this again without it.`,
+  };
 }

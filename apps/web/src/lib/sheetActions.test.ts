@@ -282,10 +282,8 @@ describe('saveSheetEditOnWeb', () => {
     // Last-write-wins over `photoIds`: an edit that forgot the kept ones would detach them.
     expect(update?.args.photoIds).toEqual(['photo-kept', 'photo-1']);
     expect(update?.args).not.toHaveProperty('waterBodyId');
-    expect(find('posts:update')[0]?.args).toMatchObject({
-      postId: 'post-1',
-      title: 'Morey',
-      body: 'Glass.',
-    });
+    // The Post's words ride the same mutation, so a refusal of either half lands neither.
+    expect(update?.args.post).toEqual({ title: 'Morey', body: 'Glass.' });
+    expect(find('posts:update')).toHaveLength(0);
   });
 });

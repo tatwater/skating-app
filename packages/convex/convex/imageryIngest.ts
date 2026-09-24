@@ -20,7 +20,8 @@
  * ## Why October, and not September
  *
  * §3.3's summit trigger opens a season when `Upper Lake of the Clouds` (1,531 m, and in the corpus)
- * registers a freeze — which on Mt Washington can happen in *August*. The phase doc reasoned that this
+ * registers a freeze — which on Mt Washington can happen in *August*. Since 2026-09-21 the two
+ * other alpine tarns the community opens its season on stand beside it (`SENTINELS`). The phase doc reasoned that this
  * was safe because an early gate only wastes granule reads.
  *
  * > **Founder, 2026-08-25:** *"let's start that cron in October instead — I don't think anyone skates
@@ -52,17 +53,70 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
-
-/** §3.3's summit trigger, found by name rather than by a hardcoded coordinate. */
-const SENTINEL_NAME = 'Upper Lake of the Clouds';
+import { isListed } from './lib/listing';
 
 /**
- * How many ordinary bodies to sample alongside the sentinel.
+ * A body the watcher always samples, found by name rather than by a hardcoded coordinate or a row
+ * id — a coordinate drifts from the row and an id is minted per deployment, but the name is what
+ * the community calls the place. `state` is part of the key because a name alone is not one:
+ * the corpus holds eight bodies called Eagle Lake, and only the one on Mt Lafayette is a sentinel.
+ *
+ * Matched against the row's displayed `name` **and every `nameClaims` value**, so a moderator
+ * picking another publisher's spelling on `/admin/water/$id` (`setWaterBodyName`) does not
+ * silently drop a sentinel — the roster name is still one of the row's claims after a pick.
+ */
+interface RosterEntry {
+  name: string;
+  state: string;
+}
+
+/**
+ * §3.3's summit triggers — the first ice in the region, and the last place anyone would want the
+ * watcher to be looking somewhere else. Any one of them freezing opens the season (`ingestWindow`'s
+ * OR rule already reads every `sentinel: true` site). Three rather than one since 2026-09-21: a
+ * group leader's seasonal journal opens the season on Lakes of the Clouds *and* Eagle Lake on the
+ * same October day, with Kinsman Pond a week behind — and a single named row is one rename, merge
+ * or purge away from leaving the gate with no sentinel at all.
+ */
+const SENTINELS: readonly RosterEntry[] = [
+  { name: 'Upper Lake of the Clouds', state: 'NH' }, // 1,531 m, Mt Washington
+  { name: 'Eagle Lake', state: 'NH' }, // 1,264 m, below Greenleaf Hut on Mt Lafayette
+  { name: 'Kinsman Pond', state: 'NH' }, // 1,134 m, Kinsman Ridge
+];
+
+/**
+ * Ordinary sites that ride along regardless of boost rank. The `by_curated_boost` sample below is
+ * "the top 24", but ~100 bodies tie at 0.3, so which 24 arrive is index order — a body the
+ * founder wants watched cannot rely on it. Low Plains (Elkins) is the same journal's valley
+ * season opener: shallow, marshy, two minutes from the lot, skated 1 December. Not a sentinel:
+ * a valley pond freezing alone should not open a region's season, which is the corpus rule's job.
+ *
+ * ⚠ Low Plains has no catalog name: it is an unnamed NHD row until a moderator gives it its
+ * community name (`setWaterBodyName`, the no-catalog-claim case — done on dev 2026-09-21). On a
+ * deployment where that has not happened this entry finds nothing and the roster is simply shorter.
+ */
+const PINNED_SITES: readonly RosterEntry[] = [{ name: 'Low Plains', state: 'NH' }];
+
+/**
+ * How many search hits to look through for a roster entry's exact name. "Eagle Lake" has eight
+ * exact-name rows across five states before any near-miss; the filter, not the take, decides.
+ */
+const ROSTER_SEARCH_TAKE = 50;
+
+/**
+ * How many ordinary bodies to sample alongside the roster.
  *
  * Enough that `corpusFraction`'s 10% means "a few sites agreed" rather than "one site is noisy", and
  * small enough that the whole tick is one Open-Meteo request and a bounded read.
  */
 const SAMPLE_SITES = 24;
+
+/**
+ * The most boost-ordered rows the sample walk reads to find {@link SAMPLE_SITES} listed ones. A
+ * ceiling on the read, not a target: ~140 bodies carry a boost on dev, so a full sample normally
+ * arrives in the first few dozen.
+ */
+const SAMPLE_SCAN_CAP = 200;
 
 /** Open-Meteo's `past_days` ceiling, matching `weather.ts`. */
 const MAX_PAST_DAYS = 92;
@@ -73,7 +127,7 @@ const START_MONTH = 10;
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 /**
- * The sites to sample: the sentinel, plus the most prominent bodies we hold.
+ * The sites to sample: the sentinels, the pinned sites, plus the most prominent bodies we hold.
  *
  * ⚠ **Bounded reads, deliberately.** The obvious implementation walks `waterBodies` and picks an even
  * spatial stride, which is what the CLI does against the Hilbert-ordered mask file. In Convex that is
@@ -91,7 +145,7 @@ const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 export const gateSites = internalQuery({
   args: {},
   handler: async (ctx) => {
-    // ⚠ **A search hit is not the sentinel until its name says so.**
+    // ⚠ **A search hit is not a roster site until its name and state say so.**
     //
     // `withSearchIndex` ranks by relevance and always answers if *anything* tokenises close enough —
     // so `.take(1)` alone crowns whichever lake scores highest on "lake"/"clouds" and hands it the
@@ -102,27 +156,67 @@ export const gateSites = internalQuery({
     //
     // Same shape as `waterBodies.applyCuratedBoosts`: take a handful and filter on the exact name.
     // No match means no sentinel, and the corpus signal carries the gate alone — which is precisely
-    // what the OR rule exists for.
-    const sentinel = (
-      await ctx.db
-        .query('waterBodies')
-        .withSearchIndex('search_name', (q) => q.search('searchText', SENTINEL_NAME))
-        .take(10)
-    )
-      .filter((b) => b.name?.toLowerCase() === SENTINEL_NAME.toLowerCase())
-      .slice(0, 1);
+    // what the OR rule exists for. A roster entry that resolves to *two* rows (a duplicate the
+    // dedup queue has not reached) is dropped rather than doubled: two sentinels for one pond is
+    // one pond voting twice.
+    //
+    // **Listed rows only.** A merge tombstones the loser rather than deleting it (D36), with its
+    // name and states intact — so without `isListed` the day the dedup queue *does* reach a
+    // duplicate sentinel is the day the entry resolves to two rows for ever, and the fix for the
+    // duplicate is what loses the sentinel. A removed body stays: a landowner takedown changes who
+    // may skate it, not whether it freezes.
+    const resolve = async (entry: RosterEntry): Promise<Doc<'waterBodies'> | undefined> => {
+      const wanted = entry.name.toLowerCase();
+      const exact = (
+        await ctx.db
+          .query('waterBodies')
+          .withSearchIndex('search_name', (q) => q.search('searchText', entry.name))
+          .take(ROSTER_SEARCH_TAKE)
+      ).filter(
+        (b) =>
+          isListed(b) &&
+          (b.states ?? []).includes(entry.state) &&
+          [b.name, ...(b.nameClaims ?? []).map((c) => c.value)].some(
+            (v) => v.toLowerCase() === wanted,
+          ),
+      );
+      return exact.length === 1 ? exact[0] : undefined;
+    };
+    const resolveAll = async (entries: readonly RosterEntry[]) =>
+      (await Promise.all(entries.map(resolve))).filter(
+        (b): b is Doc<'waterBodies'> => b !== undefined,
+      );
+    const [sentinels, pinned] = await Promise.all([
+      resolveAll(SENTINELS),
+      resolveAll(PINNED_SITES),
+    ]);
 
-    const sample = await ctx.db
-      .query('waterBodies')
-      .withIndex('by_curated_boost')
-      .order('desc')
-      .take(SAMPLE_SITES);
+    // Same `isListed` here: a merge does not clear the loser's boost, so a tombstone would
+    // otherwise sit in the sample at the survivor's own coordinate — one pond voting twice.
+    //
+    // ⚠ **Filter while reading, not after a fixed take** (Greptile, PR #74). `take(24)` then
+    // `filter` lets every boosted tombstone cost the sample a site, and a shrinking sample is how
+    // one freezing pond comes to clear `corpusFraction`'s 10% alone. So the walk keeps going until
+    // it holds 24 listed non-roster sites — roster rows are excluded here because they are already
+    // in the output, and a sentinel counted in the sample would shrink the ordinary vote the same
+    // way. Bounded by `SAMPLE_SCAN_CAP`, so a corpus of tombstones costs a few hundred reads, never
+    // a table scan.
+    const rosterIds = new Set([...sentinels, ...pinned].map((b) => b._id));
+    const sample: Doc<'waterBodies'>[] = [];
+    let scanned = 0;
+    for await (const b of ctx.db.query('waterBodies').withIndex('by_curated_boost').order('desc')) {
+      if (++scanned > SAMPLE_SCAN_CAP || sample.length >= SAMPLE_SITES) break;
+      if (isListed(b) && !rosterIds.has(b._id)) sample.push(b);
+    }
 
     const point = (b: Doc<'waterBodies'>) => b.interiorPoint ?? b.centroid;
     const out: { siteId: string; sentinel: boolean; lat: number; lng: number }[] = [];
     const seen = new Set<string>();
+    const sentinelIds = new Set(sentinels.map((b) => b._id));
 
-    for (const b of [...sentinel, ...sample]) {
+    // The flag comes from `sentinelIds`, not from which list a row arrived in — a sentinel that
+    // also ranks in the boost sample is listed once (`seen`) and flagged either way.
+    for (const b of [...sentinels, ...pinned, ...sample]) {
       const p = point(b);
       // A body with no usable point is skipped rather than defaulted. A gate is a claim about
       // somewhere, and (0, 0) is the Gulf of Guinea.
@@ -130,7 +224,7 @@ export const gateSites = internalQuery({
       seen.add(b._id);
       out.push({
         siteId: b._id,
-        sentinel: sentinel[0]?._id === b._id,
+        sentinel: sentinelIds.has(b._id),
         lat: p.lat,
         lng: p.lng,
       });
@@ -438,7 +532,7 @@ export const maybeCheckSeasonOpen = internalAction({
           `Opened by: ${window.openedBy.join(' + ')} (${series.length} sites reporting).`,
           window.winterFrom
             ? `The region itself first froze on ${window.winterFrom}.`
-            : 'Winter has not established region-wide yet — the sentinel pond opened this on its own, which it is allowed to do.',
+            : 'Winter has not established region-wide yet — a sentinel pond opened this on its own, which it is allowed to do.',
           'Satellite imagery ingest is now in season. Next operator step: pnpm --filter @skating/imagery ingest-window',
           'The corpus-wide weather sweep starts on its next daily tick.',
         ],

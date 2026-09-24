@@ -206,8 +206,9 @@ function toCreateArgs(input: {
 
 /**
  * *Save changes* on the edit door: the Report's whole content block (last-write-wins, so the kept
- * photos lead and the new uploads follow), then the Post's words. Throws with the server's
- * sentence on refusal — an edit has no queue to park in on either surface.
+ * photos lead and the new uploads follow) and the Post's words when it has a Post, in one
+ * `reports.update`. Throws with the server's sentence on refusal — an edit has no queue to park in
+ * on either surface.
  */
 export async function saveSheetEditOnWeb(
   convex: ConvexReactClient,
@@ -215,7 +216,6 @@ export async function saveSheetEditOnWeb(
 ): Promise<string> {
   if (post.mode.kind !== 'edit') throw new Error('Not an edit');
   const reportId = post.mode.reportId as Id<'reports'>;
-  const postId = post.mode.postId as Id<'posts'> | undefined;
   const report = post.reports[0];
   if (!report) throw new Error('Nothing to save');
   try {
@@ -243,18 +243,21 @@ export async function saveSheetEditOnWeb(
       );
     }
     const { waterBodyId: _body, ...content } = toReportInput(report.sheet);
+    // One mutation for both halves — the Report's content and its Post's words — so a refusal of
+    // either lands neither, and the sheet's "couldn't save" is always true of the whole edit.
     await convex.mutation(api.reports.update, {
       ...content,
       reportId,
       photoIds: [...(report.keptPhotoIds as Id<'photos'>[]), ...uploaded],
+      ...(post.mode.postId !== undefined
+        ? {
+            post: {
+              ...(post.title.trim() ? { title: post.title.trim() } : {}),
+              ...(post.body.trim() ? { body: post.body.trim() } : {}),
+            },
+          }
+        : {}),
     });
-    if (postId !== undefined) {
-      await convex.mutation(api.posts.update, {
-        postId,
-        ...(post.title.trim() ? { title: post.title.trim() } : {}),
-        ...(post.body.trim() ? { body: post.body.trim() } : {}),
-      });
-    }
     await fileConfirmations(convex, post);
     return reportId;
   } catch (error) {

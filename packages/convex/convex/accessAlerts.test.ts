@@ -769,6 +769,7 @@ describe('a live alert survives a lake full of settled ones', () => {
           putInId,
           waterBodyId,
           reason: 'not_plowed' as const,
+          kind: 'blocker' as const,
           createdByUserId: (await ctx.db.query('profiles').first())?._id as Id<'profiles'>,
           createdAt: Date.now() - (i + 2) * DAY_MS,
           season: seasonOf(Date.now()),
@@ -804,6 +805,7 @@ describe('a live alert survives a lake full of settled ones', () => {
           putInId,
           waterBodyId,
           reason: 'lot_full' as const,
+          kind: 'blocker' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: Date.now() + i,
           season: seasonOf(Date.now()),
@@ -832,6 +834,7 @@ describe('a live alert survives a lake full of settled ones', () => {
           putInId,
           waterBodyId,
           reason: 'plank_needed' as const,
+          kind: 'condition' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: Date.now() + i,
           season: seasonOf(Date.now()),
@@ -907,6 +910,7 @@ describe('the cap ranks by observation time, not by when the row landed', () => 
           putInId,
           waterBodyId,
           reason: 'not_plowed' as const,
+          kind: 'blocker' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: now - 10 * DAY_MS,
           season: seasonOf(now),
@@ -949,6 +953,7 @@ describe('an unswept backlog cannot hide a confirmed, still-live warning', () =>
         putInId,
         waterBodyId,
         reason: 'road_closed' as const,
+        kind: 'blocker' as const,
         note: 'Town has not reopened the gate',
         createdByUserId: author.id as Id<'profiles'>,
         createdAt: now - 50 * DAY_MS,
@@ -970,6 +975,7 @@ describe('an unswept backlog cannot hide a confirmed, still-live warning', () =>
           putInId,
           waterBodyId,
           reason: 'lot_full' as const,
+          kind: 'blocker' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: now - 40 * DAY_MS,
           season: seasonOf(now),
@@ -1215,5 +1221,17 @@ describe('a shared-lot alert is found however many lots the lake has', () => {
     // A gate is locked for everybody who parks there, including the people going to the big lake.
     const onBusy = await t.query(api.accessAlerts.listForBody, { waterBodyId: busy });
     expect(onBusy.map((a) => a.id)).toContain(alertId);
+  });
+});
+
+describe('accessAlerts.kind (A10-3, PR #75 review)', () => {
+  test('create stamps the kind itself — the live reads range on it', async () => {
+    const { t, putInId, author } = await setup();
+    const id = await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'plank_needed',
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.kind).toBe('condition');
   });
 });

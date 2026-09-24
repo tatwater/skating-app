@@ -9,9 +9,11 @@ import {
   distanceKm,
   isSubArea,
   looksLikeBay,
+  MATCH_RADIUS_KM,
   matchAll,
   matchDestination,
   normalizeName,
+  radiusFor,
   resolveNearDistance,
 } from './match';
 
@@ -321,6 +323,84 @@ describe('matchDestination', () => {
     );
     expect(result).toMatchObject({ kind: 'matched', target: { _id: 'near' } });
     expect(result.kind === 'matched' && (result.distanceKm ?? 99)).toBeLessThan(25);
+  });
+
+  describe('a per-entry radiusKm', () => {
+    // Lake Wentworth and Wentworth Pond, 17.7 km apart, both normalize to "wentworth" — the
+    // September seed left the 39-message lake ambiguous. A `near` on the lake plus a tighter radius
+    // is the author's own disambiguation; the default stays 25 km for everyone else.
+    const wentworth = [
+      body({
+        _id: 'lake',
+        name: 'Lake Wentworth',
+        states: ['NH'],
+        centroid: { lat: 43.598, lng: -71.162 },
+      }),
+      body({
+        _id: 'pond',
+        name: 'Wentworth Pond',
+        states: ['NH'],
+        centroid: { lat: 43.456, lng: -71.229 },
+      }),
+    ];
+    const near = { lat: 43.598, lng: -71.162 };
+
+    it('is ambiguous under the default radius', () => {
+      const result = matchDestination(
+        destination({ name: 'Lake Wentworth', state: 'NH', near }),
+        wentworth,
+      );
+      expect(result.kind).toBe('ambiguous');
+    });
+
+    it('resolves under a tighter one, with the distance recorded', () => {
+      const result = matchDestination(
+        destination({ name: 'Lake Wentworth', state: 'NH', near, radiusKm: 10 }),
+        wentworth,
+      );
+      expect(result.kind).toBe('matched');
+      expect(result.kind === 'matched' && result.target._id).toBe('lake');
+      expect(result.kind === 'matched' && result.distanceKm).toBeCloseTo(0, 5);
+    });
+
+    it('vetoes a sole namesake beyond it, as the default does beyond 25 km', () => {
+      const result = matchDestination(
+        destination({ name: 'Wentworth Pond', state: 'NH', near, radiusKm: 10 }),
+        [wentworth[1] as CandidateBody],
+      );
+      expect(result.kind).toBe('ambiguous');
+    });
+
+    it('never widens the default', () => {
+      expect(radiusFor(destination({ radiusKm: 60 }))).toBe(MATCH_RADIUS_KM);
+      expect(radiusFor(destination())).toBe(MATCH_RADIUS_KM);
+      expect(radiusFor(destination({ radiusKm: 10 }))).toBe(10);
+    });
+
+    // A hand-edited `"radiusKm": "10"` must not silently become 25 km and re-admit the namesake
+    // the radius was written to exclude (Greptile, PR #74).
+    it('rejects a malformed value rather than falling back to the default', () => {
+      for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY, '10', null]) {
+        expect(() => radiusFor(destination({ radiusKm: bad as unknown as number }))).toThrow(
+          /radiusKm must be a positive number/,
+        );
+      }
+      expect(() =>
+        matchDestination(destination({ radiusKm: '10' as unknown as number }), []),
+      ).toThrow(/Lake Willoughby \(VT\)/);
+    });
+
+    it('applies to the bbox stage too — an extent inside 25 km but outside the entry radius is far', () => {
+      const candidate = body({
+        _id: 'boxed',
+        name: 'Mill Pond',
+        centroid: { lat: 44.3, lng: -72.0 },
+        bbox: { minLat: 44.15, maxLat: 44.45, minLng: -72.1, maxLng: -71.9 },
+      });
+      const far = { lat: 44.0, lng: -72.0 };
+      expect(resolveNearDistance(far, candidate)?.basis).toBe('bbox');
+      expect(resolveNearDistance(far, candidate, {}, 10)?.basis).toBe('point');
+    });
   });
 
   it('reports a destination with no match at all — the interesting case', () => {

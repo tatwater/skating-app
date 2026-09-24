@@ -78,6 +78,18 @@ export interface HazardRef {
 }
 
 /**
+ * What the hazard queue says about a bundled local ref at flush (D55 offline): `sent` with its
+ * server id; `waiting` — still queued, so the Post waits for it; `refused` — parked in `error`, so
+ * the Post parks with a sentence saying so; `gone` — the author deleted it from the queue, so there
+ * is nothing left to attach.
+ */
+export type HazardRefResolution =
+  | { kind: 'sent'; hazardId: string }
+  | { kind: 'waiting' }
+  | { kind: 'refused'; message: string }
+  | { kind: 'gone' };
+
+/**
  * One Report inside a Post draft (A10 / D186). Fully serialized + reopenable, so the sheet can
  * hydrate it for offline editing and the flush can rebuild the report input — one source of truth
  * for both. Carries no status of its own: the Post is the unit that is pending, sent or parked.
@@ -407,10 +419,11 @@ export interface PostFlushEffects {
    */
   resolveActivityId?(trackDraftId: string): Promise<string | null>;
   /**
-   * Resolve a local hazard-queue id to its server hazard id (D55 offline), flushing the hazard first
-   * if it hasn't landed. `null` ⇒ the ref is dropped: the report posts without claiming it.
+   * Resolve a local hazard-queue id (D55 offline), flushing the hazard first if it hasn't landed.
+   * A checked hazard is never quietly left out: one still `waiting` holds the Post in the queue,
+   * one `refused` parks it — only one the author deleted (`gone`) is dropped.
    */
-  resolveHazardId?(localId: string): Promise<string | null>;
+  resolveHazardId?(localId: string): Promise<HazardRefResolution>;
   /** Create the Post with its Reports inline (`posts.create`, idempotent on the Post's key). */
   createPost(input: {
     idempotencyKey: string;
@@ -445,16 +458,19 @@ function replacePhoto(photos: readonly DraftPhoto[], updated: DraftPhoto): Draft
 }
 
 /**
- * Flush one Post draft: per Report, resolve its lake → validate → ask the create-only rules → upload
- * photos (checkpointing each id) → resolve its track and hazards; then create the Post with every
+ * Flush one Post draft in two passes over its Reports — first every Report is resolved to its lake,
+ * validated, its hazards claimed and the create-only rules asked; only then does any Report upload
+ * its photos (checkpointing each id) and resolve its track; then the Post is created with every
  * Report inline (idempotent). Persists after every advance, so an interruption anywhere leaves a
  * resumable draft — a re-flush skips already-uploaded photos and the server dedupes the Post on its
  * key. Never throws: a failure is classified and the draft parked (`error` = permanent / `pending` =
  * transient-retry) via `persist`, and returned in the result.
  *
- * **All-or-nothing, like the server.** Every Report is checked and prepared before any create; one
- * Report that cannot post parks the whole Post with that Report's reason, named by its lake, so a
- * two-lake day never lands as one and the skater knows which leg to fix.
+ * **All-or-nothing, like the server.** Every Report is checked before any Report spends an upload,
+ * and every Report is prepared before any create; one Report that cannot post parks the whole Post
+ * with that Report's reason, named by its lake, so a two-lake day never lands as one, the skater
+ * knows which leg to fix, and a first leg's photos are not uploaded for a Post a second leg was
+ * always going to sink.
  */
 export async function flushPost(
   draft: PostDraft,
@@ -472,6 +488,8 @@ export async function flushPost(
   /** Prefix a member's failure with its lake, so a two-lake Post says which leg. */
   const leg = (report: ReportDraft, message: string): string =>
     d.reports.length > 1 && report.bodyName ? `${report.bodyName}: ${message}` : message;
+  /** The create was sent once already (see the create-only rules below). */
+  const createSent = draft.status === 'creating' || draft.postId !== undefined;
 
   try {
     if (d.reports.length === 0) throw new PermanentFlushError('This post has no report in it.');
@@ -484,7 +502,15 @@ export async function flushPost(
       errorMessage: undefined,
     });
 
-    const prepared: Parameters<PostFlushEffects['createPost']>[0]['reports'] = [];
+    // Pass one — every Report resolved, validated, its hazards claimed and the rules asked, before
+    // any Report's photos go up. (A hazard a ref flushes on demand here is not an upload spent on
+    // this Post: it is safety content that goes first in every drain and posts on its own anyway.)
+    const checked: {
+      report: ReportDraft;
+      input: ReportInput;
+      waterBodyId: string;
+      attachHazardIds: string[];
+    }[] = [];
     for (const original of d.reports) {
       let r = original;
 
@@ -518,17 +544,28 @@ export async function flushPost(
       }
       // 3. Resolve the bundled hazards (D55) — **before** the rules and the uploads: a server id passes
       //    through; a local id is asked of the hazard queue (which flushes it first if it hasn't
-      //    landed — hazards go first in every drain anyway) and checkpointed onto the ref; one that
-      //    cannot resolve is left out. Resolving here is what lets the minimum-set check below count
-      //    only the hazards the Post will actually claim, so a ref that comes back empty cannot pass
-      //    the check and then fail the create after the photos were spent.
+      //    landed — hazards go first in every drain anyway) and checkpointed onto the ref. A checked
+      //    hazard is never quietly left out (D55 amended at A10-3): one still waiting holds the
+      //    Post in the queue until it sends, one the server refused parks the Post with a sentence
+      //    saying which, and only one the author deleted from the queue is dropped. Resolving here
+      //    is what lets the minimum-set check below count only the hazards the Post will actually
+      //    claim, so a ref that comes back empty cannot pass the check and then fail the create
+      //    after the photos were spent.
       const attachHazardIds: string[] = [];
       if (r.hazardRefs && r.hazardRefs.length > 0) {
         const refs: HazardRef[] = [];
         for (const ref of r.hazardRefs) {
           let hazardId = ref.hazardId;
           if (hazardId === undefined && ref.localId !== undefined && effects.resolveHazardId) {
-            hazardId = (await effects.resolveHazardId(ref.localId)) ?? undefined;
+            const resolution = await effects.resolveHazardId(ref.localId);
+            if (resolution.kind === 'sent') hazardId = resolution.hazardId;
+            // A draft whose create was already sent posted with what it had; holding it now would
+            // hold a Post that may be live (the same exemption as the create-only rules below).
+            else if (!createSent && resolution.kind === 'waiting') {
+              throw new Error('A hazard in this post is still waiting to send.');
+            } else if (!createSent && resolution.kind === 'refused') {
+              throw new PermanentFlushError(leg(r, resolution.message));
+            }
           }
           refs.push(hazardId !== undefined ? { ...ref, hazardId } : ref);
           if (hazardId !== undefined && !attachHazardIds.includes(hazardId))
@@ -550,10 +587,19 @@ export async function flushPost(
       // short-circuit (D30) is the only thing that can tell "posted at day 6.9, retried at 7.1" from
       // "never posted" — refusing it here would show an error for a post that is live, and invite a
       // second by hand.
-      if (draft.status !== 'creating' && draft.postId === undefined) {
+      if (!createSent) {
         const refusal = formCreateRefusal(validation.normalized, attachHazardIds.length, now);
         if (refusal !== null) throw new PermanentFlushError(leg(r, refusal));
       }
+
+      checked.push({ report: r, input, waterBodyId, attachHazardIds });
+    }
+
+    // Pass two — the uploads and the track, each checkpointed; nothing here can refuse the Post,
+    // only fail transiently, so a retry resumes from the checkpoint rather than re-spending.
+    const prepared: Parameters<PostFlushEffects['createPost']>[0]['reports'] = [];
+    for (const { report, input, waterBodyId, attachHazardIds } of checked) {
+      let r = report;
 
       // 4. Upload photos, checkpointing each storageId / photoId the instant it lands (so a partial
       //    failure keeps what uploaded and a retry reuses it — the durable form of web's in-memory

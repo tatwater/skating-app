@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Paragraph, Spinner, YStack } from 'tamagui';
 import { ReportSheet } from '../../src/components/sheet/ReportSheet';
+import { parkForNewDoor } from '../../src/lib/doorParking';
 import { saveSheetAsDraft } from '../../src/lib/sheetActions';
 import {
   type DoorParams,
@@ -33,8 +34,15 @@ export default function ReportScreen() {
   const router = useRouter();
   const params = useLocalSearchParams() as DoorParams;
   const profile = useQuery(api.profiles.current, {});
-  const [state, setState] = useState<'opening' | 'open' | 'gone'>(getSheet() ? 'open' : 'opening');
+  const [state, setState] = useState<'opening' | 'open' | 'gone' | 'failed'>(
+    getSheet() ? 'open' : 'opening',
+  );
+  /** Why a door did not replace the open sheet, shown on it until the next door. */
+  const [heldBecause, setHeldBecause] = useState<string | null>(null);
   const openedFor = useRef<string | null>(getSheet() ? '' : null);
+  // The door a failed opening retries — through `doorHref`, whose fresh stamp is a new door, so
+  // *Try again* re-runs the opening below rather than a second copy of it.
+  const retryDoor = useRef<Omit<DoorParams, 'at'>>({});
   const key = doorKey(params);
   // The door's params, read inside the effect through a ref: the effect keys on the door, and the
   // params object is a new identity every render.
@@ -48,18 +56,24 @@ export default function ReportScreen() {
     if (openedFor.current !== null && key === '' && getSheet() !== null) return;
     let cancelled = false;
     openedFor.current = key;
-    setState('opening');
+    setHeldBecause(null);
     // A half-written sheet a new door would replace goes to Drafts first — a skater must never face
-    // "finish now or lose it", least of all by tapping a lake.
-    const current = getSheet();
-    const parked =
-      current?.dirty && current.mode.kind === 'create'
-        ? saveSheetAsDraft(current, Date.now()).catch(() => null)
-        : Promise.resolve(null);
-    void parked
-      .then(() => openDoor(paramsRef.current, profile?.showPutInDefault, Date.now()))
+    // "finish now or lose it", least of all by tapping a lake. What cannot be parked (an edit of a
+    // published report, or a park that failed) keeps the screen, with the reason on the sheet:
+    // replacing it anyway would lose the changes without a word (`doorParking`).
+    void parkForNewDoor(getSheet(), Date.now(), saveSheetAsDraft)
+      .then((parking) => {
+        if (cancelled) return undefined;
+        if (parking.kind === 'held') {
+          setHeldBecause(parking.message);
+          setState('open');
+          return undefined;
+        }
+        setState('opening');
+        return openDoor(paramsRef.current, profile?.showPutInDefault, Date.now());
+      })
       .then((sheet) => {
-        if (cancelled) return;
+        if (cancelled || sheet === undefined) return;
         if (sheet === null) {
           setState('gone');
           return;
@@ -68,6 +82,14 @@ export default function ReportScreen() {
         setState('open');
         // The tab's own door: the lake under your feet arrives after the sheet, never before it.
         if (sheet.door === 'page') void locateTabSheet(sheet.draftId, getSheet, updateSheet);
+      })
+      // A door that could not be read — the edit door's query, a draft read — is said so, with a
+      // way back, rather than a spinner that never ends.
+      .catch(() => {
+        if (cancelled) return;
+        const { at: _at, ...door } = paramsRef.current;
+        retryDoor.current = door;
+        setState('failed');
       });
     return () => {
       cancelled = true;
@@ -80,11 +102,16 @@ export default function ReportScreen() {
       if (getSheet() === null && state === 'open') {
         openedFor.current = null;
         setState('opening');
-        void openDoor({}, profile?.showPutInDefault, Date.now()).then((sheet) => {
-          if (sheet) setSheet(sheet);
-          setState(sheet ? 'open' : 'gone');
-          if (sheet) void locateTabSheet(sheet.draftId, getSheet, updateSheet);
-        });
+        void openDoor({}, profile?.showPutInDefault, Date.now())
+          .then((sheet) => {
+            if (sheet) setSheet(sheet);
+            setState(sheet ? 'open' : 'gone');
+            if (sheet) void locateTabSheet(sheet.draftId, getSheet, updateSheet);
+          })
+          .catch(() => {
+            retryDoor.current = {};
+            setState('failed');
+          });
       }
     }, [state, profile?.showPutInDefault]),
   );
@@ -96,6 +123,13 @@ export default function ReportScreen() {
           <Paragraph color="$foregroundMuted">That report is no longer available.</Paragraph>
           <Button onPress={() => router.navigate(doorHref({}))}>Start a new one</Button>
         </YStack>
+      ) : state === 'failed' ? (
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
+          <Paragraph color="$foregroundMuted" textAlign="center">
+            Couldn't open your sheet. Check your connection and try again.
+          </Paragraph>
+          <Button onPress={() => router.navigate(doorHref(retryDoor.current))}>Try again</Button>
+        </YStack>
       ) : state === 'opening' && getSheet() === null ? (
         <YStack flex={1} alignItems="center" justifyContent="center" gap="$3">
           <Spinner color="$primary" />
@@ -103,8 +137,10 @@ export default function ReportScreen() {
         </YStack>
       ) : (
         <ReportSheet
+          notice={heldBecause}
           onDone={() => {
             openedFor.current = null;
+            setHeldBecause(null);
           }}
         />
       )}
