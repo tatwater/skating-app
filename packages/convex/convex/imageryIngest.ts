@@ -111,6 +111,13 @@ const ROSTER_SEARCH_TAKE = 50;
  */
 const SAMPLE_SITES = 24;
 
+/**
+ * The most boost-ordered rows the sample walk reads to find {@link SAMPLE_SITES} listed ones. A
+ * ceiling on the read, not a target: ~140 bodies carry a boost on dev, so a full sample normally
+ * arrives in the first few dozen.
+ */
+const SAMPLE_SCAN_CAP = 200;
+
 /** Open-Meteo's `past_days` ceiling, matching `weather.ts`. */
 const MAX_PAST_DAYS = 92;
 
@@ -186,13 +193,21 @@ export const gateSites = internalQuery({
 
     // Same `isListed` here: a merge does not clear the loser's boost, so a tombstone would
     // otherwise sit in the sample at the survivor's own coordinate — one pond voting twice.
-    const sample = (
-      await ctx.db
-        .query('waterBodies')
-        .withIndex('by_curated_boost')
-        .order('desc')
-        .take(SAMPLE_SITES)
-    ).filter(isListed);
+    //
+    // ⚠ **Filter while reading, not after a fixed take** (Greptile, PR #74). `take(24)` then
+    // `filter` lets every boosted tombstone cost the sample a site, and a shrinking sample is how
+    // one freezing pond comes to clear `corpusFraction`'s 10% alone. So the walk keeps going until
+    // it holds 24 listed non-roster sites — roster rows are excluded here because they are already
+    // in the output, and a sentinel counted in the sample would shrink the ordinary vote the same
+    // way. Bounded by `SAMPLE_SCAN_CAP`, so a corpus of tombstones costs a few hundred reads, never
+    // a table scan.
+    const rosterIds = new Set([...sentinels, ...pinned].map((b) => b._id));
+    const sample: Doc<'waterBodies'>[] = [];
+    let scanned = 0;
+    for await (const b of ctx.db.query('waterBodies').withIndex('by_curated_boost').order('desc')) {
+      if (++scanned > SAMPLE_SCAN_CAP || sample.length >= SAMPLE_SITES) break;
+      if (isListed(b) && !rosterIds.has(b._id)) sample.push(b);
+    }
 
     const point = (b: Doc<'waterBodies'>) => b.interiorPoint ?? b.centroid;
     const out: { siteId: string; sentinel: boolean; lat: number; lng: number }[] = [];

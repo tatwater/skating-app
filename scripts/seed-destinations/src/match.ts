@@ -133,10 +133,24 @@ export function looksLikeBay(destination: Destination): boolean {
 /** How far a candidate may sit from the shortlist's coordinate and still be the same lake. */
 export const MATCH_RADIUS_KM = 25;
 
-/** The radius an entry resolves under: its own, if tighter than the default; never wider. */
+/**
+ * The radius an entry resolves under: its own, if tighter than the default; never wider.
+ *
+ * ⚠ **A malformed value throws rather than reading as absent** (Greptile, PR #74). The shortlist
+ * is JSON cast to `Destination[]` with no runtime check, so `"radiusKm": "10"` arrives as a
+ * string — and falling back to 25 km there would quietly re-admit the very namesake the author
+ * wrote the radius to exclude. A value above the default is well-formed and is clamped (the
+ * documented "never widens" rule); only a non-number, NaN, infinity or non-positive value is an
+ * error, and it stops the dry run before anything is reviewed or applied.
+ */
 export function radiusFor(destination: Destination): number {
-  const own = destination.radiusKm;
-  if (own === undefined || !Number.isFinite(own) || own <= 0) return MATCH_RADIUS_KM;
+  const own: unknown = destination.radiusKm;
+  if (own === undefined) return MATCH_RADIUS_KM;
+  if (typeof own !== 'number' || !Number.isFinite(own) || own <= 0) {
+    throw new Error(
+      `${destination.name} (${destination.state}): radiusKm must be a positive number of km, got ${JSON.stringify(own)}`,
+    );
+  }
   return Math.min(own, MATCH_RADIUS_KM);
 }
 

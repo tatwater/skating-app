@@ -371,13 +371,23 @@ describe('matchDestination', () => {
       expect(result.kind).toBe('ambiguous');
     });
 
-    it('never widens the default, and ignores a nonsense value', () => {
+    it('never widens the default', () => {
       expect(radiusFor(destination({ radiusKm: 60 }))).toBe(MATCH_RADIUS_KM);
-      expect(radiusFor(destination({ radiusKm: 0 }))).toBe(MATCH_RADIUS_KM);
-      expect(radiusFor(destination({ radiusKm: -5 }))).toBe(MATCH_RADIUS_KM);
-      expect(radiusFor(destination({ radiusKm: Number.NaN }))).toBe(MATCH_RADIUS_KM);
       expect(radiusFor(destination())).toBe(MATCH_RADIUS_KM);
       expect(radiusFor(destination({ radiusKm: 10 }))).toBe(10);
+    });
+
+    // A hand-edited `"radiusKm": "10"` must not silently become 25 km and re-admit the namesake
+    // the radius was written to exclude (Greptile, PR #74).
+    it('rejects a malformed value rather than falling back to the default', () => {
+      for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY, '10', null]) {
+        expect(() => radiusFor(destination({ radiusKm: bad as unknown as number }))).toThrow(
+          /radiusKm must be a positive number/,
+        );
+      }
+      expect(() =>
+        matchDestination(destination({ radiusKm: '10' as unknown as number }), []),
+      ).toThrow(/Lake Willoughby \(VT\)/);
     });
 
     it('applies to the bbox stage too — an extent inside 25 km but outside the entry radius is far', () => {

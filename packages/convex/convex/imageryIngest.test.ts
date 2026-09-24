@@ -560,6 +560,34 @@ describe('gateSites — the roster', () => {
     expect(sites).toHaveLength(2);
   });
 
+  // Greptile, PR #74: a fixed `take(24)` then `filter` let each boosted tombstone cost the sample
+  // a site, shrinking the vote until one freezing pond could clear the 10% corpus rule alone.
+  test('boosted tombstones at the top of the index do not shrink the ordinary sample', async () => {
+    const t = convexTest(schema, modules);
+    for (let i = 0; i < 30; i++) {
+      const id = await seedNamed(t, `Merged Pond ${i}`, 'NH', 43 + i * 0.01, 50 - i);
+      await t.run((ctx) => ctx.db.patch(id, { dedupStatus: 'merged' as const }));
+    }
+    for (let i = 0; i < 26; i++) await seedNamed(t, `Listed Pond ${i}`, 'NH', 44 + i * 0.01, 1);
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    expect(sites).toHaveLength(24);
+    const names = await t.run(async (ctx) =>
+      Promise.all(sites.map(async (s) => (await ctx.db.get(s.siteId as never))?.name as string)),
+    );
+    expect(names.every((n) => n.startsWith('Listed Pond'))).toBe(true);
+  });
+
+  test('a roster site in the boost index does not take one of the 24 ordinary slots', async () => {
+    const t = convexTest(schema, modules);
+    const kinsman = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136, 99);
+    for (let i = 0; i < 26; i++) await seedNamed(t, `Listed Pond ${i}`, 'NH', 44 + i * 0.01, 1);
+
+    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([kinsman]);
+    expect(sites.filter((s) => !s.sentinel)).toHaveLength(24);
+  });
+
   test('with nothing on the roster, the boost sample carries the gate alone', async () => {
     const t = convexTest(schema, modules);
     await seedSites(t, 3);
