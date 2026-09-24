@@ -445,16 +445,19 @@ function replacePhoto(photos: readonly DraftPhoto[], updated: DraftPhoto): Draft
 }
 
 /**
- * Flush one Post draft: per Report, resolve its lake → validate → ask the create-only rules → upload
- * photos (checkpointing each id) → resolve its track and hazards; then create the Post with every
+ * Flush one Post draft in two passes over its Reports — first every Report is resolved to its lake,
+ * validated, its hazards claimed and the create-only rules asked; only then does any Report upload
+ * its photos (checkpointing each id) and resolve its track; then the Post is created with every
  * Report inline (idempotent). Persists after every advance, so an interruption anywhere leaves a
  * resumable draft — a re-flush skips already-uploaded photos and the server dedupes the Post on its
  * key. Never throws: a failure is classified and the draft parked (`error` = permanent / `pending` =
  * transient-retry) via `persist`, and returned in the result.
  *
- * **All-or-nothing, like the server.** Every Report is checked and prepared before any create; one
- * Report that cannot post parks the whole Post with that Report's reason, named by its lake, so a
- * two-lake day never lands as one and the skater knows which leg to fix.
+ * **All-or-nothing, like the server.** Every Report is checked before any Report spends an upload,
+ * and every Report is prepared before any create; one Report that cannot post parks the whole Post
+ * with that Report's reason, named by its lake, so a two-lake day never lands as one, the skater
+ * knows which leg to fix, and a first leg's photos are not uploaded for a Post a second leg was
+ * always going to sink.
  */
 export async function flushPost(
   draft: PostDraft,
@@ -484,7 +487,15 @@ export async function flushPost(
       errorMessage: undefined,
     });
 
-    const prepared: Parameters<PostFlushEffects['createPost']>[0]['reports'] = [];
+    // Pass one — every Report resolved, validated, its hazards claimed and the rules asked, before
+    // any Report's photos go up. (A hazard a ref flushes on demand here is not an upload spent on
+    // this Post: it is safety content that goes first in every drain and posts on its own anyway.)
+    const checked: {
+      report: ReportDraft;
+      input: ReportInput;
+      waterBodyId: string;
+      attachHazardIds: string[];
+    }[] = [];
     for (const original of d.reports) {
       let r = original;
 
@@ -554,6 +565,15 @@ export async function flushPost(
         const refusal = formCreateRefusal(validation.normalized, attachHazardIds.length, now);
         if (refusal !== null) throw new PermanentFlushError(leg(r, refusal));
       }
+
+      checked.push({ report: r, input, waterBodyId, attachHazardIds });
+    }
+
+    // Pass two — the uploads and the track, each checkpointed; nothing here can refuse the Post,
+    // only fail transiently, so a retry resumes from the checkpoint rather than re-spending.
+    const prepared: Parameters<PostFlushEffects['createPost']>[0]['reports'] = [];
+    for (const { report, input, waterBodyId, attachHazardIds } of checked) {
+      let r = report;
 
       // 4. Upload photos, checkpointing each storageId / photoId the instant it lands (so a partial
       //    failure keeps what uploaded and a retry reuses it — the durable form of web's in-memory

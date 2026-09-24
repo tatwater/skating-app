@@ -640,10 +640,14 @@ export const setNotificationPrefs = mutation({
 });
 
 /**
- * How many recent reports a public profile **lists** (the card history). The displayed
- * `reportCount`/`commentCount` are the true lifetime totals from the denormalized profile counters,
- * NOT this window — so a prolific reporter shows "212 reports" while the page still renders only the
- * newest 50 cards, and the read stays bounded either way.
+ * How much history a public profile **lists** (the card history), bounded twice by one number: at
+ * most this many Posts off the sort-key index, and at most this many member Reports hydrated across
+ * them. A Post is up to `POST_MAX_REPORTS` cards, each a body, an author and its photos' thumbnail
+ * URLs, so the Post window alone would let a prolific profile hydrate ten times the cards the
+ * history held when it was Reports; the Report budget keeps the read where it was, cut at the Post
+ * that would take it over. The displayed `reportCount`/`commentCount` are the true lifetime totals
+ * from the denormalized profile counters, NOT this window — so a prolific reporter shows "212
+ * reports" while the page still renders only the newest cards, and the read stays bounded either way.
  */
 const PROFILE_HISTORY_LIMIT = 50;
 
@@ -736,10 +740,11 @@ export const getPublicProfile = query({
     }
 
     // The person's **Posts**, newest skate-end time first — **bounded** (D13). We `.take()` a small
-    // window off the sort-key index rather than `.collect()`ing everything, so a prolific reporter's
-    // page can't trigger an arbitrarily large read. The displayed totals come from the denormalized
-    // counters below, not this window. Each Post is the card the feed shows (A10 / D186), through
-    // the same builder — the put-in opt-out, the blocks and the member visibility all ride with it.
+    // window off the sort-key index rather than `.collect()`ing everything, and hydrate members only
+    // up to the Report budget, so a prolific reporter's page can't trigger an arbitrarily large
+    // read. The displayed totals come from the denormalized counters below, not this window. Each
+    // Post is the card the feed shows (A10 / D186), through the same builder — the put-in opt-out,
+    // the blocks and the member visibility all ride with it.
     const authored = await ctx.db
       .query('posts')
       .withIndex('by_author_latest_skate_end_time', (q) => q.eq('authorId', target._id))
@@ -747,8 +752,13 @@ export const getPublicProfile = query({
       .take(PROFILE_HISTORY_LIMIT);
     const feedViewer = await loadFeedViewer(ctx, undefined);
     const posts: PostCardData[] = [];
+    let hydrated = 0;
     for (const post of authored) {
       if (post.moderationStatus !== 'visible') continue;
+      // The budget is cut at a Post boundary — a card is a whole Post, never part of one — and
+      // counted by the row's members before visibility, which is the read it costs.
+      if (hydrated > 0 && hydrated + post.reportIds.length > PROFILE_HISTORY_LIMIT) break;
+      hydrated += post.reportIds.length;
       const card = await toPostCard(ctx, post, feedViewer);
       if (card) posts.push(card);
     }

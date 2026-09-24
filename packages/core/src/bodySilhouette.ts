@@ -99,9 +99,13 @@ export function silhouettePath(coordinates: readonly number[][], bbox: BBox): Ln
 }
 
 /**
- * The `where` a report's chips agree on, for the highlight: the first sector any located chip or
- * reading names, and the first bay. One highlight per card — a report that says "black ice north,
- * slush south" is a report the reader opens.
+ * The `where` the highlight draws, for a report whose chips may each say a different place: the
+ * **first located chip's `where`, whole** — its sector and its bay together, as that one
+ * observation stated them. Never a sector from one chip beside a bay from another: "black ice,
+ * south end" plus a thickness reading in North Bay is not "the south end of North Bay", and a card
+ * that drew both would compose a place no one claimed. One highlight per card — a report that says
+ * "black ice north, slush south" is a report the reader opens. A chip located by a point alone is
+ * not one the card can draw.
  */
 export function reportWhereSummary(report: {
   iceTypes: readonly { where?: Where }[];
@@ -112,12 +116,10 @@ export function reportWhereSummary(report: {
     ...report.iceTypes,
     ...report.surfaceTags,
     ...(report.iceThickness?.readings ?? []),
-  ];
-  const sector = located.find((c) => c.where?.sector !== undefined)?.where?.sector;
-  const subAreaId = located.find((c) => c.where?.subAreaId !== undefined)?.where?.subAreaId;
+  ].find((c) => c.where?.sector !== undefined || c.where?.subAreaId !== undefined)?.where;
   return {
-    ...(sector !== undefined ? { sector } : {}),
-    ...(subAreaId !== undefined ? { subAreaId } : {}),
+    ...(located?.sector !== undefined ? { sector: located.sector } : {}),
+    ...(located?.subAreaId !== undefined ? { subAreaId: located.subAreaId } : {}),
   };
 }
 
