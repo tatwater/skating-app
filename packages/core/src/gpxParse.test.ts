@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGpx } from './gpxParse';
+import { parseGpx, planGpxImport } from './gpxParse';
 import { toGpx } from './track';
 
 const GPX = `<?xml version="1.0"?>
@@ -24,6 +24,19 @@ describe('parseGpx', () => {
     expect(parsed?.points[0]?.elevation).toBeUndefined();
   });
 
+  it('does not let a self-closing point swallow the next one', () => {
+    const parsed = parseGpx(
+      '<gpx><trk><trkseg><trkpt lat="1" lon="2"/>\n' +
+        '<trkpt lat="43.64" lon="-72.13"><time>2026-01-10T19:05:00Z</time></trkpt>\n' +
+        '<trkpt lat="43.65" lon="-72.14"><time>2026-01-10T19:06:00Z</time></trkpt>' +
+        '</trkseg></trk></gpx>',
+    );
+    expect(parsed?.points.map((p) => [p.lat, p.lng])).toEqual([
+      [43.64, -72.13],
+      [43.65, -72.14],
+    ]);
+  });
+
   it('refuses what is not a track', () => {
     expect(parseGpx('<html></html>')).toBeNull();
     expect(
@@ -44,5 +57,43 @@ describe('parseGpx', () => {
     expect(back?.points.map((p) => [p.lat, p.lng, p.t])).toEqual(
       points.map((p) => [p.lat, p.lng, p.t]),
     );
+  });
+});
+
+describe('planGpxImport', () => {
+  it('shapes the ingest call with a key the same file resolves to again', () => {
+    const points = Array.from({ length: 12 }, (_, i) => ({
+      lat: 43.64 + i * 0.001,
+      lng: -72.13 - i * 0.001,
+      t: Date.UTC(2026, 0, 10, 19, i),
+    }));
+    const xml = toGpx(points, { name: 'Skate' }) as string;
+    const plan = planGpxImport(xml, 'report-1');
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.path.type).toBe('LineString');
+    expect(plan.startTime).toBe(points[0]?.t);
+    expect(plan.endTime).toBe(points[11]?.t);
+    expect(plan.elapsedSeconds).toBeGreaterThan(0);
+    expect(planGpxImport(xml, 'report-1')).toEqual(plan);
+    expect((planGpxImport(xml, 'report-2') as { idempotencyKey: string }).idempotencyKey).not.toBe(
+      plan.idempotencyKey,
+    );
+  });
+
+  it('says why when it cannot', () => {
+    expect(planGpxImport('<html></html>', 'r')).toEqual({
+      ok: false,
+      message: "That file isn't a GPX track with times in it.",
+    });
+    // Two timed points on one spot: a track that ends where it starts is no track.
+    const still = planGpxImport(
+      '<gpx><trk><trkseg>' +
+        '<trkpt lat="43.64" lon="-72.13"><time>2026-01-10T19:05:00Z</time></trkpt>' +
+        '<trkpt lat="43.64" lon="-72.13"><time>2026-01-10T19:05:00Z</time></trkpt>' +
+        '</trkseg></trk></gpx>',
+      'r',
+    );
+    expect(still).toEqual({ ok: false, message: 'That track has too few usable points.' });
   });
 });

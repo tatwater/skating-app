@@ -75,13 +75,25 @@ describe('the refresh (§10.3)', () => {
           photos: [{ id: 'p1', fullUri: 'p1:full', thumbUri: 'p1:thumb', placeOnMap: false }],
         },
       ],
+      // The Post's pool (A10-7): the same blobs, the same fate.
+      photos: [
+        {
+          id: 'p2',
+          fullUri: 'p2:full',
+          thumbUri: 'p2:thumb',
+          placeOnMap: false,
+          attachTo: { kind: 'put_in', id: 'launch-1' },
+        },
+      ],
     });
     const restored = readStoredSheet(NOW)?.sheet;
     expect(restored?.title).toBe('Half written');
     expect(restored?.reports[0]?.sheet.waterBodyId).toBe('wb1');
     // The `File` behind a picked photo died with the tab; restoring its record would draw a
-    // thumbnail that cannot be uploaded.
+    // thumbnail that cannot be uploaded — or, in the pool, refuse the Post for a photo nobody can
+    // place, or send the flush after a blob that is gone.
     expect(restored?.reports[0]?.photos).toEqual([]);
+    expect(restored?.photos).toBeUndefined();
   });
 
   /**

@@ -66,12 +66,19 @@ export async function postSheetOnWeb(
   } else {
     const draft = toPostDraft(post, 'pending', now, previous ?? null);
     // An attempt that failed before its create keeps only its uploads: each photo that already
-    // landed is reused by id rather than uploaded twice.
+    // landed — a Report's or the pool's (A10-7) — is reused by id rather than uploaded twice.
     attempt =
       previous == null
         ? draft
         : {
             ...draft,
+            ...(draft.photos !== undefined
+              ? {
+                  photos: draft.photos.map(
+                    (photo) => previous.photos?.find((p) => p.id === photo.id) ?? photo,
+                  ),
+                }
+              : {}),
             reports: draft.reports.map((r) => {
               const prior = previous.reports.find((p) => p.id === r.id);
               if (!prior) return r;

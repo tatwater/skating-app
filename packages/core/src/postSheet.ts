@@ -498,7 +498,11 @@ export function assignCandidates(
   });
 }
 
-/** A photo landing on a Report is placed when its location is on that lake (D42, pre-answered by the water). */
+/**
+ * A photo landing on a Report is placed when its location is on that lake (D42, pre-answered by
+ * the water) — and only then: a placement from a previous lake does not ride along to one the
+ * coordinate is not on, so a coordinate off the lake is never sent. The author places by hand.
+ */
 function onReport(
   photo: DraftPhoto,
   reportId: string,
@@ -506,7 +510,7 @@ function onReport(
 ): DraftPhoto {
   const bbox = candidates.find((c) => c.reportId === reportId)?.bbox;
   const { attachTo: _attachTo, ...rest } = photo;
-  return onLake(photo.coord, bbox) ? { ...rest, placeOnMap: true } : rest;
+  return { ...rest, placeOnMap: onLake(photo.coord, bbox) };
 }
 
 /**
@@ -609,10 +613,11 @@ export function sendPhotoToAccess(
   const found = findPhoto(post, photoId);
   if (!found) return post;
   const stripped = withoutPhoto(post, photoId);
-  const { placeOnMap: _p, coord: _c, ...rest } = found.photo;
+  // Un-placed, never located as an access photo (the flush sends no coordinate for one) — but the
+  // coordinate stays on the record, so a change of mind back to a lake can still place it by it.
   return {
     ...stripped,
-    photos: [...(stripped.photos ?? []), { ...rest, placeOnMap: false, attachTo: target }],
+    photos: [...(stripped.photos ?? []), { ...found.photo, placeOnMap: false, attachTo: target }],
     dirty: true,
   };
 }

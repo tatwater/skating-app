@@ -18,12 +18,11 @@ import {
   POST_SENT_COPY,
   POST_TITLE_MAX_CHARS,
   type PostSheet,
-  parseGpx,
   photoCounts,
   placePhotoByHand,
+  planGpxImport,
   postCreateSent,
   postRefusals,
-  processTrack,
   type ReportRefusal,
   reassignPool,
   removeReport,
@@ -604,6 +603,8 @@ function PhotoRail({
     setHazardPrefill({
       ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
       files: file ? [file] : [],
+      // Attached already: the form must not offer it again under "near this pin".
+      sourceIds: [photo.id],
     });
     setMenuFor(null);
     void navigate({ to: '/water/$id', params: { id: waterBodyId }, search: { hazard: true } });
@@ -631,16 +632,26 @@ function PhotoRail({
         'flex-none border-border border-t px-4 py-3 transition-colors',
         dragging && 'bg-primary/5',
       )}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        if (e.dataTransfer.files.length > 0) void add(e.dataTransfer.files);
-      }}
+      // An edit adds photos through the Report's own section, which uploads them with the save;
+      // the rail's drop lands them by the day's rules, which an edit's save never reads.
+      onDragOver={
+        editing
+          ? undefined
+          : (e) => {
+              e.preventDefault();
+              setDragging(true);
+            }
+      }
+      onDragLeave={editing ? undefined : () => setDragging(false)}
+      onDrop={
+        editing
+          ? undefined
+          : (e) => {
+              e.preventDefault();
+              setDragging(false);
+              if (e.dataTransfer.files.length > 0) void add(e.dataTransfer.files);
+            }
+      }
     >
       <div className="flex items-center gap-2.5">
         <Eyebrow>Photos from the day</Eyebrow>
@@ -658,8 +669,9 @@ function PhotoRail({
           const unassigned = ph.reportId === null && ph.photo.attachTo === undefined;
           const bound = ph.photo.attachTo !== undefined;
           const menuOpen = menuFor === ph.photo.id;
-          const placeable =
-            ph.reportId !== null && !ph.kept && !ph.photo.placeOnMap && mode?.kind !== 'place';
+          // Place-mode's click lands on the instrument, which draws the *active* tab's lake: only a
+          // photo on that Report can be placed from here (D42 — never a coordinate off its lake).
+          const placeable = active && !ph.kept && !ph.photo.placeOnMap && mode?.kind !== 'place';
           return (
             <div
               key={ph.photo.id}
@@ -1373,29 +1385,18 @@ function TrackImport({
     setError(null);
     setBusy(true);
     try {
-      const parsed = parseGpx(await file.text());
-      if (!parsed) {
-        setError("That file isn't a GPX track with times in it.");
+      const plan = planGpxImport(await file.text(), report.id);
+      if (!plan.ok) {
+        setError(plan.message);
         return;
       }
-      const processed = processTrack(parsed.points);
-      if (!processed.path) {
-        setError('That track has too few usable points.');
-        return;
-      }
-      const startTime = processed.points[0]?.t ?? parsed.points[0]?.t ?? 0;
-      const endTime =
-        processed.points[processed.points.length - 1]?.t ??
-        parsed.points[parsed.points.length - 1]?.t ??
-        0;
+      const { idempotencyKey, path, startTime, endTime, elapsedSeconds } = plan;
       const activityId = await ingest({
-        idempotencyKey: `gpx:${report.id}:${crypto.randomUUID()}`,
-        path: processed.path,
+        idempotencyKey,
+        path,
         startTime,
         endTime,
-        ...(processed.stats.movingSeconds !== undefined
-          ? { elapsedSeconds: Math.round(processed.stats.movingSeconds) }
-          : {}),
+        elapsedSeconds,
         ...(body?.waterBodyId !== undefined
           ? { waterBodyId: body.waterBodyId as Id<'waterBodies'> }
           : {}),

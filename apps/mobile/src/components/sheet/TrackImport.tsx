@@ -1,9 +1,8 @@
 import { useNetInfo } from '@react-native-community/netinfo';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { parseGpx, processTrack, updateReport } from '@skating/core';
+import { planGpxImport, updateReport } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { randomUUID } from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { useState } from 'react';
@@ -44,30 +43,18 @@ export function TrackImport({
       if (picked.canceled) return;
       const uri = picked.assets[0]?.uri;
       if (!uri) return;
-      const text = await new File(uri).text();
-      const parsed = parseGpx(text);
-      if (!parsed) {
-        setError("That file isn't a GPX track with times in it.");
+      const plan = planGpxImport(await new File(uri).text(), report.id);
+      if (!plan.ok) {
+        setError(plan.message);
         return;
       }
-      const processed = processTrack(parsed.points);
-      if (!processed.path) {
-        setError('That track has too few usable points.');
-        return;
-      }
-      const startTime = processed.points[0]?.t ?? parsed.points[0]?.t ?? 0;
-      const endTime =
-        processed.points[processed.points.length - 1]?.t ??
-        parsed.points[parsed.points.length - 1]?.t ??
-        0;
+      const { idempotencyKey, path, startTime, endTime, elapsedSeconds } = plan;
       const activityId = await ingest({
-        idempotencyKey: `gpx:${report.id}:${randomUUID()}`,
-        path: processed.path,
+        idempotencyKey,
+        path,
         startTime,
         endTime,
-        ...(processed.stats.movingSeconds !== undefined
-          ? { elapsedSeconds: Math.round(processed.stats.movingSeconds) }
-          : {}),
+        elapsedSeconds,
         ...(body?.waterBodyId !== undefined
           ? { waterBodyId: body.waterBodyId as Id<'waterBodies'> }
           : {}),

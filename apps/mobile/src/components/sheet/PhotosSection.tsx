@@ -15,7 +15,7 @@ import { Image, Pressable, ScrollView } from 'react-native';
 import { Button, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../../lib/draftPhotos';
 import { getTrack } from '../../lib/draftStore';
-import { useMapSelection } from '../MapSelectionContext';
+import { setHazardPrefill } from '../../lib/hazardPrefill';
 import { pickPhotos, processPhoto } from '../photoPipeline';
 import { LakeMap } from './LakeMap';
 import { SheetChip } from './SheetChip';
@@ -54,7 +54,6 @@ export function PhotosSection({
 }: SectionProps) {
   const sheet = report.sheet;
   const router = useRouter();
-  const { setHazardCapturePrefill } = useMapSelection();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reel, setReel] = useState<ReelPhoto[] | null>(null);
@@ -210,17 +209,35 @@ export function PhotosSection({
       return { ...r, photos: r.photos.filter((p) => p.id !== id) };
     });
 
-  /** Photo → hazard (A10-7): the map's capture with the pin where the photo was taken and the photo attached. */
-  const asHazard = (photo: DraftPhoto) => {
+  /**
+   * Photo → hazard (A10-7): the map's capture with the pin where the photo was taken and the photo
+   * attached. The capture gets its **own copy** of the files: it frees what it holds on Cancel and
+   * the hazard queue frees it after a flush, and this Report's photo must outlive both.
+   */
+  const asHazard = async (photo: DraftPhoto) => {
     if (!body) return;
-    setHazardCapturePrefill({
-      ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
-      photos: [{ ...photo, id: randomUUID(), placeOnMap: false }],
-    });
-    router.navigate({
-      pathname: '/water/[id]',
-      params: { id: body.waterBodyId, hazard: String(Date.now()) },
-    });
+    setError(null);
+    setBusy(true);
+    try {
+      const id = randomUUID();
+      const [fullUri, thumbUri] = await Promise.all([
+        persistDraftPhoto(photo.fullUri, `hazard-${id}-full.jpg`),
+        persistDraftPhoto(photo.thumbUri, `hazard-${id}-thumb.jpg`),
+      ]);
+      setHazardPrefill({
+        ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
+        photos: [{ id, fullUri, thumbUri, placeOnMap: false }],
+        sourceIds: [photo.id],
+      });
+      router.navigate({
+        pathname: '/water/[id]',
+        params: { id: body.waterBodyId, hazard: String(Date.now()) },
+      });
+    } catch {
+      setError("Couldn't hand that photo to the map — try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const placingPhoto = placing ? report.photos.find((p) => p.id === placing) : undefined;
@@ -337,7 +354,7 @@ export function PhotosSection({
                 </Pressable>
               </XStack>
             </ScrollView>
-          ) : reelState === 'idle' && reel === null ? null : null}
+          ) : null}
           <SheetHint>
             Tap to include. Nothing leaves your camera roll. A blue corner means it's placed on the
             lake from its own location.
@@ -427,7 +444,7 @@ export function PhotosSection({
               <Text
                 color="$danger"
                 fontSize={11}
-                onPress={() => asHazard(photo)}
+                onPress={() => void asHazard(photo)}
                 accessibilityRole="button"
               >
                 Hazard

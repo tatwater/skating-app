@@ -56,7 +56,7 @@ export interface PhotoDrafts {
    * of those photos" sitting under a submit button reads as if the submit itself failed.
    */
   clearError: () => void;
-  addFiles: (files: FileList) => Promise<void>;
+  addFiles: (files: FileList | readonly File[]) => Promise<void>;
   removePhoto: (id: string) => void;
   setPlaceOnMap: (id: string, on: boolean) => void;
   /**
@@ -139,7 +139,7 @@ export function usePhotoDrafts(): PhotoDrafts {
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, placeOnMap: on } : p)));
   }, []);
 
-  const addFiles = useCallback(async (files: FileList) => {
+  const addFiles = useCallback(async (files: FileList | readonly File[]) => {
     setError(null);
     try {
       // Process the picked files concurrently (each is a heavy HEIC-decode + two compressions).

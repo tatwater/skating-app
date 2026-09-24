@@ -490,6 +490,7 @@ describe('the photo pool (A10-7)', () => {
     next = sendPhotoToAccess(next, 'q', { kind: 'put_in', id: 'launch-1' });
     expect(findPhoto(next, 'q')?.reportId).toBeNull();
     expect(next.photos?.[0]?.attachTo).toEqual({ kind: 'put_in', id: 'launch-1' });
+    expect(next.photos?.[0]?.placeOnMap).toBe(false);
     expect(postRefusals(next, NOW).find((r) => r.reportId === '')).toBeUndefined();
     expect(photoCounts(next)).toEqual({ total: 1, assigned: 1 });
     next = movePhotoToReport(next, 'q', c.id, assignCandidates(next, {}));
@@ -499,6 +500,18 @@ describe('the photo pool (A10-7)', () => {
       coord: { lat: 43.64, lng: -72.13 },
       placeOnMap: true,
     });
+    // Moved to a lake its coordinate is not on: the placement does not ride along (D42).
+    next = movePhotoToReport(next, 'q', m.id, assignCandidates(next, { c: crystal }));
+    expect(findPhoto(next, 'q')?.photo).toMatchObject({
+      coord: { lat: 43.64, lng: -72.13 },
+      placeOnMap: false,
+    });
+    // And back to the lake it is on: placed by it again, the coordinate having stayed.
+    next = sendPhotoToAccess(next, 'q', { kind: 'parking_area', id: 'lot-1' });
+    expect(findPhoto(next, 'q')?.photo.coord).toEqual({ lat: 43.64, lng: -72.13 });
+    next = movePhotoToReport(next, 'q', c.id, assignCandidates(next, { c: crystal }));
+    expect(findPhoto(next, 'q')?.photo.placeOnMap).toBe(true);
+    expect(findPhoto(next, 'q')?.photo.attachTo).toBeUndefined();
     next = dropPhoto(next, 'q');
     expect(findPhoto(next, 'q')).toBeNull();
     expect(dropPhoto(next, 'q')).toBe(next);

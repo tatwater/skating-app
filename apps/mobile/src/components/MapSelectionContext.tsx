@@ -1,4 +1,4 @@
-import type { BBox, DraftPhoto, HazardDraft, HazardType, LatLng } from '@skating/core';
+import type { BBox, HazardDraft, HazardType } from '@skating/core';
 import type { LineString } from 'geojson';
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
@@ -91,13 +91,6 @@ interface MapSelectionValue {
   hazardCaptureNonce: number;
   requestHazardCapture: () => void;
   /**
-   * What the report sheet hands the capture when a photo *is* the hazard (A10-7): the photo's
-   * location as the pin and the photo as the first attachment (already copied to persistent
-   * storage). Read once by the capture on the nonce it rides with, then cleared.
-   */
-  hazardCapturePrefill: { coord?: LatLng; photos: DraftPhoto[] } | null;
-  setHazardCapturePrefill: (prefill: { coord?: LatLng; photos: DraftPhoto[] } | null) => void;
-  /**
    * The two taps that become a shore band (A05b), or `null` when not snapping.
    *
    * `[]` means "armed, waiting for the first tap" — a state the map must be able to hold, since the
@@ -178,10 +171,6 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [hazardDropMode, setHazardDropMode] = useState(false);
   const [hazardCaptureNonce, setHazardCaptureNonce] = useState(0);
   const requestHazardCapture = useCallback(() => setHazardCaptureNonce((n) => n + 1), []);
-  const [hazardCapturePrefill, setHazardCapturePrefill] = useState<{
-    coord?: LatLng;
-    photos: DraftPhoto[];
-  } | null>(null);
   const [hazardShoreTaps, setHazardShoreTaps] = useState<{ lat: number; lng: number }[] | null>(
     null,
   );
@@ -216,8 +205,6 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardDropMode,
       hazardCaptureNonce,
       requestHazardCapture,
-      hazardCapturePrefill,
-      setHazardCapturePrefill,
       hazardShoreTaps,
       setHazardShoreTaps,
       onIceWaterBodyId,
@@ -246,7 +233,6 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDropMode,
       hazardCaptureNonce,
       requestHazardCapture,
-      hazardCapturePrefill,
       hazardShoreTaps,
       onIceWaterBodyId,
       onIceCoord,

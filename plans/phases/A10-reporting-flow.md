@@ -1067,8 +1067,8 @@ code from #74 that the merge brought in, not this PR's, and is left for its own 
 ## Built record — A10-7 (2026-09-23, `phase-a10-reporting-flow-7`, PR #79 stacked on #78)
 
 The second PR of the re-skin, the founder's approved split: what the sheet does with **photos and
-tracks**. Two commits off `-6`, ~2,400 changed lines over 34 files. Suites at build: core 3,036 ·
-convex 1,748 · web 651 · mobile 114. No schema change, no data run. **Two native
+tracks**. Four commits off `-6`, ~2,700 changed lines over 38 files. Suites at build: core 3,040 ·
+convex 1,748 · web 651 · mobile 115. No schema change, no data run. **Two native
 modules** (`expo-media-library`, `expo-document-picker`) with their config plugins: the phone
 needs a new EAS preview build.
 
@@ -1127,6 +1127,26 @@ needs a new EAS preview build.
 6. **The mobile hazard capture's prefill rides the map context**, not a route param: a `DraftPhoto`
    is a pair of file URIs the sheet already copied out of the roll, and the capture's nonce is the
    ask it belongs to.
+
+### The self-review pass — what it caught
+
+Fifteen findings, fourteen fixed in the branch. Three worth naming:
+
+1. **The mobile sheet crashed on mount.** `PhotosSection` read the map's context for the hazard
+   prefill, and the Reports tab has no `MapSelectionProvider` above it — the throwing hook took
+   the whole sheet down. The prefill is a module-level note now (`lib/hazardPrefill.ts`, the same
+   shape as web's, with a test), taken by the capture on its nonce; the context is untouched.
+2. **Photo → hazard shared one file two ways.** The hand-off passed the sheet photo's own file
+   URIs to the capture, whose Cancel and the hazard queue's post-flush sweep delete what they
+   were given — the Report's photo with it. The hand-off copies the files first.
+3. **A GPX retry minted a new key each attempt.** A second click after a lost ack would have
+   ingested the same file twice; `planGpxImport` derives the key from the file and the Report,
+   and both surfaces share it (with the `endTime > startTime` guard the server refuses without).
+
+The rest: a self-closing `<trkpt/>` swallowed the next point; a reload restored pool photos with
+no blobs behind them; a retried web Post re-uploaded pool photos; place-mode offered on a photo
+whose lake was not the one drawn; the prefilled photo re-offered as a suggestion; a stale
+`placeOnMap` carried to a lake the coordinate is not on; the drop zone live on an edit.
 
 ### Owed
 

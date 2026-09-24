@@ -9,6 +9,8 @@ import type { LatLng } from '@skating/core';
 export interface HazardPrefill {
   coord?: LatLng;
   files: File[];
+  /** The sheet photos `files` came from — attached on arrival, so never offered as a suggestion too. */
+  sourceIds?: string[];
 }
 
 let pending: HazardPrefill | null = null;

@@ -69,10 +69,11 @@ const getAttemptSnapshot = () => attempt;
 // SSR has no sheet and no storage; the server renders nothing and the route's door fills it on mount.
 const getServerSnapshot = (): null => null;
 
-/** The stored copy, stripped of what cannot survive a reload (the picked files). */
+/** The stored copy, stripped of what cannot survive a reload (the picked files — the Reports' and the pool's). */
 function serializable(post: PostSheet): PostSheet {
+  const { photos: _pool, ...rest } = post;
   return {
-    ...post,
+    ...rest,
     reports: post.reports.map((r) => ({ ...r, photos: [] })),
   };
 }

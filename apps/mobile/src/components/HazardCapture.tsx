@@ -44,6 +44,7 @@ import { Button, H4, Paragraph, ScrollView, Text, useTheme, XStack, YStack } fro
 import { cachedBodyPolygon } from '../lib/bodyCache';
 import { deleteDraftPhotoFiles, persistDraftPhoto } from '../lib/draftPhotos';
 import { saveHazardItem } from '../lib/draftStore';
+import { takeHazardPrefill } from '../lib/hazardPrefill';
 import { useSheet } from '../lib/sheetStore';
 import { useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
@@ -92,8 +93,6 @@ export function HazardCapture() {
     hazardDropMode,
     setHazardDropMode,
     hazardCaptureNonce,
-    hazardCapturePrefill,
-    setHazardCapturePrefill,
     hazardShoreTaps,
     setHazardShoreTaps,
   } = useMapSelection();
@@ -109,16 +108,18 @@ export function HazardCapture() {
   const fromSheet = useRef(false);
   /** A photo that is the hazard (A10-7): its location becomes the pin once a type is chosen. */
   const prefillCoord = useRef<LatLng | null>(null);
-  // The prefill rides the nonce: read on the ask it came with, never re-read on a re-render.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: consumed on the nonce by design
+  /** The open sheet's photos already attached here — the prefill's, and each suggestion taken. */
+  const [suggestedAdded, setSuggestedAdded] = useState<string[]>([]);
+  // The prefill rides the nonce: taken on the ask it came with (`hazardPrefill`, a module note —
+  // the sheet is on the Report tab, off this provider), never re-read on a re-render.
   useEffect(() => {
     if (hazardCaptureNonce === 0) return;
     fromSheet.current = true;
-    const prefill = hazardCapturePrefill;
+    const prefill = takeHazardPrefill();
     if (prefill) {
       prefillCoord.current = prefill.coord ?? null;
       if (prefill.photos.length > 0) setPhotos((p) => [...p, ...prefill.photos]);
-      setHazardCapturePrefill(null);
+      if (prefill.sourceIds.length > 0) setSuggestedAdded((s) => [...s, ...prefill.sourceIds]);
     }
     setPicking(true);
   }, [hazardCaptureNonce]);
@@ -199,7 +200,6 @@ export function HazardCapture() {
   const openSheet = useSheet();
   const theme = useTheme();
   const primaryColor = theme.primary?.val ?? '#1fc9ec';
-  const [suggestedAdded, setSuggestedAdded] = useState<string[]>([]);
   const nearby = useMemo(() => {
     if (!openSheet || !pinCoord) return [];
     const all = [...openSheet.reports.flatMap((r) => r.photos), ...(openSheet.photos ?? [])];
@@ -208,11 +208,17 @@ export function HazardCapture() {
   async function addSuggested(photo: DraftPhoto) {
     setSuggestedAdded((s) => [...s, photo.id]);
     const id = randomUUID();
-    const [fullUri, thumbUri] = await Promise.all([
-      persistDraftPhoto(photo.fullUri, `hazard-${id}-full.jpg`),
-      persistDraftPhoto(photo.thumbUri, `hazard-${id}-thumb.jpg`),
-    ]);
-    setPhotos((p) => [...p, { id, fullUri, thumbUri, placeOnMap: false }]);
+    try {
+      const [fullUri, thumbUri] = await Promise.all([
+        persistDraftPhoto(photo.fullUri, `hazard-${id}-full.jpg`),
+        persistDraftPhoto(photo.thumbUri, `hazard-${id}-thumb.jpg`),
+      ]);
+      setPhotos((p) => [...p, { id, fullUri, thumbUri, placeOnMap: false }]);
+    } catch {
+      // The copy failed: the photo is still on offer, and the sheet's own file is untouched.
+      setSuggestedAdded((s) => s.filter((x) => x !== photo.id));
+      setError("Couldn't attach that photo — try picking it instead.");
+    }
   }
 
   /** Clear the draft state without touching photo files — the queue path keeps the files it owns. */

@@ -1109,6 +1109,13 @@ describe('the Post’s own photos (A10-7, step 8)', () => {
     expect(third.draft.photos?.[0]?.attachedAccess).toBe(true);
   });
 
+  it('the pool’s files are the draft’s files too — freed with the Reports’ after a flush', () => {
+    const draft = draftWith({ photos: [pool({ attachTo: { kind: 'put_in', id: 'launch-1' } })] });
+    expect(postDraftPhotoUris(draft)).toEqual(
+      expect.arrayContaining(['file:///pool-full.jpg', 'file:///pool-thumb.jpg']),
+    );
+  });
+
   it('a photo the sheet never sent anywhere is not a refusal on a draft from before A10-7', async () => {
     const { effects } = makeEffects();
     const result = await flushPost(draftWith({}), effects, NOW);

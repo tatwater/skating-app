@@ -365,7 +365,8 @@ export function flushablePosts(drafts: readonly PostDraft[]): PostDraft[] {
 
 /** Every persistent photo file a Post draft owns (full + thumb per photo, every Report). */
 export function postDraftPhotoUris(draft: PostDraft): string[] {
-  return draft.reports.flatMap((r) => r.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
+  const photos = [...draft.reports.flatMap((r) => r.photos), ...(draft.photos ?? [])];
+  return photos.flatMap((p) => [p.fullUri, p.thumbUri]);
 }
 
 /** The local track ids a queue of Post drafts still points at — the retention guard's input. */

@@ -531,6 +531,8 @@ export function HazardForm({
    * type, and the photo is the first attachment. The type is still the author's to say.
    */
   const prefillTaken = useRef(false);
+  /** The open Post's photos already attached here — the prefill's, and each suggestion taken. */
+  const [suggestedAdded, setSuggestedAdded] = useState<string[]>([]);
   // Once, on mount: `photoDrafts.addFiles` and `setHazardDraft` are the mount's own.
   // biome-ignore lint/correctness/useExhaustiveDependencies: consumed once on mount by design
   useEffect(() => {
@@ -541,7 +543,8 @@ export function HazardForm({
     if (prefill.coord) {
       setHazardDraft({ geometryKind: 'point_radius', coord: prefill.coord, radiusMeters: 25 });
     }
-    if (prefill.files.length > 0) void photoDrafts.addFiles(filesList(prefill.files));
+    if (prefill.files.length > 0) void photoDrafts.addFiles(prefill.files);
+    if (prefill.sourceIds && prefill.sourceIds.length > 0) setSuggestedAdded(prefill.sourceIds);
   }, []);
   /**
    * The photos near this pin (A10-7, hazard → photo): the open Post's photos within reach of the
@@ -555,7 +558,6 @@ export function HazardForm({
     const all = [...openSheet.reports.flatMap((r) => r.photos), ...(openSheet.photos ?? [])];
     return photosNearPoint(all, pinCoord).filter((p) => sheetPhotoPreview(p.id) !== null);
   }, [openSheet, pinCoord]);
-  const [suggestedAdded, setSuggestedAdded] = useState<string[]>([]);
 
   /**
    * The snap's own state. It lives here rather than on the draft because Decision 3 stores a snapped
@@ -926,7 +928,7 @@ export function HazardForm({
             const file = sheetPhotoBlob(`${id}:full`);
             if (!file) return;
             setSuggestedAdded((s) => [...s, id]);
-            void photoDrafts.addFiles(filesList([file]));
+            void photoDrafts.addFiles([file]);
           }}
           onAddFiles={photoDrafts.addFiles}
           onRemovePhoto={photoDrafts.removePhoto}
@@ -957,11 +959,4 @@ export function HazardForm({
       </DialogContent>
     </Dialog>
   );
-}
-
-/** A `FileList` from files — `addFiles` takes what an `<input type=file>` gives. */
-function filesList(files: readonly File[]): FileList {
-  const dt = new DataTransfer();
-  for (const f of files) dt.items.add(f);
-  return dt.files;
 }
