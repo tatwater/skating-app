@@ -86,6 +86,14 @@ import { listedBodiesNearCoord } from './waterBodies';
  */
 const MAX_OPEN_REQUESTS_PER_USER = 10;
 
+/**
+ * Open bay asks one person may hold at once — a budget of its own, beside the lake-ask cap, so
+ * naming the bays of one big lake does not use up the asks for ponds, and a distinct-name loop
+ * cannot fill the queue (Greptile, PR #76). The corpus seed files through an internal mutation
+ * and is not held to it.
+ */
+const MAX_OPEN_BAY_REQUESTS_PER_USER = 10;
+
 /** Cap on the moderator queue read. Past this the queue is a backlog, not a list. */
 export { QUEUE_CAP } from './lib/requestDecisions';
 
@@ -126,17 +134,23 @@ export const create = mutation({
       throw new ConvexError('Only a bay request carries a name');
     }
 
-    // The cap is on asks about *lakes*. A bay ask is one per bay per lake by construction and its
-    // queue is the lake editor, not the moderator's general list — and the corpus seed files a
-    // dozen of them under one profile, which must not lock that person out of asking for a pond.
+    // Two budgets: lake asks and bay asks are capped separately, so naming the bays of one big
+    // lake never uses up someone's asks for ponds, and neither kind is unbounded. The read is the
+    // queue cap, wide enough to hold both budgets and the seed's rows, so the dupe check below
+    // sees every open ask of theirs.
     const open = await ctx.db
       .query('waterBodyRequests')
       .withIndex('by_requester_status', (q) =>
         q.eq('requesterId', profile._id).eq('status', 'open'),
       )
       .take(QUEUE_CAP);
-    const openLakeAsks = open.filter((r) => r.kind !== 'name_bay').length;
-    if (kind !== 'name_bay' && openLakeAsks >= MAX_OPEN_REQUESTS_PER_USER) {
+    const openBayAsks = open.filter((r) => r.kind === 'name_bay').length;
+    const openLakeAsks = open.length - openBayAsks;
+    if (
+      kind === 'name_bay'
+        ? openBayAsks >= MAX_OPEN_BAY_REQUESTS_PER_USER
+        : openLakeAsks >= MAX_OPEN_REQUESTS_PER_USER
+    ) {
       throw new ConvexError(
         'You have a few requests waiting on a moderator already — give them a chance to catch up.',
       );

@@ -998,11 +998,11 @@ describe('name_bay — the sub-area queue', () => {
     expect(describeRequestOutcome(rows[0] as Doc<'waterBodyRequests'>)).toMatch(/drew this bay/);
   });
 
-  test('a bay ask is not counted against the per-person cap, and does not count others toward it', async () => {
+  test('bay asks have a budget of their own: capped at ten, and never spending the lake-ask budget', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t);
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 10; i++) {
       await skater.as.mutation(api.corpusRequests.create, {
         kind: 'name_bay',
         coord: NOTCH,
@@ -1010,7 +1010,16 @@ describe('name_bay — the sub-area queue', () => {
         name: `Bay ${i}`,
       });
     }
-    // Twelve open bay asks, and a lake ask still goes through; the cap counts lake asks alone.
+    // The eleventh distinct name is refused — a name loop cannot fill the queue (Greptile, #76).
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name: 'Bay 10',
+      }),
+    ).rejects.toThrow(/waiting on a moderator/);
+    // …and a lake ask still goes through: ten open bay asks spend nothing of that budget.
     const other = await seedBody(t, 'osm/2', dormant);
     await expect(
       skater.as.mutation(api.corpusRequests.create, {
@@ -1019,6 +1028,30 @@ describe('name_bay — the sub-area queue', () => {
         waterBodyId: other,
       }),
     ).resolves.toBeTruthy();
+  });
+
+  test('approving closes the asks for every name the answering bay carries, not just the one asked', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
+    const id = await seedBody(t);
+    const ask = (who: typeof one, name: string) =>
+      who.as.mutation(api.corpusRequests.create, {
+        kind: 'name_bay',
+        coord: NOTCH,
+        waterBodyId: id,
+        name,
+      });
+    const first = await ask(one, 'Northwest Bay');
+    const variant = await ask(two, 'NW Bay'); // no fold joins these; the bay's alias does
+    const other = await ask(two, 'Button Bay');
+    await seedBay(t, id, 'Northwest Bay', ['NW Bay']);
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
+    const rows = await t.run((ctx) =>
+      Promise.all([first, variant, other].map((r) => ctx.db.get(r))),
+    );
+    expect(rows.map((r) => r?.status)).toEqual(['approved', 'approved', 'open']);
   });
 
   test('approving from the queue records which sub-area answered the ask', async () => {

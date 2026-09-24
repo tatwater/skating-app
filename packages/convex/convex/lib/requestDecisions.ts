@@ -37,6 +37,12 @@ export async function openSiblings(
   request: Doc<'waterBodyRequests'>,
   limit: number,
   asOf: number = Number.POSITIVE_INFINITY,
+  /**
+   * For an approved bay ask: the sub-area that answered it. Its name *and* aliases are the
+   * question then — the moderator who saved "Northwest Bay" with the alias "NW Bay" has answered
+   * the "NW Bay" ask too, which no name fold could join (Greptile, PR #76).
+   */
+  answeredBy?: Doc<'waterBodySubAreas'> | null,
 ): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
   const none = { rows: [], capped: false };
   let rows: Doc<'waterBodyRequests'>[];
@@ -70,8 +76,9 @@ export async function openSiblings(
       )
       .take(scan);
     if (request.kind === 'name_bay') {
-      const key = requestNameKey(request.name ?? '');
-      rows = rows.filter((r) => requestNameKey(r.name ?? '') === key);
+      const keys = new Set([requestNameKey(request.name ?? '')]);
+      for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKey(n));
+      rows = rows.filter((r) => keys.has(requestNameKey(r.name ?? '')));
     }
   }
   // +2: one for the request itself if it is still open, one to learn whether there are more.
@@ -141,7 +148,8 @@ export async function closeSiblingPage(
   request: Doc<'waterBodyRequests'>,
   decision: Decision,
 ): Promise<void> {
-  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP, decision.now);
+  const answeredBy = decision.subAreaId ? await ctx.db.get(decision.subAreaId) : null;
+  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP, decision.now, answeredBy);
   for (const row of rows) await closeRow(ctx, row, decision);
   if (capped) await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, decision);
 }
@@ -177,6 +185,11 @@ export async function decide(
 
 // ── Bays (D201) ────────────────────────────────────────────────────────────────────────────────
 
+/** Every name a bay answers to — the one it is shown by and its aliases. */
+export function bayNames(bay: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'>): string[] {
+  return [bay.name, ...(bay.aliases ?? [])];
+}
+
 /**
  * The listed sub-area on `waterBodyId` that answers a bay ask by name — its name or an alias folds
  * to the same key. Bounded by the handful of bays one lake has.
@@ -194,9 +207,7 @@ export async function drawnBay(
     .collect();
   return (
     bays.find(
-      (bay) =>
-        bay.removedAt === undefined &&
-        [bay.name, ...(bay.aliases ?? [])].some((n) => requestNameKey(n) === key),
+      (bay) => bay.removedAt === undefined && bayNames(bay).some((n) => requestNameKey(n) === key),
     ) ?? null
   );
 }
@@ -217,6 +228,17 @@ export async function approveNamedBayRequest(
   const request = await ctx.db.get(requestId);
   if (request?.kind !== 'name_bay' || request.waterBodyId !== waterBodyId) {
     throw new ConvexError('That request is not a bay request on this lake');
+  }
+  // The drawing answers the ask only if it is the bay asked for. The editor prefills the name
+  // but leaves it editable, and a renamed save must not mark "Keeler Bay" answered by a bay
+  // called something else (Greptile, PR #76). The asked-for name as an alias is enough — that is
+  // how a moderator says "same bay, better spelling".
+  const bay = await ctx.db.get(subAreaId);
+  const asked = requestNameKey(request.name ?? '');
+  if (!bay || !bayNames(bay).some((n) => requestNameKey(n) === asked)) {
+    throw new ConvexError(
+      `This bay doesn't carry the name that was asked for ("${request.name}"). Keep that name, add it as an alias, or save without the request.`,
+    );
   }
   // Decided while the moderator was drawing (declined in another tab, approved by a colleague):
   // the drawing is still right, and refusing it would roll the bay back for a row that is

@@ -2675,6 +2675,35 @@ describe('sub-areas by chord (D201)', () => {
     expect(row?.mouth?.sagittaM).toBeGreaterThan(0);
   });
 
+  test('a bay saved under another name does not answer the ask — unless it keeps the asked name as an alias', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const requestId = await bayRequest(t, one.id, body, 'Keeler Bay');
+
+    await expect(
+      mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        mouth: CORNER,
+        requestId,
+      }),
+    ).rejects.toThrow(/doesn't carry the name that was asked for/);
+    // Nothing was written: the refusal rolls the whole save back.
+    expect(await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect())).toHaveLength(0);
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
+
+    await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      aliases: ['Keeler Bay'],
+      mouth: CORNER,
+      requestId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('approved');
+  });
+
   test('refuses a request that is not a bay ask on this lake, and draws nothing', async () => {
     const t = harness();
     const here = await seedCanonicalBody(t);

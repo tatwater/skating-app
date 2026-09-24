@@ -954,10 +954,8 @@ function SubAreaTool({
   const liveChord = (): ChordDrawControl | null =>
     chordRef.current && chordRef.current.map === mapRef.current ? chordRef.current.control : null;
 
-  const disarmAll = () => {
-    controlRef.current?.clear();
-    controlRef.current?.stopDrawing();
-    setDrawing(false);
+  /** Put the chord tool away — its layers, its mouth, the bay and the ask it was drawing for. */
+  const disarmChord = () => {
     const live = liveChord();
     if (live) live.clear();
     else dropChord();
@@ -966,6 +964,13 @@ function SubAreaTool({
     setChordRefusal(null);
     setChordTarget(null);
     setChordRequest(null);
+  };
+
+  const disarmAll = () => {
+    controlRef.current?.clear();
+    controlRef.current?.stopDrawing();
+    setDrawing(false);
+    disarmChord();
     setRedrawTarget(null);
     setDraft(null);
   };
@@ -1293,6 +1298,11 @@ function SubAreaTool({
                 onResult({ tone: 'error', text: parsed.error });
                 return;
               }
+              // A pasted shape replaces an active chord rather than sitting beside it: with the
+              // chord still armed, Save would store the chord's polygon, not the one on screen
+              // (Greptile, PR #76). A freehand redraw target stays — pasting is how one replaces
+              // an outline too.
+              disarmChord();
               setDraft(parsed.polygon);
               setPaste('');
               onResult({ tone: 'ok', text: 'Loaded as a draft — check it on the map, then save.' });

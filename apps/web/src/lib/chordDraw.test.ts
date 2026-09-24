@@ -213,6 +213,19 @@ describe('the gesture', () => {
     expect(chordInstruction(last().state)).toMatch(/Drag the handle/);
   });
 
+  it('a side click on island land nobody sees shaded is not a choice — only the shaded water is', () => {
+    const control = tool();
+    control.start();
+    map.fire('click', at(1200, 800));
+    map.fire('click', at(1200, 1000));
+    expect(last().state.step).toBe('side');
+    // The island's interior: inside the larger un-clipped candidate, but land, and unshaded.
+    map.fire('click', at(800, 900));
+    expect(last().state.step).toBe('side');
+    map.fire('click', at(1100, 900)); // the notch water
+    expect(last().state.step).toBe('done');
+  });
+
   it('refuses a b on a different ring and waits for another', () => {
     const control = tool();
     control.start();

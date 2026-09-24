@@ -127,8 +127,13 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
   const { parent } = options;
   let state: ChordState = { step: 'a', sagittaM: 0 };
   let armed = false;
-  /** The candidate regions for the current `a`/`b`, un-clipped — what a side click is tested against. */
-  let candidates: [Polygon, Polygon] | null = null;
+  /**
+   * The candidates' *water* — each side clipped to the parent, exactly what the map shades. A side
+   * click is tested against this, never the un-clipped candidates: on an island ring the larger
+   * candidate is mostly island land nobody sees shaded, and a click there must not count
+   * (Greptile, PR #76).
+   */
+  let shaded: (Polygon | MultiPolygon)[] | null = null;
   let dragging: 'a' | 'b' | 'handle' | null = null;
 
   for (const id of SOURCES) map.addSource(id, { type: 'geojson', data: EMPTY });
@@ -229,12 +234,12 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
     if (!a || !b) return false;
     const result = chordCandidates(parent, a, b);
     if (!result.ok) {
-      candidates = null;
+      shaded = null;
       state = { ...state, refusal: result.reason };
       setData('chord-candidates', []);
       return false;
     }
-    candidates = result.sides;
+    shaded = result.water.filter((w): w is Polygon | MultiPolygon => w !== null);
     state = { ...state, refusal: undefined };
     setData(
       'chord-candidates',
@@ -254,12 +259,11 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
   };
 
   /**
-   * Is a side click inside a candidate at all? Which of the two it names is the derivation's call
+   * Is a side click on shaded water? Which of the two sides it names is the derivation's call
    * (the smallest containing candidate, which matters on an island where they nest); the tool
-   * only refuses a click that is in neither.
+   * only refuses a click that is on neither.
    */
-  const inACandidate = (p: LatLng): boolean =>
-    candidates?.some((c) => pointInPolygon(p, c)) ?? false;
+  const inACandidate = (p: LatLng): boolean => shaded?.some((w) => pointInPolygon(p, w)) ?? false;
 
   const onMouseMove = (e: ChordMapEvent) => {
     if (!armed) return;
@@ -383,7 +387,7 @@ export function createChordDraw(map: ChordMap, options: ChordDrawOptions): Chord
 
   const reset = () => {
     state = { step: 'a', sagittaM: 0 };
-    candidates = null;
+    shaded = null;
     dragging = null;
     for (const id of SOURCES) setData(id, []);
   };
