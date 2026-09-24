@@ -72,6 +72,7 @@ import { enqueueActorNotification } from './notificationQueue';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './photoAccess';
 import { syncReportSubAreas } from './reportSubAreas';
 import { awardPointEvent, checkAndAwardBadges } from './reputation';
+import { postSnapshotOf, recordRevision } from './revisions';
 import { activateOnEvidence } from './standing';
 import { chipInput, iceThickness, latLng, literals, snow } from './validators';
 
@@ -109,6 +110,11 @@ export const reportContent = {
   ),
   notes: v.optional(v.string()),
   point: v.optional(latLng), // optional put-in pin; falls back to the body centroid
+  // The known A06d put-in the pin snapped to (A10 §7.1 / D198) — checked below to be a live put-in
+  // of the report's body, so a condition chip filed on it (D197) has a target the lake can name.
+  // A string at the wire, like core's `ReportInput`, so both clients pass the input through as it
+  // is; `assertPutInOfBody` normalizes it and refuses anything that is not this body's launch.
+  putInId: v.optional(v.string()),
   photoIds: v.optional(v.array(v.id('photos'))),
   // Private-property opt-out (Phase 04, decision #7): false suppresses this report's derived put-in
   // marker (keeps the coarse `place` label). Default (undefined) shows it.
@@ -133,6 +139,7 @@ export function toReportInput(
     conditions?: ReportInput['conditions'];
     notes?: string;
     point?: { lat: number; lng: number };
+    putInId?: string;
   },
   waterBodyId: string,
 ): ReportInput {
@@ -153,7 +160,31 @@ export function toReportInput(
     conditions: args.conditions,
     notes: args.notes,
     point: args.point,
+    putInId: args.putInId,
   };
+}
+
+/**
+ * A `putInId` names a put-in (A10 §7.1). The validator checks it is a non-empty id; this is the
+ * check made with the body in hand: a live (`visible`) put-in of *this* body — never another
+ * lake's launch, never one a moderator hid. Raised in the validator's own error shape so the sheet
+ * shows it beside the picker.
+ */
+export async function assertPutInOfBody(
+  ctx: MutationCtx,
+  putInId: string | undefined,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Id<'putIns'> | undefined> {
+  if (putInId === undefined) return undefined;
+  const id = ctx.db.normalizeId('putIns', putInId);
+  const putIn = id === null ? null : await ctx.db.get(id);
+  if (putIn?.status !== 'visible' || putIn.waterBodyId !== waterBodyId) {
+    throw new ConvexError({
+      code: 'invalid_report',
+      errors: ['putInId: is not a put-in of this water body'],
+    });
+  }
+  return putIn._id;
 }
 
 /**
@@ -284,6 +315,7 @@ export async function createReportRow(
   // hand, and returns immediately for the ~25k bodies with no sub-areas.
   const candidates = await stampCandidates(ctx, body._id);
   assertLocatedSubAreas(n, candidates);
+  const putInId = await assertPutInOfBody(ctx, n.putInId, body._id);
   const subAreas = await resolveReportSubAreas(
     ctx,
     {
@@ -310,6 +342,7 @@ export async function createReportRow(
     source: args.activityId !== undefined ? 'activity' : 'native',
     ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
     postId,
+    ...(putInId !== undefined ? { putInId } : {}),
     ...(n.skateEndPrecision !== undefined ? { skateEndPrecision: n.skateEndPrecision } : {}),
     ...(n.observedFrom !== undefined ? { observedFrom: n.observedFrom } : {}),
     ...(n.sighting !== undefined ? { sighting: n.sighting } : {}),
@@ -664,4 +697,47 @@ async function notifyCorroboration(
     targetId: priorReport._id,
     trigger: { kind: 'corroboration', reportId: priorReport._id, byReportIds: [byReport._id] },
   });
+}
+
+/** The Post's words an edit re-sends (last-write-wins: an omitted field is a cleared one). */
+export const postWordsArgs = v.object({
+  title: v.optional(v.string()),
+  body: v.optional(v.string()),
+});
+
+/**
+ * Rewrite a Post's words as its author (A10-3): the author and moderation gates, the D186 bounds,
+ * then the revision and the patch. Words that did not change write nothing — no revision, no
+ * *edited* mark — so an edit of a Report's chips that re-sends its Post's words unchanged does not
+ * claim the Post was edited. One helper for `posts.update` and the Report edit that carries its
+ * Post's words (`reports.update`'s `post`), so the two cannot disagree about what an edit is.
+ */
+export async function editPostWords(
+  ctx: MutationCtx,
+  postId: Id<'posts'>,
+  words: Infer<typeof postWordsArgs>,
+  profile: Doc<'profiles'>,
+  now: number,
+): Promise<void> {
+  const existing = await ctx.db.get(postId);
+  if (!existing) throw new ConvexError('Post not found');
+  if (existing.authorId !== profile._id) throw new ConvexError('Only the author can edit a post');
+  if (existing.moderationStatus !== 'visible')
+    throw new ConvexError('This post has been moderated and can no longer be edited');
+  const checked = validatePostInput({ title: words.title, body: words.body });
+  if (!checked.ok) {
+    throw new ConvexError({
+      code: 'invalid_post',
+      errors: checked.errors.map((e) => `${e.field}: ${e.message}`),
+    });
+  }
+  const { title, body } = checked.normalized;
+  if (title === existing.title && body === existing.body) return;
+  await recordRevision(
+    ctx,
+    { targetType: 'post', targetId: existing._id, snapshot: postSnapshotOf(existing) },
+    profile._id,
+    now,
+  );
+  await ctx.db.patch(existing._id, { title, body, editedAt: now, updatedAt: now });
 }

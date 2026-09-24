@@ -44,6 +44,7 @@ import {
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import {
+  ACCESS_ALERT_KINDS,
   ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TARGETS,
   ACCESS_ALERT_VERDICTS,
@@ -2200,6 +2201,36 @@ export default defineSchema({
     .index('by_idempotency_key', ['idempotencyKey']),
 
   /**
+   * **What a Post or Report said before its author changed it** (A10-3, founder call 2026-09-21).
+   *
+   * Authors can edit and delete what they shared; a moderator can still see what changed. One row
+   * per author edit, holding the content block **as it stood before** the edit — the words of a
+   * Post, the whole content block of a Report — so the row that is live is always the latest and
+   * the history is the rows. Written only by `posts.update` and `reports.update`, before their
+   * patch; never by moderation (a moderator's action is a `moderationActions` row, and it changes
+   * status, not content). The card shows an *Edited* chip off `editedAt`; the diff is for
+   * moderators (the web console, A10-5).
+   *
+   * `snapshot` is `v.any()` like `moderationActions.metadata`: it is a copy of a row's typed
+   * fields at a moment, and typing it a second time here would be a second schema to keep in step
+   * with the first. Typed at the boundary (`lib/revisions.ts`).
+   *
+   * Typed text, so the departed-user sweep clears it (D62): `contentPurge` deletes a departed
+   * author's revisions past the cutoff by `by_author_replaced_at` — the audit purpose lapses with
+   * the words it was an audit of.
+   */
+  contentRevisions: defineTable({
+    targetType: literals(['post', 'report']),
+    targetId: v.string(),
+    authorId: v.id('profiles'),
+    snapshot: v.any(),
+    /** When the edit replaced this content — the moment it stopped being what was shown. */
+    replacedAt: v.number(),
+  })
+    .index('by_target', ['targetType', 'targetId'])
+    .index('by_author_replaced_at', ['authorId', 'replacedAt']),
+
+  /**
    * **A report's bay memberships, one row per (report, bay)** (A09 / D175) — the indexable copy of
    * `reports.subAreaIds`, because Convex cannot index an array and the bay-scoped feed and the bay
    * bounty gate must both find a spanning report under its *second* bay too. The
@@ -3248,6 +3279,14 @@ export default defineSchema({
      */
     waterBodyId: v.id('waterBodies'),
     reason: literals(ACCESS_REASONS),
+    /**
+     * `accessAlertKindOf(reason)`, stored (A10-3, PR #75 review) so the live reads cap blockers and
+     * conditions in the index range itself — filtering one shared range by reason set made a lake of
+     * live planks a scan to find its locked gate. Written at `create`; the reason never changes.
+     * Required, because a row without it would sit outside every `eq('kind', …)` range — invisible
+     * to the reads. (Added required: dev held no alert rows and prod is uninitialized.)
+     */
+    kind: literals(ACCESS_ALERT_KINDS),
     /** Free text, and the one place in this phase it is allowed — bounded by the row's own expiry. */
     note: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
@@ -3286,7 +3325,8 @@ export default defineSchema({
     retractedByUserId: v.optional(v.id('profiles')),
   })
     /**
-     * The two per-lake reads, and the status prefix is the point (PR #43 review).
+     * The two per-lake reads, and the status prefix is the point (PR #43 review). `kind` sits between
+     * status and the clock (A10-3) so each kind is capped in its own range — see `kind` above.
      *
      * An alert row is never deleted — expiring flips a status — so a lake accumulates them across
      * seasons for ever. These replaced bare `by_water_body` / `by_parking_area` indexes, over which a
@@ -3324,8 +3364,13 @@ export default defineSchema({
      * bucket that optional-field indexes sort first. Pinned rows, which *do* have no expiry, are read
      * by their own status and never touch this bound.
      */
-    .index('by_water_body_status_expires_at', ['waterBodyId', 'status', 'expiresAt'])
-    .index('by_parking_area_status_expires_at', ['parkingAreaId', 'status', 'expiresAt'])
+    .index('by_water_body_status_kind_expires_at', ['waterBodyId', 'status', 'kind', 'expiresAt'])
+    .index('by_parking_area_status_kind_expires_at', [
+      'parkingAreaId',
+      'status',
+      'kind',
+      'expiresAt',
+    ])
     /**
      * The expiry sweep, and the shape is the whole reason `official` is a status.
      *

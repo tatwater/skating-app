@@ -39,7 +39,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
-import { getCurrentProfile, requireContributor } from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { type BodyInfo, bodyInfoFor, type FeedCardCaches, toFeedCard } from './lib/feedCards';
@@ -49,12 +49,17 @@ import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
 import {
   assertLocatedSubAreas,
+  assertPutInOfBody,
   createPost,
+  editPostWords,
   inlineReportArgs,
+  postWordsArgs,
   reportContent,
   toReportInput,
 } from './lib/reportWrite';
 import { trustClassFor } from './lib/reputation';
+import { recordRevision, reportSnapshotOf } from './lib/revisions';
+import { authorRemoveReport } from './moderation';
 import { resolveReportSubAreas, stampCandidates } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
@@ -433,7 +438,16 @@ export const recommended = query({
  * preserves the existing `point` rather than silently clearing it.
  */
 export const update = mutation({
-  args: { reportId: v.id('reports'), ...reportContent },
+  args: {
+    reportId: v.id('reports'),
+    ...reportContent,
+    /**
+     * The words of the Post this Report belongs to, edited in the same transaction (A10-3): the
+     * sheet's *Save changes* is one edit, so a refusal of either half — a Post taken down since,
+     * a title past its bound — lands neither, and the history never holds half of it.
+     */
+    post: v.optional(postWordsArgs),
+  },
   handler: async (ctx, args) => {
     const profile = await requireContributor(ctx);
     const existing = await ctx.db.get(args.reportId);
@@ -469,6 +483,7 @@ export const update = mutation({
     const body = await ctx.db.get(existing.waterBodyId);
     const candidates = await stampCandidates(ctx, existing.waterBodyId);
     assertLocatedSubAreas(n, candidates);
+    const putInId = await assertPutInOfBody(ctx, n.putInId, existing.waterBodyId);
     const subAreas = await resolveReportSubAreas(
       ctx,
       {
@@ -480,8 +495,27 @@ export const update = mutation({
       body?.polygon as unknown as Polygon | MultiPolygon,
     );
 
+    // The Post's words, when the edit carries them — through the same helper as `posts.update`,
+    // inside this transaction, so a refusal there rolls back the Report's half too.
+    if (args.post !== undefined) {
+      if (existing.postId === undefined) throw new ConvexError('This report has no post to edit');
+      await editPostWords(ctx, existing.postId, args.post, profile, now);
+    }
+
+    // What it said before this edit, for a moderator (A10-3) — written before the patch, in the
+    // same transaction, so the history and the row can never disagree about the order of events.
+    await recordRevision(
+      ctx,
+      { targetType: 'report', targetId: args.reportId, snapshot: reportSnapshotOf(existing) },
+      profile._id,
+      now,
+    );
+
     await ctx.db.patch(args.reportId, {
       point,
+      // Last-write-wins like the pin it names: the sheet re-sends the put-in it shows, and clearing
+      // the put-in is an edit like any other.
+      putInId,
       skateEndTime: n.skateEndTime,
       skateStartTime: n.skateStartTime,
       place,
@@ -549,6 +583,24 @@ export const update = mutation({
     // there is a single card to refresh rather than an old one and a new one.
     await recomputeBodySummary(ctx, existing.waterBodyId);
     return args.reportId;
+  },
+});
+
+/**
+ * An author deleting their own Report (A10-3). Soft: the row stays, `removed`, with an
+ * `author_delete` audit row; the Post goes with its last member (D186). A Report a moderator has
+ * already removed is left to them; a hidden one may still be deleted by its author — it is theirs.
+ */
+export const remove = mutation({
+  args: { reportId: v.id('reports') },
+  handler: async (ctx, { reportId }) => {
+    const profile = await requireProfile(ctx);
+    const existing = await ctx.db.get(reportId);
+    if (!existing) throw new ConvexError('Report not found');
+    if (existing.authorId !== profile._id)
+      throw new ConvexError('Only the author can delete a report');
+    await authorRemoveReport(ctx, existing, profile, Date.now());
+    return reportId;
   },
 });
 

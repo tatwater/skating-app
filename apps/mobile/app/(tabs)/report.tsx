@@ -1,318 +1,138 @@
-import { useNetInfo } from '@react-native-community/netinfo';
-import type { Id } from '@skating/convex/dataModel';
-import {
-  formatSkateTime,
-  type HazardQueueItem,
-  hazardTypeLabel,
-  isFlushable,
-  isHazardItemFlushable,
-  type PostDraft,
-  postDraftLabel,
-  WAITING_TO_SEND_COPY,
-} from '@skating/core';
-import * as Location from 'expo-location';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ScrollView } from 'react-native';
+import { api } from '@skating/convex/api';
+import { useQuery } from 'convex/react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
-import { Badge } from '../../src/components/detailUi';
-import { LeavingNotice, useIsLeaving } from '../../src/components/LeavingNotice';
-import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext';
-import { ReportForm } from '../../src/components/ReportForm';
-import { resolveCachedBody } from '../../src/lib/bodyCache';
+import { Button, Paragraph, Spinner, YStack } from 'tamagui';
+import { ReportSheet } from '../../src/components/sheet/ReportSheet';
+import { saveSheetAsDraft } from '../../src/lib/sheetActions';
+import {
+  type DoorParams,
+  doorHref,
+  doorKey,
+  locateTabSheet,
+  openDoor,
+} from '../../src/lib/sheetDoors';
+import { getSheet, setSheet, updateSheet } from '../../src/lib/sheetStore';
 
 /**
- * The center "＋ Report" tab (D28). Online, reports are also created in place from a lake's detail
- * drawer (D47); here the form is **the page** — no second tap to reach it (founder, 2026-09-20; this
- * absorbed the old `draft/new` modal). It's the offline capture entry point (Phase 02a §6.2): your GPS
- * binds the report to the nearest cached lake (or it resolves at sync), and below the form sits
- * **Waiting to send** (A10 §9.2): the signal state, the queued hazards first, then the queued Posts,
- * each with sync + edit + delete. Drafts flush automatically on reconnect (D12); "Sync now" forces
- * it. Picking the lake by name when you're not on it is the sheet (A10-3).
+ * The center "＋ Report" tab (D28) — **the report sheet is the page** (A10-3, founder call
+ * 2026-09-21): no overview, no second tap. Every door lands here with its params
+ * (`sheetDoors.ts`): a lake's drawer, a finished recording, an unreported skate, a draft, a
+ * published Report to edit; the tab alone opens on the lake under your feet, or with the picker.
+ * Drafts and *Waiting to send* are separate screens behind the sheet's header buttons.
  *
- * While a deletion is pending the form goes (D62 amendment) but **the queue stays**: those drafts are
- * the skater's own unsent work, and this is the only screen that can show or delete them. A draft
- * that flushes now fails at the server gate and says so on its row, which is the honest outcome —
- * the alternative is a queue nobody can reach quietly failing forever.
+ * The sheet's state lives in `sheetStore`, not here, so leaving for the map (*mark one here*) and
+ * coming back finds it as it was. A door only opens a new sheet when it is a *different* door
+ * from the one open — returning to the tab never wipes a half-written report. Every navigate to a
+ * door carries its own stamp (`doorHref`'s `at`), because the tab keeps its last params: without
+ * it, the same lake's *Add a report* after a Post would be the door already consumed, and the
+ * focus path below would open the tab's own door in its place.
  */
 export default function ReportScreen() {
   const router = useRouter();
-  const { drafts, hazardItems, pendingCount, refresh, flushNow, removeDraft, removeHazardItem } =
-    useOfflineDrafts();
-  const leaving = useIsLeaving();
-  // `isConnected` is `null` while unknown; only a definite `false` reads as no signal.
-  const offline = useNetInfo().isConnected === false;
-  // Bumped to remount the capture block: Cancel and Save both want a clean form *and* a fresh GPS
-  // fix, and a key does both at once. Tab switches don't bump it, so a half-typed report survives a
-  // glance at the map.
-  const [captureKey, setCaptureKey] = useState(0);
-  const resetCapture = useCallback(() => setCaptureKey((k) => k + 1), []);
+  const params = useLocalSearchParams() as DoorParams;
+  const profile = useQuery(api.profiles.current, {});
+  const [state, setState] = useState<'opening' | 'open' | 'gone' | 'failed'>(
+    getSheet() ? 'open' : 'opening',
+  );
+  const openedFor = useRef<string | null>(getSheet() ? '' : null);
+  // The door a failed opening retries — through `doorHref`, whose fresh stamp is a new door, so
+  // *Try again* re-runs the opening below rather than a second copy of it.
+  const retryDoor = useRef<Omit<DoorParams, 'at'>>({});
+  const key = doorKey(params);
+  // The door's params, read inside the effect through a ref: the effect keys on the door, and the
+  // params object is a new identity every render.
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
-  // Refresh from sqlite whenever the tab regains focus (e.g. after editing a draft in the modal).
+  useEffect(() => {
+    if (profile === undefined) return;
+    // A door already open, or the tab revisited with the sheet still there: leave it.
+    if (openedFor.current === key && getSheet() !== null) return;
+    if (openedFor.current !== null && key === '' && getSheet() !== null) return;
+    let cancelled = false;
+    openedFor.current = key;
+    setState('opening');
+    // A half-written sheet a new door would replace goes to Drafts first — a skater must never face
+    // "finish now or lose it", least of all by tapping a lake.
+    const current = getSheet();
+    const parked =
+      current?.dirty && current.mode.kind === 'create'
+        ? saveSheetAsDraft(current, Date.now()).catch(() => null)
+        : Promise.resolve(null);
+    void parked
+      .then(() => openDoor(paramsRef.current, profile?.showPutInDefault, Date.now()))
+      .then((sheet) => {
+        if (cancelled) return;
+        if (sheet === null) {
+          setState('gone');
+          return;
+        }
+        setSheet(sheet);
+        setState('open');
+        // The tab's own door: the lake under your feet arrives after the sheet, never before it.
+        if (sheet.door === 'page') void locateTabSheet(sheet.draftId, getSheet, updateSheet);
+      })
+      // A door that could not be read — the edit door's query, a draft read — is said so, with a
+      // way back, rather than a spinner that never ends.
+      .catch(() => {
+        if (cancelled) return;
+        const { at: _at, ...door } = paramsRef.current;
+        retryDoor.current = door;
+        setState('failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [key, profile]);
+
+  // Coming back from the map with the sheet closed by Post: start fresh on the tab's own door.
   useFocusEffect(
     useCallback(() => {
-      refresh();
-    }, [refresh]),
+      if (getSheet() === null && state === 'open') {
+        openedFor.current = null;
+        setState('opening');
+        void openDoor({}, profile?.showPutInDefault, Date.now())
+          .then((sheet) => {
+            if (sheet) setSheet(sheet);
+            setState(sheet ? 'open' : 'gone');
+            if (sheet) void locateTabSheet(sheet.draftId, getSheet, updateSheet);
+          })
+          .catch(() => {
+            retryDoor.current = {};
+            setState('failed');
+          });
+      }
+    }, [state, profile?.showPutInDefault]),
   );
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <YStack gap="$4">
-          <YStack gap="$2">
-            <H4 color="$foreground">Add a report</H4>
-            {leaving ? (
-              <LeavingNotice />
-            ) : (
-              <Paragraph color="$foregroundMuted">
-                Works with no signal — it posts automatically when you're back online.
-              </Paragraph>
-            )}
-          </YStack>
-
-          {leaving ? null : (
-            <ReportCapture
-              key={captureKey}
-              onClose={resetCapture}
-              onSaved={() => {
-                // The tab is already focused, so the focus-refresh above won't fire — pull the new
-                // draft into the list ourselves before the form clears.
-                refresh();
-                resetCapture();
-              }}
-            />
-          )}
-
-          {drafts.length > 0 || hazardItems.length > 0 ? (
-            <YStack gap="$2">
-              <XStack justifyContent="space-between" alignItems="center">
-                <Text color="$foreground" fontWeight="600">
-                  {pendingCount > 0 ? `Waiting to send · ${pendingCount}` : 'Queued'}
-                </Text>
-                {pendingCount > 0 && !offline ? (
-                  <Button size="$2" onPress={() => void flushNow()}>
-                    Sync now
-                  </Button>
-                ) : null}
-              </XStack>
-              {/* The signal line (A10 §9.2): what the queue is waiting on, and that closing the app is
-                  fine. One sentence, from core, so the promise is worded once. */}
-              {pendingCount > 0 ? (
-                <Paragraph color="$foregroundMuted" fontSize={13}>
-                  {offline ? WAITING_TO_SEND_COPY.offline : WAITING_TO_SEND_COPY.online}
-                </Paragraph>
-              ) : null}
-              {/* Hazards first — they're safety content and flush first (see `flushDrafts`). A queued
-                  hazard that hit a permanent rejection lives here until dismissed, so it can't silently
-                  vanish after "it'll post when you're back in signal". */}
-              {hazardItems.map((item) => (
-                <HazardItemRow
-                  key={item.id}
-                  item={item}
-                  onDelete={() => removeHazardItem(item.id)}
-                />
-              ))}
-              {drafts.map((draft) => (
-                <DraftRow
-                  key={draft.id}
-                  draft={draft}
-                  onEdit={() =>
-                    router.navigate({ pathname: '/draft/[id]', params: { id: draft.id } })
-                  }
-                  onDelete={() => removeDraft(draft.id)}
-                />
-              ))}
-            </YStack>
-          ) : null}
+      {state === 'gone' ? (
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
+          <Paragraph color="$foregroundMuted">That report is no longer available.</Paragraph>
+          <Button onPress={() => router.navigate(doorHref({}))}>Start a new one</Button>
         </YStack>
-      </ScrollView>
+      ) : state === 'failed' ? (
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3" padding="$4">
+          <Paragraph color="$foregroundMuted" textAlign="center">
+            Couldn't open your sheet. Check your connection and try again.
+          </Paragraph>
+          <Button onPress={() => router.navigate(doorHref(retryDoor.current))}>Try again</Button>
+        </YStack>
+      ) : state === 'opening' && getSheet() === null ? (
+        <YStack flex={1} alignItems="center" justifyContent="center" gap="$3">
+          <Spinner color="$primary" />
+          <Paragraph color="$foregroundMuted">Opening your sheet…</Paragraph>
+        </YStack>
+      ) : (
+        <ReportSheet
+          onDone={() => {
+            openedFor.current = null;
+          }}
+        />
+      )}
     </SafeAreaView>
-  );
-}
-
-type Located =
-  | { phase: 'locating' }
-  | { phase: 'denied' }
-  /** Permission was fine but the fix never came — location services off, a timeout, an airplane-mode phone. */
-  | { phase: 'failed' }
-  | {
-      phase: 'ready';
-      coord: { lat: number; lng: number };
-      waterBodyId?: Id<'waterBodies'>;
-      bodyName?: string;
-    };
-
-/**
- * Locate, then the form. Uses the device GPS to bind the report to the nearest cached lake (Layer-2
- * auto-select); if none is cached, the draft carries just the coord and the lake is resolved
- * server-side at flush (`waterBodies.resolveBodyForCoord`). Rendered off the map, so the `ReportForm`
- * uses its no-map put-in fallback. Everything here can run with no signal. Located once per mount —
- * the parent remounts it (by key) whenever a fresh fix is wanted.
- */
-function ReportCapture({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [state, setState] = useState<Located>({ phase: 'locating' });
-
-  useEffect(() => {
-    let canceled = false;
-    void (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          if (!canceled) setState({ phase: 'denied' });
-          return;
-        }
-        const pos = await Location.getCurrentPositionAsync({});
-        const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        const match = resolveCachedBody(coord);
-        if (!canceled) {
-          setState({
-            phase: 'ready',
-            coord,
-            waterBodyId: match?.waterBodyId as Id<'waterBodies'> | undefined,
-            bodyName: match?.name,
-          });
-        }
-      } catch {
-        // Either call rejects when location services are off or the fix times out. Without this
-        // the rejection was unhandled and the tab sat on its spinner forever (Greptile, PR #69).
-        if (!canceled) setState({ phase: 'failed' });
-      }
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  if (state.phase === 'locating') {
-    return (
-      <YStack alignItems="center" gap="$3" paddingVertical="$6">
-        <Spinner color="$primary" />
-        <Paragraph color="$foregroundMuted">Finding your location…</Paragraph>
-      </YStack>
-    );
-  }
-
-  if (state.phase === 'denied') {
-    return (
-      <YStack alignItems="center" gap="$3" paddingVertical="$6">
-        <Paragraph color="$foregroundMuted" textAlign="center">
-          Location permission is needed to capture a report where you're skating.
-        </Paragraph>
-        {/* Remounting re-asks: once the permission is granted in Settings the next tap goes through. */}
-        <Button onPress={onClose}>Try again</Button>
-      </YStack>
-    );
-  }
-
-  if (state.phase === 'failed') {
-    return (
-      <YStack alignItems="center" gap="$3" paddingVertical="$6">
-        <Paragraph color="$foregroundMuted" textAlign="center">
-          Couldn't get your location. Check that location services are on, then try again.
-        </Paragraph>
-        <Button onPress={onClose}>Try again</Button>
-      </YStack>
-    );
-  }
-
-  return (
-    <ReportForm
-      coord={state.coord}
-      waterBodyId={state.waterBodyId}
-      bodyName={state.bodyName}
-      onClose={onClose}
-      onSaved={onSaved}
-    />
-  );
-}
-
-/** One queued Post (A10 §9.1): its title or its lakes, the latest skate, its state. */
-function DraftRow({
-  draft,
-  onEdit,
-  onDelete,
-}: {
-  draft: PostDraft;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const pending = isFlushable(draft);
-  const latest = Math.max(...draft.reports.map((r) => r.form.skateEndTime));
-  return (
-    <YStack
-      gap="$2"
-      padding="$3"
-      borderWidth={1}
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
-    >
-      <XStack justifyContent="space-between" alignItems="center" gap="$2">
-        <Text color="$foreground" flex={1}>
-          {postDraftLabel(draft)}
-        </Text>
-        <Badge tone={draft.status === 'error' ? 'solid' : undefined}>
-          {draft.status === 'error' ? 'Needs attention' : pending ? 'Waiting' : 'Sent'}
-        </Badge>
-      </XStack>
-      <Text color="$foregroundMuted" fontSize={12}>
-        Skated {formatSkateTime(latest)}
-        {draft.reports.length > 1 ? ` · ${draft.reports.length} lakes` : ''}
-      </Text>
-      {draft.status === 'error' && draft.errorMessage ? (
-        <Text color="$danger" fontSize={12}>
-          {draft.errorMessage}
-        </Text>
-      ) : null}
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$2" chromeless onPress={onDelete}>
-          Delete
-        </Button>
-        <Button size="$2" onPress={onEdit}>
-          Edit
-        </Button>
-      </XStack>
-    </YStack>
-  );
-}
-
-/**
- * A queued on-ice hazard or confirmation (Phase 09a). No edit affordance — a hazard is immutable once
- * captured — but it must be *visible and deletable*, so a permanent rejection on flush (a removed
- * lake, a minor, an unresolvable location) is something the skater can see and clear rather than a
- * silent, unrecoverable row that also never frees its photo files.
- */
-function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: () => void }) {
-  const pending = isHazardItemFlushable(item);
-  const title = item.kind === 'hazard' ? hazardTypeLabel(item.type) : 'Hazard confirmation';
-  return (
-    <YStack
-      gap="$2"
-      padding="$3"
-      borderWidth={1}
-      borderColor="$border"
-      borderRadius="$4"
-      backgroundColor="$surfaceMuted"
-    >
-      <XStack justifyContent="space-between" alignItems="center" gap="$2">
-        <Text color="$foreground" flex={1}>
-          {title}
-        </Text>
-        <Badge tone={item.status === 'error' ? 'solid' : undefined}>
-          {item.status === 'error' ? 'Needs attention' : pending ? 'Waiting' : 'Sent'}
-        </Badge>
-      </XStack>
-      {item.status === 'error' && item.errorMessage ? (
-        <Text color="$danger" fontSize={12}>
-          {item.errorMessage}
-        </Text>
-      ) : null}
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button size="$2" chromeless onPress={onDelete}>
-          Delete
-        </Button>
-      </XStack>
-    </YStack>
   );
 }

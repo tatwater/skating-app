@@ -769,6 +769,7 @@ describe('a live alert survives a lake full of settled ones', () => {
           putInId,
           waterBodyId,
           reason: 'not_plowed' as const,
+          kind: 'blocker' as const,
           createdByUserId: (await ctx.db.query('profiles').first())?._id as Id<'profiles'>,
           createdAt: Date.now() - (i + 2) * DAY_MS,
           season: seasonOf(Date.now()),
@@ -804,6 +805,7 @@ describe('a live alert survives a lake full of settled ones', () => {
           putInId,
           waterBodyId,
           reason: 'lot_full' as const,
+          kind: 'blocker' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: Date.now() + i,
           season: seasonOf(Date.now()),
@@ -819,6 +821,57 @@ describe('a live alert survives a lake full of settled ones', () => {
     expect(live.map((a) => a.id)).toContain(pinned);
     // And it sorts first, because a moderator's claim outranks a passer-by's.
     expect(live[0]?.id).toBe(pinned);
+  });
+  test('a live blocker survives a cap of newer conditions, and the launch stays demoted (A10-3 §7.2)', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const gate = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+
+    // The sheet's planks: more than one cap of them, all fresher than the gate.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 80; i++) {
+        await ctx.db.insert('accessAlerts', {
+          targetType: 'put_in' as const,
+          putInId,
+          waterBodyId,
+          reason: 'plank_needed' as const,
+          kind: 'condition' as const,
+          createdByUserId: author.id as Id<'profiles'>,
+          createdAt: Date.now() + i,
+          season: seasonOf(Date.now()),
+          expiresAt: Date.now() + 30 * DAY_MS + i,
+          status: 'active' as const,
+          confirmCount: 0,
+          denyCount: 0,
+        });
+      }
+    });
+
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.map((a) => a.id)).toContain(gate);
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(access.blockedIds).toEqual([putInId]);
+    // And the conditions are capped on their own, not silently dropped.
+    expect(access.alerts.filter((a) => a.reason === 'plank_needed').length).toBeGreaterThan(0);
+  });
+
+  test('a pinned condition is still live — a pin is not only for blockers', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const plank = await author.as.mutation(api.accessAlerts.create, {
+      ...ALERT,
+      putInId,
+      reason: 'plank_needed',
+    });
+    await mod.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: plank,
+      official: true,
+      reason: 'the club keeps one there',
+    });
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.find((a) => a.id === plank)).toMatchObject({ official: true });
+    // Pinned or not, a condition never demotes the launch.
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId });
+    expect(access.blockedIds).toEqual([]);
   });
 });
 
@@ -857,6 +910,7 @@ describe('the cap ranks by observation time, not by when the row landed', () => 
           putInId,
           waterBodyId,
           reason: 'not_plowed' as const,
+          kind: 'blocker' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: now - 10 * DAY_MS,
           season: seasonOf(now),
@@ -899,6 +953,7 @@ describe('an unswept backlog cannot hide a confirmed, still-live warning', () =>
         putInId,
         waterBodyId,
         reason: 'road_closed' as const,
+        kind: 'blocker' as const,
         note: 'Town has not reopened the gate',
         createdByUserId: author.id as Id<'profiles'>,
         createdAt: now - 50 * DAY_MS,
@@ -920,6 +975,7 @@ describe('an unswept backlog cannot hide a confirmed, still-live warning', () =>
           putInId,
           waterBodyId,
           reason: 'lot_full' as const,
+          kind: 'blocker' as const,
           createdByUserId: author.id as Id<'profiles'>,
           createdAt: now - 40 * DAY_MS,
           season: seasonOf(now),
@@ -1165,5 +1221,17 @@ describe('a shared-lot alert is found however many lots the lake has', () => {
     // A gate is locked for everybody who parks there, including the people going to the big lake.
     const onBusy = await t.query(api.accessAlerts.listForBody, { waterBodyId: busy });
     expect(onBusy.map((a) => a.id)).toContain(alertId);
+  });
+});
+
+describe('accessAlerts.kind (A10-3, PR #75 review)', () => {
+  test('create stamps the kind itself — the live reads range on it', async () => {
+    const { t, putInId, author } = await setup();
+    const id = await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'plank_needed',
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.kind).toBe('condition');
   });
 });

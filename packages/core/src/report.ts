@@ -115,6 +115,12 @@ export interface ReportInput {
   /** Optional put-in pin the skater dropped (access point); becomes `reports.point`. */
   point?: LatLng;
   /**
+   * The known A06d put-in the skater tapped (A10 §7.1 / D198) — the *named* thing `point` snapped
+   * to, when it did. The server checks it is a live put-in of this body; absent when the point is
+   * "somewhere else" (and that point is then the put-in's proposal, `putIns.listForBody` derives).
+   */
+  putInId?: string;
+  /**
    * The per-report put-in opt-out (Phase 04 decision #7): `false` keeps the precise put-in off the map
    * and, for a report published from a track, clips the path's ends (D58). Omitted means shown — the
    * stored field is optional with that default, so the form only sends the opt-out. See
@@ -162,6 +168,7 @@ export interface NormalizedReport {
   conditions?: NormalizedConditions;
   notes?: string;
   point?: LatLng;
+  putInId?: string;
 }
 
 export interface ReportValidationError {
@@ -523,6 +530,9 @@ export function validateReportInput(
   if (input.point !== undefined && !isValidCoord(input.point)) {
     errors.push({ field: 'point', message: 'is not a valid coordinate' });
   }
+  if (input.putInId !== undefined && input.putInId.trim() === '') {
+    errors.push({ field: 'putInId', message: 'must name a put-in' });
+  }
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -548,6 +558,7 @@ export function validateReportInput(
   const notes = input.notes?.trim();
   if (notes) normalized.notes = notes;
   if (input.point !== undefined) normalized.point = input.point;
+  if (input.putInId !== undefined) normalized.putInId = input.putInId;
 
   return { ok: true, normalized };
 }

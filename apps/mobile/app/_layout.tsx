@@ -85,12 +85,11 @@ function RootNavigator() {
           name="support"
           options={{ presentation: 'modal', headerShown: true, title: 'Contact support' }}
         />
-        {/* Offline draft editing (Phase 02a §6.2) — a full-screen modal, off the map. New captures
-            happen inline on the ＋ Report tab. */}
-        <Stack.Screen
-          name="draft/[id]"
-          options={{ presentation: 'modal', headerShown: true, title: 'Edit draft' }}
-        />
+        {/* The sheet's two lists (A10-3): the drafts the author is holding and the queue waiting
+            on signal. Full-screen modals behind the ＋ Report tab's header; a draft reopens on the
+            sheet itself. */}
+        <Stack.Screen name="drafts" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="queue" options={{ presentation: 'modal' }} />
       </Stack.Protected>
       <Stack.Protected guard={route === 'onboarding'}>
         <Stack.Screen name="onboarding" />

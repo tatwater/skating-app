@@ -98,6 +98,11 @@ describe('silhouetteProjection — an equirectangular fit', () => {
           }
           // North is up: a higher latitude is a smaller y.
           expect(p.toXY([minLng, minLat + dLat])[1]).toBeLessThan(p.toXY([minLng, minLat])[1]);
+          // The inverse brings a tap back to where it was (A10-3's picker) — inside the frame.
+          const inside: [number, number] = [minLng + dLng * 0.3, minLat + dLat * 0.7];
+          const back = p.fromXY(p.toXY(inside));
+          expect(back[0]).toBeCloseTo(inside[0], 9);
+          expect(back[1]).toBeCloseTo(inside[1], 9);
         },
       ),
     );

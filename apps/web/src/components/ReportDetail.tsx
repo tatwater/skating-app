@@ -26,7 +26,7 @@ import {
   type ThicknessReading,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { Comments } from './CommentThread';
 import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
@@ -363,6 +363,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // The author's own edit dialog (A06f). Declared with the other hooks, above the loading/unavailable
   // early returns, so the hook order is stable across a report that arrives late.
   const [editing, setEditing] = useState(false);
+  // The author's own takedown (A10-3): soft, audited; the Post goes with its last Report (D186).
+  const removeReport = useMutation(api.reports.remove);
+  const [deleting, setDeleting] = useState(false);
 
   // Fly to the report's put-in point as soon as the report loads.
   useEffect(() => {
@@ -494,6 +497,21 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         <div className="flex flex-wrap gap-1 px-4 pb-2">
           <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
             Edit report
+          </Button>
+          {/* Delete is the author's too (A10-3, founder call 2026-09-21) — soft, with an audit
+              row a moderator can read; the Post goes when its last Report does. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={deleting}
+            onClick={() => {
+              if (!window.confirm('Delete this report? It comes off the lake and the feed.'))
+                return;
+              setDeleting(true);
+              removeReport({ reportId: report._id }).catch(() => setDeleting(false));
+            }}
+          >
+            {deleting ? 'Deleting…' : 'Delete report'}
           </Button>
         </div>
       ) : null}

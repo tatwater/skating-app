@@ -107,6 +107,12 @@ export interface CarriedReportFields {
   thicknessScope?: ThicknessScope;
   /** The D194 facets beside the depth this form edits. */
   snow?: Omit<Snow, 'depthCm'>;
+  /**
+   * The known put-in the stored pin names (A10 §7.1 / D198). This form has no picker for it, and
+   * `reports.update` is last-write-wins over it, so it goes back as it was — unless the edit drops a
+   * new pin, which is then a point of its own and no launch's.
+   */
+  putInId?: string;
 }
 
 export interface ReportFormState {
@@ -269,6 +275,9 @@ export function buildReportInput(
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
+    // The stored put-in stands while the pin does: a new pin is "somewhere else" (`putIns.listForBody`
+    // then derives the proposal); no pin keeps `reports.update`'s existing point, and its launch.
+    ...(!point && carried?.putInId !== undefined ? { putInId: carried.putInId } : {}),
     // Only the opt-out travels: the stored field is optional-defaults-to-shown, and a draft saved
     // before the toggle existed (no `showPutIn` at all) must keep reading as shown.
     ...(form.showPutIn === false ? { showPutIn: false } : {}),
@@ -306,6 +315,7 @@ export interface StoredReportForForm {
     precip?: PrecipType;
   };
   notes?: string;
+  putInId?: string;
   showPutIn?: boolean;
 }
 
@@ -437,6 +447,7 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
     surfaceTags: (report.surfaceTags ?? []).map(toLocatedChip),
     thicknessScope: report.iceThickness?.scope,
     snow: Object.keys(definedOnly(snowFacets)).length > 0 ? definedOnly(snowFacets) : undefined,
+    putInId: report.putInId,
   }) as CarriedReportFields;
   return {
     skateEndTime: report.skateEndTime,

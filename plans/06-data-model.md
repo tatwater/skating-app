@@ -124,7 +124,8 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | Table | For |
 | --- | --- |
 | `contentFlags` | abuse and safety reports on any target; dedup per target *is* the corroboration count (A06f); corrections dedup per reason (D180) — D32 |
-| `moderationActions` | the audit log: who did what, why — D37 |
+| `moderationActions` | the audit log: who did what, why — D37; an author's own takedown is `author_delete` — A10-3 |
+| `contentRevisions` | what a Post or Report said before each author edit, for a moderator's comparison; the card shows only *Edited*; cleared with the words by the departed-user sweep — A10-3 |
 | `supportTickets` | the in-app support inbox, emailed to the operator — D37 |
 | `metricSnapshots` | pre-aggregated numbers every `/admin` chart reads, one row per (metric, day) — charts never scan the corpus — 07-2 |
 

@@ -448,6 +448,64 @@ describe('reports.create', () => {
   });
 });
 
+describe('reports.putInId — the known put-in the pin snapped to (A10 §7.1 / D198)', () => {
+  async function seedPutIn(
+    t: ReturnType<typeof convexTest>,
+    waterBodyId: Id<'waterBodies'>,
+    status: 'visible' | 'hidden' = 'visible',
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.9, lng: 0.5 },
+        source: 'osm' as const,
+        status,
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  test('stores a live put-in of the body on create; an edit re-sends or clears it', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const putInId = await seedPutIn(t, id);
+    const asUser = await seedUser(t, 'clerk_a');
+    const reportId = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: Date.now() - 60_000,
+      putInId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.putInId).toBe(putInId);
+
+    await asUser.mutation(api.reports.update, {
+      ...OBSERVED,
+      reportId,
+      skateEndTime: Date.now() - 60_000,
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.putInId).toBeUndefined();
+  });
+
+  test('refuses a hidden put-in, another lake’s put-in, and a string that is no put-in', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const other = await seedBody(t, 'osm/2');
+    const hidden = await seedPutIn(t, id, 'hidden');
+    const foreign = await seedPutIn(t, other.id);
+    const asUser = await seedUser(t, 'clerk_a');
+    for (const putInId of [hidden, foreign, 'not-a-put-in']) {
+      await expect(
+        asUser.mutation(api.reports.create, {
+          ...OBSERVED,
+          waterBodyId: id,
+          skateEndTime: Date.now() - 60_000,
+          putInId,
+        }),
+      ).rejects.toThrow(/not a put-in of this water body/);
+    }
+  });
+});
+
 describe('reports.listByWaterBody (all public, D13)', () => {
   test('sorts by skate time desc and excludes moderation-hidden reports', async () => {
     const t = convexTestWithGeo();

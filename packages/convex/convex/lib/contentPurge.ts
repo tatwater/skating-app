@@ -87,6 +87,7 @@ export function redactCutoff(now: number): number {
  */
 const CATEGORIES = [
   'posts',
+  'revisions',
   'reports',
   'hazards',
   'comments',
@@ -141,13 +142,16 @@ export interface RedactionResult {
     accessAlerts: number;
     photos: number;
   };
-  /** Rows removed outright — private, unpublished, or a standing ask nobody is making any more. */
-  erased: { bounties: number; recordings: number; photos: number };
+  /**
+   * Rows removed outright — private, unpublished, a standing ask nobody is making any more, or the
+   * edit history whose words are being cleared.
+   */
+  erased: { bounties: number; recordings: number; photos: number; revisions: number };
 }
 
 const EMPTY: Omit<RedactionResult, 'more' | 'cursor'> = {
   redacted: { posts: 0, reports: 0, hazards: 0, comments: 0, flags: 0, accessAlerts: 0, photos: 0 },
-  erased: { bounties: 0, recordings: 0, photos: 0 },
+  erased: { bounties: 0, recordings: 0, photos: 0, revisions: 0 },
 };
 
 /** How one pass is scoped. See the `final` note in the file header — it is the load-bearing one. */
@@ -218,6 +222,8 @@ export async function redactAgedContent(
     switch (which) {
       case 'posts':
         return redactPosts();
+      case 'revisions':
+        return eraseRevisions();
       case 'reports':
         return redactReports();
       case 'hazards':
@@ -256,6 +262,27 @@ export async function redactAgedContent(
       if (post.title === undefined && post.body === undefined) continue;
       await ctx.db.patch(post._id, { title: undefined, body: undefined });
       result.redacted.posts++;
+    }
+    return nextCursor(page);
+  }
+
+  // ── Revisions: what a Post or Report used to say (A10-3) ───────────────────────────────────────
+  //
+  // Typed text twice over — a snapshot of a title, a prose, a note — so it clears on the same clock
+  // as the words it copied. Deleted rather than redacted: a revision exists for a moderator to
+  // compare an edit against, and once the words are gone there is nothing to compare. Aged on
+  // `replacedAt` (when the edit happened), the row's own clock, by an author-led index.
+  async function eraseRevisions(): Promise<string | null> {
+    const page = await ctx.db
+      .query('contentRevisions')
+      .withIndex('by_author_replaced_at', (q) => {
+        const authored = q.eq('authorId', userId);
+        return final ? authored : authored.lt('replacedAt', cutoff);
+      })
+      .paginate({ cursor, numItems: pageSize });
+    for (const revision of page.page) {
+      await ctx.db.delete(revision._id);
+      result.erased.revisions++;
     }
     return nextCursor(page);
   }

@@ -39,15 +39,25 @@
 
 import type { AccessConditionReason } from './accessAlert';
 import type { LatLng } from './geometry';
+import type { HazardVerdict } from './hazardLifecycle';
 import {
   type MinimumSetTerm,
   minimumSetGaps,
+  type ReportConditionsInput,
   type ReportInput,
   type ThicknessReadingInput,
 } from './report';
-import type { LocatedIceType, LocatedSurfaceTag } from './reportFields';
+import {
+  type ChipInput,
+  type LocatedChip,
+  type LocatedIceType,
+  type LocatedSurfaceTag,
+  type Snow,
+  toLocatedChip,
+} from './reportFields';
 import { formatThicknessReading, humanizeEnum } from './reportView';
 import type {
+  IceType,
   ObservedFrom,
   Sighting,
   SkateEndPrecision,
@@ -56,8 +66,10 @@ import type {
   SnowDrift,
   SnowImpediment,
   Suitability,
+  SurfaceTag,
   ThicknessScope,
 } from './types';
+import { cmToInches, inchesToCm } from './units';
 import { describeLocatedChip, type Where } from './where';
 
 // ── Sections ────────────────────────────────────────────────────────────────────────────────────
@@ -164,8 +176,27 @@ export const FIELD_SECTION: Record<SheetFieldKey, SheetSection> = {
   accessConditions: 'access',
 };
 
-/** A hazard the track passed (§6.2), with the author's answer — `undefined` until they answer. */
-export type PassedVerdict = 'still_there' | 'gone' | 'didnt_look';
+/**
+ * A hazard the track passed (§6.2) or the body carries (§6 (d)), with the author's answer —
+ * `undefined` until they answer. The three D52 verdicts, as `hazardConfirmations.confirm` takes
+ * them, plus *didn't look*: silence is never a vote, and neither is "I didn't go there". A tick-
+ * through "gone" would be `fully_healed` under a softer label — the one vote D52 makes deliberately
+ * hard — so the word stays the word (founder call, 2026-09-21).
+ */
+export type PassedVerdict = Exclude<HazardVerdict, 'never_existed'> | 'didnt_look';
+export const PASSED_VERDICTS = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  'didnt_look',
+] as const satisfies readonly PassedVerdict[];
+
+/** The verdicts that file a confirmation (`via: 'report_flow'`); *didn't look* files nothing. */
+export function confirmableVerdict(
+  verdict: PassedVerdict,
+): Exclude<PassedVerdict, 'didnt_look'> | null {
+  return verdict === 'didnt_look' ? null : verdict;
+}
 
 export interface ReportSheetState {
   waterBodyId?: string;
@@ -181,6 +212,20 @@ export interface ReportSheetState {
     notes: string;
     point?: LatLng;
     putInId?: string;
+    /** The lot the skater parked at (A06d), when they chose one — a target for lot-shaped conditions (D197). */
+    parkingAreaId?: string;
+    /** The one-line access note that rides the condition alerts (D197). */
+    accessNote?: string;
+    /** The per-report put-in opt-out (Phase 04 #7). `undefined` reads as shown, like the stored field. */
+    showPutIn?: boolean;
+    /**
+     * The report's weather block. On a fresh sheet, absent — the server autofills from Open-Meteo
+     * at create, as it does today — until the author corrects what the sheet shows for the hour
+     * (founder call, 2026-09-21), which stores the block as `source: 'user'`. On an edit, seeded
+     * whole from the stored row with its source, because `reports.update` is last-write-wins over
+     * the block and an omitted block is a cleared one.
+     */
+    conditions?: ReportConditionsInput;
     photoIds: string[];
     /** Hazards drawn from the sheet or bundled (D55): ids the Report will carry. */
     hazardIds: string[];
@@ -199,7 +244,11 @@ function emptyField<V>(multi: boolean): ChipField<V> {
 }
 
 /** A fresh sheet on a body (door one), or with no body yet (door two). `observedFrom` defaults to on the ice, untouched. */
-export function emptySheet(openedAtMs: number, waterBodyId?: string): ReportSheetState {
+export function emptySheet(
+  openedAtMs: number,
+  waterBodyId?: string,
+  opts: { showPutIn?: boolean } = {},
+): ReportSheetState {
   const fields = {} as SheetFields;
   for (const key of Object.keys(FIELD_SECTION) as SheetFieldKey[]) {
     (fields as Record<SheetFieldKey, ChipField<unknown>>)[key] = emptyField(MULTI_FIELDS.has(key));
@@ -211,7 +260,13 @@ export function emptySheet(openedAtMs: number, waterBodyId?: string): ReportShee
     ...(waterBodyId !== undefined ? { waterBodyId } : {}),
     openedAtMs,
     fields,
-    scalars: { notes: '', photoIds: [], hazardIds: [], passedVerdicts: {} },
+    scalars: {
+      notes: '',
+      photoIds: [],
+      hazardIds: [],
+      passedVerdicts: {},
+      ...(opts.showPutIn !== undefined ? { showPutIn: opts.showPutIn } : {}),
+    },
     touchedScalars: {},
     collapsed: Object.fromEntries(SHEET_SECTIONS.map((s) => [s, false])) as Record<
       SheetSection,
@@ -233,8 +288,14 @@ export interface ExtractedValue<V> {
 
 export type SheetAction =
   | { type: 'setBody'; waterBodyId: string }
-  /** The author taps a chip: a ghost or extracted chip becomes solid; a new value is added solid. */
-  | { type: 'select'; field: SheetFieldKey; key: string; value?: unknown }
+  /**
+   * The author taps a chip: a ghost or extracted chip becomes solid; a new value is added solid; a
+   * value with an existing key replaces it. `defaulted` is the *sheet* selecting on the author's
+   * behalf (the pinned end-time preselect, D192, the way `observedFrom: on_ice` is set at open):
+   * the chip is solid but `defaulted`, and the field is not `touched` — a default stands until
+   * someone says otherwise, and the author's prose counts (D191).
+   */
+  | { type: 'select'; field: SheetFieldKey; key: string; value?: unknown; defaulted?: true }
   /** The author deselects: solid → gone, extracted → ghost (still offered, never re-promoted). */
   | { type: 'deselect'; field: SheetFieldKey; key: string }
   /** Attach or change a `where` on a located chip (ice, surface) or a reading. */
@@ -260,6 +321,8 @@ export type SheetAction =
       fields: Partial<{ [K in SheetFieldKey]: ExtractedValue<FieldValue<K>>[] }>;
     }
   | { type: 'answerPassed'; hazardId: string; verdict: PassedVerdict }
+  /** The quick thickness row (D195): one band at most; `null` is *didn't check*. Precise readings are untouched. */
+  | { type: 'selectThicknessBand'; band: ThicknessBand | null; where?: Where }
   | { type: 'setCollapsed'; section: SheetSection; collapsed: boolean };
 
 /** The floor for a field when none was configured: everything is a ghost until the eval sets one (§1.4). */
@@ -286,21 +349,53 @@ function authorSolid(chip: SheetChip<unknown>): boolean {
 
 export function sheetReducer(state: ReportSheetState, action: SheetAction): ReportSheetState {
   switch (action.type) {
-    case 'setBody':
-      return { ...state, waterBodyId: action.waterBodyId };
+    case 'setBody': {
+      if (action.waterBodyId === state.waterBodyId) return state;
+      // A peer's ghost was about the lake it came from (§4.4): on another lake it is nobody's
+      // suggestion, so it goes; the author's own chips, and a ghost from their track or their
+      // writing, are about their skate and stay.
+      const fields = { ...state.fields };
+      for (const key of Object.keys(fields) as SheetFieldKey[]) {
+        const field = fields[key] as ChipField<unknown>;
+        if (!field.chips.some((c) => c.tier === 'ghost' && c.source === 'peer')) continue;
+        (fields as Record<SheetFieldKey, ChipField<unknown>>)[key] = {
+          ...field,
+          chips: field.chips.filter((c) => !(c.tier === 'ghost' && c.source === 'peer')),
+        };
+      }
+      return { ...state, waterBodyId: action.waterBodyId, fields };
+    }
 
     case 'select':
       return withField(state, action.field, (field) => {
         const chips = field.chips as SheetChip<unknown>[];
         const existing = chips.find((c) => c.key === action.key);
+        const defaulted = action.defaulted === true ? true : undefined;
         let next: SheetChip<unknown>[];
         if (existing) {
+          // A value with the tap replaces the chip's (a reading the author retyped); without one
+          // the tap only promotes the tier.
           next = chips.map((c) =>
-            c.key === action.key ? { ...c, tier: 'solid' as const, defaulted: undefined } : c,
+            c.key === action.key
+              ? {
+                  ...c,
+                  ...(action.value !== undefined ? { value: action.value } : {}),
+                  tier: 'solid' as const,
+                  defaulted,
+                }
+              : c,
           );
         } else {
           if (action.value === undefined) return field; // nothing to add
-          next = [...chips, { key: action.key, value: action.value, tier: 'solid' }];
+          next = [
+            ...chips,
+            {
+              key: action.key,
+              value: action.value,
+              tier: 'solid',
+              ...(defaulted ? { defaulted } : {}),
+            },
+          ];
         }
         // A single-select field: the other selections step down — extracted to ghost, solid gone.
         if (!field.multi) {
@@ -309,7 +404,8 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
             return c.tier === 'extracted' ? [{ ...c, tier: 'ghost' as const }] : [];
           });
         }
-        return { ...field, chips: next, touched: true } as typeof field;
+        // A default is the sheet's doing, not the author's: the field stays untouched.
+        return { ...field, chips: next, touched: defaulted ? field.touched : true } as typeof field;
       });
 
     case 'deselect':
@@ -437,9 +533,202 @@ export function sheetReducer(state: ReportSheetState, action: SheetAction): Repo
         },
       };
 
+    case 'selectThicknessBand':
+      return withField(state, 'thickness', (field) => {
+        const kept = field.chips.filter((c) => thicknessBandOfKey(c.key) === null);
+        const chips =
+          action.band === null
+            ? kept
+            : [
+                ...kept,
+                {
+                  key: thicknessBandKey(action.band),
+                  value: thicknessBandReading(action.band, action.where),
+                  tier: 'solid' as const,
+                },
+              ];
+        return { ...field, chips, touched: true };
+      });
+
     case 'setCollapsed':
       return { ...state, collapsed: { ...state.collapsed, [action.section]: action.collapsed } };
   }
+}
+
+// ── The quick thickness path (D195) ─────────────────────────────────────────────────────────────
+
+/**
+ * The chip row *under 2 / 2–3 / 3–4 / 4–6 / 6+* — a band is stored as one `estimated` reading with
+ * the band's edges in cm (a lower bound only for *6+*; *under 2* is `0–2`, because the validator
+ * spells an upper bound alone as `minCm: 0` — a bare `maxCm` is refused as no range), so every
+ * downstream reader sees a reading, not a new shape. `didn't check` is the absence of a band.
+ */
+export const THICKNESS_BANDS = ['under_2', '2_3', '3_4', '4_6', '6_plus'] as const;
+export type ThicknessBand = (typeof THICKNESS_BANDS)[number];
+
+export const THICKNESS_BAND_LABELS: Record<ThicknessBand, string> = {
+  under_2: 'Under 2"',
+  '2_3': '2–3"',
+  '3_4': '3–4"',
+  '4_6': '4–6"',
+  '6_plus': '6"+',
+};
+
+const BAND_INCHES: Record<ThicknessBand, { min?: number; max?: number }> = {
+  under_2: { min: 0, max: 2 },
+  '2_3': { min: 2, max: 3 },
+  '3_4': { min: 3, max: 4 },
+  '4_6': { min: 4, max: 6 },
+  '6_plus': { min: 6 },
+};
+
+const BAND_KEY_PREFIX = 'band:';
+
+export function thicknessBandKey(band: ThicknessBand): string {
+  return `${BAND_KEY_PREFIX}${band}`;
+}
+
+/** The band a chip key names, or `null` for a precise reading's key. */
+export function thicknessBandOfKey(key: string): ThicknessBand | null {
+  if (!key.startsWith(BAND_KEY_PREFIX)) return null;
+  const band = key.slice(BAND_KEY_PREFIX.length);
+  return (THICKNESS_BANDS as readonly string[]).includes(band) ? (band as ThicknessBand) : null;
+}
+
+/** The reading a band stands for. */
+export function thicknessBandReading(band: ThicknessBand, where?: Where): ThicknessReadingInput {
+  const { min, max } = BAND_INCHES[band];
+  return {
+    method: 'estimated',
+    ...(min !== undefined ? { minCm: inchesToCm(min) } : {}),
+    ...(max !== undefined ? { maxCm: inchesToCm(max) } : {}),
+    ...(where !== undefined ? { where } : {}),
+  };
+}
+
+/**
+ * The band a stored reading came from, or `null` when it is a precise reading — so an edit shows
+ * the quick row the way the author left it. Exact on the edges in inches (a tenth is finer than any
+ * band edge), `estimated`, no count, no word.
+ */
+export function thicknessBandOf(reading: ThicknessReadingInput): ThicknessBand | null {
+  if (reading.method !== 'estimated' || reading.valueCm !== undefined) return null;
+  if (reading.pokeCount !== undefined || reading.supportable !== undefined) return null;
+  const min =
+    reading.minCm === undefined ? undefined : Math.round(cmToInches(reading.minCm) * 10) / 10;
+  const max =
+    reading.maxCm === undefined ? undefined : Math.round(cmToInches(reading.maxCm) * 10) / 10;
+  for (const band of THICKNESS_BANDS) {
+    const edges = BAND_INCHES[band];
+    if (edges.min === min && edges.max === max) return band;
+  }
+  return null;
+}
+
+// ── Seeding from what was stored ────────────────────────────────────────────────────────────────
+
+/**
+ * A stored report, as much of it as a sheet is seeded from: the edit door (A06f folded in, §4.1)
+ * and a draft the pre-sheet form saved. Structural rather than `Doc<'reports'>` so core stays free
+ * of the data model; both clients pass the row they hold, or `buildReportInput`'s output.
+ */
+export interface SheetSeed {
+  waterBodyId?: string;
+  skateEndTime: number;
+  skateStartTime?: number;
+  skateEndPrecision?: SkateEndPrecision;
+  observedFrom?: ObservedFrom;
+  sighting?: Sighting;
+  iceTypes?: readonly ChipInput<IceType>[];
+  surfaceTags?: readonly ChipInput<SurfaceTag>[];
+  skateQuality?: SkateQuality;
+  suitability?: Suitability;
+  iceThickness?: { readings: readonly ThicknessReadingInput[]; scope?: ThicknessScope };
+  snow?: Snow;
+  conditions?: ReportConditionsInput;
+  notes?: string;
+  point?: LatLng;
+  putInId?: string;
+  showPutIn?: boolean;
+  photoIds?: readonly string[];
+  /** The hazards the report already carries (drawn or bundled) — an edit never re-offers them. */
+  hazardIds?: readonly string[];
+}
+
+function solid<V>(key: string, value: V): SheetChip<V> {
+  return { key, value, tier: 'solid' };
+}
+
+/**
+ * The chips of a located field, one per stored chip: keyed by type, and a second chip of the same
+ * type — "black ice, north end" and "black ice, south bay" — keyed `type#2` so neither is lost on
+ * the round trip (`reports.update` is last-write-wins over the block).
+ */
+function locatedChips<T extends string>(
+  stored: readonly ChipInput<T>[],
+): SheetChip<LocatedChip<T>>[] {
+  const seen = new Map<string, number>();
+  return stored.map((chip) => {
+    const located = toLocatedChip(chip);
+    const n = (seen.get(located.type) ?? 0) + 1;
+    seen.set(located.type, n);
+    return solid(n === 1 ? located.type : `${located.type}#${n}`, located);
+  });
+}
+
+/**
+ * Seed a sheet from a stored report — every value solid and the author's (never `defaulted`), so a
+ * later extraction (A10-4) can add ghosts beside them but never move one. `openedAtMs` is the
+ * sheet's own open time (the pinned chip); the stored end time is the selected chip regardless.
+ */
+export function sheetFromReport(seed: SheetSeed, openedAtMs: number): ReportSheetState {
+  const state = emptySheet(openedAtMs, seed.waterBodyId, {
+    ...(seed.showPutIn !== undefined ? { showPutIn: seed.showPutIn } : {}),
+  });
+  const f = state.fields;
+  if (seed.skateQuality !== undefined)
+    f.quality.chips = [solid(seed.skateQuality, seed.skateQuality)];
+  if (seed.suitability !== undefined)
+    f.suitability.chips = [solid(seed.suitability, seed.suitability)];
+  if (seed.observedFrom !== undefined)
+    f.observedFrom.chips = [solid(seed.observedFrom, seed.observedFrom)];
+  if (seed.sighting !== undefined) f.sighting.chips = [solid(seed.sighting, seed.sighting)];
+  f.endTime.chips = [
+    solid('stored', { ms: seed.skateEndTime, precision: seed.skateEndPrecision ?? 'half_hour' }),
+  ];
+  f.iceTypes.chips = locatedChips(seed.iceTypes ?? []);
+  f.surfaceTags.chips = locatedChips(seed.surfaceTags ?? []);
+  const snow = seed.snow;
+  if (snow?.coverage !== undefined) f.snowCoverage.chips = [solid(snow.coverage, snow.coverage)];
+  if (snow?.impediment !== undefined)
+    f.snowImpediment.chips = [solid(snow.impediment, snow.impediment)];
+  if (snow?.drifts !== undefined) f.snowDrifts.chips = [solid(snow.drifts, snow.drifts)];
+  f.thickness.chips = (seed.iceThickness?.readings ?? []).map((reading, i) => {
+    const band = thicknessBandOf(reading);
+    return solid(band === null ? `reading:${i + 1}` : thicknessBandKey(band), reading);
+  });
+
+  const scalars: ReportSheetState['scalars'] = {
+    ...state.scalars,
+    notes: seed.notes ?? '',
+    photoIds: [...(seed.photoIds ?? [])],
+    hazardIds: [...(seed.hazardIds ?? [])],
+    ...(seed.skateStartTime !== undefined ? { skateStartTime: seed.skateStartTime } : {}),
+    ...(snow?.depthCm !== undefined ? { snowDepthCm: snow.depthCm } : {}),
+    ...(snow?.plowedPath !== undefined ? { plowedPath: snow.plowedPath } : {}),
+    ...(seed.iceThickness?.scope !== undefined ? { thicknessScope: seed.iceThickness.scope } : {}),
+    ...(seed.point !== undefined ? { point: seed.point } : {}),
+    ...(seed.putInId !== undefined ? { putInId: seed.putInId } : {}),
+    ...(seed.conditions !== undefined ? { conditions: seed.conditions } : {}),
+  };
+  const touchedScalars: ReportSheetState['touchedScalars'] = {};
+  for (const key of Object.keys(scalars) as (keyof typeof scalars)[]) {
+    const v = scalars[key];
+    if (v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) continue;
+    if (key === 'passedVerdicts') continue;
+    touchedScalars[key] = true;
+  }
+  return { ...state, scalars, touchedScalars };
 }
 
 // ── Selectors ───────────────────────────────────────────────────────────────────────────────────
@@ -499,7 +788,23 @@ export function toReportInput(state: ReportSheetState): ReportInput {
     ...(Object.keys(snow).length > 0 ? { snow } : {}),
     ...(notes ? { notes } : {}),
     ...(s.point !== undefined ? { point: s.point } : {}),
+    ...(s.putInId !== undefined ? { putInId: s.putInId } : {}),
+    // Only the opt-out travels — the stored field is optional-defaults-to-shown.
+    ...(s.showPutIn === false ? { showPutIn: false } : {}),
+    ...(s.conditions !== undefined && conditionsHasValue(s.conditions)
+      ? { conditions: { ...s.conditions, source: s.conditions.source ?? ('user' as const) } }
+      : {}),
   };
+}
+
+function conditionsHasValue(c: ReportConditionsInput): boolean {
+  return (
+    c.airTempC !== undefined ||
+    c.windSpeedKph !== undefined ||
+    (c.windDir !== undefined && c.windDir !== '') ||
+    c.sky !== undefined ||
+    c.precip !== undefined
+  );
 }
 
 /** The D189 gaps for this sheet — what still stands between it and *Post*. */

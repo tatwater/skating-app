@@ -5,6 +5,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { doorHref } from '../lib/sheetDoors';
 import { Section } from './detailUi';
 import { NewWaterPrompt } from './NewWaterPrompt';
 
@@ -75,10 +76,13 @@ export function UnreportedSkates() {
                     activityId: row.activityId as Id<'gpsActivities'>,
                     promptState: 'prompted',
                   }).catch(() => {});
-                  router.navigate({
-                    pathname: '/water/[id]',
-                    params: { id: row.waterBodyId as string, activity: row.activityId },
-                  });
+                  router.navigate(
+                    doorHref({
+                      body: row.waterBodyId as string,
+                      ...(row.waterBodyName ? { name: row.waterBodyName } : {}),
+                      activity: row.activityId,
+                    }),
+                  );
                 }}
               >
                 Report this skate
@@ -111,10 +115,7 @@ export function UnreportedSkates() {
                 activityId={row.activityId}
                 onResolved={(waterBodyId) => {
                   setAdding(null);
-                  router.navigate({
-                    pathname: '/water/[id]',
-                    params: { id: waterBodyId, activity: row.activityId },
-                  });
+                  router.navigate(doorHref({ body: waterBodyId, activity: row.activityId }));
                 }}
                 onDismiss={() => setAdding(null)}
               />

@@ -356,6 +356,38 @@ describe('the grace window', () => {
     expect(report?.surfaceTags).toEqual([{ type: 'glass' }]);
   });
 
+  test('the edit history goes with the words: an aged revision is erased, a fresh one waits (A10-3)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    const { postId } = await postedLongAgo(() =>
+      user.as.mutation(api.posts.create, {
+        title: 'Morey',
+        body: 'First words.',
+        reports: [{ ...OBSERVED, waterBodyId: bodyId, skateEndTime: T0 - LONG_AGO }],
+      }),
+    );
+    // An edit made long ago, and one made just now (each sends both words — an omitted one clears).
+    await postedLongAgo(() =>
+      user.as.mutation(api.posts.update, { postId, title: 'Morey, edited', body: 'First words.' }),
+    );
+    await user.as.mutation(api.posts.update, {
+      postId,
+      title: 'Morey, edited twice',
+      body: 'First words.',
+    });
+    const before = await t.run((ctx) => ctx.db.query('contentRevisions').collect());
+    expect(before).toHaveLength(2);
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const after = await t.run((ctx) => ctx.db.query('contentRevisions').collect());
+    expect(after.map((r) => r.snapshot)).toEqual([
+      { title: 'Morey, edited', body: 'First words.' },
+    ]);
+  });
+
   /**
    * Comments keep their shell so the thread keeps its shape (D62 second amendment). A reply whose
    * parent vanished is unreachable — the thread is keyed by `reportId` — so the row survives, marked,
