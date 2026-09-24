@@ -15,8 +15,10 @@ import {
   createQueuedConfirmation,
   type DraftPhoto,
   flushErrorMessage,
+  POST_SENT_COPY,
   type PostSheet,
   photoUploadCoord,
+  postCreateSent,
   type SheetReport,
   selectedValues,
   toPostDraft,
@@ -65,6 +67,7 @@ export const DRAFT_SYNCING_MESSAGE = 'This post is sending right now — try aga
  */
 function assertNotFlushing(post: PostSheet): void {
   if (isDraftFlushing(post.draftId)) throw new Error(DRAFT_SYNCING_MESSAGE);
+  if (postCreateSent(getDraft(post.draftId))) throw new Error(POST_SENT_COPY);
 }
 
 /** Hold the sheet as a draft on the phone. Returns the sheet with its photos on durable paths. */
@@ -116,9 +119,17 @@ export type PostOutcome =
  * the server's sentence, which is returned so the sheet can show it in place.
  */
 export async function postSheet(post: PostSheet, now: number): Promise<PostOutcome> {
-  if (isDraftFlushing(post.draftId)) return { kind: 'refused', message: DRAFT_SYNCING_MESSAGE };
+  const busy = () =>
+    isDraftFlushing(post.draftId)
+      ? DRAFT_SYNCING_MESSAGE
+      : postCreateSent(getDraft(post.draftId))
+        ? POST_SENT_COPY
+        : null;
+  const before = busy();
+  if (before !== null) return { kind: 'refused', message: before };
   const persisted = await withPersistedPhotos(post);
-  if (isDraftFlushing(post.draftId)) return { kind: 'refused', message: DRAFT_SYNCING_MESSAGE };
+  const after = busy();
+  if (after !== null) return { kind: 'refused', message: after };
   saveDraft(toPostDraft(persisted, 'pending', now, getDraft(post.draftId)));
   queueConfirmations(persisted, now);
   await flushDrafts();

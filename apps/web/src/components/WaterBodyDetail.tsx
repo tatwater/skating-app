@@ -47,13 +47,12 @@ import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
-import { ReportForm } from './ReportForm';
 import { RequestButtons } from './RequestLake';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
 import { StandingNotice } from './StandingNotice';
 import { SubAreaSpread } from './SubAreaSpread';
 import { Badge } from './ui/badge';
-import { Button } from './ui/button';
+import { Button, buttonVariants } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Skeleton } from './ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -71,9 +70,12 @@ export function WaterBodyDetail({
   waterBodyId,
   /** A named bay to frame instead of the whole lake (A02/D60) — set by a sub-area search hit. */
   focusSubAreaId,
+  /** Open the hazard form on arrival — the report console's *mark one here* hand-off (A10-5 §6). */
+  openHazardForm = false,
 }: {
   waterBodyId: string;
   focusSubAreaId?: string;
+  openHazardForm?: boolean;
 }) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
@@ -117,8 +119,12 @@ export function WaterBodyDetail({
   // pure function of (body, basis) on both clients, and the alternative is a second round trip to
   // learn which state to ask about.
   const regionStats = useQuery(api.regionStats.list, {});
-  const [formOpen, setFormOpen] = useState(false);
-  const [hazardFormOpen, setHazardFormOpen] = useState(false);
+  const [hazardFormOpen, setHazardFormOpen] = useState(openHazardForm);
+  // …and again when a later hand-off arrives at a drawer that is already open: an initial-state
+  // read alone would swallow the console's *mark one here* whenever this component is still mounted.
+  useEffect(() => {
+    if (openHazardForm) setHazardFormOpen(true);
+  }, [openHazardForm]);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const [tab, setTab] = useDetailTab();
   // The season selector lives on the Reporting tab, but the season it picks governs the whole lake
@@ -297,7 +303,16 @@ export function WaterBodyDetail({
         <div className="flex flex-wrap gap-2">
           {leaving ? null : (
             <>
-              <Button onClick={() => setFormOpen(true)}>Add a report</Button>
+              {/* The console, not a form in the drawer (A10-5 / §10.1): a Post is one to several
+                  Reports with a map, a photo rail and ten sections, and a 380-px column over the
+                  map is not where that belongs — the phone reached the same answer (A10-3). */}
+              <Link
+                to="/post"
+                search={{ body: result.body._id, name: waterBodyDisplayName(result.body.name) }}
+                className={buttonVariants()}
+              >
+                Add a report
+              </Link>
               <Button variant="outline" onClick={() => setHazardFormOpen(true)}>
                 Report a hazard
               </Button>
@@ -459,14 +474,6 @@ export function WaterBodyDetail({
           </TabsContent>
         </Tabs>
       </div>
-      {formOpen ? (
-        <ReportForm
-          waterBodyId={result.body._id}
-          bodyName={waterBodyDisplayName(result.body.name)}
-          open={formOpen}
-          onOpenChange={setFormOpen}
-        />
-      ) : null}
       {hazardFormOpen ? (
         <HazardForm waterBodyId={result.body._id} onClose={() => setHazardFormOpen(false)} />
       ) : null}

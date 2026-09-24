@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/tanstack-react-start';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
@@ -9,6 +8,7 @@ import { type ReactNode, useEffect } from 'react';
 import logoBlack from '../assets/gli-black-duotone.svg';
 import logoWhite from '../assets/gli-white-duotone.svg';
 import { isMapRoute } from '../lib/mapSelection';
+import { useSignOut } from '../lib/sheetOwner';
 import { LakeSearch } from './LakeSearch';
 import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
@@ -38,7 +38,7 @@ const navLinkClass =
 const navActiveClass = 'rounded-md px-3 py-1.5 bg-surface-muted text-foreground';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { signOut } = useAuth();
+  const signOut = useSignOut();
   const profile = useQuery(api.profiles.current, {});
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The bell's dot (A08 §1.3). `unreadCount` is a capped indexed read, so subscribing to it from the
@@ -91,6 +91,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link to="/feed" className={navLinkClass} activeProps={{ className: navActiveClass }}>
             Latest
+          </Link>
+          {/* The report console (A10-5). A blank Post from here; the lake's drawer and a published
+              report's page open it on their own doors. */}
+          <Link
+            to="/post"
+            search={{}}
+            className={navLinkClass}
+            activeProps={{ className: navActiveClass }}
+          >
+            Post
           </Link>
           {profile?.role === 'moderator' || profile?.role === 'admin' ? (
             <Link to="/admin" className={navLinkClass} activeProps={{ className: navActiveClass }}>

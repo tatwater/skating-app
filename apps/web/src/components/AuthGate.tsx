@@ -5,6 +5,7 @@ import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
 import { authZoneTarget } from '../lib/authZone';
+import { useSheetOwnerBinding } from '../lib/sheetOwner';
 import { AppShell } from './AppShell';
 import { Splash } from './Splash';
 
@@ -21,6 +22,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
   const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
+  // The report sheet is the signed-in author's; a change of account drops it (PR #77 review).
+  useSheetOwnerBinding();
 
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });

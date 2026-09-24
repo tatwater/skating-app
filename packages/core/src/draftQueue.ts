@@ -322,6 +322,21 @@ export function isHeldDraft(draft: PostDraft): boolean {
   return draft.status === 'draft';
 }
 
+/**
+ * The create was sent once already: it went out and no answer came back (`creating`), or it
+ * landed and a later step failed (a `postId`). Either way the Post may be live, and the server's
+ * idempotent create answers a retry with **the Post it already has** — so a change made after this
+ * point would be dropped without a word. A sent Post is resent exactly as it went, never edited in
+ * place; once it is up, its page's edit door is the way to change it (PR #77 review).
+ */
+export function postCreateSent(draft: PostDraft | null | undefined): boolean {
+  return draft != null && (draft.status === 'creating' || draft.postId !== undefined);
+}
+
+/** What a sent Post says in place of taking a change (`postCreateSent`), on both surfaces. */
+export const POST_SENT_COPY =
+  "This post was sent, but the answer didn't come back, so it may already be up. It can't take changes until it has landed — then edit it from its page.";
+
 /** The flushable subset of a queue, oldest first (capture order) — the reconnect-flush work list. */
 export function flushablePosts(drafts: readonly PostDraft[]): PostDraft[] {
   return drafts.filter(isFlushable).sort((a, b) => a.createdAt - b.createdAt);
@@ -489,7 +504,7 @@ export async function flushPost(
   const leg = (report: ReportDraft, message: string): string =>
     d.reports.length > 1 && report.bodyName ? `${report.bodyName}: ${message}` : message;
   /** The create was sent once already (see the create-only rules below). */
-  const createSent = draft.status === 'creating' || draft.postId !== undefined;
+  const createSent = postCreateSent(draft);
 
   try {
     if (d.reports.length === 0) throw new PermanentFlushError('This post has no report in it.');

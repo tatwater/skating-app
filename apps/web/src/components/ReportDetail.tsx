@@ -33,12 +33,12 @@ import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
-import { ReportForm } from './ReportForm';
+import { RevisionHistory } from './RevisionHistory';
 import { BlockedChip, FlagDialog } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
-import { Button } from './ui/button';
+import { Button, buttonVariants } from './ui/button';
 import { Separator } from './ui/separator';
 import { WeatherStrip } from './WeatherStrip';
 
@@ -362,7 +362,6 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
   // The author's own edit dialog (A06f). Declared with the other hooks, above the loading/unavailable
   // early returns, so the hook order is stable across a report that arrives late.
-  const [editing, setEditing] = useState(false);
   // The author's own takedown (A10-3): soft, audited; the Post goes with its last Report (D186).
   const removeReport = useMutation(api.reports.remove);
   const [deleting, setDeleting] = useState(false);
@@ -487,6 +486,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {report.postId ? (
             <ModeratorActions targetType="post" targetId={report.postId} label="Moderate post" />
           ) : null}
+          {/* What the author changed since it went up (D205, A10-5) — the other end of the
+              *Edited* mark a skater sees. Renders nothing for a non-moderator, and for a row
+              that has never been edited. */}
+          <RevisionHistory targetType="report" targetId={report._id} />
+          {report.postId ? <RevisionHistory targetType="post" targetId={report.postId} /> : null}
         </div>
       ) : null}
       {/* The author's own control (A06f), mirroring the comment thread's Edit. `reports.update` has
@@ -495,9 +499,16 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           A moderated report is refused server-side, so the button is hidden rather than left to fail. */}
       {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (
         <div className="flex flex-wrap gap-1 px-4 pb-2">
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+          {/* The console's edit door (A10-5), the same one the phone opens: the sheet seeded from
+              the published Report and its Post's words, saving both through one
+              `reports.update`. */}
+          <Link
+            to="/post"
+            search={{ edit: report._id }}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
             Edit report
-          </Button>
+          </Link>
           {/* Delete is the author's too (A10-3, founder call 2026-09-21) — soft, with an audit
               row a moderator can read; the Post goes when its last Report does. */}
           <Button
@@ -514,15 +525,6 @@ export function ReportDetail({ reportId }: { reportId: string }) {
             {deleting ? 'Deleting…' : 'Delete report'}
           </Button>
         </div>
-      ) : null}
-      {editing && body?.available ? (
-        <ReportForm
-          waterBodyId={report.waterBodyId}
-          bodyName={body.body.name}
-          open
-          onOpenChange={(next) => !next && setEditing(false)}
-          editing={{ reportId: report._id, report, photoIds: report.photoIds }}
-        />
       ) : null}
       <Comments reportId={report._id} />
     </>

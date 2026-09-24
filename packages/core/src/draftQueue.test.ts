@@ -707,6 +707,8 @@ import {
   accessConditionFilings,
   accessConditionKey,
   isHeldDraft,
+  POST_SENT_COPY,
+  postCreateSent,
   reportDraftEndTime,
   reportDraftInput,
 } from './draftQueue';
@@ -747,6 +749,25 @@ describe('held drafts (A10-3 — a draft never auto-posts)', () => {
     expect(isFlushable(held)).toBe(false);
     expect(flushablePosts([held, draftWith()])).toHaveLength(1);
     expect(isHeldDraft(draftWith())).toBe(false);
+  });
+});
+
+describe('a sent Post (PR #77 review — a change after the send would be dropped)', () => {
+  it('is sent once the create went out, answered or not, and not before', () => {
+    expect(postCreateSent(null)).toBe(false);
+    expect(postCreateSent(undefined)).toBe(false);
+    for (const status of ['draft', 'pending', 'uploading', 'error'] as const) {
+      expect(postCreateSent(draftWith({ status }))).toBe(false);
+    }
+    // Sent, no answer: the Post may be live.
+    expect(postCreateSent(draftWith({ status: 'creating' }))).toBe(true);
+    // Landed, then a later step failed and put it back to `pending`: the Post is live.
+    expect(postCreateSent(draftWith({ status: 'pending', postId: 'post-1' }))).toBe(true);
+  });
+
+  it('says it may be up, never that it is, and where a change goes instead', () => {
+    expect(POST_SENT_COPY).toMatch(/may already be up/);
+    expect(POST_SENT_COPY).toMatch(/edit it from its page/);
   });
 });
 
