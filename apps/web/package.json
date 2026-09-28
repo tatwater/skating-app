@@ -47,7 +47,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
-    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@turf/boolean-point-in-polygon": "^7.4.0",
