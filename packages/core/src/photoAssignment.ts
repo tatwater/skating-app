@@ -25,7 +25,8 @@ import {
   type LatLng,
   pointInPolygon,
 } from './geometry';
-import { PHOTO_WINDOW_PAD_MS } from './photoWindow';
+import type { PassedTrackPoint } from './passedHazards';
+import { PHOTO_WINDOW_PAD_MS, placePhoto } from './photoWindow';
 
 /** Before a Report's start (or its end, without one) and after its end — the library query's own pad. */
 export const PHOTO_WINDOW_MARGIN_MS = PHOTO_WINDOW_PAD_MS;
@@ -95,6 +96,28 @@ export function onWater(
     pointInPolygon(coord, polygon) &&
     distanceToShorelineMeters(coord, polygon) >= PHOTO_PLACE_SHORE_SETBACK_M
   );
+}
+
+/**
+ * Where a photo added on the phone sits on its Report's lake (A10-7; every phone door since A10-8):
+ * its own location when that is on the water; else, with a time and a recorded track, where the
+ * track was when the shutter fired, and that only on the water too, since a shutter before the
+ * first fix clamps to the track's first point, which may be the launch the author keeps to
+ * themselves (D58). Otherwise unplaced, its own location kept for a later hand.
+ */
+export function placeOnLake(
+  photo: { takenAtMs?: number; coord?: LatLng },
+  polygon: Polygon | MultiPolygon | null | undefined,
+  track: readonly PassedTrackPoint[],
+): { coord?: LatLng; placeOnMap: boolean } {
+  if (photo.coord !== undefined && onWater(photo.coord, polygon)) {
+    return { coord: photo.coord, placeOnMap: true };
+  }
+  if (photo.takenAtMs !== undefined && track.length > 1) {
+    const along = placePhoto({ id: '', takenAtMs: photo.takenAtMs }, track);
+    if (along && onWater(along.coord, polygon)) return { coord: along.coord, placeOnMap: true };
+  }
+  return { ...(photo.coord !== undefined ? { coord: photo.coord } : {}), placeOnMap: false };
 }
 
 /**

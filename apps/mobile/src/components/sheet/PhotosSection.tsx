@@ -1,22 +1,31 @@
 import {
+  canReadLibrary,
   type DraftPhoto,
+  type LibraryAccess,
   onWater,
-  photosInWindow,
   photoWindow,
-  placePhoto as placeAlongTrack,
   sameDayWindow,
   selectedValues,
 } from '@skating/core';
 import { randomUUID } from 'expo-crypto';
-import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView } from 'react-native';
+import { AppState, Image, Linking, Pressable, ScrollView } from 'react-native';
 import { Button, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../../lib/draftPhotos';
 import { getTrack } from '../../lib/draftStore';
 import { setHazardPrefill } from '../../lib/hazardPrefill';
-import { pickPhotos, processPhoto } from '../photoPipeline';
+import {
+  askLibraryAccess,
+  chooseMorePhotos,
+  type LibraryItem,
+  libraryPhotos,
+  READS_LIBRARY,
+  readLibraryAccess,
+  readLibraryPhoto,
+} from '../../lib/photoLibrary';
+import { toDraftPhoto } from '../../lib/sheetPhotos';
+import { pickPhotos } from '../photoPipeline';
 import { LakeMap } from './LakeMap';
 import { SheetChip } from './SheetChip';
 import { QuestionBlock, SheetHint, SheetSection, SubLabel } from './SheetSection';
@@ -25,20 +34,17 @@ import type { SectionProps } from './sectionProps';
 /** How many of the library's photos the reel shows before *same day* widens it. */
 const REEL_MAX = 30;
 
-interface ReelPhoto {
-  assetId: string;
-  uri: string;
-  takenAtMs: number;
-}
-
 /**
- * *Photos* (A10 §8, the A10-7 half): **Photos from your skate** — the camera roll queried for the
- * skate's window (the end time, and the start when there is one, padded; *same day* as the wider
- * option), each a tap to include. Nothing leaves the roll and nothing uploads until Post. An
- * included photo carries its capture time and its EXIF location, read on device; one on the lake
- * is placed by it, one with no location on a Report opened from a recording is placed where the
- * track was when the shutter fired, and any other can be placed by a tap on the lake. *This is a
- * hazard* hands the photo and its location to the map's capture. The picker stays for the rest.
+ * *Photos* (A10 §8): **Photos from your skate** on iOS — the library queried for the skate's window
+ * (the end time, and the start when there is one, padded; *same day* as the wider option), each a
+ * tap to include — and the system picker on both phones. Nothing asks for the library until the
+ * person reaches for it (A10-8, D207): the permission's state is read without a prompt, and the
+ * prompt is a tap on *Show photos from your skate*. Android reads no library at all; its picker
+ * already shows Google Photos. Nothing leaves the roll and nothing uploads until Post. An
+ * included photo carries its capture time and its location, read on device; one on the lake is
+ * placed by it, one with no location on a Report opened from a recording is placed where the track
+ * was when the shutter fired, and any other can be placed by a tap on the lake. *This is a hazard*
+ * hands the photo and its location to the map's capture.
  *
  * Nothing uploads from here: the queue uploads at flush, checkpointing each object, so a photo
  * picked with no signal costs nothing until it can post.
@@ -56,8 +62,9 @@ export function PhotosSection({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [reel, setReel] = useState<ReelPhoto[] | null>(null);
-  const [reelState, setReelState] = useState<'idle' | 'loading' | 'denied' | 'none'>('idle');
+  const [reel, setReel] = useState<LibraryItem[] | null>(null);
+  const [reelState, setReelState] = useState<'idle' | 'loading' | 'none' | 'failed'>('idle');
+  const [access, setAccess] = useState<LibraryAccess | null>(READS_LIBRARY ? null : 'none');
   const [wide, setWide] = useState(false);
   const [placing, setPlacing] = useState<string | null>(null);
   const count = report.photos.length + report.keptPhotoIds.length;
@@ -75,35 +82,56 @@ export function PhotosSection({
     return wide ? sameDayWindow(activity, timeZone) : photoWindow(activity);
   }, [endMs, startMs, wide, timeZone]);
 
+  // The permission's state, read without a prompt — and read again on the way back from Settings.
+  useEffect(() => {
+    if (!READS_LIBRARY) return;
+    let live = true;
+    const read = () => void readLibraryAccess().then((a) => live && setAccess(a));
+    read();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') read();
+    });
+    return () => {
+      live = false;
+      sub.remove();
+    };
+  }, []);
+
   const loadReel = useCallback(async () => {
     if (!window) return;
     setReelState('loading');
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
-      if (!perm.granted) {
-        setReelState('denied');
-        return;
-      }
-      const page = await MediaLibrary.getAssetsAsync({
-        mediaType: 'photo',
-        createdAfter: window.startMs,
-        createdBefore: window.endMs,
-        sortBy: [['creationTime', true]],
-        first: REEL_MAX,
-      });
-      const photos = photosInWindow(
-        page.assets.map((a) => ({ id: a.id, takenAtMs: a.creationTime, uri: a.uri })),
-        window,
-      ).map((a) => ({ assetId: a.id, uri: a.uri, takenAtMs: a.takenAtMs as number }));
+      const photos = await libraryPhotos(window, { offset: 0, limit: REEL_MAX });
       setReel(photos);
       setReelState(photos.length === 0 ? 'none' : 'idle');
     } catch {
-      setReelState('none');
+      // Said as a failure, never as an empty roll (A10-7's reel read a throw as "no photos").
+      setReel(null);
+      setReelState('failed');
     }
   }, [window]);
+  const readable = access !== null && canReadLibrary(access);
   useEffect(() => {
-    if (window && !sheet.collapsed.photos) void loadReel();
-  }, [window, loadReel, sheet.collapsed.photos]);
+    if (readable && window && !sheet.collapsed.photos) void loadReel();
+  }, [readable, window, loadReel, sheet.collapsed.photos]);
+
+  /** The one prompt, from the person's tap. */
+  const askForLibrary = async () => {
+    setError(null);
+    try {
+      setAccess(await askLibraryAccess());
+    } catch {
+      setError("Couldn't ask for your photos — try again.");
+    }
+  };
+  const chooseMore = async () => {
+    try {
+      await chooseMorePhotos();
+      void loadReel();
+    } catch {
+      setError("Couldn't open the photo chooser — try again.");
+    }
+  };
 
   /** The recorded track's points, for placing an undated-location photo where the skater was. */
   const trackPoints = useMemo(() => {
@@ -115,52 +143,18 @@ export function PhotosSection({
     }));
   }, [report.trackDraftId]);
 
-  /** Turn a library asset into a draft photo: EXIF read on device, files copied out of the roll. */
-  const include = async (item: ReelPhoto) => {
+  /** Turn a library photo into a draft photo: read on device, files copied out of the roll. */
+  const include = async (item: LibraryItem) => {
     setError(null);
     setBusy(true);
     try {
-      const info = await MediaLibrary.getAssetInfoAsync(item.assetId, {
-        shouldDownloadFromNetwork: true,
-      });
-      const processed = await processPhoto({
-        uri: info.localUri ?? info.uri,
-        width: info.width,
-        height: info.height,
-        exif: (info.exif as Record<string, unknown> | undefined) ?? null,
-        creationTime: info.creationTime,
-      });
-      const exifCoord =
-        processed.coord ??
-        (info.location ? { lat: info.location.latitude, lng: info.location.longitude } : undefined);
-      const id = randomUUID();
-      const [fullUri, thumbUri] = await Promise.all([
-        persistDraftPhoto(processed.fullUri, `sheet-${id}-full.jpg`),
-        persistDraftPhoto(processed.thumbUri, `sheet-${id}-thumb.jpg`),
-      ]);
-      const takenAtMs = processed.takenAtMs ?? item.takenAtMs;
-      // Where it was taken: its own location if on the water; else along the track at that minute
-      // — and that only on the water too, since a shutter before the first fix clamps to the
-      // track's first point, which may be the launch the author keeps to themselves (D58).
-      let coord = exifCoord;
-      let placeOnMap = onWater(coord, outline);
-      if (!placeOnMap && trackPoints.length > 1) {
-        const along = placeAlongTrack({ id, takenAtMs, coord: undefined }, trackPoints);
-        if (along && onWater(along.coord, outline)) {
-          coord = along.coord;
-          placeOnMap = true;
-        }
-      }
-      const draft: DraftPhoto = {
-        id,
-        fullUri,
-        thumbUri,
-        ...(coord ? { coord } : {}),
-        takenAtMs,
-        placeOnMap,
-      };
+      const asset = await readLibraryPhoto(item.assetId);
+      const draft = await toDraftPhoto(
+        { ...asset, creationTime: asset.creationTime ?? item.takenAtMs },
+        { outline, track: trackPoints },
+      );
       setReport((r) => ({ ...r, photos: [...r.photos, draft] }));
-      setIncludedAsset(item.assetId, id);
+      setIncludedAsset(item.assetId, draft.id);
     } catch {
       setError("Couldn't read that photo from your library.");
     } finally {
@@ -172,6 +166,7 @@ export function PhotosSection({
   const setIncludedAsset = (assetId: string, draftId: string) =>
     setAssetToDraft((m) => ({ ...m, [assetId]: draftId }));
 
+  /** The system picker: no permission on either phone, and Google Photos is in it on Android. */
   const add = async () => {
     setError(null);
     setBusy(true);
@@ -179,22 +174,11 @@ export function PhotosSection({
       const assets = await pickPhotos();
       if (assets.length === 0) return;
       const drafts: DraftPhoto[] = await Promise.all(
-        assets.map(async (asset) => {
-          const processed = await processPhoto(asset);
-          const coord = processed.coord;
-          return {
-            id: randomUUID(),
-            fullUri: processed.fullUri,
-            thumbUri: processed.thumbUri,
-            ...(coord ? { coord } : {}),
-            ...(processed.takenAtMs !== undefined ? { takenAtMs: processed.takenAtMs } : {}),
-            placeOnMap: onWater(coord, outline),
-          };
-        }),
+        assets.map((asset) => toDraftPhoto(asset, { outline, track: trackPoints })),
       );
       setReport((r) => ({ ...r, photos: [...r.photos, ...drafts] }));
     } catch {
-      setError("Couldn't add those photos — check photo permission and try again.");
+      setError("Couldn't add those photos — try again.");
     } finally {
       setBusy(false);
     }
@@ -254,21 +238,50 @@ export function PhotosSection({
       }
       gap={gaps.has('photos')}
     >
-      {/* The reel: the roll, for the skate's window. */}
-      {!editing && window ? (
+      {/* The reel (iOS): the library, for the skate's window — asked for only from a tap. */}
+      {READS_LIBRARY && !editing && window && access !== null ? (
         <YStack gap="$2">
           <SubLabel>
             From your skate · {clock(window.startMs)}–{clock(window.endMs)}
-            {reel ? ` · ${reel.length} found` : ''}
+            {readable && reel ? ` · ${reel.length} found` : ''}
           </SubLabel>
-          {reelState === 'denied' ? (
-            <SheetHint>
-              Photo access is off for Gli — allow it in Settings to see the roll here.
-            </SheetHint>
+          {access === 'ask' ? (
+            <>
+              <Button size="$2" alignSelf="flex-start" onPress={() => void askForLibrary()}>
+                Show photos from your skate
+              </Button>
+              <SheetHint>
+                Gli looks for the photos you took during these hours. Nothing is uploaded until you
+                post.
+              </SheetHint>
+            </>
+          ) : access === 'settings' ? (
+            <>
+              <SheetHint>
+                Photo access is off for Gli. Turn it on in Settings to see them here.
+              </SheetHint>
+              <Button size="$2" alignSelf="flex-start" onPress={() => void Linking.openSettings()}>
+                Open Settings
+              </Button>
+            </>
           ) : reelState === 'none' ? (
             <SheetHint>
               {wide ? 'No photos on your phone from that day.' : 'No photos from those hours.'}
             </SheetHint>
+          ) : reelState === 'failed' ? (
+            <SheetHint>Couldn't read your library just now.</SheetHint>
+          ) : null}
+          {readable ? (
+            <XStack gap="$2" flexWrap="wrap">
+              <SheetChip
+                compact
+                label={wide ? 'Just the skate' : 'The whole day'}
+                onPress={() => setWide((w) => !w)}
+              />
+              {access === 'limited' ? (
+                <SheetChip compact label="Choose more" onPress={() => void chooseMore()} />
+              ) : null}
+            </XStack>
           ) : null}
           {reel && reel.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -333,34 +346,15 @@ export function PhotosSection({
                     </Pressable>
                   );
                 })}
-                <Pressable onPress={() => setWide((w) => !w)} accessibilityRole="button">
-                  <YStack
-                    width={74}
-                    height={74}
-                    borderRadius="$xs"
-                    borderWidth={1}
-                    borderStyle="dashed"
-                    borderColor="$border"
-                    alignItems="center"
-                    justifyContent="center"
-                  >
-                    <Text
-                      color="$foregroundMuted"
-                      fontSize={12}
-                      fontWeight="600"
-                      textAlign="center"
-                    >
-                      {wide ? 'Just the\nskate' : 'Same\nday'}
-                    </Text>
-                  </YStack>
-                </Pressable>
               </XStack>
             </ScrollView>
           ) : null}
-          <SheetHint>
-            Tap to include. Nothing leaves your camera roll. A blue corner means it's placed on the
-            lake from its own location.
-          </SheetHint>
+          {reel && reel.length > 0 ? (
+            <SheetHint>
+              Tap to include. Nothing leaves your camera roll. A blue corner means it's placed on
+              the lake from its own location.
+            </SheetHint>
+          ) : null}
         </YStack>
       ) : null}
 
@@ -483,8 +477,11 @@ export function PhotosSection({
         </QuestionBlock>
       ) : null}
       <Button size="$2" alignSelf="flex-start" onPress={() => void add()} disabled={busy}>
-        {busy ? 'Adding…' : '+ From your library'}
+        {busy ? 'Adding…' : READS_LIBRARY ? '+ Choose photos' : '+ Add photos'}
       </Button>
+      {!READS_LIBRARY && !editing && count === 0 ? (
+        <SheetHint>Opens your phone's photo picker. Your Google Photos are in it too.</SheetHint>
+      ) : null}
       {report.photos.some((p) => p.coord) ? (
         <SheetHint>
           A photo's location is only sent if it's placed on the lake. Everything else in the file is

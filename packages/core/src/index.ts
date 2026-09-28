@@ -82,6 +82,7 @@ export * from './passedHazards';
 export * from './pathToBody';
 export * from './peerSuggestions';
 export * from './photo';
+export * from './photoAccess';
 export * from './photoAssignment';
 export * from './photoWindow';
 export * from './post';

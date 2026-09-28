@@ -8,6 +8,7 @@ import {
   PHOTO_PLACE_SHORE_SETBACK_M,
   PHOTO_WINDOW_MARGIN_MS,
   photosNearPoint,
+  placeOnLake,
 } from './photoAssignment';
 
 const H = 3600_000;
@@ -138,5 +139,68 @@ describe('onWater — the test that places a photo by itself', () => {
     expect(onWater({ lat: 43.635, lng: -72.128 }, undefined)).toBe(false);
     expect(onWater({ lat: 43.635, lng: -72.128 }, null)).toBe(false);
     expect(onWater(undefined, outline)).toBe(false);
+  });
+});
+
+describe('placeOnLake — where a phone photo sits when it is added', () => {
+  const outline: Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [-72.15, 43.63],
+        [-72.12, 43.63],
+        [-72.12, 43.65],
+        [-72.15, 43.65],
+        [-72.15, 43.63],
+      ],
+    ],
+  };
+  const water = { lat: 43.64, lng: -72.135 };
+  const shore = { lat: 43.6301, lng: -72.135 };
+  const home = { lat: 43.7, lng: -72.3 };
+  // A track from the launch (on the south shore) out onto the water, one fix per ten minutes.
+  const track = [
+    { lat: 43.6301, lng: -72.135, timestamp: T0 },
+    { lat: 43.64, lng: -72.135, timestamp: T0 + H / 6 },
+    { lat: 43.645, lng: -72.13, timestamp: T0 + H / 3 },
+  ];
+
+  it('places a photo by its own location on the water', () => {
+    expect(placeOnLake({ coord: water }, outline, [])).toEqual({ coord: water, placeOnMap: true });
+  });
+
+  it('keeps a location off the water, unplaced', () => {
+    expect(placeOnLake({ coord: home }, outline, [])).toEqual({ coord: home, placeOnMap: false });
+  });
+
+  it('places an unlocated photo where the track was, on the water', () => {
+    const got = placeOnLake({ takenAtMs: T0 + H / 6 }, outline, track);
+    expect(got.placeOnMap).toBe(true);
+    expect(got.coord?.lat).toBeCloseTo(43.64, 6);
+  });
+
+  it('never places a photo at the launch a shutter before the first fix clamps to (D58)', () => {
+    expect(placeOnLake({ takenAtMs: T0 - H }, outline, track)).toEqual({ placeOnMap: false });
+    expect(onWater(shore, outline)).toBe(false);
+  });
+
+  it('prefers the track to a location off the water, and keeps the location when the track fails', () => {
+    expect(placeOnLake({ coord: home, takenAtMs: T0 + H / 3 }, outline, track).placeOnMap).toBe(
+      true,
+    );
+    expect(placeOnLake({ coord: home, takenAtMs: T0 - H }, outline, track)).toEqual({
+      coord: home,
+      placeOnMap: false,
+    });
+  });
+
+  it('needs two fixes and an outline', () => {
+    expect(placeOnLake({ takenAtMs: T0 }, outline, track.slice(0, 1))).toEqual({
+      placeOnMap: false,
+    });
+    expect(placeOnLake({ coord: water }, undefined, track)).toEqual({
+      coord: water,
+      placeOnMap: false,
+    });
   });
 });
