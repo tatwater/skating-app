@@ -1105,9 +1105,10 @@ needs a new EAS preview build.
   `photoWindow` / `sameDayWindow` / `photosInWindow`, built in A10-1 and unused until now), a tap
   includes (EXIF read on device, files copied out of the roll, the roll untouched), a blue corner
   for placed; a photo with no location on a recorded skate is placed along the track at its minute
-  when that point is on the water (core's `placePhoto`, also A10-1's); *Place* opens the lake to tap; *Hazard* hands the photo and
-  its location to the map's capture through `hazardCapturePrefill` on the map context, which the
-  capture reads on its nonce (the pin lands at the photo once a type is chosen). The capture offers
+  when that point is on the water (core's `placePhoto`, also A10-1's); *Place* opens the lake to tap; *Hazard* hands a copy of the
+  photo and its location to the map's capture through a module-level note (`lib/hazardPrefill.ts`,
+  web's shape), which the capture takes on its nonce (the pin lands at the photo once a type is
+  chosen). The capture offers
   the open sheet's photos near its pin. *+ Add your track* in WHEN: `expo-document-picker` → the
   same parse, clean and ingest, online only.
 
@@ -1129,9 +1130,10 @@ needs a new EAS preview build.
    lake the moment it is added.
 4. **Place-mode is a third `ConsoleMode`**, not a where card: it has one photo and one answer.
 5. **Auto-placement is a D42 amendment**, recorded there: on-lake coordinates only.
-6. **The mobile hazard capture's prefill rides the map context**, not a route param: a `DraftPhoto`
-   is a pair of file URIs the sheet already copied out of the roll, and the capture's nonce is the
-   ask it belongs to.
+6. **The mobile hazard capture's prefill is a module-level note**, not a route param: a
+   `DraftPhoto` is a pair of file URIs, and the capture's nonce is the ask it belongs to. Built on
+   the map context first; the self-review moved it (below), because the Reports tab has no
+   provider for that context.
 
 ### The self-review pass — what it caught
 
@@ -1188,6 +1190,59 @@ Two P1s and two P2s, all real.
 - **RN render tests** — the harness is still unbuilt; the rules are in core and tested.
 - **Photos near a hazard's pin** suggest from the *open* sheet only; a hazard drawn with no sheet
   open has nothing to suggest, by design.
+
+## Plan — A10-8 (scoped 2026-09-24): the library grid and Google Photos
+
+**Founder ask (2026-09-23):** connect Google Photos and Apple Photos, ask them for every photo in
+the skate's window (or the day, before the window is set), and browse that list to choose what to
+include. **Go-ahead 2026-09-24** on the three recommendations below. Stacked on nothing: `main`
+has A10-7.
+
+### What the providers allow — checked 2026-09-23, read this first
+
+- **No cloud API reads a photo library by date any more.** Google removed the Library API's read
+  scopes on 2025-03-31 (`photoslibrary.readonly` and its siblings answer 403); an app may now
+  list only what it created itself. Apple has never had a web API for iCloud Photos.
+- **Google's replacement is the Photos Picker API.** The app creates a session and gets a
+  `pickerUri`; the person picks **inside Google's own UI**; the app polls the session until
+  `mediaItemsSet`, then lists what was picked. The only session setting is `maxItemCount`: **no
+  date filter, no preselection.** Scope `photospicker.mediaitems.readonly`. A picked item carries
+  `createTime` (capture, not upload), size and camera, and **no location**; its bytes come from a
+  `baseUrl` that needs the bearer token and lives 60 minutes, and Google strips location from the
+  bytes too. The app must pass **Google OAuth verification** before the public can use it; until
+  then it runs in testing mode for a named test-user list.
+- **On the phone the library is already reachable**, and A10-7 queries it by window
+  (`expo-media-library`). On iOS that library includes iCloud Photos (the reel downloads what is
+  not on the device). On Android it holds what is **on that phone**: a photo taken on another
+  device, or deleted from the phone to free space, is only in Google Photos.
+
+So: the phone's list is ours to draw; Google's list is Google's to draw, and ours starts at what
+the person picked. There is no Apple path on web.
+
+### The calls (founder, 2026-09-24)
+
+1. **Web gets *From Google Photos*** — an OAuth connection, testing mode for the alpha, the
+   verification review before launch.
+2. **The phone gets it too**, as a second door under the library, for the photos the phone does
+   not hold.
+3. **The phone's library becomes a full-screen grid opened from the Photos strip**; the strip
+   stays as the compact view.
+
+### Workstreams
+
+§8.4, §8.5 and §8.6 below, in that order; one PR, commits per workstream. Estimate ~2,500 lines.
+New decision **D207** (pickers, not libraries). The size rule has room; say so in the PR if not.
+
+### Owed before code
+
+- A **Google OAuth client** (Web application) in the Cloud project that already holds Firebase,
+  its consent screen with the one scope, the redirect to the Convex site, and the founder plus the
+  alpha crew as test users (the founder, in the console). `GOOGLE_PHOTOS_CLIENT_ID` +
+  `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev; their `05` rows land with the code that reads
+  them, as `credentialsRegister.test.ts` demands.
+- A build-time check, not a founder call: whether a browser can fetch a `baseUrl` with the bearer
+  token directly (CORS). The plan assumes it cannot and proxies (§8.6); if it can, the token would
+  have to reach the browser, which is worse, so the proxy stays either way.
 
 ## Review pass — 2026-09-19
 
@@ -1384,6 +1439,35 @@ A fresh-eyes review against the code, before any build. What it found and what c
   (`expo-video-thumbnails`), a per-upload size ceiling, playback via `expo-video` / `<video>`,
   storage on R2 rather than Convex file storage above a threshold; `photos` grows a `kind`
   or a sibling `media` table — decided when the pass is scoped.
+- §8.4 **The library grid (phone, A10-8).** A full-screen route opened from the Photos strip
+  (*See all*): the device library for the window, paginated with `getAssetsAsync`'s cursor rather
+  than A10-7's first 30, three columns of square thumbnails under a sticky header per local hour.
+  Hours inside the skate carry an ice rail; the other Reports' hours are marked with their number
+  (core's `timelineModel` spans). The header toggles *the skate* / *the whole day* (`photoWindow` /
+  `sameDayWindow`, both A10-1's); before an end time exists it opens on the day. A tap selects, a
+  long press previews full size, *Select all from the skate* is one button, and a sticky bar says
+  *Add n*. Already-included photos open checked. EXIF (time, location) is read on *Add*, one
+  `getAssetInfoAsync` per chosen asset, never for the whole grid. Pure parts in core and tested:
+  grouping by local hour across a DST day, marking the window's hours and the other Reports'.
+- §8.5 **The Google Photos connection (both surfaces, A10-8).** A `photoConnections` table, not a
+  widening of `activityConnections`: different scope, different purpose, nothing to push. OAuth
+  through the existing `oauthStates` and the same begin / complete / store shape as `strava.ts`;
+  the refresh token server-side only; *Disconnect* revokes it at Google and deletes the row
+  (Settings on web, *You* on the phone, beside Strava). Account deletion and the departed-user
+  sweep revoke and delete it; the data export names the connection and never the token.
+  PRIVACY.md gains a sentence: when you choose photos from Google Photos, we receive only the
+  photos you pick, without their location, and keep only the ones you post.
+- §8.6 **The picker session (both surfaces, A10-8).** A Convex action creates a session; the web
+  opens `pickerUri + '/autoclose'` in a new window, the phone in `expo-web-browser`; the client
+  polls through an action on the session's own `pollingConfig`, with *Waiting for Google Photos…*
+  and *Cancel*. On `mediaItemsSet`, an action lists the items; each item's bytes come through a
+  Convex HTTP route that checks the caller owns the session and the item is in it, fetches the
+  `baseUrl` sized to D31's full edge, and streams it back **unstored**. The client then runs the
+  bytes through the same `processPhoto` as any other photo (the re-encode strips what Google left)
+  and adds them with `takenAtMs` from `createTime`. With no location they are never placed on
+  their own; place-mode is how. The session is deleted at Google when the add is done or
+  abandoned. Web adds to the Post's pool (assignment by time, A10-7); the phone adds to the open
+  Report (A10-7 delta 3). Online only, both surfaces, and said so.
 
 ### §9 — Offline (mobile only)
 
@@ -1460,6 +1544,8 @@ Fewest sensible PRs; sub-workstreams are commits.
 - **A10-7 — photos and tracks.** §8.1 on both surfaces (assignment by time and location, the
   camera-roll reel), place-mode, the `?` menu, photo ↔ hazard, GPX import with a CTA. *(Built
   2026-09-23, stacked on `-6`; Strava import is a founder call.)*
+- **A10-8 — §8.4 + §8.5 + §8.6.** The phone's full-screen library grid, the Google Photos
+  connection, the picker session on both surfaces; D207. *(Scoped 2026-09-24, off `main`.)*
 
 ## Budgets
 
@@ -1497,12 +1583,18 @@ path, not a fallback.
 - **Pre-selected suggestions from anyone but the author.** Peer and data suggestions are ghosts
   (D188); only the author's own extracted words arrive selected, through *Confirm & Post*.
 - **A multi-body report row.** Everything downstream keys on one body; the Post carries the many.
+- **Reading a cloud photo library by date** (A10-8). Google removed the scopes in 2025 and Apple
+  never offered one; the providers' pickers are the door (D207).
+- **iCloud Photos on web, by any route.** There is no API, and the unofficial ones sign in as the
+  user with their Apple credentials. An iPhone's own library already holds iCloud's photos.
 
 ## Open at scoping
 
 1. The extraction engine's per-field floors — §1 answers with numbers.
 2. `PUT_IN_SNAP_METERS` — 150 m is a guess to be tuned on real tracks.
 3. The video pass (§8.3): its storage threshold, and when it is scoped.
+4. Google's OAuth verification for the Photos scope (§8.5): when to file it, and whether it has to
+   clear before the prod cutover or can follow it with the button hidden.
 
 Settled 2026-09-19 (founder): extracted chips confirm through one *Confirm & Post* screen; a
 partial Post in the feed shows its header with only the matching Reports (fallback if it feels

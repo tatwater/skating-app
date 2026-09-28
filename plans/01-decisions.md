@@ -6344,3 +6344,21 @@ redesign — so the sheet ships in the apps' current faces plus a `$mono` token 
 
 **Related:** D3 (nothing here says safe; the meters count sections, never grade ice), D7, D34,
 D186, D187, D188, D189, D190, D192, D193, D198, D203.
+
+## D207 — Photos from the cloud come through the provider's picker; nothing reads a library (A10-8)
+
+**Decided (2026-09-24, founder go-ahead on the A10-8 scoping).** The app never asks a cloud
+service for a person's photos by date or by anything else. It reads the **phone's own library**
+for the skate's window (A10-7's reel, A10-8's grid), and for photos that are only in the cloud it
+opens the **provider's own picker**, where the person chooses. Today that is Google's Photos
+Picker API, on both surfaces, behind a connection the person can revoke. What comes back is only
+what was picked; its bytes pass through our server unstored and are stripped and re-encoded on
+the device like every other photo (D31, D42), and a picked photo carries no location, so it is
+never placed on the lake by the app.
+
+**Why:** it is the only route the providers still allow — Google removed the library-read scopes
+on 2025-03-31, and Apple has no web API for iCloud Photos — and it is the right one anyway: a
+picker shows the person exactly what leaves their library, which a date query never did.
+
+**Related:** D31, D42, A10-7, `activityConnections` (Strava's push-only connection is the pattern
+for the token's lifecycle).
