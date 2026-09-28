@@ -8,6 +8,14 @@ import {
   serializeStateCookie,
 } from './oauthSession';
 
+/** fast-check 4 removed `hexaString`; this is the replacement its migration guide gives. */
+const HEX_DIGITS = '0123456789abcdef';
+const hexaString = (constraints: Omit<fc.StringConstraints, 'unit'>) =>
+  fc.string({
+    ...constraints,
+    unit: fc.integer({ min: 0, max: 15 }).map((n) => HEX_DIGITS[n] as string),
+  });
+
 describe('serializeStateCookie', () => {
   const cookie = serializeStateCookie('abc123', 900);
 
@@ -73,7 +81,7 @@ describe('readCookie', () => {
 
   it('round-trips whatever serializeStateCookie produced', () => {
     fc.assert(
-      fc.property(fc.hexaString({ minLength: 1, maxLength: 64 }), (nonce) => {
+      fc.property(hexaString({ minLength: 1, maxLength: 64 }), (nonce) => {
         const header = serializeStateCookie(nonce, 900).split(';')[0] as string;
         expect(readCookie(header, OAUTH_STATE_COOKIE)).toBe(nonce);
       }),
@@ -104,8 +112,8 @@ describe('browserOwnsOAuthFlow — the account-linking guard', () => {
   it('property: only the exact matching nonce ever passes', () => {
     fc.assert(
       fc.property(
-        fc.hexaString({ minLength: 8, maxLength: 32 }),
-        fc.hexaString({ minLength: 8, maxLength: 32 }),
+        hexaString({ minLength: 8, maxLength: 32 }),
+        hexaString({ minLength: 8, maxLength: 32 }),
         (a, b) => {
           expect(browserOwnsOAuthFlow(`${OAUTH_STATE_COOKIE}=${a}`, b)).toBe(a === b);
         },
