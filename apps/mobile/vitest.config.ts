@@ -18,5 +18,12 @@ export default defineConfig({
     // unbounded and still fails; this only stops green code reporting red.
     testTimeout: 20_000,
     passWithNoTests: true,
+    // Vitest 4 dropped `coverage.all`: without an `include`, only files a test imports are
+    // measured, and the untested screens would vanish from the denominator. Name the app's
+    // sources so the number stays honest about how much of the app is covered.
+    coverage: {
+      include: ['app/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}', '*.config.{ts,js}', 'scripts/**/*.mjs'],
+      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts', 'vitest.config.ts', 'babel.config.js'],
+    },
   },
 });

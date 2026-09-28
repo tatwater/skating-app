@@ -131,40 +131,36 @@ describe('transformFeatures', () => {
 });
 
 describe('array-limit escape hatch (mirrors the water ETL)', () => {
-  it(
-    'coarsens a boundary whose ring would exceed the Convex 8192-element array limit',
-    () => {
-      // A dense spiky ring (~9,000 vertices) survives the 5 m pass above the cap — a state outline's
-      // case — so adaptive coarsening must kick in.
-      const n = 9000;
-      const ring: number[][] = [];
-      for (let i = 0; i < n; i++) {
-        const t = (i / n) * 2 * Math.PI;
-        const r = 0.5 + (i % 2 === 0 ? 0 : 0.0003);
-        ring.push([-72 + r * Math.cos(t), 44 + r * Math.sin(t)]);
-      }
-      ring.push(ring[0] as number[]); // close the ring
-      expect(ring.length).toBeGreaterThan(MAX_RING_VERTICES);
+  // Adaptive coarsening of a ~9k-vertex ring is CPU-heavy; CI runs ~8× slower, so widen the timeout.
+  it('coarsens a boundary whose ring would exceed the Convex 8192-element array limit', () => {
+    // A dense spiky ring (~9,000 vertices) survives the 5 m pass above the cap — a state outline's
+    // case — so adaptive coarsening must kick in.
+    const n = 9000;
+    const ring: number[][] = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * 2 * Math.PI;
+      const r = 0.5 + (i % 2 === 0 ? 0 : 0.0003);
+      ring.push([-72 + r * Math.cos(t), 44 + r * Math.sin(t)]);
+    }
+    ring.push(ring[0] as number[]); // close the ring
+    expect(ring.length).toBeGreaterThan(MAX_RING_VERTICES);
 
-      const f: OsmBoundaryFeature = {
-        type: 'Feature',
-        properties: {
-          '@type': 'relation',
-          '@id': 4,
-          boundary: 'administrative',
-          admin_level: '4',
-          name: 'Vermont',
-        },
-        geometry: { type: 'Polygon', coordinates: [ring] },
-      };
-      const area = featureToAdminArea(f);
-      expect(area).not.toBeNull();
-      if (!area) return;
-      expect(largestRingSize(area.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES);
-    },
-    // Adaptive coarsening of a ~9k-vertex ring is CPU-heavy; CI runs ~8× slower, so widen the timeout.
-    { timeout: 30_000 },
-  );
+    const f: OsmBoundaryFeature = {
+      type: 'Feature',
+      properties: {
+        '@type': 'relation',
+        '@id': 4,
+        boundary: 'administrative',
+        admin_level: '4',
+        name: 'Vermont',
+      },
+      geometry: { type: 'Polygon', coordinates: [ring] },
+    };
+    const area = featureToAdminArea(f);
+    expect(area).not.toBeNull();
+    if (!area) return;
+    expect(largestRingSize(area.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES);
+  }, 30_000);
 
   it('skips (throws) a boundary still over the array cap after coarsening — too many components', () => {
     // >8192 tiny components: coarsening thins positions, not component count, so this can't fit.
