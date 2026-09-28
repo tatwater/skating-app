@@ -78,7 +78,8 @@ export type SheetMode =
   | { kind: 'edit'; reportId: string; postId?: string };
 
 /** Which door opened the sheet — only the layout reads it (the tab focuses the prose). */
-export type SheetDoor = 'body' | 'page' | 'track' | 'activity' | 'draft' | 'edit';
+/** `share`: photos shared to Gli from another app (A10-8 §8.7). */
+export type SheetDoor = 'body' | 'page' | 'track' | 'activity' | 'draft' | 'edit' | 'share';
 
 export interface PostSheet {
   /** The draft's id and key, minted at open so *Save draft* and *Post* address one row. */

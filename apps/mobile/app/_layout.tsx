@@ -4,6 +4,7 @@ import { api } from '@skating/convex/api';
 import { resolveAuthRoute } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { Stack } from 'expo-router';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTheme } from 'tamagui';
@@ -109,9 +110,13 @@ function RootNavigator() {
 function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Providers>
-        <RootNavigator />
-      </Providers>
+      {/* Photos shared to Gli (A10-8 §8.7): above every gate, so a share that arrives before
+          sign-in is still there after it. The tabs' `ShareIntentHandler` takes it. */}
+      <ShareIntentProvider>
+        <Providers>
+          <RootNavigator />
+        </Providers>
+      </ShareIntentProvider>
     </GestureHandlerRootView>
   );
 }

@@ -94,6 +94,20 @@ const config: ExpoConfig = {
         granularPermissions: ['photo'],
       },
     ],
+    // Share to Gli (A10-8 §8.7, D207): photos from Google Photos, the gallery or the camera, one or
+    // many. Android takes them by an intent filter (no permission); iOS by a Share Extension that
+    // reopens the app — configured here, untested until iOS is set up, and its App Group must be
+    // registered with Apple first. Images only: a shared link or text has no door.
+    [
+      'expo-share-intent',
+      {
+        androidIntentFilters: ['image/*'],
+        androidMultiIntentFilters: ['image/*'],
+        iosActivationRules: { NSExtensionActivationSupportsImageWithMaxCount: 20 },
+        iosAppGroupIdentifier: 'group.com.teaganatwater.gli',
+        iosShareExtensionName: 'Gli Share',
+      },
+    ],
     // A GPX file as a report's track (A10-7) — Strava, Garmin and most watches export one.
     'expo-document-picker',
     'expo-secure-store',

@@ -59,8 +59,11 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
   // Preselect the pinned minute in daylight, once, for a sheet that has nothing chosen yet. The
   // sheet's doing, not the author's: `defaulted` (so an extraction may step it down, D191) and
   // quiet (so an untouched sheet is not dirty the moment it opens).
+  // Photos shared to Gli (A10-8 §8.7) suggest their own end — a ghost the author taps (D188). While
+  // one stands, *now* is not preselected: it is the photos' day that is in question, not today's.
+  const fromPhotos = sheet.fields.endTime.chips.find((c) => c.key === 'photos');
   useEffect(() => {
-    if (chosen !== undefined || sheet.fields.endTime.touched) return;
+    if (chosen !== undefined || sheet.fields.endTime.touched || fromPhotos) return;
     const pre = row.preselected !== undefined ? row.chips[row.preselected] : undefined;
     if (!pre) return;
     dispatch(
@@ -73,7 +76,7 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
       },
       { quiet: true },
     );
-  }, [chosen, dispatch, row, sheet.fields.endTime.touched]);
+  }, [chosen, dispatch, row, sheet.fields.endTime.touched, fromPhotos]);
 
   const choose = (ms: number) =>
     dispatch({
@@ -118,7 +121,13 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
           : row.chips.map((c) => ({ ms: c.ms, pinned: c.pinned })),
     });
   }, [post, report.id, timeZone, now, endMs, startMs, body, gps, row]);
-  const offLadder = chosen !== undefined && !row.chips.some((c) => c.ms === chosen.ms);
+  const photosChosen = fromPhotos?.tier === 'solid' && chosen?.ms === fromPhotos.value.ms;
+  const photosPostable =
+    fromPhotos !== undefined &&
+    fromPhotos.value.ms >= row.pickerMinMs &&
+    fromPhotos.value.ms <= row.pickerMaxMs;
+  const offLadder =
+    chosen !== undefined && !photosChosen && !row.chips.some((c) => c.ms === chosen.ms);
 
   return (
     <SheetSection
@@ -146,6 +155,20 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
         </SheetHint>
       ) : (
         <YStack gap="$2">
+          {fromPhotos && photosPostable ? (
+            <XStack gap={6} flexWrap="wrap">
+              <SheetChip
+                compact
+                label={`${formatSkateTime(fromPhotos.value.ms)} · your photos`}
+                tier={photosChosen ? 'solid' : 'ghost'}
+                onPress={() => dispatch({ type: 'select', field: 'endTime', key: 'photos' })}
+              />
+            </XStack>
+          ) : fromPhotos ? (
+            <SheetHint>
+              Your photos are from more than a week ago. Reports post up to a week after the skate.
+            </SheetHint>
+          ) : null}
           <XStack gap={6} flexWrap="wrap">
             {row.chips.map((chip) => (
               <SheetChip
@@ -154,7 +177,7 @@ export function EndTimeSection({ report, body, dispatch, gaps, editing, timeZone
                 label={
                   chip.pinned ? `${clockFormat.format(chip.ms)} · now` : clockFormat.format(chip.ms)
                 }
-                tier={chosen?.ms === chip.ms ? 'solid' : undefined}
+                tier={chosen?.ms === chip.ms && !photosChosen ? 'solid' : undefined}
                 onPress={() => choose(chip.ms)}
               />
             ))}

@@ -48,3 +48,16 @@ export function updateSheet(update: (sheet: PostSheet) => PostSheet): void {
 export function useSheet(): PostSheet | null {
   return useSyncExternalStore(subscribe, getSheet, getSheet);
 }
+
+// ── The Report on screen (A10-8 §8.7) ───────────────────────────────────────────────────────────
+
+let onScreen: string | undefined;
+
+/** The sheet's active tab says which Report is on screen — where a shared photo lands by default. */
+export function setOnScreenReport(reportId: string | undefined): void {
+  onScreen = reportId;
+}
+
+export function getOnScreenReport(): string | undefined {
+  return onScreen;
+}
