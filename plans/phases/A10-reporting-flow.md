@@ -1191,14 +1191,38 @@ Two P1s and two P2s, all real.
 - **Photos near a hazard's pin** suggest from the *open* sheet only; a hazard drawn with no sheet
   open has nothing to suggest, by design.
 
-## Plan — A10-8 (scoped 2026-09-24): the library grid and Google Photos
+## Plan — A10-8 (scoped 2026-09-24, re-scoped 2026-09-28): photos, asked for when they're wanted
 
 **Founder ask (2026-09-23):** connect Google Photos and Apple Photos, ask them for every photo in
 the skate's window (or the day, before the window is set), and browse that list to choose what to
-include. **Go-ahead 2026-09-24** on the three recommendations below. Stacked on nothing: `main`
-has A10-7.
+include. **Go-ahead 2026-09-24** on three recommendations; **re-scoped 2026-09-28** after the
+founder's first device pass on A10-7 and a check of the platforms' rules, both below. Stacked on
+nothing: `main` has A10-7.
 
-### What the providers allow — checked 2026-09-23, read this first
+### What the device pass found — 2026-09-28, read this first
+
+- **The photo prompt blocked the sheet.** Opening the Report tab asked for the photo library at
+  once, before a lake or a time. The reel's effect requested permission whenever the sheet had an
+  end time and Photos was open, which every new sheet has. On Android 14+ that prompt is the
+  *Select photos / Allow all* dialog, so the person had to choose which photos Gli could see before
+  the report had a lake.
+- **The reel never ran on a device.** SDK 57's `expo-media-library` throws from
+  `getAssetsAsync` and `getAssetInfoAsync` imported from the package root (the class-based API
+  replaced them). A10-7's reel called both, its `catch` read the throw as an empty roll, and the
+  sheet said *No photos from those hours.* Typecheck saw only `@deprecated`, and no test loads the
+  module.
+- **Google Play restricts the library permission.** Since 2025-05-28 an app may hold
+  `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` only when the system photo picker cannot serve its core
+  function (gallery-type apps), and a custom picker does not qualify on its own. Attaching photos
+  to a report is the picker's case. A10-7 added the permission.
+- **Android's system photo picker already reaches the cloud.** It needs no permission, shows the
+  person's Google Photos library (backed-up photos not on the phone) beside the device's, and on
+  current versions asks whether to share a photo's location. `expo-image-picker` already opens it.
+
+So on Android the phone reads no library; the system picker is the door, and it already holds what
+a Google Photos connection would have added there.
+
+### What the providers allow — checked 2026-09-23
 
 - **No cloud API reads a photo library by date any more.** Google removed the Library API's read
   scopes on 2025-03-31 (`photoslibrary.readonly` and its siblings answer 403); an app may now
@@ -1210,39 +1234,52 @@ has A10-7.
   `createTime` (capture, not upload), size and camera, and **no location**; its bytes come from a
   `baseUrl` that needs the bearer token and lives 60 minutes, and Google strips location from the
   bytes too. The app must pass **Google OAuth verification** before the public can use it; until
-  then it runs in testing mode for a named test-user list.
-- **On the phone the library is already reachable**, and A10-7 queries it by window
-  (`expo-media-library`). On iOS that library includes iCloud Photos (the reel downloads what is
-  not on the device). On Android it holds what is **on that phone**: a photo taken on another
-  device, or deleted from the phone to free space, is only in Google Photos.
+  then it runs in testing mode for a named test-user list, where a refresh token expires in seven
+  days.
+- **On the phone the library is already reachable** (`expo-media-library`). On iOS that library
+  includes iCloud Photos (the reel downloads what is not on the device). On Android it holds what
+  is **on that phone**, and Play's policy keeps it out of reach (above).
 
-So: the phone's list is ours to draw; Google's list is Google's to draw, and ours starts at what
-the person picked. There is no Apple path on web.
+So: the phone's list is ours to draw on iOS; Google's list is Google's to draw, and ours starts at
+what the person picked. There is no Apple path on web.
 
-### The calls (founder, 2026-09-24)
+### The calls (founder)
 
-1. **Web gets *From Google Photos*** — an OAuth connection, testing mode for the alpha, the
-   verification review before launch.
-2. **The phone gets it too**, as a second door under the library, for the photos the phone does
-   not hold.
-3. **The phone's library becomes a full-screen grid opened from the Photos strip**; the strip
-   stays as the compact view.
+1. **(2026-09-24) Web gets *From Google Photos*:** an OAuth consent, testing mode for the alpha,
+   the verification review before launch.
+2. **(2026-09-28) The phone does not, for now.** Android's system picker already shows Google
+   Photos. The one case left is an iPhone that backs up to Google Photos, and it waits.
+3. **(2026-09-24, narrowed 2026-09-28) The library becomes a full-screen grid opened from the
+   Photos strip, on iOS.** Android never asks for the library (Play's policy); its door is the
+   system picker. The strip stays as the compact view.
+4. **(2026-09-28) Nothing asks for photos until the person reaches for them.** The sheet reads the
+   permission's state silently; the prompt comes only from a tap.
+5. **(2026-09-28) No stored Google token.** Every *From Google Photos* is its own consent (one tap
+   once granted) followed by the picker, in one browser trip. The access token lives in the picker
+   session's row for at most its hour and is deleted with it. That leaves no connection to manage,
+   revoke, export or sweep, and testing mode's seven-day expiry never applies.
+6. **(2026-09-28) Picked bytes come back from an action**, not an HTTP route. The Convex client
+   already carries the caller, and the web needs no CORS or hand-built auth header.
+7. **(2026-09-28) Gli is a share target on both phones.** Android through an intent filter (no
+   permission); iOS through a Share Extension, configured here and untested until iOS is set up.
+   Shared photos open a new report; if the open sheet already has something in it, one prompt
+   asks whether to add them to it or start a new one.
 
 ### Workstreams
 
-§8.4, §8.5 and §8.6 below, in that order; one PR, commits per workstream. Estimate ~2,500 lines.
-New decision **D207** (pickers, not libraries). The size rule has room; say so in the PR if not.
+§8.4 through §8.7 below, in that order; one PR, commits per workstream. Estimate ~3,000 lines.
+**D207** records the calls (pickers, never a library on Android; no stored token).
 
-### Owed before code
+### Owed before code (Google Photos only; the rest needs nothing)
 
 - A **Google OAuth client** (Web application) in the Cloud project that already holds Firebase,
-  its consent screen with the one scope, the redirect to the Convex site, and the founder plus the
-  alpha crew as test users (the founder, in the console). `GOOGLE_PHOTOS_CLIENT_ID` +
-  `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev; their `05` rows land with the code that reads
-  them, as `credentialsRegister.test.ts` demands.
-- A build-time check, not a founder call: whether a browser can fetch a `baseUrl` with the bearer
-  token directly (CORS). The plan assumes it cannot and proxies (§8.6); if it can, the token would
-  have to reach the browser, which is worse, so the proxy stays either way.
+  its consent screen with the one scope, the redirect
+  `https://agile-bee-397.convex.site/google-photos/callback`, and the founder plus the alpha crew
+  as test users (the founder, in the console). `GOOGLE_PHOTOS_CLIENT_ID` +
+  `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev. Until both are set, the web hides the button, so
+  the code ships dark.
+- **iOS, when it is set up:** an App Group (`group.com.teaganatwater.gli`) registered for the
+  Share Extension.
 
 ## Review pass — 2026-09-19
 
@@ -1439,35 +1476,53 @@ A fresh-eyes review against the code, before any build. What it found and what c
   (`expo-video-thumbnails`), a per-upload size ceiling, playback via `expo-video` / `<video>`,
   storage on R2 rather than Convex file storage above a threshold; `photos` grows a `kind`
   or a sibling `media` table — decided when the pass is scoped.
-- §8.4 **The library grid (phone, A10-8).** A full-screen route opened from the Photos strip
-  (*See all*): the device library for the window, paginated with `getAssetsAsync`'s cursor rather
-  than A10-7's first 30, three columns of square thumbnails under a sticky header per local hour.
-  Hours inside the skate carry an ice rail; the other Reports' hours are marked with their number
-  (core's `timelineModel` spans). The header toggles *the skate* / *the whole day* (`photoWindow` /
+- §8.4 **Photos, asked for when they're wanted (both phones, A10-8).** Nothing prompts when the
+  sheet opens. The Photos section reads the permission's state without asking
+  (`getPermissionsAsync`); the reel loads only when access is already there, and otherwise offers
+  *Show photos from your skate*, whose tap is the one prompt. Limited access shows the reel over
+  what was shared, with *Choose more* (`presentPermissionsPicker`). The reel moves to SDK 57's
+  class-based API (`Query` … `exeForMetadata`, `Asset.getInfo`, `Asset.getLocation`). **Android
+  reads no library** (Play's policy, D207): the manifest blocks `READ_MEDIA_IMAGES`,
+  `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO` and `READ_MEDIA_VISUAL_USER_SELECTED`, the reel is iOS-only,
+  and Android's *Add photos* is the system picker. The picker needs no permission on either phone,
+  so `pickPhotos` asks for none; on Android it shows Google Photos too. Pure parts in core and
+  tested: which state the reel is in, given the permission and the platform.
+- §8.5 **The library grid (iOS, A10-8).** A full-screen route opened from the Photos strip
+  (*See all*): the library for the window, paged with `Query.offset`/`limit` rather than A10-7's
+  first 30, three columns of square thumbnails under a sticky header per local hour. Hours inside
+  the skate carry an ice rail; the other Reports' hours are marked with their number (core's
+  `timelineModel` spans). The header toggles *the skate* / *the whole day* (`photoWindow` /
   `sameDayWindow`, both A10-1's); before an end time exists it opens on the day. A tap selects, a
   long press previews full size, *Select all from the skate* is one button, and a sticky bar says
-  *Add n*. Already-included photos open checked. EXIF (time, location) is read on *Add*, one
-  `getAssetInfoAsync` per chosen asset, never for the whole grid. Pure parts in core and tested:
-  grouping by local hour across a DST day, marking the window's hours and the other Reports'.
-- §8.5 **The Google Photos connection (both surfaces, A10-8).** A `photoConnections` table, not a
-  widening of `activityConnections`: different scope, different purpose, nothing to push. OAuth
-  through the existing `oauthStates` and the same begin / complete / store shape as `strava.ts`;
-  the refresh token server-side only; *Disconnect* revokes it at Google and deletes the row
-  (Settings on web, *You* on the phone, beside Strava). Account deletion and the departed-user
-  sweep revoke and delete it; the data export names the connection and never the token.
-  PRIVACY.md gains a sentence: when you choose photos from Google Photos, we receive only the
-  photos you pick, without their location, and keep only the ones you post.
-- §8.6 **The picker session (both surfaces, A10-8).** A Convex action creates a session; the web
-  opens `pickerUri + '/autoclose'` in a new window, the phone in `expo-web-browser`; the client
-  polls through an action on the session's own `pollingConfig`, with *Waiting for Google Photos…*
-  and *Cancel*. On `mediaItemsSet`, an action lists the items; each item's bytes come through a
-  Convex HTTP route that checks the caller owns the session and the item is in it, fetches the
-  `baseUrl` sized to D31's full edge, and streams it back **unstored**. The client then runs the
-  bytes through the same `processPhoto` as any other photo (the re-encode strips what Google left)
-  and adds them with `takenAtMs` from `createTime`. With no location they are never placed on
-  their own; place-mode is how. The session is deleted at Google when the add is done or
-  abandoned. Web adds to the Post's pool (assignment by time, A10-7); the phone adds to the open
-  Report (A10-7 delta 3). Online only, both surfaces, and said so.
+  *Add n*. Already-included photos open checked. Time and location are read on *Add*, per chosen
+  asset, never for the whole grid. Pure parts in core and tested: grouping by local hour across a
+  DST day, marking the window's hours and the other Reports'.
+- §8.6 **Google Photos on the web (A10-8).** No stored token, no connection table. *From Google
+  Photos* opens a window at once (so no popup blocker intervenes) and a mutation mints an
+  `oauthStates` row (`provider: 'google_photos'`) and returns Google's consent URL
+  (`access_type=online`, the one scope). The Convex HTTP callback exchanges the code for an access
+  token, creates a picker session, stores both in a `photoPickerSessions` row keyed by the state,
+  and redirects the window to `pickerUri + '/autoclose'`. The page polls an action on the session's
+  own `pollingConfig`, with *Waiting for Google Photos…* and *Cancel*. On `mediaItemsSet` an action
+  lists the photos (their ids and `baseUrl`s kept on the row, so a later fetch can only name an
+  item that was picked), and another returns each photo's bytes, sized to D31's full edge and
+  never stored. The page runs them through the same `processPhoto` as any other photo (the
+  re-encode strips what Google left) and adds them to the Post's pool with `takenAtMs` from
+  `createTime`; with no location they are never placed on their own, and place-mode is how. The
+  session is deleted at Google, and its row here, when the add is done or abandoned; a cron sweeps
+  rows past their hour; account deletion drops a departed person's rows. Online only, and said
+  so. PRIVACY.md gains the sentence, plus the disclosure Google's verification asks for (Limited
+  Use).
+- §8.7 **Share to Gli (both phones, A10-8).** `expo-share-intent`: an Android intent filter for
+  `image/*` (one or many; no permission), and an iOS Share Extension (configured, untested until
+  iOS is set up). A share stages the files and, when the open sheet has something in it, asks
+  once: *Add to this report* or *Start a new report*. A new report is a door (`?share=`): one
+  Report with the photos on it. The latest capture time is a ghost end-time chip (source `photos`,
+  a suggestion, never selected), and a photo on a lake the device knows names the lake, like the
+  tab's GPS does. Added to the open sheet, a photo goes to the Report its time says, else the one
+  on screen, since the phone has no pool (A10-7 delta 3). Time and location come from the file's
+  own EXIF, read on device by a small JPEG reader in core (tested); a file without EXIF, such as a
+  HEIC on iOS, arrives with neither.
 
 ### §9 — Offline (mobile only)
 

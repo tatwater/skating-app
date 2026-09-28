@@ -6345,20 +6345,35 @@ redesign — so the sheet ships in the apps' current faces plus a `$mono` token 
 **Related:** D3 (nothing here says safe; the meters count sections, never grade ice), D7, D34,
 D186, D187, D188, D189, D190, D192, D193, D198, D203.
 
-## D207 — Photos from the cloud come through the provider's picker; nothing reads a library (A10-8)
+## D207 — Photos come through a picker; Android reads no library; no stored cloud token (A10-8)
 
-**Decided (2026-09-24, founder go-ahead on the A10-8 scoping).** The app never asks a cloud
-service for a person's photos by date or by anything else. It reads the **phone's own library**
-for the skate's window (A10-7's reel, A10-8's grid), and for photos that are only in the cloud it
-opens the **provider's own picker**, where the person chooses. Today that is Google's Photos
-Picker API, on both surfaces, behind a connection the person can revoke. What comes back is only
-what was picked; its bytes pass through our server unstored and are stripped and re-encoded on
-the device like every other photo (D31, D42), and a picked photo carries no location, so it is
-never placed on the lake by the app.
+**Decided (2026-09-24, founder go-ahead on the A10-8 scoping; amended 2026-09-28 after the first
+device pass).** The app never asks a cloud service for a person's photos by date or by anything
+else, and on Android it never reads the photo library either:
 
-**Why:** it is the only route the providers still allow — Google removed the library-read scopes
-on 2025-03-31, and Apple has no web API for iCloud Photos — and it is the right one anyway: a
-picker shows the person exactly what leaves their library, which a date query never did.
+- **Android** attaches photos through the **system photo picker** only. It needs no permission,
+  and it already shows the person's Google Photos library beside the phone's. The manifest blocks
+  `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO` and
+  `READ_MEDIA_VISUAL_USER_SELECTED`.
+- **iOS** reads the **phone's own library** for the skate's window (A10-7's reel, A10-8's grid),
+  which includes iCloud Photos. The permission is asked for only when the person reaches for their
+  photos, never when the sheet opens.
+- **The web** opens **Google's Photos Picker**, where the person chooses. Each use is its own
+  consent: no refresh token is kept, and the access token lives only in the picker session's row,
+  for at most its hour. What comes back is only what was picked; its bytes pass through our server
+  unstored and are stripped and re-encoded like every other photo (D31, D42), and a picked photo
+  carries no location, so it is never placed on the lake by the app.
+- **Both phones are share targets** (Android intent filter, iOS Share Extension): a photo shared
+  to Gli is one the person chose, like a picked one.
 
-**Related:** D31, D42, A10-7, `activityConnections` (Strava's push-only connection is the pattern
-for the token's lifecycle).
+**Why:** it is the only route the providers still allow. Google removed the library-read scopes on
+2025-03-31, and Apple has no web API for iCloud Photos. Google Play has restricted
+`READ_MEDIA_IMAGES` to gallery-type apps since 2025-05-28, and attaching photos to a report is the
+picker's case. It is also the right route anyway: a picker shows the person exactly what leaves
+their library, which a date query never did. No stored token means nothing to revoke, export or
+leak, and testing mode's seven-day refresh-token expiry never bites the alpha.
+
+**Cost:** Android loses the reel, the photos found for the skate's hours; the picker has no date
+filter. An iPhone that backs up to Google Photos has no door to it yet.
+
+**Related:** D31, D42, A10-7, `oauthStates` (shared with Strava's connection).
