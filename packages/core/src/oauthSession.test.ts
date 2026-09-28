@@ -39,6 +39,12 @@ describe('serializeStateCookie', () => {
     expect(cleared).toContain('Max-Age=0');
     expect(cleared).toContain('Path=/strava');
   });
+
+  it("scopes another flow's cookie to that flow's own routes (A10-8)", () => {
+    expect(serializeStateCookie('x', 900, '/google-photos')).toContain('Path=/google-photos');
+    expect(serializeStateCookie('x', 900, '/google-photos')).not.toContain('Path=/strava');
+    expect(clearStateCookie('/google-photos')).toContain('Path=/google-photos');
+  });
 });
 
 describe('readCookie', () => {

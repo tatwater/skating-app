@@ -17,7 +17,8 @@
  *  - **`SameSite=Lax` is required, and `Strict` would break this.** The callback is a cross-site
  *    top-level GET navigation from `strava.com`; `Lax` sends cookies on exactly that, `Strict` would
  *    withhold them and every connect would fail.
- *  - **`Path=/strava`** so it's never attached to any other request to the deployment.
+ *  - **`Path=/strava`** (or the flow's own prefix — `/google-photos` since A10-8) so it's never
+ *    attached to any other request to the deployment.
  *  - **`HttpOnly` + `Secure`** — no script ever needs to read it, and the `.site` host is always HTTPS.
  *  - Both `/strava/start` and `/strava/callback` live on that same host, so this is a **first-party**
  *    cookie despite sitting in the middle of a cross-site OAuth dance.
@@ -31,7 +32,7 @@
 /** The cookie carrying the in-flight connect nonce. */
 export const OAUTH_STATE_COOKIE = 'skating_oauth_state';
 
-/** Path the cookie is scoped to — it has no business on any other route. */
+/** Path the cookie is scoped to by default — it has no business on any other route. */
 const COOKIE_PATH = '/strava';
 
 /**
@@ -40,10 +41,14 @@ const COOKIE_PATH = '/strava';
  * `maxAgeSeconds` should match the `oauthStates` TTL: a cookie that outlives its row is a cookie that
  * can only ever produce a confusing failure, and one that dies first breaks a legitimate slow login.
  */
-export function serializeStateCookie(state: string, maxAgeSeconds: number): string {
+export function serializeStateCookie(
+  state: string,
+  maxAgeSeconds: number,
+  path: string = COOKIE_PATH,
+): string {
   return [
     `${OAUTH_STATE_COOKIE}=${encodeURIComponent(state)}`,
-    `Path=${COOKIE_PATH}`,
+    `Path=${path}`,
     `Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`,
     'HttpOnly',
     'Secure',
@@ -55,10 +60,10 @@ export function serializeStateCookie(state: string, maxAgeSeconds: number): stri
  * Build the `Set-Cookie` value that clears it. Sent once the flow ends, whatever the outcome — the
  * nonce is spent either way, and leaving it behind would only let a later stray callback look valid.
  */
-export function clearStateCookie(): string {
+export function clearStateCookie(path: string = COOKIE_PATH): string {
   return [
     `${OAUTH_STATE_COOKIE}=`,
-    `Path=${COOKIE_PATH}`,
+    `Path=${path}`,
     'Max-Age=0',
     'HttpOnly',
     'Secure',

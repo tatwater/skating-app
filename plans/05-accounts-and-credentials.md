@@ -51,6 +51,7 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | **OpenRouteService** (HeiGIT) | drive-time isochrones (Phase 04), `foot-hiking` approaches (A06d) | ✅ | `ORS_API_KEY` on Convex; the ETL reads the same key | portal is <https://account.heigit.org>; measured quotas in § 3a |
 | **NREL WIND Toolkit** | winter wind roses | ✅ | `WIND_TOOLKIT_API_KEY` + `WIND_TOOLKIT_EMAIL`, local `.env` in `scripts/wind-climate` | free, instant at <https://developer.nlr.gov/signup/>; the host moved from `developer.nrel.gov`, hence the variable name |
 | **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | callback domain `agile-bee-397.convex.site` — confirmed on the dashboard 2026-09-20; athlete cap lifted to 10 the same day (new apps start single-player); no real OAuth round-trip has run yet |
+| **Google Photos Picker** (OAuth client in the Firebase Cloud project) | the web's *From Google Photos* (A10-8, D207): scope `photospicker.mediaitems.readonly`, one consent per use, no refresh token | ⬜ owed — the founder creates it | `GOOGLE_PHOTOS_CLIENT_ID` + `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex | a Web application client; redirect `https://agile-bee-397.convex.site/google-photos/callback`; testing mode (named test users) for the alpha, then Google's OAuth verification before launch; the button stays hidden until both variables are set |
 
 ### No account, by design
 
@@ -95,6 +96,7 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `RESEND_FROM_EMAIL` | ✅ `Gli Updates <updates@skating.teaganatwater.com>` | ⬜ | no |
 | `OPERATOR_ALERT_EMAIL` | ✅ | ⬜ | no |
 | `STRAVA_CLIENT_ID` · `STRAVA_CLIENT_SECRET` | ✅ | ⬜ | id no · secret **yes** |
+| `GOOGLE_PHOTOS_CLIENT_ID` · `GOOGLE_PHOTOS_CLIENT_SECRET` | ⬜ owed (A10-8) | ⬜ | id no · secret **yes** |
 | `WEB_APP_URL` | ✅ the Vercel deployment URL | ⬜ the prod URL | no |
 | `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 

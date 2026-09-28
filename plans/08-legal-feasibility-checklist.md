@@ -51,6 +51,7 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 | L17 | Privacy law outside the US — Québec Law 25, PIPEDA | Q16 | 🔬 | a separate pass before the first non-US region |
 | L18 | Donations vs. app-store billing rules | Q14 | ⛔ | choose the vehicle; a link-out avoids the store's cut and review |
 | L19 | Email compliance — unsubscribe, sender identity, postal address | D174, Q10 | 🟡 | one-click unsubscribe built; the lawyer confirms the rest |
+| L20 | Google OAuth verification for the Photos Picker; Play's photo-permission policy | D207 | 🟡 | testing mode for named alpha users; Android holds no photo permission |
 
 ---
 
@@ -217,3 +218,16 @@ CNAME-verified. For the lawyer with Q10:
 - [ ] Whether the digest counts as commercial mail under CAN-SPAM (which would require a physical
       postal address in every footer) or as transactional/relationship mail.
 - [ ] Sender identity wording in the footer once the name is final (Q15).
+
+## L20 — Google Photos and Google Play photo access (D207) 🟡
+- **Google OAuth verification.** *From Google Photos* on the web (A10-8) asks for
+  `photospicker.mediaitems.readonly`. Until Google verifies the app it runs in **testing mode**:
+  only the named test users can consent, which is the alpha's guardrail. Before the public can use
+  it: the verification review (the consent screen's branding, the privacy notice's Limited Use
+  disclosure, which `PRIVACY.md` carries since A10-8, and a demo of the scope's use). Nothing is
+  stored past the pick, so there is no token-security assessment to prepare for.
+- **Google Play's Photo and Video Permissions policy** (enforced since 2025-05-28): only apps
+  whose core function needs broad library access may hold `READ_MEDIA_IMAGES` /
+  `READ_MEDIA_VIDEO`. Gli holds neither — the manifest blocks them, and `appConfig.test.ts` fails
+  a build that would bring them back — so there is no declaration to file. If a later feature
+  wants the library on Android, this row is the gate.

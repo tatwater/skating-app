@@ -32,7 +32,8 @@
  * *that*, and it lands between the two. The seam is not *how old* something is, it is **what a person
  * typed versus what they observed**:
  *
- * - **Erased** — private artifacts with no community value: OAuth tokens, notifications, favorites,
+ * - **Erased** — private artifacts with no community value: OAuth tokens (a Strava connection, a
+ *   Google Photos pick in flight), notifications, favorites,
  *   blocks, support tickets, client signal events, unpublished recordings, abandoned photo uploads,
  *   and every bounty (a standing ask nobody is making any more).
  * - **Redacted** — free text on published content, cleared at 30 days: `reports.notes` and the notes
@@ -533,6 +534,13 @@ async function erasePrivate(
   await drain(
     await ctx.db
       .query('activityConnections')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .take(size),
+  );
+  // A *From Google Photos* in flight holds a live one-hour token (A10-8, D207).
+  await drain(
+    await ctx.db
+      .query('photoPickerSessions')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(size),
   );

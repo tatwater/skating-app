@@ -42,6 +42,19 @@ your reports"). The app is not directed at children under 16.
   only metadata we may keep is the photo's **timestamp** and **GPS coordinate**, and
   **only if you opt in** to placing that photo on the map. If you don't, the coordinate
   is not retained.
+- **Choosing photos** — Gli never looks through your photos until you ask it to. On an iPhone,
+  if you allow it, the report sheet shows the photos from your library taken during your skate's
+  hours; nothing leaves the phone until you post the ones you chose. On Android, Gli does not
+  read your photo library at all: you choose photos in the phone's own picker, or share them to
+  Gli from another app, and only those reach Gli.
+- **Google Photos (optional, on the web)** — when you choose *From Google Photos*, Google asks
+  you to let Gli see the photos you pick in Google's own window. We receive **only the photos you
+  pick, without their location**, and keep only the ones you post, processed like any other
+  photo. The access Google grants lasts at most an hour, is held on our server only while you
+  pick, and is deleted when you're done; Gli keeps no ongoing access to your Google account.
+  Gli's use and transfer of information received from Google APIs adheres to the
+  [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+  including the Limited Use requirements.
 - **Recorded skates (optional)** — the app can record your GPS track while you skate,
   using the phone's own location. Recording is something you start and stop; it never runs
   on its own. A recorded track is stored with your account, is used to work out which water
@@ -117,8 +130,8 @@ We use these services to run the app; they process data on our behalf:
 Convex (database & file storage), Clerk (authentication), Cloudflare (map tiles and the
 satellite-imagery archive), OpenRouteService (drive-time and walking routes), Open-Meteo and
 the US National Weather Service (weather), Sentry (crash/error), Resend (email notifications
-and operator email), Expo and Apple/Google (app distribution & push), and — only if you
-connect it — Strava. Data you push to a fitness provider is also governed by that
+and operator email), Expo and Apple/Google (app distribution & push), Google Photos — only when you pick from
+it — and — only if you connect it — Strava. Data you push to a fitness provider is also governed by that
 provider's own terms and privacy policy.
 
 ## Retention, deletion, and export

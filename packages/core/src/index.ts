@@ -37,6 +37,7 @@ export * from './feedFilters';
 export * from './forecastPlan';
 export * from './freezeUpCaption';
 export * from './geometry';
+export * from './googlePhotosPicker';
 export * from './gpxParse';
 export * from './hazardAdvisory';
 export * from './hazardBundle';

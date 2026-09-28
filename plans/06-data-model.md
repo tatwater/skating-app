@@ -96,7 +96,8 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | --- | --- |
 | `gpsActivities` | a recorded skate — ours (`native`); one day an imported GPX (backlog) or a watch adapter's — resolved to the body it was on (D44), linked to a report, the substrate of the aggregate layer (D58) — Phase 08 |
 | `activityConnections` | a person's link to a provider, tokens included; Strava push today — D24 |
-| `oauthStates` | short-lived OAuth `state` nonces — Phase 08 |
+| `oauthStates` | short-lived OAuth `state` nonces — Phase 08; Google Photos' too, marked `consumedAt` rather than deleted while its pick is in flight — A10-8 |
+| `photoPickerSessions` | a web *From Google Photos* in flight: one Photos Picker session and its one-hour access token, no refresh token; deleted when done, swept past its hour, erased with the account — A10-8, D207 |
 
 ### Weather
 

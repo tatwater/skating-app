@@ -68,6 +68,14 @@ crons.interval(
 // connect flow is the only way one survives — but a nonce that lingers is a credential that lingers,
 // so it gets swept rather than left to sit.
 crons.interval('prune oauth states', { hours: 6 }, internal.strava.pruneOAuthStates, {});
+// A web *From Google Photos* session holds a one-hour token (A10-8, D207). The page deletes its row
+// when it is done; this catches the tab that was closed mid-pick, soon after the hour runs out.
+crons.interval(
+  'prune photo picker sessions',
+  { hours: 1 },
+  internal.googlePhotos.pruneSessions,
+  {},
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Account lifecycle + storage hygiene (A03 / D33 / D62)
