@@ -39,7 +39,8 @@
     "pmtiles": "^4.5.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "recharts": "^2.15.4",
+    "react-is": "19.2.3",
+    "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
     "terra-draw": "^1.35.0",
     "terra-draw-maplibre-gl-adapter": "^1.4.1"

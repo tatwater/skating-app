@@ -7,11 +7,25 @@
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from 'next-themes';
 import { describe, expect, it } from 'vitest';
-import { ChartCard, ChartLegend, CompositionChart, MiniTable } from './Charts';
+import { ChartCard, ChartLegend, CompositionChart, formatTooltipValue, MiniTable } from './Charts';
 
 function withTheme(node: React.ReactNode) {
   return render(<ThemeProvider attribute="class">{node}</ThemeProvider>);
 }
+
+describe('formatTooltipValue', () => {
+  const percent = (v: number) => `${Math.round(v * 100)}%`;
+
+  it('formats a measured value', () => {
+    expect(formatTooltipValue(0.42, percent)).toBe('42%');
+    expect(formatTooltipValue(0, percent)).toBe('0%');
+  });
+
+  it('shows a never-measured day as absent rather than formatting it', () => {
+    expect(formatTooltipValue(null, percent)).toBe('—');
+    expect(formatTooltipValue(undefined, percent)).toBe('—');
+  });
+});
 
 describe('ChartCard', () => {
   it('offers the data as a table — the non-visual path every chart must have', () => {

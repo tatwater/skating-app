@@ -98,6 +98,15 @@ const axisProps = {
   tickLine: false,
 } as const;
 
+/**
+ * A tooltip value through a numeric formatter. Recharts hands the tooltip whatever the row holds,
+ * and a gap-filled day holds `null` — shown as absent, the same `—` the tables use, rather than
+ * pushed through a formatter that expects a number.
+ */
+export function formatTooltipValue(value: unknown, format: (v: number) => string): string {
+  return typeof value === 'number' ? format(value) : '—';
+}
+
 /** A small legend row (dataviz: always present for ≥2 series, so identity isn't color-alone). */
 export function ChartLegend({ items }: { items: { label: string; color: string }[] }) {
   return (
@@ -163,7 +172,9 @@ export function TimeSeriesChart({
           />
           <Tooltip
             contentStyle={tooltipStyle}
-            {...(yFormatter ? { formatter: (v: number) => yFormatter(v) } : {})}
+            {...(yFormatter
+              ? { formatter: (v: unknown) => formatTooltipValue(v, yFormatter) }
+              : {})}
           />
           {lines.map((line, i) => (
             <Line
