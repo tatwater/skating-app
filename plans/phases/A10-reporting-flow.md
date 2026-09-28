@@ -1066,6 +1066,9 @@ code from #74 that the merge brought in, not this PR's, and is left for its own 
 
 ## Built record — A10-7 (2026-09-23, `phase-a10-reporting-flow-7`, PR #79)
 
+> **Corrected by A10-8:** the camera-roll reel below never ran on a device — SDK 57's
+> `expo-media-library` throws from the calls it made (A10-8 delta 1). A10-8 rebuilt it, iOS-only.
+
 The second PR of the re-skin, the founder's approved split: what the sheet does with **photos and
 tracks**. Four commits, built off `-6` and rebased onto `main` once #78 merged; ~2,700 changed
 lines over 38 files. Suites at build: core 3,040 ·
@@ -1191,6 +1194,112 @@ Two P1s and two P2s, all real.
 - **Photos near a hazard's pin** suggest from the *open* sheet only; a hazard drawn with no sheet
   open has nothing to suggest, by design.
 
+## Built record — A10-8 (2026-09-28, `phase-a10-reporting-flow-8`, PR #80)
+
+Photos, asked for when they're wanted. Re-scoped the morning of the build (the plan below records
+why), then four workstream commits and one review commit; ~4,400 changed lines over 56 files,
+docs included. Suites at build: core 3,153 · convex 1,809 · web 695 · mobile 120. **One schema
+change** (a new `photoPickerSessions` table; `oauthStates` widened by `consumedAt` and an
+`OAUTH_PROVIDERS` union — both additive, no backfill). **One native module**
+(`expo-share-intent` 8) and a manifest change: the phone needs a new EAS preview build. *From
+Google Photos* ships dark until its OAuth client exists.
+
+### What shipped, by workstream
+
+- **§8.4 photos, asked for when they're wanted** — the Photos section reads the library
+  permission's state without a prompt (core `libraryAccess`), and the only prompt is a tap on
+  *Show photos from your skate*; limited access gets *Choose more*, a final decline *Open
+  Settings*, and the state is re-read on the way back. The reel moved to SDK 57's class-based API
+  (`Query`, `Asset`); A10-7's calls had been throwing stubs (below). **Android reads no library**:
+  the manifest blocks `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO` and
+  `READ_MEDIA_VISUAL_USER_SELECTED` (`appConfig.test.ts` fails a build that would bring one back),
+  the reel is iOS-only, and *Add photos* is the system picker, which asks for nothing and shows
+  Google Photos. Every phone door now makes its draft photo through `sheetPhotos.toDraftPhoto`, and
+  the reel's placement rule is core's `placeOnLake`, so the picker also places an unlocated photo
+  along a recorded track.
+- **§8.5 the library grid (iOS)** — `app/photo-library.tsx`, from the strip's *See all*: the skate
+  or the whole day, paged 90 at a time, three columns under a sticky header per local hour (core
+  `libraryGrid`: an hour is an instant, so the fall-back night's two 1 AMs stay apart and say which
+  is which; fast-checked across four zones including St. John's), an ice rail on the skate's hours,
+  the other Reports' numbers, *Select all from the skate*, a long-press preview, *Add n*. What is
+  already on the Report opens checked; unchecking removes it and its files. The reel and the grid
+  share which library photo became which draft (`libraryPicks`).
+- **§8.6 From Google Photos (web)** — `googlePhotos.ts`, `GooglePhotos.tsx` and the
+  `/google-photos/callback` page. One consent per pick (`access_type=online`), no refresh token;
+  the hour's token lives only on its `photoPickerSessions` row, which the page deletes, an hourly
+  cron sweeps and account deletion erases. Google returns to the web app, where `complete` runs as
+  the signed-in person and consumes only their own state. Items are recorded at list time and a
+  fetch may name only those; the token goes only to a `googleusercontent` https URL; bytes over
+  8 MB are refused; every call to Google is bounded at 20 s. Core `googlePhotosPicker` reads
+  Google's answers. PRIVACY.md gains the photo-choice paragraph, the Google Photos sentence and the
+  Limited Use disclosure; `05`, `06` and `08` (new **L20**) carry their rows.
+- **§8.7 share to Gli** — `expo-share-intent`: Android intent filters for one or many `image/*`, an
+  iOS Share Extension (configured, untested), and a `+native-intent` rewrite for its link. Core
+  `sharedPhotos` decides where a share lands: a new report, or — when the open sheet has something
+  in it — one question, *Add to this one* or *New report*. A new report from a share names the lake
+  only when a photo was taken on one the device has cached, and offers the latest capture as a
+  ghost end time (a new `photos` suggestion source, drawn on the End row, where the *now*
+  preselect stands aside for it). A shared file's time and fix come from core `readJpegExif`,
+  bounds-checked and fuzzed.
+
+### Deltas from the plan — read these before extending
+
+1. **A10-7's reel never ran on a device.** SDK 57 made `getAssetsAsync` / `getAssetInfoAsync` from
+   the package root into stubs that throw; the reel's `catch` read the throw as an empty roll. The
+   A10-7 record above describes a reel that shipped; it shipped dead. Nothing loads a native module
+   in a test, so a throwing stub typechecks — the lesson is to read a dependency's build output
+   for `throw` when it deprecates, not its types.
+2. **The Google Photos callback is the web app's, not the Convex site's.** Built first as Strava's
+   shape — a Convex-site start route planting a session cookie, the callback checking it — the
+   self-review found a forwarded start link defeats it: whoever opens the link gets the cookie. The
+   only thing that tells a victim from the person who minted the state is the Gli session, which
+   lives on the web origin, so the callback lives there too. **Strava's connect flow has the same
+   hole** (Owed).
+3. **The page never judges by its window.** Google's pages may set a cross-origin opener policy
+   that severs the popup from its opener, after which `window.closed` reads `true` mid-pick. The
+   pick ends when its session does, or on *Cancel*.
+4. **A Google Photos nonce is marked `consumedAt`, not deleted,** so the polling page never reads
+   the gap between the consume and the session's row as *gone*; the session's own write deletes
+   it, and every failed ending does.
+5. **The phone has no Google Photos door**, and Android no reel or grid (founder calls 2026-09-28).
+6. **A shared photo's location never becomes the Report's coordinate.** Built first as the tab's
+   GPS fallback (a coordinate the flush resolves); caught before commit, since a photo taken at
+   home would travel with the report.
+7. **The grid's tiles read each original's uri** (`Asset.getUri`), which on iOS may fetch an
+   iCloud original to draw a 74-pt tile. `expo-image`'s `ph://` thumbnails would not; it is a new
+   native module for a screen nobody can run yet, so it waits for iOS (Owed).
+
+### The self-review pass — what it caught
+
+`/code-review xhigh` over `main..phase-a10-reporting-flow-8`: fifteen findings, fourteen acted on
+in one commit (its message lists them). Four worth naming: the forwardable consent link (delta 2);
+the severed window (delta 3); a share reset on backgrounding, so one that arrived before sign-in
+died on the trip to the mail app for the code; and *New report* behind a dirty edit, which the
+report tab would hold and the share would be dropped. The one not acted on is the Android
+picker's location (Owed).
+
+### Owed
+
+- **The Google OAuth client** (founder, Cloud console): the one scope, the redirect
+  `<WEB_APP_URL>/google-photos/callback`, the alpha crew as test users; then
+  `GOOGLE_PHOTOS_CLIENT_ID` + `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev. The first real run is
+  after merge, when the callback page is deployed where `WEB_APP_URL` points. Two assumptions it
+  checks: picked items' `baseUrl`s are on `googleusercontent.com` (anything else is dropped), and
+  `/autoclose` closes the picker window.
+- **Google's OAuth verification** before the public can use it (L20).
+- **The Pixel pass** (a new EAS preview build): the Report tab opens with no photo prompt; *Add
+  photos* opens the system picker with Google Photos in it; **whether a picked photo keeps its
+  location** — if not, request `ACCESS_MEDIA_LOCATION` on the *Add photos* tap; a share from
+  Google Photos, one and many, with nothing open, with a draft open, and with a published report's
+  edit open; a share before sign-in.
+- **iOS, when it is set up:** register the App Group `group.com.teaganatwater.gli`; run the reel,
+  the grid (thumbnails through `expo-image`), and the Share Extension (a HEIC arrives undated).
+- **Strava's connect link can be forwarded** (Phase 08; delta 2): someone could mint a state and
+  send `/strava/start?state=…`, and a victim who connects would link their Strava to that person's
+  profile, which can then push activities to it. The fix is the same shape as §8.6's — a callback
+  where the Gli session is — but the phone opens that flow in an in-app browser with no Gli
+  session, so it is a design call, not a patch. On the roadmap.
+
 ## Plan — A10-8 (scoped 2026-09-24, re-scoped 2026-09-28): photos, asked for when they're wanted
 
 **Founder ask (2026-09-23):** connect Google Photos and Apple Photos, ask them for every photo in
@@ -1273,9 +1382,9 @@ what the person picked. There is no Apple path on web.
 ### Owed before code (Google Photos only; the rest needs nothing)
 
 - A **Google OAuth client** (Web application) in the Cloud project that already holds Firebase,
-  its consent screen with the one scope, the redirect
-  `https://agile-bee-397.convex.site/google-photos/callback`, and the founder plus the alpha crew
-  as test users (the founder, in the console). `GOOGLE_PHOTOS_CLIENT_ID` +
+  its consent screen with the one scope, the redirect `<WEB_APP_URL>/google-photos/callback` (the
+  Vercel deployment Convex dev points at), and the founder plus the alpha crew as test users (the
+  founder, in the console). `GOOGLE_PHOTOS_CLIENT_ID` +
   `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev. Until both are set, the web hides the button, so
   the code ships dark.
 - **iOS, when it is set up:** an App Group (`group.com.teaganatwater.gli`) registered for the
@@ -1498,21 +1607,24 @@ A fresh-eyes review against the code, before any build. What it found and what c
   asset, never for the whole grid. Pure parts in core and tested: grouping by local hour across a
   DST day, marking the window's hours and the other Reports'.
 - §8.6 **Google Photos on the web (A10-8).** No stored token, no connection table. *From Google
-  Photos* opens a window at once (so no popup blocker intervenes) and a mutation mints an
+  Photos* opens a window at once (so no popup blocker intervenes), and a mutation mints an
   `oauthStates` row (`provider: 'google_photos'`) and returns Google's consent URL
-  (`access_type=online`, the one scope). The Convex HTTP callback exchanges the code for an access
-  token, creates a picker session, stores both in a `photoPickerSessions` row keyed by the state,
-  and redirects the window to `pickerUri + '/autoclose'`. The page polls an action on the session's
-  own `pollingConfig`, with *Waiting for Google Photos…* and *Cancel*. On `mediaItemsSet` an action
-  lists the photos (their ids and `baseUrl`s kept on the row, so a later fetch can only name an
-  item that was picked), and another returns each photo's bytes, sized to D31's full edge and
-  never stored. The page runs them through the same `processPhoto` as any other photo (the
-  re-encode strips what Google left) and adds them to the Post's pool with `takenAtMs` from
-  `createTime`; with no location they are never placed on their own, and place-mode is how. The
-  session is deleted at Google, and its row here, when the add is done or abandoned; a cron sweeps
-  rows past their hour; account deletion drops a departed person's rows. Online only, and said
-  so. PRIVACY.md gains the sentence, plus the disclosure Google's verification asks for (Limited
-  Use).
+  (`access_type=online`, the one scope), whose redirect is the **web app's**
+  `/google-photos/callback`. That page runs in the same browser as the Gli session, so it completes
+  the pick **as the signed-in person**: an action consumes the state only if that person minted
+  it, trades the code for an access token, creates a picker session, stores both in a
+  `photoPickerSessions` row keyed by the state, and sends the window to `pickerUri + '/autoclose'`.
+  The page that asked polls an action on the session's own `pollingConfig`, with *Waiting for
+  Google Photos…* and *Cancel*; it never judges by the window, which Google's pages may sever. On
+  `mediaItemsSet` an action lists the photos (their ids and `baseUrl`s kept on the row, so a later
+  fetch can only name an item that was picked), and another returns each photo's bytes, sized to
+  D31's full edge and never stored. The page runs them through the same `processPhoto` as any
+  other photo (the re-encode strips what Google left) and adds them to the Post's pool with
+  `takenAtMs` from `createTime`; with no location they are never placed on their own, and
+  place-mode is how. The session is deleted at Google, and its row here, when the add is done or
+  abandoned; a cron sweeps rows past their hour; account deletion drops a departed person's rows.
+  Online only, and said so. PRIVACY.md gains the sentence, plus the disclosure Google's
+  verification asks for (Limited Use).
 - §8.7 **Share to Gli (both phones, A10-8).** `expo-share-intent`: an Android intent filter for
   `image/*` (one or many; no permission), and an iOS Share Extension (configured, untested until
   iOS is set up). A share stages the files and, when the open sheet has something in it, asks
