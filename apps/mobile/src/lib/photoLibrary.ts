@@ -89,13 +89,25 @@ export async function libraryPhotos(
   const dated = rows.filter(
     (r): r is typeof r & { creationTime: number } => r.creationTime !== null,
   );
-  return Promise.all(
+  // One tile that will not resolve (an iCloud-only original with no signal) costs that tile, not
+  // the page. Owed: each tile reads its original's uri; `expo-image`'s `ph://` thumbnails would not.
+  const settled = await Promise.allSettled(
     dated.map(async (r) => ({
       assetId: r.id,
       takenAtMs: r.creationTime,
       uri: await new MediaLibrary.Asset(r.id).getUri(),
     })),
   );
+  return settled.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : []));
+}
+
+/**
+ * Tell `onChange` when the library — or what Gli may see of it — changes: *Choose more* returns
+ * before the person has chosen (the system sheet has no completion), so the reel waits for this.
+ */
+export function onLibraryChange(onChange: () => void): () => void {
+  const sub = MediaLibrary.addListener(() => onChange());
+  return () => sub.remove();
 }
 
 /**

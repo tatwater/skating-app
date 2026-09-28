@@ -46,8 +46,9 @@ export default function PhotoLibraryScreen() {
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
   const [preview, setPreview] = useState<GridPhoto | null>(null);
+  const [missed, setMissed] = useState(0);
   // What is on the Report now, by asset — those open checked.
-  const included = useMemo(() => {
+  const readIncluded = useCallback((): Record<string, string> => {
     if (!request) return {};
     const report = getSheet()?.reports.find((r) => r.id === request.reportId);
     const onReport = new Set(report?.photos.map((p) => p.id));
@@ -55,6 +56,7 @@ export default function PhotoLibraryScreen() {
       Object.entries(getPicks(request.reportId)).filter(([, draftId]) => onReport.has(draftId)),
     );
   }, [request]);
+  const [included, setIncluded] = useState<Record<string, string>>(readIncluded);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set(Object.keys(included)),
   );
@@ -127,13 +129,20 @@ export default function PhotoLibraryScreen() {
     if (!request) return;
     setAdding(true);
     try {
+      // Each photo on its own: one that will not read (an iCloud original with no signal) is
+      // counted and left out, not the reason the rest are.
       const added: { assetId: string; draft: Awaited<ReturnType<typeof toDraftPhoto>> }[] = [];
+      let missed = 0;
       for (const assetId of toAdd) {
-        const asset = await readLibraryPhoto(assetId);
-        added.push({
-          assetId,
-          draft: await toDraftPhoto(asset, { outline: request.outline, track: request.track }),
-        });
+        try {
+          const asset = await readLibraryPhoto(assetId);
+          added.push({
+            assetId,
+            draft: await toDraftPhoto(asset, { outline: request.outline, track: request.track }),
+          });
+        } catch {
+          missed += 1;
+        }
       }
       const removedDrafts = new Set(toRemove.map((id) => included[id] as string));
       // A removed photo owns its copied files; drop them with it, as the Photos section does.
@@ -155,6 +164,14 @@ export default function PhotoLibraryScreen() {
       for (const id of toRemove) delete nextPicks[id];
       for (const a of added) nextPicks[a.assetId] = a.draft.id;
       setPicks(request.reportId, nextPicks);
+      if (missed > 0) {
+        // Stay, saying so: what landed is now what is included.
+        const now = readIncluded();
+        setMissed(missed);
+        setIncluded(now);
+        setSelected(new Set(Object.keys(now)));
+        return;
+      }
       router.back();
     } catch {
       setFailed(true);
@@ -272,6 +289,13 @@ export default function PhotoLibraryScreen() {
         {failed ? (
           <Paragraph color="$danger" paddingHorizontal="$3">
             Couldn't read your library just now.
+          </Paragraph>
+        ) : null}
+        {missed > 0 ? (
+          <Paragraph color="$danger" paddingHorizontal="$3">
+            {missed === 1
+              ? "One photo couldn't be read — it may be in iCloud only. The rest were added."
+              : `${missed} photos couldn't be read — they may be in iCloud only. The rest were added.`}
           </Paragraph>
         ) : null}
         <XStack padding="$3" borderTopWidth={1} borderColor="$border">

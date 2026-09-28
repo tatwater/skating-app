@@ -17,12 +17,13 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../../lib/draftPhotos';
 import { getTrack } from '../../lib/draftStore';
 import { setHazardPrefill } from '../../lib/hazardPrefill';
-import { openLibraryGridRequest, setPicks, usePicks } from '../../lib/libraryPicks';
+import { getPicks, openLibraryGridRequest, setPicks, usePicks } from '../../lib/libraryPicks';
 import {
   askLibraryAccess,
   chooseMorePhotos,
   type LibraryItem,
   libraryPhotos,
+  onLibraryChange,
   READS_LIBRARY,
   readLibraryAccess,
   readLibraryPhoto,
@@ -131,11 +132,16 @@ export function PhotosSection({
   const chooseMore = async () => {
     try {
       await chooseMorePhotos();
-      void loadReel();
     } catch {
       setError("Couldn't open the photo chooser — try again.");
     }
   };
+  // What was shared changes after *Choose more* returns (the system sheet has no completion): the
+  // library says so, and the reel reads again.
+  useEffect(() => {
+    if (access !== 'limited') return;
+    return onLibraryChange(() => void loadReel());
+  }, [access, loadReel]);
 
   /** The recorded track's points, for placing an undated-location photo where the skater was. */
   const trackPoints = useMemo(() => {
@@ -168,8 +174,9 @@ export function PhotosSection({
   // Which library photo became which draft — shared with the grid, so a second tap on either
   // removes rather than re-adds.
   const assetToDraft = usePicks(report.id);
+  // Read at write time, not from the render: the grid may have written picks while a read awaited.
   const setIncludedAsset = (assetId: string, draftId: string) =>
-    setPicks(report.id, { ...assetToDraft, [assetId]: draftId });
+    setPicks(report.id, { ...getPicks(report.id), [assetId]: draftId });
 
   /** *See all* (iOS): the full-screen grid, for the skate or the day (§8.5). */
   const post = useSheet();

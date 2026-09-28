@@ -29,7 +29,7 @@ import { convex } from './convex';
 import { getDraft, getTrack } from './draftStore';
 import { getSuggestedSkateWindow } from './dwellTracker';
 import { exifCoord } from './photo';
-import { type SharedPhoto, takeStagedShare } from './sharedPhotoFiles';
+import { type SharedPhoto, stagedShare } from './sharedPhotoFiles';
 import { toDraftPhoto } from './sheetPhotos';
 
 export interface DoorParams {
@@ -128,7 +128,7 @@ export async function openDoor(
   }
 
   if (params.share) {
-    const photos = takeStagedShare(params.share);
+    const photos = stagedShare(params.share);
     return photos ? shareSheet(photos, showPutIn, now) : null;
   }
 

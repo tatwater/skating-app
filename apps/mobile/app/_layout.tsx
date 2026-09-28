@@ -112,7 +112,8 @@ function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       {/* Photos shared to Gli (A10-8 §8.7): above every gate, so a share that arrives before
           sign-in is still there after it. The tabs' `ShareIntentHandler` takes it. */}
-      <ShareIntentProvider>
+      {/* Not reset on backgrounding: signing in means a trip to the mail app for the code. */}
+      <ShareIntentProvider options={{ resetOnBackground: false }}>
         <Providers>
           <RootNavigator />
         </Providers>

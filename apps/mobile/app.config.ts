@@ -92,6 +92,9 @@ const config: ExpoConfig = {
           'Gli shows the photos you took during a skate so you can add them to your report. Nothing is uploaded until you post, and nothing is removed from your library.',
         isAccessMediaLocationEnabled: true,
         granularPermissions: ['photo'],
+        // iOS would otherwise pop its own "select more photos?" when a limited library is read —
+        // on the sheet's open. *Choose more* is the person's own door to that (D207).
+        preventAutomaticLimitedAccessAlert: true,
       },
     ],
     // Share to Gli (A10-8 §8.7, D207): photos from Google Photos, the gallery or the camera, one or

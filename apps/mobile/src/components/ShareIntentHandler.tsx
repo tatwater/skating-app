@@ -1,7 +1,13 @@
-import { shareLanding, shareReportFor, sheetLabel, updateReport } from '@skating/core';
+import {
+  type PostSheet,
+  shareLanding,
+  shareReportFor,
+  sheetLabel,
+  updateReport,
+} from '@skating/core';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
-import { useShareIntentContext } from 'expo-share-intent';
+import { type ShareIntentFile, useShareIntentContext } from 'expo-share-intent';
 import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import { cachedBodyPolygon } from '../lib/bodyCache';
@@ -15,54 +21,76 @@ import { getOnScreenReport, getSheet, updateSheet } from '../lib/sheetStore';
  * Photos shared to Gli from another app (A10-8 §8.7, founder call 2026-09-28) — Google Photos, the
  * gallery, the camera. A share opens a report with the photos on it; if the open sheet already has
  * something in it, one question first: add them to it, or start a new one (core's `shareLanding`).
- * Mounted inside the signed-in tabs, so a share that arrives before sign-in waits for it.
+ * Mounted inside the signed-in tabs, so a share that arrives before sign-in waits for it (the
+ * provider keeps it through the trip to the mail app for the code).
  *
+ * Each share is taken off the module the moment its files are in hand — clearing does not delete
+ * them — so a second share that arrives while the first is being read is queued, never wiped.
  * Renders nothing. Only photos are taken; a shared link or text is let go.
  */
 export function ShareIntentHandler() {
   const router = useRouter();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
-  const handling = useRef(false);
+  const queue = useRef<ShareIntentFile[][]>([]);
+  const running = useRef(false);
 
   useEffect(() => {
-    if (!hasShareIntent || handling.current) return;
-    handling.current = true;
-    const files = shareIntent.files ?? [];
-    void readSharedPhotos(files)
-      .then((photos) => {
-        // Read before letting the intent go: its files are the ones just read.
-        resetShareIntent();
-        if (photos.length === 0) return;
-        const open = getSheet();
-        if (shareLanding(open) === 'new' || open === null) {
-          openNew(photos);
-          return;
+    if (!hasShareIntent) return;
+    queue.current.push(shareIntent.files ?? []);
+    resetShareIntent();
+    if (running.current) return;
+    running.current = true;
+    void (async () => {
+      try {
+        for (let files = queue.current.shift(); files; files = queue.current.shift()) {
+          const photos = await readSharedPhotos(files).catch(() => []);
+          if (photos.length > 0) await land(photos);
         }
-        const n = photos.length;
-        Alert.alert(
-          n === 1 ? 'Add this photo' : `Add ${n} photos`,
-          `To the report you have open (${sheetLabel(open)}), or to a new one?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'New report', onPress: () => openNew(photos) },
-            { text: 'Add to this one', onPress: () => void addToOpen(photos) },
-          ],
-        );
-      })
-      .catch(() => resetShareIntent())
-      .finally(() => {
-        handling.current = false;
-      });
+      } finally {
+        running.current = false;
+      }
+    })();
 
-    function openNew(photos: SharedPhoto[]) {
+    /** Where one share lands — resolved once the person has answered, if there is a question. */
+    function land(photos: SharedPhoto[]): Promise<void> {
+      const open = getSheet();
+      if (open === null || shareLanding(open) === 'new') {
+        openNew(photos);
+        return Promise.resolve();
+      }
+      const n = photos.length;
+      const title = n === 1 ? 'Add this photo' : `Add ${n} photos`;
+      // An edit of a published report cannot be parked in Drafts, so a new report would be held
+      // back behind it: the only door is this one.
+      const editing = open.mode.kind === 'edit' && open.dirty;
+      return new Promise((resolve) => {
+        Alert.alert(
+          title,
+          editing
+            ? `To the report you're editing (${sheetLabel(open)})? Save or cancel your changes first to start a new one.`
+            : `To the report you have open (${sheetLabel(open)}), or to a new one?`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
+            ...(editing ? [] : [{ text: 'New report', onPress: () => resolve(openNew(photos)) }]),
+            {
+              text: 'Add to this one',
+              onPress: () => void addToOpen(photos).finally(() => resolve()),
+            },
+          ],
+          { cancelable: true, onDismiss: () => resolve() },
+        );
+      });
+    }
+
+    function openNew(photos: SharedPhoto[]): void {
       const id = randomUUID();
       stageShare(id, photos);
       router.navigate(doorHref({ share: id }));
     }
 
-    async function addToOpen(photos: SharedPhoto[]) {
+    async function addToOpen(photos: SharedPhoto[]): Promise<void> {
       for (const photo of photos) {
-        const post = getSheet();
+        const post: PostSheet | null = getSheet();
         if (!post) break;
         const reportId = shareReportFor(post, photo, getOnScreenReport());
         const report = post.reports.find((r) => r.id === reportId);

@@ -146,7 +146,8 @@ export const peekOAuthState = internalQuery({
       .query('oauthStates')
       .withIndex('by_state', (q) => q.eq('state', args.state))
       .unique();
-    if (!row || row.expiresAt < Date.now()) return null;
+    // A Google Photos nonce (A10-8) shares the table and is never a Strava one.
+    if (row?.provider !== 'strava' || row.expiresAt < Date.now()) return null;
     return { ok: true as const };
   },
 });
@@ -159,7 +160,7 @@ export const consumeOAuthState = internalMutation({
       .query('oauthStates')
       .withIndex('by_state', (q) => q.eq('state', args.state))
       .unique();
-    if (!row) return null;
+    if (row?.provider !== 'strava') return null;
     await ctx.db.delete(row._id); // single-use, whatever happens next
     if (row.expiresAt < Date.now()) return null;
     return { userId: row.userId, redirectTo: row.redirectTo ?? null };

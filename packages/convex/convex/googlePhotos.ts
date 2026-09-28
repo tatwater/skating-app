@@ -9,17 +9,19 @@
  * hour, and erased with a departing account. There is nothing to disconnect, revoke or export, and
  * testing mode's seven-day refresh-token expiry never applies.
  *
- * The flow:
- *  1. `begin` mints a single-use state (`oauthStates`, `provider: 'google_photos'`) and returns our
- *     own `/google-photos/start`, which binds this browser (the session cookie, as Strava's flow
- *     does — see `core/oauthSession.ts` for the account-linking attack it stops) and forwards to
- *     Google's consent.
- *  2. The callback (`http.ts`) checks the cookie, and `openSession` consumes the state, trades the
- *     code for a token, creates a picker session, stores the row, and sends the window on to the
- *     picker, which closes itself when the person is done.
- *  3. The page polls `status` on the session's own interval; on `picked` it calls `list` (which
- *     records the picked items on the row), then `photo` per item — the bytes at D31's full edge,
- *     **never stored** — and finally `close`.
+ * The flow — bound to the **signed-in person**, not just to a browser:
+ *  1. `begin` mints a single-use state (`oauthStates`, `provider: 'google_photos'`) and returns
+ *     Google's consent URL, whose redirect is the **web app's** `/google-photos/callback`.
+ *  2. That page runs in the same browser as the Gli session, so `complete` runs **as the person**:
+ *     it consumes the state only if that person minted it, trades the code for a token, creates a
+ *     picker session, stores the row, and hands back the picker's URL. A state minted by someone
+ *     else — a consent link forwarded to a victim — is refused there and spent, so a victim's
+ *     picks can never land on another account. (A Convex-site callback could only bind a cookie
+ *     set by whoever opened the link first, which a forwarded link defeats; the review of this PR
+ *     found it.)
+ *  3. The page that asked polls `status` on the session's own interval; on `picked` it calls
+ *     `list` (which records the picked items on the row), then `photo` per item — the bytes at
+ *     D31's full edge, **never stored** — and finally `close`.
  *
  * Degrades quietly: with `GOOGLE_PHOTOS_CLIENT_ID` / `GOOGLE_PHOTOS_CLIENT_SECRET` unset, `available`
  * says no and the web shows no button.
@@ -42,7 +44,6 @@ import type { Doc } from './_generated/dataModel';
 import {
   action,
   type DatabaseReader,
-  internalAction,
   internalMutation,
   internalQuery,
   mutation,
@@ -53,10 +54,9 @@ import { requireContributor } from './lib/auth';
 
 /** A consent nonce lives as long as Strava's: long enough to sign in to Google, no longer. */
 const STATE_TTL_MS = 15 * 60 * 1000;
-export const GOOGLE_PHOTOS_STATE_TTL_SECONDS = STATE_TTL_MS / 1000;
 
-/** The cookie's path — our two routes, nothing else on the deployment. */
-export const GOOGLE_PHOTOS_COOKIE_PATH = '/google-photos';
+/** The web app's page that Google returns to — where the person is signed in. */
+export const GOOGLE_PHOTOS_CALLBACK_PATH = '/google-photos/callback';
 
 /** D31's full edge — Google scales the bytes, the browser still re-encodes them. */
 const FULL_EDGE = 2048;
@@ -68,20 +68,15 @@ const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 20_000;
 
 function configured(): boolean {
-  return Boolean(process.env.GOOGLE_PHOTOS_CLIENT_ID && process.env.GOOGLE_PHOTOS_CLIENT_SECRET);
+  return Boolean(
+    process.env.GOOGLE_PHOTOS_CLIENT_ID &&
+      process.env.GOOGLE_PHOTOS_CLIENT_SECRET &&
+      process.env.WEB_APP_URL,
+  );
 }
 
 function redirectUri(): string {
-  return `${process.env.CONVEX_SITE_URL}${GOOGLE_PHOTOS_COOKIE_PATH}/callback`;
-}
-
-/** Google's consent URL for a minted state — built in one place, so the redirect cannot drift. */
-export function googlePhotosConsentUrl(state: string): string {
-  return googlePhotosAuthorizeUrl({
-    clientId: process.env.GOOGLE_PHOTOS_CLIENT_ID as string,
-    redirectUri: redirectUri(),
-    state,
-  });
+  return `${(process.env.WEB_APP_URL as string).replace(/\/+$/, '')}${GOOGLE_PHOTOS_CALLBACK_PATH}`;
 }
 
 /** Is *From Google Photos* on for this deployment? The web hides the button when not. */
@@ -92,7 +87,7 @@ export const available = query({
 
 // ── Consent ──────────────────────────────────────────────────────────────────────────────────
 
-/** Start a pick: mint the state and return the page's own start URL (never Google's). */
+/** Start a pick: mint the state and return Google's consent URL, which returns to the web app. */
 export const begin = mutation({
   args: {},
   handler: async (ctx) => {
@@ -109,7 +104,11 @@ export const begin = mutation({
     });
     return {
       state,
-      startUrl: `${process.env.CONVEX_SITE_URL}${GOOGLE_PHOTOS_COOKIE_PATH}/start?state=${state}`,
+      consentUrl: googlePhotosAuthorizeUrl({
+        clientId: process.env.GOOGLE_PHOTOS_CLIENT_ID as string,
+        redirectUri: redirectUri(),
+        state,
+      }),
     };
   },
 });
@@ -126,32 +125,35 @@ async function stateRow(
   return row && row.provider === 'google_photos' ? row : null;
 }
 
-/** Internal: is this a live Google Photos state? Peeked, never consumed — the start route runs first. */
-export const peekState = internalQuery({
-  args: { state: v.string() },
-  handler: async (ctx, args) => {
-    const row = await stateRow(ctx, args.state);
-    return row !== null && row.consumedAt === undefined && row.expiresAt >= Date.now();
-  },
-});
-
 /**
- * Internal: consume the state, returning whose pick it was. Single-use — a second consume gets
- * nothing — but **marked, not deleted**: the page is polling on it, and until the session's row
- * lands the pick is still going. `storeSession` deletes it with the same write; `dropState` on
- * every failure.
+ * Internal: consume the state **for the caller** — only the person who minted it. Single-use, but
+ * **marked, not deleted**: the page that asked is polling on it, and until the session's row lands
+ * the pick is still going. `storeSession` deletes it with the same write; `dropState` on every
+ * failure. Someone else's state (a forwarded consent link) is refused and spent.
  */
-export const consumeState = internalMutation({
+export const consumeOwnState = internalMutation({
   args: { state: v.string() },
   handler: async (ctx, args) => {
+    const profile = await requireContributor(ctx);
     const row = await stateRow(ctx, args.state);
     if (!row || row.consumedAt !== undefined) return null;
-    if (row.expiresAt < Date.now()) {
+    if (row.userId !== profile._id || row.expiresAt < Date.now()) {
       await ctx.db.delete(row._id);
       return null;
     }
     await ctx.db.patch(row._id, { consumedAt: Date.now() });
     return { userId: row.userId };
+  },
+});
+
+/** The person declined at Google, or the callback page gave up: the pick is over. Own states only. */
+export const abandon = mutation({
+  args: { state: v.string() },
+  handler: async (ctx, args) => {
+    const profile = await requireContributor(ctx);
+    const row = await stateRow(ctx, args.state);
+    if (row && row.userId === profile._id) await ctx.db.delete(row._id);
+    return null;
   },
 });
 
@@ -210,72 +212,82 @@ async function google(
 }
 
 /**
- * Internal: the callback's work — consume the state, trade the code for a token, open a picker
- * session, store it. Returns the picker's URL for the window, or why not; never throws, because the
- * person is sitting in a browser window that should say something intelligible.
+ * The callback page's work, **as the signed-in person**: consume their own state, trade the code for
+ * a token, open a picker session, store it. Returns the picker's URL for the window, or why not.
+ * Never throws: whatever goes wrong spends the state (so the page that asked hears it is over) and
+ * deletes a session already opened at Google.
  */
-export const openSession = internalAction({
+export const complete = action({
   args: { code: v.string(), state: v.string() },
   handler: async (
     ctx,
     args,
   ): Promise<{ ok: true; pickerUri: string } | { ok: false; reason: 'declined' | 'failed' }> => {
-    const claim = await ctx.runMutation(internal.googlePhotos.consumeState, { state: args.state });
+    const claim = await ctx.runMutation(internal.googlePhotos.consumeOwnState, {
+      state: args.state,
+    });
     if (!claim) return { ok: false, reason: 'failed' };
+    let opened: { id: string; token: string } | null = null;
     const fail = async (reason: 'declined' | 'failed') => {
+      if (opened) {
+        await google(`${GOOGLE_PICKER_API}/sessions/${opened.id}`, {
+          method: 'DELETE',
+          token: opened.token,
+        });
+      }
       await ctx.runMutation(internal.googlePhotos.dropState, { state: args.state });
       return { ok: false as const, reason };
     };
 
-    const tokenRes = await google(GOOGLE_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code: args.code,
-        client_id: process.env.GOOGLE_PHOTOS_CLIENT_ID as string,
-        client_secret: process.env.GOOGLE_PHOTOS_CLIENT_SECRET as string,
-        redirect_uri: redirectUri(),
-        grant_type: 'authorization_code',
-      }).toString(),
-    });
-    if (!tokenRes?.ok) return fail('failed');
-    const token = (await tokenRes.json()) as {
-      access_token?: string;
-      expires_in?: number;
-      scope?: string;
-    };
-    if (!token.access_token) return fail('failed');
-    // The person unticked the one scope on Google's consent: nothing to pick with.
-    if (!grantsPickerScope(token.scope)) return fail('declined');
-
-    const now = Date.now();
-    const created = await google(`${GOOGLE_PICKER_API}/sessions`, {
-      method: 'POST',
-      token: token.access_token,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pickingConfig: { maxItemCount: String(GOOGLE_PICKER_MAX_ITEMS) } }),
-    });
-    const session = created?.ok ? readPickerSession(await created.json(), now) : null;
-    if (!session) return fail('failed');
-
-    const tokenExpiresAt = now + (token.expires_in ?? 3600) * 1000;
-    const { stored } = await ctx.runMutation(internal.googlePhotos.storeSession, {
-      userId: claim.userId,
-      state: args.state,
-      sessionId: session.id,
-      accessToken: token.access_token,
-      pickerUri: session.pickerUri,
-      pollIntervalMs: session.pollIntervalMs,
-      expiresAt: Math.min(tokenExpiresAt, session.expiresAtMs),
-    });
-    if (!stored) {
-      await google(`${GOOGLE_PICKER_API}/sessions/${session.id}`, {
-        method: 'DELETE',
-        token: token.access_token,
+    try {
+      const tokenRes = await google(GOOGLE_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: args.code,
+          client_id: process.env.GOOGLE_PHOTOS_CLIENT_ID as string,
+          client_secret: process.env.GOOGLE_PHOTOS_CLIENT_SECRET as string,
+          redirect_uri: redirectUri(),
+          grant_type: 'authorization_code',
+        }).toString(),
       });
-      return { ok: false, reason: 'failed' };
+      if (!tokenRes?.ok) return await fail('failed');
+      const token = (await tokenRes.json()) as {
+        access_token?: string;
+        expires_in?: number;
+        scope?: string;
+      };
+      if (!token.access_token) return await fail('failed');
+      // The person unticked the one scope on Google's consent: nothing to pick with.
+      if (!grantsPickerScope(token.scope)) return await fail('declined');
+
+      const now = Date.now();
+      const created = await google(`${GOOGLE_PICKER_API}/sessions`, {
+        method: 'POST',
+        token: token.access_token,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pickingConfig: { maxItemCount: String(GOOGLE_PICKER_MAX_ITEMS) } }),
+      });
+      const session = created?.ok ? readPickerSession(await created.json(), now) : null;
+      if (!session) return await fail('failed');
+      opened = { id: session.id, token: token.access_token };
+
+      const tokenExpiresAt = now + (token.expires_in ?? 3600) * 1000;
+      const { stored } = await ctx.runMutation(internal.googlePhotos.storeSession, {
+        userId: claim.userId,
+        state: args.state,
+        sessionId: session.id,
+        accessToken: token.access_token,
+        pickerUri: session.pickerUri,
+        pollIntervalMs: session.pollIntervalMs,
+        expiresAt: Math.min(tokenExpiresAt, session.expiresAtMs),
+      });
+      if (!stored) return await fail('failed');
+      return { ok: true, pickerUri: autoclosePickerUri(session.pickerUri) };
+    } catch (err) {
+      console.warn(`googlePhotos.complete: ${String(err)}`);
+      return await fail('failed');
     }
-    return { ok: true, pickerUri: autoclosePickerUri(session.pickerUri) };
   },
 });
 
@@ -345,9 +357,16 @@ export const status = action({
     const res = await google(`${GOOGLE_PICKER_API}/sessions/${session.sessionId}`, {
       token: session.accessToken,
     });
-    if (!res?.ok) return { phase: 'gone' };
-    const live = readPickerSession(await res.json(), Date.now());
-    if (!live) return { phase: 'gone' };
+    // A hiccup — no answer, a timeout, a 429 or a 5xx — is not the end of a pick the person may still
+    // be making: look again, a little later. Only Google's own "no" (a 4xx) ends it.
+    const hiccup = {
+      phase: 'picking' as const,
+      pollIntervalMs: Math.max(session.pollIntervalMs, 5_000),
+    };
+    if (!res || res.status === 429 || res.status >= 500) return hiccup;
+    if (!res.ok) return { phase: 'gone' };
+    const live = readPickerSession(await res.json().catch(() => null), Date.now());
+    if (!live) return hiccup;
     return live.mediaItemsSet
       ? { phase: 'picked' }
       : { phase: 'picking', pollIntervalMs: live.pollIntervalMs };

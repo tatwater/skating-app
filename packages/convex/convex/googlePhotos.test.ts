@@ -87,31 +87,22 @@ const TOKEN = {
   scope: GOOGLE_PHOTOS_PICKER_SCOPE,
 };
 
-/** Start a pick as `subject` and walk the browser through start + callback with the cookie. */
-async function pick(t: ReturnType<typeof convexTest>, subject = 'skater') {
+async function begin(t: ReturnType<typeof convexTest>, subject = 'skater') {
   const user = await seedUser(t, subject);
-  const { state, startUrl } = await user.as.mutation(api.googlePhotos.begin, {});
-  const start = await t.fetch(new URL(startUrl).pathname + new URL(startUrl).search, {
-    method: 'GET',
-  });
-  return { user, state, start };
+  const { state, consentUrl } = await user.as.mutation(api.googlePhotos.begin, {});
+  return { user, state, consentUrl };
 }
 
-function callback(
-  t: ReturnType<typeof convexTest>,
-  query: Record<string, string>,
-  cookieState?: string,
-) {
-  return t.fetch(`/google-photos/callback?${new URLSearchParams(query)}`, {
-    method: 'GET',
-    ...(cookieState ? { headers: { Cookie: `skating_oauth_state=${cookieState}` } } : {}),
-  });
-}
+const OPENS = () =>
+  stubFetch([
+    { match: /oauth2\.googleapis\.com\/token/, method: 'POST', body: TOKEN },
+    { match: /\/v1\/sessions$/, method: 'POST', body: SESSION },
+  ]);
 
 beforeEach(() => {
   vi.stubEnv('GOOGLE_PHOTOS_CLIENT_ID', 'gp-client');
   vi.stubEnv('GOOGLE_PHOTOS_CLIENT_SECRET', 'gp-secret');
-  vi.stubEnv('CONVEX_SITE_URL', 'https://example.convex.site');
+  vi.stubEnv('WEB_APP_URL', 'https://gli.example/');
 });
 
 afterEach(() => {
@@ -128,31 +119,18 @@ describe('availability and consent', () => {
     await expect(user.as.mutation(api.googlePhotos.begin, {})).rejects.toThrow(/not set up/);
   });
 
-  test('begins with our own start URL, which binds the browser and forwards to Google', async () => {
+  test("begins with Google's consent, returning to the web app where the person is signed in", async () => {
     const t = convexTest(schema, modules);
     expect(await t.query(api.googlePhotos.available, {})).toBe(true);
-    const { state, start } = await pick(t);
-    expect(start.status).toBe(302);
-    const location = new URL(start.headers.get('Location') as string);
-    expect(location.hostname).toBe('accounts.google.com');
-    expect(location.searchParams.get('state')).toBe(state);
-    expect(location.searchParams.get('access_type')).toBe('online');
-    expect(location.searchParams.get('redirect_uri')).toBe(
-      'https://example.convex.site/google-photos/callback',
-    );
-    const cookie = start.headers.get('Set-Cookie') as string;
-    expect(cookie).toContain(`skating_oauth_state=${state}`);
-    expect(cookie).toContain('Path=/google-photos');
+    const { state, consentUrl } = await begin(t);
+    const url = new URL(consentUrl);
+    expect(url.hostname).toBe('accounts.google.com');
+    expect(url.searchParams.get('state')).toBe(state);
+    expect(url.searchParams.get('access_type')).toBe('online');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://gli.example/google-photos/callback');
   });
 
-  test('a dead state never reaches Google', async () => {
-    const t = convexTest(schema, modules);
-    const res = await t.fetch('/google-photos/start?state=nope', { method: 'GET' });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toContain("Couldn't open Google Photos");
-  });
-
-  test('a Strava nonce is never a Google Photos one', async () => {
+  test('a Strava nonce is never a Google Photos one, and the reverse', async () => {
     const t = convexTest(schema, modules);
     const user = await seedUser(t, 'skater');
     await t.run((ctx) =>
@@ -164,25 +142,28 @@ describe('availability and consent', () => {
         createdAt: Date.now(),
       }),
     );
-    expect(await t.query(internal.googlePhotos.peekState, { state: 'strava-state' })).toBe(false);
+    const calls = stubFetch([]);
     expect(
-      await t.mutation(internal.googlePhotos.consumeState, { state: 'strava-state' }),
-    ).toBeNull();
+      await user.as.action(api.googlePhotos.complete, { code: 'c', state: 'strava-state' }),
+    ).toEqual({ ok: false, reason: 'failed' });
+    expect(calls).toHaveLength(0);
+    const { state } = await begin(t, 'other');
+    expect(await t.query(internal.strava.peekOAuthState, { state })).toBeNull();
+    expect(await t.mutation(internal.strava.consumeOAuthState, { state })).toBeNull();
   });
 });
 
-describe('the callback', () => {
-  test('opens a picker session and sends the window to it', async () => {
+describe('complete — the callback page, as the signed-in person', () => {
+  test('opens a picker session and hands back its self-closing URL', async () => {
     const t = convexTest(schema, modules);
-    const { state, user } = await pick(t);
-    const calls = stubFetch([
-      { match: /oauth2\.googleapis\.com\/token/, method: 'POST', body: TOKEN },
-      { match: /\/v1\/sessions$/, method: 'POST', body: SESSION },
-    ]);
-    const res = await callback(t, { code: 'c', state }, state);
-    expect(res.status).toBe(302);
-    expect(res.headers.get('Location')).toBe('https://photos.google.com/picker/sess-1/autoclose');
-    expect(res.headers.get('Set-Cookie')).toContain('Max-Age=0');
+    const { state, user } = await begin(t);
+    const calls = OPENS();
+    expect(await user.as.action(api.googlePhotos.complete, { code: 'c', state })).toEqual({
+      ok: true,
+      pickerUri: 'https://photos.google.com/picker/sess-1/autoclose',
+    });
+    const token = calls.find((c) => /token/.test(c.url));
+    expect(token?.method).toBe('POST');
     expect(calls.find((c) => /sessions$/.test(c.url))?.auth).toBe('Bearer tok');
     const rows = await t.run((ctx) => ctx.db.query('photoPickerSessions').collect());
     expect(rows).toHaveLength(1);
@@ -192,81 +173,111 @@ describe('the callback', () => {
     expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(0);
   });
 
-  test('refuses a browser that did not start the flow, before any exchange', async () => {
+  test("refuses someone else's consent link, before any exchange, and spends it", async () => {
+    // The attack the review found: mint a state, forward the consent link, and have a victim pick.
     const t = convexTest(schema, modules);
-    const { state } = await pick(t);
+    const { state } = await begin(t, 'attacker');
+    const victim = await seedUser(t, 'victim');
     const calls = stubFetch([]);
-    const res = await callback(t, { code: 'victim-code', state });
-    expect(res.status).toBe(200);
+    expect(
+      await victim.as.action(api.googlePhotos.complete, { code: 'victim-code', state }),
+    ).toEqual({ ok: false, reason: 'failed' });
     expect(calls).toHaveLength(0);
     expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('photoPickerSessions').collect())).toHaveLength(0);
   });
 
-  test('says so when the person declines, and ends the pick', async () => {
+  test('a declined consent is abandoned by its own person only', async () => {
     const t = convexTest(schema, modules);
-    const { state, user } = await pick(t);
-    const res = await callback(t, { error: 'access_denied', state }, state);
-    expect(await res.text()).toContain('Google Photos not opened');
+    const { state, user } = await begin(t);
+    const other = await seedUser(t, 'other');
+    await other.as.mutation(api.googlePhotos.abandon, { state });
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(1);
+    await user.as.mutation(api.googlePhotos.abandon, { state });
     expect(await user.as.action(api.googlePhotos.status, { state })).toEqual({ phase: 'gone' });
   });
 
   test('treats an unticked scope as declined', async () => {
     const t = convexTest(schema, modules);
-    const { state } = await pick(t);
+    const { state, user } = await begin(t);
     stubFetch([{ match: /token/, method: 'POST', body: { ...TOKEN, scope: 'openid' } }]);
-    const res = await callback(t, { code: 'c', state }, state);
-    expect(await res.text()).toContain('Google Photos not opened');
+    expect(await user.as.action(api.googlePhotos.complete, { code: 'c', state })).toEqual({
+      ok: false,
+      reason: 'declined',
+    });
     expect(await t.run((ctx) => ctx.db.query('photoPickerSessions').collect())).toHaveLength(0);
   });
 
   test('ends the pick when Google will not open a session', async () => {
     const t = convexTest(schema, modules);
-    const { state, user } = await pick(t);
+    const { state, user } = await begin(t);
     stubFetch([
       { match: /token/, method: 'POST', body: TOKEN },
       { match: /sessions$/, method: 'POST', ok: false, body: {} },
     ]);
-    const res = await callback(t, { code: 'c', state }, state);
-    expect(await res.text()).toContain("Couldn't open Google Photos");
+    expect((await user.as.action(api.googlePhotos.complete, { code: 'c', state })).ok).toBe(false);
     expect(await user.as.action(api.googlePhotos.status, { state })).toEqual({ phase: 'gone' });
   });
 
-  test('stores nothing for an account on its way out, and closes the session at Google', async () => {
+  test('never throws: an unreadable answer spends the state', async () => {
     const t = convexTest(schema, modules);
-    const { state, user } = await pick(t);
+    const { state, user } = await begin(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('not json');
+        },
+      })),
+    );
+    expect(await user.as.action(api.googlePhotos.complete, { code: 'c', state })).toEqual({
+      ok: false,
+      reason: 'failed',
+    });
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(0);
+  });
+
+  test('the session store refuses an account on its way out', async () => {
+    const t = convexTest(schema, modules);
+    const { state, user } = await begin(t);
+    // Its own actions refuse a departing caller up front; this is the gate behind them.
+    const calls = stubFetch([]);
     await t.run((ctx) => ctx.db.patch(user.id, { status: 'deleting' as const }));
-    const calls = stubFetch([
-      { match: /token/, method: 'POST', body: TOKEN },
-      { match: /sessions$/, method: 'POST', body: SESSION },
-      { match: /sessions\/sess-1$/, method: 'DELETE', body: {} },
-    ]);
-    const res = await callback(t, { code: 'c', state }, state);
-    expect(res.status).toBe(200);
-    expect(calls.some((c) => c.method === 'DELETE')).toBe(true);
+    expect(
+      await t.mutation(internal.googlePhotos.storeSession, {
+        userId: user.id,
+        state,
+        sessionId: 'sess-1',
+        accessToken: 'tok',
+        pickerUri: 'https://photos.google.com/picker/sess-1',
+        pollIntervalMs: 4000,
+        expiresAt: Date.now() + 60_000,
+      }),
+    ).toEqual({ stored: false });
+    expect(calls).toHaveLength(0);
     expect(await t.run((ctx) => ctx.db.query('photoPickerSessions').collect())).toHaveLength(0);
   });
 });
 
 describe('the page: status, list, photo, close', () => {
   async function opened(t: ReturnType<typeof convexTest>) {
-    const p = await pick(t);
-    stubFetch([
-      { match: /token/, method: 'POST', body: TOKEN },
-      { match: /sessions$/, method: 'POST', body: SESSION },
-    ]);
-    await callback(t, { code: 'c', state: p.state }, p.state);
+    const p = await begin(t);
+    OPENS();
+    await p.user.as.action(api.googlePhotos.complete, { code: 'c', state: p.state });
     return p;
   }
 
   test('says the person is still on the consent screen, then picking, then picked', async () => {
     const t = convexTest(schema, modules);
-    const { state, user } = await pick(t);
+    const { state, user } = await begin(t);
     expect(await user.as.action(api.googlePhotos.status, { state })).toEqual({
       phase: 'consent',
       pollIntervalMs: 2000,
     });
     // Between the consume and the session's row, still going — never "gone".
-    await t.mutation(internal.googlePhotos.consumeState, { state });
+    await user.as.mutation(internal.googlePhotos.consumeOwnState, { state });
     expect((await user.as.action(api.googlePhotos.status, { state })).phase).toBe('consent');
     await t.run(async (ctx) => {
       const row = await ctx.db.query('oauthStates').first();
@@ -283,6 +294,32 @@ describe('the page: status, list, photo, close', () => {
     stubFetch([{ match: /sessions\/sess-1$/, body: { ...SESSION, mediaItemsSet: true } }]);
     expect(await o.user.as.action(api.googlePhotos.status, { state: o.state })).toEqual({
       phase: 'picked',
+    });
+  });
+
+  test("a hiccup at Google is not the end of the pick; Google's own no is", async () => {
+    const t = convexTest(schema, modules);
+    const o = await opened(t);
+    stubFetch([{ match: /sessions\/sess-1$/, ok: false, body: {} }]); // a 500
+    expect(await o.user.as.action(api.googlePhotos.status, { state: o.state })).toEqual({
+      phase: 'picking',
+      pollIntervalMs: 5000,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('timeout');
+      }),
+    );
+    expect((await o.user.as.action(api.googlePhotos.status, { state: o.state })).phase).toBe(
+      'picking',
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })),
+    );
+    expect(await o.user.as.action(api.googlePhotos.status, { state: o.state })).toEqual({
+      phase: 'gone',
     });
   });
 

@@ -28,11 +28,6 @@ import {
 import { httpRouter } from 'convex/server';
 import { internal } from './_generated/api';
 import { type ActionCtx, httpAction } from './_generated/server';
-import {
-  GOOGLE_PHOTOS_COOKIE_PATH,
-  GOOGLE_PHOTOS_STATE_TTL_SECONDS,
-  googlePhotosConsentUrl,
-} from './googlePhotos';
 import { ClerkWebhookError, type ClerkWebhookEvent, verifyClerkWebhook } from './lib/clerkWebhook';
 import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 
@@ -274,85 +269,6 @@ http.route({
 
     const outcome = await ctx.runAction(internal.strava.completeConnect, { code, state });
     return finish(outcome.redirectTo, outcome.ok ? 'connected' : 'failed');
-  }),
-});
-
-/**
- * *From Google Photos* (A10-8 §8.6, D207) — the web's picker window lands here twice. Same shape as
- * Strava's pair above, and for the same reason: the start route binds this browser with the session
- * cookie before anyone sees Google's consent, and the callback refuses a code whose browser did not
- * start the flow, before the code is exchanged. The difference is the ending: a successful callback
- * sends the window on to Google's own picker (which closes itself when the person is done), and
- * every other ending is a page that says to close the window — the page that opened it is polling,
- * and learns the outcome from there.
- */
-const GOOGLE_PHOTOS_PAGES = {
-  declined: {
-    title: 'Google Photos not opened',
-    body: "You didn't allow Gli to see the photos you pick, so nothing was added. You can close this window.",
-  },
-  failed: {
-    title: "Couldn't open Google Photos",
-    body: 'Something went wrong. Close this window and try again from Gli.',
-  },
-} as const;
-
-function googlePhotosPage(result: keyof typeof GOOGLE_PHOTOS_PAGES, clearCookie = false): Response {
-  const copy = GOOGLE_PHOTOS_PAGES[result];
-  const page = htmlPage(copy.title, `<p>${escapeHtml(copy.body)}</p>`);
-  if (clearCookie) page.headers.set('Set-Cookie', clearStateCookie(GOOGLE_PHOTOS_COOKIE_PATH));
-  return page;
-}
-
-http.route({
-  path: `${GOOGLE_PHOTOS_COOKIE_PATH}/start`,
-  method: 'GET',
-  handler: httpAction(async (ctx, request) => {
-    const state = new URL(request.url).searchParams.get('state');
-    if (!state) return googlePhotosPage('failed');
-    const live = await ctx.runQuery(internal.googlePhotos.peekState, { state });
-    if (!live) return googlePhotosPage('failed');
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: googlePhotosConsentUrl(state),
-        'Set-Cookie': serializeStateCookie(
-          state,
-          GOOGLE_PHOTOS_STATE_TTL_SECONDS,
-          GOOGLE_PHOTOS_COOKIE_PATH,
-        ),
-      },
-    });
-  }),
-});
-
-http.route({
-  path: `${GOOGLE_PHOTOS_COOKIE_PATH}/callback`,
-  method: 'GET',
-  handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
-    const declined = url.searchParams.get('error');
-    // Every ending but the picker spends the nonce, so the polling page hears it is over.
-    const end = async (result: 'declined' | 'failed') => {
-      if (state) await ctx.runMutation(internal.googlePhotos.dropState, { state });
-      return googlePhotosPage(result, true);
-    };
-    if (declined || !code || !state) return end(declined ? 'declined' : 'failed');
-    // The session binding, checked before the code is exchanged (see `core/oauthSession.ts`).
-    if (!browserOwnsOAuthFlow(request.headers.get('Cookie'), state)) return end('failed');
-
-    const outcome = await ctx.runAction(internal.googlePhotos.openSession, { code, state });
-    if (!outcome.ok) return googlePhotosPage(outcome.reason, true);
-    return new Response(null, {
-      status: 302,
-      headers: {
-        // Google's own picker URL, read from Google's answer and checked to be https.
-        Location: outcome.pickerUri,
-        'Set-Cookie': clearStateCookie(GOOGLE_PHOTOS_COOKIE_PATH),
-      },
-    });
   }),
 });
 

@@ -56,12 +56,14 @@ export function setPicks(reportId: string, next: Readonly<Record<string, string>
   emit();
 }
 
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 export function usePicks(reportId: string): Readonly<Record<string, string>> {
   return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
+    subscribe,
     () => getPicks(reportId),
     () => getPicks(reportId),
   );

@@ -34,16 +34,21 @@ export async function readSharedPhotos(files: readonly ShareIntentFile[]): Promi
   for (const f of files) {
     if (!f.mimeType?.startsWith('image/')) continue;
     const uri = fileUri(f.path);
-    try {
-      let exif: Record<string, string | number> | null = null;
-      if (/jpe?g/i.test(f.mimeType)) {
+    // The metadata is a bonus: a file whose head will not read still lands, undated.
+    let exif: Record<string, string | number> | null = null;
+    if (/jpe?g/i.test(f.mimeType)) {
+      try {
         const handle = new File(uri).open();
         try {
           exif = readJpegExif(handle.readBytes(Math.min(handle.size ?? 0, JPEG_EXIF_HEAD_BYTES)));
         } finally {
           handle.close();
         }
+      } catch {
+        exif = null;
       }
+    }
+    try {
       const size =
         f.width && f.height ? { width: f.width, height: f.height } : await imageSize(uri);
       const takenAtMs = exifTakenAt(exif);
@@ -62,14 +67,15 @@ export async function readSharedPhotos(files: readonly ShareIntentFile[]): Promi
 
 let staged: { id: string; photos: SharedPhoto[] } | null = null;
 
+/** Stage a share for its door. The next share replaces it. */
 export function stageShare(id: string, photos: SharedPhoto[]): void {
   staged = { id, photos };
 }
 
-/** The staged share for a door, once. */
-export function takeStagedShare(id: string): SharedPhoto[] | null {
-  if (staged?.id !== id) return null;
-  const photos = staged.photos;
-  staged = null;
-  return photos;
+/**
+ * The staged share for a door. Not consumed: a door the open sheet held back (an edit with unsaved
+ * changes, a park that failed) is retried with the same id, and must still find its photos.
+ */
+export function stagedShare(id: string): SharedPhoto[] | null {
+  return staged?.id === id ? staged.photos : null;
 }

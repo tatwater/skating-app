@@ -18,7 +18,9 @@ function release(drafts: readonly DraftPhoto[]): void {
  * consent; nothing is kept at Google's side or ours once the add is done.
  *
  * The window opens **on the click**, before anything is awaited, or the browser's popup blocker
- * would take it; the consent URL arrives a moment later and the window is sent there.
+ * would take it; the consent URL arrives a moment later and the window is sent there. The page
+ * never reads the window's state (Google's pages may sever it; see `googlePhotosPoll`): the pick
+ * ends when the session does, or on *Cancel*.
  */
 export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
   const available = useQuery(api.googlePhotos.available, {}) === true;
@@ -64,22 +66,20 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
     const drafts: DraftPhoto[] = [];
     setPhase('waiting');
     try {
-      const { state, startUrl } = await begin({});
+      const { state, consentUrl } = await begin({});
       current.state = state;
       if (current.cancelled) return;
-      win.location.href = startUrl;
+      win.location.href = consentUrl;
 
-      let closedPolls = 0;
       for (;;) {
-        const step = nextPickStep(await status({ state }), win.closed, closedPolls);
+        const step = nextPickStep(await status({ state }));
         if (current.cancelled) return;
         if (step.kind === 'end') {
-          if (step.reason === 'gone') setError('Google Photos closed without adding anything.');
+          setError('Google Photos closed without adding anything.');
           end(current);
           return;
         }
         if (step.kind === 'add') break;
-        closedPolls = step.closedPolls;
         await new Promise((resolve) => setTimeout(resolve, step.ms));
         if (current.cancelled) return;
       }
