@@ -278,6 +278,49 @@ describe('sentryPrivacyHooks', () => {
     ]);
   });
 
+  it('redacts a streamed span — attributes and name — which is all SDK v11 hands the web', () => {
+    const span = sentryPrivacyHooks.beforeSendSpan({
+      name: 'GET https://skating.app/api/water?report=r1',
+      attributes: {
+        'url.full': 'https://skating.app/api/water?__clerk_db_jwt=dvb_x',
+        'sentry.op': 'http.client',
+        'user.email': 'skater@example.com',
+        homeCoord: { lat: 44.5, lng: -72.9 },
+      },
+      is_segment: false,
+      status: 'ok',
+    });
+
+    expect(span).toEqual({
+      name: 'GET https://skating.app/api/water',
+      attributes: {
+        'url.full': 'https://skating.app/api/water',
+        'sentry.op': 'http.client',
+        'user.email': REDACTION_PLACEHOLDER,
+        homeCoord: REDACTION_PLACEHOLDER,
+      },
+      is_segment: false,
+      status: 'ok',
+    });
+  });
+
+  it('redacts a static span the same way, so one hook serves both SDK versions', () => {
+    expect(
+      sentryPrivacyHooks.beforeSendSpan({
+        description: 'GET https://skating.app/a?x=1',
+        data: { 'http.url': 'https://skating.app/a?x=1' },
+      }),
+    ).toEqual({
+      description: 'GET https://skating.app/a',
+      data: { 'http.url': 'https://skating.app/a' },
+    });
+  });
+
+  it('leaves a span with nothing to redact exactly as it came', () => {
+    const span = { span_id: 's1', status: 'ok' } as SentrySpanLike & Record<string, string>;
+    expect(sentryPrivacyHooks.beforeSendSpan(span)).toEqual({ span_id: 's1', status: 'ok' });
+  });
+
   it('drops an event field that is not an object rather than passing a bare value on', () => {
     // Sentry's own types allow `extra` to be loosely shaped, and a caller can set it to a
     // string. Substituting an empty object keeps the event well-formed instead of shipping

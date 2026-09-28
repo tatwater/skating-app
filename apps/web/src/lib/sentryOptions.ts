@@ -56,11 +56,25 @@ export const sharedSentryOptions = {
      * in `@skating/core` covers the breadcrumb and span paths this setting does not reach.
      */
     urlQueryParams: false,
+
+    /**
+     * Four categories SDK v11 added, each collected unless refused. Nothing in the web app
+     * talks to a database, a queue, a GraphQL server or a model directly, so these guard
+     * against the next integration rather than a current leak — and v11's migration guide
+     * names exactly these as the ones to state to keep v10's behavior. Left unset they
+     * would fall to the SDK's defaults, which is the failure the note above describes.
+     */
+    genAI: { inputs: false, outputs: false },
+    databaseQueryData: false,
+    queues: false,
+    graphQL: { document: false, variables: false },
   },
 
   /**
    * The last thing that runs before anything leaves the process: `beforeSend`,
-   * `beforeSendTransaction`, and `beforeBreadcrumb`, all from `@skating/core`.
+   * `beforeSendSpan`, and `beforeBreadcrumb`, all from `@skating/core`. (The spread also
+   * carries `beforeSendTransaction`, which SDK v11 never calls under span streaming; it is
+   * there for mobile's v10 SDK. `sentryOptions.{client,server}.test.ts` prove what actually leaves.)
    */
   ...sentryPrivacyHooks,
 };
