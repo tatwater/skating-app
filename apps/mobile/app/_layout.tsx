@@ -90,6 +90,8 @@ function RootNavigator() {
             sheet itself. */}
         <Stack.Screen name="drafts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="queue" options={{ presentation: 'modal' }} />
+        {/* The library grid (A10-8 §8.5), iOS only — opened from a report's Photos. */}
+        <Stack.Screen name="photo-library" options={{ presentation: 'fullScreenModal' }} />
       </Stack.Protected>
       <Stack.Protected guard={route === 'onboarding'}>
         <Stack.Screen name="onboarding" />

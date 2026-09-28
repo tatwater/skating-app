@@ -4,6 +4,8 @@ import {
   type LibraryAccess,
   onWater,
   photoWindow,
+  reportEndMs,
+  reportsInTimeOrder,
   sameDayWindow,
   selectedValues,
 } from '@skating/core';
@@ -15,6 +17,7 @@ import { Button, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../../lib/draftPhotos';
 import { getTrack } from '../../lib/draftStore';
 import { setHazardPrefill } from '../../lib/hazardPrefill';
+import { openLibraryGridRequest, setPicks, usePicks } from '../../lib/libraryPicks';
 import {
   askLibraryAccess,
   chooseMorePhotos,
@@ -25,6 +28,7 @@ import {
   readLibraryPhoto,
 } from '../../lib/photoLibrary';
 import { toDraftPhoto } from '../../lib/sheetPhotos';
+import { useSheet } from '../../lib/sheetStore';
 import { pickPhotos } from '../photoPipeline';
 import { LakeMap } from './LakeMap';
 import { SheetChip } from './SheetChip';
@@ -161,10 +165,36 @@ export function PhotosSection({
       setBusy(false);
     }
   };
-  // Which reel item became which draft, so a second tap removes rather than re-adds.
-  const [assetToDraft, setAssetToDraft] = useState<Record<string, string>>({});
+  // Which library photo became which draft — shared with the grid, so a second tap on either
+  // removes rather than re-adds.
+  const assetToDraft = usePicks(report.id);
   const setIncludedAsset = (assetId: string, draftId: string) =>
-    setAssetToDraft((m) => ({ ...m, [assetId]: draftId }));
+    setPicks(report.id, { ...assetToDraft, [assetId]: draftId });
+
+  /** *See all* (iOS): the full-screen grid, for the skate or the day (§8.5). */
+  const post = useSheet();
+  const openGrid = () => {
+    const activity =
+      endMs !== undefined ? { startMs: startMs ?? endMs - 2 * 3600_000, endMs } : null;
+    const now = Date.now();
+    const others = (post ? reportsInTimeOrder(post) : []).flatMap((r, i) => {
+      const e = r.id === report.id ? undefined : reportEndMs(r);
+      if (e === undefined) return [];
+      const s = r.sheet.scalars.skateStartTime;
+      return [{ number: i + 1, ...(s !== undefined ? { startMs: s } : {}), endMs: e }];
+    });
+    openLibraryGridRequest({
+      reportId: report.id,
+      timeZone,
+      skate: activity,
+      skateWindow: activity ? photoWindow(activity) : null,
+      dayWindow: sameDayWindow(activity ?? { startMs: now, endMs: now }, timeZone),
+      others,
+      outline,
+      track: trackPoints,
+    });
+    router.push('/photo-library');
+  };
 
   /** The system picker: no permission on either phone, and Google Photos is in it on Android. */
   const add = async () => {
@@ -278,6 +308,7 @@ export function PhotosSection({
                 label={wide ? 'Just the skate' : 'The whole day'}
                 onPress={() => setWide((w) => !w)}
               />
+              <SheetChip compact label="See all" onPress={openGrid} />
               {access === 'limited' ? (
                 <SheetChip compact label="Choose more" onPress={() => void chooseMore()} />
               ) : null}
