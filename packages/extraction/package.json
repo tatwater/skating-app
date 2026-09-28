@@ -17,7 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
     "@skating/core": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.7",

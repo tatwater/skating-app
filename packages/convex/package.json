@@ -22,7 +22,7 @@
   "dependencies": {
     "@skating/core": "workspace:*",
     "convex": "^1.46.0",
-    "standardwebhooks": "^1.0.0"
+    "standardwebhooks": "^1.1.1"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
