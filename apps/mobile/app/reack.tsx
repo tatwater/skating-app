@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import { api } from '@skating/convex/api';
 import { useMutation } from 'convex/react';
 import { ConvexError } from 'convex/values';

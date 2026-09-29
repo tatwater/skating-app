@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faBell } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';

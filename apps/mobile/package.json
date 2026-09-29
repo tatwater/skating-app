@@ -14,7 +14,7 @@
     "eas-build-pre-install": "if [ -n \"$FONTAWESOME_NPM_AUTH_TOKEN\" ]; then printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc; else echo 'WARNING: FONTAWESOME_NPM_AUTH_TOKEN is unset - the @fortawesome install will 401. Set it in this EAS environment.'; fi"
   },
   "dependencies": {
-    "@clerk/clerk-expo": "^2.19.31",
+    "@clerk/expo": "^4.7.1",
     "@expo/dom-webview": "~57.0.1",
     "@expo/metro-runtime": "~57.0.16",
     "@fortawesome/fontawesome-svg-core": "^7.3.1",

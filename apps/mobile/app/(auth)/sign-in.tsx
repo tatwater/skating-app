@@ -1,4 +1,5 @@
-import { useSignIn, useSSO } from '@clerk/clerk-expo';
+import { useSSO } from '@clerk/expo';
+import { useSignIn } from '@clerk/expo/legacy';
 import * as AuthSession from 'expo-auth-session';
 import { Link } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
