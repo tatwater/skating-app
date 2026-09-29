@@ -1,26 +1,26 @@
+import { api } from '@skating/convex/api';
 import {
-  type PostSheet,
+  resolveShowPutInDefault,
   shareLanding,
   shareReportFor,
   sheetLabel,
   updateReport,
 } from '@skating/core';
-import { randomUUID } from 'expo-crypto';
+import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { type ShareIntentFile, useShareIntentContext } from 'expo-share-intent';
 import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import { cachedBodyPolygon } from '../lib/bodyCache';
-import { getTrack } from '../lib/draftStore';
-import {
-  readSharedPhotos,
-  type SharedPhoto,
-  stageShare,
-  whenShareSettles,
-} from '../lib/sharedPhotoFiles';
+import { parkForNewDoor } from '../lib/doorParking';
+import { readSharedPhotos, type SharedPhoto } from '../lib/sharedPhotoFiles';
+import { shareSheet } from '../lib/shareSheet';
+import { saveSheetAsDraft } from '../lib/sheetActions';
 import { doorHref } from '../lib/sheetDoors';
-import { toDraftPhoto } from '../lib/sheetPhotos';
-import { getOnScreenReport, getSheet, updateSheet } from '../lib/sheetStore';
+import { toDraftPhoto, trackPointsFor } from '../lib/sheetPhotos';
+import { getOnScreenReport, getSheet, setSheet, updateSheet } from '../lib/sheetStore';
+
+type Choice = 'add' | 'new' | 'cancel';
 
 /**
  * Photos shared to Gli from another app (A10-8 §8.7, founder call 2026-09-28) — Google Photos, the
@@ -29,12 +29,23 @@ import { getOnScreenReport, getSheet, updateSheet } from '../lib/sheetStore';
  * Mounted inside the signed-in tabs, so a share that arrives before sign-in waits for it (the
  * provider keeps it through the trip to the mail app for the code).
  *
+ * **Each share is finished here before the next is looked at.** The handler builds the new report
+ * itself, sets aside what was open exactly as a door would (`parkForNewDoor`: to Drafts, or held
+ * with a reason), puts the report on screen, and only then navigates — the Report tab adopts it
+ * (`?share=`). No share waits on another screen to say how it went, so none can be stranded
+ * between the two: a share lands, or the person is told why it could not and chooses. (The first
+ * build routed shares through the tab's door and waited on it; three review rounds found three ways
+ * that handshake lost photos.)
+ *
  * Each share is taken off the module the moment its files are in hand — clearing does not delete
- * them — so a second share that arrives while the first is being read is queued, never wiped.
- * Renders nothing. Only photos are taken; a shared link or text is let go.
+ * them — so a second share that arrives meanwhile is queued, never wiped. Renders nothing. Only
+ * photos are taken; a shared link or text is let go.
  */
 export function ShareIntentHandler() {
   const router = useRouter();
+  const profile = useQuery(api.profiles.current, {});
+  const showPutInDefault = useRef<boolean | undefined>(undefined);
+  showPutInDefault.current = profile?.showPutInDefault;
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const queue = useRef<ShareIntentFile[][]>([]);
   const running = useRef(false);
@@ -56,78 +67,97 @@ export function ShareIntentHandler() {
       }
     })();
 
-    /** Where one share lands — resolved once the person has answered, if there is a question. */
-    function land(photos: SharedPhoto[]): Promise<void> {
+    async function land(photos: SharedPhoto[]): Promise<void> {
       const open = getSheet();
-      if (open === null || shareLanding(open) === 'new') {
-        return openNew(photos);
-      }
-      const n = photos.length;
-      const title = n === 1 ? 'Add this photo' : `Add ${n} photos`;
-      // An edit of a published report cannot be parked in Drafts, so a new report would be held
-      // back behind it: the only door is this one.
-      const editing = open.mode.kind === 'edit' && open.dirty;
-      return new Promise((resolve) => {
-        Alert.alert(
-          title,
-          editing
-            ? `To the report you're editing (${sheetLabel(open)})? Save or cancel your changes first to start a new one.`
-            : `To the report you have open (${sheetLabel(open)}), or to a new one?`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
-            ...(editing
-              ? []
-              : [
-                  {
-                    text: 'New report',
-                    onPress: () => void openNew(photos).finally(() => resolve()),
-                  },
-                ]),
-            {
-              text: 'Add to this one',
-              onPress: () => void addToOpen(photos).finally(() => resolve()),
-            },
-          ],
-          { cancelable: true, onDismiss: () => resolve() },
-        );
-      });
+      const choice: Choice =
+        open === null || shareLanding(open) === 'new'
+          ? 'new'
+          : await ask(
+              photos.length,
+              `To the report you have open (${sheetLabel(open)}), or to a new one?`,
+              true,
+            );
+      if (choice === 'add') await addToOpen(photos);
+      else if (choice === 'new') await startNew(photos);
     }
 
     /**
-     * Stage the share and open its door — and wait for that door to say how it ended, so a share
-     * queued behind this one neither cancels it by navigating away nor asks about the report before
-     * it. Only a door that never runs meets the backstop, and its photos stay staged.
+     * A new report with the photos on it. Built first (reading photos can take seconds), then what is
+     * open set aside as any door does, then shown — so nothing typed on the open sheet meanwhile is
+     * lost to the swap.
      */
-    async function openNew(photos: SharedPhoto[]): Promise<void> {
-      const id = randomUUID();
-      stageShare(id, photos);
-      router.navigate(doorHref({ share: id }));
-      await whenShareSettles(id, 120_000);
+    async function startNew(photos: SharedPhoto[]): Promise<void> {
+      const sheet = await shareSheet(
+        photos,
+        resolveShowPutInDefault(showPutInDefault.current),
+        Date.now(),
+      );
+      const built = sheet.reports.flatMap((r) => r.photos);
+      if (built.length === 0) {
+        Alert.alert(
+          "Couldn't read those photos",
+          'Try sharing them again, or add them from the report.',
+        );
+        return;
+      }
+      const parking = await parkForNewDoor(getSheet(), Date.now(), saveSheetAsDraft);
+      if (parking.kind === 'held') {
+        // What is open can't be set aside (an edit with unsaved changes, a draft that won't save):
+        // the built report goes, and the one door left is offered.
+        if ((await ask(photos.length, parking.message, false)) === 'add') await addToOpen(photos);
+        return;
+      }
+      setSheet(sheet);
+      router.navigate(doorHref({ share: sheet.draftId }));
     }
 
     async function addToOpen(photos: SharedPhoto[]): Promise<void> {
+      let added = 0;
       for (const photo of photos) {
-        const post: PostSheet | null = getSheet();
+        const post = getSheet();
         if (!post) break;
         const reportId = shareReportFor(post, photo, getOnScreenReport());
         const report = post.reports.find((r) => r.id === reportId);
         if (!report) continue;
         const lake = {
           outline: report.sheet.waterBodyId ? cachedBodyPolygon(report.sheet.waterBodyId) : null,
-          track: (report.trackDraftId ? (getTrack(report.trackDraftId)?.points ?? []) : []).map(
-            (p) => ({ lat: p.lat, lng: p.lng, timestamp: p.t }),
-          ),
+          track: trackPointsFor(report.trackDraftId),
         };
         try {
           const draft = await toDraftPhoto(photo, lake);
+          // The sheet changed under the read: this photo has nowhere to go.
+          if (getSheet()?.draftId !== post.draftId) continue;
           updateSheet((p) =>
             updateReport(p, report.id, (r) => ({ ...r, photos: [...r.photos, draft] })),
           );
+          added += 1;
         } catch {
           // One unreadable file does not cost the others.
         }
       }
+      if (added < photos.length) {
+        Alert.alert(
+          added === 0 ? "Couldn't add those photos" : `Added ${added} of ${photos.length}`,
+          'The rest could not be read. Add them from the report if you have them.',
+        );
+      }
       router.navigate('/report');
+    }
+
+    /** One question, answered by a tap — never by a timeout. */
+    function ask(n: number, message: string, offerNew: boolean): Promise<Choice> {
+      return new Promise((resolve) => {
+        Alert.alert(
+          n === 1 ? 'Add this photo' : `Add ${n} photos`,
+          message,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+            ...(offerNew ? [{ text: 'New report', onPress: () => resolve('new') }] : []),
+            { text: 'Add to this one', onPress: () => resolve('add') },
+          ],
+          { cancelable: true, onDismiss: () => resolve('cancel') },
+        );
+      });
     }
   }, [hasShareIntent, shareIntent, resetShareIntent, router]);
 

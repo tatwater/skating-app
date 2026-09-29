@@ -1265,7 +1265,10 @@ Google Photos* ships dark until its OAuth client exists.
 6. **A shared photo's location never becomes the Report's coordinate.** Built first as the tab's
    GPS fallback (a coordinate the flush resolves); caught before commit, since a photo taken at
    home would travel with the report.
-7. **The grid's tiles read each original's uri** (`Asset.getUri`), which on iOS may fetch an
+7. **Shares land in the handler, not through a door** (third Greptile round; above).
+8. **A track places only the photos taken during it** — tightened from A10-7's rule, which let the
+   track clamp any time to its ends.
+9. **The grid's tiles read each original's uri** (`Asset.getUri`), which on iOS may fetch an
    iCloud original to draw a 74-pt tile. `expo-image`'s `ph://` thumbnails would not; it is a new
    native module for a screen nobody can run yet, so it waits for iOS (Owed).
 
@@ -1295,12 +1298,23 @@ it); the Photos section's *Add photos* keeps the photos that landed when one fai
 Photos pick cancelled before its state arrived, or during Google's consent, now spends the state —
 `close()` only ever removed the session.
 
-The second pass found one more, a P1 in the first pass's own fix: a share waited ten seconds for its
-door's sheet, and a door building twenty photos can take longer, after which the next share
-navigated away and cancelled it. A share now waits for its door to **say** how it ended —
-`opened`, `failed` or `held` — settled by the Report tab where the sheet is really set, so an
-opening dropped midway never releases its photos. A two-minute backstop only covers a door that
-never runs, and the share stays staged through it.
+The second and third passes each found a P1 in the previous pass's fix, both the same shape: a
+share whose door did not open (too slow for a ten-second wait, then held behind an edit) stranded
+its photos. The fault was the design, not the patches — shares were routed through the Report tab's
+door and the handler waited on it — so the third round replaced it: **the handler finishes each
+share itself** (builds the report, sets aside what was open with the door's own
+`parkForNewDoor`, puts the report on screen, and only then navigates; the tab adopts it by
+`?share=`). No share waits on another screen, so none can be stranded between the two; a share
+that cannot land is said to the person, who chooses.
+
+A second `/code-review xhigh` ran before that round was pushed (fifteen candidates, thirteen fixed,
+one taken in part, one owed). Worth naming: a photo taken **after** a recorded track was placed at
+the track's last fix — on the ice, published (D42) — because `placeOnLake` let the track clamp any
+time; it now places only inside the track. A pick cancelled while its callback ran still stored a
+live token; `storeSession` now refuses a state that is gone. `toDraftPhoto` copied every photo into
+permanent storage, which leaked wherever no draft followed (an edit, a replaced sheet); it now
+leaves the files in the processing cache as the picker always did, and *Save draft* copies them.
+And the grid's rail ran into the hour after a skate that ended on the hour; hours are half-open.
 
 ### Owed
 

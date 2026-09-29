@@ -15,7 +15,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState, Image, Linking, Pressable, ScrollView } from 'react-native';
 import { Button, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../../lib/draftPhotos';
-import { getTrack } from '../../lib/draftStore';
 import { setHazardPrefill } from '../../lib/hazardPrefill';
 import { getPicks, openLibraryGridRequest, setPicks, usePicks } from '../../lib/libraryPicks';
 import {
@@ -28,7 +27,7 @@ import {
   readLibraryAccess,
   readLibraryPhoto,
 } from '../../lib/photoLibrary';
-import { toDraftPhoto } from '../../lib/sheetPhotos';
+import { toDraftPhoto, trackPointsFor } from '../../lib/sheetPhotos';
 import { useSheet } from '../../lib/sheetStore';
 import { pickPhotos } from '../photoPipeline';
 import { LakeMap } from './LakeMap';
@@ -144,14 +143,7 @@ export function PhotosSection({
   }, [access, loadReel]);
 
   /** The recorded track's points, for placing an undated-location photo where the skater was. */
-  const trackPoints = useMemo(() => {
-    if (report.trackDraftId === undefined) return [];
-    return (getTrack(report.trackDraftId)?.points ?? []).map((p) => ({
-      lat: p.lat,
-      lng: p.lng,
-      timestamp: p.t,
-    }));
-  }, [report.trackDraftId]);
+  const trackPoints = useMemo(() => trackPointsFor(report.trackDraftId), [report.trackDraftId]);
 
   /** Turn a library photo into a draft photo: read on device, files copied out of the roll. */
   const include = async (item: LibraryItem) => {
@@ -289,20 +281,24 @@ export function PhotosSection({
       gap={gaps.has('photos')}
     >
       {/* The reel (iOS): the library, for the skate's window — asked for only from a tap. */}
-      {READS_LIBRARY && !editing && window && access !== null ? (
+      {READS_LIBRARY && !editing && access !== null ? (
         <YStack gap="$2">
           <SubLabel>
-            From your skate · {clock(window.startMs)}–{clock(window.endMs)}
-            {readable && reel ? ` · ${reel.length} found` : ''}
+            {window
+              ? `From your skate · ${clock(window.startMs)}–${clock(window.endMs)}${
+                  readable && reel ? ` · ${reel.length} found` : ''
+                }`
+              : 'From your library'}
           </SubLabel>
           {access === 'ask' ? (
             <>
               <Button size="$2" alignSelf="flex-start" onPress={() => void askForLibrary()}>
-                Show photos from your skate
+                {window ? 'Show photos from your skate' : 'Show your photos'}
               </Button>
               <SheetHint>
-                Gli looks for the photos you took during these hours. Nothing is uploaded until you
-                post.
+                {window
+                  ? 'Gli looks for the photos you took during these hours. Nothing is uploaded until you post.'
+                  : 'Gli shows your photos by the day. Nothing is uploaded until you post.'}
               </SheetHint>
             </>
           ) : access === 'settings' ? (
@@ -323,11 +319,14 @@ export function PhotosSection({
           ) : null}
           {readable ? (
             <XStack gap="$2" flexWrap="wrap">
-              <SheetChip
-                compact
-                label={wide ? 'Just the skate' : 'The whole day'}
-                onPress={() => setWide((w) => !w)}
-              />
+              {window ? (
+                <SheetChip
+                  compact
+                  label={wide ? 'Just the skate' : 'The whole day'}
+                  onPress={() => setWide((w) => !w)}
+                />
+              ) : null}
+              {/* Before an end time, the grid opens on today (§8.5). */}
               <SheetChip compact label="See all" onPress={openGrid} />
               {access === 'limited' ? (
                 <SheetChip compact label="Choose more" onPress={() => void chooseMore()} />

@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { libraryGrid, photoIdsInWindow } from './libraryGrid';
+import { libraryGrid } from './libraryGrid';
 import { zonedMinuteOfDay } from './zonedTime';
 
 const H = 3_600_000;
@@ -95,9 +95,17 @@ describe('libraryGrid — the marks', () => {
   it('rails the hours the skate touches, and only those', () => {
     const grid = libraryGrid(day, {
       timeZone: NY,
-      skate: { startMs: at('2026-01-10T18:45:00Z'), endMs: at('2026-01-10T20:00:00Z') },
+      skate: { startMs: at('2026-01-10T18:45:00Z'), endMs: at('2026-01-10T20:30:00Z') },
     });
     expect(grid.map((h) => h.inSkate)).toEqual([false, true, true, true, false]);
+  });
+
+  it('does not rail the hour after a skate that ends on the hour', () => {
+    const grid = libraryGrid(day, {
+      timeZone: NY,
+      skate: { startMs: at('2026-01-10T18:45:00Z'), endMs: at('2026-01-10T20:00:00Z') },
+    });
+    expect(grid.map((h) => h.inSkate)).toEqual([false, true, true, false, false]);
   });
 
   it('rails nothing before the skate has an end time', () => {
@@ -114,22 +122,5 @@ describe('libraryGrid — the marks', () => {
       ],
     });
     expect(grid.map((h) => h.reports)).toEqual([[3], [1, 3], [], [], []]);
-  });
-});
-
-describe('photoIdsInWindow', () => {
-  it('selects the photos inside the window, ends included', () => {
-    const photos = [
-      photo('before', '2026-01-10T17:59:59Z'),
-      photo('start', '2026-01-10T18:00:00Z'),
-      photo('end', '2026-01-10T19:00:00Z'),
-      photo('after', '2026-01-10T19:00:01Z'),
-    ];
-    expect(
-      photoIdsInWindow(photos, {
-        startMs: at('2026-01-10T18:00:00Z'),
-        endMs: at('2026-01-10T19:00:00Z'),
-      }),
-    ).toEqual(['start', 'end']);
   });
 });

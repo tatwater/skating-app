@@ -167,8 +167,10 @@ export const dropState = internalMutation({
 });
 
 /**
- * Internal: store the picker session. Refused for an account that is being deleted — the same gate
- * a Strava connection takes (`canConnectAccount`), because this row holds a live token too.
+ * Internal: store the picker session. Refused when the pick is no longer live — its consumed state
+ * is gone because the person cancelled while the callback ran — and for an account that is being
+ * deleted (the same gate a Strava connection takes, `canConnectAccount`), because this row holds a
+ * live token. A refusal makes `complete` delete the session at Google.
  */
 export const storeSession = internalMutation({
   args: {
@@ -182,7 +184,10 @@ export const storeSession = internalMutation({
   },
   handler: async (ctx, args) => {
     const pending = await stateRow(ctx, args.state);
-    if (pending) await ctx.db.delete(pending._id);
+    if (!pending || pending.consumedAt === undefined || pending.userId !== args.userId) {
+      return { stored: false };
+    }
+    await ctx.db.delete(pending._id);
     if (!(await canConnectAccount(ctx, args.userId))) return { stored: false };
     await ctx.db.insert('photoPickerSessions', { ...args, createdAt: Date.now() });
     return { stored: true };

@@ -10,27 +10,22 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
-  type DraftPhoto,
   openPostSheet,
   type PostSheet,
-  photosEndSuggestion,
   postSheetForEdit,
   postSheetFromDraft,
   resolveShowPutInDefault,
   snapPutIn,
-  suggestEndFromPhotos,
   trackStats,
   updateReport,
 } from '@skating/core';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
-import { cachedBodyPolygon, resolveCachedBody } from './bodyCache';
+import { resolveCachedBody } from './bodyCache';
 import { convex } from './convex';
 import { getDraft, getTrack } from './draftStore';
 import { getSuggestedSkateWindow } from './dwellTracker';
-import { exifCoord } from './photo';
-import { type SharedPhoto, stagedShare } from './sharedPhotoFiles';
-import { toDraftPhoto } from './sheetPhotos';
+import { getSheet } from './sheetStore';
 
 export interface DoorParams {
   body?: string;
@@ -39,7 +34,10 @@ export interface DoorParams {
   activity?: string;
   draft?: string;
   edit?: string;
-  /** Photos shared to Gli from another app (A10-8 §8.7): the staged share's id. */
+  /**
+   * A report the share handler already put on screen (A10-8 §8.7): its draft id. The tab adopts it
+   * rather than parking it — the handler has set aside whatever was open already.
+   */
   share?: string;
   /**
    * The opening's own stamp (`doorHref` mints it): the tab keeps its last params, so the same lake's
@@ -127,10 +125,10 @@ export async function openDoor(
     );
   }
 
+  // A share's report is built and set by the share handler; a door here only ever finds it open.
   if (params.share) {
-    // Read, not taken: the Report tab settles the share once its sheet is really set.
-    const photos = stagedShare(params.share);
-    return photos ? shareSheet(photos, showPutIn, now) : null;
+    const open = getSheet();
+    return open?.draftId === params.share ? open : null;
   }
 
   if (params.draft) {
@@ -273,50 +271,6 @@ export async function locateTabSheet(
     const withEnd = match ? withDwell(filled, match.waterBodyId) : filled;
     return { ...withEnd, dirty: false };
   });
-}
-
-/**
- * The share door (A10-8 §8.7): one Report with the shared photos on it. A photo taken on a lake the
- * device knows names the lake — as the tab's own GPS fix does — and places the photos on its water;
- * the latest capture is a ghost end time, a suggestion the author taps or doesn't (D188). The sheet
- * is dirty from the start: it holds photos, so leaving it parks it in Drafts.
- */
-async function shareSheet(
-  photos: readonly SharedPhoto[],
-  showPutIn: boolean,
-  now: number,
-): Promise<PostSheet> {
-  const located = photos.map((p) => exifCoord(p.exif)).find((c) => c !== undefined);
-  const match = located ? resolveCachedBody(located) : null;
-  const outline = match ? cachedBodyPolygon(match.waterBodyId) : null;
-  const drafts: DraftPhoto[] = [];
-  for (const photo of photos) {
-    try {
-      drafts.push(await toDraftPhoto(photo, { outline, track: [] }));
-    } catch {
-      // One unreadable file does not cost the others.
-    }
-  }
-  const post = openPostSheet(
-    'share',
-    {
-      // Named only when the device knows the lake. A photo's location never becomes the Report's
-      // own coordinate: one taken at home would otherwise travel with the report (D42).
-      ...(match ? { waterBodyId: match.waterBodyId, bodyName: match.name } : {}),
-      showPutIn,
-    },
-    now,
-    randomUUID,
-  );
-  const first = post.reports[0];
-  if (!first) return post;
-  const end = photosEndSuggestion(photos, now);
-  const next = updateReport(post, first.id, (r) => ({
-    ...r,
-    photos: drafts,
-    sheet: end !== undefined ? suggestEndFromPhotos(r.sheet, end) : r.sheet,
-  }));
-  return { ...next, dirty: true };
 }
 
 /** Today's dwell on the lake (Phase 09b) as the end time — editable, never authoritative. */

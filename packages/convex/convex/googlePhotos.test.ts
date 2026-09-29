@@ -197,6 +197,32 @@ describe('complete — the callback page, as the signed-in person', () => {
     expect(await user.as.action(api.googlePhotos.status, { state })).toEqual({ phase: 'gone' });
   });
 
+  test('a pick cancelled while the callback runs stores nothing and closes the session', async () => {
+    const t = convexTest(schema, modules);
+    const { state, user } = await begin(t);
+    // The page's Cancel lands between the consume and the store: abandon spends the state.
+    const calls = stubFetch([
+      { match: /token/, method: 'POST', body: TOKEN },
+      { match: /sessions$/, method: 'POST', body: SESSION },
+      { match: /sessions\/sess-1$/, method: 'DELETE', body: {} },
+    ]);
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (/sessions$/.test(String(input)))
+          await user.as.mutation(api.googlePhotos.abandon, { state });
+        return realFetch(input, init);
+      }),
+    );
+    expect(await user.as.action(api.googlePhotos.complete, { code: 'c', state })).toEqual({
+      ok: false,
+      reason: 'failed',
+    });
+    expect(await t.run((ctx) => ctx.db.query('photoPickerSessions').collect())).toHaveLength(0);
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(true);
+  });
+
   test('treats an unticked scope as declined', async () => {
     const t = convexTest(schema, modules);
     const { state, user } = await begin(t);
@@ -244,6 +270,7 @@ describe('complete — the callback page, as the signed-in person', () => {
     const { state, user } = await begin(t);
     // Its own actions refuse a departing caller up front; this is the gate behind them.
     const calls = stubFetch([]);
+    await user.as.mutation(internal.googlePhotos.consumeOwnState, { state });
     await t.run((ctx) => ctx.db.patch(user.id, { status: 'deleting' as const }));
     expect(
       await t.mutation(internal.googlePhotos.storeSession, {

@@ -100,10 +100,12 @@ export function onWater(
 
 /**
  * Where a photo added on the phone sits on its Report's lake (A10-7; every phone door since A10-8):
- * its own location when that is on the water; else, with a time and a recorded track, where the
- * track was when the shutter fired, and that only on the water too, since a shutter before the
- * first fix clamps to the track's first point, which may be the launch the author keeps to
- * themselves (D58). Otherwise unplaced, its own location kept for a later hand.
+ * its own location when that is on the water; else, with a time **inside the recorded track** and
+ * the track, where the track was when the shutter fired — on the water too. A time outside the
+ * track is not placed by it at all: the track would clamp it to its first or last fix, and a photo
+ * taken at home that evening would be published on the ice at the spot the skater stepped off
+ * (D42; the launch is also the spot the author may keep to themselves, D58). Otherwise unplaced,
+ * its own location kept for a later hand.
  */
 export function placeOnLake(
   photo: { takenAtMs?: number; coord?: LatLng },
@@ -113,7 +115,16 @@ export function placeOnLake(
   if (photo.coord !== undefined && onWater(photo.coord, polygon)) {
     return { coord: photo.coord, placeOnMap: true };
   }
-  if (photo.takenAtMs !== undefined && track.length > 1) {
+  const first = track[0];
+  const last = track[track.length - 1];
+  if (
+    photo.takenAtMs !== undefined &&
+    first !== undefined &&
+    last !== undefined &&
+    track.length > 1 &&
+    photo.takenAtMs >= first.timestamp &&
+    photo.takenAtMs <= last.timestamp
+  ) {
     const along = placePhoto({ id: '', takenAtMs: photo.takenAtMs }, track);
     if (along && onWater(along.coord, polygon)) return { coord: along.coord, placeOnMap: true };
   }

@@ -7,6 +7,10 @@ import { addSheetPhoto, releaseSheetPhoto } from '../../lib/sheetPhotos';
 
 type Phase = 'idle' | 'waiting' | 'adding';
 
+/** Failed looks in a row before the page gives the pick up, and the wait between them. */
+const STATUS_MISSES = 6;
+const STATUS_RETRY_MS = 5_000;
+
 function release(drafts: readonly DraftPhoto[]): void {
   for (const d of drafts) releaseSheetPhoto(d.id);
 }
@@ -43,8 +47,11 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
         void close({ state: current.state }).catch(() => undefined);
         void abandon({ state: current.state }).catch(() => undefined);
       }
-      if (run.current === current) run.current = null;
-      setPhase('idle');
+      // A run that is no longer the current one leaves the page to the one that is.
+      if (run.current === current) {
+        run.current = null;
+        setPhase('idle');
+      }
     },
     [close, abandon],
   );
@@ -80,8 +87,22 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
       }
       win.location.href = consentUrl;
 
+      let misses = 0;
       for (;;) {
-        const step = nextPickStep(await status({ state }));
+        // A look that fails on our side (a dropped connection) is not the end of a pick the person
+        // is still making: look again, and give up only after a run of them.
+        let seen: Awaited<ReturnType<typeof status>>;
+        try {
+          seen = await status({ state });
+          misses = 0;
+        } catch {
+          if (current.cancelled) return;
+          misses += 1;
+          if (misses > STATUS_MISSES) throw new Error('lost the pick');
+          await new Promise((resolve) => setTimeout(resolve, STATUS_RETRY_MS));
+          continue;
+        }
+        const step = nextPickStep(seen);
         if (current.cancelled) return;
         if (step.kind === 'end') {
           setError('Google Photos closed without adding anything.');
@@ -95,15 +116,32 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
 
       setPhase('adding');
       const picked = await list({ state });
+      let missed = 0;
       for (const item of picked) {
         if (current.cancelled) break;
-        const { bytes, mimeType } = await photo({ state, itemId: item.id });
-        const draft = await addSheetPhoto(new File([bytes], item.filename, { type: mimeType }));
-        // Google's capture time is the photo's; the bytes' own EXIF may have lost it.
-        drafts.push(item.takenAtMs !== undefined ? { ...draft, takenAtMs: item.takenAtMs } : draft);
+        // Each photo on its own: one Google won't hand over, or that won't decode, costs itself.
+        try {
+          const { bytes, mimeType } = await photo({ state, itemId: item.id });
+          const draft = await addSheetPhoto(new File([bytes], item.filename, { type: mimeType }));
+          // Google's capture time is the photo's; the bytes' own EXIF may have lost it.
+          drafts.push(
+            item.takenAtMs !== undefined ? { ...draft, takenAtMs: item.takenAtMs } : draft,
+          );
+        } catch {
+          missed += 1;
+        }
       }
       if (current.cancelled) release(drafts);
-      else if (drafts.length > 0) onPhotos(drafts);
+      else {
+        if (drafts.length > 0) onPhotos(drafts);
+        if (missed > 0) {
+          setError(
+            missed === 1
+              ? "One photo couldn't be brought over. The rest were added."
+              : `${missed} photos couldn't be brought over. The rest were added.`,
+          );
+        }
+      }
       end(current);
     } catch {
       // What was already processed holds blobs nobody will add; let them go.

@@ -1,4 +1,4 @@
-import { type GridHour, libraryGrid, photoIdsInWindow, updateReport } from '@skating/core';
+import { type GridHour, libraryGrid, updateReport } from '@skating/core';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -15,8 +15,8 @@ import { SheetChip } from '../src/components/sheet/SheetChip';
 import { deleteDraftPhotoFiles, isPersistedUri } from '../src/lib/draftPhotos';
 import { getLibraryGridRequest, getPicks, setPicks } from '../src/lib/libraryPicks';
 import {
-  allLibraryPhotos,
   type LibraryItem,
+  libraryAssetIds,
   libraryPhotos,
   readLibraryPhoto,
 } from '../src/lib/photoLibrary';
@@ -58,6 +58,7 @@ export default function PhotoLibraryScreen() {
   const [preview, setPreview] = useState<GridPhoto | null>(null);
   const [missed, setMissed] = useState(0);
   const [capped, setCapped] = useState(false);
+  const [changed, setChanged] = useState(false);
   // What is on the Report now, by asset — those open checked.
   const readIncluded = useCallback((): Record<string, string> => {
     if (!request) return {};
@@ -123,12 +124,8 @@ export default function PhotoLibraryScreen() {
   const selectSkate = async () => {
     if (!request?.skateWindow) return;
     try {
-      const skate = await allLibraryPhotos(request.skateWindow, SKATE_MAX);
-      const ids = photoIdsInWindow(
-        skate.photos.map((p) => ({ id: p.assetId, takenAtMs: p.takenAtMs })),
-        request.skateWindow,
-      );
-      setSelected((s) => new Set([...s, ...ids]));
+      const skate = await libraryAssetIds(request.skateWindow, SKATE_MAX);
+      setSelected((s) => new Set([...s, ...skate.ids]));
       setCapped(!skate.complete);
     } catch {
       setFailed(true);
@@ -138,8 +135,19 @@ export default function PhotoLibraryScreen() {
   const toAdd = [...selected].filter((id) => included[id] === undefined);
   const toRemove = Object.keys(included).filter((id) => !selected.has(id));
 
+  // Closing the grid stops an *Add* in flight: nothing lands after the person has left.
+  const closed = useRef(false);
+  useEffect(
+    () => () => {
+      closed.current = true;
+    },
+    [],
+  );
+
   const apply = async () => {
     if (!request) return;
+    // The sheet the grid was opened for: a share can replace it while the grid is up.
+    const sheetId = getSheet()?.draftId;
     setAdding(true);
     try {
       // Each photo on its own: one that will not read (an iCloud original with no signal) is
@@ -147,6 +155,7 @@ export default function PhotoLibraryScreen() {
       const added: { assetId: string; draft: Awaited<ReturnType<typeof toDraftPhoto>> }[] = [];
       let missed = 0;
       for (const assetId of toAdd) {
+        if (closed.current) return;
         try {
           const asset = await readLibraryPhoto(assetId);
           added.push({
@@ -156,6 +165,11 @@ export default function PhotoLibraryScreen() {
         } catch {
           missed += 1;
         }
+      }
+      if (closed.current) return;
+      if (getSheet()?.draftId !== sheetId) {
+        setChanged(true);
+        return;
       }
       const removedDrafts = new Set(toRemove.map((id) => included[id] as string));
       // A removed photo owns its copied files; drop them with it, as the Photos section does.
@@ -250,7 +264,7 @@ export default function PhotoLibraryScreen() {
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <YStack flex={1} backgroundColor="$background">
         <XStack alignItems="center" justifyContent="space-between" padding="$3" gap="$2">
-          <Button size="$2" chromeless onPress={() => router.back()}>
+          <Button size="$2" chromeless disabled={adding} onPress={() => router.back()}>
             Cancel
           </Button>
           <XStack gap="$1">
@@ -302,6 +316,12 @@ export default function PhotoLibraryScreen() {
         {failed ? (
           <Paragraph color="$danger" paddingHorizontal="$3">
             Couldn't read your library just now.
+          </Paragraph>
+        ) : null}
+        {changed ? (
+          <Paragraph color="$danger" paddingHorizontal="$3">
+            The report you opened this from was replaced, so nothing was added. Go back and open
+            your photos from the report on screen.
           </Paragraph>
         ) : null}
         {capped ? (

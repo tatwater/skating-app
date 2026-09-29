@@ -45,9 +45,14 @@ export interface GridInput {
   others?: readonly GridOtherReport[];
 }
 
-/** Does [from, to] (an instant when equal) touch the hour starting at `hour`? */
+/**
+ * Does [from, to) touch the hour starting at `hour`? Half-open, so a skate that ends on the hour —
+ * half of D192's ladder does — does not rail the hour after it. An instant (from = to, a Report with
+ * only an end) touches the hour it falls in.
+ */
 function touches(hour: number, from: number, to: number): boolean {
-  return from < hour + HOUR_MS && to >= hour;
+  if (from === to) return from >= hour && from < hour + HOUR_MS;
+  return from < hour + HOUR_MS && to > hour;
 }
 
 function hourLabels(hours: readonly number[], timeZone: string): string[] {
@@ -91,14 +96,4 @@ export function libraryGrid<P extends GridPhotoInput>(
       .map((o) => o.number)
       .sort((a, b) => a - b),
   }));
-}
-
-/** *Select all from the skate*: the ids of the photos inside the window the reel asks for. */
-export function photoIdsInWindow(
-  photos: readonly GridPhotoInput[],
-  window: ActivityWindow,
-): string[] {
-  return photos
-    .filter((p) => p.takenAtMs >= window.startMs && p.takenAtMs <= window.endMs)
-    .map((p) => p.id);
 }

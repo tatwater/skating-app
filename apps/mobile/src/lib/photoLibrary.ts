@@ -106,20 +106,29 @@ export async function libraryPhotos(
   };
 }
 
-/** Every photo in a window, page by page, up to `max` — *Select all from the skate*. */
-export async function allLibraryPhotos(
+/**
+ * The ids of every photo in a window, page by page, up to `max` — *Select all from the skate*. Ids
+ * only, from the media store's metadata: nothing is resolved or downloaded for a photo that is only
+ * being checked.
+ */
+export async function libraryAssetIds(
   window: ActivityWindow,
   max: number,
-): Promise<{ photos: LibraryItem[]; complete: boolean }> {
-  const PAGE = 200;
-  const photos: LibraryItem[] = [];
-  let offset = 0;
-  for (;;) {
-    const page = await libraryPhotos(window, { offset, limit: PAGE });
-    photos.push(...page.photos);
-    offset += page.scanned;
-    if (page.scanned < PAGE) return { photos, complete: true };
-    if (offset >= max) return { photos, complete: false };
+): Promise<{ ids: string[]; complete: boolean }> {
+  const PAGE = 500;
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await new MediaLibrary.Query()
+      .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
+      .gte(MediaLibrary.AssetField.CREATION_TIME, window.startMs)
+      .lte(MediaLibrary.AssetField.CREATION_TIME, window.endMs)
+      .orderBy({ key: MediaLibrary.AssetField.CREATION_TIME, ascending: true })
+      .offset(offset)
+      .limit(PAGE)
+      .exeForMetadata();
+    ids.push(...rows.map((r) => r.id));
+    if (rows.length < PAGE) return { ids, complete: true };
+    if (ids.length >= max) return { ids: ids.slice(0, max), complete: false };
   }
 }
 
@@ -138,13 +147,16 @@ export function onLibraryChange(onChange: () => void): () => void {
  */
 export async function readLibraryPhoto(assetId: string): Promise<PhotoAssetLike> {
   const asset = new MediaLibrary.Asset(assetId);
-  const [info, location] = await Promise.all([
+  const [info, uri, location] = await Promise.all([
     asset.getInfo(),
+    // The file itself: `getUri` fetches an original that lives only in iCloud, as A10-7's
+    // `shouldDownloadFromNetwork` did; `info.uri` would not.
+    asset.getUri(),
     // A photo with no location — or one the platform will not say — is simply unlocated.
     asset.getLocation().catch(() => null),
   ]);
   return {
-    uri: info.uri,
+    uri,
     width: info.width,
     height: info.height,
     ...(info.creationTime !== null ? { creationTime: info.creationTime } : {}),

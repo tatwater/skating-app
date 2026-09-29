@@ -6,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Paragraph, Spinner, YStack } from 'tamagui';
 import { ReportSheet } from '../../src/components/sheet/ReportSheet';
 import { parkForNewDoor } from '../../src/lib/doorParking';
-import { settleShare } from '../../src/lib/sharedPhotoFiles';
 import { saveSheetAsDraft } from '../../src/lib/sheetActions';
 import {
   type DoorParams,
@@ -57,13 +56,13 @@ export default function ReportScreen() {
     if (openedFor.current !== null && key === '' && getSheet() !== null) return;
     let cancelled = false;
     openedFor.current = key;
-    // A share's door says how it ended (A10-8 §8.7), so a share queued behind it waits for exactly
-    // that — and says it only where the sheet is really set, never for an opening dropped midway.
-    const share = paramsRef.current.share;
-    const settle = (outcome: 'opened' | 'failed' | 'held') => {
-      if (share) settleShare(share, outcome);
-    };
     setHeldBecause(null);
+    // A share's report (A10-8 §8.7) is already the open sheet — built, and whatever was open before
+    // it set aside, by the share handler. Adopt it: parking it here would send it to Drafts.
+    if (paramsRef.current.share !== undefined && getSheet()?.draftId === paramsRef.current.share) {
+      setState('open');
+      return;
+    }
     // A half-written sheet a new door would replace goes to Drafts first — a skater must never face
     // "finish now or lose it", least of all by tapping a lake. What cannot be parked (an edit of a
     // published report, or a park that failed) keeps the screen, with the reason on the sheet:
@@ -74,7 +73,6 @@ export default function ReportScreen() {
         if (parking.kind === 'held') {
           setHeldBecause(parking.message);
           setState('open');
-          settle('held');
           return undefined;
         }
         setState('opening');
@@ -84,12 +82,10 @@ export default function ReportScreen() {
         if (cancelled || sheet === undefined) return;
         if (sheet === null) {
           setState('gone');
-          settle('failed');
           return;
         }
         setSheet(sheet);
         setState('open');
-        settle('opened');
         // The tab's own door: the lake under your feet arrives after the sheet, never before it.
         if (sheet.door === 'page') void locateTabSheet(sheet.draftId, getSheet, updateSheet);
       })
@@ -100,7 +96,6 @@ export default function ReportScreen() {
         const { at: _at, ...door } = paramsRef.current;
         retryDoor.current = door;
         setState('failed');
-        settle('failed');
       });
     return () => {
       cancelled = true;

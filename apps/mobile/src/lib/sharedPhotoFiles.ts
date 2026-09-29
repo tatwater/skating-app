@@ -3,9 +3,6 @@
  * so the capture time and the GPS fix are read here, on device, from the file's own EXIF (core's
  * `readJpegExif`), before the pipeline's re-encode strips everything (D31). Untested native glue;
  * the reader and where the photos land are core's, and are.
- *
- * The staged share is a module-level note, as `hazardPrefill` is: the new-report door takes it by
- * the id its route param carries, once.
  */
 
 import { JPEG_EXIF_HEAD_BYTES, readJpegExif } from '@skating/core';
@@ -63,65 +60,4 @@ export async function readSharedPhotos(files: readonly ShareIntentFile[]): Promi
     }
   }
   return out;
-}
-
-/**
- * Staged shares by their door's id. Keyed, not one slot: two shares in quick succession each open
- * their own door, and the second must not overwrite the first before its door reads it.
- */
-const staged = new Map<string, SharedPhoto[]>();
-
-/** Kept at most — a share whose door never opened is not held forever. */
-const MAX_STAGED = 8;
-
-export function stageShare(id: string, photos: SharedPhoto[]): void {
-  staged.set(id, photos);
-  while (staged.size > MAX_STAGED) {
-    const oldest = staged.keys().next().value;
-    if (oldest === undefined) break;
-    staged.delete(oldest);
-  }
-}
-
-/**
- * The staged share for a door. Read, not taken: an opening that failed is retried with the same id
- * and must still find its photos. `settleShare(id, 'opened')` lets it go once the sheet is built.
- */
-export function stagedShare(id: string): SharedPhoto[] | null {
-  return staged.get(id) ?? null;
-}
-
-/**
- * How a share's door ended: its sheet was built (`opened`), it could not be (`failed`), or the open
- * sheet held it back — an edit with unsaved changes, a park that failed (`held`).
- */
-export type ShareOutcome = 'opened' | 'failed' | 'held';
-
-const waiting = new Map<string, (outcome: ShareOutcome) => void>();
-
-/**
- * Resolve when the share's door says how it ended — not after a guess at how long a door takes: a
- * door building twenty photos can take longer than any fixed wait, and the next share navigating
- * away meanwhile would cancel it. `timeoutMs` is only the backstop for a door that never ran; the
- * share stays staged either way.
- */
-export function whenShareSettles(id: string, timeoutMs: number): Promise<ShareOutcome | 'timeout'> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      waiting.delete(id);
-      resolve('timeout');
-    }, timeoutMs);
-    waiting.set(id, (outcome) => {
-      clearTimeout(timer);
-      resolve(outcome);
-    });
-  });
-}
-
-/** The door says how it ended. An opened share's photos are on its sheet, so its staging goes. */
-export function settleShare(id: string, outcome: ShareOutcome): void {
-  if (outcome === 'opened') staged.delete(id);
-  const resolve = waiting.get(id);
-  waiting.delete(id);
-  resolve?.(outcome);
 }

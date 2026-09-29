@@ -8,11 +8,11 @@
  * pick ends only when the session does — picked, or gone — or when the person says *Cancel*.
  */
 
-export type PickPhase =
-  | { phase: 'consent'; pollIntervalMs: number }
-  | { phase: 'picking'; pollIntervalMs: number }
-  | { phase: 'picked' }
-  | { phase: 'gone' };
+import type { api } from '@skating/convex/api';
+import type { FunctionReturnType } from 'convex/server';
+
+/** The server's own answer type, so a phase it adds cannot fall through here unnoticed. */
+export type PickPhase = FunctionReturnType<typeof api.googlePhotos.status>;
 
 export type PickStep = { kind: 'wait'; ms: number } | { kind: 'add' } | { kind: 'end' };
 

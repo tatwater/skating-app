@@ -184,6 +184,17 @@ describe('placeOnLake — where a phone photo sits when it is added', () => {
     expect(onWater(shore, outline)).toBe(false);
   });
 
+  it('never places a photo taken after the track at its last fix, on the water or not', () => {
+    // The track ends on the water; a photo from home that evening must not land there (D42).
+    expect(onWater(track[2], outline)).toBe(true);
+    expect(placeOnLake({ takenAtMs: T0 + 5 * H }, outline, track)).toEqual({ placeOnMap: false });
+    const home = { lat: 43.7, lng: -72.3 };
+    expect(placeOnLake({ coord: home, takenAtMs: T0 + 5 * H }, outline, track)).toEqual({
+      coord: home,
+      placeOnMap: false,
+    });
+  });
+
   it('prefers the track to a location off the water, and keeps the location when the track fails', () => {
     expect(placeOnLake({ coord: home, takenAtMs: T0 + H / 3 }, outline, track).placeOnMap).toBe(
       true,
