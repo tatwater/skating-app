@@ -12,10 +12,15 @@ import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import { cachedBodyPolygon } from '../lib/bodyCache';
 import { getTrack } from '../lib/draftStore';
-import { readSharedPhotos, type SharedPhoto, stageShare } from '../lib/sharedPhotoFiles';
+import {
+  readSharedPhotos,
+  type SharedPhoto,
+  stageShare,
+  whenShareSettles,
+} from '../lib/sharedPhotoFiles';
 import { doorHref } from '../lib/sheetDoors';
 import { toDraftPhoto } from '../lib/sheetPhotos';
-import { getOnScreenReport, getSheet, updateSheet, waitForSheet } from '../lib/sheetStore';
+import { getOnScreenReport, getSheet, updateSheet } from '../lib/sheetStore';
 
 /**
  * Photos shared to Gli from another app (A10-8 §8.7, founder call 2026-09-28) — Google Photos, the
@@ -89,18 +94,15 @@ export function ShareIntentHandler() {
     }
 
     /**
-     * Stage the share and open its door — and wait for that door's sheet, so a share queued behind
-     * this one asks about the report this one opened, not the one before it.
+     * Stage the share and open its door — and wait for that door to say how it ended, so a share
+     * queued behind this one neither cancels it by navigating away nor asks about the report before
+     * it. Only a door that never runs meets the backstop, and its photos stay staged.
      */
-    function openNew(photos: SharedPhoto[]): Promise<void> {
+    async function openNew(photos: SharedPhoto[]): Promise<void> {
       const id = randomUUID();
-      const before = getSheet();
       stageShare(id, photos);
       router.navigate(doorHref({ share: id }));
-      return waitForSheet(
-        (s) => s !== null && s.door === 'share' && s.draftId !== before?.draftId,
-        10_000,
-      );
+      await whenShareSettles(id, 120_000);
     }
 
     async function addToOpen(photos: SharedPhoto[]): Promise<void> {

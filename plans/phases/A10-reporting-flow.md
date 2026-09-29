@@ -1295,6 +1295,13 @@ it); the Photos section's *Add photos* keeps the photos that landed when one fai
 Photos pick cancelled before its state arrived, or during Google's consent, now spends the state —
 `close()` only ever removed the session.
 
+The second pass found one more, a P1 in the first pass's own fix: a share waited ten seconds for its
+door's sheet, and a door building twenty photos can take longer, after which the next share
+navigated away and cancelled it. A share now waits for its door to **say** how it ended —
+`opened`, `failed` or `held` — settled by the Report tab where the sheet is really set, so an
+opening dropped midway never releases its photos. A two-minute backstop only covers a door that
+never runs, and the share stays staged through it.
+
 ### Owed
 
 - ~~The Google OAuth client~~ — **done 2026-09-28** (founder): *Skating App – Photos*, a Web

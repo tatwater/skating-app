@@ -45,28 +45,6 @@ export function updateSheet(update: (sheet: PostSheet) => PostSheet): void {
   emit();
 }
 
-/**
- * Resolve once the open sheet satisfies `ready`, or after `timeoutMs` — a share that opened a door
- * waits for that door's sheet before the next share asks about "the report you have open".
- */
-export function waitForSheet(
-  ready: (sheet: PostSheet | null) => boolean,
-  timeoutMs: number,
-): Promise<void> {
-  if (ready(current)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      unsubscribe();
-      resolve();
-    };
-    const timer = setTimeout(done, timeoutMs);
-    const unsubscribe = subscribe(() => {
-      if (ready(current)) done();
-    });
-  });
-}
-
 export function useSheet(): PostSheet | null {
   return useSyncExternalStore(subscribe, getSheet, getSheet);
 }

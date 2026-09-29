@@ -85,12 +85,43 @@ export function stageShare(id: string, photos: SharedPhoto[]): void {
 
 /**
  * The staged share for a door. Read, not taken: an opening that failed is retried with the same id
- * and must still find its photos. `releaseStagedShare` once the sheet is built.
+ * and must still find its photos. `settleShare(id, 'opened')` lets it go once the sheet is built.
  */
 export function stagedShare(id: string): SharedPhoto[] | null {
   return staged.get(id) ?? null;
 }
 
-export function releaseStagedShare(id: string): void {
-  staged.delete(id);
+/**
+ * How a share's door ended: its sheet was built (`opened`), it could not be (`failed`), or the open
+ * sheet held it back — an edit with unsaved changes, a park that failed (`held`).
+ */
+export type ShareOutcome = 'opened' | 'failed' | 'held';
+
+const waiting = new Map<string, (outcome: ShareOutcome) => void>();
+
+/**
+ * Resolve when the share's door says how it ended — not after a guess at how long a door takes: a
+ * door building twenty photos can take longer than any fixed wait, and the next share navigating
+ * away meanwhile would cancel it. `timeoutMs` is only the backstop for a door that never ran; the
+ * share stays staged either way.
+ */
+export function whenShareSettles(id: string, timeoutMs: number): Promise<ShareOutcome | 'timeout'> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      resolve('timeout');
+    }, timeoutMs);
+    waiting.set(id, (outcome) => {
+      clearTimeout(timer);
+      resolve(outcome);
+    });
+  });
+}
+
+/** The door says how it ended. An opened share's photos are on its sheet, so its staging goes. */
+export function settleShare(id: string, outcome: ShareOutcome): void {
+  if (outcome === 'opened') staged.delete(id);
+  const resolve = waiting.get(id);
+  waiting.delete(id);
+  resolve?.(outcome);
 }
