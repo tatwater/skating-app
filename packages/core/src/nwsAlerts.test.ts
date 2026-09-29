@@ -45,14 +45,12 @@ describe('isSkatingRelevantAlert', () => {
     expect(isSkatingRelevantAlert({ event })).toBe(true);
   });
 
-  it.each([
-    'Red Flag Warning',
-    'Air Quality Alert',
-    'Rip Current Statement',
-    'Heat Advisory',
-  ])('hides %s, because a strip nobody trusts is worse than no strip', (event) => {
-    expect(isSkatingRelevantAlert({ event })).toBe(false);
-  });
+  it.each(['Red Flag Warning', 'Air Quality Alert', 'Rip Current Statement', 'Heat Advisory'])(
+    'hides %s, because a strip nobody trusts is worse than no strip',
+    (event) => {
+      expect(isSkatingRelevantAlert({ event })).toBe(false);
+    },
+  );
 });
 
 describe('alertsForBody', () => {

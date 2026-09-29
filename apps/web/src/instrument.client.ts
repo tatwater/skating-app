@@ -21,8 +21,8 @@ if (isConfigured.sentry) {
     ...sharedSentryOptions,
     dsn: env.sentryDsn,
     // Full sampling for the alpha; tune down once there's real traffic. Every navigation
-    // becomes a transaction at this rate, which is why `beforeSendTransaction` in
-    // @skating/core strips URLs out of span attributes and descriptions.
+    // produces spans at this rate, which is why `beforeSendSpan` in @skating/core strips
+    // URLs out of span attributes and names.
     tracesSampleRate: 1.0,
   });
 }

@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import * as Sentry from '@sentry/react-native';
 import { api } from '@skating/convex/api';
 import { resolveAuthRoute } from '@skating/core';

@@ -167,13 +167,12 @@ describe('name keywords', () => {
 
   // Every one of these is a real body in the corpus, and a plain "sounds like moving water" drop list
   // would have deleted all of them. Higley Flow is a New York State Park.
-  it.each([
-    'Higley Flow',
-    'Piercefield Flow',
-    'Kings Flow',
-  ])('keeps %s, a regional name for still water a drop-list would delete', (name) => {
-    expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
-  });
+  it.each(['Higley Flow', 'Piercefield Flow', 'Kings Flow'])(
+    'keeps %s, a regional name for still water a drop-list would delete',
+    (name) => {
+      expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
+    },
+  );
 
   // The keep-beats-drop asymmetry, on the five real names that depend on it.
   it.each([
@@ -338,22 +337,19 @@ describe('regional vocabulary found by reading the unresolved list', () => {
   });
 
   // An Adirondack Flow is a dammed impoundment, not a reach. Cedar River Flow is NHD's own Reservoir.
-  it.each([
-    'Higley Flow',
-    'Crooked Brook Flowage',
-    'Kings Flow',
-    'Goodnow Flowage',
-  ])('%s is lakePond, not river', (name) => {
-    expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
-  });
+  it.each(['Higley Flow', 'Crooked Brook Flowage', 'Kings Flow', 'Goodnow Flowage'])(
+    '%s is lakePond, not river',
+    (name) => {
+      expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
+    },
+  );
 
-  it.each([
-    'Barnstable Marina',
-    'Francis Lobster Pound',
-    'Fountain of the Continents',
-  ])('%s is dropped', (name) => {
-    expect(classifyName(name)?.outcome).toBe('drop');
-  });
+  it.each(['Barnstable Marina', 'Francis Lobster Pound', 'Fountain of the Continents'])(
+    '%s is dropped',
+    (name) => {
+      expect(classifyName(name)?.outcome).toBe('drop');
+    },
+  );
 });
 
 describe('assertsOceanOrGreatLake (A07a audit)', () => {

@@ -19,11 +19,11 @@
     "@skating/design": "workspace:*",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-email": "^6.9.5"
+    "react-email": "^6.11.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
-    "@vitest/coverage-v8": "^3.2.7",
-    "vitest": "^3.2.7"
+    "@vitest/coverage-v8": "^5.0.2",
+    "vitest": "^5.0.2"
   }
 }

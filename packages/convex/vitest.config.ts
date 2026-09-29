@@ -36,10 +36,16 @@ export default defineConfig({
       ],
       // Matches @skating/core's baseline; functions are at 100% now. Ratchet upward
       // as more functions land (D40).
+      //
+      // Branches re-baselined 85 → 81.8 at Vitest 5 (2026-09-28): v8 coverage now remaps through
+      // the AST, which counts every `?.`, `??` and default parameter as a branch. The same code
+      // and the same 1,792 tests measured 86.36% before and 81.88% after. Set at the measurement,
+      // not below it — a ratchet (D40) leaves no slack for a real loss to hide in. The climb back
+      // to 85 is a register row in `07-roadmap.md`.
       thresholds: {
         lines: 90,
         functions: 90,
-        branches: 85,
+        branches: 81.8,
         statements: 90,
       },
     },

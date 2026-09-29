@@ -17,7 +17,7 @@ reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
   drawer over a persistent map (`app/(tabs)/(map)/`), URL-backed + deep-linkable (`/water/[id]`,
   `/report/[id]`). Photo pipeline: `expo-image-picker` (EXIF) + `expo-image-manipulator` (resize +
   EXIF strip). Report/display logic is shared from `@skating/core` (`reportForm`/`reportView`).
-- **Clerk** auth (`@clerk/clerk-expo`) wired to **Convex** via `ConvexProviderWithClerk`
+- **Clerk** auth (`@clerk/expo`) wired to **Convex** via `ConvexProviderWithClerk`
   (D26/D2). Session tokens persist in the device keychain (`expo-secure-store`).
 - **Sentry** crash/error reporting from day one (D29).
 - **Vitest** for logic tests (D40).

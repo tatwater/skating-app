@@ -98,6 +98,32 @@ const axisProps = {
   tickLine: false,
 } as const;
 
+/**
+ * A tooltip value through a numeric formatter. Recharts hands the tooltip whatever the row holds,
+ * and a gap-filled day holds `null` — shown as absent, the same `—` the tables use, rather than
+ * pushed through a formatter that expects a number.
+ */
+export function formatTooltipValue(value: unknown, format: (v: number) => string): string {
+  return typeof value === 'number' ? format(value) : '—';
+}
+
+/**
+ * Percent with enough precision to be worth reading near zero.
+ *
+ * The kit's default percent formatter rounds to whole numbers, which for a metric that spends its
+ * first years between 0% and 0.5% renders every point as `0%` — a chart that looks broken while
+ * working perfectly. Scales its own precision to the value instead.
+ */
+export function formatShare(share: number | null | undefined): string {
+  if (share === null || share === undefined) return '—';
+  if (share === 0) return '0%';
+  const pct = share * 100;
+  if (pct < 0.01) return `${pct.toFixed(4)}%`;
+  if (pct < 1) return `${pct.toFixed(3)}%`;
+  if (pct < 10) return `${pct.toFixed(1)}%`;
+  return `${Math.round(pct)}%`;
+}
+
 /** A small legend row (dataviz: always present for ≥2 series, so identity isn't color-alone). */
 export function ChartLegend({ items }: { items: { label: string; color: string }[] }) {
   return (
@@ -128,20 +154,36 @@ export interface SeriesLine {
 }
 
 /**
+ * The Y axis a time series gets. Counts take whole-number ticks on a 40 px axis. A fraction (0–1)
+ * needs decimal ticks — whole ones gave a 0.4% share a 0–400% axis — and an axis sized to its
+ * labels, because `0.450%` in a fixed 40 px was clipped from the left into `450%`.
+ */
+export function timeSeriesYAxis(fraction: boolean): {
+  allowDecimals: boolean;
+  width: number | 'auto';
+} {
+  return fraction ? { allowDecimals: true, width: 'auto' } : { allowDecimals: false, width: 40 };
+}
+
+/**
  * One or more scalar-per-day lines over the same date axis. Rows are `{ date, [key]: number }`. Values
  * that were never measured (a gap-filled null) break the line rather than dropping to zero, so a
  * not-yet-collected day reads as absent, not as a real trough.
+ *
+ * `fraction` is for series of shares and rates (0–1) — see `timeSeriesYAxis`.
  */
 export function TimeSeriesChart({
   data,
   lines,
   height = 200,
   yFormatter,
+  fraction = false,
 }: {
   data: Array<Record<string, number | string | null>>;
   lines: SeriesLine[];
   height?: number;
   yFormatter?: (v: number) => string;
+  fraction?: boolean;
 }) {
   const { dark, series } = useChartTheme();
   const color = (line: SeriesLine, i: number) =>
@@ -157,13 +199,14 @@ export function TimeSeriesChart({
           <XAxis dataKey="date" {...axisProps} minTickGap={24} tickFormatter={shortDate} />
           <YAxis
             {...axisProps}
-            width={40}
-            allowDecimals={false}
+            {...timeSeriesYAxis(fraction)}
             {...(yFormatter ? { tickFormatter: yFormatter } : {})}
           />
           <Tooltip
             contentStyle={tooltipStyle}
-            {...(yFormatter ? { formatter: (v: number) => yFormatter(v) } : {})}
+            {...(yFormatter
+              ? { formatter: (v: unknown) => formatTooltipValue(v, yFormatter) }
+              : {})}
           />
           {lines.map((line, i) => (
             <Line
