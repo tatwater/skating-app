@@ -85,6 +85,16 @@ const EXACT_SENSITIVE_FIELD_NAMES: ReadonlySet<string> = new Set([
   'username',
   'displayname',
   'ipaddress',
+
+  // A URL's query string and fragment, split out into attributes of their own on an HTTP span:
+  // `url.query` / `url.fragment` (SDK v11) and `http.query` / `http.fragment` (v10, mobile). The
+  // value is a bare `?token=…` or `access_token=…`, not URL-shaped, so `redactUrlQuery` passes it
+  // — the key is the only thing that says what it is. (v11 filters `url.query` through
+  // `dataCollection.urlQueryParams`; the fragment it copies as is, and v10 filters neither.)
+  'urlquery',
+  'urlfragment',
+  'httpquery',
+  'httpfragment',
 ]);
 
 /**
@@ -444,8 +454,11 @@ export const sentryPrivacyHooks = {
    * both span shapes (see `SentrySpanLike`), so the rule is the same whichever SDK hands it
    * a span. It cannot drop one; returning `null` is a no-op in both SDK versions.
    *
-   * Streamed spans carry no `tags`, `extra`, `contexts` or `user` — the SDK stopped copying
-   * scope data onto spans — so the attribute bag and the name are the whole surface.
+   * The attribute bag and the name are the whole surface: streamed spans carry no `tags` or
+   * `extra`. They do carry scope data *as attributes* — v11 copies the scope's user onto every
+   * span as `user.id` / `user.email` / `user.ip_address` / `user.name`, plus scope attributes —
+   * so it is the attribute walk that covers them: `email`, `address` and `username` are on the
+   * deny list, and `user.id` (a Clerk id, were `Sentry.setUser` ever called) is not.
    *
    * One thing no hook reaches: a *root* span's name also rides in the envelope header's trace
    * context and in the SDK-added `sentry.segment.name` attribute, both unredacted. That is

@@ -60,6 +60,7 @@ export function describeSentryWire(build: string, load: () => Promise<SentryModu
             op: 'http.client',
             attributes: {
               'url.full': `https://skating.app/api/water?${SECRET_QUERY}`,
+              'url.fragment': SECRET_QUERY,
               homeCoord: COORD,
             },
           },
@@ -112,6 +113,8 @@ export function describeSentryWire(build: string, load: () => Promise<SentryModu
       });
       // …and the integration that would read `stackFrameVariables` never starts without this.
       expect(Sentry.getClient()?.getOptions()).not.toHaveProperty('includeLocalVariables', true);
+      // Mobile's transaction hook stays out: v11 never calls it and warns on every init if given one.
+      expect(sharedSentryOptions).not.toHaveProperty('beforeSendTransaction');
     });
   });
 }

@@ -304,6 +304,20 @@ describe('sentryPrivacyHooks', () => {
     });
   });
 
+  it('redacts the query and fragment attributes, which hold no URL to recognize', () => {
+    // What the SDKs split out of a fetch URL: v11 on the web (`url.*`), v10 on mobile (`http.*`).
+    // A Convex upload URL carries its token in the query; an OAuth redirect, in the fragment.
+    expect(
+      sentryPrivacyHooks.beforeSendSpan({
+        attributes: { 'url.query': 'token=abc', 'url.fragment': 'access_token=abc' },
+        data: { 'http.query': '?token=abc', 'http.fragment': '#access_token=abc' },
+      }),
+    ).toEqual({
+      attributes: { 'url.query': REDACTION_PLACEHOLDER, 'url.fragment': REDACTION_PLACEHOLDER },
+      data: { 'http.query': REDACTION_PLACEHOLDER, 'http.fragment': REDACTION_PLACEHOLDER },
+    });
+  });
+
   it('redacts a static span the same way, so one hook serves both SDK versions', () => {
     expect(
       sentryPrivacyHooks.beforeSendSpan({

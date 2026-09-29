@@ -1,6 +1,12 @@
 import { sentryPrivacyHooks } from '@skating/core';
 
 /**
+ * The shared hooks minus `beforeSendTransaction`, which is mobile's (SDK v10). SDK v11 streams
+ * spans and never calls it, and handed one anyway it `console.warn`s on every init.
+ */
+const { beforeSendTransaction: _mobileOnly, ...webPrivacyHooks } = sentryPrivacyHooks;
+
+/**
  * Sentry options shared by the browser and the server (D29).
  *
  * One definition for both runtimes on purpose. Privacy rules configured twice drift, and
@@ -53,7 +59,8 @@ export const sharedSentryOptions = {
     /**
      * No query strings. A URL here names a report, a water body, or a sub-area, and in
      * development Clerk appends its own `__clerk_db_jwt` handoff parameter. `beforeBreadcrumb`
-     * in `@skating/core` covers the breadcrumb and span paths this setting does not reach.
+     * and `beforeSendSpan` in `@skating/core` cover the breadcrumb and span paths this setting
+     * does not reach.
      */
     urlQueryParams: false,
 
@@ -83,9 +90,8 @@ export const sharedSentryOptions = {
 
   /**
    * The last thing that runs before anything leaves the process: `beforeSend`,
-   * `beforeSendSpan`, and `beforeBreadcrumb`, all from `@skating/core`. (The spread also
-   * carries `beforeSendTransaction`, which SDK v11 never calls under span streaming; it is
-   * there for mobile's v10 SDK. `sentryOptions.{client,server}.test.ts` prove what actually leaves.)
+   * `beforeSendSpan`, and `beforeBreadcrumb`, all from `@skating/core`.
+   * `sentryOptions.{client,server}.test.ts` prove what actually leaves.
    */
-  ...sentryPrivacyHooks,
+  ...webPrivacyHooks,
 };
