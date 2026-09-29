@@ -89,7 +89,7 @@ A report is an observation of a body of water on one visit — by the author, or
 - a forecast or a prediction ("should stay firm until 10am tomorrow", "may be safe by Saturday");
 - a question, gear or safety advice ("all the gear, all the time"), a reply that only thanks or agrees;
 - anything in an earlier message the author quoted or forwarded (text after "On … wrote:", a "From: … Sent: …" header, or "-----Original Message-----").
-An email that is mostly one of these may still hold an observation — "Pleasant Lake has unusually smooth ice this morning" in an invitation is a report on Pleasant Lake with that one value. A sentence about a time after the email was written is a prediction, not an observation. When a text holds no observation at all, return no reports; its facts about a body may still go in aboutBody.
+**Decide sentence by sentence, never for the email as a whole.** An email that is mostly an invitation, a plan or advice still yields a report for every sentence that says what the ice or the water is or was like: "Pleasant Lake in Elkins has some unusually smooth ice" in an invitation is a report on Pleasant Lake. A warning about known hazards is an observation — the author's, or relayed from someone's recent look or a map someone made ("the western yellow area is full of trapped air pockets") — and a one-line drive-by is a report ("river still open from Woodsville to just north of Newbury" → shore, sighting open, located). A sentence about a time after the email was written is a prediction, not an observation. When a text holds no observation at all, return no reports; its facts about a body may still go in aboutBody.
 
 ## Output
 

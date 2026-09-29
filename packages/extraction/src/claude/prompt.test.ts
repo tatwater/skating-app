@@ -16,6 +16,7 @@ describe('systemPrompt', () => {
   it('carries the reviewed rules: non-reports, other days, weather, crossings, the parts not skated', () => {
     const p = systemPrompt(vocab);
     expect(p).toContain('a season summary, a retrospective');
+    expect(p).toContain('Decide sentence by sentence, never for the email as a whole');
     expect(p).toContain('A different day is a different visit');
     expect(p).toContain('Weather is not an observation of the ice');
     expect(p).toContain('going around it, or over land, is a pressure_ridge');
