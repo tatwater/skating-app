@@ -3,6 +3,7 @@ import { useQuery } from 'convex/react';
 import {
   ChartCard,
   ChartEmpty,
+  formatShare,
   MiniTable,
   type SeriesLine,
   TimeSeriesChart,
@@ -55,23 +56,6 @@ interface CoverageMeta {
   release?: string;
   archive?: CoverageSide;
   live?: CoverageSide;
-}
-
-/**
- * Percent with enough precision to be worth reading near zero.
- *
- * The kit's default percent formatter rounds to whole numbers, which for a metric that spends its
- * first years between 0% and 0.5% renders every point as `0%` — a chart that looks broken while
- * working perfectly. Scales its own precision to the value instead.
- */
-export function formatShare(share: number | null | undefined): string {
-  if (share === null || share === undefined) return '—';
-  if (share === 0) return '0%';
-  const pct = share * 100;
-  if (pct < 0.01) return `${pct.toFixed(4)}%`;
-  if (pct < 1) return `${pct.toFixed(3)}%`;
-  if (pct < 10) return `${pct.toFixed(1)}%`;
-  return `${Math.round(pct)}%`;
 }
 
 function formatCount(n: number | undefined): string {
@@ -154,7 +138,13 @@ export function CatalogCoverage() {
         }
       >
         {history.length >= 2 ? (
-          <TimeSeriesChart data={rows} lines={LINES} height={200} yFormatter={formatShare} />
+          <TimeSeriesChart
+            data={rows}
+            lines={LINES}
+            height={200}
+            yFormatter={formatShare}
+            fraction
+          />
         ) : (
           <ChartEmpty>
             A trend needs two measurements. The next one is due with the next annual 3DHP release.

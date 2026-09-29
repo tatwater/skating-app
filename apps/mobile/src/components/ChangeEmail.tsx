@@ -1,4 +1,4 @@
-import { useUser } from '@clerk/clerk-expo';
+import { useUser } from '@clerk/expo';
 import {
   beginEmailChange,
   completeEmailChange,

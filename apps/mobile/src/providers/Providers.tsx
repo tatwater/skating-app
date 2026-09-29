@@ -1,5 +1,5 @@
-import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import { tokenCache } from '@clerk/clerk-expo/token-cache';
+import { ClerkProvider, useAuth } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
 import { themes as designThemes } from '@skating/design';
 import { ConvexProviderWithClerk } from 'convex/react-clerk';
 import { StatusBar } from 'expo-status-bar';

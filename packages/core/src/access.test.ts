@@ -415,9 +415,12 @@ describe('the approach leg (D87)', () => {
       'a non-numeric distance',
       { features: [{ properties: { summary: { distance: Number.NaN } } }] },
     ],
-  ])('returns null for %s, so the caller falls back rather than recording a zero', (_label, res) => {
-    expect(parseOrsFootHikingRoute(res)).toBeNull();
-  });
+  ])(
+    'returns null for %s, so the caller falls back rather than recording a zero',
+    (_label, res) => {
+      expect(parseOrsFootHikingRoute(res)).toBeNull();
+    },
+  );
 
   test('the straight-line fallback is flagged, and carries no invented climb', () => {
     const leg = straightLineApproach(LOT, LAUNCH);

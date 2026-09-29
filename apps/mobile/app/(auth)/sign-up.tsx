@@ -1,4 +1,4 @@
-import { useSignUp } from '@clerk/clerk-expo';
+import { useSignUp } from '@clerk/expo/legacy';
 import { Link } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView } from 'react-native';

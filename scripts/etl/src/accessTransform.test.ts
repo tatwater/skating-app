@@ -129,18 +129,19 @@ describe('parseAccessFeature', () => {
    * A lot you may not use is not a worse access point — it is a driveway, and publishing it sends
    * somebody to one.
    */
-  test.each([
-    'private',
-    'no',
-    'customers',
-    'permit',
-  ])('refuses a lot tagged access=%s outright', (value) => {
-    expect(
-      parseAccessFeature(
-        feature({ '@type': 'way', '@id': 1, amenity: 'parking', access: value }, lotPolygon(LAKE)),
-      ),
-    ).toBeNull();
-  });
+  test.each(['private', 'no', 'customers', 'permit'])(
+    'refuses a lot tagged access=%s outright',
+    (value) => {
+      expect(
+        parseAccessFeature(
+          feature(
+            { '@type': 'way', '@id': 1, amenity: 'parking', access: value },
+            lotPolygon(LAKE),
+          ),
+        ),
+      ).toBeNull();
+    },
+  );
 
   test('access=yes and an untagged lot both survive', () => {
     expect(
@@ -159,17 +160,15 @@ describe('parseAccessFeature', () => {
    * OSM's `fee` key takes values well beyond yes/no. Reading an unrecognized one as `false` would
    * publish "no fee" on a lot that charges.
    */
-  test.each([
-    'interval',
-    'donation',
-    '5 USD',
-    '',
-  ])('fee=%s reads as unknown, never as free', (value) => {
-    const parsed = parseAccessFeature(
-      feature({ '@type': 'way', '@id': 3, amenity: 'parking', fee: value }, lotPolygon(LAKE)),
-    );
-    expect(parsed?.fee).toBeUndefined();
-  });
+  test.each(['interval', 'donation', '5 USD', ''])(
+    'fee=%s reads as unknown, never as free',
+    (value) => {
+      const parsed = parseAccessFeature(
+        feature({ '@type': 'way', '@id': 3, amenity: 'parking', fee: value }, lotPolygon(LAKE)),
+      );
+      expect(parsed?.fee).toBeUndefined();
+    },
+  );
 
   test.each(['0', '-4', 'lots', ''])('capacity=%s is refused rather than guessed', (value) => {
     const parsed = parseAccessFeature(

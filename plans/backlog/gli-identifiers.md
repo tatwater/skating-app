@@ -34,9 +34,10 @@ not by a test.
 
 **Why not yet:** the rename already bought everything a user can perceive. The rest is churn with a
 live-OAuth hazard attached, so it should ride a phase that has reason to touch auth anyway — most
-likely the `@clerk/clerk-expo` → `@clerk/expo` Core 3 migration, which is separately unavoidable
-(the package is deprecated outright) and already lands in the same files.
+likely the rewrite of the Clerk custom flows onto the current Core 3 API, which already lands in the
+same files. (The package itself moved to `@clerk/expo` 4 on 2026-09-28 without it, in a dependency
+PR (#81); the flows stayed on `@clerk/expo/legacy`, so the rewrite is still the auth-touching vehicle.)
 
-> The `@clerk/clerk-expo` → `@clerk/expo` migration this rides on has its own row in the roadmap's
+> The Clerk flow rewrite this rides on has its own row in the roadmap's
 > deferred register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it), beside
 > this doc's — flip both when they land.

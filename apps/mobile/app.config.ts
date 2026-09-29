@@ -87,6 +87,10 @@ const config: ExpoConfig = {
     'expo-document-picker',
     'expo-secure-store',
     'expo-web-browser',
+    // Clerk (D26). `@clerk/expo` autolinks a native module that pulls in Clerk's Android SDK even
+    // though we use only the JS custom flows, and that SDK's dependencies collide on a META-INF file
+    // at packaging — the plugin excludes it. It also sets iOS's deployment target to 17.0.
+    '@clerk/expo',
     // Native date/time picker for editing a report's skate time (D9 — past times for offline).
     '@react-native-community/datetimepicker',
     // Native MapLibre map (Phase 02a §6). The plugin wires the iOS Podfile post_install; the native

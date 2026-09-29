@@ -1,6 +1,12 @@
 import { sentryPrivacyHooks } from '@skating/core';
 
 /**
+ * The shared hooks minus `beforeSendTransaction`, which is mobile's (SDK v10). SDK v11 streams
+ * spans and never calls it, and handed one anyway it `console.warn`s on every init.
+ */
+const { beforeSendTransaction: _mobileOnly, ...webPrivacyHooks } = sentryPrivacyHooks;
+
+/**
  * Sentry options shared by the browser and the server (D29).
  *
  * One definition for both runtimes on purpose. Privacy rules configured twice drift, and
@@ -53,14 +59,39 @@ export const sharedSentryOptions = {
     /**
      * No query strings. A URL here names a report, a water body, or a sub-area, and in
      * development Clerk appends its own `__clerk_db_jwt` handoff parameter. `beforeBreadcrumb`
-     * in `@skating/core` covers the breadcrumb and span paths this setting does not reach.
+     * and `beforeSendSpan` in `@skating/core` cover the breadcrumb and span paths this setting
+     * does not reach.
      */
     urlQueryParams: false,
+
+    /**
+     * Four categories SDK v11 added, each collected unless refused. Nothing in the web app
+     * talks to a database, a queue, a GraphQL server or a model directly, so these guard
+     * against the next integration rather than a current leak — and v11's migration guide
+     * names exactly these as the ones to state to keep v10's behavior. Left unset they
+     * would fall to the SDK's defaults, which is the failure the note above describes.
+     */
+    genAI: { inputs: false, outputs: false },
+    databaseQueryData: false,
+    queues: false,
+    graphQL: { document: false, variables: false },
+
+    /**
+     * No local variable values in server stack frames — the second of two locks. The first is
+     * that `includeLocalVariables` is unset, so the Node SDK's local-variables integration never
+     * starts; this category (on by default) is what it would consult if someone turned that on.
+     * A server function mid-report holds a report's coordinates, a home location, a Clerk token,
+     * and they would arrive as frame data, where `beforeSend` in `@skating/core` does not walk —
+     * so PRIVACY.md's "location fields are removed before anything is sent" would not hold for
+     * them. Stack traces and the surrounding source lines still go; that is what a crash needs.
+     */
+    stackFrameVariables: false,
   },
 
   /**
    * The last thing that runs before anything leaves the process: `beforeSend`,
-   * `beforeSendTransaction`, and `beforeBreadcrumb`, all from `@skating/core`.
+   * `beforeSendSpan`, and `beforeBreadcrumb`, all from `@skating/core`.
+   * `sentryOptions.{client,server}.test.ts` prove what actually leaves.
    */
-  ...sentryPrivacyHooks,
+  ...webPrivacyHooks,
 };

@@ -78,25 +78,28 @@ describe('theme structure', () => {
 describe.each(THEME_NAMES)('%s theme contrast (D34)', (name) => {
   const theme = themes[name];
 
-  it.each(
-    BODY_TEXT_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)),
-  )('body text %s on %s meets WCAG AA normal (4.5:1)', (fg, bg) => {
-    expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
-  });
+  it.each(BODY_TEXT_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)))(
+    'body text %s on %s meets WCAG AA normal (4.5:1)',
+    (fg, bg) => {
+      expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+    },
+  );
 
-  it.each(
-    foregroundPairs(theme),
-  )('foreground %s on its fill %s meets WCAG AA normal (4.5:1)', (fg, fill) => {
-    expect(
-      contrastRatio(theme[fg as SemanticColorToken], theme[fill as SemanticColorToken]),
-    ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
-  });
+  it.each(foregroundPairs(theme))(
+    'foreground %s on its fill %s meets WCAG AA normal (4.5:1)',
+    (fg, fill) => {
+      expect(
+        contrastRatio(theme[fg as SemanticColorToken], theme[fill as SemanticColorToken]),
+      ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+    },
+  );
 
-  it.each(
-    GRAPHICAL_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)),
-  )('graphical %s on %s meets WCAG non-text (3:1)', (fg, bg) => {
-    expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_LARGE);
-  });
+  it.each(GRAPHICAL_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)))(
+    'graphical %s on %s meets WCAG non-text (3:1)',
+    (fg, bg) => {
+      expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_LARGE);
+    },
+  );
 });
 
 describe('theme preference resolution (D34 amendment)', () => {

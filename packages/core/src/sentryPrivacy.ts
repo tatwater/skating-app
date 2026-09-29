@@ -85,6 +85,16 @@ const EXACT_SENSITIVE_FIELD_NAMES: ReadonlySet<string> = new Set([
   'username',
   'displayname',
   'ipaddress',
+
+  // A URL's query string and fragment, split out into attributes of their own on an HTTP span:
+  // `url.query` / `url.fragment` (SDK v11) and `http.query` / `http.fragment` (v10, mobile). The
+  // value is a bare `?token=…` or `access_token=…`, not URL-shaped, so `redactUrlQuery` passes it
+  // — the key is the only thing that says what it is. (v11 filters `url.query` through
+  // `dataCollection.urlQueryParams`; the fragment it copies as is, and v10 filters neither.)
+  'urlquery',
+  'urlfragment',
+  'httpquery',
+  'httpfragment',
 ]);
 
 /**
@@ -328,15 +338,19 @@ export type SentryBreadcrumbLike = {
 };
 
 /**
- * A transaction carries everything an event does, plus its spans.
+ * A span, in either of the two shapes the SDKs hand to hooks.
  *
- * `data` is a span's attribute bag, which for an HTTP span holds `http.url` and friends.
- * `description` is the human-readable summary, which for the same span is literally
- * `GET https://host/path?query` — a full URL, in a string, with no key to match on.
+ * The static shape (SDK v10 — mobile today, and transaction events) calls the attribute bag
+ * `data` and the summary `description`. The streamed shape (SDK v11's default — web) calls
+ * the same two things `attributes` and `name`. Either way the bag holds `http.url` and
+ * friends for an HTTP span, and the summary is literally `GET https://host/path?query` — a
+ * full URL, in a string, with no key to match on.
  */
 export type SentrySpanLike = {
   data?: unknown;
   description?: string;
+  attributes?: unknown;
+  name?: string;
 };
 
 export type SentryTransactionEventLike = SentryEventLike & {
@@ -373,6 +387,21 @@ function redactSentryEvent<Event extends SentryEventLike>(event: Event): Event {
   return redacted;
 }
 
+/** Applies the event rules to a span's attribute bag and the URL rule to its summary. */
+function redactSentrySpan<Span extends SentrySpanLike>(span: Span): Span {
+  return {
+    ...span,
+    ...(span.data === undefined ? {} : { data: asRecord(redactSensitiveData(span.data)) }),
+    ...(span.description === undefined
+      ? {}
+      : { description: redactUrlQueryInText(span.description) }),
+    ...(span.attributes === undefined
+      ? {}
+      : { attributes: asRecord(redactSensitiveData(span.attributes)) }),
+    ...(span.name === undefined ? {} : { name: redactUrlQueryInText(span.name) }),
+  };
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -404,6 +433,10 @@ export const sentryPrivacyHooks = {
    * The router integration names transactions after the *matched route* (`/u/$username`,
    * not `/u/teagan`), so the name itself is already parameterized. The URLs are in the
    * spans: an HTTP span puts one in `data['http.url']` and another in `description`.
+   *
+   * Only the static trace lifecycle produces transactions — SDK v10, which is mobile. From
+   * v11, whose default is span streaming, there are no transaction events and the SDK never
+   * calls this; `beforeSendSpan` below is what covers the web.
    */
   beforeSendTransaction: <Event extends SentryTransactionEventLike>(event: Event): Event => {
     const redacted = redactSentryEvent(event);
@@ -412,17 +445,27 @@ export const sentryPrivacyHooks = {
       return redacted;
     }
 
-    return {
-      ...redacted,
-      spans: event.spans.map((span) => ({
-        ...span,
-        ...(span.data === undefined ? {} : { data: asRecord(redactSensitiveData(span.data)) }),
-        ...(span.description === undefined
-          ? {}
-          : { description: redactUrlQueryInText(span.description) }),
-      })),
-    };
+    return { ...redacted, spans: event.spans.map((span) => redactSentrySpan(span)) };
   },
+
+  /**
+   * Every span, one at a time, as it finishes — the only span hook SDK v11 calls under its
+   * default span streaming, where `beforeSendTransaction` above is never invoked. Accepts
+   * both span shapes (see `SentrySpanLike`), so the rule is the same whichever SDK hands it
+   * a span. It cannot drop one; returning `null` is a no-op in both SDK versions.
+   *
+   * The attribute bag and the name are the whole surface: streamed spans carry no `tags` or
+   * `extra`. They do carry scope data *as attributes* — v11 copies the scope's user onto every
+   * span as `user.id` / `user.email` / `user.ip_address` / `user.name`, plus scope attributes —
+   * so it is the attribute walk that covers them: `email`, `address` and `username` are on the
+   * deny list, and `user.id` (a Clerk id, were `Sentry.setUser` ever called) is not.
+   *
+   * One thing no hook reaches: a *root* span's name also rides in the envelope header's trace
+   * context and in the SDK-added `sentry.segment.name` attribute, both unredacted. That is
+   * safe only because root spans are named after the matched route (`/water/$waterBodyId`),
+   * never a URL — keep it that way for any root span started by hand.
+   */
+  beforeSendSpan: <Span extends SentrySpanLike>(span: Span): Span => redactSentrySpan(span),
 
   /**
    * Breadcrumbs record navigation and network activity and carry the same data an event

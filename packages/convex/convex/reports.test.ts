@@ -1,4 +1,5 @@
 import { buildReportInput, emptyReportForm, reportFormFromReport } from '@skating/core';
+import { defineSchema } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -2007,7 +2008,7 @@ describe('posts.listFeed filters + favorite boost (Phase 04)', () => {
  *  (temporarily `schemaValidation: false` on a deployment with drift), so a legacy `skateTime`-shaped
  *  report can be seeded to exercise the rename migration. */
 function convexTestNoValidation() {
-  const t = convexTest({ ...schema, schemaValidation: false }, modules);
+  const t = convexTest(defineSchema(schema.tables, { schemaValidation: false }), modules);
   return t;
 }
 

@@ -105,16 +105,16 @@ describe('storeActivityConnection', () => {
    * once with nothing rescanning it — so a refused write is the only thing standing between a
    * finalizing account and live credentials that outlive it.
    */
-  test.each([
-    ['deleting'],
-    ['deleted'],
-  ] as const)('refuses to write credentials for a %s account', async (status) => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, 'leaver', status);
+  test.each([['deleting'], ['deleted']] as const)(
+    'refuses to write credentials for a %s account',
+    async (status) => {
+      const t = convexTest(schema, modules);
+      const userId = await seedUser(t, 'leaver', status);
 
-    expect(await store(t, userId)).toEqual({ stored: false });
-    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
-  });
+      expect(await store(t, userId)).toEqual({ stored: false });
+      expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+    },
+  );
 
   /**
    * Moderation states are deliberately *not* in that list. A ban is reversible and its gate belongs at
@@ -122,16 +122,16 @@ describe('storeActivityConnection', () => {
    * Stated as a test so nobody "tightens" this into `status !== 'active'` and quietly breaks a
    * suspended skater's watch sync.
    */
-  test.each([
-    ['suspended'],
-    ['banned'],
-  ] as const)('still writes for a %s account — moderation is not deletion', async (status) => {
-    const t = convexTest(schema, modules);
-    const userId = await seedUser(t, 'moderated', status);
+  test.each([['suspended'], ['banned']] as const)(
+    'still writes for a %s account — moderation is not deletion',
+    async (status) => {
+      const t = convexTest(schema, modules);
+      const userId = await seedUser(t, 'moderated', status);
 
-    expect(await store(t, userId)).toEqual({ stored: true });
-    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(1);
-  });
+      expect(await store(t, userId)).toEqual({ stored: true });
+      expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(1);
+    },
+  );
 
   test('canConnectAccount answers false for a profile that is gone entirely', async () => {
     const t = convexTest(schema, modules);
