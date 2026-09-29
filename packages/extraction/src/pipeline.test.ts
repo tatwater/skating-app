@@ -98,6 +98,7 @@ describe('claudeThenJevExtractor', () => {
           compassPhrases: [{ quote: 'the north end', sector: 'N' }],
         },
       ],
+      aboutBody: [{ bodyRef: 'morey', topic: 'feature', quote: 'the north end', quoteField: 'text' }],
       misses: [{ kind: 'field', text: 'windy', wouldNeed: 'wind' }],
     });
     const asked: string[] = [];
@@ -150,6 +151,14 @@ describe('claudeThenJevExtractor', () => {
       maxCm: 10.16,
     });
     expect(run.result.misses).toEqual([{ kind: 'field', text: 'windy', wouldNeed: 'wind' }]);
+    // Stage A's facts about the body pass straight through (D211): there is nothing to vote on.
+    expect(run.result.aboutBody).toEqual([
+      {
+        bodyRef: 'morey',
+        topic: 'feature',
+        evidence: expect.objectContaining({ text: 'the north end', located: true }),
+      },
+    ]);
     expect(run.usage).toMatchObject({
       engine: 'claude+jev:haiku',
       requests: 2,

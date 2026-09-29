@@ -12,6 +12,18 @@ describe('systemPrompt', () => {
   it('never says the ice is safe', () => {
     expect(systemPrompt(vocab).toLowerCase()).not.toMatch(/ice is safe|safe to skate|good to go/);
   });
+  // The first verified labels (A10-9): the rules the founder's review found the engines breaking.
+  it('carries the reviewed rules: non-reports, other days, weather, crossings, the parts not skated', () => {
+    const p = systemPrompt(vocab);
+    expect(p).toContain('a season summary, a retrospective');
+    expect(p).toContain('A different day is a different visit');
+    expect(p).toContain('Weather is not an observation of the ice');
+    expect(p).toContain('going around it, or over land, is a pressure_ridge');
+    expect(p).toContain('a number alone ("4 inches") says neither');
+    expect(p).toContain('is a hazard with a where, not dont_go');
+    expect(p).toContain('only a part of the lake they did not skate');
+    expect(p).toContain('topic" one of parking, access, feature, character, other');
+  });
 });
 
 describe('userPrompt', () => {

@@ -1,8 +1,8 @@
 /**
  * Stage B — voting (D196, amended 2026-09-19): per unit from Stage A, one Jev request fanning out
  * a `noul` over every value of every multi-valued enum (ice types, surface tags, hazards, access
- * conditions), a `choice` over each single-valued enum (quality, suitability, how it was seen, the
- * sighting, the three snow facets — each with a `none` hatch), and a `choice` over Stage A's
+ * conditions, sightings), a `choice` over each single-valued enum (quality, suitability, how it was
+ * seen, the three snow facets — each with a `none` hatch), and a `choice` over Stage A's
  * candidates for thickness (the method of each measurement) and for `where` (which compass phrase a
  * located value belongs to). Jev returns a calibrated probability per value; the D188 tier reads
  * straight off it, and a value Jev was never offered cannot appear.
@@ -10,18 +10,14 @@
  * Pure question-building and answer-mapping here; the request itself is `JevClient.ask`.
  */
 
-import {
-  type ObservedFrom,
-  SECTORS,
-  sightingAllowedFrom,
-  type ThicknessMethod,
-} from '@skating/core';
+import { type ObservedFrom, SECTORS, type ThicknessMethod } from '@skating/core';
 import type { Unit } from '../claude/stageA';
 import { unitEvidence, unitText } from '../claude/stageA';
 import {
   bodyOf,
   evidenceFor,
   localTimeToMs,
+  sightingKept,
   thicknessMissReason,
   thicknessReadingFrom,
   wireInchesToCm,
@@ -31,11 +27,20 @@ import {
   EXTRACTED_FIELD_KEYS,
   type ExtractedFields,
   type ExtractedReport,
+  type ExtractedWhere,
   type ExtractionInput,
   type Miss,
   type Vocabulary,
 } from '../contract';
 import type { JevAnswer, JevQuestion } from './client';
+
+/** How a sighting reads in a vote's sentence — a state of the water, not a thing on it. */
+const SIGHTING_PHRASES: Record<string, string> = {
+  open: 'still open (unfrozen)',
+  skim: 'with a skim of new ice',
+  frozen: 'frozen over',
+  snow_covered: 'snow-covered',
+};
 
 /** A noul at or below this is "the author did not say it"; the value is dropped, not ghosted. */
 export const NOUL_DROP_BELOW = 0.2;
@@ -57,11 +62,6 @@ const SINGLE: { key: keyof ExtractedFields; vocab: keyof Vocabulary; ask: string
     key: 'observedFrom',
     vocab: 'observedFrom',
     ask: 'How the author saw this ice: on it, from shore (a car, a window, a drone, a photo), or secondhand from someone else',
-  },
-  {
-    key: 'sighting',
-    vocab: 'sightings',
-    ask: 'What a shore or secondhand observer saw the body doing: still open, a skim of ice, frozen over, snow covered',
   },
   {
     key: 'snowCoverage',
@@ -94,7 +94,16 @@ const MULTI: {
   {
     key: 'hazards',
     vocab: 'hazardTypes',
-    frame: (v) => `The author reports a ${v.replace(/_/g, ' ')} hazard on this body`,
+    frame: (v) =>
+      v === 'ridge_crossing'
+        ? 'The author crossed a pressure ridge on the ice at a crossing point (going around it, or over land, is not a crossing)'
+        : `The author reports a ${v.replace(/_/g, ' ')} hazard on this body`,
+  },
+  {
+    key: 'sightings',
+    vocab: 'sightings',
+    frame: (v) =>
+      `The author saw, without skating it, all or part of this body ${SIGHTING_PHRASES[v] ?? v.replace(/_/g, ' ')}`,
   },
   {
     key: 'accessConditions',
@@ -203,10 +212,6 @@ export function reportFromAnswers(
     if (p < CHOICE_DROP_BELOW) continue;
     fields[s.key].push({ value: a.choice, confidence: p, evidence: ev });
   }
-  // A sighting is what someone *off* the ice saw (D189): when the vantage vote says on the ice,
-  // the sighting vote is answering a question that was not asked. The validator's own rule.
-  const vantage = fields.observedFrom[0] as { value: ObservedFrom } | undefined;
-  if (!sightingAllowedFrom(vantage?.value)) fields.sighting = [];
 
   for (const m of MULTI) {
     for (const v of vocab[m.vocab]) {
@@ -224,6 +229,12 @@ export function reportFromAnswers(
       });
     }
   }
+  // A sighting from the ice names a part of the lake (D189, D210) — the validator's own rule, with
+  // the vote on the vantage as the vantage.
+  const vantage = fields.observedFrom[0] as { value: ObservedFrom } | undefined;
+  fields.sightings = fields.sightings.filter((s) =>
+    sightingKept(vantage?.value, (s as { value: { where?: ExtractedWhere } }).value.where),
+  );
 
   unit.measurements.forEach((m, i) => {
     const evidence: Evidence = evidenceFor(input, m.quote, 'text');

@@ -4,7 +4,7 @@
  *
  * A wrong ghost chip costs a tap to dismiss; a wrong *confident* chip on thickness is a claim we
  * suggested. So the floors are per field, set from the eval's measured precision, and the
- * safety-flavored fields (thickness, suitability, sighting, hazards) get the strictest. **They are
+ * safety-flavored fields (thickness, suitability, sightings, hazards) get the strictest. **They are
  * set from a run, never before it**: an absent floor means "everything is a ghost", which is the
  * safe default and what `DEFAULT_PRECISION_FLOOR` in the sheet reducer enforces.
  *

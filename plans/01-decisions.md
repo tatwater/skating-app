@@ -6441,3 +6441,29 @@ mutation args accept the single `sighting` forever (an un-updated phone, a queue
 a client that sends both. The feed card and the detail show every sighting with its place.
 
 **Related:** D3, D189 (amended), D191, D193, D196.
+
+## D211 — Extraction reads observations only; a fact about the body is `aboutBody` (A10-9)
+
+**Decided (2026-09-29, founder call from the first verified eval labels).** Two things the
+contract (D196) now says outright:
+
+- **A report is an observation of a body on one visit** — the author's, or relayed from someone who
+  was there. A season summary, a list of lakes skated, an invitation, a plan, a forecast or
+  prediction, a question, gear advice, and anything in a quoted or forwarded earlier message are
+  not observations and yield no report, even when they name a lake. An invitation that says "the
+  ice is smooth this morning" still yields that one value. A different day is a different visit,
+  relayed or not. Weather is never a value.
+- **A fact about the body rather than the visit is `aboutBody`** — `{ bodyRef, topic, evidence }`
+  with the topic one of `parking` · `access` · `feature` · `character` · `other`: "limited parking
+  at the launch spot", "notorious for thin ice because of stream inflows", "a two-minute level walk
+  from the parking lot". It is returned from any text, a report or not, and is **stored nowhere
+  yet**: the corpus replay collects it and a moderator queue will decide what reaches a body's page
+  (after A10). It is not a Report value, which would decay with the visit, and not a miss, because
+  there is a place for it.
+
+**Why:** the founder's first ten verified emails included two group-leader digests the engines
+turned into eleven and one reports (every value rejected), a forecast read as a snow depth, and
+parking, access and inflow facts the contract had nowhere to put — "use these emails to make the
+corpus stronger, not just feed reports".
+
+**Related:** D3, D186, D196, D200, A06d.

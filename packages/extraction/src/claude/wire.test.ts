@@ -5,6 +5,7 @@ import {
   localTimeToMs,
   locateQuote,
   mapWireResult,
+  sightingKept,
   thicknessReadingFrom,
   type WireResult,
 } from './wire';
@@ -117,6 +118,15 @@ describe('thicknessReadingFrom — the validator’s rule at the source', () => 
 describe('mapWireResult', () => {
   const t = 'text' as const;
   const wire: WireResult = {
+    aboutBody: [
+      {
+        bodyRef: 'morey',
+        topic: 'parking',
+        quote: 'Skated Morey',
+        quoteField: 'text',
+      },
+      { bodyRef: 'Nowhere Pond', topic: 'gossip', quote: 'not here', quoteField: 'text' },
+    ],
     reports: [
       {
         bodyRef: 'morey',
@@ -144,7 +154,7 @@ describe('mapWireResult', () => {
             quote: 'afternoon',
             quoteField: t,
           },
-          { field: 'sighting', value: 'open', confidence: 0.6, quote: 'afternoon', quoteField: t },
+          { field: 'sightings', value: 'open', confidence: 0.6, quote: 'afternoon', quoteField: t },
           {
             field: 'endTime',
             value: '16:00',
@@ -278,7 +288,22 @@ describe('mapWireResult', () => {
         evidence: { field: 'text', start: 0, end: 12, text: 'Skated Morey', located: true },
       },
     ]);
-    expect(r?.fields.sighting.map((v) => v.value)).toEqual(['open']);
+    // The model's singular and the contract's plural are one field (D210).
+    expect(r?.fields.sightings.map((v) => v.value)).toEqual([{ type: 'open' }]);
+    expect(result.aboutBody).toEqual([
+      {
+        bodyRef: 'morey',
+        topic: 'parking',
+        evidence: { field: 'text', start: 0, end: 12, text: 'Skated Morey', located: true },
+      },
+      // A body never offered is a name, not a ref; an unknown topic is `other`.
+      {
+        bodyRef: null,
+        bodyName: 'Nowhere Pond',
+        topic: 'other',
+        evidence: { field: 'text', start: 0, end: 0, text: 'not here', located: false },
+      },
+    ]);
     expect(r?.fields.endTime).toHaveLength(1);
     expect(r?.fields.endTime[0]?.value).toEqual({
       ms: Date.UTC(2026, 0, 10, 21, 0),
@@ -301,7 +326,7 @@ describe('mapWireResult', () => {
     ]);
     expect(r?.fields.accessConditions.map((v) => v.value)).toEqual(['plank_needed']);
     expect(result.misses).toEqual([
-      { kind: 'enum_value', text: 'afternoon', wouldNeed: 'sighting: melting' },
+      { kind: 'enum_value', text: 'afternoon', wouldNeed: 'sightings: melting' },
       { kind: 'enum_value', text: 'Black ice', wouldNeed: 'iceTypes: glass_ice' },
       { kind: 'where', text: 'upstream', wouldNeed: 'a sector value' },
       { kind: 'enum_value', text: 'x', wouldNeed: 'thickness method: guessed' },
@@ -315,7 +340,16 @@ describe('mapWireResult', () => {
     ]);
   });
 
-  it('drops a sighting from an author on the ice, or with no vantage (D189)', () => {
+  it('keeps a sighting from the ice only for a part of the lake — a named place counts (D210)', () => {
+    expect(sightingKept('shore')).toBe(true);
+    expect(sightingKept('on_ice')).toBe(false);
+    expect(sightingKept('on_ice', { extent: 'mostly' })).toBe(false);
+    expect(sightingKept('on_ice', { sector: 'S' })).toBe(true);
+    expect(sightingKept('on_ice', { placeName: "Rocky Point to Kimball's Point" })).toBe(true);
+    expect(sightingKept(undefined, { sector: 'S' })).toBe(false);
+  });
+
+  it('drops a whole-lake sighting from an author on the ice, or any with no vantage (D189)', () => {
     const t = 'text' as const;
     const sighting = {
       field: 'sighting',
@@ -346,12 +380,12 @@ describe('mapWireResult', () => {
       },
       input(),
     );
-    expect(onIce.reports[0]?.fields.sighting).toEqual([]);
+    expect(onIce.reports[0]?.fields.sightings).toEqual([]);
     const unstated = mapWireResult(
       { reports: [{ bodyRef: 'morey', visit: 0, values: [sighting] }], misses: [] },
       input(),
     );
-    expect(unstated.reports[0]?.fields.sighting).toEqual([]);
+    expect(unstated.reports[0]?.fields.sightings).toEqual([]);
   });
 
   it('keeps a null body ref with the name as written', () => {

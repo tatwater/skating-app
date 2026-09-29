@@ -67,8 +67,13 @@ describe('questionsForUnit', () => {
       input.vocabulary.iceTypes.length +
         input.vocabulary.surfaceTags.length +
         input.vocabulary.hazardTypes.length +
-        input.vocabulary.accessConditions.length,
+        input.vocabulary.accessConditions.length +
+        input.vocabulary.sightings.length,
     );
+    expect(q['sightings.open.where']).toMatchObject({ type: 'choice' });
+    expect(q['hazards.ridge_crossing']).toMatchObject({
+      instructions: expect.stringContaining('going around it, or over land, is not a crossing'),
+    });
   });
 
   it('asks no where questions without a compass phrase', () => {
@@ -139,21 +144,33 @@ describe('reportFromAnswers', () => {
     expect(r).toMatchObject({ bodyRef: null, bodyName: 'not_offered' });
   });
 
-  it('a sighting survives only off the ice', () => {
+  it('a sighting survives off the ice, and from the ice only for a located part (D210)', () => {
     const shore = reportFromAnswers(
       unit,
-      { observedFrom: choice('shore', 0.9), sighting: choice('open', 0.8) },
+      { observedFrom: choice('shore', 0.9), 'sightings.open': noul(0.8) },
       input,
     );
-    expect(shore.fields.sighting.map((v) => v.value)).toEqual(['open']);
+    expect(shore.fields.sightings.map((v) => v.value)).toEqual([{ type: 'open' }]);
     const onIce = reportFromAnswers(
       unit,
-      { observedFrom: choice('on_ice', 0.9), sighting: choice('frozen', 0.9) },
+      { observedFrom: choice('on_ice', 0.9), 'sightings.frozen': noul(0.9) },
       input,
     );
-    expect(onIce.fields.sighting).toEqual([]);
-    const unstated = reportFromAnswers(unit, { sighting: choice('frozen', 0.9) }, input);
-    expect(unstated.fields.sighting).toEqual([]);
+    expect(onIce.fields.sightings).toEqual([]);
+    const located = reportFromAnswers(
+      unit,
+      {
+        observedFrom: choice('on_ice', 0.9),
+        'sightings.open': noul(0.9),
+        'sightings.open.where': choice('p0', 0.8),
+      },
+      input,
+    );
+    expect(located.fields.sightings.map((v) => v.value)).toEqual([
+      { type: 'open', where: { sector: 'N' } },
+    ]);
+    const unstated = reportFromAnswers(unit, { 'sightings.frozen': noul(0.9) }, input);
+    expect(unstated.fields.sightings).toEqual([]);
   });
 
   it('a measurement voted "none" or weakly is not a reading; an unlocated phrase becomes a place name', () => {

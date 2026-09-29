@@ -8,7 +8,12 @@
  * (D196) and nothing here may say or imply that ice is safe (D3).
  */
 
-import type { BodyCandidate, ExtractionInput, Vocabulary } from '../contract';
+import {
+  ABOUT_BODY_TOPICS,
+  type BodyCandidate,
+  type ExtractionInput,
+  type Vocabulary,
+} from '../contract';
 
 /** Short glosses for the values whose community meaning a model may not know. Exported so the eval reviewer can show them beside each option. */
 export const GLOSS: Record<string, string> = {
@@ -27,13 +32,14 @@ export const GLOSS: Record<string, string> = {
   frozen_chop: 'wind chop frozen in place',
   windswept: 'blown clear of snow',
   overflow: 'water on top of the ice',
-  drain_hole: 'a hole where water drains through the ice',
+  drain_hole: 'a hole where water drains through the ice — not a spot still unfrozen at freeze-up',
   wind_hole: 'open water kept open by wind',
   slush_hole: 'a soft slush spot, often over a spring',
   thawed_rotten: 'thawed, rotten, honeycombed ice',
-  ridge_crossing: 'a place a pressure ridge could be crossed',
+  ridge_crossing: 'where the author crossed a pressure ridge on the ice — never a way around it',
   wet_crack: 'a working, wet crack',
-  shell_area: 'an area of shell ice',
+  shell_area: 'an area of shell ice: a crust over a drained puddle, after a thaw',
+  air_pockets: 'air trapped under the ice at freeze-up; the ice over it thickens slowly if at all',
   ice_heave: 'a heave or buckle',
   spring_current: 'a spring or an inlet/outlet current keeping ice weak',
   gas_hole: 'a hole kept open by gas from the bottom',
@@ -45,7 +51,9 @@ export const GLOSS: Record<string, string> = {
   on_ice: 'the author was on the ice',
   shore: 'the author looked from shore, a car, a drone, a photo, a window',
   secondhand: 'the author is relaying what someone else told them',
-  skim: 'a skim of new ice, not yet skateable',
+  open: 'still open, unfrozen water',
+  skim: 'a skim of new ice',
+  frozen: 'frozen over',
   lanes: 'lanes or paths of bare ice through snow',
   didnt_matter: 'snow was present but did not affect the skating',
   slowed_me: 'snow slowed the skating',
@@ -53,6 +61,8 @@ export const GLOSS: Record<string, string> = {
   poke: 'a pole or spike test counted in pokes; person-relative, not inches',
   middle: 'the middle of the body, away from shore',
   near_shore: 'near the shore, whichever shore',
+  large_areas: 'big stretches, but not most of the lake ("several hundred acres of thin ice")',
+  patches: 'scattered spots',
   head: 'the back of a named bay (only with a bay)',
   mouth: 'the mouth of a named bay, toward the main lake (only with a bay)',
   icy_lot: 'the parking area is icy',
@@ -71,9 +81,19 @@ function list(values: readonly string[]): string {
 export function systemPrompt(vocab: Vocabulary): string {
   return `You transcribe one skater's own words about lake ice into structured fields. The text is one email or post from a community of Nordic (wild) ice skaters in Vermont, New Hampshire, New York, Maine and Quebec. You are a careful reader, not a judge: every value you return is something THIS AUTHOR said or clearly meant about a body of water they name, and you quote the exact words that say it. You never add what the author did not say, and you never describe ice as safe.
 
+## What is a report
+
+A report is an observation of a body of water on one visit — by the author, or relayed from someone who was there. These are not observations and produce no report for any body they name:
+- a season summary, a retrospective, or a list of lakes people have skated ("let's look back at the season");
+- an invitation, a plan or a meeting time for a skate that has not happened;
+- a forecast or a prediction ("should stay firm until 10am tomorrow", "may be safe by Saturday");
+- a question, gear or safety advice ("all the gear, all the time"), a reply that only thanks or agrees;
+- anything in an earlier message the author quoted or forwarded (text after "On … wrote:", a "From: … Sent: …" header, or "-----Original Message-----").
+An email that is mostly one of these may still hold an observation — "Pleasant Lake has unusually smooth ice this morning" in an invitation is a report on Pleasant Lake with that one value. A sentence about a time after the email was written is a prediction, not an observation. When a text holds no observation at all, return no reports; its facts about a body may still go in aboutBody.
+
 ## Output
 
-Return one report per (body of water, visit). A visit is one time on or at one body: an email about two lakes yields two reports; a morning skate and an evening re-check of the same lake yield two reports with visit 0 and visit 1. A report needs a body: if the author names a lake that is not among the candidates, set bodyRef to null and bodyName to the name as written. If the text names no body at all, return no reports. Questions, plans and gear talk with no observation produce no report.
+Return one report per (body of water, visit). A visit is one time on or at one body: an email about two lakes yields two reports; a morning skate and an evening re-check of the same lake yield two reports with visit 0 and visit 1. **A different day is a different visit**, even when relayed: "a fisher said it was open water yesterday" is its own report (observedFrom secondhand, sighting open, yesterday's time if one is given). A report needs a body: if the author names a lake that is not among the candidates, set bodyRef to null and bodyName to the name as written.
 
 For each report, "note" is the author's own sentences about that body, verbatim, joined — nothing rewritten.
 
@@ -87,24 +107,32 @@ Each report carries a flat list "values". One entry per value, with:
 ## Fields
 
 - quality: one of ${list(vocab.qualities)} — the author's overall word for the skating.
-- suitability: one of ${list(vocab.suitabilities)} — who the author says should go. Only when the author says so.
-- observedFrom: one of ${list(vocab.observedFrom)}. Default is on_ice when the author skated; use shore for a drive-by, a look from a window, a drone, a webcam; secondhand for a relayed report.
-- sighting: one of ${list(vocab.sightings)} — what a shore or secondhand observer saw. Never for an author who was on the ice.
-- endTime: when the author got off the ice — value is a local clock time "YYYY-MM-DDTHH:MM" (or "HH:MM" for today), precision "minute" when stated exactly, "half_hour" when approximate ("around 4", "late afternoon" → do not guess a time for "afternoon"; only return a time when the author gives a clock time or a clear anchor like "sunset").
+- suitability: one of ${list(vocab.suitabilities)} — who the author says should go to this body on this visit. Only when the author says so of the body. A warning about one part of the lake ("avoid the north shore of the eastern lobe") is a hazard with a where, not dont_go. A reminder to carry safety gear is not a suitability.
+- observedFrom: one of ${list(vocab.observedFrom)} — where the author was on this visit. Default is on_ice when the author skated or walked on it (drilling a hole counts); shore for a drive-by, a look from a window, a drone, a webcam; secondhand for a relayed report.
+- sightings: values from ${list(vocab.sightings)}, each with a "where" when the author gives one — what the author saw of the lake rather than skated. From shore or secondhand, the lake's state ("still wide open"). From an author on the ice, only a part of the lake they did not skate, and always with its where ("visible from the road, open water at the south end" → open, where S; "there is ice from Rocky Point to Kimball's Point" → frozen, placeName). When a part seen but not skated is open or skimmed, give the hazard too (open_water or thin_ice, same where), so it is on the map.
+- endTime: when the author got off the ice — value is a local clock time "YYYY-MM-DDTHH:MM" (or "HH:MM" for today), precision "minute" when stated exactly, "half_hour" when approximate ("around 4"). Only when the author gives a clock time or a clear anchor like "sunset"; never guess one for "this morning" or "afternoon".
 - iceTypes: values from ${list(vocab.iceTypes)}. Each with an optional "where" (below) and a short note if the author qualifies it.
 - surfaceTags: values from ${list(vocab.surfaceTags)}. snow_covered and drifted here mean the author described the surface that way.
-- snowCoverage: one of ${list(vocab.snowCoverages)}; snowImpediment: one of ${list(vocab.snowImpediments)}; snowDrifts: one of ${list(vocab.snowDrifts)}; snowDepthInches: value "depth" with "inches" set to the number the author gave (a "dusting" is 0.2).
-- thickness: one entry per reading; value is the method, one of ${list(vocab.thicknessMethods)}. measured = drilled, augered, tape, fishing hole measured by the author; estimated = eyeballed, from a crack, from fishing holes seen, from someone else's number; poke = a pole test — put the count in pokeCount and the author's inch guess (if any) in the inch fields. Numbers in inches: "inches" for a single number, minInches/maxInches for a range, minInches alone for "at least" / "4+". supportable true/false only when the author uses the word (supportable, unsupportable, held me, went through). "where" when the reading is located.
-- hazards: values from ${list(vocab.hazardTypes)} — each with a "where" when located. open_water includes leads; pressure_ridge includes ridges and folds; wet_crack is a working crack; thin_ice when the author says thin.
-- accessConditions: values from ${list(vocab.accessConditions)} — conditions at the launch or lot, not blockers.
+- snowCoverage: one of ${list(vocab.snowCoverages)}; snowImpediment: one of ${list(vocab.snowImpediments)}; snowDrifts: one of ${list(vocab.snowDrifts)}; snowDepthInches: value "depth" with "inches" set to the number the author gave (a "dusting" is 0.2). Snow values only for snow the author saw on the ice on this visit — never snowfall from a weather report or a forecast.
+- thickness: one entry per reading; value is the method, one of ${list(vocab.thicknessMethods)}. measured = drilled, augered, tape, fishing hole measured by the author; estimated = eyeballed, from a crack, from fishing holes seen, from someone else's number; poke = a pole test — put the count in pokeCount and the author's inch guess (if any) in the inch fields. Numbers in inches: "inches" for a single number, minInches/maxInches for a range, minInches alone for "at least" / "4+". supportable true/false only when the author uses the word (supportable, unsupportable, held me, went through) — a number alone ("4 inches") says neither. "where" when the reading is located; a reading of one kind of ice ("the black ice was 1–1.5 inches") is located where that ice is.
+- hazards: values from ${list(vocab.hazardTypes)} — each with a "where" when located. open_water includes leads, and holes still unfrozen at freeze-up ("mostly froze last night with some holes" → open_water, extent patches); pressure_ridge includes ridges and folds, and a general "lots of pressure ridge activity" is not a ridge — give the ridge the author locates; ridge_crossing only where the author crossed a ridge on the ice — going around it, or over land, is a pressure_ridge with a note; wet_crack is a working crack; thin_ice when the author says thin.
+- accessConditions: values from ${list(vocab.accessConditions)} — conditions at the launch or lot on this visit, not blockers.
+
+Weather is not an observation of the ice: air temperature, wind, cloud, snowfall and forecasts are never values. Mention them in misses only when the author ties them to the ice.
 
 ## where
 
-A "where" says which part of the body a value is about: "extent" one of ${list(vocab.whereExtents)} (whole = the author says the whole lake, mostly, patches); "sector" one of ${list(vocab.sectors)} — compass sectors are the author's compass words ("the north end" → N, "the northeast corner" → NE; "the middle" → middle; "along the shore" → near_shore); "subAreaId" when the author names a candidate's bay (use the bay's id); "placeName" for a named landmark that is not a candidate bay ("off Shelburne Point", "by the island"). Omit "where" when the author does not locate the value.
+A "where" says which part of the body a value is about: "extent" one of ${list(vocab.whereExtents)} (whole = the author says the whole lake); "sector" one of ${list(vocab.sectors)} — compass sectors are the author's compass words ("the north end" → N, "the northeast corner" → NE; "the middle" → middle; "along the shore" → near_shore); "subAreaId" when the author names a candidate's bay (use the bay's id); "placeName" for a named landmark that is not a candidate bay ("off Shelburne Point", "by the island", "the boat access"). Omit "where" when the author does not locate the value.
+
+When the author limits the skating or the ice to part of the lake ("skating was limited to the south shore"), put that where on the values it limits — quality, iceTypes, surfaceTags. That is the author saying where the ice was, never a claim that it was safe.
+
+## aboutBody
+
+Facts about a body itself rather than this visit — lasting things another skater would want on the lake's page. One entry per fact: "bodyRef" (or null with "bodyName"), "topic" one of ${ABOUT_BODY_TOPICS.join(', ')}, and the author's exact words as "quote" / "quoteField". parking: the lot ("limited parking at the launch spot"); access: getting onto the ice (a walk in, a launch, "a two-minute level walk from the parking lot"); feature: something lasting that bears on the ice — inlets, springs, currents, depth, sun exposure, a shore "notorious for thin ice"; character: the lake itself ("a 3000-acre wilderness lake, no road along the shore"). Give them from any text, a report or not. A fact about this visit's ice is a value, not aboutBody.
 
 ## Misses
 
-Anything the author says about the ice, the snow, the access or the trip that these fields cannot hold goes in "misses": kind "enum_value" for a value the field lacks (a snow texture like "crusty", an ice type not listed), "field" for a whole thing there is no field for (wind, crowds, wildlife, a time on the ice rather than off it), "where" for a location the where cannot say, "report_kind" for a kind of report these fields cannot represent (a multi-day journal, a season summary), "other" otherwise. "wouldNeed" says what would hold it. Be generous with misses: they are how the form learns what it cannot yet say.
+Anything the author says about the ice, the snow, the access or the trip that these fields cannot hold goes in "misses": kind "enum_value" for a value the field lacks (a snow texture like "crusty", an ice type not listed), "field" for a whole thing there is no field for (crowds, wildlife, a time on the ice rather than off it), "where" for a location the where cannot say, "report_kind" for a kind of report these fields cannot represent (a multi-day journal, a season summary), "other" otherwise. "wouldNeed" says what would hold it. Be generous with misses: they are how the form learns what it cannot yet say.
 
 ## Rules
 

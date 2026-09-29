@@ -31,11 +31,14 @@ import {
 } from '@skating/core';
 import { z } from 'zod';
 import {
+  ABOUT_BODY_TOPICS,
+  type AboutBody,
   type Evidence,
   EXTRACTED_FIELD_KEYS,
   type ExtractedFieldKey,
   type ExtractedFields,
   type ExtractedReport,
+  type ExtractedWhere,
   type ExtractionInput,
   type ExtractionResult,
   ExtractionResultSchema,
@@ -59,7 +62,7 @@ export const WireWhereSchema = z.object({
  * time; the optional numbers ride alongside for thickness and snow depth.
  */
 export const WireValueSchema = z.object({
-  /** A contract field key: quality, suitability, observedFrom, sighting, endTime, iceTypes, surfaceTags, snowCoverage, snowImpediment, snowDrifts, snowDepthInches, thickness, hazards, accessConditions. */
+  /** A contract field key: quality, suitability, observedFrom, sightings, endTime, iceTypes, surfaceTags, snowCoverage, snowImpediment, snowDrifts, snowDepthInches, thickness, hazards, accessConditions. */
   field: z.string(),
   /** The enum key (black_ice, dont_go, …); for thickness the method; for endTime the local time; for snowDepthInches "depth". */
   value: z.string(),
@@ -93,8 +96,19 @@ export const WireMissSchema = z.object({
   wouldNeed: z.string(),
 });
 
+/** A fact about the body rather than the visit (D211); `topic` is checked against the contract's. */
+export const WireAboutBodySchema = z.object({
+  bodyRef: z.string().nullable(),
+  bodyName: z.string().optional(),
+  topic: z.string(),
+  quote: z.string(),
+  quoteField: z.enum(['title', 'text']),
+});
+export type WireAboutBody = z.infer<typeof WireAboutBodySchema>;
+
 export const WireResultSchema = z.object({
   reports: z.array(WireReportSchema),
+  aboutBody: z.array(WireAboutBodySchema).default([]),
   misses: z.array(WireMissSchema).default([]),
 });
 export type WireResult = z.infer<typeof WireResultSchema>;
@@ -304,7 +318,6 @@ type EnumKey =
   | 'quality'
   | 'suitability'
   | 'observedFrom'
-  | 'sighting'
   | 'snowCoverage'
   | 'snowImpediment'
   | 'snowDrifts'
@@ -313,7 +326,6 @@ const ENUM_VOCAB: Record<EnumKey, keyof Vocabulary> = {
   quality: 'qualities',
   suitability: 'suitabilities',
   observedFrom: 'observedFrom',
-  sighting: 'sightings',
   snowCoverage: 'snowCoverages',
   snowImpediment: 'snowImpediments',
   snowDrifts: 'snowDrifts',
@@ -348,14 +360,23 @@ export function mapWireReport(
     }
     switch (v.field) {
       case 'iceTypes':
-      case 'surfaceTags': {
-        const list = v.field === 'iceTypes' ? vocab.iceTypes : vocab.surfaceTags;
+      case 'surfaceTags':
+      case 'sighting':
+      case 'sightings': {
+        // A model asked for `sightings` sometimes answers in the pre-D210 singular; both are one field.
+        const key = v.field === 'sighting' ? 'sightings' : v.field;
+        const list =
+          key === 'iceTypes'
+            ? vocab.iceTypes
+            : key === 'surfaceTags'
+              ? vocab.surfaceTags
+              : vocab.sightings;
         if (!inVocab(list, v.value)) {
-          miss(`${v.field}: ${v.value}`);
+          miss(`${key}: ${v.value}`);
           break;
         }
         const where = mapWhere(v.where, vocab, misses);
-        push(v.field, {
+        push(key, {
           type: v.value,
           ...(where ? { where } : {}),
           ...(v.note ? { note: v.note } : {}),
@@ -418,10 +439,12 @@ export function mapWireReport(
     }
   }
 
-  // A sighting is what someone *off* the ice saw (D189). The prompt says so; the model does not
-  // always listen, and the validator would refuse the pair — so the validator's own rule is asked.
+  // A sighting from the ice names a part of the lake (D189, D210). The prompt says so; the model does
+  // not always listen, and the validator would refuse it — so the validator's own rule is asked.
   const vantage = fields.observedFrom?.[0] as { value: ObservedFrom } | undefined;
-  if (!sightingAllowedFrom(vantage?.value)) fields.sighting = [];
+  fields.sightings = (fields.sightings ?? []).filter((s) =>
+    sightingKept(vantage?.value, (s as { value: { where?: ExtractedWhere } }).value.where),
+  );
 
   return {
     ...bodyOf(wire, input),
@@ -431,12 +454,39 @@ export function mapWireReport(
   };
 }
 
+/**
+ * May an extracted sighting stand beside this vantage (D210)? The validator's rule
+ * (`sightingAllowedFrom`), plus the one thing an extraction's `where` has that a stored one does
+ * not yet: a `placeName` ("from Rocky Point to Kimball's Point") names a part of the lake even
+ * though the sheet must still place it (A10-4 maps it to a point) before it can post.
+ */
+export function sightingKept(vantage: ObservedFrom | undefined, where?: ExtractedWhere): boolean {
+  if (vantage === 'on_ice' && where?.placeName !== undefined) return true;
+  return sightingAllowedFrom(vantage, where);
+}
+
+/** A fact about the body (D211) in the contract's shape: the body held to the candidates, the words located. */
+export function mapAboutBody(wire: WireAboutBody, input: ExtractionInput): AboutBody {
+  const topic = (ABOUT_BODY_TOPICS as readonly string[]).includes(wire.topic)
+    ? (wire.topic as AboutBody['topic'])
+    : 'other';
+  return {
+    ...bodyOf(wire, input),
+    topic,
+    evidence: evidenceFor(input, wire.quote, wire.quoteField),
+  };
+}
+
 /** Map a whole wire result and validate it against the contract — the last line of defense. */
-export function mapWireResult(wire: WireResult, input: ExtractionInput): ExtractionResult {
+export function mapWireResult(
+  wire: Omit<WireResult, 'aboutBody'> & { aboutBody?: WireAboutBody[] },
+  input: ExtractionInput,
+): ExtractionResult {
   const misses: Miss[] = [];
   const reports = wire.reports.map((r) => mapWireReport(r, input, misses));
+  const aboutBody = (wire.aboutBody ?? []).map((a) => mapAboutBody(a, input));
   for (const m of wire.misses) misses.push(toMiss(m));
-  return ExtractionResultSchema.parse({ reports, misses });
+  return ExtractionResultSchema.parse({ reports, aboutBody, misses });
 }
 
 export type { ExtractedFieldKey };
