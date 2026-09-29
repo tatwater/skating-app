@@ -525,12 +525,33 @@ describe('properties', () => {
         if (!c.ok || degenerate(c)) return true;
         const side = sideOf(c.sides[c.smaller]);
         const result = chordSubArea(LAKE, { a, b, side, sagittaM: k * maxSagittaM(a, b) });
-        if (!result.ok) return result.reason === 'crosses_shore';
+        if (!result.ok) {
+          // `disjoint` is the right answer exactly when the chosen side holds no water — a sliver
+          // above `degenerate`'s bar that lies over land (see the regression test below).
+          return (
+            result.reason === 'crosses_shore' ||
+            (result.reason === 'disjoint' && c.smallerWater === null)
+          );
+        }
         const back = clipSubAreaToParent(result.polygon, LAKE, 0);
         return back.ok && back.retainedFraction > 0.999;
       }),
       { numRuns: 60 },
     );
+  });
+
+  it('refuses a chord that runs just over land as enclosing no water, not as crossing the shore', () => {
+    // The property's counterexample, pinned (1 run in ~400 found it): `a` on the north shore east of
+    // the mouth, `b` 2.6 mm up the mouth's east wall. The straight line between them runs a hair
+    // above the shoreline — over land — and only touches it at the corner, so it crosses nothing.
+    // The smaller side is a 1 m² sliver of land; there is no water in it to be a bay.
+    const a = { lat: 44.52697961091174, lng: -72.96263544263057 };
+    const b = { lat: 44.52697963448417, lng: -72.9722607282962 };
+    const c = chordCandidates(LAKE, a, b);
+    expect(c.ok && c.smallerWater).toBeNull();
+    if (!c.ok) return;
+    const result = chordSubArea(LAKE, { a, b, side: sideOf(c.sides[c.smaller]), sagittaM: 0 });
+    expect(result).toEqual({ ok: false, reason: 'disjoint' });
   });
 
   it('the two sides partition the ring', () => {
