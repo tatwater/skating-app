@@ -29,7 +29,6 @@ export type ReportSnapshot = Pick<
   | 'skateEndPrecision'
   | 'observedFrom'
   | 'sightings'
-  | 'sighting'
   | 'iceTypes'
   | 'surfaceTags'
   | 'skateQuality'
@@ -50,7 +49,6 @@ const REPORT_CONTENT_KEYS = [
   'skateEndPrecision',
   'observedFrom',
   'sightings',
-  'sighting',
   'iceTypes',
   'surfaceTags',
   'skateQuality',

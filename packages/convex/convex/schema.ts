@@ -2088,14 +2088,11 @@ export default defineSchema({
      * What the author saw rather than skated (A10 / D189, located by D210): still open, skim,
      * frozen over, snow-covered, each with an optional `where`. From shore or secondhand any
      * sighting; from the ice only one located to a part of the body (`sightingAllowedFrom`, enforced
-     * by `validateReportInput`, never assumed by a reader). Written only when non-empty.
+     * by `validateReportInput`, never assumed by a reader). Written only when non-empty. The single
+     * pre-D210 `sighting` was widened beside it, lifted by `reports.backfillA10Shapes` and narrowed
+     * away in A10-9; the mutation args still take it.
      */
     sightings: v.optional(v.array(locatedChip(SIGHTINGS))),
-    /**
-     * The pre-D210 single sighting. Widened beside `sightings`, lifted into it by
-     * `reports.backfillA10Shapes`, then narrowed away — the A10-1 sequence again.
-     */
-    sighting: v.optional(literals(SIGHTINGS)),
     // --- Ice description (surface, NOT a safety verdict, D3) ---
     /**
      * Located chips (A10 / D193): `{ type, where?, note? }` so "black ice, north end" is one chip.

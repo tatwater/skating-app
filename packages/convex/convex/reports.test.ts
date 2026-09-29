@@ -314,7 +314,7 @@ describe('reports.create', () => {
     });
     const r = await t.run((ctx) => ctx.db.get(fromShore));
     expect(r?.sightings).toEqual([{ type: 'open' }]);
-    expect(r?.sighting).toBeUndefined();
+    expect(r && 'sighting' in r).toBe(false);
     // From the ice, a part of the lake the author saw but did not skate.
     const located = await asUser.mutation(api.reports.create, {
       ...OBSERVED,

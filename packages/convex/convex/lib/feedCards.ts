@@ -248,7 +248,6 @@ export async function toFeedCard(
     ...(r.suitability !== undefined ? { suitability: r.suitability } : {}),
     ...(r.observedFrom !== undefined ? { observedFrom: r.observedFrom } : {}),
     ...(r.sightings !== undefined ? { sightings: r.sightings } : {}),
-    ...(r.sighting !== undefined ? { sighting: r.sighting } : {}),
     ...(r.editedAt !== undefined ? { edited: true as const } : {}),
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
     author: await authorFor(ctx, r.authorId, caches.authors, now),

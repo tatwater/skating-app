@@ -527,8 +527,6 @@ export const update = mutation({
       skateEndPrecision: n.skateEndPrecision,
       observedFrom: n.observedFrom,
       sightings: n.sightings,
-      // Any edit writes the D210 list; a row it lands on mid-backfill loses its legacy copy with it.
-      sighting: undefined,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,
