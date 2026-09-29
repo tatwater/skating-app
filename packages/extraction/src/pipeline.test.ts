@@ -98,7 +98,9 @@ describe('claudeThenJevExtractor', () => {
           compassPhrases: [{ quote: 'the north end', sector: 'N' }],
         },
       ],
-      aboutBody: [{ bodyRef: 'morey', topic: 'feature', quote: 'the north end', quoteField: 'text' }],
+      aboutBody: [
+        { bodyRef: 'morey', topic: 'feature', quote: 'the north end', quoteField: 'text' },
+      ],
       misses: [{ kind: 'field', text: 'windy', wouldNeed: 'wind' }],
     });
     const asked: string[] = [];

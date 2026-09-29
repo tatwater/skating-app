@@ -8,7 +8,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { ClaudeModelKey } from './claude/client';
 import { claudeCostUsd } from './claude/client';
 import { runStageA, segmentationMisses, unitText } from './claude/stageA';
-import { mapAboutBody } from './claude/wire';
+import { denseVisits, mapAboutBody } from './claude/wire';
 import type { ExtractionInput, ExtractionRun, Extractor } from './contract';
 import { ExtractionResultSchema } from './contract';
 import { type JevClient, jevCostUsd } from './jev/client';
@@ -30,7 +30,7 @@ export function claudeThenJevExtractor(
       let jevCost = 0;
       const reports = [];
       const misses = segmentationMisses(a.segmentation);
-      for (const unit of a.segmentation.units) {
+      for (const unit of denseVisits(a.segmentation.units)) {
         const state = [input.title ? `Title: ${input.title}` : '', unitText(unit)]
           .filter(Boolean)
           .join('\n');

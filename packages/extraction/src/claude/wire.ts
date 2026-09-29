@@ -85,7 +85,8 @@ export type WireValue = z.infer<typeof WireValueSchema>;
 export const WireReportSchema = z.object({
   bodyRef: z.string().nullable(),
   bodyName: z.string().optional(),
-  visit: z.number().int().min(0).default(0),
+  /** Any integer on the wire — a model told "yesterday is another visit" numbers it -1 — renumbered by `denseVisits`. */
+  visit: z.number().int().default(0),
   note: z.string().optional(),
   values: z.array(WireValueSchema).default([]),
 });
@@ -477,13 +478,33 @@ export function mapAboutBody(wire: WireAboutBody, input: ExtractionInput): About
   };
 }
 
+/**
+ * Visits renumbered 0, 1, … per body in the model's own order. A visit number only orders one
+ * body's reports; the model is told to count up in time, and when it counts back instead ("yesterday"
+ * as -1) the order it meant is kept and the contract's non-negative visit is met, rather than the
+ * whole result failing on one number.
+ */
+export function denseVisits<T extends { bodyRef: string | null; bodyName?: string; visit: number }>(
+  reports: T[],
+): T[] {
+  const byBody = new Map<string, number[]>();
+  const keyOf = (r: T) => r.bodyRef ?? `name:${r.bodyName ?? ''}`;
+  for (const r of reports) {
+    const seen = byBody.get(keyOf(r)) ?? [];
+    if (!seen.includes(r.visit)) seen.push(r.visit);
+    byBody.set(keyOf(r), seen);
+  }
+  for (const seen of byBody.values()) seen.sort((a, b) => a - b);
+  return reports.map((r) => ({ ...r, visit: (byBody.get(keyOf(r)) as number[]).indexOf(r.visit) }));
+}
+
 /** Map a whole wire result and validate it against the contract — the last line of defense. */
 export function mapWireResult(
   wire: Omit<WireResult, 'aboutBody'> & { aboutBody?: WireAboutBody[] },
   input: ExtractionInput,
 ): ExtractionResult {
   const misses: Miss[] = [];
-  const reports = wire.reports.map((r) => mapWireReport(r, input, misses));
+  const reports = denseVisits(wire.reports).map((r) => mapWireReport(r, input, misses));
   const aboutBody = (wire.aboutBody ?? []).map((a) => mapAboutBody(a, input));
   for (const m of wire.misses) misses.push(toMiss(m));
   return ExtractionResultSchema.parse({ reports, aboutBody, misses });

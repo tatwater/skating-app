@@ -46,7 +46,8 @@ export const ClockTimeSchema = z.object({
 export const UnitSchema = z.object({
   bodyRef: z.string().nullable(),
   bodyName: z.string().optional(),
-  visit: z.number().int().min(0).default(0),
+  /** Any integer on the wire; `denseVisits` renumbers (see wire.ts). */
+  visit: z.number().int().default(0),
   /** The author's own sentences about this body and visit, verbatim, in order. */
   sentences: z.array(z.string()),
   measurements: z.array(MeasurementSchema).default([]),
@@ -68,7 +69,7 @@ export type Segmentation = z.infer<typeof SegmentationSchema>;
 export function segmentationSystemPrompt(): string {
   return `You split one skater's email or post about lake ice into observation units, without judging the ice. The community is Nordic (wild) ice skaters in Vermont, New Hampshire, New York, Maine and Quebec.
 
-A unit is (one body of water, one visit): everything the author says they or someone else observed about that lake on that trip. An email about two lakes is two units; a morning skate and an evening re-check of the same lake are two units (visit 0, visit 1); a relayed observation from another day is its own unit ("a fisher said it was open water yesterday").
+A unit is (one body of water, one visit): everything the author says they or someone else observed about that lake on that trip. An email about two lakes is two units; a morning skate and an evening re-check of the same lake are two units (visit 0, visit 1); a relayed observation from another day is its own unit ("a fisher said it was open water yesterday"). Number each body's visits 0, 1, 2… in time order, earliest first.
 
 These are not observations and belong to no unit: a season summary, a retrospective or a list of lakes skated; an invitation, a plan or a meeting time; a forecast or a prediction (anything about a time after the text was written); a question; gear or safety advice; weather that is not about the ice; and anything in an earlier message the author quoted or forwarded (after "On … wrote:", a "From: … Sent: …" header, "-----Original Message-----"). A text that is mostly one of these may still hold one observation — keep that sentence as a unit. A text with no observation has no units; list what it says about ice, snow, access or the trip under misses.
 

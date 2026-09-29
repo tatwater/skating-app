@@ -93,7 +93,7 @@ An email that is mostly one of these may still hold an observation — "Pleasant
 
 ## Output
 
-Return one report per (body of water, visit). A visit is one time on or at one body: an email about two lakes yields two reports; a morning skate and an evening re-check of the same lake yield two reports with visit 0 and visit 1. **A different day is a different visit**, even when relayed: "a fisher said it was open water yesterday" is its own report (observedFrom secondhand, sighting open, yesterday's time if one is given). A report needs a body: if the author names a lake that is not among the candidates, set bodyRef to null and bodyName to the name as written.
+Return one report per (body of water, visit). A visit is one time on or at one body: an email about two lakes yields two reports; a morning skate and an evening re-check of the same lake yield two reports with visit 0 and visit 1 — each body's visits count 0, 1, 2… in time order, earliest first. **A different day is a different visit**, even when relayed: "a fisher said it was open water yesterday" is its own report (observedFrom secondhand, sighting open, yesterday's time if one is given). A report needs a body: if the author names a lake that is not among the candidates, set bodyRef to null and bodyName to the name as written.
 
 For each report, "note" is the author's own sentences about that body, verbatim, joined — nothing rewritten.
 

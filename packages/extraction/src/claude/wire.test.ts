@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultVocabulary, type ExtractionInput } from '../contract';
 import {
+  denseVisits,
   evidenceFor,
   localTimeToMs,
   locateQuote,
@@ -112,6 +113,19 @@ describe('thicknessReadingFrom — the validator’s rule at the source', () => 
     expect(thicknessReadingFrom({ method: 'measured', inches: 4, minInches: 3 })).toBeNull();
     expect(thicknessReadingFrom({ method: 'measured', pokeCount: 2, inches: 4 })).toBeNull();
     expect(thicknessReadingFrom({ method: 'measured', inches: -1 })).toBeNull();
+  });
+});
+
+describe('denseVisits', () => {
+  it('renumbers each body 0, 1, … in the model’s order — "yesterday" as -1 comes first (A10-9)', () => {
+    const r = denseVisits([
+      { bodyRef: 'w', visit: 0 },
+      { bodyRef: 'w', visit: -1 },
+      { bodyRef: 'm', visit: 3 },
+      { bodyRef: null, bodyName: 'Halfmile', visit: 2 },
+      { bodyRef: 'w', visit: 0 },
+    ]);
+    expect(r.map((x) => x.visit)).toEqual([1, 0, 0, 0, 1]);
   });
 });
 
@@ -393,7 +407,8 @@ describe('mapWireResult', () => {
       { reports: [{ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1, values: [] }], misses: [] },
       input(),
     );
-    expect(result.reports[0]).toMatchObject({ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1 });
+    // A body's only report is its visit 0, whatever number the model gave it (denseVisits).
+    expect(result.reports[0]).toMatchObject({ bodyRef: null, bodyName: 'Halfmile Pond', visit: 0 });
   });
 
   it('nulls a body ref that was never a candidate, keeping the string as the name (Greptile P2, PR #71)', () => {
