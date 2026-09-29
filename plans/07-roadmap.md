@@ -699,7 +699,7 @@ launches.*
 - 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Phase A10 — Reporting: one sheet, three doors
-🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #75 #77 #78 #79 #80 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205 D206 D207
+🟡 **In progress** 2026-09-21 · PRs #71 #72 #73 #75 #77 #78 #79 #80 · [plan](./phases/A10-reporting-flow.md) · D186–D200 D203 D204 D205 D206 D207 D208 D209 D210 D211
 
 The report form becomes a report sheet: one fixed-order scroll a skater fills by tapping chips,
 by writing prose, or by opening it from a track, every section collapsing to a summary. A **Post**
@@ -722,6 +722,9 @@ lack of signal.*
 - **2026-09-21 — NH gaps seed:** 7 boosts on dev (campaign `nh-gaps-20260921`) for the bodies the founder's NH list and a group leader's seasonal journal named that the corpus seed missed; Pemigewasset Lake renamed over NHD's typo; Low Plains named from free text; Eagle Lake + Kinsman Pond join the season watcher as sentinels, Low Plains pinned → [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md), [`backlog/late-season-reveal.md`](./backlog/late-season-reveal.md)
 - **2026-09-21 — extraction eval, first run (§1.3):** 147-email stratified sample + 60 negatives × three engines (Claude-only Haiku 0.64¢ / 4.4 s, Sonnet 5 4.22¢ / 37 s, Haiku + Jev 0.49¢ + Jev / 4.6 s); Sonnet-drafted value labels (1,474 values, 712 contested by Haiku); provisional floors from the Jev run on four fields; $8.3 Anthropic, $0.05 Jev (2.0M tokens)
 - **2026-09-21 — A10-1 dev backfills:** `reports.backfillA10Shapes` 2 rows, `posts.backfillFromReports` 2 Posts; schema narrowed
+- **2026-09-29 — corpus re-parse (A10-9):** every quoted earlier message trimmed — 587 of 2,469 bodies changed, 24 emptied (attribution-only replies, bare "Sent from my iPhone"), forwards that open a body kept; the pre-trim file in `prev/`
+- **2026-09-29 — extraction eval, second run (A10-9, partial):** Haiku 4.5 on the sample + negatives $0.69, Haiku + Jev on the sample $0.82, Sonnet 5 on 37 of 110 $1.66 before the Anthropic credit ran out; on the ten verified emails `observedFrom` precision 35% → 67% (Haiku) and 41% → 86% (Haiku + Jev), the season wrap-up no longer a report; the sentence-level gate that followed is unmeasured
+- **2026-09-29 — A10-9 dev deploy:** `reports.sightings` widened, `reports.backfillA10Shapes` (2 scanned, 0 carried a sighting), narrowed
 
 #### Deferred
 - ⚪ **Named landmarks** (OSM/GNIS islands, points, reference bays) as labels + `where: point(name)` → [`features/named-landmarks.md`](./features/named-landmarks.md), with A10-2
@@ -745,11 +748,21 @@ lack of signal.*
 - ⚪ **A retry on Jev 503 / 529** (7 of 147 calls) and parallel per-unit votes — with A10-4
 - ⚪ **Video** — a second pass (§8.3), R2 above a size threshold; a backlog doc when scoped
 - ⚪ **Season-one review** — D199's window, D189's set, `PUT_IN_SNAP_METERS`, the extraction floors, snow texture; on `reportTime − skateEndTime` and real tracks
+- 🟢 **The first verified labels, acted on** — A10-9 (2026-09-29): `air_pockets` (D208), `large_areas` (D209), located sightings from any vantage (D210), `aboutBody` and the observations-only rule (D211), the prompt rules the ten emails exposed, the corpus parser's quoted-thread trim, a corpus-weighted review order → [A10 A10-9](./phases/A10-reporting-flow.md)
+- ⚪ **`aboutBody` reaches a body's page** — the replay collects the facts (D211); a moderator queue decides them: parking and access into A06d's rows (with [`features/access-point-authoring.md`](./features/access-point-authoring.md)), lasting features toward `bodyFeatures`, the lake's character onto the profile; after the replay
+- ⚪ **"Holes" in the sheet** — skaters say *holes* at freeze-up; the vocabulary says `open_water` in patches (founder, 2026-09-29: close enough to store, a gap to bridge in the UI); an affordance that maps the one to the other — design
+- ⚪ **A where by distance along a track** — "the hump at mile marker 12" on a GPS loop; with a GPX attached (A10-7) extraction could offer a point that far along the path for the author to move; a screenshot of a track is not a track — with A10-4
+- ⚪ **Surface through the day** — the spring pattern ("firm until 10am, possibly noon"): what the author found at what hour could be a field; the forecast half never can (D3) — a design call at the season-one review
+- ⚪ **Place-name spelling in the body resolver** — "Newberry" for Newbury, found by the founder's review; the resolver's fuzzy match, not extraction — with A10-4
+- ⚪ **Reading the corpus's attachments** — 890 of 2,469 emails carry one, 98% images; the GPS-track screenshots and ice photos hold what the words leave out; the review page shows them (A10-9), no engine reads them — after the replay says whether it needs them
 
 #### Ruled out
 - **A wizard** — order defeats muscle memory and the bop-around requirement
 - **A part-of-day end time** — vaguer than the half-hour estimate every downstream read wants
 - **Relay as a report kind** — provenance the reader sees (D191), not a kind with its own decay
+- **An Observation layer under the Report, or a vantage per value** — a Report already is one body, one visit, one vantage, one time; the gap was *seen, not skated* for part of a lake, which a located sighting says (D210)
+- **An "online" vantage for snowfall read off a weather service** — weather is not an observation (D211), and the app shows the weather
+- **ATGATT as a suitability** — the gear rule holds in every condition, so it says nothing about this lake today; the author's prose keeps it
 
 #### Owed
 - The §1 extraction eval's value tier (~150 field-labeled reports) before ghost chips are gated
@@ -840,6 +853,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | **"Water body", not "lake"** — `docs/` (~280 lines, 11 files) and code comments (~1,800) are mechanical; ~70 user-visible strings ("Search lakes by name…", "Lakes in view", "Lake not found") want a copy decision; identifiers incl. the stored `lakePond` value are a D185-style rename | ⚪ | a founder call on the user-visible strings only | [`README.md` § Words](./README.md#words) |
 | Server-tracked recommended caps · a CI GPS replay rig · first-class avatar upload | ⚪ | a trigger each; none urgent | `backlog/low-urgency-items.md` |
 | The 1,376 unmatched slipways | ⚪ | an afternoon | [`backlog/unmatched-slipways.md`](./backlog/unmatched-slipways.md) |
+| **A weather line for wind over light snow** — the weather panel's computed summaries gain one for strong wind over a small snowfall (the corpus: "a half-inch of snow, which is blowing away in the howling winds"); a confidence cue about the snow, never a reading that the ice is clear (D3) | ⚪ | nothing | A06h, A10-9 |
 
 ### A decision
 
@@ -870,6 +884,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | **Sub-areas by chord** (D201) — the tool shipped 2026-09-21 (PR #76): two shoreline points, a side, a sagitta; the polygon derived on the server, the mouth stored beside it; the queue is a sixth request kind, `name_bay`, on the lake editor and `/admin/water/requests`. **Owed: the moderator session** — the 16 destination bays are filed by `pnpm --filter @skating/seed-destinations seed-bay-requests <bays.json> --requester=<profileId> --apply` after merge (the dev rows were removed with the smoke test; the seed is not held to the ten-open-bay-asks budget a skater has), then drawn: Northwest, Button, Dog Cove, Wolfeboro, Keeler, Maquam, Dillenbeck, Carry, Stevenson, St. Albans, Holcomb, City, Silver, Fishers, Huddle, Herrick | ⚪ | a moderator session on dev | D201, [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md) § 1 |
 | **Named landmarks** (D202 at build) — `bodyLandmarks` from OSM + GNIS + the corpus's 194 places and 23 reference bays; labels at bay zoom; `where: point(name)` for the sheet and extraction | ⚪ | with A10-2 | [`features/named-landmarks.md`](./features/named-landmarks.md) |
 | **Location anchor (Q17) + a hosted geocoder** — Here / Home / Somewhere; Explore recenters, Latest re-weights, drive-time bands recompute per anchor (the D18 cache, one more entry); Home settable from an address | ⚪ | the design pass (where it lives; session vs setting; notifications stay on Home); the geocoder choice — leaning ORS `/geocode` from a Convex action | [`backlog/location-anchor.md`](./backlog/location-anchor.md), `04` § Geocoding |
+| **`aboutBody` → a body's page, "holes" in the sheet, a where by distance along a track** — the A10-9 review's three design rows (D211; founder 2026-09-29) | ⚪ | the replay (facts); design (holes); A10-4 (track distance) | A10 § Deferred |
 | **Outbound email-group bridge** — a skater's report posted to their regional list(s), opt-in per group, under their name; not legal-gated (L5 *Not gated*) | ⚪ | design: which lists per region and their posting rules, a sender the lists accept; `packages/email` templates; after A10's Posts | [`backlog/email-group-bridge.md`](./backlog/email-group-bridge.md), Q8 |
 | **React Email in every sender** — `packages/email` exists with one template and no caller; `dataExport.ts` / `operatorAlerts.ts` / `notificationDelivery.ts` still hand-build HTML; the `react-dom/server`-in-an-`internalAction` question is untried | ⚪ | the next mail design pass; the runtime check is one `convex dev --once` | [`features/react-email.md`](./features/react-email.md), D38 |
 | **Hazard follow-ons needing design** — redraw an existing footprint ("it's in the wrong place", A05c §13a: replace/average/vote, grow-now/shrink-with-evidence, an edit log, the auto-merge interaction) · ridge crossings authored and drawn as a set of one ridge · inbox grouping across notification types | ⚪ | design | A05c, A05a, A08 |

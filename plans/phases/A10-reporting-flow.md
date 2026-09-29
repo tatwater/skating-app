@@ -1347,6 +1347,112 @@ doors keep the window (A10-3); it is narrower there, since a door is the person'
   where the Gli session is — but the phone opens that flow in an in-app browser with no Gli
   session, so it is a design call, not a patch. On the roadmap.
 
+## Built record — A10-9 (2026-09-29, `phase-a10-reporting-flow-9`)
+
+What the founder's first ten verified emails taught, acted on. Not a scoped PR: the founder
+reviewed ten messages in `review.html`, wrote more notes than the emails had words, and asked to go
+over them together; every call below is theirs from that conversation (2026-09-29), and the build
+flew without check-ins after it. Seven commits off `main` at `7f8086ae`. Suites at build: core
+3,161 · convex 1,811 · web 707 · mobile 124 · extraction 33. **One schema change**, widened →
+deployed → backfilled → narrowed on dev in the build (`reports.sighting` → `reports.sightings`).
+
+### What the first ten found
+
+- **The sample was harder than the corpus, by design.** It is stratified (≥ 15 per report kind), so
+  multi-day journals and same-day changes are 21% of it and 5% of report-bearing corpus messages;
+  71% of real reports are plain lake writeups. The ten drew two group-leader journals early.
+- **76 drafted values: 39 accepted, 37 rejected — and 22 of the 37 were one email**, a season
+  wrap-up the engines turned into eleven reports. Without it, 72% accepted. `observedFrom` was the
+  weak field (9 accepted / 13 rejected), then `sighting` (1 / 4); `surfaceTags` (8 / 1) and
+  `quality` (3 / 0) held. Values only the second engine proposed were 7 / 22.
+- **The rejections were rules the engines broke, not vocabulary**: digests and invitations read as
+  reports; a forecast's snowfall read as a snow depth; *don't go* for a lake the author was leading
+  a tour on, because one lobe was thin; a portage around a ridge as a `ridge_crossing`;
+  `unsupportable` from "4 inches"; a relayed "open water yesterday" folded into today; "skating was
+  limited to the south shore" with no `where`. Two real gaps: air trapped under the ice (D208) and
+  "several hundred acres of thin ice" (D209). One parser bug: 133 bodies still carried a quoted
+  thread (Yahoo's indented attribution, Outlook's `From:` block).
+- **The founder's modeling question** — should a Post hold Reports that hold Observations, each with
+  its own vantage and time? — was answered by the labels: they accepted `on_ice` *and* `shore` on
+  Willoughby (the author on the ice at the north launch; the south end open, seen from the road) and
+  wanted Massabesic's "ice from Rocky Point to Kimball's Point" located from an author who drilled
+  100 feet out. What was missing was *seen, not skated* for part of a lake (D210).
+
+### What shipped, by workstream
+
+- **§1 the vocabulary** — `air_pockets` (D208): Tier B, point-and-radius 40 m, `crack` family,
+  `weather_insensitive` because air insulates the ice over a pocket and cold must not fade the pin
+  faster, stale copy that says so. `large_areas` (D209) between `mostly` and `patches`, never
+  covering the body; *Large areas* in both where-pickers. `06-data-model.md` and the research decay
+  table carry both.
+- **§2 located sightings (D210)** — `LocatedSighting` in core, `sightingsOf` for either shape;
+  `sightingAllowedFrom(vantage, where)`: any from shore or secondhand, from the ice only one whose
+  `where` does not cover the body; `SIGHTING_FROM_ICE_MESSAGE` shared by validator and sheet. The
+  args accept the single `sighting` forever and refuse a client that sends both. The sheet's field
+  is `sightings`, multi and located; both surfaces offer the row from every vantage — from the ice
+  as *What did you see but not skate?*, where a tap opens the where cards at once (the one required
+  where), with questions that read for a state (*Where was it still open?*). Cards and details list
+  every sighting with its place (`describeSighting`). Dev: 2 reports scanned, none carried one.
+- **§1 the extraction contract** — `sightings` located, matching the sheet's key; the vantage gate
+  per sighting (`sightingKept`: a `placeName` counts as a part of the lake); Stage B votes
+  sightings as located nouls and frames `ridge_crossing` as a crossing on the ice. **`aboutBody`**
+  (D211): `{ bodyRef, topic, evidence }`, topic `parking` · `access` · `feature` · `character` ·
+  `other`, through both engines, from any text, stored nowhere yet. `denseVisits` renumbers each
+  body's visits so a model's "yesterday is visit −1" no longer fails the whole result.
+- **§1 the prompt rules** (both the Claude-only prompt and Stage A): observations only, decided
+  sentence by sentence; a different day is a different visit; weather is never a value; suitability
+  is about the body and a partial warning is a located hazard; `ridge_crossing` only on the ice;
+  `supportable` only in the author's word; a limit on where the skating was is a `where` on the
+  values; the parts seen but not skated are located sightings, and open or skimmed ones hazards
+  too. Glosses for the new values; "not yet skateable" dropped from `skim`, a judgment.
+- **§1.2 the harness** (gitignored) — the corpus parser cuts every earlier-message marker and keeps
+  a forward that opens a body (587 of 2,469 bodies changed, 24 emptied — attribution-only replies
+  and bare "Sent from my iPhone" — none left carrying a thread); the reviewer opens in a
+  corpus-weighted order (`reviewOrder.ts`), carries the founder's saved work forward, and gains
+  *not a report*, *accept / reject the rest of a visit*, an *about the body* box, located adds with a
+  where parser, the attachment gallery and the value options; the scorer counts only reviewed rows
+  (it had been scoring 137 empty rows as ground truth) and reports message-level report presence;
+  runs take `--tag` and `--ids`.
+
+### The second eval run — partial
+
+Against the ten verified emails (loose match; small n, read as direction): `observedFrom` precision
+Haiku 35% → 67%, Haiku + Jev 41% → 86%; the season wrap-up now yields no report from every engine.
+But Haiku missed three emails the founder found reports in — a relayed hazard map read as advice, a
+one-line drive-by, and an invitation's one observation — because the gate fired on the email, not
+the sentence; the Jev pipeline missed two. Sonnet got all three and turned the wrap-up into zero
+reports and six body facts (44 facts over 37 emails). The gate now says *sentence by sentence*
+with those three as its examples; **that wording is unmeasured**, because the Anthropic credit ran
+out mid-run: Sonnet drafted 37 of 110 (six of the reviewed ten, 31 of the next hundred), and the
+Haiku and Jev re-runs on the new wording made no calls. Spend: Haiku $0.69, Jev pipeline $0.82,
+Sonnet $1.66.
+
+### Deltas from the conversation — read these before extending
+
+1. **Per-value vantage was proposed in the conversation and not built.** Reading the code, it needs
+   a vantage control on every chip on both surfaces, or an extracted value the author cannot
+   correct (D196 forbids that). A located sighting says the same thing (D210). The founder had left
+   this call to the build.
+2. **An open or skimmed part seen from afar is both a sighting and a hazard.** The sighting is the
+   reader's line (*Still open, south end*); the hazard is the map pin that decays and warns — the
+   safety object (D3). One fact, two representations with different jobs, stated in D210 so neither
+   engine nor sheet has to guess.
+3. **"Other engine only" rows are gone from the drafts.** They were 7 accepted of 22 on the first
+   ten, and when two engines split visits differently they arrive as duplicates. Disagreements still
+   show as the contested highlight.
+4. **The next batch is drafted by the best Sonnet run that exists** — new prompt for 31 of the next
+   100, first prompt for the rest — and the page names the drafter per message.
+
+### Owed
+
+- **Top up the Anthropic credit** (founder), then: the Haiku and Jev re-runs on the sentence-level
+  wording (~$2.20), Sonnet on the rest of the next hundred (~$4.60), and a fresh draft for the
+  batch. Both are one command each in `training_data/tools/eval`.
+- The founder's next review pass, in the corpus-weighted order; the floor sweep once about fifty
+  messages are reviewed.
+- `aboutBody`'s moderator queue, "holes" in the sheet, a where by distance along a track, surface
+  through the day, the resolver's spelling — roadmap § A10 Deferred.
+
 ## Plan — A10-8 (scoped 2026-09-24, re-scoped 2026-09-28): photos, asked for when they're wanted
 
 **Founder ask (2026-09-23):** connect Google Photos and Apple Photos, ask them for every photo in
@@ -1761,6 +1867,10 @@ Fewest sensible PRs; sub-workstreams are commits.
   2026-09-23, stacked on `-6`; Strava import is a founder call.)*
 - **A10-8 — §8.4 + §8.5 + §8.6.** The phone's full-screen library grid, the Google Photos
   connection, the picker session on both surfaces; D207. *(Scoped 2026-09-24, off `main`.)*
+- **A10-9 — the first verified labels, acted on.** Not scoped ahead: the founder's first ten
+  reviews, gone over together; the vocabulary (D208, D209), located sightings (D210), `aboutBody`
+  and the observations-only rule (D211), the prompt rules, the corpus parser. *(Built 2026-09-29,
+  off `main`.)*
 
 ## Budgets
 
