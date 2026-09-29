@@ -1352,8 +1352,8 @@ doors keep the window (A10-3); it is narrower there, since a door is the person'
 What the founder's first ten verified emails taught, acted on. Not a scoped PR: the founder
 reviewed ten messages in `review.html`, wrote more notes than the emails had words, and asked to go
 over them together; every call below is theirs from that conversation (2026-09-29), and the build
-flew without check-ins after it. Seven commits off `main` at `7f8086ae`. Suites at build: core
-3,161 · convex 1,811 · web 707 · mobile 124 · extraction 33. **One schema change**, widened →
+flew without check-ins after it. Nine commits off `main` at `7f8086ae`. Suites at build: core
+3,168 · convex 1,811 · web 709 · mobile 125 · extraction 37. **One schema change**, widened →
 deployed → backfilled → narrowed on dev in the build (`reports.sighting` → `reports.sightings`).
 
 ### What the first ten found
@@ -1381,8 +1381,8 @@ deployed → backfilled → narrowed on dev in the build (`reports.sighting` →
 ### What shipped, by workstream
 
 - **§1 the vocabulary** — `air_pockets` (D208): Tier B, point-and-radius 40 m, `crack` family,
-  `weather_insensitive` because air insulates the ice over a pocket and cold must not fade the pin
-  faster, stale copy that says so. `large_areas` (D209) between `mostly` and `patches`, never
+  a new weather class `insulated` — no cold term, because air insulates the ice over a pocket and
+  cold must not fade the pin faster, and shell ice's thaw persistence — and stale copy that says so. `large_areas` (D209) between `mostly` and `patches`, never
   covering the body; *Large areas* in both where-pickers. `06-data-model.md` and the research decay
   table carry both.
 - **§2 located sightings (D210)** — `LocatedSighting` in core, `sightingsOf` for either shape;
@@ -1426,6 +1426,20 @@ with those three as its examples; **that wording is unmeasured**, because the An
 out mid-run: Sonnet drafted 37 of 110 (six of the reviewed ten, 31 of the next hundred), and the
 Haiku and Jev re-runs on the new wording made no calls. Spend: Haiku $0.69, Jev pipeline $0.82,
 Sonnet $1.66.
+
+### The self-review pass — what it caught
+
+`/code-review xhigh` over the branch found 14; 13 are fixed in the last commit. The one that
+mattered most: **renaming the sheet's field would have thrown on every sheet an earlier build
+saved** — the phone's saved and queued drafts, the web sheet kept across a reload — because every
+reader indexes `fields[key].chips`. `reviveSheetState` (core) fills a missing field and lifts the
+old chip into the list, and both stores revive on read. The A10-1 note that the installed APK is
+not a migration concern was about the server's read APIs; a draft on the phone is. Also caught: a
+sighting whose place a surface cannot name read as the whole lake (now *part of the lake*); the
+revision diff flagged an untouched claim across the rename; Stage B could not locate a sighting by a
+place name, so D210's own example was dropped; `air_pockets` had lost shell ice's thaw
+persistence. Left: the where-question state now lives in four copies across the surfaces, and *N of
+M to answer* reads as required where a where is optional — on the ice chips as much as sightings.
 
 ### Deltas from the conversation — read these before extending
 
