@@ -47,7 +47,12 @@ afterEach(async () => {
   // A test file's own afterEach (which restores real timers) runs before this setup hook, so there
   // is no fake clock to advance: the drain yields real event-loop turns until the zero-delay chains
   // settle, and anything scheduled further out lapses with the test, as it always has.
-  for (const t of harnesses) await t.finishAllScheduledFunctions(() => {});
-  harnesses.clear();
-  vi.unstubAllGlobals();
+  // A drain that throws (a runaway chain past convex-test's iteration cap) fails this test, but must
+  // not leave its harness behind to fail every later test in the file the same way.
+  try {
+    for (const t of harnesses) await t.finishAllScheduledFunctions(() => {});
+  } finally {
+    harnesses.clear();
+    vi.unstubAllGlobals();
+  }
 });

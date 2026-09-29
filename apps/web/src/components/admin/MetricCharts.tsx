@@ -8,6 +8,7 @@ import {
   CompositionChart,
   type CompositionSlice,
   DiagonalScatter,
+  formatShare,
   HistogramChart,
   MiniTable,
   type ScatterPoint,
@@ -86,7 +87,7 @@ export function ScalarTrend({
     label: m.label,
     ...(m.status ? { status: m.status } : {}),
   }));
-  const yFormatter = percent ? (v: number) => `${Math.round(v * 100)}%` : undefined;
+  const yFormatter = percent ? formatShare : undefined;
 
   const hasData = rows.some((r) => metrics.some((m) => r[m.key] !== null));
   return (
@@ -121,7 +122,7 @@ export function ScalarTrend({
 function formatCell(value: number | string | null | undefined, percent: boolean): string | number {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'string') return value;
-  return percent ? `${Math.round(value * 100)}%` : value;
+  return percent ? formatShare(value) : value;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

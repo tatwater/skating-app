@@ -8,13 +8,9 @@ import {
   serializeStateCookie,
 } from './oauthSession';
 
-/** fast-check 4 removed `hexaString`; this is the replacement its migration guide gives. */
-const HEX_DIGITS = '0123456789abcdef';
+/** fast-check 4 removed `hexaString`; a string over the hex digits is the same arbitrary. */
 const hexaString = (constraints: Omit<fc.StringConstraints, 'unit'>) =>
-  fc.string({
-    ...constraints,
-    unit: fc.integer({ min: 0, max: 15 }).map((n) => HEX_DIGITS[n] as string),
-  });
+  fc.string({ ...constraints, unit: fc.constantFrom(...'0123456789abcdef') });
 
 describe('serializeStateCookie', () => {
   const cookie = serializeStateCookie('abc123', 900);

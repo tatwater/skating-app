@@ -25,8 +25,12 @@ WebBrowser.maybeCompleteAuthSession();
  * ignore it. That field is the legacy capability catalog (it also lists `ticket` and
  * `reset_password_*`); `user_settings.attributes` is the operative one.
  *
- * SSO adds no native module: `expo-web-browser` + `expo-auth-session` are already declared
- * deps and `scheme: 'skating'` already exists for the redirect, so this ships over the air.
+ * SSO itself needs no native module of its own — `expo-web-browser` + `expo-auth-session` and
+ * `scheme: 'skating'` for the redirect. But `@clerk/expo` 4 autolinks one (Clerk's Android SDK),
+ * so a build from before that upgrade can't take auth changes over the air; they need a rebuild.
+ *
+ * The hooks come from `@clerk/expo/legacy` — the create → prepare → attempt flow this screen was
+ * written against. Moving to the current method-based API is a register row in `07-roadmap.md`.
  */
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();

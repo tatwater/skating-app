@@ -526,11 +526,18 @@ describe('properties', () => {
         const side = sideOf(c.sides[c.smaller]);
         const result = chordSubArea(LAKE, { a, b, side, sagittaM: k * maxSagittaM(a, b) });
         if (!result.ok) {
-          // `disjoint` is the right answer exactly when the chosen side holds no water — a sliver
-          // above `degenerate`'s bar that lies over land (see the regression test below).
+          // `disjoint` is right exactly when the region the mouth closes holds no water — a sliver
+          // above `degenerate`'s bar lying over land (the regression test below). Built here from
+          // the walked shore and the arc actually drawn, since a bow can move it onto land or off.
           return (
             result.reason === 'crosses_shore' ||
-            (result.reason === 'disjoint' && c.smallerWater === null)
+            (result.reason === 'disjoint' &&
+              !closedRegionHasWater(c.sides[c.smaller], {
+                a,
+                b,
+                side,
+                sagittaM: k * maxSagittaM(a, b),
+              }))
           );
         }
         const back = clipSubAreaToParent(result.polygon, LAKE, 0);
@@ -623,6 +630,21 @@ describe('properties', () => {
     );
   });
 });
+
+/**
+ * Does the region a mouth closes hold any water? The walked shore of `side` (its ring less the
+ * straight chord that closes it) and the arc the mouth draws from `b` back to `a`, clipped to the
+ * lake — the construction `chordSubArea` describes, built independently of it.
+ */
+function closedRegionHasWater(side: Polygon, mouth: SubAreaMouth): boolean {
+  const walk = (side.coordinates[0] as Position[]).slice(0, -1);
+  const sagittaM = clampSagitta(mouth.a, mouth.b, mouth.sagittaM);
+  const arc = chordArc(mouth.b, mouth.a, mouthArcSide(LAKE, mouth), sagittaM).map(
+    (p): Position => [p.lng, p.lat],
+  );
+  const region: Polygon = { type: 'Polygon', coordinates: [[...walk, ...arc.slice(1)]] };
+  return clipSubAreaToParent(region, LAKE, 0).ok;
+}
 
 /** Both points on one straight shore: the smaller "side" is a line, not a region. Nothing to test. */
 function degenerate(c: { sides: [Polygon, Polygon]; smaller: 0 | 1 }): boolean {
