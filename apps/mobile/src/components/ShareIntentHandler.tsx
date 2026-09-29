@@ -22,6 +22,9 @@ import { getOnScreenReport, getSheet, setSheet, updateSheet } from '../lib/sheet
 
 type Choice = 'add' | 'new' | 'cancel';
 
+/** Saves of an open sheet that keeps changing before a share gives up replacing it. */
+const PARK_TRIES = 3;
+
 /**
  * Photos shared to Gli from another app (A10-8 §8.7, founder call 2026-09-28) — Google Photos, the
  * gallery, the camera. A share opens a report with the photos on it; if the open sheet already has
@@ -100,12 +103,26 @@ export function ShareIntentHandler() {
         );
         return;
       }
-      const parking = await parkForNewDoor(getSheet(), Date.now(), saveSheetAsDraft);
-      if (parking.kind === 'held') {
-        // What is open can't be set aside (an edit with unsaved changes, a draft that won't save):
-        // the built report goes, and the one door left is offered.
-        if ((await ask(photos.length, parking.message, false)) === 'add') await addToOpen(photos);
-        return;
+      // Set aside what is open — and again if it changed while it was being saved (the save copies
+      // photos, which takes a moment the person can type through): only a sheet whose every edit is
+      // in Drafts is replaced. One that will not hold still is left on screen, and says so.
+      for (let tries = 0; ; tries += 1) {
+        const before = getSheet();
+        const parking = await parkForNewDoor(before, Date.now(), saveSheetAsDraft);
+        if (parking.kind === 'held') {
+          // What is open can't be set aside (an edit with unsaved changes, a draft that won't
+          // save): the built report goes, and the one door left is offered.
+          if ((await ask(photos.length, parking.message, false)) === 'add') await addToOpen(photos);
+          return;
+        }
+        if (getSheet() === before) break;
+        if (tries >= PARK_TRIES) {
+          Alert.alert(
+            'Your report is still changing',
+            'Share the photos again once you have finished, and they will open in a new report.',
+          );
+          return;
+        }
       }
       setSheet(sheet);
       router.navigate(doorHref({ share: sheet.draftId }));

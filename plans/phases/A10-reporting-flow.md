@@ -1316,6 +1316,12 @@ permanent storage, which leaked wherever no draft followed (an edit, a replaced 
 leaves the files in the processing cache as the picker always did, and *Save draft* copies them.
 And the grid's rail ran into the hour after a skate that ended on the hour; hours are half-open.
 
+The fourth pass (on the merge of `main`) found the handler's own version of a window the Report
+tab's doors have always had: parking saves a snapshot, and the save copies photos, so an edit typed
+meanwhile was in neither the draft nor the share's new sheet. The handler now parks again if the
+sheet changed under the save, and after three tries leaves it on screen and says so. The tab's own
+doors keep the window (A10-3); it is narrower there, since a door is the person's own tap.
+
 ### Owed
 
 - ~~The Google OAuth client~~ — **done 2026-09-28** (founder): *Skating App – Photos*, a Web
