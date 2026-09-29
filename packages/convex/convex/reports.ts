@@ -22,6 +22,7 @@ import {
   type RecommendableReport,
   resolveSeason,
   type Season,
+  type Sighting,
   type SurfaceTag,
   seasonEndMs,
   seasonOf,
@@ -525,7 +526,9 @@ export const update = mutation({
       subAreaNames: subAreas.subAreaNames,
       skateEndPrecision: n.skateEndPrecision,
       observedFrom: n.observedFrom,
-      sighting: n.sighting,
+      sightings: n.sightings,
+      // Any edit writes the D210 list; a row it lands on mid-backfill loses its legacy copy with it.
+      sighting: undefined,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,
@@ -719,6 +722,7 @@ export function a10ShapePatch(report: Doc<'reports'>): Partial<Doc<'reports'>> |
     iceTypes: ChipInput<IceType>[];
     surfaceTags: ChipInput<SurfaceTag>[];
     snowCoverCm?: number;
+    sighting?: Sighting;
   };
   const patch: Record<string, unknown> = {};
   if (legacy.iceTypes.some((chip) => typeof chip === 'string')) {
@@ -734,6 +738,12 @@ export function a10ShapePatch(report: Doc<'reports'>): Partial<Doc<'reports'>> |
         ? report.snow
         : { ...(report.snow ?? {}), depthCm: legacy.snowCoverCm };
     patch.snowCoverCm = undefined;
+  }
+  if (legacy.sighting !== undefined) {
+    // D210 (A10-9): the single sighting joins the located list. A row with both (an edit under the
+    // widened schema) keeps its list — the edit wrote the author's current answer.
+    patch.sightings = report.sightings ?? [{ type: legacy.sighting }];
+    patch.sighting = undefined;
   }
   return Object.keys(patch).length > 0 ? (patch as Partial<Doc<'reports'>>) : null;
 }

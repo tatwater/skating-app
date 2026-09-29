@@ -226,7 +226,7 @@ describe('buildFeedCardView', () => {
     const plain = buildFeedCardView(CARD, now);
     expect(plain.suitabilityLabel).toBeNull();
     expect(plain.vantageLabel).toBeNull();
-    expect(plain.sightingLabel).toBeNull();
+    expect(plain.sightingLabels).toEqual([]);
     expect(plain.isDontGo).toBe(false);
     const onIce = buildFeedCardView({ ...CARD, observedFrom: 'on_ice' }, now);
     expect(onIce.vantageLabel).toBeNull(); // the default says nothing a reader needs
@@ -237,7 +237,19 @@ describe('buildFeedCardView', () => {
     expect(shore.suitabilityLabel).toBe("Don't go");
     expect(shore.isDontGo).toBe(true);
     expect(shore.vantageLabel).toBe('From shore');
-    expect(shore.sightingLabel).toBe('Still open');
+    expect(shore.sightingLabels).toEqual(['Still open']);
+    const located = buildFeedCardView(
+      {
+        ...CARD,
+        observedFrom: 'on_ice',
+        sightings: [
+          { type: 'open', where: { sector: 'S' } },
+          { type: 'frozen', where: { extent: 'large_areas' } },
+        ],
+      },
+      now,
+    );
+    expect(located.sightingLabels).toEqual(['Still open, south end', 'Frozen over, large areas']);
     expect(buildFeedCardView({ ...CARD, observedFrom: 'secondhand' }, now).vantageLabel).toBe(
       'Secondhand',
     );

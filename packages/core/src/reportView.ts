@@ -156,6 +156,14 @@ export const SIGHTING_LABELS: Record<Sighting, string> = {
   snow_covered: 'Snow-covered',
 };
 
+/** The where question a sighting asks (D210) — a state, so not "where is the still open?". */
+export const SIGHTING_WHERE_QUESTIONS: Record<Sighting, string> = {
+  open: 'Where was it still open?',
+  skim: 'Where was the skim ice?',
+  frozen: 'Where was it frozen over?',
+  snow_covered: 'Where was it snow-covered?',
+};
+
 export const SKY_LABELS: Record<SkyCondition, string> = {
   clear: 'Clear',
   partly_cloudy: 'Partly cloudy',

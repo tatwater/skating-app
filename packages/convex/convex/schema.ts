@@ -2085,9 +2085,15 @@ export default defineSchema({
      */
     observedFrom: v.optional(literals(OBSERVED_FROM)),
     /**
-     * What a shore observer saw (A10 / D189): still open, skim, frozen over, snow-covered — the
-     * scouting substitute for a surface chip. Valid only when `observedFrom` is not `on_ice`
-     * (enforced by `validateReportInput`, never assumed by a reader).
+     * What the author saw rather than skated (A10 / D189, located by D210): still open, skim,
+     * frozen over, snow-covered, each with an optional `where`. From shore or secondhand any
+     * sighting; from the ice only one located to a part of the body (`sightingAllowedFrom`, enforced
+     * by `validateReportInput`, never assumed by a reader). Written only when non-empty.
+     */
+    sightings: v.optional(v.array(locatedChip(SIGHTINGS))),
+    /**
+     * The pre-D210 single sighting. Widened beside `sightings`, lifted into it by
+     * `reports.backfillA10Shapes`, then narrowed away — the A10-1 sequence again.
      */
     sighting: v.optional(literals(SIGHTINGS)),
     // --- Ice description (surface, NOT a safety verdict, D3) ---

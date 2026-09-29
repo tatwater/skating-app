@@ -291,7 +291,7 @@ describe('reports.create', () => {
     expect(r?.iceTypes[0]?.where?.subAreaId).toBe(ownBay);
   });
 
-  test('a sighting from the ice is rejected at the trust boundary (D189)', async () => {
+  test('a whole-body sighting from the ice is rejected at the trust boundary (D189, D210)', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
@@ -304,6 +304,7 @@ describe('reports.create', () => {
         sighting: 'open',
       }),
     ).rejects.toThrow(/sighting/);
+    // The pre-D210 single sighting still posts from shore, stored as the list.
     const fromShore = await asUser.mutation(api.reports.create, {
       ...OBSERVED,
       waterBodyId: id,
@@ -312,7 +313,18 @@ describe('reports.create', () => {
       sighting: 'open',
     });
     const r = await t.run((ctx) => ctx.db.get(fromShore));
-    expect(r?.sighting).toBe('open');
+    expect(r?.sightings).toEqual([{ type: 'open' }]);
+    expect(r?.sighting).toBeUndefined();
+    // From the ice, a part of the lake the author saw but did not skate.
+    const located = await asUser.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      observedFrom: 'on_ice',
+      sightings: [{ type: 'open', where: { sector: 'S' } }],
+    });
+    const l = await t.run((ctx) => ctx.db.get(located));
+    expect(l?.sightings).toEqual([{ type: 'open', where: { sector: 'S' } }]);
   });
 
   test('honors a dropped put-in pin as the report point', async () => {

@@ -5973,6 +5973,10 @@ create — the sheet, the pre-sheet forms on both surfaces, and the offline queu
 one path (`lib/reportWrite.ts`) and one sentence (`minimumSetMessage`), so no two entrances answer
 the rule differently. The pre-sheet forms ask it client-side before posting and say what to add.
 
+**Amended 2026-09-29 (D210):** the scouting term is now any of the Report's **located sightings**,
+and a sighting is no longer from-shore only — from the ice it may name a part of the body the author
+saw but did not skate.
+
 **Why:** the founder wants the structured data that helps other skaters without making the
 no-AI path hostile. Making the floor identical regardless of engine means opting out costs four
 taps, not the ability to write. The set may be tuned as the flow is used.
@@ -6405,3 +6409,35 @@ a hazard, which is the dangerous direction of error. A `large_areas` claim does 
 (`whereCoversBody`), exactly like `patches`. The sheet's where-picker offers it as *Large areas*.
 
 **Related:** D193, `where.ts`.
+
+## D210 — A sighting is located, and the ice may see a part of the lake; a Report stays one vantage (A10-9)
+
+**Decided (2026-09-29, from the founder's first verified eval labels; the founder left the shape to
+this build, open to a larger refactor).** `reports.sighting` (one value, off the ice only) becomes
+`reports.sightings`: a list of `{ type, where?, note? }` like the located chips, labeled *Still
+open, south end*. From shore or secondhand any sighting may be given, located or not. **From the ice
+a sighting must be located to a part of the body that does not cover it** (`sightingAllowedFrom`,
+`whereCoversBody`) — the open south end seen from the road on the way to a north launch, the ice
+"from Rocky Point to Kimball's Point" beside the stretch the author drilled. A whole-body sighting
+from the ice is still refused: that is a surface chip. The sheet offers the row from every vantage;
+from the ice it reads *What did you see but not skate?* and a tap opens the where question at once,
+the one chip whose where is required.
+
+**The Report stays the observation unit: one body, one visit, one vantage, one time.** The founder
+asked whether a Post › Report › Observation hierarchy, with a vantage and a time per observation,
+would model the email corpus better. It would add nothing a Report does not already carry — a
+different time is already a different Report (the fisher's "open water yesterday" is a secondhand
+Report on yesterday), and a different place is already a `where` on the value. What was missing
+was a way to say *seen, not skated* for part of a lake, and a located sighting says exactly that.
+Per-value vantage was the other candidate and was rejected: it needs a vantage control on every
+chip on both surfaces, or an extracted value the author cannot correct, which D196 forbids.
+
+**Dangerous states seen at a distance stay hazards.** Open water or skim at the south end is also
+an `open_water` / `thin_ice` hazard with a `where` — map-visible, decaying, warning (D3,
+safety-first); the sighting is the reader's line, the hazard is the pin.
+
+**Mechanics:** widened beside `sighting`, lifted by `reports.backfillA10Shapes`, narrowed away; the
+mutation args accept the single `sighting` forever (an un-updated phone, a queued draft) and refuse
+a client that sends both. The feed card and the detail show every sighting with its place.
+
+**Related:** D3, D189 (amended), D191, D193, D196.

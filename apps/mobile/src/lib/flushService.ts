@@ -56,7 +56,7 @@ import {
  * Map one core report input to `posts.create`'s inline Report args (branded Convex ids reapplied).
  *
  * The content goes through **whole**: the wire args are core's `ReportInput` plus the ids, so
- * every field the sheet serializes — the vantage, the sighting, the suitability, the D194 snow
+ * every field the sheet serializes — the vantage, the sightings, the suitability, the D194 snow
  * object, the end time's precision, the put-in — reaches the server. An earlier version listed the
  * fields by name and silently dropped what it did not list (a queued draft's snow depth never
  * posted); naming them again is how the next field goes missing.

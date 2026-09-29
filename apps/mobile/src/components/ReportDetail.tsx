@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   describeLocatedChip,
+  describeSighting,
   describeSnow,
   formatConditions,
   formatLocationLine,
@@ -13,10 +14,10 @@ import {
   OBSERVED_FROM_LABELS,
   type ReportConditions,
   reportStripState,
-  SIGHTING_LABELS,
   SKATE_QUALITY_LABELS,
   SUITABILITY_LABELS,
   seasonOf,
+  sightingsOf,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
@@ -174,11 +175,12 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       </YStack>
 
       {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment;
-          then the vantage when it was not the ice (D191), and what a shore observer saw. */}
+          then the vantage when it was not the ice (D191), and what the author saw rather than
+          skated, each where it was (D210). */}
       {report.suitability ||
       report.skateQuality ||
       (report.observedFrom && report.observedFrom !== 'on_ice') ||
-      report.sighting ||
+      sightingsOf(report).length > 0 ||
       report.conflicting ? (
         <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
           {report.suitability ? (
@@ -192,7 +194,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {report.observedFrom && report.observedFrom !== 'on_ice' ? (
             <Badge>{OBSERVED_FROM_LABELS[report.observedFrom]}</Badge>
           ) : null}
-          {report.sighting ? <Badge>{SIGHTING_LABELS[report.sighting]}</Badge> : null}
+          {sightingsOf(report).map((s) => {
+            const line = describeSighting(s, report.bayNames);
+            return <Badge key={line}>{line}</Badge>;
+          })}
           {report.conflicting ? <Badge>Conflicting reports</Badge> : null}
         </XStack>
       ) : null}

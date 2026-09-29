@@ -44,6 +44,8 @@ const FIELDS: { key: string; label: string; claim: boolean }[] = [
   { key: 'skateQuality', label: 'How was it?', claim: true },
   { key: 'suitability', label: 'Who is it for?', claim: true },
   { key: 'observedFrom', label: 'How did you see it?', claim: true },
+  { key: 'sightings', label: 'What did you see?', claim: true },
+  // A revision snapshotted before D210 holds the single sighting; kept so its history still reads.
   { key: 'sighting', label: 'What did you see?', claim: true },
   { key: 'skateEndTime', label: 'Off the ice', claim: true },
   { key: 'skateStartTime', label: 'On the ice', claim: false },
@@ -101,7 +103,7 @@ export function describeRevisionValue(
     const scope = block.scope === undefined ? '' : ` — ${block.scope.replace(/_/g, ' ')}`;
     return `${readings.join('; ')}${scope}`;
   }
-  if (field === 'iceTypes' || field === 'surfaceTags') {
+  if (field === 'iceTypes' || field === 'surfaceTags' || field === 'sightings') {
     const list = Array.isArray(value) ? value : [];
     if (list.length === 0) return null;
     return list

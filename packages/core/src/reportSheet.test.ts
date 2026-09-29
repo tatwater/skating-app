@@ -500,7 +500,7 @@ describe('sections', () => {
         value: 'not_for_beginners',
       },
       { type: 'select', field: 'observedFrom', key: 'shore', value: 'shore' },
-      { type: 'select', field: 'sighting', key: 'open', value: 'open' },
+      { type: 'select', field: 'sightings', key: 'open', value: { type: 'open' } },
       { type: 'select', field: 'endTime', key: 'p', value: { ms: OPENED, precision: 'half_hour' } },
       {
         type: 'select',
@@ -746,7 +746,7 @@ describe('sheetFromReport (the edit door, §4.1)', () => {
       skateEndPrecision: 'gps',
       skateStartTime: stored.skateStartTime,
       observedFrom: 'shore',
-      sighting: 'frozen',
+      sightings: [{ type: 'frozen' }],
       iceTypes: [
         { type: 'black_ice', where: { sector: 'N' } },
         { type: 'black_ice', where: { sector: 'S' } },

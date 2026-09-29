@@ -11,6 +11,8 @@ export interface WhereCard {
   /** `field:key`, stable across renders. */
   id: string;
   label: string;
+  /** The card's question when "Where is the {label}?" does not read — a sighting is a state (D210). */
+  question?: string;
   where: Where | undefined;
   onChange: (where: Where | undefined) => void;
 }
@@ -87,7 +89,7 @@ export function WhereCards({
 
   return (
     <QuestionBlock
-      title={`Where is the ${active.label.toLowerCase()}?`}
+      title={active.question ?? `Where is the ${active.label.toLowerCase()}?`}
       onDone={onClose}
       extra={
         <>

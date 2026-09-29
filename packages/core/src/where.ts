@@ -19,12 +19,13 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
-import { humanizeEnum } from './reportView';
+import { humanizeEnum, SIGHTING_LABELS } from './reportView';
 import {
   BAY_SECTORS,
   COMPASS_SECTORS,
   SECTORS,
   type Sector,
+  type Sighting,
   WHERE_EXTENTS,
   type WhereExtent,
 } from './types';
@@ -184,6 +185,19 @@ export function describeLocatedChip(
 ): string {
   const label = humanizeEnum(chip.type);
   const where = chip.where ? describeWhere(chip.where, bayNames) : '';
+  return where ? `${label}, ${where}` : label;
+}
+
+/**
+ * A sighting's line — "Still open, south end" (D210): the reader's label for the state, then the
+ * place when the author gave one. A card and a detail both say it this way.
+ */
+export function describeSighting(
+  sighting: { type: Sighting; where?: Where },
+  bayNames?: Readonly<Record<string, string>>,
+): string {
+  const label = SIGHTING_LABELS[sighting.type];
+  const where = sighting.where ? describeWhere(sighting.where, bayNames) : '';
   return where ? `${label}, ${where}` : label;
 }
 

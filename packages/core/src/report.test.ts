@@ -5,6 +5,7 @@ import {
   locatedSubAreaIds,
   minimumSetGaps,
   type ReportInput,
+  SIGHTING_FROM_ICE_MESSAGE,
   SKATE_TIME_FUTURE_TOLERANCE_MS,
   sightingAllowedFrom,
   type ThicknessReadingInput,
@@ -414,19 +415,60 @@ describe('validateReportInput — How was it? and provenance (D190, D191)', () =
     );
   });
 
-  it('a sighting is only for a report from shore or secondhand', () => {
+  it('lifts the pre-D210 single sighting into the list, for a report from shore or secondhand', () => {
     const shore = validateReportInput(base({ observedFrom: 'shore', sighting: 'open' }), CTX);
     expect(shore.ok).toBe(true);
-    if (shore.ok) expect(shore.normalized.sighting).toBe('open');
+    if (shore.ok) expect(shore.normalized.sightings).toEqual([{ type: 'open' }]);
     const relayed = validateReportInput(
       base({ observedFrom: 'secondhand', sighting: 'skim' }),
       CTX,
     );
     expect(relayed.ok).toBe(true);
-    expect(fieldsOf(base({ sighting: 'frozen' }))).toContain('sighting');
-    expect(fieldsOf(base({ observedFrom: 'on_ice', sighting: 'frozen' }))).toContain('sighting');
+    expect(fieldsOf(base({ sighting: 'frozen' }))).toContain('sightings');
+    expect(fieldsOf(base({ observedFrom: 'on_ice', sighting: 'frozen' }))).toContain('sightings');
     expect(fieldsOf(base({ observedFrom: 'shore', sighting: 'melted' as never }))).toContain(
-      'sighting',
+      'sighting[0]',
+    );
+    expect(
+      fieldsOf(base({ observedFrom: 'shore', sighting: 'open', sightings: [{ type: 'open' }] })),
+    ).toContain('sighting');
+  });
+
+  it('takes located sightings from any vantage, but from the ice only for a part of the body (D210)', () => {
+    const shore = validateReportInput(
+      base({
+        observedFrom: 'shore',
+        sightings: [{ type: 'open', where: { sector: 'S' } }, 'frozen'],
+      }),
+      CTX,
+    );
+    expect(shore.ok).toBe(true);
+    if (shore.ok)
+      expect(shore.normalized.sightings).toEqual([
+        { type: 'open', where: { sector: 'S' } },
+        { type: 'frozen' },
+      ]);
+    // Willoughby: on the ice at the north launch, the south end open as seen from the road.
+    const onIce = validateReportInput(
+      base({ observedFrom: 'on_ice', sightings: [{ type: 'open', where: { sector: 'S' } }] }),
+      CTX,
+    );
+    expect(onIce.ok).toBe(true);
+    // The whole body, or a qualifier that still covers it, is a surface chip from the ice.
+    const errs = (sightings: ReportInput['sightings']) =>
+      validateReportInput(base({ observedFrom: 'on_ice', sightings }), CTX);
+    for (const whole of [
+      [{ type: 'frozen' as const }],
+      [{ type: 'frozen' as const, where: { extent: 'mostly' as const } }],
+    ]) {
+      const r = errs(whole);
+      expect(r.ok).toBe(false);
+      if (!r.ok)
+        expect(r.errors).toContainEqual({ field: 'sightings', message: SIGHTING_FROM_ICE_MESSAGE });
+    }
+    expect(errs([{ type: 'frozen', where: { extent: 'large_areas' } }]).ok).toBe(true);
+    expect(fieldsOf(base({ sightings: [{ type: 'open', where: { sector: 'N' } }] }))).toContain(
+      'sightings',
     );
   });
 });
@@ -556,6 +598,8 @@ describe('minimumSetGaps (D189)', () => {
       [],
     );
     expect(minimumSetGaps({ ...full, iceTypes: [], sighting: 'open' }, 0)).toEqual([]);
+    expect(minimumSetGaps({ ...full, iceTypes: [], sightings: [{ type: 'open' }] }, 0)).toEqual([]);
+    expect(minimumSetGaps({ ...full, iceTypes: [], sightings: [] }, 0)).toEqual(['observation']);
   });
 
   it('names every missing term, in sheet order', () => {
@@ -597,12 +641,16 @@ describe('isValidThicknessReading — the one rule, for a caller that builds rea
   });
 });
 
-describe('sightingAllowedFrom (D189)', () => {
-  it('is the validator’s rule: shore or secondhand only, never unstated', () => {
+describe('sightingAllowedFrom (D189, D210)', () => {
+  it('is the validator’s rule: any from shore or secondhand, a part of the body from the ice, never unstated', () => {
     expect(sightingAllowedFrom('shore')).toBe(true);
     expect(sightingAllowedFrom('secondhand')).toBe(true);
     expect(sightingAllowedFrom('on_ice')).toBe(false);
+    expect(sightingAllowedFrom('on_ice', { extent: 'mostly' })).toBe(false);
+    expect(sightingAllowedFrom('on_ice', { sector: 'S' })).toBe(true);
+    expect(sightingAllowedFrom('on_ice', { extent: 'patches' })).toBe(true);
     expect(sightingAllowedFrom(undefined)).toBe(false);
+    expect(sightingAllowedFrom(undefined, { sector: 'S' })).toBe(false);
   });
 });
 

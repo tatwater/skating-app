@@ -175,8 +175,9 @@ hazard additions of 2026-07-21.
   the estimate is lower-trust by construction; a `poke` keeps its count and the skater's own inch
   guess separately (D195). **Thickness scope**: `everywhere_tested` · `at_spot`.
 - **How it was seen** (D191, `OBSERVED_FROM`): `on_ice` · `shore` · `secondhand` — provenance the
-  reader sees, never a report kind. **Sighting** (D189, from shore only): `open` · `skim` ·
-  `frozen` · `snow_covered`. **End-time precision** (D192): `gps` · `minute` · `half_hour` — no
+  reader sees, never a report kind. **Sighting** (D189, located by D210 — `reports.sightings`, a
+  list like the chips): `open` · `skim` · `frozen` · `snow_covered`; any from shore or secondhand,
+  and from the ice only one whose `where` names a part of the body the author did not skate. **End-time precision** (D192): `gps` · `minute` · `half_hour` — no
   part-of-day value on purpose.
 - **Snow** (D194): coverage `none` · `patches` · `lanes` · `mostly` · `everywhere`; impediment
   `didnt_matter` · `slowed_me` · `avoided_areas`; drifts `none` · `avoidable` · `everywhere`; plus

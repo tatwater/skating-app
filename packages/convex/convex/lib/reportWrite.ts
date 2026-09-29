@@ -84,8 +84,12 @@ export const reportContent = {
   skateStartTime: v.optional(v.number()),
   // How exact the end time is (A10 / D192). Absent from a client that predates the sheet.
   skateEndPrecision: v.optional(literals(SKATE_END_PRECISIONS)),
-  // How the author saw it (A10 / D191); what a shore observer saw (D189). Absent means unstated.
+  // How the author saw it (A10 / D191). Absent means unstated.
   observedFrom: v.optional(literals(OBSERVED_FROM)),
+  // What the author saw rather than skated (D189, D210): located, like the chips. The single
+  // pre-D210 `sighting` stays accepted forever (an un-updated phone, a queued draft) — the validator
+  // lifts it into the list and refuses a client that sends both.
+  sightings: v.optional(v.array(chipInput(SIGHTINGS))),
   sighting: v.optional(literals(SIGHTINGS)),
   // Chips arrive as the bare key (an un-updated phone, a queued draft, the quick-tap path) or the
   // located object (A10 / D193); the core validator lifts every one to the object the schema stores.
@@ -128,6 +132,7 @@ export function toReportInput(
     skateStartTime?: number;
     skateEndPrecision?: ReportInput['skateEndPrecision'];
     observedFrom?: ReportInput['observedFrom'];
+    sightings?: ReportInput['sightings'];
     sighting?: ReportInput['sighting'];
     iceTypes?: ReportInput['iceTypes'];
     surfaceTags?: ReportInput['surfaceTags'];
@@ -149,6 +154,7 @@ export function toReportInput(
     skateStartTime: args.skateStartTime,
     skateEndPrecision: args.skateEndPrecision,
     observedFrom: args.observedFrom,
+    sightings: args.sightings,
     sighting: args.sighting,
     iceTypes: args.iceTypes,
     surfaceTags: args.surfaceTags,
@@ -345,7 +351,7 @@ export async function createReportRow(
     ...(putInId !== undefined ? { putInId } : {}),
     ...(n.skateEndPrecision !== undefined ? { skateEndPrecision: n.skateEndPrecision } : {}),
     ...(n.observedFrom !== undefined ? { observedFrom: n.observedFrom } : {}),
-    ...(n.sighting !== undefined ? { sighting: n.sighting } : {}),
+    ...(n.sightings !== undefined ? { sightings: n.sightings } : {}),
     iceTypes: n.iceTypes,
     surfaceTags: n.surfaceTags,
     ...(n.skateQuality !== undefined ? { skateQuality: n.skateQuality } : {}),
