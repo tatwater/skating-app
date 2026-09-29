@@ -106,7 +106,7 @@ export function PhotosSection({
     if (!window) return;
     setReelState('loading');
     try {
-      const photos = await libraryPhotos(window, { offset: 0, limit: REEL_MAX });
+      const { photos } = await libraryPhotos(window, { offset: 0, limit: REEL_MAX });
       setReel(photos);
       setReelState(photos.length === 0 ? 'none' : 'idle');
     } catch {
@@ -210,10 +210,23 @@ export function PhotosSection({
     try {
       const assets = await pickPhotos();
       if (assets.length === 0) return;
-      const drafts: DraftPhoto[] = await Promise.all(
+      // Each on its own: one that will not read costs itself, and what landed stays (its files are
+      // already copied for the draft).
+      const settled = await Promise.allSettled(
         assets.map((asset) => toDraftPhoto(asset, { outline, track: trackPoints })),
       );
-      setReport((r) => ({ ...r, photos: [...r.photos, ...drafts] }));
+      const drafts: DraftPhoto[] = settled.flatMap((s) =>
+        s.status === 'fulfilled' ? [s.value] : [],
+      );
+      if (drafts.length > 0) setReport((r) => ({ ...r, photos: [...r.photos, ...drafts] }));
+      const missed = settled.length - drafts.length;
+      if (missed > 0) {
+        setError(
+          missed === 1
+            ? "One photo couldn't be read. The rest were added."
+            : `${missed} photos couldn't be read. The rest were added.`,
+        );
+      }
     } catch {
       setError("Couldn't add those photos — try again.");
     } finally {

@@ -15,7 +15,7 @@ import { getTrack } from '../lib/draftStore';
 import { readSharedPhotos, type SharedPhoto, stageShare } from '../lib/sharedPhotoFiles';
 import { doorHref } from '../lib/sheetDoors';
 import { toDraftPhoto } from '../lib/sheetPhotos';
-import { getOnScreenReport, getSheet, updateSheet } from '../lib/sheetStore';
+import { getOnScreenReport, getSheet, updateSheet, waitForSheet } from '../lib/sheetStore';
 
 /**
  * Photos shared to Gli from another app (A10-8 §8.7, founder call 2026-09-28) — Google Photos, the
@@ -55,8 +55,7 @@ export function ShareIntentHandler() {
     function land(photos: SharedPhoto[]): Promise<void> {
       const open = getSheet();
       if (open === null || shareLanding(open) === 'new') {
-        openNew(photos);
-        return Promise.resolve();
+        return openNew(photos);
       }
       const n = photos.length;
       const title = n === 1 ? 'Add this photo' : `Add ${n} photos`;
@@ -71,7 +70,14 @@ export function ShareIntentHandler() {
             : `To the report you have open (${sheetLabel(open)}), or to a new one?`,
           [
             { text: 'Cancel', style: 'cancel', onPress: () => resolve() },
-            ...(editing ? [] : [{ text: 'New report', onPress: () => resolve(openNew(photos)) }]),
+            ...(editing
+              ? []
+              : [
+                  {
+                    text: 'New report',
+                    onPress: () => void openNew(photos).finally(() => resolve()),
+                  },
+                ]),
             {
               text: 'Add to this one',
               onPress: () => void addToOpen(photos).finally(() => resolve()),
@@ -82,10 +88,19 @@ export function ShareIntentHandler() {
       });
     }
 
-    function openNew(photos: SharedPhoto[]): void {
+    /**
+     * Stage the share and open its door — and wait for that door's sheet, so a share queued behind
+     * this one asks about the report this one opened, not the one before it.
+     */
+    function openNew(photos: SharedPhoto[]): Promise<void> {
       const id = randomUUID();
+      const before = getSheet();
       stageShare(id, photos);
       router.navigate(doorHref({ share: id }));
+      return waitForSheet(
+        (s) => s !== null && s.door === 'share' && s.draftId !== before?.draftId,
+        10_000,
+      );
     }
 
     async function addToOpen(photos: SharedPhoto[]): Promise<void> {

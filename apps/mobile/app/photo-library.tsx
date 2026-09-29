@@ -14,15 +14,23 @@ import { Button, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 import { SheetChip } from '../src/components/sheet/SheetChip';
 import { deleteDraftPhotoFiles, isPersistedUri } from '../src/lib/draftPhotos';
 import { getLibraryGridRequest, getPicks, setPicks } from '../src/lib/libraryPicks';
-import { type LibraryItem, libraryPhotos, readLibraryPhoto } from '../src/lib/photoLibrary';
+import {
+  allLibraryPhotos,
+  type LibraryItem,
+  libraryPhotos,
+  readLibraryPhoto,
+} from '../src/lib/photoLibrary';
 import { toDraftPhoto } from '../src/lib/sheetPhotos';
 import { getSheet, updateSheet } from '../src/lib/sheetStore';
 
 /** A page of the library, three columns deep. */
 const PAGE = 90;
 const COLUMNS = 3;
-/** *Select all from the skate* reads the skate's window whole — bounded, a skate is hours. */
-const SKATE_MAX = 500;
+/**
+ * *Select all from the skate* pages through the skate's window — bounded, a skate is hours; past the
+ * bound it says so rather than stopping quietly.
+ */
+const SKATE_MAX = 2_000;
 
 type GridPhoto = LibraryItem & { id: string };
 type Row = GridPhoto[];
@@ -41,12 +49,15 @@ export default function PhotoLibraryScreen() {
   const [scope, setScope] = useState<'skate' | 'day'>(request?.skateWindow ? 'skate' : 'day');
   const window = request ? (scope === 'skate' ? request.skateWindow : request.dayWindow) : null;
   const [items, setItems] = useState<GridPhoto[]>([]);
+  // Rows the library returned so far — the next page's offset (tiles that would not draw included).
+  const scanned = useRef(0);
   const [exhausted, setExhausted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
   const [preview, setPreview] = useState<GridPhoto | null>(null);
   const [missed, setMissed] = useState(0);
+  const [capped, setCapped] = useState(false);
   // What is on the Report now, by asset — those open checked.
   const readIncluded = useCallback((): Record<string, string> => {
     if (!request) return {};
@@ -69,19 +80,20 @@ export default function PhotoLibraryScreen() {
       setLoading(true);
       setFailed(false);
       try {
-        const offset = reset ? 0 : items.length;
+        const offset = reset ? 0 : scanned.current;
         const page = await libraryPhotos(window, { offset, limit: PAGE });
         if (id !== loadId.current) return;
-        const tagged = page.map((p) => ({ ...p, id: p.assetId }));
+        scanned.current = offset + page.scanned;
+        const tagged = page.photos.map((p) => ({ ...p, id: p.assetId }));
         setItems((prev) => (reset ? tagged : [...prev, ...tagged]));
-        setExhausted(page.length < PAGE);
+        setExhausted(page.scanned < PAGE);
       } catch {
         if (id === loadId.current) setFailed(true);
       } finally {
         if (id === loadId.current) setLoading(false);
       }
     },
-    [window, items.length],
+    [window],
   );
   // A new scope is a new list.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reloads on the scope's window only.
@@ -111,12 +123,13 @@ export default function PhotoLibraryScreen() {
   const selectSkate = async () => {
     if (!request?.skateWindow) return;
     try {
-      const skate = await libraryPhotos(request.skateWindow, { offset: 0, limit: SKATE_MAX });
+      const skate = await allLibraryPhotos(request.skateWindow, SKATE_MAX);
       const ids = photoIdsInWindow(
-        skate.map((p) => ({ id: p.assetId, takenAtMs: p.takenAtMs })),
+        skate.photos.map((p) => ({ id: p.assetId, takenAtMs: p.takenAtMs })),
         request.skateWindow,
       );
       setSelected((s) => new Set([...s, ...ids]));
+      setCapped(!skate.complete);
     } catch {
       setFailed(true);
     }
@@ -289,6 +302,11 @@ export default function PhotoLibraryScreen() {
         {failed ? (
           <Paragraph color="$danger" paddingHorizontal="$3">
             Couldn't read your library just now.
+          </Paragraph>
+        ) : null}
+        {capped ? (
+          <Paragraph color="$foregroundMuted" paddingHorizontal="$3">
+            {`Selected the first ${SKATE_MAX.toLocaleString('en-US')} photos from the skate — choose the rest by hand.`}
           </Paragraph>
         ) : null}
         {missed > 0 ? (

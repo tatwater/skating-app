@@ -72,12 +72,14 @@ export interface LibraryItem {
 /**
  * The library's photos in a window, oldest first — one page. Metadata first (cheap, from the media
  * store), then a displayable uri per item on the page; the grid pages, so this never reads the
- * whole library.
+ * whole library. `scanned` is how many rows the library returned, which is what a next page's
+ * offset and the end of the list are counted in: a tile that would not resolve is left out of
+ * `photos`, and counting only those would stop the grid short and skew the next page.
  */
 export async function libraryPhotos(
   window: ActivityWindow,
   page: { offset: number; limit: number },
-): Promise<LibraryItem[]> {
+): Promise<{ photos: LibraryItem[]; scanned: number }> {
   const rows = await new MediaLibrary.Query()
     .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.IMAGE)
     .gte(MediaLibrary.AssetField.CREATION_TIME, window.startMs)
@@ -98,7 +100,27 @@ export async function libraryPhotos(
       uri: await new MediaLibrary.Asset(r.id).getUri(),
     })),
   );
-  return settled.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : []));
+  return {
+    photos: settled.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : [])),
+    scanned: rows.length,
+  };
+}
+
+/** Every photo in a window, page by page, up to `max` — *Select all from the skate*. */
+export async function allLibraryPhotos(
+  window: ActivityWindow,
+  max: number,
+): Promise<{ photos: LibraryItem[]; complete: boolean }> {
+  const PAGE = 200;
+  const photos: LibraryItem[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await libraryPhotos(window, { offset, limit: PAGE });
+    photos.push(...page.photos);
+    offset += page.scanned;
+    if (page.scanned < PAGE) return { photos, complete: true };
+    if (offset >= max) return { photos, complete: false };
+  }
 }
 
 /**

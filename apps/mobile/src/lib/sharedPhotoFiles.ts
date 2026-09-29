@@ -65,17 +65,32 @@ export async function readSharedPhotos(files: readonly ShareIntentFile[]): Promi
   return out;
 }
 
-let staged: { id: string; photos: SharedPhoto[] } | null = null;
+/**
+ * Staged shares by their door's id. Keyed, not one slot: two shares in quick succession each open
+ * their own door, and the second must not overwrite the first before its door reads it.
+ */
+const staged = new Map<string, SharedPhoto[]>();
 
-/** Stage a share for its door. The next share replaces it. */
+/** Kept at most — a share whose door never opened is not held forever. */
+const MAX_STAGED = 8;
+
 export function stageShare(id: string, photos: SharedPhoto[]): void {
-  staged = { id, photos };
+  staged.set(id, photos);
+  while (staged.size > MAX_STAGED) {
+    const oldest = staged.keys().next().value;
+    if (oldest === undefined) break;
+    staged.delete(oldest);
+  }
 }
 
 /**
- * The staged share for a door. Not consumed: a door the open sheet held back (an edit with unsaved
- * changes, a park that failed) is retried with the same id, and must still find its photos.
+ * The staged share for a door. Read, not taken: an opening that failed is retried with the same id
+ * and must still find its photos. `releaseStagedShare` once the sheet is built.
  */
 export function stagedShare(id: string): SharedPhoto[] | null {
-  return staged?.id === id ? staged.photos : null;
+  return staged.get(id) ?? null;
+}
+
+export function releaseStagedShare(id: string): void {
+  staged.delete(id);
 }

@@ -1278,6 +1278,23 @@ died on the trip to the mail app for the code; and *New report* behind a dirty e
 report tab would hold and the share would be dropped. The one not acted on is the Android
 picker's location (Owed).
 
+### The PR #80 review — what Greptile caught
+
+Five findings on the first pass, all fixed in one commit. Two were data loss:
+
+- **The grid stopped short, and its pages skewed.** A tile whose uri would not resolve left the
+  page, so a page read short and the grid marked itself done; the next page's offset was the tiles
+  drawn, not the rows read. `libraryPhotos` now reports `scanned`, and the grid pages on it.
+- **A second share overwrote the first.** One staging slot, and the handler went on to the next
+  share while the first's door was still opening. Staged shares are now keyed by their door's id
+  and released once their sheet is built, and a share waits for its own door's sheet before the
+  next one asks about "the report you have open".
+
+And three P2s: *Select all from the skate* pages through the window (to 2,000, and says so past
+it); the Photos section's *Add photos* keeps the photos that landed when one fails; and a Google
+Photos pick cancelled before its state arrived, or during Google's consent, now spends the state —
+`close()` only ever removed the session.
+
 ### Owed
 
 - ~~The Google OAuth client~~ — **done 2026-09-28** (founder): *Skating App – Photos*, a Web

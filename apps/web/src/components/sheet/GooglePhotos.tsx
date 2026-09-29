@@ -29,6 +29,7 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
   const list = useAction(api.googlePhotos.list);
   const photo = useAction(api.googlePhotos.photo);
   const close = useAction(api.googlePhotos.close);
+  const abandon = useMutation(api.googlePhotos.abandon);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const run = useRef<{ state: string | null; win: Window | null; cancelled: boolean } | null>(null);
@@ -37,11 +38,15 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
     (current: NonNullable<typeof run.current>) => {
       current.cancelled = true;
       if (current.win && !current.win.closed) current.win.close();
-      if (current.state) void close({ state: current.state }).catch(() => undefined);
+      // Both halves: the session if Google's consent was given, the state if it was not yet.
+      if (current.state) {
+        void close({ state: current.state }).catch(() => undefined);
+        void abandon({ state: current.state }).catch(() => undefined);
+      }
       if (run.current === current) run.current = null;
       setPhase('idle');
     },
-    [close],
+    [close, abandon],
   );
 
   // A page left mid-pick still deletes the session.
@@ -68,7 +73,11 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
     try {
       const { state, consentUrl } = await begin({});
       current.state = state;
-      if (current.cancelled) return;
+      // Cancelled while the state was being minted: `end` had nothing to spend then, so spend it now.
+      if (current.cancelled) {
+        void abandon({ state }).catch(() => undefined);
+        return;
+      }
       win.location.href = consentUrl;
 
       for (;;) {
@@ -102,7 +111,7 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
       if (!current.cancelled) setError("Couldn't bring those photos over from Google Photos.");
       end(current);
     }
-  }, [begin, status, list, photo, end, onPhotos]);
+  }, [begin, status, list, photo, end, onPhotos, abandon]);
 
   const cancel = useCallback(() => {
     if (run.current) end(run.current);
