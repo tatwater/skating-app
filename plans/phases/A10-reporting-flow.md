@@ -1347,7 +1347,7 @@ doors keep the window (A10-3); it is narrower there, since a door is the person'
   where the Gli session is — but the phone opens that flow in an in-app browser with no Gli
   session, so it is a design call, not a patch. On the roadmap.
 
-## Built record — A10-9 (2026-09-29, `phase-a10-reporting-flow-9`)
+## Built record — A10-9 (2026-09-29, `phase-a10-reporting-flow-9`, PR #82)
 
 What the founder's first ten verified emails taught, acted on. Not a scoped PR: the founder
 reviewed ten messages in `review.html`, wrote more notes than the emails had words, and asked to go
