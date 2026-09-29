@@ -46,6 +46,13 @@ export const ACTIVITY_PROVIDERS = [
   'other',
 ] as const;
 
+/**
+ * Who an OAuth connect nonce (`oauthStates`) is for: every activity provider (Phase 08), plus
+ * `google_photos` — the web's *From Google Photos* (A10-8, D207), which is a one-hour picker
+ * session and never an activity, so it widens this list rather than `ACTIVITY_PROVIDERS`.
+ */
+export const OAUTH_PROVIDERS = [...ACTIVITY_PROVIDERS, 'google_photos'] as const;
+
 /** Lifecycle of a detected GPS skate → report prompt (D24). */
 export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dismissed'] as const;
 

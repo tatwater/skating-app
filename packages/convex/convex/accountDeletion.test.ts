@@ -979,6 +979,17 @@ describe('bucket 1 — erase (private artifacts)', () => {
         scopes: ['activity:write'],
         connectedAt: T0,
       });
+      // A *From Google Photos* pick in flight (A10-8): a live token, with an hour on the clock.
+      await ctx.db.insert('photoPickerSessions', {
+        userId: user.id,
+        state: 'leaver-pick',
+        sessionId: 'sess',
+        accessToken: 'secret',
+        pickerUri: 'https://photos.google.com/picker/sess',
+        pollIntervalMs: 5000,
+        expiresAt: Date.now() + 3_600_000,
+        createdAt: T0,
+      });
       await ctx.db.insert('notifications', {
         userId: user.id,
         type: 'favorite_report' as const,
@@ -1024,6 +1035,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
 
     const counts = await t.run(async (ctx) => ({
       connections: (await ctx.db.query('activityConnections').collect()).length,
+      picks: (await ctx.db.query('photoPickerSessions').collect()).length,
       notifications: (await ctx.db.query('notifications').collect()).length,
       queue: (await ctx.db.query('notificationQueue').collect()).length,
       favorites: (await ctx.db.query('waterBodyFavorites').collect()).length,
@@ -1033,6 +1045,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
     }));
     expect(counts).toEqual({
       connections: 0,
+      picks: 0,
       notifications: 0,
       queue: 0,
       favorites: 0,

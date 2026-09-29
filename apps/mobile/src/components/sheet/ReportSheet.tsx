@@ -33,7 +33,7 @@ import {
   saveSheetAsDraft,
   saveSheetEdit,
 } from '../../lib/sheetActions';
-import { setSheet, updateSheet, useSheet } from '../../lib/sheetStore';
+import { setOnScreenReport, setSheet, updateSheet, useSheet } from '../../lib/sheetStore';
 import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
 import { useOfflineDrafts } from '../OfflineDraftsContext';
 import { Input, TextArea } from '../ThemedInputs';
@@ -110,6 +110,7 @@ function SheetBody({
   const ordered = useMemo(() => reportsInTimeOrder(post), [post]);
   // The tab a removed Report leaves behind falls back to the first.
   const active = post.reports.find((r) => r.id === activeId) ?? post.reports[0];
+  useEffect(() => setOnScreenReport(active?.id), [active?.id]);
   useEffect(() => {
     if (active && active.id !== activeId) setActiveId(active.id);
   }, [active, activeId]);

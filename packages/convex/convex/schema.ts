@@ -80,6 +80,7 @@ import {
   NOTIFICATION_PREF_KEYS,
   NOTIFICATION_QUEUE_KINDS,
   NOTIFICATION_TYPES,
+  OAUTH_PROVIDERS,
   PARKING_SOURCES,
   PARKING_STATUSES,
   POINT_EVENT_REASONS,
@@ -360,13 +361,45 @@ export default defineSchema({
   oauthStates: defineTable({
     state: v.string(), // the opaque nonce echoed back by the provider
     userId: v.id('profiles'),
-    provider: literals(ACTIVITY_PROVIDERS),
+    provider: literals(OAUTH_PROVIDERS),
     /** Where to send the browser afterwards — the app deep link (mobile) or a web route. */
     redirectTo: v.optional(v.string()),
+    /**
+     * A Google Photos nonce (A10-8) is marked, not deleted, when its callback consumes it: the page
+     * is polling on it, and between the consume and the session's row it is *still going*, not gone.
+     * The session's write deletes it; a failed callback deletes it. Strava's are deleted on consume.
+     */
+    consumedAt: v.optional(v.number()),
     expiresAt: v.number(),
     createdAt: v.number(),
   })
     .index('by_state', ['state'])
+    .index('by_expires_at', ['expiresAt']),
+
+  /**
+   * A web *From Google Photos* in flight (A10-8 §8.6, D207): one Photos Picker session and the
+   * **one-hour access token** it runs on, keyed by the flow's `state`. There is no refresh token and
+   * no connection: each use is its own consent, and this row is deleted when the add is done or
+   * abandoned, swept once past its hour, and erased with a departing account. `items` is what the
+   * person picked, written when the page lists it, so a fetch can only ever name a picked photo.
+   * Server-only: no query returns a row.
+   */
+  photoPickerSessions: defineTable({
+    userId: v.id('profiles'),
+    state: v.string(),
+    sessionId: v.string(),
+    accessToken: v.string(),
+    pickerUri: v.string(),
+    pollIntervalMs: v.number(),
+    /** The earlier of the token's expiry and the session's. */
+    expiresAt: v.number(),
+    items: v.optional(
+      v.array(v.object({ id: v.string(), baseUrl: v.string(), mimeType: v.string() })),
+    ),
+    createdAt: v.number(),
+  })
+    .index('by_state', ['state'])
+    .index('by_user', ['userId'])
     .index('by_expires_at', ['expiresAt']),
 
   /**

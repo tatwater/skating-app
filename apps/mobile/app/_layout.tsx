@@ -4,6 +4,7 @@ import { api } from '@skating/convex/api';
 import { resolveAuthRoute } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { Stack } from 'expo-router';
+import { ShareIntentProvider } from 'expo-share-intent';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTheme } from 'tamagui';
@@ -90,6 +91,8 @@ function RootNavigator() {
             sheet itself. */}
         <Stack.Screen name="drafts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="queue" options={{ presentation: 'modal' }} />
+        {/* The library grid (A10-8 §8.5), iOS only — opened from a report's Photos. */}
+        <Stack.Screen name="photo-library" options={{ presentation: 'fullScreenModal' }} />
       </Stack.Protected>
       <Stack.Protected guard={route === 'onboarding'}>
         <Stack.Screen name="onboarding" />
@@ -107,9 +110,14 @@ function RootNavigator() {
 function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Providers>
-        <RootNavigator />
-      </Providers>
+      {/* Photos shared to Gli (A10-8 §8.7): above every gate, so a share that arrives before
+          sign-in is still there after it. The tabs' `ShareIntentHandler` takes it. */}
+      {/* Not reset on backgrounding: signing in means a trip to the mail app for the code. */}
+      <ShareIntentProvider options={{ resetOnBackground: false }}>
+        <Providers>
+          <RootNavigator />
+        </Providers>
+      </ShareIntentProvider>
     </GestureHandlerRootView>
   );
 }

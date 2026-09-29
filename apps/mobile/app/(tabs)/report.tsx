@@ -57,6 +57,12 @@ export default function ReportScreen() {
     let cancelled = false;
     openedFor.current = key;
     setHeldBecause(null);
+    // A share's report (A10-8 §8.7) is already the open sheet — built, and whatever was open before
+    // it set aside, by the share handler. Adopt it: parking it here would send it to Drafts.
+    if (paramsRef.current.share !== undefined && getSheet()?.draftId === paramsRef.current.share) {
+      setState('open');
+      return;
+    }
     // A half-written sheet a new door would replace goes to Drafts first — a skater must never face
     // "finish now or lose it", least of all by tapping a lake. What cannot be parked (an edit of a
     // published report, or a park that failed) keeps the screen, with the reason on the sheet:

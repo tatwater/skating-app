@@ -25,6 +25,7 @@ import { resolveCachedBody } from './bodyCache';
 import { convex } from './convex';
 import { getDraft, getTrack } from './draftStore';
 import { getSuggestedSkateWindow } from './dwellTracker';
+import { getSheet } from './sheetStore';
 
 export interface DoorParams {
   body?: string;
@@ -33,6 +34,11 @@ export interface DoorParams {
   activity?: string;
   draft?: string;
   edit?: string;
+  /**
+   * A report the share handler already put on screen (A10-8 §8.7): its draft id. The tab adopts it
+   * rather than parking it — the handler has set aside whatever was open already.
+   */
+  share?: string;
   /**
    * The opening's own stamp (`doorHref` mints it): the tab keeps its last params, so the same lake's
    * *Add a report* after a Post, or *Edit report* twice on one Report, would otherwise be the door
@@ -45,6 +51,7 @@ export interface DoorParams {
 export function doorKey(p: DoorParams): string {
   return [
     p.edit && `edit:${p.edit}`,
+    p.share && `share:${p.share}`,
     p.draft && `draft:${p.draft}`,
     p.track && `track:${p.track}`,
     p.activity && `activity:${p.activity}`,
@@ -116,6 +123,12 @@ export async function openDoor(
       now,
       randomUUID,
     );
+  }
+
+  // A share's report is built and set by the share handler; a door here only ever finds it open.
+  if (params.share) {
+    const open = getSheet();
+    return open?.draftId === params.share ? open : null;
   }
 
   if (params.draft) {

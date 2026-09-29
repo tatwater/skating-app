@@ -28,6 +28,7 @@ import type * as contradictions from "../contradictions.js";
 import type * as corpusRequests from "../corpusRequests.js";
 import type * as crons from "../crons.js";
 import type * as dataExport from "../dataExport.js";
+import type * as googlePhotos from "../googlePhotos.js";
 import type * as gpsActivities from "../gpsActivities.js";
 import type * as hazardConfirmations from "../hazardConfirmations.js";
 import type * as hazardWeather from "../hazardWeather.js";
@@ -138,6 +139,7 @@ declare const fullApi: ApiFromModules<{
   corpusRequests: typeof corpusRequests;
   crons: typeof crons;
   dataExport: typeof dataExport;
+  googlePhotos: typeof googlePhotos;
   gpsActivities: typeof gpsActivities;
   hazardConfirmations: typeof hazardConfirmations;
   hazardWeather: typeof hazardWeather;

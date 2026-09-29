@@ -15,6 +15,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
+import { ShareIntentHandler } from '../../src/components/ShareIntentHandler';
 import {
   claimNotificationCache,
   loadCachedNotifications,
@@ -177,91 +178,96 @@ export default function TabsLayout() {
     return () => sub.remove();
   }, [router]);
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.primary?.val,
-        tabBarInactiveTintColor: theme.foregroundMuted?.val,
-        tabBarStyle: {
-          backgroundColor: theme.surface?.val,
-          borderTopColor: theme.border?.val,
-        },
-        /**
-         * The surface every tab screen is drawn on. Without it React Navigation paints its own
-         * default — a light one — and only the parts of a screen that actually have content get
-         * themed: a screen's `YStack backgroundColor="$background"` is as tall as its children, so
-         * anything shorter than the viewport showed a light page under dark text. The map hid it by
-         * being full-bleed, which is why this survived the first pass.
-         *
-         * Set here as well as on the root `Stack` in `app/_layout.tsx`: they're separate navigators
-         * and each paints its own scene.
-         */
-        sceneStyle: { backgroundColor: theme.background?.val },
-      }}
-    >
-      <Tabs.Screen
-        name="(map)"
-        options={{
-          title: 'Map',
-          tabBarIcon: ({ color, size }) => <TabIcon icon={faMap} color={color} size={size} />,
+    <>
+      <ShareIntentHandler />
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: theme.primary?.val,
+          tabBarInactiveTintColor: theme.foregroundMuted?.val,
+          tabBarStyle: {
+            backgroundColor: theme.surface?.val,
+            borderTopColor: theme.border?.val,
+          },
+          /**
+           * The surface every tab screen is drawn on. Without it React Navigation paints its own
+           * default — a light one — and only the parts of a screen that actually have content get
+           * themed: a screen's `YStack backgroundColor="$background"` is as tall as its children, so
+           * anything shorter than the viewport showed a light page under dark text. The map hid it by
+           * being full-bleed, which is why this survived the first pass.
+           *
+           * Set here as well as on the root `Stack` in `app/_layout.tsx`: they're separate navigators
+           * and each paints its own scene.
+           */
+          sceneStyle: { backgroundColor: theme.background?.val },
         }}
-      />
-      <Tabs.Screen
-        name="feed"
-        options={{
-          title: 'Latest',
-          tabBarIcon: ({ color, size }) => <TabIcon icon={faNewspaper} color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="report"
-        options={{
-          title: 'Report',
-          tabBarIcon: ({ color, size }) => (
-            <TabIcon icon={faCirclePlus} color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="bounties"
-        options={{
-          title: 'Bounties',
-          tabBarIcon: ({ color, size }) => (
-            <TabIcon icon={faBinoculars} color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="you"
-        options={{
-          title: 'You',
-          // The dot is decorative; the count rides on the tab's own label, which is what a screen
-          // reader actually announces (a nested labeled View inside the icon is not read).
-          tabBarAccessibilityLabel: unread > 0 ? `You, ${unread} unread notifications` : 'You',
-          tabBarIcon: ({ color, size }) => (
-            <View>
-              <TabIcon icon={faUser} color={color} size={size} />
-              {unread > 0 ? (
-                <View
-                  accessibilityElementsHidden
-                  importantForAccessibility="no-hide-descendants"
-                  style={{
-                    position: 'absolute',
-                    top: -2,
-                    right: -4,
-                    width: 9,
-                    height: 9,
-                    borderRadius: 5,
-                    backgroundColor: theme.primary?.val,
-                    borderWidth: 1.5,
-                    borderColor: theme.surface?.val,
-                  }}
-                />
-              ) : null}
-            </View>
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="(map)"
+          options={{
+            title: 'Map',
+            tabBarIcon: ({ color, size }) => <TabIcon icon={faMap} color={color} size={size} />,
+          }}
+        />
+        <Tabs.Screen
+          name="feed"
+          options={{
+            title: 'Latest',
+            tabBarIcon: ({ color, size }) => (
+              <TabIcon icon={faNewspaper} color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="report"
+          options={{
+            title: 'Report',
+            tabBarIcon: ({ color, size }) => (
+              <TabIcon icon={faCirclePlus} color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="bounties"
+          options={{
+            title: 'Bounties',
+            tabBarIcon: ({ color, size }) => (
+              <TabIcon icon={faBinoculars} color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="you"
+          options={{
+            title: 'You',
+            // The dot is decorative; the count rides on the tab's own label, which is what a screen
+            // reader actually announces (a nested labeled View inside the icon is not read).
+            tabBarAccessibilityLabel: unread > 0 ? `You, ${unread} unread notifications` : 'You',
+            tabBarIcon: ({ color, size }) => (
+              <View>
+                <TabIcon icon={faUser} color={color} size={size} />
+                {unread > 0 ? (
+                  <View
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    style={{
+                      position: 'absolute',
+                      top: -2,
+                      right: -4,
+                      width: 9,
+                      height: 9,
+                      borderRadius: 5,
+                      backgroundColor: theme.primary?.val,
+                      borderWidth: 1.5,
+                      borderColor: theme.surface?.val,
+                    }}
+                  />
+                ) : null}
+              </View>
+            ),
+          }}
+        />
+      </Tabs>
+    </>
   );
 }

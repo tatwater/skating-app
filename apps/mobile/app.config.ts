@@ -68,19 +68,47 @@ const config: ExpoConfig = {
       backgroundColor: '#0b1620',
     },
     ...(googleServicesFile ? { googleServicesFile } : {}),
+    // Android reads no photo library (A10-8, D207): Google Play allows these only to gallery-type
+    // apps, and the system photo picker — which needs no permission and shows Google Photos too —
+    // is the door. `expo-media-library` (kept for the iOS reel) would otherwise declare them.
+    blockedPermissions: [
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_MEDIA_AUDIO',
+      'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+    ],
   },
   plugins: [
     'expo-router',
-    // The camera-roll reel on the report sheet (A10 §8.1 / A10-7): *Photos from your skate* queries
-    // the library for the skate's window; a tap includes one, nothing leaves the roll, and nothing
-    // uploads until Post. `isAccessMediaLocationEnabled` is what lets Android hand back a photo's
-    // EXIF location (the D42 opt-in reads it on device; it is sent only when placed on the lake).
+    // The camera-roll reel on the report sheet (A10-7), **iOS only** since A10-8 (D207): *Photos from
+    // your skate* queries the library for the skate's window, asked for only from a tap; nothing
+    // leaves the roll, and nothing uploads until Post. Android's read permissions are blocked above;
+    // `ACCESS_MEDIA_LOCATION` stays (Play does not restrict it) in case the system picker needs it
+    // to hand back a photo's location — unverified, owed on a device.
     [
       'expo-media-library',
       {
         photosPermission:
           'Gli shows the photos you took during a skate so you can add them to your report. Nothing is uploaded until you post, and nothing is removed from your library.',
         isAccessMediaLocationEnabled: true,
+        granularPermissions: ['photo'],
+        // iOS would otherwise pop its own "select more photos?" when a limited library is read —
+        // on the sheet's open. *Choose more* is the person's own door to that (D207).
+        preventAutomaticLimitedAccessAlert: true,
+      },
+    ],
+    // Share to Gli (A10-8 §8.7, D207): photos from Google Photos, the gallery or the camera, one or
+    // many. Android takes them by an intent filter (no permission); iOS by a Share Extension that
+    // reopens the app — configured here, untested until iOS is set up, and its App Group must be
+    // registered with Apple first. Images only: a shared link or text has no door.
+    [
+      'expo-share-intent',
+      {
+        androidIntentFilters: ['image/*'],
+        androidMultiIntentFilters: ['image/*'],
+        iosActivationRules: { NSExtensionActivationSupportsImageWithMaxCount: 20 },
+        iosAppGroupIdentifier: 'group.com.teaganatwater.gli',
+        iosShareExtensionName: 'Gli Share',
       },
     ],
     // A GPX file as a report's track (A10-7) — Strava, Garmin and most watches export one.

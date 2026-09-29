@@ -29,12 +29,17 @@ export type PhotoAssetLike = Pick<ImagePicker.ImagePickerAsset, 'uri' | 'width' 
   exif?: Record<string, unknown> | null;
   /** The library's own capture time (ms), when EXIF has none — `expo-media-library`'s `creationTime`. */
   creationTime?: number;
+  /** The library's own location, when EXIF has none — `Asset.getLocation` (A10-8). */
+  location?: { lat: number; lng: number };
 };
 
-/** Launch the library picker (multi-select, EXIF on). Returns [] if the user cancels. */
+/**
+ * Launch the system photo picker (multi-select, EXIF on). Returns [] if the user cancels. It needs
+ * no permission on either phone (D207): on Android it is the system picker, which also shows the
+ * person's Google Photos; on iOS it is PHPicker. Asking first would put the library prompt in front
+ * of a picker that never needed it.
+ */
 export async function pickPhotos(): Promise<ImagePicker.ImagePickerAsset[]> {
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) throw new Error('Photo library permission denied');
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsMultipleSelection: true,
@@ -58,7 +63,7 @@ async function resizeAndStrip(asset: PhotoAssetLike, maxEdge: number): Promise<s
 
 /** Read EXIF GPS from the original, then produce the stripped full + thumb. */
 export async function processPhoto(asset: PhotoAssetLike): Promise<ProcessedPhoto> {
-  const coord = exifCoord(asset.exif);
+  const coord = exifCoord(asset.exif) ?? asset.location;
   const takenAtMs = exifTakenAt(asset.exif) ?? asset.creationTime;
   const [fullUri, thumbUri] = await Promise.all([
     resizeAndStrip(asset, FULL_MAX_EDGE),

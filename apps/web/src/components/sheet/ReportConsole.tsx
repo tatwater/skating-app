@@ -69,6 +69,7 @@ import { LeavingNotice, useIsLeaving } from '../LeavingNotice';
 import { Textarea } from '../ui/textarea';
 import { BodyPicker } from './BodyPicker';
 import { ConsoleModeProvider, useConsoleMode } from './ConsoleMode';
+import { GooglePhotosButton } from './GooglePhotos';
 import { LakeMap, type LakeMapHazard } from './LakeMap';
 import { ReportPanels } from './ReportPanels';
 import { Eyebrow, SheetHint, StatusSquare } from './SheetPanel';
@@ -823,6 +824,14 @@ function PhotoRail({
           e.target.value = '';
         }}
       />
+      {editing ? null : (
+        <GooglePhotosButton
+          disabled={busy}
+          onPhotos={(drafts) =>
+            updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines)))
+          }
+        />
+      )}
       <p className="mt-2 text-[11px] text-foreground-muted">
         {needing > 0
           ? 'A photo taken between a lake’s start and end goes on that lake by itself; one with a location on the water is placed there. A ? is one the day can’t explain — click it to say.'

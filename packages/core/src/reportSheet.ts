@@ -94,7 +94,8 @@ export type SheetSection = (typeof SHEET_SECTIONS)[number];
 export type ChipTier = 'ghost' | 'extracted' | 'solid';
 
 /** Where a ghost came from — what the collapsed suggestion line names. */
-export type SuggestionSource = 'peer' | 'weather' | 'track' | 'prior' | 'extraction';
+/** `photos`: the capture times of photos shared to Gli (A10-8 §8.7). */
+export type SuggestionSource = 'peer' | 'weather' | 'track' | 'prior' | 'extraction' | 'photos';
 
 /** A span of the author's own writing that an extracted value came from. */
 export interface EvidenceSpan {

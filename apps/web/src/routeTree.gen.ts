@@ -29,6 +29,7 @@ import { Route as AdminImportsRouteImport } from './routes/admin.imports'
 import { Route as AdminRecurrenceRouteImport } from './routes/admin.recurrence'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
+import { Route as GooglePhotosCallbackRouteImport } from './routes/google-photos.callback'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
 import { Route as MapBountyIdRouteImport } from './routes/_map.bounty.$id'
 import { Route as MapHazardIdRouteImport } from './routes/_map.hazard.$id'
@@ -141,6 +142,11 @@ const AdminTuningRoute = AdminTuningRouteImport.update({
   path: '/tuning',
   getParentRoute: () => AdminRoute,
 } as any)
+const GooglePhotosCallbackRoute = GooglePhotosCallbackRouteImport.update({
+  id: '/google-photos/callback',
+  path: '/google-photos/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UUsernameRoute = UUsernameRouteImport.update({
   id: '/u/$username',
   path: '/u/$username',
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
+  '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/u/$username': typeof UUsernameRoute
   '/admin/': typeof AdminIndexRoute
   '/bounty/$id': typeof MapBountyIdRoute
@@ -252,6 +259,7 @@ export interface FileRoutesByTo {
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
+  '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/u/$username': typeof UUsernameRoute
   '/': typeof MapIndexRoute
   '/admin': typeof AdminIndexRoute
@@ -287,6 +295,7 @@ export interface FileRoutesById {
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
+  '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/u/$username': typeof UUsernameRoute
   '/_map/': typeof MapIndexRoute
   '/admin/': typeof AdminIndexRoute
@@ -323,6 +332,7 @@ export interface FileRouteTypes {
     | '/admin/recurrence'
     | '/admin/support'
     | '/admin/tuning'
+    | '/google-photos/callback'
     | '/u/$username'
     | '/admin/'
     | '/bounty/$id'
@@ -354,6 +364,7 @@ export interface FileRouteTypes {
     | '/admin/recurrence'
     | '/admin/support'
     | '/admin/tuning'
+    | '/google-photos/callback'
     | '/u/$username'
     | '/'
     | '/admin'
@@ -388,6 +399,7 @@ export interface FileRouteTypes {
     | '/admin/recurrence'
     | '/admin/support'
     | '/admin/tuning'
+    | '/google-photos/callback'
     | '/u/$username'
     | '/_map/'
     | '/admin/'
@@ -416,6 +428,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
+  GooglePhotosCallbackRoute: typeof GooglePhotosCallbackRoute
   UUsernameRoute: typeof UUsernameRoute
 }
 
@@ -560,6 +573,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/tuning'
       preLoaderRoute: typeof AdminTuningRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/google-photos/callback': {
+      id: '/google-photos/callback'
+      path: '/google-photos/callback'
+      fullPath: '/google-photos/callback'
+      preLoaderRoute: typeof GooglePhotosCallbackRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/u/$username': {
       id: '/u/$username'
@@ -716,6 +736,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
+  GooglePhotosCallbackRoute: GooglePhotosCallbackRoute,
   UUsernameRoute: UUsernameRoute,
 }
 export const routeTree = rootRouteImport
