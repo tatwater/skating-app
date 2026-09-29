@@ -68,6 +68,17 @@ export const sharedSentryOptions = {
     databaseQueryData: false,
     queues: false,
     graphQL: { document: false, variables: false },
+
+    /**
+     * No local variable values in server stack frames — the second of two locks. The first is
+     * that `includeLocalVariables` is unset, so the Node SDK's local-variables integration never
+     * starts; this category (on by default) is what it would consult if someone turned that on.
+     * A server function mid-report holds a report's coordinates, a home location, a Clerk token,
+     * and they would arrive as frame data, where `beforeSend` in `@skating/core` does not walk —
+     * so PRIVACY.md's "location fields are removed before anything is sent" would not hold for
+     * them. Stack traces and the surrounding source lines still go; that is what a crash needs.
+     */
+    stackFrameVariables: false,
   },
 
   /**

@@ -108,7 +108,10 @@ export function describeSentryWire(build: string, load: () => Promise<SentryModu
         databaseQueryData: false,
         queues: false,
         graphQL: { document: false, variables: false },
+        stackFrameVariables: false,
       });
+      // …and the integration that would read `stackFrameVariables` never starts without this.
+      expect(Sentry.getClient()?.getOptions()).not.toHaveProperty('includeLocalVariables', true);
     });
   });
 }
