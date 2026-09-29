@@ -272,10 +272,14 @@ export type SnowDrift = (typeof SNOW_DRIFTS)[number];
 
 /**
  * The `where` of a located chip or reading (A10 / D193): how much of the scope it covers. `whole`
- * is the plain claim; `mostly` and `patches` qualify it. Composes with a bay, a sector or a point —
- * "patches, north end" is `{ extent: 'patches', sector: 'N' }`.
+ * is the plain claim; `mostly`, `large_areas` and `patches` qualify it, most to least. Composes with
+ * a bay, a sector or a point — "patches, north end" is `{ extent: 'patches', sector: 'N' }`.
+ *
+ * `large_areas` (D209) is the rung the first verified labels found missing: "several hundred acres
+ * of thin ice" on a 3,000-acre lake is neither the scattered spots `patches` says nor the most of it
+ * `mostly` says — and calling it patches undersells a hazard, the dangerous direction of error.
  */
-export const WHERE_EXTENTS = ['whole', 'mostly', 'patches'] as const;
+export const WHERE_EXTENTS = ['whole', 'mostly', 'large_areas', 'patches'] as const;
 export type WhereExtent = (typeof WHERE_EXTENTS)[number];
 
 /**
@@ -374,6 +378,7 @@ export const HAZARD_TYPES = [
   'wet_crack',
   'drilled_hole',
   'shell_area',
+  'air_pockets',
   // Tier C — structural: don't heal within a season; often grow.
   'pressure_ridge',
   'ice_heave',
@@ -400,6 +405,7 @@ export const HAZARD_TYPE_LABELS: Record<HazardType, string> = {
   wet_crack: 'Wet / working crack',
   drilled_hole: 'Drilled hole',
   shell_area: 'Shell ice',
+  air_pockets: 'Air pockets',
   pressure_ridge: 'Pressure ridge',
   ice_heave: 'Ice heave / buckling',
   spring_current: 'Spring / inlet-outlet current',

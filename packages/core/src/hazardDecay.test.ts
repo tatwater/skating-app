@@ -54,6 +54,7 @@ describe('HAZARD_DECAY table', () => {
       wet_crack: { tier: 'B', freshH: 72, agingH: 168 },
       drilled_hole: { tier: 'B', freshH: 72, agingH: 168 },
       shell_area: { tier: 'B', freshH: 72, agingH: 168 },
+      air_pockets: { tier: 'B', freshH: 72, agingH: 168 },
       // Tier C — structural (don't heal within a season; often grow).
       pressure_ridge: { tier: 'C', freshH: 168, agingH: 504 },
       ice_heave: { tier: 'C', freshH: 168, agingH: 504 },

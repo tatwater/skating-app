@@ -13,10 +13,11 @@ import { SheetChip } from './SheetChip';
 import { SheetHint } from './SheetSection';
 import type { SheetBody } from './useSheetBody';
 
-/** The whole lake is spelled by absence (D193); the row offers the two qualifiers. */
+/** The whole lake is spelled by absence (D193); the row offers the qualifiers, most to least. */
 const EXTENTS = WHERE_EXTENTS.filter((e): e is Exclude<WhereExtent, 'whole'> => e !== 'whole');
 const EXTENT_LABELS: Record<Exclude<WhereExtent, 'whole'>, string> = {
   mostly: 'Mostly',
+  large_areas: 'Large areas',
   patches: 'In patches',
 };
 

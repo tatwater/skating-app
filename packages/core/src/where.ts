@@ -159,7 +159,8 @@ const COMPASS_WORDS: Record<(typeof COMPASS_SECTORS)[number], string> = {
 
 export function describeWhere(where: Where, bayNames?: Readonly<Record<string, string>>): string {
   const parts: string[] = [];
-  if (where.extent && where.extent !== 'whole') parts.push(where.extent);
+  if (where.extent && where.extent !== 'whole')
+    parts.push(humanizeEnum(where.extent).toLowerCase());
   const bay = where.subAreaId !== undefined ? bayNames?.[where.subAreaId] : undefined;
   if (where.sector) {
     const sector =
@@ -221,6 +222,7 @@ export function whereCoversBody(where: Where | undefined): boolean {
     where.subAreaId === undefined &&
     where.sector === undefined &&
     where.point === undefined &&
-    where.extent !== 'patches'
+    where.extent !== 'patches' &&
+    where.extent !== 'large_areas'
   );
 }

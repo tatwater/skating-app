@@ -153,6 +153,9 @@ describe('describeWhere / describeLocatedChip (A10 / D193, §12.1)', () => {
       'the head of Malletts Bay',
     );
     expect(describeWhere({ sector: 'near_shore' })).toBe('near shore');
+    expect(describeWhere({ extent: 'large_areas', sector: 'NE' })).toBe(
+      'large areas northeast end',
+    );
     expect(describeWhere({ subAreaId: 'bay1' }, bays)).toBe('Malletts Bay');
     expect(
       describeWhere({
@@ -198,9 +201,10 @@ describe('whereOverlaps / whereCoversBody (A10 §12.2)', () => {
       whereOverlaps({ extent: 'patches', sector: 'N' }, { extent: 'whole', sector: 'N' }),
     ).toBe(true);
   });
-  it('a claim covers the body unless it names a place or says patches', () => {
+  it('a claim covers the body unless it names a place or says large areas or patches', () => {
     expect(whereCoversBody(undefined)).toBe(true);
     expect(whereCoversBody({ extent: 'mostly' })).toBe(true);
+    expect(whereCoversBody({ extent: 'large_areas' })).toBe(false);
     expect(whereCoversBody({ extent: 'patches' })).toBe(false);
     expect(whereCoversBody({ sector: 'N' })).toBe(false);
     expect(whereCoversBody({ subAreaId: 'a' })).toBe(false);

@@ -75,6 +75,8 @@ export function stalenessCaveat(type: HazardType): string {
       return 'Likely re-skinned, but a drilled hole stays a weak spot for days.';
     case 'shell_area':
       return 'Shell ice is hard to see and lingers days after the thaw that made it.';
+    case 'air_pockets':
+      return 'Air under the ice insulates it — cold weather since may not have thickened it at all.';
     case 'pressure_ridge':
     case 'ice_heave':
       return 'Ridges do not heal within a season. A warm spell can open one into water; a cold one leaves refrozen blocks ("ice sharks").';

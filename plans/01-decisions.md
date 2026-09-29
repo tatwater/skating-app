@@ -6377,3 +6377,31 @@ leak, and testing mode's seven-day refresh-token expiry never bites the alpha.
 filter. An iPhone that backs up to Google Photos has no door to it yet.
 
 **Related:** D31, D42, A10-7, `oauthStates` (shared with Strava's connection).
+
+## D208 — `air_pockets` is a hazard type, and cold earns it no faster fade (A10-9)
+
+**Decided (2026-09-29, founder call from the first verified eval labels).** Air trapped under the
+sheet at freeze-up is its own hazard type, `air_pockets` ("Air pockets"), not `shell_area`. Shell
+ice is a crust left when a puddle drains after a thaw; an air pocket is a void the ice formed over,
+some "big enough to swallow you whole" (a group leader, Little Sunapee, 2024-12-15). Tier B on the
+base clock (fresh 72 h, aging 168 h), like shell ice; point-and-radius at 40 m; clusters with the
+`crack` family and never promotes. Its **weather response is `weather_insensitive`**: air insulates
+the ice over a pocket from the water that would thicken it, so a cold snap must not fade the pin
+faster — `refreeze_healed`, shell ice's class, would, and that is the direction sign-flip 1 exists
+to forbid. The stale-pin copy says so: cold since may not have thickened it at all.
+
+**Why:** the extraction had nowhere honest to put it; it chose `shell_area`, and the founder
+rejected that. The decay call follows the one physical fact the corpus gives — "since air is an
+insulator, the ice in these pockets will thicken very slowly if at all".
+
+**Related:** D51, D52, D56, `hazardWeatherDecay.ts`, A10 §1.
+
+## D209 — `large_areas` joins the `where` extents, between `mostly` and `patches` (A10-9)
+
+**Decided (2026-09-29, founder call from the first verified eval labels).** `WHERE_EXTENTS` is
+`whole` · `mostly` · `large_areas` · `patches`, most to least. "Several hundred acres of thin ice"
+on a 3,000-acre lake is neither scattered spots nor most of the lake; tagged `patches`, it undersold
+a hazard, which is the dangerous direction of error. A `large_areas` claim does not cover the body
+(`whereCoversBody`), exactly like `patches`. The sheet's where-picker offers it as *Large areas*.
+
+**Related:** D193, `where.ts`.

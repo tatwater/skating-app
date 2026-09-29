@@ -68,6 +68,10 @@ export const HAZARD_WEATHER_RESPONSE: Record<HazardType, HazardWeatherResponse> 
   ridge_crossing: 'structural', // a ridge passage marker — same physics, thaw changes it fast
   // Weather-insensitive permanent sources.
   spring_current: 'weather_insensitive',
+  // Not permanent, but cold does not heal it: the air under the sheet insulates it from the water
+  // that would thicken it (D208). `refreeze_healed` would fade it faster in a cold snap — the same
+  // wrong-direction error sign-flip 1 exists to prevent — so it takes no weather multiplier at all.
+  air_pockets: 'weather_insensitive',
   gas_hole: 'weather_insensitive',
   reef_hole: 'weather_insensitive',
 };

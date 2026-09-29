@@ -182,7 +182,8 @@ hazard additions of 2026-07-21.
   `didnt_matter` · `slowed_me` · `avoided_areas`; drifts `none` · `avoidable` · `everywhere`; plus
   a depth and `plowedPath`. The corpus talks about snow as coverage and whether it mattered far
   more than as a depth.
-- **`where`** (D193): an extent `whole` · `mostly` · `patches`, a bay, a sector, a tap — composed.
+- **`where`** (D193): an extent `whole` · `mostly` · `large_areas` · `patches` (most to least;
+  `large_areas` is D209), a bay, a sector, a tap — composed.
   Sectors: `N` · `NE` · `E` · `SE` · `S` · `SW` · `W` · `NW` · `middle` (the nine that partition
   the outline) · `near_shore` (a ring, overlapping them) · `head` · `mouth` (bay-relative, legal
   only with a bay). Kinds for display: `whole` · `subArea` · `sector` · `point`.
@@ -194,12 +195,12 @@ hazard additions of 2026-07-21.
   `unclassified` — the D109 vocabulary; the earlier eight-value list (`lake`, `pond`, `stream`,
   `marsh`, `other`…) was migrated one-way, and `lake` + `pond` → `lakePond` was its only lossy
   step. Skaters can pick five of the six; `unclassified` is the corpus admitting it doesn't know.
-- **Hazard types — exactly one per hazard, 16 canonical keys**, each with a decay tier in
+- **Hazard types — exactly one per hazard, 17 canonical keys**, each with a decay tier in
   `HAZARD_DECAY` (calibration in
   [`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)):
   `open_water` · `thin_ice` · `overflow_slush` · `drain_hole` · `wind_hole` · `slush_hole` ·
   `thawed_rotten` · `ridge_crossing` · `wet_crack` · `drilled_hole` · `shell_area` ·
-  `pressure_ridge` · `ice_heave` · `spring_current` · `gas_hole` · `reef_hole`.
+  `air_pockets` (D208) · `pressure_ridge` · `ice_heave` · `spring_current` · `gas_hole` · `reef_hole`.
   - **Canonicalized 2026-07-21 (09a):** the earlier enum stored slash-pairs as separate keys
     (`open_water` *and* `lead`, `ice_heave` *and* `buckling`, `inlet_outlet_current` *and*
     `spring`), so `Record<HazardType, HazardDecay>` couldn't typecheck and two keys could disagree
@@ -211,7 +212,9 @@ hazard additions of 2026-07-21.
     recur at the same spot every year, so they're the natural `bodyFeatures` candidates (D53);
     `ridge_crossing` is a *passage* marker that reuses the hazard machinery but renders as
     positive-but-cautious (*still crossable / dicey now / ridge closed*), and is the most volatile
-    thing on the map.
+    thing on the map; `air_pockets` is air trapped under the sheet at freeze-up — distinct from
+    `shell_area`, the drained-puddle crust after a thaw — and since air insulates, **cold weather
+    earns it no faster fade** (D208).
 - **Standing**: `active` · `dormant` · `removed` · `unlisted` (`STANDINGS`, D176), with dormancy
   and removal reasons alongside.
 
