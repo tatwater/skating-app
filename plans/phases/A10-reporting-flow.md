@@ -1473,6 +1473,18 @@ place name, so D210's own example was dropped; `air_pockets` had lost shell ice'
 persistence. Left: the where-question state now lives in four copies across the surfaces, and *N of
 M to answer* reads as required where a where is optional — on the ice chips as much as sightings.
 
+### The PR #82 review — what Greptile caught
+
+- **P1 — a dangerous sighting made no pin.** D210 said an open or skimmed part seen from afar is a
+  sighting *and* a hazard, but only the extraction prompt was told so: a skater tapping *Still open,
+  south end* posted a line on the card and nothing on the map. Fixed where it belongs, on the server
+  at report create and on an edit that adds one (D210 amended): the pin's shape is the named part of
+  the outline, and it is skipped where the author drew one. The sheet says the pin will be theirs.
+- **P2 — one place per sighting type.** Open water at both ends could not be said. A second place is
+  a second chip of the type (`open#2`, the key stored reports already had); *Another place* on the
+  where card, for ice and surface chips too, which had the same limit since A10-3. The where-card
+  model moved into core (`whereCardsFor`), retiring the four hand copies the self-review flagged.
+
 ### Deltas from the conversation — read these before extending
 
 1. **Per-value vantage was proposed in the conversation and not built.** Reading the code, it needs

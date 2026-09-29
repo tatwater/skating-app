@@ -786,6 +786,37 @@ export function selectedChips<K extends SheetFieldKey>(
   return (state.fields[key].chips as SheetChip<FieldValue<K>>[]).filter(isSelected);
 }
 
+/** The located fields — a chip there may be said of more than one place. */
+export type LocatedFieldKey = 'sightings' | 'iceTypes' | 'surfaceTags';
+
+/**
+ * The keys of every selected chip of one type in a located field — "still open" at the south end
+ * and at the inlet are two chips, `open` and `open#2` (the key `sheetFromReport` already gives a
+ * stored second place), and deselecting the type takes them all.
+ */
+export function chipKeysOfType(
+  state: ReportSheetState,
+  field: LocatedFieldKey,
+  type: string,
+): string[] {
+  return (state.fields[field].chips as SheetChip<{ type: string }>[])
+    .filter((c) => isSelected(c) && c.value.type === type)
+    .map((c) => c.key);
+}
+
+/** The key for one more place of `type`: the type itself while it is free, then `type#2`, `type#3`, … */
+export function nextPlaceKey(
+  state: ReportSheetState,
+  field: LocatedFieldKey,
+  type: string,
+): string {
+  const taken = new Set(state.fields[field].chips.map((c) => c.key));
+  if (!taken.has(type)) return type;
+  let n = 2;
+  while (taken.has(`${type}#${n}`)) n++;
+  return `${type}#${n}`;
+}
+
 /** Serialize the sheet to the validator's input. Solid and extracted chips only; ghosts never. */
 export function toReportInput(state: ReportSheetState): ReportInput {
   const s = state.scalars;

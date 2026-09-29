@@ -6442,6 +6442,17 @@ safety-first); the sighting is the reader's line, the hazard is the pin.
 mutation args accept the single `sighting` forever (an un-updated phone, a queued draft) and refuse
 a client that sends both. The feed card and the detail show every sighting with its place.
 
+**Amended 2026-09-29 (the PR #82 review):** the pin is **derived on the server**, not left to the
+engine or the author. At create — and on an edit, for the sightings it adds — every located
+`open` / `skim` sighting writes an `open_water` / `thin_ice` hazard with the Report as provenance
+(`deriveSightingHazards`, core `sightingHazardShape`): a compass wedge or the middle is that part
+of the outline, a bay the bay, a tapped point its circle, drawn large on purpose. The whole lake
+"still open", `near_shore` and an extent alone name no shape and derive nothing. Skipped where the
+author drew one of that type touching it, and for an author whose hazard posting is restricted
+(the sighting still posts). The sheet says so under the row. **A sighting type may be said of
+several places** (`open` and `open#2`), as may an ice or surface chip: *Another place* on the where
+card, and deselecting the chip takes every place.
+
 **Related:** D3, D189 (amended), D191, D193, D196.
 
 ## D211 — Extraction reads observations only; a fact about the body is `aboutBody` (A10-9)

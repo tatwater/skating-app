@@ -15,6 +15,8 @@ export interface WhereCard {
   question?: string;
   where: Where | undefined;
   onChange: (where: Where | undefined) => void;
+  /** Say it of one more place — returns the new card's id (core `whereCardsFor`). */
+  onAnotherPlace?: () => string;
 }
 
 /**
@@ -155,6 +157,18 @@ export function WhereCards({
         The ring on the lake is the same list, for the pointer.
         {placing ? ' Click the water where you mean.' : ''}
       </p>
+      {active.onAnotherPlace && active.where !== undefined ? (
+        <button
+          type="button"
+          onClick={() => {
+            const id = active.onAnotherPlace?.();
+            if (id) onActivate(id);
+          }}
+          className="self-start font-semibold text-[11px] text-foreground-muted uppercase tracking-[0.08em] hover:text-foreground"
+        >
+          + Another place
+        </button>
+      ) : null}
     </QuestionBlock>
   );
 }

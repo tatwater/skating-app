@@ -3,6 +3,7 @@ import {
   type SheetAction,
   type SheetReport,
   SIGHTING_FROM_ICE_MESSAGE,
+  SIGHTING_PIN_HINT,
   selectedValues,
   sheetReducer,
   toReportInput,
@@ -85,6 +86,23 @@ describe('What did you see? — located sightings (D210)', () => {
     fireEvent.click(screen.getByRole('button', { name: /From shore/ }));
     fireEvent.click(screen.getByRole('button', { name: /Frozen over/ }));
     expect(screen.queryByText('Where was it frozen over?')).not.toBeInTheDocument();
+  });
+
+  it('a second place for the same sighting, and the pin it makes said aloud (Greptile P1/P2 on #82)', () => {
+    const get = renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /Still open/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'South end' }));
+    expect(screen.getByText(SIGHTING_PIN_HINT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Another place' }));
+    expect(screen.getByRole('tab', { name: /Still open \(2\)/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'North end' }));
+    expect(selectedValues(get().sheet, 'sightings')).toEqual([
+      { type: 'open', where: { sector: 'S' } },
+      { type: 'open', where: { sector: 'N' } },
+    ]);
+    // Deselecting the chip takes every place it was said of.
+    fireEvent.click(screen.getByRole('button', { name: /Still open/ }));
+    expect(selectedValues(get().sheet, 'sightings')).toEqual([]);
   });
 
   it('from shore: any sighting, no where asked for', () => {

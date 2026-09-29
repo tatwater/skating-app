@@ -73,6 +73,7 @@ import { assertOwnedPhotos, syncReportPhotoLinks } from './photoAccess';
 import { syncReportSubAreas } from './reportSubAreas';
 import { awardPointEvent, checkAndAwardBadges } from './reputation';
 import { postSnapshotOf, recordRevision } from './revisions';
+import { deriveSightingHazards, drawnHazardOf } from './sightingHazards';
 import { activateOnEvidence } from './standing';
 import { chipInput, iceThickness, latLng, literals, snow } from './validators';
 
@@ -401,7 +402,31 @@ export async function createReportRow(
     profile._id,
     body._id,
   );
-  const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
+  // The pins the located sightings imply (D210): open water or skim seen on part of the lake is a
+  // hazard there, whichever control said it. Not for an author whose hazard posting is restricted —
+  // their sighting still posts as a line on the card, and is not a way around the restriction.
+  const bundled = await Promise.all(bundledHazardIds.map((id) => ctx.db.get(id)));
+  const derivedHazardIds =
+    profile.canPostHazards === false
+      ? []
+      : await deriveSightingHazards(ctx, {
+          body,
+          sightings: n.sightings ?? [],
+          drawn: [
+            ...(args.hazards ?? []).map(drawnHazardOf),
+            ...bundled.flatMap((h) => (h ? [drawnHazardOf(h)] : [])),
+          ],
+          authorId: profile._id,
+          reportId,
+          now,
+          budget:
+            HAZARD_MAX_PER_REPORT -
+            (args.hazards?.length ?? 0) -
+            (args.attachHazardIds?.length ?? 0),
+        });
+  const hazardIdsCreated = [
+    ...new Set([...createdHazardIds, ...derivedHazardIds, ...bundledHazardIds]),
+  ];
   if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
 
   // The photos' back-link (A10 / D186), written beside the list it mirrors.

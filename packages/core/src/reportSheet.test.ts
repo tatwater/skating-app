@@ -1,11 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  chipKeysOfType,
   confirmList,
   DEFAULT_PRECISION_FLOOR,
   emptySheet,
   FIELD_SECTION,
   hasExtracted,
+  nextPlaceKey,
   type ReportSheetState,
   reviveSheetState,
   SHEET_SECTIONS,
@@ -899,5 +901,41 @@ describe('the access and weather scalars serialize (A10-3)', () => {
     ]);
     expect(toReportInput(shown).showPutIn).toBeUndefined();
     expect(toReportInput(shown).conditions).toBeUndefined();
+  });
+});
+
+describe('more than one place for a located chip (Greptile P2 on #82)', () => {
+  it('a second place is a second chip of the type; deselecting the type takes every place', () => {
+    let s = emptySheet(OPENED, 'wb1');
+    s = sheetReducer(s, {
+      type: 'select',
+      field: 'sightings',
+      key: 'open',
+      value: { type: 'open', where: { sector: 'S' } },
+    });
+    expect(nextPlaceKey(s, 'sightings', 'open')).toBe('open#2');
+    expect(nextPlaceKey(s, 'sightings', 'skim')).toBe('skim');
+    s = sheetReducer(s, {
+      type: 'select',
+      field: 'sightings',
+      key: nextPlaceKey(s, 'sightings', 'open'),
+      value: { type: 'open' },
+    });
+    s = sheetReducer(s, {
+      type: 'setWhere',
+      field: 'sightings',
+      key: 'open#2',
+      where: { sector: 'N' },
+    });
+    expect(nextPlaceKey(s, 'sightings', 'open')).toBe('open#3');
+    expect(chipKeysOfType(s, 'sightings', 'open')).toEqual(['open', 'open#2']);
+    expect(toReportInput(s).sightings).toEqual([
+      { type: 'open', where: { sector: 'S' } },
+      { type: 'open', where: { sector: 'N' } },
+    ]);
+    for (const key of chipKeysOfType(s, 'sightings', 'open')) {
+      s = sheetReducer(s, { type: 'deselect', field: 'sightings', key });
+    }
+    expect(toReportInput(s).sightings).toBeUndefined();
   });
 });

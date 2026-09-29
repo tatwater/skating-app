@@ -1,4 +1,10 @@
-import { buildReportInput, emptyReportForm, reportFormFromReport } from '@skating/core';
+import {
+  buildReportInput,
+  emptyReportForm,
+  reportFormFromReport,
+  sectorFrame,
+  sectorWitness,
+} from '@skating/core';
 import { defineSchema } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -325,6 +331,127 @@ describe('reports.create', () => {
     });
     const l = await t.run((ctx) => ctx.db.get(located));
     expect(l?.sightings).toEqual([{ type: 'open', where: { sector: 'S' } }]);
+  });
+
+  describe('a located open or skim sighting is a hazard pin too (D210, Greptile P1 on #82)', () => {
+    const hazardsOf = (t: ReturnType<typeof convexTest>) =>
+      t.run((ctx) => ctx.db.query('hazards').collect());
+
+    test('open water seen at the south end pins open_water over the south of the lake, on the report', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      const reportId = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sightings: [
+          { type: 'open', where: { sector: 'S' } },
+          { type: 'frozen', where: { sector: 'N' } },
+        ],
+      });
+      const hazards = await hazardsOf(t);
+      expect(hazards).toHaveLength(1); // frozen over is not a hazard
+      expect(hazards[0]).toMatchObject({
+        type: 'open_water',
+        geometryKind: 'polygon',
+        originReportId: reportId,
+        description: 'Seen, not skated: Still open, south end',
+      });
+      const report = await t.run((ctx) => ctx.db.get(reportId));
+      expect(report?.hazardIdsCreated).toEqual([hazards[0]?._id]);
+    });
+
+    test('derives nothing for the whole lake, for a restricted poster, or where the author drew it', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      // From shore, the whole lake still open: the lake's state, not a spot.
+      await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'shore',
+        sightings: [{ type: 'open' }],
+      });
+      expect(await hazardsOf(t)).toHaveLength(0);
+      // The author drew the open water in the south already: one pin, the drawn one. Drawn at the
+      // south wedge's own witness point, from the same frame the server derives from.
+      const body = await t.run((ctx) => ctx.db.get(id as Id<'waterBodies'>));
+      const frame = sectorFrame(POLYGON, body?.interiorPoint ?? undefined);
+      if (!frame) throw new Error('the fixture has a frame');
+      const south = sectorWitness(frame, 'S');
+      await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sightings: [{ type: 'open', where: { sector: 'S' } }],
+        hazards: [
+          {
+            type: 'open_water',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [south.lng, south.lat] },
+            radiusMeters: 40,
+          },
+        ],
+      });
+      const afterDrawn = await hazardsOf(t);
+      expect(afterDrawn).toHaveLength(1);
+      expect(afterDrawn[0]?.geometryKind).toBe('point_radius');
+      // A poster whose hazard posting is restricted keeps the sighting and gets no pin.
+      const restricted = await seedUser(t, 'clerk_r');
+      await t.run(async (ctx) => {
+        const p = await ctx.db
+          .query('profiles')
+          .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'clerk_r'))
+          .unique();
+        if (p) await ctx.db.patch(p._id, { canPostHazards: false });
+      });
+      const rid = await restricted.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sightings: [{ type: 'skim', where: { sector: 'N' } }],
+      });
+      expect(await hazardsOf(t)).toHaveLength(1);
+      expect((await t.run((ctx) => ctx.db.get(rid)))?.sightings).toEqual([
+        { type: 'skim', where: { sector: 'N' } },
+      ]);
+    });
+
+    test('an edit pins only the sightings it adds, never the ones it kept', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      const base = { ...OBSERVED, skateEndTime: SKATE_TIME, observedFrom: 'on_ice' as const };
+      const reportId = await asUser.mutation(api.reports.create, {
+        ...base,
+        waterBodyId: id,
+        sightings: [{ type: 'open', where: { sector: 'S' } }],
+      });
+      expect(await hazardsOf(t)).toHaveLength(1);
+      await asUser.mutation(api.reports.update, {
+        ...base,
+        reportId,
+        sightings: [{ type: 'open', where: { sector: 'S' } }],
+        notes: 'Just the words.',
+      });
+      expect(await hazardsOf(t)).toHaveLength(1);
+      await asUser.mutation(api.reports.update, {
+        ...base,
+        reportId,
+        sightings: [
+          { type: 'open', where: { sector: 'S' } },
+          { type: 'skim', where: { sector: 'N' } },
+        ],
+      });
+      const hazards = await hazardsOf(t);
+      expect(hazards.map((h) => h.type).sort()).toEqual(['open_water', 'thin_ice']);
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.hazardIdsCreated).toHaveLength(2);
+    });
   });
 
   test('honors a dropped put-in pin as the report point', async () => {
