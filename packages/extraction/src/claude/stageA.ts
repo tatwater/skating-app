@@ -12,7 +12,12 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { ExtractionInput, Miss } from '../contract';
-import { type ClaudeModelKey, type ClaudeUsage, callStructured } from './client';
+import {
+  type ClaudeCallOptions,
+  type ClaudeModelKey,
+  type ClaudeUsage,
+  callStructured,
+} from './client';
 import { userPrompt } from './prompt';
 import { evidenceFor, toMiss, WireAboutBodySchema, WireMissSchema } from './wire';
 
@@ -97,6 +102,7 @@ export async function runStageA(
   client: Anthropic,
   model: ClaudeModelKey,
   input: ExtractionInput,
+  opts: ClaudeCallOptions = {},
 ): Promise<StageAResult> {
   const started = Date.now();
   const call = await callStructured(
@@ -105,6 +111,7 @@ export async function runStageA(
     SegmentationSchema,
     segmentationSystemPrompt(),
     userPrompt(input),
+    opts,
   );
   return { segmentation: call.data, usage: call.usage, latencyMs: Date.now() - started };
 }

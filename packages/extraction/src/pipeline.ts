@@ -5,7 +5,7 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ClaudeModelKey } from './claude/client';
+import type { ClaudeCallOptions, ClaudeModelKey } from './claude/client';
 import { claudeCostUsd } from './claude/client';
 import { runStageA, segmentationMisses, unitText } from './claude/stageA';
 import { denseVisits, mapAboutBody } from './claude/wire';
@@ -18,13 +18,14 @@ export function claudeThenJevExtractor(
   claude: Anthropic,
   model: ClaudeModelKey,
   jev: JevClient,
+  opts: ClaudeCallOptions = {},
 ): Extractor {
   const name = `claude+jev:${model}`;
   return {
     name,
     async extract(input: ExtractionInput): Promise<ExtractionRun> {
       const started = Date.now();
-      const a = await runStageA(claude, model, input);
+      const a = await runStageA(claude, model, input, opts);
       let jevInput = 0;
       let jevOutput = 0;
       let jevCost = 0;
