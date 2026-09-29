@@ -81,6 +81,7 @@ import type * as lib_revisions from "../lib/revisions.js";
 import type * as lib_sampling from "../lib/sampling.js";
 import type * as lib_scan from "../lib/scan.js";
 import type * as lib_scoring from "../lib/scoring.js";
+import type * as lib_sightingHazards from "../lib/sightingHazards.js";
 import type * as lib_standing from "../lib/standing.js";
 import type * as lib_storageBlobs from "../lib/storageBlobs.js";
 import type * as lib_validators from "../lib/validators.js";
@@ -192,6 +193,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sampling": typeof lib_sampling;
   "lib/scan": typeof lib_scan;
   "lib/scoring": typeof lib_scoring;
+  "lib/sightingHazards": typeof lib_sightingHazards;
   "lib/standing": typeof lib_standing;
   "lib/storageBlobs": typeof lib_storageBlobs;
   "lib/validators": typeof lib_validators;
