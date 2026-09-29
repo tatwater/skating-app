@@ -1427,6 +1427,38 @@ out mid-run: Sonnet drafted 37 of 110 (six of the reviewed ten, 31 of the next h
 Haiku and Jev re-runs on the new wording made no calls. Spend: Haiku $0.69, Jev pipeline $0.82,
 Sonnet $1.66.
 
+### After the top-up — the errors first, then Sonnet 5.5 (2026-09-29, later)
+
+The founder refilled the Anthropic credit and asked for the failures to be fixed before any more
+spend. Every non-credit failure across all runs was one bug: **Sonnet thinks adaptively at `high`
+effort by default, the thinking is spent from the same `max_tokens` as the JSON**, and long emails
+came back cut off mid-string — reported by the SDK's parse helper as "Unterminated string", hiding
+the stop reason. `callStructured` now streams with a 32k budget and checks `stop_reason` first
+(`ClaudeIncompleteError`); `ClaudeCallOptions` carries `effort` and a per-model thinking-off; Jev
+retries 429 / 5xx / 529 with backoff. The eval scorer had its own bug: it paired reports by visit
+number, so an engine that split "open water yesterday" into its own visit scored a perfect
+Willoughby as all misses; it now pairs each body's reports by shared values.
+
+**Claude Sonnet 5.5** (`claude-sonnet-5-5`, released 2026-09-28) needed only its ID and a rate row:
+same price as Sonnet 5, and none of its five breaking changes touch a structured-output call. Its
+512-token cache minimum means the system prompt now caches. At `medium` effort with adaptive
+thinking it was faster, cheaper and more accurate than with thinking off. **Haiku 4.5 retires "not
+sooner than 2026-10-15"** (the models overview), so no engine should be built on it.
+
+Runs (the sentence-level gate, measured this time), against the ten verified emails and the
+sample's 60 non-report emails:
+
+| engine | ¢ / email | median latency | reports found, 150 drawn | false reports, 60 non-report | `observedFrom` precision (10 verified) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Sonnet 5.5, medium | 1.5 | 4.6 s | 146 | 2 | 80% |
+| Haiku 4.5, sentence gate | 0.4 | 3.5 s | 126 (was 119) | 4 | 80% |
+| Haiku + Jev, sentence gate | 0.6 | ~5 s | 125 | — | 40% |
+| Sonnet 5 (first run) | 4.2 | 29 s | — | — | 47% |
+
+Zero errors over ~400 calls. Sonnet 5.5 now drafts every unreviewed message in the review page,
+contested against Haiku; a rebuilt page refreshes a draft only where the reviewer has not touched
+the message. Spend this round: $3.1.
+
 ### The self-review pass — what it caught
 
 `/code-review xhigh` over the branch found 14; 13 are fixed in the last commit. The one that
