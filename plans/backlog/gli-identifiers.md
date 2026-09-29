@@ -36,7 +36,7 @@ not by a test.
 live-OAuth hazard attached, so it should ride a phase that has reason to touch auth anyway — most
 likely the rewrite of the Clerk custom flows onto the current Core 3 API, which already lands in the
 same files. (The package itself moved to `@clerk/expo` 4 on 2026-09-28 without it, in a dependency
-PR; the flows stayed on `@clerk/expo/legacy`, so the rewrite is still the auth-touching vehicle.)
+PR (#81); the flows stayed on `@clerk/expo/legacy`, so the rewrite is still the auth-touching vehicle.)
 
 > The Clerk flow rewrite this rides on has its own row in the roadmap's
 > deferred register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it), beside
