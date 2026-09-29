@@ -140,17 +140,23 @@ export interface SeriesLine {
  * One or more scalar-per-day lines over the same date axis. Rows are `{ date, [key]: number }`. Values
  * that were never measured (a gap-filled null) break the line rather than dropping to zero, so a
  * not-yet-collected day reads as absent, not as a real trough.
+ *
+ * `fraction` is for series of shares and rates (0–1): decimal ticks on an axis fitted to the data.
+ * Without it the axis takes whole numbers only, which is right for counts — and for a share of
+ * 0.4% drew a 0–400% axis with the line pressed flat along the bottom.
  */
 export function TimeSeriesChart({
   data,
   lines,
   height = 200,
   yFormatter,
+  fraction = false,
 }: {
   data: Array<Record<string, number | string | null>>;
   lines: SeriesLine[];
   height?: number;
   yFormatter?: (v: number) => string;
+  fraction?: boolean;
 }) {
   const { dark, series } = useChartTheme();
   const color = (line: SeriesLine, i: number) =>
@@ -166,8 +172,10 @@ export function TimeSeriesChart({
           <XAxis dataKey="date" {...axisProps} minTickGap={24} tickFormatter={shortDate} />
           <YAxis
             {...axisProps}
-            width={40}
-            allowDecimals={false}
+            // A fraction's labels run long (`0.450%`), and a fixed 40 px clipped them from the left
+            // into `450%`; Recharts 3 sizes the axis to its labels.
+            width={fraction ? 'auto' : 40}
+            allowDecimals={fraction}
             {...(yFormatter ? { tickFormatter: yFormatter } : {})}
           />
           <Tooltip

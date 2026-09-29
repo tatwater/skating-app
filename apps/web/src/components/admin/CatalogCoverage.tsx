@@ -154,7 +154,13 @@ export function CatalogCoverage() {
         }
       >
         {history.length >= 2 ? (
-          <TimeSeriesChart data={rows} lines={LINES} height={200} yFormatter={formatShare} />
+          <TimeSeriesChart
+            data={rows}
+            lines={LINES}
+            height={200}
+            yFormatter={formatShare}
+            fraction
+          />
         ) : (
           <ChartEmpty>
             A trend needs two measurements. The next one is due with the next annual 3DHP release.

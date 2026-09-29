@@ -109,6 +109,7 @@ export function ScalarTrend({
           lines={lines}
           {...(height ? { height } : {})}
           {...(yFormatter ? { yFormatter } : {})}
+          fraction={percent}
         />
       ) : (
         <ChartEmpty>No data in the last {days} days yet.</ChartEmpty>
