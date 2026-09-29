@@ -30,7 +30,7 @@ export function claudeThenJevExtractor(
       let jevCost = 0;
       const reports = [];
       const misses = segmentationMisses(a.segmentation);
-      for (const unit of denseVisits(a.segmentation.units)) {
+      for (const unit of denseVisits(a.segmentation.units, input)) {
         const state = [input.title ? `Title: ${input.title}` : '', unitText(unit)]
           .filter(Boolean)
           .join('\n');

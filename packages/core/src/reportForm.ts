@@ -442,11 +442,12 @@ export function isFormRoundTripOf(
  */
 export function reportFormFromReport(report: StoredReportForForm): ReportFormState {
   const { depthCm, ...snowFacets } = report.snow ?? {};
+  const sightings = sightingsOf(report);
   const carried: CarriedReportFields = definedOnly({
     skateEndTime: report.skateEndTime,
     skateEndPrecision: report.skateEndPrecision,
     observedFrom: report.observedFrom,
-    sightings: sightingsOf(report).length > 0 ? sightingsOf(report) : undefined,
+    sightings: sightings.length > 0 ? sightings : undefined,
     suitability: report.suitability,
     iceTypes: (report.iceTypes ?? []).map(toLocatedChip),
     surfaceTags: (report.surfaceTags ?? []).map(toLocatedChip),

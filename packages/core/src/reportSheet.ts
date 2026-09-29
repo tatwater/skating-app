@@ -72,7 +72,7 @@ import type {
   ThicknessScope,
 } from './types';
 import { cmToInches, inchesToCm } from './units';
-import { describeLocatedChip, type Where } from './where';
+import { describeLocatedChip, describeSighting, type Where } from './where';
 
 // ── Sections ────────────────────────────────────────────────────────────────────────────────────
 
@@ -278,6 +278,35 @@ export function emptySheet(
     >,
     extractionSeq: 0,
   };
+}
+
+/**
+ * A sheet state an earlier build wrote down — a phone's saved or queued draft, a web sheet kept
+ * across a reload — brought to this build's fields before anything reads it. Every reader indexes
+ * `state.fields[key].chips`, so a field the stored state lacks would throw rather than read as
+ * empty; each missing field starts empty here. D210 renamed the single-select `sighting` to the
+ * located `sightings` list: its chip is lifted into the list, so the author's choice survives the
+ * update rather than vanishing (or failing the flush). The same object back when nothing needed
+ * doing.
+ */
+export function reviveSheetState(state: ReportSheetState): ReportSheetState {
+  const stored = state.fields as unknown as Record<string, ChipField<unknown> | undefined>;
+  const legacy = stored.sighting as ChipField<Sighting> | undefined;
+  const missing = (Object.keys(FIELD_SECTION) as SheetFieldKey[]).filter(
+    (key) => stored[key] === undefined,
+  );
+  if (legacy === undefined && missing.length === 0) return state;
+  const { sighting: _lifted, ...rest } = stored;
+  const fields: Record<string, ChipField<unknown> | undefined> = { ...rest };
+  for (const key of missing) fields[key] = emptyField(MULTI_FIELDS.has(key));
+  if (legacy !== undefined && stored.sightings === undefined) {
+    fields.sightings = {
+      ...legacy,
+      multi: true,
+      chips: legacy.chips.map((chip) => ({ ...chip, value: { type: chip.value } })),
+    };
+  }
+  return { ...state, fields: fields as unknown as SheetFields };
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────────────────────────────
@@ -907,7 +936,7 @@ export function sectionSummary(
     }
     case 'observedFrom': {
       const [from] = selectedValues(state, 'observedFrom');
-      const seen = selectedValues(state, 'sightings').map((chip) => describeLocatedChip(chip));
+      const seen = selectedValues(state, 'sightings').map((chip) => describeSighting(chip));
       return [from && humanizeEnum(from), ...seen].filter(Boolean).join(' · ');
     }
     case 'endTime': {

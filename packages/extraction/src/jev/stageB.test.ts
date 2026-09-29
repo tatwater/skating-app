@@ -76,9 +76,24 @@ describe('questionsForUnit', () => {
     });
   });
 
-  it('asks no where questions without a compass phrase', () => {
-    const q = questionsForUnit({ ...unit, compassPhrases: [] }, input.vocabulary);
+  it('asks no where questions without a compass phrase or a place', () => {
+    const q = questionsForUnit({ ...unit, compassPhrases: [], places: [] }, input.vocabulary);
     expect(Object.keys(q).some((k) => k.endsWith('.where'))).toBe(false);
+  });
+
+  it('offers named places as wheres, so a sighting from the ice can name its part (D210)', () => {
+    const placed: Unit = {
+      ...unit,
+      compassPhrases: [],
+      places: [
+        { quote: "from Rocky Point to Kimball's Point", name: "Rocky Point to Kimball's Point" },
+      ],
+    };
+    const q = questionsForUnit(placed, input.vocabulary);
+    expect((q['sightings.frozen.where'] as { criteria: Record<string, string> }).criteria).toEqual({
+      none: 'Not located, or located nowhere in particular',
+      l0: 'Located by "from Rocky Point to Kimball\'s Point"',
+    });
   });
 });
 
@@ -142,6 +157,28 @@ describe('reportFromAnswers', () => {
   it('a body ref outside the candidates is null with the ref as the name', () => {
     const r = reportFromAnswers({ ...unit, bodyRef: 'not_offered' }, {}, input);
     expect(r).toMatchObject({ bodyRef: null, bodyName: 'not_offered' });
+  });
+
+  it('maps a place answer to a placeName, and keeps the on-ice sighting it locates (D210)', () => {
+    const placed: Unit = {
+      ...unit,
+      compassPhrases: [],
+      places: [
+        { quote: "from Rocky Point to Kimball's Point", name: "Rocky Point to Kimball's Point" },
+      ],
+    };
+    const r = reportFromAnswers(
+      placed,
+      {
+        observedFrom: choice('on_ice', 0.9),
+        'sightings.frozen': noul(0.8),
+        'sightings.frozen.where': choice('l0', 0.7),
+      },
+      input,
+    );
+    expect(r.fields.sightings.map((v) => v.value)).toEqual([
+      { type: 'frozen', where: { placeName: "Rocky Point to Kimball's Point" } },
+    ]);
   });
 
   it('a sighting survives off the ice, and from the ice only for a located part (D210)', () => {

@@ -181,8 +181,8 @@ export const ExtractedFieldsSchema = z.object({
   quality: z.array(field(z.enum(SKATE_QUALITIES))).default([]),
   suitability: z.array(field(z.enum(SUITABILITIES))).default([]),
   observedFrom: z.array(field(z.enum(OBSERVED_FROM))).default([]),
-  /** What the author saw rather than skated, located (D210) — `type` is a `SIGHTINGS` value. */
-  sightings: z.array(field(LocatedChipSchema)).default([]),
+  /** What the author saw rather than skated, located (D210) — `type` held to `SIGHTINGS`, as before. */
+  sightings: z.array(field(LocatedChipSchema.extend({ type: z.enum(SIGHTINGS) }))).default([]),
   endTime: z.array(field(EndTimeSchema)).default([]),
   iceTypes: z.array(field(LocatedChipSchema)).default([]),
   surfaceTags: z.array(field(LocatedChipSchema)).default([]),

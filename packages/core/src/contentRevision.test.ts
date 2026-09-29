@@ -118,6 +118,32 @@ describe('diffContentBlocks', () => {
       diffContentBlocks({ iceTypes: ['black_ice'] }, { iceTypes: [{ type: 'black_ice' }] }),
     ).toEqual([]);
   });
+
+  /** A snapshot from before D210 against the backfilled row: the sighting was never edited. */
+  it('reads a pre-D210 single sighting as the list it became, so an untouched one is no change', () => {
+    const steps = revisionHistory(
+      [{ replacedAt: NOW, snapshot: { sighting: 'open', notes: 'a' } }],
+      { sightings: [{ type: 'open' }], notes: 'b' },
+    );
+    expect(steps[0]?.changes.map((c) => c.field)).toEqual(['notes']);
+    expect(touchedAClaim(steps)).toBe(false);
+    expect(diffContentBlocks({ sighting: 'open' }, { sightings: [{ type: 'frozen' }] })).toEqual([
+      {
+        field: 'sightings',
+        label: 'What did you see?',
+        before: 'open',
+        after: 'frozen',
+        claim: true,
+      },
+    ]);
+    // A block holding both keeps its list.
+    expect(
+      diffContentBlocks(
+        { sighting: 'open', sightings: [{ type: 'skim' }] },
+        { sightings: [{ type: 'skim' }] },
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('revisionHistory', () => {

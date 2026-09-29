@@ -250,6 +250,19 @@ describe('buildFeedCardView', () => {
       now,
     );
     expect(located.sightingLabels).toEqual(['Still open, south end', 'Frozen over, large areas']);
+    // The card carries no bay names: a bay is still a part of the lake, and two read as one line.
+    const bays = buildFeedCardView(
+      {
+        ...CARD,
+        observedFrom: 'on_ice',
+        sightings: [
+          { type: 'frozen', where: { subAreaId: 'bay1' } },
+          { type: 'frozen', where: { subAreaId: 'bay2' } },
+        ],
+      },
+      now,
+    );
+    expect(bays.sightingLabels).toEqual(['Frozen over, part of the lake']);
     expect(buildFeedCardView({ ...CARD, observedFrom: 'secondhand' }, now).vantageLabel).toBe(
       'Secondhand',
     );

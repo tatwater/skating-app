@@ -50,7 +50,7 @@ export const HAZARD_DECAY: Record<HazardType, { tier: 'A'|'B'|'C'|'D'; freshH: n
   wet_crack:      { tier: 'B', freshH: 72,  agingH: 168 },
   drilled_hole:   { tier: 'B', freshH: 72,  agingH: 168 },
   shell_area:     { tier: 'B', freshH: 72,  agingH: 168 },
-  air_pockets:    { tier: 'B', freshH: 72,  agingH: 168 },  // D208: weather_insensitive — air insulates, cold does not heal it
+  air_pockets:    { tier: 'B', freshH: 72,  agingH: 168 },  // D208: insulated — air insulates, cold does not heal it; a thaw persists it
   // Tier C — Structural: don't heal within a season; often grow. Warmth ESCALATES them (sign-flip 2).
   pressure_ridge: { tier: 'C', freshH: 168, agingH: 504 },
   ice_heave:      { tier: 'C', freshH: 168, agingH: 504 },

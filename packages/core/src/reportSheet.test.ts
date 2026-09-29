@@ -7,6 +7,7 @@ import {
   FIELD_SECTION,
   hasExtracted,
   type ReportSheetState,
+  reviveSheetState,
   SHEET_SECTIONS,
   type SheetAction,
   type SheetFieldKey,
@@ -37,6 +38,57 @@ describe('emptySheet', () => {
     expect(Object.values(s.collapsed).every((c) => c === false)).toBe(true);
     expect(sectionFilled(s, 'observedFrom')).toBe(false); // a default is not a fill
     expect(emptySheet(OPENED).waterBodyId).toBeUndefined();
+  });
+});
+
+describe('reviveSheetState (a sheet an earlier build stored)', () => {
+  /** The fields a pre-D210 build wrote: the single-select `sighting`, and no `sightings`. */
+  function storedBeforeD210(sighting?: 'open' | 'frozen'): ReportSheetState {
+    const s = emptySheet(OPENED, 'wb1');
+    const { sightings: _absent, ...fields } = s.fields;
+    return {
+      ...s,
+      fields: {
+        ...fields,
+        sighting: {
+          chips: sighting ? [{ key: sighting, value: sighting, tier: 'solid' as const }] : [],
+          multi: false,
+          touched: sighting !== undefined,
+        },
+      } as unknown as ReportSheetState['fields'],
+    };
+  }
+
+  it('lifts the single sighting into the located list, so the draft still serializes it (D210)', () => {
+    const revived = reviveSheetState(storedBeforeD210('open'));
+    expect(Object.keys(revived.fields).sort()).toEqual(Object.keys(FIELD_SECTION).sort());
+    expect(revived.fields.sightings.multi).toBe(true);
+    expect(selectedValues(revived, 'sightings')).toEqual([{ type: 'open' }]);
+    expect(toReportInput(revived).sightings).toEqual([{ type: 'open' }]);
+  });
+
+  it('fills a field the stored state lacks with an empty one, rather than throwing on read', () => {
+    const revived = reviveSheetState(storedBeforeD210());
+    expect(selectedValues(revived, 'sightings')).toEqual([]);
+    expect(() => toReportInput(revived)).not.toThrow();
+    expect(sectionSummary(revived, 'observedFrom', TZ)).toBe('');
+  });
+
+  it('keeps a list the state already has, and hands a current state back untouched', () => {
+    const current = run([
+      { type: 'select', field: 'sightings', key: 'skim', value: { type: 'skim' } },
+    ]);
+    expect(reviveSheetState(current)).toBe(current);
+    const both = {
+      ...current,
+      fields: {
+        ...current.fields,
+        sighting: (storedBeforeD210('open').fields as unknown as Record<string, unknown>).sighting,
+      },
+    } as unknown as ReportSheetState;
+    const revived = reviveSheetState(both);
+    expect(selectedValues(revived, 'sightings')).toEqual([{ type: 'skim' }]);
+    expect('sighting' in revived.fields).toBe(false);
   });
 });
 
@@ -537,7 +589,8 @@ describe('sections', () => {
       },
     ]);
     expect(sectionSummary(s, 'howWasIt', TZ)).toBe('Great · Not for beginners');
-    expect(sectionSummary(s, 'observedFrom', TZ)).toBe('Shore · Open');
+    // A sighting says what the card and the detail say (`describeSighting`), not the raw key.
+    expect(sectionSummary(s, 'observedFrom', TZ)).toBe('Shore · Still open');
     expect(sectionSummary(s, 'endTime', TZ)).toBe('about 4:12 PM');
     expect(sectionSummary(s, 'iceAndSurface', TZ)).toBe(
       'Black ice, patches north end · Glass, middle',

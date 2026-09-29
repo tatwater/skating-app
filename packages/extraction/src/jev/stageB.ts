@@ -147,7 +147,9 @@ export function questionsForUnit(unit: Unit, vocab: Vocabulary): Record<string, 
       },
     };
   });
-  if (unit.compassPhrases.length > 0) {
+  // Where a value is: a compass phrase, or a named place (D210 — "from Rocky Point to Kimball's
+  // Point" is how an author on the ice locates the part they saw but did not skate).
+  if (unit.compassPhrases.length > 0 || unit.places.length > 0) {
     for (const m of MULTI) {
       if (m.key === 'accessConditions') continue;
       for (const v of vocab[m.vocab]) {
@@ -156,6 +158,9 @@ export function questionsForUnit(unit: Unit, vocab: Vocabulary): Record<string, 
         };
         unit.compassPhrases.forEach((p, i) => {
           criteria[`p${i}`] = `Located by "${p.quote}"`;
+        });
+        unit.places.forEach((p, i) => {
+          criteria[`l${i}`] = `Located by "${p.quote}"`;
         });
         q[`${m.key}.${v}.where`] = {
           type: 'choice',
@@ -174,6 +179,10 @@ function whereFor(
 ): ExtractedFields['iceTypes'][number]['value']['where'] {
   if (answer?.type !== 'choice' || answer.choice === 'none') return undefined;
   const idx = Number(answer.choice.slice(1));
+  if (answer.choice.startsWith('l')) {
+    const place = unit.places[idx];
+    return place ? { placeName: place.name } : undefined;
+  }
   const phrase = unit.compassPhrases[idx];
   if (!phrase) return undefined;
   const out: NonNullable<ExtractedFields['iceTypes'][number]['value']['where']> = {};

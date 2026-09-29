@@ -148,7 +148,7 @@ export const OBSERVED_FROM_LABELS: Record<ObservedFrom, string> = {
   secondhand: 'Secondhand',
 };
 
-/** What a shore observer saw (A10 / D189). */
+/** What the author saw rather than skated (A10 / D189, D210). */
 export const SIGHTING_LABELS: Record<Sighting, string> = {
   open: 'Still open',
   skim: 'Skim ice',

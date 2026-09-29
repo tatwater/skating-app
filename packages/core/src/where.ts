@@ -191,14 +191,20 @@ export function describeLocatedChip(
 /**
  * A sighting's line — "Still open, south end" (D210): the reader's label for the state, then the
  * place when the author gave one. A card and a detail both say it this way.
+ *
+ * A place this surface cannot put in words — a bay whose name it was not given (the feed card
+ * carries none), a map tap with no name — is still a part of the body, and says so: from the ice a
+ * sighting may only be one (D210), and a bare "Frozen over" would claim the whole lake.
  */
 export function describeSighting(
   sighting: { type: Sighting; where?: Where },
   bayNames?: Readonly<Record<string, string>>,
 ): string {
   const label = SIGHTING_LABELS[sighting.type];
-  const where = sighting.where ? describeWhere(sighting.where, bayNames) : '';
-  return where ? `${label}, ${where}` : label;
+  if (sighting.where === undefined) return label;
+  const where = describeWhere(sighting.where, bayNames);
+  if (where) return `${label}, ${where}`;
+  return whereCoversBody(sighting.where) ? label : `${label}, part of the lake`;
 }
 
 /**

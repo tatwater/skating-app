@@ -34,7 +34,12 @@ import type { LatLng } from './geometry';
 import { photoUploadCoord } from './photo';
 import { type ReportInput, validateReportInput } from './report';
 import { buildReportInput, formCreateRefusal, type ReportFormState } from './reportForm';
-import { type ReportSheetState, selectedValues, toReportInput } from './reportSheet';
+import {
+  type ReportSheetState,
+  reviveSheetState,
+  selectedValues,
+  toReportInput,
+} from './reportSheet';
 
 /**
  * A captured photo inside a draft. `fullUri`/`thumbUri` are **persistent** file-system paths (the
@@ -202,6 +207,23 @@ export function postDraftFromLegacy(legacy: LegacyReportDraft): PostDraft {
     createdAt,
     updatedAt,
   };
+}
+
+/**
+ * A stored Post draft with every sheet-shaped Report brought to this build's sheet fields
+ * (`reviveSheetState`) — what a device read back from storage must pass through before the sheet
+ * reopens it or the flush serializes it. The same object back when no Report needed it.
+ */
+export function revivePostDraft(draft: PostDraft): PostDraft {
+  let changed = false;
+  const reports = draft.reports.map((r) => {
+    if (r.sheet === undefined) return r;
+    const sheet = reviveSheetState(r.sheet);
+    if (sheet === r.sheet) return r;
+    changed = true;
+    return { ...r, sheet };
+  });
+  return changed ? { ...draft, reports } : draft;
 }
 
 /** Build one Report draft. `id` + `idempotencyKey` are injected (the mobile layer mints UUIDs). */

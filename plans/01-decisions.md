@@ -6389,10 +6389,12 @@ sheet at freeze-up is its own hazard type, `air_pockets` ("Air pockets"), not `s
 ice is a crust left when a puddle drains after a thaw; an air pocket is a void the ice formed over,
 some "big enough to swallow you whole" (a group leader, Little Sunapee, 2024-12-15). Tier B on the
 base clock (fresh 72 h, aging 168 h), like shell ice; point-and-radius at 40 m; clusters with the
-`crack` family and never promotes. Its **weather response is `weather_insensitive`**: air insulates
-the ice over a pocket from the water that would thicken it, so a cold snap must not fade the pin
-faster — `refreeze_healed`, shell ice's class, would, and that is the direction sign-flip 1 exists
-to forbid. The stale-pin copy says so: cold since may not have thickened it at all.
+`crack` family and never promotes. Its **weather response is its own class, `insulated`**: air
+insulates the ice over a pocket from the water that would thicken it, so a cold snap earns the pin
+no faster fade (no cold term at all) — `refreeze_healed`, shell ice's class, would fade it, and that
+is the direction sign-flip 1 exists to forbid — while a thaw thins the lid over the void and keeps
+the warning up with shell ice's thaw strength. The stale-pin copy says so: cold since may not have
+thickened it at all.
 
 **Why:** the extraction had nowhere honest to put it; it chose `shell_area`, and the founder
 rejected that. The decay call follows the one physical fact the corpus gives — "since air is an

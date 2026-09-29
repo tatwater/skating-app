@@ -41,6 +41,7 @@ import { formCreateRefusal } from './reportForm';
 import {
   emptySheet,
   type ReportSheetState,
+  reviveSheetState,
   SHEET_SECTIONS,
   type SheetSeed,
   sectionFilled,
@@ -225,6 +226,21 @@ export function postSheetFromDraft(draft: PostDraft, openedAtMs: number): PostSh
     openedAtMs,
     dirty: false,
   };
+}
+
+/**
+ * A Post sheet read back from storage (web's refresh, §10.3), each Report's chips brought to this
+ * build's fields (`reviveSheetState`). The same object back when no Report needed it.
+ */
+export function revivePostSheet(post: PostSheet): PostSheet {
+  let changed = false;
+  const reports = post.reports.map((r) => {
+    const sheet = reviveSheetState(r.sheet);
+    if (sheet === r.sheet) return r;
+    changed = true;
+    return { ...r, sheet };
+  });
+  return changed ? { ...post, reports } : post;
 }
 
 /** The edit door: a published Report (and its Post's words) as a one-Report sheet. */

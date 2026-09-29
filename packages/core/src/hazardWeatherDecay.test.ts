@@ -109,6 +109,15 @@ describe('decayMultiplier (D56) — sign-flip & bound invariants (property)', ()
 
   // D208: air insulates the sheet over a pocket from the water that would thicken it, so a cold snap
   // must not fade the pin faster — the direction `refreeze_healed` would take it.
+  it('air_pockets: a thaw keeps the warning up, like shell ice (D208)', () => {
+    const thaw = wx({ freezingDegreeHours: 0, thawDegreeHours: 90, snowfallCm: 0 });
+    expect(decayMultiplier('air_pockets', thaw)).toBeLessThan(1);
+    expect(decayMultiplier('air_pockets', thaw)).toBeCloseTo(
+      decayMultiplier('shell_area', thaw),
+      12,
+    );
+  });
+
   it('air_pockets: cold never speeds its fade (m≤1 whatever the cold)', () => {
     fc.assert(
       fc.property(

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BAY_SECTORS, COMPASS_SECTORS, SECTORS, WHERE_EXTENTS } from './types';
 import {
   describeLocatedChip,
+  describeSighting,
   describeWhere,
   isCompassSector,
   validateWhere,
@@ -167,6 +168,26 @@ describe('describeWhere / describeLocatedChip (A10 / D193, §12.1)', () => {
     expect(describeWhere({ subAreaId: 'bay1' })).toBe('');
     expect(describeWhere({ sector: 'N', subAreaId: 'gone' }, bays)).toBe('north end');
     expect(describeWhere({ extent: 'whole' })).toBe('');
+  });
+  it('a sighting reads as its state, then where — never as the whole lake when it named a part (D210)', () => {
+    expect(describeSighting({ type: 'open', where: { sector: 'S' } })).toBe(
+      'Still open, south end',
+    );
+    expect(describeSighting({ type: 'frozen', where: { subAreaId: 'bay1' } }, bays)).toBe(
+      'Frozen over, Malletts Bay',
+    );
+    // The feed card has no bay names; an unnamed map tap has no words either.
+    expect(describeSighting({ type: 'frozen', where: { subAreaId: 'bay1' } })).toBe(
+      'Frozen over, part of the lake',
+    );
+    expect(
+      describeSighting({
+        type: 'skim',
+        where: { point: { coord: { lat: 44, lng: -73 }, radiusMeters: 50 } },
+      }),
+    ).toBe('Skim ice, part of the lake');
+    expect(describeSighting({ type: 'open' })).toBe('Still open');
+    expect(describeSighting({ type: 'open', where: { extent: 'whole' } })).toBe('Still open');
   });
   it('a chip reads as its type, then where — the type alone when the where says nothing', () => {
     expect(describeLocatedChip({ type: 'black_ice', where: { sector: 'N' } })).toBe(

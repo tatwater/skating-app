@@ -214,6 +214,9 @@ function ObservedFromSection({ report, body, dispatch, gaps, timeZone }: Section
             onDeselect={(key) => {
               dispatch({ type: 'deselect', field: 'sightings', key });
               if (activeCard === `sightings:${key}`) setActiveCard(null);
+              // The last one gone closes the question, or the next tap — from shore, where
+              // nothing asks — would open it again.
+              if (seen.every((c) => c.key === key)) setAsking(false);
             }}
           />
           {refused ? <SheetHint>{`Say where — ${SIGHTING_FROM_ICE_MESSAGE}.`}</SheetHint> : null}

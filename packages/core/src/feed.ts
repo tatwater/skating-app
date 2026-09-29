@@ -444,7 +444,8 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
       data.observedFrom && data.observedFrom !== 'on_ice'
         ? OBSERVED_FROM_LABELS[data.observedFrom]
         : null,
-    sightingLabels: sightingsOf(data).map((s) => describeSighting(s)),
+    // Two that read the same (two bays the card cannot name) are one line on a card.
+    sightingLabels: [...new Set(sightingsOf(data).map((s) => describeSighting(s)))],
     isDontGo: data.suitability === 'dont_go',
     chips,
     photoThumbUrls: data.photoThumbUrls,

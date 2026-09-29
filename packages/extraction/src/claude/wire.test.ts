@@ -117,15 +117,31 @@ describe('thicknessReadingFrom — the validator’s rule at the source', () => 
 });
 
 describe('denseVisits', () => {
+  const candidates = {
+    bodyCandidates: ['w', 'm'].map((ref) => ({ ref, name: ref, aliases: [], subAreas: [] })),
+  };
   it('renumbers each body 0, 1, … in the model’s order — "yesterday" as -1 comes first (A10-9)', () => {
-    const r = denseVisits([
-      { bodyRef: 'w', visit: 0 },
-      { bodyRef: 'w', visit: -1 },
-      { bodyRef: 'm', visit: 3 },
-      { bodyRef: null, bodyName: 'Halfmile', visit: 2 },
-      { bodyRef: 'w', visit: 0 },
-    ]);
+    const r = denseVisits(
+      [
+        { bodyRef: 'w', visit: 0 },
+        { bodyRef: 'w', visit: -1 },
+        { bodyRef: 'm', visit: 3 },
+        { bodyRef: null, bodyName: 'Halfmile', visit: 2 },
+        { bodyRef: 'w', visit: 0 },
+      ],
+      candidates,
+    );
     expect(r.map((x) => x.visit)).toEqual([1, 0, 0, 0, 1]);
+  });
+  it('counts a never-offered ref and the same name as one body, as `bodyOf` will', () => {
+    const r = denseVisits(
+      [
+        { bodyRef: 'Halfmile', visit: 0 },
+        { bodyRef: null, bodyName: 'Halfmile', visit: 1 },
+      ],
+      candidates,
+    );
+    expect(r.map((x) => x.visit)).toEqual([0, 1]);
   });
 });
 
@@ -361,6 +377,31 @@ describe('mapWireResult', () => {
     expect(sightingKept('on_ice', { sector: 'S' })).toBe(true);
     expect(sightingKept('on_ice', { placeName: "Rocky Point to Kimball's Point" })).toBe(true);
     expect(sightingKept(undefined, { sector: 'S' })).toBe(false);
+  });
+
+  it('holds a sighting to the contract’s vocabulary, whatever the caller offered (D210)', () => {
+    const t = 'text' as const;
+    const vocabulary = { ...defaultVocabulary(), sightings: ['melting'] };
+    const wire = {
+      reports: [
+        {
+          bodyRef: 'morey',
+          visit: 0,
+          values: [
+            {
+              field: 'observedFrom',
+              value: 'shore',
+              confidence: 1,
+              quote: 'Skated',
+              quoteField: t,
+            },
+            { field: 'sightings', value: 'melting', confidence: 1, quote: 'Skated', quoteField: t },
+          ],
+        },
+      ],
+      misses: [],
+    };
+    expect(() => mapWireResult(wire, input({ vocabulary }))).toThrow();
   });
 
   it('drops a whole-lake sighting from an author on the ice, or any with no vantage (D189)', () => {

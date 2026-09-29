@@ -1,4 +1,10 @@
-import { openPostSheet, type PostDraft, type PostSheet, postSheetForEdit } from '@skating/core';
+import {
+  openPostSheet,
+  type PostDraft,
+  type PostSheet,
+  postSheetForEdit,
+  selectedValues,
+} from '@skating/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   bindSheetOwner,
@@ -116,6 +122,27 @@ describe('the refresh (§10.3)', () => {
     setSheet(fresh());
     expect(readStoredSheet(NOW + 6 * 24 * 3600_000)).not.toBeNull();
     expect(readStoredSheet(NOW + 8 * 24 * 3600_000)).toBeNull();
+  });
+
+  it('restores a sheet an earlier build stored, its sighting lifted into the list (D210)', () => {
+    const post = fresh();
+    const first = post.reports[0] as NonNullable<(typeof post.reports)[0]>;
+    const { sightings: _absent, ...fields } = first.sheet.fields;
+    const old = {
+      ...fields,
+      sighting: {
+        chips: [{ key: 'open', value: 'open', tier: 'solid' }],
+        multi: false,
+        touched: true,
+      },
+    };
+    const stored = { ...post, reports: [{ ...first, sheet: { ...first.sheet, fields: old } }] };
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ owner: 'user_a', sheet: stored, attempt: null }),
+    );
+    const restored = readStoredSheet(NOW)?.sheet.reports[0]?.sheet;
+    expect(restored && selectedValues(restored, 'sightings')).toEqual([{ type: 'open' }]);
   });
 
   it('ignores a stored value that is not a sheet', () => {

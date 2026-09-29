@@ -215,7 +215,7 @@ hazard additions of 2026-07-21.
     positive-but-cautious (*still crossable / dicey now / ridge closed*), and is the most volatile
     thing on the map; `air_pockets` is air trapped under the sheet at freeze-up — distinct from
     `shell_area`, the drained-puddle crust after a thaw — and since air insulates, **cold weather
-    earns it no faster fade** (D208).
+    earns it no faster fade**, while a thaw keeps its warning up (`insulated`, D208).
 - **Standing**: `active` · `dormant` · `removed` · `unlisted` (`STANDINGS`, D176), with dormancy
   and removal reasons alongside.
 

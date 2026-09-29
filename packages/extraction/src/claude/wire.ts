@@ -482,13 +482,18 @@ export function mapAboutBody(wire: WireAboutBody, input: ExtractionInput): About
  * Visits renumbered 0, 1, … per body in the model's own order. A visit number only orders one
  * body's reports; the model is told to count up in time, and when it counts back instead ("yesterday"
  * as -1) the order it meant is kept and the contract's non-negative visit is met, rather than the
- * whole result failing on one number.
+ * whole result failing on one number. "One body" is the body the report resolves to (`bodyOf`), so
+ * a ref that was never a candidate and the same name given as a name are one body's visits.
  */
 export function denseVisits<T extends { bodyRef: string | null; bodyName?: string; visit: number }>(
   reports: T[],
+  input: Pick<ExtractionInput, 'bodyCandidates'>,
 ): T[] {
   const byBody = new Map<string, number[]>();
-  const keyOf = (r: T) => r.bodyRef ?? `name:${r.bodyName ?? ''}`;
+  const keyOf = (r: T) => {
+    const body = bodyOf(r, input);
+    return body.bodyRef ?? `name:${body.bodyName ?? ''}`;
+  };
   for (const r of reports) {
     const seen = byBody.get(keyOf(r)) ?? [];
     if (!seen.includes(r.visit)) seen.push(r.visit);
@@ -504,7 +509,7 @@ export function mapWireResult(
   input: ExtractionInput,
 ): ExtractionResult {
   const misses: Miss[] = [];
-  const reports = denseVisits(wire.reports).map((r) => mapWireReport(r, input, misses));
+  const reports = denseVisits(wire.reports, input).map((r) => mapWireReport(r, input, misses));
   const aboutBody = (wire.aboutBody ?? []).map((a) => mapAboutBody(a, input));
   for (const m of wire.misses) misses.push(toMiss(m));
   return ExtractionResultSchema.parse({ reports, aboutBody, misses });

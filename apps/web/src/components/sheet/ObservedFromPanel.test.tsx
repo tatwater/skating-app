@@ -77,6 +77,16 @@ describe('What did you see? — located sightings (D210)', () => {
       expect(result.normalized.sightings).toEqual([{ type: 'open', where: { sector: 'S' } }]);
   });
 
+  it('the last sighting gone closes the where, so a later one from shore is not asked', () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /Still open/ }));
+    expect(screen.getByText('Where was it still open?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Still open/ }));
+    fireEvent.click(screen.getByRole('button', { name: /From shore/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Frozen over/ }));
+    expect(screen.queryByText('Where was it frozen over?')).not.toBeInTheDocument();
+  });
+
   it('from shore: any sighting, no where asked for', () => {
     const get = renderPanel([
       { type: 'select', field: 'observedFrom', key: 'shore', value: 'shore' },

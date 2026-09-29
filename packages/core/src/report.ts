@@ -509,7 +509,7 @@ export function validateReportInput(
       message:
         input.observedFrom === 'on_ice'
           ? SIGHTING_FROM_ICE_MESSAGE
-          : 'needs to say how it was seen — from shore, or secondhand',
+          : 'needs to say how it was seen — on the ice, from shore, or secondhand',
     });
     break;
   }

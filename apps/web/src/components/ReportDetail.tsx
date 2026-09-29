@@ -444,7 +444,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           skateQuality: report.skateQuality,
           suitability: report.suitability,
           observedFrom: report.observedFrom,
-          sightings: sightingsOf(report).map((s) => describeSighting(s, report.bayNames)),
+          // Two sightings that read the same are said once — a line, not a count.
+          sightings: [
+            ...new Set(sightingsOf(report).map((s) => describeSighting(s, report.bayNames))),
+          ],
           // Each chip with its `where`, in words (A10 §12.1) — the bays by name, from the server.
           iceTypes: report.iceTypes.map((chip) => describeLocatedChip(chip, report.bayNames)),
           surfaceTags: report.surfaceTags.map((chip) => describeLocatedChip(chip, report.bayNames)),

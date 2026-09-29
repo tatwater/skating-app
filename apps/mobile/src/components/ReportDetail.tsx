@@ -122,6 +122,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const isOwn = me?._id === report.authorId;
   const readings = report.iceThickness?.readings ?? [];
   const snow = report.snow ? describeSnow(report.snow) : null;
+  // Each sighting where it was (D210), in words; two that read the same are said once.
+  const sightingLines = [
+    ...new Set(sightingsOf(report).map((s) => describeSighting(s, report.bayNames))),
+  ];
   const conditions = report.conditions
     ? formatConditions({
         ...report.conditions,
@@ -180,7 +184,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       {report.suitability ||
       report.skateQuality ||
       (report.observedFrom && report.observedFrom !== 'on_ice') ||
-      sightingsOf(report).length > 0 ||
+      sightingLines.length > 0 ||
       report.conflicting ? (
         <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
           {report.suitability ? (
@@ -194,10 +198,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {report.observedFrom && report.observedFrom !== 'on_ice' ? (
             <Badge>{OBSERVED_FROM_LABELS[report.observedFrom]}</Badge>
           ) : null}
-          {sightingsOf(report).map((s) => {
-            const line = describeSighting(s, report.bayNames);
-            return <Badge key={line}>{line}</Badge>;
-          })}
+          {sightingLines.map((line) => (
+            <Badge key={line}>{line}</Badge>
+          ))}
           {report.conflicting ? <Badge>Conflicting reports</Badge> : null}
         </XStack>
       ) : null}
