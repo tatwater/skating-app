@@ -1280,13 +1280,16 @@ picker's location (Owed).
 
 ### Owed
 
-- **The Google OAuth client** (founder, Cloud console): the one scope, the redirect
-  `<WEB_APP_URL>/google-photos/callback`, the alpha crew as test users; then
-  `GOOGLE_PHOTOS_CLIENT_ID` + `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev. The first real run is
+- ~~The Google OAuth client~~ — **done 2026-09-28** (founder): *Skating App – Photos*, a Web
+  application client in the Firebase project beside Clerk's, the one scope on the project's Data
+  Access, the redirect `<WEB_APP_URL>/google-photos/callback`, both variables on Convex dev. The
+  project stays **in production** (Google sign-in through Clerk lives there too), so until Google
+  verifies the scope a picker sees Google's *unverified app* screen (L20). The first real run is
   after merge, when the callback page is deployed where `WEB_APP_URL` points. Two assumptions it
   checks: picked items' `baseUrl`s are on `googleusercontent.com` (anything else is dropped), and
   `/autoclose` closes the picker window.
-- **Google's OAuth verification** before the public can use it (L20).
+- **Google's OAuth verification**, with the Play and App Store registration (founder call
+  2026-09-28; L20).
 - **The Pixel pass** (a new EAS preview build): the Report tab opens with no photo prompt; *Add
   photos* opens the system picker with Google Photos in it; **whether a picked photo keeps its
   location** — if not, request `ACCESS_MEDIA_LOCATION` on the *Add photos* tap; a share from
@@ -1354,8 +1357,9 @@ what the person picked. There is no Apple path on web.
 
 ### The calls (founder)
 
-1. **(2026-09-24) Web gets *From Google Photos*:** an OAuth consent, testing mode for the alpha,
-   the verification review before launch.
+1. **(2026-09-24) Web gets *From Google Photos*:** an OAuth consent; the verification review with
+   the store registration (2026-09-28 — the project stays in production, so the alpha clicks
+   through Google's *unverified app* screen rather than running in testing mode).
 2. **(2026-09-28) The phone does not, for now.** Android's system picker already shows Google
    Photos. The one case left is an iPhone that backs up to Google Photos, and it waits.
 3. **(2026-09-24, narrowed 2026-09-28) The library becomes a full-screen grid opened from the
@@ -1381,12 +1385,12 @@ what the person picked. There is no Apple path on web.
 
 ### Owed before code (Google Photos only; the rest needs nothing)
 
-- A **Google OAuth client** (Web application) in the Cloud project that already holds Firebase,
-  its consent screen with the one scope, the redirect `<WEB_APP_URL>/google-photos/callback` (the
-  Vercel deployment Convex dev points at), and the founder plus the alpha crew as test users (the
-  founder, in the console). `GOOGLE_PHOTOS_CLIENT_ID` +
-  `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev. Until both are set, the web hides the button, so
-  the code ships dark.
+- ~~A **Google OAuth client**~~ — done 2026-09-28 (see the built record's Owed): a Web
+  application client in the Cloud project that already holds Firebase, the one scope on the
+  project's Data Access, the redirect `<WEB_APP_URL>/google-photos/callback`, and
+  `GOOGLE_PHOTOS_CLIENT_ID` + `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex dev. The project stays in
+  production rather than testing mode, which is project-wide and would lock Google sign-in to
+  test users too.
 - **iOS, when it is set up:** an App Group (`group.com.teaganatwater.gli`) registered for the
   Share Extension.
 

@@ -51,7 +51,7 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | **OpenRouteService** (HeiGIT) | drive-time isochrones (Phase 04), `foot-hiking` approaches (A06d) | ✅ | `ORS_API_KEY` on Convex; the ETL reads the same key | portal is <https://account.heigit.org>; measured quotas in § 3a |
 | **NREL WIND Toolkit** | winter wind roses | ✅ | `WIND_TOOLKIT_API_KEY` + `WIND_TOOLKIT_EMAIL`, local `.env` in `scripts/wind-climate` | free, instant at <https://developer.nlr.gov/signup/>; the host moved from `developer.nrel.gov`, hence the variable name |
 | **Strava API app** | push to Strava (`activity:write`) | ✅ registered | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` on Convex; `WEB_APP_URL` for the OAuth return | callback domain `agile-bee-397.convex.site` — confirmed on the dashboard 2026-09-20; athlete cap lifted to 10 the same day (new apps start single-player); no real OAuth round-trip has run yet |
-| **Google Photos Picker** (OAuth client in the Firebase Cloud project) | the web's *From Google Photos* (A10-8, D207): scope `photospicker.mediaitems.readonly`, one consent per use, no refresh token | ⬜ owed — the founder creates it | `GOOGLE_PHOTOS_CLIENT_ID` + `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex | a Web application client; redirect `<WEB_APP_URL>/google-photos/callback` (the web app's page completes the pick as the signed-in person, so the flow reads `WEB_APP_URL` too, and runs only where that page is deployed); testing mode (named test users) for the alpha, then Google's OAuth verification before launch; the button stays hidden until both variables are set |
+| **Google Photos Picker** — OAuth client *Skating App – Photos* in the Firebase Cloud project | the web's *From Google Photos* (A10-8, D207): scope `photospicker.mediaitems.readonly`, one consent per use, no refresh token | ✅ created 2026-09-28 | `GOOGLE_PHOTOS_CLIENT_ID` + `GOOGLE_PHOTOS_CLIENT_SECRET` on Convex | a Web application client; redirect `<WEB_APP_URL>/google-photos/callback` (the web app's page completes the pick as the signed-in person, so the flow reads `WEB_APP_URL` too, and runs only where that page is deployed); the project stays in production (Clerk's Google client shares it, and publishing status is project-wide), so until Google verifies the scope a picker sees the *unverified app* screen, capped at 100 users; verification comes with the store registration (L20); the button stays hidden until both variables are set |
 
 ### No account, by design
 
@@ -96,7 +96,7 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `RESEND_FROM_EMAIL` | ✅ `Gli Updates <updates@skating.teaganatwater.com>` | ⬜ | no |
 | `OPERATOR_ALERT_EMAIL` | ✅ | ⬜ | no |
 | `STRAVA_CLIENT_ID` · `STRAVA_CLIENT_SECRET` | ✅ | ⬜ | id no · secret **yes** |
-| `GOOGLE_PHOTOS_CLIENT_ID` · `GOOGLE_PHOTOS_CLIENT_SECRET` | ⬜ owed (A10-8) | ⬜ | id no · secret **yes** |
+| `GOOGLE_PHOTOS_CLIENT_ID` · `GOOGLE_PHOTOS_CLIENT_SECRET` | ✅ 2026-09-28 | ⬜ | id no · secret **yes** |
 | `WEB_APP_URL` | ✅ the Vercel deployment URL | ⬜ the prod URL | no |
 | `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 
