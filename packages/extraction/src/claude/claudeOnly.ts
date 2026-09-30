@@ -8,6 +8,7 @@
 
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ExtractionInput, ExtractionRun, Extractor } from '../contract';
+import { attachLandmarks } from '../landmarks';
 import {
   type ClaudeCallOptions,
   type ClaudeModelKey,
@@ -35,7 +36,7 @@ export function claudeOnlyExtractor(
         opts,
       );
       return {
-        result: mapWireResult(call.data, input),
+        result: attachLandmarks(mapWireResult(call.data, input), input),
         usage: {
           engine: `claude-only:${model}`,
           latencyMs: Date.now() - started,

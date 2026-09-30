@@ -39,6 +39,10 @@ describe('userPrompt', () => {
           aliases: ['Morey'],
           place: 'Fairlee, VT',
           subAreas: [{ id: 'sa1', name: 'The Cove', aliases: ['the cove'] }],
+          landmarks: [
+            { id: 'lm1', name: 'Echo Point', aliases: [] },
+            { id: 'lm2', name: 'Bird Poop Rock', aliases: ['the gull rock'] },
+          ],
         },
       ],
       vocabulary: defaultVocabulary(),
@@ -46,7 +50,7 @@ describe('userPrompt', () => {
       timeZone: 'America/New_York',
     });
     expect(p).toContain(
-      '- ref "r1": Lake Morey (also: Morey) — Fairlee, VT; bays: The Cove [id sa1] (also: the cove)',
+      '- ref "r1": Lake Morey (also: Morey) — Fairlee, VT; bays: The Cove [id sa1] (also: the cove); landmarks: Echo Point [id lm1], Bird Poop Rock [id lm2] (also: the gull rock)',
     );
     expect(p).toContain('Written at: 2026-01-10T22:00:00.000Z (time zone America/New_York)');
     expect(p).toContain('Title:\nMorey 1/10');

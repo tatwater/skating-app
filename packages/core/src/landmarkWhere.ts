@@ -106,3 +106,25 @@ export function pointFromTap(
     ? { coord, radiusMeters, name: near.name, landmarkId: near._id }
     : { coord, radiusMeters };
 }
+
+/**
+ * Which landmark a phrase names — "off Shelburne Point", "by the gut", "west of bird poop rock" —
+ * or `null`. A landmark's name or any spelling must appear in the phrase as whole words (folded as
+ * `landmarkNameKey` folds), and the longest match wins, so "Shelburne Point" beats "Shelburne" and
+ * "Point" alone names nothing it is not. The extraction uses it to turn a `placeName` into an id.
+ */
+export function landmarkNamedIn<T extends { name: string; aliases: readonly string[] }>(
+  phrase: string,
+  landmarks: readonly T[],
+): T | null {
+  const text = ` ${landmarkNameKey(phrase)} `;
+  let best: { landmark: T; length: number } | null = null;
+  for (const landmark of landmarks) {
+    for (const name of [landmark.name, ...landmark.aliases]) {
+      const key = landmarkNameKey(name);
+      if (!key || !text.includes(` ${key} `)) continue;
+      if (!best || key.length > best.length) best = { landmark, length: key.length };
+    }
+  }
+  return best?.landmark ?? null;
+}

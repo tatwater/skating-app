@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LANDMARK_SNAP_M,
+  landmarkNamedIn,
   landmarkPoint,
   landmarksForSheet,
   nearestLandmark,
@@ -92,5 +93,25 @@ describe('a tap on the lake', () => {
       name: 'Apple Island',
       landmarkId: 'id-Apple Island',
     });
+  });
+});
+
+describe('landmarkNamedIn', () => {
+  const shelburne = { name: 'Shelburne Point', aliases: [] };
+  const town = { name: 'Shelburne', aliases: [] };
+  const gut = { name: 'The Gut', aliases: ['gut'] };
+  const rock = { name: 'Bird Poop Rock', aliases: ["the gulls' rock"] };
+
+  it('finds the landmark a phrase names, the longest name winning', () => {
+    expect(landmarkNamedIn('a wind hole off Shelburne Point', [town, shelburne])).toBe(shelburne);
+    expect(landmarkNamedIn('skated to Shelburne and back', [town, shelburne])).toBe(town);
+    expect(landmarkNamedIn('through the gut', [gut])).toBe(gut);
+    expect(landmarkNamedIn("west of the gulls' rock", [rock])).toBe(rock);
+  });
+
+  it('names nothing for a part of a word or no match', () => {
+    expect(landmarkNamedIn('the guttering', [gut])).toBeNull();
+    expect(landmarkNamedIn('north end', [gut, rock])).toBeNull();
+    expect(landmarkNamedIn('', [gut])).toBeNull();
   });
 });
