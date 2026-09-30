@@ -67,8 +67,8 @@ vi.mock('../sheet/BodyPicker', () => ({
 
 const { PlaceNameQueue } = await import('./PlaceNameQueue');
 
-const champlain = { _id: 'champlain', name: 'Lake Champlain', states: ['VT', 'NY'] };
-const george = { _id: 'george', name: 'Lake George', states: ['NY'] };
+const champlain = { _id: 'champlain', label: 'Lake Champlain · VT, NY' };
+const george = { _id: 'george', label: 'Lake George · NY' };
 
 beforeEach(() => {
   calls.length = 0;
@@ -123,7 +123,7 @@ describe('PlaceNameQueue', () => {
     render(<PlaceNameQueue />);
     expect(screen.getByText('also Apple Is')).toBeInTheDocument();
     expect(screen.getByText('11 skated')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Lake Champlain' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Lake Champlain · VT, NY' })).toHaveAttribute(
       'href',
       '/admin/water/champlain',
     );
@@ -137,7 +137,7 @@ describe('PlaceNameQueue', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lake George · NY' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ name: 'setLake', args: { id: 'long', waterBodyId: 'george' } });
-    expect(await screen.findByText('“Long Point” is on Lake George.')).toBeInTheDocument();
+    expect(await screen.findByText('“Long Point” is on Lake George · NY.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Pick a lake…' }));
     fireEvent.click(screen.getByRole('button', { name: 'pick Picked Pond' }));
@@ -168,9 +168,41 @@ describe('PlaceNameQueue', () => {
     await waitFor(() => expect(calls).toEqual([{ name: 'reopen', args: { id: 'baltic' } }]));
   });
 
+  it('offers "Choose which" for a name already on the map', () => {
+    rows.current = [
+      {
+        _id: 'cedar',
+        name: 'Cedar Island',
+        aliases: [],
+        messages: 9,
+        skatedMessages: 5,
+        states: ['VT'],
+        status: 'open',
+        lake: champlain,
+        candidates: [],
+        alreadyNamed: true,
+      },
+    ];
+    render(<PlaceNameQueue />);
+    expect(
+      screen.getByText(/Already a landmark — the emails did not say which one/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Choose which' })).toHaveAttribute(
+      'href',
+      '/admin/water/champlain',
+    );
+  });
+
+  it('says the filter may be hiding names when the recurring ones are done', () => {
+    rows.current = [];
+    render(<PlaceNameQueue />);
+    expect(screen.getByText(/Untick the filter for the names one email used/)).toBeInTheDocument();
+  });
+
   it('says so when the queue is empty', () => {
     rows.current = [];
     render(<PlaceNameQueue />);
+    fireEvent.click(screen.getByLabelText('Only names mentioned more than once'));
     expect(
       screen.getByText('Nothing waiting — every name is placed or dismissed.'),
     ).toBeInTheDocument();

@@ -226,11 +226,19 @@ async function main(): Promise<void> {
     writeFileSync(join(SCRATCH, 'corpus-unmatched.csv'), `${[header, ...rows].join('\n')}\n`);
     // The same leftovers, with their lakes resolved where one answers, for `load-landmark-names` —
     // the moderator's queue on /admin/water/place-names (D202).
-    const names = corpusNameRecords(corpus, new Map(bodies.map((b) => [b.id, b])));
-    writeFileSync(
-      join(SCRATCH, 'corpus-names.ndjson'),
-      `${names.map((r) => JSON.stringify(r)).join('\n')}\n`,
-    );
+    // Only from a run over every state: a name another state's landmarks answer to is not a name
+    // "no landmark took", and a one-state run cannot tell.
+    if (ALL_STATES.every((st) => selected.includes(st))) {
+      const names = corpusNameRecords(corpus, new Map(bodies.map((b) => [b.id, b])));
+      writeFileSync(
+        join(SCRATCH, 'corpus-names.ndjson'),
+        `${names.map((r) => JSON.stringify(r)).join('\n')}\n`,
+      );
+    } else {
+      log(
+        'corpus-names.ndjson not written: the queue is built only from a run over all five states',
+      );
+    }
   }
 
   const byKind: Record<string, number> = {};

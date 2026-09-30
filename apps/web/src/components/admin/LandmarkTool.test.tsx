@@ -281,10 +281,21 @@ describe('LandmarkTool', () => {
     queryResults.openForBody = [
       { _id: 'cn1', name: 'Apple Island', aliases: ['Apple Is'], messages: 24, skatedMessages: 11 },
       { _id: 'cn2', name: 'Isle LaMotte', aliases: [], messages: 4, skatedMessages: 3 },
+      {
+        _id: 'cn3',
+        name: 'Cedar Island',
+        aliases: [],
+        messages: 9,
+        skatedMessages: 5,
+        alreadyNamed: true,
+      },
     ];
     const onArm = vi.fn();
     const { rerender } = renderTool({ onArm });
     expect(screen.getByText(/24 mentions · also Apple Is/)).toBeInTheDocument();
+    // Already a landmark: nothing to place, only which one.
+    expect(screen.getAllByRole('button', { name: 'Place it' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Which one?' })).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'Place it' })[0] as HTMLElement);
     expect(onArm).toHaveBeenCalledWith(true);
     rerender(

@@ -182,6 +182,17 @@ export function LandmarkTool({
     void run(() => update({ landmarkId: id, point }), 'Moved.');
   }, [moving, point]);
 
+  // A name or proposal the form is answering can be decided elsewhere meanwhile (dismissed here, by
+  // a colleague, on the triage page); the form lets go of it rather than save against a closed row.
+  useEffect(() => {
+    if (placingName && corpusNames && !corpusNames.some((c) => c._id === placingName)) {
+      setPlacingName(null);
+    }
+    if (answering && proposals && !proposals.some((p) => p.requestId === answering)) {
+      setAnswering(null);
+    }
+  }, [placingName, corpusNames, answering, proposals]);
+
   const startEdit = (l: EditorLandmark) => {
     reset();
     setEditing(l);
@@ -349,26 +360,30 @@ export function LandmarkTool({
                     </span>
                   </span>
                   <span className="flex shrink-0 gap-1">
-                    <Button
-                      variant={placingName === c._id ? 'default' : 'ghost'}
-                      size="xs"
-                      onClick={() => {
-                        reset();
-                        setName(c.name);
-                        setAliases(c.aliases.join(', '));
-                        setPlacingName(c._id);
-                        onArm(true);
-                      }}
-                    >
-                      {placingName === c._id && !point ? 'Click the map…' : 'Place it'}
-                    </Button>
+                    {/* Already a landmark (the emails did not say which): nothing to place, only
+                        the landmark to choose. */}
+                    {c.alreadyNamed ? null : (
+                      <Button
+                        variant={placingName === c._id ? 'default' : 'ghost'}
+                        size="xs"
+                        onClick={() => {
+                          reset();
+                          setName(c.name);
+                          setAliases(c.aliases.join(', '));
+                          setPlacingName(c._id);
+                          onArm(true);
+                        }}
+                      >
+                        {placingName === c._id && !point ? 'Click the map…' : 'Place it'}
+                      </Button>
+                    )}
                     <Button
                       variant={spelling === c._id ? 'default' : 'ghost'}
                       size="xs"
                       disabled={live.length === 0}
                       onClick={() => setSpelling(spelling === c._id ? null : c._id)}
                     >
-                      Already here
+                      {c.alreadyNamed ? 'Which one?' : 'Already here'}
                     </Button>
                     <DismissPlaceNameDialog
                       id={c._id}

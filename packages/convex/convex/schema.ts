@@ -2758,7 +2758,11 @@ export default defineSchema({
    */
   corpusPlaceNames: defineTable({
     name: v.string(),
-    /** `landmarkNameKey(name)` plus the parent's key — the load's upsert key. */
+    /**
+     * The load's upsert key: `landmarkNameKey(name)` and the parent lake the emails named, folded —
+     * both from the corpus, never from a moderator's choice, so a re-load finds the row whatever lake
+     * it was given since.
+     */
     askKey: v.string(),
     aliases: v.array(v.string()),
     messages: v.number(),
@@ -2766,7 +2770,16 @@ export default defineSchema({
     states: v.array(v.string()),
     parentName: v.optional(v.string()),
     waterBodyId: v.optional(v.id('waterBodies')),
+    /** The lake's name and states when it was set — shown on the queue without reading its polygon. */
+    lakeLabel: v.optional(v.string()),
     candidateBodyIds: v.optional(v.array(v.id('waterBodies'))),
+    /** Labels for `candidateBodyIds`, in order. */
+    candidateLabels: v.optional(v.array(v.string())),
+    /**
+     * The name already answers to landmarks on the map — on several lakes, or twice on one — and
+     * the corpus did not say which it meant. Nothing to place; the question is which landmark it is.
+     */
+    alreadyNamed: v.optional(v.boolean()),
     status: literals(CORPUS_NAME_STATUSES),
     landmarkId: v.optional(v.id('bodyLandmarks')),
     dismissReason: v.optional(literals(CORPUS_NAME_DISMISS_REASONS)),

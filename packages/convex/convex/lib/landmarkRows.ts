@@ -8,7 +8,9 @@
 import {
   distanceToShorelineMeters,
   filledPolygon,
+  type LandmarkKind,
   landmarkNameKey,
+  landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
   pointInPolygon,
   type SubAreaCandidate,
@@ -231,4 +233,40 @@ export async function placeCorpusName(
     decidedAt: now,
     updatedAt: now,
   });
+}
+
+/** A row (or a candidate) as core's same-place rule reads it. */
+export function identityOf(row: {
+  kind: LandmarkKind;
+  point: { lat: number; lng: number };
+  name: string;
+  aliases: readonly string[];
+}) {
+  return { kind: row.kind, point: row.point, names: [row.name, ...row.aliases] };
+}
+
+/**
+ * Refuse a second live landmark that is the same place as one this lake already has — core's
+ * `landmarksAreSamePlace`, the rule the import and the ETL use, so a moderator is refused exactly the
+ * pairs the catalogs would have merged. "Long Point" is on half the lakes in Vermont and on
+ * Champlain twice; two of them far apart are two places.
+ */
+export function assertNotDuplicate(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  candidate: {
+    kind: LandmarkKind;
+    point: { lat: number; lng: number };
+    name: string;
+    aliases: readonly string[];
+  },
+  exceptId?: Id<'bodyLandmarks'>,
+): void {
+  const identity = identityOf(candidate);
+  const clash = rows.find(
+    (row) =>
+      row._id !== exceptId &&
+      row.removedAt === undefined &&
+      landmarksAreSamePlace(identityOf(row), identity),
+  );
+  if (clash) throw new ConvexError(`"${clash.name}" is already a landmark here`);
 }
