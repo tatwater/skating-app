@@ -10,11 +10,21 @@
 # canonical water" for the load of all 25,050 bodies.
 #
 #   ./run-corpus.sh <campaign-id> [--refresh] [--apply-sub-areas --actor=<profileId>]
+#                   [--mentions=<mentions.csv> | --without-corpus] [--skip-landmarks]
 #
 # The loaders now discover `.scratch/merge/merge-manifest.json` on their own, so this script is a
 # convenience and an ordering guarantee rather than the only way to get a full record. What it adds
 # that discovery cannot: the load order (bodies BEFORE sub-areas — a bay needs its parent to exist),
 # one campaign id across every pass, and a refusal to load a merge that did not finish.
+#
+# **Landmarks ride the campaign (D202).** After the bodies and the bays, the landmark pass matches
+# OSM + GNIS to the bodies just loaded (it re-exports their outlines — new bodies need their names
+# too) and loads them, then loads the community corpus's unplaced names into the moderator queue
+# (/admin/water/place-names). Applied, like the bodies: both loads are additive and idempotent, a
+# moderator's edits and removals survive them, and a decided queue name is never reopened. The
+# corpus inventory is gitignored input; the default path is the one the inventory tool writes, and
+# a campaign without it must say `--without-corpus` (a landmark load without the corpus would
+# erase every corpus count). `--skip-landmarks` leaves the stage out.
 #
 # Dev only. Pass --prod to the loader yourself if you mean production; this script does not plumb it.
 #
@@ -32,22 +42,44 @@
 # there is no reason left to wrap it and no way for a wrapper to eat the status.
 set -euo pipefail
 
+# Where the caller stood, so a relative --mentions= path means what they typed.
+CALLER_PWD="$PWD"
 cd "$(dirname "$0")"
 
-CAMPAIGN="${1:?usage: ./run-corpus.sh <campaign-id> [--refresh] [--apply-sub-areas --actor=<id>]}"
+CAMPAIGN="${1:?usage: ./run-corpus.sh <campaign-id> [--refresh] [--apply-sub-areas --actor=<id>] [--mentions=<csv> | --without-corpus] [--skip-landmarks]}"
 shift
 
 REFRESH=""
 APPLY_SUB_AREAS=""
 ACTOR=""
+# The corpus inventory's aggregate — gitignored, written by training_data/tools/corpus-mentions.
+MENTIONS="$(cd ../.. && pwd)/training_data/google_group/mentions/mentions.csv"
+WITHOUT_CORPUS=""
+SKIP_LANDMARKS=""
 for arg in "$@"; do
   case "$arg" in
     --refresh) REFRESH="--refresh" ;;
     --apply-sub-areas) APPLY_SUB_AREAS="--apply" ;;
     --actor=*) ACTOR="$arg" ;;
+    --mentions=*)
+      MENTIONS="${arg#--mentions=}"
+      case "$MENTIONS" in /*) ;; *) MENTIONS="${CALLER_PWD}/${MENTIONS}" ;; esac
+      ;;
+    --without-corpus) WITHOUT_CORPUS="--without-corpus" ;;
+    --skip-landmarks) SKIP_LANDMARKS="1" ;;
     *) echo "unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
+
+# The same rule as the sub-area check below: a cheap argument refuses at second two, not after the
+# merge. A landmark stage with neither the corpus nor an explicit `--without-corpus` would load
+# landmarks with no community names — erasing every corpus count the last campaign attached.
+if [ -z "$SKIP_LANDMARKS" ] && [ -z "$WITHOUT_CORPUS" ] && [ ! -f "$MENTIONS" ]; then
+  echo "the landmark stage needs the corpus inventory, and ${MENTIONS} is not there." >&2
+  echo "pass --mentions=<mentions.csv>, --without-corpus to build landmarks without it," >&2
+  echo "or --skip-landmarks to leave the stage out (D202)." >&2
+  exit 1
+fi
 
 # ⚠ **An explicit `--apply-sub-areas` must never be silently skipped**, and this is the only place
 # that can say so cheaply. The sub-area step below treats a missing `--actor` as "skip and carry on",
@@ -135,6 +167,30 @@ else
   echo "══ load sub-areas${APPLY_SUB_AREAS:+ (applying)}"
   pnpm --filter @skating/etl load-sub-areas "${SCRATCH}/sub-areas.ndjson" \
     --campaign="$CAMPAIGN" "$ACTOR" $APPLY_SUB_AREAS
+fi
+
+# Landmarks last: they are matched to the bodies this campaign just loaded (so the body outlines are
+# re-exported), and a name a live bay already carries is skipped (so the bays go first).
+if [ -n "$SKIP_LANDMARKS" ]; then
+  echo "══ landmarks: SKIPPED (--skip-landmarks). To run the stage on its own:"
+  echo "   pnpm --filter @skating/etl landmarks --refresh-bodies --mentions=<mentions.csv>"
+  echo "   pnpm --filter @skating/etl load-landmarks --campaign=${CAMPAIGN} --apply"
+  echo "   pnpm --filter @skating/etl load-landmark-names --campaign=${CAMPAIGN} --apply"
+else
+  echo "══ landmarks — OSM + GNIS matched to the bodies just loaded (D202)"
+  if [ -n "$WITHOUT_CORPUS" ]; then
+    pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --without-corpus
+  else
+    pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --mentions="$MENTIONS"
+  fi
+  echo "══ load landmarks"
+  pnpm --filter @skating/etl load-landmarks --campaign="$CAMPAIGN" --apply $WITHOUT_CORPUS
+  if [ -n "$WITHOUT_CORPUS" ]; then
+    echo "══ place-names queue: SKIPPED — built without the corpus"
+  else
+    echo "══ load the corpus's unplaced names into the moderator queue"
+    pnpm --filter @skating/etl load-landmark-names --campaign="$CAMPAIGN" --apply
+  fi
 fi
 
 echo

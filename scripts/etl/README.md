@@ -313,10 +313,14 @@ re-derivable, and they are kilobytes.
 > the *corpus* or re-importing one *state's OSM extract*.
 >
 > ```bash
-> ./run-corpus.sh n7-20260807            # A07a: three catalogs → the master list → the corpus
+> ./run-corpus.sh n7-20260807            # A07a: three catalogs → the master list → the corpus → its landmarks
 > ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
 > ./run-canonical.sh n6c-20260802 vt nh  # …or just some
 > ```
+> `run-corpus.sh` ends with the landmark stage (D202): it re-exports the loaded bodies, matches OSM +
+> GNIS to them, loads the landmarks and the corpus's unplaced names — all applied, all idempotent.
+> It needs the corpus inventory (`--mentions=`, defaulting to the path the inventory tool writes),
+> or `--without-corpus`, or `--skip-landmarks`; it refuses at the start rather than after the merge.
 > Each is the manual steps below, in order, with the arguments that carry provenance already
 > wired — the campaign id, and for the OSM path the extract manifest, transform summary and filter
 > command. Both write `importRuns` rows visible at **`/admin/imports`**. Read on if you are doing
@@ -689,8 +693,11 @@ towns, and the camps, resorts and lone restaurants on the shore — from the arc
 GNIS, named by the community corpus. Labels and a `where`, never places (D202 in
 [`plans/01-decisions.md`](../../plans/01-decisions.md)).
 
+**A corpus campaign runs this stage itself** (`run-corpus.sh`, last); the commands are for running
+it on its own — after a moderator session, a new OSM extract, or a fresh corpus inventory:
+
 ```sh
-pnpm --filter @skating/etl landmarks --mentions=<training_data/google_group/mentions/mentions.csv>
+pnpm --filter @skating/etl landmarks --refresh-bodies --mentions=<training_data/google_group/mentions/mentions.csv>
 pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd>            # dry
 pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --apply
 ```

@@ -6257,7 +6257,9 @@ beach or marina or shore business on the nearest shore, a town on every body wit
 on each body it crosses, a river at each mouth. A restaurant or store counts only when no other named
 business stands within 250 m; a camp, resort or hotel always (founder, 2026-09-29: they own
 shoreline and outlast their signs). The community corpus contributes spellings and a mention count,
-and only where one landmark answers. A moderator adds what no catalog has ("Bird Poop Rock"), and —
+and only where one landmark answers. The pass is the last stage of every corpus campaign
+(`run-corpus.sh`, founder 2026-09-29): new bodies get their names with the build, applied like the
+bodies themselves, since the load is additive and never overrides a moderator. A moderator adds what no catalog has ("Bird Poop Rock"), and —
 the proposal lane — so will skaters.
 
 **How they show.** Labels on the focused lake only, never viewport-wide (the per-body cap is what
