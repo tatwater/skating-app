@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import type { TrustClass } from '@skating/core';
 import {
   describeLocatedChip,
+  describeSighting,
   describeSnow,
   formatConditions,
   formatLocationLine,
@@ -15,14 +16,13 @@ import {
   type ObservedFrom,
   type ReportConditions,
   reportStripState,
-  SIGHTING_LABELS,
-  type Sighting,
   SKATE_QUALITY_LABELS,
   type SkateQuality,
   type Snow,
   SUITABILITY_LABELS,
   type Suitability,
   seasonOf,
+  sightingsOf,
   type ThicknessReading,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
@@ -61,10 +61,13 @@ export interface ReportViewData {
   /** Optional — when they got on; renders the derived duration alongside the end (Phase 05). */
   skateStartTime?: number;
   skateQuality?: SkateQuality;
-  /** The A10 axes (D190, D191, D189): who it is for, how they saw it, what a shore observer saw. */
+  /**
+   * The A10 axes (D190, D191, D189): who it is for, how they saw it, and what they saw rather than
+   * skated — already in words, each with its place (D210, `describeSighting`).
+   */
   suitability?: Suitability;
   observedFrom?: ObservedFrom;
-  sighting?: Sighting;
+  sightings?: string[];
   /** Chip lines, already in words — "Black ice, north end of Malletts Bay" (`describeLocatedChip`). */
   iceTypes: string[];
   surfaceTags: string[];
@@ -155,11 +158,12 @@ export function ReportView({
       ) : null}
       <div className="flex flex-col gap-4 px-4 pb-4">
         {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment;
-            then the vantage when it was not the ice (D191), and what a shore observer saw. */}
+            then the vantage when it was not the ice (D191), and what the author saw rather than
+            skated, each where it was (D210). */}
         {data.suitability ||
         data.skateQuality ||
         (data.observedFrom && data.observedFrom !== 'on_ice') ||
-        data.sighting ||
+        (data.sightings?.length ?? 0) > 0 ||
         data.conflicting ? (
           <div className="flex flex-wrap items-center gap-1">
             {data.suitability ? (
@@ -173,9 +177,11 @@ export function ReportView({
             {data.observedFrom && data.observedFrom !== 'on_ice' ? (
               <Badge variant="outline">{OBSERVED_FROM_LABELS[data.observedFrom]}</Badge>
             ) : null}
-            {data.sighting ? (
-              <Badge variant="outline">{SIGHTING_LABELS[data.sighting]}</Badge>
-            ) : null}
+            {(data.sightings ?? []).map((line) => (
+              <Badge key={line} variant="outline">
+                {line}
+              </Badge>
+            ))}
             {data.conflicting ? <Badge variant="outline">Conflicting reports</Badge> : null}
           </div>
         ) : null}
@@ -438,7 +444,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           skateQuality: report.skateQuality,
           suitability: report.suitability,
           observedFrom: report.observedFrom,
-          sighting: report.sighting,
+          // Two sightings that read the same are said once — a line, not a count.
+          sightings: [
+            ...new Set(sightingsOf(report).map((s) => describeSighting(s, report.bayNames))),
+          ],
           // Each chip with its `where`, in words (A10 §12.1) — the bays by name, from the server.
           iceTypes: report.iceTypes.map((chip) => describeLocatedChip(chip, report.bayNames)),
           surfaceTags: report.surfaceTags.map((chip) => describeLocatedChip(chip, report.bayNames)),

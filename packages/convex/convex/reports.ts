@@ -22,6 +22,7 @@ import {
   type RecommendableReport,
   resolveSeason,
   type Season,
+  type Sighting,
   type SurfaceTag,
   seasonEndMs,
   seasonOf,
@@ -39,6 +40,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
+import { HAZARD_MAX_PER_REPORT } from './hazards';
 import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
@@ -59,6 +61,7 @@ import {
 } from './lib/reportWrite';
 import { trustClassFor } from './lib/reputation';
 import { recordRevision, reportSnapshotOf } from './lib/revisions';
+import { addedSightings, deriveSightingHazards, drawnHazardOf } from './lib/sightingHazards';
 import { authorRemoveReport } from './moderation';
 import { resolveReportSubAreas, stampCandidates } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
@@ -525,7 +528,7 @@ export const update = mutation({
       subAreaNames: subAreas.subAreaNames,
       skateEndPrecision: n.skateEndPrecision,
       observedFrom: n.observedFrom,
-      sighting: n.sighting,
+      sightings: n.sightings,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,
@@ -582,6 +585,27 @@ export const update = mutation({
     // The body cannot change here (`update` reads `existing.waterBodyId` and never takes one), so
     // there is a single card to refresh rather than an old one and a new one.
     await recomputeBodySummary(ctx, existing.waterBodyId);
+
+    // A sighting the edit adds pins its hazard like one posted with the Report (D210); the ones it
+    // kept already have theirs, with their own confirmations and decay, which an edit never restarts.
+    const added = addedSightings(existing.sightings, n.sightings);
+    if (added.length > 0 && body && profile.canPostHazards !== false) {
+      const had = await Promise.all(existing.hazardIdsCreated.map((id) => ctx.db.get(id)));
+      const derived = await deriveSightingHazards(ctx, {
+        body,
+        sightings: added,
+        drawn: had.flatMap((h) => (h ? [drawnHazardOf(h)] : [])),
+        authorId: profile._id,
+        reportId: args.reportId,
+        now,
+        budget: HAZARD_MAX_PER_REPORT - existing.hazardIdsCreated.length,
+      });
+      if (derived.length > 0) {
+        await ctx.db.patch(args.reportId, {
+          hazardIdsCreated: [...new Set([...existing.hazardIdsCreated, ...derived])],
+        });
+      }
+    }
     return args.reportId;
   },
 });
@@ -719,6 +743,7 @@ export function a10ShapePatch(report: Doc<'reports'>): Partial<Doc<'reports'>> |
     iceTypes: ChipInput<IceType>[];
     surfaceTags: ChipInput<SurfaceTag>[];
     snowCoverCm?: number;
+    sighting?: Sighting;
   };
   const patch: Record<string, unknown> = {};
   if (legacy.iceTypes.some((chip) => typeof chip === 'string')) {
@@ -734,6 +759,12 @@ export function a10ShapePatch(report: Doc<'reports'>): Partial<Doc<'reports'>> |
         ? report.snow
         : { ...(report.snow ?? {}), depthCm: legacy.snowCoverCm };
     patch.snowCoverCm = undefined;
+  }
+  if (legacy.sighting !== undefined) {
+    // D210 (A10-9): the single sighting joins the located list. A row with both (an edit under the
+    // widened schema) keeps its list — the edit wrote the author's current answer.
+    patch.sightings = report.sightings ?? [{ type: legacy.sighting }];
+    patch.sighting = undefined;
   }
   return Object.keys(patch).length > 0 ? (patch as Partial<Doc<'reports'>>) : null;
 }

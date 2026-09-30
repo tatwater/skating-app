@@ -26,7 +26,7 @@ const SECOND: FeedCardData = {
   skateEndTime: Date.UTC(2026, 0, 5, 9, 0),
   suitability: 'dont_go',
   observedFrom: 'shore',
-  sighting: 'open',
+  sightings: [{ type: 'open', where: { sector: 'S' } }],
   iceTypes: [],
   surfaceTags: [],
   skateQuality: undefined,
@@ -75,7 +75,7 @@ describe('PostCard (A10 / D186)', () => {
     );
     expect(screen.getByText("Don't go")).toBeInTheDocument();
     expect(screen.getByText('From shore')).toBeInTheDocument();
-    expect(screen.getByText('Still open')).toBeInTheDocument();
+    expect(screen.getByText('Still open, south end')).toBeInTheDocument();
   });
 
   it('long prose is clamped with the rest a tap away, in place', () => {

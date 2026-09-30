@@ -64,6 +64,7 @@ export const HAZARD_DEFAULT_GEOMETRY_KIND: Record<HazardType, HazardGeometryKind
   ridge_crossing: 'point_radius',
   drilled_hole: 'point_radius',
   shell_area: 'point_radius',
+  air_pockets: 'point_radius',
   spring_current: 'point_radius',
   gas_hole: 'point_radius',
   reef_hole: 'point_radius',
@@ -95,6 +96,8 @@ export const HAZARD_DEFAULT_RADIUS_M: Record<HazardType, number> = {
   open_water: 40,
   overflow_slush: 40,
   shell_area: 40,
+  // A field of pockets rather than one: sized like shell ice, the other area of ice over air.
+  air_pockets: 40,
   thin_ice: 50,
   // A thaw-rotten area is the largest default: it's a condition of the sheet, not a spot, and it is
   // the #1 fatality cause — under-drawing it is the dangerous direction of error.
@@ -130,6 +133,7 @@ export const HAZARD_DEFAULT_BUFFER_M: Record<HazardType, number> = {
   ridge_crossing: 5,
   drilled_hole: 3,
   shell_area: 10,
+  air_pockets: 10,
   spring_current: 10,
   gas_hole: 5,
   reef_hole: 10,

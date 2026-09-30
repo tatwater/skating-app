@@ -5,9 +5,10 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ClaudeModelKey } from './claude/client';
+import type { ClaudeCallOptions, ClaudeModelKey } from './claude/client';
 import { claudeCostUsd } from './claude/client';
 import { runStageA, segmentationMisses, unitText } from './claude/stageA';
+import { denseVisits, mapAboutBody } from './claude/wire';
 import type { ExtractionInput, ExtractionRun, Extractor } from './contract';
 import { ExtractionResultSchema } from './contract';
 import { type JevClient, jevCostUsd } from './jev/client';
@@ -17,19 +18,20 @@ export function claudeThenJevExtractor(
   claude: Anthropic,
   model: ClaudeModelKey,
   jev: JevClient,
+  opts: ClaudeCallOptions = {},
 ): Extractor {
   const name = `claude+jev:${model}`;
   return {
     name,
     async extract(input: ExtractionInput): Promise<ExtractionRun> {
       const started = Date.now();
-      const a = await runStageA(claude, model, input);
+      const a = await runStageA(claude, model, input, opts);
       let jevInput = 0;
       let jevOutput = 0;
       let jevCost = 0;
       const reports = [];
       const misses = segmentationMisses(a.segmentation);
-      for (const unit of a.segmentation.units) {
+      for (const unit of denseVisits(a.segmentation.units, input)) {
         const state = [input.title ? `Title: ${input.title}` : '', unitText(unit)]
           .filter(Boolean)
           .join('\n');
@@ -39,7 +41,8 @@ export function claudeThenJevExtractor(
         jevCost += jevCostUsd(response.usage);
         reports.push(reportFromAnswers(unit, response.answers, input, misses));
       }
-      const result = ExtractionResultSchema.parse({ reports, misses });
+      const aboutBody = a.segmentation.aboutBody.map((f) => mapAboutBody(f, input));
+      const result = ExtractionResultSchema.parse({ reports, aboutBody, misses });
       return {
         result,
         usage: {

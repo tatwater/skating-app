@@ -56,7 +56,16 @@ export function jevCostUsd(usage: JevResponse['usage']): number {
   );
 }
 
-export function createJevClient(fetchImpl: typeof fetch = fetch): JevClient {
+/** Statuses worth another try: rate limit, and the service being busy or briefly down. */
+export const JEV_RETRYABLE: ReadonlySet<number> = new Set([429, 500, 502, 503, 504, 529]);
+export const JEV_RETRIES = 3;
+/** 1 s, 2 s, 4 s. */
+export function retryDelayMs(attempt: number): number {
+  return 1000 * 2 ** attempt;
+}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export function createJevClient(fetchImpl: typeof fetch = fetch, wait = sleep): JevClient {
   const key = process.env.TYPESAFE_API_KEY;
   if (!key) {
     throw new Error(
@@ -65,17 +74,30 @@ export function createJevClient(fetchImpl: typeof fetch = fetch): JevClient {
   }
   return {
     async ask(state, questions) {
-      const response = await fetchImpl(JEV_ENDPOINT, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify({ state, model: JEV_MODEL, questions }),
-      });
-      if (!response.ok) {
+      // 7 of 147 first-run requests came back 503 / 529: a busy service, not a bad request. Those,
+      // 429 and a dropped connection are retried with backoff; anything else fails at once.
+      for (let attempt = 0; ; attempt++) {
+        let response: Response;
+        try {
+          response = await fetchImpl(JEV_ENDPOINT, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+            body: JSON.stringify({ state, model: JEV_MODEL, questions }),
+          });
+        } catch (error) {
+          if (attempt >= JEV_RETRIES) throw error;
+          await wait(retryDelayMs(attempt));
+          continue;
+        }
+        if (response.ok) return (await response.json()) as JevResponse;
+        if (JEV_RETRYABLE.has(response.status) && attempt < JEV_RETRIES) {
+          await wait(retryDelayMs(attempt));
+          continue;
+        }
         // The body may carry the reason; the key never appears in it.
         const text = await response.text().catch(() => '');
         throw new Error(`Jev ${response.status}: ${text.slice(0, 300)}`);
       }
-      return (await response.json()) as JevResponse;
     },
   };
 }

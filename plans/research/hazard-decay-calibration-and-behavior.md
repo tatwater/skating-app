@@ -50,6 +50,7 @@ export const HAZARD_DECAY: Record<HazardType, { tier: 'A'|'B'|'C'|'D'; freshH: n
   wet_crack:      { tier: 'B', freshH: 72,  agingH: 168 },
   drilled_hole:   { tier: 'B', freshH: 72,  agingH: 168 },
   shell_area:     { tier: 'B', freshH: 72,  agingH: 168 },
+  air_pockets:    { tier: 'B', freshH: 72,  agingH: 168 },  // D208: insulated — air insulates, cold does not heal it; a thaw persists it
   // Tier C — Structural: don't heal within a season; often grow. Warmth ESCALATES them (sign-flip 2).
   pressure_ridge: { tier: 'C', freshH: 168, agingH: 504 },
   ice_heave:      { tier: 'C', freshH: 168, agingH: 504 },
@@ -75,7 +76,7 @@ export function deriveHazardFreshness(type: HazardType, lastConfirmedAt: number,
 |---|---|---|---|---|
 | open_water / lead, thin_ice, overflow_slush, drain_hole, wind_hole, slush_hole | A | <24h | 24–72h | >72h |
 | thawed_rotten, ridge_crossing | A* | <12h | 12–36h | >36h |
-| wet_crack, drilled_hole, shell_area | B | <3d | 3–7d | >7d |
+| wet_crack, drilled_hole, shell_area, air_pockets | B | <3d | 3–7d | >7d |
 | pressure_ridge, ice_heave / buckling | C | <7d | 7–21d | >21d |
 | spring_current, gas_hole, reef_hole | D | <14d | 14–45d | >45d |
 

@@ -28,7 +28,7 @@ export type ReportSnapshot = Pick<
   | 'skateStartTime'
   | 'skateEndPrecision'
   | 'observedFrom'
-  | 'sighting'
+  | 'sightings'
   | 'iceTypes'
   | 'surfaceTags'
   | 'skateQuality'
@@ -48,7 +48,7 @@ const REPORT_CONTENT_KEYS = [
   'skateStartTime',
   'skateEndPrecision',
   'observedFrom',
-  'sighting',
+  'sightings',
   'iceTypes',
   'surfaceTags',
   'skateQuality',

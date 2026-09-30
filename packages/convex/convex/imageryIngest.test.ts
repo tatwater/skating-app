@@ -50,12 +50,20 @@ async function seedSites(t: ReturnType<typeof convexTest>, count = 3) {
   });
 }
 
-/** Open-Meteo's multi-coordinate daily shape: one object per site. */
+/**
+ * Open-Meteo's multi-coordinate hourly shape, one object per site: 24 UTC hours per day, each at that
+ * day's low. The watcher cuts the days itself (`dailyLowsFromHourly`), so this is what it receives.
+ */
 function dailyLows(siteCount: number, start: string, lows: number[]) {
-  const base = new Date(`${start}T00:00:00Z`).getTime();
-  const time = lows.map((_, i) => new Date(base + i * 86_400_000).toISOString().slice(0, 10));
+  const base = new Date(`${start}T00:00:00Z`).getTime() / 1000;
+  const time = lows.flatMap((_, d) =>
+    Array.from({ length: 24 }, (_, h) => base + (d * 24 + h) * 3600),
+  );
+  const temperature_2m = lows.flatMap((low) => new Array<number>(24).fill(low));
   return Array.from({ length: siteCount }, () => ({
-    daily: { time, temperature_2m_min: lows },
+    timezone: 'UTC',
+    utc_offset_seconds: 0,
+    hourly: { time, temperature_2m },
   }));
 }
 
@@ -112,6 +120,37 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     expect(again).not.toMatchObject({ skipped: 'already recorded' });
     expect(again).toMatchObject({ open: true });
 
+    vi.useRealTimers();
+  });
+
+  test("cuts days at the lake's midnight from hourly readings, not Open-Meteo's daily ones", async () => {
+    // `daily=temperature_2m_min` cuts every day at the request-time offset, so a November tick split
+    // every October day an hour wrong. The watcher asks for hours and cuts them by the zone.
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t);
+    // 23:00 EST on 1 Dec is 04:00Z on the 2nd: the freeze belongs to the 1st at the lake.
+    const start = Date.UTC(2026, 11, 1, 5) / 1000;
+    const time = Array.from({ length: 48 }, (_, h) => start + h * 3600);
+    const temperature_2m = time.map((ts) => (ts === Date.UTC(2026, 11, 2, 4) / 1000 ? -6 : 3));
+    const fetchMock = vi.fn(async (_url: string) =>
+      okJson(
+        Array.from({ length: 3 }, () => ({
+          timezone: 'America/New_York',
+          utc_offset_seconds: -5 * 3600,
+          hourly: { time, temperature_2m },
+        })),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    expect(result).toMatchObject({ open: true, opensOn: '2026-12-01' });
+    const params = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
+    expect(params.get('hourly')).toBe('temperature_2m');
+    expect(params.get('timeformat')).toBe('unixtime');
+    expect(params.get('daily')).toBeNull();
     vi.useRealTimers();
   });
 

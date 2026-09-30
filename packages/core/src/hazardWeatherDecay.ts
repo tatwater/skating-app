@@ -40,12 +40,15 @@ import type { WeatherSinceSummary } from './weather';
  *   - `refreeze_healed` — volatile: cold likely refroze it (fade faster), thaw keeps it open (persist).
  *   - `structural` — ridges/heaves: thaw escalates/melts them (fade to recheck), cold just persists.
  *   - `rotten` — thawed_rotten: thaw worsens it (persist the warning), cold never preserves it (≥1).
+ *   - `insulated` — air_pockets: cold never fades it (air under the sheet keeps the water from
+ *     thickening the lid), thaw persists the warning (D208).
  *   - `weather_insensitive` — springs/gas/reef holes: genuinely ≈×1 regardless of weather (D53 candidates).
  */
 export type HazardWeatherResponse =
   | 'refreeze_healed'
   | 'structural'
   | 'rotten'
+  | 'insulated'
   | 'weather_insensitive';
 
 /** Weather-response class per hazard type. Exhaustive by construction (a new type is a compile error). */
@@ -68,6 +71,10 @@ export const HAZARD_WEATHER_RESPONSE: Record<HazardType, HazardWeatherResponse> 
   ridge_crossing: 'structural', // a ridge passage marker — same physics, thaw changes it fast
   // Weather-insensitive permanent sources.
   spring_current: 'weather_insensitive',
+  // Insulated — cold does not heal it: the air under the sheet keeps the water from thickening the
+  // lid (D208). `refreeze_healed` would fade it faster in a cold snap, the wrong-direction error
+  // sign-flip 1 exists to prevent; a thaw weakens the lid, so the warning persists like shell ice's.
+  air_pockets: 'insulated',
   gas_hole: 'weather_insensitive',
   reef_hole: 'weather_insensitive',
 };
@@ -234,6 +241,13 @@ export function weatherDecaySignal(
       // Thaw escalates (fade to recheck); cold just persists → floored at 1, never a discount.
       const thawTerm = o.structuralThawK * (tdh / o.tdhScaleHours) * shallowK;
       multiplier = clamp(1 + thawTerm, 1, o.multiplierCap);
+      break;
+    }
+    case 'insulated': {
+      // No cold term at all — cold never earns a faster fade (D208). The thaw term is shell ice's
+      // (`refreezeThawK`): the lid over a void thins in a thaw, so the warning persists.
+      const thawTerm = o.refreezeThawK * (tdh / o.tdhScaleHours) * shallowK;
+      multiplier = clamp(1 - thawTerm, o.multiplierFloor, 1);
       break;
     }
     case 'rotten': {

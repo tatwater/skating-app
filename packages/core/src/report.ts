@@ -27,8 +27,10 @@ import {
   type ChipInput,
   chipKeys,
   type LocatedIceType,
+  type LocatedSighting,
   type LocatedSurfaceTag,
   type Snow,
+  sightingsOf,
   snowIsEmpty,
   toLocatedChip,
 } from './reportFields';
@@ -61,7 +63,7 @@ import {
   type ThicknessMethod,
   type ThicknessScope,
 } from './types';
-import { validateWhere, type Where } from './where';
+import { validateWhere, type Where, whereCoversBody } from './where';
 
 /** A skate-end time more than this far past `now` is treated as implausibly future and rejected. */
 export const SKATE_TIME_FUTURE_TOLERANCE_MS = 60 * 60 * 1000;
@@ -100,7 +102,12 @@ export interface ReportInput {
   skateEndPrecision?: SkateEndPrecision;
   /** How the author saw it (D191). Absent means unstated — there is no backfill. */
   observedFrom?: ObservedFrom;
-  /** What a shore observer saw (D189) — valid only off the ice. */
+  /**
+   * What the author saw rather than skated (D189, D210): from shore or secondhand, any sighting;
+   * from the ice, only one located to the part of the body they did not skate.
+   */
+  sightings?: ChipInput<Sighting>[];
+  /** @deprecated The pre-D210 single sighting; lifted into `sightings`. Older clients only. */
   sighting?: Sighting;
   iceTypes?: ChipInput<IceType>[];
   surfaceTags?: ChipInput<SurfaceTag>[];
@@ -158,7 +165,8 @@ export interface NormalizedReport {
   skateStartTime?: number;
   skateEndPrecision?: SkateEndPrecision;
   observedFrom?: ObservedFrom;
-  sighting?: Sighting;
+  /** Present only when non-empty, like the thickness section. */
+  sightings?: LocatedSighting[];
   iceTypes: LocatedIceType[];
   surfaceTags: LocatedSurfaceTag[];
   skateQuality?: SkateQuality;
@@ -308,13 +316,25 @@ export function isValidThicknessReading(reading: ThicknessReadingInput): boolean
 }
 
 /**
- * May a report from this vantage carry a `sighting` (D189)? "Still open" is what someone on the
- * bank reports; from the ice it would be a surface chip, and with no vantage stated it is nobody's.
- * The validator, both extraction engines and the sheet all ask this one function.
+ * May a report from this vantage carry this sighting (D189, amended by D210)? From shore or
+ * secondhand, any sighting — "still open" is what someone on the bank reports. **From the ice, only
+ * a located one**: the part of the body the author saw but did not skate ("the south end is still
+ * open", "ice from Rocky Point to Kimball's"). A sighting of the whole body from on it would be a
+ * surface chip, so a `where` that covers the body (`whereCoversBody`) does not count. With no
+ * vantage stated it is nobody's. The validator, both extraction engines and the sheet ask this.
  */
-export function sightingAllowedFrom(observedFrom: ObservedFrom | undefined): boolean {
-  return observedFrom !== undefined && observedFrom !== 'on_ice';
+export function sightingAllowedFrom(
+  observedFrom: ObservedFrom | undefined,
+  where?: Where,
+): boolean {
+  if (observedFrom === undefined) return false;
+  if (observedFrom !== 'on_ice') return true;
+  return !whereCoversBody(where);
 }
+
+/** Why a sighting was refused — the words the validator and the sheet both use. */
+export const SIGHTING_FROM_ICE_MESSAGE =
+  "from the ice, a sighting says which part of the lake you saw but didn't skate";
 
 function validateConditions(
   conditions: ReportConditionsInput,
@@ -471,12 +491,27 @@ export function validateReportInput(
   if (input.observedFrom !== undefined && !isMember(OBSERVED_FROM, input.observedFrom)) {
     errors.push({ field: 'observedFrom', message: 'is not a known vantage' });
   }
-  if (input.sighting !== undefined) {
-    if (!isMember(SIGHTINGS, input.sighting)) {
-      errors.push({ field: 'sighting', message: 'is not a known sighting' });
-    } else if (!sightingAllowedFrom(input.observedFrom)) {
-      errors.push({ field: 'sighting', message: 'is for a report from shore or secondhand' });
-    }
+  // The pre-D210 single sighting is lifted into the list; a client sends one shape or the other.
+  if (input.sighting !== undefined && input.sightings !== undefined) {
+    errors.push({ field: 'sighting', message: 'send sightings, not both' });
+  }
+  const sightings = validateChips(
+    input.sightings ?? (input.sighting !== undefined ? [input.sighting] : []),
+    SIGHTINGS,
+    input.sightings !== undefined ? 'sightings' : 'sighting',
+    'is not a known sighting',
+    errors,
+  );
+  for (const sighting of sightings) {
+    if (sightingAllowedFrom(input.observedFrom, sighting.where)) continue;
+    errors.push({
+      field: 'sightings',
+      message:
+        input.observedFrom === 'on_ice'
+          ? SIGHTING_FROM_ICE_MESSAGE
+          : 'needs to say how it was seen — on the ice, from shore, or secondhand',
+    });
+    break;
   }
 
   const iceTypes = validateChips(
@@ -545,7 +580,7 @@ export function validateReportInput(
   if (input.skateStartTime !== undefined) normalized.skateStartTime = input.skateStartTime;
   if (input.skateEndPrecision !== undefined) normalized.skateEndPrecision = input.skateEndPrecision;
   if (input.observedFrom !== undefined) normalized.observedFrom = input.observedFrom;
-  if (input.sighting !== undefined) normalized.sighting = input.sighting;
+  if (sightings.length > 0) normalized.sightings = sightings;
   if (input.skateQuality !== undefined) normalized.skateQuality = input.skateQuality;
   if (input.suitability !== undefined) normalized.suitability = input.suitability;
   // Drop an empty thickness section — an `iceThickness: { readings: [] }` carries no information.
@@ -587,6 +622,8 @@ export interface MinimumSetReport {
   iceTypes?: readonly ChipInput<IceType>[];
   surfaceTags?: readonly ChipInput<SurfaceTag>[];
   iceThickness?: { readings: readonly unknown[] };
+  sightings?: readonly ChipInput<Sighting>[];
+  /** @deprecated pre-D210; `sightingsOf` reads either. */
   sighting?: Sighting;
 }
 
@@ -597,13 +634,14 @@ export interface MinimumSetReport {
  * list it checks.
  */
 export function locatedSubAreaIds(
-  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness'>,
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
 ): string[] {
   const ids: string[] = [];
   const located: readonly { where?: Where }[] = [
     ...report.iceTypes,
     ...report.surfaceTags,
     ...(report.iceThickness?.readings ?? []),
+    ...(report.sightings ?? []),
   ];
   for (const item of located) {
     const id = item.where?.subAreaId;
@@ -622,7 +660,7 @@ export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): M
     chipKeys(report.surfaceTags).length > 0 ||
     (report.iceThickness?.readings.length ?? 0) > 0 ||
     hazardCount > 0 ||
-    report.sighting !== undefined;
+    sightingsOf(report).length > 0;
   if (!observed) gaps.push('observation');
   return gaps;
 }

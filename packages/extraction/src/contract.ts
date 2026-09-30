@@ -3,7 +3,7 @@
  * the Convex action (§5.1), the corpus replay (D200) and the sheet reducer all speak.
  *
  * ```
- * { title?, text, bodyCandidates[], vocabulary } → { reports: [{ bodyRef, fields }], misses[] }
+ * { title?, text, bodyCandidates[], vocabulary } → { reports: [{ bodyRef, fields }], aboutBody[], misses[] }
  * ```
  *
  * ## What the shape commits to
@@ -17,6 +17,8 @@
  * - **Field keys are the sheet's field keys** (`SheetFieldKey`) where the two overlap, so the sheet
  *   applies a result with no mapping — plus `hazards`, `snowDepthCm` and the `note`, which are not
  *   chip fields. `endTime` is in the sheet's `EndTimeValue` shape.
+ * - **A fact about the body is its own output** (D211): parking, access, a lasting feature, the
+ *   lake's character — kept apart from the visit's values, for a moderator to put on the body's page.
  * - **A miss is a first-class output** (D200): anything the author said that the contract has no
  *   slot for — a texture, a landmark, a kind of report the sheet has no door for — so the corpus
  *   replay's miss list is produced by the same call that produces the reports.
@@ -179,7 +181,8 @@ export const ExtractedFieldsSchema = z.object({
   quality: z.array(field(z.enum(SKATE_QUALITIES))).default([]),
   suitability: z.array(field(z.enum(SUITABILITIES))).default([]),
   observedFrom: z.array(field(z.enum(OBSERVED_FROM))).default([]),
-  sighting: z.array(field(z.enum(SIGHTINGS))).default([]),
+  /** What the author saw rather than skated, located (D210) — `type` held to `SIGHTINGS`, as before. */
+  sightings: z.array(field(LocatedChipSchema.extend({ type: z.enum(SIGHTINGS) }))).default([]),
   endTime: z.array(field(EndTimeSchema)).default([]),
   iceTypes: z.array(field(LocatedChipSchema)).default([]),
   surfaceTags: z.array(field(LocatedChipSchema)).default([]),
@@ -208,6 +211,30 @@ export const ExtractedReportSchema = z.object({
 });
 export type ExtractedReport = z.infer<typeof ExtractedReportSchema>;
 
+/**
+ * What a fact about a body is about (D211) — the axis a moderator's queue will sort on when these
+ * are reviewed. `parking` and `access` are the A06d lot and launch; `feature` is something lasting
+ * that bears on the ice (an inlet, a spring, a shore notorious for thin ice, sun exposure, depth);
+ * `character` is the lake itself (its size, its setting).
+ */
+export const ABOUT_BODY_TOPICS = ['parking', 'access', 'feature', 'character', 'other'] as const;
+export type AboutBodyTopic = (typeof ABOUT_BODY_TOPICS)[number];
+
+/**
+ * A fact about the body rather than about this visit (D211): "there's limited parking at the
+ * launch spot", "notorious for thin ice because of stream inflows". Not a Report value — it would
+ * decay with the visit and it is not the author's observation of today's ice — and not a miss,
+ * because there is a place for it: the body's page, after a moderator accepts it. Returned even
+ * from a text with no report in it, since a season summary is where these tend to live.
+ */
+export const AboutBodySchema = z.object({
+  bodyRef: z.string().nullable(),
+  bodyName: z.string().optional(),
+  topic: z.enum(ABOUT_BODY_TOPICS),
+  evidence: EvidenceSchema,
+});
+export type AboutBody = z.infer<typeof AboutBodySchema>;
+
 /** Why something the author said has no slot (D200) — the coverage check's buckets. */
 export const MISS_KINDS = ['enum_value', 'field', 'where', 'report_kind', 'other'] as const;
 
@@ -222,6 +249,7 @@ export type Miss = z.infer<typeof MissSchema>;
 
 export const ExtractionResultSchema = z.object({
   reports: z.array(ExtractedReportSchema),
+  aboutBody: z.array(AboutBodySchema).default([]),
   misses: z.array(MissSchema).default([]),
 });
 export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;

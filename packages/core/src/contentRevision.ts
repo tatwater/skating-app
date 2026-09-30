@@ -44,7 +44,7 @@ const FIELDS: { key: string; label: string; claim: boolean }[] = [
   { key: 'skateQuality', label: 'How was it?', claim: true },
   { key: 'suitability', label: 'Who is it for?', claim: true },
   { key: 'observedFrom', label: 'How did you see it?', claim: true },
-  { key: 'sighting', label: 'What did you see?', claim: true },
+  { key: 'sightings', label: 'What did you see?', claim: true },
   { key: 'skateEndTime', label: 'Off the ice', claim: true },
   { key: 'skateStartTime', label: 'On the ice', claim: false },
   { key: 'skateEndPrecision', label: 'How exact the end time is', claim: false },
@@ -101,7 +101,7 @@ export function describeRevisionValue(
     const scope = block.scope === undefined ? '' : ` — ${block.scope.replace(/_/g, ' ')}`;
     return `${readings.join('; ')}${scope}`;
   }
-  if (field === 'iceTypes' || field === 'surfaceTags') {
+  if (field === 'iceTypes' || field === 'surfaceTags' || field === 'sightings') {
     const list = Array.isArray(value) ? value : [];
     if (list.length === 0) return null;
     return list
@@ -141,14 +141,28 @@ export function describeRevisionValue(
 }
 
 /**
+ * A block as this build names its fields. A revision snapshotted before D210 holds the single
+ * `sighting`; read as the list it became, so an edit that never touched it — compared against a
+ * live row or a later snapshot holding `sightings` — does not report a claim cleared and re-made.
+ * A block holding both (an edit under the widened schema) keeps its list, as the backfill did.
+ */
+function currentShape(block: Block): Block {
+  const { sighting, ...rest } = block;
+  if (sighting === undefined) return block;
+  return 'sightings' in rest ? rest : { ...rest, sightings: [{ type: sighting }] };
+}
+
+/**
  * What changed between two content blocks, field by field. Order is the sheet's, not the object's,
  * so two edits read the same way down the page.
  */
 export function diffContentBlocks(
-  before: Block,
-  after: Block,
+  beforeBlock: Block,
+  afterBlock: Block,
   opts: { timeZone?: string; bayNames?: Record<string, string> } = {},
 ): RevisionChange[] {
+  const before = currentShape(beforeBlock);
+  const after = currentShape(afterBlock);
   const out: RevisionChange[] = [];
   for (const { key, label, claim } of FIELDS) {
     const wasSet = key in before;

@@ -86,6 +86,7 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'wet_crack',
       'drilled_hole',
       'shell_area',
+      'air_pockets',
       'pressure_ridge',
       'ice_heave',
       'spring_current',

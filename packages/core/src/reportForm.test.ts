@@ -516,7 +516,7 @@ describe('reportFormFromReport', () => {
       expect(rebuilt).toMatchObject({
         skateEndPrecision: 'minute',
         observedFrom: 'shore',
-        sighting: 'frozen',
+        sightings: [{ type: 'frozen' }],
         suitability: 'experienced_only',
       });
     });

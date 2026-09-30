@@ -28,8 +28,10 @@ import {
   type ChipInput,
   iceTypeKeys,
   type LocatedIceType,
+  type LocatedSighting,
   type LocatedSurfaceTag,
   type Snow,
+  sightingsOf,
   surfaceTagKeys,
   toLocatedChip,
 } from './reportFields';
@@ -99,7 +101,8 @@ export interface CarriedReportFields {
   skateEndTime: number;
   skateEndPrecision?: SkateEndPrecision;
   observedFrom?: ObservedFrom;
-  sighting?: Sighting;
+  /** What the author saw rather than skated (D210) — this form has no control for it. */
+  sightings?: LocatedSighting[];
   suitability?: Suitability;
   /** Every stored chip, located or not, keyed by its type in `buildReportInput` — a key still selected gets its chips back. */
   iceTypes: LocatedIceType[];
@@ -263,7 +266,7 @@ export function buildReportInput(
       ? { skateEndPrecision: carried.skateEndPrecision }
       : {}),
     ...(carried?.observedFrom !== undefined ? { observedFrom: carried.observedFrom } : {}),
-    ...(carried?.sighting !== undefined ? { sighting: carried.sighting } : {}),
+    ...(carried?.sightings !== undefined ? { sightings: carried.sightings } : {}),
     ...(iceTypes.length > 0 ? { iceTypes } : {}),
     ...(surfaceTags.length > 0 ? { surfaceTags } : {}),
     ...(form.skateQuality !== '' ? { skateQuality: form.skateQuality } : {}),
@@ -295,6 +298,8 @@ export interface StoredReportForForm {
   skateStartTime?: number;
   skateEndPrecision?: SkateEndPrecision;
   observedFrom?: ObservedFrom;
+  sightings?: readonly ChipInput<Sighting>[];
+  /** @deprecated pre-D210 rows; read through `sightingsOf`. */
   sighting?: Sighting;
   /**
    * Either shape (A10): this form edits the keys only, and carries each chip's `where` and `note`
@@ -437,11 +442,12 @@ export function isFormRoundTripOf(
  */
 export function reportFormFromReport(report: StoredReportForForm): ReportFormState {
   const { depthCm, ...snowFacets } = report.snow ?? {};
+  const sightings = sightingsOf(report);
   const carried: CarriedReportFields = definedOnly({
     skateEndTime: report.skateEndTime,
     skateEndPrecision: report.skateEndPrecision,
     observedFrom: report.observedFrom,
-    sighting: report.sighting,
+    sightings: sightings.length > 0 ? sightings : undefined,
     suitability: report.suitability,
     iceTypes: (report.iceTypes ?? []).map(toLocatedChip),
     surfaceTags: (report.surfaceTags ?? []).map(toLocatedChip),

@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import {
+  deselectEveryPlace,
   humanizeEnum,
   ICE_TYPES,
   type IceType,
@@ -12,7 +13,10 @@ import {
   type SheetAction,
   type SheetFieldKey,
   type SheetReport,
+  SIGHTING_FROM_ICE_MESSAGE,
   SIGHTING_LABELS,
+  SIGHTING_PIN_HINT,
+  SIGHTING_WHERE_QUESTIONS,
   SIGHTINGS,
   type Sighting,
   SKATE_QUALITIES,
@@ -35,7 +39,10 @@ import {
   selectedValues,
   sheetReducer,
   sightingAllowedFrom,
+  sightingsMakePins,
   updateReport,
+  whereCardsFor,
+  whereMarkText,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -145,9 +152,21 @@ function HowWasIt({ report, dispatch, gaps, timeZone }: SectionProps) {
 
 // ── How did you see it? (D191) ───────────────────────────────────────────────────────────────────
 
-function ObservedFromSection({ report, dispatch, gaps, timeZone }: SectionProps) {
+function ObservedFromSection({ report, body, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
   const [from] = selectedValues(sheet, 'observedFrom');
+  // Sightings are located like the ice chips (D210). From the ice a sighting *needs* its where — it
+  // is the part of the lake the author saw but did not skate — so a tap from the ice opens the where
+  // question at once, the one place a chip tap does; from shore the where is optional, as on ice.
+  const [asking, setAsking] = useState(false);
+  const [activeCard, setActiveCard] = useState<string | null>(null);
+  const seen = selectedChips(sheet, 'sightings');
+  const cards: WhereCard[] = whereCardsFor(sheet, 'sightings', dispatch, {
+    label: (t) => SIGHTING_LABELS[t as Sighting],
+    question: (t) => SIGHTING_WHERE_QUESTIONS[t as Sighting],
+  });
+  const refused = seen.some((c) => !sightingAllowedFrom(from, c.value.where));
+  const unanswered = cards.filter((c) => c.where === undefined).length;
   return (
     <SheetSection
       label="How did you see it?"
@@ -170,21 +189,92 @@ function ObservedFromSection({ report, dispatch, gaps, timeZone }: SectionProps)
         onSelect={(v) => dispatch({ type: 'select', field: 'observedFrom', key: v, value: v })}
         onDeselect={(key) => dispatch({ type: 'deselect', field: 'observedFrom', key })}
       />
-      {sightingAllowedFrom(from) ? (
+      {from !== undefined ? (
         <>
-          <SubLabel>What did you see?</SubLabel>
-          <ChipRow<'sighting', Sighting>
+          <SubLabel>
+            {from === 'on_ice' ? 'What did you see but not skate?' : 'What did you see?'}
+          </SubLabel>
+          {from === 'on_ice' ? (
+            <SheetHint>
+              Open water down the lake, ice you didn’t reach — each with where it was.
+            </SheetHint>
+          ) : null}
+          <ChipRow<'sightings', Sighting>
             sheet={sheet}
-            field="sighting"
+            field="sightings"
             options={SIGHTINGS}
             label={(v) => SIGHTING_LABELS[v]}
-            onSelect={(v) => dispatch({ type: 'select', field: 'sighting', key: v, value: v })}
-            onDeselect={(key) => dispatch({ type: 'deselect', field: 'sighting', key })}
+            trailing={(key) => <WhereMark text={whereMarkText(sheet, 'sightings', key)} />}
+            onSelect={(v) => {
+              dispatch({ type: 'select', field: 'sightings', key: v, value: { type: v } });
+              if (from === 'on_ice') {
+                setActiveCard(`sightings:${v}`);
+                setAsking(true);
+              }
+            }}
+            onDeselect={(key) => {
+              deselectEveryPlace(sheet, 'sightings', key, dispatch);
+              if (typeOfCard('sightings', activeCard) === key) setActiveCard(null);
+              // The last one gone closes the question, or the next tap — from shore, where
+              // nothing asks — would open it again.
+              if (seen.every((c) => c.value.type === key)) setAsking(false);
+            }}
+          />
+          {refused ? <SheetHint>{`Say where — ${SIGHTING_FROM_ICE_MESSAGE}.`}</SheetHint> : null}
+          {sightingsMakePins(seen.map((c) => c.value)) ? (
+            <SheetHint>{SIGHTING_PIN_HINT}</SheetHint>
+          ) : null}
+          {cards.length > 0 && !asking ? (
+            <XStack gap="$2" alignItems="center" flexWrap="wrap">
+              <SubLabel>Where?</SubLabel>
+              <SheetChip
+                compact
+                label={
+                  unanswered === 0
+                    ? 'Every sighting has a where'
+                    : `${unanswered} of ${cards.length} to answer`
+                }
+                onPress={() => {
+                  setActiveCard(
+                    cards.find((c) => c.where === undefined)?.id ?? (cards[0] as WhereCard).id,
+                  );
+                  setAsking(true);
+                }}
+              />
+            </XStack>
+          ) : null}
+          <WhereCards
+            cards={cards}
+            body={body}
+            open={asking && cards.length > 0}
+            onClose={() => setAsking(false)}
+            activeId={asking ? (activeCard ?? cards[0]?.id ?? null) : null}
+            onActivate={setActiveCard}
           />
         </>
       ) : null}
     </SheetSection>
   );
+}
+
+/** The mark a located chip wears: ◇ unanswered, ◆ answered, with the sector when it names one. */
+function WhereMark({ text }: { text: string }) {
+  return (
+    <Text
+      color="$background"
+      fontSize={10}
+      opacity={text.startsWith('◆') ? 0.9 : 0.5}
+      accessibilityElementsHidden
+    >
+      {text}
+    </Text>
+  );
+}
+
+/** The chip type a where card is open for in `field` — `sightings:open#2` is the `open` chip. */
+function typeOfCard(field: string, cardId: string | null): string | null {
+  if (!cardId?.startsWith(`${field}:`)) return null;
+  return cardId.slice(field.length + 1).split('#')[0] ?? null;
 }
 
 // ── Ice and surface, with where (D193) ───────────────────────────────────────────────────────────
@@ -199,31 +289,13 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
   const peers = usePeers(body);
   const iceLine = peers ? peerLine(peers.iceTypes, peers.reporters) : null;
   const surfaceLine = peers ? peerLine(peers.surfaceTags, peers.reporters) : null;
-  const selectedIce = selectedChips(sheet, 'iceTypes');
-  const selectedSurface = selectedChips(sheet, 'surfaceTags');
   const cards: WhereCard[] = [
-    ...selectedIce.map((c) => ({ field: 'iceTypes' as const, c })),
-    ...selectedSurface.map((c) => ({ field: 'surfaceTags' as const, c })),
-  ].map(({ field, c }) => ({
-    id: `${field}:${c.key}`,
-    label: humanizeEnum(c.value.type),
-    where: c.value.where,
-    onChange: (where) => dispatch({ type: 'setWhere', field, key: c.key, where }),
-  }));
-  const whereMark = (field: 'iceTypes' | 'surfaceTags') => (key: string) => {
-    const chip = (field === 'iceTypes' ? selectedIce : selectedSurface).find((c) => c.key === key);
-    const where = chip?.value.where;
-    return (
-      <Text
-        color="$background"
-        fontSize={10}
-        opacity={where ? 0.9 : 0.5}
-        accessibilityElementsHidden
-      >
-        {where?.sector ? `◆ ${where.sector}` : where ? '◆' : '◇'}
-      </Text>
-    );
-  };
+    ...whereCardsFor(sheet, 'iceTypes', dispatch, { label: humanizeEnum }),
+    ...whereCardsFor(sheet, 'surfaceTags', dispatch, { label: humanizeEnum }),
+  ];
+  const whereMark = (field: 'iceTypes' | 'surfaceTags') => (key: string) => (
+    <WhereMark text={whereMarkText(sheet, field, key)} />
+  );
   const unanswered = cards.filter((c) => c.where === undefined).length;
 
   return (
@@ -251,8 +323,8 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
           dispatch({ type: 'select', field: 'iceTypes', key: t, value: { type: t } })
         }
         onDeselect={(key) => {
-          dispatch({ type: 'deselect', field: 'iceTypes', key });
-          if (activeCard === `iceTypes:${key}`) setActiveCard(null);
+          deselectEveryPlace(sheet, 'iceTypes', key, dispatch);
+          if (typeOfCard('iceTypes', activeCard) === key) setActiveCard(null);
         }}
       />
       <SubLabel>Surface</SubLabel>
@@ -267,8 +339,8 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
           dispatch({ type: 'select', field: 'surfaceTags', key: t, value: { type: t } })
         }
         onDeselect={(key) => {
-          dispatch({ type: 'deselect', field: 'surfaceTags', key });
-          if (activeCard === `surfaceTags:${key}`) setActiveCard(null);
+          deselectEveryPlace(sheet, 'surfaceTags', key, dispatch);
+          if (typeOfCard('surfaceTags', activeCard) === key) setActiveCard(null);
         }}
       />
       {cards.length > 0 && !asking ? (

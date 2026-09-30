@@ -12,8 +12,12 @@ export interface WhereCard {
   /** `field:key`, stable across renders. */
   id: string;
   label: string;
+  /** The card's question when "Where is the {label}?" does not read — a sighting is a state (D210). */
+  question?: string;
   where: Where | undefined;
   onChange: (where: Where | undefined) => void;
+  /** Say it of one more place — returns the new card's id (core `whereCardsFor`). */
+  onAnotherPlace?: () => string;
 }
 
 /**
@@ -54,7 +58,7 @@ export function WhereCards({
 
   return (
     <QuestionBlock
-      title={`Where is the ${active.label.toLowerCase()}?`}
+      title={active.question ?? `Where is the ${active.label.toLowerCase()}?`}
       onDone={onClose}
       extra={
         <>
@@ -154,6 +158,22 @@ export function WhereCards({
         Tap a sector on the ring, a bay, or a point on the water.
         {placing ? ' Tap the water where you mean.' : ''}
       </SheetHint>
+      {active.onAnotherPlace && where !== undefined ? (
+        <Text
+          color="$foregroundMuted"
+          fontSize={11}
+          fontWeight="700"
+          letterSpacing={0.8}
+          textTransform="uppercase"
+          accessibilityRole="button"
+          onPress={() => {
+            const id = active.onAnotherPlace?.();
+            if (id) onActivate(id);
+          }}
+        >
+          + Another place
+        </Text>
+      ) : null}
     </QuestionBlock>
   );
 }

@@ -15,21 +15,29 @@ const input: ExtractionInput = {
 };
 
 /** A fake Anthropic client whose `messages.parse` returns a canned parsed output. */
-function fakeClaude(parsed: unknown, calls: unknown[] = []): Anthropic {
+/**
+ * A client whose stream answers with `answer` serialized as the model's text — `null` sends a
+ * non-JSON body — ending on `stopReason`.
+ */
+function fakeClaude(answer: unknown, calls: unknown[] = [], stopReason = 'end_turn'): Anthropic {
   return {
     messages: {
-      parse: async (params: unknown) => {
+      stream: (params: unknown) => {
         calls.push(params);
         return {
-          parsed_output: parsed,
-          stop_reason: 'end_turn',
-          model: 'claude-fake',
-          usage: {
-            input_tokens: 1000,
-            output_tokens: 200,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-          },
+          finalMessage: async () => ({
+            content: [
+              { type: 'text', text: answer === null ? '{"reports": [' : JSON.stringify(answer) },
+            ],
+            stop_reason: stopReason,
+            model: 'claude-fake',
+            usage: {
+              input_tokens: 1000,
+              output_tokens: 200,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+          }),
         };
       },
     },
@@ -82,6 +90,31 @@ describe('claudeOnlyExtractor', () => {
       /structured output/,
     );
   });
+
+  it('says a truncated or declined answer is one, before trying to parse it (A10-9)', async () => {
+    for (const stop of ['max_tokens', 'refusal']) {
+      await expect(
+        claudeOnlyExtractor(fakeClaude({ reports: [] }, [], stop), 'sonnet').extract(input),
+      ).rejects.toThrow(new RegExp(`incomplete \\(stop_reason: ${stop}`));
+    }
+  });
+
+  it('turns thinking off in each model’s own words, and sends effort only where it exists', async () => {
+    const empty = { reports: [], misses: [] };
+    const sent = async (model: 'haiku' | 'sonnet' | 'sonnet55', opts = {}) => {
+      const calls: Record<string, unknown>[] = [];
+      await claudeOnlyExtractor(fakeClaude(empty, calls), model, opts).extract(input);
+      return calls[0] as { thinking?: unknown; output_config: { effort?: string }; model: string };
+    };
+    const off = { thinking: 'off' as const, effort: 'low' as const };
+    expect((await sent('sonnet55', off)).thinking).toEqual({ type: 'between_tools' });
+    expect((await sent('sonnet55', off)).model).toBe('claude-sonnet-5-5');
+    expect((await sent('sonnet', off)).thinking).toEqual({ type: 'disabled' });
+    expect((await sent('sonnet', off)).output_config.effort).toBe('low');
+    expect((await sent('haiku', off)).thinking).toBeUndefined();
+    expect((await sent('haiku', off)).output_config.effort).toBeUndefined();
+    expect((await sent('sonnet55')).thinking).toBeUndefined(); // adaptive, the model's default
+  });
 });
 
 describe('claudeThenJevExtractor', () => {
@@ -97,6 +130,9 @@ describe('claudeThenJevExtractor', () => {
           ],
           compassPhrases: [{ quote: 'the north end', sector: 'N' }],
         },
+      ],
+      aboutBody: [
+        { bodyRef: 'morey', topic: 'feature', quote: 'the north end', quoteField: 'text' },
       ],
       misses: [{ kind: 'field', text: 'windy', wouldNeed: 'wind' }],
     });
@@ -150,6 +186,14 @@ describe('claudeThenJevExtractor', () => {
       maxCm: 10.16,
     });
     expect(run.result.misses).toEqual([{ kind: 'field', text: 'windy', wouldNeed: 'wind' }]);
+    // Stage A's facts about the body pass straight through (D211): there is nothing to vote on.
+    expect(run.result.aboutBody).toEqual([
+      {
+        bodyRef: 'morey',
+        topic: 'feature',
+        evidence: expect.objectContaining({ text: 'the north end', located: true }),
+      },
+    ]);
     expect(run.usage).toMatchObject({
       engine: 'claude+jev:haiku',
       requests: 2,
