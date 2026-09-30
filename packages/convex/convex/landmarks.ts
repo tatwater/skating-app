@@ -168,17 +168,19 @@ function kindsMeet(a: LandmarkKind, b: LandmarkKind): boolean {
  * loader packs batches by landmark count; a giant's list may span several calls, each re-reading the
  * body's rows so the cap and the merge stay exact.
  *
+ * **Resolve, then write — one write per row per call.** Each candidate finds its row by any shared
+ * upstream id, else by name within {@link SAME_NAME_RADIUS_M} (a candidate with no row joins another
+ * new candidate the same way), and the candidates that resolve to one row are applied together: the
+ * first sets the name, kind and point, and the group's ids and spellings are its ids and aliases. So
+ * a row the catalogs own takes this run's aliases — an alias a later run drops leaves — and two
+ * candidates for one row cannot take turns overwriting it, run after run.
  *
- * Idempotent: a candidate finds its row by any shared upstream id, else by name within
- * {@link SAME_NAME_RADIUS_M}; found rows are updated in place and nothing is ever duplicated. A
- * candidate named for one of the body's live bays is skipped (`alreadyBay`). Three kinds of row are
- * **held**: a removed one stays removed (a re-run must not resurrect what a
- * moderator took down), a moderator-edited one keeps its name, kind and point (it gains ids, aliases
- * and the corpus count), and a new row past `MAX_LANDMARKS_PER_BODY` is refused and counted — the
- * cap is enforced here so the read can trust it.
- *
- * For each body: a body that is no longer listed is skipped whole: the export it was matched against is older than
- * this call, and a lake removed in between should not gain labels.
+ * Skipped or held, and counted: a candidate named for one of the body's live bays (`alreadyBay`); a
+ * removed row stays removed (a re-run must not resurrect what a moderator took down); a moderator's
+ * row keeps its name, kind, point and spellings and only gains ids, spellings and the corpus count;
+ * a new row past `MAX_LANDMARKS_PER_BODY` is refused (`overCap`) — the cap is enforced here so the
+ * read can trust it. A body no longer listed is skipped whole: the export it was matched against is
+ * older than this call, and a lake removed in between should not gain labels. Counts are per row.
  */
 type ImportCounts = {
   created: number;
@@ -191,41 +193,8 @@ type ImportCounts = {
   alreadyBay: number;
 };
 
-export const importBatch = internalMutation({
-  args: {
-    bodies: v.array(
-      v.object({ waterBodyId: v.id('waterBodies'), landmarks: v.array(importedLandmark) }),
-    ),
-    campaignId: v.optional(v.string()),
-    dryRun: v.optional(v.boolean()),
-  },
-  handler: async (ctx, { bodies, campaignId, dryRun }) => {
-    const total: ImportCounts = {
-      created: 0,
-      updated: 0,
-      unchanged: 0,
-      removedHeld: 0,
-      moderatorHeld: 0,
-      overCap: 0,
-      bodyNotListed: 0,
-      alreadyBay: 0,
-    };
-    for (const { waterBodyId, landmarks } of bodies) {
-      const counts = await importOneBody(ctx, waterBodyId, landmarks, campaignId, dryRun === false);
-      for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
-    }
-    return total;
-  },
-});
-
-async function importOneBody(
-  ctx: MutationCtx,
-  waterBodyId: Id<'waterBodies'>,
-  landmarks: Infer<typeof importedLandmark>[],
-  campaignId: string | undefined,
-  write: boolean,
-): Promise<ImportCounts> {
-  const counts: ImportCounts = {
+function emptyCounts(): ImportCounts {
+  return {
     created: 0,
     updated: 0,
     unchanged: 0,
@@ -235,6 +204,60 @@ async function importOneBody(
     bodyNotListed: 0,
     alreadyBay: 0,
   };
+}
+
+export const importBatch = internalMutation({
+  args: {
+    bodies: v.array(
+      v.object({ waterBodyId: v.id('waterBodies'), landmarks: v.array(importedLandmark) }),
+    ),
+    campaignId: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { bodies, campaignId, dryRun }) => {
+    const total = emptyCounts();
+    for (const { waterBodyId, landmarks } of bodies) {
+      const counts = await importOneBody(ctx, waterBodyId, landmarks, campaignId, dryRun === false);
+      for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
+    }
+    return total;
+  },
+});
+
+type Incoming = Infer<typeof importedLandmark> & { aliases: string[] };
+
+/** The candidates that resolve to one row — an existing one, or one this call will create. */
+interface Group {
+  existing?: Doc<'bodyLandmarks'>;
+  members: Incoming[];
+}
+
+function answersTo(
+  target: {
+    kind: LandmarkKind;
+    point: { lat: number; lng: number };
+    names: readonly string[];
+    ids: readonly string[];
+  },
+  incoming: Incoming,
+): boolean {
+  if (target.ids.some((id) => incoming.externalIds.includes(id))) return true;
+  const keys = new Set([incoming.name, ...incoming.aliases].map(landmarkNameKey));
+  return (
+    kindsMeet(target.kind, incoming.kind) &&
+    target.names.some((n) => keys.has(landmarkNameKey(n))) &&
+    haversineMeters(target.point, incoming.point) <= SAME_NAME_RADIUS_M
+  );
+}
+
+async function importOneBody(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+  landmarks: Infer<typeof importedLandmark>[],
+  campaignId: string | undefined,
+  write: boolean,
+): Promise<ImportCounts> {
+  const counts = emptyCounts();
   const body = await ctx.db.get(waterBodyId);
   if (!body || !isListed(body)) {
     counts.bodyNotListed = landmarks.length;
@@ -242,123 +265,127 @@ async function importOneBody(
   }
 
   const rows = await landmarksForBody(ctx, waterBodyId);
-  let live = rows.filter((row) => row.removedAt === undefined).length;
   const candidates = await stampCandidates(ctx, waterBodyId);
   // A name a live bay already answers to is the bay's (D202): "Malletts Bay" the village and
   // "Malletts Bay" the sub-area would be two labels saying one thing, and the bay is the place.
   const bayKeys = new Set(
     candidates.flatMap(({ ref }) => [ref.name, ...(ref.aliases ?? [])].map(landmarkNameKey)),
   );
-  const now = Date.now();
-  const claimed = new Set<Id<'bodyLandmarks'>>();
 
-  for (const incoming of landmarks) {
-    const names = normalizeLandmarkNames(incoming.name, incoming.aliases);
+  // ── Resolve every candidate to its row ───────────────────────────────────────────────────────
+  const byRow = new Map<Id<'bodyLandmarks'>, Group>();
+  const fresh: Group[] = [];
+  for (const raw of landmarks) {
+    const names = normalizeLandmarkNames(raw.name, raw.aliases);
     if (!names) continue;
-    const keys = new Set([names.name, ...names.aliases].map(landmarkNameKey));
     if (bayKeys.has(landmarkNameKey(names.name))) {
       counts.alreadyBay++;
       continue;
     }
-    const ids = new Set(incoming.externalIds);
+    const incoming: Incoming = { ...raw, name: names.name, aliases: names.aliases };
     const existing =
-      rows.find((row) => row.externalIds.some((id) => ids.has(id))) ??
-      rows.find(
-        (row) =>
-          kindsMeet(row.kind, incoming.kind) &&
-          [row.name, ...row.aliases].some((n) => keys.has(landmarkNameKey(n))) &&
-          haversineMeters(row.point, incoming.point) <= SAME_NAME_RADIUS_M,
+      rows.find((row) => row.externalIds.some((id) => incoming.externalIds.includes(id))) ??
+      rows.find((row) =>
+        answersTo(
+          { kind: row.kind, point: row.point, names: [row.name, ...row.aliases], ids: [] },
+          incoming,
+        ),
       );
-
-    if (!existing) {
-      if (live >= MAX_LANDMARKS_PER_BODY) {
-        counts.overCap++;
-        continue;
-      }
-      live++;
-      counts.created++;
-      const doc = {
-        waterBodyId,
-        name: names.name,
-        kind: incoming.kind,
-        point: incoming.point,
-        ...(incoming.areaSqM !== undefined ? { areaSqM: incoming.areaSqM } : {}),
-        ...(subAreaFor(incoming.point, candidates) ?? {}),
-        source: incoming.source,
-        externalIds: [...ids],
-        aliases: names.aliases,
-        ...(incoming.corpusMessages !== undefined
-          ? { corpusMessages: incoming.corpusMessages }
-          : {}),
-        ...(campaignId !== undefined ? { lastCampaignId: campaignId } : {}),
-        createdAt: now,
-        updatedAt: now,
-      };
-      // Found again by a later candidate in this same call (a GNIS twin of an OSM island), so the two
-      // merge here rather than landing as two rows the next run would have to reconcile. A dry run
-      // tracks its would-be rows the same way, so its counts are the counts an apply reports.
-      const id = write
-        ? await ctx.db.insert('bodyLandmarks', doc)
-        : (`dry:${rows.length}` as Id<'bodyLandmarks'>);
-      rows.push({ ...doc, _id: id, _creationTime: now });
-      claimed.add(id);
+    if (existing) {
+      const group = byRow.get(existing._id);
+      if (group) group.members.push(incoming);
+      else byRow.set(existing._id, { existing, members: [incoming] });
       continue;
     }
+    const joined = fresh.find((group) =>
+      group.members.some((m) =>
+        answersTo(
+          { kind: m.kind, point: m.point, names: [m.name, ...m.aliases], ids: m.externalIds },
+          incoming,
+        ),
+      ),
+    );
+    if (joined) joined.members.push(incoming);
+    else fresh.push({ members: [incoming] });
+  }
 
+  const now = Date.now();
+  const stamp = campaignId !== undefined ? { lastCampaignId: campaignId } : {};
+  const idsOf = (members: readonly Incoming[], also: readonly string[] = []) => [
+    ...new Set([...also, ...members.flatMap((m) => m.externalIds)]),
+  ];
+  const spellingsOf = (members: readonly Incoming[]) =>
+    members.flatMap((m) => [m.name, ...m.aliases]);
+  const corpusOf = (members: readonly Incoming[], floor = 0) =>
+    Math.max(floor, ...members.map((m) => m.corpusMessages ?? 0)) || undefined;
+
+  // ── Existing rows: one patch each ────────────────────────────────────────────────────────────
+  for (const { existing, members } of byRow.values()) {
+    if (!existing) continue;
     if (existing.removedAt !== undefined) {
       counts.removedHeld++;
       continue;
     }
-
-    // A row this call already wrote keeps the first candidate's name and point: two candidates
-    // resolving to one row would otherwise take turns overwriting it, run after run.
-    const firstClaim = !claimed.has(existing._id);
-    claimed.add(existing._id);
-    const held = existing.moderatorEditedAt !== undefined || !firstClaim;
-
-    const externalIds = [...new Set([...existing.externalIds, ...ids])];
-    const merged = normalizeLandmarkNames(existing.name, [
-      ...existing.aliases,
-      ...(held ? [names.name] : []),
-      ...names.aliases,
-    ]);
-    const aliases = merged?.aliases ?? existing.aliases;
-    const corpusMessages =
-      Math.max(existing.corpusMessages ?? 0, incoming.corpusMessages ?? 0) || undefined;
-
+    const first = members[0] as Incoming;
     let patch: Partial<Doc<'bodyLandmarks'>>;
-    if (held) {
-      if (existing.moderatorEditedAt !== undefined) counts.moderatorHeld++;
-      patch = { externalIds, aliases, corpusMessages };
+    if (existing.moderatorEditedAt !== undefined) {
+      counts.moderatorHeld++;
+      patch = {
+        externalIds: idsOf(members, existing.externalIds),
+        aliases:
+          normalizeLandmarkNames(existing.name, [...existing.aliases, ...spellingsOf(members)])
+            ?.aliases ?? existing.aliases,
+        corpusMessages: corpusOf(members, existing.corpusMessages),
+      };
     } else {
       patch = {
-        name: names.name,
-        kind: incoming.kind,
-        point: incoming.point,
-        areaSqM: incoming.areaSqM,
-        subAreaId: subAreaFor(incoming.point, candidates)?.subAreaId,
-        externalIds,
-        aliases:
-          normalizeLandmarkNames(names.name, [...existing.aliases, ...names.aliases])?.aliases ??
-          aliases,
-        corpusMessages,
+        name: first.name,
+        kind: first.kind,
+        point: first.point,
+        areaSqM: first.areaSqM,
+        subAreaId: subAreaFor(first.point, candidates)?.subAreaId,
+        // Upstream ids accumulate — an id that left the catalog still finds its row — while the
+        // spellings are this run's: the row is the catalogs', and a spelling they dropped goes.
+        externalIds: idsOf(members, existing.externalIds),
+        aliases: normalizeLandmarkNames(first.name, spellingsOf(members))?.aliases ?? [],
+        corpusMessages: corpusOf(members),
       };
     }
-    // Counted once per row: a moderator's row is `moderatorHeld`, a second claim is part of the first.
-    const counted = !held;
     if (unchanged(existing, patch)) {
-      if (counted) counts.unchanged++;
+      if (existing.moderatorEditedAt === undefined) counts.unchanged++;
       continue;
     }
-    if (counted) counts.updated++;
-    if (write) {
-      await ctx.db.patch(existing._id, {
-        ...patch,
-        ...(campaignId !== undefined ? { lastCampaignId: campaignId } : {}),
-        updatedAt: now,
-      });
-      Object.assign(existing, patch);
+    if (existing.moderatorEditedAt === undefined) counts.updated++;
+    if (write) await ctx.db.patch(existing._id, { ...patch, ...stamp, updatedAt: now });
+  }
+
+  // ── New rows, up to the cap ──────────────────────────────────────────────────────────────────
+  let live = rows.filter((row) => row.removedAt === undefined).length;
+  for (const { members } of fresh) {
+    if (live >= MAX_LANDMARKS_PER_BODY) {
+      counts.overCap++;
+      continue;
     }
+    live++;
+    counts.created++;
+    const first = members[0] as Incoming;
+    const corpusMessages = corpusOf(members);
+    if (!write) continue;
+    await ctx.db.insert('bodyLandmarks', {
+      waterBodyId,
+      name: first.name,
+      kind: first.kind,
+      point: first.point,
+      ...(first.areaSqM !== undefined ? { areaSqM: first.areaSqM } : {}),
+      ...(subAreaFor(first.point, candidates) ?? {}),
+      source: first.source,
+      externalIds: idsOf(members),
+      aliases: normalizeLandmarkNames(first.name, spellingsOf(members))?.aliases ?? [],
+      ...(corpusMessages !== undefined ? { corpusMessages } : {}),
+      ...stamp,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
   return counts;
 }

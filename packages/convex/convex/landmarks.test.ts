@@ -229,6 +229,39 @@ describe('landmarks.importBatch', () => {
     expect(row?.externalIds.sort()).toEqual(['gnis:1', 'osm:way/1']);
   });
 
+  test('a spelling a later run drops leaves a catalog row, but never a moderator’s', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const held = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Gull Rock',
+      kind: 'other',
+      point: { lat: 44.3, lng: -73.2 },
+      aliases: ['the gull'],
+    });
+    const run = (aliases: string[]) =>
+      importFor(t, {
+        waterBodyId: body,
+        landmarks: [
+          imported('Apple Island', ISLAND, { externalIds: ['osm:way/1'], aliases }),
+          imported(
+            'Gull Rock',
+            { lat: 44.3, lng: -73.2 },
+            { kind: 'other', externalIds: ['gnis:9'], aliases },
+          ),
+        ],
+        dryRun: false,
+      });
+    await run(['Lake Champlain (Apple Island)']);
+    expect((await run([])).updated).toBe(1);
+    const rows = await rowsOf(t, body);
+    expect(rows.find((r) => r.name === 'Apple Island')?.aliases).toEqual([]);
+    const gull = await t.run((ctx) => ctx.db.get(held));
+    expect(gull?.aliases).toEqual(['the gull', 'Lake Champlain (Apple Island)']);
+    expect(gull?.externalIds).toEqual(['gnis:9']);
+  });
+
   test('two places with one name, far apart, stay two places', async () => {
     const t = harness();
     const body = await seedBody(t);
