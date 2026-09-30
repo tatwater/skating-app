@@ -19,12 +19,12 @@
  */
 
 import {
-  haversineMeters,
   LANDMARK_KINDS,
   type LandmarkKind,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
+  landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
   normalizeLandmarkNames,
 } from '@skating/core';
@@ -39,7 +39,7 @@ import {
   query,
 } from './_generated/server';
 import { requireContributorRole, requireRole } from './lib/auth';
-import { auditLandmark, landmarksForBody, subAreaFor } from './lib/landmarkRows';
+import { assertNotABayName, auditLandmark, landmarksForBody, subAreaFor } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { latLng, literals } from './lib/validators';
 import { stampCandidates } from './subAreas';
@@ -115,15 +115,16 @@ export const listForEditor = query({
  * Listed bodies with their geometry, paged — the one read of the corpus the landmark ETL makes, so
  * that every point is matched offline rather than by a per-point lookup here.
  *
- * **A byte budget, not a row budget** (`sweepBodySummaries`): `paginate` reads whole documents, and a
- * page of Champlains is 300 KB each. 50 a page keeps an all-giants page an order of magnitude under
- * Convex's 16 MB read cap. The whole walk reads each body once — ~45 MB over ~25,000 bodies — which is
- * less than a single one of the per-point lookups it replaces would have cost at Champlain's shore.
+ * **A byte budget, not a row budget** (`sweepBodySummaries`): `paginate` reads whole documents, and
+ * this returns every polygon it reads, so a page is bounded by the read *and* the return cap (16 MB
+ * each). Twenty a page puts even an all-giants page (Champlain is ~300 KB) at a third of that. The
+ * whole walk reads each body once — ~45 MB over ~25,000 bodies — which is less than the per-point
+ * lookups it replaces would have cost at Champlain's shore alone.
  */
 export const listBodyGeometry = internalQuery({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
-    const numItems = Math.min(200, Math.max(1, batchSize ?? 50));
+    const numItems = Math.min(50, Math.max(1, batchSize ?? 20));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const bodies = page.page.filter(isListed).map((body) => ({
       _id: body._id,
@@ -150,18 +151,6 @@ const importedLandmark = v.object({
 });
 
 /**
- * How far apart one landmark's two sightings may be and still be one landmark, when they share a
- * name but no id — a moderator's dropped pin that the ETL later finds in GNIS, or an island OSM draws
- * as a polygon and GNIS as a point on its far end.
- */
-const SAME_NAME_RADIUS_M = 1_000;
-
-/** Which kinds may be the same place under two names in two catalogs — GNIS's "Bay" is OSM's bay. */
-function kindsMeet(a: LandmarkKind, b: LandmarkKind): boolean {
-  return a === b || a === 'other' || b === 'other';
-}
-
-/**
  * Load landmarks for a batch of bodies — **dry unless `dryRun: false`**, as every loader in
  * `scripts/etl` is. Batched across bodies because ten thousand bodies carry one or two landmarks
  * each, and one `convex run` per body would be hours of process spawns for seconds of writes. The
@@ -169,13 +158,14 @@ function kindsMeet(a: LandmarkKind, b: LandmarkKind): boolean {
  * body's rows so the cap and the merge stay exact.
  *
  * **Resolve, then write — one write per row per call.** Each candidate finds its row by any shared
- * upstream id, else by name within {@link SAME_NAME_RADIUS_M} (a candidate with no row joins another
- * new candidate the same way), and the candidates that resolve to one row are applied together: the
+ * upstream id, else by core's `landmarksAreSamePlace` (a candidate with no row joins another new
+ * candidate the same way), and the candidates that resolve to one row are applied together: the
  * first sets the name, kind and point, and the group's ids and spellings are its ids and aliases. So
  * a row the catalogs own takes this run's aliases — an alias a later run drops leaves — and two
  * candidates for one row cannot take turns overwriting it, run after run.
  *
- * Skipped or held, and counted: a candidate named for one of the body's live bays (`alreadyBay`); a
+ * Skipped or held, and counted: a name empty or longer than a place name (`invalidName`); a
+ * candidate named for one of the body's live bays (`alreadyBay`); a
  * removed row stays removed (a re-run must not resurrect what a moderator took down); a moderator's
  * row keeps its name, kind, point and spellings and only gains ids, spellings and the corpus count;
  * a new row past `MAX_LANDMARKS_PER_BODY` is refused (`overCap`) — the cap is enforced here so the
@@ -191,6 +181,7 @@ type ImportCounts = {
   overCap: number;
   bodyNotListed: number;
   alreadyBay: number;
+  invalidName: number;
 };
 
 function emptyCounts(): ImportCounts {
@@ -203,6 +194,7 @@ function emptyCounts(): ImportCounts {
     overCap: 0,
     bodyNotListed: 0,
     alreadyBay: 0,
+    invalidName: 0,
   };
 }
 
@@ -232,22 +224,13 @@ interface Group {
   members: Incoming[];
 }
 
-function answersTo(
-  target: {
-    kind: LandmarkKind;
-    point: { lat: number; lng: number };
-    names: readonly string[];
-    ids: readonly string[];
-  },
-  incoming: Incoming,
-): boolean {
-  if (target.ids.some((id) => incoming.externalIds.includes(id))) return true;
-  const keys = new Set([incoming.name, ...incoming.aliases].map(landmarkNameKey));
-  return (
-    kindsMeet(target.kind, incoming.kind) &&
-    target.names.some((n) => keys.has(landmarkNameKey(n))) &&
-    haversineMeters(target.point, incoming.point) <= SAME_NAME_RADIUS_M
-  );
+function identityOf(row: {
+  kind: LandmarkKind;
+  point: { lat: number; lng: number };
+  name: string;
+  aliases: readonly string[];
+}) {
+  return { kind: row.kind, point: row.point, names: [row.name, ...row.aliases] };
 }
 
 async function importOneBody(
@@ -273,24 +256,38 @@ async function importOneBody(
   );
 
   // ── Resolve every candidate to its row ───────────────────────────────────────────────────────
+  // Indexed once, so a giant's several hundred candidates are not each a scan of its rows.
+  const rowById = new Map<string, Doc<'bodyLandmarks'>>();
+  const rowsByName = new Map<string, Doc<'bodyLandmarks'>[]>();
+  for (const row of rows) {
+    for (const id of row.externalIds) rowById.set(id, row);
+    for (const n of [row.name, ...row.aliases]) {
+      const key = landmarkNameKey(n);
+      const list = rowsByName.get(key);
+      if (list) list.push(row);
+      else rowsByName.set(key, [row]);
+    }
+  }
   const byRow = new Map<Id<'bodyLandmarks'>, Group>();
   const fresh: Group[] = [];
   for (const raw of landmarks) {
     const names = normalizeLandmarkNames(raw.name, raw.aliases);
-    if (!names) continue;
+    if (!names) {
+      counts.invalidName++;
+      continue;
+    }
     if (bayKeys.has(landmarkNameKey(names.name))) {
       counts.alreadyBay++;
       continue;
     }
     const incoming: Incoming = { ...raw, name: names.name, aliases: names.aliases };
+    const identity = identityOf(incoming);
+    const byName = [
+      ...new Set(identity.names.flatMap((n) => rowsByName.get(landmarkNameKey(n)) ?? [])),
+    ];
     const existing =
-      rows.find((row) => row.externalIds.some((id) => incoming.externalIds.includes(id))) ??
-      rows.find((row) =>
-        answersTo(
-          { kind: row.kind, point: row.point, names: [row.name, ...row.aliases], ids: [] },
-          incoming,
-        ),
-      );
+      incoming.externalIds.map((id) => rowById.get(id)).find((row) => row !== undefined) ??
+      byName.find((row) => landmarksAreSamePlace(identityOf(row), identity));
     if (existing) {
       const group = byRow.get(existing._id);
       if (group) group.members.push(incoming);
@@ -298,11 +295,10 @@ async function importOneBody(
       continue;
     }
     const joined = fresh.find((group) =>
-      group.members.some((m) =>
-        answersTo(
-          { kind: m.kind, point: m.point, names: [m.name, ...m.aliases], ids: m.externalIds },
-          incoming,
-        ),
+      group.members.some(
+        (m) =>
+          m.externalIds.some((id) => incoming.externalIds.includes(id)) ||
+          landmarksAreSamePlace(identityOf(m), identity),
       ),
     );
     if (joined) joined.members.push(incoming);
@@ -343,6 +339,8 @@ async function importOneBody(
         kind: first.kind,
         point: first.point,
         areaSqM: first.areaSqM,
+        // Whichever catalog the name and point came from this run — the editor shows it as provenance.
+        source: first.source,
         subAreaId: subAreaFor(first.point, candidates)?.subAreaId,
         // Upstream ids accumulate — an id that left the catalog still finds its row — while the
         // spellings are this run's: the row is the catalogs', and a spelling they dropped goes.
@@ -418,23 +416,27 @@ function cleanNames(name: string, aliases: readonly string[] | undefined) {
 }
 
 /**
- * Refuse a second live landmark that is the same place as one this lake already has — any name or
- * alias of one folding to any of the other, within {@link SAME_NAME_RADIUS_M}. Distance matters here
- * where it does not for bays: "Long Point" is on half the lakes in Vermont, and on Champlain twice.
+ * Refuse a second live landmark that is the same place as one this lake already has — core's
+ * `landmarksAreSamePlace`, the rule the import and the ETL use, so a moderator is refused exactly the
+ * pairs the catalogs would have merged. "Long Point" is on half the lakes in Vermont and on
+ * Champlain twice; two of them far apart are two places.
  */
 function assertNotDuplicate(
   rows: readonly Doc<'bodyLandmarks'>[],
-  names: readonly string[],
-  point: { lat: number; lng: number },
+  candidate: {
+    kind: LandmarkKind;
+    point: { lat: number; lng: number };
+    name: string;
+    aliases: readonly string[];
+  },
   exceptId?: Id<'bodyLandmarks'>,
 ): void {
-  const keys = new Set(names.map(landmarkNameKey));
+  const identity = identityOf(candidate);
   const clash = rows.find(
     (row) =>
       row._id !== exceptId &&
       row.removedAt === undefined &&
-      [row.name, ...row.aliases].some((n) => keys.has(landmarkNameKey(n))) &&
-      haversineMeters(row.point, point) <= SAME_NAME_RADIUS_M,
+      landmarksAreSamePlace(identityOf(row), identity),
   );
   if (clash) throw new ConvexError(`"${clash.name}" is already a landmark here`);
 }
@@ -462,7 +464,8 @@ export const create = mutation({
     await requireBody(ctx, args.waterBodyId);
     const names = cleanNames(args.name, args.aliases);
     const rows = await landmarksForBody(ctx, args.waterBodyId);
-    assertNotDuplicate(rows, [names.name, ...names.aliases], args.point);
+    assertNotDuplicate(rows, { kind: args.kind, point: args.point, ...names });
+    await assertNotABayName(ctx, args.waterBodyId, [names.name, ...names.aliases]);
     if (rows.filter((row) => row.removedAt === undefined).length >= MAX_LANDMARKS_PER_BODY) {
       throw new ConvexError(`This lake already has ${MAX_LANDMARKS_PER_BODY} landmarks`);
     }
@@ -507,13 +510,15 @@ export const update = mutation({
     const names = cleanNames(args.name ?? row.name, args.aliases ?? row.aliases);
     const point = args.point ?? row.point;
     const rows = await landmarksForBody(ctx, row.waterBodyId);
-    assertNotDuplicate(rows, [names.name, ...names.aliases], point, row._id);
+    const kind = args.kind ?? row.kind;
+    assertNotDuplicate(rows, { kind, point, ...names }, row._id);
+    await assertNotABayName(ctx, row.waterBodyId, [names.name, ...names.aliases]);
     const now = Date.now();
     const moved = args.point !== undefined;
     await ctx.db.patch(row._id, {
       name: names.name,
       aliases: names.aliases,
-      kind: args.kind ?? row.kind,
+      kind,
       point,
       // A moved point may have crossed into (or out of) a bay; an unmoved one keeps its stamp.
       ...(moved
@@ -558,7 +563,9 @@ export const restore = mutation({
     if (!row) throw new ConvexError('That landmark no longer exists');
     if (row.removedAt === undefined) return;
     const rows = await landmarksForBody(ctx, row.waterBodyId);
-    assertNotDuplicate(rows, [row.name, ...row.aliases], row.point, row._id);
+    assertNotDuplicate(rows, row, row._id);
+    // A landmark retired because it became a bay (D202) stays retired while the bay lives.
+    await assertNotABayName(ctx, row.waterBodyId, [row.name, ...row.aliases]);
     if (rows.filter((r) => r.removedAt === undefined).length >= MAX_LANDMARKS_PER_BODY) {
       throw new ConvexError(`This lake already has ${MAX_LANDMARKS_PER_BODY} landmarks`);
     }

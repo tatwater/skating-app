@@ -1,14 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  filledPolygon,
   LANDMARK_KIND_LABELS,
   LANDMARK_KINDS,
   LANDMARK_LABEL_MAX_ZOOM,
   LANDMARK_LABEL_MIN_ZOOM,
+  LANDMARK_SAME_PLACE_RADIUS_M,
   landmarkLabelFeatures,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
+  landmarksAreSamePlace,
   MAX_LANDMARK_ALIASES,
   MAX_LANDMARK_NAME_LENGTH,
   normalizeLandmarkNames,
@@ -214,8 +217,77 @@ describe('subAreaForLandmark', () => {
     expect(subAreaForLandmark({ lat: 44.1, lng: -73.1 }, [])).toBeNull();
   });
 
+  it('skips a bay whose stored box, grown by the tolerance, misses the point', () => {
+    const boxed = { ...bay, bbox: { minLat: 44.0, minLng: -73.2, maxLat: 44.2, maxLng: -73.0 } };
+    expect(subAreaForLandmark({ lat: 44.1, lng: -73.1 }, [boxed])).toBe('bay');
+    expect(subAreaForLandmark({ lat: 45.1, lng: -73.1 }, [boxed])).toBeNull();
+    expect(subAreaForLandmark({ lat: 44.1, lng: -74.1 }, [boxed])).toBeNull();
+  });
+
   it('breaks an equal-distance tie toward the smaller bay', () => {
     const twin = { ...bay, ref: 'twin', surfaceAreaSqM: 1 };
     expect(subAreaForLandmark({ lat: 44.1, lng: -73.2012 }, [bay, twin])).toBe('twin');
+  });
+});
+
+describe('landmarksAreSamePlace', () => {
+  const at = (lat: number, lng: number) => ({ lat, lng });
+  const gull = {
+    kind: 'island' as const,
+    point: at(44.5, -73.3),
+    names: ['Gull Island', 'Gull Is'],
+  };
+
+  it('is one place: same name (either way round), kinds that agree, within the kind’s radius', () => {
+    expect(
+      landmarksAreSamePlace(gull, { ...gull, names: ['gull is'], point: at(44.505, -73.3) }),
+    ).toBe(true);
+    expect(landmarksAreSamePlace(gull, { ...gull, kind: 'other', names: ['Gull Island'] })).toBe(
+      true,
+    );
+  });
+
+  it('is two places when far apart, of different kinds, or differently named', () => {
+    expect(landmarksAreSamePlace(gull, { ...gull, point: at(44.52, -73.3) })).toBe(false);
+    expect(landmarksAreSamePlace(gull, { ...gull, kind: 'settlement' })).toBe(false);
+    expect(landmarksAreSamePlace(gull, { ...gull, names: ['Cedar Island'] })).toBe(false);
+  });
+
+  it('reaches further for long places — a passage’s two ends are one passage', () => {
+    const passage = {
+      kind: 'narrows' as const,
+      point: at(44.0, -73.05),
+      names: ['La Motte Passage'],
+    };
+    expect(landmarksAreSamePlace(passage, { ...passage, point: at(44.03, -73.05) })).toBe(true);
+    expect(LANDMARK_SAME_PLACE_RADIUS_M.narrows).toBeGreaterThan(
+      LANDMARK_SAME_PLACE_RADIUS_M.island,
+    );
+  });
+});
+
+describe('filledPolygon', () => {
+  it('drops the holes, so an island is inside the water around it', () => {
+    const filled = filledPolygon({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [4, 0],
+          [4, 4],
+          [0, 4],
+          [0, 0],
+        ],
+        [
+          [1, 1],
+          [2, 1],
+          [2, 2],
+          [1, 2],
+          [1, 1],
+        ],
+      ],
+    });
+    expect(filled.coordinates).toHaveLength(1);
+    expect(filled.coordinates[0]).toHaveLength(1);
   });
 });

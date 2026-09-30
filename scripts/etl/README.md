@@ -702,8 +702,11 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
 - **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
   the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
   750 m, bridges on each body they cross, rivers at each mouth. Restaurants only when standalone.
-- **`--mentions` is optional** and gitignored input; without it nothing gets a corpus count. The
-  names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's worklist.
+- **`--mentions` is required** (gitignored input), or `--without-corpus` to mean it: the load
+  replaces a catalog row's corpus count and spellings with the run's, so a run without the corpus
+  would erase them — and `load-landmarks --apply` refuses one unless told `--without-corpus` too.
+  The names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's
+  worklist.
 - **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
   edit keeps its name, kind and point, and a name a live bay carries is skipped.
 

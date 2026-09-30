@@ -25,9 +25,13 @@
 
 import type { BBox, LandmarkKind, LatLng } from '@skating/core';
 import {
+  bboxIntersects,
   distanceToPolygonMeters,
+  expandBBox,
+  filledPolygon,
   haversineMeters,
   landmarkNameKey,
+  landmarksAreSamePlace,
   pointInPolygon,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -62,26 +66,6 @@ export const LANDMARK_MATCH_RULES: Readonly<
   bridge: { mode: 'crossing', radiusM: 25 },
   waterway: { mode: 'mouths', radiusM: 30 },
 };
-
-const METERS_PER_DEG_LAT = 111_320;
-
-function expand(box: BBox, meters: number): BBox {
-  const dLat = meters / METERS_PER_DEG_LAT;
-  const mid = ((box.minLat + box.maxLat) / 2) * (Math.PI / 180);
-  const dLng = meters / (METERS_PER_DEG_LAT * Math.max(0.1, Math.cos(mid)));
-  return {
-    minLat: box.minLat - dLat,
-    maxLat: box.maxLat + dLat,
-    minLng: box.minLng - dLng,
-    maxLng: box.maxLng + dLng,
-  };
-}
-
-function overlaps(a: BBox, b: BBox): boolean {
-  return (
-    a.minLat <= b.maxLat && a.maxLat >= b.minLat && a.minLng <= b.maxLng && a.maxLng >= b.minLng
-  );
-}
 
 function boxOf(points: readonly LatLng[]): BBox {
   let minLat = Infinity;
@@ -124,19 +108,15 @@ export class BodyIndex {
 
   /** Bodies whose bbox comes within `meters` of `box`. */
   near(box: BBox, meters: number): MatchBody[] {
-    const wide = expand(box, meters);
+    const wide = expandBBox(box, meters);
     const found = new Set<MatchBody>();
     for (const key of this.keys(wide)) {
-      for (const body of this.cells.get(key) ?? []) if (overlaps(body.bbox, wide)) found.add(body);
+      for (const body of this.cells.get(key) ?? []) {
+        if (bboxIntersects(body.bbox, wide)) found.add(body);
+      }
     }
     return [...found];
   }
-}
-
-/** A polygon with its holes filled — the water *and* its islands. */
-function outer(polygon: Polygon | MultiPolygon): MultiPolygon {
-  const parts = polygon.type === 'Polygon' ? [polygon.coordinates] : polygon.coordinates;
-  return { type: 'MultiPolygon', coordinates: parts.flatMap((r) => (r[0] ? [[r[0]]] : [])) };
 }
 
 /** At most this many footprint vertices are probed for a shore distance — a bound on the work. */
@@ -211,7 +191,7 @@ export function mouthsOf(
   body: MatchBody,
   radiusM: number,
 ): { point: LatLng; direction: 'in' | 'out' }[] {
-  const wide = expand(body.bbox, radiusM);
+  const wide = expandBBox(body.bbox, radiusM);
   const inside = line.map(
     (p) =>
       p.lat >= wide.minLat &&
@@ -283,7 +263,7 @@ export function matchLandmark(c: LandmarkCandidate, index: BodyIndex): PlacedLan
     case 'contained': {
       let best: MatchBody | null = null;
       for (const body of nearby) {
-        if (!pointInPolygon(c.point, outer(body.polygon))) continue;
+        if (!pointInPolygon(c.point, filledPolygon(body.polygon))) continue;
         if (!best || body.surfaceAreaSqM < best.surfaceAreaSqM) best = body;
       }
       if (best) return [placed(c, best)];
@@ -360,34 +340,13 @@ export function keepStandaloneEstablishments(
   );
 }
 
-/**
- * How far apart two sightings of one place, by name, may be — per kind, because a place's size is.
- * An island's GNIS point and its OSM interior are within a kilometer; a passage's GNIS point and its
- * OSM line's middle can be five apart, a bay's head and its node two, a delta's three mouths two.
- */
-export const SAME_PLACE_RADIUS_M: Readonly<Record<LandmarkKind, number>> = {
-  island: 1_000,
-  point: 1_000,
-  beach: 1_000,
-  bay: 2_000,
-  narrows: 5_000,
-  waterway: 2_000,
-  bridge: 1_000,
-  marina: 1_000,
-  lighthouse: 1_000,
-  dam: 1_000,
-  settlement: 1_000,
-  establishment: 500,
-  other: 1_000,
-};
-
 const SOURCE_RANK = (l: PlacedLandmark): number =>
   (l.source === 'osm' ? 0 : 2) + (l.areaSqM !== undefined ? 0 : 1);
 
 /**
- * Fold one body's landmarks that are the same place — the same name (or alias) within the kind's
- * {@link SAME_PLACE_RADIUS_M}, and kinds that agree (`other` agrees with anything, since a GNIS
- * "Bar" and an OSM rock are often the one shoal). OSM wins the name and point (it drew a footprint
+ * Fold one body's landmarks that are the same place — core's `landmarksAreSamePlace`, the one rule
+ * the import and a moderator's duplicate check also use (same name within the kind's radius, kinds
+ * that agree). OSM wins the name and point (it drew a footprint
  * or a precise node), GNIS contributes its id and, if spelled differently, an alias.
  *
  * A reference to the body *itself* is dropped: a GNIS bay or narrows named for the lake it is on
@@ -403,12 +362,11 @@ export function mergeSamePlace(
   for (const l of ordered) {
     const key = landmarkNameKey(l.name);
     if (key === bodyKey && ['bay', 'narrows', 'other'].includes(l.kind)) continue;
-    const twin = kept.find(
-      (k) =>
-        (k.kind === l.kind || k.kind === 'other' || l.kind === 'other') &&
-        [k.name, ...k.aliases].some((n) => landmarkNameKey(n) === key) &&
-        haversineMeters(k.point, l.point) <=
-          Math.max(SAME_PLACE_RADIUS_M[k.kind], SAME_PLACE_RADIUS_M[l.kind]),
+    const twin = kept.find((k) =>
+      landmarksAreSamePlace(
+        { kind: k.kind, point: k.point, names: [k.name, ...k.aliases] },
+        { kind: l.kind, point: l.point, names: [l.name, ...l.aliases] },
+      ),
     );
     if (!twin) {
       kept.push({ ...l, externalIds: [...l.externalIds], aliases: [...l.aliases] });

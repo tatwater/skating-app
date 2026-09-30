@@ -319,8 +319,12 @@ export function LandmarkTool({
           size="sm"
           className="self-start"
           onClick={() => {
+            // A fresh form: an abandoned edit's name and kind must not ride into a new landmark.
             setMoving(null);
             setEditing(null);
+            setName('');
+            setKind('other');
+            setAliases('');
             onArm(!(armed && !moving));
           }}
         >

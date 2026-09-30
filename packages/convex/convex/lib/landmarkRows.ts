@@ -6,16 +6,22 @@
  */
 
 import {
+  distanceToShorelineMeters,
+  filledPolygon,
   landmarkNameKey,
   MAX_LANDMARKS_PER_BODY,
+  pointInPolygon,
   type SubAreaCandidate,
   subAreaForLandmark,
 } from '@skating/core';
 import { ConvexError } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
-type BayCandidates = readonly SubAreaCandidate<Doc<'waterBodySubAreas'>>[];
+type BayCandidates = readonly (SubAreaCandidate<Doc<'waterBodySubAreas'>> & {
+  bbox?: Doc<'waterBodySubAreas'>['bbox'];
+})[];
 
 /** The rows of one body, removed ones included — the one bounded read every path here shares. */
 export async function landmarksForBody(
@@ -90,43 +96,58 @@ export async function retireAsPromoted(
 }
 
 /**
- * Re-stamp one body's landmarks against its current bays — called by `subAreas.restampParent` after
- * a bay is drawn, redrawn or delisted. One bounded read, so no cursor: a body's landmarks are capped.
+ * How far from a bay a landmark of the same name may sit and still be *that bay's* name: a GNIS bay
+ * point sits at the bay's head, sometimes on the shore; a same-named place further off is another
+ * place (Champlain has two Mud Bays).
  */
-export async function restampLandmarks(
-  ctx: MutationCtx,
-  waterBodyId: Id<'waterBodies'>,
-  candidates: BayCandidates,
-): Promise<number> {
-  let changed = 0;
-  for (const row of await landmarksForBody(ctx, waterBodyId)) {
-    const next = subAreaFor(row.point, candidates)?.subAreaId;
-    if (row.subAreaId === next) continue;
-    await ctx.db.patch(row._id, { subAreaId: next });
-    changed++;
-  }
-  return changed;
-}
+export const BAY_NAME_RETIRE_RADIUS_M = 1_000;
 
 /**
- * Retire every live landmark on the body that a newly drawn bay now names (D202's promotion by
- * name). A bay drawn from the `name_bay` queue is usually a reference bay the ETL already labeled —
- * Kingsland Bay was a node before it was a place — and leaving the label beside the new sub-area
- * would name the water twice. Returns how many it retired.
+ * Retire every live landmark a bay now names (D202's promotion by name): the same name or alias,
+ * within {@link BAY_NAME_RETIRE_RADIUS_M} of the bay's outline. A bay drawn from the `name_bay`
+ * queue is usually a reference bay the ETL already labeled — Kingsland Bay was a node before it was a
+ * place — and leaving the label beside the new sub-area would name the water twice. Called from the
+ * one sub-area insert and from rename and restore, so no way of giving a bay a name skips it.
  */
 export async function retireNamedAsBay(
   ctx: MutationCtx,
   actorId: Id<'profiles'>,
   waterBodyId: Id<'waterBodies'>,
-  subAreaId: Id<'waterBodySubAreas'>,
-  names: readonly string[],
+  bay: { _id: Id<'waterBodySubAreas'>; polygon: Polygon | MultiPolygon; names: readonly string[] },
 ): Promise<number> {
-  const keys = new Set(names.map(landmarkNameKey));
+  const keys = new Set(bay.names.map(landmarkNameKey));
+  const water = filledPolygon(bay.polygon);
   let retired = 0;
   for (const row of await landmarksForBody(ctx, waterBodyId)) {
     if (row.removedAt !== undefined || !keys.has(landmarkNameKey(row.name))) continue;
-    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, subAreaId);
+    const near =
+      pointInPolygon(row.point, water) ||
+      distanceToShorelineMeters(row.point, bay.polygon) <= BAY_NAME_RETIRE_RADIUS_M;
+    if (!near) continue;
+    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, bay._id);
     retired++;
   }
   return retired;
+}
+
+/**
+ * Refuse a landmark named for a live bay of its lake (D202): the bay is the place, and a label saying
+ * the same thing would name the water twice. The ETL skips these (`alreadyBay`); a moderator is told.
+ */
+export async function assertNotABayName(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  names: readonly string[],
+): Promise<void> {
+  const keys = new Set(names.map(landmarkNameKey));
+  const bays = await ctx.db
+    .query('waterBodySubAreas')
+    .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+    .collect();
+  const bay = bays.find(
+    (b) =>
+      b.removedAt === undefined &&
+      [b.name, ...(b.aliases ?? [])].some((n) => keys.has(landmarkNameKey(n))),
+  );
+  if (bay) throw new ConvexError(`"${bay.name}" is a bay on this lake — it is already on the map`);
 }

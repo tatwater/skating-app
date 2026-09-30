@@ -32,7 +32,7 @@ import {
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader, errorText, ToolCard } from '../components/admin/adminUi';
 import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
@@ -80,6 +80,12 @@ function LakeEditor() {
   const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
   const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
   const landmarks = useQuery(api.landmarks.listForEditor, { waterBodyId });
+  // Memoized so the map's effect re-tiles the landmark source only when the list changes, not on
+  // every re-render of the editor (a giant carries ~560).
+  const liveLandmarks = useMemo(
+    () => (landmarks ?? []).filter((l) => l.removedAt === undefined),
+    [landmarks],
+  );
   const tracks = useQuery(api.gpsActivities.listTracksForBody, { waterBodyId });
 
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
@@ -197,7 +203,7 @@ function LakeEditor() {
               // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
               // convention. Which tool owns which is answered by the card holding it, each of which
               // prints its own coordinate; the map's job here is only to say "not saved yet".
-              landmarks: (landmarks ?? []).filter((l) => l.removedAt === undefined),
+              landmarks: liveLandmarks,
               suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
                 .flat()
                 .filter((p): p is LatLng => p !== null),

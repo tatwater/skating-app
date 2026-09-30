@@ -15,7 +15,15 @@
 
 import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 import { requestNameKey } from './corpusRequests';
-import { distanceToPolygonMeters, haversineMeters, type LatLng, pointInPolygon } from './geometry';
+import {
+  type BBox,
+  distanceToShorelineMeters,
+  expandBBox,
+  haversineMeters,
+  type LatLng,
+  pointInPolygon,
+} from './geometry';
+import { outerRingsOnly } from './imageryMask';
 import type { SubAreaCandidate } from './subArea';
 
 /**
@@ -86,6 +94,53 @@ export const MAX_LANDMARK_ALIASES = 12;
  * streams, bridges and shore establishments on top of them.
  */
 export const MAX_LANDMARKS_PER_BODY = 1_500;
+
+/**
+ * How far apart two sightings of one place, by name, may be — per kind, because a place's size is.
+ * An island's GNIS point and its OSM interior sit within a kilometer; a passage's GNIS point and its
+ * OSM line's middle can be five apart, a bay's head and its node two, a delta's mouths two. One table
+ * for every path that asks "is this the same place?" — the ETL's merge, the import's upsert and a
+ * moderator's duplicate check — so the three cannot answer it three ways.
+ */
+export const LANDMARK_SAME_PLACE_RADIUS_M: Readonly<Record<LandmarkKind, number>> = {
+  island: 1_000,
+  point: 1_000,
+  beach: 1_000,
+  bay: 2_000,
+  narrows: 5_000,
+  waterway: 2_000,
+  bridge: 1_000,
+  marina: 1_000,
+  lighthouse: 1_000,
+  dam: 1_000,
+  settlement: 1_000,
+  establishment: 500,
+  other: 1_000,
+};
+
+/** A landmark as the same-place rule sees it: what it is, where, and every name it answers to. */
+export interface LandmarkIdentity {
+  kind: LandmarkKind;
+  point: LatLng;
+  names: readonly string[];
+}
+
+/**
+ * Are these two the same place? Kinds that agree (`other` agrees with anything — a GNIS "Bar" and
+ * an OSM rock are often one shoal), any name of one folding to any name of the other, and within the
+ * larger of their kinds' {@link LANDMARK_SAME_PLACE_RADIUS_M}. Two Cedar Islands at opposite ends of
+ * Champlain are two places; a village and a point both called Long Point are two kinds of place.
+ */
+export function landmarksAreSamePlace(a: LandmarkIdentity, b: LandmarkIdentity): boolean {
+  if (a.kind !== b.kind && a.kind !== 'other' && b.kind !== 'other') return false;
+  const keys = new Set(a.names.map(landmarkNameKey));
+  if (!b.names.some((n) => keys.has(landmarkNameKey(n)))) return false;
+  const radius = Math.max(
+    LANDMARK_SAME_PLACE_RADIUS_M[a.kind],
+    LANDMARK_SAME_PLACE_RADIUS_M[b.kind],
+  );
+  return haversineMeters(a.point, b.point) <= radius;
+}
 
 /**
  * The key two spellings of one landmark share: `requestNameKey`'s fold (case, apostrophes, saint →
@@ -207,13 +262,13 @@ export function normalizeLandmarkNames(
  */
 export const LANDMARK_SUB_AREA_TOLERANCE_M = 150;
 
-/** A polygon with its holes filled: the water *and* the islands in it. */
-function outerRings(polygon: Polygon | MultiPolygon): MultiPolygon {
-  const parts = polygon.type === 'Polygon' ? [polygon.coordinates] : polygon.coordinates;
-  return {
-    type: 'MultiPolygon',
-    coordinates: parts.flatMap((rings) => (rings[0] ? [[rings[0]]] : [])),
-  };
+/**
+ * A polygon with its holes filled: the water *and* the islands in it. An island in a lake is a hole
+ * in the lake's polygon, so "is this island in that lake (or bay)" is containment in *this*, never in
+ * the polygon itself. Shared by the bay stamp and the ETL's island rule.
+ */
+export function filledPolygon(polygon: Polygon | MultiPolygon): MultiPolygon {
+  return { type: 'MultiPolygon', coordinates: outerRingsOnly(polygon).map((ring) => [ring]) };
 }
 
 /**
@@ -229,18 +284,33 @@ function outerRings(polygon: Polygon | MultiPolygon): MultiPolygon {
  */
 export function subAreaForLandmark<T>(
   point: LatLng,
-  candidates: readonly SubAreaCandidate<T>[],
+  candidates: readonly (SubAreaCandidate<T> & { bbox?: BBox })[],
 ): T | null {
   let inside: { ref: T; area: number } | null = null;
   let near: { ref: T; distance: number; area: number } | null = null;
+  const probe = { minLat: point.lat, maxLat: point.lat, minLng: point.lng, maxLng: point.lng };
   for (const c of candidates) {
-    if (pointInPolygon(point, outerRings(c.polygon))) {
+    // A bay whose stored box, grown by the tolerance, misses the point cannot claim it: four
+    // comparisons instead of a walk of the bay's outline, for most landmarks × most bays.
+    if (c.bbox) {
+      const grown = expandBBox(c.bbox, LANDMARK_SUB_AREA_TOLERANCE_M);
+      if (
+        probe.minLat > grown.maxLat ||
+        probe.maxLat < grown.minLat ||
+        probe.minLng > grown.maxLng ||
+        probe.maxLng < grown.minLng
+      ) {
+        continue;
+      }
+    }
+    if (pointInPolygon(point, filledPolygon(c.polygon))) {
       if (inside === null || c.surfaceAreaSqM < inside.area) {
         inside = { ref: c.ref, area: c.surfaceAreaSqM };
       }
       continue;
     }
-    const distance = distanceToPolygonMeters(point, c.polygon);
+    // Outside the filled outline, the distance to the polygon is the distance to its shore.
+    const distance = distanceToShorelineMeters(point, c.polygon);
     if (distance > LANDMARK_SUB_AREA_TOLERANCE_M) continue;
     if (
       near === null ||

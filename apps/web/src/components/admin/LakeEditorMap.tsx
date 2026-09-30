@@ -227,6 +227,9 @@ export function LakeEditorMap({
         layout: {
           'text-field': ['get', 'name'],
           'text-size': 11,
+          // Named, not left to MapLibre's default stack — the Protomaps glyph host serves only its
+          // own faces, and a default-font label 404s per glyph range and never draws.
+          'text-font': ['Noto Sans Regular'],
           'text-offset': [0, 0.9],
           'text-anchor': 'top',
           'text-optional': true,

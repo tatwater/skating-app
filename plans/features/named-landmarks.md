@@ -109,12 +109,12 @@ one.
   restore, drop, *Draw as bay*).
 
 **The first data run (dev, 2026-09-29, campaign `landmarks-20260929`):** 155,945 candidates (OSM
-131,111 + GNIS 24,834) → 24,087 placed → 23,988 rows on 10,600 of 24,953 listed bodies. By kind: 9,501 river
+131,111 + GNIS 24,834) → 24,087 placed → 23,989 rows on 10,600 of 24,953 listed bodies. By kind: 9,501 river
 mouths, 6,154 shore towns, 2,653 dams, 1,683 islands, 1,157 points, 1,137 establishments, 932
 reference bays, 391 beaches, 166 marinas, 103 bridges, 93 narrows, 93 rocks and shoals, 24
 lighthouses. 28,771 crowded businesses dropped by the standalone rule; 96 skipped because a live
 bay already carries the name. Champlain holds ~560, Winnipesaukee ~370, Lake George ~315. A re-run
-is idempotent (23,988 unchanged). The corpus: 154 of 391 place names attached, 16 ambiguous, 221
+is idempotent (23,989 unchanged). The corpus: 154 of 391 place names attached, 16 ambiguous, 221
 unmatched — the unmatched list (`.scratch/landmarks/corpus-unmatched.csv`, gitignored) is the
 moderator's worklist and the proposal lane's first customers.
 
@@ -137,6 +137,16 @@ moderator's worklist and the proposal lane's first customers.
   overwriting it. It now resolves every candidate to its row first and writes each row once.
 - *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
   Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
+
+**The self-review (`/code-review xhigh`) before the PR opened** found fifteen; all fixed: a bay could
+take a landmark's name by rename, restore or import without retiring it (the retire moved into the
+one sub-area insert, plus rename and restore, and only within 1 km — Champlain has two Mud Bays);
+a promoted landmark could be restored beside its bay (refused now); the loader split giants across
+calls, undoing resolve-then-write (a body now travels whole); a run without `--mentions` would have
+erased every corpus count (refused unless meant); "same place" had three rules in three places (one
+in core now); the editor's labels named no font (a silent 404 on Protomaps' glyph host); and the
+smaller ones — the landmark restamp pages like the others, the bay stamp prefilters by bbox, the
+geometry export pages by bytes, `source` follows the catalog that won, the drop form starts empty.
 
 **PR 2 — the consumers** (next): `where.point.landmarkId` beside the name; the sheet's landmark
 chips (ranked, a search for the rest) and tap-to-name; `reportCount` bumped when a report names one

@@ -2,20 +2,19 @@
  * The landmark loader (glue, D202) — reads `landmarks.ndjson` from `pnpm landmarks` and writes it
  * through `landmarks:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply]
+ *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus]
  *
  * Batches are packed by **landmark count across bodies**: ten thousand bodies hold one or two each,
- * and a spawn per body would be hours of `convex run` for seconds of writes. A giant's list is split
- * across calls; the mutation re-reads the body's rows each time, so the per-body cap and the
- * same-place merge stay exact across the split. Every rule — the merge, the holds, the cap, the
+ * and a spawn per body would be hours of `convex run` for seconds of writes. A body is never split
+ * across calls (see `pack`). Every rule — the merge, the holds, the cap, the
  * bay-name skip — is in the mutation and tested there.
  *
  * Failures are isolated (A06a's rule): a failed batch is recorded with the body ids it carried and
  * the run moves on; five in a row means the deployment is unwell and the run stops.
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
@@ -48,29 +47,32 @@ type Counts = Record<
   | 'moderatorHeld'
   | 'overCap'
   | 'bodyNotListed'
-  | 'alreadyBay',
+  | 'alreadyBay'
+  | 'invalidName',
   number
 >;
 
-/** Pack bodies into calls of about `BATCH_LANDMARKS` landmarks, splitting a body that alone exceeds it. */
+/**
+ * Pack bodies into calls of about `BATCH_LANDMARKS` landmarks — **never splitting a body**. The
+ * mutation resolves every candidate to its row before writing, and that holds only within one call:
+ * a giant split across two would let a candidate in the second overwrite what the first set, run
+ * after run, and a dry run's `created` would miss what an earlier chunk would have inserted. A body
+ * over the batch size goes alone (Champlain's ~560 is one call); the write caps it at 1,500.
+ */
 function pack(lines: readonly BodyLine[]): BodyLine[][] {
   const batches: BodyLine[][] = [];
   let current: BodyLine[] = [];
   let size = 0;
-  const flush = () => {
-    if (current.length > 0) batches.push(current);
-    current = [];
-    size = 0;
-  };
   for (const line of lines) {
-    for (let i = 0; i < line.landmarks.length; i += BATCH_LANDMARKS) {
-      const part = line.landmarks.slice(i, i + BATCH_LANDMARKS);
-      if (size + part.length > BATCH_LANDMARKS) flush();
-      current.push({ waterBodyId: line.waterBodyId, landmarks: part });
-      size += part.length;
+    if (current.length > 0 && size + line.landmarks.length > BATCH_LANDMARKS) {
+      batches.push(current);
+      current = [];
+      size = 0;
     }
+    current.push(line);
+    size += line.landmarks.length;
   }
-  flush();
+  if (current.length > 0) batches.push(current);
   return batches;
 }
 
@@ -81,6 +83,19 @@ function main(): void {
   const apply = args.includes('--apply');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   const inputPath = args.find((a) => !a.startsWith('--')) ?? DEFAULT_INPUT;
+  // A catalog row takes this run's corpus count and spellings (the importer replaces them), so a
+  // transform run without the corpus would erase every one on --apply. The transform says whether it
+  // had the corpus; applying one that did not takes a deliberate flag.
+  const summaryPath = join(dirname(inputPath), 'summary.json');
+  const corpusApplied = existsSync(summaryPath)
+    ? (JSON.parse(readFileSync(summaryPath, 'utf8')) as { corpusApplied?: boolean }).corpusApplied
+    : undefined;
+  if (apply && corpusApplied !== true && !args.includes('--without-corpus')) {
+    process.stderr.write(
+      `[landmarks] ${summaryPath} says the transform ran without the corpus (--mentions); applying it would erase every corpus count and community spelling. Re-run the transform with --mentions, or pass --without-corpus to mean it.\n`,
+    );
+    process.exit(1);
+  }
   const target = resolveDeployment();
   process.stderr.write(`[landmarks] target deployment: ${target.label}\n`);
 
@@ -115,6 +130,7 @@ function main(): void {
     overCap: 0,
     bodyNotListed: 0,
     alreadyBay: 0,
+    invalidName: 0,
   };
   let failedBatches = 0;
   let consecutive = 0;

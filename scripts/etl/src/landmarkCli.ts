@@ -7,7 +7,7 @@
  *   pnpm --filter @skating/etl landmarks VT NH                 # some
  *   pnpm --filter @skating/etl landmarks --refresh-bodies      # re-export the body outlines
  *   pnpm --filter @skating/etl landmarks --refresh             # re-run osmium
- *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>
+ *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *
  * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }` —
  * plus `summary.json`, and the corpus names nothing matched to `corpus-unmatched.csv`. Then
@@ -163,6 +163,13 @@ async function main(): Promise<void> {
   const selected = states.length > 0 ? states : [...ALL_STATES];
   const refresh = args.includes('--refresh');
   const mentionsPath = flag(args, 'mentions');
+  // The corpus is optional input (gitignored) but not an optional *outcome*: the loader replaces a
+  // catalog row's corpus count and spellings with this run's, so a run without it must be meant.
+  if (!mentionsPath && !args.includes('--without-corpus')) {
+    throw new Error(
+      'pass --mentions=<mentions.csv> (training_data/google_group/mentions/), or --without-corpus to build without community names',
+    );
+  }
 
   mkdirSync(SCRATCH, { recursive: true });
   if (!existsSync(BODIES) || args.includes('--refresh-bodies')) exportBodies();
@@ -235,6 +242,7 @@ async function main(): Promise<void> {
   perBody.sort((a, b) => b - a);
   const summary = {
     states: selected,
+    corpusApplied: corpus !== undefined,
     bySource,
     ...counts,
     bodiesWithLandmarks: byBody.size,

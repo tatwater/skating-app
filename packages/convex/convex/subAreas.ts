@@ -65,7 +65,7 @@ import {
 import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
-import { restampLandmarks, retireAsPromoted, retireNamedAsBay } from './lib/landmarkRows';
+import { retireAsPromoted, retireNamedAsBay, subAreaFor } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -205,6 +205,8 @@ function toCandidates(
       ref: row,
       polygon: row.polygon as unknown as Polygon | MultiPolygon,
       surfaceAreaSqM: row.surfaceAreaSqM,
+      // The landmark stamp's prefilter (D202); the other rules ignore it.
+      bbox: row.bbox,
     }));
 }
 
@@ -564,6 +566,13 @@ async function insertSubArea(
     minVisibleZoom: derived.minVisibleZoom,
     listed: true, // every insert path has just proved the parent is listed
   });
+  // Every way a bay is born — chord, freehand, paste, seed, import — retires the landmark that
+  // named the same water (D202), here in the one insert rather than in each caller.
+  await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, {
+    _id: subAreaId,
+    polygon: derived.polygon,
+    names: [input.name, ...input.aliases],
+  });
   return subAreaId;
 }
 
@@ -875,7 +884,6 @@ export const create = mutation({
     if (args.promoteLandmarkId !== undefined) {
       await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
     }
-    await retireNamedAsBay(ctx, actor._id, args.waterBodyId, subAreaId, [name, ...aliases]);
     // A new bay claims reports and hazards that already sit inside it, so the label appears on the
     // history too rather than only on what's filed from now on.
     await scheduleRestamp(ctx, args.waterBodyId);
@@ -989,7 +997,6 @@ export const createFromChord = mutation({
     if (args.promoteLandmarkId !== undefined) {
       await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
     }
-    await retireNamedAsBay(ctx, actor._id, args.waterBodyId, subAreaId, [name, ...aliases]);
     await scheduleRestamp(ctx, args.waterBodyId);
     // What happened to the ask, so the editor says so: an ask decided elsewhere while this bay was
     // being drawn keeps the answer it got, and "answered the ask" would be untrue.
@@ -1073,6 +1080,14 @@ export const rename = mutation({
         : `Updated aliases for "${nextName}"`,
       { waterBodyId: subArea.waterBodyId, aliases: nextAliases },
     );
+    // A name the bay now answers to is the bay's — a live landmark saying it retires (D202).
+    if (subArea.removedAt === undefined) {
+      await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+        _id: subAreaId,
+        polygon: subArea.polygon as unknown as Polygon | MultiPolygon,
+        names: [nextName, ...nextAliases],
+      });
+    }
     // Only the name is denormalized, so an alias-only edit changes nothing downstream — skip the job.
     if (nextName !== subArea.name) await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1178,6 +1193,12 @@ export const restore = mutation({
       waterBodyId: subArea.waterBodyId,
       geometryChanged,
       ...(chord ? { via: chord.ok ? 'chord' : 'reclip' } : {}),
+    });
+    // A bay back on the map takes its names back from any landmark that carried them meanwhile.
+    await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+      _id: subAreaId,
+      polygon: geometry.polygon as Polygon | MultiPolygon,
+      names: [subArea.name, ...(subArea.aliases ?? [])],
     });
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1407,9 +1428,19 @@ export const restampParent = internalMutation({
         break;
       }
       case 'bodyLandmarks': {
-        // Capped per body at the write (D202), so one bounded read and no cursor.
-        changed += await restampLandmarks(ctx, waterBodyId, candidates);
-        page = { isDone: true, continueCursor: '' };
+        // The landmark stamp (D202): holes filled, so an island is in the bay around it. Paged like
+        // every other table — a giant's landmarks against its bays is real work per row.
+        const p = await ctx.db
+          .query('bodyLandmarks')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const nextId = subAreaFor(row.point, candidates)?.subAreaId;
+          if (row.subAreaId === nextId) continue;
+          await ctx.db.patch(row._id, { subAreaId: nextId });
+          changed++;
+        }
+        page = p;
         break;
       }
     }

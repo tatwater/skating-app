@@ -604,7 +604,14 @@ describe('landmarks and bays', () => {
       waterBodyId: body,
       name: 'Kingsland Bay',
       kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
+      point: { lat: 44.03, lng: -73.47 },
+    });
+    // The same name at the far end of the lake is another place, and stays.
+    const far = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Kingsland Bay',
+      kind: 'bay',
+      point: { lat: 44.9, lng: -72.6 },
     });
     const other = await mod.as.mutation(api.landmarks.create, {
       waterBodyId: body,
@@ -624,6 +631,38 @@ describe('landmarks and bays', () => {
     });
     expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
     expect((await t.run((ctx) => ctx.db.get(other)))?.removedAt).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(far)))?.removedAt).toBeUndefined();
+    // …and the one it became cannot come back beside it.
+    await expect(mod.as.mutation(api.landmarks.restore, { landmarkId: id })).rejects.toThrow(
+      /is a bay on this lake/,
+    );
+  });
+
+  test('renaming a bay retires a landmark that carries its new name; a landmark may not take a bay’s', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Mud Bay',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+    });
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Kingsland Bay',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    await mod.as.mutation(api.subAreas.rename, { subAreaId: bay, name: 'Kingsland Bay' });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
+    await expect(
+      mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'kingsland bay',
+        kind: 'other',
+        point: { lat: 44.9, lng: -72.6 },
+      }),
+    ).rejects.toThrow(/is a bay on this lake/);
   });
 
   test('promoting a landmark to a bay retires it in the same write', async () => {
