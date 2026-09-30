@@ -417,6 +417,7 @@ export const MODERATION_TARGET_TYPES = [
   // on the body it changed.
   'waterBodyRequest',
   'bodyLandmark', // D202: a named point on a lake — an island, a point, a bridge
+  'corpusPlaceName', // D202: a name the corpus uses that no landmark took — placed or dismissed
 ] as const;
 
 /** In-app support inbox (D37). */

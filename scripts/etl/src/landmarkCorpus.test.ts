@@ -3,6 +3,7 @@ import {
   aliasResembles,
   applyCorpus,
   type CorpusPlace,
+  corpusNameRecords,
   parseCsv,
   parseMentions,
 } from './landmarkCorpus';
@@ -213,5 +214,82 @@ describe('applyCorpus', () => {
     expect(rock.corpusMessages).toBeUndefined();
     applyCorpus(new Map([['unnamed', [rock]]]), bodies, [place('Gull Rock')]);
     expect(rock.corpusMessages).toBe(5);
+  });
+});
+
+describe('corpusNameRecords', () => {
+  const lakeBodies = new Map<string, MatchBody>(
+    [
+      { id: 'champlain', name: 'Lake Champlain', states: ['VT', 'NY'] },
+      { id: 'long-me', name: 'Long Pond', states: ['ME'] },
+      { id: 'long-nh', name: 'Long Pond', states: ['NH'] },
+      { id: 'long-nh2', name: 'Long Pond', states: ['NH'] },
+    ].map((b) => [
+      b.id,
+      {
+        ...b,
+        polygon: { type: 'Polygon', coordinates: [] },
+        bbox: { minLat: 0, minLng: 0, maxLat: 0, maxLng: 0 },
+        surfaceAreaSqM: 1,
+      } as MatchBody,
+    ]),
+  );
+
+  it('resolves a named lake only when one answers in the corpus’s states, and keeps the choices', () => {
+    const records = corpusNameRecords(
+      {
+        matched: 0,
+        unmatched: [
+          place('Apple Island', {
+            parentBody: 'Lake Champlain',
+            states: ['VT'],
+            messages: 24,
+            aliases: ['Apple Is', 'Lake Champlain (Apple Island)', 'apple island'],
+          }),
+          place('Big Rock', { parentBody: 'Long Pond', states: ['ME'] }),
+          place('Gull Ledge', { parentBody: 'Long Pond', states: ['NH'] }),
+          place('Hero’s Welcome'),
+          place('Rideau Canal', { parentBody: 'Rideau Canal', states: ['QC'] }),
+        ],
+        ambiguous: [
+          { place: place('Cedar Island'), bodies: ['champlain'] },
+          { place: place('Long Point'), bodies: ['long-me', 'long-nh'] },
+        ],
+      },
+      lakeBodies,
+    );
+    expect(records.map((r) => [r.name, r.waterBodyId, r.candidateBodyIds])).toEqual([
+      ['Apple Island', 'champlain', undefined],
+      ['Big Rock', 'long-me', undefined],
+      ['Gull Ledge', undefined, ['long-nh', 'long-nh2']],
+      ['Hero’s Welcome', undefined, undefined],
+      ['Rideau Canal', undefined, undefined],
+      ['Cedar Island', 'champlain', undefined],
+      ['Long Point', undefined, ['long-me', 'long-nh']],
+    ]);
+    expect(records[0]).toMatchObject({
+      aliases: ['Apple Is'],
+      messages: 24,
+      parentName: 'Lake Champlain',
+      states: ['VT'],
+    });
+  });
+
+  it('skips a body with no name when indexing lakes', () => {
+    const withUnnamed = new Map(lakeBodies);
+    withUnnamed.set('x', {
+      ...(lakeBodies.get('champlain') as MatchBody),
+      id: 'x',
+      name: undefined,
+    });
+    const [rec] = corpusNameRecords(
+      {
+        matched: 0,
+        unmatched: [place('Apple Island', { parentBody: 'Lake Champlain' })],
+        ambiguous: [],
+      },
+      withUnnamed,
+    );
+    expect(rec?.waterBodyId).toBe('champlain');
   });
 });

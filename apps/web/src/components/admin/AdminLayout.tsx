@@ -84,6 +84,9 @@ const NAV: NavItem[] = [
   // Skaters asking for lakes (A07b PR 2). Beside Standing because the two are one story: what the
   // machines shelved, and who is asking for it back.
   { to: '/admin/water/requests', label: 'Requests' },
+  // The community's place names no landmark took (D202) — beside Requests, because both are
+  // skaters' words waiting on a moderator: one asked, one written in an email.
+  { to: '/admin/water/place-names', label: 'Place names' },
   { to: '/admin/features', label: 'Body features' },
   { to: '/admin/recurrence', label: 'Hazard identity' },
   // D160's dark instrument. It has to be *reachable* to be an instrument at all — a page nobody can

@@ -17,6 +17,8 @@ import {
   COLD_CHAIN_THRESHOLDS_F,
   CONDITION_SOURCES,
   CONFIDENCE_LEVELS,
+  CORPUS_NAME_DISMISS_REASONS,
+  CORPUS_NAME_STATUSES,
   DEPTH_SOURCES,
   ELEVATION_SOURCES,
   HAZARD_TYPES,
@@ -2742,6 +2744,42 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_water_body', ['waterBodyId']),
+
+  /**
+   * The community corpus's unplaced names (D202) — a place the emails name that no landmark took:
+   * "Apple Island" (a peninsula since the causeway, in neither catalog), "Hero's Welcome", "the sea
+   * caves". A moderator's queue, loaded by `scripts/etl load-landmark-names` from the landmark pass's
+   * leftovers: a count and a spelling, never text from a message (L5a).
+   *
+   * `waterBodyId` is the lake it is on when the corpus said and one lake answered; otherwise a
+   * moderator picks one (or among `candidateBodyIds`). Then it is **placed** — a landmark dropped for
+   * it, or it filed as another spelling of one already there — or **dismissed** with a reason. A
+   * re-load refreshes the counts of open rows and never reopens a decided one.
+   */
+  corpusPlaceNames: defineTable({
+    name: v.string(),
+    /** `landmarkNameKey(name)` plus the parent's key — the load's upsert key. */
+    askKey: v.string(),
+    aliases: v.array(v.string()),
+    messages: v.number(),
+    skatedMessages: v.number(),
+    states: v.array(v.string()),
+    parentName: v.optional(v.string()),
+    waterBodyId: v.optional(v.id('waterBodies')),
+    candidateBodyIds: v.optional(v.array(v.id('waterBodies'))),
+    status: literals(CORPUS_NAME_STATUSES),
+    landmarkId: v.optional(v.id('bodyLandmarks')),
+    dismissReason: v.optional(literals(CORPUS_NAME_DISMISS_REASONS)),
+    dismissNote: v.optional(v.string()),
+    decidedByUserId: v.optional(v.id('profiles')),
+    decidedAt: v.optional(v.number()),
+    lastCampaignId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_ask_key', ['askKey'])
+    .index('by_status_messages', ['status', 'messages'])
+    .index('by_water_body_status', ['waterBodyId', 'status']),
 
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).

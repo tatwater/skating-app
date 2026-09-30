@@ -22,7 +22,16 @@ const { calls, refusal, useMutation } = vi.hoisted(() => {
     }),
   };
 });
-const { useQuery } = vi.hoisted(() => ({ useQuery: vi.fn(() => [] as unknown[]) }));
+/** What each query returns, by the name the mocked `api` gives it; anything unset is empty. */
+const { queryResults, useQuery } = vi.hoisted(() => {
+  const queryResults: Record<string, unknown[]> = {};
+  return {
+    queryResults,
+    useQuery: vi.fn(
+      (ref: unknown) => queryResults[String((ref as { _name?: string })?._name)] ?? [],
+    ),
+  };
+});
 vi.mock('convex/react', () => ({ useMutation, useQuery }));
 vi.mock('@skating/convex/api', () => ({
   api: {
@@ -36,6 +45,11 @@ vi.mock('@skating/convex/api', () => ({
       approve: { _name: 'approve' },
       decline: { _name: 'decline' },
       openLandmarkRequestsForBody: { _name: 'openLandmarkRequestsForBody' },
+    },
+    corpusPlaceNames: {
+      openForBody: { _name: 'openForBody' },
+      fileAsSpelling: { _name: 'fileAsSpelling' },
+      dismiss: { _name: 'dismiss' },
     },
   },
 }));
@@ -91,6 +105,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
 beforeEach(() => {
   calls.length = 0;
   refusal.next = null;
+  for (const key of Object.keys(queryResults)) delete queryResults[key];
 });
 
 describe('LandmarkTool', () => {
@@ -208,7 +223,7 @@ describe('LandmarkTool', () => {
   });
 
   it('answers a skater’s proposal by adding the landmark with the ask attached', async () => {
-    useQuery.mockReturnValue([
+    queryResults.openLandmarkRequestsForBody = [
       {
         requestId: 'req1',
         name: 'Bird Poop Rock',
@@ -226,7 +241,7 @@ describe('LandmarkTool', () => {
         createdAt: 0,
         existingLandmarkId: 'lm-Apple Island',
       },
-    ]);
+    ];
     const onPlacePoint = vi.fn();
     const { rerender } = renderTool({ onPlacePoint });
     expect(screen.getByText(/2 skaters/)).toBeInTheDocument();
@@ -260,7 +275,50 @@ describe('LandmarkTool', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]).toEqual({ name: 'approve', args: { requestId: 'req2' } });
-    useQuery.mockReturnValue([]);
+  });
+
+  it('places a corpus name with its spellings, or files it as another spelling', async () => {
+    queryResults.openForBody = [
+      { _id: 'cn1', name: 'Apple Island', aliases: ['Apple Is'], messages: 24, skatedMessages: 11 },
+      { _id: 'cn2', name: 'Isle LaMotte', aliases: [], messages: 4, skatedMessages: 3 },
+    ];
+    const onArm = vi.fn();
+    const { rerender } = renderTool({ onArm });
+    expect(screen.getByText(/24 mentions · also Apple Is/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Place it' })[0] as HTMLElement);
+    expect(onArm).toHaveBeenCalledWith(true);
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[row('Isle La Motte')]}
+        armed={false}
+        point={{ lat: 44.62, lng: -73.3 }}
+        onArm={onArm}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Apple Island')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Apple Is')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({
+      name: 'create',
+      args: { name: 'Apple Island', aliases: ['Apple Is'], corpusNameId: 'cn1' },
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Already here' })[1] as HTMLElement);
+    fireEvent.change(screen.getByLabelText('The landmark “Isle LaMotte” is another spelling of'), {
+      target: { value: 'lm-Isle La Motte' },
+    });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toEqual({
+      name: 'fileAsSpelling',
+      args: { id: 'cn2', landmarkId: 'lm-Isle La Motte' },
+    });
   });
 
   it('says so when the lake has none', () => {

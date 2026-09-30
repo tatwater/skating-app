@@ -702,6 +702,9 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
 - **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
   the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
   750 m, bridges on each body they cross, rivers at each mouth. Restaurants only when standalone.
+- **The names nothing matched go to a moderator.** `corpus-names.ndjson` (beside the CSV) loads
+  with `pnpm --filter @skating/etl load-landmark-names --campaign=<id> [--apply]` into the queue on
+  `/admin/water/place-names`; a re-load refreshes open names and never reopens a decided one.
 - **`--mentions` is required** (gitignored input), or `--without-corpus` to mean it: the load
   replaces a catalog row's corpus count and spellings with the run's, so a run without the corpus
   would erase them — and `load-landmarks --apply` refuses one unless told `--without-corpus` too.

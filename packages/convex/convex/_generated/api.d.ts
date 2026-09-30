@@ -25,6 +25,7 @@ import type * as conditions from "../conditions.js";
 import type * as contentFlags from "../contentFlags.js";
 import type * as contentRevisions from "../contentRevisions.js";
 import type * as contradictions from "../contradictions.js";
+import type * as corpusPlaceNames from "../corpusPlaceNames.js";
 import type * as corpusRequests from "../corpusRequests.js";
 import type * as crons from "../crons.js";
 import type * as dataExport from "../dataExport.js";
@@ -140,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   contentFlags: typeof contentFlags;
   contentRevisions: typeof contentRevisions;
   contradictions: typeof contradictions;
+  corpusPlaceNames: typeof corpusPlaceNames;
   corpusRequests: typeof corpusRequests;
   crons: typeof crons;
   dataExport: typeof dataExport;

@@ -10,8 +10,9 @@
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *
  * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }` —
- * plus `summary.json`, and the corpus names nothing matched to `corpus-unmatched.csv`. Then
- * `load-landmarks` writes them, dry unless `--apply`.
+ * plus `summary.json`, and the corpus names nothing matched to `corpus-unmatched.csv` (to read) and
+ * `corpus-names.ndjson` (to load). Then `load-landmarks` writes the landmarks and
+ * `load-landmark-names` the names, each dry unless `--apply`.
  *
  * ## The one deployment read
  *
@@ -30,7 +31,7 @@ import { convexRun } from '@skating/run-log';
 import type { Feature } from 'geojson';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
-import { applyCorpus, parseMentions } from './landmarkCorpus';
+import { applyCorpus, corpusNameRecords, parseMentions } from './landmarkCorpus';
 import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
 import {
   dedupeOsmById,
@@ -223,6 +224,13 @@ async function main(): Promise<void> {
       ]),
     ].map((r) => r.map(csvCell).join(','));
     writeFileSync(join(SCRATCH, 'corpus-unmatched.csv'), `${[header, ...rows].join('\n')}\n`);
+    // The same leftovers, with their lakes resolved where one answers, for `load-landmark-names` —
+    // the moderator's queue on /admin/water/place-names (D202).
+    const names = corpusNameRecords(corpus, new Map(bodies.map((b) => [b.id, b])));
+    writeFileSync(
+      join(SCRATCH, 'corpus-names.ndjson'),
+      `${names.map((r) => JSON.stringify(r)).join('\n')}\n`,
+    );
   }
 
   const byKind: Record<string, number> = {};

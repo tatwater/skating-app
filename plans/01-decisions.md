@@ -6283,6 +6283,13 @@ filed by the report write as a seventh request kind, `name_landmark` (D179's lan
 with the spot and the report; quietly, on a budget of ten open per person, never failing the report.
 A moderator adds it from the lake editor, which answers every ask for the same place.
 
+**The corpus's leftovers are a queue, not a file.** The names the corpus uses that no landmark
+took load into `corpusPlaceNames` (a count and a spelling, never message text — L5a) with their lake
+where the emails named one and one lake answered. `/admin/water/place-names` triages them — most
+mentioned first, one-mention names hidden by default — by giving each a lake or dismissing it with
+a reason; the lake editor's Landmarks card places them: a point dropped for one, or it filed as
+another spelling of a landmark already there, its count joining the prominence either way.
+
 **Built (2026-09-29, #83, #84):** 155,945 OSM and GNIS candidates → 23,989 landmarks on
 10,600 of 24,953 listed bodies on dev (campaign `landmarks-20260929`): 9,501 river mouths, 6,154
 shore towns, 2,653 dams, 1,683 islands, 1,157 points, 1,137 shore businesses, 932 reference bays,

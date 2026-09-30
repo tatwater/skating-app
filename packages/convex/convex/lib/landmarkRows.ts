@@ -202,3 +202,33 @@ export async function noteLandmarksNamed(
     await ctx.db.patch(row._id, { reportCount: (row.reportCount ?? 0) + 1 });
   }
 }
+
+/**
+ * Mark a corpus name placed by the landmark just dropped for it (D202's queue), and carry its count
+ * to the landmark's prominence. In the same write as the landmark, so the queue never shows a name
+ * the map already has. Refused for a name decided meanwhile, or one said to be on another lake.
+ */
+export async function placeCorpusName(
+  ctx: MutationCtx,
+  id: Id<'corpusPlaceNames'>,
+  landmark: Pick<Doc<'bodyLandmarks'>, '_id' | 'waterBodyId'>,
+  actorId: Id<'profiles'>,
+): Promise<void> {
+  const row = await ctx.db.get(id);
+  if (!row || row.status !== 'open') {
+    throw new ConvexError('That name has already been placed or dismissed');
+  }
+  if (row.waterBodyId !== undefined && row.waterBodyId !== landmark.waterBodyId) {
+    throw new ConvexError(`"${row.name}" is waiting on another lake`);
+  }
+  const now = Date.now();
+  await ctx.db.patch(landmark._id, { corpusMessages: row.messages });
+  await ctx.db.patch(row._id, {
+    status: 'placed',
+    waterBodyId: landmark.waterBodyId,
+    landmarkId: landmark._id,
+    decidedByUserId: actorId,
+    decidedAt: now,
+    updatedAt: now,
+  });
+}
