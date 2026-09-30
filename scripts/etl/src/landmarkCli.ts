@@ -10,8 +10,9 @@
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *
  * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }` —
- * plus `summary.json`, and the corpus names nothing matched to `corpus-unmatched.csv`. Then
- * `load-landmarks` writes them, dry unless `--apply`.
+ * plus `summary.json`, and the corpus names nothing matched to `corpus-unmatched.csv` (to read) and
+ * `corpus-names.ndjson` (to load). Then `load-landmarks` writes the landmarks and
+ * `load-landmark-names` the names, each dry unless `--apply`.
  *
  * ## The one deployment read
  *
@@ -28,9 +29,10 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { convexRun } from '@skating/run-log';
 import type { Feature } from 'geojson';
+import { EXTRACT_SOURCES } from './archive';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
-import { applyCorpus, parseMentions } from './landmarkCorpus';
+import { applyCorpus, corpusNameRecords, parseMentions } from './landmarkCorpus';
 import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
 import {
   dedupeOsmById,
@@ -43,7 +45,12 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
 const SCRATCH = join(ROOT, '.scratch', 'landmarks');
 const BODIES = join(SCRATCH, 'bodies.ndjson');
-const ALL_STATES = ['vt', 'nh', 'me', 'ma', 'ny'] as const;
+/**
+ * Every state the corpus covers — the archive list the merge reads, never a copy of it. Adding a
+ * region is adding it there (and to GNIS's list, which `archive.test.ts` holds in step); a copy here
+ * would leave the new state's lakes without landmarks, and its corpus names queued as unmatched.
+ */
+const ALL_STATES = EXTRACT_SOURCES.map((s) => s.state.toLowerCase());
 
 function log(message: string): void {
   process.stderr.write(`[landmarks] ${message}\n`);
@@ -223,6 +230,21 @@ async function main(): Promise<void> {
       ]),
     ].map((r) => r.map(csvCell).join(','));
     writeFileSync(join(SCRATCH, 'corpus-unmatched.csv'), `${[header, ...rows].join('\n')}\n`);
+    // The same leftovers, with their lakes resolved where one answers, for `load-landmark-names` —
+    // the moderator's queue on /admin/water/place-names (D202).
+    // Only from a run over every state: a name another state's landmarks answer to is not a name
+    // "no landmark took", and a one-state run cannot tell.
+    if (ALL_STATES.every((st) => selected.includes(st))) {
+      const names = corpusNameRecords(corpus, new Map(bodies.map((b) => [b.id, b])));
+      writeFileSync(
+        join(SCRATCH, 'corpus-names.ndjson'),
+        `${names.map((r) => JSON.stringify(r)).join('\n')}\n`,
+      );
+    } else {
+      log(
+        'corpus-names.ndjson not written: the queue is built only from a run over all five states',
+      );
+    }
   }
 
   const byKind: Record<string, number> = {};

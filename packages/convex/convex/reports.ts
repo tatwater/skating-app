@@ -15,6 +15,9 @@ import {
   type IceType,
   iceTypeKeys,
   isFormRoundTripOf,
+  landmarkNameKey,
+  locatedNamedSpots,
+  locatedParts,
   locatedSubAreaIds,
   memberSubAreaIds,
   RECOMMENDED_MIN_PHOTOS,
@@ -45,6 +48,9 @@ import { getCurrentProfile, requireContributor, requireProfile } from './lib/aut
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { type BodyInfo, bodyInfoFor, type FeedCardCaches, toFeedCard } from './lib/feedCards';
+import { fileLandmarkProposals } from './lib/landmarkProposals';
+import { resolveLocatedLandmarks } from './lib/landmarkRows';
+import { isListed } from './lib/listing';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
 import { refreshPostLatestSkateEnd, syncPostPhotos } from './lib/postSync';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -486,6 +492,12 @@ export const update = mutation({
     const body = await ctx.db.get(existing.waterBodyId);
     const candidates = await stampCandidates(ctx, existing.waterBodyId);
     assertLocatedSubAreas(n, candidates);
+    // Landmark ids settled as at create (D202); an edit never counts toward prominence.
+    await resolveLocatedLandmarks(
+      ctx,
+      existing.waterBodyId,
+      locatedParts(n).map((part) => part.where),
+    );
     const putInId = await assertPutInOfBody(ctx, n.putInId, existing.waterBodyId);
     const subAreas = await resolveReportSubAreas(
       ctx,
@@ -548,6 +560,20 @@ export const update = mutation({
       editedAt: now,
       updatedAt: now,
     });
+    // A spot the edit newly names that no map has is proposed like one posted with the Report —
+    // on a lake still on the map, never one removed or merged away since (D202).
+    if (body && isListed(body)) {
+      const before = new Set(locatedNamedSpots(existing).map((spot) => landmarkNameKey(spot.name)));
+      const added = locatedNamedSpots(n).filter((spot) => !before.has(landmarkNameKey(spot.name)));
+      await fileLandmarkProposals(
+        ctx,
+        profile._id,
+        body,
+        args.reportId,
+        added,
+        candidates.flatMap(({ ref }) => [ref.name, ...(ref.aliases ?? [])]),
+      );
+    }
     // The list is replaced wholesale, so the back-links follow it both ways (A10 / D186), and the
     // Post's album is the union over its members, so it follows too.
     await syncReportPhotoLinks(ctx, args.reportId, existing.photoIds, photoIds);

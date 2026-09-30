@@ -14,7 +14,7 @@
  */
 
 import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
-import { requestNameKey } from './corpusRequests';
+import { landmarkNameKey } from './corpusRequests';
 import {
   type BBox,
   distanceToShorelineMeters,
@@ -142,14 +142,8 @@ export function landmarksAreSamePlace(a: LandmarkIdentity, b: LandmarkIdentity):
   return haversineMeters(a.point, b.point) <= radius;
 }
 
-/**
- * The key two spellings of one landmark share: `requestNameKey`'s fold (case, apostrophes, saint →
- * st, punctuation) plus a leading "the" dropped, because "the Gut" and "Gut" are one place and the
- * corpus writes both.
- */
-export function landmarkNameKey(name: string): string {
-  return requestNameKey(name).replace(/^the /, '');
-}
+/** The key two spellings of one landmark share — defined beside `requestNameKey` (`corpusRequests.ts`). */
+export { landmarkNameKey } from './corpusRequests';
 
 /**
  * How much a kind weighs when labels compete for the same spot on the map, before the community has
@@ -368,3 +362,31 @@ export function landmarkLabelFeatures(
       })),
   };
 }
+
+// ── The corpus's unplaced names (D202) ─────────────────────────────────────────────────────────
+
+/**
+ * A name the community's emails use for a place that no landmark answers to — "Apple Island",
+ * "Hero's Welcome", "the sea caves" — waiting for a moderator: `open` until it is placed on the map
+ * (or filed as another spelling of a landmark that is there), or dismissed with a reason.
+ */
+export const CORPUS_NAME_STATUSES = ['open', 'placed', 'dismissed'] as const;
+export type CorpusNameStatus = (typeof CORPUS_NAME_STATUSES)[number];
+
+/** Why a corpus name is not a landmark — the reasons the triage page offers, most common first. */
+export const CORPUS_NAME_DISMISS_REASONS = [
+  'not_a_place',
+  'a_water_body',
+  'outside_region',
+  'too_vague',
+  'other',
+] as const;
+export type CorpusNameDismissReason = (typeof CORPUS_NAME_DISMISS_REASONS)[number];
+
+export const CORPUS_NAME_DISMISS_LABELS: Record<CorpusNameDismissReason, string> = {
+  not_a_place: 'Not a place (a phrase, an event, a person)',
+  a_water_body: 'A lake, pond or river — not a landmark',
+  outside_region: 'Outside the five states',
+  too_vague: 'Too vague to place',
+  other: 'Other',
+};

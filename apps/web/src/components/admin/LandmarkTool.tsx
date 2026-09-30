@@ -7,13 +7,14 @@ import {
   type LatLng,
   landmarkNameKey,
 } from '@skating/core';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { errorText, ToolCard } from './adminUi';
+import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
 import { ReasonDialog } from './ReasonDialog';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
@@ -88,6 +89,7 @@ export function LandmarkTool({
   onClearPoint,
   onFocus,
   onPromote,
+  onPlacePoint,
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
@@ -98,12 +100,21 @@ export function LandmarkTool({
   onClearPoint: () => void;
   onFocus: (landmark: EditorLandmark) => void;
   onPromote: (landmark: EditorLandmark) => void;
+  /** Put the drop form's point here and show it — a skater's proposed spot. */
+  onPlacePoint: (point: LatLng) => void;
   onResult: SetBanner;
 }) {
   const create = useMutation(api.landmarks.create);
   const update = useMutation(api.landmarks.update);
   const remove = useMutation(api.landmarks.remove);
   const restore = useMutation(api.landmarks.restore);
+  const approveRequest = useMutation(api.corpusRequests.approve);
+  const declineRequest = useMutation(api.corpusRequests.decline);
+  // What skaters have named on this lake that no map has (D202's proposal lane).
+  const proposals = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
+  // What the community's emails name on this lake that no landmark took (the Place names queue).
+  const corpusNames = useQuery(api.corpusPlaceNames.openForBody, { waterBodyId });
+  const fileAsSpelling = useMutation(api.corpusPlaceNames.fileAsSpelling);
 
   const [filter, setFilter] = useState('');
   const [showRemoved, setShowRemoved] = useState(false);
@@ -114,6 +125,12 @@ export function LandmarkTool({
   const [kind, setKind] = useState<LandmarkKind>('other');
   const [aliases, setAliases] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
+  const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
+  /** The corpus name the drop form is placing — saving the landmark marks it placed. */
+  const [placingName, setPlacingName] = useState<Id<'corpusPlaceNames'> | null>(null);
+  /** The corpus name being filed as another spelling, and the landmark chosen for it. */
+  const [spelling, setSpelling] = useState<Id<'corpusPlaceNames'> | null>(null);
 
   const rows = landmarks ?? [];
   const live = rows.filter((l) => l.removedAt === undefined);
@@ -131,6 +148,9 @@ export function LandmarkTool({
   const reset = () => {
     setEditing(null);
     setMoving(null);
+    setAnswering(null);
+    setPlacingName(null);
+    setSpelling(null);
     setName('');
     setKind('other');
     setAliases('');
@@ -161,6 +181,17 @@ export function LandmarkTool({
     onClearPoint();
     void run(() => update({ landmarkId: id, point }), 'Moved.');
   }, [moving, point]);
+
+  // A name or proposal the form is answering can be decided elsewhere meanwhile (dismissed here, by
+  // a colleague, on the triage page); the form lets go of it rather than save against a closed row.
+  useEffect(() => {
+    if (placingName && corpusNames && !corpusNames.some((c) => c._id === placingName)) {
+      setPlacingName(null);
+    }
+    if (answering && proposals && !proposals.some((p) => p.requestId === answering)) {
+      setAnswering(null);
+    }
+  }, [placingName, corpusNames, answering, proposals]);
 
   const startEdit = (l: EditorLandmark) => {
     reset();
@@ -313,18 +344,174 @@ export function LandmarkTool({
         </div>
       ) : null}
 
+      {corpusNames && corpusNames.length > 0 ? (
+        <div className="flex flex-col gap-1 border-border border-t pt-2">
+          <p className="text-sm">Named in the community’s emails</p>
+          <ul className="space-y-1 text-sm">
+            {corpusNames.map((c) => (
+              <li key={c._id} className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-2">
+                  <span className="min-w-0 flex-1 truncate">
+                    {c.name}
+                    <span className="text-foreground-muted">
+                      {' '}
+                      — {c.messages} {c.messages === 1 ? 'mention' : 'mentions'}
+                      {c.aliases.length > 0 ? ` · also ${c.aliases.join(', ')}` : ''}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 gap-1">
+                    {/* Already a landmark (the emails did not say which): nothing to place, only
+                        the landmark to choose. */}
+                    {c.alreadyNamed ? null : (
+                      <Button
+                        variant={placingName === c._id ? 'default' : 'ghost'}
+                        size="xs"
+                        onClick={() => {
+                          reset();
+                          setName(c.name);
+                          setAliases(c.aliases.join(', '));
+                          setPlacingName(c._id);
+                          onArm(true);
+                        }}
+                      >
+                        {placingName === c._id && !point ? 'Click the map…' : 'Place it'}
+                      </Button>
+                    )}
+                    <Button
+                      variant={spelling === c._id ? 'default' : 'ghost'}
+                      size="xs"
+                      disabled={live.length === 0}
+                      onClick={() => setSpelling(spelling === c._id ? null : c._id)}
+                    >
+                      {c.alreadyNamed ? 'Which one?' : 'Already here'}
+                    </Button>
+                    <DismissPlaceNameDialog
+                      id={c._id}
+                      name={c.name}
+                      onDone={() => onResult({ tone: 'ok', text: `Dismissed “${c.name}”.` })}
+                      trigger={
+                        <Button variant="ghost" size="xs">
+                          Dismiss
+                        </Button>
+                      }
+                    />
+                  </span>
+                </div>
+                {spelling === c._id ? (
+                  <select
+                    aria-label={`The landmark “${c.name}” is another spelling of`}
+                    className="rounded-md border border-border bg-transparent px-2 py-1 text-sm"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const landmarkId = e.target.value as Id<'bodyLandmarks'>;
+                      if (!landmarkId) return;
+                      setSpelling(null);
+                      void run(
+                        () => fileAsSpelling({ id: c._id, landmarkId }),
+                        `Filed “${c.name}” as another spelling.`,
+                      );
+                    }}
+                  >
+                    <option value="">Another spelling of…</option>
+                    {[...live]
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((l) => (
+                        <option key={l._id} value={l._id}>
+                          {l.name}
+                        </option>
+                      ))}
+                  </select>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {proposals && proposals.length > 0 ? (
+        <div className="flex flex-col gap-1 border-border border-t pt-2">
+          <p className="text-sm">Named by skaters</p>
+          <ul className="space-y-1 text-sm">
+            {proposals.map((p) => (
+              <li key={p.requestId} className="flex flex-wrap items-center justify-between gap-x-2">
+                <span className="min-w-0 flex-1 truncate">
+                  {p.name}
+                  <span className="text-foreground-muted">
+                    {' '}
+                    — {p.askers} {p.askers === 1 ? 'skater' : 'skaters'}
+                  </span>
+                </span>
+                <span className="flex shrink-0 gap-1">
+                  {p.existingLandmarkId ? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(
+                          () => approveRequest({ requestId: p.requestId }),
+                          `“${p.name}” is already a landmark — answered.`,
+                        )
+                      }
+                    >
+                      Approve
+                    </Button>
+                  ) : (
+                    <Button
+                      variant={answering === p.requestId ? 'default' : 'ghost'}
+                      size="xs"
+                      onClick={() => {
+                        reset();
+                        setName(p.name);
+                        setAnswering(p.requestId);
+                        onPlacePoint(p.coord);
+                      }}
+                    >
+                      Add as landmark
+                    </Button>
+                  )}
+                  <ReasonDialog
+                    trigger={
+                      <Button variant="ghost" size="xs">
+                        Decline
+                      </Button>
+                    }
+                    title={`Decline “${p.name}”`}
+                    description="The skaters who named it read your note."
+                    confirmLabel="Decline"
+                    confirmVariant="secondary"
+                    onConfirm={async (note) => {
+                      await run(
+                        () => declineRequest({ requestId: p.requestId, note }),
+                        'Declined.',
+                      );
+                    }}
+                  />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-2 border-border border-t pt-2">
         <Button
           variant={armed && !moving ? 'default' : 'outline'}
           size="sm"
           className="self-start"
           onClick={() => {
-            // A fresh form: an abandoned edit's name and kind must not ride into a new landmark.
             setMoving(null);
             setEditing(null);
-            setName('');
-            setKind('other');
-            setAliases('');
+            // Answering a proposal, "pick a different spot" moves the point and keeps the name and
+            // the ask; anything else starts a fresh form, so an abandoned edit's name and kind never
+            // ride into a new landmark (nor an old proposal's request into an unrelated one).
+            if ((!answering && !placingName) || !point) {
+              setAnswering(null);
+              setPlacingName(null);
+              setName('');
+              setKind('other');
+              setAliases('');
+            }
             onArm(!(armed && !moving));
           }}
         >
@@ -365,8 +552,14 @@ export function LandmarkTool({
                         kind,
                         point,
                         aliases: splitAliases(aliases),
+                        ...(answering ? { requestId: answering } : {}),
+                        ...(placingName ? { corpusNameId: placingName } : {}),
                       }),
-                    `Added “${name.trim()}”.`,
+                    answering
+                      ? `Added “${name.trim()}” and answered the skaters who named it.`
+                      : placingName
+                        ? `Placed “${name.trim()}”.`
+                        : `Added “${name.trim()}”.`,
                   );
                   if (saved) reset();
                 }}

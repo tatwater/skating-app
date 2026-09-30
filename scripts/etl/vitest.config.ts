@@ -50,7 +50,8 @@ export default defineConfig({
         // one place and which corpus name attaches where live in `landmarkSource.ts`,
         // `landmarkMatch.ts` and `landmarkCorpus.ts`, all covered.
         'src/landmarkCli.ts',
-        'src/loadLandmarks.ts', // batching + `convex run`; the upsert rules are in `landmarks.importForBody`
+        'src/loadLandmarks.ts', // batching + `convex run`; the upsert rules are in `landmarks.importBatch`
+        'src/loadLandmarkNames.ts', // batching + `convex run`; the rules are in `corpusPlaceNames.importBatch`
         'src/loadReconciliation.ts',
         'src/resolveMergeDuplicates.ts', // reads the artifact, calls one mutation; the rules are tested
         'src/pruneFloor.ts', // drives `waterBodies.pruneBelowAreaFloor`, which has its own tests

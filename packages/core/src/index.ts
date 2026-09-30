@@ -73,6 +73,7 @@ export * from './lakeGeometry';
 export * from './lakeProfile';
 export * from './lakeSearch';
 export * from './landmarks';
+export * from './landmarkWhere';
 export * from './libraryGrid';
 export * from './mapRegion';
 export * from './metrics';

@@ -6,6 +6,7 @@ import {
   type LatLng,
   type PassableHazard,
   type SectorFrame,
+  type SheetLandmark,
   type SilhouetteData,
   type SunTimes,
   sectorFrame,
@@ -40,6 +41,11 @@ export interface SheetBody {
   silhouette: SilhouetteData | null;
   frame: SectorFrame | null;
   bays: { id: string; name: string }[];
+  /**
+   * The body's named landmarks (D202) — the picker's chips, and what a tap near one is named. Live
+   * like the bays: offline, the picker offers none and a tap stays a bare point.
+   */
+  landmarks: SheetLandmark[];
   putIns: SheetAccessPoint[];
   parking: SheetAccessPoint[];
   hazards: SheetHazard[];
@@ -69,6 +75,10 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
   );
   const access = useQuery(
     api.accessPoints.accessForBody,
+    skip ? 'skip' : { waterBodyId: waterBodyId as Id<'waterBodies'> },
+  );
+  const landmarkRows = useQuery(
+    api.landmarks.listForBody,
     skip ? 'skip' : { waterBodyId: waterBodyId as Id<'waterBodies'> },
   );
   const hazardRows = useQuery(
@@ -123,6 +133,7 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       silhouette,
       frame,
       bays: (bays ?? []).filter((b) => !b.removed).map((b) => ({ id: b._id, name: b.name })),
+      landmarks: landmarkRows ?? [],
       putIns: (access?.putIns ?? []).map((p) => ({
         id: p.id,
         coord: p.coord,
@@ -140,5 +151,5 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       sunAt: (atMs) => (anchor ? sunTimes(atMs, anchor.lat, anchor.lng, timeZone) : null),
       timeZone,
     };
-  }, [waterBodyId, bodyResult, bays, access, hazardRows, recent, timeZone]);
+  }, [waterBodyId, bodyResult, bays, landmarkRows, access, hazardRows, recent, timeZone]);
 }

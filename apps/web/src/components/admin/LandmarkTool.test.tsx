@@ -22,7 +22,17 @@ const { calls, refusal, useMutation } = vi.hoisted(() => {
     }),
   };
 });
-vi.mock('convex/react', () => ({ useMutation }));
+/** What each query returns, by the name the mocked `api` gives it; anything unset is empty. */
+const { queryResults, useQuery } = vi.hoisted(() => {
+  const queryResults: Record<string, unknown[]> = {};
+  return {
+    queryResults,
+    useQuery: vi.fn(
+      (ref: unknown) => queryResults[String((ref as { _name?: string })?._name)] ?? [],
+    ),
+  };
+});
+vi.mock('convex/react', () => ({ useMutation, useQuery }));
 vi.mock('@skating/convex/api', () => ({
   api: {
     landmarks: {
@@ -30,6 +40,16 @@ vi.mock('@skating/convex/api', () => ({
       update: { _name: 'update' },
       remove: { _name: 'remove' },
       restore: { _name: 'restore' },
+    },
+    corpusRequests: {
+      approve: { _name: 'approve' },
+      decline: { _name: 'decline' },
+      openLandmarkRequestsForBody: { _name: 'openLandmarkRequestsForBody' },
+    },
+    corpusPlaceNames: {
+      openForBody: { _name: 'openForBody' },
+      fileAsSpelling: { _name: 'fileAsSpelling' },
+      dismiss: { _name: 'dismiss' },
     },
   },
 }));
@@ -62,6 +82,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
     onClearPoint: vi.fn(),
     onFocus: vi.fn(),
     onPromote: vi.fn(),
+    onPlacePoint: vi.fn(),
     onResult: vi.fn(),
   };
   const view = render(
@@ -84,6 +105,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
 beforeEach(() => {
   calls.length = 0;
   refusal.next = null;
+  for (const key of Object.keys(queryResults)) delete queryResults[key];
 });
 
 describe('LandmarkTool', () => {
@@ -173,6 +195,7 @@ describe('LandmarkTool', () => {
         onClearPoint={onClearPoint}
         onFocus={vi.fn()}
         onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
         onResult={vi.fn()}
       />,
     );
@@ -197,6 +220,116 @@ describe('LandmarkTool', () => {
         text: '"Apple Island" is already a landmark here',
       }),
     );
+  });
+
+  it('answers a skater’s proposal by adding the landmark with the ask attached', async () => {
+    queryResults.openLandmarkRequestsForBody = [
+      {
+        requestId: 'req1',
+        name: 'Bird Poop Rock',
+        coord: { lat: 44.31, lng: -73.21 },
+        askers: 2,
+        reportIds: [],
+        createdAt: 0,
+      },
+      {
+        requestId: 'req2',
+        name: 'Apple Island',
+        coord: { lat: 44.5, lng: -73.3 },
+        askers: 1,
+        reportIds: [],
+        createdAt: 0,
+        existingLandmarkId: 'lm-Apple Island',
+      },
+    ];
+    const onPlacePoint = vi.fn();
+    const { rerender } = renderTool({ onPlacePoint });
+    expect(screen.getByText(/2 skaters/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+    expect(onPlacePoint).toHaveBeenCalledWith({ lat: 44.31, lng: -73.21 });
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={{ lat: 44.31, lng: -73.21 }}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={onPlacePoint}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    // Moving the proposed spot keeps the name and the ask.
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a different spot' }));
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({
+      name: 'create',
+      args: { name: 'Bird Poop Rock', requestId: 'req1' },
+    });
+    // One the lake already has is approved, not added.
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toEqual({ name: 'approve', args: { requestId: 'req2' } });
+  });
+
+  it('places a corpus name with its spellings, or files it as another spelling', async () => {
+    queryResults.openForBody = [
+      { _id: 'cn1', name: 'Apple Island', aliases: ['Apple Is'], messages: 24, skatedMessages: 11 },
+      { _id: 'cn2', name: 'Isle LaMotte', aliases: [], messages: 4, skatedMessages: 3 },
+      {
+        _id: 'cn3',
+        name: 'Cedar Island',
+        aliases: [],
+        messages: 9,
+        skatedMessages: 5,
+        alreadyNamed: true,
+      },
+    ];
+    const onArm = vi.fn();
+    const { rerender } = renderTool({ onArm });
+    expect(screen.getByText(/24 mentions · also Apple Is/)).toBeInTheDocument();
+    // Already a landmark: nothing to place, only which one.
+    expect(screen.getAllByRole('button', { name: 'Place it' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Which one?' })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Place it' })[0] as HTMLElement);
+    expect(onArm).toHaveBeenCalledWith(true);
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[row('Isle La Motte')]}
+        armed={false}
+        point={{ lat: 44.62, lng: -73.3 }}
+        onArm={onArm}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Apple Island')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Apple Is')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({
+      name: 'create',
+      args: { name: 'Apple Island', aliases: ['Apple Is'], corpusNameId: 'cn1' },
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Already here' })[1] as HTMLElement);
+    fireEvent.change(screen.getByLabelText('The landmark “Isle LaMotte” is another spelling of'), {
+      target: { value: 'lm-Isle La Motte' },
+    });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toEqual({
+      name: 'fileAsSpelling',
+      args: { id: 'cn2', landmarkId: 'lm-Isle La Motte' },
+    });
   });
 
   it('says so when the lake has none', () => {

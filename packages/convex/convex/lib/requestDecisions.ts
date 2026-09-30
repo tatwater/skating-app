@@ -8,11 +8,12 @@
  * helpers do.
  */
 
-import { requestNameKey } from '@skating/core';
+import { landmarkNameKey, requestNameKey, requestNameKeyFor } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { landmarksForBody } from './landmarkRows';
 import { literals } from './validators';
 
 /** Cap on the moderator queue read — and the page a decision drains siblings by. */
@@ -39,7 +40,7 @@ export async function openSiblings(
    * question then — the moderator who saved "Northwest Bay" with the alias "NW Bay" has answered
    * the "NW Bay" ask too, which no name fold could join (Greptile, PR #76).
    */
-  answeredBy?: Doc<'waterBodySubAreas'> | null,
+  answeredBy?: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'> | null,
 ): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
   const none = { rows: [], capped: false };
   let rows: Doc<'waterBodyRequests'>[];
@@ -54,13 +55,14 @@ export async function openSiblings(
           .lte('_creationTime', asOf),
       )
       .take(limit + 2);
-  } else if (request.kind === 'name_bay') {
-    // A bay's siblings are the asks for the *same bay* — every name the answering bay carries
-    // when there is one, else the ask's own — each an exact index range on the stored key.
+  } else if (request.kind === 'name_bay' || request.kind === 'name_landmark') {
+    // A bay's (or a landmark's) siblings are the asks for the *same place* — every name the
+    // answer carries when there is one, else the ask's own — each an exact range on the stored key.
     const waterBodyId = request.waterBodyId;
+    const kind = request.kind;
     if (waterBodyId === undefined) return none;
     const keys = new Set([requestKeyOf(request)]);
-    for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKey(n));
+    for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKeyFor(kind, n));
     rows = [];
     for (const key of keys) {
       rows.push(
@@ -69,7 +71,7 @@ export async function openSiblings(
           .withIndex('by_water_body_name', (q) =>
             q
               .eq('waterBodyId', waterBodyId)
-              .eq('kind', 'name_bay')
+              .eq('kind', kind)
               .eq('status', 'open')
               .eq('nameKey', key)
               .lte('_creationTime', asOf),
@@ -104,6 +106,7 @@ export const decisionArgs = {
   note: v.optional(v.string()),
   admittedWaterBodyId: v.optional(v.id('waterBodies')),
   subAreaId: v.optional(v.id('waterBodySubAreas')),
+  landmarkId: v.optional(v.id('bodyLandmarks')),
 };
 export type Decision = {
   requestId: Id<'waterBodyRequests'>;
@@ -114,12 +117,14 @@ export type Decision = {
   admittedWaterBodyId?: Id<'waterBodies'>;
   /** For an approved `name_bay`: the sub-area that answered it. */
   subAreaId?: Id<'waterBodySubAreas'>;
+  /** For an approved `name_landmark`: the landmark that answered it (D202). */
+  landmarkId?: Id<'bodyLandmarks'>;
 };
 
 export async function closeRow(
   ctx: MutationCtx,
   row: Doc<'waterBodyRequests'>,
-  { requestId, status, actorId, now, note, admittedWaterBodyId, subAreaId }: Decision,
+  { requestId, status, actorId, now, note, admittedWaterBodyId, subAreaId, landmarkId }: Decision,
 ): Promise<void> {
   await ctx.db.patch(row._id, {
     status,
@@ -127,6 +132,7 @@ export async function closeRow(
     decidedByUserId: actorId,
     ...(note ? { decisionNote: note } : {}),
     ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
+    ...(landmarkId ? { landmarkId } : {}),
   });
   await ctx.db.insert('moderationActions', {
     actorId,
@@ -139,6 +145,7 @@ export async function closeRow(
       ...(row.waterBodyId ? { waterBodyId: row.waterBodyId } : {}),
       ...(admittedWaterBodyId ? { admittedWaterBodyId } : {}),
       ...(subAreaId ? { subAreaId } : {}),
+      ...(landmarkId ? { landmarkId } : {}),
       ...(row._id !== requestId ? { withRequestId: requestId } : {}),
     },
     createdAt: now,
@@ -157,7 +164,11 @@ export async function closeSiblingPage(
   request: Doc<'waterBodyRequests'>,
   decision: Decision,
 ): Promise<void> {
-  const answeredBy = decision.subAreaId ? await ctx.db.get(decision.subAreaId) : null;
+  const answeredBy = decision.subAreaId
+    ? await ctx.db.get(decision.subAreaId)
+    : decision.landmarkId
+      ? await ctx.db.get(decision.landmarkId)
+      : null;
   const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP, decision.now, answeredBy);
   for (const row of rows) await closeRow(ctx, row, decision);
   if (capped) await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, decision);
@@ -178,6 +189,7 @@ export async function decide(
   note: string | undefined,
   admittedWaterBodyId?: Id<'waterBodies'>,
   subAreaId?: Id<'waterBodySubAreas'>,
+  landmarkId?: Id<'bodyLandmarks'>,
 ): Promise<void> {
   const decision: Decision = {
     requestId: request._id,
@@ -187,6 +199,7 @@ export async function decide(
     ...(note !== undefined ? { note } : {}),
     ...(admittedWaterBodyId !== undefined ? { admittedWaterBodyId } : {}),
     ...(subAreaId !== undefined ? { subAreaId } : {}),
+    ...(landmarkId !== undefined ? { landmarkId } : {}),
   };
   await closeRow(ctx, request, decision);
   await closeSiblingPage(ctx, request, decision);
@@ -200,8 +213,10 @@ export function bayNames(bay: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'>
 }
 
 /** A bay ask's question — the stored key, folded from the name for any row that predates it. */
-export function requestKeyOf(r: Pick<Doc<'waterBodyRequests'>, 'nameKey' | 'name'>): string {
-  return r.nameKey ?? requestNameKey(r.name ?? '');
+export function requestKeyOf(
+  r: Pick<Doc<'waterBodyRequests'>, 'kind' | 'nameKey' | 'name'>,
+): string {
+  return r.nameKey ?? requestNameKeyFor(r.kind, r.name ?? '');
 }
 
 /** Every name a bay ask goes by — the name and the spellings the seed filed with it. */
@@ -284,5 +299,75 @@ export async function approveNamedBayRequest(
   // already answered. The bay stands; the ask keeps the answer it got.
   if (request.status !== 'open') return 'already_decided';
   await decide(ctx, request, 'approved', actor._id, Date.now(), undefined, undefined, subAreaId);
+  return 'approved';
+}
+
+// ── Landmarks (D202) ───────────────────────────────────────────────────────────────────────────
+
+/** Do two lists of names share a landmark's spelling? `namesMeet`, by the landmark fold. */
+export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): boolean {
+  const keys = new Set(a.map(landmarkNameKey).filter((k) => k.length > 0));
+  return b.some((n) => keys.has(landmarkNameKey(n)));
+}
+
+/** The live landmark among `rows` answering to one of `names`, if any — for callers holding the rows. */
+export function matchLandmark(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  names: readonly string[],
+): Doc<'bodyLandmarks'> | null {
+  return (
+    rows.find(
+      (row) => row.removedAt === undefined && landmarkNamesMeet(names, [row.name, ...row.aliases]),
+    ) ?? null
+  );
+}
+
+/** The live landmark on this body that answers to a `name_landmark` ask's name, if one exists. */
+export async function namedLandmark(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  names: readonly string[],
+): Promise<Doc<'bodyLandmarks'> | null> {
+  return matchLandmark(await landmarksForBody(ctx, waterBodyId), names);
+}
+
+/**
+ * Approve a `name_landmark` ask by the landmark a moderator just added for it — and every open ask
+ * for the same place with it. The landmark must answer to the asked-for name (as its name or an
+ * alias): "same place, better spelling" is an alias, and a landmark by another name answers
+ * nothing. Decided elsewhere in the meantime, the landmark stands and the ask keeps its answer.
+ */
+export async function approveNamedLandmarkRequest(
+  ctx: MutationCtx,
+  requestId: Id<'waterBodyRequests'>,
+  waterBodyId: Id<'waterBodies'>,
+  actor: Doc<'profiles'>,
+  landmarkId: Id<'bodyLandmarks'>,
+): Promise<'approved' | 'already_decided'> {
+  const request = await ctx.db.get(requestId);
+  if (request?.kind !== 'name_landmark' || request.waterBodyId !== waterBodyId) {
+    throw new ConvexError('That request is not a landmark request on this lake');
+  }
+  const landmark = await ctx.db.get(landmarkId);
+  if (
+    !landmark ||
+    !landmarkNamesMeet(requestNames(request), [landmark.name, ...landmark.aliases])
+  ) {
+    throw new ConvexError(
+      `This landmark doesn't carry the name that was asked for ("${request.name}"). Keep that name, add it as another spelling, or save without the request.`,
+    );
+  }
+  if (request.status !== 'open') return 'already_decided';
+  await decide(
+    ctx,
+    request,
+    'approved',
+    actor._id,
+    Date.now(),
+    undefined,
+    undefined,
+    undefined,
+    landmarkId,
+  );
   return 'approved';
 }

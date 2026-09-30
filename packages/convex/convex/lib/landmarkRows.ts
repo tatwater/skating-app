@@ -8,7 +8,9 @@
 import {
   distanceToShorelineMeters,
   filledPolygon,
+  type LandmarkKind,
   landmarkNameKey,
+  landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
   pointInPolygon,
   type SubAreaCandidate,
@@ -150,4 +152,121 @@ export async function assertNotABayName(
       [b.name, ...(b.aliases ?? [])].some((n) => keys.has(landmarkNameKey(n))),
   );
   if (bay) throw new ConvexError(`"${bay.name}" is a bay on this lake — it is already on the map`);
+}
+
+/**
+ * Settle the landmarks a report's `where`s name (D202), in place, before the write — and return the
+ * rows. For each point that carries a `landmarkId`:
+ *
+ * - a live landmark of *this* body: the point keeps the id and takes the landmark's **own name** (a
+ *   client cannot pair Apple Island's id with words of its choosing);
+ * - anything else — another lake's landmark, one removed or promoted to a bay since the draft was
+ *   saved, a string that is not an id: the id is dropped and the author's words stay. A report must
+ *   never fail because a label changed under it; an old report whose landmark became a bay still
+ *   says "near Kingsland Bay", and an offline draft still posts.
+ */
+export async function resolveLocatedLandmarks(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  wheres: readonly ({ point?: { name?: string; landmarkId?: string } } | undefined)[],
+): Promise<Doc<'bodyLandmarks'>[]> {
+  const rows = new Map<string, Doc<'bodyLandmarks'> | null>();
+  for (const where of wheres) {
+    const point = where?.point;
+    const id = point?.landmarkId;
+    if (!point || id === undefined) continue;
+    if (!rows.has(id)) {
+      const normalized = ctx.db.normalizeId('bodyLandmarks', id);
+      const row = normalized ? await ctx.db.get(normalized) : null;
+      rows.set(
+        id,
+        row && row.waterBodyId === waterBodyId && row.removedAt === undefined ? row : null,
+      );
+    }
+    const row = rows.get(id);
+    if (row) point.name = row.name;
+    else delete point.landmarkId;
+  }
+  return [...rows.values()].filter((row): row is Doc<'bodyLandmarks'> => row !== null);
+}
+
+/**
+ * Count a report naming these landmarks (D202's prominence evidence): +1 each, **once, when the
+ * report is posted**. An edit never counts — re-adding a landmark across edits would otherwise pump
+ * one lake's labels from one report — and a report hidden or deleted later keeps its tick. A tally
+ * that orders labels and the sheet's list, never a word about the ice (D3).
+ */
+export async function noteLandmarksNamed(
+  ctx: MutationCtx,
+  rows: readonly Doc<'bodyLandmarks'>[],
+): Promise<void> {
+  for (const row of rows) {
+    await ctx.db.patch(row._id, { reportCount: (row.reportCount ?? 0) + 1 });
+  }
+}
+
+/**
+ * Mark a corpus name placed by the landmark just dropped for it (D202's queue), and carry its count
+ * to the landmark's prominence. In the same write as the landmark, so the queue never shows a name
+ * the map already has. Refused for a name decided meanwhile, or one said to be on another lake.
+ */
+export async function placeCorpusName(
+  ctx: MutationCtx,
+  id: Id<'corpusPlaceNames'>,
+  landmark: Pick<Doc<'bodyLandmarks'>, '_id' | 'waterBodyId'>,
+  actorId: Id<'profiles'>,
+): Promise<void> {
+  const row = await ctx.db.get(id);
+  if (!row || row.status !== 'open') {
+    throw new ConvexError('That name has already been placed or dismissed');
+  }
+  if (row.waterBodyId !== undefined && row.waterBodyId !== landmark.waterBodyId) {
+    throw new ConvexError(`"${row.name}" is waiting on another lake`);
+  }
+  const now = Date.now();
+  await ctx.db.patch(landmark._id, { corpusMessages: row.messages });
+  await ctx.db.patch(row._id, {
+    status: 'placed',
+    waterBodyId: landmark.waterBodyId,
+    landmarkId: landmark._id,
+    decidedByUserId: actorId,
+    decidedAt: now,
+    updatedAt: now,
+  });
+}
+
+/** A row (or a candidate) as core's same-place rule reads it. */
+export function identityOf(row: {
+  kind: LandmarkKind;
+  point: { lat: number; lng: number };
+  name: string;
+  aliases: readonly string[];
+}) {
+  return { kind: row.kind, point: row.point, names: [row.name, ...row.aliases] };
+}
+
+/**
+ * Refuse a second live landmark that is the same place as one this lake already has — core's
+ * `landmarksAreSamePlace`, the rule the import and the ETL use, so a moderator is refused exactly the
+ * pairs the catalogs would have merged. "Long Point" is on half the lakes in Vermont and on
+ * Champlain twice; two of them far apart are two places.
+ */
+export function assertNotDuplicate(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  candidate: {
+    kind: LandmarkKind;
+    point: { lat: number; lng: number };
+    name: string;
+    aliases: readonly string[];
+  },
+  exceptId?: Id<'bodyLandmarks'>,
+): void {
+  const identity = identityOf(candidate);
+  const clash = rows.find(
+    (row) =>
+      row._id !== exceptId &&
+      row.removedAt === undefined &&
+      landmarksAreSamePlace(identityOf(row), identity),
+  );
+  if (clash) throw new ConvexError(`"${clash.name}" is already a landmark here`);
 }

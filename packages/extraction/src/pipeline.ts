@@ -13,6 +13,7 @@ import type { ExtractionInput, ExtractionRun, Extractor } from './contract';
 import { ExtractionResultSchema } from './contract';
 import { type JevClient, jevCostUsd } from './jev/client';
 import { questionsForUnit, reportFromAnswers } from './jev/stageB';
+import { attachLandmarks } from './landmarks';
 
 export function claudeThenJevExtractor(
   claude: Anthropic,
@@ -42,7 +43,10 @@ export function claudeThenJevExtractor(
         reports.push(reportFromAnswers(unit, response.answers, input, misses));
       }
       const aboutBody = a.segmentation.aboutBody.map((f) => mapAboutBody(f, input));
-      const result = ExtractionResultSchema.parse({ reports, aboutBody, misses });
+      const result = attachLandmarks(
+        ExtractionResultSchema.parse({ reports, aboutBody, misses }),
+        input,
+      );
       return {
         result,
         usage: {

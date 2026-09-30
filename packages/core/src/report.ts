@@ -22,6 +22,7 @@
  * contract, not in the schema.
  */
 
+import { landmarkNameKey } from './corpusRequests';
 import { isValidCoord, type LatLng } from './geometry';
 import {
   type ChipInput,
@@ -637,17 +638,42 @@ export function locatedSubAreaIds(
   report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
 ): string[] {
   const ids: string[] = [];
-  const located: readonly { where?: Where }[] = [
+  for (const item of locatedParts(report)) {
+    const id = item.where?.subAreaId;
+    if (id !== undefined && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/** Every located part of a report — the chips, the readings, the sightings — in one list. */
+export function locatedParts(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): readonly { where?: Where }[] {
+  return [
     ...report.iceTypes,
     ...report.surfaceTags,
     ...(report.iceThickness?.readings ?? []),
     ...(report.sightings ?? []),
   ];
-  for (const item of located) {
-    const id = item.where?.subAreaId;
-    if (id !== undefined && !ids.includes(id)) ids.push(id);
+}
+
+/**
+ * The spots a report named that no landmark answers to — a point with a typed name and no id
+ * (D202). Each is a proposal a moderator may accept (`name_landmark`). Once per name.
+ */
+export function locatedNamedSpots(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): { name: string; coord: LatLng }[] {
+  const spots: { name: string; coord: LatLng }[] = [];
+  for (const item of locatedParts(report)) {
+    const point = item.where?.point;
+    if (!point?.name || point.landmarkId !== undefined) continue;
+    const name = point.name;
+    // The landmark fold: "St. Albans Rock" and "Saint Albans rock" are one proposal, not two.
+    if (spots.some((s) => landmarkNameKey(s.name) === landmarkNameKey(name))) continue;
+    spots.push({ name, coord: point.coord });
   }
-  return ids;
+  return spots;
 }
 
 export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): MinimumSetTerm[] {

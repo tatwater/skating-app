@@ -39,8 +39,17 @@ import {
   query,
 } from './_generated/server';
 import { requireContributorRole, requireRole } from './lib/auth';
-import { assertNotABayName, auditLandmark, landmarksForBody, subAreaFor } from './lib/landmarkRows';
+import {
+  assertNotABayName,
+  assertNotDuplicate,
+  auditLandmark,
+  identityOf,
+  landmarksForBody,
+  placeCorpusName,
+  subAreaFor,
+} from './lib/landmarkRows';
 import { isListed } from './lib/listing';
+import { approveNamedLandmarkRequest } from './lib/requestDecisions';
 import { latLng, literals } from './lib/validators';
 import { stampCandidates } from './subAreas';
 
@@ -222,15 +231,6 @@ type Incoming = Infer<typeof importedLandmark> & { aliases: string[] };
 interface Group {
   existing?: Doc<'bodyLandmarks'>;
   members: Incoming[];
-}
-
-function identityOf(row: {
-  kind: LandmarkKind;
-  point: { lat: number; lng: number };
-  name: string;
-  aliases: readonly string[];
-}) {
-  return { kind: row.kind, point: row.point, names: [row.name, ...row.aliases] };
 }
 
 async function importOneBody(
@@ -415,32 +415,6 @@ function cleanNames(name: string, aliases: readonly string[] | undefined) {
   return names;
 }
 
-/**
- * Refuse a second live landmark that is the same place as one this lake already has — core's
- * `landmarksAreSamePlace`, the rule the import and the ETL use, so a moderator is refused exactly the
- * pairs the catalogs would have merged. "Long Point" is on half the lakes in Vermont and on
- * Champlain twice; two of them far apart are two places.
- */
-function assertNotDuplicate(
-  rows: readonly Doc<'bodyLandmarks'>[],
-  candidate: {
-    kind: LandmarkKind;
-    point: { lat: number; lng: number };
-    name: string;
-    aliases: readonly string[];
-  },
-  exceptId?: Id<'bodyLandmarks'>,
-): void {
-  const identity = identityOf(candidate);
-  const clash = rows.find(
-    (row) =>
-      row._id !== exceptId &&
-      row.removedAt === undefined &&
-      landmarksAreSamePlace(identityOf(row), identity),
-  );
-  if (clash) throw new ConvexError(`"${clash.name}" is already a landmark here`);
-}
-
 async function requireBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
@@ -458,6 +432,13 @@ export const create = mutation({
     kind: literals(LANDMARK_KINDS),
     point: latLng,
     aliases: v.optional(v.array(v.string())),
+    /**
+     * The skater's proposal this answers (`name_landmark`, D202): the landmark is sourced as a
+     * proposal, and every open ask for the same place is approved in this write.
+     */
+    requestId: v.optional(v.id('waterBodyRequests')),
+    /** The corpus's unplaced name this places (D202's queue) — marked placed in this write. */
+    corpusNameId: v.optional(v.id('corpusPlaceNames')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -476,7 +457,13 @@ export const create = mutation({
       kind: args.kind,
       point: args.point,
       ...(subAreaFor(args.point, await stampCandidates(ctx, args.waterBodyId)) ?? {}),
-      source: 'moderator',
+      // Where the name came from: a skater's proposal, the community's emails, or the moderator.
+      source:
+        args.requestId !== undefined
+          ? 'proposal'
+          : args.corpusNameId !== undefined
+            ? 'corpus'
+            : 'moderator',
       externalIds: [],
       aliases: names.aliases,
       moderatorEditedAt: now,
@@ -487,6 +474,17 @@ export const create = mutation({
     await auditLandmark(ctx, actor._id, 'create_landmark', id, `Added "${names.name}"`, {
       kind: args.kind,
     });
+    if (args.requestId !== undefined) {
+      await approveNamedLandmarkRequest(ctx, args.requestId, args.waterBodyId, actor, id);
+    }
+    if (args.corpusNameId !== undefined) {
+      await placeCorpusName(
+        ctx,
+        args.corpusNameId,
+        { _id: id, waterBodyId: args.waterBodyId },
+        actor._id,
+      );
+    }
     return id;
   },
 });

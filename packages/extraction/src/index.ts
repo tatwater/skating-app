@@ -7,4 +7,5 @@ export * from './contract';
 export * from './floors';
 export * from './jev/client';
 export * from './jev/stageB';
+export * from './landmarks';
 export * from './pipeline';

@@ -52,6 +52,7 @@ export const WireWhereSchema = z.object({
   subAreaId: z.string().optional(),
   sector: z.string().optional(),
   placeName: z.string().optional(),
+  landmarkId: z.string().optional(),
 });
 
 /**
@@ -312,6 +313,8 @@ function mapWhere(
   }
   if (where.subAreaId !== undefined) out.subAreaId = where.subAreaId;
   if (where.placeName !== undefined) out.placeName = where.placeName;
+  // Checked against the candidates after the call (`attachLandmarks`), where the body is known.
+  if (where.landmarkId !== undefined) out.landmarkId = where.landmarkId;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 

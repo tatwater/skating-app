@@ -189,16 +189,31 @@ function RequestQueue() {
                         Draw it in the lake editor
                       </Link>
                     ) : null}
+                    {/* A landmark proposal (D202) is answered the same way: add the landmark on the
+                        lake editor, which approves every ask for it. */}
+                    {row.kind === 'name_landmark' && row.body && !row.existingLandmarkId ? (
+                      <Link
+                        to="/admin/water/$id"
+                        params={{ id: row.body._id }}
+                        className={buttonVariants({ size: 'sm' })}
+                      >
+                        Add it in the lake editor
+                      </Link>
+                    ) : null}
                     <ReasonDialog
                       trigger={
                         <Button
                           size="sm"
                           variant={
-                            row.kind === 'name_bay' && !row.drawnSubAreaId ? 'outline' : 'default'
+                            (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
+                            (row.kind === 'name_landmark' && !row.existingLandmarkId)
+                              ? 'outline'
+                              : 'default'
                           }
                           disabled={
                             (row.kind === 'admit' && !row.candidate) ||
-                            (row.kind === 'name_bay' && !row.drawnSubAreaId)
+                            (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
+                            (row.kind === 'name_landmark' && !row.existingLandmarkId)
                           }
                         >
                           Approve
@@ -306,5 +321,7 @@ function approveDescription(kind: RequestKind): string {
       return 'Removes the lake at the landowner’s request (admin). It stays reachable when zoomed in, with the reason; it leaves search and every push surface.';
     case 'name_bay':
       return 'Records that the bay drawn on this lake answers the ask. Every other open ask for the same bay is approved with it; the skater reads that a moderator drew it.';
+    case 'name_landmark':
+      return 'Records that the landmark on this lake answers the proposal. Every other open ask for the same place is approved with it; the skater reads that a moderator added it.';
   }
 }

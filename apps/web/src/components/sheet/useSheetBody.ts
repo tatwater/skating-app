@@ -6,6 +6,7 @@ import {
   type LatLng,
   type PassableHazard,
   type SectorFrame,
+  type SheetLandmark,
   type SilhouetteData,
   type SunTimes,
   sectorFrame,
@@ -39,6 +40,8 @@ export interface SheetBody {
   silhouette: SilhouetteData | null;
   frame: SectorFrame | null;
   bays: { id: string; name: string }[];
+  /** The body's named landmarks (D202) — the picker's chips, and what a tap near one is named. */
+  landmarks: SheetLandmark[];
   putIns: SheetAccessPoint[];
   parking: SheetAccessPoint[];
   hazards: SheetHazard[];
@@ -51,8 +54,8 @@ export interface SheetBody {
 }
 
 /**
- * Everything one Report panel needs of its body: the outline, the bays, the launches and lots, the
- * live hazards, the recent cards. The web twin of mobile's `useSheetBody` — same shape, from the
+ * Everything one Report panel needs of its body: the outline, the bays, the landmarks, the launches
+ * and lots, the live hazards, the recent cards. The web twin of mobile's `useSheetBody` — same shape, from the
  * same queries, minus the offline caches a browser has no equivalent of. A body-less sheet (a Post
  * whose lake has not been picked yet) gets `null`.
  */
@@ -68,6 +71,10 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
   );
   const access = useQuery(
     api.accessPoints.accessForBody,
+    skip ? 'skip' : { waterBodyId: waterBodyId as Id<'waterBodies'> },
+  );
+  const landmarkRows = useQuery(
+    api.landmarks.listForBody,
     skip ? 'skip' : { waterBodyId: waterBodyId as Id<'waterBodies'> },
   );
   const hazardRows = useQuery(
@@ -116,6 +123,7 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       silhouette,
       frame,
       bays: (bays ?? []).filter((b) => !b.removed).map((b) => ({ id: b._id, name: b.name })),
+      landmarks: landmarkRows ?? [],
       putIns: (access?.putIns ?? []).map((p) => ({
         id: p.id,
         coord: p.coord,
@@ -133,7 +141,7 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
       sunAt: (atMs) => (anchor ? sunTimes(atMs, anchor.lat, anchor.lng, timeZone) : null),
       timeZone,
     };
-  }, [waterBodyId, bodyResult, bays, access, hazardRows, recent, timeZone]);
+  }, [waterBodyId, bodyResult, bays, landmarkRows, access, hazardRows, recent, timeZone]);
   // The outline, for the photo pool's location rules (A10-7): recorded the moment it lands.
   const polygon = result?.polygon ?? null;
   useEffect(() => {

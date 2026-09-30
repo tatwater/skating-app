@@ -45,7 +45,7 @@
 - **A `putInProposals` table.** The reports' points *are* the proposals; a copy would drift the
   first time a report is edited or removed.
 - **Skater-side naming.** A skater names nothing in A10-3; a moderator names what the cluster
-  shows. Named landmarks ([`named-landmarks.md`](./named-landmarks.md)) are the skater-facing
+  shows. Named landmarks (D202) are the skater-facing
   vocabulary for "where", and a launch's name is the moderator's call.
 - **Auto-accepting a cluster at a count.** A launch on the map is a claim other skaters will drive
   to; a person accepts it (the `setOfficial` rule, applied to the queue).

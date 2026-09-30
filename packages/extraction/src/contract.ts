@@ -57,6 +57,18 @@ export const SubAreaCandidateSchema = z.object({
   aliases: z.array(z.string()).default([]),
 });
 
+/**
+ * A named landmark on a candidate body (D202) the `where` may name by id — an island, a point, a
+ * reference bay. The caller offers the body's most prominent (a giant carries hundreds, and the
+ * prompt is not the place for all of them); a name the engine finds among the rest still resolves
+ * by spelling after the call (`attachLandmarks`).
+ */
+export const LandmarkCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  aliases: z.array(z.string()).default([]),
+});
+
 export const BodyCandidateSchema = z.object({
   /** An opaque ref the caller resolves — a Convex id on the sheet, a corpus key in the eval. */
   ref: z.string(),
@@ -64,6 +76,11 @@ export const BodyCandidateSchema = z.object({
   aliases: z.array(z.string()).default([]),
   /** Named bays (A09) the `where` may name by id. */
   subAreas: z.array(SubAreaCandidateSchema).default([]),
+  /**
+   * Named landmarks (D202) the `where` may name by id. Optional in the type, not only defaulted: the
+   * eval harness builds inputs by hand, and a caller that offers none must not have to say so.
+   */
+  landmarks: z.array(LandmarkCandidateSchema).optional(),
   /** A hint for the engine — "Enfield, NH" — never returned. */
   place: z.string().optional(),
 });
@@ -144,8 +161,10 @@ export const WhereSchema = z.object({
   extent: z.enum(WHERE_EXTENTS).optional(),
   subAreaId: z.string().optional(),
   sector: z.enum(SECTORS).optional(),
-  /** A named place the union has no id for yet ("off Shelburne Point") — the landmarks ETL's input. */
+  /** A named place, as the author wrote it ("off Shelburne Point"). */
   placeName: z.string().optional(),
+  /** The candidate landmark the place is (D202) — the sheet's `where.point.landmarkId`. */
+  landmarkId: z.string().optional(),
 });
 export type ExtractedWhere = z.infer<typeof WhereSchema>;
 

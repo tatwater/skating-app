@@ -17,6 +17,8 @@ import {
   COLD_CHAIN_THRESHOLDS_F,
   CONDITION_SOURCES,
   CONFIDENCE_LEVELS,
+  CORPUS_NAME_DISMISS_REASONS,
+  CORPUS_NAME_STATUSES,
   DEPTH_SOURCES,
   ELEVATION_SOURCES,
   HAZARD_TYPES,
@@ -2743,6 +2745,55 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_water_body', ['waterBodyId']),
 
+  /**
+   * The community corpus's unplaced names (D202) — a place the emails name that no landmark took:
+   * "Apple Island" (a peninsula since the causeway, in neither catalog), "Hero's Welcome", "the sea
+   * caves". A moderator's queue, loaded by `scripts/etl load-landmark-names` from the landmark pass's
+   * leftovers: a count and a spelling, never text from a message (L5a).
+   *
+   * `waterBodyId` is the lake it is on when the corpus said and one lake answered; otherwise a
+   * moderator picks one (or among `candidateBodyIds`). Then it is **placed** — a landmark dropped for
+   * it, or it filed as another spelling of one already there — or **dismissed** with a reason. A
+   * re-load refreshes the counts of open rows and never reopens a decided one.
+   */
+  corpusPlaceNames: defineTable({
+    name: v.string(),
+    /**
+     * The load's upsert key: `landmarkNameKey(name)` and the parent lake the emails named, folded —
+     * both from the corpus, never from a moderator's choice, so a re-load finds the row whatever lake
+     * it was given since.
+     */
+    askKey: v.string(),
+    aliases: v.array(v.string()),
+    messages: v.number(),
+    skatedMessages: v.number(),
+    states: v.array(v.string()),
+    parentName: v.optional(v.string()),
+    waterBodyId: v.optional(v.id('waterBodies')),
+    /** The lake's name and states when it was set — shown on the queue without reading its polygon. */
+    lakeLabel: v.optional(v.string()),
+    candidateBodyIds: v.optional(v.array(v.id('waterBodies'))),
+    /** Labels for `candidateBodyIds`, in order. */
+    candidateLabels: v.optional(v.array(v.string())),
+    /**
+     * The name already answers to landmarks on the map — on several lakes, or twice on one — and
+     * the corpus did not say which it meant. Nothing to place; the question is which landmark it is.
+     */
+    alreadyNamed: v.optional(v.boolean()),
+    status: literals(CORPUS_NAME_STATUSES),
+    landmarkId: v.optional(v.id('bodyLandmarks')),
+    dismissReason: v.optional(literals(CORPUS_NAME_DISMISS_REASONS)),
+    dismissNote: v.optional(v.string()),
+    decidedByUserId: v.optional(v.id('profiles')),
+    decidedAt: v.optional(v.number()),
+    lastCampaignId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_ask_key', ['askKey'])
+    .index('by_status_messages', ['status', 'messages'])
+    .index('by_water_body_status', ['waterBodyId', 'status']),
+
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).
 
@@ -2824,6 +2875,10 @@ export default defineSchema({
     decisionNote: v.optional(v.string()),
     /** For an approved `admit`: the body that was created. */
     admittedWaterBodyId: v.optional(v.id('waterBodies')),
+    /** For a `name_landmark` (D202): the report whose `where` named the spot — the moderator's context. */
+    reportId: v.optional(v.id('reports')),
+    /** For an approved `name_landmark`: the landmark that answered it. */
+    landmarkId: v.optional(v.id('bodyLandmarks')),
     createdAt: v.number(),
   })
     // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).

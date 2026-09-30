@@ -3,6 +3,7 @@ import {
   aliasResembles,
   applyCorpus,
   type CorpusPlace,
+  corpusNameRecords,
   parseCsv,
   parseMentions,
 } from './landmarkCorpus';
@@ -213,5 +214,113 @@ describe('applyCorpus', () => {
     expect(rock.corpusMessages).toBeUndefined();
     applyCorpus(new Map([['unnamed', [rock]]]), bodies, [place('Gull Rock')]);
     expect(rock.corpusMessages).toBe(5);
+  });
+});
+
+describe('corpusNameRecords', () => {
+  const lakeBodies = new Map<string, MatchBody>(
+    [
+      { id: 'champlain', name: 'Lake Champlain', states: ['VT', 'NY'] },
+      { id: 'long-me', name: 'Long Pond', states: ['ME'] },
+      { id: 'long-nh', name: 'Long Pond', states: ['NH'] },
+      { id: 'long-nh2', name: 'Long Pond', states: ['NH'] },
+    ].map((b) => [
+      b.id,
+      {
+        ...b,
+        polygon: { type: 'Polygon', coordinates: [] },
+        bbox: { minLat: 0, minLng: 0, maxLat: 0, maxLng: 0 },
+        surfaceAreaSqM: 1,
+      } as MatchBody,
+    ]),
+  );
+
+  it('resolves a named lake only when one answers in the corpus’s states, and keeps the choices', () => {
+    const records = corpusNameRecords(
+      {
+        matched: 0,
+        unmatched: [
+          place('Apple Island', {
+            parentBody: 'Lake Champlain',
+            states: ['VT'],
+            messages: 24,
+            aliases: ['Apple Is', 'Lake Champlain (Apple Island)', 'apple island'],
+          }),
+          place('Big Rock', { parentBody: 'Long Pond', states: ['ME'] }),
+          place('Gull Ledge', { parentBody: 'Long Pond', states: ['NH'] }),
+          place('Hero’s Welcome'),
+          place('Rideau Canal', { parentBody: 'Rideau Canal', states: ['QC'] }),
+        ],
+        ambiguous: [
+          { place: place('Cedar Island'), bodies: ['champlain'] },
+          { place: place('Long Point'), bodies: ['long-me', 'long-nh'] },
+        ],
+      },
+      lakeBodies,
+    );
+    // Busiest first (Apple Island's 24), then by name.
+    expect(records.map((r) => [r.name, r.waterBodyId, r.candidateBodyIds, r.alreadyNamed])).toEqual(
+      [
+        ['Apple Island', 'champlain', undefined, undefined],
+        ['Big Rock', 'long-me', undefined, undefined],
+        ['Cedar Island', 'champlain', undefined, true],
+        ['Gull Ledge', undefined, ['long-nh', 'long-nh2'], undefined],
+        ['Hero’s Welcome', undefined, undefined, undefined],
+        ['Long Point', undefined, ['long-me', 'long-nh'], true],
+        ['Rideau Canal', undefined, undefined, undefined],
+      ],
+    );
+    expect(records[0]).toMatchObject({
+      aliases: ['Apple Is'],
+      messages: 24,
+      parentName: 'Lake Champlain',
+      states: ['VT'],
+    });
+  });
+
+  it('merges two spellings that fold alike on one lake, keeping the busier one’s name', () => {
+    const records = corpusNameRecords(
+      {
+        matched: 0,
+        unmatched: [
+          place('Saint Albans rock', { messages: 2, skatedMessages: 2, states: ['NY'] }),
+          place('St. Albans Rock', {
+            messages: 5,
+            skatedMessages: 1,
+            states: ['VT'],
+            aliases: ['SA Rock'],
+          }),
+        ],
+        ambiguous: [],
+      },
+      lakeBodies,
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      name: 'St. Albans Rock',
+      messages: 5,
+      skatedMessages: 2,
+      states: ['VT', 'NY'],
+    });
+    // "Saint Albans rock" folds to the name itself, so it is no second spelling.
+    expect(records[0]?.aliases).toEqual([]);
+  });
+
+  it('skips a body with no name when indexing lakes', () => {
+    const withUnnamed = new Map(lakeBodies);
+    withUnnamed.set('x', {
+      ...(lakeBodies.get('champlain') as MatchBody),
+      id: 'x',
+      name: undefined,
+    });
+    const [rec] = corpusNameRecords(
+      {
+        matched: 0,
+        unmatched: [place('Apple Island', { parentBody: 'Lake Champlain' })],
+        ambiguous: [],
+      },
+      withUnnamed,
+    );
+    expect(rec?.waterBodyId).toBe('champlain');
   });
 });
