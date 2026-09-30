@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_THAW_RUN_DAYS, ingestWindow, type SiteSeries, thawClose } from './ingestGate';
+import {
+  DEFAULT_THAW_RUN_DAYS,
+  dailyLowsFromHourly,
+  ingestWindow,
+  type SiteSeries,
+  thawClose,
+} from './ingestGate';
 
 /** `count` days from `start`, each with the given low. */
 function series(siteId: string, start: string, lows: number[], sentinel?: boolean): SiteSeries {
@@ -277,5 +283,61 @@ describe('thawClose — the live checker cannot re-derive winterFrom', () => {
     ];
     // Freeze-up recorded mid-window: the run may only start after it, so the close slips by five.
     expect(thawClose(days, '2026-04-05')).toBe('2026-04-15');
+  });
+});
+
+describe("dailyLowsFromHourly — days cut at the lake's midnight", () => {
+  const NY = 'America/New_York';
+  const HOUR_S = 3600;
+
+  /** Unix seconds for `count` hours from a UTC instant. */
+  function hours(startMs: number, count: number): number[] {
+    return Array.from({ length: count }, (_, i) => startMs / 1000 + i * HOUR_S);
+  }
+
+  it('cuts a winter day at EST midnight even when the response offset says EDT', () => {
+    // Two whole EST days: 2025-12-22 05:00Z → 2025-12-24 05:00Z. The coldest hour is 04:00Z on the
+    // 23rd — 23:00 EST on the 22nd. An EDT cut (04:00Z) would have filed it under the 23rd.
+    const time = hours(Date.UTC(2025, 11, 22, 5), 48);
+    const temps = time.map((t) => (t === Date.UTC(2025, 11, 23, 4) / 1000 ? -9 : 1));
+    expect(dailyLowsFromHourly(time, temps, NY, -4 * 3600)).toEqual([
+      { date: '2025-12-22', minTempC: -9 },
+      { date: '2025-12-23', minTempC: 1 },
+    ]);
+  });
+
+  it('keeps a 23-hour spring-forward day and drops a short edge day', () => {
+    // From 2025-03-08 06:00Z (01:00 EST): the 8th is one hour short, the 9th is its true 23 hours.
+    const time = hours(Date.UTC(2025, 2, 8, 6), 23 + 23);
+    const days = dailyLowsFromHourly(
+      time,
+      time.map(() => -1),
+      NY,
+      0,
+    );
+    expect(days.map((d) => d.date)).toEqual(['2025-03-08', '2025-03-09']);
+    const shortEdge = dailyLowsFromHourly(
+      time.slice(1),
+      time.slice(1).map(() => -1),
+      NY,
+      0,
+    );
+    expect(shortEdge.map((d) => d.date)).toEqual(['2025-03-09']);
+  });
+
+  it('treats a null reading as a gap, not a warm hour, and orders days oldest first', () => {
+    const time = hours(Date.UTC(2026, 0, 2), 72);
+    const temps: (number | null)[] = time.map(() => -3);
+    temps[30] = null;
+    temps[31] = null; // the 3rd now has 22 readings — it abstains
+    const days = dailyLowsFromHourly([...time].reverse(), [...temps].reverse(), 'UTC', 0);
+    expect(days.map((d) => d.date)).toEqual(['2026-01-02', '2026-01-04']);
+  });
+
+  it('skips malformed entries and uses the fallback offset without a zone', () => {
+    const time: unknown[] = hours(Date.UTC(2026, 0, 2, 5), 24);
+    time.push('2026-01-03T00:00');
+    const days = dailyLowsFromHourly(time, [...time.map(() => -2)], null, -5 * 3600);
+    expect(days).toEqual([{ date: '2026-01-02', minTempC: -2 }]);
   });
 });

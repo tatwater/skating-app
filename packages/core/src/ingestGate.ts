@@ -32,6 +32,8 @@
  * one weather series should not stall a season.
  */
 
+import { COMPLETE_DAY_MIN_HOURS, localStampAt } from './weatherDay';
+
 /** A day's low at one sample site. */
 export interface DailyLow {
   /** `YYYY-MM-DD`. */
@@ -73,6 +75,43 @@ export interface GateOptions {
   thawC?: number;
   /** Consecutive all-thawed days before ingest stops. */
   thawRunDays?: number;
+}
+
+/**
+ * Each local day's low from an hourly `unixtime` series, oldest first.
+ *
+ * ⚠ **Not Open-Meteo's `daily=temperature_2m_min`.** Its day boundaries use the offset in force when
+ * the request is made, for every day in the response (see {@link localStampAt}), so a 92-day window
+ * fetched after a DST change cuts every day on the far side of it at the wrong midnight. The Convex
+ * watcher and the CLI both go through here so the two cannot disagree about what a day is.
+ *
+ * A day with fewer than {@link COMPLETE_DAY_MIN_HOURS} readings is dropped rather than reported: a
+ * window's first day can come back short, and a null reading is a gap in the record, not a warm hour.
+ * The site abstains for that day instead of voting on part of it.
+ */
+export function dailyLowsFromHourly(
+  timesSec: readonly unknown[],
+  temps: readonly unknown[],
+  timeZone: string | null,
+  fallbackOffsetSeconds: number,
+): DailyLow[] {
+  const byDate = new Map<string, { min: number; hours: number }>();
+  for (const [i, t] of timesSec.entries()) {
+    const temp = temps[i];
+    if (typeof t !== 'number' || typeof temp !== 'number') continue;
+    const stamp = localStampAt(t * 1000, timeZone, fallbackOffsetSeconds);
+    if (stamp === null) continue;
+    const day = byDate.get(stamp.localDate);
+    if (day === undefined) byDate.set(stamp.localDate, { min: temp, hours: 1 });
+    else {
+      day.min = Math.min(day.min, temp);
+      day.hours++;
+    }
+  }
+  return [...byDate]
+    .filter(([, d]) => d.hours >= COMPLETE_DAY_MIN_HOURS)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([date, d]) => ({ date, minTempC: d.min }));
 }
 
 export const DEFAULT_FREEZE_C = 0;

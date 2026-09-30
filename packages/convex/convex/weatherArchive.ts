@@ -10,15 +10,15 @@
  *
  * ## Why this has its own request builder
  *
- * `weather.ts` asks for `timeformat=unixtime` and shifts each hour by a single
- * `utc_offset_seconds`, which is right for night-bucketing an integral and wrong for a calendar: one
- * offset per response means an hour lands in the wrong local day on either side of a DST change, and
- * **both transitions fall inside a Northeast skating season.**
+ * It asks for a different variable set and a longer window than `weather.ts`, and it files each hour
+ * under a local calendar date. **Both DST transitions fall inside a Northeast skating season**, so
+ * that date has to come from the zone, hour by hour.
  *
- * This builder asks for **`timeformat=iso8601`**, so Open-Meteo returns local wall-clock strings and
- * every hour arrives already knowing the date the lake actually experienced. No offset arithmetic
- * happens anywhere in this file. That is the only way to be DST-correct without shipping a timezone
- * database.
+ * ⚠ **Not from Open-Meteo's `iso8601` stamps.** This builder used to ask for them, on the belief that
+ * each arrived knowing the date the lake experienced. It does not: Open-Meteo applies the offset in
+ * force *at request time* to every hour in the response (verified 2026-09-30; see `localStampAt`), so
+ * a backfill run after a DST change misfiled every hour on the far side of it by one. It now asks
+ * for `unixtime` and stamps each hour with `localStampAt` against the response's zone.
  *
  * ⚠ **This is not a second cache key, and the distinction matters.** A06h's readiness pass flagged
  * that forking the *fetch* is fine while forking the *key* is not: the strip and the decay must agree
@@ -61,6 +61,7 @@ import {
   localDateToDayMs,
   localDayMsAt,
   localDayMsInZone,
+  localStampAt,
   nightsFieldFor,
   type SpreadBayDay,
   type SpreadBayInput,
@@ -157,10 +158,11 @@ function todayKey(nowMs: number): number {
 // Fetch
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-interface IsoHourlyResponse {
+interface UnixHourlyResponse {
   /**
-   * Seconds east of UTC for the requested coordinate, DST included, as Open-Meteo resolved it under
-   * `timezone=auto`. Free in every response and previously discarded — see `LocalHourlyBatch`.
+   * Seconds east of UTC for the requested coordinate, as Open-Meteo resolved it under
+   * `timezone=auto` — **at the moment of the request**, not at any hour in the response. Only a
+   * fallback for when no zone came back — see `LocalHourlyBatch`.
    */
   utc_offset_seconds?: number;
   /**
@@ -173,8 +175,8 @@ interface IsoHourlyResponse {
    */
   timezone?: string;
   hourly?: {
-    time?: string[]; // local wall-clock, `YYYY-MM-DDTHH:mm`
-    [key: string]: (number | null)[] | string[] | undefined;
+    time?: number[]; // unix seconds (UTC), because we request `timeformat=unixtime`
+    [key: string]: (number | null)[] | undefined;
   };
 }
 
@@ -183,34 +185,17 @@ function numOr0(x: number | null | undefined): number {
 }
 
 /**
- * Parse `2026-01-15T13:00` into its local date and hour without constructing a `Date`.
- *
- * ⚠ **`new Date('2026-01-15T13:00')` would be actively wrong here.** A bare ISO string with no zone
- * is interpreted in the *runtime's* timezone, so the same response would parse differently on a
- * developer's laptop and on Convex's UTC servers — and the value we want is neither of those, it is
- * the lake's own wall clock, which the string already states. Read the characters.
- */
-function parseLocalStamp(stamp: string): { localDate: string; localHour: number } | null {
-  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):/.exec(stamp);
-  if (!m) return null;
-  const localDate = m[1];
-  const localHour = Number(m[2]);
-  if (localDate === undefined || !Number.isFinite(localHour)) return null;
-  return { localDate, localHour };
-}
-
-/**
  * Hours plus the offset the place was on, which is the pair the archive actually needs.
  *
- * ⚠ **The hours alone cannot answer "which local day was this instant".** They carry local wall-clock
- * strings, which is exactly right for bucketing and useless for mapping a stored UTC timestamp (a
- * report's `skateEndTime`) onto a `dayMs` key. The offset is what closes that gap, it is in every
- * response already, and dropping it is what let the calibration window slip a day.
+ * ⚠ **The hours alone cannot answer "which local day was this instant".** They carry local dates
+ * and hours, which is exactly right for bucketing and useless for mapping a stored UTC timestamp (a
+ * report's `skateEndTime`) onto a `dayMs` key. The zone (or, failing that, the offset) is what closes
+ * that gap, and dropping it is what let the calibration window slip a day.
  */
 interface LocalHourlyBatch {
   hours: LocalHourlyWeather[];
   utcOffsetSeconds: number | null;
-  /** The response's IANA zone, when it gave one — see `IsoHourlyResponse.timezone`. */
+  /** The response's IANA zone, when it gave one — see `UnixHourlyResponse.timezone`. */
   timeZone: string | null;
 }
 
@@ -234,16 +219,17 @@ async function fetchLocalHourly(
     // One forward day so today's elapsed hours are included; the archive keeps only what has
     // happened, and today's provisional row is rewritten by tomorrow's append.
     forecast_days: '1',
+    // `auto` for the zone it resolves; the local stamps it would add are wrong across DST — see the
+    // module docblock.
     timezone: 'auto',
-    // The whole reason this builder exists — see the module docblock.
-    timeformat: 'iso8601',
+    timeformat: 'unixtime',
     temperature_unit: 'celsius',
     wind_speed_unit: 'kmh',
     precipitation_unit: 'mm',
   });
   if (cell.elevationM !== undefined) params.set('elevation', String(cell.elevationM));
 
-  let json: IsoHourlyResponse;
+  let json: UnixHourlyResponse;
   try {
     await meterOpenMeteo(ctx, HOURLY_VARS.length, days + 1);
     const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
@@ -251,7 +237,7 @@ async function fetchLocalHourly(
       console.warn(`Open-Meteo archive request failed: ${res.status}`);
       return null;
     }
-    json = (await res.json()) as IsoHourlyResponse;
+    json = (await res.json()) as UnixHourlyResponse;
   } catch (err) {
     console.warn('Open-Meteo archive request threw', err);
     return null;
@@ -273,12 +259,25 @@ async function fetchLocalHourly(
   const shortwave = col('shortwave_radiation');
   const weatherCode = col('weather_code');
 
+  const timeZone =
+    typeof json.timezone === 'string' && json.timezone.length > 0 ? json.timezone : null;
+  const utcOffsetSeconds =
+    typeof json.utc_offset_seconds === 'number' ? json.utc_offset_seconds : null;
+  const fallbackOffset = utcOffsetSeconds ?? approximateUtcOffsetSeconds(cell.lng);
+  const stampAt = (ts: unknown) =>
+    typeof ts === 'number' ? localStampAt(ts * 1000, timeZone, fallbackOffset) : null;
+
+  // ⚠ **The window's far edge is cut at Open-Meteo's midnight, not the lake's.** Across a DST change
+  // the two differ by an hour, so the first local date arrives either missing its 00:00 or as a
+  // one-hour stub of the day before. Either would overwrite a whole stored day with a partial one, so
+  // that date is dropped unless the window really starts at its midnight.
+  const first = stampAt(time[0]);
+  const truncatedDate = first !== null && first.localHour !== 0 ? first.localDate : null;
+
   const out: LocalHourlyWeather[] = [];
   for (let i = 0; i < time.length; i++) {
-    const stamp = time[i];
-    if (typeof stamp !== 'string') continue;
-    const parsed = parseLocalStamp(stamp);
-    if (!parsed) continue;
+    const parsed = stampAt(time[i]);
+    if (!parsed || parsed.localDate === truncatedDate) continue;
     const t = temp?.[i];
     if (typeof t !== 'number') continue; // no temperature ⇒ unusable hour
 
@@ -310,11 +309,7 @@ async function fetchLocalHourly(
     out.push(h);
   }
   if (out.length === 0) return null;
-  return {
-    hours: out,
-    utcOffsetSeconds: typeof json.utc_offset_seconds === 'number' ? json.utc_offset_seconds : null,
-    timeZone: typeof json.timezone === 'string' && json.timezone.length > 0 ? json.timezone : null,
-  };
+  return { hours: out, utcOffsetSeconds, timeZone };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

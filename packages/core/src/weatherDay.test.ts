@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   approximateUtcOffsetSeconds,
@@ -13,6 +14,7 @@ import {
   localDateToDayMs,
   localDayMsAt,
   localDayMsInZone,
+  localStampAt,
   MELT_WH_PER_MM,
   nightsBelowThresholdC,
   rainTotalMm,
@@ -516,5 +518,76 @@ describe('zone-aware local dates — what offset arithmetic cannot do', () => {
   it('handles UTC itself, where the offset is zero and the name is bare', () => {
     expect(utcOffsetSecondsInZone(Date.UTC(2025, 0, 15), 'UTC')).toBe(0);
     expect(localDateInZone(Date.UTC(2025, 0, 15, 23, 30), 'UTC')).toBe('2025-01-15');
+  });
+});
+
+describe("localStampAt — the lake's wall clock, hour by hour", () => {
+  const NY = 'America/New_York';
+
+  it('stamps a December morning in EST, whatever offset the response came back with', () => {
+    // ⚠ **The bug.** A September fetch of 2025-12-23 came back with `utc_offset_seconds: -14400`
+    // and labeled 11:00Z as `07:00`. The zone knows it was 06:00 EST.
+    expect(localStampAt(Date.UTC(2025, 11, 23, 11), NY, -4 * 3600)).toEqual({
+      localDate: '2025-12-23',
+      localHour: 6,
+    });
+    expect(localStampAt(Date.UTC(2025, 6, 15, 11), NY, -5 * 3600)).toEqual({
+      localDate: '2025-07-15',
+      localHour: 7,
+    });
+  });
+
+  it('gives fall-back two 01:00s and spring-forward no 02:00', () => {
+    const fallBack = [5, 6].map((h) => localStampAt(Date.UTC(2025, 10, 2, h), NY, 0));
+    expect(fallBack).toEqual([
+      { localDate: '2025-11-02', localHour: 1 },
+      { localDate: '2025-11-02', localHour: 1 },
+    ]);
+    const springForward = [6, 7].map(
+      (h) => localStampAt(Date.UTC(2025, 2, 9, h), NY, 0)?.localHour,
+    );
+    expect(springForward).toEqual([1, 3]);
+  });
+
+  it('files the hours of a transition day into a 25- or 23-hour day', () => {
+    const count = (y: number, m: number, d: number, date: string) =>
+      Array.from({ length: 30 }, (_, i) => localStampAt(Date.UTC(y, m, d, i), NY, 0)).filter(
+        (s) => s?.localDate === date,
+      ).length;
+    expect(count(2025, 10, 2, '2025-11-02')).toBe(25);
+    expect(count(2025, 2, 9, '2025-03-09')).toBe(23);
+  });
+
+  it('falls back to the given offset without a zone, or with one the runtime rejects', () => {
+    const at = Date.UTC(2025, 0, 15, 3);
+    expect(localStampAt(at, null, -5 * 3600)).toEqual({ localDate: '2025-01-14', localHour: 22 });
+    expect(localStampAt(at, 'Not/AZone', -5 * 3600)).toEqual({
+      localDate: '2025-01-14',
+      localHour: 22,
+    });
+  });
+
+  it('returns null for a non-finite instant', () => {
+    expect(localStampAt(Number.NaN, NY, 0)).toBeNull();
+  });
+
+  it("agrees with the runtime's own clock for any hour across several seasons", () => {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: NY,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    });
+    fc.assert(
+      fc.property(fc.integer({ min: Date.UTC(2023, 0, 1), max: Date.UTC(2028, 0, 1) }), (ms) => {
+        const parts = Object.fromEntries(fmt.formatToParts(ms).map((p) => [p.type, p.value]));
+        expect(localStampAt(ms, NY, 0)).toEqual({
+          localDate: `${parts.year}-${parts.month}-${parts.day}`,
+          localHour: Number(parts.hour),
+        });
+      }),
+    );
   });
 });

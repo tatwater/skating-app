@@ -1485,6 +1485,30 @@ M to answer* reads as required where a where is optional — on the ice chips as
   where card, for ice and surface chips too, which had the same limit since A10-3. The where-card
   model moved into core (`whereCardsFor`), retiring the four hand copies the self-review flagged.
 
+### Open-Meteo's local times are an hour off across DST — found 2026-09-30, fixed here
+
+Not A10 work. It rides on #82 so it ships before the first real season. While pulling one
+morning's weather by hand, Open-Meteo put a December sunrise at 08:19 (it was 07:19 EST).
+Measured against the forecast, archive and historical-forecast endpoints: under `timezone=auto`
+Open-Meteo applies **the offset in force at request time** to every hour and day in the response,
+and never switches at a transition. `unixtime` values are unaffected.
+
+- **`weatherArchive.fetchLocalHourly` trusted those stamps.** Its docblock said `iso8601` was
+  "DST-correct without a timezone database"; that assumption was false. A backfill that crossed a
+  change filed every hour on the far side of it into the wrong hour, and near midnight into the
+  wrong day. It now asks for `unixtime` and stamps each hour with `localStampAt` (core) against the
+  response's zone. A window edge that no longer starts at local midnight is dropped, not written
+  over a stored day.
+- **The season watcher** (`imageryIngest.fetchDailyLows`) used `daily=temperature_2m_min`, whose
+  days are cut the same wrong way. The CLI twin used UTC days, so the two could disagree about when
+  winter began. Both now read hourly and cut through `dailyLowsFromHourly` (core).
+- **The weather-timeline demo cache** was labeled an hour late throughout (a September fetch of
+  January). `fetch-archive.ts` stamps locally now; re-run it before re-exporting the SVG.
+- `weather.ts` (unixtime + a per-hour zone offset) and `conditions.ts` (absolute instants) were
+  already correct.
+- **Existing dev `weatherDays` rows are left to age out** (founder, 2026-09-30); no real season has
+  started.
+
 ### Deltas from the conversation — read these before extending
 
 1. **Per-value vantage was proposed in the conversation and not built.** Reading the code, it needs

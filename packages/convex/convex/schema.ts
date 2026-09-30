@@ -1748,9 +1748,9 @@ export default defineSchema({
    * tier for a day, which a prefix cannot do.
    *
    * **`dayMs` is `Date.UTC(y, m, d)` of the lake's LOCAL date** — a sortable key, not an instant.
-   * Hours are assigned to days from the local date strings Open-Meteo returns under
-   * `timeformat=iso8601`, never by shifting a UTC timestamp, because a response carries one
-   * `utc_offset_seconds` for its whole span and both DST transitions fall inside a skating season.
+   * Hours are assigned to days by `localStampAt` against the response's IANA zone, hour by hour —
+   * never by one `utc_offset_seconds`, and never from Open-Meteo's `iso8601` stamps, which both carry
+   * the request-time offset for the whole span. Both DST transitions fall inside a skating season.
    */
   weatherDays: defineTable({
     cellKey: v.string(), // `weatherCellFor(tier, …).key`
@@ -1903,8 +1903,7 @@ export default defineSchema({
      * ⚠ **Not always 24, and `localHour` is stored per hour rather than implied by array position.**
      * DST days are 23 or 25 hours and both transitions fall inside a skating season, so an array
      * indexed by position would misattribute every hour after the change. Storing the local hour the
-     * lake actually experienced is what lets the chart place a mark without a timezone database —
-     * the same reasoning that made the archive ask for `timeformat=iso8601` in the first place.
+     * lake actually experienced is what lets the chart place a mark without a timezone database.
      */
     /**
      * Which generation of `storableHour` wrote this row — see `HOURLY_ROW_VERSION`.

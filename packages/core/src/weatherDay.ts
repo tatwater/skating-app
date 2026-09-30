@@ -35,6 +35,7 @@
 import type { HourlyWeather } from './weather';
 
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 
 /**
  * The night that *ended* on a given morning: from 18:00 the previous evening to 09:00 that day.
@@ -197,6 +198,35 @@ export function utcOffsetSecondsAt(instantMs: number, timeZone: string): number 
   if (!m[1]) return 0;
   const magnitude = Number(m[2]) * 3600 + Number(m[3]) * 60;
   return m[1] === '-' ? -magnitude : magnitude;
+}
+
+/**
+ * The lake's wall clock at an instant — its local date and hour.
+ *
+ * ⚠ **Open-Meteo's own local stamps cannot answer this.** Under `timezone=auto` it applies the offset
+ * in force *when the request is made* to every hour in the response, and never switches at a
+ * transition. Verified 2026-09-30 against the forecast, archive and historical-forecast endpoints: a
+ * September fetch labels `2025-12-23T11:00Z` as `07:00` (EDT, an hour late for a December morning),
+ * and runs straight through 2025-11-02 without repeating an hour. A 92-day backfill that crosses a
+ * DST change therefore misfiles every hour on the far side of it. Ask for `unixtime` and stamp here,
+ * where the zone carries the transition instants.
+ *
+ * Fall-back yields two hours stamped `01` and spring-forward none stamped `02` — the 25- and 23-hour
+ * days {@link COMPLETE_DAY_MIN_HOURS} already allows for.
+ *
+ * `fallbackOffsetSeconds` is used when `timeZone` is null or the runtime rejects it.
+ */
+export function localStampAt(
+  instantMs: number,
+  timeZone: string | null,
+  fallbackOffsetSeconds: number,
+): { localDate: string; localHour: number } | null {
+  if (!Number.isFinite(instantMs)) return null;
+  const offset =
+    (timeZone === null ? null : utcOffsetSecondsAt(instantMs, timeZone)) ?? fallbackOffsetSeconds;
+  const localMs = instantMs + offset * 1000;
+  const dayMs = Math.floor(localMs / DAY_MS) * DAY_MS;
+  return { localDate: dayMsToLocalDate(dayMs), localHour: Math.floor((localMs - dayMs) / HOUR_MS) };
 }
 
 /**
