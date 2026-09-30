@@ -93,10 +93,21 @@ export async function deriveSightingHazards(
     bays[id] = bay.polygon as unknown as Polygon | MultiPolygon;
     bayNames[id] = bay.name;
   }
+  // A landmark chosen by name sits on its label point — land, often — so its point pins nothing
+  // (D202); the core rule tells a chosen landmark from a tap by that point.
+  const landmarkPoints: Record<string, { lat: number; lng: number }> = {};
+  for (const id of new Set(
+    args.sightings.flatMap((s) => (s.where?.point?.landmarkId ? [s.where.point.landmarkId] : [])),
+  )) {
+    const normalized = ctx.db.normalizeId('bodyLandmarks', id);
+    const landmark = normalized ? await ctx.db.get(normalized) : null;
+    if (landmark && landmark.waterBodyId === body._id) landmarkPoints[id] = landmark.point;
+  }
   const geometry = {
     outline: body.polygon as unknown as Polygon | MultiPolygon,
     ...(body.interiorPoint ? { interiorPoint: body.interiorPoint } : {}),
     bays,
+    landmarkPoints,
   };
   const out: Id<'hazards'>[] = [];
   let written = 0;

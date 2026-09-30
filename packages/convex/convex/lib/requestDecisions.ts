@@ -8,11 +8,12 @@
  * helpers do.
  */
 
-import { MAX_LANDMARKS_PER_BODY, requestNameKey } from '@skating/core';
+import { landmarkNameKey, requestNameKey, requestNameKeyFor } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { landmarksForBody } from './landmarkRows';
 import { literals } from './validators';
 
 /** Cap on the moderator queue read — and the page a decision drains siblings by. */
@@ -61,7 +62,7 @@ export async function openSiblings(
     const kind = request.kind;
     if (waterBodyId === undefined) return none;
     const keys = new Set([requestKeyOf(request)]);
-    for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKey(n));
+    for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKeyFor(kind, n));
     rows = [];
     for (const key of keys) {
       rows.push(
@@ -212,8 +213,10 @@ export function bayNames(bay: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'>
 }
 
 /** A bay ask's question — the stored key, folded from the name for any row that predates it. */
-export function requestKeyOf(r: Pick<Doc<'waterBodyRequests'>, 'nameKey' | 'name'>): string {
-  return r.nameKey ?? requestNameKey(r.name ?? '');
+export function requestKeyOf(
+  r: Pick<Doc<'waterBodyRequests'>, 'kind' | 'nameKey' | 'name'>,
+): string {
+  return r.nameKey ?? requestNameKeyFor(r.kind, r.name ?? '');
 }
 
 /** Every name a bay ask goes by — the name and the spellings the seed filed with it. */
@@ -301,21 +304,31 @@ export async function approveNamedBayRequest(
 
 // ── Landmarks (D202) ───────────────────────────────────────────────────────────────────────────
 
+/** Do two lists of names share a landmark's spelling? `namesMeet`, by the landmark fold. */
+export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): boolean {
+  const keys = new Set(a.map(landmarkNameKey).filter((k) => k.length > 0));
+  return b.some((n) => keys.has(landmarkNameKey(n)));
+}
+
+/** The live landmark among `rows` answering to one of `names`, if any — for callers holding the rows. */
+export function matchLandmark(
+  rows: readonly Doc<'bodyLandmarks'>[],
+  names: readonly string[],
+): Doc<'bodyLandmarks'> | null {
+  return (
+    rows.find(
+      (row) => row.removedAt === undefined && landmarkNamesMeet(names, [row.name, ...row.aliases]),
+    ) ?? null
+  );
+}
+
 /** The live landmark on this body that answers to a `name_landmark` ask's name, if one exists. */
 export async function namedLandmark(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   names: readonly string[],
 ): Promise<Doc<'bodyLandmarks'> | null> {
-  const rows = await ctx.db
-    .query('bodyLandmarks')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_LANDMARKS_PER_BODY * 2);
-  return (
-    rows.find(
-      (row) => row.removedAt === undefined && namesMeet(names, [row.name, ...row.aliases]),
-    ) ?? null
-  );
+  return matchLandmark(await landmarksForBody(ctx, waterBodyId), names);
 }
 
 /**
@@ -336,7 +349,10 @@ export async function approveNamedLandmarkRequest(
     throw new ConvexError('That request is not a landmark request on this lake');
   }
   const landmark = await ctx.db.get(landmarkId);
-  if (!landmark || !namesMeet(requestNames(request), [landmark.name, ...landmark.aliases])) {
+  if (
+    !landmark ||
+    !landmarkNamesMeet(requestNames(request), [landmark.name, ...landmark.aliases])
+  ) {
     throw new ConvexError(
       `This landmark doesn't carry the name that was asked for ("${request.name}"). Keep that name, add it as another spelling, or save without the request.`,
     );

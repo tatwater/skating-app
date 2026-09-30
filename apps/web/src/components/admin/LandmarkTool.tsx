@@ -395,12 +395,17 @@ export function LandmarkTool({
           size="sm"
           className="self-start"
           onClick={() => {
-            // A fresh form: an abandoned edit's name and kind must not ride into a new landmark.
             setMoving(null);
             setEditing(null);
-            setName('');
-            setKind('other');
-            setAliases('');
+            // Answering a proposal, "pick a different spot" moves the point and keeps the name and
+            // the ask; anything else starts a fresh form, so an abandoned edit's name and kind never
+            // ride into a new landmark (nor an old proposal's request into an unrelated one).
+            if (!answering || !point) {
+              setAnswering(null);
+              setName('');
+              setKind('other');
+              setAliases('');
+            }
             onArm(!(armed && !moving));
           }}
         >

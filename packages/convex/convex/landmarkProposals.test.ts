@@ -164,26 +164,51 @@ describe('a report that names a landmark', () => {
     expect(await requests(t)).toHaveLength(0);
   });
 
-  test('refuses another lake’s landmark, a removed one, and a string that is no id', async () => {
+  test('another lake’s landmark, a removed one, or a string that is no id keeps the words and loses the id', async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, 'osm/1');
     const other = await seedBody(t, 'osm/2');
     const foreign = await seedLandmark(t, other, 'Gull Rock');
     const gone = await seedLandmark(t, lake, 'Old Pier', { removed: true });
     const { as } = await seedUser(t, 'skater');
-    const post = (landmarkId: string) =>
-      as.mutation(api.reports.create, {
+    for (const landmarkId of [foreign, gone, 'not-an-id']) {
+      const reportId = await as.mutation(api.reports.create, {
         ...OBSERVED,
         waterBodyId: lake,
         skateEndTime: SKATE_TIME,
-        iceTypes: [{ type: 'black_ice', where: { point: located({ name: 'X', landmarkId }) } }],
+        iceTypes: [
+          { type: 'black_ice', where: { point: located({ name: 'Old Pier', landmarkId }) } },
+        ],
       });
-    await expect(post(foreign)).rejects.toThrow(/not a landmark of this water body/);
-    await expect(post(gone)).rejects.toThrow(/not a landmark of this water body/);
-    await expect(post('not-an-id')).rejects.toThrow(/not a landmark of this water body/);
+      const report = await t.run((ctx) => ctx.db.get(reportId));
+      expect(report?.iceTypes[0]?.where?.point).toEqual(located({ name: 'Old Pier' }));
+    }
+    expect((await t.run((ctx) => ctx.db.get(foreign)))?.reportCount).toBeUndefined();
   });
 
-  test('an edit that newly names a landmark counts it; saving it again does not', async () => {
+  test('a landmark’s id carries its own name, whatever the client sent', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, 'osm/1');
+    const apple = await seedLandmark(t, lake, 'Apple Island');
+    const { as } = await seedUser(t, 'skater');
+    const reportId = await as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: lake,
+      skateEndTime: SKATE_TIME,
+      iceTypes: [
+        {
+          type: 'black_ice',
+          where: { point: located({ name: 'anything at all', landmarkId: apple }) },
+        },
+      ],
+    });
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.iceTypes[0]?.where?.point?.name).toBe('Apple Island');
+    // …and no proposal for the words it replaced.
+    expect(await requests(t)).toHaveLength(0);
+  });
+
+  test('an edit never counts toward a landmark’s prominence, however often it re-adds one', async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, 'osm/1');
     const apple = await seedLandmark(t, lake, 'Apple Island');
@@ -208,7 +233,9 @@ describe('a report that names a landmark', () => {
       });
     await edit();
     await edit();
-    expect((await t.run((ctx) => ctx.db.get(apple)))?.reportCount).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(apple)))?.reportCount).toBeUndefined();
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.iceTypes[0]?.where?.point?.landmarkId).toBe(apple);
   });
 });
 
@@ -237,6 +264,26 @@ describe('a report that names a spot no map has', () => {
       coord: at,
       reportId,
     });
+  });
+
+  test('one report naming a place two ways files one ask; "the Gut" meets the landmark "Gut"', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, 'osm/1');
+    await seedLandmark(t, lake, 'Gut');
+    const { as } = await seedUser(t, 'skater');
+    await as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: lake,
+      skateEndTime: SKATE_TIME,
+      iceTypes: [
+        { type: 'black_ice', where: { point: located({ name: 'St. Albans Rock' }) } },
+        { type: 'shell_ice', where: { point: located({ name: 'Saint Albans rock' }) } },
+      ],
+      surfaceTags: ['glass'],
+      observedFrom: 'shore',
+      sightings: [{ type: 'open', where: { point: located({ name: 'the Gut' }) } }],
+    });
+    expect((await requests(t)).map((r) => r.name)).toEqual(['St. Albans Rock']);
   });
 
   test('files nothing for a name a landmark or a bay already answers to', async () => {

@@ -99,18 +99,28 @@ describe('a tap on the lake', () => {
 describe('landmarkNamedIn', () => {
   const shelburne = { name: 'Shelburne Point', aliases: [] };
   const town = { name: 'Shelburne', aliases: [] };
-  const gut = { name: 'The Gut', aliases: ['gut'] };
+  const gut = { name: 'The Gut Passage', aliases: ['the gut passage'] };
   const rock = { name: 'Bird Poop Rock', aliases: ["the gulls' rock"] };
 
   it('finds the landmark a phrase names, the longest name winning', () => {
     expect(landmarkNamedIn('a wind hole off Shelburne Point', [town, shelburne])).toBe(shelburne);
     expect(landmarkNamedIn('skated to Shelburne and back', [town, shelburne])).toBe(town);
-    expect(landmarkNamedIn('through the gut', [gut])).toBe(gut);
+    expect(landmarkNamedIn('through the gut passage', [gut])).toBe(gut);
     expect(landmarkNamedIn("west of the gulls' rock", [rock])).toBe(rock);
   });
 
-  it('names nothing for a part of a word or no match', () => {
-    expect(landmarkNamedIn('the guttering', [gut])).toBeNull();
+  it('names nothing for a part of a word, a generic word alone, a tie, or no match', () => {
+    expect(landmarkNamedIn('the gut passageway', [gut])).toBeNull();
+    const thePoint = { name: 'The Point', aliases: [] };
+    expect(landmarkNamedIn('off Shelburne Point', [thePoint])).toBeNull();
+    expect(landmarkNamedIn('a crack off the point', [thePoint])).toBe(thePoint);
+    expect(landmarkNamedIn('Point', [thePoint])).toBe(thePoint);
+    const theGut = { name: 'The Gut', aliases: [] };
+    expect(landmarkNamedIn('open water through the gut', [theGut])).toBe(theGut);
+    const longA = { name: 'Long Point', aliases: [] };
+    const longB = { name: 'Long Point', aliases: [] };
+    expect(landmarkNamedIn('off Long Point', [longA, longB])).toBeNull();
+    expect(landmarkNamedIn('off Long Point', [longA])).toBe(longA);
     expect(landmarkNamedIn('north end', [gut, rock])).toBeNull();
     expect(landmarkNamedIn('', [gut])).toBeNull();
   });

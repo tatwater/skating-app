@@ -109,6 +109,21 @@ export function requestNameKey(name: string): string {
 }
 
 /**
+ * The key two spellings of one landmark share (D202): `requestNameKey`'s fold plus a leading "the"
+ * dropped, because "the Gut" and "Gut" are one place and the corpus writes both. Lives here, beside
+ * the fold it extends, so a landmark proposal and a landmark are keyed by one rule;
+ * `landmarks.ts` re-exports it.
+ */
+export function landmarkNameKey(name: string): string {
+  return requestNameKey(name).replace(/^the /, '');
+}
+
+/** The key a naming request is grouped by: a bay's fold, or a landmark's for a landmark ask. */
+export function requestNameKeyFor(kind: RequestKind, name: string): string {
+  return kind === 'name_landmark' ? landmarkNameKey(name) : requestNameKey(name);
+}
+
+/**
  * How far an `admit` coordinate may sit from a body we already hold and still be "new water". Inside
  * this, the ask is really about that body — the server refuses with `known_water` and the clients
  * pre-resolve with the same margin so the form never opens for a lake we have.

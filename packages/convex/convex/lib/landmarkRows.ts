@@ -153,47 +153,52 @@ export async function assertNotABayName(
 }
 
 /**
- * A report's `where`s may name landmarks by id (D202); every one must be a live landmark of *this*
- * body — never another lake's, never a removed one, never a string that is not an id. Raised in the
- * validator's own error shape so the sheet shows it beside the chip. Returns the rows.
+ * Settle the landmarks a report's `where`s name (D202), in place, before the write — and return the
+ * rows. For each point that carries a `landmarkId`:
+ *
+ * - a live landmark of *this* body: the point keeps the id and takes the landmark's **own name** (a
+ *   client cannot pair Apple Island's id with words of its choosing);
+ * - anything else — another lake's landmark, one removed or promoted to a bay since the draft was
+ *   saved, a string that is not an id: the id is dropped and the author's words stay. A report must
+ *   never fail because a label changed under it; an old report whose landmark became a bay still
+ *   says "near Kingsland Bay", and an offline draft still posts.
  */
-export async function assertLocatedLandmarks(
+export async function resolveLocatedLandmarks(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-  ids: readonly string[],
+  wheres: readonly ({ point?: { name?: string; landmarkId?: string } } | undefined)[],
 ): Promise<Doc<'bodyLandmarks'>[]> {
-  const rows: Doc<'bodyLandmarks'>[] = [];
-  const unknown: string[] = [];
-  for (const id of ids) {
-    const normalized = ctx.db.normalizeId('bodyLandmarks', id);
-    const row = normalized ? await ctx.db.get(normalized) : null;
-    if (!row || row.waterBodyId !== waterBodyId || row.removedAt !== undefined) unknown.push(id);
-    else rows.push(row);
+  const rows = new Map<string, Doc<'bodyLandmarks'> | null>();
+  for (const where of wheres) {
+    const point = where?.point;
+    const id = point?.landmarkId;
+    if (!point || id === undefined) continue;
+    if (!rows.has(id)) {
+      const normalized = ctx.db.normalizeId('bodyLandmarks', id);
+      const row = normalized ? await ctx.db.get(normalized) : null;
+      rows.set(
+        id,
+        row && row.waterBodyId === waterBodyId && row.removedAt === undefined ? row : null,
+      );
+    }
+    const row = rows.get(id);
+    if (row) point.name = row.name;
+    else delete point.landmarkId;
   }
-  if (unknown.length > 0) {
-    throw new ConvexError({
-      code: 'invalid_report',
-      errors: unknown.map(
-        (id) => `where.point.landmarkId: ${id} is not a landmark of this water body`,
-      ),
-    });
-  }
-  return rows;
+  return [...rows.values()].filter((row): row is Doc<'bodyLandmarks'> => row !== null);
 }
 
 /**
- * Count a report naming these landmarks (D202's prominence evidence): +1 on each that `before` did
- * not already name. A **monotonic tally of times named** — a report hidden or deleted later keeps its
- * tick. It only orders labels and the sheet's list, never says a thing about the ice (D3), and the
- * exact version would thread a decrement through every path that hides a Report or its Post.
+ * Count a report naming these landmarks (D202's prominence evidence): +1 each, **once, when the
+ * report is posted**. An edit never counts — re-adding a landmark across edits would otherwise pump
+ * one lake's labels from one report — and a report hidden or deleted later keeps its tick. A tally
+ * that orders labels and the sheet's list, never a word about the ice (D3).
  */
 export async function noteLandmarksNamed(
   ctx: MutationCtx,
   rows: readonly Doc<'bodyLandmarks'>[],
-  before: readonly string[] = [],
 ): Promise<void> {
   for (const row of rows) {
-    if (before.includes(row._id)) continue;
     await ctx.db.patch(row._id, { reportCount: (row.reportCount ?? 0) + 1 });
   }
 }

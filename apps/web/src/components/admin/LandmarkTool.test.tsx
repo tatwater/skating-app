@@ -247,6 +247,9 @@ describe('LandmarkTool', () => {
       />,
     );
     expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    // Moving the proposed spot keeps the name and the ask.
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a different spot' }));
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toMatchObject({

@@ -64,6 +64,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { syncWaterBodyCells } from './lib/cellIndex';
+import { landmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import {
   closeSiblingPage,
@@ -72,6 +73,7 @@ import {
   drawnBay,
   listedBaysOf,
   matchBay,
+  matchLandmark,
   namedLandmark,
   QUEUE_CAP,
   requestKeyOf,
@@ -372,7 +374,10 @@ export const listMineForBody = query({
       )
       .order('desc')
       .take(50);
+    // A landmark proposal is filed by the report write, not asked from the drawer (D202): the
+    // drawer's "you asked" line is about the lake, and a proposal must not stand in for it.
     return rows
+      .filter((r) => r.kind !== 'name_landmark')
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((r) => ({
         _id: r._id,
@@ -487,6 +492,15 @@ export const listQueue = query({
       baysByBody.set(waterBodyId, bays);
       return bays;
     };
+    // And its landmarks once, for the same reason — a giant carries hundreds (D202).
+    const landmarksByBody = new Map<string, Doc<'bodyLandmarks'>[]>();
+    const landmarksOf = async (waterBodyId: Id<'waterBodies'>) => {
+      const known = landmarksByBody.get(waterBodyId);
+      if (known) return known;
+      const rows = await landmarksForBody(ctx, waterBodyId);
+      landmarksByBody.set(waterBodyId, rows);
+      return rows;
+    };
     const out = [];
     for (const r of page) {
       const requester = await ctx.db.get(r.requesterId);
@@ -508,7 +522,7 @@ export const listQueue = query({
           : {}),
         // For a landmark proposal (D202): the landmark that already answers it, if one was added.
         ...(r.kind === 'name_landmark' && r.status === 'open' && body
-          ? { existingLandmarkId: (await namedLandmark(ctx, body._id, requestNames(r)))?._id }
+          ? { existingLandmarkId: matchLandmark(await landmarksOf(body._id), requestNames(r))?._id }
           : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
@@ -825,9 +839,11 @@ export const openLandmarkRequestsForBody = query({
         createdAt: r.createdAt,
       });
     }
+    // The body's landmarks read once, however many places are proposed.
+    const landmarks = await landmarksForBody(ctx, waterBodyId);
     const out = [];
     for (const entry of byKey.values()) {
-      const existing = await namedLandmark(ctx, waterBodyId, [entry.name]);
+      const existing = matchLandmark(landmarks, [entry.name]);
       out.push({ ...entry, ...(existing ? { existingLandmarkId: existing._id } : {}) });
     }
     return out;
