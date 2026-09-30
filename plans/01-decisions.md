@@ -6283,7 +6283,7 @@ filed by the report write as a seventh request kind, `name_landmark` (D179's lan
 with the spot and the report; quietly, on a budget of ten open per person, never failing the report.
 A moderator adds it from the lake editor, which answers every ask for the same place.
 
-**Built (2026-09-29, #83 and its successor):** 155,945 OSM and GNIS candidates → 23,989 landmarks on
+**Built (2026-09-29, #83, #84):** 155,945 OSM and GNIS candidates → 23,989 landmarks on
 10,600 of 24,953 listed bodies on dev (campaign `landmarks-20260929`): 9,501 river mouths, 6,154
 shore towns, 2,653 dams, 1,683 islands, 1,157 points, 1,137 shore businesses, 932 reference bays,
 391 beaches, 166 marinas, 103 bridges, 93 narrows, 93 rocks and shoals, 24 lighthouses; Champlain

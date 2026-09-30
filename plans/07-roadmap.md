@@ -727,7 +727,7 @@ lack of signal.*
 - **2026-09-29 — A10-9 dev deploy:** `reports.sightings` widened, `reports.backfillA10Shapes` (2 scanned, 0 carried a sighting), narrowed
 
 #### Deferred
-- 🟢 **Named landmarks** (OSM/GNIS islands, points, reference bays, towns, bridges, camps) as labels + `where: point(name)` — done 2026-09-29, two PRs stacked on A10-9 (#83 the table, the ETL, the labels and the moderator's card; its successor the sheet's chips and tap-to-name, skater proposals and extraction candidates) → D202
+- 🟢 **Named landmarks** (OSM/GNIS islands, points, reference bays, towns, bridges, camps) as labels + `where: point(name)` — done 2026-09-29, two PRs stacked on A10-9 (#83 the table, the ETL, the labels and the moderator's card; #84 the sheet’s chips and tap-to-name, skater proposals and extraction candidates) → D202
 - 🟢 **Sub-areas by chord** — two shoreline points + side + arc, on the admin body page; the queue is the `name_bay` request kind → register (*Sub-areas by chord*), D201
 - ⚪ **Vision-suggested hazard types** on a photo the skater already tagged — after §1's eval pattern exists
 - ⚪ **Painting** ice or snow onto the body — web-only if ever; the `where` union first
@@ -927,7 +927,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | Downstate NY purged — the A07a reload + `pruneNotInCampaign` (2,322) and A07a-2's `pruneOutsideCoverage` (the 22 dedup-flagged rows); Long Island reads 0 on dev; the line is a county mask (D111) | 🟢 | done 2026-08-08 | A07a |
 | Radar terrain correction — `sar-geocode.py` / `sar-deshift.py`, carried by the 2026-08-26 re-cut | 🟢 | done 2026-08-25 | A06e |
 | Feed-card water-body map (Phase 05 decision 6) | 🟢 | folded into A10 (founder call 2026-09-20) | A10 |
-| Named landmarks — `bodyLandmarks` from OSM + GNIS named by the corpus (23,989 on dev), labels on the focused lake by size or prominence, the lake editor's card, the sheet's chips and tap-to-name, skater proposals (`name_landmark`), extraction candidates | 🟢 | done 2026-09-29 (#83 and its successor) | D202 |
+| Named landmarks — `bodyLandmarks` from OSM + GNIS named by the corpus (23,989 on dev), labels on the focused lake by size or prominence, the lake editor's card, the sheet's chips and tap-to-name, skater proposals (`name_landmark`), extraction candidates | 🟢 | done 2026-09-29 (#83, #84) | D202 |
 | `@clerk/clerk-expo` → `@clerk/expo` 4 — the package move; the flows kept on `@clerk/expo/legacy` (the rewrite is its own row above) | 🟢 | done 2026-09-28 (#81) | `apps/mobile` |
 
 **Ruled out, project-wide** (the per-phase reasons are in the entries above): pulling GPS from
