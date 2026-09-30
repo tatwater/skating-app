@@ -24,6 +24,46 @@ function validate(where: Where): { normalized: Where | null; fields: string[] } 
 }
 
 describe('validateWhere', () => {
+  it('keeps a landmark point’s id and name, and refuses an id with no name or an overlong name', () => {
+    const errors: WhereValidationError[] = [];
+    expect(
+      validateWhere(
+        {
+          point: {
+            coord: { lat: 44.5, lng: -73.3 },
+            radiusMeters: 75,
+            name: '  Apple   Island ',
+            landmarkId: ' lm1 ',
+          },
+        },
+        'w',
+        errors,
+      ),
+    ).toEqual({
+      point: {
+        coord: { lat: 44.5, lng: -73.3 },
+        radiusMeters: 75,
+        name: 'Apple Island',
+        landmarkId: 'lm1',
+      },
+    });
+    expect(
+      validateWhere(
+        { point: { coord: { lat: 44.5, lng: -73.3 }, radiusMeters: 75, landmarkId: 'lm1' } },
+        'w',
+        errors,
+      ),
+    ).toBeNull();
+    expect(
+      validateWhere(
+        { point: { coord: { lat: 44.5, lng: -73.3 }, radiusMeters: 75, name: 'x'.repeat(81) } },
+        'w',
+        errors,
+      ),
+    ).toBeNull();
+    expect(errors.map((e) => e.field)).toEqual(['w.point.name', 'w.point.name']);
+  });
+
   it('accepts each part alone and any composition of them', () => {
     expect(validate({ extent: 'patches' }).normalized).toEqual({ extent: 'patches' });
     expect(validate({ subAreaId: ' sa1 ' }).normalized).toEqual({ subAreaId: 'sa1' });
@@ -162,7 +202,7 @@ describe('describeWhere / describeLocatedChip (A10 / D193, §12.1)', () => {
       describeWhere({
         point: { coord: { lat: 44, lng: -73 }, radiusMeters: 50, name: 'Shelburne Point' },
       }),
-    ).toBe('Shelburne Point');
+    ).toBe('near Shelburne Point');
   });
   it('leaves a bay unsaid rather than showing an id, and says nothing for `whole`', () => {
     expect(describeWhere({ subAreaId: 'bay1' })).toBe('');

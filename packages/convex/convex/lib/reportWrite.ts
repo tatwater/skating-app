@@ -26,6 +26,8 @@ import {
   hasMeasuredThickness,
   ICE_TYPES,
   isMinor,
+  locatedLandmarkIds,
+  locatedNamedSpots,
   locatedSubAreaIds,
   memberSubAreaIds,
   minimumSetGaps,
@@ -67,6 +69,8 @@ import { resolveSurvivor } from './bodies';
 import { recomputeBodySummary } from './bodySummary';
 import { bumpContributionCount } from './contributionCounts';
 import { tryAutoMerge } from './hazardMerge';
+import { fileLandmarkProposals } from './landmarkProposals';
+import { assertLocatedLandmarks, noteLandmarksNamed } from './landmarkRows';
 import { isListed } from './listing';
 import { enqueueActorNotification } from './notificationQueue';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './photoAccess';
@@ -322,6 +326,8 @@ export async function createReportRow(
   // hand, and returns immediately for the ~25k bodies with no sub-areas.
   const candidates = await stampCandidates(ctx, body._id);
   assertLocatedSubAreas(n, candidates);
+  // And the named landmarks (D202): each must be this body's own, live.
+  const namedLandmarks = await assertLocatedLandmarks(ctx, body._id, locatedLandmarkIds(n));
   const putInId = await assertPutInOfBody(ctx, n.putInId, body._id);
   const subAreas = await resolveReportSubAreas(
     ctx,
@@ -468,6 +474,10 @@ export async function createReportRow(
   // merged body is unlisted — and leave the survivor, the card a skater is actually looking at,
   // stale until the six-hourly sweep.
   await recomputeBodySummary(ctx, body._id);
+
+  // The landmarks it names grow in prominence; a spot it names that no map has is proposed (D202).
+  await noteLandmarksNamed(ctx, namedLandmarks);
+  await fileLandmarkProposals(ctx, profile._id, body, reportId, locatedNamedSpots(n));
 
   // Standing (A07b): a report is evidence of use, and a dormant body yields to it — before the
   // notification fan-out below, which only pushes an *active* body. A `none` ruling or a removal

@@ -2,6 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   isValidThicknessReading,
+  locatedLandmarkIds,
+  locatedNamedSpots,
   locatedSubAreaIds,
   minimumSetGaps,
   type ReportInput,
@@ -672,5 +674,47 @@ describe('locatedSubAreaIds', () => {
       }),
     ).toEqual(['bay1', 'bay2']);
     expect(locatedSubAreaIds({ iceTypes: [], surfaceTags: [] })).toEqual([]);
+  });
+});
+
+describe('locatedLandmarkIds and locatedNamedSpots (D202)', () => {
+  const at = { lat: 44.5, lng: -73.3 };
+  const report = {
+    iceTypes: [
+      {
+        type: 'black_ice' as const,
+        where: { point: { coord: at, radiusMeters: 75, name: 'Apple Island', landmarkId: 'lm1' } },
+      },
+      {
+        type: 'shell_ice' as const,
+        where: { point: { coord: at, radiusMeters: 75, name: 'Bird Poop Rock' } },
+      },
+    ],
+    surfaceTags: [
+      {
+        type: 'glass' as const,
+        where: { point: { coord: at, radiusMeters: 75, name: 'Apple Island', landmarkId: 'lm1' } },
+      },
+      {
+        type: 'bumpy' as const,
+        where: { point: { coord: at, radiusMeters: 75, name: 'bird poop rock' } },
+      },
+      { type: 'rough' as const, where: { point: { coord: at, radiusMeters: 75 } } },
+    ],
+    sightings: [
+      {
+        type: 'open' as const,
+        where: { point: { coord: at, radiusMeters: 75, landmarkId: 'lm2', name: 'Gull Rock' } },
+      },
+    ],
+  };
+
+  it('collects each landmark a report names once', () => {
+    expect(locatedLandmarkIds(report)).toEqual(['lm1', 'lm2']);
+    expect(locatedLandmarkIds({ iceTypes: [], surfaceTags: [] })).toEqual([]);
+  });
+
+  it('collects each typed name no landmark answers to, once per spelling', () => {
+    expect(locatedNamedSpots(report)).toEqual([{ name: 'Bird Poop Rock', coord: at }]);
   });
 });

@@ -62,6 +62,7 @@ import type * as lib_feedCards from "../lib/feedCards.js";
 import type * as lib_flagResolution from "../lib/flagResolution.js";
 import type * as lib_hazardMerge from "../lib/hazardMerge.js";
 import type * as lib_hazardValidators from "../lib/hazardValidators.js";
+import type * as lib_landmarkProposals from "../lib/landmarkProposals.js";
 import type * as lib_landmarkRows from "../lib/landmarkRows.js";
 import type * as lib_listing from "../lib/listing.js";
 import type * as lib_metrics from "../lib/metrics.js";
@@ -176,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   "lib/flagResolution": typeof lib_flagResolution;
   "lib/hazardMerge": typeof lib_hazardMerge;
   "lib/hazardValidators": typeof lib_hazardValidators;
+  "lib/landmarkProposals": typeof lib_landmarkProposals;
   "lib/landmarkRows": typeof lib_landmarkRows;
   "lib/listing": typeof lib_listing;
   "lib/metrics": typeof lib_metrics;
