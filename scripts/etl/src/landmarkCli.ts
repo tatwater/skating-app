@@ -12,7 +12,8 @@
  * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }`; a
  * run of every state marks each line `complete` and writes an empty one for a body it placed nothing
  * on, so the loader retires what the catalogs stopped placing (`landmarkLines`) — plus `summary.json`,
- * and the corpus names nothing matched to `corpus-unmatched.csv`. Then `load-landmarks` writes them,
+ * and the corpus names nothing matched to `corpus-unmatched.csv` (to read) and `corpus-names.ndjson`
+ * (to load). Then `load-landmarks` writes the landmarks and `load-landmark-names` the names, each
  * dry unless `--apply`.
  *
  * ## The one deployment read
@@ -39,7 +40,7 @@ import { convexRun } from '@skating/run-log';
 import type { Feature } from 'geojson';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
-import { applyCorpus, parseMentions } from './landmarkCorpus';
+import { applyCorpus, corpusNameRecords, parseMentions } from './landmarkCorpus';
 import { landmarkLines, runIsComplete } from './landmarkLines';
 import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
 import {
@@ -233,6 +234,13 @@ async function main(): Promise<void> {
       ]),
     ].map((r) => r.map(csvCell).join(','));
     writeFileSync(join(SCRATCH, 'corpus-unmatched.csv'), `${[header, ...rows].join('\n')}\n`);
+    // The same leftovers, with their lakes resolved where one answers, for `load-landmark-names` —
+    // the moderator's queue on /admin/water/place-names (D202).
+    const names = corpusNameRecords(corpus, new Map(bodies.map((b) => [b.id, b])));
+    writeFileSync(
+      join(SCRATCH, 'corpus-names.ndjson'),
+      `${names.map((r) => JSON.stringify(r)).join('\n')}\n`,
+    );
   }
 
   const byKind: Record<string, number> = {};

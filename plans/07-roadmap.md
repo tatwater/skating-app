@@ -927,7 +927,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | Downstate NY purged — the A07a reload + `pruneNotInCampaign` (2,322) and A07a-2's `pruneOutsideCoverage` (the 22 dedup-flagged rows); Long Island reads 0 on dev; the line is a county mask (D111) | 🟢 | done 2026-08-08 | A07a |
 | Radar terrain correction — `sar-geocode.py` / `sar-deshift.py`, carried by the 2026-08-26 re-cut | 🟢 | done 2026-08-25 | A06e |
 | Feed-card water-body map (Phase 05 decision 6) | 🟢 | folded into A10 (founder call 2026-09-20) | A10 |
-| Named landmarks — `bodyLandmarks` from OSM + GNIS named by the corpus (23,989 on dev), labels on the focused lake by size or prominence, the lake editor's card, the sheet's chips and tap-to-name, skater proposals (`name_landmark`), extraction candidates | 🟢 | done 2026-09-29 (#83, #84) | D202 |
+| Named landmarks — `bodyLandmarks` from OSM + GNIS named by the corpus (23,989 on dev), labels on the focused lake by size or prominence, the lake editor's card, the sheet's chips and tap-to-name, skater proposals (`name_landmark`), extraction candidates; the corpus's 237 unplaced names as a moderator queue (`/admin/water/place-names`, campaign `landmark-names-20260929`) | 🟢 | done 2026-09-29 (#83, #84) | D202 |
 | `@clerk/clerk-expo` → `@clerk/expo` 4 — the package move; the flows kept on `@clerk/expo/legacy` (the rewrite is its own row above) | 🟢 | done 2026-09-28 (#81) | `apps/mobile` |
 
 **Ruled out, project-wide** (the per-phase reasons are in the entries above): pulling GPS from

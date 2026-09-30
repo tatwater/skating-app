@@ -1,6 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  CORPUS_NAME_DISMISS_LABELS,
+  CORPUS_NAME_DISMISS_REASONS,
   filledPolygon,
   LANDMARK_KIND_LABELS,
   LANDMARK_KINDS,
@@ -289,5 +291,13 @@ describe('filledPolygon', () => {
     });
     expect(filled.coordinates).toHaveLength(1);
     expect(filled.coordinates[0]).toHaveLength(1);
+  });
+});
+
+describe('corpus name dismissal reasons', () => {
+  it('labels every reason', () => {
+    for (const reason of CORPUS_NAME_DISMISS_REASONS) {
+      expect(CORPUS_NAME_DISMISS_LABELS[reason]).toBeTruthy();
+    }
   });
 });

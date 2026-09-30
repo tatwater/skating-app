@@ -47,6 +47,7 @@ import {
   LandmarkRowIndex,
   landmarksForBody,
   liveLandmarksForBody,
+  placeCorpusName,
   removedLandmarksForBody,
   subAreaFor,
 } from './lib/landmarkRows';
@@ -549,6 +550,8 @@ export const create = mutation({
      * proposal, and every open ask for the same place is approved in this write.
      */
     requestId: v.optional(v.id('waterBodyRequests')),
+    /** The corpus's unplaced name this places (D202's queue) — marked placed in this write. */
+    corpusNameId: v.optional(v.id('corpusPlaceNames')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -580,6 +583,14 @@ export const create = mutation({
     });
     if (args.requestId !== undefined) {
       await approveNamedLandmarkRequest(ctx, args.requestId, args.waterBodyId, actor, id);
+    }
+    if (args.corpusNameId !== undefined) {
+      await placeCorpusName(
+        ctx,
+        args.corpusNameId,
+        { _id: id, waterBodyId: args.waterBodyId },
+        actor._id,
+      );
     }
     return id;
   },
