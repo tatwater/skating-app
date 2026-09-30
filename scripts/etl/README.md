@@ -682,6 +682,31 @@ let the patchiness argue for hand-entering the rest; that is the trap D70 exists
 
 ---
 
+## The landmark pass (D202) — the names a body is steered by
+
+Islands, points, reference bays, narrows, river mouths, bridges, marinas, lighthouses, dams, shore
+towns, and the camps, resorts and lone restaurants on the shore — from the archived OSM extracts and
+GNIS, named by the community corpus. Labels and a `where`, never places
+([`plans/features/named-landmarks.md`](../../plans/features/named-landmarks.md)).
+
+```sh
+pnpm --filter @skating/etl landmarks --mentions=<training_data/google_group/mentions/mentions.csv>
+pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd>            # dry
+pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --apply
+```
+
+- **Matching is offline.** The first run exports every listed body's outline once
+  (`landmarks:listBodyGeometry`, ~500 pages, ~8 minutes) to `.scratch/landmarks/bodies.ndjson`;
+  later runs reuse it. `--refresh-bodies` after a campaign moves or admits bodies. Never match per
+  point in a mutation — that reads a giant's polygon once per landmark.
+- **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
+  the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
+  750 m, bridges on each body they cross, rivers at each mouth. Restaurants only when standalone.
+- **`--mentions` is optional** and gitignored input; without it nothing gets a corpus count. The
+  names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's worklist.
+- **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
+  edit keeps its name, kind and point, and a name a live bay carries is skipped.
+
 ## Regional expansion (Phase 02b)
 
 To widen the corpus beyond Vermont, run the same pipeline **once per state** — no code change; the

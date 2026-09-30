@@ -6237,6 +6237,40 @@ A07b because a corpus-shaped table would have been a second queue with no second
 
 **Related:** D60, D175, D179, D202, A02 Decision 10, A09.
 
+## D202 — A place skaters steer by but do not skate is a landmark: a labeled point, never a sub-area (Named landmarks)
+
+**Decided (2026-09-20, founder observation; built 2026-09-29).** A bay is a sub-area only when
+skaters go there and skate it; an island, a point, a reference bay, a narrows, a river's mouth, a
+bridge, a marina, a lighthouse, a dam, the town on the shore, or the camp or resort that owns a
+stretch of it is a **landmark** — a `bodyLandmarks` row: a name, a kind and a point on one body, with
+no page, favorite, feed or bounty. The corpus's skated-message count is the test (≥ 2 skated
+messages → a sub-area candidate, the rule that reproduced the founder's sixteen destination bays),
+and the two never name the same water twice: a landmark whose name a live bay answers to is not
+loaded, and drawing a bay retires the landmark of the same name in the same write (or, by id, the
+one a moderator promoted with *Draw as bay*).
+
+**Where they come from.** OSM and GNIS, over every listed body, matched offline against a one-time
+export of the bodies' outlines (never a per-point lookup — the A06d parking pass's 105 GB lesson),
+by a rule per kind: an island inside the outer shore, a bay or narrows on the water, a point or
+beach or marina or shore business on the nearest shore, a town on every body within 750 m, a bridge
+on each body it crosses, a river at each mouth. A restaurant or store counts only when no other named
+business stands within 250 m; a camp, resort or hotel always (founder, 2026-09-29: they own
+shoreline and outlast their signs). The community corpus contributes spellings and a mention count,
+and only where one landmark answers. A moderator adds what no catalog has ("Bird Poop Rock"), and —
+the proposal lane — so will skaters.
+
+**How they show.** Labels on the focused lake only, never viewport-wide (the per-body cap is what
+bounds the read); each name waits for its own zoom — its footprint's size or its prominence,
+whichever comes first — and where names collide the more prominent is placed first. Prominence is
+the kind, the corpus's mentions and the reports that name it, all logarithmic, so one chatty island
+cannot bury the rest.
+
+**Why:** half the corpus's reports locate something, and a large share do it by a name no map in the
+app carried — "off Apple Island", "a wind hole west of the bird poop rock". A sub-area for each would
+give a page to places nobody skates as a destination; a label gives the name without the place.
+
+**Related:** D60, D175, D193, D201, A09.
+
 ## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
 
 **Decided (2026-09-21, founder call; Phase 05 decision 6 folded into A10 on 2026-09-20).** A report
