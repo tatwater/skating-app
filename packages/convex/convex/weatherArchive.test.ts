@@ -1523,6 +1523,121 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
     }
   });
 
+  test('drops the one-hour stub before the window when a spring fetch reaches back into EST', async () => {
+    // The other direction: fetched in EDT, the window opens at 00:00 EDT on the 5th — 23:00 EST on
+    // the 4th. The 4th is one hour and must not be written; the 5th is whole from its own midnight.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2025, 2, 12, 15));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      const dates = Array.from(
+        { length: 8 },
+        (_, i) => `2025-03-${String(5 + i).padStart(2, '0')}`,
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson(
+            unixResponse(dates, {
+              zone: {
+                timezone: 'America/New_York',
+                utcOffsetSeconds: -4 * 3600,
+                offsetFor: () => -4 * 3600,
+              },
+            }),
+          ),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 7 });
+
+      const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      const on = (date: string) => rows.find((r) => r.localDate === date);
+      expect(on('2025-03-04')).toBeUndefined();
+      expect(on('2025-03-05')?.hours).toBe(24);
+      expect(on('2025-03-09')?.hours).toBe(23); // spring-forward: no 02:00
+      expect(on('2025-03-12')?.hours).toBe(24);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("never writes a day the lake has not reached — the spring-forward night's tomorrow stub", async () => {
+    // Fetched at 01:30 EST on the night the clocks change, Open-Meteo cuts the window at EST
+    // midnight: its last hour is 04:00Z on the 10th, which is 00:00 EDT *tomorrow* at the lake.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2025, 2, 9, 6, 30));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson(
+            unixResponse(['2025-03-06', '2025-03-07', '2025-03-08', '2025-03-09'], {
+              zone: {
+                timezone: 'America/New_York',
+                utcOffsetSeconds: -5 * 3600,
+                offsetFor: () => -5 * 3600,
+              },
+            }),
+          ),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 4 });
+
+      const days = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      expect(days.map((r) => r.localDate).sort()).toEqual([
+        '2025-03-06',
+        '2025-03-07',
+        '2025-03-08',
+        '2025-03-09',
+      ]);
+      expect(days.find((r) => r.localDate === '2025-03-09')?.hours).toBe(23);
+      const hourDays = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+      expect(hourDays.some((r) => r.localDate === '2025-03-10')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('stamps by the response offset when no zone came back, and claims none', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 0, 20, 15));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      const coldAt = Date.UTC(2026, 0, 18, 4); // 23:00 on the 17th at −5 h
+      const dates = ['2026-01-17', '2026-01-18', '2026-01-19', '2026-01-20'];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson({
+            ...unixResponse(dates, {
+              zone: { timezone: 'UTC', utcOffsetSeconds: -5 * 3600, offsetFor: () => -5 * 3600 },
+              tempFor: (d, h) => (dayMsOf(d) + (h + 5) * 3_600_000 === coldAt ? -12 : 2),
+            }),
+            timezone: undefined,
+          }),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 4 });
+
+      const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      expect(rows.map((r) => r.localDate).sort()).toEqual(dates);
+      const jan17 = rows.find((r) => r.localDate === '2026-01-17');
+      expect(jan17?.minTempC).toBe(-12);
+      expect(jan17?.hours).toBe(24);
+      expect(jan17?.timeZone).toBeUndefined();
+      expect(jan17?.utcOffsetSeconds).toBe(-5 * 3600);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('falls back to the response-wide offset when no zone came back', async () => {
     // Older Open-Meteo behavior, or a response we could not read a zone from. One number for every
     // date is wrong-ish, and it is still better than nothing — but it must not claim a zone.

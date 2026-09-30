@@ -306,9 +306,9 @@ describe("dailyLowsFromHourly — days cut at the lake's midnight", () => {
     ]);
   });
 
-  it('keeps a 23-hour spring-forward day and drops a short edge day', () => {
-    // From 2025-03-08 06:00Z (01:00 EST): the 8th is one hour short, the 9th is its true 23 hours.
-    const time = hours(Date.UTC(2025, 2, 8, 6), 23 + 23);
+  it('keeps a 23-hour spring-forward day and drops a first day that misses its midnight', () => {
+    // From 2025-03-08 05:00Z (00:00 EST): the 8th is whole, the 9th is its true 23 hours.
+    const time = hours(Date.UTC(2025, 2, 8, 5), 24 + 23);
     const days = dailyLowsFromHourly(
       time,
       time.map(() => -1),
@@ -316,13 +316,17 @@ describe("dailyLowsFromHourly — days cut at the lake's midnight", () => {
       0,
     );
     expect(days.map((d) => d.date)).toEqual(['2025-03-08', '2025-03-09']);
-    const shortEdge = dailyLowsFromHourly(
-      time.slice(1),
-      time.slice(1).map(() => -1),
-      NY,
-      0,
-    );
-    expect(shortEdge.map((d) => d.date)).toEqual(['2025-03-09']);
+    // One hour later the 8th still has 23 readings — enough by count, but it starts at 01:00, so it
+    // is Open-Meteo's cut, not the lake's day.
+    const late = time.slice(1);
+    expect(
+      dailyLowsFromHourly(
+        late,
+        late.map(() => -1),
+        NY,
+        0,
+      ).map((d) => d.date),
+    ).toEqual(['2025-03-09']);
   });
 
   it('treats a null reading as a gap, not a warm hour, and orders days oldest first', () => {

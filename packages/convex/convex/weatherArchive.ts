@@ -271,13 +271,18 @@ async function fetchLocalHourly(
   // the two differ by an hour, so the first local date arrives either missing its 00:00 or as a
   // one-hour stub of the day before. Either would overwrite a whole stored day with a partial one, so
   // that date is dropped unless the window really starts at its midnight.
-  const first = stampAt(time[0]);
+  const first = stampAt(time.find((ts) => typeof ts === 'number'));
   const truncatedDate = first !== null && first.localHour !== 0 ? first.localDate : null;
+  // …and the near edge the same way. A fetch in the hour or two before the clocks spring forward is
+  // cut at standard-time midnight, which is 00:00 of *tomorrow* at the lake: a one-hour stub of a day
+  // that has not begun, and the newest row the panel would anchor on. Nothing past the lake's today.
+  const todayLocal = localStampAt(Date.now(), timeZone, fallbackOffset)?.localDate;
 
   const out: LocalHourlyWeather[] = [];
   for (let i = 0; i < time.length; i++) {
     const parsed = stampAt(time[i]);
     if (!parsed || parsed.localDate === truncatedDate) continue;
+    if (todayLocal !== undefined && parsed.localDate > todayLocal) continue;
     const t = temp?.[i];
     if (typeof t !== 'number') continue; // no temperature ⇒ unusable hour
 

@@ -18,10 +18,11 @@
  * for part of the window. Deriving calendar days by dividing that shifted value by 86 400 000 would
  * quietly misfile an hour on either side of the change.
  *
- * So the archive fetch asks Open-Meteo for `timeformat=iso8601`, which returns local wall-clock
- * strings, and every hour arrives here already carrying the **local date and hour the lake actually
- * experienced**. No offset arithmetic happens in this file at all, which is the only way to be
- * DST-correct without a timezone database.
+ * So every hour arrives here already carrying the **local date and hour the lake actually
+ * experienced**, stamped by {@link localStampAt} from a `unixtime` instant and the lake's IANA zone,
+ * hour by hour. ⚠ **Not from Open-Meteo's `iso8601` strings.** This note used to say those were
+ * DST-correct; they are not — Open-Meteo applies the request-time offset to every hour in a response
+ * (verified 2026-09-30), so the zone, which carries the transition instants, has to do the stamping.
  *
  * ## Two temperature minima, deliberately
  *
@@ -224,9 +225,9 @@ export function localStampAt(
   if (!Number.isFinite(instantMs)) return null;
   const offset =
     (timeZone === null ? null : utcOffsetSecondsAt(instantMs, timeZone)) ?? fallbackOffsetSeconds;
-  const localMs = instantMs + offset * 1000;
-  const dayMs = Math.floor(localMs / DAY_MS) * DAY_MS;
-  return { localDate: dayMsToLocalDate(dayMs), localHour: Math.floor((localMs - dayMs) / HOUR_MS) };
+  const dayMs = localDayMsAt(instantMs, offset);
+  const localHour = Math.floor((instantMs + offset * 1000 - dayMs) / HOUR_MS);
+  return { localDate: dayMsToLocalDate(dayMs), localHour };
 }
 
 /**
@@ -341,7 +342,7 @@ export const MELT_MM_PER_DEGREE_HOUR = 0.25;
 
 /** An hourly observation that knows what local day and hour it happened on. */
 export interface LocalHourlyWeather extends HourlyWeather {
-  /** Local calendar date as Open-Meteo returned it under `timezone=auto`, `YYYY-MM-DD`. */
+  /** Local calendar date at the lake, `YYYY-MM-DD` — stamped by {@link localStampAt}. */
   localDate: string;
   /** Local hour of day, 0–23. */
   localHour: number;

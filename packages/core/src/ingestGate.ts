@@ -85,9 +85,11 @@ export interface GateOptions {
  * fetched after a DST change cuts every day on the far side of it at the wrong midnight. The Convex
  * watcher and the CLI both go through here so the two cannot disagree about what a day is.
  *
- * A day with fewer than {@link COMPLETE_DAY_MIN_HOURS} readings is dropped rather than reported: a
- * window's first day can come back short, and a null reading is a gap in the record, not a warm hour.
- * The site abstains for that day instead of voting on part of it.
+ * Two kinds of partial day are dropped rather than reported, so the site abstains instead of voting
+ * on part of one. The window's first day, unless the series starts at its local midnight: across a
+ * DST change Open-Meteo's cut is an hour off, the same edge `weatherArchive.fetchLocalHourly` drops.
+ * And any day with fewer than {@link COMPLETE_DAY_MIN_HOURS} readings, because a null reading is a
+ * gap in the record, not a warm hour.
  */
 export function dailyLowsFromHourly(
   timesSec: readonly unknown[],
@@ -95,12 +97,19 @@ export function dailyLowsFromHourly(
   timeZone: string | null,
   fallbackOffsetSeconds: number,
 ): DailyLow[] {
+  const instants = timesSec.filter((t): t is number => typeof t === 'number');
+  const first =
+    instants.length === 0
+      ? null
+      : localStampAt(Math.min(...instants) * 1000, timeZone, fallbackOffsetSeconds);
+  const truncatedDate = first !== null && first.localHour !== 0 ? first.localDate : null;
+
   const byDate = new Map<string, { min: number; hours: number }>();
   for (const [i, t] of timesSec.entries()) {
     const temp = temps[i];
     if (typeof t !== 'number' || typeof temp !== 'number') continue;
     const stamp = localStampAt(t * 1000, timeZone, fallbackOffsetSeconds);
-    if (stamp === null) continue;
+    if (stamp === null || stamp.localDate === truncatedDate) continue;
     const day = byDate.get(stamp.localDate);
     if (day === undefined) byDate.set(stamp.localDate, { min: temp, hours: 1 });
     else {
