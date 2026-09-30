@@ -201,6 +201,19 @@ export function WherePicker({
           }}
         />
       </XStack>
+      {where?.point?.landmarkId !== undefined ? (
+        <XStack gap="$2" flexWrap="wrap">
+          {/* A tap near a landmark takes its name; the skater may mean some other spot by it. */}
+          <SheetChip
+            compact
+            label={`Not ${where.point.name ?? 'that place'} — name this spot`}
+            onPress={() => {
+              const point = where?.point;
+              if (point) set({ point: { coord: point.coord, radiusMeters: point.radiusMeters } });
+            }}
+          />
+        </XStack>
+      ) : null}
       {unnamedTap ? (
         <YStack gap="$1">
           <Input

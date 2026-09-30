@@ -22,6 +22,7 @@
  * contract, not in the schema.
  */
 
+import { landmarkNameKey } from './corpusRequests';
 import { isValidCoord, type LatLng } from './geometry';
 import {
   type ChipInput,
@@ -645,7 +646,7 @@ export function locatedSubAreaIds(
 }
 
 /** Every located part of a report — the chips, the readings, the sightings — in one list. */
-function locatedParts(
+export function locatedParts(
   report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
 ): readonly { where?: Where }[] {
   return [
@@ -654,18 +655,6 @@ function locatedParts(
     ...(report.iceThickness?.readings ?? []),
     ...(report.sightings ?? []),
   ];
-}
-
-/** Every landmark a report's `where`s name (D202), once each — the server checks they are the body's. */
-export function locatedLandmarkIds(
-  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
-): string[] {
-  const ids: string[] = [];
-  for (const item of locatedParts(report)) {
-    const id = item.where?.point?.landmarkId;
-    if (id !== undefined && !ids.includes(id)) ids.push(id);
-  }
-  return ids;
 }
 
 /**
@@ -680,7 +669,8 @@ export function locatedNamedSpots(
     const point = item.where?.point;
     if (!point?.name || point.landmarkId !== undefined) continue;
     const name = point.name;
-    if (spots.some((s) => s.name.toLowerCase() === name.toLowerCase())) continue;
+    // The landmark fold: "St. Albans Rock" and "Saint Albans rock" are one proposal, not two.
+    if (spots.some((s) => landmarkNameKey(s.name) === landmarkNameKey(name))) continue;
     spots.push({ name, coord: point.coord });
   }
   return spots;

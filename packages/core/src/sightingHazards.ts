@@ -11,11 +11,15 @@
  * large on purpose — under-drawing a hazard is the dangerous direction of error
  * (`HAZARD_DEFAULT_RADIUS_M`). A sighting that names no shape derives nothing: the whole lake
  * "still open" is the lake's state, not a spot; `near_shore` is a band around every shore; an
- * extent alone or a landmark name has no geometry yet (named landmarks, A10 § Later).
+ * extent alone has no geometry. A **landmark chosen by name** (D202) is not a spot either: its
+ * point is where its label sits — an island's middle, a headland's tip, the town — which is land,
+ * and a circle there would pin the open water on the island and miss the water. It pins what the
+ * rest of its `where` names (a wedge, a bay), else nothing. A *tap* that took a landmark's name is
+ * still the tap, and pins its circle.
  */
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
-import { type LatLng, simplifyPath } from './geometry';
+import { haversineMeters, type LatLng, simplifyPath } from './geometry';
 import { HAZARD_MAX_VERTICES, type HazardShape } from './hazardGeometry';
 import { type PartitionSector, sectorFrame, sectorPolygons } from './sectorGeometry';
 import type { HazardType, Sighting } from './types';
@@ -45,7 +49,15 @@ export interface SightingGeometryContext {
   interiorPoint?: LatLng;
   /** The body's bays by id, for a `where` that names one. */
   bays?: Readonly<Record<string, Polygon | MultiPolygon>>;
+  /**
+   * The label points of the landmarks the sightings name (D202), by id — a point *at* one is the
+   * landmark chosen by name, not a tap, and has no water geometry of its own.
+   */
+  landmarkPoints?: Readonly<Record<string, LatLng>>;
 }
+
+/** A point this close to a landmark's label point is that label point (a chip, not a tap). */
+const LABEL_POINT_M = 1;
 
 const PARTITION = new Set<string>(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'middle']);
 
@@ -120,7 +132,15 @@ export function sightingHazardShape(
   const type = SIGHTING_HAZARD_TYPE[sighting.type];
   const where = sighting.where;
   if (!type || !where) return null;
-  if (where.point) {
+  const label =
+    where.point?.landmarkId !== undefined
+      ? ctx.landmarkPoints?.[where.point.landmarkId]
+      : undefined;
+  const chosenByName =
+    label !== undefined &&
+    where.point !== undefined &&
+    haversineMeters(label, where.point.coord) < LABEL_POINT_M;
+  if (where.point && !chosenByName) {
     return {
       type,
       shape: {

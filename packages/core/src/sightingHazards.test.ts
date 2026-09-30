@@ -49,6 +49,27 @@ describe('sightingHazardShape (D210) — the pin a located open or skim sighting
     });
   });
 
+  it('a landmark chosen by name pins what the rest of its where names, never its label point (D202)', () => {
+    const label = { lat: 44.7, lng: -72.05 };
+    const withLandmarks = { ...ctx, landmarkPoints: { lm1: label } };
+    const chosen = { coord: label, radiusMeters: 75, name: 'Apple Island', landmarkId: 'lm1' };
+    // Named alone: nothing — the island is land.
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: chosen } }, withLandmarks),
+    ).toBeNull();
+    // Named with a wedge: the wedge.
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: chosen, sector: 'N' } }, withLandmarks)
+        ?.shape.geometryKind,
+    ).toBe('polygon');
+    // A tap that took the name is the tap's circle.
+    const tap = { ...chosen, coord: { lat: 44.701, lng: -72.05 } };
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: tap } }, withLandmarks)?.shape
+        .geometryKind,
+    ).toBe('point_radius');
+  });
+
   it('a bay is the bay, a wedge of a bay is the bay’s wedge, an unknown bay is nothing', () => {
     const bay: Polygon = {
       type: 'Polygon',

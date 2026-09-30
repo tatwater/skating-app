@@ -129,3 +129,23 @@ describe('whereClickOnWater', () => {
     });
   });
 });
+
+describe('a tap that took a landmark’s name', () => {
+  it('can be let go of, and named something else', () => {
+    render(
+      <Harness
+        initial={{
+          point: {
+            coord: { lat: 44.6003, lng: -73.4 },
+            radiusMeters: 75,
+            name: 'Gull Ledge',
+            landmarkId: 'id-Gull Ledge',
+          },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Not Gull Ledge — name this spot' }));
+    expect(whereNow()?.point).toEqual({ coord: { lat: 44.6003, lng: -73.4 }, radiusMeters: 75 });
+    expect(screen.getByLabelText('Name this spot')).toBeInTheDocument();
+  });
+});

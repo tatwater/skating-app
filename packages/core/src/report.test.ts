@@ -2,7 +2,6 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   isValidThicknessReading,
-  locatedLandmarkIds,
   locatedNamedSpots,
   locatedSubAreaIds,
   minimumSetGaps,
@@ -677,7 +676,7 @@ describe('locatedSubAreaIds', () => {
   });
 });
 
-describe('locatedLandmarkIds and locatedNamedSpots (D202)', () => {
+describe('locatedNamedSpots (D202)', () => {
   const at = { lat: 44.5, lng: -73.3 };
   const report = {
     iceTypes: [
@@ -708,11 +707,6 @@ describe('locatedLandmarkIds and locatedNamedSpots (D202)', () => {
       },
     ],
   };
-
-  it('collects each landmark a report names once', () => {
-    expect(locatedLandmarkIds(report)).toEqual(['lm1', 'lm2']);
-    expect(locatedLandmarkIds({ iceTypes: [], surfaceTags: [] })).toEqual([]);
-  });
 
   it('collects each typed name no landmark answers to, once per spelling', () => {
     expect(locatedNamedSpots(report)).toEqual([{ name: 'Bird Poop Rock', coord: at }]);

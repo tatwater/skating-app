@@ -14,7 +14,7 @@
  */
 
 import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
-import { requestNameKey } from './corpusRequests';
+import { landmarkNameKey } from './corpusRequests';
 import {
   type BBox,
   distanceToShorelineMeters,
@@ -142,14 +142,8 @@ export function landmarksAreSamePlace(a: LandmarkIdentity, b: LandmarkIdentity):
   return haversineMeters(a.point, b.point) <= radius;
 }
 
-/**
- * The key two spellings of one landmark share: `requestNameKey`'s fold (case, apostrophes, saint →
- * st, punctuation) plus a leading "the" dropped, because "the Gut" and "Gut" are one place and the
- * corpus writes both.
- */
-export function landmarkNameKey(name: string): string {
-  return requestNameKey(name).replace(/^the /, '');
-}
+/** The key two spellings of one landmark share — defined beside `requestNameKey` (`corpusRequests.ts`). */
+export { landmarkNameKey } from './corpusRequests';
 
 /**
  * How much a kind weighs when labels compete for the same spot on the map, before the community has

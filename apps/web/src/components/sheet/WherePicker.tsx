@@ -192,6 +192,19 @@ export function WherePicker({
           onChange={(e) => setFinding(e.target.value)}
         />
       ) : null}
+      {where?.point?.landmarkId !== undefined ? (
+        <div className="flex flex-wrap gap-1.5">
+          {/* A tap near a landmark takes its name; the skater may mean some other spot by it. */}
+          <SheetChip
+            compact
+            label={`Not ${where.point.name ?? 'that place'} — name this spot`}
+            onClick={() => {
+              const point = where?.point;
+              if (point) set({ point: { coord: point.coord, radiusMeters: point.radiusMeters } });
+            }}
+          />
+        </div>
+      ) : null}
       {unnamedTap ? (
         <div className="flex flex-col gap-1">
           <Input
