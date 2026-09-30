@@ -31,17 +31,16 @@ import {
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
-import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
+import { AdminEmpty, AdminPageHeader, errorText, ToolCard } from '../components/admin/adminUi';
 import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
+import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
@@ -80,6 +79,7 @@ function LakeEditor() {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
   const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
+  const landmarks = useQuery(api.landmarks.listForEditor, { waterBodyId });
   const tracks = useQuery(api.gpsActivities.listTracksForBody, { waterBodyId });
 
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
@@ -107,8 +107,13 @@ function LakeEditor() {
    * makes "armed for something else" unrepresentable: arming any tool disarms the others by
    * construction, and each tool's button reads its own value to know whether it is the live one.
    */
-  const [placing, setPlacing] = useState<'feature' | 'put_in' | 'parking' | null>(null);
+  const [placing, setPlacing] = useState<'feature' | 'put_in' | 'parking' | 'landmark' | null>(
+    null,
+  );
   const [putInPoint, setPutInPoint] = useState<LatLng | null>(null);
+  const [landmarkPoint, setLandmarkPoint] = useState<LatLng | null>(null);
+  /** A landmark handed to the chord tool to be drawn as a bay (D202) — consumed when it arms. */
+  const [promotion, setPromotion] = useState<EditorLandmark | null>(null);
   const [parkingPoint, setParkingPoint] = useState<LatLng | null>(null);
 
   if (result === undefined) return <AdminEmpty>Loading…</AdminEmpty>;
@@ -192,7 +197,8 @@ function LakeEditor() {
               // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
               // convention. Which tool owns which is answered by the card holding it, each of which
               // prints its own coordinate; the map's job here is only to say "not saved yet".
-              suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint]
+              landmarks: (landmarks ?? []).filter((l) => l.removedAt === undefined),
+              suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
                 .flat()
                 .filter((p): p is LatLng => p !== null),
             }}
@@ -207,6 +213,9 @@ function LakeEditor() {
               else if (placing === 'put_in')
                 setPutInPoint(snapToEdge(coord, body.polygon as unknown as GeoJSON.Polygon));
               else if (placing === 'parking') setParkingPoint(coord);
+              // A landmark sits where its label should: an island's middle, a point's tip — never
+              // snapped, since half of them are on the water and half on the land beside it.
+              else if (placing === 'landmark') setLandmarkPoint(coord);
               else return;
               setPlacing(null);
             }}
@@ -226,6 +235,24 @@ function LakeEditor() {
             draft={draft}
             setDraft={setDraft}
             mapRef={drawTargetRef}
+            promotion={promotion}
+            onPromotionTaken={() => setPromotion(null)}
+            onResult={setBanner}
+          />
+          <LandmarkTool
+            waterBodyId={waterBodyId}
+            landmarks={landmarks}
+            armed={placing === 'landmark'}
+            onArm={(on) => setPlacing(on ? 'landmark' : null)}
+            point={landmarkPoint}
+            onClearPoint={() => setLandmarkPoint(null)}
+            onFocus={(l) =>
+              drawTargetRef.current?.flyTo({
+                center: [l.point.lng, l.point.lat],
+                zoom: Math.max(drawTargetRef.current.getZoom(), 13),
+              })
+            }
+            onPromote={setPromotion}
             onResult={setBanner}
           />
           <DepthTool body={body} onResult={setBanner} />
@@ -295,26 +322,6 @@ function LakeEditor() {
 
 type Banner = { tone: 'ok' | 'error'; text: string } | null;
 type SetBanner = (banner: Banner) => void;
-
-/** Turn a thrown ConvexError into the operator-facing line the server wrote. */
-function errorText(err: unknown): string {
-  if (err instanceof ConvexError) {
-    const data = err.data as { message?: string } | string;
-    return typeof data === 'string' ? data : (data?.message ?? 'That write was rejected.');
-  }
-  return 'Something went wrong — check your connection and try again.';
-}
-
-function ToolCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3">
-        <p className="font-mono text-foreground-muted text-xs uppercase tracking-widest">{title}</p>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
 
 /**
  * Which publisher's name this body displays (A07a).
@@ -837,6 +844,8 @@ function SubAreaTool({
   draft,
   setDraft,
   mapRef,
+  promotion,
+  onPromotionTaken,
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
@@ -854,6 +863,9 @@ function SubAreaTool({
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
   mapRef: { current: maplibregl.Map | null };
+  /** A landmark to draw as a bay (D202): arms the chord with its name, and the save retires it. */
+  promotion: EditorLandmark | null;
+  onPromotionTaken: () => void;
   onResult: SetBanner;
 }) {
   const create = useMutation(api.subAreas.create);
@@ -889,6 +901,8 @@ function SubAreaTool({
   const [chordTarget, setChordTarget] = useState<string | null>(null);
   /** The queue row being drawn — approved by the save. */
   const [chordRequest, setChordRequest] = useState<string | null>(null);
+  /** The landmark being promoted — retired by the save (D202). */
+  const [chordPromote, setChordPromote] = useState<Id<'bodyLandmarks'> | null>(null);
   /** Why the current mouth makes no polygon — the derivation's own message, inline. */
   const [chordRefusal, setChordRefusal] = useState<string | null>(null);
 
@@ -966,6 +980,7 @@ function SubAreaTool({
     setChordRefusal(null);
     setChordTarget(null);
     setChordRequest(null);
+    setChordPromote(null);
   };
 
   const disarmAll = () => {
@@ -1011,6 +1026,18 @@ function SubAreaTool({
     // point of its own (a skater's, from the drawer) leaves the camera alone — the name is the lead.
     if (row.coord) mapRef.current?.flyTo({ center: [row.coord.lng, row.coord.lat], zoom: 13 });
   };
+
+  // A landmark handed over to be drawn as a bay: the queue's gesture, with the landmark attached.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire once per hand-off
+  useEffect(() => {
+    if (!promotion) return;
+    armChord();
+    setName(promotion.name);
+    setAliases(promotion.aliases.join(', '));
+    setChordPromote(promotion._id);
+    mapRef.current?.flyTo({ center: [promotion.point.lng, promotion.point.lat], zoom: 13 });
+    onPromotionTaken();
+  }, [promotion]);
 
   /** Arm freehand drawing — for a new bay, or to replace `target`'s outline. */
   const arm = async (target?: string) => {
@@ -1061,6 +1088,7 @@ function SubAreaTool({
               }
             : {}),
           ...(chordRequest ? { requestId: chordRequest as Id<'waterBodyRequests'> } : {}),
+          ...(chordPromote ? { promoteLandmarkId: chordPromote } : {}),
         });
         onResult({
           tone: 'ok',

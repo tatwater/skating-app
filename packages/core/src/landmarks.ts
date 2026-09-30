@@ -13,9 +13,9 @@
  * here is a safety claim (D3): a label says what a place is called, never what the ice there is like.
  */
 
-import type { MultiPolygon, Polygon } from 'geojson';
+import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
 import { requestNameKey } from './corpusRequests';
-import { distanceToPolygonMeters, type LatLng, pointInPolygon } from './geometry';
+import { distanceToPolygonMeters, haversineMeters, type LatLng, pointInPolygon } from './geometry';
 import type { SubAreaCandidate } from './subArea';
 
 /**
@@ -251,4 +251,50 @@ export function subAreaForLandmark<T>(
     }
   }
   return inside?.ref ?? near?.ref ?? null;
+}
+
+/** What a map needs of a landmark to label it — `listForBody`'s view. */
+export interface LabelableLandmark {
+  name: string;
+  kind: LandmarkKind;
+  point: LatLng;
+  prominence: number;
+  minZoom: number;
+}
+
+/** How near a put-in that carries a landmark's name must be for the put-in's own label to say it. */
+export const LANDMARK_PUT_IN_SAME_PLACE_M = 150;
+
+/**
+ * The label layer's features, shared by both maps. A landmark whose name a put-in within
+ * {@link LANDMARK_PUT_IN_SAME_PLACE_M} already carries is left out — a town beach that is also the
+ * launch is one place on screen, drawn as the launch (A06d owns it), not a marker and a label
+ * saying the same words. `sortKey` is the negated prominence, because MapLibre places the lowest
+ * key first and the most prominent name should win a crowded spot.
+ */
+export function landmarkLabelFeatures(
+  landmarks: readonly LabelableLandmark[],
+  putIns: readonly { coord: LatLng; name?: string }[] = [],
+): FeatureCollection<
+  Point,
+  { name: string; kind: LandmarkKind; minZoom: number; sortKey: number }
+> {
+  const named = putIns
+    .filter((p) => p.name)
+    .map((p) => ({ ...p, key: landmarkNameKey(p.name ?? '') }));
+  return {
+    type: 'FeatureCollection',
+    features: landmarks
+      .filter((l) => {
+        const key = landmarkNameKey(l.name);
+        return !named.some(
+          (p) => p.key === key && haversineMeters(p.coord, l.point) <= LANDMARK_PUT_IN_SAME_PLACE_M,
+        );
+      })
+      .map((l) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [l.point.lng, l.point.lat] },
+        properties: { name: l.name, kind: l.kind, minZoom: l.minZoom, sortKey: -l.prominence },
+      })),
+  };
 }

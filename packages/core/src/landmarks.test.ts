@@ -5,9 +5,14 @@ import {
   LANDMARK_KINDS,
   LANDMARK_LABEL_MAX_ZOOM,
   LANDMARK_LABEL_MIN_ZOOM,
+  landmarkLabelFeatures,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
+  MAX_LANDMARK_ALIASES,
+  MAX_LANDMARK_NAME_LENGTH,
+  normalizeLandmarkNames,
+  subAreaForLandmark,
 } from './landmarks';
 
 describe('landmarkNameKey', () => {
@@ -109,5 +114,108 @@ describe('landmarkLabelMinZoom', () => {
         },
       ),
     );
+  });
+});
+
+describe('landmarkLabelFeatures', () => {
+  const beach = {
+    name: 'Leddy Park Beach',
+    kind: 'beach' as const,
+    point: { lat: 44.5, lng: -73.25 },
+    prominence: 3,
+    minZoom: 13,
+  };
+  const island = { ...beach, name: 'Apple Island', kind: 'island' as const, prominence: 5 };
+
+  it('carries what the layer filters and sorts on, most prominent sorting first', () => {
+    const fc = landmarkLabelFeatures([beach, island]);
+    expect(fc.features.map((f) => f.properties)).toEqual([
+      { name: 'Leddy Park Beach', kind: 'beach', minZoom: 13, sortKey: -3 },
+      { name: 'Apple Island', kind: 'island', minZoom: 13, sortKey: -5 },
+    ]);
+    expect(fc.features[0]?.geometry.coordinates).toEqual([-73.25, 44.5]);
+  });
+
+  it('leaves out a landmark a nearby put-in already names, and only that one', () => {
+    const putIns = [
+      { coord: { lat: 44.5005, lng: -73.25 }, name: 'Leddy Park beach' },
+      { coord: { lat: 44.6, lng: -73.25 }, name: 'Apple Island' },
+      { coord: { lat: 44.5, lng: -73.25 } },
+    ];
+    expect(
+      landmarkLabelFeatures([beach, island], putIns).features.map((f) => f.properties.name),
+    ).toEqual(['Apple Island']);
+  });
+});
+
+describe('normalizeLandmarkNames', () => {
+  it('trims, collapses spaces, and drops aliases that only re-spell the name or each other', () => {
+    expect(
+      normalizeLandmarkNames('  Bird   Poop Rock ', [
+        'bird poop rock',
+        ' The Poop  Rock',
+        'the poop rock',
+        '',
+      ]),
+    ).toEqual({ name: 'Bird Poop Rock', aliases: ['The Poop Rock'] });
+  });
+
+  it('refuses an empty or overlong name, and drops an overlong alias', () => {
+    expect(normalizeLandmarkNames('   ')).toBeNull();
+    expect(normalizeLandmarkNames('x'.repeat(MAX_LANDMARK_NAME_LENGTH + 1))).toBeNull();
+    expect(
+      normalizeLandmarkNames('Gull Rock', ['y'.repeat(MAX_LANDMARK_NAME_LENGTH + 1), '...']),
+    ).toEqual({
+      name: 'Gull Rock',
+      aliases: [],
+    });
+  });
+
+  it('keeps at most the alias cap', () => {
+    const many = Array.from({ length: MAX_LANDMARK_ALIASES + 5 }, (_, i) => `Spelling ${i}`);
+    expect(normalizeLandmarkNames('Gull Rock', many)?.aliases).toHaveLength(MAX_LANDMARK_ALIASES);
+  });
+});
+
+describe('subAreaForLandmark', () => {
+  const ring = (minLng: number, minLat: number, maxLng: number, maxLat: number) => [
+    [minLng, minLat],
+    [maxLng, minLat],
+    [maxLng, maxLat],
+    [minLng, maxLat],
+    [minLng, minLat],
+  ];
+  // A bay with an island hole in it, and a smaller cove inside the bay.
+  const bay = {
+    ref: 'bay',
+    polygon: {
+      type: 'Polygon' as const,
+      coordinates: [ring(-73.2, 44.0, -73.0, 44.2), ring(-73.12, 44.08, -73.08, 44.12)],
+    },
+    surfaceAreaSqM: 3e8,
+  };
+  const cove = {
+    ref: 'cove',
+    polygon: { type: 'MultiPolygon' as const, coordinates: [[ring(-73.2, 44.0, -73.15, 44.05)]] },
+    surfaceAreaSqM: 1e7,
+  };
+
+  it('puts an island in the bay whose water surrounds it', () => {
+    expect(subAreaForLandmark({ lat: 44.1, lng: -73.1 }, [bay, cove])).toBe('bay');
+  });
+
+  it('prefers the smallest bay containing it', () => {
+    expect(subAreaForLandmark({ lat: 44.02, lng: -73.18 }, [bay, cove])).toBe('cove');
+  });
+
+  it('gives a point just off the shore to the nearest bay, and open water to none', () => {
+    expect(subAreaForLandmark({ lat: 44.1, lng: -73.2012 }, [bay, cove])).toBe('bay');
+    expect(subAreaForLandmark({ lat: 44.1, lng: -73.25 }, [bay, cove])).toBeNull();
+    expect(subAreaForLandmark({ lat: 44.1, lng: -73.1 }, [])).toBeNull();
+  });
+
+  it('breaks an equal-distance tie toward the smaller bay', () => {
+    const twin = { ...bay, ref: 'twin', surfaceAreaSqM: 1 };
+    expect(subAreaForLandmark({ lat: 44.1, lng: -73.2012 }, [bay, twin])).toBe('twin');
   });
 });
