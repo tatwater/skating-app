@@ -310,6 +310,8 @@ export interface CorpusNameRecord {
   waterBodyId?: string;
   /** For a name that met landmarks on several lakes: those lakes, for the moderator to choose from. */
   candidateBodyIds?: string[];
+  /** The name answers to landmarks already on the map (ambiguously) — nothing to place, only to attribute. */
+  alreadyNamed?: boolean;
 }
 
 /**
@@ -354,9 +356,31 @@ export function corpusNameRecords(
   }
   for (const { place, bodies: ids } of outcome.ambiguous) {
     const rec = record(place);
+    rec.alreadyNamed = true;
     if (ids.length === 1) rec.waterBodyId = ids[0] as string;
     else rec.candidateBodyIds = [...ids];
     out.push(rec);
   }
-  return out;
+  // One row per name on its named lake: two spellings that fold alike ("St. Albans Rock", "Saint
+  // Albans rock") merge — the busier one's name, both spellings, the larger counts — and the queue
+  // is loaded busiest first.
+  const merged = new Map<string, CorpusNameRecord>();
+  for (const rec of out) {
+    const key = `${landmarkNameKey(rec.name)}|${rec.parentName ? landmarkNameKey(rec.parentName) : ''}`;
+    const held = merged.get(key);
+    if (!held) {
+      merged.set(key, rec);
+      continue;
+    }
+    const [keep, other] = held.messages >= rec.messages ? [held, rec] : [rec, held];
+    keep.aliases = [...new Set([...keep.aliases, other.name, ...other.aliases])].filter(
+      (a) => landmarkNameKey(a) !== landmarkNameKey(keep.name),
+    );
+    keep.states = [...new Set([...keep.states, ...other.states])];
+    keep.skatedMessages = Math.max(keep.skatedMessages, other.skatedMessages);
+    merged.set(key, keep);
+  }
+  return [...merged.values()].sort(
+    (a, b) => b.messages - a.messages || a.name.localeCompare(b.name),
+  );
 }

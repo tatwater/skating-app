@@ -258,21 +258,52 @@ describe('corpusNameRecords', () => {
       },
       lakeBodies,
     );
-    expect(records.map((r) => [r.name, r.waterBodyId, r.candidateBodyIds])).toEqual([
-      ['Apple Island', 'champlain', undefined],
-      ['Big Rock', 'long-me', undefined],
-      ['Gull Ledge', undefined, ['long-nh', 'long-nh2']],
-      ['Hero’s Welcome', undefined, undefined],
-      ['Rideau Canal', undefined, undefined],
-      ['Cedar Island', 'champlain', undefined],
-      ['Long Point', undefined, ['long-me', 'long-nh']],
-    ]);
+    // Busiest first (Apple Island's 24), then by name.
+    expect(records.map((r) => [r.name, r.waterBodyId, r.candidateBodyIds, r.alreadyNamed])).toEqual(
+      [
+        ['Apple Island', 'champlain', undefined, undefined],
+        ['Big Rock', 'long-me', undefined, undefined],
+        ['Cedar Island', 'champlain', undefined, true],
+        ['Gull Ledge', undefined, ['long-nh', 'long-nh2'], undefined],
+        ['Hero’s Welcome', undefined, undefined, undefined],
+        ['Long Point', undefined, ['long-me', 'long-nh'], true],
+        ['Rideau Canal', undefined, undefined, undefined],
+      ],
+    );
     expect(records[0]).toMatchObject({
       aliases: ['Apple Is'],
       messages: 24,
       parentName: 'Lake Champlain',
       states: ['VT'],
     });
+  });
+
+  it('merges two spellings that fold alike on one lake, keeping the busier one’s name', () => {
+    const records = corpusNameRecords(
+      {
+        matched: 0,
+        unmatched: [
+          place('Saint Albans rock', { messages: 2, skatedMessages: 2, states: ['NY'] }),
+          place('St. Albans Rock', {
+            messages: 5,
+            skatedMessages: 1,
+            states: ['VT'],
+            aliases: ['SA Rock'],
+          }),
+        ],
+        ambiguous: [],
+      },
+      lakeBodies,
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      name: 'St. Albans Rock',
+      messages: 5,
+      skatedMessages: 2,
+      states: ['VT', 'NY'],
+    });
+    // "Saint Albans rock" folds to the name itself, so it is no second spelling.
+    expect(records[0]?.aliases).toEqual([]);
   });
 
   it('skips a body with no name when indexing lakes', () => {

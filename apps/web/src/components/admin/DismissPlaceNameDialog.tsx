@@ -9,6 +9,7 @@ import { useMutation } from 'convex/react';
 import { type ReactElement, useState } from 'react';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { errorText } from './adminUi';
 import { ReasonDialog } from './ReasonDialog';
 
 /**
@@ -58,7 +59,12 @@ export function DismissPlaceNameDialog({
         </div>
       }
       onConfirm={async (note) => {
-        await dismiss({ id, reason, ...(note ? { note } : {}) });
+        try {
+          await dismiss({ id, reason, ...(note ? { note } : {}) });
+        } catch (err) {
+          // The dialog shows `message`; give it the server's own sentence, not the transport's.
+          throw new Error(errorText(err));
+        }
         onDone?.();
       }}
     />

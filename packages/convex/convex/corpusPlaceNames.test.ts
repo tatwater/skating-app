@@ -134,19 +134,71 @@ describe('corpusPlaceNames.importBatch', () => {
       name('Apple Island', { messages: 30, waterBodyId: lake, parentName: 'Lake Champlain' }),
       name('Baltic Sea', { messages: 9 }),
     ]);
-    expect(again).toEqual({ created: 0, refreshed: 1, unchanged: 0, decidedHeld: 1 });
+    expect(again).toEqual({ created: 0, refreshed: 1, unchanged: 0, decidedHeld: 1, duplicate: 0 });
     expect(await load(t, [name('   ')])).toMatchObject({ created: 0 });
   });
 
-  test('drops a lake id that no longer exists, and keeps the name for a person to place', async () => {
+  test('drops a lake no longer on the map, and keeps the name for a person to place', async () => {
     const t = harness();
     const gone = await seedBody(t, 'Gone Pond');
     await t.run((ctx) => ctx.db.delete(gone));
+    const merged = await seedBody(t, 'Merged Pond');
+    await t.run((ctx) => ctx.db.patch(merged, { dedupStatus: 'merged' }));
     const lake = await seedBody(t, 'Long Pond');
-    await load(t, [name('Big Rock', { waterBodyId: gone, candidateBodyIds: [gone, lake] })]);
+    await load(t, [
+      name('Big Rock', { waterBodyId: merged, candidateBodyIds: [gone, merged, lake] }),
+    ]);
     const [row] = await t.run((ctx) => ctx.db.query('corpusPlaceNames').collect());
     expect(row?.waterBodyId).toBeUndefined();
     expect(row?.candidateBodyIds).toEqual([lake]);
+    expect(row?.candidateLabels).toEqual(['Long Pond · VT']);
+  });
+
+  test('keeps the first of two names that fold alike in one load, and says so', async () => {
+    const t = harness();
+    const counts = await load(t, [
+      name('St. Albans Rock', { messages: 5 }),
+      name('Saint Albans rock', { messages: 2 }),
+    ]);
+    expect(counts).toMatchObject({ created: 1, duplicate: 1 });
+    const rows = await t.run((ctx) => ctx.db.query('corpusPlaceNames').collect());
+    expect(rows.map((r) => [r.name, r.messages])).toEqual([['St. Albans Rock', 5]]);
+  });
+
+  test('a lake a moderator gave stays given, and a re-load finds the row by the corpus’s key', async () => {
+    const t = harness();
+    const lake = await seedBody(t, 'Lake Champlain');
+    const mod = await seedUser(t, 'mod');
+    await load(t, [name('Hero’s Welcome', { messages: 12 })]);
+    const [row] = (await mod.as.query(api.corpusPlaceNames.listQueue, {})).rows;
+    if (!row) throw new Error('not loaded');
+    await mod.as.mutation(api.corpusPlaceNames.setLake, { id: row._id, waterBodyId: lake });
+    const again = await load(t, [name('Hero’s Welcome', { messages: 13 })]);
+    expect(again).toMatchObject({ created: 0, refreshed: 1 });
+    const rows = await t.run((ctx) => ctx.db.query('corpusPlaceNames').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      waterBodyId: lake,
+      lakeLabel: 'Lake Champlain · VT',
+      messages: 13,
+    });
+  });
+
+  test('stamps the campaign on a name the run carries unchanged', async () => {
+    const t = harness();
+    await t.mutation(internal.corpusPlaceNames.importBatch, {
+      names: [name('Gull Ledge')],
+      campaignId: 'first',
+      dryRun: false,
+    });
+    const counts = await t.mutation(internal.corpusPlaceNames.importBatch, {
+      names: [name('Gull Ledge')],
+      campaignId: 'second',
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ unchanged: 1 });
+    const [row] = await t.run((ctx) => ctx.db.query('corpusPlaceNames').collect());
+    expect(row?.lastCampaignId).toBe('second');
   });
 });
 
@@ -163,8 +215,11 @@ describe('the triage page', () => {
     ]);
     const all = await mod.as.query(api.corpusPlaceNames.listQueue, {});
     expect(all.rows.map((r) => r.name)).toEqual(['Apple Island', 'Long Point', 'Once Rock']);
-    expect(all.rows[0]?.lake?.name).toBe('Lake Champlain');
-    expect(all.rows[1]?.candidates.map((c) => c.name)).toEqual(['Lake Champlain', 'Lake George']);
+    expect(all.rows[0]?.lake?.label).toBe('Lake Champlain · VT');
+    expect(all.rows[1]?.candidates.map((c) => c.label)).toEqual([
+      'Lake Champlain · VT',
+      'Lake George · VT',
+    ]);
     const busy = await mod.as.query(api.corpusPlaceNames.listQueue, { minMessages: 2 });
     expect(busy.rows.map((r) => r.name)).toEqual(['Apple Island', 'Long Point']);
   });
@@ -212,6 +267,10 @@ describe('the triage page', () => {
         .collect(),
     );
     expect(audits.map((a) => a.action)).toEqual(['remove', 'restore']);
+    expect(audits[0]?.reason).toBe(
+      'Dismissed "Hero’s Welcome": not_a_place — a store, not a spot on the ice',
+    );
+    expect(audits[0]?.metadata).toMatchObject({ reason: 'not_a_place' });
   });
 
   test('refuses a lake that is not on the map', async () => {
@@ -266,7 +325,10 @@ describe('placing a name', () => {
       point: { lat: 44.6, lng: -73.3 },
       corpusNameId: row._id,
     });
-    expect((await t.run((ctx) => ctx.db.get(landmarkId)))?.corpusMessages).toBe(24);
+    expect(await t.run((ctx) => ctx.db.get(landmarkId))).toMatchObject({
+      corpusMessages: 24,
+      source: 'corpus',
+    });
     const stored = await t.run((ctx) => ctx.db.get(row._id));
     expect(stored).toMatchObject({ status: 'placed', landmarkId });
     expect(await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake })).toEqual([]);
@@ -311,6 +373,63 @@ describe('placing a name', () => {
     expect(landmark?.aliases).toEqual(['Isle LaMotte', 'Isle of La Motte']);
     expect(landmark?.corpusMessages).toBe(4);
     expect((await t.run((ctx) => ctx.db.get(row._id)))?.status).toBe('placed');
+  });
+
+  test('refuses a spelling a bay answers to, or one a full landmark cannot keep', async () => {
+    const t = harness();
+    const lake = await seedBody(t, 'Lake Champlain');
+    const mod = await seedUser(t, 'mod');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: lake,
+      name: 'Kingsland Bay',
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-73.4, 44.1],
+            [-73.2, 44.1],
+            [-73.2, 44.3],
+            [-73.4, 44.3],
+            [-73.4, 44.1],
+          ],
+        ],
+      },
+    });
+    const point = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: lake,
+      name: 'Hawkins Point',
+      kind: 'point',
+      point: { lat: 44.2, lng: -73.3 },
+      aliases: Array.from({ length: 12 }, (_, i) => `Hawkins Spelling ${i}`),
+    });
+    await load(t, [
+      name('Kingsland Bay', { waterBodyId: lake }),
+      name('The Hawk', { waterBodyId: lake }),
+    ]);
+    const open = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    const bay = open.find((r) => r.name === 'Kingsland Bay');
+    const hawk = open.find((r) => r.name === 'The Hawk');
+    if (!bay || !hawk) throw new Error('not loaded');
+    await expect(
+      mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: hawk._id, landmarkId: point }),
+    ).rejects.toThrow(/as many spellings/);
+    await mod.as.mutation(api.landmarks.update, { landmarkId: point, aliases: [] });
+    await expect(
+      mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: bay._id, landmarkId: point }),
+    ).rejects.toThrow(/is a bay on this lake/);
+    expect((await t.run((ctx) => ctx.db.get(bay._id)))?.status).toBe('open');
+  });
+
+  test('a name already on the map, unsure which, loads as such', async () => {
+    const t = harness();
+    const lake = await seedBody(t, 'Lake Champlain');
+    const mod = await seedUser(t, 'mod');
+    await t.mutation(internal.corpusPlaceNames.importBatch, {
+      names: [{ ...name('Cedar Island', { waterBodyId: lake }), alreadyNamed: true }],
+      dryRun: false,
+    });
+    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    expect(row).toMatchObject({ name: 'Cedar Island', alreadyNamed: true });
   });
 
   test('refuses a removed landmark, and a name already decided', async () => {

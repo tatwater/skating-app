@@ -102,7 +102,9 @@ export function PlaceNameQueue() {
       ) : result.rows.length === 0 ? (
         <AdminEmpty>
           {status === 'open'
-            ? 'Nothing waiting — every name is placed or dismissed.'
+            ? recurringOnly
+              ? 'No name mentioned more than once is waiting. Untick the filter for the names one email used.'
+              : 'Nothing waiting — every name is placed or dismissed.'
             : `No ${status} names${recurringOnly ? ' mentioned more than once' : ''}.`}
         </AdminEmpty>
       ) : (
@@ -123,6 +125,12 @@ export function PlaceNameQueue() {
                   {row.aliases.length > 0 ? (
                     <p className="text-foreground-muted text-xs">also {row.aliases.join(', ')}</p>
                   ) : null}
+                  {row.alreadyNamed ? (
+                    <p className="text-foreground-muted text-xs">
+                      Already a landmark — the emails did not say which one. Choose it in the lake
+                      editor.
+                    </p>
+                  ) : null}
                   {row.status === 'dismissed' && row.dismissReason ? (
                     <p className="text-foreground-muted text-xs">
                       {CORPUS_NAME_DISMISS_LABELS[row.dismissReason as CorpusNameDismissReason]}
@@ -141,10 +149,10 @@ export function PlaceNameQueue() {
                     row={row}
                     editable={row.status === 'open'}
                     onPick={() => setPicking(row)}
-                    onChoose={(waterBodyId, lakeName) =>
+                    onChoose={(waterBodyId, label) =>
                       void act(
                         () => setLake({ id: row._id, waterBodyId }),
-                        `“${row.name}” is on ${lakeName}.`,
+                        `“${row.name}” is on ${label}.`,
                       )
                     }
                   />
@@ -158,7 +166,7 @@ export function PlaceNameQueue() {
                           params={{ id: row.lake._id }}
                           className={buttonVariants({ size: 'xs' })}
                         >
-                          Place it
+                          {row.alreadyNamed ? 'Choose which' : 'Place it'}
                         </Link>
                       ) : null}
                       <DismissPlaceNameDialog
@@ -224,7 +232,7 @@ function LakeCell({
   row: Row;
   editable: boolean;
   onPick: () => void;
-  onChoose: (waterBodyId: Id<'waterBodies'>, name: string) => void;
+  onChoose: (waterBodyId: Id<'waterBodies'>, label: string) => void;
 }) {
   const said = row.parentName ? (
     <p className="text-foreground-muted text-xs">
@@ -243,7 +251,7 @@ function LakeCell({
           params={{ id: row.lake._id }}
           className="underline underline-offset-2"
         >
-          {row.lake.name}
+          {row.lake.label}
         </Link>
         {editable ? (
           <button
@@ -267,10 +275,9 @@ function LakeCell({
             key={lake._id}
             size="xs"
             variant="outline"
-            onClick={() => onChoose(lake._id, lake.name)}
+            onClick={() => onChoose(lake._id, lake.label)}
           >
-            {lake.name}
-            {lake.states.length > 0 ? ` · ${lake.states.join(', ')}` : ''}
+            {lake.label}
           </Button>
         ))}
         <Button
