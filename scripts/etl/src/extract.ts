@@ -295,3 +295,50 @@ export function threeDhpExtractArgs(gpkg: string, out: string): string[] {
     '-overwrite',
   ];
 }
+
+/**
+ * The OSM tags the **landmark** pass keeps (D202) — the named places a body is steered by. A superset
+ * again: `osmLandmarkKind` (`landmarkSource.ts`) makes the final call and drops anything unnamed.
+ *
+ * `bridge:name` is a key, not a value: a road bridge is a `highway=*` way with `bridge=yes`, and only
+ * the ones someone *named* as a bridge (`bridge:name=Sand Bar Bridge`) are landmarks — the rest carry
+ * the road's name, and "Route 2" is not something anyone steers by.
+ */
+export const OSM_LANDMARK_TAGS = [
+  'place=island,islet,town,village,hamlet',
+  'natural=cape,peninsula,beach,bay,strait,rock,stone',
+  'waterway=river,stream,canal,dam',
+  'man_made=bridge,lighthouse',
+  'bridge:name',
+  'leisure=marina,summer_camp,resort',
+  'tourism=camp_site,hotel,motel,resort,guest_house',
+  'amenity=restaurant,cafe,bar,pub',
+  'shop=general',
+] as const;
+
+/** `osmium tags-filter` argv — the landmark subset of a state extract (D202). */
+export function osmLandmarkFilterArgs(pbf: string, out: string): string[] {
+  return ['tags-filter', '-t', pbf, ...OSM_LANDMARK_TAGS, '-o', out, '--overwrite'];
+}
+
+/**
+ * `osmium export` argv for the landmark pass — **every geometry type**. Islands and beaches are
+ * polygons as often as nodes, a bay reference is a node, a river is a line and a bridge is either.
+ * osmium emits a closed way as both a line and an area; the parser keeps one per OSM id.
+ */
+export function osmLandmarkExportArgs(filtered: string, out: string): string[] {
+  return [
+    'export',
+    filtered,
+    '--geometry-types=point,linestring,polygon',
+    '-a',
+    'type,id',
+    '-f',
+    'geojsonseq',
+    '-x',
+    'print_record_separator=false',
+    '-o',
+    out,
+    '--overwrite',
+  ];
+}
