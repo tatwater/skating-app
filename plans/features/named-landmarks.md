@@ -95,7 +95,7 @@ one.
 
 ## Built
 
-**PR 1 — the table, the ETL, the labels, the moderator's card.**
+**PR 1 (#83) — the table, the ETL, the labels, the moderator’s card.**
 
 - `bodyLandmarks` (D202): name, kind (13), point, footprint area, bay stamp (A09, holes filled so an
   island is in the bay around it), source, upstream ids as an array (one island is an OSM way *and*
