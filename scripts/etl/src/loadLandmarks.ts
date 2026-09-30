@@ -2,7 +2,7 @@
  * The landmark loader (glue, D202) — reads `landmarks.ndjson` from `pnpm landmarks` and writes it
  * through `landmarks:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus]
+ *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--prod]
  *
  * Batches are packed by **landmark count across bodies**: ten thousand bodies hold one or two each,
  * and a spawn per body would be hours of `convex run` for seconds of writes. A body is never split
@@ -98,6 +98,13 @@ function main(): void {
   }
   const target = resolveDeployment();
   process.stderr.write(`[landmarks] target deployment: ${target.label}\n`);
+  // Dev first, as every loader here: a non-dev target needs the operator to say so.
+  if (!target.isDev && !args.includes('--prod')) {
+    process.stderr.write(
+      '[landmarks] refusing: target is not a dev deployment. Confirm, then re-run with --prod.\n',
+    );
+    process.exit(1);
+  }
 
   const lines = readFileSync(inputPath, 'utf8')
     .split('\n')

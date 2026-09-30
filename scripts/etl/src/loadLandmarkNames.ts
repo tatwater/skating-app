@@ -2,7 +2,7 @@
  * The corpus-name loader (glue, D202) — reads `corpus-names.ndjson` from `pnpm landmarks` and loads
  * it into the moderator's queue through `corpusPlaceNames:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmark-names [.scratch/landmarks/corpus-names.ndjson] [--campaign=<id>] [--apply]
+ *   pnpm --filter @skating/etl load-landmark-names [.scratch/landmarks/corpus-names.ndjson] [--campaign=<id>] [--apply] [--prod]
  *
  * Idempotent: an open name gets the run's counts, a placed or dismissed one is left as a moderator
  * left it (the mutation's rules, tested there). A few hundred rows, so one call per hundred.
@@ -31,6 +31,13 @@ function main(): void {
   const inputPath = args.find((a) => !a.startsWith('--')) ?? DEFAULT_INPUT;
   const target = resolveDeployment();
   process.stderr.write(`[landmark-names] target deployment: ${target.label}\n`);
+  // Dev first, as every loader here: a non-dev target needs the operator to say so.
+  if (!target.isDev && !args.includes('--prod')) {
+    process.stderr.write(
+      '[landmark-names] refusing: target is not a dev deployment. Confirm, then re-run with --prod.\n',
+    );
+    process.exit(1);
+  }
   const names = readFileSync(inputPath, 'utf8')
     .split('\n')
     .filter((line) => line.trim().length > 0)

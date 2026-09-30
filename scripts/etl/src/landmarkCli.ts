@@ -29,6 +29,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { convexRun } from '@skating/run-log';
 import type { Feature } from 'geojson';
+import { EXTRACT_SOURCES } from './archive';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
 import { applyCorpus, corpusNameRecords, parseMentions } from './landmarkCorpus';
@@ -44,7 +45,12 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
 const SCRATCH = join(ROOT, '.scratch', 'landmarks');
 const BODIES = join(SCRATCH, 'bodies.ndjson');
-const ALL_STATES = ['vt', 'nh', 'me', 'ma', 'ny'] as const;
+/**
+ * Every state the corpus covers — the archive list the merge reads, never a copy of it. Adding a
+ * region is adding it there (and to GNIS's list, which `archive.test.ts` holds in step); a copy here
+ * would leave the new state's lakes without landmarks, and its corpus names queued as unmatched.
+ */
+const ALL_STATES = EXTRACT_SOURCES.map((s) => s.state.toLowerCase());
 
 function log(message: string): void {
   process.stderr.write(`[landmarks] ${message}\n`);
