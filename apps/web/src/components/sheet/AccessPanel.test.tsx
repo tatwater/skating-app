@@ -23,6 +23,7 @@ const body: SheetBody = {
   silhouette: null,
   frame: null,
   bays: [],
+  landmarks: [],
   putIns: [{ id: 'put-1', coord: LAUNCH, name: 'State launch', kind: 'putIn' }],
   parking: [{ id: 'lot-1', coord: { lat: 43.9, lng: -72.16 }, name: 'Town lot', kind: 'parking' }],
   hazards: [],

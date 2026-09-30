@@ -1,13 +1,19 @@
 import {
   COMPASS_SECTORS,
   describeWhere,
+  landmarkPoint,
+  landmarksForSheet,
+  MAX_LANDMARK_NAME_LENGTH,
+  pointFromTap,
   type Sector,
+  searchLandmarks,
   WHERE_EXTENTS,
   type Where,
   type WhereExtent,
 } from '@skating/core';
 import { useState } from 'react';
 import { Text, XStack, YStack } from 'tamagui';
+import { Input } from '../ThemedInputs';
 import { LakeMap } from './LakeMap';
 import { SheetChip } from './SheetChip';
 import { SheetHint } from './SheetSection';
@@ -50,7 +56,8 @@ export function patchWhere(where: Where | undefined, patch: Partial<Where>): Whe
 
 /**
  * The *where* affordance (A10 / D193) under a selected chip: how much of the lake, which bay, which
- * end, or a point tapped on the silhouette. Composes — "patches, north end of Malletts Bay" is an
+ * end, a named landmark (D202), or a point tapped on the silhouette — named for the landmark it
+ * lands near, or by the skater, which proposes the name. Composes — "patches, north end of Malletts Bay" is an
  * extent, a bay and a sector at once. The chips choose; the lake shows.
  *
  * Nothing here is required: a chip with no `where` is the whole lake, spelled by absence (D193).
@@ -72,6 +79,8 @@ export function WherePicker({
   onPlacing?: (placing: boolean) => void;
 }) {
   const [localPlacing, setLocalPlacing] = useState(false);
+  /** The search over the landmarks past the chips — open once asked for. */
+  const [finding, setFinding] = useState<string | null>(null);
   const placing = instrument ? placingProp : localPlacing;
   const setPlacing = (next: boolean | ((p: boolean) => boolean)) => {
     const value = typeof next === 'function' ? next(placing) : next;
@@ -85,6 +94,21 @@ export function WherePicker({
     ? [...COMPASS_SECTORS, 'middle', 'near_shore', 'head', 'mouth']
     : [...COMPASS_SECTORS, 'middle', 'near_shore'];
   const words = where ? describeWhere(where, bayNames) : '';
+  // The body's landmarks (D202): the most prominent as chips, scoped to the chosen bay; the rest
+  // behind a search. A landmark is a point with its name — choosing one is choosing that point.
+  const landmarks = body?.landmarks ?? [];
+  const { chips: landmarkChips, more } = landmarksForSheet(landmarks, {
+    ...(where?.subAreaId !== undefined ? { subAreaId: where.subAreaId } : {}),
+  });
+  const found = finding ? searchLandmarks(landmarks, finding) : [];
+  const shownLandmarks = [
+    ...landmarkChips,
+    ...found.filter((f) => !landmarkChips.some((c) => c._id === f._id)),
+  ];
+  const chosenLandmark = where?.point?.landmarkId;
+  // A tapped point no landmark answers to may be named — and the name goes to the moderators as a
+  // proposal when the report posts (`name_landmark`).
+  const unnamedTap = where?.point !== undefined && where.point.landmarkId === undefined;
 
   return (
     <YStack gap="$2" accessibilityLabel="Where on the lake">
@@ -122,6 +146,35 @@ export function WherePicker({
           ))}
         </XStack>
       ) : null}
+      {shownLandmarks.length > 0 || more > 0 ? (
+        <XStack gap="$2" flexWrap="wrap">
+          {shownLandmarks.map((l) => (
+            <SheetChip
+              key={l._id}
+              compact
+              label={l.name}
+              tier={chosenLandmark === l._id ? 'solid' : undefined}
+              onPress={() =>
+                set({
+                  point: chosenLandmark === l._id ? undefined : landmarkPoint(l, POINT_RADIUS_M),
+                })
+              }
+            />
+          ))}
+          {more > 0 && finding === null ? (
+            <SheetChip compact label={`${more} more places…`} onPress={() => setFinding('')} />
+          ) : null}
+        </XStack>
+      ) : null}
+      {finding !== null ? (
+        <Input
+          autoFocus
+          accessibilityLabel="Find a place on the lake"
+          placeholder="Find a place — an island, a point, a beach"
+          value={finding}
+          onChangeText={setFinding}
+        />
+      ) : null}
       <XStack gap="$2" flexWrap="wrap">
         {sectors.map((sector) => (
           <SheetChip
@@ -134,14 +187,46 @@ export function WherePicker({
         ))}
         <SheetChip
           compact
-          label={where?.point ? 'Point placed' : placing ? 'Tap the water…' : 'A point on the lake'}
-          tier={where?.point || placing ? 'solid' : undefined}
+          label={
+            where?.point && !chosenLandmark
+              ? 'Point placed'
+              : placing
+                ? 'Tap the water…'
+                : 'A point on the lake'
+          }
+          tier={(where?.point && !chosenLandmark) || placing ? 'solid' : undefined}
           onPress={() => {
-            if (where?.point) set({ point: undefined });
+            if (where?.point && !chosenLandmark) set({ point: undefined });
             else setPlacing((p) => !p);
           }}
         />
       </XStack>
+      {unnamedTap ? (
+        <YStack gap="$1">
+          <Input
+            accessibilityLabel="Name this spot"
+            placeholder="Name this spot (optional) — e.g. Bird Poop Rock"
+            maxLength={MAX_LANDMARK_NAME_LENGTH}
+            value={where?.point?.name ?? ''}
+            onChangeText={(name) => {
+              const point = where?.point;
+              if (!point) return;
+              set({
+                point: {
+                  coord: point.coord,
+                  radiusMeters: point.radiusMeters,
+                  ...(name ? { name } : {}),
+                },
+              });
+            }}
+          />
+          {where?.point?.name?.trim() ? (
+            <SheetHint>
+              We’ll suggest “{where.point.name.trim()}” to the moderators as a place on this lake.
+            </SheetHint>
+          ) : null}
+        </YStack>
+      ) : null}
       {!instrument && body?.silhouette && (placing || where?.sector || where?.point) ? (
         <YStack gap="$1.5">
           <LakeMap
@@ -156,7 +241,8 @@ export function WherePicker({
             onTap={
               placing
                 ? (coord) => {
-                    set({ point: { coord, radiusMeters: POINT_RADIUS_M } });
+                    // Near a known landmark, the tap takes its name (D202).
+                    set({ point: pointFromTap(coord, landmarks, POINT_RADIUS_M) });
                     setPlacing(false);
                   }
                 : undefined
