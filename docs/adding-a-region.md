@@ -30,6 +30,12 @@ Step 4b) are keyed to **state agencies**, not to a bounding box. Widening the en
 contours; a state that publishes them does. It is optional, it is per-agency, and it is the one step
 that can honestly answer "this state has none."*
 
+**And one that rides along with the water:** *landmarks* (Step 1c) — the named islands, points,
+beaches, river mouths, bridges, marinas, lighthouses, dams, shore towns and camps a lake is labeled
+with, and that a report can say it was "near" (D202). They have no bbox of their own: they come from
+the same OSM extracts plus USGS GNIS, matched to the lakes you just loaded, so a state's landmarks
+arrive with its lakes — as long as the state is on the two lists Step 1c names.
+
 On top of those, **three places hard-code the region's bounding box**, and they must stay in
 sync or you get blank tiles at a corner or a map that pans past the data:
 
@@ -93,6 +99,14 @@ outside it or on the wrong side of a clip line.
 ---
 
 ## Step 1 — Import the water data (per state/extract)
+
+> **The whole corpus is built by one command now:** `scripts/etl/run-corpus.sh <campaign-id>` —
+> the four catalogs merged into one master list, the lakes loaded, the bays, and the landmarks
+> (Step 1c), in that order. What a new state needs before it can run — its archives, its place in
+> the region mask — is in [`scripts/etl/README.md`](../scripts/etl/README.md) § Running the
+> pipeline. The per-extract
+> commands below are the OSM-only path it grew from — still the quickest way to see one state's
+> water on the map on its own.
 
 Run the Phase 01 ETL pipeline **once per extract**. Full detail:
 [`scripts/etl/README.md`](../scripts/etl/README.md). The short version, per state:
@@ -180,6 +194,47 @@ pnpm --filter @skating/admin-areas load .scratch/areas.ndjson --state=<XX>
 
 **Verify before moving on:** file a test report on a lake in the new region and confirm the feed
 card shows a town/county line, not just the lake name.
+
+---
+
+## Step 1c — Landmarks (the names skaters steer by)
+
+Islands, points, beaches, reference bays, narrows, river mouths, bridges, marinas, lighthouses, dams,
+shore towns, and the camps, resorts and lone restaurants on the shore (D202). They label a lake when
+it's open and zoomed in, and the report sheet offers them as places ("black ice near Apple Island").
+Nothing to author by hand: OSM and GNIS supply them, matched to the lakes you just loaded, and the
+community's emails supply the spellings skaters actually use and how often they use them.
+
+**If you built the corpus with `run-corpus.sh`, this has already run** — it is the script's last
+stage. By hand, after the water (and any bays) are loaded:
+
+```bash
+pnpm --filter @skating/etl landmarks --refresh-bodies \
+  --mentions=<training_data/google_group/mentions/mentions.csv>
+pnpm --filter @skating/etl load-landmarks --campaign=<id>        # dry run; --apply to write
+pnpm --filter @skating/etl load-landmark-names --campaign=<id>   # dry run; --apply to write
+```
+
+What a new region needs for this to find anything:
+
+- **The state on both archive lists.** The landmark pass takes its states from the same list the
+  merge does — `EXTRACT_SOURCES` in `scripts/etl/src/archive.ts` — and reads each state's GNIS file,
+  so `GNIS_STATE_CODES` in `scripts/etl/src/gnisSource.ts` must name it too (a test fails if the two
+  lists disagree). Then archive both: `pnpm --filter @skating/etl archive <XX>` and
+  `pnpm --filter @skating/etl archive-gnis`.
+- **`--refresh-bodies`.** The pass matches offline, against a cached export of every listed lake's
+  outline (it takes ~8 minutes to rebuild). A stale export has none of the new region's lakes, and
+  the run would quietly find no landmarks there.
+- **The corpus inventory, or `--without-corpus`.** The loads replace a landmark's community counts
+  with the run's, so a run without the inventory must say so — and then the new region's landmarks
+  carry no community names, which is fine for a region the corpus doesn't reach yet.
+- **A run over every state.** The names the corpus uses that no landmark took go to a moderator
+  queue (Admin → **Place names**) — but only from a run over all of them, since a one-state run
+  can't tell a name another state's landmarks answer to from one nobody's do.
+
+**Verify:** open a lake in the new region and zoom in — the island and point names appear as you
+zoom (the bigger and better-known first). The lake editor's **Landmarks** card lists them, and
+**Place names** holds whatever the community names there that no map does.
 
 ---
 
@@ -382,6 +437,9 @@ other **and** the Step 2 `--bbox`:
       `waterMap.test.ts` updated; `pnpm test` green.
 - [ ] Admin boundaries imported per state (`scripts/admin-areas`), and a report in the new region
       shows a town/county label rather than a bare lake name.
+- [ ] Landmarks built for the new state — the last stage of `run-corpus.sh`, or Step 1c by hand with
+      `--refresh-bodies`; the state in both `EXTRACT_SOURCES` and `GNIS_STATE_CODES`; a lake there
+      shows island and point labels when zoomed in.
 - [ ] Read counts spot-checked against the new corpus with `waterBodies:viewportReadStats` — a wide
       zoom, a dense zoom, and a pan into empty space. *(This checklist item existed before A01 and was
       never actually performed, which is how a 256-body clamp sized for a 9,967-body corpus survived
