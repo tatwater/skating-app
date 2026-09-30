@@ -19,6 +19,7 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
+import { MAX_LANDMARK_NAME_LENGTH } from './landmarks';
 import { humanizeEnum, SIGHTING_LABELS } from './reportView';
 import {
   BAY_SECTORS,
@@ -35,8 +36,15 @@ export interface WherePoint {
   coord: LatLng;
   /** The tap's uncertainty, in meters. Coarse by design: this is "about here", not a survey. */
   radiusMeters: number;
-  /** A named landmark the point stands for ("off Shelburne Point") — filled by the landmarks ETL, later. */
+  /**
+   * The place's name, as the reader sees it ("near Apple Island"). Copied at the write, so an old
+   * report still reads right after the landmark is renamed or removed. With `landmarkId` it is a
+   * known landmark's (D202); without, it is what the skater typed for a spot no map has — which
+   * also files a proposal for it (`name_landmark`).
+   */
   name?: string;
+  /** The `bodyLandmarks` row the point stands for; the server checks it is the body's own. */
+  landmarkId?: string;
 }
 
 export interface Where {
@@ -120,10 +128,22 @@ export function validateWhere(
         message: `must be between ${WHERE_POINT_RADIUS_MIN_M} and ${WHERE_POINT_RADIUS_MAX_M} meters`,
       });
     }
+    const trimmed = name?.trim().replace(/\s+/g, ' ');
+    if (trimmed && trimmed.length > MAX_LANDMARK_NAME_LENGTH) {
+      errors.push({
+        field: `${path}.point.name`,
+        message: `must be ${MAX_LANDMARK_NAME_LENGTH} characters or fewer`,
+      });
+    }
+    const landmarkId = where.point.landmarkId?.trim();
+    // A landmark's point carries its name, so the words survive the landmark (D202).
+    if (landmarkId && !trimmed) {
+      errors.push({ field: `${path}.point.name`, message: "is required with a landmark's id" });
+    }
     if (errors.length === before) {
       const point: WherePoint = { coord, radiusMeters };
-      const trimmed = name?.trim();
       if (trimmed) point.name = trimmed;
+      if (landmarkId) point.landmarkId = landmarkId;
       normalized.point = point;
     }
   }
@@ -174,7 +194,9 @@ export function describeWhere(where: Where, bayNames?: Readonly<Record<string, s
   } else if (bay) {
     parts.push(bay);
   }
-  if (where.point?.name) parts.push(where.point.name);
+  // "Near", whatever the kind: "off" suits a point or an island and not a town, and nothing here
+  // may say more about the place than that the author was by it (D3).
+  if (where.point?.name) parts.push(`near ${where.point.name}`);
   return parts.join(' ');
 }
 

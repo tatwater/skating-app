@@ -41,6 +41,7 @@ import {
 import { requireContributorRole, requireRole } from './lib/auth';
 import { assertNotABayName, auditLandmark, landmarksForBody, subAreaFor } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
+import { approveNamedLandmarkRequest } from './lib/requestDecisions';
 import { latLng, literals } from './lib/validators';
 import { stampCandidates } from './subAreas';
 
@@ -458,6 +459,11 @@ export const create = mutation({
     kind: literals(LANDMARK_KINDS),
     point: latLng,
     aliases: v.optional(v.array(v.string())),
+    /**
+     * The skater's proposal this answers (`name_landmark`, D202): the landmark is sourced as a
+     * proposal, and every open ask for the same place is approved in this write.
+     */
+    requestId: v.optional(v.id('waterBodyRequests')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -476,7 +482,7 @@ export const create = mutation({
       kind: args.kind,
       point: args.point,
       ...(subAreaFor(args.point, await stampCandidates(ctx, args.waterBodyId)) ?? {}),
-      source: 'moderator',
+      source: args.requestId !== undefined ? 'proposal' : 'moderator',
       externalIds: [],
       aliases: names.aliases,
       moderatorEditedAt: now,
@@ -487,6 +493,9 @@ export const create = mutation({
     await auditLandmark(ctx, actor._id, 'create_landmark', id, `Added "${names.name}"`, {
       kind: args.kind,
     });
+    if (args.requestId !== undefined) {
+      await approveNamedLandmarkRequest(ctx, args.requestId, args.waterBodyId, actor, id);
+    }
     return id;
   },
 });

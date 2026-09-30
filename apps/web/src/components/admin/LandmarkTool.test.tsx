@@ -22,7 +22,8 @@ const { calls, refusal, useMutation } = vi.hoisted(() => {
     }),
   };
 });
-vi.mock('convex/react', () => ({ useMutation }));
+const { useQuery } = vi.hoisted(() => ({ useQuery: vi.fn(() => [] as unknown[]) }));
+vi.mock('convex/react', () => ({ useMutation, useQuery }));
 vi.mock('@skating/convex/api', () => ({
   api: {
     landmarks: {
@@ -30,6 +31,11 @@ vi.mock('@skating/convex/api', () => ({
       update: { _name: 'update' },
       remove: { _name: 'remove' },
       restore: { _name: 'restore' },
+    },
+    corpusRequests: {
+      approve: { _name: 'approve' },
+      decline: { _name: 'decline' },
+      openLandmarkRequestsForBody: { _name: 'openLandmarkRequestsForBody' },
     },
   },
 }));
@@ -62,6 +68,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
     onClearPoint: vi.fn(),
     onFocus: vi.fn(),
     onPromote: vi.fn(),
+    onPlacePoint: vi.fn(),
     onResult: vi.fn(),
   };
   const view = render(
@@ -173,6 +180,7 @@ describe('LandmarkTool', () => {
         onClearPoint={onClearPoint}
         onFocus={vi.fn()}
         onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
         onResult={vi.fn()}
       />,
     );
@@ -197,6 +205,59 @@ describe('LandmarkTool', () => {
         text: '"Apple Island" is already a landmark here',
       }),
     );
+  });
+
+  it('answers a skater’s proposal by adding the landmark with the ask attached', async () => {
+    useQuery.mockReturnValue([
+      {
+        requestId: 'req1',
+        name: 'Bird Poop Rock',
+        coord: { lat: 44.31, lng: -73.21 },
+        askers: 2,
+        reportIds: [],
+        createdAt: 0,
+      },
+      {
+        requestId: 'req2',
+        name: 'Apple Island',
+        coord: { lat: 44.5, lng: -73.3 },
+        askers: 1,
+        reportIds: [],
+        createdAt: 0,
+        existingLandmarkId: 'lm-Apple Island',
+      },
+    ]);
+    const onPlacePoint = vi.fn();
+    const { rerender } = renderTool({ onPlacePoint });
+    expect(screen.getByText(/2 skaters/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+    expect(onPlacePoint).toHaveBeenCalledWith({ lat: 44.31, lng: -73.21 });
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={{ lat: 44.31, lng: -73.21 }}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={onPlacePoint}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({
+      name: 'create',
+      args: { name: 'Bird Poop Rock', requestId: 'req1' },
+    });
+    // One the lake already has is approved, not added.
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1]).toEqual({ name: 'approve', args: { requestId: 'req2' } });
+    useQuery.mockReturnValue([]);
   });
 
   it('says so when the lake has none', () => {

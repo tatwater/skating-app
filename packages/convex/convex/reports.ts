@@ -15,6 +15,8 @@ import {
   type IceType,
   iceTypeKeys,
   isFormRoundTripOf,
+  locatedLandmarkIds,
+  locatedNamedSpots,
   locatedSubAreaIds,
   memberSubAreaIds,
   RECOMMENDED_MIN_PHOTOS,
@@ -45,6 +47,8 @@ import { getCurrentProfile, requireContributor, requireProfile } from './lib/aut
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { type BodyInfo, bodyInfoFor, type FeedCardCaches, toFeedCard } from './lib/feedCards';
+import { fileLandmarkProposals } from './lib/landmarkProposals';
+import { assertLocatedLandmarks, noteLandmarksNamed } from './lib/landmarkRows';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
 import { refreshPostLatestSkateEnd, syncPostPhotos } from './lib/postSync';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -486,6 +490,11 @@ export const update = mutation({
     const body = await ctx.db.get(existing.waterBodyId);
     const candidates = await stampCandidates(ctx, existing.waterBodyId);
     assertLocatedSubAreas(n, candidates);
+    const namedLandmarks = await assertLocatedLandmarks(
+      ctx,
+      existing.waterBodyId,
+      locatedLandmarkIds(n),
+    );
     const putInId = await assertPutInOfBody(ctx, n.putInId, existing.waterBodyId);
     const subAreas = await resolveReportSubAreas(
       ctx,
@@ -548,6 +557,14 @@ export const update = mutation({
       editedAt: now,
       updatedAt: now,
     });
+    // A landmark the edit newly names counts once (D202); one it already named does not count again,
+    // and a spot newly named that no map has is proposed like one posted with the Report.
+    await noteLandmarksNamed(ctx, namedLandmarks, locatedLandmarkIds(existing));
+    if (body) {
+      const before = new Set(locatedNamedSpots(existing).map((spot) => spot.name.toLowerCase()));
+      const added = locatedNamedSpots(n).filter((spot) => !before.has(spot.name.toLowerCase()));
+      await fileLandmarkProposals(ctx, profile._id, body, args.reportId, added);
+    }
     // The list is replaced wholesale, so the back-links follow it both ways (A10 / D186), and the
     // Post's album is the union over its members, so it follows too.
     await syncReportPhotoLinks(ctx, args.reportId, existing.photoIds, photoIds);

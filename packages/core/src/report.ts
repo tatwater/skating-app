@@ -637,17 +637,53 @@ export function locatedSubAreaIds(
   report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
 ): string[] {
   const ids: string[] = [];
-  const located: readonly { where?: Where }[] = [
+  for (const item of locatedParts(report)) {
+    const id = item.where?.subAreaId;
+    if (id !== undefined && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/** Every located part of a report — the chips, the readings, the sightings — in one list. */
+function locatedParts(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): readonly { where?: Where }[] {
+  return [
     ...report.iceTypes,
     ...report.surfaceTags,
     ...(report.iceThickness?.readings ?? []),
     ...(report.sightings ?? []),
   ];
-  for (const item of located) {
-    const id = item.where?.subAreaId;
+}
+
+/** Every landmark a report's `where`s name (D202), once each — the server checks they are the body's. */
+export function locatedLandmarkIds(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): string[] {
+  const ids: string[] = [];
+  for (const item of locatedParts(report)) {
+    const id = item.where?.point?.landmarkId;
     if (id !== undefined && !ids.includes(id)) ids.push(id);
   }
   return ids;
+}
+
+/**
+ * The spots a report named that no landmark answers to — a point with a typed name and no id
+ * (D202). Each is a proposal a moderator may accept (`name_landmark`). Once per name.
+ */
+export function locatedNamedSpots(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): { name: string; coord: LatLng }[] {
+  const spots: { name: string; coord: LatLng }[] = [];
+  for (const item of locatedParts(report)) {
+    const point = item.where?.point;
+    if (!point?.name || point.landmarkId !== undefined) continue;
+    const name = point.name;
+    if (spots.some((s) => s.name.toLowerCase() === name.toLowerCase())) continue;
+    spots.push({ name, coord: point.coord });
+  }
+  return spots;
 }
 
 export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): MinimumSetTerm[] {

@@ -2824,6 +2824,10 @@ export default defineSchema({
     decisionNote: v.optional(v.string()),
     /** For an approved `admit`: the body that was created. */
     admittedWaterBodyId: v.optional(v.id('waterBodies')),
+    /** For a `name_landmark` (D202): the report whose `where` named the spot — the moderator's context. */
+    reportId: v.optional(v.id('reports')),
+    /** For an approved `name_landmark`: the landmark that answered it. */
+    landmarkId: v.optional(v.id('bodyLandmarks')),
     createdAt: v.number(),
   })
     // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).

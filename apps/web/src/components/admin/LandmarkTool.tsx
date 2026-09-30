@@ -7,7 +7,7 @@ import {
   type LatLng,
   landmarkNameKey,
 } from '@skating/core';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
@@ -88,6 +88,7 @@ export function LandmarkTool({
   onClearPoint,
   onFocus,
   onPromote,
+  onPlacePoint,
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
@@ -98,12 +99,18 @@ export function LandmarkTool({
   onClearPoint: () => void;
   onFocus: (landmark: EditorLandmark) => void;
   onPromote: (landmark: EditorLandmark) => void;
+  /** Put the drop form's point here and show it — a skater's proposed spot. */
+  onPlacePoint: (point: LatLng) => void;
   onResult: SetBanner;
 }) {
   const create = useMutation(api.landmarks.create);
   const update = useMutation(api.landmarks.update);
   const remove = useMutation(api.landmarks.remove);
   const restore = useMutation(api.landmarks.restore);
+  const approveRequest = useMutation(api.corpusRequests.approve);
+  const declineRequest = useMutation(api.corpusRequests.decline);
+  // What skaters have named on this lake that no map has (D202's proposal lane).
+  const proposals = useQuery(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId });
 
   const [filter, setFilter] = useState('');
   const [showRemoved, setShowRemoved] = useState(false);
@@ -114,6 +121,8 @@ export function LandmarkTool({
   const [kind, setKind] = useState<LandmarkKind>('other');
   const [aliases, setAliases] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
+  const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
 
   const rows = landmarks ?? [];
   const live = rows.filter((l) => l.removedAt === undefined);
@@ -131,6 +140,7 @@ export function LandmarkTool({
   const reset = () => {
     setEditing(null);
     setMoving(null);
+    setAnswering(null);
     setName('');
     setKind('other');
     setAliases('');
@@ -313,6 +323,72 @@ export function LandmarkTool({
         </div>
       ) : null}
 
+      {proposals && proposals.length > 0 ? (
+        <div className="flex flex-col gap-1 border-border border-t pt-2">
+          <p className="text-sm">Named by skaters</p>
+          <ul className="space-y-1 text-sm">
+            {proposals.map((p) => (
+              <li key={p.requestId} className="flex flex-wrap items-center justify-between gap-x-2">
+                <span className="min-w-0 flex-1 truncate">
+                  {p.name}
+                  <span className="text-foreground-muted">
+                    {' '}
+                    — {p.askers} {p.askers === 1 ? 'skater' : 'skaters'}
+                  </span>
+                </span>
+                <span className="flex shrink-0 gap-1">
+                  {p.existingLandmarkId ? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(
+                          () => approveRequest({ requestId: p.requestId }),
+                          `“${p.name}” is already a landmark — answered.`,
+                        )
+                      }
+                    >
+                      Approve
+                    </Button>
+                  ) : (
+                    <Button
+                      variant={answering === p.requestId ? 'default' : 'ghost'}
+                      size="xs"
+                      onClick={() => {
+                        reset();
+                        setName(p.name);
+                        setAnswering(p.requestId);
+                        onPlacePoint(p.coord);
+                      }}
+                    >
+                      Add as landmark
+                    </Button>
+                  )}
+                  <ReasonDialog
+                    trigger={
+                      <Button variant="ghost" size="xs">
+                        Decline
+                      </Button>
+                    }
+                    title={`Decline “${p.name}”`}
+                    description="The skaters who named it read your note."
+                    confirmLabel="Decline"
+                    confirmVariant="secondary"
+                    onConfirm={async (note) => {
+                      await run(
+                        () => declineRequest({ requestId: p.requestId, note }),
+                        'Declined.',
+                      );
+                    }}
+                  />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-2 border-border border-t pt-2">
         <Button
           variant={armed && !moving ? 'default' : 'outline'}
@@ -365,8 +441,11 @@ export function LandmarkTool({
                         kind,
                         point,
                         aliases: splitAliases(aliases),
+                        ...(answering ? { requestId: answering } : {}),
                       }),
-                    `Added “${name.trim()}”.`,
+                    answering
+                      ? `Added “${name.trim()}” and answered the skaters who named it.`
+                      : `Added “${name.trim()}”.`,
                   );
                   if (saved) reset();
                 }}

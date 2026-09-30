@@ -151,3 +151,49 @@ export async function assertNotABayName(
   );
   if (bay) throw new ConvexError(`"${bay.name}" is a bay on this lake — it is already on the map`);
 }
+
+/**
+ * A report's `where`s may name landmarks by id (D202); every one must be a live landmark of *this*
+ * body — never another lake's, never a removed one, never a string that is not an id. Raised in the
+ * validator's own error shape so the sheet shows it beside the chip. Returns the rows.
+ */
+export async function assertLocatedLandmarks(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  ids: readonly string[],
+): Promise<Doc<'bodyLandmarks'>[]> {
+  const rows: Doc<'bodyLandmarks'>[] = [];
+  const unknown: string[] = [];
+  for (const id of ids) {
+    const normalized = ctx.db.normalizeId('bodyLandmarks', id);
+    const row = normalized ? await ctx.db.get(normalized) : null;
+    if (!row || row.waterBodyId !== waterBodyId || row.removedAt !== undefined) unknown.push(id);
+    else rows.push(row);
+  }
+  if (unknown.length > 0) {
+    throw new ConvexError({
+      code: 'invalid_report',
+      errors: unknown.map(
+        (id) => `where.point.landmarkId: ${id} is not a landmark of this water body`,
+      ),
+    });
+  }
+  return rows;
+}
+
+/**
+ * Count a report naming these landmarks (D202's prominence evidence): +1 on each that `before` did
+ * not already name. A **monotonic tally of times named** — a report hidden or deleted later keeps its
+ * tick. It only orders labels and the sheet's list, never says a thing about the ice (D3), and the
+ * exact version would thread a decrement through every path that hides a Report or its Post.
+ */
+export async function noteLandmarksNamed(
+  ctx: MutationCtx,
+  rows: readonly Doc<'bodyLandmarks'>[],
+  before: readonly string[] = [],
+): Promise<void> {
+  for (const row of rows) {
+    if (before.includes(row._id)) continue;
+    await ctx.db.patch(row._id, { reportCount: (row.reportCount ?? 0) + 1 });
+  }
+}
