@@ -5772,7 +5772,8 @@ request as *a coordinate plus a requester*, resolved against the archives, admit
 Built with three changes the kickoff settled.
 
 **Five kinds, not one** *(six from D201: `name_bay`, a bay on an active lake that skaters treat
-as a place of its own — the sub-area queue)*. With standing (D176) a request is usually about a water body we already hold:
+as a place of its own — the sub-area queue; seven from D202: `name_landmark`, a place a skater
+named in a report that no map has — filed by the report write, never a drawer button)*. With standing (D176) a request is usually about a water body we already hold:
 `activate` a dormant body (the common case once the corpus is tiered — no geometry, one decision),
 `restore` a removed one, `contest_access` a `none` ruling, and the landowner's `takedown` D48
 deferred to Phase 07 and nobody built (*"we should add landowner takedown request as a fifth kind"*).
@@ -6265,11 +6266,40 @@ whichever comes first — and where names collide the more prominent is placed f
 the kind, the corpus's mentions and the reports that name it, all logarithmic, so one chatty island
 cannot bury the rest.
 
+**In a report.** A `where` point may carry a landmark's id beside its name (D193): chosen from the
+sheet's chips (the body's most prominent, then a search), or taken by a tap within 150 m of one
+(founder, 2026-09-29) — "near Apple Island", whatever the kind. The name is copied at the write so an
+old report reads right after a rename, and a live id always takes the landmark's own name; an id
+that is stale (removed, promoted, another lake's) is dropped and the words kept — a report never
+fails because a label changed under it. A landmark chosen by name is a *place*, not a spot on the
+water: an open-water sighting at one pins only the wedge or bay the rest of its `where` names, never
+a circle on the island. Posting a report counts toward the landmarks it names (`reportCount`, a
+tally that orders labels — edits never count, and it says nothing about the ice). The extraction
+offers a body's landmarks as candidates and resolves a named place to one by whole-word spelling,
+never on a tie.
+
+**Proposed by skaters.** A spot a skater names that no landmark answers to — "bird poop rock" — is
+filed by the report write as a seventh request kind, `name_landmark` (D179's lane, D201's shape),
+with the spot and the report; quietly, on a budget of ten open per person, never failing the report.
+A moderator adds it from the lake editor, which answers every ask for the same place.
+
+**Built (2026-09-29, #83 and its successor):** 155,945 OSM and GNIS candidates → 23,989 landmarks on
+10,600 of 24,953 listed bodies on dev (campaign `landmarks-20260929`): 9,501 river mouths, 6,154
+shore towns, 2,653 dams, 1,683 islands, 1,157 points, 1,137 shore businesses, 932 reference bays,
+391 beaches, 166 marinas, 103 bridges, 93 narrows, 93 rocks and shoals, 24 lighthouses; Champlain
+~560. 154 of the corpus's 391 place names attached; the 221 it could not (Apple Island is a
+peninsula since the causeway and in neither catalog) are a moderator's worklist. What the data
+taught, each now a rule with a test: two catalogs sight one place up to a kilometer apart (a
+passage's ends, five), so the same-place radius is per kind and one rule in core; the inventory's
+alias lists are an LLM's clusters, so a spelling attaches only when it resembles the name; a named
+parent lake is binding; a re-run must be able to forget, so the import resolves every candidate to
+its row before writing it once.
+
 **Why:** half the corpus's reports locate something, and a large share do it by a name no map in the
 app carried — "off Apple Island", "a wind hole west of the bird poop rock". A sub-area for each would
 give a page to places nobody skates as a destination; a label gives the name without the place.
 
-**Related:** D60, D175, D193, D201, A09.
+**Related:** D60, D175, D179, D193, D201, A09.
 
 ## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
 
