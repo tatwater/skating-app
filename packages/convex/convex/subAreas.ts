@@ -65,6 +65,7 @@ import {
 import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
+import { restampLandmarks, retireAsPromoted, retireNamedAsBay } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -90,7 +91,14 @@ const SEED_MIN_RETAINED_FRACTION = 0.35;
  * just re-resolved; walking reports first would rebuild each of them from a stamp about to change.
  * Put-ins and features follow because nothing else depends on them.
  */
-const RESTAMP_TABLES = ['gpsActivities', 'reports', 'hazards', 'putIns', 'bodyFeatures'] as const;
+const RESTAMP_TABLES = [
+  'gpsActivities',
+  'reports',
+  'hazards',
+  'putIns',
+  'bodyFeatures',
+  'bodyLandmarks',
+] as const;
 type RestampTable = (typeof RESTAMP_TABLES)[number];
 
 /**
@@ -838,6 +846,8 @@ export const create = mutation({
     /** The drawn outline. Clipped to the parent before storage — never stored as supplied. */
     polygon: geoJson,
     curatedBoost: v.optional(v.number()),
+    /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
+    promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -862,6 +872,10 @@ export const create = mutation({
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
     });
+    if (args.promoteLandmarkId !== undefined) {
+      await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
+    }
+    await retireNamedAsBay(ctx, actor._id, args.waterBodyId, subAreaId, [name, ...aliases]);
     // A new bay claims reports and hazards that already sit inside it, so the label appears on the
     // history too rather than only on what's filed from now on.
     await scheduleRestamp(ctx, args.waterBodyId);
@@ -938,6 +952,8 @@ export const createFromChord = mutation({
     mouth: subAreaMouth,
     curatedBoost: v.optional(v.number()),
     requestId: v.optional(v.id('waterBodyRequests')),
+    /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
+    promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -970,6 +986,10 @@ export const createFromChord = mutation({
       args.requestId === undefined
         ? undefined
         : await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
+    if (args.promoteLandmarkId !== undefined) {
+      await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
+    }
+    await retireNamedAsBay(ctx, actor._id, args.waterBodyId, subAreaId, [name, ...aliases]);
     await scheduleRestamp(ctx, args.waterBodyId);
     // What happened to the ask, so the editor says so: an ask decided elsewhere while this bay was
     // being drawn keeps the answer it got, and "answered the ask" would be untrue.
@@ -1384,6 +1404,12 @@ export const restampParent = internalMutation({
           changed++;
         }
         page = p;
+        break;
+      }
+      case 'bodyLandmarks': {
+        // Capped per body at the write (D202), so one bounded read and no cursor.
+        changed += await restampLandmarks(ctx, waterBodyId, candidates);
+        page = { isDone: true, continueCursor: '' };
         break;
       }
     }
