@@ -686,8 +686,8 @@ let the patchiness argue for hand-entering the rest; that is the trap D70 exists
 
 Islands, points, reference bays, narrows, river mouths, bridges, marinas, lighthouses, dams, shore
 towns, and the camps, resorts and lone restaurants on the shore — from the archived OSM extracts and
-GNIS, named by the community corpus. Labels and a `where`, never places
-([`plans/features/named-landmarks.md`](../../plans/features/named-landmarks.md)).
+GNIS, named by the community corpus. Labels and a `where`, never places (D202 in
+[`plans/01-decisions.md`](../../plans/01-decisions.md)).
 
 ```sh
 pnpm --filter @skating/etl landmarks --mentions=<training_data/google_group/mentions/mentions.csv>
