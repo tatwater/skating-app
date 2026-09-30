@@ -677,3 +677,45 @@ export function summaryCardLayer(
     },
   } as StyleSpecification['layers'][number];
 }
+
+/** The source the landmark labels ride (D202). */
+export const LANDMARK_SOURCE_ID = 'landmark-labels';
+
+/**
+ * The landmark label layer (D202) — text, never a marker: no circle, no icon, no click handler,
+ * because a landmark has no page to open. Regular weight where a bay name is italic, so "Apple
+ * Island" and "Malletts Bay" read as two kinds of name, and one step smaller: a landmark is a
+ * reference, the bay is the place.
+ *
+ * Each feature carries its own `minZoom` (`landmarkLabelMinZoom` — its footprint's size or its
+ * prominence) and the filter holds it back until then; MapLibre evaluates a zoom filter at integer
+ * zooms, which is the granularity the zoom was computed for. `symbol-sort-key` is the negated
+ * prominence, so where two names collide the one skaters use more is placed first and the other
+ * waits — the founder's "reveal the important ones first" without a rule per kind. Validated in a
+ * test for the reason `summaryCardLayer` is: an invalid layer does not draw and does not say so.
+ */
+export function landmarkLabelLayer(
+  palette: (typeof SUB_AREA_PALETTE)[keyof typeof SUB_AREA_PALETTE],
+): StyleSpecification['layers'][number] {
+  return {
+    id: 'landmark-label',
+    type: 'symbol',
+    source: LANDMARK_SOURCE_ID,
+    filter: ['<=', ['get', 'minZoom'], ['zoom']],
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-size': 11,
+      'text-font': ['Noto Sans Regular'],
+      'text-max-width': 8,
+      'symbol-sort-key': ['get', 'sortKey'],
+      'text-allow-overlap': false,
+      'text-optional': true,
+    },
+    paint: {
+      'text-color': palette.label,
+      'text-halo-color': palette.halo,
+      'text-halo-width': 1.2,
+      'text-opacity': 0.85,
+    },
+  };
+}

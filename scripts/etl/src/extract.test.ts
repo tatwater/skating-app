@@ -14,11 +14,14 @@ import {
   nhdExtractArgs,
   ONE_ACRE_SQ_KM,
   OSM_ACCESS_TAGS,
+  OSM_LANDMARK_TAGS,
   OSM_WATER_TAGS,
   osmAccessExportArgs,
   osmAccessFilterArgs,
   osmExportArgs,
   osmFilterArgs,
+  osmLandmarkExportArgs,
+  osmLandmarkFilterArgs,
   THREE_DHP_SELECT,
   threeDhpExtractArgs,
 } from './extract';
@@ -96,6 +99,22 @@ describe('the access extract (A06d §2.1)', () => {
     expect(args).toContain('-t');
     expect(args).not.toContain('-R');
     expect(args).toContain('--overwrite');
+  });
+});
+
+describe('the OSM landmark pass (D202)', () => {
+  it('exports every geometry type — islands are areas, bays are nodes, rivers are lines', () => {
+    const args = osmLandmarkExportArgs('/in.pbf', '/out.geojsonseq');
+    expect(args).toContain('--geometry-types=point,linestring,polygon');
+    expect(args.join(' ')).toContain('-a type,id');
+  });
+
+  it('filters with -t over the tags the parser reads, bridge names included', () => {
+    const args = osmLandmarkFilterArgs('/in.pbf', '/out.pbf');
+    expect(args).toContain('-t');
+    expect(args).not.toContain('-R');
+    expect(args).toEqual(expect.arrayContaining([...OSM_LANDMARK_TAGS]));
+    expect([...OSM_LANDMARK_TAGS]).toContain('bridge:name');
   });
 });
 

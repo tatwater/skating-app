@@ -26,6 +26,7 @@ import {
   hasWeatherFilter,
   holdFrames,
   isRegionOffscreen,
+  landmarkLabelFeatures,
   mapFilters,
   NO_HELD_FRAMES,
   prefetchFrames,
@@ -569,6 +570,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
   const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns]);
+
+  // Named landmarks for the focused lake (D202) — per body like the put-ins, never a viewport read.
+  // Built by the same core helper web uses, so a beach that is also the launch is one label on
+  // both surfaces (the launch's).
+  const landmarks = useQuery(
+    api.landmarks.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  );
+  const landmarksFC = useMemo(
+    () =>
+      highlightWaterBodyId && landmarks ? landmarkLabelFeatures(landmarks, putIns ?? []) : EMPTY_FC,
+    [highlightWaterBodyId, landmarks, putIns],
+  );
   const approachesFC = useMemo(() => approachesToFeatureCollection(putIns ?? []), [putIns]);
 
   // Hazards + known features for the focused lake (Phase 09a, D54 Layer 0). Scoped to the open body,
@@ -974,6 +988,33 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             type="line"
             filter={['in', ['get', '_id'], ['literal', favoriteIds]]}
             paint={{ 'line-color': FAVORITE_OUTLINE_COLOR, 'line-width': 2.5 }}
+          />
+        </GeoJSONSource>
+
+        {/* Landmark names (D202): text, never a marker — a landmark has no page, so nothing here takes
+          a press. Mounted before the bays so a bay name wins a crowded spot, and far beneath every
+          pin. Each name waits for its own zoom; where two collide the more prominent places first. */}
+        <GeoJSONSource id="landmark-labels" data={landmarksFC}>
+          <Layer
+            id="landmark-label"
+            type="symbol"
+            filter={['<=', ['get', 'minZoom'], ['zoom']]}
+            layout={{
+              'text-field': ['get', 'name'],
+              'text-size': 11,
+              // Required on Native for the reason the bay label below gives.
+              'text-font': ['Noto Sans Regular'],
+              'text-max-width': 8,
+              'symbol-sort-key': ['get', 'sortKey'],
+              'text-allow-overlap': false,
+              'text-optional': true,
+            }}
+            paint={{
+              'text-color': subAreaPalette.label,
+              'text-halo-color': subAreaPalette.halo,
+              'text-halo-width': 1.2,
+              'text-opacity': 0.85,
+            }}
           />
         </GeoJSONSource>
 

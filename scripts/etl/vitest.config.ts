@@ -46,6 +46,11 @@ export default defineConfig({
         'src/accessCli.ts',
         'src/loadAccess.ts', // batching + `convex run`; the join and the ladder are in the mutation
         'src/loadSubAreas.ts', // reads the artifact, calls one mutation; the rules are both tested
+        // osmium + the body export + file I/O. What a feature is, which body it belongs to, what is
+        // one place and which corpus name attaches where live in `landmarkSource.ts`,
+        // `landmarkMatch.ts` and `landmarkCorpus.ts`, all covered.
+        'src/landmarkCli.ts',
+        'src/loadLandmarks.ts', // batching + `convex run`; the upsert rules are in `landmarks.importForBody`
         'src/loadReconciliation.ts',
         'src/resolveMergeDuplicates.ts', // reads the artifact, calls one mutation; the rules are tested
         'src/pruneFloor.ts', // drives `waterBodies.pruneBelowAreaFloor`, which has its own tests

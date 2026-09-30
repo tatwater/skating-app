@@ -47,6 +47,8 @@ export interface LakeEditorData {
   suggestedPoints: readonly LatLng[];
   /** A shape being drawn or pasted, previewed before save. */
   draftPolygon: GeoJSON.Geometry | null;
+  /** Named landmarks (D202) — a dot each, labeled by prominence where there is room. */
+  landmarks?: readonly { name: string; point: LatLng; prominence: number }[];
 }
 
 /**
@@ -203,6 +205,39 @@ export function LakeEditorMap({
         paint: { 'line-color': '#eab308', 'line-width': 2 },
       });
 
+      // Landmarks (D202) under the put-ins: a dot for every one, so a moderator sees what is there
+      // before dropping a duplicate, and the name where it fits — the most prominent placed first,
+      // exactly as the public map will place them.
+      map.addSource('editor-landmarks', { type: 'geojson', data: EMPTY });
+      map.addLayer({
+        id: 'editor-landmark-dots',
+        type: 'circle',
+        source: 'editor-landmarks',
+        paint: {
+          'circle-radius': 3,
+          'circle-color': bays.label,
+          'circle-stroke-color': pinHalo,
+          'circle-stroke-width': 1,
+        },
+      });
+      map.addLayer({
+        id: 'editor-landmark-labels',
+        type: 'symbol',
+        source: 'editor-landmarks',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 11,
+          // Named, not left to MapLibre's default stack — the Protomaps glyph host serves only its
+          // own faces, and a default-font label 404s per glyph range and never draws.
+          'text-font': ['Noto Sans Regular'],
+          'text-offset': [0, 0.9],
+          'text-anchor': 'top',
+          'text-optional': true,
+          'symbol-sort-key': ['-', 0, ['get', 'prominence']],
+        },
+        paint: { 'text-color': bays.label, 'text-halo-color': bays.halo, 'text-halo-width': 1.2 },
+      });
+
       map.addSource('editor-put-ins', { type: 'geojson', data: EMPTY });
       map.addLayer({
         id: 'editor-put-ins',
@@ -349,6 +384,19 @@ export function LakeEditorMap({
     });
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
   }, [loaded, data.putIns, setData]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    setData('editor-landmarks', {
+      type: 'FeatureCollection',
+      features: (data.landmarks ?? []).map((l) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [l.point.lng, l.point.lat] },
+        properties: { name: l.name, prominence: l.prominence },
+      })),
+    });
+    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
+  }, [loaded, data.landmarks, setData]);
 
   useEffect(() => {
     if (!loaded) return;

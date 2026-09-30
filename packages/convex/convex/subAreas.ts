@@ -65,6 +65,7 @@ import {
 import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
+import { retireAsPromoted, retireNamedAsBay, subAreaFor } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -90,7 +91,14 @@ const SEED_MIN_RETAINED_FRACTION = 0.35;
  * just re-resolved; walking reports first would rebuild each of them from a stamp about to change.
  * Put-ins and features follow because nothing else depends on them.
  */
-const RESTAMP_TABLES = ['gpsActivities', 'reports', 'hazards', 'putIns', 'bodyFeatures'] as const;
+const RESTAMP_TABLES = [
+  'gpsActivities',
+  'reports',
+  'hazards',
+  'putIns',
+  'bodyFeatures',
+  'bodyLandmarks',
+] as const;
 type RestampTable = (typeof RESTAMP_TABLES)[number];
 
 /**
@@ -197,6 +205,8 @@ function toCandidates(
       ref: row,
       polygon: row.polygon as unknown as Polygon | MultiPolygon,
       surfaceAreaSqM: row.surfaceAreaSqM,
+      // The landmark stamp's prefilter (D202); the other rules ignore it.
+      bbox: row.bbox,
     }));
 }
 
@@ -556,6 +566,13 @@ async function insertSubArea(
     minVisibleZoom: derived.minVisibleZoom,
     listed: true, // every insert path has just proved the parent is listed
   });
+  // Every way a bay is born — chord, freehand, paste, seed, import — retires the landmark that
+  // named the same water (D202), here in the one insert rather than in each caller.
+  await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, {
+    _id: subAreaId,
+    polygon: derived.polygon,
+    names: [input.name, ...input.aliases],
+  });
   return subAreaId;
 }
 
@@ -838,6 +855,8 @@ export const create = mutation({
     /** The drawn outline. Clipped to the parent before storage — never stored as supplied. */
     polygon: geoJson,
     curatedBoost: v.optional(v.number()),
+    /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
+    promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -862,6 +881,9 @@ export const create = mutation({
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
     });
+    if (args.promoteLandmarkId !== undefined) {
+      await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
+    }
     // A new bay claims reports and hazards that already sit inside it, so the label appears on the
     // history too rather than only on what's filed from now on.
     await scheduleRestamp(ctx, args.waterBodyId);
@@ -938,6 +960,8 @@ export const createFromChord = mutation({
     mouth: subAreaMouth,
     curatedBoost: v.optional(v.number()),
     requestId: v.optional(v.id('waterBodyRequests')),
+    /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
+    promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -970,6 +994,9 @@ export const createFromChord = mutation({
       args.requestId === undefined
         ? undefined
         : await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
+    if (args.promoteLandmarkId !== undefined) {
+      await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
+    }
     await scheduleRestamp(ctx, args.waterBodyId);
     // What happened to the ask, so the editor says so: an ask decided elsewhere while this bay was
     // being drawn keeps the answer it got, and "answered the ask" would be untrue.
@@ -1053,6 +1080,14 @@ export const rename = mutation({
         : `Updated aliases for "${nextName}"`,
       { waterBodyId: subArea.waterBodyId, aliases: nextAliases },
     );
+    // A name the bay now answers to is the bay's — a live landmark saying it retires (D202).
+    if (subArea.removedAt === undefined) {
+      await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+        _id: subAreaId,
+        polygon: subArea.polygon as unknown as Polygon | MultiPolygon,
+        names: [nextName, ...nextAliases],
+      });
+    }
     // Only the name is denormalized, so an alias-only edit changes nothing downstream — skip the job.
     if (nextName !== subArea.name) await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1158,6 +1193,12 @@ export const restore = mutation({
       waterBodyId: subArea.waterBodyId,
       geometryChanged,
       ...(chord ? { via: chord.ok ? 'chord' : 'reclip' } : {}),
+    });
+    // A bay back on the map takes its names back from any landmark that carried them meanwhile.
+    await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+      _id: subAreaId,
+      polygon: geometry.polygon as Polygon | MultiPolygon,
+      names: [subArea.name, ...(subArea.aliases ?? [])],
     });
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1379,6 +1420,22 @@ export const restampParent = internalMutation({
           .paginate(opts);
         for (const row of p.page) {
           const nextId = smallestContainingSubArea(hazardCenter(row), candidates)?._id;
+          if (row.subAreaId === nextId) continue;
+          await ctx.db.patch(row._id, { subAreaId: nextId });
+          changed++;
+        }
+        page = p;
+        break;
+      }
+      case 'bodyLandmarks': {
+        // The landmark stamp (D202): holes filled, so an island is in the bay around it. Paged like
+        // every other table — a giant's landmarks against its bays is real work per row.
+        const p = await ctx.db
+          .query('bodyLandmarks')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const nextId = subAreaFor(row.point, candidates)?.subAreaId;
           if (row.subAreaId === nextId) continue;
           await ctx.db.patch(row._id, { subAreaId: nextId });
           changed++;
