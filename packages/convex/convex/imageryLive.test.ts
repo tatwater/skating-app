@@ -9,7 +9,7 @@ import schema from './schema';
 const modules = import.meta.glob('./**/*.*s');
 
 /**
- * Live imagery (A06i §5, D214): poll → spawn → reconcile → index, against a stubbed catalog,
+ * Live imagery (A06i §5, D214): poll → pump → index, single-flight, against a stubbed catalog,
  * bucket and Fly API.
  */
 
@@ -361,10 +361,13 @@ async function queue(t: T, ids: string[], fields: Record<string, unknown> = {}) 
 
 const seasonRow = (t: T) => t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
 const counts = (t: T) => t.run((ctx) => ctx.db.query('imageryCounts').first());
+const pumpState = (t: T) =>
+  t.run(async (ctx) => (await ctx.db.query('imageryPump').collect()).find((r) => r.key === 'pump'));
 const pumpNow = (t: T) => t.action(internal.imageryLive.pump, {});
+const pendingPumps = (t: T) => scheduled(t, 'imageryLive:pump');
 
 describe('pump — starting cuts', () => {
-  test('starts up to the live cap, and beats again while work is left', async () => {
+  test('starts up to the live cap, and leaves exactly one next beat', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     const ids = [s2('19TEA', '20261005'), s2('19TEB', '20261005'), s2('19TEC', '20261005')];
@@ -379,12 +382,17 @@ describe('pump — starting cuts', () => {
     stub(w);
     expect(await pumpNow(t)).toMatchObject({ live: 23, spawned: 2 });
     expect(w.spawned).toEqual(ids.slice(0, 2));
-    const rows = await granules(t);
     expect(
-      rows.filter((g) => g.status === 'spawned').every((g) => g.machineId?.startsWith('m-')),
+      (await granules(t))
+        .filter((g) => g.status === 'spawned')
+        .every((g) => g.machineId?.startsWith('m-')),
     ).toBe(true);
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
+    expect(await pendingPumps(t)).toHaveLength(1);
     expect((await runs(t))[0]).toMatchObject({ kind: 'pump', outcome: 'ok' });
+    // Woken again (a poll, a click): still one beat, never a second chain.
+    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 0 });
+    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 60_000 });
+    expect(await pendingPumps(t)).toHaveLength(1);
   });
 
   test('never starts a cut while paused — but still settles the ones in flight', async () => {
@@ -400,11 +408,11 @@ describe('pump — starting cuts', () => {
     expect(await pumpNow(t)).toMatchObject({ landed: 1, spawned: 0 });
     expect(w.spawned).toEqual([]);
     // Queued but not allowed to start, and nothing cutting: the pump stops beating.
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(0);
+    expect(await pendingPumps(t)).toHaveLength(0);
     expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
   });
 
-  test('a refused spawn keeps its attempts, and three in a row trip the breaker', async () => {
+  test('a refused spawn spends no attempt; three in a row trip the breaker and back off', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     const ids = ['A', 'B', 'C', 'D', 'E'].map((c) => s2(`19TE${c}`, '20261005'));
@@ -412,28 +420,79 @@ describe('pump — starting cuts', () => {
     stub(world({ spawnFails: new Set(ids) }));
     expect(await pumpNow(t)).toMatchObject({ refused: 3, spawned: 0 });
     const rows = await granules(t);
-    // Every granule is back in the queue, none has spent an attempt, and two were never tried.
     expect(rows.every((g) => g.status === 'queued' && g.attempts === 0)).toBe(true);
-    expect(rows.filter((g) => g.lastError?.includes('breaker'))).toHaveLength(2);
+    // The three tried carry a refusal each; the two never tried carry nothing.
+    expect(rows.filter((g) => g.refusals === 1)).toHaveLength(3);
     const alert = (await scheduled(t, 'broadcastToStaff'))[0]?.args[0];
     expect(alert).toMatchObject({
       heading: 'Fly is refusing new satellite cuts',
       roles: ['admin'],
     });
-    // The next beat is the half-hour backoff, not the three-minute one.
-    const [next] = await scheduled(t, 'imageryLive:pump');
+    const state = await pumpState(t);
+    expect((state?.backoffUntil ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+    const [next] = await pendingPumps(t);
     expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
-    expect((await runs(t))[0]).toMatchObject({
-      outcome: 'failed',
-      detail: 'backing off 30 minutes',
-    });
+    // A poll's wake does not cut the backoff short…
+    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 0 });
+    const [still] = await pendingPumps(t);
+    expect((still?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
   });
 
-  test('an unreadable Machine list backs off with one alert, and starts nothing', async () => {
+  test('the refusal streak carries across beats, so one refusal at a time still trips', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const id = s2('19TEA', '20261005');
+    const w = world({
+      spawnFails: new Set([id]),
+      machines: Array.from({ length: 24 }, (_, i) => ({
+        id: `x${i}`,
+        name: `granule-x${i}`,
+        state: 'started',
+      })),
+    });
+    stub(w);
+    await queue(t, [id]);
+    for (let beat = 1; beat <= 3; beat++) {
+      await pumpNow(t);
+      expect((await pumpState(t))?.refusalStreak).toBe(beat);
+    }
+    // Three refusals of the one granule: it is failed, and the breaker is open.
+    expect((await granules(t))[0]).toMatchObject({ status: 'failed', refusals: 3 });
+    expect((await pumpState(t))?.backoffUntil).toBeGreaterThan(Date.now());
+    const headings = (await scheduled(t, 'broadcastToStaff')).map(
+      (j) => (j.args[0] as { heading: string }).heading,
+    );
+    expect(headings).toContain('Fly is refusing new satellite cuts');
+    expect(headings).toContain('1 satellite cut failed');
+  });
+
+  test('a refused granule goes to the back of the queue', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const bad = s2('19TEA', '20261005');
+    const good = s2('19TEB', '20261005');
+    await queue(t, [bad]);
+    vi.advanceTimersByTime(1_000);
+    await queue(t, [good]);
+    const w = world({
+      spawnFails: new Set([bad]),
+      machines: Array.from({ length: 24 }, (_, i) => ({
+        id: `x${i}`,
+        name: `granule-x${i}`,
+        state: 'started',
+      })),
+    });
+    stub(w);
+    vi.advanceTimersByTime(1_000);
+    await pumpNow(t); // claims the bad one (oldest), refused — and re-queued at this later time
+    await pumpNow(t); // claims the good one now — the bad one moved behind it
+    expect(w.spawned).toEqual([good]);
+  });
+
+  test('an unreadable Machine list backs off with one alert a day, and starts nothing', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     await queue(t, [s2('19TEA', '20261005')]);
-    stub(world());
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: Request | string) => {
@@ -444,37 +503,141 @@ describe('pump — starting cuts', () => {
     );
     expect(await pumpNow(t)).toMatchObject({ spawned: 0 });
     expect((await granules(t))[0]?.status).toBe('queued');
-    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+    await pumpNow(t);
+    const alerts = await scheduled(t, 'broadcastToStaff');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.args[0]).toMatchObject({
       heading: 'The Fly API is refusing the imagery job',
     });
-    // A second pump the same day: no second email.
-    await t.run(async (ctx) => {
-      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
-        if (job.name.includes('pump')) await ctx.scheduler.cancel(job._id);
-      }
-    });
-    await pumpNow(t);
-    expect(await scheduled(t, 'broadcastToStaff')).toHaveLength(1);
   });
 
-  test('only one pump runs at a time; one asked for meanwhile runs on release', async () => {
+  test('Retry failed (and Start) clear the backoff and wake the pump at once', async () => {
     const t = convexTest(schema, modules);
-    expect(await t.mutation(internal.imageryLive.acquireLease, { key: 'pump' })).toBe(true);
-    stub(world());
-    expect(await pumpNow(t)).toEqual({ skipped: 'another pump is running' });
-    expect(await t.mutation(internal.imageryLive.releaseLease, { key: 'pump' })).toBe(true);
-    expect(await t.mutation(internal.imageryLive.acquireLease, { key: 'pump' })).toBe(true);
-    // A lease left by a crashed holder lapses.
-    vi.advanceTimersByTime(10 * 60_000);
-    expect(await t.mutation(internal.imageryLive.acquireLease, { key: 'pump' })).toBe(true);
-    expect(await t.mutation(internal.imageryLive.releaseLease, { key: 'nobody' })).toBe(false);
+    await openSeason(t);
+    await t.run((ctx) =>
+      ctx.db.insert('imageryPump', {
+        key: 'pump',
+        runningUntil: 0,
+        pending: false,
+        backoffUntil: Date.now() + 20 * 60_000,
+        refusalStreak: 3,
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'admin',
+        displayName: 'A',
+        username: 'a',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyAnswered: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: true,
+          greatReportNearby: true,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'admin' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.retryFailed, {});
+    const state = await pumpState(t);
+    expect(state?.backoffUntil).toBeUndefined();
+    expect(state?.refusalStreak).toBe(0);
+    const [next] = await pendingPumps(t);
+    expect((next?.scheduledTime ?? Number.POSITIVE_INFINITY) - Date.now()).toBeLessThan(1_000);
   });
 
-  test('does nothing without credentials', async () => {
+  test('does nothing without credentials, and schedules nothing', async () => {
     const t = convexTest(schema, modules);
     vi.unstubAllEnvs();
     expect(await pumpNow(t)).toEqual({ skipped: 'unconfigured' });
+    expect(await pendingPumps(t)).toHaveLength(0);
     expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+  });
+
+  test('a run that throws still schedules a backoff beat', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    await queue(t, [s2('19TEA', '20261005')]);
+    // Fly refuses the list, and the alert about it then throws (a corrupt duplicate throttle row
+    // makes its `.unique()` read fail) — an unexpected error in the middle of a beat.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('dailyThrottle', { key: 'imagery-fly', lastOn: '2000-01-01' });
+      await ctx.db.insert('dailyThrottle', { key: 'imagery-fly', lastOn: '2000-01-01' });
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 401 })),
+    );
+    await expect(pumpNow(t)).rejects.toThrow();
+    const [next] = await pendingPumps(t);
+    expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+    expect((await pumpState(t))?.runningUntil).toBe(0);
+  });
+});
+
+describe('the single-flight state', () => {
+  test('one holder at a time; a second asking is noted and run on release', async () => {
+    const t = convexTest(schema, modules);
+    expect(await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' })).toEqual({
+      ok: true,
+      refusalStreak: 0,
+    });
+    stub(world());
+    expect(await pumpNow(t)).toEqual({ skipped: 'another pump is running' });
+    // The refused begin left a beat at the lease's expiry, so a dead holder cannot strand the job…
+    const [expiry] = await pendingPumps(t);
+    expect((expiry?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(14 * 60_000);
+    // …and the holder's release, with someone having asked, runs it again now.
+    await t.mutation(internal.imageryLive.end, { key: 'pump', token: 'a', delayMs: null });
+    const [now] = await pendingPumps(t);
+    expect((now?.scheduledTime ?? Number.POSITIVE_INFINITY) - Date.now()).toBeLessThan(1_000);
+    expect(await pendingPumps(t)).toHaveLength(1);
+  });
+
+  test('only the token that took the lease can release it', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' });
+    await t.mutation(internal.imageryLive.end, { key: 'pump', token: 'stale', delayMs: 0 });
+    expect((await pumpState(t))?.runningUntil).toBeGreaterThan(Date.now());
+    // A lease outlives any action, then lapses.
+    vi.advanceTimersByTime(16 * 60_000);
+    expect((await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'b' })).ok).toBe(
+      true,
+    );
+  });
+
+  test('a later wake never replaces an earlier beat', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 60_000 });
+    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 5 * 60_000 });
+    const beats = await pendingPumps(t);
+    expect(beats).toHaveLength(1);
+    expect((beats[0]?.scheduledTime ?? 0) - Date.now()).toBeLessThanOrEqual(60_000);
+    // An earlier one does replace it.
+    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 0 });
+    const [first] = await pendingPumps(t);
+    expect((first?.scheduledTime ?? 1) - Date.now()).toBeLessThan(1_000);
+    expect(await pendingPumps(t)).toHaveLength(1);
+  });
+
+  test('the index build is single-flight too', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'a' });
+    stub(world());
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    await t.mutation(internal.imageryLive.end, { key: 'index', token: 'a', delayMs: null });
+    expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
   });
 });
 
@@ -531,7 +694,8 @@ describe('pump — settling cuts', () => {
     stub(w);
     expect(await pumpNow(t)).toMatchObject({
       landed: 1,
-      running: 3,
+      running: 1,
+      young: 2,
       requeued: 1,
       empty: 2,
       failed: 1,
@@ -547,10 +711,10 @@ describe('pump — settling cuts', () => {
     expect(by.get(lostClaim)?.status).toBe('empty');
     expect(by.get(freshClaim)?.status).toBe('spawned');
     expect(by.get(justSpawned)?.status).toBe('spawned');
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
+    expect(await pendingPumps(t)).toHaveLength(1);
     expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
-      heading: '1 satellite cut failed twice',
+      heading: '1 satellite cut failed',
     });
   });
 
@@ -592,20 +756,37 @@ describe('pump — settling cuts', () => {
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'Cuts in flight cannot be checked',
     });
-    const [next] = await scheduled(t, 'imageryLive:pump');
+    const [next] = await pendingPumps(t);
     expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
   });
 
-  test('a Machine read that errors is checked again next beat', async () => {
+  test('one blink among answers is not a backoff', async () => {
     const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: Date.now() });
     await queue(t, [s2('19TEA', '20261005')], {
       status: 'spawned',
       attempts: 1,
       machineId: 'bad',
       spawnedAt: 0,
     });
-    stub(world({ machineDetail: new Map([['bad', 'error']]) }));
-    expect(await pumpNow(t)).toMatchObject({ unknown: 1 });
+    await queue(t, [s2('19TEB', '20261005')], {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'm',
+      spawnedAt: 0,
+    });
+    stub(
+      world({
+        machineDetail: new Map<string, unknown>([
+          ['bad', 'error'],
+          ['m', { state: 'started' }],
+        ]),
+      }),
+    );
+    expect(await pumpNow(t)).toMatchObject({ unknown: 1, running: 1 });
+    expect(await scheduled(t, 'broadcastToStaff')).toHaveLength(0);
+    const [next] = await pendingPumps(t);
+    expect((next?.scheduledTime ?? 0) - Date.now()).toBeLessThanOrEqual(3 * 60_000);
   });
 
   test('nothing to do records nothing and schedules nothing', async () => {
@@ -613,7 +794,7 @@ describe('pump — settling cuts', () => {
     stub(world());
     expect(await pumpNow(t)).toMatchObject({ landed: 0, spawned: 0 });
     expect(await runs(t)).toEqual([]);
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(0);
+    expect(await pendingPumps(t)).toHaveLength(0);
   });
 });
 
@@ -716,7 +897,7 @@ describe('buildIndex', () => {
 });
 
 describe('the page', () => {
-  test("sees runs, this season's ledger totals and the last failures; Retry failed requeues them", async () => {
+  test("sees runs, this season's ledger, the last failures and any backoff; Retry failed requeues", async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     stub(world());
@@ -729,18 +910,27 @@ describe('the page', () => {
           season: SEASON,
           capturedAt: '2026-10-05T15:30:00Z',
         },
+        {
+          granuleId: s2('19TEB', '20261005'),
+          slot: 'S2C_19TEB_20261005',
+          mission: 's2',
+          season: SEASON,
+          capturedAt: '2026-10-05T15:31:00Z',
+        },
       ],
       cap: 10,
     });
-    const [failed] = await queue(t, [s2('19TEB', '20261005')], {
-      status: 'spawned',
-      attempts: 2,
-      machineId: 'exit1',
+    // Claim both, then fail one — every move through the ledger.
+    const claims = await t.mutation(internal.imageryLive.claimForSpawn, {
+      season: SEASON,
+      limit: 2,
     });
-    await t.mutation(internal.imageryLive.settleGranule, {
-      id: failed as Id<'imageryGranules'>,
-      status: 'failed',
-      error: 'exit 1',
+    await t.mutation(internal.imageryLive.settleMany, {
+      settled: [{ id: claims[1]?.id as Id<'imageryGranules'>, status: 'failed', error: 'exit 1' }],
+    });
+    await t.mutation(internal.imageryLive.settleSpawn, {
+      id: claims[0]?.id as Id<'imageryGranules'>,
+      untried: true,
     });
     await t.mutation(internal.imageryLive.recordRun, {
       season: SEASON,
@@ -776,38 +966,36 @@ describe('the page', () => {
     );
     const admin = t.withIdentity({ subject: 'admin' });
     const activity = await admin.query(api.imageryLive.activity, {});
-    // The queued one counted on insert; the hand-made spawned row only counted as it settled.
-    expect(activity.counts).toMatchObject({ queued: 1, failed: 1 });
+    expect(activity.counts).toEqual({ queued: 1, spawned: 0, landed: 0, empty: 0, failed: 1 });
     expect(activity.failed).toEqual([{ granuleId: s2('19TEB', '20261005'), lastError: 'exit 1' }]);
     expect(activity.runs).toHaveLength(1);
     expect(activity.configured).toBe(true);
+    expect(activity.backoffUntil).toBeNull();
 
     expect(await admin.mutation(api.imageryLive.retryFailed, {})).toEqual({ requeued: 1 });
     expect((await admin.query(api.imageryLive.activity, {})).counts).toMatchObject({
       queued: 2,
       failed: 0,
     });
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
+    expect(await pendingPumps(t)).toHaveLength(1);
   });
 
-  test('settling ignores a vanished or already-settled row; a claim with no room takes nothing', async () => {
+  test('settling ignores a row that is not cutting; a claim with no room takes nothing', async () => {
     const t = convexTest(schema, modules);
     const [id] = await queue(t, [s2('19TEA', '20261005')]);
-    // Still queued, not spawned: neither settle touches it.
     expect(
       await t.mutation(internal.imageryLive.settleSpawn, {
         id: id as Id<'imageryGranules'>,
         machineId: 'm',
       }),
-    ).toBeNull();
-    expect(
-      await t.mutation(internal.imageryLive.settleGranule, {
-        id: id as Id<'imageryGranules'>,
-        status: 'landed',
-      }),
-    ).toBeNull();
+    ).toEqual({ failed: false });
+    await t.mutation(internal.imageryLive.settleMany, {
+      settled: [{ id: id as Id<'imageryGranules'>, status: 'landed' }],
+    });
     expect((await granules(t))[0]?.status).toBe('queued');
-    expect(await t.mutation(internal.imageryLive.claimForSpawn, { limit: 0 })).toEqual([]);
+    expect(
+      await t.mutation(internal.imageryLive.claimForSpawn, { season: SEASON, limit: 0 }),
+    ).toEqual([]);
     expect(
       await t.mutation(internal.imageryLive.setWindowTo, {
         season: 'winter-2030-31',

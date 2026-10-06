@@ -331,6 +331,8 @@ export interface ImageryActivity {
   runs: ImageryRun[];
   counts: Record<string, number>;
   failed: { granuleId: string; lastError: string | null }[];
+  /** When the pump resumes after Fly or the archive failed, or `null`. */
+  backoffUntil?: number | null;
   configured: boolean;
   pollCap: number;
   maxLive: number;
@@ -379,6 +381,12 @@ export function ImageryPanel({
         ) : null}
       </div>
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
+      {activity?.backoffUntil && activity.backoffUntil > Date.now() ? (
+        <p className="text-sm text-warning">
+          Backing off until {new Date(activity.backoffUntil).toLocaleTimeString()} — Fly or the
+          archive was failing. Start imagery or Retry failed tries again at once.
+        </p>
+      ) : null}
       {activity && !activity.configured ? (
         <p className="text-sm text-warning">
           The deployment is missing imagery credentials (Fly and R2). Started imagery refuses each

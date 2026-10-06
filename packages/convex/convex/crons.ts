@@ -275,8 +275,9 @@ crons.interval(
 
 /**
  * Live satellite imagery (A06i §5 / D214). Every six hours, once an admin has pressed *Start imagery*
- * on `/admin/seasons`, ask the catalog for passes published since the last check and cut each new
- * one. A no-op — one indexed read — whenever imagery is not running, which is most of the year.
+ * on `/admin/seasons`, ask the catalog for passes published since the last check and queue each new
+ * one for the pump. Whenever imagery is not running — most of the year — it is one indexed read and
+ * a wake of the pump, which finds nothing to do and schedules nothing.
  *
  * Six hours rather than timed to orbits: what matters is when a processed granule reaches the
  * catalog, and that lags the pass by hours to a day on no schedule. One cheap request finds out.

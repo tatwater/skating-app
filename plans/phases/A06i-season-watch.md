@@ -148,6 +148,21 @@ before anything is stored or decided (D140); the full history fill runs once a d
 must be real days inside their season; the reset email names the notice by its New York day; the
 ledger totals are kept in `imageryCounts` instead of counted per render.
 
+A second pass over that fix found it still let beats multiply — a nine-minute lease under a
+ten-minute action limit could lapse mid-run, an unowned release freed the next holder's lease,
+each wake-up scheduled its own beat, and a run that threw scheduled nothing — and that the
+breaker reset every beat, so a refusal arriving one at a time never tripped it. Two rounds in the
+same fix meant redesign: `lib/imageryPump` makes both jobs **single-flight** (one state row per
+job: a 15-minute owner-token lease, the one pending beat, the backoff and the refusal streak; every
+wake-up replaces rather than adds; a throw ends in a backoff beat; only an admin's *Start* or *Retry
+failed* cuts a backoff short). In place: a single unknown among answers no longer backs off; a
+refused granule moves to the back of the queue and fails on its third refusal; the pump, the
+failed list and *Retry failed* are scoped to the current season; the fill guard holds from the
+click until the fill's last request, not for a calendar day; today's low is dropped at
+`storeSeries`, the one sink, rather than at each fetch; Fly and archive reads time out at 30 s;
+settle checks run eight at a time and land in one mutation, with the ledger written once per
+mutation.
+
 ### §6 — `/admin/seasons`
 
 The current watch (state, dates, sentinels, *Reset*), imagery (*Start* / *Pause*, the run history),

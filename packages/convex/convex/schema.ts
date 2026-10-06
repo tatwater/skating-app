@@ -1316,10 +1316,12 @@ export default defineSchema({
     spawnedAt: v.optional(v.number()),
     settledAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
+    /** Spawns the Fly API refused for this granule — three and it is settled as failed. */
+    refusals: v.optional(v.number()),
   })
     .index('by_granule', ['granuleId'])
     .index('by_slot', ['slot'])
-    .index('by_status', ['status', 'queuedAt']),
+    .index('by_season_status', ['season', 'status', 'queuedAt']),
 
   // One row per frame manifest found in R2 for a season (A06i §5): what the season index is composed
   // from. Rebuilt by listing — a row whose manifest is no longer listed is dropped — so the index is
@@ -1355,15 +1357,26 @@ export default defineSchema({
   // history fill, which a second click must not double against the Open-Meteo budget.
   dailyThrottle: defineTable({
     key: v.string(),
-    lastOn: v.string(),
+    /** The New York day the key was last used, for once-a-day keys. */
+    lastOn: v.optional(v.string()),
+    /** Until when the key is busy, for a key that guards something long-running (the fill). */
+    until: v.optional(v.number()),
   }).index('by_key', ['key']),
 
-  // The live imagery job's leases (A06i §5): one `pump` and one `index` at a time, ever. `pending`
-  // records that a run was asked for while the lease was held, so it runs once more on release.
-  imageryLeases: defineTable({
+  // The live imagery job's single-flight state (A06i §5, D214), one row per job (`pump`, `index`).
+  // `runningUntil` + `token` are the lease — longer than Convex's 10-minute action limit, so it can
+  // only lapse after its holder is dead, and only the holder's token releases it. `nextAt` +
+  // `scheduledId` are the **one** pending beat: every wake-up goes through here, so beats never
+  // multiply. `backoffUntil` and `refusalStreak` carry a failing Fly or archive across beats.
+  imageryPump: defineTable({
     key: v.string(),
-    leaseUntil: v.number(),
+    runningUntil: v.number(),
+    token: v.optional(v.string()),
     pending: v.boolean(),
+    nextAt: v.optional(v.number()),
+    scheduledId: v.optional(v.id('_scheduled_functions')),
+    backoffUntil: v.optional(v.number()),
+    refusalStreak: v.optional(v.number()),
   }).index('by_key', ['key']),
 
   // The granule ledger's totals per frame season (A06i §5), kept beside every status change so the

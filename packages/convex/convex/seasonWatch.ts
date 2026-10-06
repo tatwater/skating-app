@@ -44,14 +44,14 @@ import {
 import { openMeteoCallWeight } from './lib/apiMeter';
 import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
-import { firstToday } from './lib/dailyThrottle';
+import { busyUntil, setBusyUntil } from './lib/dailyThrottle';
+import { wakeBeat } from './lib/imageryPump';
 import { isListed } from './lib/listing';
 import { newYorkDate } from './lib/seasonWatchEmails';
 import {
   rosterSite as rosterSiteValidator,
   seasonWatchSettings as settingsValidator,
 } from './lib/seasonWatchValidators';
-import { siteToday } from './lib/siteDay';
 import { literals } from './lib/validators';
 
 /**
@@ -171,7 +171,6 @@ async function defaultConfig(ctx: QueryCtx): Promise<Omit<WatchConfig, 'version'
   };
 }
 
-/** The current settings, seeding version 1 from the defaults on first use. */
 /**
  * Stamp any season row opened before A06i — the legacy winter-2026-27 row — with what decided it.
  *
@@ -200,6 +199,7 @@ async function stampLegacyRows(ctx: MutationCtx) {
   }
 }
 
+/** The current settings, seeding version 1 from the defaults on first use. */
 export const ensureSettings = internalMutation({
   args: {},
   handler: async (ctx): Promise<WatchConfig> => {
@@ -325,11 +325,18 @@ export const storeSeries = internalMutation({
           q.eq('season', season).eq('waterBodyId', site.waterBodyId),
         )
         .unique();
+      // ⚠ **Today's low is a forecast** — the night is not over — so it is never stored, and so
+      // never decided on (D140: observed, never forecast). Enforced here, at the one sink every
+      // writer goes through, rather than at each fetch. The corpus is all US Eastern, so New York's
+      // date is every site's date; kept would be a forecast 19 °F recording the one-way imagery-line
+      // date, and sending its email, before the night had happened.
+      const today = newYorkDate(now);
+      const observed = site.days.filter((d) => d.date < today);
       // ⚠ **The archive fills gaps in what the live watch kept; it never replaces it.** Those forecast
       // nights are what the season was actually decided on, and a replay must reproduce the decision.
       const keepLive = existing?.source === 'forecast' && source === 'archive';
       const kept = keepLive ? new Set(expandLows(existing).map((d) => d.date)) : null;
-      const days = kept ? site.days.filter((d) => !kept.has(d.date)) : site.days;
+      const days = kept ? observed.filter((d) => !kept.has(d.date)) : observed;
       const merged = mergeLows(existing, days as DailyLow[]);
       const fields = {
         name: site.name,
@@ -552,6 +559,8 @@ export const startImagery = mutation({
       imageryPausedAt: undefined,
     });
     await ctx.scheduler.runAfter(0, internal.imageryLive.poll, {});
+    // Pressing *Start* is also how an admin says "I fixed it" — clear any backoff and wake the pump.
+    await wakeBeat(ctx, 'pump', 0, { force: true });
     return null;
   },
 });
@@ -626,13 +635,17 @@ export const requestHistoryFill = mutation({
   args: {},
   handler: async (ctx) => {
     await requireContributorRole(ctx, 'admin');
-    // A full fill is ~6,000 weighted Open-Meteo calls spread over a day and a half; a second click
-    // (or a second admin) must not stack another on the same free budget.
-    if (!(await firstToday(ctx, 'history-fill'))) {
+    // A full fill is ~6,000 weighted Open-Meteo calls spread over a day and a half; a second one
+    // started before the first finishes would stack on the same free budget, whoever clicks.
+    const busy = await busyUntil(ctx, 'history-fill');
+    if (busy !== null && busy > Date.now()) {
       throw new ConvexError(
-        'A full history fill already started today — it runs over about a day and a half.',
+        `A full history fill is still running, until ${new Date(busy).toUTCString()}.`,
       );
     }
+    // Held from the click, not from when the planner runs — a second click in between must see it.
+    // The planner replaces this with the fill's real end.
+    await setBusyUntil(ctx, 'history-fill', Date.now() + 2 * 24 * 60 * 60_000);
     await ctx.scheduler.runAfter(0, internal.seasonWatch.scheduleHistoryFill, {});
     return null;
   },
@@ -676,7 +689,10 @@ export const scheduleHistoryFill = internalMutation({
     const config = row ? configOf(row) : { version: 0, ...(await defaultConfig(ctx)) };
     const { sites } = await sampleSites(ctx, { ...config, sampleSize: config.settings.sampleSize });
     const wanted = waterBodyIds ? sites.filter((s) => waterBodyIds.includes(s.siteId)) : sites;
-    if (wanted.length === 0) return { requests: 0 };
+    if (wanted.length === 0) {
+      if (!waterBodyIds) await setBusyUntil(ctx, 'history-fill', Date.now());
+      return { requests: 0 };
+    }
 
     const chunks: (typeof wanted)[] = [];
     for (let i = 0; i < wanted.length; i += HISTORY_SITES_PER_REQUEST) {
@@ -705,12 +721,13 @@ export const scheduleHistoryFill = internalMutation({
         });
       }
     }
+    // A full fill marks itself busy until its last request, so a second cannot stack on it.
+    if (!waterBodyIds) await setBusyUntil(ctx, 'history-fill', now + slot * spacing + 60 * 60_000);
     return { requests: slot + chunks.length };
   },
 });
 
 interface DailyResponse {
-  utc_offset_seconds?: number;
   daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
 }
 
@@ -765,17 +782,12 @@ export const fillSeason = internalAction({
       sites: sites.map((site, i) => {
         const daily = rows[i]?.daily;
         const mins = daily?.temperature_2m_min ?? [];
-        // Today's low is still a forecast — dropped, as the daily tick drops it (D140).
-        const today = siteToday(now, rows[i]?.utc_offset_seconds);
         return {
           ...site,
           days: (daily?.time ?? [])
             .map((date, j) => ({ date, minTempC: mins[j] }))
             // A null low is a gap, not a warm night.
-            .filter(
-              (d): d is DailyLow =>
-                typeof d.minTempC === 'number' && d.date >= floor && d.date < today,
-            ),
+            .filter((d): d is DailyLow => typeof d.minTempC === 'number' && d.date >= floor),
         };
       }),
     });

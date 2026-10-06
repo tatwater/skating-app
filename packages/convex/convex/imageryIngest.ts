@@ -67,7 +67,6 @@ import {
   rosterSite,
   seasonWatchSettings,
 } from './lib/seasonWatchValidators';
-import { siteToday } from './lib/siteDay';
 
 type NamedSiteLow = Infer<typeof namedSiteLow>;
 
@@ -305,7 +304,6 @@ export const sendNextEmail = internalMutation({
 });
 
 interface DailyResponse {
-  utc_offset_seconds?: number;
   daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
 }
 
@@ -350,20 +348,16 @@ async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   const json = (await res.json()) as DailyResponse | DailyResponse[];
   const rows = Array.isArray(json) ? json : [json];
 
-  const now = Date.now();
   return sites.map((site, i) => {
     const daily = rows[i]?.daily;
     const mins = daily?.temperature_2m_min ?? [];
-    const today = siteToday(now, rows[i]?.utc_offset_seconds);
     return {
       site,
-      // A null low is a gap in the record, not a warm night: the site abstains for that day.
+      // A null low is a gap in the record, not a warm night: the site abstains for that day. Today's
+      // low — still a forecast — is dropped where every low is stored (`seasonWatch.storeSeries`).
       days: (daily?.time ?? [])
         .map((date, j) => ({ date, minTempC: mins[j] }))
-        .filter(
-          (d): d is { date: string; minTempC: number } =>
-            typeof d.minTempC === 'number' && d.date < today,
-        ),
+        .filter((d): d is { date: string; minTempC: number } => typeof d.minTempC === 'number'),
     };
   });
 }

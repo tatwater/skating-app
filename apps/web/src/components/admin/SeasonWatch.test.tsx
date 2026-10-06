@@ -58,6 +58,20 @@ describe('WatchCard', () => {
     expect(onReset).toHaveBeenCalledWith('reset');
   });
 
+  it('names version 0 as the defaults it shipped with', () => {
+    render(
+      <WatchCard
+        season="winter-2026-27"
+        floor="2026-10-01"
+        row={{ ...ROW, settingsVersion: 0 }}
+        onReset={async () => {}}
+      />,
+    );
+    expect(
+      screen.getByText(/the defaults it shipped with \(before versions\)/),
+    ).toBeInTheDocument();
+  });
+
   it('a legacy row says its detail is coming', () => {
     const { opening: _o, ...legacy } = ROW;
     render(
@@ -112,6 +126,22 @@ describe('ImageryPanel', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Pause imagery' }));
     expect(await screen.findByText('No watch is open for winter-2026-27.')).toBeInTheDocument();
+  });
+
+  it('offers Retry failed beside the failures, and shows a backoff', async () => {
+    const onRetryFailed = vi.fn(async () => {});
+    render(
+      <ImageryPanel
+        row={{ ...ROW, imageryStartedAt: 1 }}
+        activity={{ ...activity, configured: true, backoffUntil: Date.now() + 60_000 }}
+        onStart={async () => {}}
+        onPause={async () => {}}
+        onRetryFailed={onRetryFailed}
+      />,
+    );
+    expect(screen.getByText(/Backing off until/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
+    expect(onRetryFailed).toHaveBeenCalled();
   });
 
   it('says why there is nothing to do', () => {

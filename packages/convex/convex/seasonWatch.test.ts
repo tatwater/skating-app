@@ -354,7 +354,11 @@ describe('reset, imagery and field dates', () => {
     await admin.as.mutation(api.seasonWatch.startImagery, { season: 'winter-2026-27' });
     const started = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
     expect(started).toMatchObject({ imageryStartedBy: admin.id });
-    expect(await scheduled(t, 'imageryLive')).toHaveLength(1);
+    // A poll to queue what is new, and the pump woken (clearing any backoff).
+    expect((await scheduled(t, 'imageryLive')).map((j) => j.name).sort()).toEqual([
+      'imageryLive:poll',
+      'imageryLive:pump',
+    ]);
 
     await admin.as.mutation(api.seasonWatch.pauseImagery, { season: 'winter-2026-27' });
     expect(
@@ -456,16 +460,28 @@ describe('the review fixes', () => {
     expect(doc).toMatchObject({ source: 'forecast', firstDate: '2026-10-01', lows: [4, -1] });
   });
 
-  test('a full history fill runs once a day, whoever clicks', async () => {
+  test('a full history fill cannot start while one is still running, whoever clicks', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
     const t = convexTest(schema, modules);
+    await seedBody(t, 'Upper Lake of the Clouds', 44.258);
     const admin = await seedUser(t, 'admin', 'admin');
+    const other = await seedUser(t, 'admin2', 'admin');
     await admin.as.mutation(api.seasonWatch.requestHistoryFill, {});
-    await expect(admin.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
-      /already started today/,
+    // Before the planner has even run, a second click is refused.
+    await expect(other.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
+      /still running/,
     );
-    vi.setSystemTime(new Date('2026-10-07T12:00:00Z'));
+    // The planner sets the real end: one site is one chunk, ten past seasons 75 minutes apart,
+    // plus an hour — 13½ hours.
+    await t.mutation(internal.seasonWatch.scheduleHistoryFill, {});
+    // That evening it is still running…
+    vi.setSystemTime(new Date('2026-10-06T23:00:00Z'));
+    await expect(admin.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
+      /still running/,
+    );
+    // …and once it has ended, a new one may start.
+    vi.setSystemTime(new Date('2026-10-07T02:00:00Z'));
     await admin.as.mutation(api.seasonWatch.requestHistoryFill, {});
   });
 

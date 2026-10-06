@@ -14,6 +14,9 @@
 
 const FLY_API = 'https://api.machines.dev/v1';
 
+/** One Fly API call, at most. */
+const FLY_TIMEOUT_MS = 30_000;
+
 /** `fan-out.sh`'s defaults: `shared-cpu-4x`, 2048 MB, San Jose. */
 export const FLY_GUEST = { cpu_kind: 'shared', cpus: 4, memory_mb: 2048 } as const;
 export const FLY_VM_SIZE_LABEL = 'shared-cpu-4x/2048MB';
@@ -68,6 +71,9 @@ export function machineName(granuleId: string, attempt: number): string {
 
 async function fly(config: FlyConfig, path: string, init?: RequestInit): Promise<Response> {
   return await fetch(`${FLY_API}/apps/${config.app}${path}`, {
+    // ⚠ Bounded: `fan-out.sh` saw `fly machine run` hang for over an hour, and an unbounded call
+    // here would hold the pump's lease and its action to the 10-minute limit for nothing.
+    signal: AbortSignal.timeout(FLY_TIMEOUT_MS),
     ...init,
     headers: {
       Authorization: `Bearer ${config.token}`,

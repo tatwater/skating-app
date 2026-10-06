@@ -9,6 +9,9 @@
 
 import { AwsClient } from 'aws4fetch';
 
+/** One public read, at most — a hung request must not hold the pump's beat. */
+const TIMEOUT_MS = 30_000;
+
 export interface R2Config {
   client: AwsClient;
   endpoint: string;
@@ -100,7 +103,9 @@ export async function putJson(config: R2Config, key: string, body: unknown): Pro
 
 /** Read a public object as JSON, or `null` on a 404. */
 export async function getPublicJson<T>(config: R2Config, key: string): Promise<T | null> {
-  const res = await fetch(`${config.publicBase}/${key}`);
+  const res = await fetch(`${config.publicBase}/${key}`, {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`archive ${key}: ${res.status} ${res.statusText}`);
   return (await res.json()) as T;
@@ -108,7 +113,10 @@ export async function getPublicJson<T>(config: R2Config, key: string): Promise<T
 
 /** Whether a public object exists — a manifest is how a cut proves it landed. */
 export async function publicExists(config: R2Config, key: string): Promise<boolean> {
-  const res = await fetch(`${config.publicBase}/${key}`, { method: 'HEAD' });
+  const res = await fetch(`${config.publicBase}/${key}`, {
+    method: 'HEAD',
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
   if (res.status === 404) return false;
   if (!res.ok) throw new Error(`archive HEAD ${key}: ${res.status} ${res.statusText}`);
   return true;
