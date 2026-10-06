@@ -29,35 +29,35 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { findLatestMasks, flag, has, SCRATCH } from './cli';
 import {
   assertTileSurveyUsable,
+  DEFAULT_STAC_URL,
+  emptyTilesFromCollection,
   type GranuleCandidate,
   parseGranuleId,
+  type SarSelectionResult,
+  STAC_COLLECTIONS,
+  searchStac,
   selectGranules,
-} from './granuleSelection';
-import { type SarSelectionResult, selectSarGranules } from './sarSelection';
-import {
-  emptyTilesFromCollection,
+  selectSarGranules,
+  stacDayRange,
   type TileSurveyCollection,
   type TileSurveyEntry,
   tileSurveyKey,
   toTileSurveyCollection,
-} from './tileSurvey';
+} from '@skating/core';
 
-const STAC_URL = process.env.STAC_URL ?? 'https://earth-search.aws.element84.com/v1';
+import { findLatestMasks, flag, has, SCRATCH } from './cli';
+
+const STAC_URL = process.env.STAC_URL ?? DEFAULT_STAC_URL;
 
 /**
- * Which mission's catalog to search.
- *
- * ⚠ **Two collections, and almost nothing downstream is shared.** Sentinel-2 items carry
- * `eo:cloud_cover` and an MGRS tile in the id; Sentinel-1 items carry neither and add
- * `sat:orbit_state` instead. So the mission decides the collection, the id grammar, the selection
- * function *and* whether the empty-tile prefilter can run at all — see `--mission` in `main`.
+ * Which mission's catalog to search — see `STAC_COLLECTIONS` in core for why the two share almost
+ * nothing downstream. Overridable per environment for a mirror.
  */
 const COLLECTIONS = {
-  s2: process.env.STAC_COLLECTION ?? 'sentinel-2-l2a',
-  s1: process.env.STAC_COLLECTION_S1 ?? 'sentinel-1-grd',
+  s2: process.env.STAC_COLLECTION ?? STAC_COLLECTIONS.s2,
+  s1: process.env.STAC_COLLECTION_S1 ?? STAC_COLLECTIONS.s1,
 } as const;
 type Mission = keyof typeof COLLECTIONS;
 
@@ -69,100 +69,18 @@ function maskExtent(fgbPath: string): [number, number, number, number] {
   return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
 }
 
-interface StacItem {
-  id: string;
-  geometry?: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown };
-  properties: {
-    datetime: string;
-    'eo:cloud_cover'?: number;
-    /** Sentinel-1 only. Recorded, never filtered on — see `sarSelection`. */
-    'sat:orbit_state'?: 'ascending' | 'descending';
-  };
-}
-
-/**
- * A cap on how far a `next` chain may be followed.
- *
- * A season is a handful of pages at 250 items each. 200 is far beyond any real search and exists
- * only so that a server handing back a `next` link identical to the request that produced it turns
- * into an error rather than a loop nobody is watching.
- */
-const MAX_STAC_PAGES = 200;
-
-/**
- * Page through a STAC search.
- *
- * STAC caps a page at a few hundred items and hands back a `next` link. A season across ~25 tiles is
- * comfortably more than one page, and silently taking only the first would look exactly like a quiet
- * season — the failure this whole file exists to make loud.
- *
- * ⚠ **A `next` link comes in two shapes and only one of them carries a `body`.** Earth Search's POST
- * search returns the continuation token inside `body`; the GET form puts it in the `href` instead.
- * Treating an absent `body` as "no more pages" reads the second shape as the end of the search — the
- * quiet truncation this function is supposed to prevent, arriving through the door left open for it.
- * So the request shape follows the link rather than being assumed.
- */
+/** One whole search, paged by the shared `searchStac` (core) — the live poll in Convex uses it too. */
 async function searchAll(
   bbox: [number, number, number, number],
   from: string,
   to: string,
   collection: string,
 ): Promise<GranuleCandidate[]> {
-  const items: GranuleCandidate[] = [];
-  let request: { url: string; body: Record<string, unknown> | null } | null = {
-    url: `${STAC_URL}/search`,
-    body: {
-      collections: [collection],
-      bbox,
-      datetime: `${from}T00:00:00Z/${to}T23:59:59Z`,
-      limit: 250,
-    },
-  };
-  let pages = 0;
-
-  while (request) {
-    const response = request.body
-      ? await fetch(request.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request.body),
-        })
-      : await fetch(request.url);
-    if (!response.ok)
-      throw new Error(`STAC search failed: ${response.status} ${response.statusText}`);
-    const page = (await response.json()) as {
-      features: StacItem[];
-      links?: { rel: string; href: string; body?: Record<string, unknown> }[];
-    };
-    pages++;
-    for (const feature of page.features) {
-      items.push({
-        id: feature.id,
-        datetime: feature.properties.datetime,
-        ...(feature.properties['eo:cloud_cover'] === undefined
-          ? {}
-          : { cloudCoverPct: feature.properties['eo:cloud_cover'] }),
-        ...(feature.geometry
-          ? { footprint: feature.geometry as GranuleCandidate['footprint'] }
-          : {}),
-        // Recorded rather than filtered on. Ascending and descending see a lake at different
-        // incidence angles, so a *timeline* must not blend them — but that is a read-time
-        // correction, and dropping half the passes here would be irreversible.
-        ...(feature.properties['sat:orbit_state']
-          ? { orbitDirection: feature.properties['sat:orbit_state'] }
-          : {}),
-      });
-    }
-    const next = page.links?.find((l) => l.rel === 'next');
-    if (!next) break;
-    if (pages >= MAX_STAC_PAGES) {
-      throw new Error(
-        `STAC still offering a next link after ${pages} pages — refusing to keep following it`,
-      );
-    }
-    request = { url: next.href, body: next.body ?? null };
-  }
-
+  const { items, pages } = await searchStac(
+    fetch,
+    { collection, bbox, datetime: stacDayRange(from, to) },
+    STAC_URL,
+  );
   console.error(`[select-granules] ${items.length} items across ${pages} STAC page(s)`);
   return items;
 }

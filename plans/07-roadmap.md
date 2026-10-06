@@ -579,6 +579,25 @@ observations (D160). *A skater asks "do I get in the car?" against a water body 
 - **True-sunset digest timing** — sunset runs opposite to the season; 8pm local stays
 - **An always-on LibreWXR** — ~$760/yr for what cutting costs ~$5/mo
 
+## Phase A06i — The season watch
+🟡 **In progress** 2026-10-06 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214
+
+The daily season checker opened winter-2026-27 on 3 October on one 31 °F night at two summit tarns
+and mailed staff that the skating season had begun, without saying which sentinel or what it
+measured. It is now an ice watch, said in so many words (D212): four staff emails, never two on one
+day — the watch has begun (the sentinels that fired, as a table), time to start the imagery (the
+first 20 °F sentinel night), winter region-wide (which lakes froze), the end. Its thresholds and
+roster are versioned settings an admin edits on `/admin/seasons`, previewed against every season
+back to 2016-17 from stored and archived lows, each season keeping the version that decided it, and
+a too-early watch can be reset (D213). Once an admin presses *Start imagery*, Convex polls the
+satellite catalog every six hours and cuts each new pass on Fly (D214). *An operator can read why the
+watch opened, tune it against past winters, and leave the season's imagery to run itself.*
+
+#### Owed
+- Convex dev env for live imagery: `IMAGERY_ARCHIVE_URL`, `R2_*`, `FLY_API_TOKEN`, `FLY_IMAGE`
+- `publish-search-plan` for `winter-2026-27`; the history fill on dev (*Fill history*)
+- Matt's thresholds — the reason the settings page exists; the triggers are unchanged until then
+
 ## Phase A07a — The unified corpus
 🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phases/A07a-unified-corpus.md) · D92–D105 D109–D137
 

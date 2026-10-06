@@ -58,6 +58,8 @@ describe('ingestWindow — opening', () => {
       winterFrom: null,
       closesOn: null,
       openedBy: [],
+      opening: null,
+      winter: null,
     });
   });
 

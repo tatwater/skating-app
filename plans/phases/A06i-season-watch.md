@@ -1,0 +1,152 @@
+# Phase A06i — The season watch: an ice watch you can read, tune, and that starts the imagery itself
+
+The daily season checker (A06e §3.3, D149; D161's gate for the weather sweep) opened winter-2026-27
+on **3 October 2026** and emailed the staff *"Skating season winter-2026-27 has begun"*, which said
+neither which sentinel had opened it nor what it had measured, told the operator to run a command it
+didn't explain, and claimed a skating season nobody was skating. This phase makes the watch
+something the founder can read, tune and learn from, and lets it run the season's satellite imagery
+without a terminal.
+
+## Kickoff pass — 2026-10-05/06 (founder calls + what the data said)
+
+### What opened the season
+
+The dev row: `opensOn 2026-10-03`, `openedBy ['sentinel']`, `sitesSampled 28`, `winterFrom null`,
+detected 2026-10-04 20:46 UTC. Open-Meteo's observed lows for that night:
+
+| Site | Elevation | Low, 3 Oct | Rule (≤ 0 °C) |
+| --- | --- | --- | --- |
+| Upper Lake of the Clouds | 1,531 m | −0.4 °C (31.3 °F) | fired |
+| Eagle Lake (Lafayette) | 1,264 m | 0.0 °C (32.0 °F) | fired, on the line |
+| Kinsman Pond | 1,134 m | 1.4 °C (34.5 °F) | — |
+| 25 ordinary sites | — | none ≤ 0 (warmest-coldest 2.5 °C) | needs 10 % |
+
+**The rule is one night at or below freezing at any one sentinel**, after 1 October. The forecast
+showed why tightening it would barely move this year: the summit was forecast to −7.1 °C (19 °F) on
+6 October, and the corpus 10 % signal alone fires ~10 October. The 2025-26 archive says the same of
+last year: the summit crossed 0 °C on 1 October 2025 and −6.7 °C (20 °F) on 9 October. Only a
+November floor or a cumulative measure would postpone a season meaningfully; Matt (an admin who
+skates earlier than the founder) is being asked for thresholds. **The triggers are not changed by
+this phase** — it builds the instrument to change them with.
+
+### Founder calls
+
+1. **Recipients** — `broadcastToStaff` mails every active moderator and admin, one message each. On
+   dev that is two admins.
+2. **"Ice watch", never "season"** (D212). The subjects become *Winter 2026-27: Ice Watch Has Begun*
+   and so on; the body says daily monitoring has begun, not skating.
+3. **Sentinels that fired are a table** of names and lows, only the ones that fired, °F first with °C
+   in brackets.
+4. **A second email at the first 20 °F night at a sentinel**, reminding the founder to start imagery
+   if it hasn't been started. Sentinel, not ordinary lake (the founder overruled the recommendation).
+5. **A third email when winter sets in region-wide**, with what was met and where.
+6. **No two emails on one day.** If two are due, the second goes the next day.
+7. **One sentinel roster for the cron and the CLI** — all three.
+8. **Imagery runs itself once started** — an admin presses *Start imagery*, then it runs through the
+   season; a whole season cuts for ~$1.50 of Fly compute (A06e), so the human-before-spend rule
+   guarded almost nothing. **From Convex**, polling the satellite catalog every 6 hours (D214).
+9. **The thresholds are editable on a Seasons page**, with a preview against past seasons; each
+   season keeps the settings it was decided under (D213).
+10. **Real-world dates per season** (first skated, last skated) are admin-entered, so a preview can
+    say how many days before or after them a rule fired.
+11. **The current season's watch can be reset** from the page, keeping the old record as superseded.
+12. **Imagery failures and a hit cap email admins only**, outside the one-a-day rule.
+13. **One PR** for everything.
+
+### The archive is good enough to backtest on
+
+Open-Meteo's ERA5 archive and its archived forecast both elevation-correct to the summit (1,533 m) and
+agree within ~1–2 °C night to night at Upper Lake of the Clouds (Sept–Oct 2025), with no bias either
+way. The live watch reads the forecast endpoint's `past_days` (D140); history is filled from the
+archive. The page labels which is which.
+
+## The build
+
+### §1 — One rule, in core (`packages/core/src/seasonWatch.ts`)
+
+`ingestWindow` gains `sentinelNights` (consecutive nights at one sentinel, default 1 — today's rule),
+and returns *which* sentinels fired and their lows, and the corpus counts behind the open and the
+winter dates. New beside it: `firstSentinelNightAtOrBelow` (the imagery nudge), `clipToFloor` (the
+October floor, moved out of the cron so a backtest applies it too) and `evaluateSeason`, the one
+function the cron and the page's preview both call. `SeasonWatchSettings` is the settings shape, with
+`DEFAULT_SEASON_WATCH_SETTINGS` built from the existing constants so nothing moves until someone
+edits it.
+
+### §2 — Settings, versioned, in the database
+
+`seasonWatchSettings` holds every saved version (who, when, a note); the latest is current. Sentinels
+and pinned sites are stored as water-body ids with a name/state snapshot, resolved through merges
+(`mergedInto`). With no row yet, the defaults resolve the roster by name and state exactly as before
+(`SENTINELS`, `PINNED_SITES`). Each `imageryIngestSeasons` row now carries a copy of the settings it
+was decided under; the legacy row is stamped with the defaults it was in fact decided under.
+
+### §3 — Observations kept, history filled
+
+`seasonWatchSeries`: one document per (season, site), `firstDate` + a `lows` array (°C, `null` for a
+gap), `source: 'forecast' | 'archive'`. The daily tick merges its 92 days into the current season's
+documents instead of throwing them away. `fillSeasonHistory` fetches Oct 1 – Jun 30 for every past
+season back to 2016-17 from the archive, one multi-site request per season, for every site in the
+current settings plus the ordinary sample, and again for any site a settings save adds.
+
+### §4 — The emails (D212)
+
+A queue on the season row (`emailQueue`, `lastEmailOn` as a New York date). Each tick enqueues what
+it found and sends the head if nothing went out today. Each entry carries what it reports (sites,
+lows, counts) so the copy never re-derives a past night from a rolling window. `broadcastToStaff`
+takes typed blocks (paragraph, heading, list, table) and renders a real HTML table plus an aligned
+plain-text one; `roles` narrows it to admins for imagery alerts.
+
+The copy, as settled with the founder (2026-10-06):
+
+1. **Winter 2026-27: Ice Watch Has Begun** — *Ice watch began on Saturday, October 3* · daily
+   monitoring has begun because at least one sentinel had one night at or below freezing · **What
+   set it off** (table) · the rule, and how many ordinary lakes froze that night · **What changes
+   now** — the weather sweep runs daily; imagery doesn't start until you start it, from the Seasons
+   page, now or at the first 20 °F night · **What to expect next** — the 20 °F reminder, winter
+   region-wide, the end of the watch. After a reset it says which notice it replaces.
+2. **Winter 2026-27: Time to Start Satellite Imagery** — *First 20 °F night: Tuesday, October 6* ·
+   table · running it late loses nothing (the archive keeps every image) but the app won't show this
+   season until it runs · press *Start imagery* on the Seasons page; from then it checks the catalog
+   every 6 hours until the watch ends. Skipped when imagery is already running.
+3. **Winter 2026-27: Winter Has Set In Region-Wide** — *Winter set in region-wide on Monday,
+   October 19* · N of M ordinary lakes at or below 32 °F, above the threshold of half, air
+   temperature not ice · table of the lakes that froze · the watch keeps running until spring.
+4. **Winter 2026-27: Ice Watch Has Ended** — the existing close copy.
+
+### §5 — Live imagery from Convex (D214)
+
+`imageryLive.ts`. Every 6 hours, while the season row is open and `imageryStartedAt` is set and not
+paused: search Earth Search's STAC for S2 L2A and S1 GRD over the mask extent since the last window
+(less a 5-day overlap for late-published items), select with the A06e functions (now in core),
+skip any slot already queued, and spawn one Fly Machine per new granule through the Machines API
+with exactly `fan-out.sh`'s configuration. Machines are throttled on live count (25). A reconcile
+pass 20 minutes later checks R2 for each manifest: landed, still running, or settled without a frame
+(retried once, then recorded as empty). Then the season's index is rebuilt by listing R2 (only new
+manifests are read; rows for vanished keys are dropped) and `index/latest.json` turns over by
+`latestSeasonWithFrames`. Guards: 300 granules a run, a missing config refuses with an admin alert,
+at most one alert per kind per day.
+
+The search plan the cron can't compute (the mask extent and the empty-tile set, both from `ogrinfo`)
+is published once per mask bake as `masks/<season>-search.json` (`publish-search-plan`); an unknown
+tile is kept.
+
+### §6 — `/admin/seasons`
+
+The current watch (state, dates, sentinels, *Reset*), imagery (*Start* / *Pause*, the run history),
+the settings editor with the preview table (every season under the saved and the edited settings,
+with the field dates beside them), a season's sentinel lows charted against the thresholds, the
+field-date form, and where each default lives in code. Admin-only.
+
+### §7 — The CLI
+
+`ingest-window` stops re-deciding with its own sample and its own one-sentinel regex: it reads the
+recorded watch and the settings from the deployment (`convex run seasonWatch:status`) and prints them
+with the manual backfill commands. The cutter, `fan-out.sh` and `backfill.sh` stay for past seasons.
+
+## Owed at merge
+
+- Convex dev env: `IMAGERY_ARCHIVE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`,
+  `FLY_API_TOKEN`, `FLY_IMAGE` (the pinned cutter image). Until they exist the live job refuses and
+  says so.
+- `publish-search-plan` for `winter-2026-27` (the survey cached on 2026-08-25 matches the masks).
+- The masks predate the 2026-09-19/21 corpus seed; a re-bake is still the register's item.

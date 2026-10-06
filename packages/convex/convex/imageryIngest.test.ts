@@ -1,6 +1,7 @@
+import { DEFAULT_SEASON_WATCH_SETTINGS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -8,55 +9,63 @@ import schema from './schema';
 const modules = import.meta.glob('./**/*.*s');
 
 /**
- * The season lifecycle of the 25-site checker (D149, and D161's gate for the weather sweep).
+ * The season watch's daily tick (D149; A06i / D212–D213): the lifecycle, the emails it queues and
+ * the roster it samples.
  *
- * ⚠ **This file exists because the checker had no tests at all**, and it had just grown a second
- * edge. Opening was covered by `ingestGate.test.ts` at the pure-function level, but the wiring — the
- * early return that decides whether a tick does anything — was not, which is exactly where the bug
- * lived: a recorded `opensOn` short-circuited every subsequent tick, so the `closesOn` that
- * `ingestWindow` computed was never persisted and nothing downstream could ever stand down.
+ * ⚠ **This file exists because the checker once had no tests at all**, and a recorded `opensOn`
+ * short-circuited every later tick — the `closesOn` that `ingestWindow` computed was never persisted
+ * and nothing downstream could ever stand down. The lifecycle tests below are that regression.
  */
 
-const square = (d: number): Polygon => ({
+const square = (d: number, lat = 44.0163): Polygon => ({
   type: 'Polygon',
   coordinates: [
     [
-      [-72.0331 - d, 44.0163 - d],
-      [-72.0331 + d, 44.0163 - d],
-      [-72.0331 + d, 44.0163 + d],
-      [-72.0331 - d, 44.0163 + d],
-      [-72.0331 - d, 44.0163 - d],
+      [-72.0331 - d, lat - d],
+      [-72.0331 + d, lat - d],
+      [-72.0331 + d, lat + d],
+      [-72.0331 - d, lat + d],
+      [-72.0331 - d, lat - d],
     ],
   ],
 });
 
-async function seedSites(t: ReturnType<typeof convexTest>, count = 3) {
-  await t.run(async (ctx) => {
-    for (let i = 0; i < count; i++) {
-      await ctx.db.insert('waterBodies', {
-        name: `Gate Lake ${i}`,
-        searchText: `Gate Lake ${i}`,
-        type: 'lakePond' as const,
-        source: 'osm' as const,
-        polygon: square(0.01),
-        bbox: { minLat: 43.99, minLng: -72.05, maxLat: 44.05, maxLng: -71.99 },
-        centroid: { lat: 44.0163 + i * 0.1, lng: -72.0331 },
-        interiorPoint: { lat: 44.0163 + i * 0.1, lng: -72.0331 },
-        dedupStatus: 'clean' as const,
-        curatedBoost: 10 - i,
-        createdAt: Date.now(),
-      });
-    }
-  });
+type T = ReturnType<typeof convexTest>;
+
+/** A named, listed body. `boost` puts it in the ordinary sample; a roster name makes it a sentinel. */
+async function seedBody(
+  t: T,
+  name: string,
+  lat: number,
+  opts: { state?: string; boost?: number } = {},
+) {
+  return await t.run(async (ctx) =>
+    ctx.db.insert('waterBodies', {
+      name,
+      searchText: name,
+      type: 'lakePond' as const,
+      source: 'osm' as const,
+      polygon: square(0.001, lat),
+      bbox: { minLat: lat - 0.001, minLng: -72.04, maxLat: lat + 0.001, maxLng: -72.02 },
+      centroid: { lat, lng: -72.0331 },
+      interiorPoint: { lat, lng: -72.0331 },
+      ...(opts.state ? { states: [opts.state] } : {}),
+      dedupStatus: 'clean' as const,
+      ...(opts.boost !== undefined ? { curatedBoost: opts.boost } : {}),
+      createdAt: Date.now(),
+    }),
+  );
 }
 
-/** Open-Meteo's multi-coordinate daily shape: one object per site. */
-function dailyLows(siteCount: number, start: string, lows: number[]) {
-  const base = new Date(`${start}T00:00:00Z`).getTime();
-  const time = lows.map((_, i) => new Date(base + i * 86_400_000).toISOString().slice(0, 10));
-  return Array.from({ length: siteCount }, () => ({
-    daily: { time, temperature_2m_min: lows },
-  }));
+/** `count` ordinary boosted lakes at 44.0163 + i·0.1. */
+async function seedSites(t: T, count = 3) {
+  for (let i = 0; i < count; i++)
+    await seedBody(t, `Gate Lake ${i}`, 44.0163 + i * 0.1, { boost: 10 - i });
+}
+
+const SUMMIT_LAT = 44.258;
+async function seedSentinel(t: T) {
+  return await seedBody(t, 'Upper Lake of the Clouds', SUMMIT_LAT, { state: 'NH' });
 }
 
 const okJson = (body: unknown) =>
@@ -65,20 +74,69 @@ const okJson = (body: unknown) =>
     headers: { 'content-type': 'application/json' },
   });
 
+function dates(start: string, n: number) {
+  const base = Date.parse(`${start}T00:00:00Z`);
+  return Array.from({ length: n }, (_, i) =>
+    new Date(base + i * 86_400_000).toISOString().slice(0, 10),
+  );
+}
+
 /**
- * The checker's month gate and its October observation floor both read the real clock, so a test
- * has to pin the clock **and** date its fixtures consistently with it.
- *
- * ⚠ Both dates below sit inside one season label: D63's boundary is July, so December 2026 and
- * April 2027 are both `winter-2026-27`. Straddling it accidentally is how a close ends up filed
- * against a season that never opened.
+ * An Open-Meteo stub answering each requested coordinate by latitude: `summit` for the sentinel,
+ * `valley` for everything else. One object per site, as the multi-coordinate form returns.
+ */
+function stubLows(start: string, valley: number[], summit: number[] = valley) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const lats = (new URL(url).searchParams.get('latitude') ?? '').split(',');
+      return okJson(
+        lats.map((lat) => {
+          const lows = Number(lat).toFixed(3) === SUMMIT_LAT.toFixed(3) ? summit : valley;
+          return { daily: { time: dates(start, lows.length), temperature_2m_min: lows } };
+        }),
+      );
+    }),
+  );
+}
+
+/**
+ * The checker's floor reads the real clock, so a test pins the clock **and** dates its fixtures to
+ * match. ⚠ Both dates sit inside one season label: D63's boundary is July, so December 2026 and
+ * April 2027 are both `winter-2026-27`.
  */
 const IN_SEASON = '2026-12-15';
 const IN_SPRING = '2027-04-30';
-const atDate = (iso: string) => vi.setSystemTime(new Date(`${iso}T00:00:00Z`));
+const atDate = (iso: string, hour = 17) =>
+  vi.setSystemTime(new Date(`${iso}T${String(hour).padStart(2, '0')}:00:00Z`));
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+const tickNow = (t: T) => t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+const theRow = (t: T) => t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+
+async function broadcasts(t: T) {
+  return t.run(async (ctx) => {
+    const jobs = await ctx.db.system.query('_scheduled_functions').collect();
+    return jobs
+      .filter((j) => j.name.includes('broadcastToStaff'))
+      .map(
+        (j) =>
+          j.args[0] as {
+            subject: string;
+            heading: string;
+            blocks: { kind: string }[];
+            roles?: string[];
+          },
+      );
+  });
+}
 
 describe('maybeCheckSeasonOpen — the season lifecycle', () => {
-  test('does nothing between July and October', async () => {
+  test('does nothing before the floor', async () => {
     vi.useFakeTimers();
     atDate('2026-08-15');
     const t = convexTest(schema, modules);
@@ -86,33 +144,65 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(result).toMatchObject({ skipped: 'before October' });
+    expect(await tickNow(t)).toMatchObject({ skipped: 'before the floor' });
     expect(fetchMock).not.toHaveBeenCalled();
-    vi.useRealTimers();
   });
 
-  test('records the open, then keeps ticking to look for the close', async () => {
+  test('a later floor in the settings postpones the watch', async () => {
+    vi.useFakeTimers();
+    atDate('2026-10-20');
+    const t = convexTest(schema, modules);
+    await seedSites(t);
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    await t.run((ctx) =>
+      ctx.db.insert('seasonWatchSettings', {
+        version: 2,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, startMonthDay: '11-01' },
+        sentinels: [],
+        pinned: [],
+        savedAt: Date.now(),
+      }),
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await tickNow(t)).toMatchObject({ skipped: 'before the floor' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('records the open, keeps the lows, then keeps ticking to look for the close', async () => {
     vi.useFakeTimers();
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
     await seedSites(t);
 
     // A cold December: every site freezes, so the corpus signal fires and winter establishes.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
-    );
-    const opened = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(opened).toMatchObject({ open: true, opensOn: '2026-12-02' });
+    stubLows('2026-12-01', [2, -1, -3, -4, -5]);
+    expect(await tickNow(t)).toMatchObject({ open: true, opensOn: '2026-12-02' });
+
+    const row = await theRow(t);
+    expect(row).toMatchObject({
+      openedBy: ['corpus'],
+      winterFrom: '2026-12-02',
+      settingsVersion: 1,
+      settings: DEFAULT_SEASON_WATCH_SETTINGS,
+      opening: { sentinels: [], corpus: { frozen: 3, reporting: 3 } },
+    });
+    expect(row?.winter?.frozen).toHaveLength(3);
+
+    // The lows are kept, one document per site, from the forecast endpoint's observed past days.
+    const series = await t.run((ctx) => ctx.db.query('seasonWatchSeries').collect());
+    expect(series).toHaveLength(3);
+    expect(series[0]).toMatchObject({
+      season: 'winter-2026-27',
+      source: 'forecast',
+      firstDate: '2026-12-01',
+    });
+    expect(series[0]?.lows).toEqual([2, -1, -3, -4, -5]);
 
     // ⚠ The regression this file exists for. A second tick must NOT report "already recorded" —
     // the row has an open date and no close date, so there is still work to do.
-    const again = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(again).not.toMatchObject({ skipped: 'already recorded' });
+    const again = await tickNow(t);
     expect(again).toMatchObject({ open: true });
-
-    vi.useRealTimers();
   });
 
   test('closes the season on a sustained thaw, against the RECORDED winterFrom', async () => {
@@ -120,125 +210,171 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
     await seedSites(t);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
-    );
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    stubLows('2026-12-01', [2, -1, -3, -4, -5]);
+    await tickNow(t);
 
-    // Now it is April and the fetch window reaches back only to mid-January — nowhere near the
-    // December freeze-up. `ingestWindow` would find no winterFrom here and never close; the recorded
-    // one is what makes the close reachable.
+    // April: the fetch window no longer reaches December, but the stored lows and the recorded
+    // winterFrom do — the close is measured from the date the region froze.
     atDate(IN_SPRING);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        okJson(
-          dailyLows(
-            3,
-            '2027-04-01',
-            Array.from({ length: 20 }, () => 8),
-          ),
-        ),
-      ),
+    stubLows(
+      '2027-04-01',
+      Array.from({ length: 20 }, () => 8),
     );
-    const closed = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(closed).toMatchObject({ closed: true, closesOn: '2027-04-10' });
-
-    const row = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+    expect(await tickNow(t)).toMatchObject({ closed: true, closesOn: '2027-04-10' });
+    const row = await theRow(t);
     expect(row?.closesOn).toBe('2027-04-10');
     expect(row?.closedAt).toBeTypeOf('number');
 
-    // Closed is final within a season: a late cold snap does not reopen it, and a later tick does
-    // not move the date to whenever we last looked.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        okJson(
-          dailyLows(
-            3,
-            '2027-05-01',
-            Array.from({ length: 20 }, () => 9),
-          ),
-        ),
-      ),
+    // Closed is final within a season: a later tick neither reopens it nor moves the date.
+    stubLows(
+      '2027-05-01',
+      Array.from({ length: 20 }, () => 9),
     );
-    const after = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(after).toMatchObject({ skipped: 'already recorded' });
-    const unchanged = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
-    expect(unchanged?.closesOn).toBe('2027-04-10');
-
-    vi.useRealTimers();
+    expect(await tickNow(t)).toMatchObject({ skipped: 'already recorded' });
+    expect((await theRow(t))?.closesOn).toBe('2027-04-10');
   });
 
-  test('a season opened before the region froze fills in winterFrom on a later tick', async () => {
+  test('a legacy row is stamped with the defaults, its opening night filled, and winter found later', async () => {
     vi.useFakeTimers();
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
-    await seedSites(t);
-    // ⚠ **The normal October state, not an exotic one.** The sentinel pond is allowed to open a
-    // season on its own — that is the whole point of the OR rule — and it does so weeks before a
-    // majority of ordinary sites see an overnight freeze. `recordSeasonOpen` is insert-only, so if
-    // nothing ever revisits `winterFrom` the row can never be closed: imagery ingest cuts granules
-    // into July and the D161 weather sweep spends ~4,300 Open-Meteo calls a day all summer.
+    await seedSites(t, 2);
+    const summit = await seedSentinel(t);
+    // ⚠ **The normal October state.** A sentinel opens a season weeks before a majority of ordinary
+    // sites freeze, and the opening is insert-only — so if nothing revisits `winterFrom` the row can
+    // never close, and imagery and the D161 sweep run all summer.
     await t.run((ctx) =>
       ctx.db.insert('imageryIngestSeasons', {
         season: 'winter-2026-27',
-        opensOn: '2026-11-02',
+        opensOn: '2026-12-02',
         openedBy: ['sentinel'],
         winterFrom: null,
         sitesSampled: 3,
-        detectedAt: Date.now(),
+        detectedAt: Date.parse('2026-12-03T20:00:00Z'),
       }),
     );
 
-    // Still no region-wide freeze: nothing to measure a close from, so the tick stands down —
-    // but it does not foreclose the question.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        okJson(
-          dailyLows(
-            3,
-            '2026-12-01',
-            Array.from({ length: 5 }, () => 6),
-          ),
-        ),
-      ),
-    );
-    const early = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(early).toMatchObject({ skipped: 'already recorded' });
-    const stillNull = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
-    expect(stillNull?.winterFrom).toBeNull();
+    // Still no region-wide freeze: the tick stands down, but fills in what it can.
+    stubLows('2026-12-01', [6, 6, 6, 6, 6], [3, -0.4, -2, -3, -4]);
+    expect(await tickNow(t)).toMatchObject({ skipped: 'already recorded' });
+    const stamped = await theRow(t);
+    expect(stamped).toMatchObject({
+      winterFrom: null,
+      settingsVersion: 1,
+      // Its opening email already went, as the old message: stamped so the queue never re-sends it.
+      emailsSent: [{ kind: 'opened', sentOn: '2026-12-03' }],
+      opening: {
+        sentinels: [
+          { waterBodyId: summit, name: 'Upper Lake of the Clouds', state: 'NH', lowC: -0.4 },
+        ],
+        corpus: { frozen: 0, reporting: 2 },
+      },
+    });
 
     // The region freezes. Ice-in arrives *after* opening, so it has to be writable after opening.
+    atDate('2026-12-16');
+    stubLows('2026-12-01', [2, 2, 2, 2, 2, 2, 2, 2, -1, -3]);
+    expect(await tickNow(t)).toMatchObject({ open: true, opensOn: '2026-12-02' });
+    const row = await theRow(t);
+    expect(row?.winterFrom).toBe('2026-12-09');
+    expect(row?.opensOn).toBe('2026-12-02');
+
+    // A one-way door: a later window does not re-date ice-in.
+    stubLows('2026-12-01', [-5, -5, -5]);
+    await tickNow(t);
+    expect((await theRow(t))?.winterFrom).toBe('2026-12-09');
+  });
+
+  test('sentinelNights holds the opening until one summit stays cold', async () => {
+    vi.useFakeTimers();
+    atDate('2026-10-10');
+    const t = convexTest(schema, modules);
+    await seedSites(t, 2);
+    await seedSentinel(t);
+    const config = await t.mutation(internal.seasonWatch.ensureSettings, {});
+    await t.run((ctx) =>
+      ctx.db.insert('seasonWatchSettings', {
+        version: 2,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sentinelNights: 3 },
+        sentinels: config.sentinels,
+        pinned: [],
+        savedAt: Date.now(),
+      }),
+    );
+    stubLows('2026-10-01', [9, 9, 9, 9, 9, 9, 9], [5, -1, 3, -1, -2, -3, 4]);
+    expect(await tickNow(t)).toMatchObject({ open: true, opensOn: '2026-10-06' });
+    expect((await theRow(t))?.settingsVersion).toBe(2);
+  });
+
+  test('records the first 20 °F sentinel night once, and queues the reminder', async () => {
+    vi.useFakeTimers();
+    atDate('2026-10-05');
+    const t = convexTest(schema, modules);
+    await seedSites(t, 2);
+    await seedSentinel(t);
+    stubLows('2026-10-01', [9, 9, 9, 9], [7, 3, -0.4, -2]);
+    expect(await tickNow(t)).toMatchObject({ open: true, opensOn: '2026-10-03' });
+    expect((await theRow(t))?.imageryNudgeOn).toBeUndefined();
+
+    atDate('2026-10-07');
+    stubLows('2026-10-01', [9, 9, 9, 9, 9, 9], [7, 3, -0.4, -2, -3.7, -7.1]);
+    await tickNow(t);
+    const row = await theRow(t);
+    expect(row?.imageryNudgeOn).toBe('2026-10-06');
+    expect(row?.imageryNudgeSites?.[0]?.lowC).toBe(-7.1);
+  });
+
+  test('stands down cleanly with nothing to sample, or nothing observed', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const empty = convexTest(schema, modules);
+    vi.stubGlobal('fetch', vi.fn());
+    expect(await tickNow(empty)).toMatchObject({ skipped: 'no sites' });
+
+    const t = convexTest(schema, modules);
+    await seedSites(t, 1);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
+      vi.fn(async () => okJson([{ daily: { time: ['2026-12-01'], temperature_2m_min: [null] } }])),
     );
-    const later = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(later).toMatchObject({ open: true, opensOn: '2026-11-02' });
-    const row = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
-    expect(row?.winterFrom).toBe('2026-12-02');
-    // The open date is never moved by the fill-in — only the missing half is written.
-    expect(row?.opensOn).toBe('2026-11-02');
+    expect(await tickNow(t)).toMatchObject({ skipped: 'no observations' });
+  });
 
-    // And once established it is a one-way door: a warmer later window does not re-date ice-in.
+  test('a mild autumn opens nothing', async () => {
+    vi.useFakeTimers();
+    atDate('2026-10-05');
+    const t = convexTest(schema, modules);
+    await seedSites(t, 2);
+    stubLows('2026-10-01', [9, 9, 9, 9]);
+    expect(await tickNow(t)).toMatchObject({ open: false, sitesSampled: 2 });
+    expect(await theRow(t)).toBeNull();
+  });
+
+  test('an Open-Meteo failure throws, and still lets a queued email go', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t, 1);
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-12-02',
+      openedBy: ['corpus'],
+      winterFrom: null,
+      sitesSampled: 1,
+    });
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, 2, -4, -5, -6]))),
+      vi.fn(async () => new Response('down', { status: 503, statusText: 'Down' })),
     );
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    const pinned = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
-    expect(pinned?.winterFrom).toBe('2026-12-02');
-
-    vi.useRealTimers();
+    await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
+    expect(await broadcasts(t)).toHaveLength(1);
   });
 });
 
-describe('season boundary alerts staff', () => {
+describe('the staff emails — one a day, in order (D212)', () => {
   /** An active moderator and admin, plus two who must NOT be mailed. */
-  async function seedStaff(t: ReturnType<typeof convexTest>) {
+  async function seedStaff(t: T) {
     const base = {
       driveTimePrefMinutes: 60,
       profileVisibility: 'public' as const,
@@ -295,87 +431,198 @@ describe('season boundary alerts staff', () => {
     });
   }
 
-  async function queuedBroadcasts(t: ReturnType<typeof convexTest>) {
-    return t.run(async (ctx) => {
-      const jobs = await ctx.db.system.query('_scheduled_functions').collect();
-      return jobs.filter((j) => j.name.includes('broadcastToStaff'));
-    });
-  }
-
-  test('mails staff exactly once when the season opens', async () => {
+  test('the opening email goes the day it opens, names the sentinel, and goes once', async () => {
     vi.useFakeTimers();
-    atDate(IN_SEASON);
+    atDate('2026-10-04');
     const t = convexTest(schema, modules);
-    await seedSites(t);
+    await seedSites(t, 2);
+    await seedSentinel(t);
     await seedStaff(t);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
-    );
+    stubLows('2026-10-01', [9, 9, 9, 9], [7, 3, -0.4, 1]);
 
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    const first = await queuedBroadcasts(t);
-    expect(first).toHaveLength(1);
-    const args = first[0]?.args[0] as { subject: string; lines: string[] };
-    expect(args.subject).toContain('has begun');
-    expect(args.lines.join(' ')).toContain('2026-12-02');
+    await tickNow(t);
+    const sent = await broadcasts(t);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.subject).toBe('Winter 2026-27: Ice Watch Has Begun');
+    expect(sent[0]?.heading).toBe('Ice watch began on Saturday, October 3');
+    expect(JSON.stringify(sent[0]?.blocks)).toContain('Upper Lake of the Clouds, NH');
+    expect(JSON.stringify(sent[0]?.blocks)).toContain('31.3°F (−0.4°C)');
 
-    // The daily cron keeps ticking after an open (it is looking for the close), so a second tick
-    // must not mail everyone again. ⚠ What stops it *here* is the control flow — the second tick
-    // takes the close branch and never reaches the open one. The `created` gate is defense in depth
-    // for the concurrent case this cannot reach; its own guarantee is asserted directly below.
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(await queuedBroadcasts(t)).toHaveLength(1);
-    vi.useRealTimers();
+    // The same day again: nothing further, and the row says what went when.
+    await tickNow(t);
+    expect(await broadcasts(t)).toHaveLength(1);
+    expect((await theRow(t))?.emailsSent).toEqual([
+      expect.objectContaining({ kind: 'opened', sentOn: '2026-10-04' }),
+    ]);
   });
 
-  test('mails staff exactly once when the season closes', async () => {
+  test('two facts found on one tick go on two days', async () => {
     vi.useFakeTimers();
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
     await seedSites(t);
     await seedStaff(t);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
-    );
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    // Opens and establishes winter on the same night: the opening goes today, winter tomorrow.
+    stubLows('2026-12-01', [2, -1, -3, -4, -5]);
+    await tickNow(t);
+    expect((await broadcasts(t)).map((b) => b.subject)).toEqual([
+      'Winter 2026-27: Ice Watch Has Begun',
+    ]);
 
+    atDate('2026-12-16');
+    await tickNow(t);
+    expect((await broadcasts(t)).map((b) => b.subject)).toEqual([
+      'Winter 2026-27: Ice Watch Has Begun',
+      'Winter 2026-27: Winter Has Set In Region-Wide',
+    ]);
+
+    // Spring: the close is queued, and goes on the tick that found it (nothing else went that day).
     atDate(IN_SPRING);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        okJson(
-          dailyLows(
-            3,
-            '2027-04-01',
-            Array.from({ length: 20 }, () => 8),
-          ),
-        ),
-      ),
+    stubLows(
+      '2027-04-01',
+      Array.from({ length: 20 }, () => 8),
     );
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-
-    const jobs = await queuedBroadcasts(t);
-    const closes = jobs.filter((j) =>
-      (j.args[0] as { subject: string }).subject.includes('closed'),
-    );
-    expect(closes).toHaveLength(1);
-
-    // A later tick short-circuits on the recorded close and tells nobody again — again by control
-    // flow, with the mutation's refusal to re-close as the backstop.
-    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    const after = await queuedBroadcasts(t);
-    expect(
-      after.filter((j) => (j.args[0] as { subject: string }).subject.includes('closed')),
-    ).toHaveLength(1);
-    vi.useRealTimers();
+    await tickNow(t);
+    const subjects = (await broadcasts(t)).map((b) => b.subject);
+    expect(subjects.at(-1)).toBe('Winter 2026-27: Ice Watch Has Ended');
+    // And a later tick tells nobody again.
+    atDate('2027-05-01');
+    await tickNow(t);
+    expect((await broadcasts(t)).filter((b) => b.subject.includes('Ended'))).toHaveLength(1);
   });
 
-  test('the record mutations are what actually make the alerts once-only', async () => {
-    // ⚠ The tests above exercise the sequential path, where control flow already prevents a second
-    // mail. The real guarantee — two ticks racing, which convex-test cannot schedule — lives in the
-    // mutations, so it is asserted at that level rather than assumed.
+  test('an imagery reminder is dropped once imagery is running, without spending the day', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-10-03',
+      openedBy: ['sentinel'],
+      winterFrom: null,
+      sitesSampled: 3,
+      imageryNudge: { date: '2026-10-03', sites: [{ name: 'Upper Lake of the Clouds', lowC: -7 }] },
+    });
+    await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-04' });
+    const row = await theRow(t);
+    await t.run((ctx) =>
+      ctx.db.patch((row as { _id: Id<'imageryIngestSeasons'> })._id, {
+        imageryStartedAt: Date.now(),
+      }),
+    );
+    // The reminder is dropped; nothing else is queued, so nothing goes and the queue empties.
+    expect(await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-05' })).toEqual(
+      {
+        sent: null,
+      },
+    );
+    expect((await theRow(t))?.emailQueue).toEqual([]);
+    expect(await broadcasts(t)).toHaveLength(1);
+  });
+
+  test('a nudge recorded after imagery started queues nothing', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-10-03',
+      openedBy: ['sentinel'],
+      winterFrom: null,
+      sitesSampled: 3,
+    });
+    const row = await theRow(t);
+    await t.run((ctx) =>
+      ctx.db.patch((row as { _id: Id<'imageryIngestSeasons'> })._id, {
+        imageryStartedAt: Date.now(),
+        emailQueue: [],
+      }),
+    );
+    await t.mutation(internal.imageryIngest.recordImageryNudge, {
+      season: 'winter-2026-27',
+      date: '2026-10-06',
+      sites: [],
+    });
+    expect((await theRow(t))?.emailQueue).toEqual([]);
+    // Once only.
+    expect(
+      await t.mutation(internal.imageryIngest.recordImageryNudge, {
+        season: 'winter-2026-27',
+        date: '2026-10-07',
+        sites: [],
+      }),
+    ).toBeNull();
+  });
+
+  test('nothing is sent before any settings exist', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-10-03',
+      openedBy: ['corpus'],
+      winterFrom: null,
+      sitesSampled: 3,
+    });
+    expect(await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-04' })).toEqual(
+      {
+        sent: null,
+      },
+    );
+    expect((await theRow(t))?.emailQueue).toHaveLength(1);
+  });
+
+  test('a reopening after a reset says which notice it replaces', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    const admin = await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'a',
+        displayName: 'A',
+        username: 'a',
+        role: 'admin' as const,
+        status: 'active' as const,
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyAnswered: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: true,
+          greatReportNearby: true,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasonsSuperseded', {
+        season: 'winter-2026-27',
+        opensOn: '2026-10-03',
+        openedBy: ['sentinel'],
+        winterFrom: null,
+        sitesSampled: 28,
+        detectedAt: Date.parse('2026-10-04T20:46:00Z'),
+        supersededAt: Date.now(),
+        supersededBy: admin,
+      }),
+    );
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-11-04',
+      openedBy: ['sentinel'],
+      winterFrom: null,
+      sitesSampled: 28,
+    });
+    const queued = (await theRow(t))?.emailQueue?.[0]?.email;
+    expect(queued).toMatchObject({ kind: 'opened', replaces: { opensOn: '2026-10-03' } });
+  });
+
+  test('the record mutations are what actually make the emails once-only', async () => {
+    // ⚠ Two ticks racing, which convex-test cannot schedule — so the guarantee is asserted where it
+    // lives, in the writes, rather than assumed from control flow.
     const t = convexTest(schema, modules);
     const args = {
       season: 'winter-2026-27',
@@ -384,48 +631,67 @@ describe('season boundary alerts staff', () => {
       winterFrom: '2026-12-02',
       sitesSampled: 3,
     };
-    const first = await t.run((ctx) =>
-      ctx.runMutation(internal.imageryIngest.recordSeasonOpen, args),
-    );
-    const second = await t.run((ctx) =>
-      ctx.runMutation(internal.imageryIngest.recordSeasonOpen, args),
-    );
+    const first = await t.mutation(internal.imageryIngest.recordSeasonOpen, args);
+    const second = await t.mutation(internal.imageryIngest.recordSeasonOpen, args);
     expect(first.created).toBe(true);
-    expect(second.created).toBe(false);
-    expect(second.id).toBe(first.id);
+    expect(second).toEqual({ id: first.id, created: false });
 
-    const closed = await t.run((ctx) =>
-      ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
+    expect(
+      await t.mutation(internal.imageryIngest.recordSeasonClose, {
         season: 'winter-2026-27',
         closesOn: '2027-04-10',
       }),
-    );
-    const reclosed = await t.run((ctx) =>
-      ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
+    ).not.toBeNull();
+    expect(
+      await t.mutation(internal.imageryIngest.recordSeasonClose, {
         season: 'winter-2026-27',
         closesOn: '2027-05-01',
       }),
-    );
-    expect(closed).not.toBeNull();
-    expect(reclosed).toBeNull(); // and the date does not move to whenever we last looked
-    const row = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
-    expect(row?.closesOn).toBe('2027-04-10');
+    ).toBeNull();
+    expect((await theRow(t))?.closesOn).toBe('2027-04-10');
+    // Winter is already set on this row, and a missing row is refused, not created.
+    expect(
+      await t.mutation(internal.imageryIngest.recordSeasonWinterFrom, {
+        season: 'winter-2026-27',
+        winterFrom: '2026-12-09',
+      }),
+    ).toBeNull();
+    expect(
+      await t.mutation(internal.imageryIngest.recordSeasonWinterFrom, {
+        season: 'winter-2030-31',
+        winterFrom: '2030-12-09',
+      }),
+    ).toBeNull();
+    expect(
+      await t.mutation(internal.imageryIngest.recordSeasonClose, {
+        season: 'winter-2030-31',
+        closesOn: '2031-04-01',
+      }),
+    ).toBeNull();
+    expect(
+      await t.mutation(internal.imageryIngest.recordOpeningDetail, {
+        season: 'winter-2030-31',
+        sentinels: [],
+        corpus: { frozen: 0, reporting: 0 },
+      }),
+    ).toBeNull();
   });
 
-  test('the recipient list is active moderators and admins, and nobody else', async () => {
+  test('the recipient list is active moderators and admins, and `roles` narrows it', async () => {
     const t = convexTest(schema, modules);
     await seedStaff(t);
-    const staff = await t.run((ctx) => ctx.runQuery(internal.operatorAlerts.staffSubjects, {}));
+    const staff = await t.query(internal.operatorAlerts.staffSubjects, {});
     expect(staff.map((s) => s.subject).sort()).toEqual(['admin-1', 'mod-1']);
+    const admins = await t.query(internal.operatorAlerts.staffSubjects, { roles: ['admin'] });
+    expect(admins.map((s) => s.subject)).toEqual(['admin-1']);
   });
 
   test('a broadcast with no configured staff is reported, not thrown', async () => {
-    // Dev has no moderator (a known open founder call), and a cron must not fail because of it.
     const t = convexTest(schema, modules);
     const res = await t.action(internal.operatorAlerts.broadcastToStaff, {
       subject: 's',
       heading: 'h',
-      lines: [],
+      blocks: [{ kind: 'paragraph', text: 'x' }],
       deepLinkPath: '/admin',
     });
     expect(res).toEqual({ recipients: 0, sent: 0 });
@@ -442,101 +708,89 @@ describe('season boundary alerts staff', () => {
       lines: ['x'],
       deepLinkPath: '/admin',
     });
-    expect(res.recipients).toBe(2);
-    expect(res.sent).toBe(0);
+    expect(res).toEqual({ recipients: 2, sent: 0 });
   });
 });
 
-describe('gateSites — the roster', () => {
-  /** A named body in a state, with just enough geometry to be a site. */
-  async function seedNamed(
-    t: ReturnType<typeof convexTest>,
-    name: string,
-    state: string,
-    lat: number,
-    boost?: number,
-  ) {
-    return await t.run(async (ctx) =>
-      ctx.db.insert('waterBodies', {
-        name,
-        searchText: name,
-        type: 'lakePond' as const,
-        source: 'osm' as const,
-        polygon: square(0.001),
-        bbox: { minLat: lat - 0.001, minLng: -71.7, maxLat: lat + 0.001, maxLng: -71.6 },
-        centroid: { lat, lng: -71.65 },
-        interiorPoint: { lat, lng: -71.65 },
-        states: [state],
-        dedupStatus: 'clean' as const,
-        ...(boost !== undefined ? { curatedBoost: boost } : {}),
-        createdAt: Date.now(),
-      }),
-    );
+describe('the roster — seeded by name, then held by id', () => {
+  /** The roster the tick samples: settings version 1 seeded from the names, then `gateSites`. */
+  async function rosterSites(t: T) {
+    const config = await t.mutation(internal.seasonWatch.ensureSettings, {});
+    return await t.query(internal.seasonWatch.gateSites, {
+      sentinels: config.sentinels,
+      pinned: config.pinned,
+      sampleSize: 24,
+    });
   }
 
   test('all three alpine sentinels are flagged, and a pinned site rides along unflagged', async () => {
     const t = convexTest(schema, modules);
-    const clouds = await seedNamed(t, 'Upper Lake of the Clouds', 'NH', 44.258);
-    const eagle = await seedNamed(t, 'Eagle Lake', 'NH', 44.16);
-    const kinsman = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136);
-    const lowPlains = await seedNamed(t, 'Low Plains', 'NH', 43.411);
+    const clouds = await seedBody(t, 'Upper Lake of the Clouds', 44.258, { state: 'NH' });
+    const eagle = await seedBody(t, 'Eagle Lake', 44.16, { state: 'NH' });
+    const kinsman = await seedBody(t, 'Kinsman Pond', 44.136, { state: 'NH' });
+    const lowPlains = await seedBody(t, 'Low Plains', 43.411, { state: 'NH' });
     await seedSites(t, 2);
 
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
-    const byId = new Map(sites.map((s) => [s.siteId, s.sentinel]));
-    expect(byId.get(clouds)).toBe(true);
-    expect(byId.get(eagle)).toBe(true);
-    expect(byId.get(kinsman)).toBe(true);
-    expect(byId.get(lowPlains)).toBe(false);
-    // The boost sample is still there, and nothing is listed twice.
+    const sites = await rosterSites(t);
+    const byId = new Map(sites.map((s) => [s.siteId, s]));
+    expect(byId.get(clouds)?.sentinel).toBe(true);
+    expect(byId.get(eagle)?.sentinel).toBe(true);
+    expect(byId.get(kinsman)?.sentinel).toBe(true);
+    expect(byId.get(lowPlains)).toMatchObject({ sentinel: false, role: 'pinned' });
     expect(sites).toHaveLength(6);
     expect(new Set(sites.map((s) => s.siteId)).size).toBe(6);
   });
 
   test('a same-named body in another state is not the sentinel', async () => {
     const t = convexTest(schema, modules);
-    // Eight Eagle Lakes on dev; only Lafayette's counts. Here: two decoys and the real one.
-    await seedNamed(t, 'Eagle Lake', 'ME', 44.35);
-    await seedNamed(t, 'Eagle Lake', 'NY', 44.2);
-    const real = await seedNamed(t, 'Eagle Lake', 'NH', 44.16);
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
-    const sentinels = sites.filter((s) => s.sentinel).map((s) => s.siteId);
-    expect(sentinels).toEqual([real]);
+    await seedBody(t, 'Eagle Lake', 44.35, { state: 'ME' });
+    await seedBody(t, 'Eagle Lake', 44.2, { state: 'NY' });
+    const real = await seedBody(t, 'Eagle Lake', 44.16, { state: 'NH' });
+    const sites = await rosterSites(t);
+    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([real]);
   });
 
   test('a roster name that resolves to two rows in the state is dropped, not doubled', async () => {
     const t = convexTest(schema, modules);
-    await seedNamed(t, 'Kinsman Pond', 'NH', 44.136);
-    await seedNamed(t, 'Kinsman Pond', 'NH', 44.137);
-    const clouds = await seedNamed(t, 'Upper Lake of the Clouds', 'NH', 44.258);
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
-    // Both Kinsman rows still arrive through the boost sample — as ordinary sites, unflagged.
+    await seedBody(t, 'Kinsman Pond', 44.136, { state: 'NH', boost: 1 });
+    await seedBody(t, 'Kinsman Pond', 44.137, { state: 'NH', boost: 1 });
+    const clouds = await seedBody(t, 'Upper Lake of the Clouds', 44.258, { state: 'NH' });
+    const sites = await rosterSites(t);
     expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([clouds]);
     expect(sites).toHaveLength(3);
   });
 
   test('a merged tombstone beside the survivor does not drop the sentinel', async () => {
     const t = convexTest(schema, modules);
-    // A merge tombstones the loser with its name and states intact (D36). Two exact-name rows,
-    // one of them the tombstone, must resolve to the survivor rather than to nothing.
-    const survivor = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136, 0.3);
-    const loser = await seedNamed(t, 'Kinsman Pond', 'NH', 44.137, 0.3);
+    const survivor = await seedBody(t, 'Kinsman Pond', 44.136, { state: 'NH', boost: 0.3 });
+    const loser = await seedBody(t, 'Kinsman Pond', 44.137, { state: 'NH', boost: 0.3 });
     await t.run((ctx) =>
       ctx.db.patch(loser, { dedupStatus: 'merged' as const, mergedIntoId: survivor }),
     );
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    const sites = await rosterSites(t);
     expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([survivor]);
-    // …and the tombstone is not in the boost sample either: it kept its boost, and its point is
-    // the survivor's own.
     expect(sites.map((s) => s.siteId)).not.toContain(loser);
+  });
+
+  test('a sentinel merged after it was chosen follows its survivor', async () => {
+    const t = convexTest(schema, modules);
+    const original = await seedBody(t, 'Kinsman Pond', 44.136, { state: 'NH' });
+    const config = await t.mutation(internal.seasonWatch.ensureSettings, {});
+    const survivor = await seedBody(t, 'Kinsman Pond (survivor)', 44.137, { state: 'NH' });
+    await t.run((ctx) =>
+      ctx.db.patch(original, { dedupStatus: 'merged' as const, mergedIntoId: survivor }),
+    );
+    const sites = await t.query(internal.seasonWatch.gateSites, {
+      sentinels: config.sentinels,
+      pinned: config.pinned,
+      sampleSize: 24,
+    });
+    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([survivor]);
   });
 
   test("a moderator's display-name pick does not lose the sentinel — the roster name is a claim", async () => {
     const t = convexTest(schema, modules);
-    const clouds = await seedNamed(t, 'Lakes of the Clouds', 'NH', 44.258);
+    const clouds = await seedBody(t, 'Lakes of the Clouds', 44.258, { state: 'NH' });
     await t.run((ctx) =>
       ctx.db.patch(clouds, {
         nameClaims: [
@@ -546,17 +800,15 @@ describe('gateSites — the roster', () => {
         searchText: 'Lakes of the Clouds Upper Lake of the Clouds',
       }),
     );
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    const sites = await rosterSites(t);
     expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([clouds]);
   });
 
-  test('a sentinel that also ranks in the boost sample keeps its flag', async () => {
+  test('a sentinel that also ranks in the boost sample keeps its flag, listed once', async () => {
     const t = convexTest(schema, modules);
-    const kinsman = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136, 0.3);
+    const kinsman = await seedBody(t, 'Kinsman Pond', 44.136, { state: 'NH', boost: 0.3 });
     await seedSites(t, 1);
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    const sites = await rosterSites(t);
     expect(sites.find((s) => s.siteId === kinsman)?.sentinel).toBe(true);
     expect(sites).toHaveLength(2);
   });
@@ -566,12 +818,15 @@ describe('gateSites — the roster', () => {
   test('boosted tombstones at the top of the index do not shrink the ordinary sample', async () => {
     const t = convexTest(schema, modules);
     for (let i = 0; i < 30; i++) {
-      const id = await seedNamed(t, `Merged Pond ${i}`, 'NH', 43 + i * 0.01, 50 - i);
+      const id = await seedBody(t, `Merged Pond ${i}`, 43 + i * 0.01, {
+        state: 'NH',
+        boost: 50 - i,
+      });
       await t.run((ctx) => ctx.db.patch(id, { dedupStatus: 'merged' as const }));
     }
-    for (let i = 0; i < 26; i++) await seedNamed(t, `Listed Pond ${i}`, 'NH', 44 + i * 0.01, 1);
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    for (let i = 0; i < 26; i++)
+      await seedBody(t, `Listed Pond ${i}`, 44 + i * 0.01, { state: 'NH', boost: 1 });
+    const sites = await rosterSites(t);
     expect(sites).toHaveLength(24);
     const names = await t.run(async (ctx) =>
       Promise.all(
@@ -581,20 +836,10 @@ describe('gateSites — the roster', () => {
     expect(names.every((n) => n.startsWith('Listed Pond'))).toBe(true);
   });
 
-  test('a roster site in the boost index does not take one of the 24 ordinary slots', async () => {
-    const t = convexTest(schema, modules);
-    const kinsman = await seedNamed(t, 'Kinsman Pond', 'NH', 44.136, 99);
-    for (let i = 0; i < 26; i++) await seedNamed(t, `Listed Pond ${i}`, 'NH', 44 + i * 0.01, 1);
-
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
-    expect(sites.filter((s) => s.sentinel).map((s) => s.siteId)).toEqual([kinsman]);
-    expect(sites.filter((s) => !s.sentinel)).toHaveLength(24);
-  });
-
   test('with nothing on the roster, the boost sample carries the gate alone', async () => {
     const t = convexTest(schema, modules);
     await seedSites(t, 3);
-    const sites = await t.query(internal.imageryIngest.gateSites, {});
+    const sites = await rosterSites(t);
     expect(sites).toHaveLength(3);
     expect(sites.some((s) => s.sentinel)).toBe(false);
   });

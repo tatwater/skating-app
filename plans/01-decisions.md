@@ -4812,6 +4812,10 @@ founder asked for over calendar-year invalidation.
 **Backfill last season on first build**, so the feature ships with a full scrubber rather than an empty
 one that fills over three weeks.
 
+**Amended 2026-10-06 (A06i, D214):** *"the cron notices and an operator acts"* now means an admin
+presses *Start imagery* once a season; from then the cuts run from Convex every six hours until the
+watch ends. The weather gate itself is unchanged, and its thresholds became editable settings (D213).
+
 **Related:** [D56](#d56--weather-driven-dynamic-hazard-decay--the-expanded-weather-since-variable-set), [D63](#d63--a-season-is-july-1--june-30-and-it-is-derived-rather-than-stored-a05a), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ---
@@ -6377,3 +6381,79 @@ leak, and testing mode's seven-day refresh-token expiry never bites the alpha.
 filter. An iPhone that backs up to Google Photos has no door to it yet.
 
 **Related:** D31, D42, A10-7, `oauthStates` (shared with Strava's connection).
+
+## D212 — The season checker announces an ice watch, never a season, one email a day (A06i)
+
+**Decided (2026-10-06, founder, after the first real opening).** The checker's verdict is a
+*monitoring window* — when we start watching the weather corpus-wide and when imagery is worth
+starting — and nothing it says may read as a skating season or as ice (D3). Its staff emails:
+
+1. **Ice Watch Has Begun** — the sentinels that fired, as a table of names and overnight lows (°F,
+   with °C in brackets), the rule that fired, how many ordinary lakes froze that night, what changes
+   now and what to expect next.
+2. **Time to Start Satellite Imagery** — the first night a **sentinel** reaches the imagery line
+   (20 °F by default), sent only if imagery has not been started.
+3. **Winter Has Set In Region-Wide** — how many ordinary lakes froze, which, and that this measures
+   air, not ice.
+4. **Ice Watch Has Ended**.
+
+**Never two on one day:** each fact is queued on the season row with what it measured, and the daily
+tick sends the oldest if nothing went out that New York day. Recipients are unchanged: every active
+moderator and admin, one message each.
+
+**Why:** the first email (*"Skating season winter-2026-27 has begun"*, 4 October) went out on a 31 °F
+night at two summit tarns with nobody skating, and said only *"Opened by: sentinel"* — nobody could
+tell which sentinel, how cold, or what to change. A claim the data cannot support is the D3 failure
+in a staff inbox before it is one in a skater's.
+
+**Related:** D3, D149, D161, D213, [`phase-A06i`](./phases/A06i-season-watch.md).
+
+## D213 — The watch's thresholds are versioned settings, previewed against every past season (A06i)
+
+**Decided (2026-10-06, founder).** Every knob of the season watch — the floor date, the freezing
+line, consecutive sentinel nights, the corpus and winter fractions, the imagery line, the thaw line
+and run, the sample size, the sentinel and pinned rosters — lives in `seasonWatchSettings` as
+versions; the highest is current and an admin saves a new one on `/admin/seasons`. Rules:
+
+- **A season keeps the version that opened it**, copied onto its row: tightening a threshold in
+  January cannot rewrite why October's watch began. Later facts (the imagery line, winter, the end)
+  are looked for under the current settings, from the recorded opening.
+- **Every edit is previewed** against every season back to 2016-17, through the same
+  `evaluateSeason` the cron runs, using the lows the watch now keeps (`seasonWatchSeries`) and
+  Open-Meteo's archive for seasons before it existed — beside admin-entered field dates (first and
+  last skated), so a rule can be judged by how far ahead of real skating it fires.
+- **A watch can be reset**: its row moves whole into `imageryIngestSeasonsSuperseded`, the weather
+  sweep and live imagery stand down, and the next tick decides again under the current settings;
+  the re-sent opening email names the notice it replaces.
+- **Roster entries are water-body ids**, following merges to their survivor; the defaults still
+  resolve by exact name and state when version 1 is seeded.
+
+**Why:** the defaults (one night at or below freezing at any sentinel after 1 October) fire in the
+first days of October nearly every year — 1 October 2025, 3 October 2026 — weeks before anyone
+skates, and the founder wanted to tune them with Matt against evidence rather than by editing
+constants blind. The preview is what keeps a stricter-sounding setting from doing the opposite of
+its label.
+
+**Related:** D3, D149, D212, [`phase-A06i`](./phases/A06i-season-watch.md).
+
+## D214 — Live imagery runs from Convex once started: a six-hourly catalog poll, Fly cuts, an index built by listing (A06i)
+
+**Decided (2026-10-06, founder).** After an admin presses *Start imagery*, Convex polls Earth Search
+every six hours for new Sentinel-2 L2A and Sentinel-1 GRD items over the mask extent, selects them
+with A06e's rules (moved to core), queues each slot once, starts one Fly Machine per granule through
+the Machines API with `fan-out.sh`'s exact configuration and live-Machine cap, reconciles against the
+manifests in R2 (one retry; exit zero without a frame is *empty*, non-zero twice is *failed*), and
+rebuilds `index/<season>.json` — and `index/latest.json` on turnover — by listing the bucket. At most
+300 granules a poll; admins (not moderators) are emailed on a failure, a hit cap or missing
+configuration, at most once per kind per day.
+
+**Why:** a whole season cuts for about $1.50 of Fly compute (A06e), so the human-before-spend step
+D149 kept guarded almost nothing and cost a terminal session every few days. A poll rather than an
+orbit schedule because the moment that matters is when a processed granule reaches the catalog,
+which lags the pass by hours to a day on no schedule. Convex rather than GitHub Actions because the
+season row, the run history and the alerts already live there; what the cron cannot compute
+(`ogrinfo`'s mask extent and empty-tile survey) is published once per mask bake as
+`masks/<season>-search.json`. D148's condition holds: the Fly surface is one file (`lib/fly.ts`),
+and the CLIs stay for past seasons.
+
+**Related:** D147, D148, D149, D213, [`phase-A06i`](./phases/A06i-season-watch.md).

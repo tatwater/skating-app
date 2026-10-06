@@ -53,7 +53,15 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
 | `bathymetryCoverage` | which bodies have contour tiles and whose credit line to render — A06b |
-| `imageryIngestSeasons` | which seasons of Sentinel passes exist in the archive, per body — A06e |
+| `imageryIngestSeasons` | the season watch's verdict, one row per season: when the ice watch opened and why (with the settings that decided it), the first 20 °F sentinel night, winter region-wide, the end; the staff-email queue; whether imagery was started — D149, D161, D212–D214 |
+| `imageryIngestSeasonsSuperseded` | a season-watch row an admin reset, kept whole — D213 |
+| `seasonWatchSettings` | every saved version of the watch's thresholds and roster; the highest is current — D213 |
+| `seasonWatchSeries` | overnight lows per (season, site), compact: what the watch measured, and the archive back to 2016-17, so a season can be replayed under other settings — A06i §3 |
+| `seasonFieldDates` | the first and last days anyone skated, per season, admin-entered for the preview to compare against — A06i §6 |
+| `imageryGranules` | every pass the live poll queued, and how it settled (landed, empty, failed) — D214 |
+| `imageryFrames` | one row per frame manifest listed in R2 for the live season: what the season index is composed from — D214 |
+| `imageryRuns` | every live-imagery pass (poll, spawn, reconcile, index) — the run history on `/admin/seasons` — D214 |
+| `operatorAlertThrottle` | at most one operator alert per key per day — A06i §5 |
 | `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; `/admin/imports` — A06c §6.2 |
 
 ### Access
