@@ -136,6 +136,7 @@ function stub(w: World) {
         const id = url.pathname.split('/machines/')[1];
         if (id) {
           const detail = w.machineDetail.get(id);
+          if (detail === 'error') return new Response('', { status: 502, statusText: 'Bad' });
           return detail ? json(detail) : new Response('', { status: 404 });
         }
         return json(w.machines);
@@ -223,7 +224,7 @@ describe('poll', () => {
     expect(await runs(t)).toEqual([]);
   });
 
-  test('queues each new slot once, skipping empty tiles and reprocessings, then spawns', async () => {
+  test('queues each new slot once, skipping empty tiles and reprocessings, then wakes the pump', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     const w = world({
@@ -248,10 +249,9 @@ describe('poll', () => {
       [s1('20261006T224512'), s2('19TEM', '20261005', 1)].sort(),
     );
     expect(queued.every((g) => g.status === 'queued' && g.season === SEASON)).toBe(true);
-    expect(await scheduled(t, 'imageryLive:spawn')).toHaveLength(1);
-    expect(
-      (await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first()))?.imageryWindowTo,
-    ).toBe('2026-10-10');
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
+    expect(await counts(t)).toMatchObject({ queued: 2 });
+    expect((await seasonRow(t))?.imageryWindowTo).toBe('2026-10-10');
 
     // The next poll overlaps five days and finds the same passes: nothing new is queued, and a v0
     // published late into an already-cut slot is not cut a second time.
@@ -260,8 +260,14 @@ describe('poll', () => {
     const again = await t.action(internal.imageryLive.poll, {});
     expect(again.detail).toBe('window 2026-10-05 → 2026-10-12');
     expect(await granules(t)).toHaveLength(2);
-    const last = (await runs(t)).at(-1);
-    expect(last?.counts).toMatchObject({ queued: 0, alreadyQueued: 2 });
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ queued: 0, alreadyQueued: 2 });
+  });
+
+  test('wakes the pump even when it skips, so a dead pump chain restarts', async () => {
+    const t = convexTest(schema, modules);
+    stub(world());
+    await t.action(internal.imageryLive.poll, {});
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
   });
 
   test('refuses, once a day, without credentials', async () => {
@@ -298,26 +304,36 @@ describe('poll', () => {
     expect(result).toMatchObject({ outcome: 'failed' });
     expect(result.detail).toContain('STAC search failed: 502');
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
-      heading: 'A satellite catalog poll failed',
+      heading: 'A satellite catalog check failed',
     });
   });
 
-  test(`queues at most ${POLL_CAP} a poll, oldest first, and says so`, async () => {
+  test(`queues at most ${POLL_CAP} a check, oldest first, and resumes where it stopped`, async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
-    const features = Array.from({ length: POLL_CAP + 2 }, (_, i) => {
-      const day = String(3 + (i % 7)).padStart(2, '0');
-      const tile = `19T${String.fromCharCode(65 + (Math.floor(i / 26) % 26))}${String.fromCharCode(65 + (i % 26))}`;
+    // 150 passes on each of 3 days: the cap lands inside the second day.
+    const features = Array.from({ length: 450 }, (_, i) => {
+      const day = String(3 + Math.floor(i / 150)).padStart(2, '0');
+      const n = i % 150;
+      const tile = `19T${String.fromCharCode(65 + Math.floor(n / 26))}${String.fromCharCode(65 + (n % 26))}`;
       return feature(s2(tile, `202610${day}`), `2026-10-${day}T15:30:00Z`);
     });
-    stub(world({ s2: features }));
+    const w = world({ s2: features });
+    stub(w);
     const result = await t.action(internal.imageryLive.poll, {});
-    expect(result.outcome).toBe('capped');
+    expect(result).toEqual({ outcome: 'capped', detail: 'window 2026-10-03 → 2026-10-04' });
     expect(await granules(t)).toHaveLength(POLL_CAP);
-    expect((await runs(t))[0]?.counts).toMatchObject({ overCap: 2 });
+    expect((await runs(t))[0]?.counts).toMatchObject({ queued: POLL_CAP, notYetExamined: 150 });
+    // ⚠ The window stops at the newest pass queued, not today, so nothing over the cap is lost.
+    expect((await seasonRow(t))?.imageryWindowTo).toBe('2026-10-04');
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
-      heading: `A satellite poll hit its cap of ${POLL_CAP}`,
+      heading: `A satellite check hit its cap of ${POLL_CAP}`,
     });
+
+    // The next check starts from the overlap and queues the rest.
+    vi.setSystemTime(new Date('2026-10-10T18:00:00Z'));
+    expect((await t.action(internal.imageryLive.poll, {})).outcome).toBe('ok');
+    expect(await granules(t)).toHaveLength(450);
   });
 });
 
@@ -343,9 +359,14 @@ async function queue(t: T, ids: string[], fields: Record<string, unknown> = {}) 
   });
 }
 
-describe('spawn', () => {
-  test('spawns up to the live cap, reschedules for the rest, and schedules a reconcile', async () => {
+const seasonRow = (t: T) => t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+const counts = (t: T) => t.run((ctx) => ctx.db.query('imageryCounts').first());
+const pumpNow = (t: T) => t.action(internal.imageryLive.pump, {});
+
+describe('pump — starting cuts', () => {
+  test('starts up to the live cap, and beats again while work is left', async () => {
     const t = convexTest(schema, modules);
+    await openSeason(t);
     const ids = [s2('19TEA', '20261005'), s2('19TEB', '20261005'), s2('19TEC', '20261005')];
     await queue(t, ids);
     const w = world({
@@ -356,74 +377,111 @@ describe('spawn', () => {
       })),
     });
     stub(w);
-    expect(await t.action(internal.imageryLive.spawn, {})).toEqual({
-      spawned: 2,
-      failed: 0,
-      remaining: 1,
-    });
+    expect(await pumpNow(t)).toMatchObject({ live: 23, spawned: 2 });
     expect(w.spawned).toEqual(ids.slice(0, 2));
     const rows = await granules(t);
     expect(
       rows.filter((g) => g.status === 'spawned').every((g) => g.machineId?.startsWith('m-')),
     ).toBe(true);
-    expect(await scheduled(t, 'imageryLive:spawn')).toHaveLength(1);
-    expect(await scheduled(t, 'imageryLive:reconcile')).toHaveLength(1);
-    expect((await runs(t))[0]).toMatchObject({
-      kind: 'spawn',
-      counts: { live: 23, claimed: 2, spawned: 2 },
-    });
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
+    expect((await runs(t))[0]).toMatchObject({ kind: 'pump', outcome: 'ok' });
   });
 
-  test('a failed spawn is retried once, then settled as failed', async () => {
+  test('never starts a cut while paused — but still settles the ones in flight', async () => {
     const t = convexTest(schema, modules);
-    const [id] = await queue(t, [s2('19TEA', '20261005')]);
-    const w = world({ spawnFails: new Set([s2('19TEA', '20261005')]) });
-    stub(w);
-    expect(await t.action(internal.imageryLive.spawn, {})).toMatchObject({ failed: 1 });
-    expect(await t.run((ctx) => ctx.db.get(id as Id<'imageryGranules'>))).toMatchObject({
-      status: 'queued',
-      attempts: 1,
-    });
-    await t.action(internal.imageryLive.spawn, {});
-    expect(await t.run((ctx) => ctx.db.get(id as Id<'imageryGranules'>))).toMatchObject({
-      status: 'failed',
-      attempts: 2,
-    });
-    expect((await runs(t)).at(-1)?.outcome).toBe('failed');
-  });
-
-  test('an unreadable Machine list waits rather than floods', async () => {
-    const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: Date.now() });
+    const landed = s2('19TEZ', '20261005');
     await queue(t, [s2('19TEA', '20261005')]);
+    await queue(t, [landed], { status: 'spawned', attempts: 1, machineId: 'm', spawnedAt: 0 });
+    const w = world({
+      manifests: new Map([[`frames/${SEASON}/${landed}.json`, { granuleId: landed }]]),
+    });
+    stub(w);
+    expect(await pumpNow(t)).toMatchObject({ landed: 1, spawned: 0 });
+    expect(w.spawned).toEqual([]);
+    // Queued but not allowed to start, and nothing cutting: the pump stops beating.
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(0);
+    expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
+  });
+
+  test('a refused spawn keeps its attempts, and three in a row trip the breaker', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const ids = ['A', 'B', 'C', 'D', 'E'].map((c) => s2(`19TE${c}`, '20261005'));
+    await queue(t, ids);
+    stub(world({ spawnFails: new Set(ids) }));
+    expect(await pumpNow(t)).toMatchObject({ refused: 3, spawned: 0 });
+    const rows = await granules(t);
+    // Every granule is back in the queue, none has spent an attempt, and two were never tried.
+    expect(rows.every((g) => g.status === 'queued' && g.attempts === 0)).toBe(true);
+    expect(rows.filter((g) => g.lastError?.includes('breaker'))).toHaveLength(2);
+    const alert = (await scheduled(t, 'broadcastToStaff'))[0]?.args[0];
+    expect(alert).toMatchObject({
+      heading: 'Fly is refusing new satellite cuts',
+      roles: ['admin'],
+    });
+    // The next beat is the half-hour backoff, not the three-minute one.
+    const [next] = await scheduled(t, 'imageryLive:pump');
+    expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+    expect((await runs(t))[0]).toMatchObject({
+      outcome: 'failed',
+      detail: 'backing off 30 minutes',
+    });
+  });
+
+  test('an unreadable Machine list backs off with one alert, and starts nothing', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    await queue(t, [s2('19TEA', '20261005')]);
+    stub(world());
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('', { status: 500 })),
+      vi.fn(async (input: Request | string) => {
+        const url = input instanceof Request ? input.url : input;
+        if (url.includes('api.machines.dev')) return new Response('', { status: 401 });
+        return new Response('', { status: 404 });
+      }),
     );
-    expect(await t.action(internal.imageryLive.spawn, {})).toEqual({
-      spawned: 0,
-      failed: 0,
-      remaining: -1,
-    });
-    expect(await scheduled(t, 'imageryLive:spawn')).toHaveLength(1);
+    expect(await pumpNow(t)).toMatchObject({ spawned: 0 });
     expect((await granules(t))[0]?.status).toBe('queued');
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+      heading: 'The Fly API is refusing the imagery job',
+    });
+    // A second pump the same day: no second email.
+    await t.run(async (ctx) => {
+      for (const job of await ctx.db.system.query('_scheduled_functions').collect()) {
+        if (job.name.includes('pump')) await ctx.scheduler.cancel(job._id);
+      }
+    });
+    await pumpNow(t);
+    expect(await scheduled(t, 'broadcastToStaff')).toHaveLength(1);
   });
 
-  test('spawns nothing without credentials', async () => {
+  test('only one pump runs at a time; one asked for meanwhile runs on release', async () => {
+    const t = convexTest(schema, modules);
+    expect(await t.mutation(internal.imageryLive.acquireLease, { key: 'pump' })).toBe(true);
+    stub(world());
+    expect(await pumpNow(t)).toEqual({ skipped: 'another pump is running' });
+    expect(await t.mutation(internal.imageryLive.releaseLease, { key: 'pump' })).toBe(true);
+    expect(await t.mutation(internal.imageryLive.acquireLease, { key: 'pump' })).toBe(true);
+    // A lease left by a crashed holder lapses.
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(await t.mutation(internal.imageryLive.acquireLease, { key: 'pump' })).toBe(true);
+    expect(await t.mutation(internal.imageryLive.releaseLease, { key: 'nobody' })).toBe(false);
+  });
+
+  test('does nothing without credentials', async () => {
     const t = convexTest(schema, modules);
     vi.unstubAllEnvs();
-    expect(await t.action(internal.imageryLive.spawn, {})).toEqual({
-      spawned: 0,
-      failed: 0,
-      remaining: 0,
-    });
-    expect(await t.action(internal.imageryLive.reconcile, {})).toBeNull();
+    expect(await pumpNow(t)).toEqual({ skipped: 'unconfigured' });
     expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
   });
 });
 
-describe('reconcile', () => {
+describe('pump — settling cuts', () => {
   test('settles each cut by what the bucket and Fly say', async () => {
     const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: Date.now() }); // settle only
     const landed = s2('19TEA', '20261005');
     const running = s2('19TEB', '20261005');
     const firstMiss = s2('19TEC', '20261005');
@@ -431,6 +489,7 @@ describe('reconcile', () => {
     const failedCut = s2('19TEE', '20261005');
     const lostClaim = s2('19TEF', '20261005');
     const freshClaim = s2('19TEG', '20261005');
+    const justSpawned = s2('19TEH', '20261005');
     const spawnedAt = Date.now() - 30 * 60_000;
     await queue(t, [landed, running], {
       status: 'spawned',
@@ -443,6 +502,12 @@ describe('reconcile', () => {
     await queue(t, [failedCut], { status: 'spawned', attempts: 2, machineId: 'exit1', spawnedAt });
     await queue(t, [lostClaim], { status: 'spawned', attempts: 2, spawnedAt });
     await queue(t, [freshClaim], { status: 'spawned', attempts: 1, spawnedAt: Date.now() });
+    await queue(t, [justSpawned], {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'm2',
+      spawnedAt: Date.now(),
+    });
     const w = world({
       manifests: new Map([[`frames/${SEASON}/${landed}.json`, { granuleId: landed }]]),
       machineDetail: new Map<string, unknown>([
@@ -464,9 +529,14 @@ describe('reconcile', () => {
       ]),
     });
     stub(w);
-    // Both `landed` and `running` share Machine id `m`; only the one with a manifest is landed.
-    const counts = await t.action(internal.imageryLive.reconcile, {});
-    expect(counts).toEqual({ landed: 1, running: 2, requeued: 1, empty: 2, failed: 1 });
+    expect(await pumpNow(t)).toMatchObject({
+      landed: 1,
+      running: 3,
+      requeued: 1,
+      empty: 2,
+      failed: 1,
+      unknown: 0,
+    });
     const by = new Map((await granules(t)).map((g) => [g.granuleId, g]));
     expect(by.get(landed)?.status).toBe('landed');
     expect(by.get(running)?.status).toBe('spawned');
@@ -476,13 +546,12 @@ describe('reconcile', () => {
     expect(by.get(failedCut)).toMatchObject({ status: 'failed', lastError: 'exit 1' });
     expect(by.get(lostClaim)?.status).toBe('empty');
     expect(by.get(freshClaim)?.status).toBe('spawned');
-    expect(await scheduled(t, 'imageryLive:reconcile')).toHaveLength(1);
-    expect(await scheduled(t, 'imageryLive:spawn')).toHaveLength(1);
+    expect(by.get(justSpawned)?.status).toBe('spawned');
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
     expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: '1 satellite cut failed twice',
     });
-    expect((await runs(t))[0]).toMatchObject({ kind: 'reconcile', outcome: 'failed' });
   });
 
   test('a first miss that exited non-zero keeps the code', async () => {
@@ -502,21 +571,49 @@ describe('reconcile', () => {
         ]),
       }),
     );
-    await t.action(internal.imageryLive.reconcile, {});
+    await pumpNow(t);
     expect((await granules(t))[0]).toMatchObject({ status: 'queued', lastError: 'exit 3' });
   });
 
-  test('nothing spawned records nothing', async () => {
+  test('when nothing can be checked, it backs off and says so once', async () => {
+    const t = convexTest(schema, modules);
+    await queue(t, [s2('19TEA', '20261005')], {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'm',
+      spawnedAt: 0,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503, statusText: 'Down' })),
+    );
+    expect(await pumpNow(t)).toMatchObject({ unknown: 1 });
+    expect((await granules(t))[0]?.status).toBe('spawned');
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+      heading: 'Cuts in flight cannot be checked',
+    });
+    const [next] = await scheduled(t, 'imageryLive:pump');
+    expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+  });
+
+  test('a Machine read that errors is checked again next beat', async () => {
+    const t = convexTest(schema, modules);
+    await queue(t, [s2('19TEA', '20261005')], {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'bad',
+      spawnedAt: 0,
+    });
+    stub(world({ machineDetail: new Map([['bad', 'error']]) }));
+    expect(await pumpNow(t)).toMatchObject({ unknown: 1 });
+  });
+
+  test('nothing to do records nothing and schedules nothing', async () => {
     const t = convexTest(schema, modules);
     stub(world());
-    expect(await t.action(internal.imageryLive.reconcile, {})).toEqual({
-      landed: 0,
-      running: 0,
-      requeued: 0,
-      empty: 0,
-      failed: 0,
-    });
+    expect(await pumpNow(t)).toMatchObject({ landed: 0, spawned: 0 });
     expect(await runs(t)).toEqual([]);
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(0);
   });
 });
 
@@ -618,11 +715,33 @@ describe('buildIndex', () => {
   });
 });
 
-describe('activity', () => {
-  test('the admin page sees runs, the ledger and the last failures', async () => {
+describe('the page', () => {
+  test("sees runs, this season's ledger totals and the last failures; Retry failed requeues them", async () => {
     const t = convexTest(schema, modules);
-    await queue(t, [s2('19TEA', '20261005')]);
-    await queue(t, [s2('19TEB', '20261005')], { status: 'failed', lastError: 'exit 1' });
+    await openSeason(t);
+    stub(world());
+    await t.mutation(internal.imageryLive.queueGranules, {
+      items: [
+        {
+          granuleId: s2('19TEA', '20261005'),
+          slot: 'S2C_19TEA_20261005',
+          mission: 's2',
+          season: SEASON,
+          capturedAt: '2026-10-05T15:30:00Z',
+        },
+      ],
+      cap: 10,
+    });
+    const [failed] = await queue(t, [s2('19TEB', '20261005')], {
+      status: 'spawned',
+      attempts: 2,
+      machineId: 'exit1',
+    });
+    await t.mutation(internal.imageryLive.settleGranule, {
+      id: failed as Id<'imageryGranules'>,
+      status: 'failed',
+      error: 'exit 1',
+    });
     await t.mutation(internal.imageryLive.recordRun, {
       season: SEASON,
       kind: 'poll',
@@ -655,23 +774,39 @@ describe('activity', () => {
         createdAt: Date.now(),
       }),
     );
-    const activity = await t.withIdentity({ subject: 'admin' }).query(api.imageryLive.activity, {});
-    expect(activity.counts).toEqual({ queued: 1, spawned: 0, landed: 0, empty: 0, failed: 1 });
+    const admin = t.withIdentity({ subject: 'admin' });
+    const activity = await admin.query(api.imageryLive.activity, {});
+    // The queued one counted on insert; the hand-made spawned row only counted as it settled.
+    expect(activity.counts).toMatchObject({ queued: 1, failed: 1 });
     expect(activity.failed).toEqual([{ granuleId: s2('19TEB', '20261005'), lastError: 'exit 1' }]);
     expect(activity.runs).toHaveLength(1);
     expect(activity.configured).toBe(true);
+
+    expect(await admin.mutation(api.imageryLive.retryFailed, {})).toEqual({ requeued: 1 });
+    expect((await admin.query(api.imageryLive.activity, {})).counts).toMatchObject({
+      queued: 2,
+      failed: 0,
+    });
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
   });
 
-  test('settleSpawn ignores a vanished row and claimForSpawn takes nothing for no room', async () => {
+  test('settling ignores a vanished or already-settled row; a claim with no room takes nothing', async () => {
     const t = convexTest(schema, modules);
     const [id] = await queue(t, [s2('19TEA', '20261005')]);
-    await t.run((ctx) => ctx.db.delete(id as Id<'imageryGranules'>));
+    // Still queued, not spawned: neither settle touches it.
     expect(
       await t.mutation(internal.imageryLive.settleSpawn, {
         id: id as Id<'imageryGranules'>,
         machineId: 'm',
       }),
     ).toBeNull();
+    expect(
+      await t.mutation(internal.imageryLive.settleGranule, {
+        id: id as Id<'imageryGranules'>,
+        status: 'landed',
+      }),
+    ).toBeNull();
+    expect((await granules(t))[0]?.status).toBe('queued');
     expect(await t.mutation(internal.imageryLive.claimForSpawn, { limit: 0 })).toEqual([]);
     expect(
       await t.mutation(internal.imageryLive.setWindowTo, {

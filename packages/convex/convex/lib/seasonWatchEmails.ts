@@ -135,7 +135,8 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
       if (email.replaces) {
         blocks.push({
           kind: 'paragraph',
-          text: `This replaces the notice from ${longDate(new Date(email.replaces.detectedAt).toISOString().slice(0, 10))}: the watch was reset, and has begun again under the current settings.`,
+          // The notice went out on its New York day, so it is named by that day (D212's clock).
+          text: `This replaces the notice from ${longDate(newYorkDate(email.replaces.detectedAt))}: the watch was reset, and has begun again under the current settings.`,
         });
       }
       const bySentinel = email.sentinels.length > 0;

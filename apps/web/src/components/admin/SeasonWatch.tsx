@@ -228,8 +228,11 @@ export function WatchCard({
             </p>
           )}
           <p className="text-foreground-muted text-xs">
-            Decided under settings version {row.settingsVersion ?? '—'} ·{' '}
-            {new Date(row.detectedAt).toLocaleString()}
+            Decided under{' '}
+            {row.settingsVersion === 0
+              ? 'the defaults it shipped with (before versions)'
+              : `settings version ${row.settingsVersion ?? '—'}`}{' '}
+            · {new Date(row.detectedAt).toLocaleString()}
           </p>
         </div>
         <div className="flex flex-col gap-2">
@@ -339,11 +342,13 @@ export function ImageryPanel({
   activity,
   onStart,
   onPause,
+  onRetryFailed,
 }: {
   row: WatchRow | null;
   activity: ImageryActivity | undefined;
   onStart: () => Promise<unknown>;
   onPause: () => Promise<unknown>;
+  onRetryFailed?: () => Promise<unknown>;
 }) {
   const { busy, error, run } = useAction();
   const status = !row
@@ -429,10 +434,22 @@ export function ImageryPanel({
             <p className="text-foreground-muted text-sm">No passes yet.</p>
           )}
           {activity.failed.length > 0 ? (
-            <p className="text-foreground-muted text-xs">
-              Last failures:{' '}
-              {activity.failed.map((f) => `${f.granuleId} (${f.lastError ?? '?'})`).join(', ')}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-foreground-muted text-xs">
+                Last failures:{' '}
+                {activity.failed.map((f) => `${f.granuleId} (${f.lastError ?? '?'})`).join(', ')}
+              </p>
+              {onRetryFailed ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => run(onRetryFailed)}
+                >
+                  Retry failed
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           <p className="text-foreground-muted text-xs">
             Guards: at most {activity.pollCap} granules a check, {activity.maxLive} cut Machines at

@@ -116,19 +116,37 @@ The copy, as settled with the founder (2026-10-06):
 ### §5 — Live imagery from Convex (D214)
 
 `imageryLive.ts`. Every 6 hours, while the season row is open and `imageryStartedAt` is set and not
-paused: search Earth Search's STAC for S2 L2A and S1 GRD over the mask extent since the last window
-(less a 5-day overlap for late-published items), select with the A06e functions (now in core),
-skip any slot already queued, and spawn one Fly Machine per new granule through the Machines API
-with exactly `fan-out.sh`'s configuration. Machines are throttled on live count (25). A reconcile
-pass 20 minutes later checks R2 for each manifest: landed, still running, or settled without a frame
-(retried once, then recorded as empty). Then the season's index is rebuilt by listing R2 (only new
-manifests are read; rows for vanished keys are dropped) and `index/latest.json` turns over by
-`latestSeasonWithFrames`. Guards: 300 granules a run, a missing config refuses with an admin alert,
-at most one alert per kind per day.
+paused, `poll` searches Earth Search's STAC for S2 L2A and S1 GRD over the mask extent since the
+last window (less a 5-day overlap for late-published items), selects with the A06e functions (now in
+core), and queues each new slot — oldest first, at most 300; a capped poll moves its window only to
+the newest pass it queued. It always wakes the pump.
+
+**The pump** (`pump`, under a lease — never two at once) is the only thing that touches Fly: it
+settles cuts in flight against the manifests in R2 (landed, still running, or gone without a frame —
+retried once, then *empty* on exit 0 or *failed* otherwise), then, only while imagery is running,
+starts new ones up to 25 live Machines with exactly `fan-out.sh`'s configuration, and beats every
+three minutes while anything is queued or cutting. A Fly or archive failure backs it off half an
+hour with one admin email a day; a refused spawn spends no attempt, and three in a row trip a
+breaker. A second lease serializes `buildIndex`, which lists R2, reads only new manifests and writes
+`index/<season>.json` and, on turnover, `index/latest.json`. *Retry failed* on the page re-queues
+failed cuts.
 
 The search plan the cron can't compute (the mask extent and the empty-tile set, both from `ogrinfo`)
 is published once per mask bake as `masks/<season>-search.json` (`publish-search-plan`); an unknown
 tile is kept.
+
+#### Built record — the self-review (2026-10-06)
+
+`/code-review xhigh` found 15 issues; the seven in the imagery job had one cause — separate
+self-rescheduling spawn and reconcile chains that multiplied, each reading live Machines on its own
+(the `fan-out.sh` overshoot), spawning after *Pause*, retrying a dead token every two minutes, and
+dying on one transient error. They became the leased pump above. The rest were fixed in place: a
+capped poll no longer skips passes; the archive fills gaps in the live season's kept nights but
+never replaces them; the legacy row is stamped as **version 0** (the shipped defaults) on every tick
+and save, so an admin saving first cannot misattribute it; today's low (a forecast) is dropped
+before anything is stored or decided (D140); the full history fill runs once a day; field dates
+must be real days inside their season; the reset email names the notice by its New York day; the
+ledger totals are kept in `imageryCounts` instead of counted per render.
 
 ### §6 — `/admin/seasons`
 

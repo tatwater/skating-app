@@ -1338,11 +1338,11 @@ export default defineSchema({
     .index('by_season', ['season', 'capturedAt'])
     .index('by_manifest', ['manifestKey']),
 
-  // Every live-imagery pass (A06i §5): a catalog poll, a spawn batch, a reconcile, an index build.
-  // What `/admin/seasons` shows as the run history, and the record that imagery has run at all.
+  // Every live-imagery pass (A06i §5): a catalog poll, a pump beat that settled or started cuts, an
+  // index build. What `/admin/seasons` shows as the run history, and the record that imagery ran.
   imageryRuns: defineTable({
     season: v.string(),
-    kind: literals(['poll', 'spawn', 'reconcile', 'index'] as const),
+    kind: literals(['poll', 'pump', 'index'] as const),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
     outcome: literals(['ok', 'capped', 'failed', 'refused', 'skipped'] as const),
@@ -1350,12 +1350,32 @@ export default defineSchema({
     counts: v.optional(v.record(v.string(), v.number())),
   }).index('by_started', ['startedAt']),
 
-  // At most one operator alert per key per day (A06i §5) — a misconfigured job polls every six
-  // hours, and four identical emails a day is how an inbox learns to ignore the fifth.
-  operatorAlertThrottle: defineTable({
+  // Once per key per New York day (A06i): an operator alert — a misconfigured job polls every six
+  // hours, and four identical emails a day is how an inbox learns to ignore the fifth — or a full
+  // history fill, which a second click must not double against the Open-Meteo budget.
+  dailyThrottle: defineTable({
     key: v.string(),
-    lastSentOn: v.string(),
+    lastOn: v.string(),
   }).index('by_key', ['key']),
+
+  // The live imagery job's leases (A06i §5): one `pump` and one `index` at a time, ever. `pending`
+  // records that a run was asked for while the lease was held, so it runs once more on release.
+  imageryLeases: defineTable({
+    key: v.string(),
+    leaseUntil: v.number(),
+    pending: v.boolean(),
+  }).index('by_key', ['key']),
+
+  // The granule ledger's totals per frame season (A06i §5), kept beside every status change so the
+  // admin page reads one row instead of counting thousands.
+  imageryCounts: defineTable({
+    season: v.string(),
+    queued: v.number(),
+    spawned: v.number(),
+    landed: v.number(),
+    empty: v.number(),
+    failed: v.number(),
+  }).index('by_season', ['season']),
 
   // Per-state distribution basis for the derived caption (A06c §1.5). **One row per state**, holding
   // the 10th–90th percentiles of each metric across that state's listed bodies.

@@ -643,9 +643,10 @@ granule list is ocean, Québec or dry land, and those jobs correctly produce not
 ## Live, from Convex (A06i, D214)
 
 From winter 2026-27 the current season's imagery runs itself: an admin presses **Start imagery** on
-`/admin/seasons`, and `packages/convex/convex/imageryLive.ts` checks Earth Search every 6 hours,
-spawns one Machine per new granule with exactly `fan-out.sh`'s configuration (`lib/fly.ts`),
-reconciles against the manifests in R2, and rebuilds `index/<season>.json` by listing the bucket.
+`/admin/seasons`, and `packages/convex/convex/imageryLive.ts` checks Earth Search every 6 hours and
+queues each new granule; one leased pump spawns them with exactly `fan-out.sh`'s configuration and
+live-Machine cap (`lib/fly.ts`), settles them against the manifests in R2, and a second lease
+rebuilds `index/<season>.json` by listing the bucket.
 Everything above stays the tool for **past** seasons and recuts.
 
 What it needs, once per season or per credential:

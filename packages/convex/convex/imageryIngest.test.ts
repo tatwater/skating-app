@@ -270,7 +270,8 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     const stamped = await theRow(t);
     expect(stamped).toMatchObject({
       winterFrom: null,
-      settingsVersion: 1,
+      // Version 0: the defaults it shipped with, before there were versions.
+      settingsVersion: 0,
       // Its opening email already went, as the old message: stamped so the queue never re-sends it.
       emailsSent: [{ kind: 'opened', sentOn: '2026-12-03' }],
       opening: {
@@ -374,6 +375,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
       openedBy: ['corpus'],
       winterFrom: null,
       sitesSampled: 1,
+      settingsVersion: 1,
     });
     vi.stubGlobal(
       'fetch',
@@ -381,6 +383,21 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     );
     await expect(tickNow(t)).rejects.toThrow(/Open-Meteo 503/);
     expect(await broadcasts(t)).toHaveLength(1);
+  });
+  test("today's low is a forecast, and is never stored or decided on", async () => {
+    vi.useFakeTimers();
+    atDate('2026-10-06');
+    const t = convexTest(schema, modules);
+    await seedSites(t, 1);
+    await seedSentinel(t);
+    // Through 6 October, the 6th being today: its 19 °F is a forecast for a night not yet over.
+    stubLows('2026-10-01', [9, 9, 9, 9, 9, 9], [7, 3, -0.4, -0.2, -3.7, -7.1]);
+    await tickNow(t);
+    expect((await theRow(t))?.imageryNudgeOn).toBeUndefined();
+    const summit = (await t.run((ctx) => ctx.db.query('seasonWatchSeries').collect())).find(
+      (d) => d.name === 'Upper Lake of the Clouds',
+    );
+    expect(summit?.lows).toEqual([7, 3, -0.4, -0.2, -3.7]);
   });
 });
 

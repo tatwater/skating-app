@@ -86,6 +86,7 @@ function AdminSeasons() {
   const addFieldDate = useMutation(api.seasonWatch.addFieldDate);
   const removeFieldDate = useMutation(api.seasonWatch.removeFieldDate);
   const requestHistoryFill = useMutation(api.seasonWatch.requestHistoryFill);
+  const retryFailed = useMutation(api.imageryLive.retryFailed);
   const fill = useAction();
 
   const season = archiveSeasonAt(Date.now());
@@ -186,6 +187,7 @@ function AdminSeasons() {
           activity={activity}
           onStart={() => startImagery({ season })}
           onPause={() => pauseImagery({ season })}
+          onRetryFailed={() => retryFailed({})}
         />
       </Section>
 

@@ -10,8 +10,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      // Measured here is the logic that can be wrong in a way that still looks right: which granules
-      // a season selects, and the mask geometry the archive is cut against. The CLIs are argv +
+      // Measured here is the logic that can be wrong in a way that still looks right: the mask geometry
+      // the archive is cut against. (Granule selection, the tile survey and the frame index moved to
+      // `@skating/core` in A06i, where Convex shares them, and are measured there.) The CLIs are argv +
       // stderr shells over that logic, and `corpus.ts` is a subprocess boundary (`convex run`).
       exclude: [
         'src/**/*.test.ts',
@@ -20,6 +21,7 @@ export default defineConfig({
         'src/selectGranules.ts',
         'src/ingestWindowCli.ts',
         'src/buildIndex.ts',
+        'src/publishSearchPlan.ts',
         'src/corpus.ts',
       ],
       thresholds: {

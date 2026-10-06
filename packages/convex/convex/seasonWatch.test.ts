@@ -215,7 +215,7 @@ describe('the overview and the stored lows', () => {
     await seedSeason(t);
     await seedSeason(t, { season: 'winter-2025-26' });
     const admin = await seedUser(t, 'admin', 'admin');
-    for (const date of ['2026-12-01', '2025-11-20']) {
+    for (const date of ['2026-01-10', '2025-11-20']) {
       await admin.as.mutation(api.seasonWatch.addFieldDate, {
         season: 'winter-2025-26',
         kind: 'first_skated',
@@ -226,7 +226,7 @@ describe('the overview and the stored lows', () => {
     expect(overview.current.version).toBe(0);
     // Newest season first; field dates in date order.
     expect(overview.seasons.map((s) => s.season)).toEqual(['winter-2026-27', 'winter-2025-26']);
-    expect(overview.fieldDates.map((d) => d.date)).toEqual(['2025-11-20', '2026-12-01']);
+    expect(overview.fieldDates.map((d) => d.date)).toEqual(['2025-11-20', '2026-01-10']);
     expect(overview.sites.map((s) => [s.name, s.role])).toEqual([
       ['Upper Lake of the Clouds', 'sentinel'],
       ['Big Lake', 'sample'],
@@ -401,7 +401,7 @@ describe('reset, imagery and field dates', () => {
         kind: 'last_skated',
         date: 'March 3',
       }),
-    ).rejects.toThrow(/YYYY-MM-DD/);
+    ).rejects.toThrow(/real day/);
     await expect(
       admin.as.mutation(api.seasonWatch.addFieldDate, {
         season: '2025-26',
@@ -411,6 +411,81 @@ describe('reset, imagery and field dates', () => {
     ).rejects.toThrow(/Not a season/);
     await admin.as.mutation(api.seasonWatch.removeFieldDate, { id });
     expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+  });
+});
+
+describe('the review fixes', () => {
+  test('a legacy row is stamped as version 0 even when an admin saves before the first tick', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t, 'Upper Lake of the Clouds', 44.258);
+    await seedSeason(t);
+    const admin = await seedUser(t, 'admin', 'admin');
+    await admin.as.mutation(api.seasonWatch.saveSettings, {
+      settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sentinelNights: 3 },
+      sentinels: [],
+      pinned: [],
+    });
+    const row = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+    expect(row).toMatchObject({ settingsVersion: 0, settings: DEFAULT_SEASON_WATCH_SETTINGS });
+    expect(row?.sentinels?.map((s) => s.name)).toEqual(['Upper Lake of the Clouds']);
+  });
+
+  test('the archive fills gaps in the live season but never replaces a kept night', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t, 'A Pond', 44.1);
+    const site = { waterBodyId: id, name: 'A Pond', lat: 44.1, lng: -71.65 };
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2026-27',
+      source: 'forecast',
+      sites: [{ ...site, days: [{ date: '2026-10-02', minTempC: -1 }] }],
+    });
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2026-27',
+      source: 'archive',
+      sites: [
+        {
+          ...site,
+          days: [
+            { date: '2026-10-01', minTempC: 4 },
+            { date: '2026-10-02', minTempC: 1.5 },
+          ],
+        },
+      ],
+    });
+    const [doc] = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2026-27' });
+    expect(doc).toMatchObject({ source: 'forecast', firstDate: '2026-10-01', lows: [4, -1] });
+  });
+
+  test('a full history fill runs once a day, whoever clicks', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
+    const t = convexTest(schema, modules);
+    const admin = await seedUser(t, 'admin', 'admin');
+    await admin.as.mutation(api.seasonWatch.requestHistoryFill, {});
+    await expect(admin.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
+      /already started today/,
+    );
+    vi.setSystemTime(new Date('2026-10-07T12:00:00Z'));
+    await admin.as.mutation(api.seasonWatch.requestHistoryFill, {});
+  });
+
+  test('a field date must be a real day inside its season', async () => {
+    const t = convexTest(schema, modules);
+    const admin = await seedUser(t, 'admin', 'admin');
+    await expect(
+      admin.as.mutation(api.seasonWatch.addFieldDate, {
+        season: 'winter-2026-27',
+        kind: 'first_skated',
+        date: '2027-02-31',
+      }),
+    ).rejects.toThrow(/real day/);
+    await expect(
+      admin.as.mutation(api.seasonWatch.addFieldDate, {
+        season: 'winter-2026-27',
+        kind: 'first_skated',
+        date: '2019-12-01',
+      }),
+    ).rejects.toThrow(/not in winter-2026-27/);
   });
 });
 

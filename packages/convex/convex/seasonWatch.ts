@@ -22,6 +22,7 @@ import {
   archiveSeasonLabel,
   type DailyLow,
   DEFAULT_SEASON_WATCH_SETTINGS,
+  expandLows,
   mergeLows,
   type SeasonWatchSettings,
   seasonStartYear,
@@ -43,9 +44,14 @@ import {
 import { openMeteoCallWeight } from './lib/apiMeter';
 import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
+import { firstToday } from './lib/dailyThrottle';
 import { isListed } from './lib/listing';
 import { newYorkDate } from './lib/seasonWatchEmails';
-import { seasonWatchSettings as settingsValidator } from './lib/seasonWatchValidators';
+import {
+  rosterSite as rosterSiteValidator,
+  seasonWatchSettings as settingsValidator,
+} from './lib/seasonWatchValidators';
+import { siteToday } from './lib/siteDay';
 import { literals } from './lib/validators';
 
 /**
@@ -91,12 +97,6 @@ const SAMPLE_SCAN_CAP = 200;
 
 /** The first season the history fill reaches back to — the start of the imagery archive's reach. */
 export const HISTORY_FIRST_SEASON_YEAR = 2016;
-
-const rosterSiteArg = v.object({
-  waterBodyId: v.id('waterBodies'),
-  name: v.string(),
-  state: v.optional(v.string()),
-});
 
 export interface RosterSite {
   waterBodyId: Id<'waterBodies'>;
@@ -172,9 +172,38 @@ async function defaultConfig(ctx: QueryCtx): Promise<Omit<WatchConfig, 'version'
 }
 
 /** The current settings, seeding version 1 from the defaults on first use. */
+/**
+ * Stamp any season row opened before A06i — the legacy winter-2026-27 row — with what decided it.
+ *
+ * It was decided under the defaults D149 shipped with and the roster those names resolved to, which
+ * is **version 0**: the settings before there were versions. Not version 1, which is whatever was
+ * saved first — the defaults if `ensureSettings` seeded it, an admin's edit if they saved first — and
+ * stamping that would rewrite why the season opened. Its opening email has already gone (as the old
+ * "season has begun" message), so it is marked sent and the queue never re-sends it. Idempotent, and
+ * run on every tick and every save, so the order those happen in after a deploy does not matter.
+ */
+async function stampLegacyRows(ctx: MutationCtx) {
+  const legacy = (await ctx.db.query('imageryIngestSeasons').take(50)).filter(
+    (r) => r.settingsVersion === undefined,
+  );
+  if (legacy.length === 0) return;
+  const defaults = await defaultConfig(ctx);
+  for (const row of legacy) {
+    const sentOn = newYorkDate(row.detectedAt);
+    await ctx.db.patch(row._id, {
+      settingsVersion: 0,
+      settings: defaults.settings,
+      sentinels: defaults.sentinels,
+      emailsSent: row.emailsSent ?? [{ kind: 'opened', sentOn, sentAt: row.detectedAt }],
+      lastEmailOn: row.lastEmailOn ?? sentOn,
+    });
+  }
+}
+
 export const ensureSettings = internalMutation({
   args: {},
   handler: async (ctx): Promise<WatchConfig> => {
+    await stampLegacyRows(ctx);
     const row = await latestSettings(ctx);
     if (row) return configOf(row);
     const seeded = await defaultConfig(ctx);
@@ -184,20 +213,6 @@ export const ensureSettings = internalMutation({
       note: 'The defaults the watch shipped with (D149), seeded by A06i.',
       savedAt: Date.now(),
     });
-    // A row opened before A06i was decided under exactly these defaults, and its opening email has
-    // already gone (as the old "season has begun" message). Stamped so the page can show what decided
-    // it and the queue never re-sends it.
-    for (const row of await ctx.db.query('imageryIngestSeasons').take(50)) {
-      if (row.settingsVersion !== undefined) continue;
-      const sentOn = newYorkDate(row.detectedAt);
-      await ctx.db.patch(row._id, {
-        settingsVersion: 1,
-        settings: seeded.settings,
-        sentinels: seeded.sentinels,
-        emailsSent: row.emailsSent ?? [{ kind: 'opened', sentOn, sentAt: row.detectedAt }],
-        lastEmailOn: row.lastEmailOn ?? sentOn,
-      });
-    }
     return { version: 1, ...seeded };
   },
 });
@@ -275,8 +290,8 @@ export async function sampleSites(
 
 export const gateSites = internalQuery({
   args: {
-    sentinels: v.array(rosterSiteArg),
-    pinned: v.array(rosterSiteArg),
+    sentinels: v.array(rosterSiteValidator),
+    pinned: v.array(rosterSiteValidator),
     sampleSize: v.number(),
   },
   handler: async (ctx, args) => (await sampleSites(ctx, args)).sites,
@@ -310,13 +325,18 @@ export const storeSeries = internalMutation({
           q.eq('season', season).eq('waterBodyId', site.waterBodyId),
         )
         .unique();
-      const merged = mergeLows(existing, site.days as DailyLow[]);
+      // ⚠ **The archive fills gaps in what the live watch kept; it never replaces it.** Those forecast
+      // nights are what the season was actually decided on, and a replay must reproduce the decision.
+      const keepLive = existing?.source === 'forecast' && source === 'archive';
+      const kept = keepLive ? new Set(expandLows(existing).map((d) => d.date)) : null;
+      const days = kept ? site.days.filter((d) => !kept.has(d.date)) : site.days;
+      const merged = mergeLows(existing, days as DailyLow[]);
       const fields = {
         name: site.name,
         ...(site.state ? { state: site.state } : {}),
         lat: site.lat,
         lng: site.lng,
-        source,
+        source: keepLive ? ('forecast' as const) : source,
         firstDate: merged.firstDate,
         lows: merged.lows,
         updatedAt: now,
@@ -450,6 +470,7 @@ export const saveSettings = mutation({
     const pinned = await snapshot(args.pinned);
     if (errors.length > 0) throw new ConvexError(errors.join(' '));
 
+    await stampLegacyRows(ctx);
     const previous = await latestSettings(ctx);
     const version = (previous?.version ?? 0) + 1;
     await ctx.db.insert('seasonWatchSettings', {
@@ -561,8 +582,20 @@ export const addFieldDate = mutation({
     } catch {
       throw new ConvexError(`Not a season: ${args.season}.`);
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(args.date) || Number.isNaN(Date.parse(args.date))) {
-      throw new ConvexError('The date must be YYYY-MM-DD.');
+    // A real calendar day (V8 rolls 2027-02-31 over to 3 March), inside the season it is filed under.
+    const [y, m, d] = args.date.split('-').map(Number) as [number, number, number];
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    const real =
+      /^\d{4}-\d{2}-\d{2}$/.test(args.date) &&
+      probe.getUTCFullYear() === y &&
+      probe.getUTCMonth() === m - 1 &&
+      probe.getUTCDate() === d;
+    if (!real) throw new ConvexError('The date must be a real day, YYYY-MM-DD.');
+    const year = seasonStartYear(args.season);
+    if (args.date < `${year}-07-01` || args.date > `${year + 1}-06-30`) {
+      throw new ConvexError(
+        `${args.date} is not in ${args.season} (July ${year} – June ${year + 1}).`,
+      );
     }
     const place = args.place?.trim();
     const note = args.note?.trim();
@@ -593,6 +626,13 @@ export const requestHistoryFill = mutation({
   args: {},
   handler: async (ctx) => {
     await requireContributorRole(ctx, 'admin');
+    // A full fill is ~6,000 weighted Open-Meteo calls spread over a day and a half; a second click
+    // (or a second admin) must not stack another on the same free budget.
+    if (!(await firstToday(ctx, 'history-fill'))) {
+      throw new ConvexError(
+        'A full history fill already started today — it runs over about a day and a half.',
+      );
+    }
     await ctx.scheduler.runAfter(0, internal.seasonWatch.scheduleHistoryFill, {});
     return null;
   },
@@ -670,6 +710,7 @@ export const scheduleHistoryFill = internalMutation({
 });
 
 interface DailyResponse {
+  utc_offset_seconds?: number;
   daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
 }
 
@@ -724,12 +765,17 @@ export const fillSeason = internalAction({
       sites: sites.map((site, i) => {
         const daily = rows[i]?.daily;
         const mins = daily?.temperature_2m_min ?? [];
+        // Today's low is still a forecast — dropped, as the daily tick drops it (D140).
+        const today = siteToday(now, rows[i]?.utc_offset_seconds);
         return {
           ...site,
           days: (daily?.time ?? [])
             .map((date, j) => ({ date, minTempC: mins[j] }))
-            // A null low is a gap, not a warm night; and the current season keeps its own floor.
-            .filter((d): d is DailyLow => typeof d.minTempC === 'number' && d.date >= floor),
+            // A null low is a gap, not a warm night.
+            .filter(
+              (d): d is DailyLow =>
+                typeof d.minTempC === 'number' && d.date >= floor && d.date < today,
+            ),
         };
       }),
     });

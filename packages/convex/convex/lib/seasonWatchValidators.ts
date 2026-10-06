@@ -36,6 +36,12 @@ export const namedSiteLow = v.object({
   lowC: v.number(),
 });
 
+/** What the opening night measured: the sentinels that fired, and the ordinary lakes' count. */
+export const openingDetail = v.object({
+  sentinels: v.array(namedSiteLow),
+  corpus: v.object({ frozen: v.number(), reporting: v.number() }),
+});
+
 /**
  * One staff email waiting its turn (D212: never two on one day). Each carries what it reports, so
  * the copy is written from what was measured that night rather than re-derived from a rolling
@@ -96,12 +102,7 @@ export const seasonRecordFields = {
   /** The sentinels watched when it opened — a copy, so a later roster edit cannot rewrite why. */
   sentinels: v.optional(v.array(rosterSite)),
   /** What the opening night measured. */
-  opening: v.optional(
-    v.object({
-      sentinels: v.array(namedSiteLow),
-      corpus: v.object({ frozen: v.number(), reporting: v.number() }),
-    }),
-  ),
+  opening: v.optional(openingDetail),
   /** The first sentinel night at or below the imagery line, and the sentinels that reached it. */
   imageryNudgeOn: v.optional(v.string()),
   imageryNudgeSites: v.optional(v.array(namedSiteLow)),

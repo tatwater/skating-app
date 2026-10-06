@@ -6440,12 +6440,16 @@ its label.
 
 **Decided (2026-10-06, founder).** After an admin presses *Start imagery*, Convex polls Earth Search
 every six hours for new Sentinel-2 L2A and Sentinel-1 GRD items over the mask extent, selects them
-with A06e's rules (moved to core), queues each slot once, starts one Fly Machine per granule through
-the Machines API with `fan-out.sh`'s exact configuration and live-Machine cap, reconciles against the
-manifests in R2 (one retry; exit zero without a frame is *empty*, non-zero twice is *failed*), and
-rebuilds `index/<season>.json` — and `index/latest.json` on turnover — by listing the bucket. At most
-300 granules a poll; admins (not moderators) are emailed on a failure, a hit cap or missing
-configuration, at most once per kind per day.
+with A06e's rules (moved to core) and queues each slot once, oldest first, at most 300 a poll — a
+capped poll advances its window only to the newest pass it queued, so nothing over the cap is lost.
+**One leased pump** is the only thing that touches Fly: it settles cuts in flight against the
+manifests in R2 (one retry; exit zero without a frame is *empty*, non-zero twice is *failed*), starts
+new ones only while imagery is running, up to `fan-out.sh`'s live-Machine cap and with its exact
+Machine configuration, and backs off half an hour when Fly or the archive is failing; a refused
+spawn spends no attempt, and three in a row trip a breaker. A second lease serializes the index
+build — `index/<season>.json`, and `index/latest.json` on turnover — by listing the bucket. Admins
+(not moderators) are emailed on a failure, a hit cap or missing configuration, at most once per
+kind per day.
 
 **Why:** a whole season cuts for about $1.50 of Fly compute (A06e), so the human-before-spend step
 D149 kept guarded almost nothing and cost a terminal session every few days. A poll rather than an
@@ -6455,5 +6459,10 @@ season row, the run history and the alerts already live there; what the cron can
 (`ogrinfo`'s mask extent and empty-tile survey) is published once per mask bake as
 `masks/<season>-search.json`. D148's condition holds: the Fly surface is one file (`lib/fly.ts`),
 and the CLIs stay for past seasons.
+
+**Why one pump** (the build's own review, 2026-10-06): separate self-rescheduling spawn and
+reconcile chains multiplied, each sized its batch from its own reading of live Machines — the
+overshoot `fan-out.sh` measured — and kept spawning after *Pause*. One actor under a lease makes the
+cap, *Pause* and every backoff a single check.
 
 **Related:** D147, D148, D149, D213, [`phase-A06i`](./phases/A06i-season-watch.md).

@@ -61,7 +61,13 @@ import {
 } from './_generated/server';
 import { openMeteoCallWeight } from './lib/apiMeter';
 import { composeSeasonEmail, newYorkDate, type SeasonEmail } from './lib/seasonWatchEmails';
-import { namedSiteLow, rosterSite, seasonWatchSettings } from './lib/seasonWatchValidators';
+import {
+  namedSiteLow,
+  openingDetail,
+  rosterSite,
+  seasonWatchSettings,
+} from './lib/seasonWatchValidators';
+import { siteToday } from './lib/siteDay';
 
 type NamedSiteLow = Infer<typeof namedSiteLow>;
 
@@ -184,11 +190,6 @@ export const recordOpeningDetail = internalMutation({
   },
 });
 
-const openingArg = v.object({
-  sentinels: v.array(namedSiteLow),
-  corpus: v.object({ frozen: v.number(), reporting: v.number() }),
-});
-
 export const recordSeasonOpen = internalMutation({
   args: {
     season: v.string(),
@@ -199,7 +200,7 @@ export const recordSeasonOpen = internalMutation({
     settingsVersion: v.optional(v.number()),
     settings: v.optional(seasonWatchSettings),
     sentinels: v.optional(v.array(rosterSite)),
-    opening: v.optional(openingArg),
+    opening: v.optional(openingDetail),
     winter: v.optional(v.object({ frozen: v.array(namedSiteLow), reporting: v.number() })),
     imageryNudge: v.optional(v.object({ date: v.string(), sites: v.array(namedSiteLow) })),
   },
@@ -304,6 +305,7 @@ export const sendNextEmail = internalMutation({
 });
 
 interface DailyResponse {
+  utc_offset_seconds?: number;
   daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
 }
 
@@ -348,15 +350,20 @@ async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   const json = (await res.json()) as DailyResponse | DailyResponse[];
   const rows = Array.isArray(json) ? json : [json];
 
+  const now = Date.now();
   return sites.map((site, i) => {
     const daily = rows[i]?.daily;
     const mins = daily?.temperature_2m_min ?? [];
+    const today = siteToday(now, rows[i]?.utc_offset_seconds);
     return {
       site,
       // A null low is a gap in the record, not a warm night: the site abstains for that day.
       days: (daily?.time ?? [])
         .map((date, j) => ({ date, minTempC: mins[j] }))
-        .filter((d): d is { date: string; minTempC: number } => typeof d.minTempC === 'number'),
+        .filter(
+          (d): d is { date: string; minTempC: number } =>
+            typeof d.minTempC === 'number' && d.date < today,
+        ),
     };
   });
 }
