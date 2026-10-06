@@ -130,6 +130,7 @@ describe('ImageryPanel', () => {
 
   it('offers Retry failed beside the failures, and shows a backoff', async () => {
     const onRetryFailed = vi.fn(async () => {});
+    const onTryAgain = vi.fn(async () => {});
     render(
       <ImageryPanel
         row={{ ...ROW, imageryStartedAt: 1 }}
@@ -137,9 +138,12 @@ describe('ImageryPanel', () => {
         onStart={async () => {}}
         onPause={async () => {}}
         onRetryFailed={onRetryFailed}
+        onTryAgain={onTryAgain}
       />,
     );
     expect(screen.getByText(/Backing off until/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again now' }));
+    expect(onTryAgain).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
     expect(onRetryFailed).toHaveBeenCalled();
   });

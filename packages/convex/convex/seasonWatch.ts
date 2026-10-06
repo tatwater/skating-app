@@ -45,7 +45,7 @@ import { openMeteoCallWeight } from './lib/apiMeter';
 import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { busyUntil, setBusyUntil } from './lib/dailyThrottle';
-import { wakeBeat } from './lib/imageryPump';
+import { clearBackoff } from './lib/imageryPump';
 import { isListed } from './lib/listing';
 import { newYorkDate } from './lib/seasonWatchEmails';
 import {
@@ -318,6 +318,7 @@ export const storeSeries = internalMutation({
   },
   handler: async (ctx, { season, source, sites }) => {
     const now = Date.now();
+    const today = newYorkDate(now);
     for (const site of sites) {
       const existing = await ctx.db
         .query('seasonWatchSeries')
@@ -330,7 +331,6 @@ export const storeSeries = internalMutation({
       // writer goes through, rather than at each fetch. The corpus is all US Eastern, so New York's
       // date is every site's date; kept would be a forecast 19 °F recording the one-way imagery-line
       // date, and sending its email, before the night had happened.
-      const today = newYorkDate(now);
       const observed = site.days.filter((d) => d.date < today);
       // ⚠ **The archive fills gaps in what the live watch kept; it never replaces it.** Those forecast
       // nights are what the season was actually decided on, and a replay must reproduce the decision.
@@ -559,8 +559,8 @@ export const startImagery = mutation({
       imageryPausedAt: undefined,
     });
     await ctx.scheduler.runAfter(0, internal.imageryLive.poll, {});
-    // Pressing *Start* is also how an admin says "I fixed it" — clear any backoff and wake the pump.
-    await wakeBeat(ctx, 'pump', 0, { force: true });
+    // Pressing *Start* is also how an admin says "I fixed it" — clear any backoff.
+    await clearBackoff(ctx, 'pump');
     return null;
   },
 });
@@ -643,10 +643,9 @@ export const requestHistoryFill = mutation({
         `A full history fill is still running, until ${new Date(busy).toUTCString()}.`,
       );
     }
-    // Held from the click, not from when the planner runs — a second click in between must see it.
-    // The planner replaces this with the fill's real end.
-    await setBusyUntil(ctx, 'history-fill', Date.now() + 2 * 24 * 60 * 60_000);
-    await ctx.scheduler.runAfter(0, internal.seasonWatch.scheduleHistoryFill, {});
+    // Planned in this same transaction, so the busy mark and the scheduled requests commit
+    // together: a second click sees it, and a planner that fails leaves no false hold behind.
+    await planHistoryFill(ctx);
     return null;
   },
 });
@@ -682,49 +681,54 @@ export function historySeasons(nowMs: number): string[] {
  * is filled from the forecast endpoint's past days (what the live watch reads); past seasons from
  * the archive.
  */
-export const scheduleHistoryFill = internalMutation({
-  args: { waterBodyIds: v.optional(v.array(v.id('waterBodies'))) },
-  handler: async (ctx, { waterBodyIds }) => {
-    const row = await latestSettings(ctx);
-    const config = row ? configOf(row) : { version: 0, ...(await defaultConfig(ctx)) };
-    const { sites } = await sampleSites(ctx, { ...config, sampleSize: config.settings.sampleSize });
-    const wanted = waterBodyIds ? sites.filter((s) => waterBodyIds.includes(s.siteId)) : sites;
-    if (wanted.length === 0) {
-      if (!waterBodyIds) await setBusyUntil(ctx, 'history-fill', Date.now());
-      return { requests: 0 };
-    }
+/** Plan a history fill and mark a full one busy until its last request, in one transaction. */
+async function planHistoryFill(
+  ctx: MutationCtx,
+  waterBodyIds?: Id<'waterBodies'>[],
+): Promise<{ requests: number }> {
+  const row = await latestSettings(ctx);
+  const config = row ? configOf(row) : { version: 0, ...(await defaultConfig(ctx)) };
+  const { sites } = await sampleSites(ctx, { ...config, sampleSize: config.settings.sampleSize });
+  const wanted = waterBodyIds ? sites.filter((s) => waterBodyIds.includes(s.siteId)) : sites;
+  if (wanted.length === 0) {
+    return { requests: 0 };
+  }
 
-    const chunks: (typeof wanted)[] = [];
-    for (let i = 0; i < wanted.length; i += HISTORY_SITES_PER_REQUEST) {
-      chunks.push(wanted.slice(i, i + HISTORY_SITES_PER_REQUEST));
-    }
-    const spacing = waterBodyIds ? SMALL_FILL_SPACING_MS : HISTORY_SPACING_MS;
-    const now = Date.now();
-    const current = archiveSeasonAt(now);
-    let slot = 0;
-    for (const chunk of chunks) {
-      const args = chunk.map((s) => ({
-        waterBodyId: s.siteId,
-        name: s.name,
-        ...(s.state ? { state: s.state } : {}),
-        lat: s.lat,
-        lng: s.lng,
-      }));
-      await ctx.scheduler.runAfter(0, internal.seasonWatch.fillSeason, {
-        season: current,
+  const chunks: (typeof wanted)[] = [];
+  for (let i = 0; i < wanted.length; i += HISTORY_SITES_PER_REQUEST) {
+    chunks.push(wanted.slice(i, i + HISTORY_SITES_PER_REQUEST));
+  }
+  const spacing = waterBodyIds ? SMALL_FILL_SPACING_MS : HISTORY_SPACING_MS;
+  const now = Date.now();
+  const current = archiveSeasonAt(now);
+  let slot = 0;
+  for (const chunk of chunks) {
+    const args = chunk.map((s) => ({
+      waterBodyId: s.siteId,
+      name: s.name,
+      ...(s.state ? { state: s.state } : {}),
+      lat: s.lat,
+      lng: s.lng,
+    }));
+    await ctx.scheduler.runAfter(0, internal.seasonWatch.fillSeason, {
+      season: current,
+      sites: args,
+    });
+    for (const season of historySeasons(now)) {
+      await ctx.scheduler.runAfter(++slot * spacing, internal.seasonWatch.fillSeason, {
+        season,
         sites: args,
       });
-      for (const season of historySeasons(now)) {
-        await ctx.scheduler.runAfter(++slot * spacing, internal.seasonWatch.fillSeason, {
-          season,
-          sites: args,
-        });
-      }
     }
-    // A full fill marks itself busy until its last request, so a second cannot stack on it.
-    if (!waterBodyIds) await setBusyUntil(ctx, 'history-fill', now + slot * spacing + 60 * 60_000);
-    return { requests: slot + chunks.length };
-  },
+  }
+  // A full fill marks itself busy until its last request, so a second cannot stack on it.
+  if (!waterBodyIds) await setBusyUntil(ctx, 'history-fill', now + slot * spacing + 60 * 60_000);
+  return { requests: slot + chunks.length };
+}
+
+export const scheduleHistoryFill = internalMutation({
+  args: { waterBodyIds: v.optional(v.array(v.id('waterBodies'))) },
+  handler: async (ctx, { waterBodyIds }) => await planHistoryFill(ctx, waterBodyIds),
 });
 
 interface DailyResponse {

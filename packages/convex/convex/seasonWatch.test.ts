@@ -354,11 +354,8 @@ describe('reset, imagery and field dates', () => {
     await admin.as.mutation(api.seasonWatch.startImagery, { season: 'winter-2026-27' });
     const started = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
     expect(started).toMatchObject({ imageryStartedBy: admin.id });
-    // A poll to queue what is new, and the pump woken (clearing any backoff).
-    expect((await scheduled(t, 'imageryLive')).map((j) => j.name).sort()).toEqual([
-      'imageryLive:poll',
-      'imageryLive:pump',
-    ]);
+    // A poll to queue what is new; the pump's own 3-minute tick starts the cuts.
+    expect((await scheduled(t, 'imageryLive')).map((j) => j.name)).toEqual(['imageryLive:poll']);
 
     await admin.as.mutation(api.seasonWatch.pauseImagery, { season: 'winter-2026-27' });
     expect(
@@ -472,9 +469,8 @@ describe('the review fixes', () => {
     await expect(other.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
       /still running/,
     );
-    // The planner sets the real end: one site is one chunk, ten past seasons 75 minutes apart,
-    // plus an hour — 13½ hours.
-    await t.mutation(internal.seasonWatch.scheduleHistoryFill, {});
+    // Planned in the click's own transaction: one site is one chunk, ten past seasons 75 minutes
+    // apart, plus an hour — busy for 13½ hours.
     // That evening it is still running…
     vi.setSystemTime(new Date('2026-10-06T23:00:00Z'));
     await expect(admin.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(

@@ -6,33 +6,32 @@
 import type { MutationCtx } from '../_generated/server';
 import { newYorkDate } from './seasonWatchEmails';
 
-/** Whether `key` is still unused today (New York); marks it used if so. */
-export async function firstToday(ctx: MutationCtx, key: string): Promise<boolean> {
-  const today = newYorkDate(Date.now());
-  const row = await ctx.db
+async function throttleRow(ctx: MutationCtx, key: string) {
+  return await ctx.db
     .query('dailyThrottle')
     .withIndex('by_key', (q) => q.eq('key', key))
     .unique();
-  if (row?.lastOn === today) return false;
-  if (row) await ctx.db.patch(row._id, { lastOn: today });
-  else await ctx.db.insert('dailyThrottle', { key, lastOn: today });
+}
+
+async function upsert(ctx: MutationCtx, key: string, fields: { lastOn?: string; until?: number }) {
+  const row = await throttleRow(ctx, key);
+  if (row) await ctx.db.patch(row._id, fields);
+  else await ctx.db.insert('dailyThrottle', { key, ...fields });
+}
+
+/** Whether `key` is still unused today (New York); marks it used if so. */
+export async function firstToday(ctx: MutationCtx, key: string): Promise<boolean> {
+  const today = newYorkDate(Date.now());
+  if ((await throttleRow(ctx, key))?.lastOn === today) return false;
+  await upsert(ctx, key, { lastOn: today });
   return true;
 }
 
 /** Until when `key` is busy, or `null`. */
 export async function busyUntil(ctx: MutationCtx, key: string): Promise<number | null> {
-  const row = await ctx.db
-    .query('dailyThrottle')
-    .withIndex('by_key', (q) => q.eq('key', key))
-    .unique();
-  return row?.until ?? null;
+  return (await throttleRow(ctx, key))?.until ?? null;
 }
 
 export async function setBusyUntil(ctx: MutationCtx, key: string, until: number): Promise<void> {
-  const row = await ctx.db
-    .query('dailyThrottle')
-    .withIndex('by_key', (q) => q.eq('key', key))
-    .unique();
-  if (row) await ctx.db.patch(row._id, { until });
-  else await ctx.db.insert('dailyThrottle', { key, until });
+  await upsert(ctx, key, { until });
 }

@@ -6442,12 +6442,14 @@ its label.
 every six hours for new Sentinel-2 L2A and Sentinel-1 GRD items over the mask extent, selects them
 with A06e's rules (moved to core) and queues each slot once, oldest first, at most 300 a poll — a
 capped poll advances its window only to the newest pass it queued, so nothing over the cap is lost.
-**One leased pump** is the only thing that touches Fly: it settles cuts in flight against the
-manifests in R2 (one retry; exit zero without a frame is *empty*, non-zero twice is *failed*), starts
-new ones only while imagery is running, up to `fan-out.sh`'s live-Machine cap and with its exact
-Machine configuration, and backs off half an hour when Fly or the archive is failing; a refused
-spawn spends no attempt, and three in a row trip a breaker. A second lease serializes the index
-build — `index/<season>.json`, and `index/latest.json` on turnover — by listing the bucket. Admins
+**One leased pump on a fixed 3-minute cron** is the only thing that touches Fly: it settles cuts in
+flight against the manifests in R2 (one retry; exit zero without a frame is *empty*, non-zero twice
+is *failed*), starts new ones only while imagery is running, up to `fan-out.sh`'s live-Machine cap
+and with its exact Machine configuration, and backs off half an hour when Fly or the archive is
+failing; a refused spawn spends no attempt, three in a row trip a breaker that reopens half-way
+(one probe) after the backoff, and a timed-out spawn is left in flight rather than refused. A
+second lease on a 10-minute cron rebuilds the index — `index/<season>.json`, and
+`index/latest.json` on turnover — by listing the bucket, whenever a frame has landed. Admins
 (not moderators) are emailed on a failure, a hit cap or missing configuration, at most once per
 kind per day.
 
@@ -6460,9 +6462,11 @@ season row, the run history and the alerts already live there; what the cron can
 `masks/<season>-search.json`. D148's condition holds: the Fly surface is one file (`lib/fly.ts`),
 and the CLIs stay for past seasons.
 
-**Why one pump** (the build's own review, 2026-10-06): separate self-rescheduling spawn and
-reconcile chains multiplied, each sized its batch from its own reading of live Machines — the
-overshoot `fan-out.sh` measured — and kept spawning after *Pause*. One actor under a lease makes the
-cap, *Pause* and every backoff a single check.
+**Why one pump on a fixed tick** (three review rounds of the build, 2026-10-06): separate
+self-rescheduling spawn and reconcile chains multiplied, each sized its batch from its own reading of
+live Machines — the overshoot `fan-out.sh` measured — and kept spawning after *Pause*; single pumps
+that scheduled their own next run then kept finding new ways to lose, stack or wedge it. A fixed
+cron tick cannot be lost or doubled, and one actor under a lease makes the cap, *Pause* and every
+backoff a single check.
 
 **Related:** D147, D148, D149, D213, [`phase-A06i`](./phases/A06i-season-watch.md).

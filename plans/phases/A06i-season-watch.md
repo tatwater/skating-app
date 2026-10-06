@@ -121,15 +121,16 @@ last window (less a 5-day overlap for late-published items), selects with the A0
 core), and queues each new slot — oldest first, at most 300; a capped poll moves its window only to
 the newest pass it queued. It always wakes the pump.
 
-**The pump** (`pump`, under a lease — never two at once) is the only thing that touches Fly: it
-settles cuts in flight against the manifests in R2 (landed, still running, or gone without a frame —
-retried once, then *empty* on exit 0 or *failed* otherwise), then, only while imagery is running,
-starts new ones up to 25 live Machines with exactly `fan-out.sh`'s configuration, and beats every
-three minutes while anything is queued or cutting. A Fly or archive failure backs it off half an
-hour with one admin email a day; a refused spawn spends no attempt, and three in a row trip a
-breaker. A second lease serializes `buildIndex`, which lists R2, reads only new manifests and writes
-`index/<season>.json` and, on turnover, `index/latest.json`. *Retry failed* on the page re-queues
-failed cuts.
+**The pump** (`pump`, a fixed 3-minute cron, under a lease — never two at once) is the only thing
+that touches Fly: it settles cuts in flight against the manifests in R2 (landed, still running, or
+gone without a frame — retried once, then *empty* on exit 0 or *failed* otherwise), then, only while
+imagery is running, starts new ones up to 25 live Machines with exactly `fan-out.sh`'s
+configuration. With nothing queued or cutting a tick is one read. A Fly or archive failure backs it
+off half an hour with one admin email a day; a refused spawn spends no attempt, three in a row trip
+a breaker that lets one probe through after the backoff, and a timed-out spawn stays in flight.
+`buildIndex` (a 10-minute cron, its own lease) runs when a frame has landed: it lists R2, reads only
+new manifests and writes `index/<season>.json` and, on turnover, `index/latest.json`; a failed build
+is retried next tick. *Retry failed* and *Try again now* on the page end a backoff.
 
 The search plan the cron can't compute (the mask extent and the empty-tile set, both from `ogrinfo`)
 is published once per mask bake as `masks/<season>-search.json` (`publish-search-plan`); an unknown
@@ -162,6 +163,16 @@ click until the fill's last request, not for a calendar day; today's low is drop
 `storeSeries`, the one sink, rather than at each fetch; Fly and archive reads time out at 30 s;
 settle checks run eight at a time and land in one mutation, with the ledger written once per
 mutation.
+
+A third pass found the redesign's own scheduling still had holes — a breaker that, once tripped and
+carried across beats, never closed; a stored beat id that outlived a failed run and wedged the job;
+a crashed holder with no beat behind it; an admin's reset overwritten by the run it interrupted.
+Every one came from a job scheduling its own next run, so the pump and the index build became
+**fixed crons** (3 and 10 minutes) under a plain lease, and the scheduling state went away. Also in
+that round: the breaker reopens half-way (one probe) after a backoff; a spawn that times out is left
+in flight, not refused (the Machine may exist); back off only on three failed checks with no answer;
+an admin's reset during a run wins; the history fill is planned in the click's own transaction; the
+signed R2 calls time out too; *Try again now* on the page.
 
 ### §6 — `/admin/seasons`
 

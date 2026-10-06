@@ -1363,20 +1363,19 @@ export default defineSchema({
     until: v.optional(v.number()),
   }).index('by_key', ['key']),
 
-  // The live imagery job's single-flight state (A06i §5, D214), one row per job (`pump`, `index`).
-  // `runningUntil` + `token` are the lease — longer than Convex's 10-minute action limit, so it can
-  // only lapse after its holder is dead, and only the holder's token releases it. `nextAt` +
-  // `scheduledId` are the **one** pending beat: every wake-up goes through here, so beats never
-  // multiply. `backoffUntil` and `refusalStreak` carry a failing Fly or archive across beats.
+  // The live imagery job's run state (A06i §5, D214), one row per job (`pump`, `index`). Both run
+  // from fixed crons, so there is nothing to schedule — only a lease (`runningUntil` + `token`,
+  // longer than an action can live, released only by its token), a backoff, the spawn breaker's
+  // streak, when an admin last said "try again now", and the index's dirty flag.
   imageryPump: defineTable({
     key: v.string(),
     runningUntil: v.number(),
     token: v.optional(v.string()),
-    pending: v.boolean(),
-    nextAt: v.optional(v.number()),
-    scheduledId: v.optional(v.id('_scheduled_functions')),
+    runStartedAt: v.optional(v.number()),
     backoffUntil: v.optional(v.number()),
     refusalStreak: v.optional(v.number()),
+    forcedAt: v.optional(v.number()),
+    dirty: v.optional(v.boolean()),
   }).index('by_key', ['key']),
 
   // The granule ledger's totals per frame season (A06i §5), kept beside every status change so the

@@ -224,7 +224,7 @@ describe('poll', () => {
     expect(await runs(t)).toEqual([]);
   });
 
-  test('queues each new slot once, skipping empty tiles and reprocessings, then wakes the pump', async () => {
+  test('queues each new slot once, skipping empty tiles and reprocessings', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     const w = world({
@@ -249,7 +249,6 @@ describe('poll', () => {
       [s1('20261006T224512'), s2('19TEM', '20261005', 1)].sort(),
     );
     expect(queued.every((g) => g.status === 'queued' && g.season === SEASON)).toBe(true);
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
     expect(await counts(t)).toMatchObject({ queued: 2 });
     expect((await seasonRow(t))?.imageryWindowTo).toBe('2026-10-10');
 
@@ -261,13 +260,6 @@ describe('poll', () => {
     expect(again.detail).toBe('window 2026-10-05 → 2026-10-12');
     expect(await granules(t)).toHaveLength(2);
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ queued: 0, alreadyQueued: 2 });
-  });
-
-  test('wakes the pump even when it skips, so a dead pump chain restarts', async () => {
-    const t = convexTest(schema, modules);
-    stub(world());
-    await t.action(internal.imageryLive.poll, {});
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(1);
   });
 
   test('refuses, once a day, without credentials', async () => {
@@ -337,6 +329,35 @@ describe('poll', () => {
   });
 });
 
+async function seedAdmin(t: T) {
+  return await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: 'admin',
+      displayName: 'A',
+      username: 'a',
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: {
+        activityDetected: true,
+        bountyRequest: true,
+        hazardConfirmation: true,
+        bountyAnswered: true,
+        reportRated: true,
+        reportCommented: true,
+        contentFlagResolved: true,
+        favoriteReport: true,
+        nearbyReportDigest: true,
+        greatReportNearby: true,
+      },
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'admin' as const,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  );
+}
+
 async function queue(t: T, ids: string[], fields: Record<string, unknown> = {}) {
   return await t.run(async (ctx) => {
     const out: Id<'imageryGranules'>[] = [];
@@ -361,24 +382,27 @@ async function queue(t: T, ids: string[], fields: Record<string, unknown> = {}) 
 
 const seasonRow = (t: T) => t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
 const counts = (t: T) => t.run((ctx) => ctx.db.query('imageryCounts').first());
-const pumpState = (t: T) =>
-  t.run(async (ctx) => (await ctx.db.query('imageryPump').collect()).find((r) => r.key === 'pump'));
+/** Every job by name, pending or already run — advancing fake timers runs due ones. */
+const jobs = (t: T, name: string) =>
+  t.run(async (ctx) =>
+    (await ctx.db.system.query('_scheduled_functions').collect()).filter((j) =>
+      j.name.includes(name),
+    ),
+  );
 const pumpNow = (t: T) => t.action(internal.imageryLive.pump, {});
-const pendingPumps = (t: T) => scheduled(t, 'imageryLive:pump');
+
+const runState = (t: T, key: 'pump' | 'index' = 'pump') =>
+  t.run(async (ctx) => (await ctx.db.query('imageryPump').collect()).find((r) => r.key === key));
+const fullFleet = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: `x${i}`, name: `granule-x${i}`, state: 'started' }));
 
 describe('pump — starting cuts', () => {
-  test('starts up to the live cap, and leaves exactly one next beat', async () => {
+  test('starts up to the live cap, and leaves the lease free', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     const ids = [s2('19TEA', '20261005'), s2('19TEB', '20261005'), s2('19TEC', '20261005')];
     await queue(t, ids);
-    const w = world({
-      machines: Array.from({ length: 23 }, (_, i) => ({
-        id: `x${i}`,
-        name: `granule-x${i}`,
-        state: 'started',
-      })),
-    });
+    const w = world({ machines: fullFleet(23) });
     stub(w);
     expect(await pumpNow(t)).toMatchObject({ live: 23, spawned: 2 });
     expect(w.spawned).toEqual(ids.slice(0, 2));
@@ -387,12 +411,19 @@ describe('pump — starting cuts', () => {
         .filter((g) => g.status === 'spawned')
         .every((g) => g.machineId?.startsWith('m-')),
     ).toBe(true);
-    expect(await pendingPumps(t)).toHaveLength(1);
     expect((await runs(t))[0]).toMatchObject({ kind: 'pump', outcome: 'ok' });
-    // Woken again (a poll, a click): still one beat, never a second chain.
-    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 0 });
-    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 60_000 });
-    expect(await pendingPumps(t)).toHaveLength(1);
+    expect((await runState(t))?.runningUntil).toBe(0);
+  });
+
+  test('with nothing to do, a tick is one read: no lease, no row, no run', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: Date.now() });
+    // Queued but paused, and nothing cutting: nothing to do.
+    await queue(t, [s2('19TEA', '20261005')]);
+    stub(world());
+    expect(await pumpNow(t)).toEqual({ skipped: 'nothing to do' });
+    expect(await runState(t)).toBeNull();
+    expect(await runs(t)).toEqual([]);
   });
 
   test('never starts a cut while paused — but still settles the ones in flight', async () => {
@@ -407,9 +438,8 @@ describe('pump — starting cuts', () => {
     stub(w);
     expect(await pumpNow(t)).toMatchObject({ landed: 1, spawned: 0 });
     expect(w.spawned).toEqual([]);
-    // Queued but not allowed to start, and nothing cutting: the pump stops beating.
-    expect(await pendingPumps(t)).toHaveLength(0);
-    expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
+    // A frame landed: the index tick will rebuild.
+    expect((await runState(t, 'index'))?.dirty).toBe(true);
   });
 
   test('a refused spawn spends no attempt; three in a row trip the breaker and back off', async () => {
@@ -423,42 +453,59 @@ describe('pump — starting cuts', () => {
     expect(rows.every((g) => g.status === 'queued' && g.attempts === 0)).toBe(true);
     // The three tried carry a refusal each; the two never tried carry nothing.
     expect(rows.filter((g) => g.refusals === 1)).toHaveLength(3);
-    const alert = (await scheduled(t, 'broadcastToStaff'))[0]?.args[0];
-    expect(alert).toMatchObject({
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'Fly is refusing new satellite cuts',
       roles: ['admin'],
     });
-    const state = await pumpState(t);
-    expect((state?.backoffUntil ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
-    const [next] = await pendingPumps(t);
-    expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
-    // A poll's wake does not cut the backoff short…
-    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 0 });
-    const [still] = await pendingPumps(t);
-    expect((still?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+    expect(((await runState(t))?.backoffUntil ?? 0) - Date.now()).toBeGreaterThanOrEqual(
+      29 * 60_000,
+    );
+    // A tick during the backoff does nothing.
+    expect(await pumpNow(t)).toEqual({ skipped: 'backing off' });
   });
 
-  test('the refusal streak carries across beats, so one refusal at a time still trips', async () => {
+  test('after a backoff the breaker is half-open: one probe, and a success closes it', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const ids = ['A', 'B', 'C', 'D'].map((c) => s2(`19TE${c}`, '20261005'));
+    await queue(t, ids);
+    const w = world({ spawnFails: new Set(ids.slice(0, 3)) });
+    stub(w);
+    await pumpNow(t); // three refusals trip it; the fourth goes back untried
+    vi.advanceTimersByTime(31 * 60_000);
+    // Fly is fixed. The first claim after the backoff is the probe; it succeeds and the rest follow.
+    w.spawnFails.clear();
+    expect(await pumpNow(t)).toMatchObject({ spawned: 4, refused: 0 });
+    expect((await runState(t))?.refusalStreak).toBe(0);
+  });
+
+  test('a half-open probe that is refused trips the breaker again at once', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const ids = ['A', 'B', 'C', 'D'].map((c) => s2(`19TE${c}`, '20261005'));
+    await queue(t, ids);
+    stub(world({ spawnFails: new Set(ids) }));
+    await pumpNow(t);
+    vi.advanceTimersByTime(31 * 60_000);
+    expect(await pumpNow(t)).toMatchObject({ refused: 1 });
+    expect(((await runState(t))?.backoffUntil ?? 0) - Date.now()).toBeGreaterThanOrEqual(
+      29 * 60_000,
+    );
+  });
+
+  test('the streak carries across runs, so one refusal at a time still trips', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     const id = s2('19TEA', '20261005');
-    const w = world({
-      spawnFails: new Set([id]),
-      machines: Array.from({ length: 24 }, (_, i) => ({
-        id: `x${i}`,
-        name: `granule-x${i}`,
-        state: 'started',
-      })),
-    });
-    stub(w);
+    stub(world({ spawnFails: new Set([id]), machines: fullFleet(24) }));
     await queue(t, [id]);
-    for (let beat = 1; beat <= 3; beat++) {
+    for (let run = 1; run <= 3; run++) {
       await pumpNow(t);
-      expect((await pumpState(t))?.refusalStreak).toBe(beat);
+      expect((await runState(t))?.refusalStreak).toBe(run);
     }
     // Three refusals of the one granule: it is failed, and the breaker is open.
     expect((await granules(t))[0]).toMatchObject({ status: 'failed', refusals: 3 });
-    expect((await pumpState(t))?.backoffUntil).toBeGreaterThan(Date.now());
+    expect((await runState(t))?.backoffUntil).toBeGreaterThan(Date.now());
     const headings = (await scheduled(t, 'broadcastToStaff')).map(
       (j) => (j.args[0] as { heading: string }).heading,
     );
@@ -474,19 +521,34 @@ describe('pump — starting cuts', () => {
     await queue(t, [bad]);
     vi.advanceTimersByTime(1_000);
     await queue(t, [good]);
-    const w = world({
-      spawnFails: new Set([bad]),
-      machines: Array.from({ length: 24 }, (_, i) => ({
-        id: `x${i}`,
-        name: `granule-x${i}`,
-        state: 'started',
-      })),
-    });
+    const w = world({ spawnFails: new Set([bad]), machines: fullFleet(24) });
     stub(w);
     vi.advanceTimersByTime(1_000);
     await pumpNow(t); // claims the bad one (oldest), refused — and re-queued at this later time
     await pumpNow(t); // claims the good one now — the bad one moved behind it
     expect(w.spawned).toEqual([good]);
+  });
+
+  test('a spawn that times out is left in flight, not refused', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const id = s2('19TEA', '20261005');
+    await queue(t, [id]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.includes('api.machines.dev') && req.method === 'POST') {
+          throw new DOMException('The operation timed out.', 'TimeoutError');
+        }
+        if (req.url.includes('api.machines.dev')) return new Response('[]');
+        return new Response('', { status: 404 });
+      }),
+    );
+    expect(await pumpNow(t)).toMatchObject({ unconfirmed: 1, refused: 0 });
+    expect((await granules(t))[0]).toMatchObject({ status: 'spawned', attempts: 1 });
+    expect((await granules(t))[0]?.machineId).toBeUndefined();
+    expect((await runState(t))?.refusalStreak).toBe(0);
   });
 
   test('an unreadable Machine list backs off with one alert a day, and starts nothing', async () => {
@@ -503,74 +565,21 @@ describe('pump — starting cuts', () => {
     );
     expect(await pumpNow(t)).toMatchObject({ spawned: 0 });
     expect((await granules(t))[0]?.status).toBe('queued');
+    vi.advanceTimersByTime(31 * 60_000);
     await pumpNow(t);
-    const alerts = await scheduled(t, 'broadcastToStaff');
+    const alerts = await jobs(t, 'broadcastToStaff');
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.args[0]).toMatchObject({
       heading: 'The Fly API is refusing the imagery job',
     });
   });
 
-  test('Retry failed (and Start) clear the backoff and wake the pump at once', async () => {
-    const t = convexTest(schema, modules);
-    await openSeason(t);
-    await t.run((ctx) =>
-      ctx.db.insert('imageryPump', {
-        key: 'pump',
-        runningUntil: 0,
-        pending: false,
-        backoffUntil: Date.now() + 20 * 60_000,
-        refusalStreak: 3,
-      }),
-    );
-    await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: 'admin',
-        displayName: 'A',
-        username: 'a',
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public' as const,
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyAnswered: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: true,
-          greatReportNearby: true,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role: 'admin' as const,
-        status: 'active' as const,
-        createdAt: Date.now(),
-      }),
-    );
-    await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.retryFailed, {});
-    const state = await pumpState(t);
-    expect(state?.backoffUntil).toBeUndefined();
-    expect(state?.refusalStreak).toBe(0);
-    const [next] = await pendingPumps(t);
-    expect((next?.scheduledTime ?? Number.POSITIVE_INFINITY) - Date.now()).toBeLessThan(1_000);
-  });
-
-  test('does nothing without credentials, and schedules nothing', async () => {
-    const t = convexTest(schema, modules);
-    vi.unstubAllEnvs();
-    expect(await pumpNow(t)).toEqual({ skipped: 'unconfigured' });
-    expect(await pendingPumps(t)).toHaveLength(0);
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
-  });
-
-  test('a run that throws still schedules a backoff beat', async () => {
+  test('a run that throws backs off, leaves a run row, and tells the admins', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     await queue(t, [s2('19TEA', '20261005')]);
     // Fly refuses the list, and the alert about it then throws (a corrupt duplicate throttle row
-    // makes its `.unique()` read fail) — an unexpected error in the middle of a beat.
+    // makes its `.unique()` read fail) — an unexpected error in the middle of a run.
     await t.run(async (ctx) => {
       await ctx.db.insert('dailyThrottle', { key: 'imagery-fly', lastOn: '2000-01-01' });
       await ctx.db.insert('dailyThrottle', { key: 'imagery-fly', lastOn: '2000-01-01' });
@@ -580,64 +589,66 @@ describe('pump — starting cuts', () => {
       vi.fn(async () => new Response('', { status: 401 })),
     );
     await expect(pumpNow(t)).rejects.toThrow();
-    const [next] = await pendingPumps(t);
-    expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
-    expect((await pumpState(t))?.runningUntil).toBe(0);
+    const state = await runState(t);
+    expect(state?.runningUntil).toBe(0);
+    expect((state?.backoffUntil ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+    expect((await runs(t))[0]).toMatchObject({ kind: 'pump', outcome: 'failed' });
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+      heading: 'The imagery pump hit an error',
+    });
+  });
+
+  test('does nothing without credentials', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    await queue(t, [s2('19TEA', '20261005')]);
+    vi.unstubAllEnvs();
+    expect(await pumpNow(t)).toEqual({ skipped: 'unconfigured' });
   });
 });
 
-describe('the single-flight state', () => {
-  test('one holder at a time; a second asking is noted and run on release', async () => {
+describe('the run state', () => {
+  test('one holder at a time; only its token releases the lease; a dead holder lapses', async () => {
     const t = convexTest(schema, modules);
-    expect(await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' })).toEqual({
-      ok: true,
-      refusalStreak: 0,
-    });
+    await openSeason(t);
+    await queue(t, [s2('19TEA', '20261005')]);
+    expect(await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' })).toMatchObject(
+      {
+        ok: true,
+      },
+    );
     stub(world());
-    expect(await pumpNow(t)).toEqual({ skipped: 'another pump is running' });
-    // The refused begin left a beat at the lease's expiry, so a dead holder cannot strand the job…
-    const [expiry] = await pendingPumps(t);
-    expect((expiry?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(14 * 60_000);
-    // …and the holder's release, with someone having asked, runs it again now.
-    await t.mutation(internal.imageryLive.end, { key: 'pump', token: 'a', delayMs: null });
-    const [now] = await pendingPumps(t);
-    expect((now?.scheduledTime ?? Number.POSITIVE_INFINITY) - Date.now()).toBeLessThan(1_000);
-    expect(await pendingPumps(t)).toHaveLength(1);
-  });
-
-  test('only the token that took the lease can release it', async () => {
-    const t = convexTest(schema, modules);
-    await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' });
-    await t.mutation(internal.imageryLive.end, { key: 'pump', token: 'stale', delayMs: 0 });
-    expect((await pumpState(t))?.runningUntil).toBeGreaterThan(Date.now());
-    // A lease outlives any action, then lapses.
-    vi.advanceTimersByTime(16 * 60_000);
+    expect(await pumpNow(t)).toEqual({ skipped: 'running' });
+    await t.mutation(internal.imageryLive.end, { key: 'pump', token: 'stale' });
+    expect((await runState(t))?.runningUntil).toBeGreaterThan(Date.now());
+    // The lease outlives any action (10 minutes), then lapses.
+    vi.advanceTimersByTime(11 * 60_000);
+    expect(await pumpNow(t)).toEqual({ skipped: 'running' });
+    vi.advanceTimersByTime(5 * 60_000);
     expect((await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'b' })).ok).toBe(
       true,
     );
   });
 
-  test('a later wake never replaces an earlier beat', async () => {
+  test("an admin's reset during a run is not overwritten when the run ends", async () => {
     const t = convexTest(schema, modules);
-    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 60_000 });
-    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 5 * 60_000 });
-    const beats = await pendingPumps(t);
-    expect(beats).toHaveLength(1);
-    expect((beats[0]?.scheduledTime ?? 0) - Date.now()).toBeLessThanOrEqual(60_000);
-    // An earlier one does replace it.
-    await t.mutation(internal.imageryLive.wake, { key: 'pump', delayMs: 0 });
-    const [first] = await pendingPumps(t);
-    expect((first?.scheduledTime ?? 1) - Date.now()).toBeLessThan(1_000);
-    expect(await pendingPumps(t)).toHaveLength(1);
-  });
-
-  test('the index build is single-flight too', async () => {
-    const t = convexTest(schema, modules);
-    await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'a' });
-    stub(world());
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
-    await t.mutation(internal.imageryLive.end, { key: 'index', token: 'a', delayMs: null });
-    expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
+    await t.run((ctx) =>
+      ctx.db.insert('imageryPump', { key: 'pump', runningUntil: 0, refusalStreak: 2 }),
+    );
+    await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' });
+    vi.advanceTimersByTime(1_000);
+    await seedAdmin(t);
+    await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
+    // The run ends having tripped the breaker on its stale streak — the reset wins.
+    await t.mutation(internal.imageryLive.end, {
+      key: 'pump',
+      token: 'a',
+      backoff: true,
+      refusalStreak: 3,
+    });
+    const state = await runState(t);
+    expect(state?.backoffUntil).toBeUndefined();
+    expect(state?.refusalStreak).toBe(0);
   });
 });
 
@@ -711,8 +722,7 @@ describe('pump — settling cuts', () => {
     expect(by.get(lostClaim)?.status).toBe('empty');
     expect(by.get(freshClaim)?.status).toBe('spawned');
     expect(by.get(justSpawned)?.status).toBe('spawned');
-    expect(await pendingPumps(t)).toHaveLength(1);
-    expect(await scheduled(t, 'imageryLive:buildIndex')).toHaveLength(1);
+    expect((await runState(t, 'index'))?.dirty).toBe(true);
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: '1 satellite cut failed',
     });
@@ -739,28 +749,33 @@ describe('pump — settling cuts', () => {
     expect((await granules(t))[0]).toMatchObject({ status: 'queued', lastError: 'exit 3' });
   });
 
-  test('when nothing can be checked, it backs off and says so once', async () => {
+  test('when three or more checks fail and nothing answers, it backs off and says so', async () => {
     const t = convexTest(schema, modules);
-    await queue(t, [s2('19TEA', '20261005')], {
-      status: 'spawned',
-      attempts: 1,
-      machineId: 'm',
-      spawnedAt: 0,
-    });
+    await queue(
+      t,
+      ['A', 'B', 'C'].map((c) => s2(`19TE${c}`, '20261005')),
+      {
+        status: 'spawned',
+        attempts: 1,
+        machineId: 'm',
+        spawnedAt: 0,
+      },
+    );
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 503, statusText: 'Down' })),
     );
-    expect(await pumpNow(t)).toMatchObject({ unknown: 1 });
-    expect((await granules(t))[0]?.status).toBe('spawned');
+    expect(await pumpNow(t)).toMatchObject({ unknown: 3 });
+    expect((await granules(t)).every((g) => g.status === 'spawned')).toBe(true);
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'Cuts in flight cannot be checked',
     });
-    const [next] = await pendingPumps(t);
-    expect((next?.scheduledTime ?? 0) - Date.now()).toBeGreaterThanOrEqual(29 * 60_000);
+    expect(((await runState(t))?.backoffUntil ?? 0) - Date.now()).toBeGreaterThanOrEqual(
+      29 * 60_000,
+    );
   });
 
-  test('one blink among answers is not a backoff', async () => {
+  test('one blink among answers — or among cuts too young to check — is not a backoff', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t, { imageryPausedAt: Date.now() });
     await queue(t, [s2('19TEA', '20261005')], {
@@ -784,17 +799,16 @@ describe('pump — settling cuts', () => {
       }),
     );
     expect(await pumpNow(t)).toMatchObject({ unknown: 1, running: 1 });
+    // And the other shape: one blink beside cuts too young to check.
+    await t.run(async (ctx) => {
+      for (const g of await ctx.db.query('imageryGranules').collect()) {
+        if (g.machineId === 'm')
+          await ctx.db.patch(g._id, { spawnedAt: Date.now(), machineId: 'm' });
+      }
+    });
+    expect(await pumpNow(t)).toMatchObject({ unknown: 1, young: 1 });
     expect(await scheduled(t, 'broadcastToStaff')).toHaveLength(0);
-    const [next] = await pendingPumps(t);
-    expect((next?.scheduledTime ?? 0) - Date.now()).toBeLessThanOrEqual(3 * 60_000);
-  });
-
-  test('nothing to do records nothing and schedules nothing', async () => {
-    const t = convexTest(schema, modules);
-    stub(world());
-    expect(await pumpNow(t)).toMatchObject({ landed: 0, spawned: 0 });
-    expect(await runs(t)).toEqual([]);
-    expect(await pendingPumps(t)).toHaveLength(0);
+    expect((await runState(t))?.backoffUntil).toBeUndefined();
   });
 });
 
@@ -816,6 +830,7 @@ describe('buildIndex', () => {
 
   test('reads only new manifests, drops vanished ones, writes the index and turns latest over', async () => {
     const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
     const a = s2('19TEA', '20261005');
     const b = s2('19TEB', '20261006');
     const w = world({
@@ -850,6 +865,10 @@ describe('buildIndex', () => {
     );
     w.latest = { season: SEASON };
     w.puts.clear();
+    // Not dirty: the tick is one read and writes nothing.
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(w.puts.size).toBe(0);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.action(internal.imageryLive.buildIndex, {});
     const next = w.puts.get(`index/${SEASON}.json`) as {
       frames: { granuleId: string; band: string }[];
@@ -869,6 +888,7 @@ describe('buildIndex', () => {
 
   test('an unreadable manifest is counted, not fatal; a season without frames does not take latest', async () => {
     const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
     const w = world({
       manifests: new Map<string, unknown>([[`frames/${SEASON}/bad.json`, null]]),
       latest: null,
@@ -884,6 +904,7 @@ describe('buildIndex', () => {
 
   test('a failed rebuild alerts the admins', async () => {
     const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 403, statusText: 'Forbidden' })),
@@ -893,6 +914,14 @@ describe('buildIndex', () => {
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'The imagery index could not be rebuilt',
     });
+    // A failed build leaves the flag set, so the next tick retries.
+    expect(
+      (
+        await t.run(async (ctx) =>
+          (await ctx.db.query('imageryPump').collect()).find((r) => r.key === 'index'),
+        )
+      )?.dirty,
+    ).toBe(true);
   });
 });
 
@@ -938,32 +967,7 @@ describe('the page', () => {
       startedAt: 1,
       outcome: 'ok',
     });
-    await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: 'admin',
-        displayName: 'A',
-        username: 'a',
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public' as const,
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyAnswered: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: true,
-          greatReportNearby: true,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role: 'admin' as const,
-        status: 'active' as const,
-        createdAt: Date.now(),
-      }),
-    );
+    await seedAdmin(t);
     const admin = t.withIdentity({ subject: 'admin' });
     const activity = await admin.query(api.imageryLive.activity, {});
     expect(activity.counts).toEqual({ queued: 1, spawned: 0, landed: 0, empty: 0, failed: 1 });
@@ -977,7 +981,6 @@ describe('the page', () => {
       queued: 2,
       failed: 0,
     });
-    expect(await pendingPumps(t)).toHaveLength(1);
   });
 
   test('settling ignores a row that is not cutting; a claim with no room takes nothing', async () => {

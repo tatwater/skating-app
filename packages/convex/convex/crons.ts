@@ -285,6 +285,20 @@ crons.interval(
 crons.interval('poll for new satellite imagery', { hours: 6 }, internal.imageryLive.poll, {});
 
 /**
+ * The live imagery pump and index build (A06i §5 / D214). Fixed ticks rather than runs that schedule
+ * their own next run — a fixed tick cannot be lost, doubled or wedged, which three review rounds of
+ * self-scheduling could not say. With nothing queued or cutting, the pump tick is one read; with no
+ * new frame, the index tick is one read.
+ */
+crons.interval('pump live satellite imagery', { minutes: 3 }, internal.imageryLive.pump, {});
+crons.interval(
+  'rebuild the live imagery index',
+  { minutes: 10 },
+  internal.imageryLive.buildIndex,
+  {},
+);
+
+/**
  * NWS active alerts (A06c §2.5). Fifteen minutes because a winter storm warning is issued on that kind
  * of timescale and a skater deciding at 7am should not be reading 6am's picture — and because five
  * requests a quarter-hour is nothing to an unauthenticated public API that asks only for a

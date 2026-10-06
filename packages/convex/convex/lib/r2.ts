@@ -9,7 +9,7 @@
 
 import { AwsClient } from 'aws4fetch';
 
-/** One public read, at most — a hung request must not hold the pump's beat. */
+/** One read, at most — a hung request must not hold a run's lease to the action limit. */
 const TIMEOUT_MS = 30_000;
 
 export interface R2Config {
@@ -81,6 +81,7 @@ export async function listKeys(config: R2Config, prefix: string): Promise<string
     if (token) params.set('continuation-token', token);
     const res = await config.client.fetch(
       `${config.endpoint}/${config.bucket}?${params.toString()}`,
+      { signal: AbortSignal.timeout(TIMEOUT_MS) },
     );
     if (!res.ok) throw new Error(`R2 list ${prefix}: ${res.status} ${res.statusText}`);
     const parsed = parseListObjects(await res.text());
@@ -96,6 +97,8 @@ export async function putJson(config: R2Config, key: string, body: unknown): Pro
   const res = await config.client.fetch(`${config.endpoint}/${config.bucket}/${key}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
+    // An 8 MB season index is seconds of upload; a minute is a stall, not a slow link.
+    signal: AbortSignal.timeout(2 * TIMEOUT_MS),
     body: `${JSON.stringify(body)}\n`,
   });
   if (!res.ok) throw new Error(`R2 put ${key}: ${res.status} ${res.statusText}`);

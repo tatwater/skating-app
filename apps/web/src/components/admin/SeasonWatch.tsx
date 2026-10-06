@@ -345,12 +345,14 @@ export function ImageryPanel({
   onStart,
   onPause,
   onRetryFailed,
+  onTryAgain,
 }: {
   row: WatchRow | null;
   activity: ImageryActivity | undefined;
   onStart: () => Promise<unknown>;
   onPause: () => Promise<unknown>;
   onRetryFailed?: () => Promise<unknown>;
+  onTryAgain?: () => Promise<unknown>;
 }) {
   const { busy, error, run } = useAction();
   const status = !row
@@ -382,10 +384,17 @@ export function ImageryPanel({
       </div>
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
       {activity?.backoffUntil && activity.backoffUntil > Date.now() ? (
-        <p className="text-sm text-warning">
-          Backing off until {new Date(activity.backoffUntil).toLocaleTimeString()} — Fly or the
-          archive was failing. Start imagery or Retry failed tries again at once.
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-warning">
+            Backing off until {new Date(activity.backoffUntil).toLocaleTimeString()} — Fly or the
+            archive was failing.
+          </p>
+          {onTryAgain ? (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onTryAgain)}>
+              Try again now
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       {activity && !activity.configured ? (
         <p className="text-sm text-warning">
