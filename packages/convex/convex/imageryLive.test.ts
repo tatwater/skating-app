@@ -439,7 +439,7 @@ describe('pump — starting cuts', () => {
     expect(await pumpNow(t)).toMatchObject({ landed: 1, spawned: 0 });
     expect(w.spawned).toEqual([]);
     // A frame landed: the index tick will rebuild.
-    expect((await runState(t, 'index'))?.dirty).toBe(true);
+    expect((await runState(t, 'index'))?.dirtySeq).toBe(1);
   });
 
   test('a refused spawn spends no attempt; three in a row trip the breaker and back off', async () => {
@@ -473,10 +473,12 @@ describe('pump — starting cuts', () => {
     stub(w);
     await pumpNow(t); // three refusals trip it; the fourth goes back untried
     vi.advanceTimersByTime(31 * 60_000);
-    // Fly is fixed. The first claim after the backoff is the probe; it succeeds and the rest follow.
+    // Fly is fixed. The first run after the backoff claims one granule — the probe — and it
+    // succeeds; the breaker closes, and the next run starts the rest.
     w.spawnFails.clear();
-    expect(await pumpNow(t)).toMatchObject({ spawned: 4, refused: 0 });
+    expect(await pumpNow(t)).toMatchObject({ spawned: 1, refused: 0 });
     expect((await runState(t))?.refusalStreak).toBe(0);
+    expect(await pumpNow(t)).toMatchObject({ spawned: 3 });
   });
 
   test('a half-open probe that is refused trips the breaker again at once', async () => {
@@ -551,6 +553,55 @@ describe('pump — starting cuts', () => {
     expect((await runState(t))?.refusalStreak).toBe(0);
   });
 
+  test('two timeouts stop a run starting more; the untried claims go back to the queue', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const ids = ['A', 'B', 'C', 'D'].map((c) => s2(`19TE${c}`, '20261005'));
+    await queue(t, ids);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.includes('api.machines.dev') && req.method === 'POST') {
+          throw new DOMException('The operation timed out.', 'TimeoutError');
+        }
+        if (req.url.includes('api.machines.dev')) return new Response('[]');
+        return new Response('', { status: 404 });
+      }),
+    );
+    expect(await pumpNow(t)).toMatchObject({ unconfirmed: 2 });
+    const rows = await granules(t);
+    expect(rows.filter((g) => g.status === 'spawned')).toHaveLength(2);
+    expect(rows.filter((g) => g.status === 'queued' && g.attempts === 0)).toHaveLength(2);
+    // (Seeded directly, so only the run's own moves are counted: four claimed, two handed back.)
+    expect(await counts(t)).toMatchObject({ queued: -2, spawned: 2 });
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+      heading: 'Fly is not answering spawns',
+    });
+  });
+
+  test('a spawn budget stops a slow run, handing the rest back', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    const ids = ['A', 'B', 'C'].map((c) => s2(`19TE${c}`, '20261005'));
+    await queue(t, ids);
+    stub(world());
+    const fetchFn = globalThis.fetch;
+    // Each create takes three minutes of the clock: the second one ends past the four-minute budget.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.includes('api.machines.dev') && req.method === 'POST') {
+          vi.advanceTimersByTime(3 * 60_000);
+        }
+        return fetchFn(req);
+      }),
+    );
+    expect(await pumpNow(t)).toMatchObject({ spawned: 2 });
+    expect((await granules(t)).filter((g) => g.status === 'queued')).toHaveLength(1);
+  });
+
   test('an unreadable Machine list backs off with one alert a day, and starts nothing', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
@@ -607,6 +658,34 @@ describe('pump — starting cuts', () => {
   });
 });
 
+describe('admin resets', () => {
+  test('Retry failed and Try again now clear the backoff and run the pump at once', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    await seedAdmin(t);
+    const admin = t.withIdentity({ subject: 'admin' });
+    for (const press of [
+      () => admin.mutation(api.imageryLive.retryFailed, {}),
+      () => admin.mutation(api.imageryLive.tryAgainNow, {}),
+    ]) {
+      await t.run(async (ctx) => {
+        for (const r of await ctx.db.query('imageryPump').collect()) await ctx.db.delete(r._id);
+        await ctx.db.insert('imageryPump', {
+          key: 'pump',
+          runningUntil: 0,
+          backoffUntil: Date.now() + 20 * 60_000,
+          refusalStreak: 3,
+          blindTicks: 2,
+        });
+      });
+      await press();
+      expect(await runState(t)).toMatchObject({ refusalStreak: 0, blindTicks: 0 });
+      expect((await runState(t))?.backoffUntil).toBeUndefined();
+    }
+    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(2);
+  });
+});
+
 describe('the run state', () => {
   test('one holder at a time; only its token releases the lease; a dead holder lapses', async () => {
     const t = convexTest(schema, modules);
@@ -649,6 +728,39 @@ describe('the run state', () => {
     const state = await runState(t);
     expect(state?.backoffUntil).toBeUndefined();
     expect(state?.refusalStreak).toBe(0);
+  });
+});
+
+describe('the index tick', () => {
+  test('does nothing with no request outstanding, or while another build holds the lease', async () => {
+    const t = convexTest(schema, modules);
+    stub(world());
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'other' });
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+  });
+
+  test('without credentials it builds nothing and keeps the request', async () => {
+    const t = convexTest(schema, modules);
+    vi.unstubAllEnvs();
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+  });
+
+  test('a frame landing during a build is built again', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    const seq = await t.query(internal.imageryLive.indexOutstanding, {});
+    await t.mutation(internal.imageryLive.markIndexDirty, {}); // lands mid-build
+    await t.mutation(internal.imageryLive.markIndexBuilt, { seq: seq as number });
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(2);
+    // An older build finishing late never moves the mark backwards.
+    await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2 });
+    await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 1 });
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
   });
 });
 
@@ -708,8 +820,8 @@ describe('pump — settling cuts', () => {
       running: 1,
       young: 2,
       requeued: 1,
-      empty: 2,
-      failed: 1,
+      empty: 1,
+      failed: 2,
       unknown: 0,
     });
     const by = new Map((await granules(t)).map((g) => [g.granuleId, g]));
@@ -719,12 +831,16 @@ describe('pump — settling cuts', () => {
     expect(by.get(firstMiss)?.machineId).toBeUndefined();
     expect(by.get(emptyCut)?.status).toBe('empty');
     expect(by.get(failedCut)).toMatchObject({ status: 'failed', lastError: 'exit 1' });
-    expect(by.get(lostClaim)?.status).toBe('empty');
+    // Never confirmed is not empty: no Machine was ever seen.
+    expect(by.get(lostClaim)).toMatchObject({
+      status: 'failed',
+      lastError: 'spawn never confirmed',
+    });
     expect(by.get(freshClaim)?.status).toBe('spawned');
     expect(by.get(justSpawned)?.status).toBe('spawned');
-    expect((await runState(t, 'index'))?.dirty).toBe(true);
+    expect((await runState(t, 'index'))?.dirtySeq).toBe(1);
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
-      heading: '1 satellite cut failed',
+      heading: '2 satellite cuts failed',
     });
   });
 
@@ -749,24 +865,25 @@ describe('pump — settling cuts', () => {
     expect((await granules(t))[0]).toMatchObject({ status: 'queued', lastError: 'exit 3' });
   });
 
-  test('when three or more checks fail and nothing answers, it backs off and says so', async () => {
+  test('three blind runs in a row back off — however few cuts are in flight', async () => {
     const t = convexTest(schema, modules);
-    await queue(
-      t,
-      ['A', 'B', 'C'].map((c) => s2(`19TE${c}`, '20261005')),
-      {
-        status: 'spawned',
-        attempts: 1,
-        machineId: 'm',
-        spawnedAt: 0,
-      },
-    );
+    await queue(t, [s2('19TEA', '20261005')], {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'm',
+      spawnedAt: 0,
+    });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 503, statusText: 'Down' })),
     );
-    expect(await pumpNow(t)).toMatchObject({ unknown: 3 });
-    expect((await granules(t)).every((g) => g.status === 'spawned')).toBe(true);
+    for (let run = 1; run <= 2; run++) {
+      expect(await pumpNow(t)).toMatchObject({ unknown: 1 });
+      expect((await runState(t))?.backoffUntil).toBeUndefined();
+      expect((await runState(t))?.blindTicks).toBe(run);
+    }
+    await pumpNow(t);
+    expect((await granules(t))[0]?.status).toBe('spawned');
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'Cuts in flight cannot be checked',
     });
@@ -914,14 +1031,8 @@ describe('buildIndex', () => {
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'The imagery index could not be rebuilt',
     });
-    // A failed build leaves the flag set, so the next tick retries.
-    expect(
-      (
-        await t.run(async (ctx) =>
-          (await ctx.db.query('imageryPump').collect()).find((r) => r.key === 'index'),
-        )
-      )?.dirty,
-    ).toBe(true);
+    // A failed build leaves its request standing, so the next tick retries.
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
   });
 });
 

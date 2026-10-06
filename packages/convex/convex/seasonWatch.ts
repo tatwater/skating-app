@@ -677,11 +677,10 @@ export function historySeasons(nowMs: number): string[] {
 }
 
 /**
- * Plan a history fill: which sites, which seasons, and when each request runs. The current season
- * is filled from the forecast endpoint's past days (what the live watch reads); past seasons from
- * the archive.
+ * Plan a history fill — which sites, which seasons, and when each request runs — and mark a full
+ * one busy until its last request, in the caller's transaction. The current season is filled from
+ * the forecast endpoint's past days (what the live watch reads); past seasons from the archive.
  */
-/** Plan a history fill and mark a full one busy until its last request, in one transaction. */
 async function planHistoryFill(
   ctx: MutationCtx,
   waterBodyIds?: Id<'waterBodies'>[],
@@ -726,6 +725,7 @@ async function planHistoryFill(
   return { requests: slot + chunks.length };
 }
 
+/** The history fill for sites a settings save added (`saveSettings`). */
 export const scheduleHistoryFill = internalMutation({
   args: { waterBodyIds: v.optional(v.array(v.id('waterBodies'))) },
   handler: async (ctx, { waterBodyIds }) => await planHistoryFill(ctx, waterBodyIds),

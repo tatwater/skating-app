@@ -119,7 +119,7 @@ The copy, as settled with the founder (2026-10-06):
 paused, `poll` searches Earth Search's STAC for S2 L2A and S1 GRD over the mask extent since the
 last window (less a 5-day overlap for late-published items), selects with the A06e functions (now in
 core), and queues each new slot — oldest first, at most 300; a capped poll moves its window only to
-the newest pass it queued. It always wakes the pump.
+the newest pass it queued. What it queues, the pump starts at once.
 
 **The pump** (`pump`, a fixed 3-minute cron, under a lease — never two at once) is the only thing
 that touches Fly: it settles cuts in flight against the manifests in R2 (landed, still running, or
@@ -173,6 +173,14 @@ that round: the breaker reopens half-way (one probe) after a backoff; a spawn th
 in flight, not refused (the Machine may exist); back off only on three failed checks with no answer;
 an admin's reset during a run wins; the history fill is planned in the click's own transaction; the
 signed R2 calls time out too; *Try again now* on the page.
+
+A fourth pass found only edges, which says the design had settled: spawning has a time budget and
+stops after two timeouts (a hung create could otherwise outlive the action and its `finally`);
+a claim never confirmed fails on its last attempt instead of passing as *empty*; untried claims
+are handed back even when a run throws; the index's dirty flag became compare-and-clear, so a
+killed build leaves its request standing; three blind runs in a row back off however few cuts are in
+flight; a half-open breaker claims one granule; *Try again now*, *Retry failed* and a poll that
+queued something run the pump at once; one runnable rule serves both queries.
 
 ### §6 — `/admin/seasons`
 

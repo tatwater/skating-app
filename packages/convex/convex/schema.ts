@@ -1366,7 +1366,8 @@ export default defineSchema({
   // The live imagery job's run state (A06i §5, D214), one row per job (`pump`, `index`). Both run
   // from fixed crons, so there is nothing to schedule — only a lease (`runningUntil` + `token`,
   // longer than an action can live, released only by its token), a backoff, the spawn breaker's
-  // streak, when an admin last said "try again now", and the index's dirty flag.
+  // streak, when an admin last said "try again now", how many runs in a row could check nothing,
+  // and — for the index — how many rebuilds were asked for against how many completed.
   imageryPump: defineTable({
     key: v.string(),
     runningUntil: v.number(),
@@ -1375,7 +1376,11 @@ export default defineSchema({
     backoffUntil: v.optional(v.number()),
     refusalStreak: v.optional(v.number()),
     forcedAt: v.optional(v.number()),
-    dirty: v.optional(v.boolean()),
+    /** Consecutive pump runs in which no cut in flight could be checked at all. */
+    blindTicks: v.optional(v.number()),
+    /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
+    dirtySeq: v.optional(v.number()),
+    builtSeq: v.optional(v.number()),
   }).index('by_key', ['key']),
 
   // The granule ledger's totals per frame season (A06i §5), kept beside every status change so the

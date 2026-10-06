@@ -42,7 +42,7 @@ async function ensureRow(ctx: MutationCtx, key: JobKey): Promise<Doc<'imageryPum
 }
 
 export type Begun =
-  | { ok: true; refusalStreak: number; startedAt: number }
+  | { ok: true; refusalStreak: number; blindTicks: number }
   | { ok: false; reason: 'running' | 'backing off' };
 
 /**
@@ -68,7 +68,7 @@ export async function beginRun(ctx: MutationCtx, key: JobKey, token: string): Pr
     backoffUntil: undefined,
     refusalStreak: streak,
   });
-  return { ok: true, refusalStreak: streak, startedAt: now };
+  return { ok: true, refusalStreak: streak, blindTicks: row.blindTicks ?? 0 };
 }
 
 /**
@@ -80,7 +80,7 @@ export async function endRun(
   ctx: MutationCtx,
   key: JobKey,
   token: string,
-  outcome: { backoff?: boolean; refusalStreak?: number },
+  outcome: { backoff?: boolean; refusalStreak?: number; blindTicks?: number },
 ): Promise<void> {
   const row = await jobRow(ctx, key);
   if (!row || row.token !== token) return;
@@ -93,6 +93,7 @@ export async function endRun(
       : {
           ...(outcome.backoff ? { backoffUntil: Date.now() + BACKOFF_MS } : {}),
           ...(outcome.refusalStreak !== undefined ? { refusalStreak: outcome.refusalStreak } : {}),
+          ...(outcome.blindTicks !== undefined ? { blindTicks: outcome.blindTicks } : {}),
         }),
   });
 }
@@ -103,20 +104,29 @@ export async function clearBackoff(ctx: MutationCtx, key: JobKey): Promise<void>
   await ctx.db.patch(row._id, {
     backoffUntil: undefined,
     refusalStreak: 0,
+    blindTicks: 0,
     forcedAt: Date.now(),
   });
 }
 
-/** Ask for an index rebuild: the next index tick sees the flag. */
+/** Ask for an index rebuild: the next index tick sees it. */
 export async function markDirty(ctx: MutationCtx, key: JobKey): Promise<void> {
   const row = await ensureRow(ctx, key);
-  if (!row.dirty) await ctx.db.patch(row._id, { dirty: true });
+  await ctx.db.patch(row._id, { dirtySeq: (row.dirtySeq ?? 0) + 1 });
 }
 
-/** Take the dirty flag, clearing it — a frame that lands during the build marks it again. */
-export async function takeDirty(ctx: MutationCtx, key: JobKey): Promise<boolean> {
+/** The rebuild a build should satisfy, or `null` if none is outstanding. */
+export function outstanding(row: Doc<'imageryPump'> | null): number | null {
+  const asked = row?.dirtySeq ?? 0;
+  return asked > (row?.builtSeq ?? 0) ? asked : null;
+}
+
+/**
+ * Mark `seq` built — **compare-and-clear**, after the build succeeds. Nothing is cleared up front,
+ * so a build killed mid-way (the action limit, a deploy) leaves the request standing for the next
+ * tick; and a frame that lands during the build raises `dirtySeq` past `seq`, so it is built again.
+ */
+export async function markBuilt(ctx: MutationCtx, key: JobKey, seq: number): Promise<void> {
   const row = await ensureRow(ctx, key);
-  if (!row.dirty) return false;
-  await ctx.db.patch(row._id, { dirty: false });
-  return true;
+  if ((row.builtSeq ?? 0) < seq) await ctx.db.patch(row._id, { builtSeq: seq });
 }

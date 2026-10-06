@@ -13,17 +13,23 @@ async function throttleRow(ctx: MutationCtx, key: string) {
     .unique();
 }
 
-async function upsert(ctx: MutationCtx, key: string, fields: { lastOn?: string; until?: number }) {
-  const row = await throttleRow(ctx, key);
-  if (row) await ctx.db.patch(row._id, fields);
+async function upsert(
+  ctx: MutationCtx,
+  key: string,
+  fields: { lastOn?: string; until?: number },
+  row?: Awaited<ReturnType<typeof throttleRow>>,
+) {
+  const existing = row === undefined ? await throttleRow(ctx, key) : row;
+  if (existing) await ctx.db.patch(existing._id, fields);
   else await ctx.db.insert('dailyThrottle', { key, ...fields });
 }
 
 /** Whether `key` is still unused today (New York); marks it used if so. */
 export async function firstToday(ctx: MutationCtx, key: string): Promise<boolean> {
   const today = newYorkDate(Date.now());
-  if ((await throttleRow(ctx, key))?.lastOn === today) return false;
-  await upsert(ctx, key, { lastOn: today });
+  const row = await throttleRow(ctx, key);
+  if (row?.lastOn === today) return false;
+  await upsert(ctx, key, { lastOn: today }, row);
   return true;
 }
 

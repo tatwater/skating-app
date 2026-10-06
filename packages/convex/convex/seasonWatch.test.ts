@@ -465,7 +465,7 @@ describe('the review fixes', () => {
     const admin = await seedUser(t, 'admin', 'admin');
     const other = await seedUser(t, 'admin2', 'admin');
     await admin.as.mutation(api.seasonWatch.requestHistoryFill, {});
-    // Before the planner has even run, a second click is refused.
+    // The plan commits with the click, so a second click is refused at once.
     await expect(other.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
       /still running/,
     );
