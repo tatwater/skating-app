@@ -110,6 +110,7 @@ function stub(w: World) {
               : key === 'index/latest.json'
                 ? w.latest
                 : w.manifests.get(key);
+        if (found === 'error') return new Response('', { status: 500, statusText: 'Err' });
         if (found === undefined || found === null) return new Response('', { status: 404 });
         return req.method === 'HEAD' ? new Response(null) : json(found);
       }
@@ -595,11 +596,12 @@ describe('buildIndex', () => {
       latest: null,
     });
     stub(w);
-    // `null` in the map lists the key but 404s on read.
+    // `null` in the map lists the key but 404s on read; `'error'` lists it and 500s.
     w.manifests.set(`frames/${SEASON}/bad.json`, null);
+    w.manifests.set(`frames/${SEASON}/worse.json`, 'error');
     await t.action(internal.imageryLive.buildIndex, {});
     expect(w.puts.has('index/latest.json')).toBe(false);
-    expect((await runs(t))[0]?.counts).toMatchObject({ unreadable: 1, frames: 0 });
+    expect((await runs(t))[0]?.counts).toMatchObject({ unreadable: 2, frames: 0 });
   });
 
   test('a failed rebuild alerts the admins', async () => {

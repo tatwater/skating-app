@@ -85,14 +85,23 @@ function dates(start: string, n: number) {
  * An Open-Meteo stub answering each requested coordinate by latitude: `summit` for the sentinel,
  * `valley` for everything else. One object per site, as the multi-coordinate form returns.
  */
-function stubLows(start: string, valley: number[], summit: number[] = valley) {
+const EAGLE_LAT = 44.16;
+
+function stubLows(
+  start: string,
+  valley: number[],
+  summit: number[] = valley,
+  eagle: number[] = summit,
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
       const lats = (new URL(url).searchParams.get('latitude') ?? '').split(',');
       return okJson(
         lats.map((lat) => {
-          const lows = Number(lat).toFixed(3) === SUMMIT_LAT.toFixed(3) ? summit : valley;
+          const at = Number(lat).toFixed(3);
+          const lows =
+            at === SUMMIT_LAT.toFixed(3) ? summit : at === EAGLE_LAT.toFixed(3) ? eagle : valley;
           return { daily: { time: dates(start, lows.length), temperature_2m_min: lows } };
         }),
       );
@@ -240,6 +249,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     const t = convexTest(schema, modules);
     await seedSites(t, 2);
     const summit = await seedSentinel(t);
+    const eagle = await seedBody(t, 'Eagle Lake', EAGLE_LAT, { state: 'NH' });
     // ⚠ **The normal October state.** A sentinel opens a season weeks before a majority of ordinary
     // sites freeze, and the opening is insert-only — so if nothing revisits `winterFrom` the row can
     // never close, and imagery and the D161 sweep run all summer.
@@ -255,7 +265,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     );
 
     // Still no region-wide freeze: the tick stands down, but fills in what it can.
-    stubLows('2026-12-01', [6, 6, 6, 6, 6], [3, -0.4, -2, -3, -4]);
+    stubLows('2026-12-01', [6, 6, 6, 6, 6], [3, -0.4, -2, -3, -4], [3, -1.5, 0, 0, 0]);
     expect(await tickNow(t)).toMatchObject({ skipped: 'already recorded' });
     const stamped = await theRow(t);
     expect(stamped).toMatchObject({
@@ -264,7 +274,9 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
       // Its opening email already went, as the old message: stamped so the queue never re-sends it.
       emailsSent: [{ kind: 'opened', sentOn: '2026-12-03' }],
       opening: {
+        // Both sentinels that fired, coldest first.
         sentinels: [
+          { waterBodyId: eagle, name: 'Eagle Lake', state: 'NH', lowC: -1.5 },
           { waterBodyId: summit, name: 'Upper Lake of the Clouds', state: 'NH', lowC: -0.4 },
         ],
         corpus: { frozen: 0, reporting: 2 },

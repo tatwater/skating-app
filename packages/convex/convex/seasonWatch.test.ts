@@ -212,9 +212,21 @@ describe('the overview and the stored lows', () => {
     const t = convexTest(schema, modules);
     await seedBody(t, 'Upper Lake of the Clouds', 44.258);
     await seedBody(t, 'Big Lake', 44.5, { boost: 1 });
+    await seedSeason(t);
+    await seedSeason(t, { season: 'winter-2025-26' });
     const admin = await seedUser(t, 'admin', 'admin');
+    for (const date of ['2026-12-01', '2025-11-20']) {
+      await admin.as.mutation(api.seasonWatch.addFieldDate, {
+        season: 'winter-2025-26',
+        kind: 'first_skated',
+        date,
+      });
+    }
     const overview = await admin.as.query(api.seasonWatch.overview, {});
     expect(overview.current.version).toBe(0);
+    // Newest season first; field dates in date order.
+    expect(overview.seasons.map((s) => s.season)).toEqual(['winter-2026-27', 'winter-2025-26']);
+    expect(overview.fieldDates.map((d) => d.date)).toEqual(['2025-11-20', '2026-12-01']);
     expect(overview.sites.map((s) => [s.name, s.role])).toEqual([
       ['Upper Lake of the Clouds', 'sentinel'],
       ['Big Lake', 'sample'],
