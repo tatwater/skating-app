@@ -47,7 +47,7 @@ import {
   toTileSurveyCollection,
 } from '@skating/core';
 
-import { findLatestMasks, flag, has, SCRATCH } from './cli';
+import { findLatestMasks, flag, has, maskExtent, SCRATCH } from './cli';
 
 const STAC_URL = process.env.STAC_URL ?? DEFAULT_STAC_URL;
 
@@ -60,14 +60,6 @@ const COLLECTIONS = {
   s1: process.env.STAC_COLLECTION_S1 ?? STAC_COLLECTIONS.s1,
 } as const;
 type Mission = keyof typeof COLLECTIONS;
-
-/** The mask file's own extent, via ogrinfo — see the module note for why this and not REGION_BOUNDS. */
-function maskExtent(fgbPath: string): [number, number, number, number] {
-  const out = execFileSync('ogrinfo', ['-so', '-al', fgbPath], { encoding: 'utf8' });
-  const match = /Extent:\s*\(([-\d.]+),\s*([-\d.]+)\)\s*-\s*\(([-\d.]+),\s*([-\d.]+)\)/.exec(out);
-  if (!match) throw new Error(`could not read an extent from ${fgbPath}`);
-  return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
-}
 
 /** One whole search, paged by the shared `searchStac` (core) — the live poll in Convex uses it too. */
 async function searchAll(

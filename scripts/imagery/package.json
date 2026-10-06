@@ -12,6 +12,7 @@
     "select-granules": "tsx src/selectGranules.ts",
     "fan-out": "./fan-out.sh",
     "ingest-window": "tsx src/ingestWindowCli.ts",
+    "publish-search-plan": "tsx src/publishSearchPlan.ts",
     "build-index": "tsx src/buildIndex.ts",
     "backfill": "./backfill.sh"
   },

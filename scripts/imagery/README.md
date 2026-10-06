@@ -640,6 +640,29 @@ repeat until a round adds nothing new. The miss set never reaches zero — rough
 granule list is ocean, Québec or dry land, and those jobs correctly produce nothing — so the plateau
 *is* the empty-granule count.
 
+## Live, from Convex (A06i, D214)
+
+From winter 2026-27 the current season's imagery runs itself: an admin presses **Start imagery** on
+`/admin/seasons`, and `packages/convex/convex/imageryLive.ts` checks Earth Search every 6 hours,
+spawns one Machine per new granule with exactly `fan-out.sh`'s configuration (`lib/fly.ts`),
+reconciles against the manifests in R2, and rebuilds `index/<season>.json` by listing the bucket.
+Everything above stays the tool for **past** seasons and recuts.
+
+What it needs, once per season or per credential:
+
+```bash
+# After each mask bake: the search box and the empty-tile set, which only ogrinfo can compute.
+pnpm --filter @skating/imagery select-granules --from=<any> --to=<any>   # if the tile survey is stale
+pnpm --filter @skating/imagery publish-search-plan                       # → masks/<season>-search.json
+
+# On the Convex deployment (never echo the values):
+#   IMAGERY_ARCHIVE_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, [R2_BUCKET]
+#   FLY_API_TOKEN (step 4's scoped deploy token), FLY_IMAGE (step 5's pinned ref)
+```
+
+Without them the job refuses each check and emails the admins once a day. `ingest-window` now reads
+the recorded watch from the deployment rather than re-deciding it with its own sample.
+
 ## Verifying the bill is what you think
 
 ```bash
