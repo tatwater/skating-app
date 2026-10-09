@@ -580,7 +580,7 @@ observations (D160). *A skater asks "do I get in the car?" against a water body 
 - **An always-on LibreWXR** — ~$760/yr for what cutting costs ~$5/mo
 
 ## Phase A06i — The season watch
-🟡 **In progress** 2026-10-06 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214
+🟡 **In progress** 2026-10-06 · PR #85 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214
 
 The daily season checker opened winter-2026-27 on 3 October on one 31 °F night at two summit tarns
 and mailed staff that the skating season had begun, without saying which sentinel or what it
