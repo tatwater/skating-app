@@ -172,6 +172,21 @@ export const recordImageryNudge = internalMutation({
 });
 
 /**
+ * Fill in what the winter night measured on a row whose winter was recorded before A06i kept it —
+ * the legacy winter-2026-27 row, whose 7 October 2026 was written by the old tick. Detail only: no
+ * email is queued for a fact days old, which the old code had already decided without one.
+ */
+export const recordWinterDetail = internalMutation({
+  args: { season: v.string(), frozen: v.array(namedSiteLow), reporting: v.number() },
+  handler: async (ctx, { season, frozen, reporting }) => {
+    const row = await rowFor(ctx, season);
+    if (!row || row.winterFrom === null || row.winter !== undefined) return null;
+    await ctx.db.patch(row._id, { winter: { frozen, reporting } });
+    return row._id;
+  },
+});
+
+/**
  * Fill in what the opening night measured on a row opened before A06i recorded it — the legacy
  * winter-2026-27 row, opened 3 October 2026 with only the word `sentinel` to show for it.
  */
@@ -583,6 +598,27 @@ async function followOpenSeason(
           frozen: ordinary.filter((s) => (lowOn(s) as number) <= settings.freezeC).length,
           reporting: ordinary.length,
         },
+      });
+    }
+  }
+
+  // The winter night's detail, for a row whose winter the old tick recorded without it.
+  if (already.winterFrom !== null && already.winter === undefined) {
+    const on = already.winterFrom;
+    const ordinary = clipped
+      .filter((s) => !s.sentinel)
+      .map((s) => ({ siteId: s.siteId, low: s.days.find((d) => d.date === on)?.minTempC }))
+      .filter((s): s is { siteId: string; low: number } => s.low !== undefined);
+    if (ordinary.length > 0) {
+      await ctx.runMutation(internal.imageryIngest.recordWinterDetail, {
+        season,
+        frozen: named(
+          ordinary
+            .filter((s) => s.low <= settings.freezeC)
+            .map((s) => ({ siteId: s.siteId, lowC: s.low }))
+            .sort((a, b) => a.lowC - b.lowC),
+        ),
+        reporting: ordinary.length,
       });
     }
   }

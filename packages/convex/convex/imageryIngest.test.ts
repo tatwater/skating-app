@@ -298,6 +298,42 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     expect((await theRow(t))?.winterFrom).toBe('2026-12-09');
   });
 
+  test('a legacy winter gets its detail filled, and no late email', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t, 2);
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: 'winter-2026-27',
+        opensOn: '2026-12-01',
+        openedBy: ['corpus'],
+        winterFrom: '2026-12-02',
+        sitesSampled: 2,
+        detectedAt: Date.parse('2026-12-02T20:00:00Z'),
+      }),
+    );
+    stubLows('2026-12-01', [3, -1, 4, 4, 4]);
+    await tickNow(t);
+    const row = await theRow(t);
+    expect(row?.winter).toEqual({
+      frozen: [
+        expect.objectContaining({ name: 'Gate Lake 0', lowC: -1 }),
+        expect.objectContaining({ name: 'Gate Lake 1', lowC: -1 }),
+      ],
+      reporting: 2,
+    });
+    expect(row?.emailQueue ?? []).toEqual([]);
+    // Once only, and never on a row without a winter.
+    expect(
+      await t.mutation(internal.imageryIngest.recordWinterDetail, {
+        season: 'winter-2026-27',
+        frozen: [],
+        reporting: 0,
+      }),
+    ).toBeNull();
+  });
+
   test('sentinelNights holds the opening until one summit stays cold', async () => {
     vi.useFakeTimers();
     atDate('2026-10-10');
