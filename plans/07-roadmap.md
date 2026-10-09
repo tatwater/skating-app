@@ -593,10 +593,12 @@ a too-early watch can be reset (D213). Once an admin presses *Start imagery*, Co
 satellite catalog every six hours and cuts each new pass on Fly (D214). *An operator can read why the
 watch opened, tune it against past winters, and leave the season's imagery to run itself.*
 
+#### Data runs
+- **2026-10-09 — on dev:** the legacy winter-2026-27 row stamped (v0) and its opening night filled; the search plan published (50 empty / 50 kept tiles); the history fill started (33 requests, 2016-17 onward)
+
 #### Owed
-- Convex dev env for live imagery: `IMAGERY_ARCHIVE_URL`, `R2_*`, `FLY_API_TOKEN`, `FLY_IMAGE`
-- `publish-search-plan` for `winter-2026-27`; the history fill on dev (*Fill history*)
-- Matt's thresholds — the reason the settings page exists; the triggers are unchanged until then
+- `FLY_API_TOKEN` on Convex dev (flyctl is signed out here); the other imagery settings are set
+- Matt's thresholds — the reason the settings page exists; the triggers are unchanged until then. ⚠ Winter region-wide was recorded for 2026-10-07 on one cold night, so a warm October fortnight would end the watch
 
 ## Phase A07a — The unified corpus
 🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phases/A07a-unified-corpus.md) · D92–D105 D109–D137

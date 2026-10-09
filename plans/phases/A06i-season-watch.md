@@ -195,10 +195,32 @@ field-date form, and where each default lives in code. Admin-only.
 recorded watch and the settings from the deployment (`convex run seasonWatch:status`) and prints them
 with the manual backfill commands. The cutter, `fan-out.sh` and `backfill.sh` stay for past seasons.
 
+## On dev — 2026-10-09
+
+Deployed from a local-only branch combining this one with the landmarks stack (#82–#84), whose data
+a main-based schema cannot validate; that branch is never pushed. What the real data said:
+
+- The legacy row stamped as **version 0**; its opening night filled in exactly as the first email
+  should have read: Upper Lake of the Clouds −0.4 °C (31.3 °F), Eagle Lake 0.0 °C, 0 of 25 ordinary
+  lakes.
+- **No 20 °F night yet.** The forecast had the summit at −7.1 °C on 6 October; observed was −5.7, and
+  −6.2 on the 7th (about 21 °F). Dropping today's forecast low is what kept that from firing.
+- ⚠ **Winter region-wide was already recorded for 7 October** (by the old tick, so with no email):
+  13 of 25 ordinary lakes at or below freezing for one night, none the next. The end of the watch is
+  measured from that date, so ten straight nights above freezing at every ordinary lake would end
+  the watch — imagery and the weather sweep with it — in October. A threshold for Matt and the
+  founder: a winter rule of more than one night, or a reset under stricter settings.
+- The live catalog for 3–6 October selected 85 passes (74 optical of 157, 81 dropped as empty tiles;
+  11 radar of 17), about 21 a day — a normal catch-up stays under the 300 cap.
+- `/admin/seasons` rendered in both themes from real dev data (a local harness; dev sign-in is by
+  emailed code); the chart gained a legend and visible reference lines from that render.
+- The history fill is running: 33 requests 75 minutes apart, done about 2026-10-11 11:00 UTC.
+
 ## Owed at merge
 
-- Convex dev env: `IMAGERY_ARCHIVE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`,
-  `FLY_API_TOKEN`, `FLY_IMAGE` (the pinned cutter image). Until they exist the live job refuses and
-  says so.
-- `publish-search-plan` for `winter-2026-27` (the survey cached on 2026-08-25 matches the masks).
+- 🟢 Convex dev env set 2026-10-09: `IMAGERY_ARCHIVE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+  `R2_ENDPOINT`, `FLY_IMAGE`. ⚪ **`FLY_API_TOKEN`** — flyctl is signed out on this Mac; `fly auth
+  login`, then `fly tokens create deploy --app skating-imagery --expiry 8760h` into Convex dev.
+- 🟢 `publish-search-plan` for `winter-2026-27`, 2026-10-09 (50 empty / 50 kept tiles).
+- Dev runs the combined branch until #82–#84 merge; after they do, rebase this PR and push it.
 - The masks predate the 2026-09-19/21 corpus seed; a re-bake is still the register's item.

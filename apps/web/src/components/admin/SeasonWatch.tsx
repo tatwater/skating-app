@@ -24,6 +24,7 @@ import {
   type SettingsForm,
   shortDay,
 } from '@/lib/seasonPreview';
+import { ChartLegend } from '../charts/Charts';
 import { CHART_TOKENS, chartSeries } from '../charts/palette';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -781,7 +782,11 @@ export function SeasonDetail({
   ].filter((m): m is [string, string] => Boolean(m[1]));
   return (
     <div className="flex flex-col gap-3">
-      <Select value={season} onValueChange={(v) => onSeasonChange(v as string)}>
+      <Select
+        value={season}
+        items={seasons.map((s) => ({ value: s, label: s.replace('winter-', 'Winter ') }))}
+        onValueChange={(v) => onSeasonChange(v as string)}
+      >
         <SelectTrigger size="sm" className="w-48" aria-label="Season">
           <SelectValue />
         </SelectTrigger>
@@ -795,9 +800,15 @@ export function SeasonDetail({
       </Select>
       {rows.length > 0 ? (
         <Card>
-          <CardContent className="py-3">
+          <CardContent className="flex flex-col gap-2 py-3">
+            <ChartLegend
+              items={sentinels.map((s, i) => ({
+                label: siteName(s),
+                color: colors[i % colors.length] as string,
+              }))}
+            />
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+              <LineChart data={rows} margin={{ top: 22, right: 12, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={CHART_TOKENS.grid} strokeDasharray="2 4" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -812,22 +823,33 @@ export function SeasonDetail({
                 />
                 <ReferenceLine
                   y={Math.round(celsiusToFahrenheit(settings.freezeC))}
-                  stroke={CHART_TOKENS.grid}
+                  stroke={CHART_TOKENS.axis}
                   strokeDasharray="4 4"
-                  label={{ value: 'freezing line', fontSize: 10, position: 'insideTopRight' }}
+                  label={{
+                    value: 'freezing line',
+                    fontSize: 10,
+                    fill: CHART_TOKENS.axis,
+                    position: 'insideTopRight',
+                  }}
                 />
                 <ReferenceLine
                   y={Math.round(celsiusToFahrenheit(settings.imageryNudgeC))}
-                  stroke={CHART_TOKENS.grid}
+                  stroke={CHART_TOKENS.axis}
                   strokeDasharray="4 4"
-                  label={{ value: 'imagery line', fontSize: 10, position: 'insideBottomRight' }}
+                  label={{
+                    value: 'imagery line',
+                    fontSize: 10,
+                    fill: CHART_TOKENS.axis,
+                    position: 'insideBottomRight',
+                  }}
                 />
                 {marks.map(([label, date]) => (
                   <ReferenceLine
                     key={label}
                     x={date}
-                    stroke={CHART_TOKENS.grid}
-                    label={{ value: label, fontSize: 10, position: 'top' }}
+                    stroke={CHART_TOKENS.axis}
+                    strokeDasharray="2 3"
+                    label={{ value: label, fontSize: 10, fill: CHART_TOKENS.axis, position: 'top' }}
                   />
                 ))}
                 {sentinels.map((s, i) => (
@@ -963,7 +985,11 @@ export function FieldDates({
       <div className="grid items-end gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <div className="flex flex-col gap-1">
           <Label>Season</Label>
-          <Select value={season} onValueChange={(v) => setSeason(v as string)}>
+          <Select
+            value={season}
+            items={seasons.map((s) => ({ value: s, label: s.replace('winter-', '') }))}
+            onValueChange={(v) => setSeason(v as string)}
+          >
             <SelectTrigger size="sm" aria-label="Field date season">
               <SelectValue />
             </SelectTrigger>
@@ -978,7 +1004,14 @@ export function FieldDates({
         </div>
         <div className="flex flex-col gap-1">
           <Label>What</Label>
-          <Select value={kind} onValueChange={(v) => setKind(v as FieldDateRow['kind'])}>
+          <Select
+            value={kind}
+            items={[
+              { value: 'first_skated', label: 'First skated' },
+              { value: 'last_skated', label: 'Last skated' },
+            ]}
+            onValueChange={(v) => setKind(v as FieldDateRow['kind'])}
+          >
             <SelectTrigger size="sm" aria-label="Field date kind">
               <SelectValue />
             </SelectTrigger>
