@@ -597,7 +597,7 @@ watch opened, tune it against past winters, and leave the season's imagery to ru
 - **2026-10-09 — on dev:** the legacy winter-2026-27 row stamped (v0) and its opening night filled; the search plan published (50 empty / 50 kept tiles); the history fill started (33 requests, 2016-17 onward)
 
 #### Owed
-- `FLY_API_TOKEN` on Convex dev (flyctl is signed out here); the other imagery settings are set
+- The first *Start imagery* on dev — every setting is in place; the first real spawn is the token's first use
 - Matt's thresholds — the reason the settings page exists; the triggers are unchanged until then. ⚠ Winter region-wide was recorded for 2026-10-07 on one cold night, so a warm October fortnight would end the watch
 
 ## Phase A07a — The unified corpus

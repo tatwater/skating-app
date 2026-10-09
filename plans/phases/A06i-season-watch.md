@@ -219,8 +219,8 @@ a main-based schema cannot validate; that branch is never pushed. What the real 
 ## Owed at merge
 
 - 🟢 Convex dev env set 2026-10-09: `IMAGERY_ARCHIVE_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
-  `R2_ENDPOINT`, `FLY_IMAGE`. ⚪ **`FLY_API_TOKEN`** — flyctl is signed out on this Mac; `fly auth
-  login`, then `fly tokens create deploy --app skating-imagery --expiry 8760h` into Convex dev.
+  `R2_ENDPOINT`, `FLY_IMAGE`; 🟢 `FLY_API_TOKEN` 2026-10-09 — a deploy token scoped to
+  `skating-imagery`, one year (`convex-dev-live-imagery` in `fly tokens list`).
 - 🟢 `publish-search-plan` for `winter-2026-27`, 2026-10-09 (50 empty / 50 kept tiles).
 - Dev runs the combined branch until #82–#84 merge; after they do, rebase this PR and push it.
 - The masks predate the 2026-09-19/21 corpus seed; a re-bake is still the register's item.
