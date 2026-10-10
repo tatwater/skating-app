@@ -602,6 +602,31 @@ describe('pump — starting cuts', () => {
     expect((await granules(t)).filter((g) => g.status === 'queued')).toHaveLength(1);
   });
 
+  test('Pause during a batch stops it: no spawn after the Pause commits, the rest handed back', async () => {
+    const t = convexTest(schema, modules);
+    const id = await openSeason(t);
+    const ids = ['A', 'B', 'C'].map((c) => s2(`19TE${c}`, '20261005'));
+    await queue(t, ids);
+    const w = world();
+    stub(w);
+    const fetchFn = globalThis.fetch;
+    // An admin presses Pause while the first create is in flight.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.includes('api.machines.dev') && req.method === 'POST') {
+          await t.run((ctx) => ctx.db.patch(id, { imageryPausedAt: Date.now() }));
+        }
+        return fetchFn(req);
+      }),
+    );
+    expect(await pumpNow(t)).toMatchObject({ spawned: 1 });
+    expect(w.spawned).toEqual(ids.slice(0, 1));
+    const rows = await granules(t);
+    expect(rows.filter((g) => g.status === 'queued' && g.attempts === 0)).toHaveLength(2);
+  });
+
   test('an unreadable Machine list backs off with one alert a day, and starts nothing', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
@@ -1016,7 +1041,28 @@ describe('buildIndex', () => {
     w.manifests.set(`frames/${SEASON}/worse.json`, 'error');
     await t.action(internal.imageryLive.buildIndex, {});
     expect(w.puts.has('index/latest.json')).toBe(false);
-    expect((await runs(t))[0]?.counts).toMatchObject({ unreadable: 2, frames: 0 });
+    expect((await runs(t))[0]).toMatchObject({
+      outcome: 'failed',
+      counts: expect.objectContaining({ unreadable: 2, frames: 0 }),
+    });
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+      heading: 'Some cut frames cannot be read into the imagery index',
+    });
+  });
+
+  test('an unreadable manifest keeps the rebuild pending until it reads — with no new cut to ask', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    const a = s2('19TEA', '20261005');
+    const key = `frames/${SEASON}/${a}.json`;
+    const w = world({ manifests: new Map<string, unknown>([[key, 'error']]) });
+    stub(w);
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 0 });
+    // The last cut has landed and imagery is paused: nothing will mark the index dirty again.
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+    w.manifests.set(key, manifest(a, '2026-10-05T15:30:00Z'));
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
   });
 
   test('a failed rebuild alerts the admins', async () => {
