@@ -701,14 +701,20 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
   point in a mutation — that reads a giant's polygon once per landmark.
 - **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
   the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
-  750 m, bridges on each body they cross, rivers at each mouth. Restaurants only when standalone.
+  750 m, bridges on each body they cross (segments cut against the shore, so a two-vertex span over a
+  pond counts) or stop within 25 m of, rivers at each mouth. Restaurants only when standalone.
 - **`--mentions` is required** (gitignored input), or `--without-corpus` to mean it: the load
   replaces a catalog row's corpus count and spellings with the run's, so a run without the corpus
   would erase them — and `load-landmarks --apply` refuses one unless told `--without-corpus` too.
   The names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's
   worklist.
 - **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
-  edit keeps its name, kind and point, and a name a live bay carries is skipped.
+  edit keeps its name, kind and point, and a name a live bay carries (or an alias of it) is skipped.
+- **It also forgets.** Every body the run covers gets a line marked `complete` — an empty one if
+  nothing landed on it — and a catalog row a complete line no longer has is retired (`dropped`),
+  back if a later run places it (`returned`). A run of some states covers only bodies wholly inside
+  them, so `landmarks VT` never drops the New Hampshire half of a border lake. Read `dropped` on
+  the dry run before `--apply`: a broken extract shows up there as thousands.
 
 ## Regional expansion (Phase 02b)
 

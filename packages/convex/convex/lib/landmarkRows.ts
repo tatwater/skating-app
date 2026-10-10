@@ -8,8 +8,11 @@
 import {
   distanceToShorelineMeters,
   filledPolygon,
+  type LandmarkKind,
   landmarkNameKey,
+  landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
+  normalizeLandmarkNames,
   pointInPolygon,
   type SubAreaCandidate,
   subAreaForLandmark,
@@ -37,6 +40,16 @@ export async function landmarksForBody(
     .take(MAX_LANDMARKS_PER_BODY * 2);
 }
 
+/** A row or candidate as core's same-place rule sees it: what it is, where, and every name. */
+export function identityOf(row: {
+  kind: LandmarkKind;
+  point: { lat: number; lng: number };
+  name: string;
+  aliases: readonly string[];
+}) {
+  return { kind: row.kind, point: row.point, names: [row.name, ...row.aliases] };
+}
+
 export function subAreaFor(
   point: { lat: number; lng: number },
   candidates: BayCandidates,
@@ -46,16 +59,17 @@ export function subAreaFor(
   return match ? { subAreaId: match._id } : null;
 }
 
+/** Audit a landmark write. No `actorId` means the system acted — a merge the ETL ran (A05c / D80). */
 export async function auditLandmark(
   ctx: MutationCtx,
-  actorId: Id<'profiles'>,
+  actorId: Id<'profiles'> | undefined,
   action: 'create_landmark' | 'edit_landmark' | 'promote_landmark' | 'remove' | 'restore',
   landmarkId: Id<'bodyLandmarks'>,
   reason: string,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
   await ctx.db.insert('moderationActions', {
-    actorId,
+    ...(actorId !== undefined ? { actorId } : {}),
     action,
     targetType: 'bodyLandmark',
     targetId: landmarkId,
@@ -72,7 +86,7 @@ export async function auditLandmark(
  */
 export async function retireAsPromoted(
   ctx: MutationCtx,
-  actorId: Id<'profiles'>,
+  actorId: Id<'profiles'> | undefined,
   landmarkId: Id<'bodyLandmarks'>,
   waterBodyId: Id<'waterBodies'>,
   subAreaId: Id<'waterBodySubAreas'>,
@@ -103,31 +117,189 @@ export async function retireAsPromoted(
 export const BAY_NAME_RETIRE_RADIUS_M = 1_000;
 
 /**
- * Retire every live landmark a bay now names (D202's promotion by name): the same name or alias,
- * within {@link BAY_NAME_RETIRE_RADIUS_M} of the bay's outline. A bay drawn from the `name_bay`
- * queue is usually a reference bay the ETL already labeled — Kingsland Bay was a node before it was a
- * place — and leaving the label beside the new sub-area would name the water twice. Called from the
- * one sub-area insert and from rename and restore, so no way of giving a bay a name skips it.
+ * Retire every live landmark a bay now names (D202's promotion by name): any of the landmark's names
+ * — its name or an alias — matching any of the bay's, within {@link BAY_NAME_RETIRE_RADIUS_M} of the
+ * bay's outline. Every name on both sides, because that is what `assertNotABayName` refuses: a
+ * landmark answering to "Kingsland Bay" under an alias names the bay as surely as one called it. A
+ * bay drawn from the `name_bay` queue is usually a reference bay the ETL already labeled — Kingsland
+ * Bay was a node before it was a place — and leaving the label beside the new sub-area would name the
+ * water twice. Called from the one sub-area insert, from rename and restore, and from a merge, so no
+ * way of giving a lake a bay skips it.
  */
 export async function retireNamedAsBay(
   ctx: MutationCtx,
-  actorId: Id<'profiles'>,
+  actorId: Id<'profiles'> | undefined,
   waterBodyId: Id<'waterBodies'>,
-  bay: { _id: Id<'waterBodySubAreas'>; polygon: Polygon | MultiPolygon; names: readonly string[] },
+  bay: BayNaming,
 ): Promise<number> {
-  const keys = new Set(bay.names.map(landmarkNameKey));
-  const water = filledPolygon(bay.polygon);
+  return retireNamedAsBays(ctx, actorId, waterBodyId, [bay]);
+}
+
+type BayNaming = {
+  _id: Id<'waterBodySubAreas'>;
+  polygon: Polygon | MultiPolygon;
+  names: readonly string[];
+};
+
+/** {@link retireNamedAsBay} for several bays over one read of the body's landmarks. */
+export async function retireNamedAsBays(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'> | undefined,
+  waterBodyId: Id<'waterBodies'>,
+  bays: readonly BayNaming[],
+): Promise<number> {
+  if (bays.length === 0) return 0;
+  const named = bays.map((bay) => ({
+    bay,
+    keys: new Set(bay.names.map(landmarkNameKey)),
+    water: filledPolygon(bay.polygon),
+  }));
   let retired = 0;
   for (const row of await landmarksForBody(ctx, waterBodyId)) {
-    if (row.removedAt !== undefined || !keys.has(landmarkNameKey(row.name))) continue;
-    const near =
-      pointInPolygon(row.point, water) ||
-      distanceToShorelineMeters(row.point, bay.polygon) <= BAY_NAME_RETIRE_RADIUS_M;
-    if (!near) continue;
-    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, bay._id);
+    if (row.removedAt !== undefined) continue;
+    const rowKeys = [row.name, ...row.aliases].map(landmarkNameKey);
+    const match = named.find(
+      ({ bay, keys, water }) =>
+        rowKeys.some((key) => keys.has(key)) &&
+        (pointInPolygon(row.point, water) ||
+          distanceToShorelineMeters(row.point, bay.polygon) <= BAY_NAME_RETIRE_RADIUS_M),
+    );
+    if (!match) continue;
+    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, match.bay._id);
     retired++;
   }
   return retired;
+}
+
+/**
+ * Move a merged body's landmarks to the survivor (D36 / D202) — called from `mergeBodyInto` after the
+ * bays have moved, so that a merge cannot strand a lake's labels on a tombstone nothing lists.
+ *
+ * Moved, then reconciled against the survivor's own rows by the rule every other writer uses (shared
+ * upstream id, else core's `landmarksAreSamePlace`), since two duplicate bodies usually carry the same
+ * catalog landmarks twice:
+ *
+ * - **A live twin** takes the moved row in: its ids, spellings and the larger corpus count; the sum
+ *   of the report counts; and, where only the moved row was a moderator's, the moderator's name,
+ *   kind and point. The moved row is retired beside it, so ids that point at it (a report's `where`,
+ *   an audit row) still resolve.
+ * - **A twin a moderator removed** holds: the moved row is retired too, as a re-run of the ETL would
+ *   hold it. (A twin the catalogs dropped does not — that was no one's judgment of the place.)
+ * - **No twin**: the row moves as it is, up to `MAX_LANDMARKS_PER_BODY`; past the cap it is retired
+ *   and counted, so the per-body read can still trust the cap.
+ *
+ * Then every live bay on the survivor retires the landmarks it now names (`retireNamedAsBays`) —
+ * each body's bays and labels were reconciled against each other, not against the other body's.
+ * Bay stamps (`subAreaId`) are left to the merge's `scheduleRestamp`, like every other child's.
+ */
+export async function repointLandmarksOnMerge(
+  ctx: MutationCtx,
+  loserId: Id<'waterBodies'>,
+  survivorId: Id<'waterBodies'>,
+  actorId: Id<'profiles'> | undefined,
+): Promise<{ repointed: number; folded: number; overCap: number; retiredAsBay: number }> {
+  const moving = await landmarksForBody(ctx, loserId);
+  const staying = await landmarksForBody(ctx, survivorId);
+  const now = Date.now();
+  let live = staying.filter((row) => row.removedAt === undefined).length;
+  let folded = 0;
+  let overCap = 0;
+  for (const row of moving) {
+    const retire = { waterBodyId: survivorId, removedAt: now, updatedAt: now };
+    if (row.removedAt !== undefined) {
+      await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
+      continue;
+    }
+    const sameAs = (other: Doc<'bodyLandmarks'>) =>
+      other.externalIds.some((id) => row.externalIds.includes(id)) ||
+      landmarksAreSamePlace(identityOf(other), identityOf(row));
+    const twin =
+      staying.find((other) => other.removedAt === undefined && sameAs(other)) ??
+      staying.find((other) => other.catalogDroppedAt === undefined && sameAs(other));
+    if (twin && twin.removedAt !== undefined) {
+      await ctx.db.patch(row._id, retire);
+      await auditLandmark(
+        ctx,
+        actorId,
+        'remove',
+        row._id,
+        `"${row.name}" was removed here already`,
+        {
+          mergedIntoId: twin._id,
+        },
+      );
+      folded++;
+      continue;
+    }
+    if (twin) {
+      const takeRow = twin.moderatorEditedAt === undefined && row.moderatorEditedAt !== undefined;
+      const keeper = takeRow ? row : twin;
+      const reportCount = (twin.reportCount ?? 0) + (row.reportCount ?? 0);
+      const corpusMessages = Math.max(twin.corpusMessages ?? 0, row.corpusMessages ?? 0);
+      const patch = {
+        name: keeper.name,
+        kind: keeper.kind,
+        point: keeper.point,
+        ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),
+        externalIds: [...new Set([...twin.externalIds, ...row.externalIds])],
+        aliases:
+          normalizeLandmarkNames(keeper.name, [
+            twin.name,
+            ...twin.aliases,
+            row.name,
+            ...row.aliases,
+          ])?.aliases ?? keeper.aliases,
+        ...(corpusMessages > 0 ? { corpusMessages } : {}),
+        ...(reportCount > 0 ? { reportCount } : {}),
+        updatedAt: now,
+      };
+      await ctx.db.patch(twin._id, patch);
+      Object.assign(twin, patch);
+      await ctx.db.patch(row._id, retire);
+      await auditLandmark(
+        ctx,
+        actorId,
+        'remove',
+        row._id,
+        `Folded into "${twin.name}" by a merge`,
+        {
+          mergedIntoId: twin._id,
+        },
+      );
+      folded++;
+      continue;
+    }
+    if (live >= MAX_LANDMARKS_PER_BODY) {
+      await ctx.db.patch(row._id, retire);
+      await auditLandmark(
+        ctx,
+        actorId,
+        'remove',
+        row._id,
+        `Over the lake's landmark cap after a merge`,
+      );
+      overCap++;
+      continue;
+    }
+    await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
+    staying.push({ ...row, waterBodyId: survivorId });
+    live++;
+  }
+
+  const bays = (
+    await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', survivorId))
+      .collect()
+  )
+    .filter((bay) => bay.removedAt === undefined)
+    .map((bay) => ({
+      _id: bay._id,
+      polygon: bay.polygon as unknown as Polygon | MultiPolygon,
+      names: [bay.name, ...(bay.aliases ?? [])],
+    }));
+  const retiredAsBay = await retireNamedAsBays(ctx, actorId, survivorId, bays);
+  return { repointed: moving.length, folded, overCap, retiredAsBay };
 }
 
 /**

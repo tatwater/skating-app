@@ -17,7 +17,11 @@
  *   point can sit a few hundred meters up the headland; a hotel must be on the water to count.
  * - A **settlement** is every body within 750 m of it — a village on the shore of two ponds is a
  *   reference on both.
- * - A **bridge** is every body it crosses.
+ * - A **bridge** is every body it crosses — its line cut against the shore, so a span drawn with one
+ *   vertex on each bank still crosses the pond between them — or, failing a crossing, every body its
+ *   span comes within 25 m of. That fallback is deliberate: on the five-state pass (2026-10-10) it is
+ *   30 of 103 bridges, and they are the bridge over a lake's outlet and the span over water OSM split
+ *   at the deck (vertices 0–1 m off the water on both sides), which skaters steer by.
  * - A **waterway** is its mouths: each place a named river or stream crosses a body's shore, or ends
  *   at it. The direction comes from OSM's own convention (waterways are drawn downstream), so an inlet
  *   and an outlet of one river are two labels — though a later merge folds two within a kilometer.
@@ -172,55 +176,153 @@ function placed(
   };
 }
 
-/** The in-water vertex nearest the middle of a bridge's span — where its label belongs. */
-function spanMiddle(inWater: readonly LatLng[]): LatLng {
-  const lat = inWater.reduce((s, p) => s + p.lat, 0) / inWater.length;
-  const lng = inWater.reduce((s, p) => s + p.lng, 0) / inWater.length;
+/** A stretch of a line on one side of a body's shore. */
+export interface ShorePiece {
+  from: LatLng;
+  to: LatLng;
+  water: boolean;
+}
+
+/** Every shore edge of a body as `[ax, ay, bx, by]` in `[lng, lat]`, flattened once per body. */
+const shoreEdgeCache = new WeakMap<MatchBody['polygon'], Float64Array>();
+
+function shoreEdges(polygon: MatchBody['polygon']): Float64Array {
+  const cached = shoreEdgeCache.get(polygon);
+  if (cached) return cached;
+  const rings = polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat();
+  const count = rings.reduce((n, ring) => n + Math.max(0, ring.length - 1), 0);
+  const edges = new Float64Array(count * 4);
+  let k = 0;
+  for (const ring of rings) {
+    for (let i = 0; i + 1 < ring.length; i++) {
+      const a = ring[i] as number[];
+      const b = ring[i + 1] as number[];
+      edges[k++] = a[0] as number;
+      edges[k++] = a[1] as number;
+      edges[k++] = b[0] as number;
+      edges[k++] = b[1] as number;
+    }
+  }
+  shoreEdgeCache.set(polygon, edges);
+  return edges;
+}
+
+function along(a: LatLng, b: LatLng, t: number): LatLng {
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
+/**
+ * A line cut wherever a segment crosses the body's shore — the outer ring and every island's — into
+ * pieces each wholly on the water or wholly off it, neighbors on the same side joined. **Segments,
+ * not vertices**: a bridge or a creek drawn with one vertex on each bank crosses the pond between
+ * them with no vertex on it, and a test of vertices alone sees only land. Planar in `[lng, lat]`,
+ * which is exact enough for where one straight segment meets one shore edge.
+ */
+export function cutAtShore(line: readonly LatLng[], body: MatchBody): ShorePiece[] {
+  const edges = shoreEdges(body.polygon);
+  const box = body.bbox;
+  const pieces: ShorePiece[] = [];
+  const onWater = (p: LatLng) =>
+    p.lat >= box.minLat &&
+    p.lat <= box.maxLat &&
+    p.lng >= box.minLng &&
+    p.lng <= box.maxLng &&
+    pointInPolygon(p, body.polygon);
+  for (let i = 0; i + 1 < line.length; i++) {
+    const a = line[i] as LatLng;
+    const b = line[i + 1] as LatLng;
+    const minX = Math.min(a.lng, b.lng);
+    const maxX = Math.max(a.lng, b.lng);
+    const minY = Math.min(a.lat, b.lat);
+    const maxY = Math.max(a.lat, b.lat);
+    const cuts = [0, 1];
+    if (maxX >= box.minLng && minX <= box.maxLng && maxY >= box.minLat && minY <= box.maxLat) {
+      const rx = b.lng - a.lng;
+      const ry = b.lat - a.lat;
+      for (let e = 0; e < edges.length; e += 4) {
+        const ex = edges[e] as number;
+        const ey = edges[e + 1] as number;
+        const fx = edges[e + 2] as number;
+        const fy = edges[e + 3] as number;
+        if (Math.max(ex, fx) < minX || Math.min(ex, fx) > maxX) continue;
+        if (Math.max(ey, fy) < minY || Math.min(ey, fy) > maxY) continue;
+        const sx = fx - ex;
+        const sy = fy - ey;
+        const denom = rx * sy - ry * sx;
+        // Parallel: a segment running along the shore does not cross it.
+        if (denom === 0) continue;
+        const qx = ex - a.lng;
+        const qy = ey - a.lat;
+        const t = (qx * sy - qy * sx) / denom;
+        const u = (qx * ry - qy * rx) / denom;
+        if (t > 0 && t < 1 && u >= 0 && u <= 1) cuts.push(t);
+      }
+    }
+    cuts.sort((x, y) => x - y);
+    for (let c = 0; c + 1 < cuts.length; c++) {
+      const t0 = cuts[c] as number;
+      const t1 = cuts[c + 1] as number;
+      if (t1 <= t0) continue;
+      const from = along(a, b, t0);
+      const to = along(a, b, t1);
+      // A piece's side is its middle's: its ends sit on the shore, where every test is a coin toss.
+      const water = onWater(along(a, b, (t0 + t1) / 2));
+      const prev = pieces[pieces.length - 1];
+      if (prev && prev.water === water) prev.to = to;
+      else pieces.push({ from, to, water });
+    }
+  }
+  return pieces;
+}
+
+/** The near-water vertex nearest the middle of a bridge's span — where a near bridge's label goes. */
+function spanMiddle(near: readonly LatLng[]): LatLng {
+  const lat = near.reduce((s, p) => s + p.lat, 0) / near.length;
+  const lng = near.reduce((s, p) => s + p.lng, 0) / near.length;
   const center = { lat, lng };
-  let best = inWater[0] as LatLng;
-  for (const p of inWater) if (haversineMeters(p, center) < haversineMeters(best, center)) best = p;
+  let best = near[0] as LatLng;
+  for (const p of near) if (haversineMeters(p, center) < haversineMeters(best, center)) best = p;
   return best;
+}
+
+/** The point halfway along a line's water — where a bridge's label belongs, mid-span. */
+function middleOfWater(water: readonly ShorePiece[]): LatLng {
+  const lengths = water.map((p) => haversineMeters(p.from, p.to));
+  let remaining = lengths.reduce((s, l) => s + l, 0) / 2;
+  let i = 0;
+  while (i < water.length - 1 && remaining > (lengths[i] as number)) {
+    remaining -= lengths[i] as number;
+    i++;
+  }
+  const piece = water[i] as ShorePiece;
+  const length = lengths[i] as number;
+  return along(piece.from, piece.to, length === 0 ? 0 : Math.min(1, remaining / length));
 }
 
 /**
  * Every mouth a line has on a body: `in` where it crosses from land onto the water (or ends at the
- * shore), `out` where it leaves (or starts at the shore). The label goes on the water-side vertex.
+ * shore), `out` where it leaves (or starts at the shore). The label goes on the shore, where the line
+ * crosses it — a sparse line's nearest water vertex can be across the pond.
  */
 export function mouthsOf(
   line: readonly LatLng[],
   body: MatchBody,
   radiusM: number,
 ): { point: LatLng; direction: 'in' | 'out' }[] {
-  const wide = expandBBox(body.bbox, radiusM);
-  const inside = line.map(
-    (p) =>
-      p.lat >= wide.minLat &&
-      p.lat <= wide.maxLat &&
-      p.lng >= wide.minLng &&
-      p.lng <= wide.maxLng &&
-      pointInPolygon(p, body.polygon),
-  );
+  const pieces = cutAtShore(line, body);
+  const first = pieces[0];
+  const last = pieces[pieces.length - 1];
+  if (!first || !last) return [];
   const mouths: { point: LatLng; direction: 'in' | 'out' }[] = [];
-  const first = line[0];
-  const last = line[line.length - 1];
-  if (first && !inside[0] && distanceToPolygonMeters(first, body.polygon) <= radiusM) {
-    mouths.push({ point: first, direction: 'out' });
+  if (!first.water && distanceToPolygonMeters(first.from, body.polygon) <= radiusM) {
+    mouths.push({ point: first.from, direction: 'out' });
   }
-  for (let i = 0; i + 1 < line.length; i++) {
-    if (inside[i] === inside[i + 1]) continue;
-    mouths.push(
-      inside[i + 1]
-        ? { point: line[i + 1] as LatLng, direction: 'in' }
-        : { point: line[i] as LatLng, direction: 'out' },
-    );
+  for (let i = 0; i + 1 < pieces.length; i++) {
+    const next = pieces[i + 1] as ShorePiece;
+    mouths.push({ point: next.from, direction: next.water ? 'in' : 'out' });
   }
-  if (
-    last &&
-    line.length > 1 &&
-    !inside[line.length - 1] &&
-    distanceToPolygonMeters(last, body.polygon) <= radiusM
-  ) {
-    mouths.push({ point: last, direction: 'in' });
+  if (!last.water && distanceToPolygonMeters(last.to, body.polygon) <= radiusM) {
+    mouths.push({ point: last.to, direction: 'in' });
   }
   return mouths;
 }
@@ -281,10 +383,14 @@ export function matchLandmark(c: LandmarkCandidate, index: BodyIndex): PlacedLan
     case 'crossing': {
       const out: PlacedLandmark[] = [];
       for (const body of nearby) {
-        const inWater = shape.filter(
-          (p) => distanceToPolygonMeters(p, body.polygon) <= rule.radiusM,
-        );
-        if (inWater.length > 0) out.push(placed(c, body, spanMiddle(inWater)));
+        const water = cutAtShore(shape, body).filter((piece) => piece.water);
+        if (water.length > 0) {
+          out.push(placed(c, body, middleOfWater(water)));
+          continue;
+        }
+        // No span over this water — a node, the bridge at the outlet, the deck OSM cut the water at.
+        const near = shape.filter((p) => distanceToPolygonMeters(p, body.polygon) <= rule.radiusM);
+        if (near.length > 0) out.push(placed(c, body, spanMiddle(near)));
       }
       return out;
     }
@@ -378,6 +484,28 @@ export function mergeSamePlace(
     if (l.name !== twin.name && !twin.aliases.includes(l.name)) twin.aliases.push(l.name);
   }
   return kept;
+}
+
+/**
+ * Did this run read every catalog a body's landmarks could come from? Then its list for the body —
+ * empty included — is the whole of what the catalogs place there, and the importer may retire a
+ * catalog row the list no longer has. A run of every state covers every body (a lake that crosses
+ * into Québec has no other catalog to read); a run of some covers only a body wholly inside them —
+ * a VT run says nothing about the New Hampshire half of a border lake, and a body with no states
+ * recorded is covered by nothing but the full run.
+ */
+export function runCoversBody(
+  bodyStates: readonly string[] | undefined,
+  selected: readonly string[],
+  all: readonly string[],
+): boolean {
+  const ran = new Set(selected.map((s) => s.toLowerCase()));
+  if (all.every((s) => ran.has(s.toLowerCase()))) return true;
+  return (
+    bodyStates !== undefined &&
+    bodyStates.length > 0 &&
+    bodyStates.every((s) => ran.has(s.toLowerCase()))
+  );
 }
 
 /** What a pass placed, and the tallies that say how much it placed from what. */

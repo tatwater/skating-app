@@ -37,6 +37,7 @@ const MAX_CONSECUTIVE_FAILURES = 5;
 interface BodyLine {
   waterBodyId: string;
   landmarks: unknown[];
+  complete?: boolean;
 }
 
 type Counts = Record<
@@ -48,7 +49,9 @@ type Counts = Record<
   | 'overCap'
   | 'bodyNotListed'
   | 'alreadyBay'
-  | 'invalidName',
+  | 'invalidName'
+  | 'dropped'
+  | 'returned',
   number
 >;
 
@@ -57,20 +60,23 @@ type Counts = Record<
  * mutation resolves every candidate to its row before writing, and that holds only within one call:
  * a giant split across two would let a candidate in the second overwrite what the first set, run
  * after run, and a dry run's `created` would miss what an earlier chunk would have inserted. A body
- * over the batch size goes alone (Champlain's ~560 is one call); the write caps it at 1,500.
+ * over the batch size goes alone (Champlain's ~560 is one call); the write caps it at 1,500. An
+ * empty line — a covered body the run placed nothing on — weighs one: it is an index read, and the
+ * body's own read only when it has catalog rows to retire.
  */
 function pack(lines: readonly BodyLine[]): BodyLine[][] {
   const batches: BodyLine[][] = [];
   let current: BodyLine[] = [];
   let size = 0;
   for (const line of lines) {
-    if (current.length > 0 && size + line.landmarks.length > BATCH_LANDMARKS) {
+    const weight = Math.max(1, line.landmarks.length);
+    if (current.length > 0 && size + weight > BATCH_LANDMARKS) {
       batches.push(current);
       current = [];
       size = 0;
     }
     current.push(line);
-    size += line.landmarks.length;
+    size += weight;
   }
   if (current.length > 0) batches.push(current);
   return batches;
@@ -131,6 +137,8 @@ function main(): void {
     bodyNotListed: 0,
     alreadyBay: 0,
     invalidName: 0,
+    dropped: 0,
+    returned: 0,
   };
   let failedBatches = 0;
   let consecutive = 0;
@@ -167,7 +175,7 @@ function main(): void {
     }
     if ((i + 1) % 10 === 0 || i + 1 === batches.length) {
       process.stderr.write(
-        `[landmarks] ${i + 1}/${batches.length} batches — ${totals.created} created · ${totals.updated} updated\n`,
+        `[landmarks] ${i + 1}/${batches.length} batches — ${totals.created} created · ${totals.updated} updated · ${totals.dropped} dropped\n`,
       );
     }
   }
@@ -179,7 +187,7 @@ function main(): void {
   logger.stage({
     name: 'load',
     detail:
-      'landmarks:importBatch — upsert by upstream id or same name nearby; holds removed and moderator rows',
+      'landmarks:importBatch — upsert by upstream id or same name nearby; holds removed and moderator rows; retires catalog rows a complete line no longer places',
     input: inputPath,
     output: target.label,
     counts: Object.entries(totals).map(([name, value]) => ({ name, value })),

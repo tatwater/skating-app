@@ -3,6 +3,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   BodyIndex,
+  cutAtShore,
   keepStandaloneEstablishments,
   type MatchBody,
   matchLandmark,
@@ -10,6 +11,7 @@ import {
   mouthsOf,
   type PlacedLandmark,
   placeLandmarks,
+  runCoversBody,
 } from './landmarkMatch';
 import type { LandmarkCandidate } from './landmarkSource';
 
@@ -175,7 +177,9 @@ describe('matchLandmark', () => {
       candidate('Lake Bridge', 'bridge', line[1] as LatLng, { line }),
       index,
     );
-    expect(bridge?.point).toEqual({ lat: 44.09, lng: -73.098 });
+    // Half of the 0.003° of it that is over the water, which starts at the shore (-73.1).
+    expect(bridge?.point.lat).toBe(44.09);
+    expect(bridge?.point.lng).toBeCloseTo(-73.0985, 9);
     const dry = [
       { lat: 44.09, lng: -73.2 },
       { lat: 44.09, lng: -73.19 },
@@ -201,7 +205,80 @@ describe('matchLandmark', () => {
       'osm:node/Otter Creek#in0',
       'osm:node/Otter Creek#out1',
     ]);
-    expect(mouths.map((m) => m.point.lng)).toEqual([-73.09, -73.01]);
+    // On the shore, where the river crosses it — not the nearest vertex on the water.
+    expect(mouths.map((m) => m.point.lng)).toEqual([-73.1, -73.0]);
+  });
+
+  it('finds a bridge whose two vertices are both on the banks', () => {
+    // Spans the pond (-72.99 … -72.985) with no vertex on the water.
+    const line = [
+      { lat: 44.052, lng: -72.9905 },
+      { lat: 44.052, lng: -72.9845 },
+    ];
+    const placedOn = matchLandmark(
+      candidate('Pond Bridge', 'bridge', line[0] as LatLng, { line }),
+      index,
+    );
+    expect(placedOn.map((l) => l.waterBodyId)).toEqual(['pond']);
+    expect(placedOn[0]?.point.lng).toBeCloseTo(-72.9875, 9);
+  });
+
+  it('measures a span over an island by its water alone', () => {
+    // 0.005° of water, the 0.02° island, then 0.02° of water: the middle of the water is in the second.
+    const line = [
+      { lat: 44.05, lng: -73.065 },
+      { lat: 44.05, lng: -73.02 },
+    ];
+    const [bridge] = matchLandmark(
+      candidate('Island Bridge', 'bridge', line[0] as LatLng, { line }),
+      index,
+    );
+    expect(bridge?.point.lng).toBeCloseTo(-73.0325, 6);
+  });
+
+  it('keeps a bridge whose span stops just short of the water, at its nearest vertex', () => {
+    // The outlet bridge, or a deck OSM cut the water at: 10 m off the west shore, then away from it.
+    const line = [
+      { lat: 44.05, lng: -73.10013 },
+      { lat: 44.05, lng: -73.1005 },
+      { lat: 44.05, lng: -73.11 },
+    ];
+    const placedOn = matchLandmark(
+      candidate('Outlet Bridge', 'bridge', line[1] as LatLng, { line }),
+      index,
+    );
+    expect(placedOn.map((l) => l.waterBodyId)).toEqual(['lake']);
+    expect(placedOn[0]?.point).toEqual(line[0]);
+    const off = [
+      { lat: 44.05, lng: -73.1005 },
+      { lat: 44.05, lng: -73.11 },
+    ];
+    expect(
+      matchLandmark(candidate('Inland Bridge', 'bridge', off[0] as LatLng, { line: off }), index),
+    ).toEqual([]);
+  });
+
+  it('places a bridge drawn as a node by its distance to the water', () => {
+    const near = candidate('Node Bridge', 'bridge', { lat: 44.052, lng: -72.9901 });
+    expect(matchLandmark(near, index).map((l) => l.waterBodyId)).toEqual(['pond']);
+    const far = candidate('Far Bridge', 'bridge', { lat: 44.052, lng: -72.992 });
+    expect(matchLandmark(far, index)).toEqual([]);
+  });
+
+  it('finds both mouths of a stream drawn straight across a pond', () => {
+    const line = [
+      { lat: 44.052, lng: -72.995 },
+      { lat: 44.052, lng: -72.98 },
+    ];
+    const mouths = matchLandmark(
+      candidate('Pond Brook', 'waterway', line[0] as LatLng, { line }),
+      index,
+    ).filter((m) => m.waterBodyId === 'pond');
+    expect(mouths.map((m) => m.externalIds[0])).toEqual([
+      'osm:node/Pond Brook#in0',
+      'osm:node/Pond Brook#out1',
+    ]);
+    expect(mouths.map((m) => Math.round(m.point.lng * 1e6) / 1e6)).toEqual([-72.99, -72.985]);
   });
 
   it('returns nothing for a candidate with no body near it', () => {
@@ -211,6 +288,45 @@ describe('matchLandmark', () => {
     expect(
       matchLandmark(candidate('Hills', 'settlement', { lat: 44.05, lng: -73.3 }), index),
     ).toEqual([]);
+  });
+});
+
+describe('cutAtShore', () => {
+  it('cuts a line at every shore it crosses, island rings included, and joins same-side pieces', () => {
+    // West to east through the lake and across the island's hole in its middle.
+    const line = [
+      { lat: 44.05, lng: -73.11 },
+      { lat: 44.05, lng: -73.08 },
+      { lat: 44.05, lng: -73.07 },
+      { lat: 44.05, lng: -72.99 },
+    ];
+    const pieces = cutAtShore(line, LAKE);
+    expect(pieces.map((p) => p.water)).toEqual([false, true, false, true, false]);
+    expect(pieces.map((p) => Math.round(p.from.lng * 1e6) / 1e6)).toEqual([
+      -73.11, -73.1, -73.06, -73.04, -73.0,
+    ]);
+  });
+
+  it('returns no pieces for a single vertex, and one land piece for a line nowhere near', () => {
+    expect(cutAtShore([{ lat: 44.05, lng: -73.05 }], LAKE)).toEqual([]);
+    expect(
+      cutAtShore(
+        [
+          { lat: 45, lng: -73.2 },
+          { lat: 45, lng: -73.15 },
+        ],
+        LAKE,
+      ).map((p) => p.water),
+    ).toEqual([false]);
+  });
+
+  it('does not cut where a line only touches the shore at a vertex', () => {
+    const line = [
+      { lat: 44.12, lng: -73.11 },
+      { lat: 44.1, lng: -73.1 },
+      { lat: 44.12, lng: -73.09 },
+    ];
+    expect(cutAtShore(line, LAKE).map((p) => p.water)).toEqual([false]);
   });
 });
 
@@ -427,5 +543,22 @@ describe('placeLandmarks', () => {
         .sort(),
     ).toEqual(['Gull Island', 'Lakeside']);
     expect(byBody.get('pond')?.map((l) => l.name)).toEqual(['Lakeside']);
+  });
+});
+
+describe('runCoversBody', () => {
+  const all = ['vt', 'nh', 'me', 'ma', 'ny'];
+
+  it('covers every body on a run of every state, whatever its states say', () => {
+    expect(runCoversBody(['VT', 'QC'], all, all)).toBe(true);
+    expect(runCoversBody(undefined, [...all].reverse(), all)).toBe(true);
+  });
+
+  it('covers only a body wholly inside a partial run', () => {
+    expect(runCoversBody(['VT'], ['vt'], all)).toBe(true);
+    expect(runCoversBody(['NY', 'VT'], ['vt'], all)).toBe(false);
+    expect(runCoversBody(['NY', 'VT'], ['vt', 'ny'], all)).toBe(true);
+    expect(runCoversBody(undefined, ['vt'], all)).toBe(false);
+    expect(runCoversBody([], ['vt'], all)).toBe(false);
   });
 });

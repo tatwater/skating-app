@@ -2711,6 +2711,9 @@ export default defineSchema({
    * moderator on the lake editor. A moderator's edit sets `moderatorEditedAt`, after which a re-run
    * of the ETL adds ids and aliases but leaves the name, kind and point as the moderator left them —
    * the `official` put-in discipline. A removal is soft (`removedAt`) so a re-run never resurrects it.
+   * A catalog row a later run no longer places on the body is retired the same way, with
+   * `catalogDroppedAt` saying it was the catalogs, not a person — so a run that places it again
+   * brings it back.
    */
   bodyLandmarks: defineTable({
     waterBodyId: v.id('waterBodies'),
@@ -2737,6 +2740,8 @@ export default defineSchema({
     reportCount: v.optional(v.number()),
     moderatorEditedAt: v.optional(v.number()),
     removedAt: v.optional(v.number()),
+    /** Set with `removedAt` when a complete ETL run no longer placed this catalog row here. */
+    catalogDroppedAt: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')),
     lastCampaignId: v.optional(v.string()),
     createdAt: v.number(),

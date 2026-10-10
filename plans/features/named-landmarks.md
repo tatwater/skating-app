@@ -135,6 +135,16 @@ moderator's worklist and the proposal lane's first customers.
 - *A re-run must be able to forget* — the importer first unioned stored and incoming spellings, so a
   spelling a later run dropped could never leave; and two candidates for one row took turns
   overwriting it. It now resolves every candidate to its row first and writes each row once.
+- *A re-run must be able to forget a place, too* (Greptile on #83) — a feature a later run no longer
+  placed on a lake stayed labeled forever. A run now marks each body it fully covers `complete`
+  (an empty line if it placed nothing) and the import retires the catalog rows such a line lacks.
+- *Bridges are drawn sparse, and stop at the shore* (Greptile on #83, measured 2026-10-10) — the
+  vertex test missed a span with one vertex on each bank, so lines are now cut against the shore by
+  segment. Requiring a true crossing would have dropped 30 of 103 bridges, nearly all the bridge at
+  a lake's outlet or a deck OSM split the water at (vertices 0–1 m off it on both sides), so a span
+  within 25 m still counts. River mouths gain 49 labels (9,501 → 9,550), placed on the shore line.
+- *A merge must carry the labels* (Greptile on #83) — `mergeBodyInto` moved every other child but
+  left landmarks on the tombstone. They move now, folded into the survivor's twins.
 - *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
   Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
 

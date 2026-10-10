@@ -97,6 +97,7 @@ import {
   WATER_BODY_SOURCES,
 } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
+import { repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -2953,7 +2954,7 @@ export const reject = mutation({
 /**
  * Moderator: merge a duplicate water body into a survivor (D36) — the missing dedup mutation. Re-points
  * **every** body-keyed child (`reports`/`hazards`/`bounties`/`bodyFeatures`/`putIns`/
- * `waterBodyFavorites`) from the loser to the survivor, then soft-tombstones the loser
+ * `waterBodyFavorites`/`waterBodySubAreas`/`bodyLandmarks`) from the loser to the survivor, then soft-tombstones the loser
  * (`dedupStatus: merged` + `mergedIntoId`) so read paths follow the chain to the survivor and
  * `isListed` drops it off the map. Never a hard delete (reversible in spirit with the D15/D33 ethos);
  * audits `merge_waterbody` with the re-pointed counts.
@@ -3096,6 +3097,9 @@ export async function mergeBodyInto(
     // still named on every report this merge just moved to the survivor. Re-clipped against the
     // survivor's outline on the way, since near-identical is what made these a duplicate pair.
     const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actorId);
+    // Landmarks too (D202), after the bays: folded into the survivor's twins, then checked against
+    // the survivor's bays — the merged set of both lakes' — for a label a bay now names.
+    const landmarks = await repointLandmarksOnMerge(ctx, loserId, survivorId, actorId);
 
     const repointed = {
       reports: reports.length,
@@ -3107,6 +3111,10 @@ export async function mergeBodyInto(
       favoritesDeduped,
       subAreas: subAreas.repointed,
       subAreasDelisted: subAreas.delisted,
+      landmarks: landmarks.repointed,
+      landmarksFolded: landmarks.folded,
+      landmarksOverCap: landmarks.overCap,
+      landmarksRetiredAsBay: landmarks.retiredAsBay,
     };
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats

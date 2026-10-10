@@ -9,9 +9,11 @@
  *   pnpm --filter @skating/etl landmarks --refresh             # re-run osmium
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *
- * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }` —
- * plus `summary.json`, and the corpus names nothing matched to `corpus-unmatched.csv`. Then
- * `load-landmarks` writes them, dry unless `--apply`.
+ * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks,
+ * complete }`, with an empty line for every body the run covers but placed nothing on, so the loader
+ * retires what the catalogs stopped placing (`runCoversBody`) — plus `summary.json`, and the corpus
+ * names nothing matched to `corpus-unmatched.csv`. Then `load-landmarks` writes them, dry unless
+ * `--apply`.
  *
  * ## The one deployment read
  *
@@ -31,7 +33,7 @@ import type { Feature } from 'geojson';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
 import { applyCorpus, parseMentions } from './landmarkCorpus';
-import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
+import { BodyIndex, type MatchBody, placeLandmarks, runCoversBody } from './landmarkMatch';
 import {
   dedupeOsmById,
   type LandmarkCandidate,
@@ -228,13 +230,19 @@ async function main(): Promise<void> {
   const byKind: Record<string, number> = {};
   const perBody: number[] = [];
   const out: string[] = [];
-  for (const [waterBodyId, landmarks] of byBody) {
-    perBody.push(landmarks.length);
+  let covered = 0;
+  for (const body of bodies) {
+    const landmarks = byBody.get(body.id) ?? [];
+    const complete = runCoversBody(body.states, selected, ALL_STATES);
+    if (complete) covered++;
+    if (landmarks.length === 0 && !complete) continue;
+    if (landmarks.length > 0) perBody.push(landmarks.length);
     for (const l of landmarks) byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
     out.push(
       JSON.stringify({
-        waterBodyId,
+        waterBodyId: body.id,
         landmarks: landmarks.map(({ waterBodyId: _, ...rest }) => rest),
+        complete,
       }),
     );
   }
@@ -246,6 +254,7 @@ async function main(): Promise<void> {
     bySource,
     ...counts,
     bodiesWithLandmarks: byBody.size,
+    bodiesCovered: covered,
     byKind,
     largestBodies: perBody.slice(0, 10),
     ...(corpus
