@@ -20,7 +20,6 @@
 
 import {
   LANDMARK_KINDS,
-  type LandmarkKind,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,

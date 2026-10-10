@@ -20,7 +20,7 @@ import {
   assertNotABayName,
   assertNotDuplicate,
   auditLandmark,
-  landmarksForBody,
+  liveLandmarksForBody,
 } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { literals } from './lib/validators';
@@ -364,7 +364,7 @@ export const fileAsSpelling = mutation({
     // The checks an edit runs: never a bay's name, never the same place as another landmark.
     await assertNotABayName(ctx, landmark.waterBodyId, [row.name, ...row.aliases]);
     assertNotDuplicate(
-      await landmarksForBody(ctx, landmark.waterBodyId),
+      await liveLandmarksForBody(ctx, landmark.waterBodyId),
       { ...landmark, aliases },
       landmark._id,
     );

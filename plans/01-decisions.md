@@ -6260,7 +6260,7 @@ business stands within 250 m; a camp, resort or hotel always (founder, 2026-09-2
 shoreline and outlast their signs). The community corpus contributes spellings and a mention count,
 and only where one landmark answers. The pass is the last stage of every corpus campaign
 (`run-corpus.sh`, founder 2026-09-29): new bodies get their names with the build, applied like the
-bodies themselves, since the load is additive and never overrides a moderator. A moderator adds what no catalog has ("Bird Poop Rock"), and —
+bodies themselves, since the load never overrides a moderator and what it retires comes back with the catalogs. A moderator adds what no catalog has ("Bird Poop Rock"), and —
 the proposal lane — so will skaters.
 
 **What a re-run and a merge do.** A run of every state is the whole of what the catalogs place: a

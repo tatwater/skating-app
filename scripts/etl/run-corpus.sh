@@ -20,8 +20,9 @@
 # **Landmarks ride the campaign (D202).** After the bodies and the bays, the landmark pass matches
 # OSM + GNIS to the bodies just loaded (it re-exports their outlines — new bodies need their names
 # too) and loads them, then loads the community corpus's unplaced names into the moderator queue
-# (/admin/water/place-names). Applied, like the bodies: both loads are additive and idempotent, a
-# moderator's edits and removals survive them, and a decided queue name is never reopened. The
+# (/admin/water/place-names). Applied, like the bodies: both loads are idempotent (what the landmark
+# load retires comes back with the catalogs), a moderator's edits and removals survive them, and a
+# decided queue name is never reopened. The
 # corpus inventory is gitignored input; the default path is the one the inventory tool writes, and
 # a campaign without it must say `--without-corpus` (a landmark load without the corpus would
 # erase every corpus count). `--skip-landmarks` leaves the stage out.

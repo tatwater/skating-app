@@ -13,7 +13,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { landmarksForBody } from './landmarkRows';
+import { liveLandmarksForBody } from './landmarkRows';
 import { literals } from './validators';
 
 /** Cap on the moderator queue read — and the page a decision drains siblings by. */
@@ -328,7 +328,7 @@ export async function namedLandmark(
   waterBodyId: Id<'waterBodies'>,
   names: readonly string[],
 ): Promise<Doc<'bodyLandmarks'> | null> {
-  return matchLandmark(await landmarksForBody(ctx, waterBodyId), names);
+  return matchLandmark(await liveLandmarksForBody(ctx, waterBodyId), names);
 }
 
 /**

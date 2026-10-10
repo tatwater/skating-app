@@ -64,7 +64,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { syncWaterBodyCells } from './lib/cellIndex';
-import { landmarksForBody } from './lib/landmarkRows';
+import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import {
   closeSiblingPage,
@@ -497,7 +497,7 @@ export const listQueue = query({
     const landmarksOf = async (waterBodyId: Id<'waterBodies'>) => {
       const known = landmarksByBody.get(waterBodyId);
       if (known) return known;
-      const rows = await landmarksForBody(ctx, waterBodyId);
+      const rows = await liveLandmarksForBody(ctx, waterBodyId);
       landmarksByBody.set(waterBodyId, rows);
       return rows;
     };
@@ -840,7 +840,7 @@ export const openLandmarkRequestsForBody = query({
       });
     }
     // The body's landmarks read once, however many places are proposed.
-    const landmarks = await landmarksForBody(ctx, waterBodyId);
+    const landmarks = await liveLandmarksForBody(ctx, waterBodyId);
     const out = [];
     for (const entry of byKey.values()) {
       const existing = matchLandmark(landmarks, [entry.name]);

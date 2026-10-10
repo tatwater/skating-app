@@ -486,7 +486,7 @@ export async function placeCorpusName(
   actorId: Id<'profiles'>,
 ): Promise<void> {
   const row = await ctx.db.get(id);
-  if (!row || row.status !== 'open') {
+  if (row?.status !== 'open') {
     throw new ConvexError('That name has already been placed or dismissed');
   }
   if (row.waterBodyId !== undefined && row.waterBodyId !== landmark.waterBodyId) {
