@@ -1,6 +1,6 @@
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { createPostDraft, createReportDraft, type DraftPhoto } from './draftQueue';
+import { createPostDraft, createReportDraft, type DraftPhoto, revivePostDraft } from './draftQueue';
 import {
   addEarlierVisit,
   addLake,
@@ -21,6 +21,7 @@ import {
   removeReport,
   reportEndMs,
   reportsInTimeOrder,
+  revivePostSheet,
   SHEET_SECTION_COUNT,
   type SheetReport,
   sectionsFilled,
@@ -31,7 +32,7 @@ import {
   updateReport,
 } from './postSheet';
 import { emptyReportForm } from './reportForm';
-import { selectedValues, sheetReducer } from './reportSheet';
+import { type ReportSheetState, selectedValues, sheetReducer, toReportInput } from './reportSheet';
 
 const NOW = Date.UTC(2026, 0, 10, 20);
 let seq = 0;
@@ -249,6 +250,47 @@ describe('toPostDraft / postSheetFromDraft — the round trip', () => {
         NOW,
       ),
     ).toBeNull();
+  });
+});
+
+describe('revivePostSheet / revivePostDraft — what an earlier build stored (D210)', () => {
+  /** A Report's chips as a pre-D210 build wrote them: `sighting`, single-select, no `sightings`. */
+  function beforeD210(sheet: ReportSheetState): ReportSheetState {
+    const { sightings: _absent, ...fields } = sheet.fields;
+    const sighting = { chips: [{ key: 'open', value: 'open', tier: 'solid' }], multi: false };
+    return {
+      ...sheet,
+      fields: { ...fields, sighting: { ...sighting, touched: true } },
+    } as unknown as ReportSheetState;
+  }
+
+  it('brings every stored Report to this build’s fields, keeping the sighting chosen', () => {
+    const post = filled(
+      openPostSheet('body', { waterBodyId: 'wb1', bodyName: 'Morey' }, NOW, mint),
+    );
+    const stored: PostSheet = {
+      ...post,
+      reports: post.reports.map((r) => ({ ...r, sheet: beforeD210(r.sheet) })),
+    };
+    const revived = revivePostSheet(stored);
+    const sheet = revived.reports[0]?.sheet as ReportSheetState;
+    expect(toReportInput(sheet).sightings).toEqual([{ type: 'open' }]);
+    // A current sheet, and a pre-sheet form draft, come back as they were.
+    expect(revivePostSheet(post)).toBe(post);
+    const queued = toPostDraft(stored, 'pending', NOW);
+    const draft = revivePostDraft(queued);
+    expect(draft).not.toBe(queued);
+    expect(selectedValues(draft.reports[0]?.sheet as ReportSheetState, 'sightings')).toEqual([
+      { type: 'open' },
+    ]);
+    expect(revivePostDraft(draft)).toBe(draft);
+    const formDraft = createPostDraft({
+      id: 'd1',
+      idempotencyKey: 'k1',
+      now: NOW,
+      reports: [createReportDraft({ id: 'r1', idempotencyKey: 'rk1', form: emptyReportForm(NOW) })],
+    });
+    expect(revivePostDraft(formDraft)).toBe(formDraft);
   });
 });
 

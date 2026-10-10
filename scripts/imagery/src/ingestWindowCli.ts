@@ -29,7 +29,12 @@ import process from 'node:process';
 // `ingestGate` lives in core rather than beside this CLI: the same gate now runs from a Convex cron
 // that watches for the season opening (`convex/imageryIngest.ts`), and a second copy of a threshold
 // is a second chance to disagree about when winter started.
-import { ingestWindow, type SiteSeries } from '@skating/core';
+import {
+  approximateUtcOffsetSeconds,
+  dailyLowsFromHourly,
+  ingestWindow,
+  type SiteSeries,
+} from '@skating/core';
 
 import { findLatestMasks, flag } from './cli';
 
@@ -103,28 +108,41 @@ function sampleSites(fgbPath: string, wanted: number): Site[] {
   return sentinel ? [sentinel, ...sampled] : sampled;
 }
 
-/** One Open-Meteo call for every site — it takes comma-separated coordinate lists. */
+/**
+ * One Open-Meteo call for every site — it takes comma-separated coordinate lists.
+ *
+ * Hourly readings cut into local days by `dailyLowsFromHourly`, the same function the Convex watcher
+ * uses, so the CLI and the cron agree on what a day is. (This used to ask for UTC days while the cron
+ * asked for Open-Meteo's local ones, which are themselves wrong across a DST change.)
+ */
 async function fetchLows(sites: Site[], pastDays: number): Promise<SiteSeries[]> {
   const url = new URL(OPEN_METEO_URL);
   url.searchParams.set('latitude', sites.map((s) => s.lat.toFixed(4)).join(','));
   url.searchParams.set('longitude', sites.map((s) => s.lng.toFixed(4)).join(','));
-  url.searchParams.set('daily', 'temperature_2m_min');
+  url.searchParams.set('hourly', 'temperature_2m');
   url.searchParams.set('past_days', String(Math.min(MAX_PAST_DAYS, pastDays)));
   url.searchParams.set('forecast_days', '1');
-  url.searchParams.set('timezone', 'UTC');
+  url.searchParams.set('timezone', 'auto');
+  url.searchParams.set('timeformat', 'unixtime');
 
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Open-Meteo ${response.status} ${response.statusText}`);
-  const body = (await response.json()) as
-    | { daily: { time: string[]; temperature_2m_min: (number | null)[] } }
-    | { daily: { time: string[]; temperature_2m_min: (number | null)[] } }[];
+  type Block = {
+    timezone?: string;
+    utc_offset_seconds?: number;
+    hourly?: { time?: (number | null)[]; temperature_2m?: (number | null)[] };
+  };
+  const body = (await response.json()) as Block | Block[];
   const blocks = Array.isArray(body) ? body : [body];
 
   return blocks.map((block, i) => {
     const site = sites[i] as Site;
-    const days = block.daily.time
-      .map((date, d) => ({ date, minTempC: block.daily.temperature_2m_min[d] }))
-      .filter((d): d is { date: string; minTempC: number } => d.minTempC !== null);
+    const days = dailyLowsFromHourly(
+      block.hourly?.time ?? [],
+      block.hourly?.temperature_2m ?? [],
+      block.timezone || null,
+      block.utc_offset_seconds ?? approximateUtcOffsetSeconds(site.lng),
+    );
     return { siteId: site.siteId, ...(site.sentinel ? { sentinel: true } : {}), days };
   });
 }

@@ -18,10 +18,11 @@
  * for part of the window. Deriving calendar days by dividing that shifted value by 86 400 000 would
  * quietly misfile an hour on either side of the change.
  *
- * So the archive fetch asks Open-Meteo for `timeformat=iso8601`, which returns local wall-clock
- * strings, and every hour arrives here already carrying the **local date and hour the lake actually
- * experienced**. No offset arithmetic happens in this file at all, which is the only way to be
- * DST-correct without a timezone database.
+ * So every hour arrives here already carrying the **local date and hour the lake actually
+ * experienced**, stamped by {@link localStampAt} from a `unixtime` instant and the lake's IANA zone,
+ * hour by hour. ⚠ **Not from Open-Meteo's `iso8601` strings.** This note used to say those were
+ * DST-correct; they are not — Open-Meteo applies the request-time offset to every hour in a response
+ * (verified 2026-09-30), so the zone, which carries the transition instants, has to do the stamping.
  *
  * ## Two temperature minima, deliberately
  *
@@ -35,6 +36,7 @@
 import type { HourlyWeather } from './weather';
 
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 
 /**
  * The night that *ended* on a given morning: from 18:00 the previous evening to 09:00 that day.
@@ -200,6 +202,35 @@ export function utcOffsetSecondsAt(instantMs: number, timeZone: string): number 
 }
 
 /**
+ * The lake's wall clock at an instant — its local date and hour.
+ *
+ * ⚠ **Open-Meteo's own local stamps cannot answer this.** Under `timezone=auto` it applies the offset
+ * in force *when the request is made* to every hour in the response, and never switches at a
+ * transition. Verified 2026-09-30 against the forecast, archive and historical-forecast endpoints: a
+ * September fetch labels `2025-12-23T11:00Z` as `07:00` (EDT, an hour late for a December morning),
+ * and runs straight through 2025-11-02 without repeating an hour. A 92-day backfill that crosses a
+ * DST change therefore misfiles every hour on the far side of it. Ask for `unixtime` and stamp here,
+ * where the zone carries the transition instants.
+ *
+ * Fall-back yields two hours stamped `01` and spring-forward none stamped `02` — the 25- and 23-hour
+ * days {@link COMPLETE_DAY_MIN_HOURS} already allows for.
+ *
+ * `fallbackOffsetSeconds` is used when `timeZone` is null or the runtime rejects it.
+ */
+export function localStampAt(
+  instantMs: number,
+  timeZone: string | null,
+  fallbackOffsetSeconds: number,
+): { localDate: string; localHour: number } | null {
+  if (!Number.isFinite(instantMs)) return null;
+  const offset =
+    (timeZone === null ? null : utcOffsetSecondsAt(instantMs, timeZone)) ?? fallbackOffsetSeconds;
+  const dayMs = localDayMsAt(instantMs, offset);
+  const localHour = Math.floor((instantMs + offset * 1000 - dayMs) / HOUR_MS);
+  return { localDate: dayMsToLocalDate(dayMs), localHour };
+}
+
+/**
  * Hours below which a stored day is **still in progress**, not a finished observation.
  *
  * ⚠ **Not `=== 24`.** DST days are 23 or 25 hours long and both transitions fall inside a Northeast
@@ -311,7 +342,7 @@ export const MELT_MM_PER_DEGREE_HOUR = 0.25;
 
 /** An hourly observation that knows what local day and hour it happened on. */
 export interface LocalHourlyWeather extends HourlyWeather {
-  /** Local calendar date as Open-Meteo returned it under `timezone=auto`, `YYYY-MM-DD`. */
+  /** Local calendar date at the lake, `YYYY-MM-DD` — stamped by {@link localStampAt}. */
   localDate: string;
   /** Local hour of day, 0–23. */
   localHour: number;

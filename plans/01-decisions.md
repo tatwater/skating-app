@@ -5973,6 +5973,10 @@ create — the sheet, the pre-sheet forms on both surfaces, and the offline queu
 one path (`lib/reportWrite.ts`) and one sentence (`minimumSetMessage`), so no two entrances answer
 the rule differently. The pre-sheet forms ask it client-side before posting and say what to add.
 
+**Amended 2026-09-29 (D210):** the scouting term is now any of the Report's **located sightings**,
+and a sighting is no longer from-shore only — from the ice it may name a part of the body the author
+saw but did not skate.
+
 **Why:** the founder wants the structured data that helps other skaters without making the
 no-AI path hostile. Making the floor identical regardless of engine means opting out costs four
 taps, not the ability to write. The set may be tuned as the flow is used.
@@ -6377,3 +6381,102 @@ leak, and testing mode's seven-day refresh-token expiry never bites the alpha.
 filter. An iPhone that backs up to Google Photos has no door to it yet.
 
 **Related:** D31, D42, A10-7, `oauthStates` (shared with Strava's connection).
+
+## D208 — `air_pockets` is a hazard type, and cold earns it no faster fade (A10-9)
+
+**Decided (2026-09-29, founder call from the first verified eval labels).** Air trapped under the
+sheet at freeze-up is its own hazard type, `air_pockets` ("Air pockets"), not `shell_area`. Shell
+ice is a crust left when a puddle drains after a thaw; an air pocket is a void the ice formed over,
+some "big enough to swallow you whole" (a group leader, Little Sunapee, 2024-12-15). Tier B on the
+base clock (fresh 72 h, aging 168 h), like shell ice; point-and-radius at 40 m; clusters with the
+`crack` family and never promotes. Its **weather response is its own class, `insulated`**: air
+insulates the ice over a pocket from the water that would thicken it, so a cold snap earns the pin
+no faster fade (no cold term at all) — `refreeze_healed`, shell ice's class, would fade it, and that
+is the direction sign-flip 1 exists to forbid — while a thaw thins the lid over the void and keeps
+the warning up with shell ice's thaw strength. The stale-pin copy says so: cold since may not have
+thickened it at all.
+
+**Why:** the extraction had nowhere honest to put it; it chose `shell_area`, and the founder
+rejected that. The decay call follows the one physical fact the corpus gives — "since air is an
+insulator, the ice in these pockets will thicken very slowly if at all".
+
+**Related:** D51, D52, D56, `hazardWeatherDecay.ts`, A10 §1.
+
+## D209 — `large_areas` joins the `where` extents, between `mostly` and `patches` (A10-9)
+
+**Decided (2026-09-29, founder call from the first verified eval labels).** `WHERE_EXTENTS` is
+`whole` · `mostly` · `large_areas` · `patches`, most to least. "Several hundred acres of thin ice"
+on a 3,000-acre lake is neither scattered spots nor most of the lake; tagged `patches`, it undersold
+a hazard, which is the dangerous direction of error. A `large_areas` claim does not cover the body
+(`whereCoversBody`), exactly like `patches`. The sheet's where-picker offers it as *Large areas*.
+
+**Related:** D193, `where.ts`.
+
+## D210 — A sighting is located, and the ice may see a part of the lake; a Report stays one vantage (A10-9)
+
+**Decided (2026-09-29, from the founder's first verified eval labels; the founder left the shape to
+this build, open to a larger refactor).** `reports.sighting` (one value, off the ice only) becomes
+`reports.sightings`: a list of `{ type, where?, note? }` like the located chips, labeled *Still
+open, south end*. From shore or secondhand any sighting may be given, located or not. **From the ice
+a sighting must be located to a part of the body that does not cover it** (`sightingAllowedFrom`,
+`whereCoversBody`) — the open south end seen from the road on the way to a north launch, the ice
+"from Rocky Point to Kimball's Point" beside the stretch the author drilled. A whole-body sighting
+from the ice is still refused: that is a surface chip. The sheet offers the row from every vantage;
+from the ice it reads *What did you see but not skate?* and a tap opens the where question at once,
+the one chip whose where is required.
+
+**The Report stays the observation unit: one body, one visit, one vantage, one time.** The founder
+asked whether a Post › Report › Observation hierarchy, with a vantage and a time per observation,
+would model the email corpus better. It would add nothing a Report does not already carry — a
+different time is already a different Report (the fisher's "open water yesterday" is a secondhand
+Report on yesterday), and a different place is already a `where` on the value. What was missing
+was a way to say *seen, not skated* for part of a lake, and a located sighting says exactly that.
+Per-value vantage was the other candidate and was rejected: it needs a vantage control on every
+chip on both surfaces, or an extracted value the author cannot correct, which D196 forbids.
+
+**Dangerous states seen at a distance stay hazards.** Open water or skim at the south end is also
+an `open_water` / `thin_ice` hazard with a `where` — map-visible, decaying, warning (D3,
+safety-first); the sighting is the reader's line, the hazard is the pin.
+
+**Mechanics:** widened beside `sighting`, lifted by `reports.backfillA10Shapes`, narrowed away; the
+mutation args accept the single `sighting` forever (an un-updated phone, a queued draft) and refuse
+a client that sends both. The feed card and the detail show every sighting with its place.
+
+**Amended 2026-09-29 (the PR #82 review):** the pin is **derived on the server**, not left to the
+engine or the author. At create — and on an edit, for the sightings it adds — every located
+`open` / `skim` sighting writes an `open_water` / `thin_ice` hazard with the Report as provenance
+(`deriveSightingHazards`, core `sightingHazardShape`): a compass wedge or the middle is that part
+of the outline, a bay the bay, a tapped point its circle, drawn large on purpose. The whole lake
+"still open", `near_shore` and an extent alone name no shape and derive nothing. Skipped where the
+author drew one of that type touching it, and for an author whose hazard posting is restricted
+(the sighting still posts). The sheet says so under the row. **A sighting type may be said of
+several places** (`open` and `open#2`), as may an ice or surface chip: *Another place* on the where
+card, and deselecting the chip takes every place.
+
+**Related:** D3, D189 (amended), D191, D193, D196.
+
+## D211 — Extraction reads observations only; a fact about the body is `aboutBody` (A10-9)
+
+**Decided (2026-09-29, founder call from the first verified eval labels).** Two things the
+contract (D196) now says outright:
+
+- **A report is an observation of a body on one visit** — the author's, or relayed from someone who
+  was there. A season summary, a list of lakes skated, an invitation, a plan, a forecast or
+  prediction, a question, gear advice, and anything in a quoted or forwarded earlier message are
+  not observations and yield no report, even when they name a lake. An invitation that says "the
+  ice is smooth this morning" still yields that one value. A different day is a different visit,
+  relayed or not. Weather is never a value.
+- **A fact about the body rather than the visit is `aboutBody`** — `{ bodyRef, topic, evidence }`
+  with the topic one of `parking` · `access` · `feature` · `character` · `other`: "limited parking
+  at the launch spot", "notorious for thin ice because of stream inflows", "a two-minute level walk
+  from the parking lot". It is returned from any text, a report or not, and is **stored nowhere
+  yet**: the corpus replay collects it and a moderator queue will decide what reaches a body's page
+  (after A10). It is not a Report value, which would decay with the visit, and not a miss, because
+  there is a place for it.
+
+**Why:** the founder's first ten verified emails included two group-leader digests the engines
+turned into eleven and one reports (every value rejected), a forecast read as a snow depth, and
+parking, access and inflow facts the contract had nowhere to put — "use these emails to make the
+corpus stronger, not just feed reports".
+
+**Related:** D3, D186, D196, D200, A06d.

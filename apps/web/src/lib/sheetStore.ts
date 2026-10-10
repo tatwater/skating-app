@@ -23,7 +23,13 @@
  * sheet from taking a change the server's idempotent create would silently drop.
  */
 
-import { type PostDraft, type PostSheet, postCreateSent } from '@skating/core';
+import {
+  type PostDraft,
+  type PostSheet,
+  postCreateSent,
+  revivePostDraft,
+  revivePostSheet,
+} from '@skating/core';
 import { useSyncExternalStore } from 'react';
 import { releaseAllSheetPhotos } from './sheetPhotos';
 
@@ -152,7 +158,12 @@ export function readStoredSheet(now: number): StoredSheet | null {
     }
     if (now - sheet.openedAtMs > STORED_MAX_AGE_MS) return null;
     const stored = parsed.attempt;
-    return { sheet, attempt: stored?.id === sheet.draftId ? stored : null };
+    // A sheet an earlier build stored carries that build's fields (D210 renamed one); every reader
+    // indexes this build's, so the record is revived before anything reads it.
+    return {
+      sheet: revivePostSheet(sheet),
+      attempt: stored?.id === sheet.draftId ? revivePostDraft(stored) : null,
+    };
   } catch {
     return null;
   }

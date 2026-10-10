@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { LegacyReportDraft } from '@skating/core';
+import { emptySheet, type LegacyReportDraft, selectedValues } from '@skating/core';
 import { describe, expect, it, vi } from 'vitest';
 
 // `draftStore` imports `expo-sqlite` at module load (→ react-native, which Vitest can't transform).
@@ -183,6 +183,40 @@ describe('draftStore kind migration', () => {
     expect(byId).toEqual({ old: true, hidden: false, shown: true });
     // A real boolean in the blob, not the string 'true' — the form reads it as one.
     expect(typeof byId.old).toBe('boolean');
+
+    raw.close();
+  });
+
+  it('revives a Post draft whose sheet an earlier build saved, keeping its sighting (D210)', () => {
+    const raw = new DatabaseSync(':memory:');
+    const db = adapt(raw);
+    ensureSchema(db);
+    // Queued on the ice under the pre-D210 build: the single-select `sighting`, no `sightings`.
+    const { sightings: _absent, ...fields } = emptySheet(1000, 'wb1').fields;
+    const sheet = {
+      ...emptySheet(1000, 'wb1'),
+      fields: {
+        ...fields,
+        sighting: { chips: [{ key: 'open', value: 'open', tier: 'solid' }], multi: false },
+      },
+    };
+    const post = {
+      kind: 'post',
+      id: 'p1',
+      idempotencyKey: 'key-p1',
+      status: 'pending',
+      reports: [{ id: 'r1', idempotencyKey: 'rk1', sheet, photos: [] }],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+    raw
+      .prepare(
+        'INSERT INTO report_drafts (id, kind, status, createdAt, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(post.id, post.kind, post.status, post.createdAt, post.updatedAt, JSON.stringify(post));
+
+    const revived = readPostDrafts(db)[0]?.reports[0]?.sheet;
+    expect(revived && selectedValues(revived, 'sightings')).toEqual([{ type: 'open' }]);
 
     raw.close();
   });

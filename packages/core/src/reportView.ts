@@ -148,12 +148,20 @@ export const OBSERVED_FROM_LABELS: Record<ObservedFrom, string> = {
   secondhand: 'Secondhand',
 };
 
-/** What a shore observer saw (A10 / D189). */
+/** What the author saw rather than skated (A10 / D189, D210). */
 export const SIGHTING_LABELS: Record<Sighting, string> = {
   open: 'Still open',
   skim: 'Skim ice',
   frozen: 'Frozen over',
   snow_covered: 'Snow-covered',
+};
+
+/** The where question a sighting asks (D210) — a state, so not "where is the still open?". */
+export const SIGHTING_WHERE_QUESTIONS: Record<Sighting, string> = {
+  open: 'Where was it still open?',
+  skim: 'Where was the skim ice?',
+  frozen: 'Where was it frozen over?',
+  snow_covered: 'Where was it snow-covered?',
 };
 
 export const SKY_LABELS: Record<SkyCondition, string> = {

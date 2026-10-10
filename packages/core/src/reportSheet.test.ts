@@ -1,12 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  chipKeysOfType,
   confirmList,
   DEFAULT_PRECISION_FLOOR,
   emptySheet,
   FIELD_SECTION,
   hasExtracted,
+  nextPlaceKey,
   type ReportSheetState,
+  reviveSheetState,
   SHEET_SECTIONS,
   type SheetAction,
   type SheetFieldKey,
@@ -37,6 +40,57 @@ describe('emptySheet', () => {
     expect(Object.values(s.collapsed).every((c) => c === false)).toBe(true);
     expect(sectionFilled(s, 'observedFrom')).toBe(false); // a default is not a fill
     expect(emptySheet(OPENED).waterBodyId).toBeUndefined();
+  });
+});
+
+describe('reviveSheetState (a sheet an earlier build stored)', () => {
+  /** The fields a pre-D210 build wrote: the single-select `sighting`, and no `sightings`. */
+  function storedBeforeD210(sighting?: 'open' | 'frozen'): ReportSheetState {
+    const s = emptySheet(OPENED, 'wb1');
+    const { sightings: _absent, ...fields } = s.fields;
+    return {
+      ...s,
+      fields: {
+        ...fields,
+        sighting: {
+          chips: sighting ? [{ key: sighting, value: sighting, tier: 'solid' as const }] : [],
+          multi: false,
+          touched: sighting !== undefined,
+        },
+      } as unknown as ReportSheetState['fields'],
+    };
+  }
+
+  it('lifts the single sighting into the located list, so the draft still serializes it (D210)', () => {
+    const revived = reviveSheetState(storedBeforeD210('open'));
+    expect(Object.keys(revived.fields).sort()).toEqual(Object.keys(FIELD_SECTION).sort());
+    expect(revived.fields.sightings.multi).toBe(true);
+    expect(selectedValues(revived, 'sightings')).toEqual([{ type: 'open' }]);
+    expect(toReportInput(revived).sightings).toEqual([{ type: 'open' }]);
+  });
+
+  it('fills a field the stored state lacks with an empty one, rather than throwing on read', () => {
+    const revived = reviveSheetState(storedBeforeD210());
+    expect(selectedValues(revived, 'sightings')).toEqual([]);
+    expect(() => toReportInput(revived)).not.toThrow();
+    expect(sectionSummary(revived, 'observedFrom', TZ)).toBe('');
+  });
+
+  it('keeps a list the state already has, and hands a current state back untouched', () => {
+    const current = run([
+      { type: 'select', field: 'sightings', key: 'skim', value: { type: 'skim' } },
+    ]);
+    expect(reviveSheetState(current)).toBe(current);
+    const both = {
+      ...current,
+      fields: {
+        ...current.fields,
+        sighting: (storedBeforeD210('open').fields as unknown as Record<string, unknown>).sighting,
+      },
+    } as unknown as ReportSheetState;
+    const revived = reviveSheetState(both);
+    expect(selectedValues(revived, 'sightings')).toEqual([{ type: 'skim' }]);
+    expect('sighting' in revived.fields).toBe(false);
   });
 });
 
@@ -500,7 +554,7 @@ describe('sections', () => {
         value: 'not_for_beginners',
       },
       { type: 'select', field: 'observedFrom', key: 'shore', value: 'shore' },
-      { type: 'select', field: 'sighting', key: 'open', value: 'open' },
+      { type: 'select', field: 'sightings', key: 'open', value: { type: 'open' } },
       { type: 'select', field: 'endTime', key: 'p', value: { ms: OPENED, precision: 'half_hour' } },
       {
         type: 'select',
@@ -537,7 +591,8 @@ describe('sections', () => {
       },
     ]);
     expect(sectionSummary(s, 'howWasIt', TZ)).toBe('Great · Not for beginners');
-    expect(sectionSummary(s, 'observedFrom', TZ)).toBe('Shore · Open');
+    // A sighting says what the card and the detail say (`describeSighting`), not the raw key.
+    expect(sectionSummary(s, 'observedFrom', TZ)).toBe('Shore · Still open');
     expect(sectionSummary(s, 'endTime', TZ)).toBe('about 4:12 PM');
     expect(sectionSummary(s, 'iceAndSurface', TZ)).toBe(
       'Black ice, patches north end · Glass, middle',
@@ -746,7 +801,7 @@ describe('sheetFromReport (the edit door, §4.1)', () => {
       skateEndPrecision: 'gps',
       skateStartTime: stored.skateStartTime,
       observedFrom: 'shore',
-      sighting: 'frozen',
+      sightings: [{ type: 'frozen' }],
       iceTypes: [
         { type: 'black_ice', where: { sector: 'N' } },
         { type: 'black_ice', where: { sector: 'S' } },
@@ -846,5 +901,41 @@ describe('the access and weather scalars serialize (A10-3)', () => {
     ]);
     expect(toReportInput(shown).showPutIn).toBeUndefined();
     expect(toReportInput(shown).conditions).toBeUndefined();
+  });
+});
+
+describe('more than one place for a located chip (Greptile P2 on #82)', () => {
+  it('a second place is a second chip of the type; deselecting the type takes every place', () => {
+    let s = emptySheet(OPENED, 'wb1');
+    s = sheetReducer(s, {
+      type: 'select',
+      field: 'sightings',
+      key: 'open',
+      value: { type: 'open', where: { sector: 'S' } },
+    });
+    expect(nextPlaceKey(s, 'sightings', 'open')).toBe('open#2');
+    expect(nextPlaceKey(s, 'sightings', 'skim')).toBe('skim');
+    s = sheetReducer(s, {
+      type: 'select',
+      field: 'sightings',
+      key: nextPlaceKey(s, 'sightings', 'open'),
+      value: { type: 'open' },
+    });
+    s = sheetReducer(s, {
+      type: 'setWhere',
+      field: 'sightings',
+      key: 'open#2',
+      where: { sector: 'N' },
+    });
+    expect(nextPlaceKey(s, 'sightings', 'open')).toBe('open#3');
+    expect(chipKeysOfType(s, 'sightings', 'open')).toEqual(['open', 'open#2']);
+    expect(toReportInput(s).sightings).toEqual([
+      { type: 'open', where: { sector: 'S' } },
+      { type: 'open', where: { sector: 'N' } },
+    ]);
+    for (const key of chipKeysOfType(s, 'sightings', 'open')) {
+      s = sheetReducer(s, { type: 'deselect', field: 'sightings', key });
+    }
+    expect(toReportInput(s).sightings).toBeUndefined();
   });
 });

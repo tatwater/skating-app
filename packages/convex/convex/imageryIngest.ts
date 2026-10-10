@@ -41,8 +41,10 @@
  */
 
 import {
+  approximateUtcOffsetSeconds,
   archiveSeasonAt,
   DEFAULT_THAW_RUN_DAYS,
+  dailyLowsFromHourly,
   ingestWindow,
   type SiteSeries,
   seasonOf,
@@ -316,8 +318,12 @@ export const recordSeasonOpen = internalMutation({
   },
 });
 
-interface DailyResponse {
-  daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
+interface HourlyResponse {
+  /** The zone Open-Meteo resolved under `timezone=auto` — what makes a local day knowable. */
+  timezone?: string;
+  /** The offset at request time, not at any hour in the response; a fallback only. */
+  utc_offset_seconds?: number;
+  hourly?: { time?: (number | null)[]; temperature_2m?: (number | null)[] };
 }
 
 /**
@@ -326,6 +332,10 @@ interface DailyResponse {
  * ⚠ **Observed, never forecast** — D140. Open-Meteo's *forecast* endpoint with `past_days` is the
  * right source anyway: the ERA5 archive lags ~5 days, so an archive-backed gate opens the season the
  * better part of a week late, which is the expensive direction.
+ *
+ * ⚠ **Hourly, and the days are cut here.** `daily=temperature_2m_min` cuts every day at the offset in
+ * force when the request is made, so a November tick split every October day at the wrong midnight.
+ * `dailyLowsFromHourly` cuts them by the zone, and is the same function the CLI uses.
  *
  * Multi-coordinate form: passing comma-separated `latitude`/`longitude` returns an *array* of
  * per-location objects, so 25 sites cost one HTTP call rather than 25.
@@ -336,30 +346,32 @@ async function fetchDailyLows(
   const params = new URLSearchParams({
     latitude: sites.map((s) => s.lat.toFixed(4)).join(','),
     longitude: sites.map((s) => s.lng.toFixed(4)).join(','),
-    daily: 'temperature_2m_min',
+    hourly: 'temperature_2m',
     past_days: String(MAX_PAST_DAYS),
     forecast_days: '1',
     timezone: 'auto',
+    timeformat: 'unixtime',
     temperature_unit: 'celsius',
   });
 
   const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
   if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText}`);
-  const json = (await res.json()) as DailyResponse | DailyResponse[];
+  const json = (await res.json()) as HourlyResponse | HourlyResponse[];
   // One coordinate returns an object; several return an array. Normalized so the caller never has to
   // care how many sites survived the point check above.
   const rows = Array.isArray(json) ? json : [json];
 
   const out: SiteSeries[] = [];
   for (const [i, site] of sites.entries()) {
-    const daily = rows[i]?.daily;
-    const times = daily?.time ?? [];
-    const mins = daily?.temperature_2m_min ?? [];
-    const days = times
-      .map((date, j) => ({ date, minTempC: mins[j] }))
-      // A null low is a gap in the record, not a warm night. Dropping it lets the site abstain for
-      // that day rather than vote "did not freeze", which is what a `?? 0` would have made it do.
-      .filter((d): d is { date: string; minTempC: number } => typeof d.minTempC === 'number');
+    const row = rows[i];
+    // A null reading is a gap in the record, not a warm hour; a day short of readings is dropped so
+    // the site abstains rather than votes "did not freeze" on part of a day.
+    const days = dailyLowsFromHourly(
+      row?.hourly?.time ?? [],
+      row?.hourly?.temperature_2m ?? [],
+      typeof row?.timezone === 'string' && row.timezone.length > 0 ? row.timezone : null,
+      row?.utc_offset_seconds ?? approximateUtcOffsetSeconds(site.lng),
+    );
     if (days.length > 0) {
       out.push({ siteId: site.siteId, sentinel: site.sentinel, days });
     }

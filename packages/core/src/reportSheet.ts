@@ -51,8 +51,10 @@ import {
   type ChipInput,
   type LocatedChip,
   type LocatedIceType,
+  type LocatedSighting,
   type LocatedSurfaceTag,
   type Snow,
+  sightingsOf,
   toLocatedChip,
 } from './reportFields';
 import { formatThicknessReading, humanizeEnum } from './reportView';
@@ -70,7 +72,7 @@ import type {
   ThicknessScope,
 } from './types';
 import { cmToInches, inchesToCm } from './units';
-import { describeLocatedChip, type Where } from './where';
+import { describeLocatedChip, describeSighting, type Where } from './where';
 
 // ── Sections ────────────────────────────────────────────────────────────────────────────────────
 
@@ -140,7 +142,7 @@ export interface SheetFields {
   quality: ChipField<SkateQuality>;
   suitability: ChipField<Suitability>;
   observedFrom: ChipField<ObservedFrom>;
-  sighting: ChipField<Sighting>;
+  sightings: ChipField<LocatedSighting>;
   endTime: ChipField<EndTimeValue>;
   iceTypes: ChipField<LocatedIceType>;
   surfaceTags: ChipField<LocatedSurfaceTag>;
@@ -155,6 +157,7 @@ export type FieldValue<K extends SheetFieldKey> =
   SheetFields[K] extends ChipField<infer V> ? V : never;
 
 const MULTI_FIELDS: ReadonlySet<SheetFieldKey> = new Set<SheetFieldKey>([
+  'sightings',
   'iceTypes',
   'surfaceTags',
   'thickness',
@@ -166,7 +169,7 @@ export const FIELD_SECTION: Record<SheetFieldKey, SheetSection> = {
   quality: 'howWasIt',
   suitability: 'howWasIt',
   observedFrom: 'observedFrom',
-  sighting: 'observedFrom',
+  sightings: 'observedFrom',
   endTime: 'endTime',
   iceTypes: 'iceAndSurface',
   surfaceTags: 'iceAndSurface',
@@ -277,6 +280,35 @@ export function emptySheet(
   };
 }
 
+/**
+ * A sheet state an earlier build wrote down — a phone's saved or queued draft, a web sheet kept
+ * across a reload — brought to this build's fields before anything reads it. Every reader indexes
+ * `state.fields[key].chips`, so a field the stored state lacks would throw rather than read as
+ * empty; each missing field starts empty here. D210 renamed the single-select `sighting` to the
+ * located `sightings` list: its chip is lifted into the list, so the author's choice survives the
+ * update rather than vanishing (or failing the flush). The same object back when nothing needed
+ * doing.
+ */
+export function reviveSheetState(state: ReportSheetState): ReportSheetState {
+  const stored = state.fields as unknown as Record<string, ChipField<unknown> | undefined>;
+  const legacy = stored.sighting as ChipField<Sighting> | undefined;
+  const missing = (Object.keys(FIELD_SECTION) as SheetFieldKey[]).filter(
+    (key) => stored[key] === undefined,
+  );
+  if (legacy === undefined && missing.length === 0) return state;
+  const { sighting: _lifted, ...rest } = stored;
+  const fields: Record<string, ChipField<unknown> | undefined> = { ...rest };
+  for (const key of missing) fields[key] = emptyField(MULTI_FIELDS.has(key));
+  if (legacy !== undefined && stored.sightings === undefined) {
+    fields.sightings = {
+      ...legacy,
+      multi: true,
+      chips: legacy.chips.map((chip) => ({ ...chip, value: { type: chip.value } })),
+    };
+  }
+  return { ...state, fields: fields as unknown as SheetFields };
+}
+
 // ── Actions ─────────────────────────────────────────────────────────────────────────────────────
 
 /** One extracted value for a field, as the extraction contract returns it (§1.1). */
@@ -302,7 +334,7 @@ export type SheetAction =
   /** Attach or change a `where` on a located chip (ice, surface) or a reading. */
   | {
       type: 'setWhere';
-      field: 'iceTypes' | 'surfaceTags' | 'thickness';
+      field: 'sightings' | 'iceTypes' | 'surfaceTags' | 'thickness';
       key: string;
       where?: Where;
     }
@@ -639,6 +671,8 @@ export interface SheetSeed {
   skateStartTime?: number;
   skateEndPrecision?: SkateEndPrecision;
   observedFrom?: ObservedFrom;
+  sightings?: readonly ChipInput<Sighting>[];
+  /** @deprecated pre-D210 — a draft saved before the list, or a row mid-backfill. */
   sighting?: Sighting;
   iceTypes?: readonly ChipInput<IceType>[];
   surfaceTags?: readonly ChipInput<SurfaceTag>[];
@@ -693,7 +727,7 @@ export function sheetFromReport(seed: SheetSeed, openedAtMs: number): ReportShee
     f.suitability.chips = [solid(seed.suitability, seed.suitability)];
   if (seed.observedFrom !== undefined)
     f.observedFrom.chips = [solid(seed.observedFrom, seed.observedFrom)];
-  if (seed.sighting !== undefined) f.sighting.chips = [solid(seed.sighting, seed.sighting)];
+  f.sightings.chips = locatedChips(sightingsOf(seed));
   f.endTime.chips = [
     solid('stored', { ms: seed.skateEndTime, precision: seed.skateEndPrecision ?? 'half_hour' }),
   ];
@@ -752,13 +786,44 @@ export function selectedChips<K extends SheetFieldKey>(
   return (state.fields[key].chips as SheetChip<FieldValue<K>>[]).filter(isSelected);
 }
 
+/** The located fields — a chip there may be said of more than one place. */
+export type LocatedFieldKey = 'sightings' | 'iceTypes' | 'surfaceTags';
+
+/**
+ * The keys of every selected chip of one type in a located field — "still open" at the south end
+ * and at the inlet are two chips, `open` and `open#2` (the key `sheetFromReport` already gives a
+ * stored second place), and deselecting the type takes them all.
+ */
+export function chipKeysOfType(
+  state: ReportSheetState,
+  field: LocatedFieldKey,
+  type: string,
+): string[] {
+  return (state.fields[field].chips as SheetChip<{ type: string }>[])
+    .filter((c) => isSelected(c) && c.value.type === type)
+    .map((c) => c.key);
+}
+
+/** The key for one more place of `type`: the type itself while it is free, then `type#2`, `type#3`, … */
+export function nextPlaceKey(
+  state: ReportSheetState,
+  field: LocatedFieldKey,
+  type: string,
+): string {
+  const taken = new Set(state.fields[field].chips.map((c) => c.key));
+  if (!taken.has(type)) return type;
+  let n = 2;
+  while (taken.has(`${type}#${n}`)) n++;
+  return `${type}#${n}`;
+}
+
 /** Serialize the sheet to the validator's input. Solid and extracted chips only; ghosts never. */
 export function toReportInput(state: ReportSheetState): ReportInput {
   const s = state.scalars;
   const [quality] = selectedValues(state, 'quality');
   const [suitability] = selectedValues(state, 'suitability');
   const [observedFrom] = selectedValues(state, 'observedFrom');
-  const [sighting] = selectedValues(state, 'sighting');
+  const sightings = selectedValues(state, 'sightings');
   const [endTime] = selectedValues(state, 'endTime');
   const [snowCoverage] = selectedValues(state, 'snowCoverage');
   const [snowImpediment] = selectedValues(state, 'snowImpediment');
@@ -778,7 +843,7 @@ export function toReportInput(state: ReportSheetState): ReportInput {
     ...(endTime !== undefined ? { skateEndPrecision: endTime.precision } : {}),
     ...(s.skateStartTime !== undefined ? { skateStartTime: s.skateStartTime } : {}),
     ...(observedFrom !== undefined ? { observedFrom } : {}),
-    ...(sighting !== undefined ? { sighting } : {}),
+    ...(sightings.length > 0 ? { sightings } : {}),
     iceTypes: selectedValues(state, 'iceTypes'),
     surfaceTags: selectedValues(state, 'surfaceTags'),
     ...(quality !== undefined ? { skateQuality: quality } : {}),
@@ -823,14 +888,14 @@ export function hasExtracted(state: ReportSheetState): boolean {
 export interface ConfirmItem {
   field: SheetFieldKey;
   chip: SheetChip<unknown>;
-  /** Safety-flavored values lead the list (D188): don't go, suitability, thickness, sighting. */
+  /** Safety-flavored values lead the list (D188): don't go, suitability, thickness, sightings. */
   safety: boolean;
 }
 
 const SAFETY_FIELDS: ReadonlySet<SheetFieldKey> = new Set<SheetFieldKey>([
   'suitability',
   'thickness',
-  'sighting',
+  'sightings',
 ]);
 
 /** The *Confirm & Post* list: every extracted chip, safety-flavored first, in section order. */
@@ -856,7 +921,7 @@ export function sectionFilled(state: ReportSheetState, section: SheetSection): b
       // The default is a default, not a fill — but a tap or an extraction that moved it is one.
       return (
         selectedChips(state, 'observedFrom').some((c) => c.defaulted !== true) ||
-        selectedValues(state, 'sighting').length > 0
+        selectedValues(state, 'sightings').length > 0
       );
     case 'snow':
       return anySelected || s.snowDepthCm !== undefined || s.plowedPath !== undefined;
@@ -902,10 +967,8 @@ export function sectionSummary(
     }
     case 'observedFrom': {
       const [from] = selectedValues(state, 'observedFrom');
-      const [sighting] = selectedValues(state, 'sighting');
-      return [from && humanizeEnum(from), sighting && humanizeEnum(sighting)]
-        .filter(Boolean)
-        .join(' · ');
+      const seen = selectedValues(state, 'sightings').map((chip) => describeSighting(chip));
+      return [from && humanizeEnum(from), ...seen].filter(Boolean).join(' · ');
     }
     case 'endTime': {
       const [t] = selectedValues(state, 'endTime');

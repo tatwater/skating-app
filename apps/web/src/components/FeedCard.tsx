@@ -111,7 +111,7 @@ export function FeedCard({
       {card.suitabilityLabel ||
       card.qualityLabel ||
       card.vantageLabel ||
-      card.sightingLabel ||
+      card.sightingLabels.length > 0 ||
       chips.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1">
           {/* The who-claim leads (D3 / D190): "Don't go" before "Great", in the warning treatment. */}
@@ -123,7 +123,11 @@ export function FeedCard({
           {card.qualityLabel ? <Badge variant="secondary">{card.qualityLabel}</Badge> : null}
           {/* Provenance a reader needs (D191): only off the ice, where it changes how a chip reads. */}
           {card.vantageLabel ? <Badge variant="outline">{card.vantageLabel}</Badge> : null}
-          {card.sightingLabel ? <Badge variant="outline">{card.sightingLabel}</Badge> : null}
+          {card.sightingLabels.map((label) => (
+            <Badge key={label} variant="outline">
+              {label}
+            </Badge>
+          ))}
           {chips.map((chip) => (
             <Badge key={chip} variant="outline">
               {chip}

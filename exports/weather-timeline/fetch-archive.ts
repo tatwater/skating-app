@@ -10,8 +10,14 @@
  *
  * The variable list and every unit match `HOURLY_VARS` exactly, so what lands here is byte-for-byte
  * the shape the real ingest would have stored.
+ *
+ * ⚠ **The local stamps are made here, not by Open-Meteo.** Its `iso8601` times use the offset in
+ * force when the request is made, so a summer fetch of this January window labeled every hour an hour
+ * late. The request asks for `unixtime` a day either side of the window, stamps each hour against the
+ * zone with `localStampAt`, and keeps the hours whose local date falls inside it.
  */
 import { writeFileSync } from 'node:fs';
+import { dayMsToLocalDate, localDateToDayMs, localStampAt } from '../../packages/core/src/index';
 
 const LAKE = {
   name: 'Mascoma Lake',
@@ -44,15 +50,20 @@ const VARS = [
   'weather_code',
 ];
 
+/** `YYYY-MM-DD` shifted by whole days. */
+function shiftDate(date: string, days: number): string {
+  return dayMsToLocalDate((localDateToDayMs(date) ?? 0) + days * 86_400_000);
+}
+
 async function main() {
   const params = new URLSearchParams({
     latitude: String(LAKE.lat),
     longitude: String(LAKE.lng),
-    start_date: START,
-    end_date: END,
+    start_date: shiftDate(START, -1),
+    end_date: shiftDate(END, 1),
     hourly: VARS.join(','),
     timezone: 'auto',
-    timeformat: 'iso8601',
+    timeformat: 'unixtime',
     temperature_unit: 'celsius',
     wind_speed_unit: 'kmh',
     precipitation_unit: 'mm',
@@ -61,8 +72,30 @@ async function main() {
   const url = `https://archive-api.open-meteo.com/v1/archive?${params}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`archive ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as { hourly?: Record<string, unknown[]> };
-  const hours = json.hourly?.time?.length ?? 0;
+  const raw = (await res.json()) as {
+    timezone?: string;
+    utc_offset_seconds?: number;
+    hourly?: Record<string, unknown[]>;
+  };
+  const zone = raw.timezone || null;
+  if (zone === null) throw new Error('archive returned no timezone');
+  const unix = raw.hourly?.time ?? [];
+
+  // Re-stamp as local wall clock and keep [START, END] — the shape `build-svg.ts` reads.
+  const keep: number[] = [];
+  const time: string[] = [];
+  for (const [i, ts] of unix.entries()) {
+    const stamp = typeof ts === 'number' ? localStampAt(ts * 1000, zone, 0) : null;
+    if (stamp === null || stamp.localDate < START || stamp.localDate > END) continue;
+    keep.push(i);
+    time.push(`${stamp.localDate}T${String(stamp.localHour).padStart(2, '0')}:00`);
+  }
+  const hourly: Record<string, unknown[]> = { time };
+  for (const [key, values] of Object.entries(raw.hourly ?? {})) {
+    if (key !== 'time') hourly[key] = keep.map((i) => values[i]);
+  }
+  const json = { timezone: zone, hourly };
+  const hours = time.length;
   if (hours === 0) throw new Error('archive returned no hours');
 
   writeFileSync(

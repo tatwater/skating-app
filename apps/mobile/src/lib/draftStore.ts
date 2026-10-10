@@ -13,6 +13,7 @@ import {
   type PostDraft,
   postDraftFromLegacy,
   type QueuedTrack,
+  revivePostDraft,
 } from '@skating/core';
 import * as SQLite from 'expo-sqlite';
 
@@ -117,14 +118,15 @@ export function ensureSchema(db: SqliteLike): void {
 }
 
 /** All **Post** drafts, oldest first — the read half of `listDrafts`, factored out to test alongside
- *  `ensureSchema` (a migrated pre-Phase-09a row, lifted to a Post, must still come back here). */
+ *  `ensureSchema` (a migrated pre-Phase-09a row, lifted to a Post, must still come back here). Each
+ *  is revived (`revivePostDraft`): a sheet saved by an earlier build carries its fields, not ours. */
 export function readPostDrafts(db: SqliteLike): PostDraft[] {
   return db
     .getAllSync<{ data: string }>(
       'SELECT data FROM report_drafts WHERE kind = ? ORDER BY createdAt ASC',
       [KIND_POST],
     )
-    .map((r) => JSON.parse(r.data) as PostDraft);
+    .map((r) => revivePostDraft(JSON.parse(r.data) as PostDraft));
 }
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -170,7 +172,7 @@ export function getDraft(id: string): PostDraft | null {
     'SELECT data FROM report_drafts WHERE id = ? AND kind = ?',
     [id, KIND_POST],
   );
-  return row ? (JSON.parse(row.data) as PostDraft) : null;
+  return row ? revivePostDraft(JSON.parse(row.data) as PostDraft) : null;
 }
 
 export function deleteDraft(id: string): void {

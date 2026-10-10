@@ -80,6 +80,10 @@ export const HAZARD_DECAY: Record<HazardType, HazardDecay> = {
   wet_crack: { tier: 'B', freshH: 72, agingH: 168 },
   drilled_hole: { tier: 'B', freshH: 72, agingH: 168 },
   shell_area: { tier: 'B', freshH: 72, agingH: 168 },
+  // Air trapped under the sheet at freeze-up (D208). Air insulates, so the ice over a pocket thickens
+  // slowly if at all — "likely to remain unsafe for days to come" (the corpus, a group leader). Tier B
+  // on the base clock; its weather response is the part that differs from shell ice.
+  air_pockets: { tier: 'B', freshH: 72, agingH: 168 },
 
   // ── Tier C — structural. Don't heal within a season; often grow.
   // ⚠ Phase 10 sign-flip 2: warmth ESCALATES these (a ridge can melt into open water in a 2-day windy

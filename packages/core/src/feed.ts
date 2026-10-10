@@ -9,11 +9,11 @@
  */
 
 import type { SilhouetteData } from './bodySilhouette';
+import { type ChipInput, sightingsOf } from './reportFields';
 import {
   formatSkateWindow,
   humanizeEnum,
   OBSERVED_FROM_LABELS,
-  SIGHTING_LABELS,
   SKATE_QUALITY_LABELS,
   SUITABILITY_LABELS,
 } from './reportView';
@@ -26,6 +26,7 @@ import type {
   Suitability,
   SurfaceTag,
 } from './types';
+import { describeSighting } from './where';
 
 /**
  * A feed/report author's public attribution + cosmetic trust (D50). `trustClass` drives the `TrustAvatar`
@@ -189,7 +190,12 @@ export interface FeedCardData {
   suitability?: Suitability;
   /** How the author saw it (A10 / D191). Absent means unstated. */
   observedFrom?: ObservedFrom;
-  /** What a shore observer saw (A10 / D189) — the observation a from-shore report may carry. */
+  /**
+   * What the author saw rather than skated (D189, D210) — located, any vantage; the server sends
+   * the stored list (a pre-D210 row's single `sighting` is read through `sightingsOf`).
+   */
+  sightings?: ChipInput<Sighting>[];
+  /** @deprecated pre-D210 rows mid-backfill. */
   sighting?: Sighting;
   photoThumbUrls: string[];
   author: FeedAuthor;
@@ -341,11 +347,12 @@ export interface FeedCardView {
    * The A10 axes (§12.1). `suitabilityLabel` leads the chip row when set — "Don't go" before
    * "Great" (D3: the who-claim outranks the how-good). `vantageLabel` is set only off the ice: the
    * default vantage says nothing a reader needs, while "From shore" and "Secondhand" change how a
-   * thickness reads. `sightingLabel` is the shore observer's one observation.
+   * thickness reads. `sightingLabels` are what the author saw rather than skated, each with its
+   * place when it has one — "Still open, south end" (D210).
    */
   suitabilityLabel: string | null;
   vantageLabel: string | null;
-  sightingLabel: string | null;
+  sightingLabels: string[];
   /** `true` when the author said don't go — the card leads with it, in the warning treatment. */
   isDontGo: boolean;
   /** Humanized ice + surface vocabulary, ready as chip text (UI truncates if it wants). */
@@ -437,7 +444,8 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
       data.observedFrom && data.observedFrom !== 'on_ice'
         ? OBSERVED_FROM_LABELS[data.observedFrom]
         : null,
-    sightingLabel: data.sighting ? SIGHTING_LABELS[data.sighting] : null,
+    // Two that read the same (two bays the card cannot name) are one line on a card.
+    sightingLabels: [...new Set(sightingsOf(data).map((s) => describeSighting(s)))],
     isDontGo: data.suitability === 'dont_go',
     chips,
     photoThumbUrls: data.photoThumbUrls,

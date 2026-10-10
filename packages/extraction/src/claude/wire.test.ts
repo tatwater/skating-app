@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { defaultVocabulary, type ExtractionInput } from '../contract';
 import {
+  denseVisits,
   evidenceFor,
   localTimeToMs,
   locateQuote,
   mapWireResult,
+  sightingKept,
   thicknessReadingFrom,
   type WireResult,
 } from './wire';
@@ -114,9 +116,47 @@ describe('thicknessReadingFrom — the validator’s rule at the source', () => 
   });
 });
 
+describe('denseVisits', () => {
+  const candidates = {
+    bodyCandidates: ['w', 'm'].map((ref) => ({ ref, name: ref, aliases: [], subAreas: [] })),
+  };
+  it('renumbers each body 0, 1, … in the model’s order — "yesterday" as -1 comes first (A10-9)', () => {
+    const r = denseVisits(
+      [
+        { bodyRef: 'w', visit: 0 },
+        { bodyRef: 'w', visit: -1 },
+        { bodyRef: 'm', visit: 3 },
+        { bodyRef: null, bodyName: 'Halfmile', visit: 2 },
+        { bodyRef: 'w', visit: 0 },
+      ],
+      candidates,
+    );
+    expect(r.map((x) => x.visit)).toEqual([1, 0, 0, 0, 1]);
+  });
+  it('counts a never-offered ref and the same name as one body, as `bodyOf` will', () => {
+    const r = denseVisits(
+      [
+        { bodyRef: 'Halfmile', visit: 0 },
+        { bodyRef: null, bodyName: 'Halfmile', visit: 1 },
+      ],
+      candidates,
+    );
+    expect(r.map((x) => x.visit)).toEqual([0, 1]);
+  });
+});
+
 describe('mapWireResult', () => {
   const t = 'text' as const;
   const wire: WireResult = {
+    aboutBody: [
+      {
+        bodyRef: 'morey',
+        topic: 'parking',
+        quote: 'Skated Morey',
+        quoteField: 'text',
+      },
+      { bodyRef: 'Nowhere Pond', topic: 'gossip', quote: 'not here', quoteField: 'text' },
+    ],
     reports: [
       {
         bodyRef: 'morey',
@@ -144,7 +184,7 @@ describe('mapWireResult', () => {
             quote: 'afternoon',
             quoteField: t,
           },
-          { field: 'sighting', value: 'open', confidence: 0.6, quote: 'afternoon', quoteField: t },
+          { field: 'sightings', value: 'open', confidence: 0.6, quote: 'afternoon', quoteField: t },
           {
             field: 'endTime',
             value: '16:00',
@@ -278,7 +318,22 @@ describe('mapWireResult', () => {
         evidence: { field: 'text', start: 0, end: 12, text: 'Skated Morey', located: true },
       },
     ]);
-    expect(r?.fields.sighting.map((v) => v.value)).toEqual(['open']);
+    // The model's singular and the contract's plural are one field (D210).
+    expect(r?.fields.sightings.map((v) => v.value)).toEqual([{ type: 'open' }]);
+    expect(result.aboutBody).toEqual([
+      {
+        bodyRef: 'morey',
+        topic: 'parking',
+        evidence: { field: 'text', start: 0, end: 12, text: 'Skated Morey', located: true },
+      },
+      // A body never offered is a name, not a ref; an unknown topic is `other`.
+      {
+        bodyRef: null,
+        bodyName: 'Nowhere Pond',
+        topic: 'other',
+        evidence: { field: 'text', start: 0, end: 0, text: 'not here', located: false },
+      },
+    ]);
     expect(r?.fields.endTime).toHaveLength(1);
     expect(r?.fields.endTime[0]?.value).toEqual({
       ms: Date.UTC(2026, 0, 10, 21, 0),
@@ -301,7 +356,7 @@ describe('mapWireResult', () => {
     ]);
     expect(r?.fields.accessConditions.map((v) => v.value)).toEqual(['plank_needed']);
     expect(result.misses).toEqual([
-      { kind: 'enum_value', text: 'afternoon', wouldNeed: 'sighting: melting' },
+      { kind: 'enum_value', text: 'afternoon', wouldNeed: 'sightings: melting' },
       { kind: 'enum_value', text: 'Black ice', wouldNeed: 'iceTypes: glass_ice' },
       { kind: 'where', text: 'upstream', wouldNeed: 'a sector value' },
       { kind: 'enum_value', text: 'x', wouldNeed: 'thickness method: guessed' },
@@ -315,7 +370,41 @@ describe('mapWireResult', () => {
     ]);
   });
 
-  it('drops a sighting from an author on the ice, or with no vantage (D189)', () => {
+  it('keeps a sighting from the ice only for a part of the lake — a named place counts (D210)', () => {
+    expect(sightingKept('shore')).toBe(true);
+    expect(sightingKept('on_ice')).toBe(false);
+    expect(sightingKept('on_ice', { extent: 'mostly' })).toBe(false);
+    expect(sightingKept('on_ice', { sector: 'S' })).toBe(true);
+    expect(sightingKept('on_ice', { placeName: "Rocky Point to Kimball's Point" })).toBe(true);
+    expect(sightingKept(undefined, { sector: 'S' })).toBe(false);
+  });
+
+  it('holds a sighting to the contract’s vocabulary, whatever the caller offered (D210)', () => {
+    const t = 'text' as const;
+    const vocabulary = { ...defaultVocabulary(), sightings: ['melting'] };
+    const wire = {
+      reports: [
+        {
+          bodyRef: 'morey',
+          visit: 0,
+          values: [
+            {
+              field: 'observedFrom',
+              value: 'shore',
+              confidence: 1,
+              quote: 'Skated',
+              quoteField: t,
+            },
+            { field: 'sightings', value: 'melting', confidence: 1, quote: 'Skated', quoteField: t },
+          ],
+        },
+      ],
+      misses: [],
+    };
+    expect(() => mapWireResult(wire, input({ vocabulary }))).toThrow();
+  });
+
+  it('drops a whole-lake sighting from an author on the ice, or any with no vantage (D189)', () => {
     const t = 'text' as const;
     const sighting = {
       field: 'sighting',
@@ -346,12 +435,12 @@ describe('mapWireResult', () => {
       },
       input(),
     );
-    expect(onIce.reports[0]?.fields.sighting).toEqual([]);
+    expect(onIce.reports[0]?.fields.sightings).toEqual([]);
     const unstated = mapWireResult(
       { reports: [{ bodyRef: 'morey', visit: 0, values: [sighting] }], misses: [] },
       input(),
     );
-    expect(unstated.reports[0]?.fields.sighting).toEqual([]);
+    expect(unstated.reports[0]?.fields.sightings).toEqual([]);
   });
 
   it('keeps a null body ref with the name as written', () => {
@@ -359,7 +448,8 @@ describe('mapWireResult', () => {
       { reports: [{ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1, values: [] }], misses: [] },
       input(),
     );
-    expect(result.reports[0]).toMatchObject({ bodyRef: null, bodyName: 'Halfmile Pond', visit: 1 });
+    // A body's only report is its visit 0, whatever number the model gave it (denseVisits).
+    expect(result.reports[0]).toMatchObject({ bodyRef: null, bodyName: 'Halfmile Pond', visit: 0 });
   });
 
   it('nulls a body ref that was never a candidate, keeping the string as the name (Greptile P2, PR #71)', () => {

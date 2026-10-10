@@ -17,7 +17,14 @@
  * the validator normalizes both — but a reader over a row mid-backfill must not throw either.
  */
 
-import type { IceType, SnowCoverage, SnowDrift, SnowImpediment, SurfaceTag } from './types';
+import type {
+  IceType,
+  Sighting,
+  SnowCoverage,
+  SnowDrift,
+  SnowImpediment,
+  SurfaceTag,
+} from './types';
 import type { Where } from './where';
 
 export interface LocatedChip<T extends string> {
@@ -29,6 +36,12 @@ export interface LocatedChip<T extends string> {
 
 export type LocatedIceType = LocatedChip<IceType>;
 export type LocatedSurfaceTag = LocatedChip<SurfaceTag>;
+/**
+ * What the author saw of the body rather than skated (D189, located by D210): "still open at the
+ * south end", "frozen from Rocky Point to Kimball's". A list, like the chips, because one look at a
+ * lake can see more than one state.
+ */
+export type LocatedSighting = LocatedChip<Sighting>;
 
 /** A chip as a client may send it: the bare key (older clients, the quick-tap path) or the object. */
 export type ChipInput<T extends string> = T | LocatedChip<T>;
@@ -45,6 +58,19 @@ export function iceTypeKeys(chips: readonly ChipInput<IceType>[] | undefined): I
 
 export function surfaceTagKeys(chips: readonly ChipInput<SurfaceTag>[] | undefined): SurfaceTag[] {
   return chipKeys(chips);
+}
+
+/**
+ * A report's sightings, located, whichever shape it holds: the D210 list, or the pre-D210 single
+ * `sighting` a row mid-backfill or an older client's draft still carries. The list wins when both
+ * are present — the validator refuses a report that sends both, so that is only ever a stale copy.
+ */
+export function sightingsOf(report: {
+  sightings?: readonly ChipInput<Sighting>[];
+  sighting?: Sighting;
+}): LocatedChip<Sighting>[] {
+  if (report.sightings !== undefined) return report.sightings.map(toLocatedChip);
+  return report.sighting !== undefined ? [{ type: report.sighting }] : [];
 }
 
 /** Lift a bare key to the located shape; an object passes through untouched. */
