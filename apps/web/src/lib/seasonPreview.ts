@@ -30,6 +30,9 @@ export interface SeriesDoc {
   name: string;
   state: string | null;
   source: 'forecast' | 'archive';
+  /** Whether the season is whole as a past season — false for one the live watch kept, until the
+   * archive has filled its spring. Absent counts as whole. */
+  archiveFilled?: boolean;
   firstDate: string;
   lows: (number | null)[];
 }
@@ -155,7 +158,10 @@ export interface PreviewRow {
   lastSkated: string | null;
   /** Days from the watch opening to the first recorded skate; positive means the watch was early. */
   leadDays: number | null;
-  /** Sites the roster watches, and how many of them have no lows stored for this season. */
+  /**
+   * Sites the roster watches, and how many lack lows for this season: none stored, or — for a past
+   * season — only what the live watch kept, without the archive's spring (the server's rule).
+   */
   watched: number;
   missingLows: number;
 }
@@ -165,6 +171,8 @@ export function previewSeasons(
   roster: Roster,
   settings: SeasonWatchSettings,
   fieldDates: readonly FieldDate[],
+  /** The season under way, whose live-kept lows are whole so far. */
+  current = '',
 ): PreviewRow[] {
   return seasonsIn(docs).map((season) => {
     const sources = new Set(docs.filter((d) => d.season === season).map((d) => d.source));
@@ -192,7 +200,14 @@ export function previewSeasons(
       leadDays:
         firstSkated && evaluation.opensOn ? daysBetween(evaluation.opensOn, firstSkated) : null,
       watched,
-      missingLows: watched - new Set(series.map((s) => s.siteId)).size,
+      missingLows:
+        watched -
+        docs.filter(
+          (d) =>
+            d.season === season &&
+            (season === current || d.archiveFilled !== false) &&
+            series.some((s) => s.siteId === d.waterBodyId),
+        ).length,
     };
   });
 }

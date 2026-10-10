@@ -334,6 +334,8 @@ export interface ImageryActivity {
   failed: { granuleId: string; lastError: string | null }[];
   /** When the pump resumes after Fly or the archive failed, or `null`. */
   backoffUntil?: number | null;
+  /** When the index next re-reads manifests it could not read, or `null`. */
+  indexRetryAt?: number | null;
   configured: boolean;
   pollCap: number;
   maxLive: number;
@@ -389,6 +391,19 @@ export function ImageryPanel({
           <p className="text-sm text-warning">
             Backing off until {new Date(activity.backoffUntil).toLocaleTimeString()} — Fly or the
             archive was failing.
+          </p>
+          {onTryAgain ? (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onTryAgain)}>
+              Try again now
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {activity?.indexRetryAt ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-warning">
+            Some cut frames could not be read into the index; it reads them again at{' '}
+            {new Date(activity.indexRetryAt).toLocaleTimeString()}.
           </p>
           {onTryAgain ? (
             <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onTryAgain)}>
@@ -1077,11 +1092,17 @@ export function FieldDates({
 }
 
 /**
- * How long the history fill runs, roughly — so the button's promise is honest. `spanMs` is the
- * server's pacing for the lakes watched now (`overview.historyFillMs`).
+ * What the history fill covers and how long it runs, roughly — so the button's promise is honest.
+ * Both from the server's planner (`overview.historyFill`): the seasons it covers, and its pacing
+ * for the lakes watched now.
  */
 export function historyFillHint(seasons: number, spanMs: number): string {
   const minutes = Math.round(spanMs / 60_000);
-  const span = minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
-  return `Fills whatever the watched lakes are missing from ${seasons} past seasons of Open-Meteo's archive. From nothing that is spread over about ${span}, so it never starves the daily weather sweep.`;
+  const span =
+    minutes < 1
+      ? 'at once'
+      : minutes < 120
+        ? `over about ${minutes} minutes`
+        : `over about ${Math.round(minutes / 60)} hours`;
+  return `Fills whatever the watched lakes are missing from ${seasons} seasons of Open-Meteo's records. From nothing that runs ${span}, so it never starves the daily weather sweep.`;
 }

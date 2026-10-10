@@ -3,7 +3,8 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { POLL_CAP, slotOf, unreadableBackoffMs } from './imageryLive';
+import { POLL_CAP, slotOf } from './imageryLive';
+import { unreadableRetryMs } from './lib/imageryPump';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1050,36 +1051,48 @@ describe('buildIndex', () => {
     });
   });
 
-  test('an unreadable manifest keeps the rebuild pending until it reads, backing off meanwhile', async () => {
+  test('an unreadable manifest is retried — later, less often — and never holds back a new frame', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     const a = s2('19TEA', '20261005');
-    const key = `frames/${SEASON}/${a}.json`;
-    const w = world({ manifests: new Map<string, unknown>([[key, 'error']]) });
+    const b = s2('19TEB', '20261006');
+    const bad = `frames/${SEASON}/${a}.json`;
+    const w = world({ manifests: new Map<string, unknown>([[bad, 'error']]) });
     stub(w);
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 0 });
-    // The last cut has landed and imagery is paused: nothing will mark the index dirty again.
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
-    // Ten minutes on, the next tick waits out the backoff rather than rebuilding.
-    vi.advanceTimersByTime(10 * 60_000);
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
-    // Still unreadable after half an hour: the next wait is an hour.
-    vi.advanceTimersByTime(21 * 60_000);
-    await t.action(internal.imageryLive.buildIndex, {});
-    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
-    expect(((await runState(t, 'index'))?.backoffUntil ?? 0) - Date.now()).toBeGreaterThan(
-      59 * 60_000,
-    );
-    w.manifests.set(key, manifest(a, '2026-10-05T15:30:00Z'));
-    vi.advanceTimersByTime(61 * 60_000);
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
+    // The last cut has landed and imagery is paused: nothing will mark the index dirty again —
+    // the retry is what reads it, in half an hour.
     expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
-    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 0 });
-    expect((await runs(t)).at(-1)).toMatchObject({ outcome: 'ok' });
+    expect(JSON.stringify((await scheduled(t, 'broadcastToStaff'))[0]?.args[0])).toContain(
+      'again in 30 minutes',
+    );
+    // A good frame lands meanwhile: it is built on the next tick, not held for the retry.
+    vi.advanceTimersByTime(10 * 60_000);
+    w.manifests.set(`frames/${SEASON}/${b}.json`, manifest(b, '2026-10-06T15:30:00Z'));
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
+    // Still unreadable on that build too: the next wait doubles to an hour.
+    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
+    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
+    // The page shows the wait, and Try again now makes it due at once.
+    await seedAdmin(t);
+    const admin = t.withIdentity({ subject: 'admin' });
+    expect((await admin.query(api.imageryLive.activity, {})).indexRetryAt).toBeGreaterThan(
+      Date.now(),
+    );
+    await admin.mutation(api.imageryLive.tryAgainNow, {});
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(2);
+    // The manifest is fixed: the retry reads it, and the wait is gone.
+    w.manifests.set(bad, manifest(a, '2026-10-05T15:30:00Z'));
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 4 });
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
+    const job = await runState(t, 'index');
+    expect(job?.retryAt).toBeUndefined();
+    expect(job?.unreadableStreak).toBeUndefined();
   });
 
-  test('the unreadable backoff doubles from half an hour to a six-hour ceiling', () => {
-    expect([1, 2, 3, 4, 5, 6, 9].map((n) => unreadableBackoffMs(n) / 60_000)).toEqual([
+  test('the unreadable retry waits half an hour, doubling to a six-hour ceiling', () => {
+    expect([1, 2, 3, 4, 5, 6, 9].map((n) => unreadableRetryMs(n) / 60_000)).toEqual([
       30, 60, 120, 240, 360, 360, 360,
     ]);
   });

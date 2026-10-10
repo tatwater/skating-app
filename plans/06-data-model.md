@@ -61,7 +61,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `imageryGranules` | every pass the live poll queued, and how it settled (landed, empty, failed) — D214 |
 | `imageryFrames` | one row per frame manifest listed in R2 for the live season: what the season index is composed from — D214 |
 | `imageryRuns` | every live-imagery pass (poll, pump beat, index build) — the run history on `/admin/seasons` — D214 |
-| `imageryPump` | the live job's run state per job (pump, index), both on fixed crons: an owner-token lease, the backoff, the breaker's streak, blind runs, the index's asked-for and built rebuilds, and its run of unreadable builds — D214 |
+| `imageryPump` | the live job's run state per job (pump, index), both on fixed crons: an owner-token lease, the backoff, the breaker's streak, blind runs, the index's asked-for and built rebuilds, and its run of builds with unreadable manifests and when it next re-reads them — D214 |
 | `imageryCounts` | the granule ledger's totals per season, kept beside every status change — D214 |
 | `dailyThrottle` | once per key per New York day (operator alerts), or busy until a time (the full history fill) — A06i |
 | `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; `/admin/imports` — A06c §6.2 |

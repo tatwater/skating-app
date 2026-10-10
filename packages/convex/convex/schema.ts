@@ -1383,8 +1383,12 @@ export default defineSchema({
     forcedAt: v.optional(v.number()),
     /** Consecutive pump runs in which no cut in flight could be checked at all. */
     blindTicks: v.optional(v.number()),
-    /** Consecutive index builds that could not read every manifest listed — sets their backoff. */
+    /**
+     * Index builds in a row that could not read every manifest listed, and when the next re-reads
+     * them — the retry waits, doubling; a frame landing meanwhile is built as usual.
+     */
     unreadableStreak: v.optional(v.number()),
+    retryAt: v.optional(v.number()),
     /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
     dirtySeq: v.optional(v.number()),
     builtSeq: v.optional(v.number()),

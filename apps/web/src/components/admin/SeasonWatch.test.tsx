@@ -374,7 +374,9 @@ describe('FieldDates', () => {
   });
 
   it("says how long the fill is spread over, in the server's pacing", () => {
-    expect(historyFillHint(10, 32 * 75 * 60_000)).toContain('about 40 hours');
-    expect(historyFillHint(10, 10 * 2 * 60_000)).toContain('about 20 minutes');
+    expect(historyFillHint(11, 32 * 75 * 60_000)).toContain('11 seasons');
+    expect(historyFillHint(11, 32 * 75 * 60_000)).toContain('over about 40 hours');
+    expect(historyFillHint(11, 10 * 2 * 60_000)).toContain('over about 20 minutes');
+    expect(historyFillHint(11, 0)).toContain('runs at once');
   });
 });

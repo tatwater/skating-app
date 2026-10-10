@@ -93,6 +93,18 @@ describe('the replay', () => {
     expect(previewSeasons(docs, roster, DEFAULT_SEASON_WATCH_SETTINGS, [])[0]?.missingLows).toBe(0);
   });
 
+  it("counts a past season the live watch kept, without the archive's spring, as missing", () => {
+    const kept = docs.map((d) =>
+      d.waterBodyId === 'valley' ? { ...d, source: 'forecast' as const, archiveFilled: false } : d,
+    );
+    const rows = previewSeasons(kept, roster, DEFAULT_SEASON_WATCH_SETTINGS, [], 'winter-2026-27');
+    // The season under way is whole so far; last season is not.
+    expect(rows.map((r) => [r.season, r.missingLows])).toEqual([
+      ['winter-2026-27', 0],
+      ['winter-2025-26', 1],
+    ]);
+  });
+
   it('builds the roster from the resolved sites, not the ids a version stored', () => {
     // `clouds-old` was merged into `clouds`: the server resolved it, so the replay reads `clouds`.
     const sites = [

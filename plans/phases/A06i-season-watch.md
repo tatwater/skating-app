@@ -203,8 +203,10 @@ during render, so a save does not blank the page. A second self-review pass made
 single-flight (a fill asked for during one books one re-plan for its end, rather than queueing its
 work again and stretching its hold) and taught it that a past season the live watch kept still
 needs the archive's spring (`archiveFilledAt`). In the imagery job: a spawn batch asks again before
-each create, so nothing starts after *Pause*; an unreadable manifest leaves the index request
-standing and backs the index off — half an hour, doubling to six hours — with one email a day.
+each create, so nothing starts after *Pause*; a manifest the index cannot read is re-read after
+half an hour, doubling to six hours while it stays unreadable, with one email a day and the wait on
+the page (*Try again now* ends it). A first version backed the whole index job off, which held back
+good frames landing meanwhile — the third self-review pass caught it; only the retry waits now.
 
 ### §6 — `/admin/seasons`
 

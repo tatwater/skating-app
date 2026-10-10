@@ -239,23 +239,37 @@ export async function sampleSites(
   ctx: QueryCtx,
   config: Pick<WatchConfig, 'sentinels' | 'pinned'> & { sampleSize: number },
 ) {
-  // ⚠ A roster lake merged into another roster lake is reported too: the survivor already votes
-  // once, and quietly folding the two would let a save drop the second entry unseen.
-  const taken = new Set<string>();
-  const resolveAll = async (sites: readonly RosterSite[]) => {
-    const found: Doc<'waterBodies'>[] = [];
-    const missing: RosterSite[] = [];
-    for (const site of sites) {
-      const b = await resolveSurvivor(ctx, site.waterBodyId);
-      if (b && isListed(b) && !taken.has(b._id)) {
-        taken.add(b._id);
-        found.push(b);
-      } else missing.push(site);
-    }
-    return { found, missing };
-  };
-  const sentinels = await resolveAll(config.sentinels);
-  const pinned = await resolveAll(config.pinned);
+  // ⚠ **A roster lake merged into another roster lake is reported**, not folded in: the survivor
+  // already votes once, and folding would let a save drop the merged entry unseen. Entries that are
+  // their own survivor claim their lake first, so it is the merged loser that is named, whichever
+  // list each is in.
+  const roster = [
+    ...config.sentinels.map((site) => ({ site, role: 'sentinel' as const })),
+    ...config.pinned.map((site) => ({ site, role: 'pinned' as const })),
+  ];
+  const resolved: {
+    site: RosterSite;
+    role: 'sentinel' | 'pinned';
+    b: Doc<'waterBodies'> | null;
+  }[] = [];
+  for (const entry of roster) {
+    const b = await resolveSurvivor(ctx, entry.site.waterBodyId);
+    resolved.push({ ...entry, b: b && isListed(b) ? b : null });
+  }
+  const claimed = new Set(
+    resolved.filter((r) => r.b?._id === r.site.waterBodyId).map((r) => r.site.waterBodyId),
+  );
+  for (const r of resolved) {
+    if (!r.b || r.b._id === r.site.waterBodyId) continue;
+    if (claimed.has(r.b._id)) r.b = null;
+    else claimed.add(r.b._id);
+  }
+  const ofRole = (role: 'sentinel' | 'pinned') => ({
+    found: resolved.filter((r) => r.role === role && r.b).map((r) => r.b as Doc<'waterBodies'>),
+    missing: resolved.filter((r) => r.role === role && !r.b).map((r) => r.site),
+  });
+  const sentinels = ofRole('sentinel');
+  const pinned = ofRole('pinned');
 
   // ⚠ **Filter while reading, not after a fixed take** (Greptile, PR #74): every boosted tombstone
   // a fixed take spent would shrink the sample, and a shrinking sample is how one freezing pond comes
@@ -362,7 +376,8 @@ export const storeSeries = internalMutation({
         lat: site.lat,
         lng: site.lng,
         source: keepLive ? ('forecast' as const) : source,
-        ...(keepLive ? { archiveFilledAt: now } : {}),
+        // Marked only when the archive had nights to give: an empty answer is retried later.
+        ...(keepLive && observed.length > 0 ? { archiveFilledAt: now } : {}),
         firstDate: merged.firstDate,
         lows: merged.lows,
         updatedAt: now,
@@ -439,11 +454,12 @@ export const overview = query({
       fieldDates: fieldDates.sort((a, b) => a.date.localeCompare(b.date)),
       defaultsInCode: DEFAULTS_IN_CODE,
       historyFirstSeason: HISTORY_FIRST_SEASON_YEAR,
-      // How long *Fill history* runs from nothing for the sites watched now — the planner's pacing.
-      historyFillMs: (() => {
+      // What *Fill history* covers, and how long it runs from nothing for the sites watched now —
+      // the planner's own seasons and pacing, so the page's estimate cannot drift from it.
+      historyFill: (() => {
         const seasons = fillSeasons(Date.now()).length;
         const perSeason = Math.ceil(sites.length / HISTORY_SITES_PER_REQUEST);
-        return fillPacing(perSeason * seasons, seasons).spanMs;
+        return { seasons, spanMs: fillPacing(perSeason * seasons, seasons).spanMs };
       })(),
     };
   },
@@ -486,6 +502,8 @@ export const series = query({
       name: d.name,
       state: d.state ?? null,
       source: d.source,
+      // Whether a past season is whole (`holdsSeason`): the page counts one that is not as missing.
+      archiveFilled: holdsSeason(d, false),
       firstDate: d.firstDate,
       lows: d.lows,
     }));
@@ -687,7 +705,7 @@ export const requestHistoryFill = mutation({
     const busy = await busyUntil(ctx, FILL_KEY);
     if (busy !== null && busy > Date.now()) {
       throw new ConvexError(
-        `A full history fill is still running, until ${new Date(busy).toUTCString()}.`,
+        `A history fill is still running, until ${new Date(busy).toUTCString()}.`,
       );
     }
     // Planned in this same transaction, so the busy mark and the scheduled requests commit
@@ -744,20 +762,14 @@ export function historySeasons(nowMs: number): string[] {
 }
 
 /**
- * Whether a fill would add nothing to one site's season. The current season: once it has lows at
- * all (the live watch keeps it up). A past season: once the archive has been over it — a season the
+ * Whether a stored season leaves a fill nothing to add. The current season: once it has lows at all
+ * (the live watch keeps it up). A past season: once the archive has been over it — a season the
  * live watch kept ends at its close, and the spring a thaw rule replays is still to fill.
  */
-async function holdsSeason(
-  ctx: QueryCtx,
-  season: string,
-  waterBodyId: Id<'waterBodies'>,
+export function holdsSeason(
+  doc: Pick<Doc<'seasonWatchSeries'>, 'source' | 'archiveFilledAt'> | null,
   isCurrent: boolean,
-): Promise<boolean> {
-  const doc = await ctx.db
-    .query('seasonWatchSeries')
-    .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', waterBodyId))
-    .unique();
+): boolean {
   if (!doc) return false;
   return isCurrent || doc.source === 'archive' || doc.archiveFilledAt !== undefined;
 }
@@ -779,7 +791,8 @@ async function planHistoryFill(
 ): Promise<{ requests: number; deferredUntil?: number }> {
   const now = Date.now();
   const busy = await busyUntil(ctx, FILL_KEY);
-  if (busy !== null && busy > now) {
+  // A minute's slack, so the re-plan booked for a fill's end never reads itself as early.
+  if (busy !== null && busy > now + 60_000) {
     const booked = await busyUntil(ctx, REPLAN_KEY);
     if (booked === null || booked < busy) {
       await setBusyUntil(ctx, REPLAN_KEY, busy);
@@ -796,10 +809,18 @@ async function planHistoryFill(
 
   const requests: { season: string; sites: typeof sites }[] = [];
   for (const season of seasons) {
-    const lacking: typeof sites = [];
-    for (const site of sites) {
-      if (!(await holdsSeason(ctx, season, site.siteId, season === current))) lacking.push(site);
-    }
+    // One range read a season — a few dozen documents — rather than a lookup per site.
+    const stored = new Map(
+      (
+        await ctx.db
+          .query('seasonWatchSeries')
+          .withIndex('by_season_body', (q) => q.eq('season', season))
+          .take(500)
+      ).map((d) => [d.waterBodyId as string, d]),
+    );
+    const lacking = sites.filter(
+      (site) => !holdsSeason(stored.get(site.siteId) ?? null, season === current),
+    );
     for (let i = 0; i < lacking.length; i += HISTORY_SITES_PER_REQUEST) {
       requests.push({ season, sites: lacking.slice(i, i + HISTORY_SITES_PER_REQUEST) });
     }
@@ -836,7 +857,11 @@ export const heldSites = internalQuery({
   handler: async (ctx, { season, waterBodyIds, isCurrent }) => {
     const out: Id<'waterBodies'>[] = [];
     for (const id of waterBodyIds) {
-      if (await holdsSeason(ctx, season, id, isCurrent)) out.push(id);
+      const doc = await ctx.db
+        .query('seasonWatchSeries')
+        .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
+        .unique();
+      if (holdsSeason(doc, isCurrent)) out.push(id);
     }
     return out;
   },

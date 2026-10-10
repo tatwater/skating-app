@@ -5,7 +5,6 @@ import {
   DEFAULT_SEASON_WATCH_SETTINGS,
   searchQueryArg,
   seasonFloorDate,
-  seasonStartYear,
 } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
@@ -168,10 +167,17 @@ function AdminSeasons() {
   const derived = useMemo(() => {
     if (!overview || !series || !saved || !savedSites || !draft) return null;
     const fieldDates = overview.fieldDates;
-    const savedRows = previewSeasons(series, rosterOf(savedSites), saved.settings, fieldDates);
+    const current = archiveSeasonAt(Date.now());
+    const savedRows = previewSeasons(
+      series,
+      rosterOf(savedSites),
+      saved.settings,
+      fieldDates,
+      current,
+    );
     const editedRows =
       draft.valid && editedSites
-        ? previewSeasons(series, rosterOf(editedSites), draft.edited, fieldDates)
+        ? previewSeasons(series, rosterOf(editedSites), draft.edited, fieldDates, current)
         : savedRows;
     return { ...draft, savedRows, editedRows };
   }, [overview, series, saved, savedSites, draft, editedSites]);
@@ -295,10 +301,7 @@ function AdminSeasons() {
         }
       >
         <p className="text-foreground-muted text-xs">
-          {historyFillHint(
-            seasonStartYear(season) - overview.historyFirstSeason,
-            overview.historyFillMs,
-          )}
+          {historyFillHint(overview.historyFill.seasons, overview.historyFill.spanMs)}
         </p>
         {fill.error ? <p className="text-destructive text-sm">{fill.error}</p> : null}
         {resampling && previewed === undefined ? (

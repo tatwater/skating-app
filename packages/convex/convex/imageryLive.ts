@@ -17,8 +17,8 @@
  * 3. **`buildIndex`** (cron, every 10 minutes, when a frame has landed) — under its own lease: lists
  *    `frames/<season>/` in R2, reads only manifests it has not seen, drops rows whose manifest is
  *    gone, and writes `index/<season>.json` — and `index/latest.json` on turnover. Built from the
- *    bucket, never from what was launched (A06e). A failed build is retried on the next tick; one
- *    that could not read a manifest it listed, after a backoff that doubles while it keeps failing.
+ *    bucket, never from what was launched (A06e). A failed build is retried on the next tick; a
+ *    manifest it could not read, after a wait that doubles while it stays unreadable.
  *
  * ⚠ **Why one leased pump on a fixed tick** (three self-review rounds, 2026-10-06). Separate
  * self-rescheduling spawn and reconcile chains multiplied, each sized its spawn batch from its own
@@ -96,6 +96,7 @@ import {
   markBuilt,
   markDirty,
   outstanding,
+  retryNow,
   SPAWN_BREAKER,
 } from './lib/imageryPump';
 import {
@@ -158,18 +159,6 @@ const LOST_CLAIM_MS = 10 * 60_000;
 
 /** Manifests fetched at once while indexing. */
 const MANIFEST_CONCURRENCY = 8;
-
-/**
- * How long the index waits after a build that could not read every manifest: half an hour, doubling
- * each time in a row, to six hours. A blip clears on the first retry; a manifest written corrupt
- * costs a handful of rebuilds a day rather than one every ten minutes.
- */
-const UNREADABLE_BACKOFF_MS = 30 * 60_000;
-const UNREADABLE_BACKOFF_CAP_MS = 6 * 60 * 60_000;
-
-export function unreadableBackoffMs(streak: number): number {
-  return Math.min(UNREADABLE_BACKOFF_MS * 2 ** (streak - 1), UNREADABLE_BACKOFF_CAP_MS);
-}
 
 type Outcome = Doc<'imageryRuns'>['outcome'];
 type Status = Doc<'imageryGranules'>['status'];
@@ -253,8 +242,6 @@ export const end = internalMutation({
     backoff: v.optional(v.boolean()),
     refusalStreak: v.optional(v.number()),
     blindTicks: v.optional(v.number()),
-    backoffMs: v.optional(v.number()),
-    unreadableStreak: v.optional(v.number()),
   },
   handler: async (ctx, { key, token, ...outcome }) => {
     await endRun(ctx, key, token, outcome);
@@ -271,11 +258,8 @@ export const markIndexDirty = internalMutation({
 });
 
 export const markIndexBuilt = internalMutation({
-  args: { seq: v.number() },
-  handler: async (ctx, { seq }) => {
-    await markBuilt(ctx, 'index', seq);
-    return null;
-  },
+  args: { seq: v.number(), unreadable: v.optional(v.number()) },
+  handler: async (ctx, { seq, unreadable }) => await markBuilt(ctx, 'index', seq, unreadable),
 });
 
 /** Whether a tick has anything to do: a cut in flight, or one queued and allowed to start. */
@@ -296,7 +280,7 @@ export const hasWork = internalQuery({
 /** The rebuild the index tick should satisfy, or `null`. */
 export const indexOutstanding = internalQuery({
   args: {},
-  handler: async (ctx) => outstanding(await jobRow(ctx, 'index')),
+  handler: async (ctx) => outstanding(await jobRow(ctx, 'index'), Date.now()),
 });
 
 /** Hand untried claims back to the queue unchanged, in one transaction. */
@@ -1088,13 +1072,18 @@ export const retryFailed = mutation({
   },
 });
 
-/** *Try again now*: an admin who fixed what was failing ends the backoff and closes the breaker. */
+/**
+ * *Try again now*: an admin who fixed what was failing ends the pump's backoff and closes the
+ * breaker — and makes a pending re-read of unreadable manifests due, with a build to do it.
+ */
 export const tryAgainNow = mutation({
   args: {},
   handler: async (ctx) => {
     await requireContributorRole(ctx, 'admin');
     await clearBackoff(ctx, 'pump');
+    await retryNow(ctx, 'index');
     await ctx.scheduler.runAfter(0, internal.imageryLive.pump, {});
+    await ctx.scheduler.runAfter(0, internal.imageryLive.buildIndex, {});
     return null;
   },
 });
@@ -1138,6 +1127,12 @@ export const syncFrames = internalMutation({
   },
 });
 
+/** `90 * 60_000` → `2 hours`; under two hours, in minutes. */
+function inWords(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  return minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
+}
+
 /** A manifest reduced to what the season index carries — the per-body stats stay in R2. */
 export function frameFromManifest(manifestKey: string, m: FrameManifest) {
   return {
@@ -1167,29 +1162,34 @@ export const buildIndex = internalAction({
     const token = crypto.randomUUID();
     const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
     if (!begun.ok) return null;
-    let outcome: { unreadableStreak?: number; backoffMs?: number } = {};
     try {
       const result = await buildIndexOnce(ctx);
       if (result === null) return null;
-      if (result.unreadable === 0) {
-        await ctx.runMutation(internal.imageryLive.markIndexBuilt, { seq });
-        outcome = { unreadableStreak: 0 };
-      } else {
-        // An index missing a frame it listed is not built: the request stands — even after the last
-        // cut, a Pause or the watch's end — and a later build reads what this one could not.
-        const streak = begun.unreadableStreak + 1;
-        outcome = { unreadableStreak: streak, backoffMs: unreadableBackoffMs(streak) };
+      // Built even with a manifest it could not read, so a frame landing later is not held back;
+      // what it could not read is retried after a wait that doubles while it keeps failing.
+      const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
+        seq,
+        unreadable: result.unreadable,
+      });
+      if (retryInMs !== null) {
+        const n = result.unreadable;
+        await ctx.runMutation(internal.imageryLive.alertAdmins, {
+          key: 'imagery-index-unreadable',
+          season: result.season,
+          problem: 'Some cut frames cannot be read into the imagery index',
+          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read, so ${n === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index reads ${n === 1 ? 'it' : 'them'} again in ${inWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
+        });
       }
       return { frames: result.frames };
     } finally {
-      await ctx.runMutation(internal.imageryLive.end, { key: 'index', token, ...outcome });
+      await ctx.runMutation(internal.imageryLive.end, { key: 'index', token });
     }
   },
 });
 
 async function buildIndexOnce(
   ctx: ActionCtx,
-): Promise<{ frames: number; unreadable: number } | null> {
+): Promise<{ frames: number; unreadable: number; season: string } | null> {
   const startedAt = Date.now();
   const season = archiveSeasonAt(startedAt);
   const config = configured();
@@ -1281,17 +1281,7 @@ async function buildIndexOnce(
         frames: index.frames.length,
       },
     });
-    if (unreadable > 0) {
-      // A manifest that stays unreadable (written corrupt, say) would otherwise retry quietly
-      // forever; one email a day says so, so someone can look.
-      await ctx.runMutation(internal.imageryLive.alertAdmins, {
-        key: 'imagery-index-unreadable',
-        season,
-        problem: 'Some cut frames cannot be read into the imagery index',
-        detail: `${unreadable} manifest${unreadable === 1 ? '' : 's'} in frames/${season}/ could not be read, so ${unreadable === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index tries again after half an hour, then less often, until they read.`,
-      });
-    }
-    return { frames: index.frames.length, unreadable };
+    return { frames: index.frames.length, unreadable, season };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await ctx.runMutation(internal.imageryLive.alertAdmins, {
@@ -1330,6 +1320,7 @@ export const activity = query({
       .order('desc')
       .take(10);
     const pump = await jobRow(ctx, 'pump');
+    const index = await jobRow(ctx, 'index');
     return {
       runs,
       counts: {
@@ -1341,6 +1332,7 @@ export const activity = query({
       },
       failed: failed.map((g) => ({ granuleId: g.granuleId, lastError: g.lastError ?? null })),
       backoffUntil: pump?.backoffUntil ?? null,
+      indexRetryAt: index?.retryAt ?? null,
       configured: configured().ok,
       pollCap: POLL_CAP,
       maxLive: MAX_LIVE_MACHINES,

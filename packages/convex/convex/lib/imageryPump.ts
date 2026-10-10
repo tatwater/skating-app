@@ -42,7 +42,7 @@ async function ensureRow(ctx: MutationCtx, key: JobKey): Promise<Doc<'imageryPum
 }
 
 export type Begun =
-  | { ok: true; refusalStreak: number; blindTicks: number; unreadableStreak: number }
+  | { ok: true; refusalStreak: number; blindTicks: number }
   | { ok: false; reason: 'running' | 'backing off' };
 
 /**
@@ -68,12 +68,7 @@ export async function beginRun(ctx: MutationCtx, key: JobKey, token: string): Pr
     backoffUntil: undefined,
     refusalStreak: streak,
   });
-  return {
-    ok: true,
-    refusalStreak: streak,
-    blindTicks: row.blindTicks ?? 0,
-    unreadableStreak: row.unreadableStreak ?? 0,
-  };
+  return { ok: true, refusalStreak: streak, blindTicks: row.blindTicks ?? 0 };
 }
 
 /**
@@ -85,14 +80,7 @@ export async function endRun(
   ctx: MutationCtx,
   key: JobKey,
   token: string,
-  outcome: {
-    backoff?: boolean;
-    /** A backoff of its own length, rather than `BACKOFF_MS`. */
-    backoffMs?: number;
-    refusalStreak?: number;
-    blindTicks?: number;
-    unreadableStreak?: number;
-  },
+  outcome: { backoff?: boolean; refusalStreak?: number; blindTicks?: number },
 ): Promise<void> {
   const row = await jobRow(ctx, key);
   if (!row || row.token !== token) return;
@@ -103,16 +91,9 @@ export async function endRun(
     ...(resetDuringRun
       ? {}
       : {
-          ...(outcome.backoffMs !== undefined
-            ? { backoffUntil: Date.now() + outcome.backoffMs }
-            : outcome.backoff
-              ? { backoffUntil: Date.now() + BACKOFF_MS }
-              : {}),
+          ...(outcome.backoff ? { backoffUntil: Date.now() + BACKOFF_MS } : {}),
           ...(outcome.refusalStreak !== undefined ? { refusalStreak: outcome.refusalStreak } : {}),
           ...(outcome.blindTicks !== undefined ? { blindTicks: outcome.blindTicks } : {}),
-          ...(outcome.unreadableStreak !== undefined
-            ? { unreadableStreak: outcome.unreadableStreak }
-            : {}),
         }),
   });
 }
@@ -134,10 +115,27 @@ export async function markDirty(ctx: MutationCtx, key: JobKey): Promise<void> {
   await ctx.db.patch(row._id, { dirtySeq: (row.dirtySeq ?? 0) + 1 });
 }
 
-/** The rebuild a build should satisfy, or `null` if none is outstanding. */
-export function outstanding(row: Doc<'imageryPump'> | null): number | null {
+/**
+ * The rebuild a build should satisfy, or `null` if none is outstanding: one asked for since the last
+ * build, or — once `retryAt` has come — a retry of manifests the last build could not read.
+ */
+export function outstanding(row: Doc<'imageryPump'> | null, now: number): number | null {
   const asked = row?.dirtySeq ?? 0;
-  return asked > (row?.builtSeq ?? 0) ? asked : null;
+  if (asked > (row?.builtSeq ?? 0)) return asked;
+  return row?.retryAt !== undefined && row.retryAt <= now ? asked : null;
+}
+
+/**
+ * How long the index waits to re-read manifests it could not: half an hour, doubling each build in
+ * a row that still cannot, to six hours. A blip clears on the first retry; a manifest written
+ * corrupt costs a handful of rebuilds a day rather than one every ten minutes. Only the retry waits —
+ * a frame landing meanwhile asks for its own build, which is never held back.
+ */
+const UNREADABLE_RETRY_MS = 30 * 60_000;
+const UNREADABLE_RETRY_CAP_MS = 6 * 60 * 60_000;
+
+export function unreadableRetryMs(streak: number): number {
+  return Math.min(UNREADABLE_RETRY_MS * 2 ** (streak - 1), UNREADABLE_RETRY_CAP_MS);
 }
 
 /**
@@ -145,7 +143,27 @@ export function outstanding(row: Doc<'imageryPump'> | null): number | null {
  * so a build killed mid-way (the action limit, a deploy) leaves the request standing for the next
  * tick; and a frame that lands during the build raises `dirtySeq` past `seq`, so it is built again.
  */
-export async function markBuilt(ctx: MutationCtx, key: JobKey, seq: number): Promise<void> {
+export async function markBuilt(
+  ctx: MutationCtx,
+  key: JobKey,
+  seq: number,
+  unreadable = 0,
+): Promise<{ retryInMs: number | null }> {
   const row = await ensureRow(ctx, key);
-  if ((row.builtSeq ?? 0) < seq) await ctx.db.patch(row._id, { builtSeq: seq });
+  // ⚠ **A build that could not read a manifest still completes its request**, so a frame landing
+  // later is built on the next tick as usual; what it could not read is retried at `retryAt`.
+  const streak = unreadable > 0 ? (row.unreadableStreak ?? 0) + 1 : 0;
+  const retryInMs = unreadable > 0 ? unreadableRetryMs(streak) : null;
+  await ctx.db.patch(row._id, {
+    ...((row.builtSeq ?? 0) < seq ? { builtSeq: seq } : {}),
+    unreadableStreak: streak > 0 ? streak : undefined,
+    retryAt: retryInMs === null ? undefined : Date.now() + retryInMs,
+  });
+  return { retryInMs };
+}
+
+/** An admin's "try again now" for the index: a pending re-read of unreadable manifests is due. */
+export async function retryNow(ctx: MutationCtx, key: JobKey): Promise<void> {
+  const row = await jobRow(ctx, key);
+  if (row?.retryAt !== undefined) await ctx.db.patch(row._id, { retryAt: Date.now() });
 }

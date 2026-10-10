@@ -227,6 +227,9 @@ describe('the overview and the stored lows', () => {
     expect(overview.missing).toEqual([]);
     expect(overview.defaultsInCode.settings).toContain('DEFAULT_SEASON_WATCH_SETTINGS');
     expect(overview.historyFirstSeason).toBe(HISTORY_FIRST_SEASON_YEAR);
+    // Two sites, one request a season: a small fill, two minutes apart, over the planner's seasons.
+    const seasons = 1 + historySeasons(Date.now()).length;
+    expect(overview.historyFill).toEqual({ seasons, spanMs: (seasons - 1) * 2 * 60_000 });
   });
 
   test("previews an edited roster by the cron's rule: survivors, and the sample re-drawn", async () => {
@@ -289,6 +292,32 @@ describe('the overview and the stored lows', () => {
     const overview = await admin.as.query(api.seasonWatch.overview, {});
     expect(overview.missing.map((m) => m.name)).toEqual(['Upper Lake of the Clouds']);
     expect(overview.versions).toHaveLength(1);
+  });
+
+  test('a sentinel merged into a pinned lake is the one reported — the pinned lake stays', async () => {
+    const t = convexTest(schema, modules);
+    const summit = await seedBody(t, 'Upper Lake of the Clouds', 44.258);
+    const pinnedLake = await seedBody(t, 'Lakes of the Clouds', 44.259);
+    await t.run((ctx) =>
+      ctx.db.insert('seasonWatchSettings', {
+        version: 1,
+        settings: DEFAULT_SEASON_WATCH_SETTINGS,
+        sentinels: [{ waterBodyId: summit, name: 'Upper Lake of the Clouds' }],
+        pinned: [{ waterBodyId: pinnedLake, name: 'Lakes of the Clouds' }],
+        savedAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(summit, { dedupStatus: 'merged' as const, mergedIntoId: pinnedLake }),
+    );
+    const admin = await seedUser(t, 'admin', 'admin');
+    const overview = await admin.as.query(api.seasonWatch.overview, {});
+    expect(overview.sites.map((s) => [s.name, s.role])).toEqual([
+      ['Lakes of the Clouds', 'pinned'],
+    ]);
+    expect(overview.missing).toEqual([
+      { waterBodyId: summit, name: 'Upper Lake of the Clouds', role: 'sentinel' },
+    ]);
   });
 
   test('reports a roster lake merged into another roster lake, with its role', async () => {
@@ -370,6 +399,8 @@ describe('the overview and the stored lows', () => {
         // The state from the first write stays: a later write without one does not erase it.
         state: 'NH',
         source: 'forecast',
+        // Kept live, never topped up by the archive: whole only while it is the current season.
+        archiveFilled: false,
         firstDate: '2026-10-01',
         lows: [3, -1, -2],
       },
@@ -707,6 +738,13 @@ describe('history', () => {
     expect((await scheduled(t, 'fillSeason'))[0]?.args[0]).toMatchObject({
       season: 'winter-2025-26',
     });
+    // An archive answer with no nights for it marks nothing: it is still lacking.
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2025-26',
+      source: 'archive',
+      sites: [{ ...site, days: [] }],
+    });
+    expect(await plan()).toEqual({ requests: 1 });
     // The archive fills its gaps — and marks it, so the next plan leaves it be.
     await t.mutation(internal.seasonWatch.storeSeries, {
       season: 'winter-2025-26',
