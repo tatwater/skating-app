@@ -56,12 +56,12 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `imageryIngestSeasons` | the season watch's verdict, one row per season: when the ice watch opened and why (with the settings that decided it), the first 20 °F sentinel night, winter region-wide, the end; the staff-email queue; whether imagery was started — D149, D161, D212–D214 |
 | `imageryIngestSeasonsSuperseded` | a season-watch row an admin reset, kept whole — D213 |
 | `seasonWatchSettings` | every saved version of the watch's thresholds and roster; the highest is current — D213 |
-| `seasonWatchSeries` | overnight lows per (season, site), compact: what the watch measured, and the archive back to 2016-17, so a season can be replayed under other settings — A06i §3 |
+| `seasonWatchSeries` | overnight lows per (season, site), compact: what the watch measured, and the archive back to 2016-17, so a season can be replayed under other settings; `archiveFilledAt` marks a live-kept season the archive has topped up — A06i §3 |
 | `seasonFieldDates` | the first and last days anyone skated, per season, admin-entered for the preview to compare against — A06i §6 |
 | `imageryGranules` | every pass the live poll queued, and how it settled (landed, empty, failed) — D214 |
 | `imageryFrames` | one row per frame manifest listed in R2 for the live season: what the season index is composed from — D214 |
 | `imageryRuns` | every live-imagery pass (poll, pump beat, index build) — the run history on `/admin/seasons` — D214 |
-| `imageryPump` | the live job's run state per job (pump, index), both on fixed crons: an owner-token lease, the backoff, the breaker's streak, blind runs, and the index's asked-for and built rebuilds — D214 |
+| `imageryPump` | the live job's run state per job (pump, index), both on fixed crons: an owner-token lease, the backoff, the breaker's streak, blind runs, the index's asked-for and built rebuilds, and its run of unreadable builds — D214 |
 | `imageryCounts` | the granule ledger's totals per season, kept beside every status change — D214 |
 | `dailyThrottle` | once per key per New York day (operator alerts), or busy until a time (the full history fill) — A06i |
 | `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; `/admin/imports` — A06c §6.2 |

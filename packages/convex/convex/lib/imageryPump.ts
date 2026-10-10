@@ -42,7 +42,7 @@ async function ensureRow(ctx: MutationCtx, key: JobKey): Promise<Doc<'imageryPum
 }
 
 export type Begun =
-  | { ok: true; refusalStreak: number; blindTicks: number }
+  | { ok: true; refusalStreak: number; blindTicks: number; unreadableStreak: number }
   | { ok: false; reason: 'running' | 'backing off' };
 
 /**
@@ -68,7 +68,12 @@ export async function beginRun(ctx: MutationCtx, key: JobKey, token: string): Pr
     backoffUntil: undefined,
     refusalStreak: streak,
   });
-  return { ok: true, refusalStreak: streak, blindTicks: row.blindTicks ?? 0 };
+  return {
+    ok: true,
+    refusalStreak: streak,
+    blindTicks: row.blindTicks ?? 0,
+    unreadableStreak: row.unreadableStreak ?? 0,
+  };
 }
 
 /**
@@ -80,7 +85,14 @@ export async function endRun(
   ctx: MutationCtx,
   key: JobKey,
   token: string,
-  outcome: { backoff?: boolean; refusalStreak?: number; blindTicks?: number },
+  outcome: {
+    backoff?: boolean;
+    /** A backoff of its own length, rather than `BACKOFF_MS`. */
+    backoffMs?: number;
+    refusalStreak?: number;
+    blindTicks?: number;
+    unreadableStreak?: number;
+  },
 ): Promise<void> {
   const row = await jobRow(ctx, key);
   if (!row || row.token !== token) return;
@@ -91,9 +103,16 @@ export async function endRun(
     ...(resetDuringRun
       ? {}
       : {
-          ...(outcome.backoff ? { backoffUntil: Date.now() + BACKOFF_MS } : {}),
+          ...(outcome.backoffMs !== undefined
+            ? { backoffUntil: Date.now() + outcome.backoffMs }
+            : outcome.backoff
+              ? { backoffUntil: Date.now() + BACKOFF_MS }
+              : {}),
           ...(outcome.refusalStreak !== undefined ? { refusalStreak: outcome.refusalStreak } : {}),
           ...(outcome.blindTicks !== undefined ? { blindTicks: outcome.blindTicks } : {}),
+          ...(outcome.unreadableStreak !== undefined
+            ? { unreadableStreak: outcome.unreadableStreak }
+            : {}),
         }),
   });
 }

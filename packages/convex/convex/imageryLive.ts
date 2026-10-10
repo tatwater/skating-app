@@ -17,8 +17,8 @@
  * 3. **`buildIndex`** (cron, every 10 minutes, when a frame has landed) — under its own lease: lists
  *    `frames/<season>/` in R2, reads only manifests it has not seen, drops rows whose manifest is
  *    gone, and writes `index/<season>.json` — and `index/latest.json` on turnover. Built from the
- *    bucket, never from what was launched (A06e). A failed build, or one that could not read a
- *    manifest it listed, is retried on the next tick.
+ *    bucket, never from what was launched (A06e). A failed build is retried on the next tick; one
+ *    that could not read a manifest it listed, after a backoff that doubles while it keeps failing.
  *
  * ⚠ **Why one leased pump on a fixed tick** (three self-review rounds, 2026-10-06). Separate
  * self-rescheduling spawn and reconcile chains multiplied, each sized its spawn batch from its own
@@ -159,6 +159,18 @@ const LOST_CLAIM_MS = 10 * 60_000;
 /** Manifests fetched at once while indexing. */
 const MANIFEST_CONCURRENCY = 8;
 
+/**
+ * How long the index waits after a build that could not read every manifest: half an hour, doubling
+ * each time in a row, to six hours. A blip clears on the first retry; a manifest written corrupt
+ * costs a handful of rebuilds a day rather than one every ten minutes.
+ */
+const UNREADABLE_BACKOFF_MS = 30 * 60_000;
+const UNREADABLE_BACKOFF_CAP_MS = 6 * 60 * 60_000;
+
+export function unreadableBackoffMs(streak: number): number {
+  return Math.min(UNREADABLE_BACKOFF_MS * 2 ** (streak - 1), UNREADABLE_BACKOFF_CAP_MS);
+}
+
 type Outcome = Doc<'imageryRuns'>['outcome'];
 type Status = Doc<'imageryGranules'>['status'];
 type Settled = 'queued' | 'landed' | 'empty' | 'failed';
@@ -241,6 +253,8 @@ export const end = internalMutation({
     backoff: v.optional(v.boolean()),
     refusalStreak: v.optional(v.number()),
     blindTicks: v.optional(v.number()),
+    backoffMs: v.optional(v.number()),
+    unreadableStreak: v.optional(v.number()),
   },
   handler: async (ctx, { key, token, ...outcome }) => {
     await endRun(ctx, key, token, outcome);
@@ -1153,17 +1167,22 @@ export const buildIndex = internalAction({
     const token = crypto.randomUUID();
     const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
     if (!begun.ok) return null;
+    let outcome: { unreadableStreak?: number; backoffMs?: number } = {};
     try {
       const result = await buildIndexOnce(ctx);
       if (result === null) return null;
-      // An index missing a frame it listed is not built: the request stands, and the next tick reads
-      // the manifests it could not — even after the last cut, a Pause or the watch's end.
       if (result.unreadable === 0) {
         await ctx.runMutation(internal.imageryLive.markIndexBuilt, { seq });
+        outcome = { unreadableStreak: 0 };
+      } else {
+        // An index missing a frame it listed is not built: the request stands — even after the last
+        // cut, a Pause or the watch's end — and a later build reads what this one could not.
+        const streak = begun.unreadableStreak + 1;
+        outcome = { unreadableStreak: streak, backoffMs: unreadableBackoffMs(streak) };
       }
       return { frames: result.frames };
     } finally {
-      await ctx.runMutation(internal.imageryLive.end, { key: 'index', token });
+      await ctx.runMutation(internal.imageryLive.end, { key: 'index', token, ...outcome });
     }
   },
 });
@@ -1240,40 +1259,36 @@ async function buildIndexOnce(
     const turnedOver = index.frames.length > 0 && (!latest?.season || season > latest.season);
     if (turnedOver) await putJson(config.r2, 'index/latest.json', { season });
 
-    // A manifest that stays unreadable (written corrupt, say) keeps the request standing, so this
-    // build repeats every 10 minutes until it reads. One email a day says so; and a repeat that
-    // changed nothing leaves no run row, or a day of them would push every other run off the page.
-    const alerted =
-      unreadable > 0 &&
-      (
-        await ctx.runMutation(internal.imageryLive.alertAdmins, {
-          key: 'imagery-index-unreadable',
-          season,
-          problem: 'Some cut frames cannot be read into the imagery index',
-          detail: `${unreadable} manifest${unreadable === 1 ? '' : 's'} in frames/${season}/ could not be read, so ${unreadable === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index is rebuilt every 10 minutes until they read.`,
-        })
-      ).sent;
-    const changed = added.length + remove.length > 0 || turnedOver;
-    if (unreadable === 0 || changed || alerted) {
-      const details = [
-        ...(turnedOver ? [`index/latest.json → ${season}`] : []),
-        ...(unreadable > 0
-          ? [`${unreadable} manifest${unreadable === 1 ? '' : 's'} unreadable — retrying next tick`]
-          : []),
-      ];
-      await ctx.runMutation(internal.imageryLive.recordRun, {
+    const details = [
+      ...(turnedOver ? [`index/latest.json → ${season}`] : []),
+      ...(unreadable > 0
+        ? [
+            `${unreadable} manifest${unreadable === 1 ? '' : 's'} unreadable — retrying after a backoff`,
+          ]
+        : []),
+    ];
+    await ctx.runMutation(internal.imageryLive.recordRun, {
+      season,
+      kind: 'index',
+      startedAt,
+      outcome: unreadable > 0 ? 'failed' : 'ok',
+      ...(details.length > 0 ? { detail: details.join('; ') } : {}),
+      counts: {
+        manifests: listed.length,
+        added: added.length,
+        removed: remove.length,
+        unreadable,
+        frames: index.frames.length,
+      },
+    });
+    if (unreadable > 0) {
+      // A manifest that stays unreadable (written corrupt, say) would otherwise retry quietly
+      // forever; one email a day says so, so someone can look.
+      await ctx.runMutation(internal.imageryLive.alertAdmins, {
+        key: 'imagery-index-unreadable',
         season,
-        kind: 'index',
-        startedAt,
-        outcome: unreadable > 0 ? 'failed' : 'ok',
-        ...(details.length > 0 ? { detail: details.join('; ') } : {}),
-        counts: {
-          manifests: listed.length,
-          added: added.length,
-          removed: remove.length,
-          unreadable,
-          frames: index.frames.length,
-        },
+        problem: 'Some cut frames cannot be read into the imagery index',
+        detail: `${unreadable} manifest${unreadable === 1 ? '' : 's'} in frames/${season}/ could not be read, so ${unreadable === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index tries again after half an hour, then less often, until they read.`,
       });
     }
     return { frames: index.frames.length, unreadable };

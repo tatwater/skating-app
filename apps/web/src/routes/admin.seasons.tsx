@@ -16,7 +16,6 @@ import {
   historyFillHint,
   ImageryPanel,
   PreviewTable,
-  type RosterEntry,
   SeasonDetail,
   Section,
   SettingsEditor,
@@ -31,6 +30,7 @@ import {
   fromForm,
   type MissingSite,
   previewSeasons,
+  type RosterEntry,
   rosterEntries,
   rosterOf,
   type SeriesDoc,
@@ -155,8 +155,10 @@ function AdminSeasons() {
   // the table back to the saved result between them.
   const [lastPreview, setLastPreview] = useState<typeof previewed>(undefined);
   useEffect(() => {
-    if (previewed !== undefined) setLastPreview(previewed);
-  }, [previewed]);
+    // Forgotten once the edit stops re-drawing (Discard, a save), so a later edit never borrows it.
+    if (!resampling) setLastPreview(undefined);
+    else if (previewed !== undefined) setLastPreview(previewed);
+  }, [previewed, resampling]);
   const preview = resampling ? (previewed ?? lastPreview) : undefined;
   const editedSites =
     savedSites && draft
@@ -251,6 +253,7 @@ function AdminSeasons() {
             setPinned(next.pinned);
           }}
           dirty={derived.dirty}
+          lost={missing}
           picker={(onPick) => <RosterPicker onPick={onPick} />}
           onSave={(note) =>
             saveSettings({
@@ -292,7 +295,10 @@ function AdminSeasons() {
         }
       >
         <p className="text-foreground-muted text-xs">
-          {historyFillHint(seasonStartYear(season) - overview.historyFirstSeason)}
+          {historyFillHint(
+            seasonStartYear(season) - overview.historyFirstSeason,
+            overview.historyFillMs,
+          )}
         </p>
         {fill.error ? <p className="text-destructive text-sm">{fill.error}</p> : null}
         {resampling && previewed === undefined ? (
@@ -302,8 +308,11 @@ function AdminSeasons() {
           <PreviewTable
             edited={derived.editedRows}
             saved={derived.savedRows}
-            // Saving fills what the edit lacks; *Fill history* fills what the saved settings lack.
-            fillHint={derived.resample ? 'saving fills them' : 'Fill history fills them'}
+            // Saving fills what a previewed edit lacks; *Fill history*, what the saved settings lack
+            // — which is what the table shows while the edit's sample loads or is refused.
+            fillHint={
+              derived.resample && editedSites ? 'saving fills them' : 'Fill history fills them'
+            }
           />
         ) : (
           <AdminEmpty>

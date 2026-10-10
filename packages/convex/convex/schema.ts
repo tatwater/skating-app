@@ -1281,6 +1281,11 @@ export default defineSchema({
     firstDate: v.string(),
     lows: v.array(v.union(v.number(), v.null())),
     updatedAt: v.number(),
+    /**
+     * When the archive filled the gaps in a season the live watch kept (`source: 'forecast'`) — the
+     * nights before the watch began and after it closed. Unset, a past season still has them to fill.
+     */
+    archiveFilledAt: v.optional(v.number()),
   })
     .index('by_season_body', ['season', 'waterBodyId'])
     .index('by_body', ['waterBodyId']),
@@ -1378,6 +1383,8 @@ export default defineSchema({
     forcedAt: v.optional(v.number()),
     /** Consecutive pump runs in which no cut in flight could be checked at all. */
     blindTicks: v.optional(v.number()),
+    /** Consecutive index builds that could not read every manifest listed — sets their backoff. */
+    unreadableStreak: v.optional(v.number()),
     /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
     dirtySeq: v.optional(v.number()),
     builtSeq: v.optional(v.number()),

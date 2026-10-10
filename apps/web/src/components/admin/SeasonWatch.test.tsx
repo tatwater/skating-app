@@ -230,6 +230,28 @@ describe('SettingsEditor', () => {
     expect(screen.getByRole('button', { name: 'Save as a new version' })).toBeDisabled();
   });
 
+  it('refuses a lost lake still in the roster, naming it', () => {
+    render(
+      <SettingsEditor
+        {...props}
+        lost={[
+          { waterBodyId: 'a', name: 'Upper Lake of the Clouds' },
+          { waterBodyId: 'z', name: 'Gone' },
+        ]}
+        onFormChange={() => {}}
+        onRosterChange={() => {}}
+        dirty
+        onSave={async () => {}}
+      />,
+    );
+    expect(
+      screen.getByText('Upper Lake of the Clouds is not found any more — remove it.'),
+    ).toBeInTheDocument();
+    // Already removed from the draft: nothing to refuse.
+    expect(screen.queryByText(/Gone is not found/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save as a new version' })).toBeDisabled();
+  });
+
   it('refuses an eleventh sentinel before the server has to', () => {
     render(
       <SettingsEditor
@@ -351,7 +373,8 @@ describe('FieldDates', () => {
     });
   });
 
-  it('says the fill is spread out', () => {
-    expect(historyFillHint(10)).toContain('about 38 hours');
+  it("says how long the fill is spread over, in the server's pacing", () => {
+    expect(historyFillHint(10, 32 * 75 * 60_000)).toContain('about 40 hours');
+    expect(historyFillHint(10, 10 * 2 * 60_000)).toContain('about 20 minutes');
   });
 });

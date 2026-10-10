@@ -88,7 +88,8 @@ documents instead of throwing them away. `fillSeasonHistory` fetches Sep 1 – J
 season back to 2016-17 from the archive, one multi-site request per season, for every site in the
 current settings plus the ordinary sample. After that, a save or *Fill history* fills whatever a
 watched lake has no lows for (a new sample lake, a merged sentinel's survivor, a request that
-failed), and each request skips what has been filled since it was planned. The floor editor stops at
+failed, the spring after a live-kept season closed), one fill at a time, and each request skips
+what has been filled since it was planned. The floor editor stops at
 1 September, where that history begins.
 
 ### §4 — The emails (D212)
@@ -196,10 +197,14 @@ past seasons stay under the loser's id, and any fill request that failed — so 
 lows, a large fill waits behind a running one and holds the busy mark, and each request re-checks
 when it runs. Each queued email keeps the settings that decided its fact, so a reminder found after
 the imagery line moved names the new line. The floor stops at 1 September, where the history
-begins. A roster lake that no longer resolves stays in the draft, flagged, so a save cannot drop it
-silently; the draft is seeded during render, so a save does not blank the page. In the imagery
-job: a spawn batch asks again before each create, so nothing starts after *Pause*; an unreadable
-manifest leaves the index request standing, with one email and at most one run row a day.
+begins. A roster lake that no longer resolves — or that merged into another roster lake — stays in
+the draft, flagged, and blocks the save, so it cannot be dropped silently; the draft is seeded
+during render, so a save does not blank the page. A second self-review pass made the fill
+single-flight (a fill asked for during one books one re-plan for its end, rather than queueing its
+work again and stretching its hold) and taught it that a past season the live watch kept still
+needs the archive's spring (`archiveFilledAt`). In the imagery job: a spawn batch asks again before
+each create, so nothing starts after *Pause*; an unreadable manifest leaves the index request
+standing and backs the index off — half an hour, doubling to six hours — with one email a day.
 
 ### §6 — `/admin/seasons`
 

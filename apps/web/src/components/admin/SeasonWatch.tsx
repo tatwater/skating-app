@@ -55,8 +55,6 @@ import { StatTile, Table, Td, Th } from './adminUi';
  * here means a lake is skateable.
  */
 
-const DAY = 86_400_000;
-
 /** A section with a title and one line of why — the page is long, and each part answers one question. */
 export function Section({
   title,
@@ -481,8 +479,6 @@ export function ImageryPanel({
   );
 }
 
-export type { RosterEntry };
-
 const FIELDS: { key: keyof SettingsForm; label: string; unit: string; help: string }[] = [
   {
     key: 'startMonthDay',
@@ -549,6 +545,7 @@ export function SettingsEditor({
   pinned,
   onRosterChange,
   dirty,
+  lost = [],
   picker,
   onSave,
   onDiscard,
@@ -560,6 +557,8 @@ export function SettingsEditor({
   pinned: RosterEntry[];
   onRosterChange: (next: { sentinels: RosterEntry[]; pinned: RosterEntry[] }) => void;
   dirty: boolean;
+  /** Roster lakes that no longer resolve (merged or delisted): each one still listed is an error. */
+  lost?: RosterEntry[];
   /** The lake search, rendered per list: `picker(onPick)`. */
   picker: (onPick: (entry: RosterEntry) => void) => ReactNode;
   onSave: (note: string) => Promise<unknown>;
@@ -570,6 +569,11 @@ export function SettingsEditor({
   const errors = validateSeasonWatchSettings(edited);
   if (sentinels.length > MAX_ROSTER_SITES || pinned.length > MAX_ROSTER_SITES) {
     errors.push('At most ten sentinels and ten pinned sites.');
+  }
+  // A lost lake stays in the draft so it cannot be dropped unseen; the save would refuse it.
+  const chosen = new Set([...sentinels, ...pinned].map((s) => s.waterBodyId));
+  for (const m of lost) {
+    if (chosen.has(m.waterBodyId)) errors.push(`${m.name} is not found any more — remove it.`);
   }
   const roster = (
     title: string,
@@ -1072,8 +1076,12 @@ export function FieldDates({
   );
 }
 
-/** When each pass of the history fill runs, roughly — so the button's promise is honest. */
-export function historyFillHint(seasons: number): string {
-  const hours = Math.round(((seasons * 3 * 75 * 60_000) / DAY) * 24);
-  return `Fills whatever the watched lakes are missing from ${seasons} past seasons of Open-Meteo's archive. From nothing that is spread over about ${hours} hours, so it never starves the daily weather sweep.`;
+/**
+ * How long the history fill runs, roughly — so the button's promise is honest. `spanMs` is the
+ * server's pacing for the lakes watched now (`overview.historyFillMs`).
+ */
+export function historyFillHint(seasons: number, spanMs: number): string {
+  const minutes = Math.round(spanMs / 60_000);
+  const span = minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
+  return `Fills whatever the watched lakes are missing from ${seasons} past seasons of Open-Meteo's archive. From nothing that is spread over about ${span}, so it never starves the daily weather sweep.`;
 }

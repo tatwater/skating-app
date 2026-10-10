@@ -3,7 +3,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { POLL_CAP, slotOf } from './imageryLive';
+import { POLL_CAP, slotOf, unreadableBackoffMs } from './imageryLive';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1050,7 +1050,7 @@ describe('buildIndex', () => {
     });
   });
 
-  test('an unreadable manifest keeps the rebuild pending until it reads — with no new cut to ask', async () => {
+  test('an unreadable manifest keeps the rebuild pending until it reads, backing off meanwhile', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     const a = s2('19TEA', '20261005');
@@ -1060,14 +1060,28 @@ describe('buildIndex', () => {
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 0 });
     // The last cut has landed and imagery is paused: nothing will mark the index dirty again.
     expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
-    // Still unreadable, the same day: the retry changed nothing, so it leaves no second run row.
+    // Ten minutes on, the next tick waits out the backoff rather than rebuilding.
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    // Still unreadable after half an hour: the next wait is an hour.
+    vi.advanceTimersByTime(21 * 60_000);
     await t.action(internal.imageryLive.buildIndex, {});
-    expect(await runs(t)).toHaveLength(1);
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
+    expect(((await runState(t, 'index'))?.backoffUntil ?? 0) - Date.now()).toBeGreaterThan(
+      59 * 60_000,
+    );
     w.manifests.set(key, manifest(a, '2026-10-05T15:30:00Z'));
+    vi.advanceTimersByTime(61 * 60_000);
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
     expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
+    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 0 });
     expect((await runs(t)).at(-1)).toMatchObject({ outcome: 'ok' });
+  });
+
+  test('the unreadable backoff doubles from half an hour to a six-hour ceiling', () => {
+    expect([1, 2, 3, 4, 5, 6, 9].map((n) => unreadableBackoffMs(n) / 60_000)).toEqual([
+      30, 60, 120, 240, 360, 360, 360,
+    ]);
   });
 
   test('a failed rebuild alerts the admins', async () => {

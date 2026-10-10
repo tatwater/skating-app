@@ -98,6 +98,10 @@ const ROSTER_SEARCH_TAKE = 50;
 /** The most boost-ordered rows the sample walk reads to find `sampleSize` listed ones. */
 const SAMPLE_SCAN_CAP = 200;
 
+/** The history fill's busy mark (one fill at a time), and the re-plan a fill asked for during one booked. */
+const FILL_KEY = 'history-fill';
+const REPLAN_KEY = 'history-fill-replan';
+
 /** The first season the history fill reaches back to — the start of the imagery archive's reach. */
 export const HISTORY_FIRST_SEASON_YEAR = 2016;
 
@@ -235,13 +239,18 @@ export async function sampleSites(
   ctx: QueryCtx,
   config: Pick<WatchConfig, 'sentinels' | 'pinned'> & { sampleSize: number },
 ) {
+  // ⚠ A roster lake merged into another roster lake is reported too: the survivor already votes
+  // once, and quietly folding the two would let a save drop the second entry unseen.
+  const taken = new Set<string>();
   const resolveAll = async (sites: readonly RosterSite[]) => {
     const found: Doc<'waterBodies'>[] = [];
     const missing: RosterSite[] = [];
     for (const site of sites) {
       const b = await resolveSurvivor(ctx, site.waterBodyId);
-      if (b && isListed(b)) found.push(b);
-      else missing.push(site);
+      if (b && isListed(b) && !taken.has(b._id)) {
+        taken.add(b._id);
+        found.push(b);
+      } else missing.push(site);
     }
     return { found, missing };
   };
@@ -353,6 +362,7 @@ export const storeSeries = internalMutation({
         lat: site.lat,
         lng: site.lng,
         source: keepLive ? ('forecast' as const) : source,
+        ...(keepLive ? { archiveFilledAt: now } : {}),
         firstDate: merged.firstDate,
         lows: merged.lows,
         updatedAt: now,
@@ -429,6 +439,12 @@ export const overview = query({
       fieldDates: fieldDates.sort((a, b) => a.date.localeCompare(b.date)),
       defaultsInCode: DEFAULTS_IN_CODE,
       historyFirstSeason: HISTORY_FIRST_SEASON_YEAR,
+      // How long *Fill history* runs from nothing for the sites watched now — the planner's pacing.
+      historyFillMs: (() => {
+        const seasons = fillSeasons(Date.now()).length;
+        const perSeason = Math.ceil(sites.length / HISTORY_SITES_PER_REQUEST);
+        return fillPacing(perSeason * seasons, seasons).spanMs;
+      })(),
     };
   },
 });
@@ -666,9 +682,9 @@ export const requestHistoryFill = mutation({
   args: {},
   handler: async (ctx) => {
     await requireContributorRole(ctx, 'admin');
-    // A fill from nothing is ~6,000 weighted Open-Meteo calls spread over a day and a half; a second
-    // one started before the first finishes would stack on the same free budget, whoever clicks.
-    const busy = await busyUntil(ctx, 'history-fill');
+    // A fill from nothing is ~6,000 weighted Open-Meteo calls spread over a day and a half; a click
+    // during one is told when it ends (a save during one books a re-plan instead).
+    const busy = await busyUntil(ctx, FILL_KEY);
     if (busy !== null && busy > Date.now()) {
       throw new ConvexError(
         `A full history fill is still running, until ${new Date(busy).toUTCString()}.`,
@@ -698,6 +714,27 @@ const HISTORY_SPACING_MS = 75 * 60_000;
 /** Spacing for a small fill — at most one request per season — each request a few hundred calls. */
 const SMALL_FILL_SPACING_MS = 2 * 60_000;
 
+/**
+ * The seasons a fill covers: the current one — once its floor can have come; between July and
+ * 1 September it has no night a fill would keep — then every past season.
+ */
+function fillSeasons(nowMs: number): string[] {
+  const current = archiveSeasonAt(nowMs);
+  const floor = `${seasonStartYear(current)}-${EARLIEST_START_MONTH_DAY}`;
+  return [...(newYorkDate(nowMs) > floor ? [current] : []), ...historySeasons(nowMs)];
+}
+
+/**
+ * How a fill of `requests` over `seasons` seasons is paced. At most one request a season is small:
+ * two minutes apart. More weighs like a fill from nothing on the shared daily Open-Meteo budget:
+ * 75 minutes apart.
+ */
+function fillPacing(requests: number, seasons: number) {
+  const large = requests > seasons;
+  const spacing = large ? HISTORY_SPACING_MS : SMALL_FILL_SPACING_MS;
+  return { large, spacing, spanMs: Math.max(0, requests - 1) * spacing };
+}
+
 /** The seasons history covers: the first archive season up to the one before the current. */
 export function historySeasons(nowMs: number): string[] {
   const current = seasonStartYear(archiveSeasonAt(nowMs));
@@ -707,46 +744,71 @@ export function historySeasons(nowMs: number): string[] {
 }
 
 /**
- * Plan a fill of every (site, season) the watch reads but holds no lows for — which sites, which
- * seasons, and when each request runs — in the caller's transaction. The current season is filled
- * from the forecast endpoint's past days (what the live watch reads); past seasons from the archive.
- *
- * A small fill (at most one request a season) runs two minutes apart. A larger one weighs like a
- * fill from nothing on the shared daily Open-Meteo budget, so it is spread 75 minutes apart and
- * marked busy until its last request. ⚠ **Any fill waits for one already running**, and each request
- * re-asks the store when it runs (`fillSeason`), so a fill planned behind another only fetches what
- * the first did not.
+ * Whether a fill would add nothing to one site's season. The current season: once it has lows at
+ * all (the live watch keeps it up). A past season: once the archive has been over it — a season the
+ * live watch kept ends at its close, and the spring a thaw rule replays is still to fill.
  */
-async function planHistoryFill(ctx: MutationCtx): Promise<{ requests: number }> {
+async function holdsSeason(
+  ctx: QueryCtx,
+  season: string,
+  waterBodyId: Id<'waterBodies'>,
+  isCurrent: boolean,
+): Promise<boolean> {
+  const doc = await ctx.db
+    .query('seasonWatchSeries')
+    .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', waterBodyId))
+    .unique();
+  if (!doc) return false;
+  return isCurrent || doc.source === 'archive' || doc.archiveFilledAt !== undefined;
+}
+
+/**
+ * Plan a fill of every (site, season) the watch reads that {@link holdsSeason} says lacks lows —
+ * which sites, which seasons, and when each request runs — in the caller's transaction. The current
+ * season is filled from the forecast endpoint's past days (what the live watch reads), and only once
+ * its floor can have come; past seasons from the archive.
+ *
+ * ⚠ **One fill at a time.** Every fill marks itself busy until its last request. A fill asked for
+ * while one runs plans nothing now: it books one re-plan for when that fill ends, which then sees
+ * only what the first left lacking — so saves during a fill neither queue its work twice nor
+ * stretch its hold. A small fill (at most one request a season) runs two minutes apart; a larger one
+ * weighs like a fill from nothing on the shared daily Open-Meteo budget and runs 75 minutes apart.
+ */
+async function planHistoryFill(
+  ctx: MutationCtx,
+): Promise<{ requests: number; deferredUntil?: number }> {
+  const now = Date.now();
+  const busy = await busyUntil(ctx, FILL_KEY);
+  if (busy !== null && busy > now) {
+    const booked = await busyUntil(ctx, REPLAN_KEY);
+    if (booked === null || booked < busy) {
+      await setBusyUntil(ctx, REPLAN_KEY, busy);
+      await ctx.scheduler.runAt(busy, internal.seasonWatch.scheduleHistoryFill, {});
+    }
+    return { requests: 0, deferredUntil: busy };
+  }
+
   const row = await latestSettings(ctx);
   const config = row ? configOf(row) : { version: 0, ...(await defaultConfig(ctx)) };
   const { sites } = await sampleSites(ctx, { ...config, sampleSize: config.settings.sampleSize });
-  const now = Date.now();
-  const seasons = [archiveSeasonAt(now), ...historySeasons(now)];
+  const current = archiveSeasonAt(now);
+  const seasons = fillSeasons(now);
 
   const requests: { season: string; sites: typeof sites }[] = [];
   for (const season of seasons) {
-    const stored = new Set(
-      (
-        await ctx.db
-          .query('seasonWatchSeries')
-          .withIndex('by_season_body', (q) => q.eq('season', season))
-          .take(500)
-      ).map((d) => d.waterBodyId as string),
-    );
-    const lacking = sites.filter((s) => !stored.has(s.siteId));
+    const lacking: typeof sites = [];
+    for (const site of sites) {
+      if (!(await holdsSeason(ctx, season, site.siteId, season === current))) lacking.push(site);
+    }
     for (let i = 0; i < lacking.length; i += HISTORY_SITES_PER_REQUEST) {
       requests.push({ season, sites: lacking.slice(i, i + HISTORY_SITES_PER_REQUEST) });
     }
   }
   if (requests.length === 0) return { requests: 0 };
 
-  const large = requests.length > seasons.length;
-  const spacing = large ? HISTORY_SPACING_MS : SMALL_FILL_SPACING_MS;
-  const busy = await busyUntil(ctx, 'history-fill');
-  const start = busy !== null && busy > now ? busy - now : 0;
+  const { large, spacing, spanMs } = fillPacing(requests.length, seasons.length);
   for (const [i, request] of requests.entries()) {
-    await ctx.scheduler.runAfter(start + i * spacing, internal.seasonWatch.fillSeason, {
+    await ctx.scheduler.runAfter(i * spacing, internal.seasonWatch.fillSeason, {
       season: request.season,
       sites: request.sites.map((s) => ({
         waterBodyId: s.siteId,
@@ -757,30 +819,24 @@ async function planHistoryFill(ctx: MutationCtx): Promise<{ requests: number }> 
       })),
     });
   }
-  // A large fill holds the busy mark until its last request, so a click cannot stack on it.
-  if (large) {
-    await setBusyUntil(ctx, 'history-fill', now + start + requests.length * spacing + 60 * 60_000);
-  }
+  // Busy until the last request has had time to land.
+  await setBusyUntil(ctx, FILL_KEY, now + spanMs + (large ? 60 * 60_000 : 10 * 60_000));
   return { requests: requests.length };
 }
 
-/** The history fill a settings save asks for (`saveSettings`). */
+/** The history fill a settings save asks for (`saveSettings`), and a re-plan a busy fill booked. */
 export const scheduleHistoryFill = internalMutation({
   args: {},
   handler: async (ctx) => await planHistoryFill(ctx),
 });
 
-/** Which of these sites already hold lows for a season — a fill skips them. */
-export const storedSites = internalQuery({
-  args: { season: v.string(), waterBodyIds: v.array(v.id('waterBodies')) },
-  handler: async (ctx, { season, waterBodyIds }) => {
+/** Which of these sites already hold a season ({@link holdsSeason}) — a fill skips them. */
+export const heldSites = internalQuery({
+  args: { season: v.string(), waterBodyIds: v.array(v.id('waterBodies')), isCurrent: v.boolean() },
+  handler: async (ctx, { season, waterBodyIds, isCurrent }) => {
     const out: Id<'waterBodies'>[] = [];
     for (const id of waterBodyIds) {
-      const doc = await ctx.db
-        .query('seasonWatchSeries')
-        .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
-        .unique();
-      if (doc) out.push(id);
+      if (await holdsSeason(ctx, season, id, isCurrent)) out.push(id);
     }
     return out;
   },
@@ -805,17 +861,18 @@ export const fillSeason = internalAction({
     ),
   },
   handler: async (ctx, { season, sites: planned }) => {
-    // Planned perhaps hours ago, perhaps behind another fill: fetch only what is still missing.
-    const stored = new Set<string>(
-      await ctx.runQuery(internal.seasonWatch.storedSites, {
-        season,
-        waterBodyIds: planned.map((s) => s.waterBodyId),
-      }),
-    );
-    const sites = planned.filter((s) => !stored.has(s.waterBodyId));
-    if (sites.length === 0) return null;
+    // Planned perhaps hours ago: fetch only what is still missing when it runs.
     const now = Date.now();
     const isCurrent = archiveSeasonAt(now) === season;
+    const held = new Set<string>(
+      await ctx.runQuery(internal.seasonWatch.heldSites, {
+        season,
+        waterBodyIds: planned.map((s) => s.waterBodyId),
+        isCurrent,
+      }),
+    );
+    const sites = planned.filter((s) => !held.has(s.waterBodyId));
+    if (sites.length === 0) return null;
     const year = seasonStartYear(season);
     const params = new URLSearchParams({
       latitude: sites.map((s) => s.lat.toFixed(4)).join(','),

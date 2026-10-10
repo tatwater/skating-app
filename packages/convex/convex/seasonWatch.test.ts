@@ -291,6 +291,32 @@ describe('the overview and the stored lows', () => {
     expect(overview.versions).toHaveLength(1);
   });
 
+  test('reports a roster lake merged into another roster lake, with its role', async () => {
+    const t = convexTest(schema, modules);
+    const clouds = await seedBody(t, 'Upper Lake of the Clouds', 44.258);
+    const pinned = await seedBody(t, 'Clouds Duplicate', 44.2581);
+    await t.run((ctx) =>
+      ctx.db.insert('seasonWatchSettings', {
+        version: 1,
+        settings: DEFAULT_SEASON_WATCH_SETTINGS,
+        sentinels: [{ waterBodyId: clouds, name: 'Upper Lake of the Clouds' }],
+        pinned: [{ waterBodyId: pinned, name: 'Clouds Duplicate' }],
+        savedAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(pinned, { dedupStatus: 'merged' as const, mergedIntoId: clouds }),
+    );
+    const admin = await seedUser(t, 'admin', 'admin');
+    const overview = await admin.as.query(api.seasonWatch.overview, {});
+    expect(overview.sites.map((s) => [s.name, s.role])).toEqual([
+      ['Upper Lake of the Clouds', 'sentinel'],
+    ]);
+    expect(overview.missing).toEqual([
+      { waterBodyId: pinned, name: 'Clouds Duplicate', role: 'pinned' },
+    ]);
+  });
+
   test('storeSeries merges a refetch over what is stored and skips an empty first write', async () => {
     const t = convexTest(schema, modules);
     const id = await seedBody(t, 'A Pond', 44.1);
@@ -608,31 +634,99 @@ describe('history', () => {
     const byTime = [...fills].sort((a, b) => a.scheduledTime - b.scheduledTime);
     expect((byTime[1]?.scheduledTime ?? 0) - (byTime[0]?.scheduledTime ?? 0)).toBe(2 * 60_000);
     expect(byTime[0]?.args[0]).toMatchObject({ season: 'winter-2026-27' });
-    // A small fill holds no busy mark: a click straight after it is accepted.
+    // One fill at a time: a click while it runs is told when it ends.
     const admin = await seedUser(t, 'admin', 'admin');
-    expect(await admin.as.mutation(api.seasonWatch.requestHistoryFill, {})).toEqual({
-      requests: 11,
-    });
+    await expect(admin.as.mutation(api.seasonWatch.requestHistoryFill, {})).rejects.toThrow(
+      /still running/,
+    );
   });
 
-  test('a large fill is spread 75 minutes apart, and a fill planned behind it waits for it', async () => {
+  test('a large fill is spread 75 minutes apart; saves during it book one re-plan for its end', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
     const t = convexTest(schema, modules);
     await seedLakes(t, 13);
-    await t.mutation(internal.seasonWatch.scheduleHistoryFill, {});
+    expect(await t.mutation(internal.seasonWatch.scheduleHistoryFill, {})).toEqual({
+      requests: 22,
+    });
     const first = (await scheduled(t, 'fillSeason'))
       .map((f) => f.scheduledTime)
       .sort((a, b) => a - b);
-    expect(first).toHaveLength(22);
     expect((first[1] as number) - (first[0] as number)).toBe(75 * 60_000);
-    // A save during it plans the same gaps again — after the first fill's hold, not on top of it.
+    // Two saves during it queue nothing and do not stretch its hold — one re-plan, at its end.
+    const busyUntil = Date.now() + 21 * 75 * 60_000 + 60 * 60_000;
+    for (let save = 0; save < 2; save++) {
+      expect(await t.mutation(internal.seasonWatch.scheduleHistoryFill, {})).toEqual({
+        requests: 0,
+        deferredUntil: busyUntil,
+      });
+    }
+    expect(await scheduled(t, 'fillSeason')).toHaveLength(22);
+    const replans = await scheduled(t, 'scheduleHistoryFill');
+    expect(replans.map((j) => j.scheduledTime)).toEqual([busyUntil]);
+    // At its end the re-plan sees what is still lacking (here, all of it) and plans it.
+    vi.setSystemTime(busyUntil);
+    expect(await t.mutation(internal.seasonWatch.scheduleHistoryFill, {})).toEqual({
+      requests: 22,
+    });
+  });
+
+  test('a past season the live watch kept is topped up from the archive once', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
+    const t = convexTest(schema, modules);
+    const [lake] = await seedLakes(t, 1);
+    const site = { waterBodyId: lake as Id<'waterBodies'>, name: 'Lake 0', lat: 44, lng: -71.65 };
+    // Every past season from the archive, but 2025-26 only as the live watch kept it: to its close.
+    for (const season of historySeasons(Date.now())) {
+      await t.run((ctx) =>
+        ctx.db.insert('seasonWatchSeries', {
+          season,
+          ...site,
+          source: season === 'winter-2025-26' ? ('forecast' as const) : ('archive' as const),
+          firstDate: '2025-10-01',
+          lows: [1],
+          updatedAt: 0,
+        }),
+      );
+    }
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2026-27',
+      source: 'forecast',
+      sites: [{ ...site, days: [{ date: '2026-10-01', minTempC: 1 }] }],
+    });
+    const plan = async () => {
+      // Each plan here stands for a later day, after the last fill's hold.
+      await t.run(async (ctx) => {
+        for (const r of await ctx.db.query('dailyThrottle').collect()) await ctx.db.delete(r._id);
+        return null;
+      });
+      return await t.mutation(internal.seasonWatch.scheduleHistoryFill, {});
+    };
+    expect(await plan()).toEqual({ requests: 1 });
+    expect((await scheduled(t, 'fillSeason'))[0]?.args[0]).toMatchObject({
+      season: 'winter-2025-26',
+    });
+    // The archive fills its gaps — and marks it, so the next plan leaves it be.
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2025-26',
+      source: 'archive',
+      sites: [{ ...site, days: [{ date: '2026-04-20', minTempC: 5 }] }],
+    });
+    expect(await plan()).toEqual({ requests: 0 });
+  });
+
+  test('between July and 1 September the new season is not filled — it has no night to keep', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-15T12:00:00Z'));
+    const t = convexTest(schema, modules);
+    await seedLakes(t, 1);
     await t.mutation(internal.seasonWatch.scheduleHistoryFill, {});
-    const second = (await scheduled(t, 'fillSeason'))
-      .map((f) => f.scheduledTime)
-      .sort((a, b) => a - b)
-      .slice(22);
-    expect(second[0]).toBeGreaterThan(first.at(-1) as number);
+    const seasons = (await scheduled(t, 'fillSeason')).map(
+      (f) => (f.args[0] as { season: string }).season,
+    );
+    expect(seasons).toHaveLength(10);
+    expect(seasons).not.toContain('winter-2026-27');
   });
 
   test('a fill fetches only the sites still missing when it runs', async () => {
