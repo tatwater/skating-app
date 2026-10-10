@@ -46,6 +46,8 @@ import {
   isCatalogsLive,
   LandmarkRowIndex,
   landmarksForBody,
+  liveLandmarksForBody,
+  removedLandmarksForBody,
   subAreaFor,
 } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
@@ -82,9 +84,8 @@ export type LandmarkView = ReturnType<typeof toView>;
 export const listForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    const rows = await landmarksForBody(ctx, waterBodyId);
+    const rows = await liveLandmarksForBody(ctx, waterBodyId);
     return rows
-      .filter((row) => row.removedAt === undefined)
       .map(toView)
       .sort((a, b) => b.prominence - a.prominence || a.name.localeCompare(b.name));
   },
@@ -230,13 +231,16 @@ export const importBatch = internalMutation({
       }),
     ),
     campaignId: v.optional(v.string()),
+    /** When the body export the run was matched against was taken (`summary.bodiesExportedAt`). */
+    matchedAt: v.optional(v.number()),
     dryRun: v.optional(v.boolean()),
   },
-  handler: async (ctx, { bodies, campaignId, dryRun }) => {
+  handler: async (ctx, { bodies, campaignId, matchedAt, dryRun }) => {
     const total = emptyCounts();
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
         complete: complete === true,
+        matchedAt,
         campaignId,
         write: dryRun === false,
       });
@@ -260,15 +264,22 @@ async function importOneBody(
   landmarks: Infer<typeof importedLandmark>[],
   {
     complete,
+    matchedAt,
     campaignId,
     write,
-  }: { complete: boolean; campaignId: string | undefined; write: boolean },
+  }: {
+    complete: boolean;
+    matchedAt: number | undefined;
+    campaignId: string | undefined;
+    write: boolean;
+  },
 ): Promise<ImportCounts> {
   const counts = emptyCounts();
-  const rows = await landmarksForBody(ctx, waterBodyId);
-  // A complete run's empty line usually lands on a body that never had a landmark: the index read
-  // above says so, and the body's polygon is never read.
-  if (landmarks.length === 0 && !(complete && rows.some(isCatalogsLive))) return counts;
+  const liveRows = await liveLandmarksForBody(ctx, waterBodyId);
+  // A complete run's empty line usually lands on a body that never had a landmark: the live read
+  // says so, and neither the removed rows nor the body's polygon is read.
+  if (landmarks.length === 0 && !(complete && liveRows.some(isCatalogsLive))) return counts;
+  const rows = [...liveRows, ...(await removedLandmarksForBody(ctx, waterBodyId))];
   const body = await ctx.db.get(waterBodyId);
   if (!body || !isListed(body)) {
     counts.bodyNotListed = landmarks.length;
@@ -327,8 +338,14 @@ async function importOneBody(
 
   const now = Date.now();
   const stamp = campaignId !== undefined ? { lastCampaignId: campaignId } : {};
+  // A feature's id accumulates (one that left the catalog still finds its row); a *placement's* —
+  // a river mouth's `osm:way/1#in@44.0213,-73.1002` — is this run's alone, or a shore redrawn by a
+  // campaign would grow every mouth's ids run after run.
   const idsOf = (members: readonly Incoming[], also: readonly string[] = []) => [
-    ...new Set([...also, ...members.flatMap((m) => m.externalIds)]),
+    ...new Set([
+      ...also.filter((id) => !id.includes('#')),
+      ...members.flatMap((m) => m.externalIds),
+    ]),
   ];
   const spellingsOf = (members: readonly Incoming[]) =>
     members.flatMap((m) => [m.name, ...m.aliases]);
@@ -341,6 +358,11 @@ async function importOneBody(
   if (complete) {
     for (const row of rows) {
       if (!isCatalogsLive(row) || byRow.has(row._id) || claimed.has(row._id)) continue;
+      // A merge moved it here after the export this run matched against, which placed its
+      // catalogs on the merged lake: this line could not have had it.
+      if (row.movedAt !== undefined && (matchedAt === undefined || row.movedAt > matchedAt)) {
+        continue;
+      }
       counts.dropped++;
       live--;
       if (write) {
@@ -526,7 +548,7 @@ export const create = mutation({
     const actor = await requireContributorRole(ctx, 'moderator');
     await requireBody(ctx, args.waterBodyId);
     const names = cleanNames(args.name, args.aliases);
-    const rows = await landmarksForBody(ctx, args.waterBodyId);
+    const rows = await liveLandmarksForBody(ctx, args.waterBodyId);
     assertNotDuplicate(rows, { kind: args.kind, point: args.point, ...names });
     await assertNotABayName(ctx, args.waterBodyId, [names.name, ...names.aliases]);
     if (rows.filter((row) => row.removedAt === undefined).length >= MAX_LANDMARKS_PER_BODY) {
@@ -572,7 +594,7 @@ export const update = mutation({
     if (!row) throw new ConvexError('That landmark no longer exists');
     const names = cleanNames(args.name ?? row.name, args.aliases ?? row.aliases);
     const point = args.point ?? row.point;
-    const rows = await landmarksForBody(ctx, row.waterBodyId);
+    const rows = await liveLandmarksForBody(ctx, row.waterBodyId);
     const kind = args.kind ?? row.kind;
     assertNotDuplicate(rows, { kind, point, ...names }, row._id);
     await assertNotABayName(ctx, row.waterBodyId, [names.name, ...names.aliases]);
@@ -609,7 +631,7 @@ export const remove = mutation({
     // it back: removing it makes the removal a person's, which holds.
     if (row.removedAt !== undefined && row.catalogDroppedAt === undefined) return;
     await ctx.db.patch(landmarkId, {
-      removedAt: row.removedAt ?? Date.now(),
+      removedAt: Date.now(),
       catalogDroppedAt: undefined,
       updatedAt: Date.now(),
     });
@@ -631,7 +653,7 @@ export const restore = mutation({
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     if (row.removedAt === undefined) return;
-    const rows = await landmarksForBody(ctx, row.waterBodyId);
+    const rows = await liveLandmarksForBody(ctx, row.waterBodyId);
     assertNotDuplicate(rows, row, row._id);
     // A landmark retired because it became a bay (D202) stays retired while the bay lives.
     await assertNotABayName(ctx, row.waterBodyId, [row.name, ...row.aliases]);

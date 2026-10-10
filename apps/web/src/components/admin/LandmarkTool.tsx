@@ -117,6 +117,7 @@ export function LandmarkTool({
 
   const rows = landmarks ?? [];
   const live = rows.filter((l) => l.removedAt === undefined);
+  const liveIds = new Set<string>(live.map((l) => l._id));
   const key = landmarkNameKey(filter);
   const matching = rows
     .filter((l) => showRemoved || l.removedAt === undefined)
@@ -217,14 +218,17 @@ export function LandmarkTool({
               <span className="flex shrink-0 gap-1">
                 {l.removedAt !== undefined ? (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      disabled={busy}
-                      onClick={() => void run(() => restore({ landmarkId: l._id }), 'Restored.')}
-                    >
-                      Restore
-                    </Button>
+                    {/* A row folded into a twin that is still live has nothing to restore: the twin is the place. */}
+                    {liveIds.has(l.mergedIntoId ?? '') ? null : (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        disabled={busy}
+                        onClick={() => void run(() => restore({ landmarkId: l._id }), 'Restored.')}
+                      >
+                        Restore
+                      </Button>
+                    )}
                     {l.catalogDroppedAt !== undefined ? (
                       // A catalog drop comes back if a later import places it again; this makes it stay off.
                       <Button

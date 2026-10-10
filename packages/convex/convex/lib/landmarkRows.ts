@@ -36,18 +36,42 @@ export async function landmarksForBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<Doc<'bodyLandmarks'>[]> {
-  const live = await ctx.db
+  return [
+    ...(await liveLandmarksForBody(ctx, waterBodyId)),
+    ...(await removedLandmarksForBody(ctx, waterBodyId)),
+  ];
+}
+
+/**
+ * The live rows alone — what the map, a moderator's write checks and the bay retirement read, so a
+ * removal never costs them a read (or wakes a subscribed label layer).
+ */
+export async function liveLandmarksForBody(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'bodyLandmarks'>[]> {
+  return ctx.db
     .query('bodyLandmarks')
     .withIndex('by_water_body_removed', (q) =>
       q.eq('waterBodyId', waterBodyId).eq('removedAt', undefined),
     )
     .take(MAX_LANDMARKS_PER_BODY);
-  const removed = await ctx.db
+}
+
+/**
+ * The newest removals, up to the cap. An older one past that falls out of the writers' sight — a
+ * takedown 1,500 removals back could then be re-created by the import — which needs a lake to shed
+ * ~3× Champlain's whole landmark list after the takedown: not a case the writers produce.
+ */
+export async function removedLandmarksForBody(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'bodyLandmarks'>[]> {
+  return ctx.db
     .query('bodyLandmarks')
     .withIndex('by_water_body_removed', (q) => q.eq('waterBodyId', waterBodyId).gt('removedAt', 0))
     .order('desc')
     .take(MAX_LANDMARKS_PER_BODY);
-  return [...live, ...removed];
 }
 
 /** A live row the catalogs own outright — the only kind a run that stops placing it may retire. */
@@ -231,8 +255,7 @@ export async function retireNamedAsBays(
     water: filledPolygon(bay.polygon),
   }));
   let retired = 0;
-  for (const row of await landmarksForBody(ctx, waterBodyId)) {
-    if (row.removedAt !== undefined) continue;
+  for (const row of await liveLandmarksForBody(ctx, waterBodyId)) {
     const rowKeys = [row.name, ...row.aliases].map(landmarkNameKey);
     const match = named.find(
       ({ bay, keys, water }) =>
@@ -353,7 +376,7 @@ export async function repointLandmarksOnMerge(
       overCap++;
       continue;
     }
-    await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
+    await ctx.db.patch(row._id, { waterBodyId: survivorId, movedAt: now, updatedAt: now });
     index.add({ ...row, waterBodyId: survivorId });
     live++;
   }

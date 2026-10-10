@@ -72,40 +72,28 @@ export function packLines(lines: readonly BodyLine[], batchSize: number): BodyLi
   return batches;
 }
 
-/** How old a body export a complete run may be matched against before `--apply` refuses. */
-export const MAX_BODY_EXPORT_AGE_MS = 24 * 60 * 60 * 1000;
-
 /** What the transform's `summary.json` says about the run the loader is about to write. */
 export interface TransformSummary {
   corpusApplied?: boolean;
   complete?: boolean;
-  /** When `bodies.ndjson` was exported (epoch ms). */
+  /**
+   * When `bodies.ndjson` was exported (epoch ms) — sent with every batch as `matchedAt`, so the
+   * importer never drops a row a merge moved onto its body after the export the run was matched to.
+   */
   bodiesExportedAt?: number;
 }
 
 /**
- * Why `load-landmarks --apply` must not go ahead, or `null`. Each refusal names the flag that
- * overrides it, so a run that means it can say so.
- *
- * - **Without the corpus**: a catalog row takes this run's corpus count and spellings (the importer
- *   replaces them), so a transform run without the corpus would erase every one.
- * - **Against a stale body export**: a complete run retires what its lines lack, and a lake merged
- *   since the export has its landmarks on the survivor, which the old export matched nothing to —
- *   they would be dropped until the next run.
+ * Why `load-landmarks --apply` must not go ahead, or `null`: a catalog row takes this run's corpus
+ * count and spellings (the importer replaces them), so a transform run without the corpus would
+ * erase every one — unless `--without-corpus` says that is meant.
  */
 export function applyRefusal(
   summary: TransformSummary | undefined,
-  flags: { withoutCorpus: boolean; staleBodies: boolean },
-  now: number,
+  flags: { withoutCorpus: boolean },
 ): string | null {
   if (summary?.corpusApplied !== true && !flags.withoutCorpus) {
     return 'the transform ran without the corpus (--mentions); applying it would erase every corpus count and community spelling. Re-run the transform with --mentions, or pass --without-corpus to mean it.';
-  }
-  if (summary?.complete === true && !flags.staleBodies) {
-    const exportedAt = summary.bodiesExportedAt;
-    if (exportedAt === undefined || now - exportedAt > MAX_BODY_EXPORT_AGE_MS) {
-      return 'a complete run retires the landmarks its lines lack, and the body export it was matched against is over a day old (or undated) — a lake merged since would lose its labels. Re-run the transform with --refresh-bodies, or pass --stale-bodies to mean it.';
-    }
   }
   return null;
 }

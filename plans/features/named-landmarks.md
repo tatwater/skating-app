@@ -151,6 +151,8 @@ moderator's worklist and the proposal lane's first customers.
 - *A merge must carry the labels* (Greptile on #83) — `mergeBodyInto` moved every other child but
   left landmarks on the tombstone. They move now, folded into the survivor's twins, by the same
   resolver the import uses (`LandmarkRowIndex`), so the two writers cannot disagree about a pair.
+  A moved row carries `movedAt`, and a run matched against a body export older than the merge never
+  drops it — that export placed its catalogs on the lake that no longer exists.
 - *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
   Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
 

@@ -277,18 +277,15 @@ export function cutAtShore(line: readonly LatLng[], body: MatchBody): ShorePiece
   return pieces;
 }
 
-/** Of `points` (never empty), the one nearest `target`. */
-function nearestTo(target: LatLng, points: readonly LatLng[]): LatLng {
+/** Of `points` (never empty), the one nearest their average — a span's middle, by its own points. */
+function spanMiddle(points: readonly LatLng[]): LatLng {
+  const center = {
+    lat: points.reduce((s, p) => s + p.lat, 0) / points.length,
+    lng: points.reduce((s, p) => s + p.lng, 0) / points.length,
+  };
   let best = points[0] as LatLng;
-  for (const p of points) if (haversineMeters(p, target) < haversineMeters(best, target)) best = p;
+  for (const p of points) if (haversineMeters(p, center) < haversineMeters(best, center)) best = p;
   return best;
-}
-
-/** The near-water vertex nearest the middle of a bridge's span — where a near bridge's label goes. */
-function spanMiddle(near: readonly LatLng[]): LatLng {
-  const lat = near.reduce((s, p) => s + p.lat, 0) / near.length;
-  const lng = near.reduce((s, p) => s + p.lng, 0) / near.length;
-  return nearestTo({ lat, lng }, near);
 }
 
 /** The point halfway along a line's water — where a bridge's label belongs, mid-span. */
@@ -391,13 +388,11 @@ export function matchLandmark(c: LandmarkCandidate, index: BodyIndex): PlacedLan
       for (const body of nearby) {
         const water = cutAtShore(shape, body).filter((piece) => piece.water);
         if (water.length > 0) {
-          // A deck drawn as an area crosses twice, once down each side: its label goes on the side's
-          // middle nearest the deck's own point, not halfway along both sides together.
+          // A deck drawn as an area crosses twice, once down each side: its label is one side's
+          // middle, not halfway along both sides together (the far shore). Chosen by the middles
+          // themselves — the deck's representative point can sit on its outline, near one bank.
           const point = c.polygon
-            ? nearestTo(
-                c.point,
-                water.map((piece) => middleOfWater([piece])),
-              )
+            ? spanMiddle(water.map((piece) => middleOfWater([piece])))
             : middleOfWater(water);
           out.push(placed(c, body, point));
           continue;

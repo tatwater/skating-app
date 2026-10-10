@@ -101,12 +101,15 @@ describe('LandmarkTool', () => {
     renderTool({
       landmarks: [
         row('Butler Island', { removedAt: 1, catalogDroppedAt: 1 }),
-        row('Gull Island', { removedAt: 1, mergedIntoId: 'lm-twin' as Id<'bodyLandmarks'> }),
+        row('Gull Island', { removedAt: 1, mergedIntoId: 'lm-Gull' as Id<'bodyLandmarks'> }),
+        row('Gull'),
       ],
     });
     fireEvent.click(screen.getByLabelText('Removed'));
     expect(screen.getByText(/no longer in the catalogs/)).toBeInTheDocument();
     expect(screen.getByText(/folded into its twin by a merge/)).toBeInTheDocument();
+    // Only the drop offers Restore: the folded row's twin is live.
+    expect(screen.getAllByRole('button', { name: 'Restore' })).toHaveLength(1);
     const keep = screen.getAllByRole('button', { name: 'Keep off' });
     expect(keep).toHaveLength(1);
     fireEvent.click(keep[0] as HTMLElement);

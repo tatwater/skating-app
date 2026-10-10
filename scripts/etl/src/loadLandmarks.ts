@@ -2,7 +2,7 @@
  * The landmark loader (glue, D202) — reads `landmarks.ndjson` from `pnpm landmarks` and writes it
  * through `landmarks:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--stale-bodies]
+ *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus]
  *
  * Batches are packed by **landmark count across bodies**: ten thousand bodies hold one or two each,
  * and a spawn per body would be hours of `convex run` for seconds of writes. A body is never split
@@ -63,14 +63,7 @@ function main(): void {
     ? (JSON.parse(readFileSync(summaryPath, 'utf8')) as TransformSummary)
     : undefined;
   const refusal = apply
-    ? applyRefusal(
-        summary,
-        {
-          withoutCorpus: args.includes('--without-corpus'),
-          staleBodies: args.includes('--stale-bodies'),
-        },
-        Date.now(),
-      )
+    ? applyRefusal(summary, { withoutCorpus: args.includes('--without-corpus') })
     : null;
   if (refusal) {
     process.stderr.write(`[landmarks] ${summaryPath}: ${refusal}\n`);
@@ -122,6 +115,9 @@ function main(): void {
         convexRun<Counts>('landmarks:importBatch', {
           bodies: batch,
           ...(campaignId !== undefined ? { campaignId } : {}),
+          ...(summary?.bodiesExportedAt !== undefined
+            ? { matchedAt: Math.floor(summary.bodiesExportedAt) }
+            : {}),
           dryRun: !apply,
         });
       let counts: Counts;

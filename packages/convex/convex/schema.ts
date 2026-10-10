@@ -2750,6 +2750,11 @@ export default defineSchema({
      * that row now. Kept so ids that point here still resolve; never matched by a writer again.
      */
     mergedIntoId: v.optional(v.id('bodyLandmarks')),
+    /**
+     * When a merge moved this row onto its body (D36). A complete ETL run matched against a body
+     * export older than this never drops the row: the export placed its catalogs on the merged lake.
+     */
+    movedAt: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')),
     lastCampaignId: v.optional(v.string()),
     createdAt: v.number(),

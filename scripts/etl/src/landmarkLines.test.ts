@@ -3,7 +3,6 @@ import {
   applyRefusal,
   type BodyLine,
   landmarkLines,
-  MAX_BODY_EXPORT_AGE_MS,
   packLines,
   runIsComplete,
 } from './landmarkLines';
@@ -71,33 +70,15 @@ describe('packLines', () => {
 });
 
 describe('applyRefusal', () => {
-  const now = 1_000_000_000_000;
-  const fresh = { corpusApplied: true, complete: true, bodiesExportedAt: now - 60_000 };
-  const flags = { withoutCorpus: false, staleBodies: false };
+  const flags = { withoutCorpus: false };
 
-  it('lets a fresh run with the corpus through', () => {
-    expect(applyRefusal(fresh, flags, now)).toBeNull();
-    expect(applyRefusal({ corpusApplied: true }, flags, now)).toBeNull();
+  it('lets a run with the corpus through', () => {
+    expect(applyRefusal({ corpusApplied: true, complete: true }, flags)).toBeNull();
   });
 
   it('refuses a run without the corpus unless told so', () => {
-    expect(applyRefusal({ ...fresh, corpusApplied: false }, flags, now)).toMatch(
-      /--without-corpus/,
-    );
-    expect(applyRefusal(undefined, flags, now)).toMatch(/--without-corpus/);
-    expect(
-      applyRefusal({ ...fresh, corpusApplied: false }, { ...flags, withoutCorpus: true }, now),
-    ).toBeNull();
-  });
-
-  it('refuses a complete run matched against an old or undated export unless told so', () => {
-    const old = { ...fresh, bodiesExportedAt: now - MAX_BODY_EXPORT_AGE_MS - 1 };
-    expect(applyRefusal(old, flags, now)).toMatch(/--refresh-bodies/);
-    expect(applyRefusal({ corpusApplied: true, complete: true }, flags, now)).toMatch(
-      /--stale-bodies/,
-    );
-    expect(applyRefusal(old, { ...flags, staleBodies: true }, now)).toBeNull();
-    // A partial run retires nothing, so its export's age does not matter.
-    expect(applyRefusal({ ...old, complete: false }, flags, now)).toBeNull();
+    expect(applyRefusal({ corpusApplied: false }, flags)).toMatch(/--without-corpus/);
+    expect(applyRefusal(undefined, flags)).toMatch(/--without-corpus/);
+    expect(applyRefusal({ corpusApplied: false }, { withoutCorpus: true })).toBeNull();
   });
 });

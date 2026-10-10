@@ -871,6 +871,34 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
   });
 });
 
+describe('a river mouth’s ids (self-review)', () => {
+  test('a placement id is the run’s alone: a redrawn shore replaces it rather than piling up', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mouth = (at: string, lat: number) =>
+      imported(
+        'Otter Creek',
+        { lat, lng: -73.4 },
+        {
+          kind: 'other',
+          externalIds: [`osm:way/9#in@${at}`],
+        },
+      );
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [mouth('44.2000,-73.4000', 44.2)],
+      dryRun: false,
+    });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [mouth('44.2001,-73.4000', 44.2001)],
+      dryRun: false,
+    });
+    const [row] = await rowsOf(t, body);
+    expect(row?.externalIds).toEqual(['osm:way/9#in@44.2001,-73.4000']);
+  });
+});
+
 describe('what a drop must not do (self-review)', () => {
   const A = imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'] });
   const B = imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] });
@@ -1174,6 +1202,30 @@ describe('a merge carries the landmarks (D36 / D202)', () => {
 
 describe('a merge, the survivor’s rows deciding (self-review)', () => {
   const P = { lat: 44.5, lng: -73.2 };
+
+  test('a row a merge moved is not dropped by a run matched against an export older than the merge', async () => {
+    const t = harness();
+    const survivor = await seedBody(t);
+    const loser = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await importFor(t, {
+      waterBodyId: loser,
+      landmarks: [imported('Butler Island', P, { externalIds: ['osm:way/2'] })],
+      dryRun: false,
+    });
+    const exportedBefore = Date.now() - 1;
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    const run = (matchedAt?: number) =>
+      t.mutation(internal.landmarks.importBatch, {
+        bodies: [{ waterBodyId: survivor, landmarks: [], complete: true }],
+        ...(matchedAt !== undefined ? { matchedAt } : {}),
+        dryRun: false,
+      });
+    expect((await run(exportedBefore)).dropped).toBe(0);
+    expect((await run()).dropped).toBe(0);
+    vi.advanceTimersByTime(1_000);
+    expect((await run(Date.now())).dropped).toBe(1);
+  });
 
   test('a twin the catalogs dropped does not hold the moved row; the moved row stays live', async () => {
     const t = harness();
