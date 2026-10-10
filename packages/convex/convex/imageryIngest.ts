@@ -38,9 +38,11 @@
 import {
   archiveSeasonAt,
   clipToFloor,
+  dailyLowsFromOpenMeteo,
   evaluateSeason,
   expandLows,
   firstSentinelNightAtOrBelow,
+  type OpenMeteoHourlyRow,
   type SeasonWatchSettings,
   type SiteLow,
   type SiteSeries,
@@ -345,10 +347,6 @@ export const sendNextEmail = internalMutation({
   },
 });
 
-interface DailyResponse {
-  daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
-}
-
 interface GateSite {
   siteId: Id<'waterBodies'>;
   sentinel: boolean;
@@ -363,17 +361,23 @@ interface GateSite {
  *
  * ⚠ **Observed, never forecast** — D140. Open-Meteo's *forecast* endpoint with `past_days` is the
  * right source anyway: the ERA5 archive lags ~5 days, so an archive-backed gate opens the season the
- * better part of a week late, which is the expensive direction. Multi-coordinate form: passing
- * comma-separated `latitude`/`longitude` returns one object per site.
+ * better part of a week late, which is the expensive direction.
+ *
+ * ⚠ **Hourly, and the days are cut here.** `daily=temperature_2m_min` cuts every day at the offset in
+ * force when the request is made, so a November tick split every October day at the wrong midnight.
+ * `dailyLowsFromOpenMeteo` cuts them by the zone — the same cut the history fill stores.
+ *
+ * Multi-coordinate form: passing comma-separated `latitude`/`longitude` returns one object per site.
  */
 async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   const params = new URLSearchParams({
     latitude: sites.map((s) => s.lat.toFixed(4)).join(','),
     longitude: sites.map((s) => s.lng.toFixed(4)).join(','),
-    daily: 'temperature_2m_min',
+    hourly: 'temperature_2m',
     past_days: String(MAX_PAST_DAYS),
     forecast_days: '1',
     timezone: 'auto',
+    timeformat: 'unixtime',
     temperature_unit: 'celsius',
   });
 
@@ -387,21 +391,16 @@ async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
     console.warn('externalApiCalls metering failed (fetch continues)', err);
   }
   if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText}`);
-  const json = (await res.json()) as DailyResponse | DailyResponse[];
+  const json = (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
   const rows = Array.isArray(json) ? json : [json];
 
-  return sites.map((site, i) => {
-    const daily = rows[i]?.daily;
-    const mins = daily?.temperature_2m_min ?? [];
-    return {
-      site,
-      // A null low is a gap in the record, not a warm night: the site abstains for that day. Today's
-      // low — still a forecast — is dropped where every low is stored (`seasonWatch.storeSeries`).
-      days: (daily?.time ?? [])
-        .map((date, j) => ({ date, minTempC: mins[j] }))
-        .filter((d): d is { date: string; minTempC: number } => typeof d.minTempC === 'number'),
-    };
-  });
+  return sites.map((site, i) => ({
+    site,
+    // A null reading is a gap in the record, not a warm hour, and a day short of readings is
+    // dropped, so the site abstains for it. Today's low — still a forecast — is dropped where every
+    // low is stored (`seasonWatch.storeSeries`).
+    days: dailyLowsFromOpenMeteo(rows[i], site.lng),
+  }));
 }
 
 /**

@@ -88,6 +88,7 @@ export function hazardFamilyFor(type: HazardType): HazardFamily | null {
     case 'wet_crack':
     case 'drilled_hole':
     case 'shell_area':
+    case 'air_pockets':
       return 'crack';
     case 'ridge_crossing':
       return null;

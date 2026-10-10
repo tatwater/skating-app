@@ -86,7 +86,9 @@ was decided under; the legacy row is stamped with the defaults it was in fact de
 gap), `source: 'forecast' | 'archive'`. The daily tick merges its 92 days into the current season's
 documents instead of throwing them away. `fillSeasonHistory` fetches Sep 1 – Jun 30 for every past
 season back to 2016-17 from the archive, one multi-site request per season, for every site in the
-current settings plus the ordinary sample. After that, a save or *Fill history* fills whatever a
+current settings plus the ordinary sample — as hourly readings cut into local days by the zone
+(`dailyLowsFromOpenMeteo`, the same cut as the daily tick since #82: Open-Meteo's daily lows use one
+fixed offset for every day). After that, a save or *Fill history* fills whatever a
 watched lake has no lows for (a new sample lake, a merged sentinel's survivor, a request that
 failed, the spring after a live-kept season closed), one fill at a time, and each request skips
 what has been filled since it was planned. The floor editor stops at

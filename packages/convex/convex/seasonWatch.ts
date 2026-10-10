@@ -22,11 +22,13 @@ import {
   archiveSeasonLabel,
   type DailyLow,
   DEFAULT_SEASON_WATCH_SETTINGS,
+  dailyLowsFromOpenMeteo,
   EARLIEST_START_MONTH_DAY,
   expandLows,
   MAX_ROSTER_SITES,
   MAX_SAMPLE_SITES,
   mergeLows,
+  type OpenMeteoHourlyRow,
   type SeasonWatchSettings,
   seasonStartYear,
   validateSeasonWatchSettings,
@@ -887,10 +889,6 @@ export const heldSites = internalQuery({
     await heldIn(ctx, season, waterBodyIds, isCurrent),
 });
 
-interface DailyResponse {
-  daily?: { time?: string[]; temperature_2m_min?: (number | null)[] };
-}
-
 /** Fill one season for a handful of sites — one Open-Meteo request. */
 export const fillSeason = internalAction({
   args: {
@@ -922,8 +920,11 @@ export const fillSeason = internalAction({
     const params = new URLSearchParams({
       latitude: sites.map((s) => s.lat.toFixed(4)).join(','),
       longitude: sites.map((s) => s.lng.toFixed(4)).join(','),
-      daily: 'temperature_2m_min',
+      // Hourly, cut into days here (`dailyLowsFromOpenMeteo`): Open-Meteo's daily lows cut every day
+      // at the offset in force when the request is made — the same cut the daily tick refuses.
+      hourly: 'temperature_2m',
       timezone: 'auto',
+      timeformat: 'unixtime',
       temperature_unit: 'celsius',
     });
     // From the earliest floor the editor accepts (1 September), so a preview can move the floor
@@ -945,23 +946,18 @@ export const fillSeason = internalAction({
       nowMs: now,
     });
     if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText} filling ${season}`);
-    const json = (await res.json()) as DailyResponse | DailyResponse[];
+    const json = (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
     const rows = Array.isArray(json) ? json : [json];
     await ctx.runMutation(internal.seasonWatch.storeSeries, {
       season,
       source: isCurrent ? 'forecast' : 'archive',
       sites: sites.flatMap((site, i) => {
-        const daily = rows[i]?.daily;
         // No answer for this site at all: send nothing, so it is still lacking and asked again.
-        if (!daily?.time) return [];
-        const mins = daily.temperature_2m_min ?? [];
+        if (!rows[i]?.hourly?.time) return [];
         return [
           {
             ...site,
-            days: daily.time
-              .map((date, j) => ({ date, minTempC: mins[j] }))
-              // A null low is a gap, not a warm night.
-              .filter((d): d is DailyLow => typeof d.minTempC === 'number' && d.date >= floor),
+            days: dailyLowsFromOpenMeteo(rows[i], site.lng).filter((d) => d.date >= floor),
           },
         ];
       }),

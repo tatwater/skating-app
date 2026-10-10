@@ -308,6 +308,19 @@ describe('reports.backfillA10Shapes (A10-1)', () => {
     });
   });
 
+  test('lifts a single sighting into the located list, and keeps a list an edit already wrote (D210)', () => {
+    expect(a10ShapePatch(legacyRow({ sighting: 'open' }))).toEqual({
+      sightings: [{ type: 'open' }],
+      sighting: undefined,
+    });
+    expect(
+      a10ShapePatch(
+        legacyRow({ sighting: 'open', sightings: [{ type: 'frozen', where: { sector: 'N' } }] }),
+      ),
+    ).toEqual({ sightings: [{ type: 'frozen', where: { sector: 'N' } }], sighting: undefined });
+    expect(a10ShapePatch(legacyRow({ sightings: [{ type: 'skim' }] }))).toBeNull();
+  });
+
   test('the mutation is a no-op over lifted rows', async () => {
     const t = convexTest(schema, modules);
     const authorId = await seedProfile(t);

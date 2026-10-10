@@ -19,12 +19,13 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
-import { humanizeEnum } from './reportView';
+import { humanizeEnum, SIGHTING_LABELS } from './reportView';
 import {
   BAY_SECTORS,
   COMPASS_SECTORS,
   SECTORS,
   type Sector,
+  type Sighting,
   WHERE_EXTENTS,
   type WhereExtent,
 } from './types';
@@ -159,7 +160,8 @@ const COMPASS_WORDS: Record<(typeof COMPASS_SECTORS)[number], string> = {
 
 export function describeWhere(where: Where, bayNames?: Readonly<Record<string, string>>): string {
   const parts: string[] = [];
-  if (where.extent && where.extent !== 'whole') parts.push(where.extent);
+  if (where.extent && where.extent !== 'whole')
+    parts.push(humanizeEnum(where.extent).toLowerCase());
   const bay = where.subAreaId !== undefined ? bayNames?.[where.subAreaId] : undefined;
   if (where.sector) {
     const sector =
@@ -184,6 +186,25 @@ export function describeLocatedChip(
   const label = humanizeEnum(chip.type);
   const where = chip.where ? describeWhere(chip.where, bayNames) : '';
   return where ? `${label}, ${where}` : label;
+}
+
+/**
+ * A sighting's line — "Still open, south end" (D210): the reader's label for the state, then the
+ * place when the author gave one. A card and a detail both say it this way.
+ *
+ * A place this surface cannot put in words — a bay whose name it was not given (the feed card
+ * carries none), a map tap with no name — is still a part of the body, and says so: from the ice a
+ * sighting may only be one (D210), and a bare "Frozen over" would claim the whole lake.
+ */
+export function describeSighting(
+  sighting: { type: Sighting; where?: Where },
+  bayNames?: Readonly<Record<string, string>>,
+): string {
+  const label = SIGHTING_LABELS[sighting.type];
+  if (sighting.where === undefined) return label;
+  const where = describeWhere(sighting.where, bayNames);
+  if (where) return `${label}, ${where}`;
+  return whereCoversBody(sighting.where) ? label : `${label}, part of the lake`;
 }
 
 /**
@@ -221,6 +242,7 @@ export function whereCoversBody(where: Where | undefined): boolean {
     where.subAreaId === undefined &&
     where.sector === undefined &&
     where.point === undefined &&
-    where.extent !== 'patches'
+    where.extent !== 'patches' &&
+    where.extent !== 'large_areas'
   );
 }

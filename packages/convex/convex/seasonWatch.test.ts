@@ -84,6 +84,24 @@ async function seedBody(
   );
 }
 
+/**
+ * One site's Open-Meteo hourly row: 24 UTC hours a day from `start`, each at that day's low (`null`
+ * is a missing reading). `fillSeason` cuts the days itself (`dailyLowsFromOpenMeteo`).
+ */
+function hourlyRow(start: string, lows: (number | null)[]) {
+  const base = Date.parse(`${start}T00:00:00Z`) / 1000;
+  return {
+    timezone: 'UTC',
+    utc_offset_seconds: 0,
+    hourly: {
+      time: lows.flatMap((_, d) =>
+        Array.from({ length: 24 }, (_, h) => base + (d * 24 + h) * 3600),
+      ),
+      temperature_2m: lows.flatMap((low) => new Array<number | null>(24).fill(low)),
+    },
+  };
+}
+
 /** `n` ordinary lakes, most prominent first — every one of them in the default sample. */
 async function seedLakes(t: T, n: number) {
   const ids: Id<'waterBodies'>[] = [];
@@ -794,12 +812,7 @@ describe('history', () => {
     // Lake 0 answered with only null nights; Lake 1 is missing from the answer.
     vi.stubGlobal(
       'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify([{ daily: { time: ['2026-04-20'], temperature_2m_min: [null] } }]),
-          ),
-      ),
+      vi.fn(async () => new Response(JSON.stringify([hourlyRow('2026-04-20', [null])]))),
     );
     await t.action(internal.seasonWatch.fillSeason, {
       season: 'winter-2025-26',
@@ -867,20 +880,17 @@ describe('history', () => {
       'fetch',
       vi.fn(async (url: string) => {
         urls.push(url);
-        return new Response(
-          JSON.stringify({
-            daily: {
-              time: ['2025-08-31', '2025-09-01', '2025-09-02'],
-              temperature_2m_min: [1, 2, null],
-            },
-          }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify(hourlyRow('2025-08-31', [1, 2, null])), { status: 200 });
       }),
     );
     const site = { waterBodyId: pond, name: 'A Pond', state: 'NH', lat: 44.1, lng: -71.65 };
     await t.action(internal.seasonWatch.fillSeason, { season: 'winter-2025-26', sites: [site] });
     expect(urls[0]).toContain('archive-api.open-meteo.com');
+    // Hours, cut into days by the zone — never Open-Meteo's daily lows (one fixed offset).
+    const params = new URL(urls[0] as string).searchParams;
+    expect(params.get('hourly')).toBe('temperature_2m');
+    expect(params.get('timeformat')).toBe('unixtime');
+    expect(params.get('daily')).toBeNull();
     expect(urls[0]).toContain('start_date=2025-09-01');
     expect(urls[0]).toContain('end_date=2026-06-30');
     const stored = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2025-26' });

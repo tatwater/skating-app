@@ -87,7 +87,7 @@ describe('ReportView', () => {
           ...FIXTURE,
           suitability: 'dont_go',
           observedFrom: 'shore',
-          sighting: 'open',
+          sightings: ['Still open', 'Frozen over, north end'],
           post: {
             title: 'Morey, from the road',
             body: 'Open water off the launch, ice further up.',
@@ -99,6 +99,7 @@ describe('ReportView', () => {
     expect(await screen.findByText("Don't go")).toBeInTheDocument();
     expect(screen.getByText('From shore')).toBeInTheDocument();
     expect(screen.getByText('Still open')).toBeInTheDocument();
+    expect(screen.getByText('Frozen over, north end')).toBeInTheDocument();
     expect(screen.getByText('Morey, from the road')).toBeInTheDocument();
     expect(screen.getByText('Open water off the launch, ice further up.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Lake Fairlee' })).toBeInTheDocument();

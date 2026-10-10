@@ -61,7 +61,7 @@ export async function openWebDoor(
           ? { skateEndPrecision: report.skateEndPrecision }
           : {}),
         ...(report.observedFrom !== undefined ? { observedFrom: report.observedFrom } : {}),
-        ...(report.sighting !== undefined ? { sighting: report.sighting } : {}),
+        ...(report.sightings !== undefined ? { sightings: report.sightings } : {}),
         iceTypes: report.iceTypes,
         surfaceTags: report.surfaceTags,
         ...(report.skateQuality !== undefined ? { skateQuality: report.skateQuality } : {}),

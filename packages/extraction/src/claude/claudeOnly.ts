@@ -8,11 +8,20 @@
 
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ExtractionInput, ExtractionRun, Extractor } from '../contract';
-import { type ClaudeModelKey, callStructured, claudeCostUsd } from './client';
+import {
+  type ClaudeCallOptions,
+  type ClaudeModelKey,
+  callStructured,
+  claudeCostUsd,
+} from './client';
 import { systemPrompt, userPrompt } from './prompt';
 import { mapWireResult, WireResultSchema } from './wire';
 
-export function claudeOnlyExtractor(client: Anthropic, model: ClaudeModelKey): Extractor {
+export function claudeOnlyExtractor(
+  client: Anthropic,
+  model: ClaudeModelKey,
+  opts: ClaudeCallOptions = {},
+): Extractor {
   return {
     name: `claude-only:${model}`,
     async extract(input: ExtractionInput): Promise<ExtractionRun> {
@@ -23,6 +32,7 @@ export function claudeOnlyExtractor(client: Anthropic, model: ClaudeModelKey): E
         WireResultSchema,
         systemPrompt(input.vocabulary),
         userPrompt(input),
+        opts,
       );
       return {
         result: mapWireResult(call.data, input),

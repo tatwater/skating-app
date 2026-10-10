@@ -243,11 +243,11 @@ export async function toFeedCard(
     iceTypes: iceTypeKeys(r.iceTypes),
     surfaceTags: surfaceTagKeys(r.surfaceTags),
     ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-    // The A10 axes a reader needs at a glance (§12.1): how they saw it, who it is for, and what a
-    // shore observer saw. Absent means unstated, and the card says nothing.
+    // The A10 axes a reader needs at a glance (§12.1): how they saw it, who it is for, and what the
+    // author saw rather than skated (D210). Absent means unstated, and the card says nothing.
     ...(r.suitability !== undefined ? { suitability: r.suitability } : {}),
     ...(r.observedFrom !== undefined ? { observedFrom: r.observedFrom } : {}),
-    ...(r.sighting !== undefined ? { sighting: r.sighting } : {}),
+    ...(r.sightings !== undefined ? { sightings: r.sightings } : {}),
     ...(r.editedAt !== undefined ? { edited: true as const } : {}),
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
     author: await authorFor(ctx, r.authorId, caches.authors, now),

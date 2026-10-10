@@ -74,11 +74,22 @@ const okJson = (body: unknown) =>
     headers: { 'content-type': 'application/json' },
   });
 
-function dates(start: string, n: number) {
-  const base = Date.parse(`${start}T00:00:00Z`);
-  return Array.from({ length: n }, (_, i) =>
-    new Date(base + i * 86_400_000).toISOString().slice(0, 10),
-  );
+/**
+ * One site's Open-Meteo hourly row: 24 UTC hours a day from `start`, each at that day's low (`null`
+ * is a missing reading). The watcher cuts the days itself (`dailyLowsFromOpenMeteo`).
+ */
+function hourlyRow(start: string, lows: (number | null)[]) {
+  const base = Date.parse(`${start}T00:00:00Z`) / 1000;
+  return {
+    timezone: 'UTC',
+    utc_offset_seconds: 0,
+    hourly: {
+      time: lows.flatMap((_, d) =>
+        Array.from({ length: 24 }, (_, h) => base + (d * 24 + h) * 3600),
+      ),
+      temperature_2m: lows.flatMap((low) => new Array<number | null>(24).fill(low)),
+    },
+  };
 }
 
 /**
@@ -102,7 +113,7 @@ function stubLows(
           const at = Number(lat).toFixed(3);
           const lows =
             at === SUMMIT_LAT.toFixed(3) ? summit : at === EAGLE_LAT.toFixed(3) ? eagle : valley;
-          return { daily: { time: dates(start, lows.length), temperature_2m_min: lows } };
+          return hourlyRow(start, lows);
         }),
       );
     }),
@@ -212,6 +223,37 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     // the row has an open date and no close date, so there is still work to do.
     const again = await tickNow(t);
     expect(again).toMatchObject({ open: true });
+  });
+
+  test("cuts days at the lake's midnight from hourly readings, not Open-Meteo's daily ones", async () => {
+    // `daily=temperature_2m_min` cuts every day at the request-time offset, so a November tick split
+    // every October day an hour wrong. The watcher asks for hours and cuts them by the zone.
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t);
+    // 23:00 EST on 1 Dec is 04:00Z on the 2nd: the freeze belongs to the 1st at the lake.
+    const start = Date.UTC(2026, 11, 1, 5) / 1000;
+    const time = Array.from({ length: 48 }, (_, h) => start + h * 3600);
+    const temperature_2m = time.map((ts) => (ts === Date.UTC(2026, 11, 2, 4) / 1000 ? -6 : 3));
+    const fetchMock = vi.fn(async (_url: string) =>
+      okJson(
+        Array.from({ length: 3 }, () => ({
+          timezone: 'America/New_York',
+          utc_offset_seconds: -5 * 3600,
+          hourly: { time, temperature_2m },
+        })),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    expect(result).toMatchObject({ open: true, opensOn: '2026-12-01' });
+    const params = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
+    expect(params.get('hourly')).toBe('temperature_2m');
+    expect(params.get('timeformat')).toBe('unixtime');
+    expect(params.get('daily')).toBeNull();
+    vi.useRealTimers();
   });
 
   test('closes the season on a sustained thaw, against the RECORDED winterFrom', async () => {
@@ -384,7 +426,7 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     await seedSites(t, 1);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson([{ daily: { time: ['2026-12-01'], temperature_2m_min: [null] } }])),
+      vi.fn(async () => okJson([hourlyRow('2026-12-01', [null])])),
     );
     expect(await tickNow(t)).toMatchObject({ skipped: 'no observations' });
   });
