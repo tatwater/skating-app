@@ -26,18 +26,94 @@ type BayCandidates = readonly (SubAreaCandidate<Doc<'waterBodySubAreas'>> & {
   bbox?: Doc<'waterBodySubAreas'>['bbox'];
 })[];
 
-/** The rows of one body, removed ones included — the one bounded read every path here shares. */
+/**
+ * The rows of one body, removed ones included — the one bounded read every path here shares. Live
+ * and removed are read apart: the writers cap *live* rows, so the live read is always all of them,
+ * while removals (a moderator's takedowns, promoted bays, the catalogs' drops, merges' folds) have
+ * no cap and grow — the newest `MAX_LANDMARKS_PER_BODY` of them are what a writer still needs.
+ */
 export async function landmarksForBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<Doc<'bodyLandmarks'>[]> {
-  // Twice the cap: the writers cap *live* rows, and removed ones (a moderator's takedowns, promoted
-  // bays) sit beside them. A body with more removals than the cap allows is not a case moderators
-  // produce; the ETL never removes.
-  return ctx.db
+  const live = await ctx.db
     .query('bodyLandmarks')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_LANDMARKS_PER_BODY * 2);
+    .withIndex('by_water_body_removed', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('removedAt', undefined),
+    )
+    .take(MAX_LANDMARKS_PER_BODY);
+  const removed = await ctx.db
+    .query('bodyLandmarks')
+    .withIndex('by_water_body_removed', (q) => q.eq('waterBodyId', waterBodyId).gt('removedAt', 0))
+    .order('desc')
+    .take(MAX_LANDMARKS_PER_BODY);
+  return [...live, ...removed];
+}
+
+/** A live row the catalogs own outright — the only kind a run that stops placing it may retire. */
+export function isCatalogsLive(row: Doc<'bodyLandmarks'>): boolean {
+  return (
+    row.removedAt === undefined &&
+    row.moderatorEditedAt === undefined &&
+    (row.source === 'osm' || row.source === 'gnis')
+  );
+}
+
+/** What resolving a landmark needs: what it is, where, its names, and the upstream ids it carries. */
+export interface LandmarkProbe {
+  kind: LandmarkKind;
+  point: { lat: number; lng: number };
+  name: string;
+  aliases: readonly string[];
+  externalIds: readonly string[];
+}
+
+/**
+ * **The one rule every writer finds a landmark's row by** (D202) — the import, a merge, and nothing
+ * else, so the two cannot drift. A row answers by a shared upstream id, else by core's
+ * `landmarksAreSamePlace`; and rows are tried in tiers, id before place within each:
+ *
+ * 1. **Live** — a live row is the place, whatever a removed one says.
+ * 2. **Removed by a person** — a takedown or a promotion holds against the catalogs.
+ * 3. **Dropped by the catalogs** (`catalogDroppedAt`) — no one's judgment; placing it again returns it.
+ *
+ * A row a merge folded into its twin (`mergedIntoId`) is never an answer: the twin is the place.
+ * Indexed once by id and name key, so a giant's several hundred candidates are not each a scan.
+ */
+export class LandmarkRowIndex {
+  private readonly byId = new Map<string, Doc<'bodyLandmarks'>[]>();
+  private readonly byName = new Map<string, Doc<'bodyLandmarks'>[]>();
+
+  constructor(rows: readonly Doc<'bodyLandmarks'>[] = []) {
+    for (const row of rows) this.add(row);
+  }
+
+  /** Index a row — again after a patch, so its new ids and names find it too. */
+  add(row: Doc<'bodyLandmarks'>): void {
+    if (row.mergedIntoId !== undefined) return;
+    const push = (map: Map<string, Doc<'bodyLandmarks'>[]>, key: string) => {
+      const list = map.get(key);
+      if (!list) map.set(key, [row]);
+      else if (!list.includes(row)) list.push(row);
+    };
+    for (const id of row.externalIds) push(this.byId, id);
+    for (const n of [row.name, ...row.aliases]) push(this.byName, landmarkNameKey(n));
+  }
+
+  resolve(probe: LandmarkProbe): Doc<'bodyLandmarks'> | undefined {
+    const identity = identityOf(probe);
+    const byId = [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))];
+    const byPlace = [
+      ...new Set(identity.names.flatMap((n) => this.byName.get(landmarkNameKey(n)) ?? [])),
+    ].filter((row) => landmarksAreSamePlace(identityOf(row), identity));
+    const tier = (row: Doc<'bodyLandmarks'>) =>
+      row.removedAt === undefined ? 0 : row.catalogDroppedAt === undefined ? 1 : 2;
+    for (const t of [0, 1, 2]) {
+      const hit = byId.find((row) => tier(row) === t) ?? byPlace.find((row) => tier(row) === t);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
 }
 
 /** A row or candidate as core's same-place rule sees it: what it is, where, and every name. */
@@ -175,20 +251,23 @@ export async function retireNamedAsBays(
  * Move a merged body's landmarks to the survivor (D36 / D202) — called from `mergeBodyInto` after the
  * bays have moved, so that a merge cannot strand a lake's labels on a tombstone nothing lists.
  *
- * Moved, then reconciled against the survivor's own rows by the rule every other writer uses (shared
- * upstream id, else core's `landmarksAreSamePlace`), since two duplicate bodies usually carry the same
- * catalog landmarks twice:
+ * Each live row is resolved against the survivor's by the rule the import uses (`LandmarkRowIndex`),
+ * since two duplicate bodies usually carry the same catalog landmarks twice. **The survivor's rows
+ * decide**, in both directions:
  *
  * - **A live twin** takes the moved row in: its ids, spellings and the larger corpus count; the sum
  *   of the report counts; and, where only the moved row was a moderator's, the moderator's name,
- *   kind and point. The moved row is retired beside it, so ids that point at it (a report's `where`,
- *   an audit row) still resolve.
- * - **A twin a moderator removed** holds: the moved row is retired too, as a re-run of the ETL would
- *   hold it. (A twin the catalogs dropped does not — that was no one's judgment of the place.)
- * - **No twin**: the row moves as it is, up to `MAX_LANDMARKS_PER_BODY`; past the cap it is retired
- *   and counted, so the per-body read can still trust the cap.
+ *   kind and point. The moved row is retired as folded into it (`mergedIntoId`), so ids that point
+ *   at it still resolve and no writer matches it again.
+ * - **A twin a person removed** holds: the moved row is folded into that removal.
+ * - **No twin, or one the catalogs dropped**: the row moves as it is, up to `MAX_LANDMARKS_PER_BODY`;
+ *   past the cap it is retired and counted — returnable (`catalogDroppedAt`) if the catalogs own it,
+ *   since no person judged it.
+ * - **A removed row** moves as it is, after the live ones, and its removal stands — on itself, not
+ *   on a live twin the survivor carries: a takedown on the duplicate is not a judgment of the
+ *   survivor's label.
  *
- * Then every live bay on the survivor retires the landmarks it now names (`retireNamedAsBays`) —
+ * Then every live bay on the survivor retires the labels it now names (`retireNamedAsBays`) —
  * each body's bays and labels were reconciled against each other, not against the other body's.
  * Bay stamps (`subAreaId`) are left to the merge's `scheduleRestamp`, like every other child's.
  */
@@ -200,90 +279,87 @@ export async function repointLandmarksOnMerge(
 ): Promise<{ repointed: number; folded: number; overCap: number; retiredAsBay: number }> {
   const moving = await landmarksForBody(ctx, loserId);
   const staying = await landmarksForBody(ctx, survivorId);
+  if (moving.length === 0 && staying.length === 0) {
+    return { repointed: 0, folded: 0, overCap: 0, retiredAsBay: 0 };
+  }
+  const index = new LandmarkRowIndex(staying);
   const now = Date.now();
   let live = staying.filter((row) => row.removedAt === undefined).length;
   let folded = 0;
   let overCap = 0;
   for (const row of moving) {
-    const retire = { waterBodyId: survivorId, removedAt: now, updatedAt: now };
-    if (row.removedAt !== undefined) {
-      await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
-      continue;
-    }
-    const sameAs = (other: Doc<'bodyLandmarks'>) =>
-      other.externalIds.some((id) => row.externalIds.includes(id)) ||
-      landmarksAreSamePlace(identityOf(other), identityOf(row));
-    const twin =
-      staying.find((other) => other.removedAt === undefined && sameAs(other)) ??
-      staying.find((other) => other.catalogDroppedAt === undefined && sameAs(other));
-    if (twin && twin.removedAt !== undefined) {
-      await ctx.db.patch(row._id, retire);
-      await auditLandmark(
-        ctx,
-        actorId,
-        'remove',
-        row._id,
-        `"${row.name}" was removed here already`,
-        {
-          mergedIntoId: twin._id,
-        },
-      );
-      folded++;
-      continue;
-    }
-    if (twin) {
-      const takeRow = twin.moderatorEditedAt === undefined && row.moderatorEditedAt !== undefined;
-      const keeper = takeRow ? row : twin;
-      const reportCount = (twin.reportCount ?? 0) + (row.reportCount ?? 0);
-      const corpusMessages = Math.max(twin.corpusMessages ?? 0, row.corpusMessages ?? 0);
-      const patch = {
-        name: keeper.name,
-        kind: keeper.kind,
-        point: keeper.point,
-        ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),
-        externalIds: [...new Set([...twin.externalIds, ...row.externalIds])],
-        aliases:
-          normalizeLandmarkNames(keeper.name, [
-            twin.name,
-            ...twin.aliases,
-            row.name,
-            ...row.aliases,
-          ])?.aliases ?? keeper.aliases,
-        ...(corpusMessages > 0 ? { corpusMessages } : {}),
-        ...(reportCount > 0 ? { reportCount } : {}),
+    if (row.removedAt !== undefined) continue;
+    const twin = index.resolve(row);
+    if (twin && twin.catalogDroppedAt === undefined) {
+      if (twin.removedAt === undefined) {
+        const takeRow = twin.moderatorEditedAt === undefined && row.moderatorEditedAt !== undefined;
+        const keeper = takeRow ? row : twin;
+        const reportCount = (twin.reportCount ?? 0) + (row.reportCount ?? 0);
+        const corpusMessages = Math.max(twin.corpusMessages ?? 0, row.corpusMessages ?? 0);
+        const patch = {
+          name: keeper.name,
+          kind: keeper.kind,
+          point: keeper.point,
+          ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),
+          externalIds: [...new Set([...twin.externalIds, ...row.externalIds])],
+          aliases:
+            normalizeLandmarkNames(keeper.name, [
+              twin.name,
+              ...twin.aliases,
+              row.name,
+              ...row.aliases,
+            ])?.aliases ?? keeper.aliases,
+          ...(corpusMessages > 0 ? { corpusMessages } : {}),
+          ...(reportCount > 0 ? { reportCount } : {}),
+          updatedAt: now,
+        };
+        await ctx.db.patch(twin._id, patch);
+        Object.assign(twin, patch);
+        index.add(twin);
+      }
+      await ctx.db.patch(row._id, {
+        waterBodyId: survivorId,
+        removedAt: now,
+        mergedIntoId: twin._id,
         updatedAt: now,
-      };
-      await ctx.db.patch(twin._id, patch);
-      Object.assign(twin, patch);
-      await ctx.db.patch(row._id, retire);
+      });
       await auditLandmark(
         ctx,
         actorId,
         'remove',
         row._id,
-        `Folded into "${twin.name}" by a merge`,
-        {
-          mergedIntoId: twin._id,
-        },
+        twin.removedAt === undefined
+          ? `Folded into "${twin.name}" by a merge`
+          : `"${row.name}" was removed on the lake it merged into`,
+        { mergedIntoId: twin._id },
       );
       folded++;
       continue;
     }
     if (live >= MAX_LANDMARKS_PER_BODY) {
-      await ctx.db.patch(row._id, retire);
+      await ctx.db.patch(row._id, {
+        waterBodyId: survivorId,
+        removedAt: now,
+        ...(isCatalogsLive(row) ? { catalogDroppedAt: now } : {}),
+        updatedAt: now,
+      });
       await auditLandmark(
         ctx,
         actorId,
         'remove',
         row._id,
-        `Over the lake's landmark cap after a merge`,
+        "Over the lake's landmark cap after a merge",
       );
       overCap++;
       continue;
     }
     await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
-    staying.push({ ...row, waterBodyId: survivorId });
+    index.add({ ...row, waterBodyId: survivorId });
     live++;
+  }
+  for (const row of moving) {
+    if (row.removedAt === undefined) continue;
+    await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
   }
 
   const bays = (

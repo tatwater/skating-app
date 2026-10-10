@@ -6260,12 +6260,14 @@ shoreline and outlast their signs). The community corpus contributes spellings a
 and only where one landmark answers. A moderator adds what no catalog has ("Bird Poop Rock"), and —
 the proposal lane — so will skaters.
 
-**What a re-run and a merge do.** A run that covers a body (every state it lies in) is the whole of
-what the catalogs place there: a catalog row it no longer places is retired as the catalogs' drop
-(`catalogDroppedAt`), never a person's, and comes back when a run places it again; a moderator's row
-is never dropped, and restoring a dropped one makes it theirs. A body merged into another (D36)
-takes its landmarks along — same-place twins folded into one row, a twin a moderator removed still
-removed, and any label a bay of the merged lake now names retired.
+**What a re-run and a merge do.** A run of every state is the whole of what the catalogs place: a
+catalog row it no longer places is retired as the catalogs' drop (`catalogDroppedAt`), never a
+person's, and comes back when a run places it again. A run of some states drops nothing — a Vermont
+pond can hold a New Hampshire village's label. A moderator's row is never dropped; restoring a
+dropped one makes it theirs, and *Keep off* makes the drop a person's removal. A body merged into
+another (D36) takes its landmarks along, the survivor's rows deciding: a same-place twin absorbs the
+moved row (folded, `mergedIntoId`), a twin a person removed holds it removed, and any label a bay of
+the merged lake now names is retired.
 
 **How they show.** Labels on the focused lake only, never viewport-wide (the per-body cap is what
 bounds the read); each name waits for its own zoom — its footprint's size or its prominence,

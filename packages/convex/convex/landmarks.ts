@@ -21,7 +21,6 @@
 import {
   LANDMARK_KINDS,
   type LandmarkKind,
-  type LandmarkSource,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
@@ -44,6 +43,8 @@ import {
   assertNotABayName,
   auditLandmark,
   identityOf,
+  isCatalogsLive,
+  LandmarkRowIndex,
   landmarksForBody,
   subAreaFor,
 } from './lib/landmarkRows';
@@ -110,6 +111,7 @@ export const listForEditor = query({
           : {}),
         ...(row.removedAt !== undefined ? { removedAt: row.removedAt } : {}),
         ...(row.catalogDroppedAt !== undefined ? { catalogDroppedAt: row.catalogDroppedAt } : {}),
+        ...(row.mergedIntoId !== undefined ? { mergedIntoId: row.mergedIntoId } : {}),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   },
@@ -252,17 +254,6 @@ interface Group {
   members: Incoming[];
 }
 
-const CATALOG_SOURCES: readonly LandmarkSource[] = ['osm', 'gnis'];
-
-/** A live row the catalogs own outright — the only kind a run that stops placing it may retire. */
-function isCatalogsLive(row: Doc<'bodyLandmarks'>): boolean {
-  return (
-    row.removedAt === undefined &&
-    row.moderatorEditedAt === undefined &&
-    CATALOG_SOURCES.includes(row.source)
-  );
-}
-
 async function importOneBody(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
@@ -292,54 +283,37 @@ async function importOneBody(
   );
 
   // ── Resolve every candidate to its row ───────────────────────────────────────────────────────
-  // Indexed once, so a giant's several hundred candidates are not each a scan of its rows.
-  // A live row wins an id over a removed one: a merge can leave a retired twin holding the same ids.
-  const rowById = new Map<string, Doc<'bodyLandmarks'>>();
-  const rowsByName = new Map<string, Doc<'bodyLandmarks'>[]>();
-  for (const row of rows) {
-    for (const id of row.externalIds) {
-      const held = rowById.get(id);
-      if (!held || (held.removedAt !== undefined && row.removedAt === undefined)) {
-        rowById.set(id, row);
-      }
-    }
-    for (const n of [row.name, ...row.aliases]) {
-      const key = landmarkNameKey(n);
-      const list = rowsByName.get(key);
-      if (list) list.push(row);
-      else rowsByName.set(key, [row]);
-    }
-  }
+  // The one rule a merge also uses (`LandmarkRowIndex`): live rows first, then a person's removal,
+  // then the catalogs' own drop. A candidate skipped below still claims the row it resolves to, so a
+  // complete line never drops a row only because this run declined to write it.
+  const index = new LandmarkRowIndex(rows);
   const byRow = new Map<Id<'bodyLandmarks'>, Group>();
+  const claimed = new Set<Id<'bodyLandmarks'>>();
   const fresh: Group[] = [];
   for (const raw of landmarks) {
     const names = normalizeLandmarkNames(raw.name, raw.aliases);
     if (!names) {
       counts.invalidName++;
-      continue;
-    }
-    // Every name, as `assertNotABayName` refuses a moderator's: an alias that is the bay's names it.
-    if ([names.name, ...names.aliases].some((n) => bayKeys.has(landmarkNameKey(n)))) {
-      counts.alreadyBay++;
+      const row = index.resolve({ ...raw, name: '', aliases: [] });
+      if (row) claimed.add(row._id);
       continue;
     }
     const incoming: Incoming = { ...raw, name: names.name, aliases: names.aliases };
-    const identity = identityOf(incoming);
-    const byName = [
-      ...new Set(identity.names.flatMap((n) => rowsByName.get(landmarkNameKey(n)) ?? [])),
-    ];
-    const samePlace = (row: Doc<'bodyLandmarks'>) =>
-      landmarksAreSamePlace(identityOf(row), identity);
-    const existing =
-      incoming.externalIds.map((id) => rowById.get(id)).find((row) => row !== undefined) ??
-      byName.find((row) => row.removedAt === undefined && samePlace(row)) ??
-      byName.find(samePlace);
+    const existing = index.resolve(incoming);
+    // Every name, as `assertNotABayName` refuses a moderator's: an alias that is the bay's names it.
+    // The row it answers to is kept as it is — the far Mud Bay the bay rule leaves standing stays.
+    if ([names.name, ...names.aliases].some((n) => bayKeys.has(landmarkNameKey(n)))) {
+      counts.alreadyBay++;
+      if (existing) claimed.add(existing._id);
+      continue;
+    }
     if (existing) {
       const group = byRow.get(existing._id);
       if (group) group.members.push(incoming);
       else byRow.set(existing._id, { existing, members: [incoming] });
       continue;
     }
+    const identity = identityOf(incoming);
     const joined = fresh.find((group) =>
       group.members.some(
         (m) =>
@@ -366,7 +340,7 @@ async function importOneBody(
   // ── Rows this run no longer places — first, so their room goes to what it does ──────────────
   if (complete) {
     for (const row of rows) {
-      if (!isCatalogsLive(row) || byRow.has(row._id)) continue;
+      if (!isCatalogsLive(row) || byRow.has(row._id) || claimed.has(row._id)) continue;
       counts.dropped++;
       live--;
       if (write) {
@@ -403,8 +377,9 @@ async function importOneBody(
   for (const { existing, members } of byRow.values()) {
     if (!existing) continue;
     if (existing.removedAt !== undefined) {
-      // A person's removal holds; the catalogs' own drop is undone by the catalogs placing it again.
-      if (existing.catalogDroppedAt === undefined) {
+      // A person's removal holds; the catalogs' own drop is undone by the catalogs placing it again —
+      // unless a moderator has since edited the dropped row, which makes it theirs.
+      if (existing.catalogDroppedAt === undefined || existing.moderatorEditedAt !== undefined) {
         counts.removedHeld++;
         continue;
       }
@@ -630,8 +605,14 @@ export const remove = mutation({
     const actor = await requireContributorRole(ctx, 'moderator');
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
-    if (row.removedAt !== undefined) return;
-    await ctx.db.patch(landmarkId, { removedAt: Date.now(), updatedAt: Date.now() });
+    // A row the catalogs dropped is already off the map, but a run that places it again would bring
+    // it back: removing it makes the removal a person's, which holds.
+    if (row.removedAt !== undefined && row.catalogDroppedAt === undefined) return;
+    await ctx.db.patch(landmarkId, {
+      removedAt: row.removedAt ?? Date.now(),
+      catalogDroppedAt: undefined,
+      updatedAt: Date.now(),
+    });
     await auditLandmark(
       ctx,
       actor._id,
@@ -666,6 +647,8 @@ export const restore = mutation({
       ...(row.catalogDroppedAt !== undefined
         ? { catalogDroppedAt: undefined, moderatorEditedAt: now }
         : {}),
+      // A row a merge folded away is a place again once a moderator brings it back.
+      mergedIntoId: undefined,
     });
     await auditLandmark(ctx, actor._id, 'restore', landmarkId, `Restored "${row.name}"`);
   },

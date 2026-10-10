@@ -9,11 +9,11 @@
  *   pnpm --filter @skating/etl landmarks --refresh             # re-run osmium
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *
- * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks,
- * complete }`, with an empty line for every body the run covers but placed nothing on, so the loader
- * retires what the catalogs stopped placing (`runCoversBody`) — plus `summary.json`, and the corpus
- * names nothing matched to `corpus-unmatched.csv`. Then `load-landmarks` writes them, dry unless
- * `--apply`.
+ * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }`; a
+ * run of every state marks each line `complete` and writes an empty one for a body it placed nothing
+ * on, so the loader retires what the catalogs stopped placing (`landmarkLines`) — plus `summary.json`,
+ * and the corpus names nothing matched to `corpus-unmatched.csv`. Then `load-landmarks` writes them,
+ * dry unless `--apply`.
  *
  * ## The one deployment read
  *
@@ -23,7 +23,14 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
@@ -33,7 +40,8 @@ import type { Feature } from 'geojson';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
 import { applyCorpus, parseMentions } from './landmarkCorpus';
-import { BodyIndex, type MatchBody, placeLandmarks, runCoversBody } from './landmarkMatch';
+import { landmarkLines, runIsComplete } from './landmarkLines';
+import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
 import {
   dedupeOsmById,
   type LandmarkCandidate,
@@ -229,32 +237,29 @@ async function main(): Promise<void> {
 
   const byKind: Record<string, number> = {};
   const perBody: number[] = [];
-  const out: string[] = [];
-  let covered = 0;
-  for (const body of bodies) {
-    const landmarks = byBody.get(body.id) ?? [];
-    const complete = runCoversBody(body.states, selected, ALL_STATES);
-    if (complete) covered++;
-    if (landmarks.length === 0 && !complete) continue;
-    if (landmarks.length > 0) perBody.push(landmarks.length);
+  for (const landmarks of byBody.values()) {
+    perBody.push(landmarks.length);
     for (const l of landmarks) byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
-    out.push(
-      JSON.stringify({
-        waterBodyId: body.id,
-        landmarks: landmarks.map(({ waterBodyId: _, ...rest }) => rest),
-        complete,
-      }),
-    );
   }
-  writeFileSync(join(SCRATCH, 'landmarks.ndjson'), `${out.join('\n')}\n`);
+  const complete = runIsComplete(selected, ALL_STATES);
+  const lines = landmarkLines(
+    bodies.map((b) => b.id),
+    byBody,
+    complete,
+  );
+  writeFileSync(
+    join(SCRATCH, 'landmarks.ndjson'),
+    `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`,
+  );
   perBody.sort((a, b) => b - a);
   const summary = {
     states: selected,
     corpusApplied: corpus !== undefined,
+    complete,
+    bodiesExportedAt: statSync(BODIES).mtimeMs,
     bySource,
     ...counts,
     bodiesWithLandmarks: byBody.size,
-    bodiesCovered: covered,
     byKind,
     largestBodies: perBody.slice(0, 10),
     ...(corpus

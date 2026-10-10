@@ -210,18 +210,35 @@ export function LandmarkTool({
                   — {LANDMARK_KIND_LABELS[l.kind].toLowerCase()} · {SOURCE_LABELS[l.source]}
                   {l.corpusMessages ? ` · ${l.corpusMessages} mentions` : ''}
                   {l.moderatorEditedAt !== undefined ? ' · edited' : ''}
+                  {l.catalogDroppedAt !== undefined ? ' · no longer in the catalogs' : ''}
+                  {l.mergedIntoId !== undefined ? ' · folded into its twin by a merge' : ''}
                 </span>
               </button>
               <span className="flex shrink-0 gap-1">
                 {l.removedAt !== undefined ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    disabled={busy}
-                    onClick={() => void run(() => restore({ landmarkId: l._id }), 'Restored.')}
-                  >
-                    Restore
-                  </Button>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={busy}
+                      onClick={() => void run(() => restore({ landmarkId: l._id }), 'Restored.')}
+                    >
+                      Restore
+                    </Button>
+                    {l.catalogDroppedAt !== undefined ? (
+                      // A catalog drop comes back if a later import places it again; this makes it stay off.
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(() => remove({ landmarkId: l._id }), 'Kept off the map.')
+                        }
+                      >
+                        Keep off
+                      </Button>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     <Button variant="ghost" size="xs" onClick={() => startEdit(l)}>

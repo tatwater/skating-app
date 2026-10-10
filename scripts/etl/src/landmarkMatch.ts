@@ -25,6 +25,8 @@
  * - A **waterway** is its mouths: each place a named river or stream crosses a body's shore, or ends
  *   at it. The direction comes from OSM's own convention (waterways are drawn downstream), so an inlet
  *   and an outlet of one river are two labels — though a later merge folds two within a kilometer.
+ *   A mouth's id is the way's and where it meets the shore (`#in@44.0213,-73.1002`), never its
+ *   position in the list: a crossing found or lost upstream must not hand one mouth's id to another.
  */
 
 import type { BBox, LandmarkKind, LatLng } from '@skating/core';
@@ -275,14 +277,18 @@ export function cutAtShore(line: readonly LatLng[], body: MatchBody): ShorePiece
   return pieces;
 }
 
+/** Of `points` (never empty), the one nearest `target`. */
+function nearestTo(target: LatLng, points: readonly LatLng[]): LatLng {
+  let best = points[0] as LatLng;
+  for (const p of points) if (haversineMeters(p, target) < haversineMeters(best, target)) best = p;
+  return best;
+}
+
 /** The near-water vertex nearest the middle of a bridge's span — where a near bridge's label goes. */
 function spanMiddle(near: readonly LatLng[]): LatLng {
   const lat = near.reduce((s, p) => s + p.lat, 0) / near.length;
   const lng = near.reduce((s, p) => s + p.lng, 0) / near.length;
-  const center = { lat, lng };
-  let best = near[0] as LatLng;
-  for (const p of near) if (haversineMeters(p, center) < haversineMeters(best, center)) best = p;
-  return best;
+  return nearestTo({ lat, lng }, near);
 }
 
 /** The point halfway along a line's water — where a bridge's label belongs, mid-span. */
@@ -385,7 +391,15 @@ export function matchLandmark(c: LandmarkCandidate, index: BodyIndex): PlacedLan
       for (const body of nearby) {
         const water = cutAtShore(shape, body).filter((piece) => piece.water);
         if (water.length > 0) {
-          out.push(placed(c, body, middleOfWater(water)));
+          // A deck drawn as an area crosses twice, once down each side: its label goes on the side's
+          // middle nearest the deck's own point, not halfway along both sides together.
+          const point = c.polygon
+            ? nearestTo(
+                c.point,
+                water.map((piece) => middleOfWater([piece])),
+              )
+            : middleOfWater(water);
+          out.push(placed(c, body, point));
           continue;
         }
         // No span over this water — a node, the bridge at the outlet, the deck OSM cut the water at.
@@ -397,9 +411,10 @@ export function matchLandmark(c: LandmarkCandidate, index: BodyIndex): PlacedLan
     case 'mouths': {
       const out: PlacedLandmark[] = [];
       for (const body of nearby) {
-        mouthsOf(shape, body, rule.radiusM).forEach((mouth, i) => {
-          out.push(placed(c, body, mouth.point, `#${mouth.direction}${i}`));
-        });
+        for (const mouth of mouthsOf(shape, body, rule.radiusM)) {
+          const at = `${mouth.point.lat.toFixed(4)},${mouth.point.lng.toFixed(4)}`;
+          out.push(placed(c, body, mouth.point, `#${mouth.direction}@${at}`));
+        }
       }
       return out;
     }
@@ -484,28 +499,6 @@ export function mergeSamePlace(
     if (l.name !== twin.name && !twin.aliases.includes(l.name)) twin.aliases.push(l.name);
   }
   return kept;
-}
-
-/**
- * Did this run read every catalog a body's landmarks could come from? Then its list for the body —
- * empty included — is the whole of what the catalogs place there, and the importer may retire a
- * catalog row the list no longer has. A run of every state covers every body (a lake that crosses
- * into Québec has no other catalog to read); a run of some covers only a body wholly inside them —
- * a VT run says nothing about the New Hampshire half of a border lake, and a body with no states
- * recorded is covered by nothing but the full run.
- */
-export function runCoversBody(
-  bodyStates: readonly string[] | undefined,
-  selected: readonly string[],
-  all: readonly string[],
-): boolean {
-  const ran = new Set(selected.map((s) => s.toLowerCase()));
-  if (all.every((s) => ran.has(s.toLowerCase()))) return true;
-  return (
-    bodyStates !== undefined &&
-    bodyStates.length > 0 &&
-    bodyStates.every((s) => ran.has(s.toLowerCase()))
-  );
 }
 
 /** What a pass placed, and the tallies that say how much it placed from what. */

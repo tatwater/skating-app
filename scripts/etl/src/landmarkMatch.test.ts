@@ -11,7 +11,6 @@ import {
   mouthsOf,
   type PlacedLandmark,
   placeLandmarks,
-  runCoversBody,
 } from './landmarkMatch';
 import type { LandmarkCandidate } from './landmarkSource';
 
@@ -202,8 +201,8 @@ describe('matchLandmark', () => {
       index,
     );
     expect(mouths.map((m) => m.externalIds[0])).toEqual([
-      'osm:node/Otter Creek#in0',
-      'osm:node/Otter Creek#out1',
+      'osm:node/Otter Creek#in@44.0200,-73.1000',
+      'osm:node/Otter Creek#out@44.0200,-73.0000',
     ]);
     // On the shore, where the river crosses it — not the nearest vertex on the water.
     expect(mouths.map((m) => m.point.lng)).toEqual([-73.1, -73.0]);
@@ -234,6 +233,29 @@ describe('matchLandmark', () => {
       index,
     );
     expect(bridge?.point.lng).toBeCloseTo(-73.0325, 6);
+  });
+
+  it('labels a deck drawn as an area mid-span, not on the far shore', () => {
+    // A deck polygon 0.0002° wide spanning the lake (-73.1 … -73.0) and both banks: its outline
+    // crosses the water twice, once down each side.
+    const ring = [
+      { lat: 44.02, lng: -73.12 },
+      { lat: 44.02, lng: -72.98 },
+      { lat: 44.0202, lng: -72.98 },
+      { lat: 44.0202, lng: -73.12 },
+      { lat: 44.02, lng: -73.12 },
+    ];
+    const deck: Polygon = { type: 'Polygon', coordinates: [ring.map((p) => [p.lng, p.lat])] };
+    const [bridge] = matchLandmark(
+      candidate(
+        'Deck Bridge',
+        'bridge',
+        { lat: 44.0201, lng: -73.05 },
+        { line: ring, polygon: deck },
+      ),
+      index,
+    );
+    expect(bridge?.point.lng).toBeCloseTo(-73.05, 6);
   });
 
   it('keeps a bridge whose span stops just short of the water, at its nearest vertex', () => {
@@ -275,8 +297,8 @@ describe('matchLandmark', () => {
       index,
     ).filter((m) => m.waterBodyId === 'pond');
     expect(mouths.map((m) => m.externalIds[0])).toEqual([
-      'osm:node/Pond Brook#in0',
-      'osm:node/Pond Brook#out1',
+      'osm:node/Pond Brook#in@44.0520,-72.9900',
+      'osm:node/Pond Brook#out@44.0520,-72.9850',
     ]);
     expect(mouths.map((m) => Math.round(m.point.lng * 1e6) / 1e6)).toEqual([-72.99, -72.985]);
   });
@@ -543,22 +565,5 @@ describe('placeLandmarks', () => {
         .sort(),
     ).toEqual(['Gull Island', 'Lakeside']);
     expect(byBody.get('pond')?.map((l) => l.name)).toEqual(['Lakeside']);
-  });
-});
-
-describe('runCoversBody', () => {
-  const all = ['vt', 'nh', 'me', 'ma', 'ny'];
-
-  it('covers every body on a run of every state, whatever its states say', () => {
-    expect(runCoversBody(['VT', 'QC'], all, all)).toBe(true);
-    expect(runCoversBody(undefined, [...all].reverse(), all)).toBe(true);
-  });
-
-  it('covers only a body wholly inside a partial run', () => {
-    expect(runCoversBody(['VT'], ['vt'], all)).toBe(true);
-    expect(runCoversBody(['NY', 'VT'], ['vt'], all)).toBe(false);
-    expect(runCoversBody(['NY', 'VT'], ['vt', 'ny'], all)).toBe(true);
-    expect(runCoversBody(undefined, ['vt'], all)).toBe(false);
-    expect(runCoversBody([], ['vt'], all)).toBe(false);
   });
 });

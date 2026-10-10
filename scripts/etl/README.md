@@ -710,11 +710,15 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
   worklist.
 - **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
   edit keeps its name, kind and point, and a name a live bay carries (or an alias of it) is skipped.
-- **It also forgets.** Every body the run covers gets a line marked `complete` — an empty one if
-  nothing landed on it — and a catalog row a complete line no longer has is retired (`dropped`),
-  back if a later run places it (`returned`). A run of some states covers only bodies wholly inside
-  them, so `landmarks VT` never drops the New Hampshire half of a border lake. Read `dropped` on
-  the dry run before `--apply`: a broken extract shows up there as thousands.
+- **It also forgets — on a run of every state only.** That run writes a line for every exported
+  body, marked `complete` (an empty one if nothing landed), and a catalog row a complete line no
+  longer has is retired (`dropped`), back if a later run places it (`returned`). A run of some
+  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place. Because
+  a complete run retires, `--apply` refuses one matched against a body export over a day old (a lake
+  merged since would lose its labels): `--refresh-bodies`, or `--stale-bodies` to mean it. Read
+  `dropped` on the dry run before `--apply` by hand — a broken extract shows up there as thousands.
+- **A mouth's id is where it meets the shore** (`osm:way/1#in@44.0213,-73.1002`), never its place in
+  the list, so a crossing found or lost upstream cannot hand one mouth's id to another.
 
 ## Regional expansion (Phase 02b)
 

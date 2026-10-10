@@ -2,12 +2,12 @@
  * The landmark loader (glue, D202) — reads `landmarks.ndjson` from `pnpm landmarks` and writes it
  * through `landmarks:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus]
+ *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--stale-bodies]
  *
  * Batches are packed by **landmark count across bodies**: ten thousand bodies hold one or two each,
  * and a spawn per body would be hours of `convex run` for seconds of writes. A body is never split
- * across calls (see `pack`). Every rule — the merge, the holds, the cap, the
- * bay-name skip — is in the mutation and tested there.
+ * across calls (`packLines`). Every rule — the merge, the holds, the cap, the bay-name skip, the
+ * drop — is in the mutation and tested there; when `--apply` refuses is `applyRefusal`.
  *
  * Failures are isolated (A06a's rule): a failed batch is recorded with the body ids it carried and
  * the run moves on; five in a row means the deployment is unwell and the run stops.
@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { applyRefusal, type BodyLine, packLines, type TransformSummary } from './landmarkLines';
 
 const DEFAULT_INPUT = join(
   fileURLToPath(new URL('..', import.meta.url)),
@@ -34,12 +35,6 @@ const DEFAULT_INPUT = join(
 const BATCH_LANDMARKS = 300;
 const MAX_CONSECUTIVE_FAILURES = 5;
 
-interface BodyLine {
-  waterBodyId: string;
-  landmarks: unknown[];
-  complete?: boolean;
-}
-
 type Counts = Record<
   | 'created'
   | 'updated'
@@ -55,33 +50,6 @@ type Counts = Record<
   number
 >;
 
-/**
- * Pack bodies into calls of about `BATCH_LANDMARKS` landmarks — **never splitting a body**. The
- * mutation resolves every candidate to its row before writing, and that holds only within one call:
- * a giant split across two would let a candidate in the second overwrite what the first set, run
- * after run, and a dry run's `created` would miss what an earlier chunk would have inserted. A body
- * over the batch size goes alone (Champlain's ~560 is one call); the write caps it at 1,500. An
- * empty line — a covered body the run placed nothing on — weighs one: it is an index read, and the
- * body's own read only when it has catalog rows to retire.
- */
-function pack(lines: readonly BodyLine[]): BodyLine[][] {
-  const batches: BodyLine[][] = [];
-  let current: BodyLine[] = [];
-  let size = 0;
-  for (const line of lines) {
-    const weight = Math.max(1, line.landmarks.length);
-    if (current.length > 0 && size + weight > BATCH_LANDMARKS) {
-      batches.push(current);
-      current = [];
-      size = 0;
-    }
-    current.push(line);
-    size += weight;
-  }
-  if (current.length > 0) batches.push(current);
-  return batches;
-}
-
 let activeLogger: RunLogger | undefined;
 
 function main(): void {
@@ -89,17 +57,23 @@ function main(): void {
   const apply = args.includes('--apply');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   const inputPath = args.find((a) => !a.startsWith('--')) ?? DEFAULT_INPUT;
-  // A catalog row takes this run's corpus count and spellings (the importer replaces them), so a
-  // transform run without the corpus would erase every one on --apply. The transform says whether it
-  // had the corpus; applying one that did not takes a deliberate flag.
+  // What the transform says about its run decides whether --apply may go ahead (`applyRefusal`).
   const summaryPath = join(dirname(inputPath), 'summary.json');
-  const corpusApplied = existsSync(summaryPath)
-    ? (JSON.parse(readFileSync(summaryPath, 'utf8')) as { corpusApplied?: boolean }).corpusApplied
+  const summary = existsSync(summaryPath)
+    ? (JSON.parse(readFileSync(summaryPath, 'utf8')) as TransformSummary)
     : undefined;
-  if (apply && corpusApplied !== true && !args.includes('--without-corpus')) {
-    process.stderr.write(
-      `[landmarks] ${summaryPath} says the transform ran without the corpus (--mentions); applying it would erase every corpus count and community spelling. Re-run the transform with --mentions, or pass --without-corpus to mean it.\n`,
-    );
+  const refusal = apply
+    ? applyRefusal(
+        summary,
+        {
+          withoutCorpus: args.includes('--without-corpus'),
+          staleBodies: args.includes('--stale-bodies'),
+        },
+        Date.now(),
+      )
+    : null;
+  if (refusal) {
+    process.stderr.write(`[landmarks] ${summaryPath}: ${refusal}\n`);
     process.exit(1);
   }
   const target = resolveDeployment();
@@ -109,7 +83,7 @@ function main(): void {
     .split('\n')
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as BodyLine);
-  const batches = pack(lines);
+  const batches = packLines(lines, BATCH_LANDMARKS);
   const landmarkCount = lines.reduce((n, l) => n + l.landmarks.length, 0);
 
   const logger = new RunLogger({

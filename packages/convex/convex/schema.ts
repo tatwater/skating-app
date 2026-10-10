@@ -2740,13 +2740,26 @@ export default defineSchema({
     reportCount: v.optional(v.number()),
     moderatorEditedAt: v.optional(v.number()),
     removedAt: v.optional(v.number()),
-    /** Set with `removedAt` when a complete ETL run no longer placed this catalog row here. */
+    /**
+     * Set with `removedAt` when no person retired the row: a complete ETL run no longer placed this
+     * catalog row here, or a merge moved it past the cap. A run that places it again brings it back.
+     */
     catalogDroppedAt: v.optional(v.number()),
+    /**
+     * Set with `removedAt` when a merge folded this row into the survivor's twin (D36): the place is
+     * that row now. Kept so ids that point here still resolve; never matched by a writer again.
+     */
+    mergedIntoId: v.optional(v.id('bodyLandmarks')),
     createdByUserId: v.optional(v.id('profiles')),
     lastCampaignId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_water_body', ['waterBodyId']),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    // Live and removed read apart (`landmarksForBody`), so removals piling up can never push a live
+    // row out of the per-body read. `removedAt` unset is an indexed value: equality on `undefined`
+    // reads the live rows, and `gt(0)` (never a bare range) the removed.
+    .index('by_water_body_removed', ['waterBodyId', 'removedAt']),
 
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).

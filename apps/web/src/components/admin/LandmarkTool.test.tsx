@@ -97,6 +97,24 @@ describe('LandmarkTool', () => {
     expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument();
   });
 
+  it('says why a row is off the map, and keeps a catalog drop off when asked', async () => {
+    renderTool({
+      landmarks: [
+        row('Butler Island', { removedAt: 1, catalogDroppedAt: 1 }),
+        row('Gull Island', { removedAt: 1, mergedIntoId: 'lm-twin' as Id<'bodyLandmarks'> }),
+      ],
+    });
+    fireEvent.click(screen.getByLabelText('Removed'));
+    expect(screen.getByText(/no longer in the catalogs/)).toBeInTheDocument();
+    expect(screen.getByText(/folded into its twin by a merge/)).toBeInTheDocument();
+    const keep = screen.getAllByRole('button', { name: 'Keep off' });
+    expect(keep).toHaveLength(1);
+    fireEvent.click(keep[0] as HTMLElement);
+    await waitFor(() =>
+      expect(calls).toContainEqual({ name: 'remove', args: { landmarkId: 'lm-Butler Island' } }),
+    );
+  });
+
   it('filters by name or kind, and says when nothing matches', () => {
     renderTool();
     const filter = screen.getByPlaceholderText('Find by name, alias or kind');
