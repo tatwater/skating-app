@@ -8,6 +8,7 @@ import {
   bodiesCoveringPoint,
   bufferedLineOverlap,
   containedFraction,
+  coveredFraction,
   destinationPoint,
   distanceToPolygonMeters,
   expandBBox,
@@ -196,6 +197,35 @@ describe('polygonIoU', () => {
         expect(iou).toBeLessThanOrEqual(1 + 1e-9);
         expect(iou).toBeCloseTo(analyticRectIoU(a, b), 2);
         expect(iou).toBeCloseTo(polygonIoU(rect(b), rect(a)), 9);
+      }),
+    );
+  });
+});
+
+describe('coveredFraction', () => {
+  const A = rect({ minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 });
+
+  it('is 1 inside, 0 disjoint or arealess, the share otherwise, and not symmetric', () => {
+    const inner = rect({ minLat: 0.25, minLng: 0.25, maxLat: 0.75, maxLng: 0.75 });
+    expect(coveredFraction(inner, A)).toBeCloseTo(1, 6);
+    expect(coveredFraction(A, inner)).toBeCloseTo(0.25, 2); // a smaller shape covers a quarter
+    expect(coveredFraction(A, rect({ minLat: 5, minLng: 5, maxLat: 6, maxLng: 6 }))).toBe(0);
+    expect(
+      coveredFraction(A, rect({ minLat: 0, minLng: 0.5, maxLat: 1, maxLng: 1.5 })),
+    ).toBeCloseTo(0.5, 2);
+    expect(coveredFraction(rect({ minLat: 0, minLng: 0, maxLat: 0, maxLng: 0 }), A)).toBe(0);
+  });
+
+  it('matches the analytic share of a rectangle and stays in [0,1] (property)', () => {
+    fc.assert(
+      fc.property(arbBox, arbBox, (a, b) => {
+        const got = coveredFraction(rect(a), rect(b));
+        const ix = Math.max(0, Math.min(a.maxLng, b.maxLng) - Math.max(a.minLng, b.minLng));
+        const iy = Math.max(0, Math.min(a.maxLat, b.maxLat) - Math.max(a.minLat, b.minLat));
+        const areaA = (a.maxLng - a.minLng) * (a.maxLat - a.minLat);
+        expect(got).toBeGreaterThanOrEqual(0);
+        expect(got).toBeLessThanOrEqual(1);
+        expect(got).toBeCloseTo((ix * iy) / areaA, 2);
       }),
     );
   });
