@@ -6,6 +6,7 @@ import {
   clipToFloor,
   DEFAULT_SEASON_WATCH_SETTINGS,
   daysBetween,
+  durationInWords,
   EARLIEST_START_MONTH_DAY,
   evaluateSeason,
   expandLows,
@@ -225,6 +226,15 @@ describe('settings', () => {
     expect(
       validateSeasonWatchSettings({ ...DEFAULT_SEASON_WATCH_SETTINGS, startMonthDay }),
     ).toEqual([]);
+  });
+});
+
+describe('durationInWords', () => {
+  it('says minutes under two hours, hours from there', () => {
+    expect(durationInWords(30 * 60_000)).toBe('30 minutes');
+    expect(durationInWords(119 * 60_000)).toBe('119 minutes');
+    expect(durationInWords(6 * 60 * 60_000)).toBe('6 hours');
+    expect(durationInWords(-5)).toBe('0 minutes');
   });
 });
 

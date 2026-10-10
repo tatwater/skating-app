@@ -163,6 +163,7 @@ describe('settings', () => {
     ['a duplicate sentinel', { twice: true }, /listed twice/],
     ['a lake in both lists', { both: true }, /both a sentinel and a pinned/],
     ['an unlisted lake', { merged: true }, /not listed/],
+    ['a duplicate pinned lake', { pinnedTwice: true }, /pinned lake is listed twice/],
     ['too many sentinels', { many: true }, /At most ten/],
   ])('refuses %s', async (_label, opts, message) => {
     const t = convexTest(schema, modules);
@@ -176,12 +177,19 @@ describe('settings', () => {
       twice?: boolean;
       both?: boolean;
       many?: boolean;
+      pinnedTwice?: boolean;
     };
     await expect(
       admin.as.mutation(api.seasonWatch.saveSettings, {
         settings: o.settings ?? DEFAULT_SEASON_WATCH_SETTINGS,
-        sentinels: o.many ? Array.from({ length: 11 }, () => a) : o.twice ? [a, a] : [a],
-        pinned: o.both ? [a] : [],
+        sentinels: o.many
+          ? Array.from({ length: 11 }, () => a)
+          : o.twice
+            ? [a, a]
+            : o.pinnedTwice
+              ? []
+              : [a],
+        pinned: o.both ? [a] : o.pinnedTwice ? [a, a] : [],
       }),
     ).rejects.toThrow(message);
   });
@@ -347,6 +355,8 @@ describe('the overview and the stored lows', () => {
   });
 
   test('storeSeries merges a refetch over what is stored and skips an empty first write', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'));
     const t = convexTest(schema, modules);
     const id = await seedBody(t, 'A Pond', 44.1);
     const site = { waterBodyId: id, name: 'A Pond', lat: 44.1, lng: -71.65 };
@@ -399,8 +409,8 @@ describe('the overview and the stored lows', () => {
         // The state from the first write stays: a later write without one does not erase it.
         state: 'NH',
         source: 'forecast',
-        // Kept live, never topped up by the archive: whole only while it is the current season.
-        archiveFilled: false,
+        // Kept live and still the current season: whole so far (a fill would leave it be).
+        whole: true,
         firstDate: '2026-10-01',
         lows: [3, -1, -2],
       },
@@ -738,13 +748,6 @@ describe('history', () => {
     expect((await scheduled(t, 'fillSeason'))[0]?.args[0]).toMatchObject({
       season: 'winter-2025-26',
     });
-    // An archive answer with no nights for it marks nothing: it is still lacking.
-    await t.mutation(internal.seasonWatch.storeSeries, {
-      season: 'winter-2025-26',
-      source: 'archive',
-      sites: [{ ...site, days: [] }],
-    });
-    expect(await plan()).toEqual({ requests: 1 });
     // The archive fills its gaps — and marks it, so the next plan leaves it be.
     await t.mutation(internal.seasonWatch.storeSeries, {
       season: 'winter-2025-26',
@@ -765,6 +768,51 @@ describe('history', () => {
     );
     expect(seasons).toHaveLength(10);
     expect(seasons).not.toContain('winter-2026-27');
+  });
+
+  test('a site the archive did not answer for is not stored; one it answered, even empty, is whole', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
+    const t = convexTest(schema, modules);
+    const [a, b] = await seedLakes(t, 2);
+    for (const id of [a, b]) {
+      await t.run((ctx) =>
+        ctx.db.insert('seasonWatchSeries', {
+          season: 'winter-2025-26',
+          waterBodyId: id as Id<'waterBodies'>,
+          name: 'x',
+          lat: 44,
+          lng: -71.65,
+          source: 'forecast' as const,
+          firstDate: '2025-10-01',
+          lows: [1],
+          updatedAt: 0,
+        }),
+      );
+    }
+    // Lake 0 answered with only null nights; Lake 1 is missing from the answer.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([{ daily: { time: ['2026-04-20'], temperature_2m_min: [null] } }]),
+          ),
+      ),
+    );
+    await t.action(internal.seasonWatch.fillSeason, {
+      season: 'winter-2025-26',
+      sites: [a, b].map((id, i) => ({
+        waterBodyId: id as Id<'waterBodies'>,
+        name: `Lake ${i}`,
+        lat: 44,
+        lng: -71.65,
+      })),
+    });
+    const docs = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2025-26' });
+    const byId = new Map(docs.map((d) => [d.waterBodyId as string, d]));
+    expect(byId.get(a as string)?.archiveFilledAt).toBeDefined();
+    expect(byId.get(b as string)?.archiveFilledAt).toBeUndefined();
   });
 
   test('a fill fetches only the sites still missing when it runs', async () => {

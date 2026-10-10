@@ -256,13 +256,13 @@ export async function sampleSites(
     const b = await resolveSurvivor(ctx, entry.site.waterBodyId);
     resolved.push({ ...entry, b: b && isListed(b) ? b : null });
   }
-  const claimed = new Set(
-    resolved.filter((r) => r.b?._id === r.site.waterBodyId).map((r) => r.site.waterBodyId),
-  );
-  for (const r of resolved) {
-    if (!r.b || r.b._id === r.site.waterBodyId) continue;
-    if (claimed.has(r.b._id)) r.b = null;
-    else claimed.add(r.b._id);
+  const claimed = new Set<string>();
+  const own = resolved.filter((r) => r.b?._id === r.site.waterBodyId);
+  const merged = resolved.filter((r) => r.b && r.b._id !== r.site.waterBodyId);
+  for (const r of [...own, ...merged]) {
+    // A lake already claimed — by its own entry, or listed twice — is reported, not folded in.
+    if (claimed.has((r.b as Doc<'waterBodies'>)._id)) r.b = null;
+    else claimed.add((r.b as Doc<'waterBodies'>)._id);
   }
   const ofRole = (role: 'sentinel' | 'pinned') => ({
     found: resolved.filter((r) => r.role === role && r.b).map((r) => r.b as Doc<'waterBodies'>),
@@ -376,8 +376,9 @@ export const storeSeries = internalMutation({
         lat: site.lat,
         lng: site.lng,
         source: keepLive ? ('forecast' as const) : source,
-        // Marked only when the archive had nights to give: an empty answer is retried later.
-        ...(keepLive && observed.length > 0 ? { archiveFilledAt: now } : {}),
+        // The archive has answered for this site (`fillSeason` sends no site it did not answer
+        // for), so the season is whole — even if the answer held no nights to add.
+        ...(keepLive ? { archiveFilledAt: now } : {}),
         firstDate: merged.firstDate,
         lows: merged.lows,
         updatedAt: now,
@@ -496,14 +497,15 @@ export const series = query({
   handler: async (ctx) => {
     await requireRole(ctx, 'admin');
     const docs = await ctx.db.query('seasonWatchSeries').take(2_000);
+    const current = archiveSeasonAt(Date.now());
     return docs.map((d) => ({
       season: d.season,
       waterBodyId: d.waterBodyId,
       name: d.name,
       state: d.state ?? null,
       source: d.source,
-      // Whether a past season is whole (`holdsSeason`): the page counts one that is not as missing.
-      archiveFilled: holdsSeason(d, false),
+      // Whether a fill would leave it be (`holdsSeason`): the page counts one that is not as missing.
+      whole: holdsSeason(d, d.season === current),
       firstDate: d.firstDate,
       lows: d.lows,
     }));
@@ -526,6 +528,8 @@ export const saveSettings = mutation({
     const errors = validateSeasonWatchSettings(args.settings);
     if (new Set(args.sentinels).size !== args.sentinels.length)
       errors.push('A sentinel is listed twice.');
+    if (new Set(args.pinned).size !== args.pinned.length)
+      errors.push('A pinned lake is listed twice.');
     if (args.sentinels.some((id) => args.pinned.includes(id))) {
       errors.push('A lake cannot be both a sentinel and a pinned site.');
     }
@@ -809,18 +813,15 @@ async function planHistoryFill(
 
   const requests: { season: string; sites: typeof sites }[] = [];
   for (const season of seasons) {
-    // One range read a season — a few dozen documents — rather than a lookup per site.
-    const stored = new Map(
-      (
-        await ctx.db
-          .query('seasonWatchSeries')
-          .withIndex('by_season_body', (q) => q.eq('season', season))
-          .take(500)
-      ).map((d) => [d.waterBodyId as string, d]),
+    const held = new Set<string>(
+      await heldIn(
+        ctx,
+        season,
+        sites.map((s) => s.siteId),
+        season === current,
+      ),
     );
-    const lacking = sites.filter(
-      (site) => !holdsSeason(stored.get(site.siteId) ?? null, season === current),
-    );
+    const lacking = sites.filter((site) => !held.has(site.siteId));
     for (let i = 0; i < lacking.length; i += HISTORY_SITES_PER_REQUEST) {
       requests.push({ season, sites: lacking.slice(i, i + HISTORY_SITES_PER_REQUEST) });
     }
@@ -851,20 +852,32 @@ export const scheduleHistoryFill = internalMutation({
   handler: async (ctx) => await planHistoryFill(ctx),
 });
 
-/** Which of these sites already hold a season ({@link holdsSeason}) — a fill skips them. */
+/**
+ * Which of these sites hold a season ({@link holdsSeason}) — one point lookup each, so the read is
+ * the watched sites and nothing else. The planner and `fillSeason` both ask it.
+ */
+async function heldIn(
+  ctx: QueryCtx,
+  season: string,
+  waterBodyIds: readonly Id<'waterBodies'>[],
+  isCurrent: boolean,
+): Promise<Id<'waterBodies'>[]> {
+  const out: Id<'waterBodies'>[] = [];
+  for (const id of waterBodyIds) {
+    const doc = await ctx.db
+      .query('seasonWatchSeries')
+      .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
+      .unique();
+    if (holdsSeason(doc, isCurrent)) out.push(id);
+  }
+  return out;
+}
+
+/** {@link heldIn}, for `fillSeason` to ask when it runs. */
 export const heldSites = internalQuery({
   args: { season: v.string(), waterBodyIds: v.array(v.id('waterBodies')), isCurrent: v.boolean() },
-  handler: async (ctx, { season, waterBodyIds, isCurrent }) => {
-    const out: Id<'waterBodies'>[] = [];
-    for (const id of waterBodyIds) {
-      const doc = await ctx.db
-        .query('seasonWatchSeries')
-        .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
-        .unique();
-      if (holdsSeason(doc, isCurrent)) out.push(id);
-    }
-    return out;
-  },
+  handler: async (ctx, { season, waterBodyIds, isCurrent }) =>
+    await heldIn(ctx, season, waterBodyIds, isCurrent),
 });
 
 interface DailyResponse {
@@ -930,16 +943,20 @@ export const fillSeason = internalAction({
     await ctx.runMutation(internal.seasonWatch.storeSeries, {
       season,
       source: isCurrent ? 'forecast' : 'archive',
-      sites: sites.map((site, i) => {
+      sites: sites.flatMap((site, i) => {
         const daily = rows[i]?.daily;
-        const mins = daily?.temperature_2m_min ?? [];
-        return {
-          ...site,
-          days: (daily?.time ?? [])
-            .map((date, j) => ({ date, minTempC: mins[j] }))
-            // A null low is a gap, not a warm night.
-            .filter((d): d is DailyLow => typeof d.minTempC === 'number' && d.date >= floor),
-        };
+        // No answer for this site at all: send nothing, so it is still lacking and asked again.
+        if (!daily?.time) return [];
+        const mins = daily.temperature_2m_min ?? [];
+        return [
+          {
+            ...site,
+            days: daily.time
+              .map((date, j) => ({ date, minTempC: mins[j] }))
+              // A null low is a gap, not a warm night.
+              .filter((d): d is DailyLow => typeof d.minTempC === 'number' && d.date >= floor),
+          },
+        ];
       }),
     });
     return null;

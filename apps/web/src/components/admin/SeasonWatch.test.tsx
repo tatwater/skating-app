@@ -148,6 +148,28 @@ describe('ImageryPanel', () => {
     expect(onRetryFailed).toHaveBeenCalled();
   });
 
+  it('shows a pending index re-read with its own Try again now — one button when both wait', async () => {
+    const onTryAgain = vi.fn(async () => {});
+    const panel = (extra: Record<string, unknown>) => (
+      <ImageryPanel
+        row={{ ...ROW, imageryStartedAt: 1 }}
+        activity={{ ...activity, configured: true, ...extra }}
+        onStart={async () => {}}
+        onPause={async () => {}}
+        onTryAgain={onTryAgain}
+      />
+    );
+    const { rerender } = render(panel({ indexRetryAt: Date.now() + 30 * 60_000 }));
+    expect(screen.getByText(/could not be read into the index/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again now' }));
+    expect(onTryAgain).toHaveBeenCalled();
+    rerender(panel({ indexRetryAt: Date.now() + 30 * 60_000, backoffUntil: Date.now() + 60_000 }));
+    expect(screen.getAllByRole('button', { name: 'Try again now' })).toHaveLength(1);
+    // A retry already due is not a wait to show.
+    rerender(panel({ indexRetryAt: Date.now() - 1 }));
+    expect(screen.queryByText(/could not be read into the index/)).toBeNull();
+  });
+
   it('says why there is nothing to do', () => {
     const { rerender } = render(
       <ImageryPanel
@@ -319,7 +341,7 @@ describe('PreviewTable', () => {
     expect(screen.getByText('Oct 3')).toHaveClass('line-through');
     expect(screen.getByText('47 days')).toBeInTheDocument();
     expect(screen.getByText('(archive)')).toBeInTheDocument();
-    expect(screen.queryByText(/No lows for/)).toBeNull();
+    expect(screen.queryByText(/Lows incomplete/)).toBeNull();
   });
 
   it('says when a season is replayed over fewer lakes than the watch reads', () => {
@@ -334,7 +356,9 @@ describe('PreviewTable', () => {
       missingLows: 4,
     };
     render(<PreviewTable edited={[row]} saved={[row]} fillHint="saving fills them" />);
-    expect(screen.getByText('No lows for 4 of 28 lakes — saving fills them')).toBeInTheDocument();
+    expect(
+      screen.getByText('Lows incomplete for 4 of 28 lakes — saving fills them'),
+    ).toBeInTheDocument();
   });
 });
 
@@ -377,6 +401,7 @@ describe('FieldDates', () => {
     expect(historyFillHint(11, 32 * 75 * 60_000)).toContain('11 seasons');
     expect(historyFillHint(11, 32 * 75 * 60_000)).toContain('over about 40 hours');
     expect(historyFillHint(11, 10 * 2 * 60_000)).toContain('over about 20 minutes');
-    expect(historyFillHint(11, 0)).toContain('runs at once');
+    // Nothing to spread out: no claim about the sweep.
+    expect(historyFillHint(11, 0)).not.toContain('sweep');
   });
 });

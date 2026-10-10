@@ -126,8 +126,8 @@ export function outstanding(row: Doc<'imageryPump'> | null, now: number): number
 }
 
 /**
- * How long the index waits to re-read manifests it could not: half an hour, doubling each build in
- * a row that still cannot, to six hours. A blip clears on the first retry; a manifest written
+ * How long the index waits to re-read manifests it could not: half an hour, doubling each retry
+ * that still cannot, to six hours. A blip clears on the first retry; a manifest written
  * corrupt costs a handful of rebuilds a day rather than one every ten minutes. Only the retry waits —
  * a frame landing meanwhile asks for its own build, which is never held back.
  */
@@ -150,20 +150,41 @@ export async function markBuilt(
   unreadable = 0,
 ): Promise<{ retryInMs: number | null }> {
   const row = await ensureRow(ctx, key);
+  const now = Date.now();
   // ⚠ **A build that could not read a manifest still completes its request**, so a frame landing
-  // later is built on the next tick as usual; what it could not read is retried at `retryAt`.
-  const streak = unreadable > 0 ? (row.unreadableStreak ?? 0) + 1 : 0;
-  const retryInMs = unreadable > 0 ? unreadableRetryMs(streak) : null;
+  // later is built on the next tick as usual; what it could not read is re-read at `retryAt`.
+  let streak = 0;
+  let retryAt: number | undefined;
+  if (unreadable > 0) {
+    const pending = row.retryAt;
+    if ((row.forcedAt ?? 0) > (row.runStartedAt ?? 0)) {
+      // An admin pressed *Try again now* during this build: theirs is the next retry — now.
+      streak = row.unreadableStreak ?? 1;
+      retryAt = now;
+    } else if ((row.builtSeq ?? 0) >= seq && pending !== undefined) {
+      // This build was the retry, and it still cannot read: wait longer.
+      streak = (row.unreadableStreak ?? 0) + 1;
+      retryAt = now + unreadableRetryMs(streak);
+    } else {
+      // A new frame's build: it neither escalates the wait nor pushes a pending retry back.
+      streak = Math.max(row.unreadableStreak ?? 0, 1);
+      retryAt = pending ?? now + unreadableRetryMs(streak);
+    }
+  }
   await ctx.db.patch(row._id, {
     ...((row.builtSeq ?? 0) < seq ? { builtSeq: seq } : {}),
     unreadableStreak: streak > 0 ? streak : undefined,
-    retryAt: retryInMs === null ? undefined : Date.now() + retryInMs,
+    retryAt,
   });
-  return { retryInMs };
+  return { retryInMs: retryAt === undefined ? null : Math.max(0, retryAt - now) };
 }
 
 /** An admin's "try again now" for the index: a pending re-read of unreadable manifests is due. */
 export async function retryNow(ctx: MutationCtx, key: JobKey): Promise<void> {
-  const row = await jobRow(ctx, key);
-  if (row?.retryAt !== undefined) await ctx.db.patch(row._id, { retryAt: Date.now() });
+  const row = await ensureRow(ctx, key);
+  // `forcedAt` tells a build already running that its own retry wait is not the one to keep.
+  await ctx.db.patch(row._id, {
+    forcedAt: Date.now(),
+    ...(row.retryAt !== undefined ? { retryAt: Date.now() } : {}),
+  });
 }

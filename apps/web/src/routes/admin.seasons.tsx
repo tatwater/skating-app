@@ -167,17 +167,10 @@ function AdminSeasons() {
   const derived = useMemo(() => {
     if (!overview || !series || !saved || !savedSites || !draft) return null;
     const fieldDates = overview.fieldDates;
-    const current = archiveSeasonAt(Date.now());
-    const savedRows = previewSeasons(
-      series,
-      rosterOf(savedSites),
-      saved.settings,
-      fieldDates,
-      current,
-    );
+    const savedRows = previewSeasons(series, rosterOf(savedSites), saved.settings, fieldDates);
     const editedRows =
       draft.valid && editedSites
-        ? previewSeasons(series, rosterOf(editedSites), draft.edited, fieldDates, current)
+        ? previewSeasons(series, rosterOf(editedSites), draft.edited, fieldDates)
         : savedRows;
     return { ...draft, savedRows, editedRows };
   }, [overview, series, saved, savedSites, draft, editedSites]);

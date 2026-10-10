@@ -138,6 +138,12 @@ export function validateSeasonWatchSettings(settings: SeasonWatchSettings): stri
   return errors;
 }
 
+/** A wait in words, for a staff email or page: `30 minutes`; from two hours, `6 hours`. */
+export function durationInWords(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  return minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
+}
+
 /** `winter-2026-27` → `2026`. Throws on anything else, because a wrong year files a season wrongly. */
 export function seasonStartYear(label: string): number {
   const match = /^winter-(\d{4})-(\d{2})$/.exec(label);

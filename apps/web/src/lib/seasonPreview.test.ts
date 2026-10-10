@@ -94,10 +94,11 @@ describe('the replay', () => {
   });
 
   it("counts a past season the live watch kept, without the archive's spring, as missing", () => {
+    // The server marks last season's live-kept valley lows not whole; this season's are, so far.
     const kept = docs.map((d) =>
-      d.waterBodyId === 'valley' ? { ...d, source: 'forecast' as const, archiveFilled: false } : d,
+      d.waterBodyId === 'valley' && d.season === 'winter-2025-26' ? { ...d, whole: false } : d,
     );
-    const rows = previewSeasons(kept, roster, DEFAULT_SEASON_WATCH_SETTINGS, [], 'winter-2026-27');
+    const rows = previewSeasons(kept, roster, DEFAULT_SEASON_WATCH_SETTINGS, []);
     // The season under way is whole so far; last season is not.
     expect(rows.map((r) => [r.season, r.missingLows])).toEqual([
       ['winter-2026-27', 0],

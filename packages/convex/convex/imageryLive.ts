@@ -51,6 +51,7 @@ import {
   addDaysIso,
   archiveSeasonAt,
   buildSeasonIndex,
+  durationInWords,
   type FrameManifest,
   type GranuleCandidate,
   parseGranuleId,
@@ -279,8 +280,10 @@ export const hasWork = internalQuery({
 
 /** The rebuild the index tick should satisfy, or `null`. */
 export const indexOutstanding = internalQuery({
-  args: {},
-  handler: async (ctx) => outstanding(await jobRow(ctx, 'index'), Date.now()),
+  // ⚠ `now` is an argument, not `Date.now()` in the query: a query's result is cached on what it
+  // reads, and a retry coming due is a change in the clock, not in any row.
+  args: { now: v.number() },
+  handler: async (ctx, { now }) => outstanding(await jobRow(ctx, 'index'), now),
 });
 
 /** Hand untried claims back to the queue unchanged, in one transaction. */
@@ -1127,12 +1130,6 @@ export const syncFrames = internalMutation({
   },
 });
 
-/** `90 * 60_000` → `2 hours`; under two hours, in minutes. */
-function inWords(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  return minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
-}
-
 /** A manifest reduced to what the season index carries — the per-body stats stay in R2. */
 export function frameFromManifest(manifestKey: string, m: FrameManifest) {
   return {
@@ -1157,7 +1154,7 @@ export function frameFromManifest(manifestKey: string, m: FrameManifest) {
 export const buildIndex = internalAction({
   args: {},
   handler: async (ctx): Promise<{ frames: number } | null> => {
-    const seq = await ctx.runQuery(internal.imageryLive.indexOutstanding, {});
+    const seq = await ctx.runQuery(internal.imageryLive.indexOutstanding, { now: Date.now() });
     if (seq === null) return null;
     const token = crypto.randomUUID();
     const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
@@ -1177,7 +1174,7 @@ export const buildIndex = internalAction({
           key: 'imagery-index-unreadable',
           season: result.season,
           problem: 'Some cut frames cannot be read into the imagery index',
-          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read, so ${n === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index reads ${n === 1 ? 'it' : 'them'} again in ${inWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
+          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read, so ${n === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
         });
       }
       return { frames: result.frames };
@@ -1263,7 +1260,7 @@ async function buildIndexOnce(
       ...(turnedOver ? [`index/latest.json → ${season}`] : []),
       ...(unreadable > 0
         ? [
-            `${unreadable} manifest${unreadable === 1 ? '' : 's'} unreadable — retrying after a backoff`,
+            `${unreadable} manifest${unreadable === 1 ? '' : 's'} unreadable — the rest indexed, those re-read later`,
           ]
         : []),
     ];

@@ -30,9 +30,11 @@ export interface SeriesDoc {
   name: string;
   state: string | null;
   source: 'forecast' | 'archive';
-  /** Whether the season is whole as a past season — false for one the live watch kept, until the
-   * archive has filled its spring. Absent counts as whole. */
-  archiveFilled?: boolean;
+  /**
+   * Whether a history fill would leave this season be (the server's `holdsSeason`) — false for a
+   * past season the live watch kept until the archive has filled its spring. Absent counts as whole.
+   */
+  whole?: boolean;
   firstDate: string;
   lows: (number | null)[];
 }
@@ -149,6 +151,13 @@ export function siteSeriesFor(
     }));
 }
 
+/** How many of a roster's sites hold a season whole — the rest are what a fill would ask for. */
+function wholeIn(season: string, docs: readonly SeriesDoc[], roster: Roster): number {
+  const watched = new Set([...roster.sentinelIds, ...roster.ordinaryIds]);
+  return docs.filter((d) => d.season === season && d.whole !== false && watched.has(d.waterBodyId))
+    .length;
+}
+
 export interface PreviewRow {
   season: string;
   /** Where the lows came from: the live endpoint, the ERA5 archive, or both. */
@@ -171,8 +180,6 @@ export function previewSeasons(
   roster: Roster,
   settings: SeasonWatchSettings,
   fieldDates: readonly FieldDate[],
-  /** The season under way, whose live-kept lows are whole so far. */
-  current = '',
 ): PreviewRow[] {
   return seasonsIn(docs).map((season) => {
     const sources = new Set(docs.filter((d) => d.season === season).map((d) => d.source));
@@ -200,14 +207,7 @@ export function previewSeasons(
       leadDays:
         firstSkated && evaluation.opensOn ? daysBetween(evaluation.opensOn, firstSkated) : null,
       watched,
-      missingLows:
-        watched -
-        docs.filter(
-          (d) =>
-            d.season === season &&
-            (season === current || d.archiveFilled !== false) &&
-            series.some((s) => s.siteId === d.waterBodyId),
-        ).length,
+      missingLows: watched - wholeIn(season, docs, roster),
     };
   });
 }

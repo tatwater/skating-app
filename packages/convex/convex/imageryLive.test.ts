@@ -765,7 +765,7 @@ describe('the index tick', () => {
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'other' });
     expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
   });
 
   test('without credentials it builds nothing and keeps the request', async () => {
@@ -773,20 +773,20 @@ describe('the index tick', () => {
     vi.unstubAllEnvs();
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
   });
 
   test('a frame landing during a build is built again', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    const seq = await t.query(internal.imageryLive.indexOutstanding, {});
+    const seq = await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() });
     await t.mutation(internal.imageryLive.markIndexDirty, {}); // lands mid-build
     await t.mutation(internal.imageryLive.markIndexBuilt, { seq: seq as number });
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(2);
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(2);
     // An older build finishing late never moves the mark backwards.
     await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2 });
     await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 1 });
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
   });
 });
 
@@ -1059,19 +1059,27 @@ describe('buildIndex', () => {
     const bad = `frames/${SEASON}/${a}.json`;
     const w = world({ manifests: new Map<string, unknown>([[bad, 'error']]) });
     stub(w);
+    const due = () => t.query(internal.imageryLive.indexOutstanding, { now: Date.now() });
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 0 });
     // The last cut has landed and imagery is paused: nothing will mark the index dirty again —
     // the retry is what reads it, in half an hour.
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
+    expect(await due()).toBeNull();
+    const firstRetry = (await runState(t, 'index'))?.retryAt as number;
+    expect(firstRetry - Date.now()).toBe(30 * 60_000);
     expect(JSON.stringify((await scheduled(t, 'broadcastToStaff'))[0]?.args[0])).toContain(
       'again in 30 minutes',
     );
-    // A good frame lands meanwhile: it is built on the next tick, not held for the retry.
+    // A good frame lands meanwhile: it is built on the next tick, not held for the retry — and
+    // that build neither escalates the wait nor pushes the retry back.
     vi.advanceTimersByTime(10 * 60_000);
     w.manifests.set(`frames/${SEASON}/${b}.json`, manifest(b, '2026-10-06T15:30:00Z'));
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
-    // Still unreadable on that build too: the next wait doubles to an hour.
+    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 1, retryAt: firstRetry });
+    // The retry comes due on its own; still unreadable, the next wait doubles to an hour.
+    vi.advanceTimersByTime(21 * 60_000);
+    expect(await due()).not.toBeNull();
+    await t.action(internal.imageryLive.buildIndex, {});
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
     expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
     // The page shows the wait, and Try again now makes it due at once.
@@ -1081,14 +1089,28 @@ describe('buildIndex', () => {
       Date.now(),
     );
     await admin.mutation(api.imageryLive.tryAgainNow, {});
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(2);
+    expect(await due()).toBe(2);
     // The manifest is fixed: the retry reads it, and the wait is gone.
     w.manifests.set(bad, manifest(a, '2026-10-05T15:30:00Z'));
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 4 });
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
+    expect(await due()).toBeNull();
     const job = await runState(t, 'index');
     expect(job?.retryAt).toBeUndefined();
     expect(job?.unreadableStreak).toBeUndefined();
+  });
+
+  test('Try again now pressed during a build is the next retry, not overwritten by its wait', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    // A build is under way when the admin presses it…
+    await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'run' });
+    vi.advanceTimersByTime(1_000);
+    await seedAdmin(t);
+    await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
+    // …and that build then finds a manifest it cannot read: the retry is due now, not in 30 minutes.
+    expect(
+      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 1, unreadable: 1 }),
+    ).toEqual({ retryInMs: 0 });
   });
 
   test('the unreadable retry waits half an hour, doubling to a six-hour ceiling', () => {
@@ -1110,7 +1132,7 @@ describe('buildIndex', () => {
       heading: 'The imagery index could not be rebuilt',
     });
     // A failed build leaves its request standing, so the next tick retries.
-    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
   });
 });
 

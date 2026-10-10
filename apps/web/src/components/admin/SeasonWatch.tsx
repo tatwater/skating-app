@@ -1,5 +1,6 @@
 import {
   celsiusToFahrenheit,
+  durationInWords,
   MAX_ROSTER_SITES,
   type SeasonWatchSettings,
   validateSeasonWatchSettings,
@@ -399,13 +400,14 @@ export function ImageryPanel({
           ) : null}
         </div>
       ) : null}
-      {activity?.indexRetryAt ? (
+      {activity?.indexRetryAt && activity.indexRetryAt > Date.now() ? (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-warning">
             Some cut frames could not be read into the index; it reads them again at{' '}
             {new Date(activity.indexRetryAt).toLocaleTimeString()}.
           </p>
-          {onTryAgain ? (
+          {/* One button does both; the pump's banner above already shows it. */}
+          {onTryAgain && !(activity.backoffUntil && activity.backoffUntil > Date.now()) ? (
             <Button variant="outline" size="sm" disabled={busy} onClick={() => run(onTryAgain)}>
               Try again now
             </Button>
@@ -734,7 +736,7 @@ export function PreviewTable({
                 {r.missingLows > 0 ? (
                   // A replay over fewer lakes than the watch reads is not the whole result: say so.
                   <span className="block text-warning text-xs">
-                    No lows for {r.missingLows} of {r.watched} lakes — {fillHint}
+                    Lows incomplete for {r.missingLows} of {r.watched} lakes — {fillHint}
                   </span>
                 ) : null}
               </Td>
@@ -1097,12 +1099,7 @@ export function FieldDates({
  * for the lakes watched now.
  */
 export function historyFillHint(seasons: number, spanMs: number): string {
-  const minutes = Math.round(spanMs / 60_000);
-  const span =
-    minutes < 1
-      ? 'at once'
-      : minutes < 120
-        ? `over about ${minutes} minutes`
-        : `over about ${Math.round(minutes / 60)} hours`;
-  return `Fills whatever the watched lakes are missing from ${seasons} seasons of Open-Meteo's records. From nothing that runs ${span}, so it never starves the daily weather sweep.`;
+  const what = `Fills whatever the watched lakes are missing from ${seasons} seasons of Open-Meteo's records.`;
+  if (spanMs < 60_000) return what;
+  return `${what} From nothing it is spread over about ${durationInWords(spanMs)}, so it never starves the daily weather sweep.`;
 }
