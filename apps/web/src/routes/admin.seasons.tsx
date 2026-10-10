@@ -82,7 +82,9 @@ function RosterPicker({ onPick }: { onPick: (entry: RosterEntry) => void }) {
 
 function AdminSeasons() {
   const overview = useQuery(api.seasonWatch.overview, {});
-  const series = useQuery(api.seasonWatch.series, {}) as SeriesDoc[] | undefined;
+  const series = useQuery(api.seasonWatch.series, { current: archiveSeasonAt(Date.now()) }) as
+    | SeriesDoc[]
+    | undefined;
   const activity = useQuery(api.imageryLive.activity, {});
   const saveSettings = useMutation(api.seasonWatch.saveSettings);
   const resetSeason = useMutation(api.seasonWatch.resetSeason);

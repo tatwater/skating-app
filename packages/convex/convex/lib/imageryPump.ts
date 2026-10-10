@@ -153,22 +153,26 @@ export async function markBuilt(
   const now = Date.now();
   // ⚠ **A build that could not read a manifest still completes its request**, so a frame landing
   // later is built on the next tick as usual; what it could not read is re-read at `retryAt`.
+  //
+  // Every build re-reads every manifest not yet indexed, so **a build that started at or after
+  // `retryAt` was the retry**, whatever asked for it — the one rule, by the clock rather than by
+  // which request a build satisfied. Only such a build, still failing, waits longer; a build that
+  // started earlier leaves a pending retry where it is (an admin's *Try again now* during it
+  // included, since that sets `retryAt` after the build began).
   let streak = 0;
   let retryAt: number | undefined;
   if (unreadable > 0) {
     const pending = row.retryAt;
-    if ((row.forcedAt ?? 0) > (row.runStartedAt ?? 0)) {
-      // An admin pressed *Try again now* during this build: theirs is the next retry — now.
-      streak = row.unreadableStreak ?? 1;
-      retryAt = now;
-    } else if ((row.builtSeq ?? 0) >= seq && pending !== undefined) {
-      // This build was the retry, and it still cannot read: wait longer.
+    const startedAt = row.runStartedAt ?? now;
+    if (pending === undefined) {
+      streak = 1;
+      retryAt = now + unreadableRetryMs(streak);
+    } else if (pending <= startedAt) {
       streak = (row.unreadableStreak ?? 0) + 1;
       retryAt = now + unreadableRetryMs(streak);
     } else {
-      // A new frame's build: it neither escalates the wait nor pushes a pending retry back.
       streak = Math.max(row.unreadableStreak ?? 0, 1);
-      retryAt = pending ?? now + unreadableRetryMs(streak);
+      retryAt = pending;
     }
   }
   await ctx.db.patch(row._id, {
@@ -181,10 +185,6 @@ export async function markBuilt(
 
 /** An admin's "try again now" for the index: a pending re-read of unreadable manifests is due. */
 export async function retryNow(ctx: MutationCtx, key: JobKey): Promise<void> {
-  const row = await ensureRow(ctx, key);
-  // `forcedAt` tells a build already running that its own retry wait is not the one to keep.
-  await ctx.db.patch(row._id, {
-    forcedAt: Date.now(),
-    ...(row.retryAt !== undefined ? { retryAt: Date.now() } : {}),
-  });
+  const row = await jobRow(ctx, key);
+  if (row?.retryAt !== undefined) await ctx.db.patch(row._id, { retryAt: Date.now() });
 }

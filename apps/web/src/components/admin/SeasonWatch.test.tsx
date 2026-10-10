@@ -165,9 +165,9 @@ describe('ImageryPanel', () => {
     expect(onTryAgain).toHaveBeenCalled();
     rerender(panel({ indexRetryAt: Date.now() + 30 * 60_000, backoffUntil: Date.now() + 60_000 }));
     expect(screen.getAllByRole('button', { name: 'Try again now' })).toHaveLength(1);
-    // A retry already due is not a wait to show.
+    // A retry already due has not yet succeeded: still shown, as the next check's.
     rerender(panel({ indexRetryAt: Date.now() - 1 }));
-    expect(screen.queryByText(/could not be read into the index/)).toBeNull();
+    expect(screen.getByText(/reads them again at the next check/)).toBeInTheDocument();
   });
 
   it('says why there is nothing to do', () => {

@@ -151,9 +151,8 @@ export function siteSeriesFor(
     }));
 }
 
-/** How many of a roster's sites hold a season whole — the rest are what a fill would ask for. */
-function wholeIn(season: string, docs: readonly SeriesDoc[], roster: Roster): number {
-  const watched = new Set([...roster.sentinelIds, ...roster.ordinaryIds]);
+/** How many watched sites hold a season whole — the rest are what a fill would ask for. */
+function wholeIn(season: string, docs: readonly SeriesDoc[], watched: ReadonlySet<string>): number {
   return docs.filter((d) => d.season === season && d.whole !== false && watched.has(d.waterBodyId))
     .length;
 }
@@ -185,7 +184,7 @@ export function previewSeasons(
     const sources = new Set(docs.filter((d) => d.season === season).map((d) => d.source));
     const series = siteSeriesFor(season, docs, roster);
     const evaluation = evaluateSeason(series, settings, season);
-    const watched = new Set([...roster.sentinelIds, ...roster.ordinaryIds]).size;
+    const watched = new Set([...roster.sentinelIds, ...roster.ordinaryIds]);
     const dates = fieldDates.filter((f) => f.season === season);
     const earliest = (kind: FieldDate['kind']) =>
       dates
@@ -206,8 +205,8 @@ export function previewSeasons(
       lastSkated: latest ?? null,
       leadDays:
         firstSkated && evaluation.opensOn ? daysBetween(evaluation.opensOn, firstSkated) : null,
-      watched,
-      missingLows: watched - wholeIn(season, docs, roster),
+      watched: watched.size,
+      missingLows: watched.size - wholeIn(season, docs, watched),
     };
   });
 }

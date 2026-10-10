@@ -1102,15 +1102,35 @@ describe('buildIndex', () => {
   test('Try again now pressed during a build is the next retry, not overwritten by its wait', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    // A build is under way when the admin presses it…
+    const bad = `frames/${SEASON}/${s2('19TEA', '20261005')}.json`;
+    stub(world({ manifests: new Map<string, unknown>([[bad, 'error']]) }));
+    await t.action(internal.imageryLive.buildIndex, {}); // a retry is pending, 30 minutes out
+    // A new frame's build is under way when the admin presses Try again now…
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'run' });
     vi.advanceTimersByTime(1_000);
     await seedAdmin(t);
     await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
-    // …and that build then finds a manifest it cannot read: the retry is due now, not in 30 minutes.
+    // …and that build still cannot read it: the admin's retry stands — due now, not pushed back.
     expect(
-      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 1, unreadable: 1 }),
+      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2, unreadable: 1 }),
     ).toEqual({ retryInMs: 0 });
+    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 1 });
+  });
+
+  test('a build that starts once the retry is due is the retry, whatever asked for it', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    const bad = `frames/${SEASON}/${s2('19TEA', '20261005')}.json`;
+    stub(world({ manifests: new Map<string, unknown>([[bad, 'error']]) }));
+    await t.action(internal.imageryLive.buildIndex, {});
+    // Past the retry, a new frame asks for a build: it re-reads the manifest, so it was the retry,
+    // and the wait doubles rather than sitting in the past.
+    vi.advanceTimersByTime(31 * 60_000);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
+    expect(((await runState(t, 'index'))?.retryAt ?? 0) - Date.now()).toBe(60 * 60_000);
   });
 
   test('the unreadable retry waits half an hour, doubling to a six-hour ceiling', () => {

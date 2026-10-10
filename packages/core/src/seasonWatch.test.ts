@@ -234,7 +234,8 @@ describe('durationInWords', () => {
     expect(durationInWords(30 * 60_000)).toBe('30 minutes');
     expect(durationInWords(119 * 60_000)).toBe('119 minutes');
     expect(durationInWords(6 * 60 * 60_000)).toBe('6 hours');
-    expect(durationInWords(-5)).toBe('0 minutes');
+    expect(durationInWords(60_000)).toBe('1 minute');
+    expect(durationInWords(-5)).toBe('under a minute');
   });
 });
 

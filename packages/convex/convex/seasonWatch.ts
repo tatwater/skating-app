@@ -256,13 +256,15 @@ export async function sampleSites(
     const b = await resolveSurvivor(ctx, entry.site.waterBodyId);
     resolved.push({ ...entry, b: b && isListed(b) ? b : null });
   }
-  const claimed = new Set<string>();
-  const own = resolved.filter((r) => r.b?._id === r.site.waterBodyId);
-  const merged = resolved.filter((r) => r.b && r.b._id !== r.site.waterBodyId);
-  for (const r of [...own, ...merged]) {
-    // A lake already claimed — by its own entry, or listed twice — is reported, not folded in.
-    if (claimed.has((r.b as Doc<'waterBodies'>)._id)) r.b = null;
-    else claimed.add((r.b as Doc<'waterBodies'>)._id);
+  // (An entry listed twice under its own id is the same lake twice, not a lost one: it folds, and
+  // the save refuses duplicates anyway.)
+  const claimed = new Set(
+    resolved.filter((r) => r.b?._id === r.site.waterBodyId).map((r) => r.site.waterBodyId),
+  );
+  for (const r of resolved) {
+    if (!r.b || r.b._id === r.site.waterBodyId) continue;
+    if (claimed.has(r.b._id)) r.b = null;
+    else claimed.add(r.b._id);
   }
   const ofRole = (role: 'sentinel' | 'pinned') => ({
     found: resolved.filter((r) => r.role === role && r.b).map((r) => r.b as Doc<'waterBodies'>),
@@ -384,11 +386,15 @@ export const storeSeries = internalMutation({
         updatedAt: now,
       };
       if (existing) await ctx.db.patch(existing._id, fields);
-      else if (merged.lows.length > 0) {
+      // An empty first write is skipped — except the archive's: it answered for this site
+      // (`fillSeason` sends no other) and had no nights, which is worth keeping, or every plan
+      // would ask it again.
+      else if (merged.lows.length > 0 || source === 'archive') {
         await ctx.db.insert('seasonWatchSeries', {
           season,
           waterBodyId: site.waterBodyId,
           ...fields,
+          firstDate: merged.firstDate || `${seasonStartYear(season)}-${EARLIEST_START_MONTH_DAY}`,
         });
       }
     }
@@ -493,11 +499,12 @@ export const previewSites = query({
  * `evaluateSeason` the cron uses. ~30 sites × ~11 seasons of ~300 numbers: well under a megabyte.
  */
 export const series = query({
-  args: {},
-  handler: async (ctx) => {
+  // ⚠ The page passes the season under way rather than the query reading the clock: a query is
+  // cached on the rows it reads, and the July turnover changes none of them.
+  args: { current: v.string() },
+  handler: async (ctx, { current }) => {
     await requireRole(ctx, 'admin');
     const docs = await ctx.db.query('seasonWatchSeries').take(2_000);
-    const current = archiveSeasonAt(Date.now());
     return docs.map((d) => ({
       season: d.season,
       waterBodyId: d.waterBodyId,
@@ -862,15 +869,15 @@ async function heldIn(
   waterBodyIds: readonly Id<'waterBodies'>[],
   isCurrent: boolean,
 ): Promise<Id<'waterBodies'>[]> {
-  const out: Id<'waterBodies'>[] = [];
-  for (const id of waterBodyIds) {
-    const doc = await ctx.db
-      .query('seasonWatchSeries')
-      .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
-      .unique();
-    if (holdsSeason(doc, isCurrent)) out.push(id);
-  }
-  return out;
+  const docs = await Promise.all(
+    waterBodyIds.map((id) =>
+      ctx.db
+        .query('seasonWatchSeries')
+        .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
+        .unique(),
+    ),
+  );
+  return waterBodyIds.filter((_, i) => holdsSeason(docs[i] ?? null, isCurrent));
 }
 
 /** {@link heldIn}, for `fillSeason` to ask when it runs. */

@@ -387,9 +387,10 @@ describe('the overview and the stored lows', () => {
         },
       ],
     });
+    // An empty first write from the live watch keeps nothing.
     await t.mutation(internal.seasonWatch.storeSeries, {
       season: 'winter-2025-26',
-      source: 'archive',
+      source: 'forecast',
       sites: [{ ...site, days: [] }],
     });
     const rows = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2026-27' });
@@ -400,7 +401,7 @@ describe('the overview and the stored lows', () => {
     );
 
     const admin = await seedUser(t, 'admin', 'admin');
-    const all = await admin.as.query(api.seasonWatch.series, {});
+    const all = await admin.as.query(api.seasonWatch.series, { current: 'winter-2026-27' });
     expect(all).toEqual([
       {
         season: 'winter-2026-27',
@@ -813,6 +814,20 @@ describe('history', () => {
     const byId = new Map(docs.map((d) => [d.waterBodyId as string, d]));
     expect(byId.get(a as string)?.archiveFilledAt).toBeDefined();
     expect(byId.get(b as string)?.archiveFilledAt).toBeUndefined();
+  });
+
+  test('an archive answer with no nights for a site never stored is kept, so it is not asked again', async () => {
+    const t = convexTest(schema, modules);
+    const [lake] = await seedLakes(t, 1);
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2019-20',
+      source: 'archive',
+      sites: [
+        { waterBodyId: lake as Id<'waterBodies'>, name: 'Lake 0', lat: 44, lng: -71.65, days: [] },
+      ],
+    });
+    const [doc] = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2019-20' });
+    expect(doc).toMatchObject({ source: 'archive', firstDate: '2019-09-01', lows: [] });
   });
 
   test('a fill fetches only the sites still missing when it runs', async () => {

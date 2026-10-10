@@ -140,7 +140,9 @@ export function validateSeasonWatchSettings(settings: SeasonWatchSettings): stri
 
 /** A wait in words, for a staff email or page: `30 minutes`; from two hours, `6 hours`. */
 export function durationInWords(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / 60_000));
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 1) return 'under a minute';
+  if (minutes === 1) return '1 minute';
   return minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
 }
 

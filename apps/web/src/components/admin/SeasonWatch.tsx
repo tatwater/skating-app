@@ -400,11 +400,15 @@ export function ImageryPanel({
           ) : null}
         </div>
       ) : null}
-      {activity?.indexRetryAt && activity.indexRetryAt > Date.now() ? (
+      {activity?.indexRetryAt ? (
+        // Shown until a build reads every manifest — a retry already due has not yet succeeded.
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-warning">
-            Some cut frames could not be read into the index; it reads them again at{' '}
-            {new Date(activity.indexRetryAt).toLocaleTimeString()}.
+            Some cut frames could not be read into the index; it reads them again{' '}
+            {activity.indexRetryAt > Date.now()
+              ? `at ${new Date(activity.indexRetryAt).toLocaleTimeString()}`
+              : 'at the next check'}
+            .
           </p>
           {/* One button does both; the pump's banner above already shows it. */}
           {onTryAgain && !(activity.backoffUntil && activity.backoffUntil > Date.now()) ? (
