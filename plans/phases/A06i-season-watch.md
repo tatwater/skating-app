@@ -86,8 +86,10 @@ was decided under; the legacy row is stamped with the defaults it was in fact de
 gap), `source: 'forecast' | 'archive'`. The daily tick merges its 92 days into the current season's
 documents instead of throwing them away. `fillSeasonHistory` fetches Sep 1 – Jun 30 for every past
 season back to 2016-17 from the archive, one multi-site request per season, for every site in the
-current settings plus the ordinary sample, and again for every site a settings save starts watching
-— roster or sample. The floor editor stops at 1 September, where that history begins.
+current settings plus the ordinary sample. After that, a save or *Fill history* fills whatever a
+watched lake has no lows for (a new sample lake, a merged sentinel's survivor, a request that
+failed), and each request skips what has been filled since it was planned. The floor editor stops at
+1 September, where that history begins.
 
 ### §4 — The emails (D212)
 
@@ -187,12 +189,17 @@ Greptile's first pass (2026-10-10) found seven, four in the preview and the emai
 replayed an edit with the saved sample and the roster ids the version stored; it now asks the server
 for the edited sites (`previewSites`, which is `sampleSites`), so roster ids follow merges and the
 sample is re-drawn at the edited size, and a season missing lows for watched lakes says so. A save
-fills history for every site it starts watching, not only the roster it names; a fill of more than
-one request is spaced like a full one. Each queued email keeps the settings that decided its fact,
-so a reminder found after the imagery line moved names the new line. The floor stops at 1 September,
-where the history begins. In the imagery job: a spawn batch asks again before each create, so
-nothing starts after *Pause*; an unreadable manifest leaves the index request standing, with one
-email a day.
+filled history only for roster ids it had not stored before; the self-review of the first fix
+(diffing the sites each version watches) found it still missed a merged sentinel's survivor, whose
+past seasons stay under the loser's id, and any fill request that failed — so the fill became
+**fill what is missing**: the planner asks the store which watched (site, season) pairs have no
+lows, a large fill waits behind a running one and holds the busy mark, and each request re-checks
+when it runs. Each queued email keeps the settings that decided its fact, so a reminder found after
+the imagery line moved names the new line. The floor stops at 1 September, where the history
+begins. A roster lake that no longer resolves stays in the draft, flagged, so a save cannot drop it
+silently; the draft is seeded during render, so a save does not blank the page. In the imagery
+job: a spawn batch asks again before each create, so nothing starts after *Pause*; an unreadable
+manifest leaves the index request standing, with one email and at most one run row a day.
 
 ### §6 — `/admin/seasons`
 

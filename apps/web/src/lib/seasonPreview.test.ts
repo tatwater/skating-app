@@ -2,6 +2,8 @@ import { DEFAULT_SEASON_WATCH_SETTINGS } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import {
   chartRows,
+  draftRoster,
+  editedSitesFor,
   fromForm,
   lowF,
   previewSeasons,
@@ -113,6 +115,34 @@ describe('the replay', () => {
     expect(rosterEntries(sites, 'pinned')).toEqual([
       { waterBodyId: 'low-plains', name: 'Low Plains' },
     ]);
+  });
+
+  it('starts the draft from the resolved roster, keeping a lost lake for the save to refuse', () => {
+    const sites = [
+      { siteId: 'clouds', role: 'sentinel' as const, name: 'Upper Lake of the Clouds' },
+      { siteId: 'valley', role: 'sample' as const, name: 'Valley' },
+    ];
+    expect(
+      draftRoster(sites, [
+        { waterBodyId: 'gone', name: 'Kinsman Pond', state: 'NH', role: 'sentinel' },
+        { waterBodyId: 'low', name: 'Low Plains', role: 'pinned' },
+      ]),
+    ).toEqual({
+      sentinels: [
+        { waterBodyId: 'clouds', name: 'Upper Lake of the Clouds' },
+        { waterBodyId: 'gone', name: 'Kinsman Pond', state: 'NH' },
+      ],
+      pinned: [{ waterBodyId: 'low', name: 'Low Plains' }],
+    });
+  });
+
+  it('previews an edit over the saved sites, or the re-drawn sample once it has loaded', () => {
+    const saved = [{ siteId: 'a', role: 'sample' as const, name: 'A' }];
+    const redrawn = [{ siteId: 'b', role: 'sample' as const, name: 'B' }];
+    expect(editedSitesFor(false, saved, undefined)).toBe(saved);
+    expect(editedSitesFor(true, saved, undefined)).toBeUndefined();
+    expect(editedSitesFor(true, saved, null)).toBeNull();
+    expect(editedSitesFor(true, saved, { sites: redrawn })).toBe(redrawn);
   });
 
   it('a November floor postpones every season it can', () => {

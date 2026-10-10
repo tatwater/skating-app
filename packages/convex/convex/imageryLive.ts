@@ -1240,34 +1240,40 @@ async function buildIndexOnce(
     const turnedOver = index.frames.length > 0 && (!latest?.season || season > latest.season);
     if (turnedOver) await putJson(config.r2, 'index/latest.json', { season });
 
-    const details = [
-      ...(turnedOver ? [`index/latest.json → ${season}`] : []),
-      ...(unreadable > 0
-        ? [`${unreadable} manifest${unreadable === 1 ? '' : 's'} unreadable — retrying next tick`]
-        : []),
-    ];
-    await ctx.runMutation(internal.imageryLive.recordRun, {
-      season,
-      kind: 'index',
-      startedAt,
-      outcome: unreadable > 0 ? 'failed' : 'ok',
-      ...(details.length > 0 ? { detail: details.join('; ') } : {}),
-      counts: {
-        manifests: listed.length,
-        added: added.length,
-        removed: remove.length,
-        unreadable,
-        frames: index.frames.length,
-      },
-    });
-    if (unreadable > 0) {
-      // A manifest that stays unreadable (written corrupt, or deleted between list and read) would
-      // otherwise retry quietly for ever; one email a day says which, so someone can look.
-      await ctx.runMutation(internal.imageryLive.alertAdmins, {
-        key: 'imagery-index-unreadable',
+    // A manifest that stays unreadable (written corrupt, say) keeps the request standing, so this
+    // build repeats every 10 minutes until it reads. One email a day says so; and a repeat that
+    // changed nothing leaves no run row, or a day of them would push every other run off the page.
+    const alerted =
+      unreadable > 0 &&
+      (
+        await ctx.runMutation(internal.imageryLive.alertAdmins, {
+          key: 'imagery-index-unreadable',
+          season,
+          problem: 'Some cut frames cannot be read into the imagery index',
+          detail: `${unreadable} manifest${unreadable === 1 ? '' : 's'} in frames/${season}/ could not be read, so ${unreadable === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index is rebuilt every 10 minutes until they read.`,
+        })
+      ).sent;
+    const changed = added.length + remove.length > 0 || turnedOver;
+    if (unreadable === 0 || changed || alerted) {
+      const details = [
+        ...(turnedOver ? [`index/latest.json → ${season}`] : []),
+        ...(unreadable > 0
+          ? [`${unreadable} manifest${unreadable === 1 ? '' : 's'} unreadable — retrying next tick`]
+          : []),
+      ];
+      await ctx.runMutation(internal.imageryLive.recordRun, {
         season,
-        problem: 'Some cut frames cannot be read into the imagery index',
-        detail: `${unreadable} manifest${unreadable === 1 ? '' : 's'} in frames/${season}/ could not be read, so ${unreadable === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index is rebuilt every 10 minutes until they read.`,
+        kind: 'index',
+        startedAt,
+        outcome: unreadable > 0 ? 'failed' : 'ok',
+        ...(details.length > 0 ? { detail: details.join('; ') } : {}),
+        counts: {
+          manifests: listed.length,
+          added: added.length,
+          removed: remove.length,
+          unreadable,
+          frames: index.frames.length,
+        },
       });
     }
     return { frames: index.frames.length, unreadable };

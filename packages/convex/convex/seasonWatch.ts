@@ -24,6 +24,7 @@ import {
   DEFAULT_SEASON_WATCH_SETTINGS,
   EARLIEST_START_MONTH_DAY,
   expandLows,
+  MAX_ROSTER_SITES,
   MAX_SAMPLE_SITES,
   mergeLows,
   type SeasonWatchSettings,
@@ -96,9 +97,6 @@ const ROSTER_SEARCH_TAKE = 50;
 
 /** The most boost-ordered rows the sample walk reads to find `sampleSize` listed ones. */
 const SAMPLE_SCAN_CAP = 200;
-
-/** The most sentinels, and the most pinned sites, a roster may name. */
-const MAX_ROSTER = 10;
 
 /** The first season the history fill reaches back to — the start of the imagery archive's reach. */
 export const HISTORY_FIRST_SEASON_YEAR = 2016;
@@ -231,7 +229,7 @@ export const ensureSettings = internalMutation({
  * sample runs slightly cold and the gate opens a little early — the cheap direction to be wrong in.
  *
  * Roster ids follow merges to their survivor (D36) and must still be listed; a roster site that no
- * longer resolves is reported back as `missing` rather than silently dropped.
+ * longer resolves is reported back as `missing`, with its role, rather than silently dropped.
  */
 export async function sampleSites(
   ctx: QueryCtx,
@@ -290,7 +288,13 @@ export async function sampleSites(
       lng: p.lng,
     });
   }
-  return { sites, missing: [...sentinels.missing, ...pinned.missing] };
+  return {
+    sites,
+    missing: [
+      ...sentinels.missing.map((m) => ({ ...m, role: 'sentinel' as const })),
+      ...pinned.missing.map((m) => ({ ...m, role: 'pinned' as const })),
+    ],
+  };
 }
 
 export const gateSites = internalQuery({
@@ -445,7 +449,8 @@ export const previewSites = query({
     await requireRole(ctx, 'admin');
     const size = args.sampleSize;
     if (!Number.isInteger(size) || size < 1 || size > MAX_SAMPLE_SITES) return null;
-    if (args.sentinels.length > MAX_ROSTER || args.pinned.length > MAX_ROSTER) return null;
+    if (args.sentinels.length > MAX_ROSTER_SITES || args.pinned.length > MAX_ROSTER_SITES)
+      return null;
     return await sampleSites(ctx, args);
   },
 });
@@ -471,7 +476,10 @@ export const series = query({
   },
 });
 
-/** Save a new settings version. Sites a save adds get their history filled in the background. */
+/**
+ * Save a new settings version. Whatever the new settings watch but has no lows stored is filled in
+ * the background.
+ */
 export const saveSettings = mutation({
   args: {
     settings: settingsValidator,
@@ -487,15 +495,16 @@ export const saveSettings = mutation({
     if (args.sentinels.some((id) => args.pinned.includes(id))) {
       errors.push('A lake cannot be both a sentinel and a pinned site.');
     }
-    if (args.sentinels.length > MAX_ROSTER || args.pinned.length > MAX_ROSTER) {
+    if (args.sentinels.length > MAX_ROSTER_SITES || args.pinned.length > MAX_ROSTER_SITES) {
       errors.push('At most ten sentinels and ten pinned sites.');
     }
     const snapshot = async (ids: Id<'waterBodies'>[]) => {
       const out: RosterSite[] = [];
       for (const id of ids) {
         const b = await ctx.db.get(id);
-        if (!b || !isListed(b)) errors.push('One of the chosen lakes is not listed.');
-        else out.push(rosterSite(b));
+        if (!b || !isListed(b)) {
+          errors.push(`${b?.name ?? 'One of the chosen lakes'} is not listed — remove it.`);
+        } else out.push(rosterSite(b));
       }
       return out;
     };
@@ -516,26 +525,11 @@ export const saveSettings = mutation({
       savedAt: Date.now(),
     });
 
-    // ⚠ **Every site the save starts watching, not only the roster it names.** A larger sample, or a
-    // roster lake leaving the sample's slots, brings ordinary lakes in too — and without their past
-    // seasons the preview would replay a smaller sample than the cron runs, without saying so.
-    const before = previous ? configOf(previous) : { version: 0, ...(await defaultConfig(ctx)) };
-    const watchedBefore = new Set(
-      (await sampleSites(ctx, { ...before, sampleSize: before.settings.sampleSize })).sites.map(
-        (s) => s.siteId,
-      ),
-    );
-    const watched = await sampleSites(ctx, {
-      sentinels,
-      pinned,
-      sampleSize: args.settings.sampleSize,
-    });
-    const added = watched.sites.filter((s) => !watchedBefore.has(s.siteId));
-    if (added.length > 0) {
-      await ctx.scheduler.runAfter(0, internal.seasonWatch.scheduleHistoryFill, {
-        waterBodyIds: added.map((s) => s.siteId),
-      });
-    }
+    // ⚠ **Fill what is missing, not what the save names.** A larger sample, a lake displaced from
+    // the sample, a merged sentinel's survivor (its past seasons stay under the loser's id) and a
+    // fill request that failed all leave a watched lake without lows; only asking the store finds
+    // every one. Scheduled, so the planner reads the version this transaction committed.
+    await ctx.scheduler.runAfter(0, internal.seasonWatch.scheduleHistoryFill, {});
     return { version };
   },
 });
@@ -667,13 +661,13 @@ export const removeFieldDate = mutation({
   },
 });
 
-/** The page's *Fill history* button: every past season, for every site the watch samples now. */
+/** The page's *Fill history* button: every season a site the watch reads now has no lows for. */
 export const requestHistoryFill = mutation({
   args: {},
   handler: async (ctx) => {
     await requireContributorRole(ctx, 'admin');
-    // A full fill is ~6,000 weighted Open-Meteo calls spread over a day and a half; a second one
-    // started before the first finishes would stack on the same free budget, whoever clicks.
+    // A fill from nothing is ~6,000 weighted Open-Meteo calls spread over a day and a half; a second
+    // one started before the first finishes would stack on the same free budget, whoever clicks.
     const busy = await busyUntil(ctx, 'history-fill');
     if (busy !== null && busy > Date.now()) {
       throw new ConvexError(
@@ -682,8 +676,7 @@ export const requestHistoryFill = mutation({
     }
     // Planned in this same transaction, so the busy mark and the scheduled requests commit
     // together: a second click sees it, and a planner that fails leaves no false hold behind.
-    await planHistoryFill(ctx);
-    return null;
+    return await planHistoryFill(ctx);
   },
 });
 
@@ -702,7 +695,7 @@ const HISTORY_SITES_PER_REQUEST = 12;
  */
 const HISTORY_SPACING_MS = 75 * 60_000;
 
-/** Spacing when only a few new sites (one request's worth) are being filled. */
+/** Spacing for a small fill — at most one request per season — each request a few hundred calls. */
 const SMALL_FILL_SPACING_MS = 2 * 60_000;
 
 /** The seasons history covers: the first archive season up to the one before the current. */
@@ -714,60 +707,83 @@ export function historySeasons(nowMs: number): string[] {
 }
 
 /**
- * Plan a history fill — which sites, which seasons, and when each request runs — and mark a full
- * one busy until its last request, in the caller's transaction. The current season is filled from
- * the forecast endpoint's past days (what the live watch reads); past seasons from the archive.
+ * Plan a fill of every (site, season) the watch reads but holds no lows for — which sites, which
+ * seasons, and when each request runs — in the caller's transaction. The current season is filled
+ * from the forecast endpoint's past days (what the live watch reads); past seasons from the archive.
+ *
+ * A small fill (at most one request a season) runs two minutes apart. A larger one weighs like a
+ * fill from nothing on the shared daily Open-Meteo budget, so it is spread 75 minutes apart and
+ * marked busy until its last request. ⚠ **Any fill waits for one already running**, and each request
+ * re-asks the store when it runs (`fillSeason`), so a fill planned behind another only fetches what
+ * the first did not.
  */
-async function planHistoryFill(
-  ctx: MutationCtx,
-  waterBodyIds?: Id<'waterBodies'>[],
-): Promise<{ requests: number }> {
+async function planHistoryFill(ctx: MutationCtx): Promise<{ requests: number }> {
   const row = await latestSettings(ctx);
   const config = row ? configOf(row) : { version: 0, ...(await defaultConfig(ctx)) };
   const { sites } = await sampleSites(ctx, { ...config, sampleSize: config.settings.sampleSize });
-  const wanted = waterBodyIds ? sites.filter((s) => waterBodyIds.includes(s.siteId)) : sites;
-  if (wanted.length === 0) {
-    return { requests: 0 };
-  }
-
-  const chunks: (typeof wanted)[] = [];
-  for (let i = 0; i < wanted.length; i += HISTORY_SITES_PER_REQUEST) {
-    chunks.push(wanted.slice(i, i + HISTORY_SITES_PER_REQUEST));
-  }
-  // A few sites a save added go quickly; more than one request's worth — a sample grown by dozens —
-  // weighs like a full fill on the shared daily budget, so it is spread like one.
-  const spacing = waterBodyIds && chunks.length === 1 ? SMALL_FILL_SPACING_MS : HISTORY_SPACING_MS;
   const now = Date.now();
-  const current = archiveSeasonAt(now);
-  let slot = 0;
-  for (const chunk of chunks) {
-    const args = chunk.map((s) => ({
-      waterBodyId: s.siteId,
-      name: s.name,
-      ...(s.state ? { state: s.state } : {}),
-      lat: s.lat,
-      lng: s.lng,
-    }));
-    await ctx.scheduler.runAfter(0, internal.seasonWatch.fillSeason, {
-      season: current,
-      sites: args,
-    });
-    for (const season of historySeasons(now)) {
-      await ctx.scheduler.runAfter(++slot * spacing, internal.seasonWatch.fillSeason, {
-        season,
-        sites: args,
-      });
+  const seasons = [archiveSeasonAt(now), ...historySeasons(now)];
+
+  const requests: { season: string; sites: typeof sites }[] = [];
+  for (const season of seasons) {
+    const stored = new Set(
+      (
+        await ctx.db
+          .query('seasonWatchSeries')
+          .withIndex('by_season_body', (q) => q.eq('season', season))
+          .take(500)
+      ).map((d) => d.waterBodyId as string),
+    );
+    const lacking = sites.filter((s) => !stored.has(s.siteId));
+    for (let i = 0; i < lacking.length; i += HISTORY_SITES_PER_REQUEST) {
+      requests.push({ season, sites: lacking.slice(i, i + HISTORY_SITES_PER_REQUEST) });
     }
   }
-  // A full fill marks itself busy until its last request, so a second cannot stack on it.
-  if (!waterBodyIds) await setBusyUntil(ctx, 'history-fill', now + slot * spacing + 60 * 60_000);
-  return { requests: slot + chunks.length };
+  if (requests.length === 0) return { requests: 0 };
+
+  const large = requests.length > seasons.length;
+  const spacing = large ? HISTORY_SPACING_MS : SMALL_FILL_SPACING_MS;
+  const busy = await busyUntil(ctx, 'history-fill');
+  const start = busy !== null && busy > now ? busy - now : 0;
+  for (const [i, request] of requests.entries()) {
+    await ctx.scheduler.runAfter(start + i * spacing, internal.seasonWatch.fillSeason, {
+      season: request.season,
+      sites: request.sites.map((s) => ({
+        waterBodyId: s.siteId,
+        name: s.name,
+        ...(s.state ? { state: s.state } : {}),
+        lat: s.lat,
+        lng: s.lng,
+      })),
+    });
+  }
+  // A large fill holds the busy mark until its last request, so a click cannot stack on it.
+  if (large) {
+    await setBusyUntil(ctx, 'history-fill', now + start + requests.length * spacing + 60 * 60_000);
+  }
+  return { requests: requests.length };
 }
 
-/** The history fill for sites a settings save added (`saveSettings`). */
+/** The history fill a settings save asks for (`saveSettings`). */
 export const scheduleHistoryFill = internalMutation({
-  args: { waterBodyIds: v.optional(v.array(v.id('waterBodies'))) },
-  handler: async (ctx, { waterBodyIds }) => await planHistoryFill(ctx, waterBodyIds),
+  args: {},
+  handler: async (ctx) => await planHistoryFill(ctx),
+});
+
+/** Which of these sites already hold lows for a season — a fill skips them. */
+export const storedSites = internalQuery({
+  args: { season: v.string(), waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (ctx, { season, waterBodyIds }) => {
+    const out: Id<'waterBodies'>[] = [];
+    for (const id of waterBodyIds) {
+      const doc = await ctx.db
+        .query('seasonWatchSeries')
+        .withIndex('by_season_body', (q) => q.eq('season', season).eq('waterBodyId', id))
+        .unique();
+      if (doc) out.push(id);
+    }
+    return out;
+  },
 });
 
 interface DailyResponse {
@@ -788,7 +804,16 @@ export const fillSeason = internalAction({
       }),
     ),
   },
-  handler: async (ctx, { season, sites }) => {
+  handler: async (ctx, { season, sites: planned }) => {
+    // Planned perhaps hours ago, perhaps behind another fill: fetch only what is still missing.
+    const stored = new Set<string>(
+      await ctx.runQuery(internal.seasonWatch.storedSites, {
+        season,
+        waterBodyIds: planned.map((s) => s.waterBodyId),
+      }),
+    );
+    const sites = planned.filter((s) => !stored.has(s.waterBodyId));
+    if (sites.length === 0) return null;
     const now = Date.now();
     const isCurrent = archiveSeasonAt(now) === season;
     const year = seasonStartYear(season);

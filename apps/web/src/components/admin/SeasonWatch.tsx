@@ -1,5 +1,6 @@
 import {
   celsiusToFahrenheit,
+  MAX_ROSTER_SITES,
   type SeasonWatchSettings,
   validateSeasonWatchSettings,
 } from '@skating/core';
@@ -19,6 +20,7 @@ import {
   chartRows,
   lowF,
   type PreviewRow,
+  type RosterEntry,
   type SentinelCrossing,
   type SeriesDoc,
   type SettingsForm,
@@ -479,11 +481,7 @@ export function ImageryPanel({
   );
 }
 
-export interface RosterEntry {
-  waterBodyId: string;
-  name: string;
-  state?: string;
-}
+export type { RosterEntry };
 
 const FIELDS: { key: keyof SettingsForm; label: string; unit: string; help: string }[] = [
   {
@@ -570,6 +568,9 @@ export function SettingsEditor({
   const [note, setNote] = useState('');
   const { busy, error, run } = useAction();
   const errors = validateSeasonWatchSettings(edited);
+  if (sentinels.length > MAX_ROSTER_SITES || pinned.length > MAX_ROSTER_SITES) {
+    errors.push('At most ten sentinels and ten pinned sites.');
+  }
   const roster = (
     title: string,
     list: RosterEntry[],
@@ -675,7 +676,16 @@ function Changed({ now, before }: { now: ReactNode; before: ReactNode }) {
 }
 
 /** Every season under the edited settings, the saved result struck through where it differs. */
-export function PreviewTable({ edited, saved }: { edited: PreviewRow[]; saved: PreviewRow[] }) {
+export function PreviewTable({
+  edited,
+  saved,
+  fillHint,
+}: {
+  edited: PreviewRow[];
+  saved: PreviewRow[];
+  /** How the lows a season is missing get filled — by saving the edit, or *Fill history*. */
+  fillHint: string;
+}) {
   const before = new Map(saved.map((r) => [r.season, r]));
   const by = (r: PreviewRow) => r.evaluation.openedBy.join(' + ') || '—';
   return (
@@ -705,7 +715,7 @@ export function PreviewTable({ edited, saved }: { edited: PreviewRow[]; saved: P
                 {r.missingLows > 0 ? (
                   // A replay over fewer lakes than the watch reads is not the whole result: say so.
                   <span className="block text-warning text-xs">
-                    No lows for {r.missingLows} of {r.watched} lakes — fill the history
+                    No lows for {r.missingLows} of {r.watched} lakes — {fillHint}
                   </span>
                 ) : null}
               </Td>
@@ -1065,5 +1075,5 @@ export function FieldDates({
 /** When each pass of the history fill runs, roughly — so the button's promise is honest. */
 export function historyFillHint(seasons: number): string {
   const hours = Math.round(((seasons * 3 * 75 * 60_000) / DAY) * 24);
-  return `Fills ${seasons} past seasons from Open-Meteo's archive, spread over about ${hours} hours so it never starves the daily weather sweep.`;
+  return `Fills whatever the watched lakes are missing from ${seasons} past seasons of Open-Meteo's archive. From nothing that is spread over about ${hours} hours, so it never starves the daily weather sweep.`;
 }

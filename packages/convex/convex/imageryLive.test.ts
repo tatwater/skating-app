@@ -1060,9 +1060,14 @@ describe('buildIndex', () => {
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 0 });
     // The last cut has landed and imagery is paused: nothing will mark the index dirty again.
     expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
+    // Still unreadable, the same day: the retry changed nothing, so it leaves no second run row.
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await runs(t)).toHaveLength(1);
+    expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBe(1);
     w.manifests.set(key, manifest(a, '2026-10-05T15:30:00Z'));
     expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
     expect(await t.query(internal.imageryLive.indexOutstanding, {})).toBeNull();
+    expect((await runs(t)).at(-1)).toMatchObject({ outcome: 'ok' });
   });
 
   test('a failed rebuild alerts the admins', async () => {

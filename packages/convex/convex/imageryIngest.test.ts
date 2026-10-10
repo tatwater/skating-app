@@ -643,6 +643,38 @@ describe('the staff emails — one a day, in order (D212)', () => {
     expect(headings.at(-1)).toBe('First 25°F night: Tuesday, October 6');
   });
 
+  test('winter and the close carry the settings that decided them, for their emails', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-10-03',
+      openedBy: ['sentinel'],
+      winterFrom: null,
+      sitesSampled: 3,
+      settings: DEFAULT_SEASON_WATCH_SETTINGS,
+    });
+    const later = { ...DEFAULT_SEASON_WATCH_SETTINGS, winterFraction: 0.75, thawRunDays: 14 };
+    await t.mutation(internal.imageryIngest.recordSeasonWinterFrom, {
+      season: 'winter-2026-27',
+      winterFrom: '2026-11-20',
+      frozen: [],
+      reporting: 24,
+      settings: later,
+    });
+    await t.mutation(internal.imageryIngest.recordSeasonClose, {
+      season: 'winter-2026-27',
+      closesOn: '2027-04-10',
+      settings: later,
+    });
+    const queue = (await theRow(t))?.emailQueue ?? [];
+    type Entry = { email: { kind: string }; settings?: { thawRunDays: number } };
+    expect(queue.map((e: Entry) => [e.email.kind, e.settings?.thawRunDays])).toEqual([
+      ['opened', DEFAULT_SEASON_WATCH_SETTINGS.thawRunDays],
+      ['winter', 14],
+      ['closed', 14],
+    ]);
+  });
+
   test('nothing is sent before any settings exist', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryIngest.recordSeasonOpen, {

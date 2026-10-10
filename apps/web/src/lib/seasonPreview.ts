@@ -60,11 +60,60 @@ export function rosterOf(sites: readonly WatchedSite[]): Roster {
   };
 }
 
+/** A roster lake as the editor lists it. */
+export interface RosterEntry {
+  waterBodyId: string;
+  name: string;
+  state?: string;
+}
+
+/** A roster lake that no longer resolves — merged into nothing, or delisted. */
+export interface MissingSite extends RosterEntry {
+  role: 'sentinel' | 'pinned';
+}
+
 /** One role's sites as the roster editor lists them. */
-export function rosterEntries(sites: readonly WatchedSite[], role: 'sentinel' | 'pinned') {
+export function rosterEntries(
+  sites: readonly WatchedSite[],
+  role: 'sentinel' | 'pinned',
+): RosterEntry[] {
   return sites
     .filter((s) => s.role === role)
     .map((s) => ({ waterBodyId: s.siteId, name: s.name, ...(s.state ? { state: s.state } : {}) }));
+}
+
+/**
+ * The roster the editor starts from: each lake as the cron reads it (a merged one as its survivor),
+ * then any that no longer resolve. ⚠ **A lost lake stays in the draft**, beside the page's warning,
+ * so the save refuses it until someone removes it — rather than a save that changed something else
+ * quietly deleting it from the roster.
+ */
+export function draftRoster(
+  sites: readonly WatchedSite[],
+  missing: readonly MissingSite[],
+): { sentinels: RosterEntry[]; pinned: RosterEntry[] } {
+  const lost = (role: MissingSite['role']) =>
+    missing
+      .filter((m) => m.role === role)
+      .map(({ waterBodyId, name, state }) => ({ waterBodyId, name, ...(state ? { state } : {}) }));
+  return {
+    sentinels: [...rosterEntries(sites, 'sentinel'), ...lost('sentinel')],
+    pinned: [...rosterEntries(sites, 'pinned'), ...lost('pinned')],
+  };
+}
+
+/**
+ * The sites an edit is previewed over: the saved ones when the edit leaves the sample alone, else
+ * the server's re-drawn sample — `undefined` while it loads, `null` when the edit is one the save
+ * would refuse (the editor names why).
+ */
+export function editedSitesFor(
+  resample: boolean,
+  savedSites: readonly WatchedSite[],
+  preview: { sites: readonly WatchedSite[] } | null | undefined,
+): readonly WatchedSite[] | null | undefined {
+  if (!resample) return savedSites;
+  return preview === undefined ? undefined : (preview?.sites ?? null);
 }
 
 export interface FieldDate {

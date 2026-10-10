@@ -74,6 +74,9 @@ export const DEFAULT_SAMPLE_SITES = 24;
 /** The most ordinary lakes the sample may hold. */
 export const MAX_SAMPLE_SITES = 60;
 
+/** The most sentinels, and the most pinned sites, a roster may name. */
+export const MAX_ROSTER_SITES = 10;
+
 /** The settings D149 shipped with, so nothing moves until someone saves an edit. */
 export const DEFAULT_SEASON_WATCH_SETTINGS: SeasonWatchSettings = {
   startMonthDay: DEFAULT_START_MONTH_DAY,
@@ -115,7 +118,7 @@ export function validateSeasonWatchSettings(settings: SeasonWatchSettings): stri
     errors.push('The earliest date must be MM-DD between September and December.');
   } else {
     const [month, day] = [Number(monthDay[1]), Number(monthDay[2])];
-    // A real calendar day — 30 September and 31 November do not exist in any year.
+    // A real calendar day — 31 September and 31 November do not exist in any year.
     const probe = new Date(Date.UTC(2001, month - 1, day));
     if (probe.getUTCMonth() !== month - 1) errors.push('The earliest date is not a real day.');
   }

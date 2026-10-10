@@ -230,6 +230,21 @@ describe('SettingsEditor', () => {
     expect(screen.getByRole('button', { name: 'Save as a new version' })).toBeDisabled();
   });
 
+  it('refuses an eleventh sentinel before the server has to', () => {
+    render(
+      <SettingsEditor
+        {...props}
+        sentinels={Array.from({ length: 11 }, (_, i) => ({ waterBodyId: `s${i}`, name: `S${i}` }))}
+        onFormChange={() => {}}
+        onRosterChange={() => {}}
+        dirty
+        onSave={async () => {}}
+      />,
+    );
+    expect(screen.getByText('At most ten sentinels and ten pinned sites.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save as a new version' })).toBeDisabled();
+  });
+
   it('edits a field and removes a sentinel', async () => {
     const onFormChange = vi.fn();
     const onRosterChange = vi.fn();
@@ -277,7 +292,7 @@ describe('PreviewTable', () => {
       watched: 28,
       missingLows: 0,
     });
-    render(<PreviewTable edited={[row(2)]} saved={[row(1)]} />);
+    render(<PreviewTable edited={[row(2)]} saved={[row(1)]} fillHint="Fill history fills them" />);
     expect(screen.getByText('Oct 4')).toBeInTheDocument();
     expect(screen.getByText('Oct 3')).toHaveClass('line-through');
     expect(screen.getByText('47 days')).toBeInTheDocument();
@@ -296,8 +311,8 @@ describe('PreviewTable', () => {
       watched: 28,
       missingLows: 4,
     };
-    render(<PreviewTable edited={[row]} saved={[row]} />);
-    expect(screen.getByText('No lows for 4 of 28 lakes — fill the history')).toBeInTheDocument();
+    render(<PreviewTable edited={[row]} saved={[row]} fillHint="saving fills them" />);
+    expect(screen.getByText('No lows for 4 of 28 lakes — saving fills them')).toBeInTheDocument();
   });
 });
 
