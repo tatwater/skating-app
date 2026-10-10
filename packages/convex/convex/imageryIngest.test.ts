@@ -1,4 +1,4 @@
-import { DEFAULT_SEASON_WATCH_SETTINGS } from '@skating/core';
+import { DEFAULT_SEASON_WATCH_SETTINGS, fahrenheitToCelsius } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -614,6 +614,33 @@ describe('the staff emails — one a day, in order (D212)', () => {
         sites: [],
       }),
     ).toBeNull();
+  });
+
+  test('each email states the rule that decided it, not the one the season opened under', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    await t.mutation(internal.imageryIngest.recordSeasonOpen, {
+      season: 'winter-2026-27',
+      opensOn: '2026-10-03',
+      openedBy: ['sentinel'],
+      winterFrom: null,
+      sitesSampled: 3,
+      settings: DEFAULT_SEASON_WATCH_SETTINGS, // the 20 °F imagery line
+    });
+    await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-04' });
+    // An admin raises the imagery line to 25 °F after the opening; a 24 °F night meets it.
+    const raised = { ...DEFAULT_SEASON_WATCH_SETTINGS, imageryNudgeC: fahrenheitToCelsius(25) };
+    await t.mutation(internal.imageryIngest.recordImageryNudge, {
+      season: 'winter-2026-27',
+      date: '2026-10-06',
+      sites: [{ name: 'Eagle Lake', lowC: fahrenheitToCelsius(24) }],
+      settings: raised,
+    });
+    expect(await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-07' })).toEqual(
+      { sent: 'imagery' },
+    );
+    const headings = (await broadcasts(t)).map((a) => a.heading);
+    expect(headings.at(-1)).toBe('First 25°F night: Tuesday, October 6');
   });
 
   test('nothing is sent before any settings exist', async () => {

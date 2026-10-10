@@ -109,8 +109,20 @@ export const seasonRecordFields = {
   /** The ordinary lakes that froze the night winter set in, out of how many reported. */
   winter: v.optional(v.object({ frozen: v.array(namedSiteLow), reporting: v.number() })),
 
-  /** Staff emails waiting to go, oldest first, and the New York date the last one went (D212). */
-  emailQueue: v.optional(v.array(v.object({ email: seasonEmail, queuedAt: v.number() }))),
+  /**
+   * Staff emails waiting to go, oldest first, and the New York date the last one went (D212). Each
+   * carries the settings that decided it: a fact found after the opening is found under that day's
+   * settings, not the opening's, and its email has to state the rule that actually fired.
+   */
+  emailQueue: v.optional(
+    v.array(
+      v.object({
+        email: seasonEmail,
+        queuedAt: v.number(),
+        settings: v.optional(seasonWatchSettings),
+      }),
+    ),
+  ),
   emailsSent: v.optional(
     v.array(v.object({ kind: v.string(), sentOn: v.string(), sentAt: v.number() })),
   ),

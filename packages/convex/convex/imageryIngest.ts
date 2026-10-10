@@ -92,8 +92,16 @@ async function rowFor(ctx: MutationCtx, season: string) {
     .unique();
 }
 
-function enqueue(row: Doc<'imageryIngestSeasons'>, email: SeasonEmail) {
-  return [...(row.emailQueue ?? []), { email, queuedAt: Date.now() }];
+/** Queue an email with the settings that decided its fact, so its copy states the rule that fired. */
+function enqueue(
+  row: Doc<'imageryIngestSeasons'>,
+  email: SeasonEmail,
+  settings: SeasonWatchSettings | undefined,
+) {
+  return [
+    ...(row.emailQueue ?? []),
+    { email, queuedAt: Date.now(), ...(settings ? { settings } : {}) },
+  ];
 }
 
 /**
@@ -104,18 +112,23 @@ function enqueue(row: Doc<'imageryIngestSeasons'>, email: SeasonEmail) {
  * the field a description of the last time we looked rather than of the melt.
  */
 export const recordSeasonClose = internalMutation({
-  args: { season: v.string(), closesOn: v.string(), sitesSampled: v.optional(v.number()) },
-  handler: async (ctx, { season, closesOn, sitesSampled }) => {
+  args: {
+    season: v.string(),
+    closesOn: v.string(),
+    sitesSampled: v.optional(v.number()),
+    settings: v.optional(seasonWatchSettings),
+  },
+  handler: async (ctx, { season, closesOn, sitesSampled, settings }) => {
     const row = await rowFor(ctx, season);
     if (!row || row.closesOn !== undefined) return null;
     await ctx.db.patch(row._id, {
       closesOn,
       closedAt: Date.now(),
-      emailQueue: enqueue(row, {
-        kind: 'closed',
-        date: closesOn,
-        sitesSampled: sitesSampled ?? row.sitesSampled,
-      }),
+      emailQueue: enqueue(
+        row,
+        { kind: 'closed', date: closesOn, sitesSampled: sitesSampled ?? row.sitesSampled },
+        settings,
+      ),
     });
     return row._id;
   },
@@ -136,15 +149,16 @@ export const recordSeasonWinterFrom = internalMutation({
     winterFrom: v.string(),
     frozen: v.optional(v.array(namedSiteLow)),
     reporting: v.optional(v.number()),
+    settings: v.optional(seasonWatchSettings),
   },
-  handler: async (ctx, { season, winterFrom, frozen, reporting }) => {
+  handler: async (ctx, { season, winterFrom, frozen, reporting, settings }) => {
     const row = await rowFor(ctx, season);
     if (!row || row.winterFrom !== null) return null;
     const winter = { frozen: frozen ?? [], reporting: reporting ?? 0 };
     await ctx.db.patch(row._id, {
       winterFrom,
       winter,
-      emailQueue: enqueue(row, { kind: 'winter', date: winterFrom, ...winter }),
+      emailQueue: enqueue(row, { kind: 'winter', date: winterFrom, ...winter }, settings),
     });
     return row._id;
   },
@@ -156,15 +170,20 @@ export const recordSeasonWinterFrom = internalMutation({
  * noise.
  */
 export const recordImageryNudge = internalMutation({
-  args: { season: v.string(), date: v.string(), sites: v.array(namedSiteLow) },
-  handler: async (ctx, { season, date, sites }) => {
+  args: {
+    season: v.string(),
+    date: v.string(),
+    sites: v.array(namedSiteLow),
+    settings: v.optional(seasonWatchSettings),
+  },
+  handler: async (ctx, { season, date, sites, settings }) => {
     const row = await rowFor(ctx, season);
     if (!row || row.imageryNudgeOn !== undefined) return null;
     await ctx.db.patch(row._id, {
       imageryNudgeOn: date,
       imageryNudgeSites: sites,
       ...(row.imageryStartedAt === undefined
-        ? { emailQueue: enqueue(row, { kind: 'imagery', date, sites }) }
+        ? { emailQueue: enqueue(row, { kind: 'imagery', date, sites }, settings) }
         : {}),
     });
     return row._id;
@@ -256,7 +275,12 @@ export const recordSeasonOpen = internalMutation({
         ? { imageryNudgeOn: imageryNudge.date, imageryNudgeSites: imageryNudge.sites }
         : {}),
       detectedAt: now,
-      emailQueue: queue.map((email) => ({ email, queuedAt: now })),
+      // Everything this tick queues was decided under the settings it opened with.
+      emailQueue: queue.map((email) => ({
+        email,
+        queuedAt: now,
+        ...(args.settings ? { settings: args.settings } : {}),
+      })),
     });
     return { id, created: true };
   },
@@ -284,9 +308,12 @@ export const sendNextEmail = internalMutation({
     for (const row of rows.sort((a, b) => a.season.localeCompare(b.season))) {
       const queue = [...(row.emailQueue ?? [])];
       while (queue.length > 0) {
-        const next = queue.shift() as { email: SeasonEmail; queuedAt: number };
+        const next = queue.shift() as (typeof queue)[number];
         if (next.email.kind === 'imagery' && row.imageryStartedAt !== undefined) continue;
-        const settings: SeasonWatchSettings | undefined = row.settings ?? settingsRow?.settings;
+        // The settings that decided this email's fact; then the opening's, for one queued before
+        // entries carried their own; then the current version.
+        const settings: SeasonWatchSettings | undefined =
+          next.settings ?? row.settings ?? settingsRow?.settings;
         // No settings anywhere means `ensureSettings` has never run — leave everything queued.
         if (!settings) return { sent: null };
         const sentinels = row.sentinels ?? settingsRow?.sentinels ?? [];
@@ -631,6 +658,7 @@ async function followOpenSeason(
         season,
         date: nudge.date,
         sites: named(nudge.sites),
+        settings,
       });
     }
   }
@@ -646,6 +674,7 @@ async function followOpenSeason(
         winterFrom: winter.date,
         frozen: named(winter.frozen),
         reporting: winter.reporting,
+        settings,
       });
       winterFrom = winter.date;
       console.warn(`[season watch] ${season} winter established region-wide on ${winter.date}`);
@@ -665,6 +694,7 @@ async function followOpenSeason(
     season,
     closesOn,
     sitesSampled: clipped.filter((s) => !s.sentinel).length,
+    settings,
   });
   // Logged only on the write that actually closed it — a racing tick prints nothing.
   if (wrote !== null) {
