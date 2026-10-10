@@ -40,6 +40,33 @@ export interface Roster {
   ordinaryIds: readonly string[];
 }
 
+/** A site as `seasonWatch.sampleSites` resolves it — roster ids already followed to survivors. */
+export interface WatchedSite {
+  siteId: string;
+  role: 'sentinel' | 'pinned' | 'sample';
+  name: string;
+  state?: string;
+}
+
+/**
+ * The roster a replay reads, from the sites the server resolved — never from the ids a settings
+ * version stored. A merged sentinel's new lows accrue under its survivor, and the sample is drawn
+ * around the roster, so only the resolved sites are the lakes the live watch actually reads.
+ */
+export function rosterOf(sites: readonly WatchedSite[]): Roster {
+  return {
+    sentinelIds: sites.filter((s) => s.role === 'sentinel').map((s) => s.siteId),
+    ordinaryIds: sites.filter((s) => s.role !== 'sentinel').map((s) => s.siteId),
+  };
+}
+
+/** One role's sites as the roster editor lists them. */
+export function rosterEntries(sites: readonly WatchedSite[], role: 'sentinel' | 'pinned') {
+  return sites
+    .filter((s) => s.role === role)
+    .map((s) => ({ waterBodyId: s.siteId, name: s.name, ...(s.state ? { state: s.state } : {}) }));
+}
+
 export interface FieldDate {
   season: string;
   kind: 'first_skated' | 'last_skated';
@@ -79,6 +106,9 @@ export interface PreviewRow {
   lastSkated: string | null;
   /** Days from the watch opening to the first recorded skate; positive means the watch was early. */
   leadDays: number | null;
+  /** Sites the roster watches, and how many of them have no lows stored for this season. */
+  watched: number;
+  missingLows: number;
 }
 
 export function previewSeasons(
@@ -89,7 +119,9 @@ export function previewSeasons(
 ): PreviewRow[] {
   return seasonsIn(docs).map((season) => {
     const sources = new Set(docs.filter((d) => d.season === season).map((d) => d.source));
-    const evaluation = evaluateSeason(siteSeriesFor(season, docs, roster), settings, season);
+    const series = siteSeriesFor(season, docs, roster);
+    const evaluation = evaluateSeason(series, settings, season);
+    const watched = new Set([...roster.sentinelIds, ...roster.ordinaryIds]).size;
     const dates = fieldDates.filter((f) => f.season === season);
     const earliest = (kind: FieldDate['kind']) =>
       dates
@@ -110,6 +142,8 @@ export function previewSeasons(
       lastSkated: latest ?? null,
       leadDays:
         firstSkated && evaluation.opensOn ? daysBetween(evaluation.opensOn, firstSkated) : null,
+      watched,
+      missingLows: watched - new Set(series.map((s) => s.siteId)).size,
     };
   });
 }

@@ -28,11 +28,14 @@ import { Button } from '../components/ui/button';
 import {
   fromForm,
   previewSeasons,
+  rosterEntries,
+  rosterOf,
   type SeriesDoc,
   sameSettings,
   seasonsIn,
   sentinelCrossings,
   toForm,
+  type WatchedSite,
 } from '../lib/seasonPreview';
 
 /**
@@ -92,6 +95,8 @@ function AdminSeasons() {
 
   const season = archiveSeasonAt(Date.now());
   const saved = overview?.current;
+  // The saved roster as the cron reads it: followed to survivors, still listed (`sampleSites`).
+  const savedSites = overview?.sites as WatchedSite[] | undefined;
 
   // The draft: the form, in the founder's units, and the two rosters. Reset whenever a new version
   // lands, so a save (here or elsewhere) is what the form shows next.
@@ -99,47 +104,67 @@ function AdminSeasons() {
   const [sentinels, setSentinels] = useState<RosterEntry[]>([]);
   const [pinned, setPinned] = useState<RosterEntry[]>([]);
   const version = saved?.version;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed the draft only when the saved version changes
-  useEffect(() => {
-    if (!saved) return;
+  // Which version the draft was seeded from: until it is, the empty draft is not an edit.
+  const [seeded, setSeeded] = useState<number | null>(null);
+  const resetDraft = () => {
+    if (!saved || !savedSites) return;
+    setSeeded(saved.version);
     setForm(toForm(saved.settings));
-    setSentinels(saved.sentinels);
-    setPinned(saved.pinned);
-  }, [version, saved === undefined]);
+    setSentinels(rosterEntries(savedSites, 'sentinel'));
+    setPinned(rosterEntries(savedSites, 'pinned'));
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-seed the draft only when the saved version changes
+  useEffect(resetDraft, [version, saved === undefined]);
 
   const [detailSeason, setDetailSeason] = useState<string | null>(null);
 
-  const derived = useMemo(() => {
-    if (!overview || !series || !saved) return null;
+  const draft = useMemo(() => {
+    if (!saved || !savedSites || seeded !== saved.version) return null;
     const edited = fromForm(form, saved.settings);
-    const sampleIds = overview.sites
-      .filter((s) => s.role === 'sample')
-      .map((s) => s.siteId as string);
-    const ids = (list: RosterEntry[]) => list.map((s) => s.waterBodyId);
+    const ids = (list: RosterEntry[]) => list.map((s) => s.waterBodyId).join();
     const rosterChanged =
-      ids(sentinels).join() !== ids(saved.sentinels).join() ||
-      ids(pinned).join() !== ids(saved.pinned).join();
+      ids(sentinels) !== ids(rosterEntries(savedSites, 'sentinel')) ||
+      ids(pinned) !== ids(rosterEntries(savedSites, 'pinned'));
     const dirty = !sameSettings(edited, saved.settings) || rosterChanged;
     const valid = Object.values(edited).every((v) => typeof v === 'string' || Number.isFinite(v));
-    const fieldDates = overview.fieldDates;
-    const savedRows = previewSeasons(
-      series,
-      { sentinelIds: ids(saved.sentinels), ordinaryIds: [...ids(saved.pinned), ...sampleIds] },
-      saved.settings,
-      fieldDates,
-    );
-    const editedRows = valid
-      ? previewSeasons(
-          series,
-          { sentinelIds: ids(sentinels), ordinaryIds: [...ids(pinned), ...sampleIds] },
-          edited,
-          fieldDates,
-        )
-      : savedRows;
-    return { edited, dirty, savedRows, editedRows, valid };
-  }, [overview, series, saved, form, sentinels, pinned]);
+    // The sample is drawn around the roster at its size, so either changing re-draws it.
+    const resample = rosterChanged || edited.sampleSize !== saved.settings.sampleSize;
+    return { edited, dirty, valid, resample };
+  }, [saved, savedSites, seeded, form, sentinels, pinned]);
 
-  if (overview === undefined || series === undefined || !saved || !derived) {
+  // ⚠ **The edited preview samples by the server's own rule** (`previewSites` is `sampleSites`), not
+  // the saved sample with the roster swapped: a smaller sample, or a lake moving in or out of the
+  // roster, changes which ordinary lakes vote.
+  const toSite = (s: RosterEntry) => ({ ...s, waterBodyId: s.waterBodyId as Id<'waterBodies'> });
+  const previewed = useQuery(
+    api.seasonWatch.previewSites,
+    draft?.resample && draft.valid
+      ? {
+          sentinels: sentinels.map(toSite),
+          pinned: pinned.map(toSite),
+          sampleSize: draft.edited.sampleSize,
+        }
+      : 'skip',
+  );
+  // `undefined` while the re-drawn sample loads; `null` for a sample size the save would refuse.
+  const editedSites: WatchedSite[] | null | undefined = !draft?.resample
+    ? savedSites
+    : previewed === undefined
+      ? undefined
+      : ((previewed?.sites as WatchedSite[] | undefined) ?? null);
+
+  const derived = useMemo(() => {
+    if (!overview || !series || !saved || !savedSites || !draft) return null;
+    const fieldDates = overview.fieldDates;
+    const savedRows = previewSeasons(series, rosterOf(savedSites), saved.settings, fieldDates);
+    const editedRows =
+      draft.valid && editedSites
+        ? previewSeasons(series, rosterOf(editedSites), draft.edited, fieldDates)
+        : savedRows;
+    return { ...draft, savedRows, editedRows };
+  }, [overview, series, saved, savedSites, draft, editedSites]);
+
+  if (overview === undefined || series === undefined || !saved || !savedSites || !derived) {
     return <AdminEmpty>Loading…</AdminEmpty>;
   }
 
@@ -148,6 +173,9 @@ function AdminSeasons() {
   const shownSeason = detailSeason ?? seasons[0] ?? season;
   const shownSettings = derived.valid ? derived.edited : saved.settings;
   const allSeasons = [...new Set([season, ...seasons])].sort().reverse();
+  // The chart and its crossings follow the same resolved sentinels as the table.
+  const shownSentinels = rosterEntries(editedSites ?? savedSites, 'sentinel');
+  const missing = derived.resample && previewed ? previewed.missing : overview.missing;
 
   return (
     <div className="flex flex-col gap-10">
@@ -197,10 +225,9 @@ function AdminSeasons() {
         title="Settings"
         blurb={`Version ${saved.version}${saved.version === 0 ? ' (the defaults — nothing saved yet)' : ''}. Edit and the table below previews every past season before you save.`}
       >
-        {overview.missing.length > 0 ? (
+        {missing.length > 0 ? (
           <p className="text-sm text-warning">
-            Not found any more (merged or delisted):{' '}
-            {overview.missing.map((m) => m.name).join(', ')}.
+            Not found any more (merged or delisted): {missing.map((m) => m.name).join(', ')}.
           </p>
         ) : null}
         <SettingsEditor
@@ -223,11 +250,7 @@ function AdminSeasons() {
               ...(note.trim() ? { note } : {}),
             })
           }
-          onDiscard={() => {
-            setForm(toForm(saved.settings));
-            setSentinels(saved.sentinels);
-            setPinned(saved.pinned);
-          }}
+          onDiscard={resetDraft}
         />
         {overview.versions.length > 0 ? (
           <details className="text-sm">
@@ -262,6 +285,9 @@ function AdminSeasons() {
           {historyFillHint(seasonStartYear(season) - overview.historyFirstSeason)}
         </p>
         {fill.error ? <p className="text-destructive text-sm">{fill.error}</p> : null}
+        {derived.resample && derived.valid && editedSites === undefined ? (
+          <p className="text-foreground-muted text-xs">Re-drawing the sample for the edit…</p>
+        ) : null}
         {derived.editedRows.length > 0 ? (
           <PreviewTable edited={derived.editedRows} saved={derived.savedRows} />
         ) : (
@@ -280,11 +306,11 @@ function AdminSeasons() {
           season={shownSeason}
           onSeasonChange={setDetailSeason}
           docs={series}
-          sentinels={sentinels}
+          sentinels={shownSentinels}
           crossings={sentinelCrossings(
             shownSeason,
             series,
-            sentinels.map((s) => s.waterBodyId),
+            shownSentinels.map((s) => s.waterBodyId),
             shownSettings,
           )}
           settings={shownSettings}

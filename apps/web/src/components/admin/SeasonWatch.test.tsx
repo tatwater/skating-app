@@ -274,12 +274,30 @@ describe('PreviewTable', () => {
       firstSkated: '2026-11-20',
       lastSkated: null,
       leadDays: nights === 1 ? 48 : 47,
+      watched: 28,
+      missingLows: 0,
     });
     render(<PreviewTable edited={[row(2)]} saved={[row(1)]} />);
     expect(screen.getByText('Oct 4')).toBeInTheDocument();
     expect(screen.getByText('Oct 3')).toHaveClass('line-through');
     expect(screen.getByText('47 days')).toBeInTheDocument();
     expect(screen.getByText('(archive)')).toBeInTheDocument();
+    expect(screen.queryByText(/No lows for/)).toBeNull();
+  });
+
+  it('says when a season is replayed over fewer lakes than the watch reads', () => {
+    const row = {
+      season: 'winter-2024-25',
+      source: 'archive' as const,
+      evaluation: evaluateSeason([], DEFAULT_SEASON_WATCH_SETTINGS, 'winter-2024-25'),
+      firstSkated: null,
+      lastSkated: null,
+      leadDays: null,
+      watched: 28,
+      missingLows: 4,
+    };
+    render(<PreviewTable edited={[row]} saved={[row]} />);
+    expect(screen.getByText('No lows for 4 of 28 lakes — fill the history')).toBeInTheDocument();
   });
 });
 

@@ -5,6 +5,8 @@ import {
   fromForm,
   lowF,
   previewSeasons,
+  rosterEntries,
+  rosterOf,
   type SeriesDoc,
   sameSettings,
   seasonsIn,
@@ -73,6 +75,44 @@ describe('the replay', () => {
     });
     expect(rows[1]?.evaluation.opensOn).toBe('2025-10-01');
     expect(rows[1]?.evaluation.imageryNudge?.date).toBe('2025-10-09');
+  });
+
+  it('counts the watched lakes a season has no lows for, rather than replaying fewer silently', () => {
+    const rows = previewSeasons(
+      docs,
+      { sentinelIds: ['clouds'], ordinaryIds: ['valley', 'new-sample'] },
+      DEFAULT_SEASON_WATCH_SETTINGS,
+      [],
+    );
+    expect(rows.map((r) => [r.watched, r.missingLows])).toEqual([
+      [3, 1],
+      [3, 1],
+    ]);
+    expect(previewSeasons(docs, roster, DEFAULT_SEASON_WATCH_SETTINGS, [])[0]?.missingLows).toBe(0);
+  });
+
+  it('builds the roster from the resolved sites, not the ids a version stored', () => {
+    // `clouds-old` was merged into `clouds`: the server resolved it, so the replay reads `clouds`.
+    const sites = [
+      {
+        siteId: 'clouds',
+        role: 'sentinel' as const,
+        name: 'Upper Lake of the Clouds',
+        state: 'NH',
+      },
+      { siteId: 'low-plains', role: 'pinned' as const, name: 'Low Plains' },
+      { siteId: 'valley', role: 'sample' as const, name: 'Valley' },
+    ];
+    expect(rosterOf(sites)).toEqual({
+      sentinelIds: ['clouds'],
+      ordinaryIds: ['low-plains', 'valley'],
+    });
+    expect(rosterEntries(sites, 'sentinel')).toEqual([
+      { waterBodyId: 'clouds', name: 'Upper Lake of the Clouds', state: 'NH' },
+    ]);
+    expect(rosterEntries(sites, 'pinned')).toEqual([
+      { waterBodyId: 'low-plains', name: 'Low Plains' },
+    ]);
   });
 
   it('a November floor postpones every season it can', () => {

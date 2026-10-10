@@ -3,6 +3,7 @@ import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import schema from './schema';
 import { HISTORY_FIRST_SEASON_YEAR, historySeasons } from './seasonWatch';
 
@@ -124,28 +125,64 @@ describe('settings', () => {
     expect(await t.run((ctx) => ctx.db.query('seasonWatchSettings').collect())).toHaveLength(1);
   });
 
-  test('an admin saves a new version; sites it adds get their history filled', async () => {
+  test('an admin saves a new version; every site it starts watching gets its history filled', async () => {
     const t = convexTest(schema, modules);
     const clouds = await seedBody(t, 'Upper Lake of the Clouds', 44.258);
-    const eagle = await seedBody(t, 'Big Pond', 44.16);
+    await seedBody(t, 'Big Lake', 44.5, { boost: 3 });
+    const mid = await seedBody(t, 'Mid Lake', 44.4, { boost: 2 });
+    const pond = await seedBody(t, 'Big Pond', 44.16);
     await t.mutation(internal.seasonWatch.ensureSettings, {});
     const admin = await seedUser(t, 'admin', 'admin');
+    const fills = async () =>
+      (await scheduled(t, 'scheduleHistoryFill')).map((j) => j.args[0] as unknown);
 
+    // A sample of one: Big Lake. Watching fewer lakes starts watching none.
+    await admin.as.mutation(api.seasonWatch.saveSettings, {
+      settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sampleSize: 1 },
+      sentinels: [clouds],
+      pinned: [],
+    });
+    expect(await fills()).toEqual([]);
+
+    // A sentinel from outside the sample, and a sample grown to two: both new sites are filled.
     const saved = await admin.as.mutation(api.seasonWatch.saveSettings, {
-      settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sentinelNights: 3 },
-      sentinels: [clouds, eagle],
+      settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sentinelNights: 3, sampleSize: 2 },
+      sentinels: [clouds, pond],
       pinned: [],
       note: '  Matt: three nights  ',
     });
-    expect(saved).toEqual({ version: 2 });
+    expect(saved).toEqual({ version: 3 });
     const row = await t.run((ctx) =>
       ctx.db.query('seasonWatchSettings').withIndex('by_version').order('desc').first(),
     );
-    expect(row).toMatchObject({ version: 2, note: 'Matt: three nights', savedBy: admin.id });
+    expect(row).toMatchObject({ version: 3, note: 'Matt: three nights', savedBy: admin.id });
     expect(row?.sentinels.map((s) => s.name)).toEqual(['Upper Lake of the Clouds', 'Big Pond']);
+    expect(await fills()).toEqual([{ waterBodyIds: [pond, mid] }]);
+  });
+
+  test('a lake leaving the sample for the roster lets the next one in — and that one is filled', async () => {
+    const t = convexTest(schema, modules);
+    const clouds = await seedBody(t, 'Upper Lake of the Clouds', 44.258);
+    const big = await seedBody(t, 'Big Lake', 44.5, { boost: 3 });
+    const mid = await seedBody(t, 'Mid Lake', 44.4, { boost: 2 });
+    await t.run((ctx) =>
+      ctx.db.insert('seasonWatchSettings', {
+        version: 1,
+        settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sampleSize: 1 },
+        sentinels: [{ waterBodyId: clouds, name: 'Upper Lake of the Clouds' }],
+        pinned: [],
+        savedAt: Date.now(),
+      }),
+    );
+    const admin = await seedUser(t, 'admin', 'admin');
+    // Big Lake, the sample of one, is pinned: Mid Lake takes the sample's slot.
+    await admin.as.mutation(api.seasonWatch.saveSettings, {
+      settings: { ...DEFAULT_SEASON_WATCH_SETTINGS, sampleSize: 1 },
+      sentinels: [clouds],
+      pinned: [big],
+    });
     const fills = await scheduled(t, 'scheduleHistoryFill');
-    expect(fills).toHaveLength(1);
-    expect(fills[0]?.args[0]).toEqual({ waterBodyIds: [eagle] });
+    expect(fills.map((j) => j.args[0])).toEqual([{ waterBodyIds: [mid] }]);
   });
 
   test('a save with nothing new schedules no fill', async () => {
@@ -234,6 +271,57 @@ describe('the overview and the stored lows', () => {
     expect(overview.missing).toEqual([]);
     expect(overview.defaultsInCode.settings).toContain('DEFAULT_SEASON_WATCH_SETTINGS');
     expect(overview.historyFirstSeason).toBe(HISTORY_FIRST_SEASON_YEAR);
+  });
+
+  test("previews an edited roster by the cron's rule: survivors, and the sample re-drawn", async () => {
+    const t = convexTest(schema, modules);
+    const clouds = await seedBody(t, 'Upper Lake of the Clouds', 44.258);
+    const survivor = await seedBody(t, 'Lakes of the Clouds', 44.259);
+    const big = await seedBody(t, 'Big Lake', 44.5, { boost: 3 });
+    await seedBody(t, 'Mid Lake', 44.4, { boost: 2 });
+    // The sentinel was merged after it was chosen: its lows now accrue under the survivor.
+    await t.run((ctx) =>
+      ctx.db.patch(clouds, { dedupStatus: 'merged' as const, mergedIntoId: survivor }),
+    );
+    const admin = await seedUser(t, 'admin', 'admin');
+    const preview = await admin.as.query(api.seasonWatch.previewSites, {
+      sentinels: [{ waterBodyId: clouds, name: 'Upper Lake of the Clouds' }],
+      pinned: [{ waterBodyId: big, name: 'Big Lake' }],
+      sampleSize: 1,
+    });
+    expect(preview?.sites.map((s) => [s.siteId, s.role])).toEqual([
+      [survivor, 'sentinel'],
+      [big, 'pinned'],
+      // Big Lake is pinned, so the sample of one is the next lake down.
+      [expect.anything(), 'sample'],
+    ]);
+    expect(preview?.sites[2]?.name).toBe('Mid Lake');
+    // A size the save would refuse previews nothing; only an admin may ask.
+    for (const sampleSize of [0, 1.5, 61]) {
+      expect(
+        await admin.as.query(api.seasonWatch.previewSites, {
+          sentinels: [],
+          pinned: [],
+          sampleSize,
+        }),
+      ).toBeNull();
+    }
+    const many = Array.from({ length: 11 }, () => ({ waterBodyId: big, name: 'Big Lake' }));
+    expect(
+      await admin.as.query(api.seasonWatch.previewSites, {
+        sentinels: many,
+        pinned: [],
+        sampleSize: 1,
+      }),
+    ).toBeNull();
+    const moderator = await seedUser(t, 'mod', 'moderator');
+    await expect(
+      moderator.as.query(api.seasonWatch.previewSites, {
+        sentinels: [],
+        pinned: [],
+        sampleSize: 1,
+      }),
+    ).rejects.toThrow(/admin/);
   });
 
   test('reports a roster site that no longer resolves', async () => {
@@ -530,6 +618,30 @@ describe('history', () => {
     expect((times.at(-1) as number) - (times[0] as number)).toBeGreaterThanOrEqual(
       10 * 75 * 60_000,
     );
+  });
+
+  test("a few added sites fill quickly; more than one request's worth is spread like a full fill", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
+    const t = convexTest(schema, modules);
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < 13; i++)
+      ids.push(await seedBody(t, `Lake ${i}`, 44 + i / 100, { boost: i }));
+    const gap = async (waterBodyIds: typeof ids) => {
+      await t.run(async (ctx) => {
+        for (const j of await ctx.db.system.query('_scheduled_functions').collect()) {
+          if (j.state.kind === 'pending') await ctx.scheduler.cancel(j._id);
+        }
+      });
+      await t.mutation(internal.seasonWatch.scheduleHistoryFill, { waterBodyIds });
+      const times = (await scheduled(t, 'fillSeason'))
+        .filter((f) => f.state.kind === 'pending')
+        .map((f) => f.scheduledTime)
+        .sort((a, b) => a - b);
+      return (times.at(-1) as number) - (times.at(-2) as number);
+    };
+    expect(await gap(ids.slice(0, 2))).toBe(2 * 60_000);
+    expect(await gap(ids)).toBe(75 * 60_000);
   });
 
   test('a fill with no matching sites schedules nothing', async () => {

@@ -22,7 +22,9 @@ import {
   archiveSeasonLabel,
   type DailyLow,
   DEFAULT_SEASON_WATCH_SETTINGS,
+  EARLIEST_START_MONTH_DAY,
   expandLows,
+  MAX_SAMPLE_SITES,
   mergeLows,
   type SeasonWatchSettings,
   seasonStartYear,
@@ -94,6 +96,9 @@ const ROSTER_SEARCH_TAKE = 50;
 
 /** The most boost-ordered rows the sample walk reads to find `sampleSize` listed ones. */
 const SAMPLE_SCAN_CAP = 200;
+
+/** The most sentinels, and the most pinned sites, a roster may name. */
+const MAX_ROSTER = 10;
 
 /** The first season the history fill reaches back to — the start of the imagery archive's reach. */
 export const HISTORY_FIRST_SEASON_YEAR = 2016;
@@ -425,6 +430,27 @@ export const overview = query({
 });
 
 /**
+ * The sites an edited roster and sample size would watch — {@link sampleSites} itself, so the preview
+ * of an edit samples by the one rule the cron will use once it is saved: roster ids followed to their
+ * survivors, and the sample re-drawn around the roster at the edited size. `null` for a sample size
+ * the save would refuse.
+ */
+export const previewSites = query({
+  args: {
+    sentinels: v.array(rosterSiteValidator),
+    pinned: v.array(rosterSiteValidator),
+    sampleSize: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireRole(ctx, 'admin');
+    const size = args.sampleSize;
+    if (!Number.isInteger(size) || size < 1 || size > MAX_SAMPLE_SITES) return null;
+    if (args.sentinels.length > MAX_ROSTER || args.pinned.length > MAX_ROSTER) return null;
+    return await sampleSites(ctx, args);
+  },
+});
+
+/**
  * Every stored low, every season — the preview replays these in the browser through the same
  * `evaluateSeason` the cron uses. ~30 sites × ~11 seasons of ~300 numbers: well under a megabyte.
  */
@@ -461,7 +487,7 @@ export const saveSettings = mutation({
     if (args.sentinels.some((id) => args.pinned.includes(id))) {
       errors.push('A lake cannot be both a sentinel and a pinned site.');
     }
-    if (args.sentinels.length > 10 || args.pinned.length > 10) {
+    if (args.sentinels.length > MAX_ROSTER || args.pinned.length > MAX_ROSTER) {
       errors.push('At most ten sentinels and ten pinned sites.');
     }
     const snapshot = async (ids: Id<'waterBodies'>[]) => {
@@ -490,13 +516,24 @@ export const saveSettings = mutation({
       savedAt: Date.now(),
     });
 
-    const known = new Set(
-      [...(previous?.sentinels ?? []), ...(previous?.pinned ?? [])].map((s) => s.waterBodyId),
+    // ⚠ **Every site the save starts watching, not only the roster it names.** A larger sample, or a
+    // roster lake leaving the sample's slots, brings ordinary lakes in too — and without their past
+    // seasons the preview would replay a smaller sample than the cron runs, without saying so.
+    const before = previous ? configOf(previous) : { version: 0, ...(await defaultConfig(ctx)) };
+    const watchedBefore = new Set(
+      (await sampleSites(ctx, { ...before, sampleSize: before.settings.sampleSize })).sites.map(
+        (s) => s.siteId,
+      ),
     );
-    const added = [...sentinels, ...pinned].filter((s) => !known.has(s.waterBodyId));
+    const watched = await sampleSites(ctx, {
+      sentinels,
+      pinned,
+      sampleSize: args.settings.sampleSize,
+    });
+    const added = watched.sites.filter((s) => !watchedBefore.has(s.siteId));
     if (added.length > 0) {
       await ctx.scheduler.runAfter(0, internal.seasonWatch.scheduleHistoryFill, {
-        waterBodyIds: added.map((s) => s.waterBodyId),
+        waterBodyIds: added.map((s) => s.siteId),
       });
     }
     return { version };
@@ -665,7 +702,7 @@ const HISTORY_SITES_PER_REQUEST = 12;
  */
 const HISTORY_SPACING_MS = 75 * 60_000;
 
-/** Spacing when only a few new sites are being filled — each request is a few dozen calls. */
+/** Spacing when only a few new sites (one request's worth) are being filled. */
 const SMALL_FILL_SPACING_MS = 2 * 60_000;
 
 /** The seasons history covers: the first archive season up to the one before the current. */
@@ -697,7 +734,9 @@ async function planHistoryFill(
   for (let i = 0; i < wanted.length; i += HISTORY_SITES_PER_REQUEST) {
     chunks.push(wanted.slice(i, i + HISTORY_SITES_PER_REQUEST));
   }
-  const spacing = waterBodyIds ? SMALL_FILL_SPACING_MS : HISTORY_SPACING_MS;
+  // A few sites a save added go quickly; more than one request's worth — a sample grown by dozens —
+  // weighs like a full fill on the shared daily budget, so it is spread like one.
+  const spacing = waterBodyIds && chunks.length === 1 ? SMALL_FILL_SPACING_MS : HISTORY_SPACING_MS;
   const now = Date.now();
   const current = archiveSeasonAt(now);
   let slot = 0;
@@ -760,14 +799,16 @@ export const fillSeason = internalAction({
       timezone: 'auto',
       temperature_unit: 'celsius',
     });
-    // From 1 September, so a preview can move the floor earlier than October and still have data.
+    // From the earliest floor the editor accepts (1 September), so a preview can move the floor
+    // earlier than October and still have every night the live cron would count.
+    const floor = `${year}-${EARLIEST_START_MONTH_DAY}`;
     let days: number;
     if (isCurrent) {
       params.set('past_days', '92');
       params.set('forecast_days', '1');
       days = 93;
     } else {
-      params.set('start_date', `${year}-09-01`);
+      params.set('start_date', floor);
       params.set('end_date', `${year + 1}-06-30`);
       days = 303;
     }
@@ -779,7 +820,6 @@ export const fillSeason = internalAction({
     if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText} filling ${season}`);
     const json = (await res.json()) as DailyResponse | DailyResponse[];
     const rows = Array.isArray(json) ? json : [json];
-    const floor = `${year}-09-01`;
     await ctx.runMutation(internal.seasonWatch.storeSeries, {
       season,
       source: isCurrent ? 'forecast' : 'archive',

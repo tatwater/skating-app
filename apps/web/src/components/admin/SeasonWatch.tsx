@@ -490,7 +490,7 @@ const FIELDS: { key: keyof SettingsForm; label: string; unit: string; help: stri
     key: 'startMonthDay',
     label: 'Earliest night that counts',
     unit: 'MM-DD',
-    help: 'Nothing before this date in a season can open the watch. A cheap bound on an August cold snap.',
+    help: 'Nothing before this date in a season can open the watch — a cheap bound on an early cold snap. 09-01 at the earliest, where the stored history begins.',
   },
   {
     key: 'freezeF',
@@ -701,6 +701,12 @@ export function PreviewTable({ edited, saved }: { edited: PreviewRow[]; saved: P
                 {r.season.replace('winter-', '')}{' '}
                 {r.source !== 'forecast' ? (
                   <span className="text-foreground-muted text-xs">({r.source})</span>
+                ) : null}
+                {r.missingLows > 0 ? (
+                  // A replay over fewer lakes than the watch reads is not the whole result: say so.
+                  <span className="block text-warning text-xs">
+                    No lows for {r.missingLows} of {r.watched} lakes — fill the history
+                  </span>
                 ) : null}
               </Td>
               <Td>

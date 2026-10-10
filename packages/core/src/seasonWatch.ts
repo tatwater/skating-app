@@ -71,6 +71,9 @@ export const DEFAULT_START_MONTH_DAY = '10-01';
  */
 export const DEFAULT_SAMPLE_SITES = 24;
 
+/** The most ordinary lakes the sample may hold. */
+export const MAX_SAMPLE_SITES = 60;
+
 /** The settings D149 shipped with, so nothing moves until someone saves an edit. */
 export const DEFAULT_SEASON_WATCH_SETTINGS: SeasonWatchSettings = {
   startMonthDay: DEFAULT_START_MONTH_DAY,
@@ -84,7 +87,13 @@ export const DEFAULT_SEASON_WATCH_SETTINGS: SeasonWatchSettings = {
   sampleSize: DEFAULT_SAMPLE_SITES,
 };
 
-const MONTH_DAY = /^(0[7-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/**
+ * The earliest floor the editor accepts: the history fill (`seasonWatch.fillSeason`) keeps lows from
+ * this day on, so a floor before it would preview a season missing nights the live cron counts.
+ */
+export const EARLIEST_START_MONTH_DAY = '09-01';
+
+const MONTH_DAY = /^(09|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 /**
  * Everything wrong with a settings object, as sentences an admin can act on. Empty means valid.
@@ -103,7 +112,7 @@ export function validateSeasonWatchSettings(settings: SeasonWatchSettings): stri
 
   const monthDay = MONTH_DAY.exec(settings.startMonthDay);
   if (!monthDay) {
-    errors.push('The earliest date must be MM-DD between July and December.');
+    errors.push('The earliest date must be MM-DD between September and December.');
   } else {
     const [month, day] = [Number(monthDay[1]), Number(monthDay[2])];
     // A real calendar day — 30 September and 31 November do not exist in any year.
@@ -117,7 +126,12 @@ export function validateSeasonWatchSettings(settings: SeasonWatchSettings): stri
   within(settings.imageryNudgeC, -40, 5, 'The imagery line must be between −40 °F and 41 °F.');
   within(settings.thawC, -10, 10, 'The thaw line must be between 14 °F and 50 °F.');
   whole(settings.thawRunDays, 1, 60, 'Thawed nights must be a whole number from 1 to 60.');
-  whole(settings.sampleSize, 1, 60, 'The sample must be a whole number from 1 to 60 lakes.');
+  whole(
+    settings.sampleSize,
+    1,
+    MAX_SAMPLE_SITES,
+    `The sample must be a whole number from 1 to ${MAX_SAMPLE_SITES} lakes.`,
+  );
   return errors;
 }
 

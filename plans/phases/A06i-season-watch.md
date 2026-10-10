@@ -84,9 +84,10 @@ was decided under; the legacy row is stamped with the defaults it was in fact de
 
 `seasonWatchSeries`: one document per (season, site), `firstDate` + a `lows` array (°C, `null` for a
 gap), `source: 'forecast' | 'archive'`. The daily tick merges its 92 days into the current season's
-documents instead of throwing them away. `fillSeasonHistory` fetches Oct 1 – Jun 30 for every past
+documents instead of throwing them away. `fillSeasonHistory` fetches Sep 1 – Jun 30 for every past
 season back to 2016-17 from the archive, one multi-site request per season, for every site in the
-current settings plus the ordinary sample, and again for any site a settings save adds.
+current settings plus the ordinary sample, and again for every site a settings save starts watching
+— roster or sample. The floor editor stops at 1 September, where that history begins.
 
 ### §4 — The emails (D212)
 
@@ -129,8 +130,8 @@ configuration. With nothing queued or cutting a tick is one read. A Fly or archi
 off half an hour with one admin email a day; a refused spawn spends no attempt, three in a row trip
 a breaker that lets one probe through after the backoff, and a timed-out spawn stays in flight.
 `buildIndex` (a 10-minute cron, its own lease) runs when a frame has landed: it lists R2, reads only
-new manifests and writes `index/<season>.json` and, on turnover, `index/latest.json`; a failed build
-is retried next tick. *Retry failed* and *Try again now* on the page end a backoff.
+new manifests and writes `index/<season>.json` and, on turnover, `index/latest.json`; a failed build,
+or one with a manifest it could not read, is retried next tick. *Retry failed* and *Try again now* on the page end a backoff.
 
 The search plan the cron can't compute (the mask extent and the empty-tile set, both from `ogrinfo`)
 is published once per mask bake as `masks/<season>-search.json` (`publish-search-plan`); an unknown
@@ -182,11 +183,22 @@ killed build leaves its request standing; three blind runs in a row back off how
 flight; a half-open breaker claims one granule; *Try again now*, *Retry failed* and a poll that
 queued something run the pump at once; one runnable rule serves both queries.
 
+Greptile's first pass (2026-10-10) found seven, four in the preview and the emails. The preview
+replayed an edit with the saved sample and the roster ids the version stored; it now asks the server
+for the edited sites (`previewSites`, which is `sampleSites`), so roster ids follow merges and the
+sample is re-drawn at the edited size, and a season missing lows for watched lakes says so. A save
+fills history for every site it starts watching, not only the roster it names; a fill of more than
+one request is spaced like a full one. Each queued email keeps the settings that decided its fact,
+so a reminder found after the imagery line moved names the new line. The floor stops at 1 September,
+where the history begins. In the imagery job: a spawn batch asks again before each create, so
+nothing starts after *Pause*; an unreadable manifest leaves the index request standing, with one
+email a day.
+
 ### §6 — `/admin/seasons`
 
 The current watch (state, dates, sentinels, *Reset*), imagery (*Start* / *Pause*, the run history),
 the settings editor with the preview table (every season under the saved and the edited settings,
-with the field dates beside them), a season's sentinel lows charted against the thresholds, the
+each over the sites the cron would read for it, with the field dates beside them), a season's sentinel lows charted against the thresholds, the
 field-date form, and where each default lives in code. Admin-only.
 
 ### §7 — The CLI

@@ -6,6 +6,7 @@ import {
   clipToFloor,
   DEFAULT_SEASON_WATCH_SETTINGS,
   daysBetween,
+  EARLIEST_START_MONTH_DAY,
   evaluateSeason,
   expandLows,
   fahrenheitToCelsius,
@@ -199,9 +200,11 @@ describe('settings', () => {
   });
 
   it.each([
-    [{ startMonthDay: '06-30' }, 'between July and December'],
+    [{ startMonthDay: '06-30' }, 'between September and December'],
+    // The history keeps lows from 1 September, so an August floor could not be previewed.
+    [{ startMonthDay: '08-31' }, 'between September and December'],
     [{ startMonthDay: '11-31' }, 'not a real day'],
-    [{ startMonthDay: 'Nov 1' }, 'between July and December'],
+    [{ startMonthDay: 'Nov 1' }, 'between September and December'],
     [{ freezeC: 9 }, 'freezing line'],
     [{ freezeC: Number.NaN }, 'freezing line'],
     [{ sentinelNights: 1.5 }, 'Sentinel nights'],
@@ -218,9 +221,9 @@ describe('settings', () => {
     expect(errors[0]).toContain(message);
   });
 
-  it('accepts a November floor', () => {
+  it.each(['11-01', EARLIEST_START_MONTH_DAY])('accepts a %s floor', (startMonthDay) => {
     expect(
-      validateSeasonWatchSettings({ ...DEFAULT_SEASON_WATCH_SETTINGS, startMonthDay: '11-01' }),
+      validateSeasonWatchSettings({ ...DEFAULT_SEASON_WATCH_SETTINGS, startMonthDay }),
     ).toEqual([]);
   });
 });
