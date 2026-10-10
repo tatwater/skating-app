@@ -508,6 +508,23 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
 }
 
 /**
+ * The fraction of `inner`'s area that lies inside `outer`, in `[0, 1]` — "does this shape cover
+ * that one", where `polygonIoU` asks "are these the same shape". Geodesic, and truncated first for
+ * the clipper's sake (see `polygonIoU`). `0` for an `inner` with no area. Throws when the clipper
+ * does: a caller deciding whether to *skip* a warning must read a throw as "not covered".
+ */
+export function coveredFraction(
+  inner: Polygon | MultiPolygon,
+  outer: Polygon | MultiPolygon,
+): number {
+  const fi = truncate(feature(inner), { precision: 9 });
+  const innerArea = area(fi);
+  if (innerArea === 0) return 0;
+  const shared = intersect(featureCollection([fi, truncate(feature(outer), { precision: 9 })]));
+  return shared ? Math.min(1, area(shared) / innerArea) : 0;
+}
+
+/**
  * Ramer–Douglas–Peucker: drop the points of a path that lie within `toleranceMeters` of the line
  * their neighbors already describe. Endpoints are always kept.
  *

@@ -1484,6 +1484,17 @@ M to answer* reads as required where a where is optional — on the ice chips as
   a second chip of the type (`open#2`, the key stored reports already had); *Another place* on the
   where card, for ice and surface chips too, which had the same limit since A10-3. The where-card
   model moved into core (`whereCardsFor`), retiring the four hand copies the self-review flagged.
+- **P1 (second review) — a smaller drawn pin cancelled the area's pin.** "Skipped where the author
+  drew one" had been written as *same type, footprints touching*, so a 40 m pin inside *Still open,
+  south end* stood in for the whole south wedge, and the rest of what they reported had no warning.
+  Now the drawn pins must *cover* it (`drawnCoversDerived`: same type, their union over ≥ 99.9% of
+  it, failing open). A partial drawing gets both pins, and auto-merge unions them if they touch, so
+  warned area never shrinks. The earlier test had asserted the bug.
+- **P2 (second review) — the hint promised a pin that wasn't made.** *Goes on the map* showed for any
+  open or skim sighting with a `where`, but near shore and an extent alone derive nothing. The sheet
+  and the server now read one rule (`whereNamesPinShape`); the copy is unchanged. What the sheet
+  still can't see: a bay the body doesn't know, an outline with no sector frame, or a wedge no
+  simplification fits under the vertex cap. All three are server-side edge cases.
 
 ### Open-Meteo's local times are an hour off across DST — found 2026-09-30, fixed here
 

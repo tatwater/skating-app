@@ -4,19 +4,18 @@
  * `sightingHazardShape` (core) decides the shape; this reads what it needs — the body's outline and
  * only the bays the sightings name, so the read is bounded by the Report — and writes through
  * `insertHazard` + `tryAutoMerge`, the path every in-report hazard takes, with the Report as
- * provenance. A derived pin the author already drew (same type, footprints touching) is skipped:
- * the drawn one is the more precise claim, and two pins for one open lead is the state auto-merge
- * exists to remove. Create derives from every sighting; an edit only from the sightings it adds,
+ * provenance. A derived pin the author already drew (same type, their pins covering it —
+ * `drawnCoversDerived`) is skipped; one they drew only part of is written, and auto-merge unions the
+ * two if they touch. Create derives from every sighting; an edit only from the sightings it adds,
  * since a pin already filed has its own lifecycle (confirmations, decay) that an edit must not
  * restart.
  */
 
 import {
   describeSighting,
+  drawnCoversDerived,
   type HazardShape,
-  hazardFootprint,
   type LocatedSighting,
-  polygonDistanceMeters,
   sightingHazardShape,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -43,15 +42,6 @@ export function drawnHazardOf(h: {
       ...(h.bufferMeters !== undefined ? { bufferMeters: h.bufferMeters } : {}),
     },
   };
-}
-
-/** Did the author already draw this — the same type, footprints touching? */
-function alreadyDrawn(derived: DrawnHazard, drawn: readonly DrawnHazard[]): boolean {
-  const footprint = hazardFootprint(derived.shape);
-  return drawn.some(
-    (d) =>
-      d.type === derived.type && polygonDistanceMeters(hazardFootprint(d.shape), footprint) === 0,
-  );
 }
 
 /** The sightings an edit adds — the ones the stored row did not already say, where and all. */
@@ -103,7 +93,7 @@ export async function deriveSightingHazards(
   for (const sighting of args.sightings) {
     if (written >= budget) break;
     const derived = sightingHazardShape(sighting, geometry);
-    if (!derived || alreadyDrawn(derived, args.drawn)) continue;
+    if (!derived || drawnCoversDerived(derived, args.drawn)) continue;
     const hazardId = await insertHazard(
       ctx,
       {
