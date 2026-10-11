@@ -700,10 +700,19 @@ function waterSide(
   return water.ok ? fetchOrigin(water.polygon) : null;
 }
 
-/** A re-derived chord: `chordSubArea`'s answer, and — when it holds — whether it jumped (D215). */
+/** A re-derived chord: `chordSubArea`'s answer, and — when it holds — how it relates to the old bay. */
 export type RederivedChord =
   | Extract<ChordResult, { ok: false }>
-  | (Extract<ChordResult, { ok: true }> & { jumped: boolean });
+  | (Extract<ChordResult, { ok: true }> & {
+      /** Too different from the old bay to apply unseen (D215). */
+      jumped: boolean;
+      /**
+       * The re-fit holds at least {@link CHORD_REDERIVE_SAME_WATER} of the old bay's water that is
+       * still water — measured, never assumed. Only then may a jump replace an old outline that no
+       * longer fits the lake (`chordRederivationPlan`).
+       */
+      sameWater: boolean;
+    });
 
 /**
  * The overlap a re-fit must keep with the bay it was — intersection over union — not to be a jump
@@ -712,6 +721,9 @@ export type RederivedChord =
  */
 export const CHORD_REDERIVE_MIN_OVERLAP = 0.5;
 
+/** The share of the old bay's surviving water a re-fit must hold to be called the same water. */
+export const CHORD_REDERIVE_SAME_WATER = 0.8;
+
 /**
  * Re-derive a stored mouth against a parent whose outline may have moved — the parent re-clip after
  * a re-import or a merge, and a restore (D215). Two rules on top of `chordSubArea`:
@@ -719,16 +731,19 @@ export const CHORD_REDERIVE_MIN_OVERLAP = 0.5;
  * 1. **The same water.** The re-snapped ends bound two regions; each is built into a bay exactly as
  *    a moderator's mouth would be (chord or bow, clipped), and the bay is the one that holds more
  *    of `previous` — its outline before this — never the one holding the stored `side`. That click
- *    was where a moderator pointed against the *old* shore; a mouth line that moved past it (a
- *    click near the mouth, a refined outline) would otherwise turn the bay into the rest of the
- *    lake. The bay-sized build is weighed first, and the other (most of a giant lake) is built only
- *    when that is not a clear majority. The returned mouth carries a fresh `side` on the water kept.
+ *    was where a moderator pointed against the *old* shore; a mouth line that moved past it would
+ *    otherwise turn the bay into the rest of the lake. The bay-sized build is weighed first; the
+ *    other (most of a giant lake) is built only when that is not a clear majority, or to measure a
+ *    jump. The rest of the lake is kept only when it holds the larger share of the old bay, and when
+ *    the bay-sized region cannot be built and the rest holds less than half of it, the answer is
+ *    that region's refusal — exactly what a moderator drawing that mouth would meet. When the
+ *    clipper cannot measure overlap at all (near-coincident outlines), the old bay's own open-water
+ *    point decides instead — no clipper — and nothing is called the same water.
  * 2. **A jump flag.** A re-fit more than {@link CHORD_REDERIVE_MAX_AREA_RATIO} times bigger or smaller
  *    than `previous`, or overlapping it less than {@link CHORD_REDERIVE_MIN_OVERLAP}, comes back
- *    `jumped`; the caller does not apply that unseen (`subAreas.reclipSubAreasToParent`).
+ *    `jumped`; `chordRederivationPlan` decides what the server does with it.
  *
- * When the overlap cannot be measured (the clipper chokes on near-coincident outlines) the answer is
- * a refusal (`clip_failed`), never a derivation by the old click: the caller keeps the old outline.
+ * The returned mouth carries a fresh `side` on the open water kept.
  */
 export function rederiveChordSubArea(
   parent: Polygon | MultiPolygon,
@@ -749,41 +764,107 @@ export function rederiveChordSubArea(
     .sort((x, y) => x.area - y.area);
   const smaller = regions[0];
   const larger = regions[regions.length - 1];
-  if (!smaller || !larger) return { ok: false, reason: 'degenerate' };
-  const build = (r: typeof smaller) => constructBay(parent, a, b, r.path, r.polygon, mouth);
+  // What `chordSubArea` answers for the same mouth: no region for the side to be in.
+  if (!smaller || !larger) return { ok: false, reason: 'side_ambiguous' };
+  const small = constructBay(parent, a, b, smaller.path, smaller.polygon, mouth);
+  let large: ChordResult | undefined;
+  const buildLarge = () => {
+    large ??=
+      smaller === larger ? small : constructBay(parent, a, b, larger.path, larger.polygon, mouth);
+    return large;
+  };
 
-  let kept: { bay: Extract<ChordResult, { ok: true }>; region: Polygon; held: number };
+  type Kept = { bay: Extract<ChordResult, { ok: true }>; region: Polygon };
+  let kept: Kept;
+  let overlap: number | null = null;
+  let sameWater = false;
+  const before = surfaceAreaSqM(previous);
   try {
-    const small = build(smaller);
-    const inSmall = small.ok ? coveredFraction(previous, small.polygon) : 0;
+    const held = (r: ChordResult) => (r.ok ? coveredFraction(previous, r.polygon) : 0);
+    const inSmall = held(small);
+    let inLarge: number | null = null;
     if (small.ok && inSmall >= 0.5) {
-      kept = { bay: small, region: smaller.polygon, held: inSmall };
+      kept = { bay: small, region: smaller.polygon };
     } else {
-      const large = smaller === larger ? small : build(larger);
-      const inLarge = large.ok ? coveredFraction(previous, large.polygon) : 0;
-      if (large.ok && (!small.ok || inLarge > inSmall)) {
-        kept = { bay: large, region: larger.polygon, held: inLarge };
+      const big = buildLarge();
+      inLarge = held(big);
+      if (big.ok && (small.ok ? inLarge > inSmall : inLarge >= 0.5)) {
+        kept = { bay: big, region: larger.polygon };
       } else if (small.ok) {
-        kept = { bay: small, region: smaller.polygon, held: inSmall };
+        kept = { bay: small, region: smaller.polygon };
       } else {
-        // Neither region builds a bay (both closing lines cut the shore, say): the small one's
-        // refusal is the one a moderator would have met drawing it.
         return small;
       }
     }
+    const keptHeld = kept.bay === small ? inSmall : (inLarge as number);
+    const after = surfaceAreaSqM(kept.bay.polygon);
+    const shared = keptHeld * before;
+    overlap = before + after - shared > 0 ? shared / (before + after - shared) : 0;
+    // Of the old bay's water that is still water — in one region or the other — how much the
+    // re-fit holds. Measured when it matters: a jump the server might apply.
+    if (jumpedBy(before, after, overlap)) {
+      inLarge ??= held(buildLarge());
+      const surviving = inSmall + inLarge;
+      sameWater = surviving > 0 && keptHeld / surviving >= CHORD_REDERIVE_SAME_WATER;
+    } else {
+      sameWater = true;
+    }
   } catch {
-    return { ok: false, reason: 'clip_failed' };
+    const inside = fetchOrigin(previous);
+    if (!inside) return { ok: false, reason: 'clip_failed' };
+    if (small.ok && pointInPolygon(inside, small.polygon)) {
+      kept = { bay: small, region: smaller.polygon };
+    } else {
+      const big = buildLarge();
+      if (!big.ok || !pointInPolygon(inside, big.polygon))
+        return { ok: false, reason: 'clip_failed' };
+      kept = { bay: big, region: larger.polygon };
+    }
+    overlap = null;
+    sameWater = false;
   }
 
-  const side = waterSide(parent, kept.bay.polygon, kept.region) ?? kept.bay.mouth.side;
-  const before = surfaceAreaSqM(previous);
-  const after = surfaceAreaSqM(kept.bay.polygon);
-  const shared = kept.held * before;
-  const overlap = before + after - shared > 0 ? shared / (before + after - shared) : 0;
-  const jumped =
+  const side =
+    waterSide(parent, kept.bay.polygon, kept.region) ??
+    regionSideAt(a, b, kept.region) ??
+    kept.bay.mouth.side;
+  const jumped = jumpedBy(before, surfaceAreaSqM(kept.bay.polygon), overlap);
+  return { ...kept.bay, mouth: { ...kept.bay.mouth, side }, jumped, sameWater };
+}
+
+/** The tripwire (D215): the size changed by half again or a third, or the bay moved more than it stayed. */
+function jumpedBy(before: number, after: number, overlap: number | null): boolean {
+  return (
     before > 0 &&
     (after > before * CHORD_REDERIVE_MAX_AREA_RATIO ||
       after * CHORD_REDERIVE_MAX_AREA_RATIO < before ||
-      overlap < CHORD_REDERIVE_MIN_OVERLAP);
-  return { ...kept.bay, mouth: { ...kept.bay.mouth, side }, jumped };
+      (overlap !== null && overlap < CHORD_REDERIVE_MIN_OVERLAP))
+  );
+}
+
+/**
+ * What the server does with a re-derivation (D215) — one rule for the parent re-clip and a restore,
+ * so the two cannot answer one bay differently:
+ *
+ * - a refusal: the old outline (re-clipped), and `stale` the reason — the mouth no longer derives;
+ * - a re-fit that did not jump: the re-fit;
+ * - a jump, while the old outline still fits the lake: the old outline, and a `review`;
+ * - a jump onto the same water when the old outline no longer fits: the re-fit, and a `review` —
+ *   rather than delist a bay whose mouth still fits;
+ * - a jump onto other water when the old one no longer fits: the old outline (which then fails as
+ *   any unfit outline does) and `stale`: nothing measured says the re-fit is this bay.
+ */
+export type ChordRederivationPlan =
+  | { use: 'chord'; review?: 'refitted' }
+  | { use: 'old'; review?: 'kept'; stale?: ChordRejection | 'moved_elsewhere' };
+
+export function chordRederivationPlan(
+  chord: RederivedChord,
+  oldOutlineFits: boolean,
+): ChordRederivationPlan {
+  if (!chord.ok) return { use: 'old', stale: chord.reason };
+  if (!chord.jumped) return { use: 'chord' };
+  if (oldOutlineFits) return { use: 'old', review: 'kept' };
+  if (chord.sameWater) return { use: 'chord', review: 'refitted' };
+  return { use: 'old', stale: 'moved_elsewhere' };
 }

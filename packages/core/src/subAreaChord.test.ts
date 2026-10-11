@@ -17,6 +17,7 @@ import {
   CHORD_REDERIVE_MAX_AREA_RATIO,
   chordArc,
   chordCandidates,
+  chordRederivationPlan,
   chordSubArea,
   clampSagitta,
   MAX_SAGITTA_RATIO,
@@ -778,6 +779,58 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
     expect(kept.jumped).toBe(false);
   });
 
+  it('refuses — never keeps the rest of the lake — when the bay-sized region cannot be built', () => {
+    // A semicircle bowed into a right-angle corner grazes the corner (Thales): the corner refuses,
+    // and the rest of the lake, which still builds, holds none of the old bay.
+    const deep = { ...mouth, sagittaM: -maxSagittaM(mouth.a, mouth.b) };
+    expect(chordSubArea(lake, deep)).toMatchObject({ ok: false });
+    const answer = rederiveChordSubArea(lake, deep, before.polygon);
+    expect(answer).toMatchObject({ ok: false, reason: 'crosses_shore' });
+  });
+
+  it('measures whether a jump is still the same water', () => {
+    // An arm off the east shore, its mouth across the entrance; the arm is mapped 0.4° longer. The
+    // bay grows 1.8x — a jump — and holds all of the old one: the same water.
+    const withArm = (end: number): Polygon => ({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-73.5, 44.0],
+          [-72.5, 44.0],
+          [-72.5, 44.4],
+          [end, 44.4],
+          [end, 44.5],
+          [-72.5, 44.5],
+          [-72.5, 45.0],
+          [-73.5, 45.0],
+          [-73.5, 44.0],
+        ],
+      ],
+    });
+    const armMouth = {
+      a: { lat: 44.4, lng: -72.5 },
+      b: { lat: 44.5, lng: -72.5 },
+      side: { lat: 44.45, lng: -72.25 },
+      sagittaM: 0,
+    };
+    const arm = chordSubArea(withArm(-72.0), armMouth);
+    if (!arm.ok) throw new Error(arm.reason);
+    const grown = rederiveChordSubArea(withArm(-71.6), armMouth, arm.polygon);
+    expect(grown).toMatchObject({ ok: true, jumped: true, sameWater: true });
+    // The corner, its mouth rotated by a shore moved 0.2° out, keeps only half the old corner on its
+    // side of the new mouth: a jump, and not the same water.
+    expect(
+      rederiveChordSubArea(box(-73.5, 44.0, -72.3, 45.0), mouth, before.polygon),
+    ).toMatchObject({
+      ok: true,
+      jumped: true,
+      sameWater: false,
+    });
+    // An old "bay" mostly off in other water is not.
+    const elsewhere = rederiveChordSubArea(lake, mouth, box(-72.6, 43.9, -72.45, 44.05));
+    expect(elsewhere).toMatchObject({ ok: true, jumped: true });
+  });
+
   it('passes on the snap’s refusals and a mouth whose regions both cut the shore', () => {
     expect(rederiveChordSubArea(lake, { ...mouth, b: mouth.a }, before.polygon)).toMatchObject({
       ok: false,
@@ -786,5 +839,41 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
     expect(
       rederiveChordSubArea(lake, { ...mouth, a: { lat: Number.NaN, lng: 0 } }, before.polygon),
     ).toMatchObject({ ok: false, reason: 'degenerate' });
+  });
+});
+
+describe('chordRederivationPlan — one answer for the re-clip and a restore (D215)', () => {
+  const bay = {
+    ok: true as const,
+    polygon: { type: 'Polygon' as const, coordinates: [] },
+    mouth: { a: { lat: 0, lng: 0 }, b: { lat: 0, lng: 1 }, side: { lat: 1, lng: 0 }, sagittaM: 0 },
+    constructed: { type: 'Polygon' as const, coordinates: [] },
+    clipped: false,
+  };
+
+  it('takes a re-fit that did not jump, and keeps the old outline for a refusal', () => {
+    expect(chordRederivationPlan({ ...bay, jumped: false, sameWater: true }, false)).toEqual({
+      use: 'chord',
+    });
+    expect(chordRederivationPlan({ ok: false, reason: 'different_rings' }, true)).toEqual({
+      use: 'old',
+      stale: 'different_rings',
+    });
+  });
+
+  it('keeps the old outline for a jump while it fits; else re-fits the same water, never other water', () => {
+    const jump = { ...bay, jumped: true };
+    expect(chordRederivationPlan({ ...jump, sameWater: true }, true)).toEqual({
+      use: 'old',
+      review: 'kept',
+    });
+    expect(chordRederivationPlan({ ...jump, sameWater: true }, false)).toEqual({
+      use: 'chord',
+      review: 'refitted',
+    });
+    expect(chordRederivationPlan({ ...jump, sameWater: false }, false)).toEqual({
+      use: 'old',
+      stale: 'moved_elsewhere',
+    });
   });
 });

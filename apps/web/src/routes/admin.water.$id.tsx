@@ -179,8 +179,10 @@ function LakeEditor() {
                   name: s.name,
                   polygon: s.polygon as GeoJSON.Geometry,
                   centroid: s.centroid,
-                  // A stale mouth is not the bay's edge any more — drawing it would say it was.
-                  ...(s.mouth && !s.mouthStale ? { mouth: s.mouth } : {}),
+                  // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
+                  // until a moderator checks it, is one under review (D215): its outline may be the
+                  // old one the re-fit was kept from.
+                  ...(s.mouth && !s.mouthStale && !s.mouthReview ? { mouth: s.mouth } : {}),
                 })),
               putIns: putIns ?? [],
               parkingAreas: access?.parking ?? [],

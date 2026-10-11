@@ -6494,16 +6494,20 @@ anything, one just inside the mouth flips on a routine refinement. Founder call,
 
 - **The same water.** Each of the mouth's two regions is built into a bay exactly as a moderator's
   mouth would be — chord or bow, clipped — and the re-derivation keeps the one that holds more of
-  the bay's current outline, never the one holding the old click. It stores a fresh `side` on the
-  open water it kept (off the mouth line, off any island), so the editor's click-based preview
-  shows the same bay and saving from it cannot make the flip real. The ends stay as drawn; every
-  derivation re-snaps them. When the overlap cannot be measured, nothing is re-fitted.
+  the bay's current outline, never the one holding the old click. The rest of the lake is kept only
+  when it holds the larger share of the old bay; when the bay's own region cannot be built, the
+  answer is that region's refusal. A fresh `side` is stored on the open water kept (off the mouth
+  line, off any island), so the editor's click-based preview shows the same bay and saving from it
+  cannot make the flip real; the ends stay as drawn. Where the clipper cannot measure overlap
+  (near-coincident outlines), the old bay's own open-water point picks the region instead.
 - **A jump waits.** A re-fit more than half again bigger or a third smaller than the bay was, or
-  overlapping it less than half (it moved more than it stayed), is not applied unseen: the old
-  outline, re-clipped, stays while it still fits the lake. Where it no longer fits — a shore moved
-  in over most of it — the re-fit is applied, because the first rule has already kept the right
-  water: a bay whose mouth still fits is never delisted for it. Either way the bay carries
-  `mouthReview`, shown in the editor, which no re-import clears — only a moderator's mouth save.
+  overlapping it less than half (it moved more than it stayed), is not applied unseen. While the old
+  outline still fits the lake it stays, re-clipped. Where it no longer fits, the re-fit is applied
+  only if it holds at least 80% of the old bay's surviving water — measured — and otherwise the old
+  outline fails as any unfit outline does. Either way the bay carries `mouthReview` (or, for the
+  last case, `mouthStale`), shown in the editor; a review is cleared only by a moderator's mouth
+  save, never by a later re-import. The re-clip and a restore read one rule
+  (`chordRederivationPlan`), and write the mouth only when something changed.
 
 A moderator's own mouth — drawn, edited, saved — still picks its side by the click: that click is
 against the shore they are looking at.
