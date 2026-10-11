@@ -416,6 +416,14 @@ const jobs = (t: T, name: string) =>
   );
 const pumpNow = (t: T) => t.action(internal.imageryLive.pump, {});
 
+/** The known-unreadable manifests, least recently tried first — the order the next build reads them. */
+const unreadableRows = (t: T) =>
+  t.run(async (ctx) =>
+    (await ctx.db.query('imageryUnreadable').collect())
+      // The `by_season_tried` order: tried time, then insertion.
+      .sort((a, b) => a.triedAt - b.triedAt || a._creationTime - b._creationTime)
+      .map((r) => r.manifestKey),
+  );
 const runState = (t: T, key: 'pump' | 'index' = 'pump') =>
   t.run(async (ctx) => (await ctx.db.query('imageryPump').collect()).find((r) => r.key === key));
 const fullFleet = (n: number) =>
@@ -1178,7 +1186,7 @@ describe('buildIndex', () => {
     await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
     // …and that build still cannot read it: the admin's retry stands — due now, not pushed back.
     expect(
-      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2, unreadableKeys: ['k'] }),
+      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2, unreadable: 1 }),
     ).toEqual({ retryInMs: 0 });
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 1 });
   });
@@ -1327,14 +1335,14 @@ describe('buildIndex', () => {
     await t.action(internal.imageryLive.buildIndex, {});
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await good()).toEqual([]);
-    expect(await t.query(internal.imageryLive.unreadableKeys, {})).toHaveLength(16);
+    expect(await unreadableRows(t)).toHaveLength(16);
     // The third reads the good frames first, the known-unreadable ones behind them.
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await good()).toHaveLength(4);
     // Nothing readable is left, so the request is satisfied; the sixteen wait for their retry.
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
     expect((await runState(t, 'index'))?.retryAt).toBeGreaterThan(Date.now());
-    expect(await t.query(internal.imageryLive.unreadableKeys, {})).toHaveLength(16);
+    expect(await unreadableRows(t)).toHaveLength(16);
   });
 
   test('known-unreadable manifests take turns, so a repaired one behind stalling ones is read', async () => {
@@ -1352,7 +1360,11 @@ describe('buildIndex', () => {
     // All seventeen are known unreadable, the last in line repaired since.
     const repaired = keys[16] as string;
     stalling.delete(repaired);
-    await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 0, unreadableKeys: keys });
+    await t.run(async (ctx) => {
+      for (const [i, manifestKey] of keys.entries()) {
+        await ctx.db.insert('imageryUnreadable', { season: SEASON, manifestKey, triedAt: i });
+      }
+    });
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     stub(world({ manifests }));
     const fetchFn = globalThis.fetch;
@@ -1373,15 +1385,84 @@ describe('buildIndex', () => {
     // The first build spends its budget on the front eight; they go to the back of the line.
     await t.action(internal.imageryLive.buildIndex, {});
     expect(await read()).toEqual([]);
-    expect((await t.query(internal.imageryLive.unreadableKeys, {})).slice(-8)).toEqual(
-      keys.slice(0, 8),
-    );
+    expect((await unreadableRows(t)).slice(-8)).toEqual(keys.slice(0, 8));
     // The next starts where that one stopped; the one after reaches the repaired manifest.
     for (let build = 0; build < 2 && (await read()).length === 0; build++) {
       vi.advanceTimersByTime(7 * 60 * 60_000); // past any retry wait
       await t.action(internal.imageryLive.buildIndex, {});
     }
     expect(await read()).toEqual([repaired]);
+  });
+
+  test('past a thousand known-unreadable manifests, none is forgotten and a good frame still reads first', async () => {
+    const t = convexTest(schema, modules);
+    const manifests = new Map<string, unknown>();
+    const keys: string[] = [];
+    for (let i = 0; i < 1200; i++) {
+      const g = s2(`${String(i).padStart(5, '0')}`, '20261005');
+      const key = `frames/${SEASON}/${g}.json`;
+      keys.push(key);
+      manifests.set(key, 'error');
+    }
+    const fresh = s2('ZZZZZ', '20261006');
+    manifests.set(`frames/${SEASON}/${fresh}.json`, manifest(fresh, '2026-10-06T15:30:00Z'));
+    await t.run(async (ctx) => {
+      for (const [i, manifestKey] of keys.entries()) {
+        await ctx.db.insert('imageryUnreadable', { season: SEASON, manifestKey, triedAt: i });
+      }
+    });
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    const w = world({ manifests });
+    stub(w);
+    const fetchFn = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        // The known-unreadable ones stall to their timeout before failing.
+        if (req.url.startsWith(ENDPOINT) && req.method === 'GET' && req.url.includes('/frames/')) {
+          const key = new URL(req.url).pathname.replace('/skating-imagery/', '');
+          if (w.manifests.get(key) === 'error') vi.advanceTimersByTime(30_000);
+        }
+        return fetchFn(req);
+      }),
+    );
+    await t.action(internal.imageryLive.buildIndex, {});
+    const rows = await t.run((ctx) => ctx.db.query('imageryFrames').collect());
+    expect(rows.map((r) => r.granuleId)).toEqual([fresh]);
+    // All 1,200 still remembered. Two groups fit the budget — the good frame with seven stalls
+    // (210 s), then eight more — and the fifteen tried move to the back, in the order tried.
+    const order = await unreadableRows(t);
+    expect(order).toHaveLength(1200);
+    expect(order.slice(-15)).toEqual(keys.slice(0, 15));
+    expect(order[0]).toBe(keys[15]);
+  });
+
+  test('a known-unreadable manifest is forgotten once it reads, or is gone', async () => {
+    const t = convexTest(schema, modules);
+    const a = s2('19TEA', '20261005');
+    const b = s2('19TEB', '20261005');
+    await t.run(async (ctx) => {
+      for (const g of [a, b]) {
+        await ctx.db.insert('imageryUnreadable', {
+          season: SEASON,
+          manifestKey: `frames/${SEASON}/${g}.json`,
+          triedAt: 0,
+        });
+      }
+    });
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    // `a` is repaired; `b` was deleted from the bucket.
+    stub(
+      world({
+        manifests: new Map<string, unknown>([
+          [`frames/${SEASON}/${a}.json`, manifest(a, '2026-10-05T15:30:00Z')],
+        ]),
+      }),
+    );
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await unreadableRows(t)).toEqual([]);
+    expect((await runs(t)).at(-1)).toMatchObject({ outcome: 'ok' });
   });
 
   test('a build cut short still sets the unreadable retry and alert', async () => {

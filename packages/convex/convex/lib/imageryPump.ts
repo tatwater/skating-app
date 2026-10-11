@@ -143,24 +143,19 @@ export function unreadableRetryMs(streak: number): number {
  * so a build killed mid-way (the action limit, a deploy) leaves the request standing for the next
  * tick; and a frame that lands during the build raises `dirtySeq` past `seq`, so it is built again.
  */
-/** The most unreadable manifest keys the index job remembers — ~70 KB at most. */
-const MAX_UNREADABLE_KEYS = 1_000;
-
 /**
- * Record what a build did. `unreadableKeys` are the manifests it could not read (or, known
- * unreadable, did not reach): kept on the row so the next build reads them **last**, behind every
- * readable one, and they cannot spend its budget ahead of good frames. `complete: false` — the build
- * ran out of time with readable manifests still unread — leaves the request standing; the
- * unreadable ones still get their retry wait and alert either way.
+ * Record what a build did. `unreadable` counts the manifests it could not read (or, known unreadable
+ * — `imageryUnreadable` — did not reach). `complete: false` — the build ran out of time with readable
+ * manifests still unread — leaves the request standing; the unreadable ones get their retry wait and
+ * alert either way.
  */
 export async function markBuilt(
   ctx: MutationCtx,
   key: JobKey,
   seq: number,
-  unreadableKeys: readonly string[] = [],
+  unreadable = 0,
   complete = true,
 ): Promise<{ retryInMs: number | null }> {
-  const unreadable = unreadableKeys.length;
   const row = await ensureRow(ctx, key);
   const now = Date.now();
   // ⚠ **A build that could not read a manifest still completes its request**, so a frame landing
@@ -191,7 +186,6 @@ export async function markBuilt(
     ...(complete && (row.builtSeq ?? 0) < seq ? { builtSeq: seq } : {}),
     unreadableStreak: streak > 0 ? streak : undefined,
     retryAt,
-    unreadableKeys: unreadable > 0 ? unreadableKeys.slice(0, MAX_UNREADABLE_KEYS) : undefined,
   });
   return { retryInMs: retryAt === undefined ? null : Math.max(0, retryAt - now) };
 }

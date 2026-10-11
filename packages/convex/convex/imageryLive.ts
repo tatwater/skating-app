@@ -270,19 +270,45 @@ export const markIndexDirty = internalMutation({
 });
 
 export const markIndexBuilt = internalMutation({
-  args: {
-    seq: v.number(),
-    unreadableKeys: v.optional(v.array(v.string())),
-    complete: v.optional(v.boolean()),
-  },
-  handler: async (ctx, { seq, unreadableKeys, complete }) =>
-    await markBuilt(ctx, 'index', seq, unreadableKeys ?? [], complete ?? true),
+  args: { seq: v.number(), unreadable: v.optional(v.number()), complete: v.optional(v.boolean()) },
+  handler: async (ctx, { seq, unreadable, complete }) =>
+    await markBuilt(ctx, 'index', seq, unreadable ?? 0, complete ?? true),
 });
 
-/** The manifests the last index build could not read. */
-export const unreadableKeys = internalQuery({
-  args: {},
-  handler: async (ctx) => (await jobRow(ctx, 'index'))?.unreadableKeys ?? [],
+/** A season's known-unreadable manifests, least recently tried first. */
+export const unreadablePage = internalQuery({
+  args: { season: v.string(), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { season, cursor }) =>
+    await ctx.db
+      .query('imageryUnreadable')
+      .withIndex('by_season_tried', (q) => q.eq('season', season))
+      .paginate({ cursor, numItems: 1000 }),
+});
+
+/**
+ * Remember the manifests a build could not read — tried now, so behind every other known one next
+ * time — and forget the ones that read, or are gone or current again.
+ */
+export const recordUnreadable = internalMutation({
+  args: { season: v.string(), failed: v.array(v.string()), cleared: v.array(v.string()) },
+  handler: async (ctx, { season, failed, cleared }) => {
+    const now = Date.now();
+    const rowOf = (manifestKey: string) =>
+      ctx.db
+        .query('imageryUnreadable')
+        .withIndex('by_manifest', (q) => q.eq('manifestKey', manifestKey))
+        .first();
+    for (const manifestKey of failed) {
+      const row = await rowOf(manifestKey);
+      if (row) await ctx.db.patch(row._id, { triedAt: now });
+      else await ctx.db.insert('imageryUnreadable', { season, manifestKey, triedAt: now });
+    }
+    for (const manifestKey of cleared) {
+      const row = await rowOf(manifestKey);
+      if (row) await ctx.db.delete(row._id);
+    }
+    return null;
+  },
 });
 
 /** Whether a tick has anything to do: a cut in flight, or one queued and allowed to start. */
@@ -1214,11 +1240,11 @@ export const buildIndex = internalAction({
       // tick goes on — the unreadable ones get their wait and alert all the same.
       const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
         seq,
-        unreadableKeys: result.unreadableKeys,
+        unreadable: result.unreadable,
         complete: result.deferred === 0,
       });
       if (retryInMs !== null) {
-        const n = result.unreadableKeys.length;
+        const n = result.unreadable;
         await ctx.runMutation(internal.imageryLive.alertAdmins, {
           key: 'imagery-index-unreadable',
           season: result.season,
@@ -1233,12 +1259,9 @@ export const buildIndex = internalAction({
   },
 });
 
-async function buildIndexOnce(ctx: ActionCtx): Promise<{
-  frames: number;
-  unreadableKeys: string[];
-  deferred: number;
-  season: string;
-} | null> {
+async function buildIndexOnce(
+  ctx: ActionCtx,
+): Promise<{ frames: number; unreadable: number; deferred: number; season: string } | null> {
   const startedAt = Date.now();
   const season = archiveSeasonAt(startedAt);
   const config = configured();
@@ -1283,10 +1306,22 @@ async function buildIndexOnce(ctx: ActionCtx): Promise<{
     // top, so one that stalls at the front would spend every budget, and the good frames behind it
     // would never be reached (Greptile, PR #85).
     //
-    // Among themselves they rotate: they are read in the order remembered, which puts the ones
-    // not reached last time first and the ones that failed again at the back — so a stalling few
-    // cannot keep a repaired one behind them unread, build after build.
-    const failingOrder: string[] = await ctx.runQuery(internal.imageryLive.unreadableKeys, {});
+    // Among themselves they rotate: least recently tried first (`imageryUnreadable`), so a stalling
+    // few cannot keep a repaired one behind them unread, build after build — however many there are.
+    const failingOrder: string[] = [];
+    let failingCursor: string | null = null;
+    do {
+      const page: {
+        page: Doc<'imageryUnreadable'>[];
+        isDone: boolean;
+        continueCursor: string;
+      } = await ctx.runQuery(internal.imageryLive.unreadablePage, {
+        season,
+        cursor: failingCursor,
+      });
+      failingOrder.push(...page.page.map((r) => r.manifestKey));
+      failingCursor = page.isDone ? null : page.continueCursor;
+    } while (failingCursor);
     const failing = new Set(failingOrder);
     const pending = new Set([...unseen, ...stale]);
     const fresh = [
@@ -1335,9 +1370,17 @@ async function buildIndexOnce(ctx: ActionCtx): Promise<{
     // ones are still unreadable, and wait for their retry like the ones that failed just now.
     const unread = fresh.slice(next);
     const deferred = unread.filter((k) => !failing.has(k)).length;
-    // Not reached first, failed again last: next build's turn order (see `failingOrder`).
-    const unreadableKeys = [...unread.filter((k) => failing.has(k)), ...failedNow];
-    const unreadable = unreadableKeys.length;
+    const unreadable = unread.filter((k) => failing.has(k)).length + failedNow.length;
+    // Failed now: tried now, so behind the others next time. Read now, or no longer waiting to be
+    // read (gone from the listing, or current again): forgotten. Not reached: left as they were.
+    const cleared = failingOrder.filter((k) => reread.has(k) || !pending.has(k));
+    for (let i = 0; i < Math.max(failedNow.length, cleared.length); i += 100) {
+      await ctx.runMutation(internal.imageryLive.recordUnreadable, {
+        season,
+        failed: failedNow.slice(i, i + 100),
+        cleared: cleared.slice(i, i + 100),
+      });
+    }
 
     // A changed manifest that could not be read keeps its old row until it can (counted unreadable,
     // so it is retried): an older description of the frame beats no frame.
@@ -1384,7 +1427,7 @@ async function buildIndexOnce(ctx: ActionCtx): Promise<{
         frames: index.frames.length,
       },
     });
-    return { frames: index.frames.length, unreadableKeys, deferred, season };
+    return { frames: index.frames.length, unreadable, deferred, season };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await ctx.runMutation(internal.imageryLive.alertAdmins, {

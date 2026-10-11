@@ -1395,12 +1395,22 @@ export default defineSchema({
      */
     unreadableStreak: v.optional(v.number()),
     retryAt: v.optional(v.number()),
-    /** The manifests the last build could not read — the next reads them last, behind good ones. */
-    unreadableKeys: v.optional(v.array(v.string())),
     /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
     dirtySeq: v.optional(v.number()),
     builtSeq: v.optional(v.number()),
   }).index('by_key', ['key']),
+
+  // The manifests the index could not read (A06i §5): one row each, kept until it reads. The next
+  // build reads them last, behind every readable frame, and the least recently tried first — so a
+  // stalling few can neither hold back good frames nor keep a repaired one unread. A table, not a
+  // list on the job row: a season of failures would not fit in one document.
+  imageryUnreadable: defineTable({
+    season: v.string(),
+    manifestKey: v.string(),
+    triedAt: v.number(),
+  })
+    .index('by_season_tried', ['season', 'triedAt'])
+    .index('by_manifest', ['manifestKey']),
 
   // The granule ledger's totals per frame season (A06i §5), kept beside every status change so the
   // admin page reads one row instead of counting thousands.
