@@ -222,9 +222,10 @@ What a new region needs for this to find anything:
   so `GNIS_STATE_CODES` in `scripts/etl/src/gnisSource.ts` must name it too (a test fails if the two
   lists disagree). Then archive both: `pnpm --filter @skating/etl archive <XX>` and
   `pnpm --filter @skating/etl archive-gnis`.
-- **`--refresh-bodies`.** The pass matches offline, against a cached export of every listed lake's
-  outline (it takes ~8 minutes to rebuild). A stale export has none of the new region's lakes, and
-  the run would quietly find no landmarks there.
+- **Fresh outlines.** The pass matches offline, against an export of every listed lake's outline
+  (~8 minutes to rebuild). A run over every state always rebuilds it; a run of only the new state
+  reuses the cache unless `--refresh-bodies` — and a stale export has none of the new region's
+  lakes, so the run would quietly find no landmarks there.
 - **The corpus inventory, or `--without-corpus`.** The loads replace a landmark's community counts
   with the run's, so a run without the inventory must say so — and then the new region's landmarks
   carry no community names, which is fine for a region the corpus doesn't reach yet.

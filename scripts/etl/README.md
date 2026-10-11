@@ -697,15 +697,17 @@ GNIS, named by the community corpus. Labels and a `where`, never places (D202 in
 it on its own — after a moderator session, a new OSM extract, or a fresh corpus inventory:
 
 ```sh
-pnpm --filter @skating/etl landmarks --refresh-bodies --mentions=<training_data/google_group/mentions/mentions.csv>
+pnpm --filter @skating/etl landmarks --mentions=<training_data/google_group/mentions/mentions.csv>
 pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd>            # dry
 pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --apply
 ```
 
 - **Matching is offline.** The first run exports every listed body's outline once
-  (`landmarks:listBodyGeometry`, ~500 pages, ~8 minutes) to `.scratch/landmarks/bodies.ndjson`;
-  later runs reuse it. `--refresh-bodies` after a campaign moves or admits bodies. Never match per
-  point in a mutation — that reads a giant's polygon once per landmark.
+  (`landmarks:listBodyGeometry`, ~500 pages, ~8 minutes) to `.scratch/landmarks/bodies.ndjson`.
+  A run of every state always re-exports it: its lines retire what it does not place, so an outline
+  redrawn since a cached export would retire that lake's landmarks. A run of some states reuses the
+  cache — `--refresh-bodies` after a campaign moves or admits bodies. Never match per point in a
+  mutation — that reads a giant's polygon once per landmark.
 - **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
   the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
   750 m, bridges on each body they cross (segments cut against the shore, so a two-vertex span over a
