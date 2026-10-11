@@ -53,7 +53,9 @@ export type ImportRunKind =
   | 'access_put_ins'
   // Corpus standing (A07b): the one-time partition into active / dormant, and the July rollover.
   | 'standing_seed'
-  | 'standing_rollover';
+  | 'standing_rollover'
+  /** `scripts/etl load-landmarks` — the named places a body is steered by (D202). */
+  | 'landmark_seed';
 
 /** A named tally. Each loader names its own; see the table comment for why they aren't columns. */
 export interface RunCount {

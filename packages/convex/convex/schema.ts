@@ -21,6 +21,8 @@ import {
   ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  LANDMARK_KINDS,
+  LANDMARK_SOURCES,
   OBSERVED_FROM,
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
@@ -2692,6 +2694,95 @@ export default defineSchema({
     // "Known outlet", never "outlet" (D103) — the bay view lists what the lake already knows.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   }).index('by_water_body_active', ['waterBodyId', 'active']),
+
+  /**
+   * Named landmarks (D202) — the islands, points, reference bays, narrows, river mouths, bridges,
+   * marinas, lighthouses, dams, shore towns and shore establishments a body is steered by.
+   *
+   * **A labeled point, never a place.** No page, favorite, report feed or bounty hangs off a row; a
+   * landmark that skaters start to *skate* is promoted to a sub-area with the chord tool (D201), and
+   * the row is retired. Read per body — with the hazards and put-ins the drawer already loads — and
+   * never viewport-wide; the write path caps a body at `MAX_LANDMARKS_PER_BODY` so that read can
+   * `take` the cap and know it has them all.
+   *
+   * Loaded by `scripts/etl load-landmarks` (OSM + GNIS, matched to a body offline and written one
+   * body per call), named by the community corpus (aliases + `corpusMessages`), and authored by a
+   * moderator on the lake editor. A moderator's edit sets `moderatorEditedAt`, after which a re-run
+   * of the ETL adds ids and aliases but leaves the name, kind and point as the moderator left them —
+   * the `official` put-in discipline. A removal is soft (`removedAt`) so a re-run never resurrects it.
+   * A catalog row a later run no longer places on the body is retired the same way, with
+   * `catalogDroppedAt` saying it was the catalogs, not a person — so a run that places it again
+   * brings it back.
+   */
+  bodyLandmarks: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    name: v.string(),
+    kind: literals(LANDMARK_KINDS),
+    /** Where the label sits: an island's interior, a point's tip, a river's mouth on the shore. */
+    point: latLng,
+    /** The landmark's own footprint, where the source drew one (an island, a peninsula, a beach). */
+    areaSqM: v.optional(v.number()),
+    /** The bay the point falls in (A09 / D175), stamped at write and re-stamped by `restampParent`. */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    source: literals(LANDMARK_SOURCES),
+    /**
+     * Every upstream id this row stands for, prefixed by source (`osm:way/123`, `gnis:1459987`). An
+     * array because one island is often both an OSM way and a GNIS point, and a re-run must find the
+     * row by either — matched in memory over the body's rows, never by an index (Convex does not
+     * index arrays, and a body's landmarks are one bounded read).
+     */
+    externalIds: v.array(v.string()),
+    aliases: v.array(v.string()),
+    /** Messages in the community corpus naming it — prominence's prior (L5a: a count, no text). */
+    corpusMessages: v.optional(v.number()),
+    /** Reports whose `where` names it — prominence's evidence, bumped at the report's write. */
+    reportCount: v.optional(v.number()),
+    moderatorEditedAt: v.optional(v.number()),
+    removedAt: v.optional(v.number()),
+    /**
+     * Set with `removedAt` when no person retired the row: a complete ETL run no longer placed this
+     * catalog row here, or a merge moved it past the cap. A run that places it again brings it back.
+     */
+    catalogDroppedAt: v.optional(v.number()),
+    /**
+     * Set with `removedAt` when a merge folded this row into the survivor's twin (D36): the place is
+     * that row now. Kept so ids that point here still resolve; never matched by a writer again.
+     */
+    mergedIntoId: v.optional(v.id('bodyLandmarks')),
+    /**
+     * When a merge last changed what this row stands for (D36): moved it onto its body, or folded a
+     * twin from the merged lake into it. A complete ETL run matched against a body export older than
+     * this never drops the row, and keeps the footprint and kind the fold brought — that export
+     * placed the merged lake's catalogs on the lake that no longer exists.
+     */
+    movedAt: v.optional(v.number()),
+    createdByUserId: v.optional(v.id('profiles')),
+    lastCampaignId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    // Live and removed read apart (`landmarksForBody`), so removals piling up can never push a live
+    // row out of the per-body read. `removedAt` unset is an indexed value: equality on `undefined`
+    // reads the live rows, and `gt(0)` (never a bare range) the removed.
+    .index('by_water_body_removed', ['waterBodyId', 'removedAt']),
+
+  /**
+   * What each catalog source read on the complete landmark loads this deployment accepted (D202) —
+   * the bar a later load's sources must clear before it may retire anything (`landmarkSourceCheck`).
+   * In the deployment, not a scratch file, because it vouches for what *this deployment's* rows were
+   * built from; written only after a complete load applied without a failed batch
+   * (`landmarks.acceptCompleteLoad`), so a transform nobody loaded never moves it. One row per
+   * accepted load; the newest is the bar, each source at its highest accepted count unless the
+   * operator excused a shrink (`nextLandmarkSourceBar`).
+   */
+  landmarkSourceBaselines: defineTable({
+    sources: v.array(v.object({ source: v.string(), count: v.number() })),
+    campaignId: v.optional(v.string()),
+    /** The operator said a shortfall was a real shrink (`--accept-source-drop`). */
+    acceptedShrink: v.optional(v.boolean()),
+    acceptedAt: v.number(),
+  }).index('by_accepted_at', ['acceptedAt']),
 
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).

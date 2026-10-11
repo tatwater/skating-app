@@ -8,23 +8,14 @@ import {
   postedAccessError,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { errorText } from './adminUi';
 
 type Banner = { tone: 'ok' | 'error'; text: string } | null;
-
-/** Turn a thrown ConvexError into the operator-facing line the server wrote. */
-function errorText(err: unknown): string {
-  if (err instanceof ConvexError) {
-    const data = err.data as { message?: string } | string;
-    return typeof data === 'string' ? data : (data?.message ?? 'That write was rejected.');
-  }
-  return 'Something went wrong — check your connection and try again.';
-}
 
 const MONTHS = [
   'January',

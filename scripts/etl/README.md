@@ -682,6 +682,60 @@ let the patchiness argue for hand-entering the rest; that is the trap D70 exists
 
 ---
 
+## The landmark pass (D202) — the names a body is steered by
+
+Islands, points, reference bays, narrows, river mouths, bridges, marinas, lighthouses, dams, shore
+towns, and the camps, resorts and lone restaurants on the shore — from the archived OSM extracts and
+GNIS, named by the community corpus. Labels and a `where`, never places
+([`plans/features/named-landmarks.md`](../../plans/features/named-landmarks.md)).
+
+```sh
+pnpm --filter @skating/etl landmarks --mentions=<training_data/google_group/mentions/mentions.csv>
+pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd>            # dry
+pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --apply
+```
+
+- **Matching is offline.** The first run exports every listed body's outline once
+  (`landmarks:listBodyGeometry`, ~500 pages, ~8 minutes) to `.scratch/landmarks/bodies.ndjson`;
+  later runs reuse it. `--refresh-bodies` after a campaign moves or admits bodies. Never match per
+  point in a mutation — that reads a giant's polygon once per landmark.
+- **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
+  the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
+  750 m, bridges on each body they cross (segments cut against the shore, so a two-vertex span over a
+  pond counts) or stop within 25 m of, rivers at each mouth. Restaurants only when standalone.
+- **`--mentions` is required** (gitignored input), or `--without-corpus` to mean it: the load
+  replaces a catalog row's corpus count and spellings with the run's, so a run without the corpus
+  would erase them — and `load-landmarks --apply` refuses one unless told `--without-corpus` too.
+  The names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's
+  worklist.
+- **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
+  edit keeps its name, kind and point (and a spelling they deleted stays deleted), and a landmark a
+  live bay names — any name of either, within 1 km of the bay — is skipped.
+- **It also forgets — on a run of every state only.** That run writes a line for every exported
+  body, marked `complete` (an empty one if nothing landed), and a catalog row a complete line no
+  longer has is retired (`dropped`), back if a later run places it (`returned`). A run of some
+  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place.
+- **Retiring needs the sources to vouch, and the deployment keeps the bar.** The loader sends each
+  state's OSM and GNIS candidate counts (`summary.bySource`); the importer retires nothing unless
+  every one is within 3% of the last complete load *this deployment accepted*
+  (`landmarkSourceBaselines`), and the loader moves that bar only after an applied complete load
+  with no failed batch — a transform nobody loaded, or a dry run, never does — and only ever *up*:
+  a source's bar is its highest accepted count unless the operator says a shrink is real, so it
+  cannot be walked down in steps under the margin. The **first** complete load on a deployment
+  retires nothing and sets the bar; the next one retires. No flag excuses a missing bar, missing
+  counts or a source that read nothing. On top, a
+  lake about to lose more than half its catalog labels (and more than 10) holds them (`dropsHeld`).
+  Both print on the dry run. `--refresh` if an extract is broken; on the loader,
+  `--accept-source-drop` if a source really shrank and `--accept-mass-drop` if a lake really lost
+  most of its labels — separate words, so excusing one never lifts the other. Every osmium output
+  and the body export are written under a `.partial` name and renamed on success, so a run cut short
+  never leaves a truncated cache. A row a merge moved after the body export *began* reading is never
+  dropped (`bodies.meta.json` records the start; the loader sends it, less five minutes of clock
+  slack). Still read `dropped` on the dry run before `--apply` by hand, and
+  a batch whose drops pass a mutation's write limit fails whole.
+- **A mouth's id is where it meets the shore** (`osm:way/1#in@44.0213,-73.1002`), never its place in
+  the list, so a crossing found or lost upstream cannot hand one mouth's id to another.
+
 ## Regional expansion (Phase 02b)
 
 To widen the corpus beyond Vermont, run the same pipeline **once per state** — no code change; the

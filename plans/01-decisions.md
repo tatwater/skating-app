@@ -6237,6 +6237,57 @@ A07b because a corpus-shaped table would have been a second queue with no second
 
 **Related:** D60, D175, D179, D202, A02 Decision 10, A09.
 
+## D202 — A place skaters steer by but do not skate is a landmark: a labeled point, never a sub-area (Named landmarks)
+
+**Decided (2026-09-20, founder observation; built 2026-09-29).** A bay is a sub-area only when
+skaters go there and skate it; an island, a point, a reference bay, a narrows, a river's mouth, a
+bridge, a marina, a lighthouse, a dam, the town on the shore, or the camp or resort that owns a
+stretch of it is a **landmark** — a `bodyLandmarks` row: a name, a kind and a point on one body, with
+no page, favorite, feed or bounty. The corpus's skated-message count is the test (≥ 2 skated
+messages → a sub-area candidate, the rule that reproduced the founder's sixteen destination bays),
+and the two never name the same water twice: a bay *names* a landmark when any name of one is any
+name of the other and the landmark is on the bay's water or within 1 km of it — one rule every
+writer reads. Such a landmark is not loaded or added, and drawing, redrawing, renaming or restoring
+a bay retires it in the same write (or, by id, the one a moderator promoted with *Draw as bay*). A
+same-named place across the lake (Champlain's other Mud Bay) is a landmark to all of them.
+
+**Where they come from.** OSM and GNIS, over every listed body, matched offline against a one-time
+export of the bodies' outlines (never a per-point lookup — the A06d parking pass's 105 GB lesson),
+by a rule per kind: an island inside the outer shore, a bay or narrows on the water, a point or
+beach or marina or shore business on the nearest shore, a town on every body within 750 m, a bridge
+on each body its span crosses or stops within 25 m of (the outlet bridge, the deck OSM cut the water
+at), a river at each mouth on the shore. A restaurant or store counts only when no other named
+business stands within 250 m; a camp, resort or hotel always (founder, 2026-09-29: they own
+shoreline and outlast their signs). The community corpus contributes spellings and a mention count,
+and only where one landmark answers. A moderator adds what no catalog has ("Bird Poop Rock"), and —
+the proposal lane — so will skaters.
+
+**What a re-run and a merge do.** A run of every state is the whole of what the catalogs place: a
+catalog row it no longer places is retired as the catalogs' drop (`catalogDroppedAt`), never a
+person's, and comes back when a run places it again. A run of some states drops nothing — a Vermont
+pond can hold a New Hampshire village's label — and neither does one whose sources came back short:
+a missing landmark is a removal only when every state's OSM and GNIS read within 3% of what the last
+complete load *this deployment accepted* read, never because an extract was truncated. The bar is
+kept in the deployment, moves only after a complete load applies cleanly and never down without the
+operator's word, so the first load sets it and retires nothing; and a lake about to lose most of its
+catalog labels at once holds them. A moderator's row is never dropped; restoring a
+dropped one makes it theirs, and *Keep off* makes the drop a person's removal. A body merged into
+another (D36) takes its landmarks along, the survivor's rows deciding: a same-place twin absorbs the
+moved row (folded, `mergedIntoId`), a twin a person removed holds it removed, and any label a bay of
+the merged lake now names is retired.
+
+**How they show.** Labels on the focused lake only, never viewport-wide (the per-body cap is what
+bounds the read); each name waits for its own zoom — its footprint's size or its prominence,
+whichever comes first — and where names collide the more prominent is placed first. Prominence is
+the kind, the corpus's mentions and the reports that name it, all logarithmic, so one chatty island
+cannot bury the rest.
+
+**Why:** half the corpus's reports locate something, and a large share do it by a name no map in the
+app carried — "off Apple Island", "a wind hole west of the bird poop rock". A sub-area for each would
+give a page to places nobody skates as a destination; a label gives the name without the place.
+
+**Related:** D60, D175, D193, D201, A09.
+
 ## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
 
 **Decided (2026-09-21, founder call; Phase 05 decision 6 folded into A10 on 2026-09-20).** A report

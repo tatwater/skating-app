@@ -387,6 +387,13 @@ export const MODERATION_ACTIONS = [
   // and you cannot get to it. Auditing them together would lose which the moderator meant, and they
   // reverse differently.
   'set_public_access',
+  // ── Named landmarks (D202) ───────────────────────────────────────────────────────────────────────
+  // A moderator dropped, renamed, moved or re-kinded a label on a lake. Removal and restore reuse the
+  // generic verbs, disambiguated by the `bodyLandmark` target type, as sub-areas do. `promote_landmark`
+  // records a landmark retired because it was drawn as a bay (D202: skaters started to skate it).
+  'create_landmark',
+  'edit_landmark',
+  'promote_landmark',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -409,6 +416,7 @@ export const MODERATION_TARGET_TYPES = [
   // A07b PR 2: a corpus request, so a moderator's approve/decline is a row on the request as well as
   // on the body it changed.
   'waterBodyRequest',
+  'bodyLandmark', // D202: a named point on a lake — an island, a point, a bridge
 ] as const;
 
 /** In-app support inbox (D37). */
@@ -598,6 +606,10 @@ export const IMPORT_RUN_KINDS = [
   // share a row. The put-in stage failing leaves lots nothing points at, which is merely incomplete.
   'access_parking',
   'access_put_ins',
+  // scripts/etl load-landmarks — the named islands, points, bays and shore places a body is steered
+  // by (D202). Its own kind because it writes its own table and fails in its own way: a landmark with
+  // no body is a scope boundary (the ocean, a pond below the floor), never a fault.
+  'landmark_seed',
 ] as const;
 
 /**

@@ -97,6 +97,7 @@ import {
   WATER_BODY_SOURCES,
 } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
+import { repointLandmarksOnMerge } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -545,6 +546,7 @@ export const importCanonical = internalMutation({
     }
     let inserted = 0;
     let updated = 0;
+    let landmarksRetired = 0;
     let queuedForMerge = 0;
     let conflicts = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
@@ -684,6 +686,9 @@ export const importCanonical = internalMutation({
           if (resynced.reclipped > 0 || resynced.delisted > 0) {
             await scheduleRestamp(ctx, existing._id);
           }
+          // A chord bay re-derived against the new shore may have grown onto a same-named label
+          // and retired it (D202); the run reports how many, since no person took that action.
+          landmarksRetired += resynced.landmarksRetired;
         }
         updated++;
       } else {
@@ -739,6 +744,7 @@ export const importCanonical = internalMutation({
       updated,
       queuedForMerge,
       conflicts,
+      landmarksRetired,
       unresolved: unresolved.slice(0, 20),
     };
   },
@@ -2953,7 +2959,7 @@ export const reject = mutation({
 /**
  * Moderator: merge a duplicate water body into a survivor (D36) — the missing dedup mutation. Re-points
  * **every** body-keyed child (`reports`/`hazards`/`bounties`/`bodyFeatures`/`putIns`/
- * `waterBodyFavorites`) from the loser to the survivor, then soft-tombstones the loser
+ * `waterBodyFavorites`/`waterBodySubAreas`/`bodyLandmarks`) from the loser to the survivor, then soft-tombstones the loser
  * (`dedupStatus: merged` + `mergedIntoId`) so read paths follow the chain to the survivor and
  * `isListed` drops it off the map. Never a hard delete (reversible in spirit with the D15/D33 ethos);
  * audits `merge_waterbody` with the re-pointed counts.
@@ -3096,6 +3102,15 @@ export async function mergeBodyInto(
     // still named on every report this merge just moved to the survivor. Re-clipped against the
     // survivor's outline on the way, since near-identical is what made these a duplicate pair.
     const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actorId);
+    // Landmarks too (D202), after the bays: folded into the survivor's twins, then checked against
+    // the survivor's bays — the merged set of both lakes' — for a label a bay now names.
+    const landmarks = await repointLandmarksOnMerge(
+      ctx,
+      loserId,
+      survivorId,
+      actorId,
+      subAreas.repointed > 0,
+    );
 
     const repointed = {
       reports: reports.length,
@@ -3107,6 +3122,10 @@ export async function mergeBodyInto(
       favoritesDeduped,
       subAreas: subAreas.repointed,
       subAreasDelisted: subAreas.delisted,
+      landmarks: landmarks.repointed,
+      landmarksFolded: landmarks.folded,
+      landmarksOverCap: landmarks.overCap,
+      landmarksRetiredAsBay: landmarks.retiredAsBay,
     };
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats

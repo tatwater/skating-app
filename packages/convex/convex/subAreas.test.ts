@@ -2729,6 +2729,48 @@ describe('sub-areas by chord (D201)', () => {
     ).rejects.toThrow(/already has a sub-area called "NW Bay"/);
   });
 
+  test('a re-import that grows a chord bay onto a same-named landmark retires it (D202)', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: {
+        a: { lat: 44.2, lng: -72.5 },
+        b: { lat: 44.0, lng: -72.7 },
+        // Deep in the corner, so it stays on the bay's side of the chord when the mouth re-snaps.
+        side: { lat: 44.02, lng: -72.52 },
+        sagittaM: 0,
+      },
+    });
+    // ~6 km east of the bay, past the shore as it stands: another place, until the shore moves.
+    const landmark = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      kind: 'bay',
+      point: { lat: 44.02, lng: -72.42 },
+    });
+    // The east shore moves out to -72.4: the mouth re-snaps to it and the bay grows over the label.
+    const result = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          osmId: 'way/1',
+          name: 'Lake Champlain',
+          type: 'lakePond' as const,
+          polygon: rect(-73.5, 44.0, -72.4, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.4 },
+          centroid: { lat: 44.5, lng: -72.95 },
+          surfaceAreaSqM: 8.8e9,
+        },
+      ],
+    });
+    expect(result.landmarksRetired).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(landmark)))?.removedAt).toBeDefined();
+  });
+
   test('restore re-derives a chord bay from its mouth — the shore it comes back to, not the one it left', async () => {
     const t = harness();
     const body = await seedCanonicalBody(t);
