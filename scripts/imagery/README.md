@@ -498,6 +498,11 @@ Plenty of granules over five states cover only land, or Québec, or ocean. Those
 "nothing to cut". Exiting non-zero would light up a fan-out with red for jobs that did exactly the
 right thing, and that noise is how a real failure gets missed.
 
+Before exiting, it writes **`cuts/<season>/<granuleId>.empty.json`** — the bucket's record that the
+granule was looked at and held nothing. The live job needs it (A06i, D214): a Machine auto-destroys on
+exit and its exit code goes with it, so without the record a cut gone without a frame cannot be told
+from a failure, and the job files it as failed. Outside `frames/`, so no index listing sees it.
+
 ### Two failure directions, and which one this takes
 
 `revealShape` returns `null` when a union collapses, and core is explicit that this means *"do not
@@ -598,9 +603,10 @@ always-on footprint the cost model is avoiding. `--build-only --push` builds, pu
 ```bash
 cp .env.example .env.local          # then set FLY_IMAGE (step 5) and MASK_SEASON
 
-# One granule, plumbing only — proves the box reads COGs and writes R2.
+# One granule, plumbing only — proves the box reads COGs and writes R2. Any id Earth Search still
+# lists will do; the catalog drops old ones (S2B_18TXP_20260115_0_L2A now 404s).
 fly machine run "$FLY_IMAGE" --app skating-imagery --region sjc --rm --restart no \
-  -- S2B_18TXP_20260115_0_L2A --smoke
+  -- S2A_18TXP_20261008_1_L2A --smoke
 
 # A whole pass, MAX_PARALLEL Machines alive at a time.
 ./fan-out.sh granules.txt
@@ -639,6 +645,30 @@ behind. Rather than diagnose each, `backfill.sh` reconciles: list the bucket, re
 repeat until a round adds nothing new. The miss set never reaches zero — roughly 40% of a five-state
 granule list is ocean, Québec or dry land, and those jobs correctly produce nothing — so the plateau
 *is* the empty-granule count.
+
+## Live, from Convex (A06i, D214)
+
+From winter 2026-27 the current season's imagery runs itself: an admin presses **Start imagery** on
+`/admin/seasons`, and `packages/convex/convex/imageryLive.ts` checks Earth Search every 6 hours and
+queues each new granule; one leased pump spawns them with exactly `fan-out.sh`'s configuration and
+live-Machine cap (`lib/fly.ts`), settles them against the manifests in R2, and a second lease
+rebuilds `index/<season>.json` by listing the bucket.
+Everything above stays the tool for **past** seasons and recuts.
+
+What it needs, once per season or per credential:
+
+```bash
+# After each mask bake: the search box and the empty-tile set, which only ogrinfo can compute.
+pnpm --filter @skating/imagery select-granules --from=<any> --to=<any>   # if the tile survey is stale
+pnpm --filter @skating/imagery publish-search-plan                       # → masks/<season>-search.json
+
+# On the Convex deployment (never echo the values):
+#   IMAGERY_ARCHIVE_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, [R2_BUCKET]
+#   FLY_API_TOKEN (step 4's scoped deploy token), FLY_IMAGE (step 5's pinned ref)
+```
+
+Without them the job refuses each check and emails the admins once a day. `ingest-window` now reads
+the recorded watch from the deployment rather than re-deciding it with its own sample.
 
 ## Verifying the bill is what you think
 

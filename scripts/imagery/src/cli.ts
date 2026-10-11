@@ -12,6 +12,7 @@
  * decisions live in `granuleSelection`, `revealMasks`, `frameIndex` and `tileSurvey`.
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
@@ -54,4 +55,16 @@ export function findLatestMasks(): string {
     throw new Error('no mask file in .scratch — pass --masks=<path.fgb> or run bake-masks first');
   }
   return join(SCRATCH, latest);
+}
+
+/**
+ * The mask file's own extent, via `ogrinfo` — the STAC search box. Shared by `select-granules` and
+ * `publish-search-plan` (A06i), so the box a backfill searches and the one the live poll searches
+ * are read the same way from the same file.
+ */
+export function maskExtent(fgbPath: string): [number, number, number, number] {
+  const out = execFileSync('ogrinfo', ['-so', '-al', fgbPath], { encoding: 'utf8' });
+  const match = /Extent:\s*\(([-\d.]+),\s*([-\d.]+)\)\s*-\s*\(([-\d.]+),\s*([-\d.]+)\)/.exec(out);
+  if (!match) throw new Error(`could not read an extent from ${fgbPath}`);
+  return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
 }

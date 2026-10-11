@@ -102,6 +102,11 @@ import {
   WEATHER_DAY_SOURCES,
 } from './lib/enums';
 import {
+  rosterSite,
+  seasonRecordFields,
+  seasonWatchSettings as seasonWatchSettingsValidator,
+} from './lib/seasonWatchValidators';
+import {
   bbox,
   boolFlags,
   decileBlock,
@@ -1230,40 +1235,192 @@ export default defineSchema({
     externalId: v.string(),
   }).index('by_external_id', ['source', 'externalId']),
 
-  // When each imagery season's ingest window opened (A06e §3.3 / D149). One row per season, written
-  // once by `imageryIngest.maybeCheckSeasonOpen` and never revised — the gate is a judgment made on
-  // the observations available at the time, and re-deciding it later with more data would silently
-  // rewrite the reason a backfill was started.
+  // When each imagery season's ingest window opened (A06e §3.3 / D149) — the season watch's verdict
+  // (A06i). One row per season, written by `imageryIngest.maybeCheckSeasonOpen`. The opening is never
+  // re-decided by a later tick — the gate is a judgment made on the observations available at the
+  // time — but an admin may **reset** it from `/admin/seasons` (D213), which moves the row whole into
+  // `imageryIngestSeasonsSuperseded` and lets the next tick decide again under the current settings.
   //
   // ⚠ **This records that we should START LOOKING, not that the archive turned over.** D149 keeps
   // those separate on purpose: weather opens the window, and the first frame actually showing ice is
   // what flips the app to the new season (`latestSeasonWithFrames`). A row here with no frames behind
-  // it is the normal state for days or weeks.
-  imageryIngestSeasons: defineTable({
-    season: v.string(), // `winter-YYYY-YY`, D63's July boundary
-    /** Observed date the gate opened — from the weather series, not the date we noticed. */
-    opensOn: v.string(),
-    /** `sentinel` (the summit pond), `corpus` (the region-wide signal), or both on the same day. */
-    openedBy: v.array(v.string()),
-    /** First date the region itself froze, or `null` if winter had not established yet. */
-    winterFrom: v.union(v.string(), v.null()),
+  // it is the normal state for days or weeks. Nor is it a skating season (D212): it is an ice watch.
+  imageryIngestSeasons: defineTable(seasonRecordFields).index('by_season', ['season']),
+
+  // A season-watch row an admin reset (A06i, D213), kept whole so the timeline can show what was
+  // superseded and the re-sent opening email can say which notice it replaces.
+  imageryIngestSeasonsSuperseded: defineTable({
+    ...seasonRecordFields,
+    supersededAt: v.number(),
+    supersededBy: v.id('profiles'),
+  }).index('by_season', ['season', 'supersededAt']),
+
+  // Every saved version of the season watch's settings (A06i §2, D213); the highest `version` is
+  // current. Never edited in place: a season row copies the version that decided it, and a later
+  // save must not change what that copy meant. With no row at all, the defaults resolve the roster
+  // by name (`imageryIngest.SENTINELS`), exactly as before A06i.
+  seasonWatchSettings: defineTable({
+    version: v.number(),
+    settings: seasonWatchSettingsValidator,
+    sentinels: v.array(rosterSite),
+    pinned: v.array(rosterSite),
+    note: v.optional(v.string()),
+    /** Absent on the version seeded from the defaults. */
+    savedBy: v.optional(v.id('profiles')),
+    savedAt: v.number(),
+  }).index('by_version', ['version']),
+
+  // Overnight lows per site per season (A06i §3) — what the watch measured, kept so a season can be
+  // replayed under other settings. One document per (season, body): `firstDate` plus one low (°C)
+  // per following day, `null` for a gap. `forecast` is the live endpoint's observed past days (D140);
+  // `archive` is Open-Meteo's ERA5 archive, used to fill seasons before the watch existed.
+  seasonWatchSeries: defineTable({
+    season: v.string(),
+    waterBodyId: v.id('waterBodies'),
+    name: v.string(),
+    state: v.optional(v.string()),
+    lat: v.number(),
+    lng: v.number(),
+    source: literals(['forecast', 'archive'] as const),
+    firstDate: v.string(),
+    lows: v.array(v.union(v.number(), v.null())),
+    updatedAt: v.number(),
     /**
-     * Observed date the season closed — ten consecutive days on which every ordinary site went
-     * without an overnight freeze (`ingestWindow`'s reluctant ice-out proxy). Absent while the
-     * season is still open, which is the normal state from November to roughly May.
-     *
-     * ⚠ **This is the only "the season is over" signal in the system, and two very different
-     * consumers read it**: imagery ingest stops cutting granules, and A06h's corpus-wide weather
-     * sweep stops spending Open-Meteo calls. Both want the *same* reluctance — being late costs a
-     * few granule reads and a few thousand weather calls, while being early truncates the melt-out
-     * record and blinds discovery during the last skateable weeks of the season.
+     * When the archive filled the gaps in a season the live watch kept (`source: 'forecast'`) — the
+     * nights before the watch began and after it closed. Unset, a past season still has them to fill.
      */
-    closesOn: v.optional(v.string()),
-    /** When `closesOn` was recorded, so a re-open (it happens; see the module note) is auditable. */
-    closedAt: v.optional(v.number()),
-    /** How many sites actually returned observations — the honest denominator for `openedBy`. */
-    sitesSampled: v.number(),
-    detectedAt: v.number(),
+    archiveFilledAt: v.optional(v.number()),
+  })
+    .index('by_season_body', ['season', 'waterBodyId'])
+    .index('by_body', ['waterBodyId']),
+
+  // Real-world dates an admin records per season (A06i §6) — the first and last days anyone actually
+  // skated — so a preview can say how far ahead of them a rule fired. Staff-entered, read only on
+  // `/admin/seasons`; never shown to skaters and never a claim about any ice (D3).
+  seasonFieldDates: defineTable({
+    season: v.string(),
+    kind: literals(['first_skated', 'last_skated'] as const),
+    date: v.string(),
+    waterBodyId: v.optional(v.id('waterBodies')),
+    place: v.optional(v.string()),
+    note: v.optional(v.string()),
+    enteredBy: v.id('profiles'),
+    enteredAt: v.number(),
+  }).index('by_season', ['season', 'date']),
+
+  // Live imagery (A06i §5, D214): every granule the 6-hourly poll has queued, one row each, so a
+  // later poll never cuts the same pass twice and the reconcile can tell landed from lost.
+  imageryGranules: defineTable({
+    granuleId: v.string(),
+    /** `platform_tile_date` (S2) or `platform_startedAt` (S1) — a reprocessing shares its slot. */
+    slot: v.string(),
+    mission: literals(['s2', 's1'] as const),
+    /** The frame season, from the capture date — where the cutter files it. */
+    season: v.string(),
+    capturedAt: v.string(),
+    status: literals(['queued', 'spawned', 'landed', 'empty', 'failed'] as const),
+    attempts: v.number(),
+    machineId: v.optional(v.string()),
+    queuedAt: v.number(),
+    spawnedAt: v.optional(v.number()),
+    settledAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    /** Spawns the Fly API refused for this granule — three and it is settled as failed. */
+    refusals: v.optional(v.number()),
+  })
+    .index('by_granule', ['granuleId'])
+    .index('by_slot', ['slot'])
+    .index('by_season_status', ['season', 'status', 'queuedAt']),
+
+  // One row per frame manifest found in R2 for a season (A06i §5): what the season index is composed
+  // from. Rebuilt by listing — a row whose manifest is no longer listed is dropped — so the index is
+  // still built from what is in the bucket, never from what was launched (A06e's rule).
+  imageryFrames: defineTable({
+    season: v.string(),
+    manifestKey: v.string(),
+    granuleId: v.string(),
+    capturedAt: v.string(),
+    cloudCoverPct: v.union(v.number(), v.null()),
+    bodyCount: v.number(),
+    bands: v.array(v.string()),
+    footprint: v.optional(geoJson),
+    orbitDirection: v.optional(v.string()),
+    /** The manifest's ETag when it was read: a recut overwrites the key, and a new ETag says so. */
+    etag: v.optional(v.string()),
+  })
+    .index('by_season', ['season', 'capturedAt'])
+    .index('by_manifest', ['manifestKey']),
+
+  // Every live-imagery pass (A06i §5): a catalog poll, a pump beat that settled or started cuts, an
+  // index build. What `/admin/seasons` shows as the run history, and the record that imagery ran.
+  imageryRuns: defineTable({
+    season: v.string(),
+    kind: literals(['poll', 'pump', 'index'] as const),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+    outcome: literals(['ok', 'capped', 'failed', 'refused', 'skipped'] as const),
+    detail: v.optional(v.string()),
+    counts: v.optional(v.record(v.string(), v.number())),
+  }).index('by_started', ['startedAt']),
+
+  // Once per key per New York day (A06i): an operator alert — a misconfigured job polls every six
+  // hours, and four identical emails a day is how an inbox learns to ignore the fifth — or a full
+  // history fill, which a second click must not double against the Open-Meteo budget.
+  dailyThrottle: defineTable({
+    key: v.string(),
+    /** The New York day the key was last used, for once-a-day keys. */
+    lastOn: v.optional(v.string()),
+    /** Until when the key is busy, for a key that guards something long-running (the fill). */
+    until: v.optional(v.number()),
+  }).index('by_key', ['key']),
+
+  // The live imagery job's run state (A06i §5, D214), one row per job (`pump`, `index`). Both run
+  // from fixed crons, so there is nothing to schedule — only a lease (`runningUntil` + `token`,
+  // longer than an action can live, released only by its token), a backoff, the spawn breaker's
+  // streak, when an admin last said "try again now", how many runs in a row could check nothing,
+  // and — for the index — how many rebuilds were asked for against how many completed.
+  imageryPump: defineTable({
+    key: v.string(),
+    runningUntil: v.number(),
+    token: v.optional(v.string()),
+    runStartedAt: v.optional(v.number()),
+    backoffUntil: v.optional(v.number()),
+    refusalStreak: v.optional(v.number()),
+    forcedAt: v.optional(v.number()),
+    /** Consecutive pump runs in which no cut in flight could be checked at all. */
+    blindTicks: v.optional(v.number()),
+    /**
+     * Index builds in a row that could not read every manifest listed, and when the next re-reads
+     * them — the retry waits, doubling; a frame landing meanwhile is built as usual.
+     */
+    unreadableStreak: v.optional(v.number()),
+    retryAt: v.optional(v.number()),
+    /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
+    dirtySeq: v.optional(v.number()),
+    builtSeq: v.optional(v.number()),
+  }).index('by_key', ['key']),
+
+  // The manifests the index could not read (A06i §5): one row each, kept until it reads. The next
+  // build reads them last, behind every readable frame, and the least recently tried first — so a
+  // stalling few can neither hold back good frames nor keep a repaired one unread. A table, not a
+  // list on the job row: a season of failures would not fit in one document.
+  imageryUnreadable: defineTable({
+    season: v.string(),
+    manifestKey: v.string(),
+    triedAt: v.number(),
+  })
+    .index('by_season_tried', ['season', 'triedAt'])
+    .index('by_manifest', ['manifestKey']),
+
+  // The granule ledger's totals per frame season (A06i §5), kept beside every status change so the
+  // admin page reads one row instead of counting thousands.
+  imageryCounts: defineTable({
+    season: v.string(),
+    queued: v.number(),
+    spawned: v.number(),
+    landed: v.number(),
+    empty: v.number(),
+    failed: v.number(),
   }).index('by_season', ['season']),
 
   // Per-state distribution basis for the derived caption (A06c §1.5). **One row per state**, holding

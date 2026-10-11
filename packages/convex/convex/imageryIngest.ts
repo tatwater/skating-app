@@ -1,239 +1,81 @@
 /**
- * Watching for the imagery season to open (A06e §3.3 / **D149**).
+ * The season watch — an ice watch, not a skating season (A06e §3.3 / **D149**; A06i / **D212**–D214).
  *
  * > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new
  * > season, never on a date.**
  *
- * ## What this does, and the one thing it deliberately does not
+ * ## What this does
  *
- * Once a day from **1 October**, this samples observed overnight lows across the corpus and asks
- * `ingestWindow` — the same gate `pnpm --filter @skating/imagery ingest-window` runs — whether the
- * season has opened. When it has, the verdict is written to `imageryIngestSeasons` and never
- * recomputed for that season.
+ * Once a day from the settings' floor (1 October by default), this fetches observed overnight lows
+ * at the sentinels, the pinned sites and a sample of prominent lakes, **keeps them**
+ * (`seasonWatchSeries`, A06i §3), and asks `evaluateSeason` — the same function `/admin/seasons`
+ * previews with — whether the watch has opened. Once open it keeps ticking for three more facts,
+ * each recorded once: the first 20 °F sentinel night (the imagery reminder), the night winter set in
+ * region-wide, and the end of the watch. Each queues a staff email, and at most one goes out a day.
  *
- * **It does not start a backfill.** Cutting granules spends real money on infrastructure this
- * deployment cannot see, and the gate is a judgment about a season rather than a fact about a row —
- * so the cron's job is to *notice*, and an operator's job is to act on it. That is the same split the
- * CLI already draws: *"Deliberately does not run the selection itself… the operator should see it
- * before a fan-out spends anything."*
+ * ## What it deliberately does not do
  *
- * ## Why October, and not September
+ * **It does not start the imagery.** An admin presses *Start imagery* on `/admin/seasons` (D214);
+ * from then `imageryLive.poll` cuts each new pass every 6 hours until the watch ends. The cron's job
+ * is to notice and to say so.
  *
- * §3.3's summit trigger opens a season when `Upper Lake of the Clouds` (1,531 m, and in the corpus)
- * registers a freeze — which on Mt Washington can happen in *August*. Since 2026-09-21 the two
- * other alpine tarns the community opens its season on stand beside it (`SENTINELS`). The phase doc reasoned that this
- * was safe because an early gate only wastes granule reads.
+ * ## Why a floor at all
+ *
+ * The summit triggers can register a freeze on Mt Washington in August. The floor is a cheap outer
+ * bound on nonsense, not a second gate.
  *
  * > **Founder, 2026-08-25:** *"let's start that cron in October instead — I don't think anyone skates
  * > anywhere before November, so an Oct 1 start gives us plenty of time to catch extended freezing
  * > temps long enough to start forming ice anywhere."*
  *
- * So the calendar floor is a **cheap outer bound on nonsense**, not a second gate: it stops the
- * watcher reporting "the season opened" in August because one alpine tarn had a cold night, while
- * still leaving a month of margin before anyone could skate. The weather gate inside it is unchanged
- * and still does all the real work.
- *
  * ## ⚠ The asymmetry that licenses the whole design
  *
  * An over-eager gate costs a few dollars of granule reads. A late one **misses freeze-up entirely** —
- * the single most valuable frame of the season, gone, with nothing to say it was ever there. Every
- * threshold below leans early on purpose, and so does the site sampling.
+ * the single most valuable frame of the season, gone, with nothing to say it was ever there. The
+ * defaults lean early on purpose; whether they lean *too* early is what the settings page is for.
  */
 
 import {
-  approximateUtcOffsetSeconds,
   archiveSeasonAt,
-  DEFAULT_THAW_RUN_DAYS,
-  dailyLowsFromHourly,
-  ingestWindow,
+  clipToFloor,
+  dailyLowsFromOpenMeteo,
+  evaluateSeason,
+  expandLows,
+  firstSentinelNightAtOrBelow,
+  type SeasonWatchSettings,
+  type SiteLow,
   type SiteSeries,
-  seasonOf,
+  seasonFloorDate,
   thawClose,
+  winterOnOrAfter,
 } from '@skating/core';
-import { v } from 'convex/values';
+import { type Infer, v } from 'convex/values';
 
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
-import { isListed } from './lib/listing';
+import type { Doc, Id } from './_generated/dataModel';
+import {
+  type ActionCtx,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from './_generated/server';
+import { lastUsedOn, markUsedOn } from './lib/dailyThrottle';
+import { fetchHourlyRows, openMeteoMeter } from './lib/openMeteoHourly';
+import { composeSeasonEmail, newYorkDate, type SeasonEmail } from './lib/seasonWatchEmails';
+import {
+  namedSiteLow,
+  openingDetail,
+  rosterSite,
+  seasonWatchSettings,
+} from './lib/seasonWatchValidators';
 
-/**
- * A body the watcher always samples, found by name rather than by a hardcoded coordinate or a row
- * id — a coordinate drifts from the row and an id is minted per deployment, but the name is what
- * the community calls the place. `state` is part of the key because a name alone is not one:
- * the corpus holds eight bodies called Eagle Lake, and only the one on Mt Lafayette is a sentinel.
- *
- * Matched against the row's displayed `name` **and every `nameClaims` value**, so a moderator
- * picking another publisher's spelling on `/admin/water/$id` (`setWaterBodyName`) does not
- * silently drop a sentinel — the roster name is still one of the row's claims after a pick.
- */
-interface RosterEntry {
-  name: string;
-  state: string;
-}
-
-/**
- * §3.3's summit triggers — the first ice in the region, and the last place anyone would want the
- * watcher to be looking somewhere else. Any one of them freezing opens the season (`ingestWindow`'s
- * OR rule already reads every `sentinel: true` site). Three rather than one since 2026-09-21: a
- * group leader's seasonal journal opens the season on Lakes of the Clouds *and* Eagle Lake on the
- * same October day, with Kinsman Pond a week behind — and a single named row is one rename, merge
- * or purge away from leaving the gate with no sentinel at all.
- */
-const SENTINELS: readonly RosterEntry[] = [
-  { name: 'Upper Lake of the Clouds', state: 'NH' }, // 1,531 m, Mt Washington
-  { name: 'Eagle Lake', state: 'NH' }, // 1,264 m, below Greenleaf Hut on Mt Lafayette
-  { name: 'Kinsman Pond', state: 'NH' }, // 1,134 m, Kinsman Ridge
-];
-
-/**
- * Ordinary sites that ride along regardless of boost rank. The `by_curated_boost` sample below is
- * "the top 24", but ~100 bodies tie at 0.3, so which 24 arrive is index order — a body the
- * founder wants watched cannot rely on it. Low Plains (Elkins) is the same journal's valley
- * season opener: shallow, marshy, two minutes from the lot, skated 1 December. Not a sentinel:
- * a valley pond freezing alone should not open a region's season, which is the corpus rule's job.
- *
- * ⚠ Low Plains has no catalog name: it is an unnamed NHD row until a moderator gives it its
- * community name (`setWaterBodyName`, the no-catalog-claim case — done on dev 2026-09-21). On a
- * deployment where that has not happened this entry finds nothing and the roster is simply shorter.
- */
-const PINNED_SITES: readonly RosterEntry[] = [{ name: 'Low Plains', state: 'NH' }];
-
-/**
- * How many search hits to look through for a roster entry's exact name. "Eagle Lake" has eight
- * exact-name rows across five states before any near-miss; the filter, not the take, decides.
- */
-const ROSTER_SEARCH_TAKE = 50;
-
-/**
- * How many ordinary bodies to sample alongside the roster.
- *
- * Enough that `corpusFraction`'s 10% means "a few sites agreed" rather than "one site is noisy", and
- * small enough that the whole tick is one Open-Meteo request and a bounded read.
- */
-const SAMPLE_SITES = 24;
-
-/**
- * The most boost-ordered rows the sample walk reads to find {@link SAMPLE_SITES} listed ones. A
- * ceiling on the read, not a target: ~140 bodies carry a boost on dev, so a full sample normally
- * arrives in the first few dozen.
- */
-const SAMPLE_SCAN_CAP = 200;
+type NamedSiteLow = Infer<typeof namedSiteLow>;
 
 /** Open-Meteo's `past_days` ceiling, matching `weather.ts`. */
 const MAX_PAST_DAYS = 92;
 
-/** The month the watcher starts looking, 1-indexed. Founder call — see the module note. */
-const START_MONTH = 10;
-
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
-
-/**
- * The sites to sample: the sentinels, the pinned sites, plus the most prominent bodies we hold.
- *
- * ⚠ **Bounded reads, deliberately.** The obvious implementation walks `waterBodies` and picks an even
- * spatial stride, which is what the CLI does against the Hilbert-ordered mask file. In Convex that is
- * a full scan of ~25,000 documents and it **exceeds the 16 MB per-function read limit** — measured
- * 2026-08-25, trying exactly that. A search index for the sentinel and one ordered index range for the
- * sample keep this to a few dozen documents.
- *
- * **What that costs, stated plainly:** `by_curated_boost` returns *popular* lakes rather than a
- * spatial grid, and popularity in this corpus skews toward northern New England — so the sample runs
- * slightly colder than the region as a whole and the gate will open a little early. Given the
- * asymmetry above, that is the direction to be wrong in. The CLI's spatially-even sample remains the
- * more rigorous instrument and both feed the identical `ingestWindow`; if this ever needs to be
- * spatially fair, `waterBodyCells` is the index to reach for.
- */
-export const gateSites = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    // ⚠ **A search hit is not a roster site until its name and state say so.**
-    //
-    // `withSearchIndex` ranks by relevance and always answers if *anything* tokenises close enough —
-    // so `.take(1)` alone crowns whichever lake scores highest on "lake"/"clouds" and hands it the
-    // one privilege no other site has: opening a whole region's season on its own. The corpus holds
-    // thousands of bodies with "Lake" in the name, so the wrong one is the likely outcome the day
-    // this pond is renamed, merged or purged — and it fails *silently*, because a valley lake
-    // freezing in November is a perfectly plausible-looking `openedBy: ['sentinel']`.
-    //
-    // Same shape as `waterBodies.applyCuratedBoosts`: take a handful and filter on the exact name.
-    // No match means no sentinel, and the corpus signal carries the gate alone — which is precisely
-    // what the OR rule exists for. A roster entry that resolves to *two* rows (a duplicate the
-    // dedup queue has not reached) is dropped rather than doubled: two sentinels for one pond is
-    // one pond voting twice.
-    //
-    // **Listed rows only.** A merge tombstones the loser rather than deleting it (D36), with its
-    // name and states intact — so without `isListed` the day the dedup queue *does* reach a
-    // duplicate sentinel is the day the entry resolves to two rows for ever, and the fix for the
-    // duplicate is what loses the sentinel. A removed body stays: a landowner takedown changes who
-    // may skate it, not whether it freezes.
-    const resolve = async (entry: RosterEntry): Promise<Doc<'waterBodies'> | undefined> => {
-      const wanted = entry.name.toLowerCase();
-      const exact = (
-        await ctx.db
-          .query('waterBodies')
-          .withSearchIndex('search_name', (q) => q.search('searchText', entry.name))
-          .take(ROSTER_SEARCH_TAKE)
-      ).filter(
-        (b) =>
-          isListed(b) &&
-          (b.states ?? []).includes(entry.state) &&
-          [b.name, ...(b.nameClaims ?? []).map((c) => c.value)].some(
-            (v) => v.toLowerCase() === wanted,
-          ),
-      );
-      return exact.length === 1 ? exact[0] : undefined;
-    };
-    const resolveAll = async (entries: readonly RosterEntry[]) =>
-      (await Promise.all(entries.map(resolve))).filter(
-        (b): b is Doc<'waterBodies'> => b !== undefined,
-      );
-    const [sentinels, pinned] = await Promise.all([
-      resolveAll(SENTINELS),
-      resolveAll(PINNED_SITES),
-    ]);
-
-    // Same `isListed` here: a merge does not clear the loser's boost, so a tombstone would
-    // otherwise sit in the sample at the survivor's own coordinate — one pond voting twice.
-    //
-    // ⚠ **Filter while reading, not after a fixed take** (Greptile, PR #74). `take(24)` then
-    // `filter` lets every boosted tombstone cost the sample a site, and a shrinking sample is how
-    // one freezing pond comes to clear `corpusFraction`'s 10% alone. So the walk keeps going until
-    // it holds 24 listed non-roster sites — roster rows are excluded here because they are already
-    // in the output, and a sentinel counted in the sample would shrink the ordinary vote the same
-    // way. Bounded by `SAMPLE_SCAN_CAP`, so a corpus of tombstones costs a few hundred reads, never
-    // a table scan.
-    const rosterIds = new Set([...sentinels, ...pinned].map((b) => b._id));
-    const sample: Doc<'waterBodies'>[] = [];
-    let scanned = 0;
-    for await (const b of ctx.db.query('waterBodies').withIndex('by_curated_boost').order('desc')) {
-      if (++scanned > SAMPLE_SCAN_CAP || sample.length >= SAMPLE_SITES) break;
-      if (isListed(b) && !rosterIds.has(b._id)) sample.push(b);
-    }
-
-    const point = (b: Doc<'waterBodies'>) => b.interiorPoint ?? b.centroid;
-    const out: { siteId: string; sentinel: boolean; lat: number; lng: number }[] = [];
-    const seen = new Set<string>();
-    const sentinelIds = new Set(sentinels.map((b) => b._id));
-
-    // The flag comes from `sentinelIds`, not from which list a row arrived in — a sentinel that
-    // also ranks in the boost sample is listed once (`seen`) and flagged either way.
-    for (const b of [...sentinels, ...pinned, ...sample]) {
-      const p = point(b);
-      // A body with no usable point is skipped rather than defaulted. A gate is a claim about
-      // somewhere, and (0, 0) is the Gulf of Guinea.
-      if (!p || seen.has(b._id)) continue;
-      seen.add(b._id);
-      out.push({
-        siteId: b._id,
-        sentinel: sentinelIds.has(b._id),
-        lat: p.lat,
-        lng: p.lng,
-      });
-    }
-    return out;
-  },
-});
 
 /** The recorded verdict for a season, or `null` if we have not decided one yet. */
 export const seasonRecord = internalQuery({
@@ -245,50 +87,140 @@ export const seasonRecord = internalQuery({
       .unique(),
 });
 
+async function rowFor(ctx: MutationCtx, season: string) {
+  return await ctx.db
+    .query('imageryIngestSeasons')
+    .withIndex('by_season', (q) => q.eq('season', season))
+    .unique();
+}
+
+/** Queue an email with the settings that decided its fact, so its copy states the rule that fired. */
+function enqueue(
+  row: Doc<'imageryIngestSeasons'>,
+  email: SeasonEmail,
+  settings: SeasonWatchSettings | undefined,
+) {
+  return [
+    ...(row.emailQueue ?? []),
+    { email, queuedAt: Date.now(), ...(settings ? { settings } : {}) },
+  ];
+}
+
 /**
- * Record the date a season closed, once.
+ * Record the date a season closed, once, and queue the closing email.
  *
  * ⚠ **Only ever set on a row that has none.** Ice-out is a one-way door within a season: a late cold
  * snap after ten thawed days does not un-close it, and letting a later tick move the date would make
  * the field a description of the last time we looked rather than of the melt.
  */
 export const recordSeasonClose = internalMutation({
-  args: { season: v.string(), closesOn: v.string() },
-  handler: async (ctx, { season, closesOn }) => {
-    const row = await ctx.db
-      .query('imageryIngestSeasons')
-      .withIndex('by_season', (q) => q.eq('season', season))
-      .unique();
+  args: {
+    season: v.string(),
+    closesOn: v.string(),
+    sitesSampled: v.optional(v.number()),
+    settings: v.optional(seasonWatchSettings),
+  },
+  handler: async (ctx, { season, closesOn, sitesSampled, settings }) => {
+    const row = await rowFor(ctx, season);
     if (!row || row.closesOn !== undefined) return null;
-    await ctx.db.patch(row._id, { closesOn, closedAt: Date.now() });
+    await ctx.db.patch(row._id, {
+      closesOn,
+      closedAt: Date.now(),
+      emailQueue: enqueue(
+        row,
+        { kind: 'closed', date: closesOn, sitesSampled: sitesSampled ?? row.sitesSampled },
+        settings,
+      ),
+    });
     return row._id;
   },
 });
 
 /**
- * Fill in `winterFrom` on a season that was opened before the region itself froze.
+ * Fill in `winterFrom` on a season that was opened before the region itself froze, and queue the
+ * winter email.
  *
- * ⚠ **Without this the close can never fire in the common case.** The sentinel pond is *allowed* to
- * open a season on its own — that is the whole point of the OR rule — and it does so weeks before a
- * majority of ordinary sites see an overnight freeze. So the very first October tick routinely writes
- * `winterFrom: null`, and `recordSeasonOpen` is insert-only, so nothing would ever revisit it: the
- * row would sit open for ever, imagery ingest would cut granules into July and the corpus-wide
- * weather sweep would spend ~4,300 Open-Meteo calls a day right through the summer. Ice-in is a fact
- * that arrives *after* opening, so it has to be writable after opening.
- *
- * **Only ever set on a row that has none**, for the same reason `recordSeasonClose` is: the date the
- * region froze is a one-way door within a season, and letting a later tick move it would make the
- * field describe the last time we looked rather than the freeze.
+ * ⚠ **Without this the close can never fire in the common case.** A sentinel opens a season weeks
+ * before a majority of ordinary sites freeze, so the first tick routinely writes `winterFrom: null`;
+ * ice-in is a fact that arrives *after* opening, so it has to be writable after opening. **Only ever
+ * set on a row that has none**, for the same one-way-door reason as the close.
  */
 export const recordSeasonWinterFrom = internalMutation({
-  args: { season: v.string(), winterFrom: v.string() },
-  handler: async (ctx, { season, winterFrom }) => {
-    const row = await ctx.db
-      .query('imageryIngestSeasons')
-      .withIndex('by_season', (q) => q.eq('season', season))
-      .unique();
+  args: {
+    season: v.string(),
+    winterFrom: v.string(),
+    frozen: v.optional(v.array(namedSiteLow)),
+    reporting: v.optional(v.number()),
+    settings: v.optional(seasonWatchSettings),
+  },
+  handler: async (ctx, { season, winterFrom, frozen, reporting, settings }) => {
+    const row = await rowFor(ctx, season);
     if (!row || row.winterFrom !== null) return null;
-    await ctx.db.patch(row._id, { winterFrom });
+    const winter = { frozen: frozen ?? [], reporting: reporting ?? 0 };
+    await ctx.db.patch(row._id, {
+      winterFrom,
+      winter,
+      emailQueue: enqueue(row, { kind: 'winter', date: winterFrom, ...winter }, settings),
+    });
+    return row._id;
+  },
+});
+
+/**
+ * Record the first sentinel night at or below the imagery line, once (A06i §4). The reminder email is
+ * queued only if nobody has started the imagery yet — telling someone to start what is running is
+ * noise.
+ */
+export const recordImageryNudge = internalMutation({
+  args: {
+    season: v.string(),
+    date: v.string(),
+    sites: v.array(namedSiteLow),
+    settings: v.optional(seasonWatchSettings),
+  },
+  handler: async (ctx, { season, date, sites, settings }) => {
+    const row = await rowFor(ctx, season);
+    if (!row || row.imageryNudgeOn !== undefined) return null;
+    await ctx.db.patch(row._id, {
+      imageryNudgeOn: date,
+      imageryNudgeSites: sites,
+      ...(row.imageryStartedAt === undefined
+        ? { emailQueue: enqueue(row, { kind: 'imagery', date, sites }, settings) }
+        : {}),
+    });
+    return row._id;
+  },
+});
+
+/**
+ * Fill in what the winter night measured on a row whose winter was recorded before A06i kept it —
+ * the legacy winter-2026-27 row, whose 7 October 2026 was written by the old tick. Detail only: no
+ * email is queued for a fact days old, which the old code had already decided without one.
+ */
+export const recordWinterDetail = internalMutation({
+  args: { season: v.string(), frozen: v.array(namedSiteLow), reporting: v.number() },
+  handler: async (ctx, { season, frozen, reporting }) => {
+    const row = await rowFor(ctx, season);
+    if (!row || row.winterFrom === null || row.winter !== undefined) return null;
+    await ctx.db.patch(row._id, { winter: { frozen, reporting } });
+    return row._id;
+  },
+});
+
+/**
+ * Fill in what the opening night measured on a row opened before A06i recorded it — the legacy
+ * winter-2026-27 row, opened 3 October 2026 with only the word `sentinel` to show for it.
+ */
+export const recordOpeningDetail = internalMutation({
+  args: {
+    season: v.string(),
+    sentinels: v.array(namedSiteLow),
+    corpus: v.object({ frozen: v.number(), reporting: v.number() }),
+  },
+  handler: async (ctx, { season, sentinels, corpus }) => {
+    const row = await rowFor(ctx, season);
+    if (!row || row.opening !== undefined) return null;
+    await ctx.db.patch(row._id, { opening: { sentinels, corpus } });
     return row._id;
   },
 });
@@ -300,30 +232,137 @@ export const recordSeasonOpen = internalMutation({
     openedBy: v.array(v.string()),
     winterFrom: v.union(v.string(), v.null()),
     sitesSampled: v.number(),
+    settingsVersion: v.optional(v.number()),
+    settings: v.optional(seasonWatchSettings),
+    sentinels: v.optional(v.array(rosterSite)),
+    opening: v.optional(openingDetail),
+    winter: v.optional(v.object({ frozen: v.array(namedSiteLow), reporting: v.number() })),
+    imageryNudge: v.optional(v.object({ date: v.string(), sites: v.array(namedSiteLow) })),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { imageryNudge, ...args }) => {
     // Idempotent by season. The cron ticks daily and a season opens once; re-running after a partial
     // failure must not produce a second row claiming a different date.
     //
     // ⚠ **`created` is what the staff email is gated on**, and it has to come from here rather than
     // from the caller's control flow: "did this tick actually open the season" is a property of the
     // write, and deciding it upstream is how a retried tick mails everyone a second time.
-    const existing = await ctx.db
-      .query('imageryIngestSeasons')
-      .withIndex('by_season', (q) => q.eq('season', args.season))
-      .unique();
+    const existing = await rowFor(ctx, args.season);
     if (existing) return { id: existing._id, created: false };
-    const id = await ctx.db.insert('imageryIngestSeasons', { ...args, detectedAt: Date.now() });
+
+    const superseded = await ctx.db
+      .query('imageryIngestSeasonsSuperseded')
+      .withIndex('by_season', (q) => q.eq('season', args.season))
+      .order('desc')
+      .first();
+    const now = Date.now();
+    const queue: SeasonEmail[] = [
+      {
+        kind: 'opened',
+        date: args.opensOn,
+        sentinels: args.opening?.sentinels ?? [],
+        corpus: args.opening?.corpus ?? { frozen: 0, reporting: args.sitesSampled },
+        ...(superseded
+          ? { replaces: { opensOn: superseded.opensOn, detectedAt: superseded.detectedAt } }
+          : {}),
+      },
+    ];
+    // Everything a first tick can already see, in the order it happened — one a day from here.
+    if (imageryNudge) queue.push({ kind: 'imagery', ...imageryNudge });
+    if (args.winterFrom && args.winter) {
+      queue.push({ kind: 'winter', date: args.winterFrom, ...args.winter });
+    }
+    const id = await ctx.db.insert('imageryIngestSeasons', {
+      ...args,
+      ...(imageryNudge
+        ? { imageryNudgeOn: imageryNudge.date, imageryNudgeSites: imageryNudge.sites }
+        : {}),
+      detectedAt: now,
+      // Everything this tick queues was decided under the settings it opened with.
+      emailQueue: queue.map((email) => ({
+        email,
+        queuedAt: now,
+        ...(args.settings ? { settings: args.settings } : {}),
+      })),
+    });
     return { id, created: true };
   },
 });
 
-interface HourlyResponse {
-  /** The zone Open-Meteo resolved under `timezone=auto` — what makes a local day knowable. */
-  timezone?: string;
-  /** The offset at request time, not at any hour in the response; a fallback only. */
-  utc_offset_seconds?: number;
-  hourly?: { time?: (number | null)[]; temperature_2m?: (number | null)[] };
+/**
+ * The day the last watch email went, kept outside the season rows: a reset moves its row to the
+ * superseded table, and the day's mark must not go with it, or a reopening the same day would send a
+ * second email (D212).
+ */
+const WATCH_EMAIL_KEY = 'season-watch-email';
+
+/**
+ * Send the next queued staff email, if none has gone out today (D212: never two on one day).
+ *
+ * The send is scheduled **inside** this mutation, so "taken off the queue" and "sent" commit
+ * together — a retried tick cannot mail anyone twice, and a failed one loses nothing. An imagery
+ * reminder whose imagery has since been started is dropped without spending the day's slot.
+ */
+export const sendNextEmail = internalMutation({
+  args: { today: v.string() },
+  handler: async (ctx, { today }): Promise<{ sent: string | null }> => {
+    const rows = await ctx.db.query('imageryIngestSeasons').take(50);
+    if ((await lastUsedOn(ctx, WATCH_EMAIL_KEY)) === today) return { sent: null };
+    if (rows.some((r) => r.lastEmailOn === today)) return { sent: null };
+    const settingsRow = await ctx.db
+      .query('seasonWatchSettings')
+      .withIndex('by_version')
+      .order('desc')
+      .first();
+
+    // Oldest season first, so a closing email from last winter goes before anything from this one.
+    for (const row of rows.sort((a, b) => a.season.localeCompare(b.season))) {
+      const queue = [...(row.emailQueue ?? [])];
+      while (queue.length > 0) {
+        const next = queue.shift() as (typeof queue)[number];
+        if (next.email.kind === 'imagery' && row.imageryStartedAt !== undefined) continue;
+        // The settings that decided this email's fact; then the opening's, for one queued before
+        // entries carried their own; then the current version.
+        const settings: SeasonWatchSettings | undefined =
+          next.settings ?? row.settings ?? settingsRow?.settings;
+        // No settings anywhere means `ensureSettings` has never run — leave everything queued.
+        if (!settings) return { sent: null };
+        const sentinels = row.sentinels ?? settingsRow?.sentinels ?? [];
+        const composed = composeSeasonEmail(next.email, {
+          season: row.season,
+          settings,
+          sentinelNames: sentinels.map((s) => s.name),
+        });
+        await markUsedOn(ctx, WATCH_EMAIL_KEY, today);
+        await ctx.db.patch(row._id, {
+          emailQueue: queue,
+          lastEmailOn: today,
+          emailsSent: [
+            ...(row.emailsSent ?? []),
+            { kind: next.email.kind, sentOn: today, sentAt: Date.now() },
+          ],
+        });
+        await ctx.scheduler.runAfter(0, internal.operatorAlerts.broadcastToStaff, {
+          subject: composed.subject,
+          heading: composed.heading,
+          blocks: composed.blocks,
+          deepLinkPath: '/admin/seasons',
+        });
+        return { sent: next.email.kind };
+      }
+      // Only dropped reminders left: clear them so they are not walked again tomorrow.
+      if ((row.emailQueue ?? []).length > 0) await ctx.db.patch(row._id, { emailQueue: [] });
+    }
+    return { sent: null };
+  },
+});
+
+interface GateSite {
+  siteId: Id<'waterBodies'>;
+  sentinel: boolean;
+  name: string;
+  state?: string;
+  lat: number;
+  lng: number;
 }
 
 /**
@@ -335,17 +374,12 @@ interface HourlyResponse {
  *
  * ⚠ **Hourly, and the days are cut here.** `daily=temperature_2m_min` cuts every day at the offset in
  * force when the request is made, so a November tick split every October day at the wrong midnight.
- * `dailyLowsFromHourly` cuts them by the zone, and is the same function the CLI uses.
+ * `dailyLowsFromOpenMeteo` cuts them by the zone — the same cut the history fill stores.
  *
- * Multi-coordinate form: passing comma-separated `latitude`/`longitude` returns an *array* of
- * per-location objects, so 25 sites cost one HTTP call rather than 25.
+ * Multi-coordinate form, a few sites a request (`lib/openMeteoHourly`).
  */
-async function fetchDailyLows(
-  sites: readonly { siteId: string; sentinel: boolean; lat: number; lng: number }[],
-): Promise<SiteSeries[]> {
+async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   const params = new URLSearchParams({
-    latitude: sites.map((s) => s.lat.toFixed(4)).join(','),
-    longitude: sites.map((s) => s.lng.toFixed(4)).join(','),
     hourly: 'temperature_2m',
     past_days: String(MAX_PAST_DAYS),
     forecast_days: '1',
@@ -353,30 +387,28 @@ async function fetchDailyLows(
     timeformat: 'unixtime',
     temperature_unit: 'celsius',
   });
-
-  const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
-  if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText}`);
-  const json = (await res.json()) as HourlyResponse | HourlyResponse[];
-  // One coordinate returns an object; several return an array. Normalized so the caller never has to
-  // care how many sites survived the point check above.
-  const rows = Array.isArray(json) ? json : [json];
-
-  const out: SiteSeries[] = [];
-  for (const [i, site] of sites.entries()) {
-    const row = rows[i];
-    // A null reading is a gap in the record, not a warm hour; a day short of readings is dropped so
-    // the site abstains rather than votes "did not freeze" on part of a day.
-    const days = dailyLowsFromHourly(
-      row?.hourly?.time ?? [],
-      row?.hourly?.temperature_2m ?? [],
-      typeof row?.timezone === 'string' && row.timezone.length > 0 ? row.timezone : null,
-      row?.utc_offset_seconds ?? approximateUtcOffsetSeconds(site.lng),
-    );
-    if (days.length > 0) {
-      out.push({ siteId: site.siteId, sentinel: site.sentinel, days });
-    }
+  const fetched = await fetchHourlyRows(
+    OPEN_METEO_URL,
+    params,
+    sites,
+    MAX_PAST_DAYS + 1,
+    openMeteoMeter(ctx, MAX_PAST_DAYS + 1),
+  );
+  // ⚠ **All of the sample or none of it.** Deciding on the sites that answered would shrink the
+  // sample, and a shrinking sample is how one freezing pond comes to clear `corpusFraction` alone.
+  // A failed tick is retried tomorrow; its email still goes (the `finally` above).
+  if (fetched.failed > 0) {
+    throw new Error(`${fetched.lastError} (${fetched.failed} of ${fetched.requests} requests)`);
   }
-  return out;
+  const rows = fetched.rows;
+
+  return sites.map((site, i) => ({
+    site,
+    // A null reading is a gap in the record, not a warm hour, and a day short of readings is
+    // dropped, so the site abstains for it. Today's low — still a forecast — is dropped where every
+    // low is stored (`seasonWatch.storeSeries`).
+    days: dailyLowsFromOpenMeteo(rows[i], site.lng),
+  }));
 }
 
 /**
@@ -384,15 +416,12 @@ async function fetchDailyLows(
  *
  * ⚠ **Written out rather than inferred, and it has to be.** `maybeCheckSeasonOpen` calls
  * `internal.imageryIngest.*` — its own module — so letting TypeScript infer the return type makes the
- * type depend on `_generated/api.d.ts`, which imports this file, which is the type back where it
- * started. TypeScript resolves that circularity by widening `DataModel`, and the damage lands
- * *everywhere else*: `Doc<'accessAlerts'>` collapses into a union of all 44 tables and ~456 errors
- * appear in files this one never touches. Measured 2026-08-25, and the symptom points nowhere near
- * the cause — hence this note.
+ * type depend on `_generated/api.d.ts`, which imports this file. TypeScript resolves that circularity
+ * by widening `DataModel`, and ~456 errors appear in files this one never touches (2026-08-25).
  */
 type SeasonWatchResult =
   | {
-      skipped: 'before October' | 'already recorded' | 'no sites' | 'no observations';
+      skipped: 'before the floor' | 'already recorded' | 'no sites' | 'no observations';
       season: string;
       opensOn?: string;
     }
@@ -403,162 +432,283 @@ type SeasonWatchResult =
 /**
  * The daily tick.
  *
- * A daily interval with a month gate rather than a `crons.cron` expression, matching
- * `recurrence.maybeRunRollover` — it keeps `crons.ts` uniform and, more usefully, makes the check
- * **retryable**: a tick that fails on 12 October is picked up on the 13th, where a once-a-year
- * expression would wait a year.
- *
- * Cheap on the ~10 months it does nothing: a no-op before October and a single indexed read once the
- * season has been recorded.
+ * A daily interval with a gate rather than a `crons.cron` expression, matching
+ * `recurrence.maybeRunRollover` — it keeps `crons.ts` uniform and makes the check **retryable**: a
+ * tick that fails on 12 October is picked up on the 13th.
  */
 export const maybeCheckSeasonOpen = internalAction({
   args: {},
   handler: async (ctx): Promise<SeasonWatchResult> => {
-    const now = new Date();
-    const month = now.getUTCMonth() + 1;
-
-    // D63's July boundary, via the one definition of the label. `bakeMasks` names the mask artifact
-    // with the same function, so a cut and the row recording why it happened cannot disagree.
-    const season = archiveSeasonAt(now.getTime());
-
-    // ⚠ The floor is on the *calendar*, not on the season label. Between July and September the
-    // season label already reads `winter-YYYY-YY` and the sentinel pond can freeze — see the module
-    // note on why the founder moved this to October.
-    if (month < START_MONTH && month >= 7) return { skipped: 'before October' as const, season };
-
-    // ⚠ **An opened season is not a finished one — the tick keeps running to find the close.**
-    //
-    // This used to return here on any recorded row, which meant `ingestWindow` computed a perfectly
-    // good `closesOn` that nothing ever persisted. Two consumers pay for that: imagery keeps cutting
-    // granules into July, and A06h's corpus-wide weather sweep (D161) keeps spending ~4,300
-    // Open-Meteo calls a day right through the spring, because the only thing it can gate on is the
-    // presence of `opensOn`. So the row is complete when it has *both* dates, not one.
-    const already = await ctx.runQuery(internal.imageryIngest.seasonRecord, { season });
-    if (already?.closesOn !== undefined) {
-      return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+    const nowMs = Date.now();
+    try {
+      return await tick(ctx, nowMs);
+    } finally {
+      // Whatever is queued — including what this tick just found — goes out last, one a day (D212),
+      // and even when the tick itself failed: a dead weather API must not hold back yesterday's news.
+      await ctx.runMutation(internal.imageryIngest.sendNextEmail, { today: newYorkDate(nowMs) });
     }
-
-    const sites = await ctx.runQuery(internal.imageryIngest.gateSites, {});
-    if (sites.length === 0) return { skipped: 'no sites' as const, season };
-
-    const fetched = await fetchDailyLows(sites);
-
-    // ⚠ **The October floor has to bound the OBSERVATIONS, not just the tick.**
-    //
-    // Gating only on `month` delays *when we look* and does nothing about *what we look at*:
-    // `past_days` is 92, so the very first tick on 1 October carries the series back to roughly
-    // 1 July. `ingestWindow` returns the earliest freeze in whatever it is handed — and the module
-    // note above says plainly that the summit pond can freeze in August. The gate would therefore
-    // record `opensOn` in August on day one, print it as the `--from=` an operator pastes into
-    // `select-granules`, and spend exactly the money the founder's October call was made to avoid.
-    //
-    // So the series is clipped to 1 October of the season's own opening year. `seasonOf` is the same
-    // July boundary `archiveSeasonAt` uses, so a January tick clips to the *previous* October rather
-    // than to one that has not happened yet.
-    const floor = `${seasonOf(now.getTime())}-${String(START_MONTH).padStart(2, '0')}-01`;
-    const series = fetched
-      .map((s) => ({ ...s, days: s.days.filter((d) => d.date >= floor) }))
-      .filter((s) => s.days.length > 0);
-    if (series.length === 0) return { skipped: 'no observations' as const, season };
-
-    // ⚠ **A season opened before the region froze carries `winterFrom: null`, and that is the normal
-    // October state, not an edge case.** The sentinel pond opens a season on its own weeks before a
-    // majority of ordinary sites see an overnight freeze, and `recordSeasonOpen` is insert-only — so
-    // without this the row would keep `winterFrom: null` for ever, the close could never be measured
-    // from anything, and both consumers (imagery ingest, the D161 weather sweep) would run through
-    // the summer. Ice-in arrives after opening, so it is resolved here, on a later tick, from the
-    // window that now contains it.
-    let winterFrom = already?.winterFrom ?? null;
-    if (already && winterFrom === null) {
-      winterFrom = ingestWindow(series).winterFrom;
-      if (winterFrom !== null) {
-        await ctx.runMutation(internal.imageryIngest.recordSeasonWinterFrom, {
-          season,
-          winterFrom,
-        });
-        console.warn(`[imagery] ${season} winter established region-wide on ${winterFrom}`);
-      }
-    }
-
-    // The already-open case: look only for the close, and do it against the **recorded**
-    // `winterFrom`. Re-deriving it at close time is impossible — `past_days` is 92, so by the spring
-    // tick that would actually close a season the date the region froze is months out of the window,
-    // and `ingestWindow` would return `closesOn: null` for ever. See `thawClose`.
-    if (already) {
-      // Still no region-wide freeze: nothing to measure a close from, so wait for the next tick.
-      if (winterFrom === null) {
-        return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
-      }
-      const closesOn = thawClose(series, winterFrom);
-      if (!closesOn) {
-        return {
-          open: true as const,
-          season,
-          opensOn: already.opensOn,
-          openedBy: already.openedBy,
-        };
-      }
-      const wrote = await ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
-        season,
-        closesOn,
-      });
-      // Both the log and the mail are gated on the mutation having actually written, not on reaching
-      // this line — `recordSeasonClose` refuses to re-close, so a racing second tick neither tells
-      // anybody twice nor prints a second "CLOSED" for a write it did not make.
-      if (wrote !== null) {
-        console.warn(
-          `[imagery] ${season} ingest window CLOSED on ${closesOn} ` +
-            `(${series.length} sites, ${DEFAULT_THAW_RUN_DAYS} thawed days). ` +
-            `Corpus-wide weather sweep stands down until the next season opens.`,
-        );
-        await ctx.scheduler.runAfter(0, internal.operatorAlerts.broadcastToStaff, {
-          subject: `Skating season ${season} has closed`,
-          heading: `The ${season} season closed on ${closesOn}`,
-          lines: [
-            `Ten consecutive days with no overnight freeze at any of the ${series.length} sampled sites — the reluctant ice-out proxy, which typically lands a couple of weeks after a real Vermont ice-out.`,
-            'Satellite imagery ingest stands down, and so does the corpus-wide weather sweep, until the next season opens.',
-            'This is a region-wide signal about spend, not a claim that any particular lake is unskateable.',
-          ],
-          deepLinkPath: '/admin',
-        });
-      }
-      return { closed: true as const, season, closesOn };
-    }
-
-    const window = ingestWindow(series);
-    if (!window.opensOn) return { open: false as const, season, sitesSampled: series.length };
-
-    const opened = await ctx.runMutation(internal.imageryIngest.recordSeasonOpen, {
-      season,
-      opensOn: window.opensOn,
-      openedBy: window.openedBy,
-      winterFrom: window.winterFrom,
-      sitesSampled: series.length,
-    });
-
-    if (opened.created) {
-      await ctx.scheduler.runAfter(0, internal.operatorAlerts.broadcastToStaff, {
-        subject: `Skating season ${season} has begun`,
-        heading: `The ${season} season opened on ${window.opensOn}`,
-        lines: [
-          `Opened by: ${window.openedBy.join(' + ')} (${series.length} sites reporting).`,
-          window.winterFrom
-            ? `The region itself first froze on ${window.winterFrom}.`
-            : 'Winter has not established region-wide yet — a sentinel pond opened this on its own, which it is allowed to do.',
-          'Satellite imagery ingest is now in season. Next operator step: pnpm --filter @skating/imagery ingest-window',
-          'The corpus-wide weather sweep starts on its next daily tick.',
-        ],
-        deepLinkPath: '/admin',
-      });
-    }
-
-    // The operator-facing signal. Deliberately loud and deliberately not a user notification: this
-    // says "go spend money on a fan-out", which is nobody's push notification.
-    console.warn(
-      `[imagery] ${season} ingest window OPENED on ${window.opensOn} ` +
-        `(by ${window.openedBy.join('+')}, ${series.length} sites). ` +
-        `Next: pnpm --filter @skating/imagery ingest-window`,
-    );
-    return { open: true as const, season, opensOn: window.opensOn, openedBy: window.openedBy };
   },
 });
+
+async function tick(ctx: ActionCtx, nowMs: number): Promise<SeasonWatchResult> {
+  const today = newYorkDate(nowMs);
+
+  // D63's July boundary, via the one definition of the label. `bakeMasks` names the mask artifact
+  // with the same function, so a cut and the row recording why it happened cannot disagree.
+  const season = archiveSeasonAt(nowMs);
+  const config: WatchConfigLike = await ctx.runMutation(internal.seasonWatch.ensureSettings, {});
+  const { settings } = config;
+
+  // ⚠ The floor is on the *calendar*, not on the season label: between July and the floor the
+  // label already reads `winter-YYYY-YY` and a summit can freeze.
+  const floor = seasonFloorDate(season, settings.startMonthDay);
+  if (today < floor) return { skipped: 'before the floor' as const, season };
+
+  // ⚠ **An opened season is not a finished one — the tick keeps running to find the close.**
+  // Imagery and A06h's weather sweep (D161) both stand down only on `closesOn`.
+  const already: Doc<'imageryIngestSeasons'> | null = await ctx.runQuery(
+    internal.imageryIngest.seasonRecord,
+    { season },
+  );
+  if (already?.closesOn !== undefined) {
+    return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+  }
+
+  const sites: GateSite[] = await ctx.runQuery(internal.seasonWatch.gateSites, {
+    sentinels: config.sentinels,
+    pinned: config.pinned,
+    sampleSize: settings.sampleSize,
+  });
+  if (sites.length === 0) return { skipped: 'no sites' as const, season };
+
+  const fetched = await fetchDailyLows(ctx, sites);
+  await ctx.runMutation(internal.seasonWatch.storeSeries, {
+    season,
+    source: 'forecast',
+    sites: fetched
+      .filter((f) => f.days.length > 0)
+      .map(({ site, days }) => ({
+        waterBodyId: site.siteId,
+        name: site.name,
+        ...(site.state ? { state: site.state } : {}),
+        lat: site.lat,
+        lng: site.lng,
+        days,
+      })),
+  });
+
+  // Decide on everything stored this season for the sites sampled now — so a decision can see
+  // further back than one 92-day fetch, and a site dropped from the roster no longer votes.
+  const stored: Doc<'seasonWatchSeries'>[] = await ctx.runQuery(internal.seasonWatch.seasonSeries, {
+    season,
+  });
+  const byId = new Map(sites.map((s) => [s.siteId as string, s]));
+  const series: SiteSeries[] = stored
+    .filter((d) => byId.has(d.waterBodyId))
+    .map((d) => ({
+      siteId: d.waterBodyId,
+      ...(byId.get(d.waterBodyId)?.sentinel ? { sentinel: true } : {}),
+      days: expandLows(d),
+    }));
+  const clipped = clipToFloor(series, floor);
+  if (clipped.length === 0) return { skipped: 'no observations' as const, season };
+
+  const named = (lows: readonly SiteLow[]): NamedSiteLow[] =>
+    lows.map(({ siteId, lowC }) => {
+      const site = byId.get(siteId);
+      return {
+        waterBodyId: siteId as Id<'waterBodies'>,
+        name: site?.name ?? siteId,
+        ...(site?.state ? { state: site.state } : {}),
+        lowC,
+      };
+    });
+
+  if (!already) return await openIfDue(ctx, { season, config, clipped, named });
+  return await followOpenSeason(ctx, { season, settings, already, clipped, named });
+}
+
+interface WatchConfigLike {
+  version: number;
+  settings: SeasonWatchSettings;
+  sentinels: Infer<typeof rosterSite>[];
+  pinned: Infer<typeof rosterSite>[];
+}
+
+interface Evaluated {
+  season: string;
+  clipped: SiteSeries[];
+  named: (lows: readonly SiteLow[]) => NamedSiteLow[];
+}
+
+/** The not-yet-open branch: evaluate the whole season and record the opening if it has come. */
+async function openIfDue(
+  ctx: ActionCtx,
+  { season, config, clipped, named }: Evaluated & { config: WatchConfigLike },
+): Promise<SeasonWatchResult> {
+  const { settings } = config;
+  const evaluation = evaluateSeason(clipped, settings, season);
+  if (!evaluation.opensOn || !evaluation.opening) {
+    return { open: false as const, season, sitesSampled: clipped.length };
+  }
+  await ctx.runMutation(internal.imageryIngest.recordSeasonOpen, {
+    season,
+    opensOn: evaluation.opensOn,
+    openedBy: evaluation.openedBy,
+    winterFrom: evaluation.winterFrom,
+    sitesSampled: clipped.length,
+    settingsVersion: config.version,
+    settings,
+    sentinels: config.sentinels,
+    opening: {
+      sentinels: named(evaluation.opening.sentinels),
+      corpus: evaluation.opening.corpus,
+    },
+    ...(evaluation.winter
+      ? {
+          winter: {
+            frozen: named(evaluation.winter.frozen),
+            reporting: evaluation.winter.reporting,
+          },
+        }
+      : {}),
+    ...(evaluation.imageryNudge
+      ? {
+          imageryNudge: {
+            date: evaluation.imageryNudge.date,
+            sites: named(evaluation.imageryNudge.sites),
+          },
+        }
+      : {}),
+  });
+  // The operator-facing log line. The staff email is queued by the write itself.
+  console.warn(
+    `[season watch] ${season} ice watch OPENED on ${evaluation.opensOn} ` +
+      `(by ${evaluation.openedBy.join('+')}, ${clipped.length} sites).`,
+  );
+  return {
+    open: true as const,
+    season,
+    opensOn: evaluation.opensOn,
+    openedBy: evaluation.openedBy,
+  };
+}
+
+/**
+ * The open branch: fill in what the season has reached since — each fact once, under today's
+ * settings, measured from the **recorded** opening.
+ */
+async function followOpenSeason(
+  ctx: ActionCtx,
+  {
+    season,
+    settings,
+    already,
+    clipped,
+    named,
+  }: Evaluated & { settings: SeasonWatchSettings; already: Doc<'imageryIngestSeasons'> },
+): Promise<SeasonWatchResult> {
+  const options = {
+    freezeC: settings.freezeC,
+    winterFraction: settings.winterFraction,
+    thawC: settings.thawC,
+    thawRunDays: settings.thawRunDays,
+  };
+
+  // The opening night's detail, for a row opened before A06i recorded it.
+  if (already.opening === undefined) {
+    const lowOn = (s: SiteSeries) => s.days.find((d) => d.date === already.opensOn)?.minTempC;
+    const night = clipped.filter((s) => lowOn(s) !== undefined);
+    if (night.length > 0) {
+      const fired = night
+        .filter((s) => s.sentinel && (lowOn(s) as number) <= settings.freezeC)
+        .map((s) => ({ siteId: s.siteId, lowC: lowOn(s) as number }))
+        .sort((a, b) => a.lowC - b.lowC);
+      const ordinary = night.filter((s) => !s.sentinel);
+      await ctx.runMutation(internal.imageryIngest.recordOpeningDetail, {
+        season,
+        sentinels: named(fired),
+        corpus: {
+          frozen: ordinary.filter((s) => (lowOn(s) as number) <= settings.freezeC).length,
+          reporting: ordinary.length,
+        },
+      });
+    }
+  }
+
+  // The winter night's detail, for a row whose winter the old tick recorded without it.
+  if (already.winterFrom !== null && already.winter === undefined) {
+    const on = already.winterFrom;
+    const ordinary = clipped
+      .filter((s) => !s.sentinel)
+      .map((s) => ({ siteId: s.siteId, low: s.days.find((d) => d.date === on)?.minTempC }))
+      .filter((s): s is { siteId: string; low: number } => s.low !== undefined);
+    if (ordinary.length > 0) {
+      await ctx.runMutation(internal.imageryIngest.recordWinterDetail, {
+        season,
+        frozen: named(
+          ordinary
+            .filter((s) => s.low <= settings.freezeC)
+            .map((s) => ({ siteId: s.siteId, lowC: s.low }))
+            .sort((a, b) => a.lowC - b.lowC),
+        ),
+        reporting: ordinary.length,
+      });
+    }
+  }
+
+  // The imagery reminder — looked for from the recorded opening.
+  if (already.imageryNudgeOn === undefined) {
+    const nudge = firstSentinelNightAtOrBelow(clipped, settings.imageryNudgeC, already.opensOn);
+    if (nudge) {
+      await ctx.runMutation(internal.imageryIngest.recordImageryNudge, {
+        season,
+        date: nudge.date,
+        sites: named(nudge.sites),
+        settings,
+      });
+    }
+  }
+
+  // ⚠ **Winter from the RECORDED opening**, not from a re-run of the opening rule: after a stricter
+  // edit that re-run could land later or nowhere, and a season plainly in winter would never close.
+  let winterFrom = already.winterFrom;
+  if (winterFrom === null) {
+    const winter = winterOnOrAfter(clipped, already.opensOn, options);
+    if (winter) {
+      await ctx.runMutation(internal.imageryIngest.recordSeasonWinterFrom, {
+        season,
+        winterFrom: winter.date,
+        frozen: named(winter.frozen),
+        reporting: winter.reporting,
+        settings,
+      });
+      winterFrom = winter.date;
+      console.warn(`[season watch] ${season} winter established region-wide on ${winter.date}`);
+    }
+  }
+  if (winterFrom === null) {
+    return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+  }
+
+  // The close, against the RECORDED winterFrom: by the spring tick that would close a season, the
+  // date the region froze may be months back — see `thawClose`.
+  const closesOn = thawClose(clipped, winterFrom, options);
+  if (!closesOn) {
+    return { open: true as const, season, opensOn: already.opensOn, openedBy: already.openedBy };
+  }
+  const wrote = await ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
+    season,
+    closesOn,
+    sitesSampled: clipped.filter((s) => !s.sentinel).length,
+    settings,
+  });
+  // Logged only on the write that actually closed it — a racing tick prints nothing.
+  if (wrote !== null) {
+    console.warn(
+      `[season watch] ${season} ice watch ENDED on ${closesOn} (${clipped.length} sites, ` +
+        `${settings.thawRunDays} thawed days). Imagery and the weather sweep stand down.`,
+    );
+  }
+  return { closed: true as const, season, closesOn };
+}

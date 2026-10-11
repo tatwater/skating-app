@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_THAW_RUN_DAYS,
   dailyLowsFromHourly,
+  dailyLowsFromOpenMeteo,
   ingestWindow,
   type SiteSeries,
   thawClose,
@@ -64,6 +65,8 @@ describe('ingestWindow — opening', () => {
       winterFrom: null,
       closesOn: null,
       openedBy: [],
+      opening: null,
+      winter: null,
     });
   });
 
@@ -283,6 +286,37 @@ describe('thawClose — the live checker cannot re-derive winterFrom', () => {
     ];
     // Freeze-up recorded mid-window: the run may only start after it, so the close slips by five.
     expect(thawClose(days, '2026-04-05')).toBe('2026-04-15');
+  });
+});
+
+describe('dailyLowsFromOpenMeteo — one hourly row, cut the same way everywhere', () => {
+  const day = (startMs: number) => Array.from({ length: 24 }, (_, i) => startMs / 1000 + i * 3600);
+
+  it('cuts by the zone Open-Meteo resolved, ahead of its request-time offset', () => {
+    // 2025-12-22 05:00Z is 00:00 EST; the row's offset (EDT) would cut an hour early.
+    const time = [...day(Date.UTC(2025, 11, 22, 5)), ...day(Date.UTC(2025, 11, 23, 5))];
+    const temperature_2m = time.map((t) => (t === Date.UTC(2025, 11, 23, 4) / 1000 ? -9 : 1));
+    const row = {
+      timezone: 'America/New_York',
+      utc_offset_seconds: -4 * 3600,
+      hourly: { time, temperature_2m },
+    };
+    expect(dailyLowsFromOpenMeteo(row, -71.65)).toEqual([
+      { date: '2025-12-22', minTempC: -9 },
+      { date: '2025-12-23', minTempC: 1 },
+    ]);
+  });
+
+  it('falls back to the offset, then the longitude; no row is no days', () => {
+    const time = day(Date.UTC(2025, 11, 22, 5));
+    const hourly = { time, temperature_2m: time.map(() => -2) };
+    expect(dailyLowsFromOpenMeteo({ utc_offset_seconds: -5 * 3600, hourly }, 0)).toEqual([
+      { date: '2025-12-22', minTempC: -2 },
+    ]);
+    expect(dailyLowsFromOpenMeteo({ timezone: '', hourly }, -75)).toEqual([
+      { date: '2025-12-22', minTempC: -2 },
+    ]);
+    expect(dailyLowsFromOpenMeteo(undefined, -71.65)).toEqual([]);
   });
 });
 

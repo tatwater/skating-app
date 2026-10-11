@@ -258,20 +258,43 @@ crons.interval(
 );
 
 /**
- * Watch for the imagery season to open (A06e §3.3 / D149) — the other once-a-year job, same shape.
+ * The season watch (A06e §3.3 / D149; A06i) — the other once-a-year job, same shape.
  *
- * Daily from 1 October, this asks the observed weather whether freeze-up has started, and records the
- * answer once per season. It **does not** start a backfill: cutting granules spends money on
- * infrastructure this deployment cannot see, so the cron notices and an operator acts.
- *
- * A no-op for ten months of the year, and a single indexed read for the rest of the season once the
- * window has been recorded. See `imageryIngest.ts` for why the floor is October rather than
- * September — the summit trigger can register a freeze on Mt Washington in August.
+ * Daily from the settings' floor (1 October by default), this keeps the observed overnight lows,
+ * records when the ice watch opens, the first 20 °F sentinel night, winter region-wide and the end,
+ * and sends at most one queued staff email a day (D212). It **does not** start the imagery: an admin
+ * does, on `/admin/seasons` (D214). See `imageryIngest.ts` for why there is a floor at all — the
+ * summit trigger can register a freeze on Mt Washington in August.
  */
 crons.interval(
   'watch for the imagery season to open',
   { hours: 24 },
   internal.imageryIngest.maybeCheckSeasonOpen,
+  {},
+);
+
+/**
+ * Live satellite imagery (A06i §5 / D214). Every six hours, once an admin has pressed *Start imagery*
+ * on `/admin/seasons`, ask the catalog for passes published since the last check and queue each new
+ * one for the pump. Whenever imagery is not running — most of the year — it is one indexed read and
+ * a wake of the pump, which finds nothing to do and schedules nothing.
+ *
+ * Six hours rather than timed to orbits: what matters is when a processed granule reaches the
+ * catalog, and that lags the pass by hours to a day on no schedule. One cheap request finds out.
+ */
+crons.interval('poll for new satellite imagery', { hours: 6 }, internal.imageryLive.poll, {});
+
+/**
+ * The live imagery pump and index build (A06i §5 / D214). Fixed ticks rather than runs that schedule
+ * their own next run — a fixed tick cannot be lost, doubled or wedged, which three review rounds of
+ * self-scheduling could not say. With nothing queued or cutting, the pump tick is one read; with no
+ * new frame, the index tick is one read.
+ */
+crons.interval('pump live satellite imagery', { minutes: 3 }, internal.imageryLive.pump, {});
+crons.interval(
+  'rebuild the live imagery index',
+  { minutes: 10 },
+  internal.imageryLive.buildIndex,
   {},
 );
 

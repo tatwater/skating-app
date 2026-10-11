@@ -21,10 +21,13 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
-
-import { latestSeasonWithFrames, type SeasonIndex } from '@skating/core';
+import {
+  buildSeasonIndex,
+  type FrameManifest,
+  latestSeasonWithFrames,
+  type SeasonIndex,
+} from '@skating/core';
 import { flag, has, SCRATCH } from './cli';
-import { buildSeasonIndex, type FrameManifest } from './frameIndex';
 
 function rclone(args: string[]): string {
   return execFileSync('rclone', [...args, '--s3-no-check-bucket'], {
