@@ -210,6 +210,16 @@ half an hour, doubling to six hours while it stays unreadable, with one email a 
 the page (*Try again now* ends it). A first version backed the whole index job off, which held back
 good frames landing meanwhile — the third self-review pass caught it; only the retry waits now.
 
+Greptile's second pass (2026-10-11) found three. **Empty needs proof:** a destroyed Machine is gone
+from the Fly API (none of the A06e backfill's thousands were listed, even with `include_deleted`), so
+its exit code usually is too, and a cut gone without a frame was filed *empty*. The cutter now writes
+`cuts/<season>/<granuleId>.empty.json` when it has nothing to cut; without that record or a seen zero
+exit, a last miss is *failed*. **A recut is read again:** the listing's ETag is kept on each frame row,
+and a changed one re-reads the manifest — signed, past the CDN. **A reset keeps the day's email mark:**
+it lives in `dailyThrottle`, not on the resettable row. Re-filling the lows on dev the same day showed
+hourly answers arriving slowly or cut off from Convex, so the tick and the fill fetch three sites a
+request with one retry (`fetchHourlyRows`).
+
 ### §6 — `/admin/seasons`
 
 The current watch (state, dates, sentinels, *Reset*), imagery (*Start* / *Pause*, the run history),

@@ -498,6 +498,11 @@ Plenty of granules over five states cover only land, or Québec, or ocean. Those
 "nothing to cut". Exiting non-zero would light up a fan-out with red for jobs that did exactly the
 right thing, and that noise is how a real failure gets missed.
 
+Before exiting, it writes **`cuts/<season>/<granuleId>.empty.json`** — the bucket's record that the
+granule was looked at and held nothing. The live job needs it (A06i, D214): a Machine auto-destroys on
+exit and its exit code goes with it, so without the record a cut gone without a frame cannot be told
+from a failure, and the job files it as failed. Outside `frames/`, so no index listing sees it.
+
 ### Two failure directions, and which one this takes
 
 `revealShape` returns `null` when a union collapses, and core is explicit that this means *"do not

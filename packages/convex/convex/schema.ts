@@ -1345,6 +1345,8 @@ export default defineSchema({
     bands: v.array(v.string()),
     footprint: v.optional(geoJson),
     orbitDirection: v.optional(v.string()),
+    /** The manifest's ETag when it was read: a recut overwrites the key, and a new ETag says so. */
+    etag: v.optional(v.string()),
   })
     .index('by_season', ['season', 'capturedAt'])
     .index('by_manifest', ['manifestKey']),

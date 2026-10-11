@@ -53,6 +53,8 @@ export function r2ConfigFromEnv(
 /** One page of a ListObjectsV2 response. XML by regex: the shape is fixed and tiny. */
 export function parseListObjects(xml: string): {
   keys: string[];
+  /** Each object's key and ETag — the ETag changes when the object is overwritten. */
+  objects: ListedObject[];
   truncated: boolean;
   next: string | null;
 } {
@@ -64,9 +66,29 @@ export function parseListObjects(xml: string): {
       .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&');
   const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map((m) => decodeXml(m[1] as string));
+  const blocks = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)];
+  const parsedObjects = blocks.flatMap((m) => {
+    const block = m[1] as string;
+    const key = /<Key>([^<]*)<\/Key>/.exec(block)?.[1];
+    if (key === undefined) return [];
+    const etag = /<ETag>([^<]*)<\/ETag>/.exec(block)?.[1];
+    return [
+      {
+        key: decodeXml(key),
+        ...(etag ? { etag: decodeXml(etag).replace(/^"|"$/g, '') } : {}),
+      },
+    ];
+  });
+  // A listing without `<Contents>` wrappers (no real S3 sends one) still yields its keys.
+  const objects = blocks.length > 0 ? parsedObjects : keys.map((key) => ({ key }));
   const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
   const next = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(xml)?.[1];
-  return { keys, truncated, next: next ? decodeXml(next) : null };
+  return { keys, objects, truncated, next: next ? decodeXml(next) : null };
+}
+
+export interface ListedObject {
+  key: string;
+  etag?: string;
 }
 
 /** The most pages a listing may follow — a season is ~15 pages of 1,000; this is a loop guard. */
@@ -74,7 +96,12 @@ const MAX_LIST_PAGES = 100;
 
 /** Every key under `prefix`. */
 export async function listKeys(config: R2Config, prefix: string): Promise<string[]> {
-  const keys: string[] = [];
+  return (await listObjects(config, prefix)).map((o) => o.key);
+}
+
+/** Every object under `prefix`, with its ETag. */
+export async function listObjects(config: R2Config, prefix: string): Promise<ListedObject[]> {
+  const objects: ListedObject[] = [];
   let token: string | null = null;
   for (let page = 0; page < MAX_LIST_PAGES; page++) {
     const params = new URLSearchParams({ 'list-type': '2', prefix, 'max-keys': '1000' });
@@ -85,8 +112,8 @@ export async function listKeys(config: R2Config, prefix: string): Promise<string
     );
     if (!res.ok) throw new Error(`R2 list ${prefix}: ${res.status} ${res.statusText}`);
     const parsed = parseListObjects(await res.text());
-    keys.push(...parsed.keys);
-    if (!parsed.truncated || !parsed.next) return keys;
+    objects.push(...parsed.objects);
+    if (!parsed.truncated || !parsed.next) return objects;
     token = parsed.next;
   }
   throw new Error(`R2 list ${prefix}: still truncated after ${MAX_LIST_PAGES} pages`);
@@ -102,6 +129,21 @@ export async function putJson(config: R2Config, key: string, body: unknown): Pro
     body: `${JSON.stringify(body)}\n`,
   });
   if (!res.ok) throw new Error(`R2 put ${key}: ${res.status} ${res.statusText}`);
+}
+
+/**
+ * Read an object as JSON through the signed endpoint — the bucket itself, past any CDN cache — or
+ * `null` on a 404. For what must be current: a recut manifest read through a cache could be the
+ * old one, stored against the new ETag, and never read again.
+ */
+export async function getJson<T>(config: R2Config, key: string): Promise<T | null> {
+  // Signed, then sent once: the caller already retries what it cannot read (the index's retry
+  // wait), so the client's own 5xx retries would only stretch a dead read.
+  const signed = await config.client.sign(`${config.endpoint}/${config.bucket}/${key}`);
+  const res = await fetch(signed, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`R2 get ${key}: ${res.status} ${res.statusText}`);
+  return (await res.json()) as T;
 }
 
 /** Read a public object as JSON, or `null` on a 404. */

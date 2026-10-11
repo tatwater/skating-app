@@ -773,6 +773,21 @@ measure_ndsi() {
   mv bodies-ndsi.json bodies.json
 }
 
+# The bucket's record that this granule was looked at and held nothing to cut. ⚠ **The live job's only
+# proof of *empty*** (A06i, PR #85): a Machine auto-destroys on exit and its exit code goes with it,
+# so a cut gone without a frame is *failed* unless this is in the bucket. Written before exiting 0;
+# a failed write exits non-zero, which is a visible failure rather than a silent one.
+# `imageryLive.emptyMarkerKey` names the same key.
+mark_nothing_to_cut() {
+  local key="cuts/${FRAME_SEASON}/${GRANULE_ID}.empty.json"
+  jq -n --arg granuleId "$GRANULE_ID" --arg season "$FRAME_SEASON" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{granuleId: $granuleId, season: $season, at: $at, reason: "no corpus bodies under this granule"}' \
+    > nothing-to-cut.json || die "could not write the nothing-to-cut record"
+  rclone --config "$RCLONE_CONF" copyto nothing-to-cut.json "r2:${R2_BUCKET}/${key}" \
+    --s3-no-check-bucket || die "could not record nothing-to-cut at ${key}"
+}
+
 transform_granule() {
   fetch_masks
 
@@ -781,6 +796,7 @@ transform_granule() {
   # did exactly the right thing, and the noise would hide a real failure.
   if [[ "$MASK_COUNT" -eq 0 ]]; then
     log "no corpus bodies under this granule — nothing to cut"
+    mark_nothing_to_cut
     return 0
   fi
 
@@ -1134,6 +1150,7 @@ transform_sar() {
   fetch_masks
   if [[ "$MASK_COUNT" -eq 0 ]]; then
     log "no corpus bodies under this pass — nothing to cut"
+    mark_nothing_to_cut
     return 0
   fi
 

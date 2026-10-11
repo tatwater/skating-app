@@ -3,7 +3,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { POLL_CAP, slotOf } from './imageryLive';
+import { emptyMarkerKey, POLL_CAP, slotOf } from './imageryLive';
 import { unreadableRetryMs } from './lib/imageryPump';
 import schema from './schema';
 
@@ -87,6 +87,13 @@ function world(overrides: Partial<World> = {}): World {
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
+/** A stand-in ETag: any change to the stored content changes it. */
+const etag = (value: unknown) => {
+  let h = 0;
+  for (const c of JSON.stringify(value) ?? '') h = (h * 31 + c.charCodeAt(0)) | 0;
+  return (h >>> 0).toString(16);
+};
+
 function stub(w: World) {
   vi.stubGlobal(
     'fetch',
@@ -120,9 +127,24 @@ function stub(w: World) {
           w.puts.set(url.pathname.replace('/skating-imagery/', ''), JSON.parse(await req.text()));
           return new Response('');
         }
-        const keys = [...w.manifests.keys()].map((k) => `<Key>${k}</Key>`).join('');
+        // A signed read of one object, straight from the bucket.
+        const key = url.pathname
+          .replace('/skating-imagery/', '')
+          .replace(/^\/skating-imagery$/, '');
+        if (key && !url.searchParams.has('list-type')) {
+          const found = w.manifests.get(key);
+          if (found === 'error') return new Response('', { status: 500, statusText: 'Err' });
+          if (found === undefined || found === null) return new Response('', { status: 404 });
+          return json(found);
+        }
+        // The listing, each object with an ETag that changes when its content does.
+        const contents = [...w.manifests.entries()]
+          .map(
+            ([k, v]) => `<Contents><Key>${k}</Key><ETag>&quot;${etag(v)}&quot;</ETag></Contents>`,
+          )
+          .join('');
         return new Response(
-          `<ListBucketResult>${keys}<IsTruncated>false</IsTruncated></ListBucketResult>`,
+          `<ListBucketResult>${contents}<IsTruncated>false</IsTruncated></ListBucketResult>`,
         );
       }
       if (url.host === 'api.machines.dev') {
@@ -870,6 +892,47 @@ describe('pump — settling cuts', () => {
     });
   });
 
+  test('empty needs proof: a Machine gone from the API is failed, unless the cutter recorded nothing to cut', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: Date.now() });
+    const vanished = s2('19TEA', '20261005');
+    const recorded = s2('19TEB', '20261005');
+    const recordedFirstTry = s2('19TEC', '20261005');
+    const spawnedAt = Date.now() - 30 * 60_000;
+    // Both Machines auto-destroyed and the API no longer knows them (a 404): no exit code at all.
+    await queue(t, [vanished, recorded], {
+      status: 'spawned',
+      attempts: 2,
+      machineId: 'gone',
+      spawnedAt,
+    });
+    await queue(t, [recordedFirstTry], {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'gone',
+      spawnedAt,
+    });
+    stub(
+      world({
+        manifests: new Map<string, unknown>([
+          [emptyMarkerKey(SEASON, recorded), { granuleId: recorded }],
+          [emptyMarkerKey(SEASON, recordedFirstTry), { granuleId: recordedFirstTry }],
+        ]),
+      }),
+    );
+    expect(await pumpNow(t)).toMatchObject({ empty: 2, failed: 1, requeued: 0 });
+    const by = new Map((await granules(t)).map((g) => [g.granuleId, g]));
+    expect(by.get(vanished)).toMatchObject({
+      status: 'failed',
+      lastError: 'gone with no frame and no nothing-to-cut record',
+    });
+    expect(by.get(recorded)?.status).toBe('empty');
+    // The record settles a first miss too: no retry for a granule known to hold nothing.
+    expect(by.get(recordedFirstTry)?.status).toBe('empty');
+    // Outside `frames/`, so the index never lists it as a frame.
+    expect(emptyMarkerKey(SEASON, recorded).startsWith('frames/')).toBe(false);
+  });
+
   test('a first miss that exited non-zero keeps the code', async () => {
     const t = convexTest(schema, modules);
     const id = s2('19TEA', '20261005');
@@ -1137,6 +1200,31 @@ describe('buildIndex', () => {
     expect([1, 2, 3, 4, 5, 6, 9].map((n) => unreadableRetryMs(n) / 60_000)).toEqual([
       30, 60, 120, 240, 360, 360, 360,
     ]);
+  });
+
+  test('a recut manifest is read again: its new ETag retires the saved row', async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    const a = s2('19TEA', '20261005');
+    const key = `frames/${SEASON}/${a}.json`;
+    const w = world({
+      manifests: new Map<string, unknown>([[key, manifest(a, '2026-10-05T15:30:00Z')]]),
+    });
+    stub(w);
+    await t.action(internal.imageryLive.buildIndex, {});
+    // A manual recut writes the same key: one band now, and a different body count.
+    w.manifests.set(key, manifest(a, '2026-10-05T15:30:00Z', { bands: ['visual'], bodyCount: 15 }));
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 1 });
+    const index = w.puts.get(`index/${SEASON}.json`) as { frames: { band: string }[] };
+    expect(index.frames.map((f) => f.band)).toEqual(['visual']);
+    const rows = await t.run((ctx) => ctx.db.query('imageryFrames').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ bodyCount: 15, bands: ['visual'] });
+    // Unchanged since: the next build reuses the row and reads nothing.
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 0 });
   });
 
   test('a failed rebuild alerts the admins', async () => {

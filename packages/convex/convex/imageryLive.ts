@@ -101,8 +101,9 @@ import {
   SPAWN_BREAKER,
 } from './lib/imageryPump';
 import {
+  getJson,
   getPublicJson,
-  listKeys,
+  listObjects,
   publicExists,
   putJson,
   type R2Config,
@@ -745,7 +746,23 @@ type Verdict =
     }
   | { kind: 'running' | 'young' | 'unknown' };
 
-/** What the bucket and Fly say about one cut in flight. Never throws: a failed read is `unknown`. */
+/**
+ * Where the cutter records a granule it looked at and found nothing to cut under (`cut-granule.sh`,
+ * `mark_nothing_to_cut`) — outside `frames/`, so the index's listing never mistakes it for a frame.
+ */
+export function emptyMarkerKey(season: string, granuleId: string): string {
+  return `cuts/${season}/${granuleId}.empty.json`;
+}
+
+/**
+ * What the bucket and Fly say about one cut in flight. Never throws: a failed read is `unknown`.
+ *
+ * ⚠ **Empty needs proof.** Machines auto-destroy on exit, and a destroyed Machine is gone from the
+ * API (2026-10-11: none of the A06e backfill's thousands were listed, even with `include_deleted`),
+ * so its exit code usually is too. A cut gone without a frame is *empty* only on the cutter's
+ * nothing-to-cut record or a seen zero exit; anything else, on its last attempt, is *failed* — an
+ * email and *Retry failed*, rather than a real failure filed as an empty pass.
+ */
 async function check(
   config: { fly: FlyConfig; r2: R2Config },
   granule: Doc<'imageryGranules'>,
@@ -764,6 +781,9 @@ async function check(
     if (await publicExists(config.r2, `frames/${granule.season}/${granule.granuleId}.json`)) {
       return settle('landed');
     }
+    if (await publicExists(config.r2, emptyMarkerKey(granule.season, granule.granuleId))) {
+      return settle('empty');
+    }
     let exitCode: number | null = null;
     if (granule.machineId) {
       const machine = await getMachine(config.fly, granule.machineId);
@@ -772,8 +792,8 @@ async function check(
     } else if (age < LOST_CLAIM_MS) {
       return { kind: 'young' }; // a claim whose spawn call may still be returning
     }
-    // Gone without a manifest. The first miss is always retried: a spawn that never started and a
-    // genuinely empty granule look the same from here, and a retry costs seconds.
+    // Gone without a frame or a nothing-to-cut record. The first miss is always retried: a spawn
+    // that never started, a crash and an image too old to write the record all look the same here.
     if (granule.attempts < MAX_ATTEMPTS) {
       return settle(
         'queued',
@@ -782,11 +802,12 @@ async function check(
     }
     if (exitCode !== null && exitCode !== 0) return settle('failed', `exit ${exitCode}`);
     // ⚠ **Never confirmed is not empty.** A claim with no Machine id timed out or died mid-call: no
-    // Machine was ever seen, so nothing says the granule had nothing to cut. Failed, with an email
-    // and *Retry failed*, rather than a real pass silently dropped.
+    // Machine was ever seen, so nothing says the granule had nothing to cut.
     if (!granule.machineId) return settle('failed', 'spawn never confirmed');
-    // `cut-granule` exits 0 on "nothing to cut" — a footprint that misses every body.
-    return settle('empty');
+    // A seen zero exit with no record is a cutter image from before the record existed: it exits 0
+    // on "nothing to cut" — a footprint that misses every body.
+    if (exitCode === 0) return settle('empty');
+    return settle('failed', 'gone with no frame and no nothing-to-cut record');
   } catch {
     return { kind: 'unknown' }; // the archive or the Fly API blinked; look again next beat
   }
@@ -1112,6 +1133,7 @@ const frameRow = v.object({
   bands: v.array(v.string()),
   footprint: v.optional(geoJson),
   orbitDirection: v.optional(v.string()),
+  etag: v.optional(v.string()),
 });
 
 export const syncFrames = internalMutation({
@@ -1131,7 +1153,7 @@ export const syncFrames = internalMutation({
 });
 
 /** A manifest reduced to what the season index carries — the per-body stats stay in R2. */
-export function frameFromManifest(manifestKey: string, m: FrameManifest) {
+export function frameFromManifest(manifestKey: string, m: FrameManifest, etag?: string) {
   return {
     season: m.season,
     manifestKey,
@@ -1142,6 +1164,7 @@ export function frameFromManifest(manifestKey: string, m: FrameManifest) {
     bands: m.bands ?? [m.band ?? 'visual'],
     ...(m.footprint ? { footprint: m.footprint } : {}),
     ...(m.orbitDirection ? { orbitDirection: m.orbitDirection } : {}),
+    ...(etag ? { etag } : {}),
   };
 }
 
@@ -1192,10 +1215,12 @@ async function buildIndexOnce(
   const config = configured();
   if (!config.ok) return null;
   try {
-    const listed = (await listKeys(config.r2, `frames/${season}/`)).filter((k) =>
-      k.endsWith('.json'),
+    const objects = (await listObjects(config.r2, `frames/${season}/`)).filter((o) =>
+      o.key.endsWith('.json'),
     );
+    const listed = objects.map((o) => o.key);
     const listedSet = new Set(listed);
+    const etagOf = new Map(objects.map((o) => [o.key, o.etag]));
 
     const rows: Doc<'imageryFrames'>[] = [];
     let cursor: string | null = null;
@@ -1206,27 +1231,41 @@ async function buildIndexOnce(
       cursor = page.isDone ? null : page.continueCursor;
     } while (cursor);
 
-    const known = new Set(rows.map((r) => r.manifestKey));
+    // ⚠ **A saved row is reused only while its manifest is unchanged.** A recut (`backfill`) writes
+    // the same key again; its ETag is what says so, and a stale row would carry the old bands,
+    // footprint and body count into the index — over the CLI's corrected one.
+    const current = (r: Doc<'imageryFrames'>) => {
+      const etag = etagOf.get(r.manifestKey);
+      return etag === undefined || r.etag === etag;
+    };
+    const byKey = new Map(rows.map((r) => [r.manifestKey, r]));
     const remove = rows
       .filter((r) => !listedSet.has(r.manifestKey))
       .map((r) => r._id as Id<'imageryFrames'>);
-    const fresh = listed.filter((k) => !known.has(k));
+    const fresh = listed.filter((k) => {
+      const row = byKey.get(k);
+      return !row || !current(row);
+    });
     const added: ReturnType<typeof frameFromManifest>[] = [];
+    const reread = new Set<string>();
     let unreadable = 0;
     for (let i = 0; i < fresh.length; i += MANIFEST_CONCURRENCY) {
       const batch = await Promise.all(
         fresh.slice(i, i + MANIFEST_CONCURRENCY).map(async (key) => {
           try {
-            const manifest = await getPublicJson<FrameManifest>(config.r2, key);
-            return manifest ? frameFromManifest(key, manifest) : null;
+            // Signed, past the CDN: a recut read through a cache could still be the old manifest.
+            const manifest = await getJson<FrameManifest>(config.r2, key);
+            return manifest ? frameFromManifest(key, manifest, etagOf.get(key)) : null;
           } catch {
             return null;
           }
         }),
       );
       for (const row of batch) {
-        if (row) added.push(row);
-        else unreadable++;
+        if (row) {
+          added.push(row);
+          reread.add(row.manifestKey);
+        } else unreadable++;
       }
     }
     for (let i = 0; i < Math.max(added.length, remove.length); i += 100) {
@@ -1236,7 +1275,9 @@ async function buildIndexOnce(
       });
     }
 
-    const keep = rows.filter((r) => listedSet.has(r.manifestKey));
+    // A changed manifest that could not be read keeps its old row until it can (counted unreadable,
+    // so it is retried): an older description of the frame beats no frame.
+    const keep = rows.filter((r) => listedSet.has(r.manifestKey) && !reread.has(r.manifestKey));
     const manifests: FrameManifest[] = [...keep, ...added].map((r) => ({
       granuleId: r.granuleId,
       capturedAt: r.capturedAt,

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  getJson,
   getPublicJson,
   listKeys,
   parseListObjects,
@@ -45,11 +46,17 @@ describe('listing', () => {
   it('parses keys, truncation and the continuation token, unescaping entities', () => {
     expect(
       parseListObjects(
-        '<ListBucketResult><Contents><Key>frames/a&amp;b.json</Key></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>t&lt;1</NextContinuationToken></ListBucketResult>',
+        '<ListBucketResult><Contents><Key>frames/a&amp;b.json</Key><ETag>&quot;abc123&quot;</ETag></Contents><Contents><Key>frames/c.json</Key></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>t&lt;1</NextContinuationToken></ListBucketResult>',
       ),
-    ).toEqual({ keys: ['frames/a&b.json'], truncated: true, next: 't<1' });
+    ).toEqual({
+      keys: ['frames/a&b.json', 'frames/c.json'],
+      objects: [{ key: 'frames/a&b.json', etag: 'abc123' }, { key: 'frames/c.json' }],
+      truncated: true,
+      next: 't<1',
+    });
     expect(parseListObjects('<IsTruncated>false</IsTruncated>')).toEqual({
       keys: [],
+      objects: [],
       truncated: false,
       next: null,
     });
@@ -73,6 +80,29 @@ describe('listing', () => {
     expect(await listKeys(config(), 'frames/winter-2026-27/')).toEqual(['a.json', 'b.json']);
     expect(urls[0]).toContain('https://acct.r2.cloudflarestorage.com/skating-imagery?list-type=2');
     expect(urls[0]).toContain('prefix=frames%2Fwinter-2026-27%2F');
+  });
+
+  it('reads one object signed, straight from the bucket: JSON, null on a 404, a throw otherwise', async () => {
+    const seen: Request[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string) => {
+        const req = input instanceof Request ? input : new Request(input);
+        seen.push(req);
+        if (req.url.endsWith('/missing.json')) return new Response('', { status: 404 });
+        if (req.url.endsWith('/broken.json')) return new Response('', { status: 500 });
+        return new Response('{"a":1}');
+      }),
+    );
+    expect(await getJson(config(), 'frames/x.json')).toEqual({ a: 1 });
+    expect(seen[0]?.url).toBe(
+      'https://acct.r2.cloudflarestorage.com/skating-imagery/frames/x.json',
+    );
+    expect(seen[0]?.headers.get('authorization')).toContain('AWS4-HMAC-SHA256');
+    expect(await getJson(config(), 'missing.json')).toBeNull();
+    await expect(getJson(config(), 'broken.json')).rejects.toThrow(/R2 get broken.json: 500/);
+    // Sent once: no retry of its own.
+    expect(seen).toHaveLength(3);
   });
 
   it('refuses a listing that never ends, and reports a failed one', async () => {
