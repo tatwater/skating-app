@@ -2765,6 +2765,22 @@ export default defineSchema({
     // reads the live rows, and `gt(0)` (never a bare range) the removed.
     .index('by_water_body_removed', ['waterBodyId', 'removedAt']),
 
+  /**
+   * What each catalog source read on the complete landmark loads this deployment accepted (D202) —
+   * the bar a later load's sources must clear before it may retire anything
+   * (`landmarkSourceShortfalls`). In the deployment, not a scratch file, because it vouches for
+   * what *this deployment's* rows were built from; written only after a complete load applied
+   * without a failed batch (`landmarks.acceptCompleteLoad`), so a transform nobody loaded never
+   * moves it. One row per accepted load; the newest is the bar.
+   */
+  landmarkSourceBaselines: defineTable({
+    sources: v.array(v.object({ source: v.string(), count: v.number() })),
+    campaignId: v.optional(v.string()),
+    /** The operator said a shortfall was a real shrink (`--accept-source-drop`). */
+    acceptedShrink: v.optional(v.boolean()),
+    acceptedAt: v.number(),
+  }).index('by_accepted_at', ['acceptedAt']),
+
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).
 

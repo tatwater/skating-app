@@ -5,6 +5,7 @@
  * `complete` is what lets the importer retire a catalog row, so the rule that marks one is tested.
  */
 
+import type { LandmarkSourceCount } from '@skating/core';
 import type { PlacedLandmark } from './landmarkMatch';
 
 export interface BodyLine {
@@ -22,44 +23,6 @@ export interface BodyLine {
 export function runIsComplete(selected: readonly string[], all: readonly string[]): boolean {
   const ran = new Set(selected.map((s) => s.toLowerCase()));
   return all.every((s) => ran.has(s.toLowerCase()));
-}
-
-/** How far a source's candidate count may fall below its last good count and still vouch. */
-export const MAX_SOURCE_SHRINK = 0.1;
-
-/**
- * May this run vouch for a complete list? Every state must have run, and **every source must have
- * read what it read last time** — a truncated or empty cached extract (an osmium run cut short, a
- * GNIS file half-downloaded) would otherwise read as thousands of catalog removals and retire valid
- * labels. A source with no candidates, or more than {@link MAX_SOURCE_SHRINK} under its last good
- * count (`state.osm`, `state.gnis`), is a shortfall; any shortfall leaves the run incomplete — it
- * still adds and updates, and retires nothing — unless `acceptShrink` says the drop is real.
- *
- * The baseline moves only on a run that vouches, so one bad extract cannot lower the bar for the
- * next. With no baseline yet, only an empty source is caught.
- */
-export function runCompleteness(
-  selected: readonly string[],
-  all: readonly string[],
-  counts: Readonly<Record<string, number>>,
-  baseline: Readonly<Record<string, number>> | undefined,
-  acceptShrink: boolean,
-): { complete: boolean; shortfalls: string[]; baseline: Record<string, number> | undefined } {
-  const shortfalls: string[] = [];
-  for (const [source, n] of Object.entries(counts)) {
-    const last = baseline?.[source];
-    if (n === 0) shortfalls.push(`${source}: no candidates`);
-    else if (last !== undefined && n < last * (1 - MAX_SOURCE_SHRINK)) {
-      const pct = Math.round((1 - n / last) * 100);
-      shortfalls.push(`${source}: ${n} candidates, ${pct}% under the last good run's ${last}`);
-    }
-  }
-  const vouches = shortfalls.length === 0 || acceptShrink;
-  return {
-    complete: runIsComplete(selected, all) && vouches,
-    shortfalls,
-    baseline: vouches ? { ...baseline, ...counts } : baseline,
-  };
 }
 
 /**
@@ -114,6 +77,8 @@ export function packLines(lines: readonly BodyLine[], batchSize: number): BodyLi
 export interface TransformSummary {
   corpusApplied?: boolean;
   complete?: boolean;
+  /** Each catalog source's candidate count, `vt.osm` / `vt.gnis` — what vouches for `complete`. */
+  bySource?: Record<string, number>;
   /**
    * When `bodies.ndjson` was exported (epoch ms) — sent with every batch as `matchedAt`, so the
    * importer never drops a row a merge moved onto its body after the export the run was matched to.
@@ -134,4 +99,31 @@ export function applyRefusal(
     return 'the transform ran without the corpus (--mentions); applying it would erase every corpus count and community spelling. Re-run the transform with --mentions, or pass --without-corpus to mean it.';
   }
   return null;
+}
+
+/**
+ * What the run's sources read, as the importer weighs them against the deployment's last accepted
+ * complete load (`landmarkSourceShortfalls`). `undefined` — and so no retirement — when the summary
+ * does not say.
+ */
+export function summarySources(
+  summary: TransformSummary | undefined,
+): LandmarkSourceCount[] | undefined {
+  const bySource = summary?.bySource;
+  if (!bySource) return undefined;
+  return Object.entries(bySource).map(([source, count]) => ({ source, count }));
+}
+
+/**
+ * Should the loader ask the deployment to take this load as its new source baseline? Only an applied
+ * load with complete lines and not one failed batch: a dry run, a partial run, or a load some of whose
+ * bodies never landed must not move the bar a later load is held to. (The deployment re-checks the
+ * sources itself, `landmarks.acceptCompleteLoad`.)
+ */
+export function acceptsLoad(run: {
+  apply: boolean;
+  lines: readonly BodyLine[];
+  failedBatches: number;
+}): boolean {
+  return run.apply && run.failedBatches === 0 && run.lines.some((l) => l.complete === true);
 }

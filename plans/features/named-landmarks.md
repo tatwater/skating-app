@@ -139,8 +139,12 @@ moderator's worklist and the proposal lane's first customers.
   placed on a lake stayed labeled forever. A run of every state now marks each body's line
   `complete` (an empty line if it placed nothing) and the import retires the catalog rows such a line
   lacks — softly, since reports point at rows by id. And only when the sources vouch (Greptile's
-  second round): a truncated or empty cached extract would have read as thousands of removals, so
-  each state's OSM and GNIS count must be within 10% of the last good run's or nothing is retired. Not a partial run: a VT pond 500 m from an NH
+  second and third rounds): a truncated or empty cached extract would have read as thousands of
+  removals, so each state's OSM and GNIS count must be within 3% of the last complete load the
+  *deployment* accepted — a local baseline moved on every transform, loaded or not, and could drift
+  down in steps under the margin. The importer enforces it; the loader moves the bar only after a
+  clean applied load; a lake losing most of its labels at once holds them; and the caches are
+  renamed into place, so an interrupted osmium run no longer leaves a truncated file to reuse. Not a partial run: a VT pond 500 m from an NH
   village holds a label only the NH catalogs place. A candidate skipped for a bay's name still keeps
   its row (the far Mud Bay); a moderator's new row at the same place wins over a returning drop.
 - *Bridges are drawn sparse, and stop at the shore* (Greptile on #83, measured 2026-10-10) — the
@@ -155,6 +159,8 @@ moderator's worklist and the proposal lane's first customers.
   resolver the import uses (`LandmarkRowIndex`), so the two writers cannot disagree about a pair.
   A moved row carries `movedAt`, and a run matched against a body export older than the merge never
   drops it — that export placed its catalogs on the lake that no longer exists.
+  A fold fills what the kept row lacks — a footprint, a specific kind over `other` — but never a
+  moderator's name, kind or point: their `other` is a call, not a gap.
 - *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
   Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
 

@@ -319,14 +319,19 @@ export async function repointLandmarksOnMerge(
         const keeper = takeRow ? row : twin;
         const other = takeRow ? twin : row;
         // What the keeper lacks, the other supplies — as the ETL's same-place fold does: a footprint
-        // (an OSM island's area folded into a GNIS point drives its prominence and label zoom), and
-        // a specific kind over `other` (a GNIS "Island" folded into an OSM rock is an island).
+        // (an OSM island's area folded into a GNIS point drives its prominence and label zoom), and,
+        // for a catalog keeper only, a specific kind over `other` (a GNIS "Island" folded into an OSM
+        // rock is an island). A moderator's name, kind and point are their call, `other` included.
         const areaSqM = keeper.areaSqM ?? other.areaSqM;
+        const kind =
+          keeper.kind === 'other' && keeper.moderatorEditedAt === undefined
+            ? other.kind
+            : keeper.kind;
         const reportCount = (twin.reportCount ?? 0) + (row.reportCount ?? 0);
         const corpusMessages = Math.max(twin.corpusMessages ?? 0, row.corpusMessages ?? 0);
         const patch = {
           name: keeper.name,
-          kind: keeper.kind === 'other' ? other.kind : keeper.kind,
+          kind,
           point: keeper.point,
           ...(areaSqM !== undefined ? { areaSqM } : {}),
           ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),

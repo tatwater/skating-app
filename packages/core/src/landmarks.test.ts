@@ -7,13 +7,16 @@ import {
   LANDMARK_LABEL_MAX_ZOOM,
   LANDMARK_LABEL_MIN_ZOOM,
   LANDMARK_SAME_PLACE_RADIUS_M,
+  landmarkDropsHeld,
   landmarkLabelFeatures,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
+  landmarkSourceShortfalls,
   landmarksAreSamePlace,
   MAX_LANDMARK_ALIASES,
   MAX_LANDMARK_NAME_LENGTH,
+  MAX_LANDMARK_SOURCE_SHRINK,
   normalizeLandmarkNames,
   subAreaForLandmark,
 } from './landmarks';
@@ -289,5 +292,78 @@ describe('filledPolygon', () => {
     });
     expect(filled.coordinates).toHaveLength(1);
     expect(filled.coordinates[0]).toHaveLength(1);
+  });
+});
+
+describe('landmarkSourceShortfalls', () => {
+  const baseline = [
+    { source: 'vt.osm', count: 9_000 },
+    { source: 'vt.gnis', count: 1_200 },
+  ];
+
+  it('vouches for sources that read what the accepted load read, within the margin', () => {
+    expect(landmarkSourceShortfalls(baseline, baseline)).toEqual([]);
+    expect(
+      landmarkSourceShortfalls(
+        [
+          { source: 'vt.osm', count: 8_800 },
+          { source: 'vt.gnis', count: 1_300 },
+          { source: 'ny.osm', count: 50_000 },
+        ],
+        baseline,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names every source that is empty, short, or not read', () => {
+    expect(
+      landmarkSourceShortfalls(
+        [
+          { source: 'vt.osm', count: 4_000 },
+          { source: 'ny.gnis', count: 0 },
+        ],
+        baseline,
+      ),
+    ).toEqual([
+      'ny.gnis: no candidates',
+      'vt.osm: 4000 candidates, 56% under the accepted 9000',
+      'vt.gnis: not read this run',
+    ]);
+  });
+
+  it('will not vouch without a baseline or without the run’s own counts', () => {
+    expect(landmarkSourceShortfalls(baseline, undefined)).toEqual([
+      'no complete load has been accepted on this deployment yet',
+    ]);
+    expect(landmarkSourceShortfalls(undefined, baseline)).toHaveLength(1);
+    expect(landmarkSourceShortfalls([], baseline)).toHaveLength(1);
+  });
+
+  it('never vouches for a source under the margin (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 1e6 }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (last, f) => {
+          const now = Math.floor(last * f);
+          const out = landmarkSourceShortfalls(
+            [{ source: 's', count: now }],
+            [{ source: 's', count: last }],
+          );
+          return now >= last * (1 - MAX_LANDMARK_SOURCE_SHRINK)
+            ? out.length === 0
+            : out.length === 1;
+        },
+      ),
+    );
+  });
+});
+
+describe('landmarkDropsHeld', () => {
+  it('holds a drop of more than half a lake’s catalog rows, past the floor', () => {
+    expect(landmarkDropsHeld(11, 20)).toBe(true);
+    expect(landmarkDropsHeld(10, 12)).toBe(false); // at the floor: a small lake may lose its few
+    expect(landmarkDropsHeld(11, 22)).toBe(false); // exactly half
+    expect(landmarkDropsHeld(1, 1)).toBe(false);
   });
 });

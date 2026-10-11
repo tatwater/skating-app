@@ -21,9 +21,11 @@
 import {
   LANDMARK_KINDS,
   type LandmarkKind,
+  landmarkDropsHeld,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
+  landmarkSourceShortfalls,
   landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
   normalizeLandmarkNames,
@@ -189,6 +191,12 @@ const importedLandmark = v.object({
  * on a complete body that no candidate resolved to is retired with `catalogDroppedAt` — soft, so the
  * ids that point at it still resolve — and a later run that places it again brings it back
  * (`returned`). Only the catalogs' own rows: a moderator's row, or one a moderator edited, is theirs.
+ *
+ * **Only when the sources vouch.** `complete` retires nothing unless the run's per-source counts
+ * (`sources`) clear the last complete load this deployment accepted (`landmarkSourceShortfalls`) —
+ * a truncated extract is not a removal, and the first complete load on a deployment only sets the
+ * bar. And a lake about to lose more than half its catalog rows holds them (`dropsHeld`,
+ * `landmarkDropsHeld`). `acceptSourceDrop` overrides both, on the operator's word.
  */
 type ImportCounts = {
   created: number;
@@ -201,6 +209,8 @@ type ImportCounts = {
   alreadyBay: number;
   invalidName: number;
   dropped: number;
+  /** Rows a complete line would have dropped, held by the per-lake brake (`landmarkDropsHeld`). */
+  dropsHeld: number;
   returned: number;
 };
 
@@ -216,8 +226,15 @@ function emptyCounts(): ImportCounts {
     alreadyBay: 0,
     invalidName: 0,
     dropped: 0,
+    dropsHeld: 0,
     returned: 0,
   };
+}
+
+const sourceCounts = v.array(v.object({ source: v.string(), count: v.number() }));
+
+async function acceptedBaseline(ctx: QueryCtx) {
+  return ctx.db.query('landmarkSourceBaselines').withIndex('by_accepted_at').order('desc').first();
 }
 
 export const importBatch = internalMutation({
@@ -233,20 +250,60 @@ export const importBatch = internalMutation({
     campaignId: v.optional(v.string()),
     /** When the body export the run was matched against was taken (`summary.bodiesExportedAt`). */
     matchedAt: v.optional(v.number()),
+    /** What each catalog source read on this run (`summary.bySource`) — what vouches for `complete`. */
+    sources: v.optional(sourceCounts),
+    /** The operator says a source shortfall, or a lake's mass drop, is real (`--accept-source-drop`). */
+    acceptSourceDrop: v.optional(v.boolean()),
     dryRun: v.optional(v.boolean()),
   },
-  handler: async (ctx, { bodies, campaignId, matchedAt, dryRun }) => {
+  handler: async (ctx, args) => {
+    const { bodies, campaignId, matchedAt, dryRun } = args;
+    const acceptSourceDrop = args.acceptSourceDrop === true;
+    // A line's `complete` retires rows only when the run's sources vouch for it against the last load
+    // this deployment accepted. Checked here, in the one writer, so no caller can skip it.
+    let shortfalls: string[] = [];
+    if (bodies.some((b) => b.complete === true)) {
+      shortfalls = landmarkSourceShortfalls(args.sources, (await acceptedBaseline(ctx))?.sources);
+    }
+    const vouched = shortfalls.length === 0 || acceptSourceDrop;
     const total = emptyCounts();
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
-        complete: complete === true,
+        complete: complete === true && vouched,
         matchedAt,
+        acceptSourceDrop,
         campaignId,
         write: dryRun === false,
       });
       for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
     }
-    return total;
+    return { ...total, shortfalls: vouched ? [] : shortfalls };
+  },
+});
+
+/**
+ * Record a complete load as the deployment's new source baseline (D202) — called by the loader after
+ * an applied complete run with no failed batch, never by a dry run or a transform. Refused (and the
+ * old bar kept) when the run's own sources fall short of it, unless the operator said the shrink is
+ * real; with no bar yet, the run is held only to having read something from every source.
+ */
+export const acceptCompleteLoad = internalMutation({
+  args: {
+    sources: sourceCounts,
+    campaignId: v.optional(v.string()),
+    acceptSourceDrop: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { sources, campaignId, acceptSourceDrop }) => {
+    const baseline = await acceptedBaseline(ctx);
+    const shortfalls = landmarkSourceShortfalls(sources, baseline?.sources ?? sources);
+    if (shortfalls.length > 0 && acceptSourceDrop !== true) return { accepted: false, shortfalls };
+    await ctx.db.insert('landmarkSourceBaselines', {
+      sources,
+      ...(campaignId !== undefined ? { campaignId } : {}),
+      ...(shortfalls.length > 0 ? { acceptedShrink: true } : {}),
+      acceptedAt: Date.now(),
+    });
+    return { accepted: true, shortfalls };
   },
 });
 
@@ -265,11 +322,13 @@ async function importOneBody(
   {
     complete,
     matchedAt,
+    acceptSourceDrop,
     campaignId,
     write,
   }: {
     complete: boolean;
     matchedAt: number | undefined;
+    acceptSourceDrop: boolean;
     campaignId: string | undefined;
     write: boolean;
   },
@@ -356,13 +415,20 @@ async function importOneBody(
 
   // ── Rows this run no longer places — first, so their room goes to what it does ──────────────
   if (complete) {
-    for (const row of rows) {
-      if (!isCatalogsLive(row) || byRow.has(row._id) || claimed.has(row._id)) continue;
-      // A merge moved it here after the export this run matched against, which placed its
-      // catalogs on the merged lake: this line could not have had it.
-      if (row.movedAt !== undefined && (matchedAt === undefined || row.movedAt > matchedAt)) {
-        continue;
-      }
+    const dropping = rows.filter(
+      (row) =>
+        isCatalogsLive(row) &&
+        !byRow.has(row._id) &&
+        !claimed.has(row._id) &&
+        // A merge moved it here after the export this run matched against, which placed its
+        // catalogs on the merged lake: this line could not have had it.
+        !(row.movedAt !== undefined && (matchedAt === undefined || row.movedAt > matchedAt)),
+    );
+    // The per-lake brake: most of a lake's labels do not leave in one run on the catalogs' say-so.
+    const held =
+      !acceptSourceDrop && landmarkDropsHeld(dropping.length, rows.filter(isCatalogsLive).length);
+    if (held) counts.dropsHeld += dropping.length;
+    for (const row of held ? [] : dropping) {
       counts.dropped++;
       live--;
       if (write) {

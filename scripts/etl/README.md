@@ -713,12 +713,17 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
 - **It also forgets — on a run of every state only.** That run writes a line for every exported
   body, marked `complete` (an empty one if nothing landed), and a catalog row a complete line no
   longer has is retired (`dropped`), back if a later run places it (`returned`). A run of some
-  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place. Nor
-  does a run whose sources came back short: each state's OSM and GNIS candidate count is checked
-  against the last run that vouched (`.scratch/landmarks/source-baseline.json`), and one that is
-  empty or more than 10% under leaves the run incomplete — it adds and updates, and retires nothing.
-  `--refresh` if an extract is broken; `--accept-source-drop` on the transform if the shrink is
-  real. A row a merge moved after the body export the run matched against is never dropped (the
+  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place.
+- **Retiring needs the sources to vouch, and the deployment keeps the bar.** The loader sends each
+  state's OSM and GNIS candidate counts (`summary.bySource`); the importer retires nothing unless
+  every one is within 3% of the last complete load *this deployment accepted*
+  (`landmarkSourceBaselines`), and the loader moves that bar only after an applied complete load
+  with no failed batch — a transform nobody loaded, or a dry run, never does. So the **first**
+  complete load on a deployment retires nothing and sets the bar; the next one retires. On top, a
+  lake about to lose more than half its catalog labels (and more than 10) holds them (`dropsHeld`).
+  Both print on the dry run. `--refresh` if an extract is broken; `--accept-source-drop` on the
+  loader if the shrink is real. Every osmium output and the body export are written under a
+  `.partial` name and renamed on success, so a run cut short never leaves a truncated cache. A row a merge moved after the body export the run matched against is never dropped (the
   loader sends the export's time). Still read `dropped` on the dry run before `--apply` by hand, and
   a batch whose drops pass a mutation's write limit fails whole.
 - **A mouth's id is where it meets the shore** (`osm:way/1#in@44.0213,-73.1002`), never its place in

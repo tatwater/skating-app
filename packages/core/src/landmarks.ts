@@ -95,6 +95,63 @@ export const MAX_LANDMARK_ALIASES = 12;
  */
 export const MAX_LANDMARKS_PER_BODY = 1_500;
 
+/** One catalog source's candidate count on a run — `vt.osm`, `ny.gnis`. */
+export interface LandmarkSourceCount {
+  source: string;
+  count: number;
+}
+
+/**
+ * How far a source's count may fall below the deployment's last accepted load and still vouch. A
+ * month of real catalog edits moves a state's named landmarks by well under this; a truncated extract
+ * loses far more. Tight on purpose — a false alarm costs the operator `--accept-source-drop`, a miss
+ * costs the lake its labels.
+ */
+export const MAX_LANDMARK_SOURCE_SHRINK = 0.03;
+
+/**
+ * Why a run's sources cannot vouch that its list is complete — `[]` when they can (D202). A run
+ * retires the catalog rows it no longer places, so a truncated or empty extract (an osmium run cut
+ * short, a half-downloaded GNIS file) must never read as removals. Measured against the counts of the
+ * **last complete load the deployment accepted**, never against a transform that was not loaded: a
+ * source the baseline has that this run did not read, one that read nothing, or one more than
+ * {@link MAX_LANDMARK_SOURCE_SHRINK} under its accepted count is a shortfall. No baseline at all is
+ * one too — the first complete load establishes it and retires nothing.
+ */
+export function landmarkSourceShortfalls(
+  sources: readonly LandmarkSourceCount[] | undefined,
+  baseline: readonly LandmarkSourceCount[] | undefined,
+): string[] {
+  if (!sources || sources.length === 0) return ['the run did not say what its sources read'];
+  if (!baseline) return ['no complete load has been accepted on this deployment yet'];
+  const read = new Map(sources.map((s) => [s.source, s.count]));
+  const shortfalls: string[] = [];
+  for (const { source, count } of sources) {
+    if (count === 0) shortfalls.push(`${source}: no candidates`);
+  }
+  for (const { source, count: last } of baseline) {
+    const now = read.get(source);
+    if (now === undefined) shortfalls.push(`${source}: not read this run`);
+    else if (now > 0 && now < last * (1 - MAX_LANDMARK_SOURCE_SHRINK)) {
+      const pct = Math.round((1 - now / last) * 100);
+      shortfalls.push(`${source}: ${now} candidates, ${pct}% under the accepted ${last}`);
+    }
+  }
+  return shortfalls;
+}
+
+/**
+ * The per-lake brake on a complete load's drops (D202): a body about to lose more than half its live
+ * catalog rows, and more than {@link DROP_BRAKE_MIN} of them, holds them instead. Whatever the cause —
+ * an extract that read short in one corner, a shore redrawn so the matcher places its landmarks
+ * elsewhere — a lake does not lose most of its labels in one run without an operator saying so.
+ */
+export const DROP_BRAKE_MIN = 10;
+
+export function landmarkDropsHeld(dropping: number, catalogLive: number): boolean {
+  return dropping > DROP_BRAKE_MIN && dropping * 2 > catalogLive;
+}
+
 /**
  * How far apart two sightings of one place, by name, may be — per kind, because a place's size is.
  * An island's GNIS point and its OSM interior sit within a kilometer; a passage's GNIS point and its
