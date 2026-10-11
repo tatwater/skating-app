@@ -105,7 +105,6 @@ import {
   getJson,
   getPublicJson,
   listObjects,
-  publicExists,
   putJson,
   type R2Config,
   r2ConfigFromEnv,
@@ -149,6 +148,17 @@ const BLIND_RUNS_TO_BACK_OFF = 3;
  * no backoff, no record and the lease held. Claims past the budget go back untried.
  */
 const SPAWN_BUDGET_MS = 4 * 60_000;
+
+/**
+ * The whole run's deadline, from its start — the checks and the spawns share it. ⚠ **Well inside the
+ * 10-minute action limit**: a check is up to three 30 s reads and a spawn one 30 s create, so past
+ * these marks one more group can still be in flight, and the writes after it must land before
+ * Convex stops the action — or the landed frames are never marked dirty and the lease is held.
+ * Checks stop starting at the first mark, spawns at the second; each group of checks is settled as
+ * it finishes (Greptile, PR #85).
+ */
+const CHECK_DEADLINE_MS = 3 * 60_000;
+const RUN_DEADLINE_MS = 6 * 60_000;
 
 /** Timeouts in one run that stop it starting more: Fly answering nothing is not a refusal, but it
  * is not working either. */
@@ -825,7 +835,9 @@ async function check(
     ...(error ? { error } : {}),
   });
   try {
-    if (await publicExists(config.r2, `frames/${granule.season}/${granule.granuleId}.json`)) {
+    // Asked of the bucket itself, signed: a CDN may have cached the 404 from before the upload,
+    // and a landed cut read as missing would be recut — and its frame never indexed.
+    if (await exists(config.r2, `frames/${granule.season}/${granule.granuleId}.json`)) {
       return settle('landed');
     }
     let exitCode: number | null = null;
@@ -937,34 +949,40 @@ async function pumpOnce(
   let backoff = false;
   let streak = refusalStreakIn;
 
-  // ── Settle what is cutting: CHECK_CONCURRENCY checks at a time, then one transaction ──
+  // ── Settle what is cutting: CHECK_CONCURRENCY checks at a time, each group settled as it lands,
+  //    and no group started past the check deadline (the rest are checked next tick) ──
   const inFlight: Doc<'imageryGranules'>[] = await ctx.runQuery(
     internal.imageryLive.granulesByStatus,
     { season, status: 'spawned', limit: RECONCILE_BATCH },
   );
-  const verdicts: Verdict[] = [];
-  for (let i = 0; i < inFlight.length; i += CHECK_CONCURRENCY) {
-    verdicts.push(
-      ...(await Promise.all(
-        inFlight.slice(i, i + CHECK_CONCURRENCY).map((g) => check(config, g, startedAt)),
-      )),
-    );
-  }
   const settled: { id: Id<'imageryGranules'>; status: Settled; error?: string }[] = [];
-  for (const verdict of verdicts) {
-    if (verdict.kind !== 'settle') {
-      counts[verdict.kind]++;
-      continue;
+  for (let i = 0; i < inFlight.length; i += CHECK_CONCURRENCY) {
+    if (Date.now() - startedAt >= CHECK_DEADLINE_MS) break;
+    const verdicts = await Promise.all(
+      inFlight.slice(i, i + CHECK_CONCURRENCY).map((g) => check(config, g, startedAt)),
+    );
+    const group: typeof settled = [];
+    for (const verdict of verdicts) {
+      if (verdict.kind !== 'settle') {
+        counts[verdict.kind]++;
+        continue;
+      }
+      group.push({
+        id: verdict.id,
+        status: verdict.status,
+        ...(verdict.error ? { error: verdict.error } : {}),
+      });
+      counts[verdict.status === 'queued' ? 'requeued' : verdict.status]++;
+      if (verdict.status === 'failed') failures.push(`${verdict.granuleId} (${verdict.error})`);
     }
-    settled.push({
-      id: verdict.id,
-      status: verdict.status,
-      ...(verdict.error ? { error: verdict.error } : {}),
-    });
-    counts[verdict.status === 'queued' ? 'requeued' : verdict.status]++;
-    if (verdict.status === 'failed') failures.push(`${verdict.granuleId} (${verdict.error})`);
+    if (group.length > 0)
+      await ctx.runMutation(internal.imageryLive.settleMany, { settled: group });
+    // A frame that landed asks for its index build at once, not only if the run gets to its end.
+    if (group.some((g) => g.status === 'landed')) {
+      await ctx.runMutation(internal.imageryLive.markIndexDirty, {});
+    }
+    settled.push(...group);
   }
-  if (settled.length > 0) await ctx.runMutation(internal.imageryLive.settleMany, { settled });
 
   // A run is *blind* when it had cuts to check and could check none. Back off on the third blind
   // run in a row — not the first, which is a blink, and not never, which with one or two cuts in
@@ -983,13 +1001,20 @@ async function pumpOnce(
 
   // ── Start new cuts — only while imagery is running ──
   const state = await ctx.runQuery(internal.imageryLive.liveState, { season });
-  if (state.runnable && !backoff) {
-    const spawn = await startCuts(ctx, config.fly, season, streak, counts, failures);
+  if (state.runnable && !backoff && Date.now() - startedAt < RUN_DEADLINE_MS) {
+    const spawn = await startCuts(
+      ctx,
+      config.fly,
+      season,
+      streak,
+      counts,
+      failures,
+      startedAt + RUN_DEADLINE_MS,
+    );
     streak = spawn.streak;
     backoff = spawn.backoff;
   }
 
-  if (counts.landed > 0) await ctx.runMutation(internal.imageryLive.markIndexDirty, {});
   if (failures.length > 0) {
     await ctx.runMutation(internal.imageryLive.alertAdmins, {
       key: 'imagery-cut-failed',
@@ -1023,6 +1048,8 @@ async function startCuts(
   streakIn: number,
   counts: PumpCounts,
   failures: string[],
+  /** The run's deadline (`RUN_DEADLINE_MS`): no spawn starts past it. */
+  deadline: number,
 ): Promise<{ streak: number; backoff: boolean }> {
   let live: number;
   try {
@@ -1054,7 +1081,8 @@ async function startCuts(
       const stop =
         streak >= SPAWN_BREAKER ||
         timeouts >= TIMEOUTS_TO_STOP ||
-        Date.now() - started > SPAWN_BUDGET_MS;
+        Date.now() - started > SPAWN_BUDGET_MS ||
+        Date.now() >= deadline;
       if (stop) break;
       // ⚠ **Ask again before every spawn.** A batch can run for minutes, and *Pause*, a reset or the
       // watch ending commits in the middle of it; claims taken before that must not start after it.

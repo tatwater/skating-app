@@ -943,6 +943,46 @@ describe('pump — settling cuts', () => {
     expect(emptyMarkerKey(SEASON, recorded).startsWith('frames/')).toBe(false);
   });
 
+  test("slow checks stop at the run's deadline: each group is settled as it lands, the rest next tick", async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: Date.now() });
+    const ids = Array.from({ length: 12 }, (_, i) =>
+      s2(`19T${String(i).padStart(2, '0')}A`, '20261005'),
+    );
+    await queue(t, ids, {
+      status: 'spawned',
+      attempts: 1,
+      machineId: 'm',
+      spawnedAt: Date.now() - 30 * 60_000,
+    });
+    stub(
+      world({
+        manifests: new Map<string, unknown>(
+          ids.map((g) => [`frames/${SEASON}/${g}.json`, { granuleId: g }]),
+        ),
+      }),
+    );
+    const fetchFn = globalThis.fetch;
+    // Every check's first read — the signed HEAD for its manifest — takes 30 s.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.startsWith(ENDPOINT) && req.method === 'HEAD') vi.advanceTimersByTime(30_000);
+        return fetchFn(req);
+      }),
+    );
+    // One group of eight is four minutes of checking — past the three-minute mark: it is settled,
+    // its frames asked for, and the last four wait.
+    expect(await pumpNow(t)).toMatchObject({ landed: 8 });
+    const status = async () => (await granules(t)).map((g) => g.status);
+    expect((await status()).filter((x) => x === 'landed')).toHaveLength(8);
+    expect((await status()).filter((x) => x === 'spawned')).toHaveLength(4);
+    expect((await runState(t, 'index'))?.dirtySeq).toBe(1);
+    expect((await runState(t))?.runningUntil).toBe(0); // the lease is given back
+    expect(await pumpNow(t)).toMatchObject({ landed: 4 });
+  });
+
   test('a first miss that exited non-zero keeps the code', async () => {
     const t = convexTest(schema, modules);
     const id = s2('19TEA', '20261005');
