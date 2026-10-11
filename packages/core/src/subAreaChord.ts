@@ -30,7 +30,7 @@
  */
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
-import { type LatLng, pointInPolygon, surfaceAreaSqM } from './geometry';
+import { coveredFraction, type LatLng, pointInPolygon, surfaceAreaSqM } from './geometry';
 import { clipSubAreaToParent, type SubAreaClipRejection } from './subArea';
 
 // ── Vocabulary ─────────────────────────────────────────────────────────────────────────────────
@@ -653,4 +653,113 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
     constructed,
     clipped: clip.clipped,
   };
+}
+
+// ── Re-derivation against a moved shoreline (D215) ────────────────────────────────────────────
+
+/**
+ * How far a re-derivation may change a bay's area, either way, before it stops and asks a moderator
+ * (D215): half again bigger, or a third smaller. A refined outline moves a bay's area by a few
+ * percent; a mouth that re-snapped onto another shore, or a merge that added a whole arm, moves it
+ * by multiples — and a bay that silently became the rest of the lake moves it by orders.
+ */
+export const CHORD_REDERIVE_MAX_AREA_RATIO = 1.5;
+
+/**
+ * A point well inside `region`, away from its mouth `a → b`: part of the way from the chord's
+ * midpoint toward the shore vertex farthest from it, the first such point that is inside. Stored
+ * as a re-derived bay's `side`, so the editor's preview — which still picks its side by that point
+ * — shows the water the server kept, and a later click-based derivation has margin to spare.
+ */
+function deepSide(a: LatLng, b: LatLng, region: Polygon): LatLng | null {
+  const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+  let far: LatLng | null = null;
+  let farM = -1;
+  for (const [lng, lat] of region.coordinates[0] ?? []) {
+    const p = { lat: lat as number, lng: lng as number };
+    const [x, y] = toLocal(p, mid);
+    const d = Math.hypot(x, y);
+    if (d > farM) {
+      farM = d;
+      far = p;
+    }
+  }
+  if (far) {
+    for (const t of [0.5, 0.35, 0.2, 0.1, 0.05]) {
+      const p = { lat: mid.lat + (far.lat - mid.lat) * t, lng: mid.lng + (far.lng - mid.lng) * t };
+      if (pointInPolygon(p, region)) return p;
+    }
+  }
+  return regionSideAt(a, b, region);
+}
+
+/** A re-derived chord: `chordSubArea`'s answer, and — when it holds — whether it jumped (D215). */
+export type RederivedChord =
+  | Extract<ChordResult, { ok: false }>
+  | (Extract<ChordResult, { ok: true }> & { jumped: boolean });
+
+/**
+ * Re-derive a stored mouth against a parent whose outline may have moved — the parent re-clip after
+ * a re-import or a merge, and a restore (D215). Two rules on top of `chordSubArea`:
+ *
+ * 1. **The same water.** The re-snapped ends bound two regions, and the bay is the one `previous`
+ *    (its outline before this) mostly lies in — not the one holding the stored `side`. That click
+ *    was where a moderator pointed against the *old* shore; a mouth line that moved past it (a click
+ *    near the mouth, a refined outline) would otherwise turn the bay into the rest of the lake. The
+ *    returned mouth carries a fresh `side`, deep in the region kept.
+ * 2. **A tripwire.** A result more than {@link CHORD_REDERIVE_MAX_AREA_RATIO} times bigger or smaller
+ *    than `previous` comes back `jumped`. The caller does not apply a change that size unseen: it
+ *    keeps the old outline (re-clipped) and flags the mouth for a moderator — or, where the old
+ *    outline no longer fits the lake at all, applies this one (the same water, by rule 1) and flags
+ *    it, rather than delist a bay whose mouth still re-fits.
+ *
+ * Anything the overlap cannot decide (an intersection the clipper chokes on) falls back to the
+ * stored `side`, still under the tripwire.
+ */
+export function rederiveChordSubArea(
+  parent: Polygon | MultiPolygon,
+  mouth: SubAreaMouth,
+  previous: Polygon | MultiPolygon,
+): RederivedChord {
+  const guard = (result: ChordResult): RederivedChord => {
+    if (!result.ok) return result;
+    const before = surfaceAreaSqM(previous);
+    const after = surfaceAreaSqM(result.polygon);
+    const jumped =
+      before > 0 &&
+      (after > before * CHORD_REDERIVE_MAX_AREA_RATIO ||
+        after * CHORD_REDERIVE_MAX_AREA_RATIO < before);
+    return { ...result, jumped };
+  };
+  if (!finiteMouth(mouth)) return { ok: false, reason: 'degenerate' };
+  const snapped = snapPair(parent, mouth.a, mouth.b);
+  if (!snapped.ok) return snapped;
+  const candidates = candidateRings(parent, snapped.a, snapped.b)
+    .filter((path) => path.length >= 3)
+    .map((path) => {
+      const polygon: Polygon = { type: 'Polygon', coordinates: [closeRing(path)] };
+      return { polygon, area: surfaceAreaSqM(polygon) };
+    })
+    .sort((x, y) => x.area - y.area);
+  const smaller = candidates[0];
+  const larger = candidates[candidates.length - 1];
+  if (!smaller || !larger) return guard(chordSubArea(parent, mouth));
+  let kept: Polygon;
+  try {
+    // Whichever region holds more of the old bay. Usually that is the smaller by a majority, and
+    // the larger (most of a giant lake) is never intersected; when it isn't — a shore moved in so far
+    // that most of the old bay is land now, in neither region — the two are weighed against each
+    // other, never against the old bay's whole area. On an island ring the two nest, and the
+    // smaller (the notch) holds the bay either way.
+    const inSmaller = coveredFraction(previous, smaller.polygon);
+    kept =
+      inSmaller >= 0.5 || inSmaller >= coveredFraction(previous, larger.polygon)
+        ? smaller.polygon
+        : larger.polygon;
+  } catch {
+    return guard(chordSubArea(parent, mouth));
+  }
+  const side = deepSide(snapped.a.point, snapped.b.point, kept);
+  if (!side) return guard(chordSubArea(parent, mouth));
+  return guard(chordSubArea(parent, { ...mouth, side }));
 }

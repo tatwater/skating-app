@@ -6235,7 +6235,9 @@ properly crosses the walked shore is refused; one that only touches it (a click 
 meters past a corner) is a zero-width spike the clipper drops, not a crossing. The queue reuses
 A07b because a corpus-shaped table would have been a second queue with no second answer.
 
-**Related:** D60, D175, D179, D202, A02 Decision 10, A09.
+**Related:** D60, D175, D179, D202, D215, A02 Decision 10, A09.
+
+*Amended by D215 (2026-10-11): a re-derivation keeps the bay's water rather than the stored `side`, and a re-fit that changes the bay's size by half or more waits for a moderator.*
 
 ## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
 
@@ -6480,3 +6482,34 @@ parking, access and inflow facts the contract had nowhere to put — "use these 
 corpus stronger, not just feed reports".
 
 **Related:** D3, D186, D196, D200, A06d.
+
+## D215 — A chord bay re-derived against a moved shore keeps its water, and a jump waits for a moderator (D201)
+
+D201 stores a bay as its mouth — two shore points, a `side` and a sagitta — and re-derives the
+outline whenever the lake's shoreline moves (a re-import whose footprint changed, a merge, a
+restore). The `side` is the moderator's click against the shore *as it was*; re-snapped to a new
+shore, the mouth line can pass that click, and the bay becomes the rest of the lake. How far the
+shore has to move is how far the click was from the mouth: a click deep in the bay survives almost
+anything, one just inside the mouth flips on a routine refinement. Founder call, 2026-10-11:
+
+- **The same water.** A re-derivation keeps whichever of the mouth's two regions holds more of the
+  bay's current outline — never the region holding the old click — and stores a fresh `side` deep
+  in the water it kept, so the editor's click-based preview shows the same bay and saving from it
+  cannot make the flip real. The ends stay as drawn; every derivation re-snaps them.
+- **A jump waits.** A re-fit more than half again bigger, or a third smaller, than the bay was is
+  not applied unseen: the old outline, re-clipped, stays while it still fits the lake, and the
+  mouth carries a note the editor shows ("check the mouth"). Where the old outline no longer fits —
+  a shore moved in over most of it — the re-fit is applied, because the first rule has already
+  kept the right water, and the note says so: a bay whose mouth still fits is never delisted for it.
+
+A moderator's own mouth — drawn, edited, saved — still picks its side by the click: that click is
+against the shore they are looking at.
+
+**Why:** a refined OSM outline, a source swap (OSM / NHD / 3DHP disagree by tens to hundreds of
+meters), a merge that adds an arm, a mouth point that re-snaps across a narrows, or a broken
+relation in one fetch can each move a mouth line past a click. A bay that silently became the
+whole lake would stamp every report on it; one that silently doubled would claim water nobody drew.
+Dev had no chord bays when this landed (all 128 were drawn or seeded), so nothing was re-derived
+under the old rule.
+
+**Related:** D5, D201, A02 Decision 10, A09.

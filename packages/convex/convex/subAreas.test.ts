@@ -1,5 +1,6 @@
-import { requestNameKey } from '@skating/core';
+import { type LatLng, pointInPolygon, requestNameKey } from '@skating/core';
 import { convexTest } from 'convex-test';
+import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
@@ -2754,8 +2755,8 @@ describe('sub-areas by chord (D201)', () => {
           osmId: 'way/1',
           name: 'Lake Champlain',
           type: 'lakePond' as const,
-          polygon: rect(-73.5, 44.0, -72.6, 45.0),
-          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.6 },
+          polygon: rect(-73.5, 44.0, -72.55, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.55 },
           centroid: { lat: 44.5, lng: -73.05 },
           surfaceAreaSqM: 7.8e9,
         },
@@ -2765,7 +2766,7 @@ describe('sub-areas by chord (D201)', () => {
     const row = await t.run((ctx) => ctx.db.get(id));
     const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
     // Re-derived: the hypotenuse starts at the re-snapped point on the new shore.
-    expect(ring.some(([lng, lat]) => lng === -72.6 && lat === 44.2)).toBe(true);
+    expect(ring.some(([lng, lat]) => lng === -72.55 && lat === 44.2)).toBe(true);
     expect(row?.mouthStale).toBeUndefined();
   });
 
@@ -2906,9 +2907,9 @@ describe('sub-areas by chord (D201)', () => {
       mouth,
     });
 
-    // The refined outline pulls the east shore 0.1° west. `a` re-snaps to the new shore and the
-    // bay's hypotenuse now runs from (−72.6, 44.2) — a vertex a plain clip of the old triangle
-    // could never produce (the clip would cut the old hypotenuse at (−72.6, 44.1)).
+    // The refined outline pulls the east shore 0.05° west. `a` re-snaps to the new shore and the
+    // bay's hypotenuse now runs from (−72.55, 44.2) — a vertex a plain clip of the old triangle
+    // could never produce (the clip would cut the old hypotenuse at (−72.55, 44.15)).
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -2917,8 +2918,8 @@ describe('sub-areas by chord (D201)', () => {
           osmId: 'way/1',
           name: 'Lake Champlain',
           type: 'lakePond' as const,
-          polygon: rect(-73.5, 44.0, -72.6, 45.0),
-          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.6 },
+          polygon: rect(-73.5, 44.0, -72.55, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.55 },
           centroid: { lat: 44.5, lng: -73.05 },
           surfaceAreaSqM: 7.8e9,
         },
@@ -2927,10 +2928,13 @@ describe('sub-areas by chord (D201)', () => {
 
     const row = await t.run((ctx) => ctx.db.get(id));
     expect(row?.removedAt).toBeUndefined();
-    expect(row?.mouth).toEqual(mouth); // the fact is kept; the shape follows it
+    // The fact is kept — the ends as drawn, the sagitta — and the shape follows it; the side is
+    // refreshed to a point deep in the water kept (D215).
+    expect(row?.mouth).toMatchObject({ a: mouth.a, b: mouth.b, sagittaM: mouth.sagittaM });
+    expect(row?.mouthStale).toBeUndefined();
     const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
-    expect(ring.some(([lng, lat]) => lng === -72.6 && lat === 44.2)).toBe(true);
-    expect(ring.some(([lng, lat]) => lng === -72.6 && Math.abs((lat ?? 0) - 44.1) < 1e-6)).toBe(
+    expect(ring.some(([lng, lat]) => lng === -72.55 && lat === 44.2)).toBe(true);
+    expect(ring.some(([lng, lat]) => lng === -72.55 && Math.abs((lat ?? 0) - 44.15) < 1e-6)).toBe(
       false,
     );
   });
@@ -2965,7 +2969,6 @@ describe('sub-areas by chord (D201)', () => {
     const t = harness();
     const body = await seedCanonicalBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    // The side point sits just inside the corner.
     const mouth = { ...CORNER, side: { lat: 44.01, lng: -73.49 } };
     const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
@@ -2973,10 +2976,21 @@ describe('sub-areas by chord (D201)', () => {
       mouth,
     });
 
-    // The south shore moves north past the side point: it is on land now, in neither candidate,
-    // and the construction refuses. The plain re-clip still trims the stored shape to the new
+    // The refined outline maps an islet right at `a` and moves the west shore off it: `a` now snaps
+    // to the islet and `b` to the mainland — a mouth from the mainland to an island, which encloses
+    // no bay, so the construction refuses. The plain re-clip still trims the stored shape to the new
     // outline (Decision 10 survives), and the mouth stays on the row as the editor's starting point.
-    await reimportLake(t, rect(-73.5, 44.02, -72.5, 45.0), { minLat: 44.02 });
+    await reimportLake(
+      t,
+      {
+        type: 'Polygon' as const,
+        coordinates: [
+          rect(-73.52, 44.02, -72.5, 45.0).coordinates[0] as number[][],
+          rect(-73.502, 44.198, -73.498, 44.202).coordinates[0] as number[][],
+        ],
+      } as ReturnType<typeof rect>,
+      { minLat: 44.02, minLng: -73.52 },
+    );
 
     const row = await t.run((ctx) => ctx.db.get(id));
     expect(row?.removedAt).toBeUndefined();
@@ -2989,9 +3003,81 @@ describe('sub-areas by chord (D201)', () => {
     // The fix is a mouth save, and it clears the note.
     await mod.as.mutation(api.subAreas.updateChord, {
       subAreaId: id,
-      mouth: { ...mouth, side: { lat: 44.05, lng: -73.45 } },
+      // `a` back on the mainland's new west shore.
+      mouth: { ...mouth, a: { lat: 44.2, lng: -73.52 }, side: { lat: 44.05, lng: -73.45 } },
     });
     expect((await t.run((ctx) => ctx.db.get(id)))?.mouthStale).toBeUndefined();
+  });
+
+  describe('a moved shore keeps the same water, and a jump waits for a moderator (D215)', () => {
+    // Across the south-east corner, the click close to the mouth line — the case that flipped.
+    const NEAR_CLICK = {
+      a: { lat: 44.2, lng: -72.5 },
+      b: { lat: 44.0, lng: -72.7 },
+      side: { lat: 44.05, lng: -72.65 },
+      sagittaM: 0,
+    };
+    async function cornerBay() {
+      const t = harness();
+      const body = await seedCanonicalBody(t);
+      const mod = await seedUser(t, 'mod', 'moderator');
+      const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        mouth: NEAR_CLICK,
+      });
+      const before = await t.run((ctx) => ctx.db.get(id));
+      const eastShore = (maxLng: number) =>
+        reimportLake(t, rect(-73.5, 44.0, maxLng, 45.0), { maxLng });
+      return { t, mod, id, area: before?.surfaceAreaSqM ?? 0, eastShore };
+    }
+
+    test('a shore moved past the click keeps the corner, and the side follows the water', async () => {
+      const { t, id, area, eastShore } = await cornerBay();
+      // 0.05° out: the old click is now on the rest-of-the-lake side of the re-snapped mouth.
+      await eastShore(-72.45);
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.surfaceAreaSqM).toBeGreaterThan(area);
+      expect(row?.surfaceAreaSqM).toBeLessThan(area * 1.5);
+      expect(row?.mouthStale).toBeUndefined();
+      expect(row?.mouth?.side).not.toEqual(NEAR_CLICK.side);
+      expect(pointInPolygon(row?.mouth?.side as LatLng, row?.polygon as Polygon)).toBe(true);
+    });
+
+    test('a jump keeps the old outline while it still fits, and flags the mouth', async () => {
+      const { t, id, area, eastShore } = await cornerBay();
+      // 0.2° out: re-fitted, the corner would more than double; the old one still fits the lake.
+      await eastShore(-72.3);
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.surfaceAreaSqM).toBeCloseTo(area, -3);
+      expect(row?.mouth).toEqual(NEAR_CLICK);
+      expect(row?.mouthStale).toMatch(/outline was kept\. Check the mouth/);
+    });
+
+    test('a jump re-fits when the old outline no longer fits the lake — flagged, never delisted', async () => {
+      const { t, id, area, eastShore } = await cornerBay();
+      // 0.1° in: three quarters of the old corner is now land; the re-fit is half the size.
+      await eastShore(-72.6);
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.removedAt).toBeUndefined();
+      expect(row?.surfaceAreaSqM).toBeLessThan(area * 0.6);
+      expect(row?.mouthStale).toMatch(/re-fitted/);
+    });
+
+    test('a restore treats a jump the same way: the outline kept if it fits, else the re-fit', async () => {
+      for (const [maxLng, expected] of [
+        [-72.3, /outline was kept/],
+        [-72.6, /re-fitted/],
+      ] as const) {
+        const { t, mod, id, eastShore } = await cornerBay();
+        await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+        await eastShore(maxLng);
+        await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
+        const row = await t.run((ctx) => ctx.db.get(id));
+        expect(row?.removedAt).toBeUndefined();
+        expect(row?.mouthStale).toMatch(expected);
+      }
+    });
   });
 
   function reimportLake(
