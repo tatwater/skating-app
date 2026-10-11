@@ -26,6 +26,7 @@ import {
   landmarkLabelMinZoom,
   landmarkProminence,
   landmarkSourceCheck,
+  landmarkSourceReasons,
   landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
@@ -196,9 +197,9 @@ const importedLandmark = v.object({
  * (`returned`). Only the catalogs' own rows: a moderator's row, or one a moderator edited, is theirs.
  *
  * **Only when the sources vouch.** `complete` retires nothing unless the run's per-source counts
- * (`sources`) clear the last complete load this deployment accepted (`landmarkSourceShortfalls`) —
- * a truncated extract is not a removal, and the first complete load on a deployment only sets the
- * bar. And a lake about to lose more than half its catalog rows holds them (`dropsHeld`,
+ * (`sources`) clear the bar this deployment accepted (`landmarkSourceCheck`, each source's highest
+ * accepted count) — a truncated extract is not a removal, and the first complete load on a
+ * deployment only sets the bar. And a lake about to lose more than half its catalog rows holds them (`dropsHeld`,
  * `landmarkDropsHeld`). Each has its own override, on the operator's word — `acceptSourceDrop`,
  * `acceptMassDrop` — so excusing a real catalog shrink never also switches off the brake.
  */
@@ -278,7 +279,7 @@ export const importBatch = internalMutation({
     }
     // The operator may excuse a shrink, never a block (no bar yet, no counts, an empty source).
     const vouched = landmarkSourcesVouch(check, acceptSourceDrop);
-    const shortfalls = [...check.blocking, ...check.shrinks];
+    const shortfalls = landmarkSourceReasons(check);
     const total = emptyCounts();
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
@@ -312,13 +313,13 @@ export const acceptCompleteLoad = internalMutation({
     // With no bar yet, the run is held to having read something from every source it names.
     const check = landmarkSourceCheck(sources, baseline?.sources ?? sources);
     const accept = acceptSourceDrop === true;
-    const shortfalls = [...check.blocking, ...check.shrinks];
+    const shortfalls = landmarkSourceReasons(check);
     if (!landmarkSourcesVouch(check, accept)) return { accepted: false, shortfalls };
     await ctx.db.insert('landmarkSourceBaselines', {
-      // Never lowered without the operator's word, so the bar cannot drift down in small steps.
-      sources: nextLandmarkSourceBar(sources, baseline?.sources, accept),
+      // Never lowered without the operator's word, and then only the sources they excused.
+      sources: nextLandmarkSourceBar(sources, baseline?.sources, check, accept),
       ...(campaignId !== undefined ? { campaignId } : {}),
-      ...(check.shrinks.length > 0 ? { acceptedShrink: true } : {}),
+      ...(accept && check.shrinks.length > 0 ? { acceptedShrink: true } : {}),
       acceptedAt: Date.now(),
     });
     return { accepted: true, shortfalls };
@@ -387,12 +388,11 @@ async function importOneBody(
     return { probe, valid: names !== null };
   });
   const assigned = index.assign(entries.map((e) => e.probe));
+  const claimed = new Set([...assigned.values()].map((row) => row._id));
   const byRow = new Map<Id<'bodyLandmarks'>, Group>();
-  const claimed = new Set<Id<'bodyLandmarks'>>();
   const fresh: Group[] = [];
   for (const { probe: incoming, valid } of entries) {
     const existing = assigned.get(incoming);
-    if (existing) claimed.add(existing._id);
     if (!valid) {
       counts.invalidName++;
       continue;
@@ -481,7 +481,11 @@ async function importOneBody(
       (predatesMerge ? existing.areaSqM : undefined);
     return {
       name: first.name,
-      kind: predatesMerge && first.kind === 'other' ? existing.kind : first.kind,
+      // The specific kind wins, as in the ETL's own fold: a GNIS "other" and an OSM island resolved
+      // to one row are an island, whichever came first in the line.
+      kind:
+        members.find((m) => m.kind !== 'other')?.kind ??
+        (predatesMerge ? existing.kind : first.kind),
       point: first.point,
       areaSqM,
       // Whichever catalog the name and point came from this run — the editor shows it as provenance.

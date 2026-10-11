@@ -1860,3 +1860,63 @@ test('when one id names a person’s takedown and a catalog drop, the takedown h
   });
   expect(counts).toMatchObject({ removedHeld: 1, returned: 0, created: 0 });
 });
+
+describe('the last pass', () => {
+  test('a removed row an id names is that feature’s alone: a same-named neighbor gets its own row', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const at = (lat: number, id: string) =>
+      imported('Otter Creek', { lat, lng: -73.3 }, { kind: 'other', externalIds: [id] });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.2, 'osm:a')], dryRun: false });
+    const taken = (await rowsOf(t, body))[0]?._id as Id<'bodyLandmarks'>;
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: taken });
+    // The removed row's own feature, and another mouth 0.3 km off with a different id: the takedown
+    // holds the first, and the second is a place of its own, not folded into the takedown.
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [at(44.2027, 'osm:b'), at(44.2, 'osm:a')],
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ removedHeld: 1, created: 1 });
+  });
+
+  test('the specific kind wins among a row’s candidates, whichever came first in the line', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['gnis:9', 'osm:way/1'] })],
+      dryRun: false,
+    });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [
+        imported('Gull Island', ISLAND, { kind: 'other', externalIds: ['gnis:9'], source: 'gnis' }),
+        imported('Gull Island', { lat: 44.7501, lng: -72.75 }, { externalIds: ['osm:way/1'] }),
+      ],
+      dryRun: false,
+    });
+    const [row] = await rowsOf(t, body);
+    expect(row?.kind).toBe('island');
+  });
+
+  test('a source no longer read is a shrink the operator may excuse, and it leaves the bar', async () => {
+    const t = harness();
+    await seedBaseline(t);
+    const only = [{ source: 'vt.osm', count: 100 }];
+    expect(
+      await t.mutation(internal.landmarks.acceptCompleteLoad, { sources: only }),
+    ).toMatchObject({ accepted: false, shortfalls: ['vt.gnis: not read this run'] });
+    expect(
+      await t.mutation(internal.landmarks.acceptCompleteLoad, {
+        sources: only,
+        acceptSourceDrop: true,
+      }),
+    ).toMatchObject({ accepted: true });
+    const bar = await t.run((ctx) =>
+      ctx.db.query('landmarkSourceBaselines').withIndex('by_accepted_at').order('desc').first(),
+    );
+    expect(bar).toMatchObject({ sources: only, acceptedShrink: true });
+  });
+});

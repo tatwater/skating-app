@@ -103,7 +103,7 @@ export function applyRefusal(
 
 /**
  * What the run's sources read, as the importer weighs them against the deployment's last accepted
- * complete load (`landmarkSourceShortfalls`). `undefined` — and so no retirement — when the summary
+ * complete load (`landmarkSourceCheck`). `undefined` — and so no retirement — when the summary
  * does not say.
  */
 export function summarySources(
@@ -140,4 +140,20 @@ export const EXPORT_CLOCK_SLACK_MS = 5 * 60 * 1000;
 export function matchedAtOf(summary: TransformSummary | undefined): { matchedAt?: number } {
   const at = summary?.bodiesExportedAt;
   return at === undefined ? {} : { matchedAt: Math.floor(at - EXPORT_CLOCK_SLACK_MS) };
+}
+
+/**
+ * Run a `convex run` once more if it throws — the CLI's own auth check intermittently answers 401
+ * mid-run (seen on the first dry run, 2026-09-29), and every call the loader makes is idempotent, so
+ * a second attempt is always safe. Any error is retried once, because the CLI does not tell an auth
+ * blip from anything else; a deterministic failure just fails twice. `onRetry` lets the caller say
+ * so: a first attempt that committed before the CLI failed shows its writes as already done.
+ */
+export function withOneRetry<T>(call: () => T, onRetry: () => void = () => {}): T {
+  try {
+    return call();
+  } catch {
+    onRetry();
+    return call();
+  }
 }

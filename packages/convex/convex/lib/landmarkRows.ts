@@ -138,14 +138,21 @@ export class LandmarkRowIndex {
   assign<P extends LandmarkProbe>(probes: readonly P[]): Map<P, Doc<'bodyLandmarks'>> {
     const tier = (row: Doc<'bodyLandmarks'>) =>
       row.removedAt === undefined ? 0 : row.catalogDroppedAt === undefined ? 1 : 2;
+    const idRows = new Map(
+      probes.map((probe) => [
+        probe,
+        [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))].sort(
+          (a, b) => tier(a) - tier(b),
+        ),
+      ]),
+    );
+    // A row some probe's id names is that feature's: never another probe's by place, or two
+    // probes would land on it — the id's in step 3, the place match's in step 2.
+    const idNamed = new Set([...idRows.values()].flat().map((row) => row._id));
     const out = new Map<P, Doc<'bodyLandmarks'>>();
     const taken = new Set<Id<'bodyLandmarks'>>();
-    const idRows = (probe: P) =>
-      [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))].sort(
-        (a, b) => tier(a) - tier(b),
-      );
     for (const probe of probes) {
-      const live = idRows(probe).find((row) => tier(row) === 0);
+      const live = idRows.get(probe)?.find((row) => tier(row) === 0);
       if (live) {
         out.set(probe, live);
         taken.add(live._id);
@@ -155,14 +162,15 @@ export class LandmarkRowIndex {
     for (const probe of probes) {
       if (out.has(probe)) continue;
       const identity = identityOf(probe);
-      const idTier = idRows(probe)[0];
+      const byId = idRows.get(probe)?.[0];
       const rows = new Set(
         identity.names.flatMap((n) => this.byName.get(landmarkNameKey(n)) ?? []),
       );
       for (const row of rows) {
-        if (taken.has(row._id) || !landmarksAreSamePlace(identityOf(row), identity)) continue;
+        if (taken.has(row._id) || idNamed.has(row._id)) continue;
+        if (!landmarksAreSamePlace(identityOf(row), identity)) continue;
         // A removed row the probe's own id names outranks a same-tier place match (step 3 takes it).
-        if (idTier && tier(row) >= tier(idTier)) continue;
+        if (byId && tier(row) >= tier(byId)) continue;
         pairs.push({
           probe,
           row,
@@ -179,8 +187,8 @@ export class LandmarkRowIndex {
     }
     for (const probe of probes) {
       if (out.has(probe)) continue;
-      const removed = idRows(probe)[0];
-      if (removed) out.set(probe, removed);
+      const byId = idRows.get(probe)?.[0];
+      if (byId) out.set(probe, byId);
     }
     return out;
   }
@@ -432,7 +440,6 @@ export async function repointLandmarksOnMerge(
         };
         await ctx.db.patch(twin._id, patch);
         Object.assign(twin, patch);
-        index.add(twin);
       }
       await ctx.db.patch(row._id, {
         waterBodyId: survivorId,
@@ -471,7 +478,6 @@ export async function repointLandmarksOnMerge(
       continue;
     }
     await ctx.db.patch(row._id, { waterBodyId: survivorId, movedAt: now, updatedAt: now });
-    index.add({ ...row, waterBodyId: survivorId });
     live++;
   }
   for (const row of moving) {

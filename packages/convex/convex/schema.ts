@@ -2750,8 +2750,10 @@ export default defineSchema({
      */
     mergedIntoId: v.optional(v.id('bodyLandmarks')),
     /**
-     * When a merge moved this row onto its body (D36). A complete ETL run matched against a body
-     * export older than this never drops the row: the export placed its catalogs on the merged lake.
+     * When a merge last changed what this row stands for (D36): moved it onto its body, or folded a
+     * twin from the merged lake into it. A complete ETL run matched against a body export older than
+     * this never drops the row, and keeps the footprint and kind the fold brought — that export
+     * placed the merged lake's catalogs on the lake that no longer exists.
      */
     movedAt: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')),
@@ -2767,11 +2769,12 @@ export default defineSchema({
 
   /**
    * What each catalog source read on the complete landmark loads this deployment accepted (D202) —
-   * the bar a later load's sources must clear before it may retire anything
-   * (`landmarkSourceShortfalls`). In the deployment, not a scratch file, because it vouches for
-   * what *this deployment's* rows were built from; written only after a complete load applied
-   * without a failed batch (`landmarks.acceptCompleteLoad`), so a transform nobody loaded never
-   * moves it. One row per accepted load; the newest is the bar.
+   * the bar a later load's sources must clear before it may retire anything (`landmarkSourceCheck`).
+   * In the deployment, not a scratch file, because it vouches for what *this deployment's* rows were
+   * built from; written only after a complete load applied without a failed batch
+   * (`landmarks.acceptCompleteLoad`), so a transform nobody loaded never moves it. One row per
+   * accepted load; the newest is the bar, each source at its highest accepted count unless the
+   * operator excused a shrink (`nextLandmarkSourceBar`).
    */
   landmarkSourceBaselines: defineTable({
     sources: v.array(v.object({ source: v.string(), count: v.number() })),

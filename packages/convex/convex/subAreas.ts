@@ -395,7 +395,7 @@ export async function reclipSubAreasToParent(
   parent: Doc<'waterBodies'>,
   /** The human whose action triggered this, when there was one (a merge). Absent for the ETL. */
   actorId?: Id<'profiles'>,
-): Promise<{ reclipped: number; delisted: number }> {
+): Promise<{ reclipped: number; delisted: number; landmarksRetired: number }> {
   const parentPolygon = parent.polygon as unknown as Polygon | MultiPolygon;
   // `isActive`, not `isListed`: the bay's cells follow the lake's standing (see `subAreaListed`).
   const parentListed = isActive(parent);
@@ -492,10 +492,11 @@ export async function reclipSubAreasToParent(
       listed: parentListed,
     });
   }
-  if (regrown.length > 0) await retireNamedAsBays(ctx, actorId, waterBodyId, regrown);
+  const landmarksRetired =
+    regrown.length > 0 ? await retireNamedAsBays(ctx, actorId, waterBodyId, regrown) : 0;
   // The re-stamp is the caller's: `importCanonical` and `merge` both schedule one when this reports
   // movement, and the ETL gates it so an unchanged batch schedules nothing.
-  return { reclipped, delisted };
+  return { reclipped, delisted, landmarksRetired };
 }
 
 /**

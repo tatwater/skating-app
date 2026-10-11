@@ -113,12 +113,15 @@ export const MAX_LANDMARK_SOURCE_SHRINK = 0.03;
 export interface LandmarkSourceCheck {
   /**
    * What no word excuses: no bar yet (the first complete load only sets it), no counts from the run,
-   * a source that read nothing, a source the bar has that this run did not read. None of these is a
-   * catalog shrinking; each is a run that cannot know what it is missing.
+   * a source that read nothing. Each is a run that cannot know what it is missing.
    */
   blocking: string[];
-  /** A source more than {@link MAX_LANDMARK_SOURCE_SHRINK} under the bar — `--accept-source-drop`. */
-  shrinks: string[];
+  /**
+   * A source more than {@link MAX_LANDMARK_SOURCE_SHRINK} under the bar, or one the bar has that the
+   * run did not read (a state left out, a key renamed) — `--accept-source-drop` excuses these, and
+   * only these sources' bars then move down.
+   */
+  shrinks: { source: string; reason: string }[];
 }
 
 /**
@@ -132,7 +135,7 @@ export function landmarkSourceCheck(
   baseline: readonly LandmarkSourceCount[] | undefined,
 ): LandmarkSourceCheck {
   const blocking: string[] = [];
-  const shrinks: string[] = [];
+  const shrinks: LandmarkSourceCheck['shrinks'] = [];
   if (!sources || sources.length === 0) {
     return { blocking: ['the run did not say what its sources read'], shrinks };
   }
@@ -143,13 +146,21 @@ export function landmarkSourceCheck(
   const read = new Map(sources.map((s) => [s.source, s.count]));
   for (const { source, count: bar } of baseline ?? []) {
     const now = read.get(source);
-    if (now === undefined) blocking.push(`${source}: not read this run`);
+    if (now === undefined) shrinks.push({ source, reason: `${source}: not read this run` });
     else if (now > 0 && now < bar * (1 - MAX_LANDMARK_SOURCE_SHRINK)) {
       const pct = Math.round((1 - now / bar) * 100);
-      shrinks.push(`${source}: ${now} candidates, ${pct}% under the accepted ${bar}`);
+      shrinks.push({
+        source,
+        reason: `${source}: ${now} candidates, ${pct}% under the accepted ${bar}`,
+      });
     }
   }
   return { blocking, shrinks };
+}
+
+/** Every reason a check gives, blocks first — what the loader prints. */
+export function landmarkSourceReasons(check: LandmarkSourceCheck): string[] {
+  return [...check.blocking, ...check.shrinks.map((s) => s.reason)];
 }
 
 /** May a complete load retire? Nothing blocking, and any shrink excused by the operator. */
@@ -160,18 +171,26 @@ export function landmarkSourcesVouch(check: LandmarkSourceCheck, acceptShrink: b
 /**
  * The bar after an accepted load: each source's **highest** accepted count, so the bar never drifts
  * down in steps each under the margin — a slow real decline surfaces as a shrink once it passes the
- * margin, and only the operator's word (`acceptShrink`) lowers the bar to what the run read.
+ * margin. Only a shrink the operator excused (`acceptShrink`) moves down, to what the run read, and
+ * an excused unread source leaves the bar; every other source keeps its highest count.
  */
 export function nextLandmarkSourceBar(
   sources: readonly LandmarkSourceCount[],
   baseline: readonly LandmarkSourceCount[] | undefined,
+  check: LandmarkSourceCheck,
   acceptShrink: boolean,
 ): LandmarkSourceCount[] {
+  const excused = new Set(acceptShrink ? check.shrinks.map((s) => s.source) : []);
+  const read = new Map(sources.map((s) => [s.source, s.count]));
   const bar = new Map((baseline ?? []).map((s) => [s.source, s.count]));
-  return sources.map(({ source, count }) => ({
+  const next = sources.map(({ source, count }) => ({
     source,
-    count: acceptShrink ? count : Math.max(count, bar.get(source) ?? 0),
+    count: excused.has(source) ? count : Math.max(count, bar.get(source) ?? 0),
   }));
+  for (const [source, count] of bar) {
+    if (!read.has(source) && !excused.has(source)) next.push({ source, count });
+  }
+  return next;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   packLines,
   runIsComplete,
   summarySources,
+  withOneRetry,
 } from './landmarkLines';
 import type { PlacedLandmark } from './landmarkMatch';
 
@@ -117,5 +118,25 @@ describe('matchedAtOf', () => {
     });
     expect(matchedAtOf({})).toEqual({});
     expect(matchedAtOf(undefined)).toEqual({});
+  });
+});
+
+describe('withOneRetry', () => {
+  it('returns the first answer, or the second after one failure, and says when it retried', () => {
+    expect(withOneRetry(() => 1)).toBe(1);
+    let calls = 0;
+    let retried = 0;
+    const flaky = () => {
+      calls++;
+      if (calls === 1) throw new Error('401');
+      return 2;
+    };
+    expect(withOneRetry(flaky, () => retried++)).toBe(2);
+    expect(retried).toBe(1);
+    expect(() =>
+      withOneRetry(() => {
+        throw new Error('down');
+      }),
+    ).toThrow('down');
   });
 });

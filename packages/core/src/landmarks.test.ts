@@ -13,6 +13,7 @@ import {
   landmarkNameKey,
   landmarkProminence,
   landmarkSourceCheck,
+  landmarkSourceReasons,
   landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARK_ALIASES,
@@ -322,29 +323,26 @@ describe('landmarkSourceCheck', () => {
     expect(landmarkSourcesVouch(check, false)).toBe(true);
   });
 
-  it('calls a short source a shrink the operator may excuse', () => {
-    const check = landmarkSourceCheck(
-      [
-        { source: 'vt.osm', count: 4_000 },
-        { source: 'vt.gnis', count: 1_200 },
-      ],
-      baseline,
-    );
-    expect(check).toEqual({
-      blocking: [],
-      shrinks: ['vt.osm: 4000 candidates, 56% under the accepted 9000'],
-    });
+  it('calls a short or unread source a shrink the operator may excuse', () => {
+    const check = landmarkSourceCheck([{ source: 'vt.osm', count: 4_000 }], baseline);
+    expect(landmarkSourceReasons(check)).toEqual([
+      'vt.osm: 4000 candidates, 56% under the accepted 9000',
+      'vt.gnis: not read this run',
+    ]);
+    expect(check.blocking).toEqual([]);
     expect(landmarkSourcesVouch(check, false)).toBe(false);
     expect(landmarkSourcesVouch(check, true)).toBe(true);
   });
 
-  it('blocks — past any excuse — an empty source, an unread one, no bar, or no counts', () => {
-    const check = landmarkSourceCheck([{ source: 'ny.gnis', count: 0 }], baseline);
-    expect(check.blocking).toEqual([
-      'ny.gnis: no candidates',
-      'vt.osm: not read this run',
-      'vt.gnis: not read this run',
-    ]);
+  it('blocks — past any excuse — an empty source, no bar, or no counts', () => {
+    const check = landmarkSourceCheck(
+      [
+        { source: 'vt.osm', count: 9_000 },
+        { source: 'vt.gnis', count: 0 },
+      ],
+      baseline,
+    );
+    expect(landmarkSourceReasons(check)).toEqual(['vt.gnis: no candidates']);
     expect(landmarkSourcesVouch(check, true)).toBe(false);
     expect(landmarkSourceCheck(baseline, undefined).blocking).toEqual([
       'no complete load has been accepted on this deployment yet',
@@ -373,17 +371,55 @@ describe('landmarkSourceCheck', () => {
 });
 
 describe('nextLandmarkSourceBar', () => {
-  const bar = [{ source: 'ny.osm', count: 55_000 }];
+  const bar = [
+    { source: 'ny.osm', count: 55_000 },
+    { source: 'vt.osm', count: 9_000 },
+    { source: 'nh.gnis', count: 1_600 },
+  ];
+  const next = (sources: { source: string; count: number }[], accept: boolean) =>
+    nextLandmarkSourceBar(sources, bar, landmarkSourceCheck(sources, bar), accept);
 
-  it('never lowers the bar without the operator: steps under the margin cannot ratchet it down', () => {
-    expect(nextLandmarkSourceBar([{ source: 'ny.osm', count: 53_400 }], bar, false)).toEqual(bar);
-    expect(nextLandmarkSourceBar([{ source: 'ny.osm', count: 56_000 }], bar, false)).toEqual([
-      { source: 'ny.osm', count: 56_000 },
+  it('only rises without the operator: steps under the margin cannot walk it down', () => {
+    expect(
+      next(
+        [
+          { source: 'ny.osm', count: 53_400 },
+          { source: 'vt.osm', count: 9_500 },
+          { source: 'nh.gnis', count: 1_600 },
+        ],
+        false,
+      ),
+    ).toEqual([
+      { source: 'ny.osm', count: 55_000 },
+      { source: 'vt.osm', count: 9_500 },
+      { source: 'nh.gnis', count: 1_600 },
     ]);
-    expect(nextLandmarkSourceBar([{ source: 'ny.osm', count: 40_000 }], bar, true)).toEqual([
-      { source: 'ny.osm', count: 40_000 },
+    expect(
+      nextLandmarkSourceBar(bar, undefined, landmarkSourceCheck(bar, undefined), false),
+    ).toEqual(bar);
+  });
+
+  it('lowers only the shrinks the operator excused, and lets an excused unread source go', () => {
+    // vt.osm really shrank, nh.gnis is no longer read; ny.osm read 2.9% low and is not excused.
+    expect(
+      next(
+        [
+          { source: 'ny.osm', count: 53_400 },
+          { source: 'vt.osm', count: 4_000 },
+        ],
+        true,
+      ),
+    ).toEqual([
+      { source: 'ny.osm', count: 55_000 },
+      { source: 'vt.osm', count: 4_000 },
     ]);
-    expect(nextLandmarkSourceBar(bar, undefined, false)).toEqual(bar);
+    // Passing the flag with nothing to excuse moves nothing down.
+    expect(
+      next(
+        bar.map((s) => ({ ...s, count: s.count - 10 })),
+        true,
+      ),
+    ).toEqual(bar);
   });
 });
 

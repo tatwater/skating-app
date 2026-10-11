@@ -26,6 +26,7 @@ import {
   packLines,
   summarySources,
   type TransformSummary,
+  withOneRetry,
 } from './landmarkLines';
 
 const DEFAULT_INPUT = join(
@@ -139,17 +140,9 @@ function main(): void {
           ...(acceptMassDrop ? { acceptMassDrop } : {}),
           dryRun: !apply,
         });
-      let counts: Counts & { shortfalls?: string[] };
-      try {
-        counts = call();
-      } catch {
-        // One retry: the CLI's own auth check intermittently answers 401 mid-run (seen on the first
-        // dry run, 2026-09-29), and the batch is idempotent — a second attempt is always safe. But if
-        // the first call committed before the CLI failed, the retry sees its writes as already done
-        // and counts them `unchanged`: the run says so rather than under-report quietly.
-        batchesRetried++;
-        counts = call();
-      }
+      // A first attempt that committed before the CLI failed shows its writes as `unchanged` on the
+      // retry: counted, so the run says its numbers may under-report rather than do so quietly.
+      const counts = withOneRetry(call, () => batchesRetried++);
       for (const key of Object.keys(totals) as (keyof Counts)[]) totals[key] += counts[key] ?? 0;
       for (const shortfall of counts.shortfalls ?? []) shortfalls.add(shortfall);
       consecutive = 0;
@@ -192,13 +185,8 @@ function main(): void {
       });
     let note: string;
     try {
-      let result: { accepted: boolean; shortfalls: string[] };
-      try {
-        result = accept();
-      } catch {
-        // The same intermittent 401 the batches retry; recording a bar twice is harmless.
-        result = accept();
-      }
+      // Recording the bar twice is harmless: the second row is the same bar.
+      const result = withOneRetry(accept);
       note = result.accepted
         ? 'source counts accepted as the deployment’s new baseline'
         : `source counts NOT accepted as the baseline (${result.shortfalls.join('; ')})`;
