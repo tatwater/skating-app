@@ -14,7 +14,7 @@
  */
 
 import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
-import { requestNameKey } from './corpusRequests';
+import { landmarkNameKey } from './corpusRequests';
 import {
   type BBox,
   distanceToShorelineMeters,
@@ -243,23 +243,69 @@ export interface LandmarkIdentity {
  */
 export function landmarksAreSamePlace(a: LandmarkIdentity, b: LandmarkIdentity): boolean {
   if (a.kind !== b.kind && a.kind !== 'other' && b.kind !== 'other') return false;
-  const keys = new Set(a.names.map(landmarkNameKey));
-  if (!b.names.some((n) => keys.has(landmarkNameKey(n)))) return false;
+  // The distance before the names: it is the cheap test, and the queue asks this of every ask
+  // against every landmark on a lake — most of them far away.
   const radius = Math.max(
     LANDMARK_SAME_PLACE_RADIUS_M[a.kind],
     LANDMARK_SAME_PLACE_RADIUS_M[b.kind],
   );
-  return haversineMeters(a.point, b.point) <= radius;
+  const near = haversineMeters(a.point, b.point) <= radius;
+  if (!near) return false;
+  const keys = new Set(a.names.map(landmarkNameKey));
+  return b.names.some((n) => keys.has(landmarkNameKey(n)));
+}
+
+/** A skater's ask for a landmark (D202, `name_landmark`): the names it goes by, and the spot marked. */
+export interface LandmarkAsk {
+  names: readonly string[];
+  coord: LatLng;
+}
+
+/** An ask as the same-place rule sees it — it has no kind, so it agrees with any (`other`'s radius). */
+function askIdentity(ask: LandmarkAsk): LandmarkIdentity {
+  return { kind: 'other', point: ask.coord, names: ask.names };
 }
 
 /**
- * The key two spellings of one landmark share: `requestNameKey`'s fold (case, apostrophes, saint →
- * st, punctuation) plus a leading "the" dropped, because "the Gut" and "Gut" are one place and the
- * corpus writes both.
+ * Is this ask for this landmark — a name of one folding to a name of the other, *and* the same place
+ * by {@link landmarksAreSamePlace}? A name alone is not enough: Champlain has two Long Points, and
+ * a landmark at one answers nobody who marked the other (Greptile P1 on #84).
  */
-export function landmarkNameKey(name: string): string {
-  return requestNameKey(name).replace(/^the /, '');
+export function landmarkAnswersAsk(
+  landmark: { kind: LandmarkKind; point: LatLng; name: string; aliases: readonly string[] },
+  ask: LandmarkAsk,
+): boolean {
+  return landmarksAreSamePlace(
+    { kind: landmark.kind, point: landmark.point, names: [landmark.name, ...landmark.aliases] },
+    askIdentity(ask),
+  );
 }
+
+/** Are two asks for one place — one name, marked within the same-place radius of each other? */
+export function landmarkAsksAreSamePlace(a: LandmarkAsk, b: LandmarkAsk): boolean {
+  return landmarksAreSamePlace(askIdentity(a), askIdentity(b));
+}
+
+/**
+ * The asks as places, for the lake editor's proposals: each ask, oldest first, joins the oldest
+ * place whose **first** ask it is the same place as, else starts one. The first ask stands for its
+ * place — its spot is where the editor flies, its id what a decision is made on — and a decision
+ * closes every open ask that is the same place as it (`openSiblings`). An ask within reach of two
+ * places' first asks is listed under the older and answered by whichever is decided first: by the
+ * rule it is the same place as either.
+ */
+export function groupLandmarkAsks<T extends LandmarkAsk>(asks: readonly T[]): T[][] {
+  const places: T[][] = [];
+  for (const ask of asks) {
+    const place = places.find((p) => landmarkAsksAreSamePlace(p[0] as T, ask));
+    if (place) place.push(ask);
+    else places.push([ask]);
+  }
+  return places;
+}
+
+/** The key two spellings of one landmark share — defined beside `requestNameKey` (`corpusRequests.ts`). */
+export { landmarkNameKey } from './corpusRequests';
 
 /**
  * How much a kind weighs when labels compete for the same spot on the map, before the community has
@@ -483,3 +529,31 @@ export function landmarkLabelFeatures(
       })),
   };
 }
+
+// ── The corpus's unplaced names (D202) ─────────────────────────────────────────────────────────
+
+/**
+ * A name the community's emails use for a place that no landmark answers to — "Apple Island",
+ * "Hero's Welcome", "the sea caves" — waiting for a moderator: `open` until it is placed on the map
+ * (or filed as another spelling of a landmark that is there), or dismissed with a reason.
+ */
+export const CORPUS_NAME_STATUSES = ['open', 'placed', 'dismissed'] as const;
+export type CorpusNameStatus = (typeof CORPUS_NAME_STATUSES)[number];
+
+/** Why a corpus name is not a landmark — the reasons the triage page offers, most common first. */
+export const CORPUS_NAME_DISMISS_REASONS = [
+  'not_a_place',
+  'a_water_body',
+  'outside_region',
+  'too_vague',
+  'other',
+] as const;
+export type CorpusNameDismissReason = (typeof CORPUS_NAME_DISMISS_REASONS)[number];
+
+export const CORPUS_NAME_DISMISS_LABELS: Record<CorpusNameDismissReason, string> = {
+  not_a_place: 'Not a place (a phrase, an event, a person)',
+  a_water_body: 'A lake, pond or river — not a landmark',
+  outside_region: 'Outside the five states',
+  too_vague: 'Too vague to place',
+  other: 'Other',
+};

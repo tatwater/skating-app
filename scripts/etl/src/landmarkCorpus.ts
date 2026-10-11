@@ -295,3 +295,92 @@ export function applyCorpus(
   }
   return outcome;
 }
+
+/** One corpus name no landmark took, as `load-landmark-names` writes it (D202's moderator queue). */
+export interface CorpusNameRecord {
+  name: string;
+  /** The spellings that resemble the name — the inventory's clusters, filtered as attachment is. */
+  aliases: string[];
+  messages: number;
+  skatedMessages: number;
+  states: string[];
+  /** The lake the inventory said it was on, by name, when it said. */
+  parentName?: string;
+  /** That lake, when exactly one listed body answers to the name (in the states the corpus saw). */
+  waterBodyId?: string;
+  /** For a name that met landmarks on several lakes: those lakes, for the moderator to choose from. */
+  candidateBodyIds?: string[];
+  /** The name answers to landmarks already on the map (ambiguously) — nothing to place, only to attribute. */
+  alreadyNamed?: boolean;
+}
+
+/**
+ * The corpus's leftovers as the moderator's queue: every unmatched name, and every ambiguous one
+ * with the lakes it met. A named parent resolves to a body only when one listed body of that name
+ * sits in the states the corpus saw — two "Long Pond"s are a choice for a person, not a guess.
+ */
+export function corpusNameRecords(
+  outcome: CorpusOutcome,
+  bodies: ReadonlyMap<string, MatchBody>,
+): CorpusNameRecord[] {
+  const byName = new Map<string, MatchBody[]>();
+  for (const body of bodies.values()) {
+    if (!body.name) continue;
+    const key = landmarkNameKey(body.name);
+    const list = byName.get(key);
+    if (list) list.push(body);
+    else byName.set(key, [body]);
+  }
+  const record = (place: CorpusPlace): CorpusNameRecord => ({
+    name: place.name,
+    aliases: place.aliases.filter(
+      (a) => aliasResembles(a, place.name) && landmarkNameKey(a) !== landmarkNameKey(place.name),
+    ),
+    messages: place.messages,
+    skatedMessages: place.skatedMessages,
+    states: place.states,
+    ...(place.parentBody ? { parentName: place.parentBody } : {}),
+  });
+  const out: CorpusNameRecord[] = [];
+  for (const place of outcome.unmatched) {
+    const rec = record(place);
+    if (place.parentBody) {
+      let hits = byName.get(landmarkNameKey(place.parentBody)) ?? [];
+      if (place.states.length > 0) {
+        hits = hits.filter((b) => (b.states ?? []).some((s) => place.states.includes(s)));
+      }
+      if (hits.length === 1) rec.waterBodyId = (hits[0] as MatchBody).id;
+      else if (hits.length > 1) rec.candidateBodyIds = hits.map((b) => b.id);
+    }
+    out.push(rec);
+  }
+  for (const { place, bodies: ids } of outcome.ambiguous) {
+    const rec = record(place);
+    rec.alreadyNamed = true;
+    if (ids.length === 1) rec.waterBodyId = ids[0] as string;
+    else rec.candidateBodyIds = [...ids];
+    out.push(rec);
+  }
+  // One row per name on its named lake: two spellings that fold alike ("St. Albans Rock", "Saint
+  // Albans rock") merge — the busier one's name, both spellings, the larger counts — and the queue
+  // is loaded busiest first.
+  const merged = new Map<string, CorpusNameRecord>();
+  for (const rec of out) {
+    const key = `${landmarkNameKey(rec.name)}|${rec.parentName ? landmarkNameKey(rec.parentName) : ''}`;
+    const held = merged.get(key);
+    if (!held) {
+      merged.set(key, rec);
+      continue;
+    }
+    const [keep, other] = held.messages >= rec.messages ? [held, rec] : [rec, held];
+    keep.aliases = [...new Set([...keep.aliases, other.name, ...other.aliases])].filter(
+      (a) => landmarkNameKey(a) !== landmarkNameKey(keep.name),
+    );
+    keep.states = [...new Set([...keep.states, ...other.states])];
+    keep.skatedMessages = Math.max(keep.skatedMessages, other.skatedMessages);
+    merged.set(key, keep);
+  }
+  return [...merged.values()].sort(
+    (a, b) => b.messages - a.messages || a.name.localeCompare(b.name),
+  );
+}

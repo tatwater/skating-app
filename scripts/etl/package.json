@@ -31,7 +31,8 @@
     "tidal-band": "tsx --max-old-space-size=8192 src/tidalBand.ts",
     "retire-absorbed": "tsx src/retireAbsorbed.ts",
     "landmarks": "tsx --max-old-space-size=8192 src/landmarkCli.ts",
-    "load-landmarks": "tsx src/loadLandmarks.ts"
+    "load-landmarks": "tsx src/loadLandmarks.ts",
+    "load-landmark-names": "tsx src/loadLandmarkNames.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

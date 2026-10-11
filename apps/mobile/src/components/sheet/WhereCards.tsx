@@ -1,4 +1,4 @@
-import type { Where } from '@skating/core';
+import { pointFromTap, type Where } from '@skating/core';
 import { useMemo, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
@@ -135,8 +135,11 @@ export function WhereCards({
           onTap={
             placing
               ? (coord) => {
+                  // Near a known landmark, the tap takes its name (D202).
                   active.onChange(
-                    patchWhere(where, { point: { coord, radiusMeters: POINT_RADIUS_M } }),
+                    patchWhere(where, {
+                      point: pointFromTap(coord, body.landmarks, POINT_RADIUS_M),
+                    }),
                   );
                   setPlacing(false);
                 }

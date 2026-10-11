@@ -1,4 +1,4 @@
-import type { Where } from '@skating/core';
+import { pointFromTap, type SheetLandmark, type Where } from '@skating/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../lib/utils';
 import { useConsoleMode } from './ConsoleMode';
@@ -173,10 +173,14 @@ export function WhereCards({
   );
 }
 
-/** What the instrument does with a click on the water while a where card is open. */
+/**
+ * What the instrument does with a click on the water while a where card is open: a point, named
+ * for the landmark it landed near when there is one (D202).
+ */
 export function whereClickOnWater(
   where: Where | undefined,
   coord: { lat: number; lng: number },
+  landmarks: readonly SheetLandmark[] = [],
 ): Where | undefined {
-  return patchWhere(where, { point: { coord, radiusMeters: POINT_RADIUS_M } });
+  return patchWhere(where, { point: pointFromTap(coord, landmarks, POINT_RADIUS_M) });
 }

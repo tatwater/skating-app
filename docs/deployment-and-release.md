@@ -263,7 +263,9 @@ of every line is the founder — they are provisioning decisions, not code.
    ones named here (`ORS_API_KEY` — without it `isochrones.ts` silently skips polygons;
    `STRAVA_CLIENT_ID` / `_SECRET`; `WEB_APP_URL` — without it operator alerts build bare deep links
    and the OAuth return is lost). Then the corpus, in the dev order — `run-corpus.sh` is dev-only,
-   so each loader with `--prod`: merge → bodies → sub-areas → prune; depths; enrichment /
+   so each loader with `--prod`: merge → bodies → sub-areas → prune; landmarks (the pass with
+   `--refresh-bodies` against prod, then `load-landmarks` and `load-landmark-names`, each
+   `--apply --prod` — D202; after the bays, which a landmark's name defers to); depths; enrichment /
    elevation; access `parking` then `put-ins` `--batch=1`; bathymetry match; bay depths;
    `mintSubAreaKeys`; `restampAllParents`; **then `backfillCells`** — the imports write cell rows
    at insert, but the A06c §4.2 richness terms (put-ins, depth, contours, activity) are computed

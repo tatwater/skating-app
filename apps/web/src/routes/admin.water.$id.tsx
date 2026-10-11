@@ -263,6 +263,11 @@ function LakeEditor() {
               })
             }
             onPromote={setPromotion}
+            onPlacePoint={(point) => {
+              setPlacing(null);
+              setLandmarkPoint(point);
+              drawTargetRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14 });
+            }}
             onResult={setBanner}
           />
           <DepthTool body={body} onResult={setBanner} />

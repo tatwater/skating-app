@@ -46,12 +46,14 @@ describe('requestKindsFor — what a standing lets you ask', () => {
     expect(requestKindsFor({ standing: 'unlisted' })).toEqual([]);
   });
 
-  it('every kind has a skater label, a moderator title and a prompt; only name_bay asks for a name', () => {
+  it('every kind has a skater label, a moderator title and a prompt; the naming kinds ask for a name', () => {
     for (const kind of REQUEST_KINDS) {
       expect(requestKindLabel(kind).length).toBeGreaterThan(0);
       expect(requestKindTitle(kind).length).toBeGreaterThan(0);
       expect(requestPrompt(kind).title.length).toBeGreaterThan(0);
-      expect(requestPrompt(kind).name !== undefined).toBe(kind === 'name_bay');
+      expect(requestPrompt(kind).name !== undefined).toBe(
+        kind === 'name_bay' || kind === 'name_landmark',
+      );
     }
   });
 
@@ -77,6 +79,9 @@ describe('describeRequestOutcome', () => {
     ).toBe('A moderator put this lake back on the active map. Welcome back.');
     expect(describeRequestOutcome({ kind: 'admit', status: 'approved' })).toBe(
       'A moderator added this water to the map.',
+    );
+    expect(describeRequestOutcome({ kind: 'name_landmark', status: 'approved' })).toBe(
+      'A moderator added this place to the map.',
     );
     expect(describeRequestOutcome({ kind: 'name_bay', status: 'approved' })).toBe(
       'A moderator drew this bay as a place of its own.',

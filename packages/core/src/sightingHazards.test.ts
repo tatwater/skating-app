@@ -7,6 +7,7 @@ import { sectorFrame, sectorWitness } from './sectorGeometry';
 import {
   drawnCoversDerived,
   fitToVertexCap,
+  landmarkPointsOf,
   sightingHazardShape,
   sightingsMakePins,
   whereNamesPinShape,
@@ -53,6 +54,51 @@ describe('sightingHazardShape (D210) — the pin a located open or skim sighting
         radiusMeters: 80,
       },
     });
+  });
+
+  it('a landmark chosen by name pins what the rest of its where names, never its label point (D202)', () => {
+    const label = { lat: 44.7, lng: -72.05 };
+    const withLandmarks = { ...ctx, landmarkPoints: { lm1: label } };
+    const chosen = {
+      coord: label,
+      radiusMeters: 75,
+      name: 'Apple Island',
+      landmarkId: 'lm1',
+      byName: true,
+    };
+    // Named alone: nothing — the island is land.
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: chosen } }, withLandmarks),
+    ).toBeNull();
+    // Named with a wedge: the wedge.
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: chosen, sector: 'N' } }, withLandmarks)
+        ?.shape.geometryKind,
+    ).toBe('polygon');
+    // A tap that took the name is the tap's circle.
+    const tap = { ...chosen, coord: { lat: 44.701, lng: -72.05 } };
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: tap } }, withLandmarks)?.shape
+        .geometryKind,
+    ).toBe('point_radius');
+  });
+
+  it('a tap that lands on the label is the tap’s circle — the picker says which, not the distance (Greptile P1 on #84)', () => {
+    const label = { lat: 44.7, lng: -72.05 };
+    const withLandmarks = { ...ctx, landmarkPoints: { lm1: label } };
+    // pointFromTap's point for a thumb on the label: the coord *is* the label, and no flag.
+    const tap = { coord: label, radiusMeters: 75, name: 'Apple Island', landmarkId: 'lm1' };
+    expect(
+      sightingHazardShape({ type: 'open', where: { point: tap } }, withLandmarks)?.shape
+        .geometryKind,
+    ).toBe('point_radius');
+    expect(whereNamesPinShape({ point: tap }, withLandmarks.landmarkPoints)).toBe(true);
+    // Chosen by name, but the landmark has moved since: the point is no longer on the label, so it
+    // pins (the over-drawing direction), and a flag with no id is a plain spot.
+    const moved = { ...tap, byName: true, coord: { lat: 44.71, lng: -72.05 } };
+    expect(whereNamesPinShape({ point: moved }, withLandmarks.landmarkPoints)).toBe(true);
+    const { landmarkId: _, ...unlinked } = { ...tap, byName: true };
+    expect(whereNamesPinShape({ point: unlinked }, withLandmarks.landmarkPoints)).toBe(true);
   });
 
   it('a bay is the bay, a wedge of a bay is the bay’s wedge, an unknown bay is nothing', () => {
@@ -117,6 +163,27 @@ describe('whereNamesPinShape / sightingsMakePins — the hint promises a pin onl
     expect(whereNamesPinShape({ subAreaId: 'b1', sector: 'near_shore' })).toBe(false);
     expect(whereNamesPinShape({ extent: 'patches' })).toBe(false);
     expect(whereNamesPinShape({ sector: 'head' })).toBe(false);
+  });
+
+  it('promises no pin for a landmark chosen by name alone — the sheet and the server read one rule (D202)', () => {
+    const label = { lat: 44.7, lng: -72.05 };
+    const points = landmarkPointsOf({ landmarks: [{ _id: 'lm1', point: label }] });
+    const chosen = {
+      coord: label,
+      radiusMeters: 75,
+      name: 'Apple Island',
+      landmarkId: 'lm1',
+      byName: true,
+    };
+    expect(whereNamesPinShape({ point: chosen }, points)).toBe(false);
+    expect(whereNamesPinShape({ point: chosen, sector: 'N' }, points)).toBe(true);
+    expect(sightingsMakePins([{ type: 'open', where: { point: chosen } }], points)).toBe(false);
+    // A tap that took the name is still a tap; and without the points, a point reads as a tap.
+    const tap = { ...chosen, coord: { lat: 44.701, lng: -72.05 } };
+    expect(whereNamesPinShape({ point: tap }, points)).toBe(true);
+    expect(whereNamesPinShape({ point: chosen })).toBe(true);
+    expect(landmarkPointsOf({ landmarks: [] })).toBeUndefined();
+    expect(landmarkPointsOf(null)).toBeUndefined();
   });
 
   it('agrees with the server: no hint for a placed sighting that derives nothing', () => {
