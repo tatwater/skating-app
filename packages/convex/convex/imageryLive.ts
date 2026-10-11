@@ -163,8 +163,14 @@ const LOST_CLAIM_MS = 10 * 60_000;
 /** Manifests fetched at once while indexing. */
 const MANIFEST_CONCURRENCY = 8;
 
-/** Saved rows one build reads again (changed, or written before ETags were kept); the rest wait. */
-const REREAD_CAP = 400;
+/**
+ * How long one build may spend reading manifests, from its start. ⚠ **Well inside the 10-minute
+ * action limit**, with room for one more group's reads (30 s each, at most), the index write and
+ * `latest`: a build killed mid-read saves nothing and the next repeats it, for ever (Greptile,
+ * PR #85). Each group is saved as it lands, so a build out of time keeps what it read; the rest
+ * wait, and the request stands for the next tick.
+ */
+const READ_BUDGET_MS = 4 * 60_000;
 
 type Outcome = Doc<'imageryRuns'>['outcome'];
 type Status = Doc<'imageryGranules'>['status'];
@@ -1243,8 +1249,7 @@ async function buildIndexOnce(
     // the same key again; its ETag is what says so, and a stale row would carry the old bands,
     // footprint and body count into the index — over the CLI's corrected one.
     // A row written before ETags were kept is stale too — it may predate a recut — and is read
-    // again; at most `REREAD_CAP` stale rows a build, so a whole season of them cannot run a build
-    // past the action limit (the rest wait, and the request stands for the next tick).
+    // again. Reading is bounded by time, not count (`READ_BUDGET_MS`).
     const current = (r: Doc<'imageryFrames'>) => {
       const etag = etagOf.get(r.manifestKey);
       return etag === undefined || r.etag === etag;
@@ -1258,14 +1263,23 @@ async function buildIndexOnce(
       const row = byKey.get(k);
       return row !== undefined && !current(row);
     });
-    const fresh = [...unseen, ...stale.slice(0, REREAD_CAP)];
-    const deferred = Math.max(0, stale.length - REREAD_CAP);
+    // New frames first: a frame missing from the timeline matters more than a recut's details.
+    const fresh = [...unseen, ...stale];
+    for (let i = 0; i < remove.length; i += 100) {
+      await ctx.runMutation(internal.imageryLive.syncFrames, {
+        add: [],
+        remove: remove.slice(i, i + 100),
+      });
+    }
     const added: ReturnType<typeof frameFromManifest>[] = [];
     const reread = new Set<string>();
     let unreadable = 0;
-    for (let i = 0; i < fresh.length; i += MANIFEST_CONCURRENCY) {
+    let next = 0;
+    while (next < fresh.length && Date.now() - startedAt < READ_BUDGET_MS) {
+      const group = fresh.slice(next, next + MANIFEST_CONCURRENCY);
+      next += group.length;
       const batch = await Promise.all(
-        fresh.slice(i, i + MANIFEST_CONCURRENCY).map(async (key) => {
+        group.map(async (key) => {
           try {
             // Signed, past the CDN: a recut read through a cache could still be the old manifest.
             const manifest = await getJson<FrameManifest>(config.r2, key);
@@ -1275,19 +1289,18 @@ async function buildIndexOnce(
           }
         }),
       );
-      for (const row of batch) {
-        if (row) {
-          added.push(row);
-          reread.add(row.manifestKey);
-        } else unreadable++;
+      const landed = batch.filter((row): row is NonNullable<typeof row> => row !== null);
+      unreadable += batch.length - landed.length;
+      // Saved as it lands: a build stopped by the clock keeps what it read.
+      if (landed.length > 0) {
+        await ctx.runMutation(internal.imageryLive.syncFrames, { add: landed, remove: [] });
+      }
+      for (const row of landed) {
+        added.push(row);
+        reread.add(row.manifestKey);
       }
     }
-    for (let i = 0; i < Math.max(added.length, remove.length); i += 100) {
-      await ctx.runMutation(internal.imageryLive.syncFrames, {
-        add: added.slice(i, i + 100),
-        remove: remove.slice(i, i + 100),
-      });
-    }
+    const deferred = fresh.length - next;
 
     // A changed manifest that could not be read keeps its old row until it can (counted unreadable,
     // so it is retried): an older description of the frame beats no frame.

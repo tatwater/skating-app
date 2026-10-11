@@ -1259,38 +1259,40 @@ describe('buildIndex', () => {
     expect(row?.etag).toBeDefined();
   });
 
-  test('stale rows past the per-build cap wait for the next tick, with the request standing', async () => {
+  test("slow reads run out the build's budget, not the action: each group is saved, the next tick goes on", async () => {
     const t = convexTest(schema, modules);
     const manifests = new Map<string, unknown>();
-    const keys: string[] = [];
-    for (let i = 0; i < 401; i++) {
+    for (let i = 0; i < 20; i++) {
       const g = s2(`19T${String(i).padStart(3, '0')}`, '20261005');
-      const key = `frames/${SEASON}/${g}.json`;
-      keys.push(key);
-      manifests.set(key, manifest(g, '2026-10-05T15:30:00Z'));
+      manifests.set(`frames/${SEASON}/${g}.json`, manifest(g, '2026-10-05T15:30:00Z'));
     }
-    await t.run(async (ctx) => {
-      for (const key of keys) {
-        await ctx.db.insert('imageryFrames', {
-          season: SEASON,
-          manifestKey: key,
-          granuleId: key,
-          capturedAt: '2026-10-05T15:30:00Z',
-          cloudCoverPct: 40,
-          bodyCount: 1,
-          bands: ['visual'],
-        });
-      }
-    });
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     stub(world({ manifests }));
+    const fetchFn = globalThis.fetch;
+    // Every signed manifest read stalls to its 30 s timeout before answering.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.startsWith(ENDPOINT) && req.url.includes('/frames/') && req.method === 'GET') {
+          vi.advanceTimersByTime(30_000);
+        }
+        return fetchFn(req);
+      }),
+    );
+    const saved = () => t.run((ctx) => ctx.db.query('imageryFrames').collect());
+    // One group of eight takes four minutes: the budget is spent, and what it read is kept.
     await t.action(internal.imageryLive.buildIndex, {});
-    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 400, deferred: 1 });
+    expect(await saved()).toHaveLength(8);
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 8, deferred: 12 });
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
-    // The next tick reads the last one and completes the request.
+    // Each tick goes on from there, until every frame is read and the request is satisfied.
     await t.action(internal.imageryLive.buildIndex, {});
-    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 1 });
+    expect(await saved()).toHaveLength(16);
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await saved()).toHaveLength(20);
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 4 });
   });
 
   test('a failed rebuild alerts the admins', async () => {
