@@ -356,6 +356,7 @@ export const storeSeries = internalMutation({
   handler: async (ctx, { season, source, sites }) => {
     const now = Date.now();
     const today = newYorkDate(now);
+    const isCurrent = archiveSeasonAt(now) === season;
     for (const site of sites) {
       const existing = await ctx.db
         .query('seasonWatchSeries')
@@ -381,17 +382,24 @@ export const storeSeries = internalMutation({
         lat: site.lat,
         lng: site.lng,
         source: keepLive ? ('forecast' as const) : source,
-        // The archive has answered for this site (`fillSeason` sends no site it did not answer
-        // for), so the season is whole — even if the answer held no nights to add.
-        ...(keepLive ? { archiveFilledAt: now } : {}),
+        // `archiveFilledAt` means *the archive has been over the whole season, through June* — so
+        // only a past season's pass sets it. The season under way is topped up only to yesterday,
+        // and stamping it would leave its spring unfilled for good once the watch closes (Greptile,
+        // PR #85); it is whole while it reaches back to its floor (`holdsSeason`). A site the
+        // archive answered for is whole even if the answer held no nights to add.
+        ...(keepLive && !isCurrent ? { archiveFilledAt: now } : {}),
         firstDate: merged.firstDate,
         lows: merged.lows,
         updatedAt: now,
       };
       if (existing) await ctx.db.patch(existing._id, fields);
-      // An empty first write is skipped — except the archive's: it answered for this site
-      // (`fillSeason` sends no other) and had no nights, which is worth keeping, or every plan
-      // would ask it again.
+      // ⚠ **The archive never starts a season under way.** Its document would read as a whole past
+      // season once the watch closed, spring and all; it only fills gaps around what the live
+      // watch keeps. A site with no live lows yet is still lacking, and asked again.
+      else if (isCurrent && source === 'archive') continue;
+      // An empty first write is skipped — except a past season's archive answer: it answered for
+      // this site (`fillSeason` sends no other) and had no nights, which is worth keeping, or every
+      // plan would ask it again.
       else if (merged.lows.length > 0 || source === 'archive') {
         await ctx.db.insert('seasonWatchSeries', {
           season,
@@ -789,6 +797,7 @@ export function holdsSeason(
   isCurrent: boolean,
 ): boolean {
   if (!doc) return false;
+  // A past season's archive pass — the only writer of either — covered it through June.
   if (doc.source === 'archive' || doc.archiveFilledAt !== undefined) return true;
   // ⚠ **The season under way is whole only back to its floor.** The live watch keeps 92 days, so a
   // lake added in February starts in November: its autumn is still to fill from the archive

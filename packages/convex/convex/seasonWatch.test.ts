@@ -981,10 +981,43 @@ describe('history', () => {
     expect(urls[1]).toContain('start_date=2026-09-01');
     expect(urls[1]).toContain('end_date=2027-02-09');
     const [doc] = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2026-27' });
-    // The autumn is filled, the live night kept, and the season whole.
+    // The autumn is filled, the live night kept, and the season whole — while it is under way.
     expect(doc).toMatchObject({ source: 'forecast', firstDate: '2026-09-01' });
-    expect(doc?.archiveFilledAt).toBeDefined();
+    // ⚠ Not marked archive-filled: that would skip the spring once the season is past.
+    expect(doc?.archiveFilledAt).toBeUndefined();
     expect(await held()).toEqual([site.waterBodyId]);
+    // Next August the season is past, and its spring — after the watch closed — is still to fill.
+    vi.setSystemTime(new Date('2027-08-10T17:00:00Z'));
+    expect(
+      await t.query(internal.seasonWatch.heldSites, {
+        season: 'winter-2026-27',
+        waterBodyIds: [site.waterBodyId],
+        isCurrent: false,
+      }),
+    ).toEqual([]);
+  });
+
+  test('the archive never starts a season under way: a site with no live lows stays lacking', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2027-02-10T17:00:00Z'));
+    const t = convexTest(schema, modules);
+    const [lake] = await seedLakes(t, 1);
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2026-27',
+      source: 'archive',
+      sites: [
+        {
+          waterBodyId: lake as Id<'waterBodies'>,
+          name: 'Lake 0',
+          lat: 44,
+          lng: -71.65,
+          days: [{ date: '2026-09-01', minTempC: 5 }],
+        },
+      ],
+    });
+    expect(await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2026-27' })).toEqual(
+      [],
+    );
   });
 
   test('in October the forecast already reaches the floor: no archive pass for the season under way', async () => {
