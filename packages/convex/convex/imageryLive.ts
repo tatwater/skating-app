@@ -1282,11 +1282,17 @@ async function buildIndexOnce(ctx: ActionCtx): Promise<{
     // and ⚠ **manifests the last build could not read last of all**: every build starts from the
     // top, so one that stalls at the front would spend every budget, and the good frames behind it
     // would never be reached (Greptile, PR #85).
-    const failing = new Set<string>(await ctx.runQuery(internal.imageryLive.unreadableKeys, {}));
+    //
+    // Among themselves they rotate: they are read in the order remembered, which puts the ones
+    // not reached last time first and the ones that failed again at the back — so a stalling few
+    // cannot keep a repaired one behind them unread, build after build.
+    const failingOrder: string[] = await ctx.runQuery(internal.imageryLive.unreadableKeys, {});
+    const failing = new Set(failingOrder);
+    const pending = new Set([...unseen, ...stale]);
     const fresh = [
       ...unseen.filter((k) => !failing.has(k)),
       ...stale.filter((k) => !failing.has(k)),
-      ...[...unseen, ...stale].filter((k) => failing.has(k)),
+      ...failingOrder.filter((k) => pending.has(k)),
     ];
     for (let i = 0; i < remove.length; i += 100) {
       await ctx.runMutation(internal.imageryLive.syncFrames, {
@@ -1329,7 +1335,8 @@ async function buildIndexOnce(ctx: ActionCtx): Promise<{
     // ones are still unreadable, and wait for their retry like the ones that failed just now.
     const unread = fresh.slice(next);
     const deferred = unread.filter((k) => !failing.has(k)).length;
-    const unreadableKeys = [...failedNow, ...unread.filter((k) => failing.has(k))];
+    // Not reached first, failed again last: next build's turn order (see `failingOrder`).
+    const unreadableKeys = [...unread.filter((k) => failing.has(k)), ...failedNow];
     const unreadable = unreadableKeys.length;
 
     // A changed manifest that could not be read keeps its old row until it can (counted unreadable,

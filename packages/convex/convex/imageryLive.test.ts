@@ -1337,6 +1337,53 @@ describe('buildIndex', () => {
     expect(await t.query(internal.imageryLive.unreadableKeys, {})).toHaveLength(16);
   });
 
+  test('known-unreadable manifests take turns, so a repaired one behind stalling ones is read', async () => {
+    const t = convexTest(schema, modules);
+    const manifests = new Map<string, unknown>();
+    const stalling = new Set<string>();
+    const keys: string[] = [];
+    for (let i = 0; i < 17; i++) {
+      const g = s2(`19T${String(i).padStart(3, '0')}`, '20261005');
+      const key = `frames/${SEASON}/${g}.json`;
+      keys.push(key);
+      stalling.add(key);
+      manifests.set(key, manifest(g, '2026-10-05T15:30:00Z'));
+    }
+    // All seventeen are known unreadable, the last in line repaired since.
+    const repaired = keys[16] as string;
+    stalling.delete(repaired);
+    await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 0, unreadableKeys: keys });
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    stub(world({ manifests }));
+    const fetchFn = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const key = new URL(req.url).pathname.replace('/skating-imagery/', '');
+        if (req.url.startsWith(ENDPOINT) && req.method === 'GET' && stalling.has(key)) {
+          vi.advanceTimersByTime(30_000);
+          return new Response('', { status: 504, statusText: 'Timeout' });
+        }
+        return fetchFn(req);
+      }),
+    );
+    const read = async () =>
+      (await t.run((ctx) => ctx.db.query('imageryFrames').collect())).map((r) => r.manifestKey);
+    // The first build spends its budget on the front eight; they go to the back of the line.
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await read()).toEqual([]);
+    expect((await t.query(internal.imageryLive.unreadableKeys, {})).slice(-8)).toEqual(
+      keys.slice(0, 8),
+    );
+    // The next starts where that one stopped; the one after reaches the repaired manifest.
+    for (let build = 0; build < 2 && (await read()).length === 0; build++) {
+      vi.advanceTimersByTime(7 * 60 * 60_000); // past any retry wait
+      await t.action(internal.imageryLive.buildIndex, {});
+    }
+    expect(await read()).toEqual([repaired]);
+  });
+
   test('a build cut short still sets the unreadable retry and alert', async () => {
     const t = convexTest(schema, modules);
     const manifests = new Map<string, unknown>();
