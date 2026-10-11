@@ -579,41 +579,51 @@ async function noteRederivation(
   const followsRefit = chord.ok && (plan.use === 'chord' || plan.review === 'kept');
   const mouth = followsRefit ? { ...subArea.mouth, side: chord.mouth.side } : subArea.mouth;
   const mouthStale = 'stale' in plan && plan.stale ? staleMouthNote(plan.stale, when) : undefined;
+  // A new review replaces the old. A re-fit applied over an outline an earlier review said was kept
+  // turns that review into a re-fit's — still unanswered, but no longer saying the outline was kept.
   const mouthReview = plan.review
     ? { outcome: plan.review, note: jumpNote(plan.review, when) }
-    : subArea.mouthReview;
-  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
-  if (
-    same(subArea.mouth, mouth) &&
+    : plan.use === 'chord' && subArea.mouthReview?.outcome === 'kept'
+      ? { outcome: 'refitted' as const, note: jumpNote('refitted_later', when) }
+      : subArea.mouthReview;
+  const unchanged =
+    subArea.mouth.side.lat === mouth.side.lat &&
+    subArea.mouth.side.lng === mouth.side.lng &&
     subArea.mouthStale === mouthStale &&
-    same(subArea.mouthReview, mouthReview)
-  ) {
-    return undefined;
-  }
+    subArea.mouthReview?.outcome === mouthReview?.outcome &&
+    subArea.mouthReview?.note === mouthReview?.note;
+  if (unchanged) return undefined;
   await ctx.db.patch(subArea._id, { mouth, mouthStale, mouthReview });
-  return mouthStale ?? (plan.review ? mouthReview?.note : undefined);
+  return mouthStale ?? mouthReview?.note;
 }
 
-/** The note a bay carries when a moved shore leaves its mouth unable to stand for the bay (D201). */
+/** What is wrong with a mouth that cannot stand for its bay any more (D201 / D215), as a phrase. */
+function mouthTrouble(reason: ChordRejection | 'moved_elsewhere'): string {
+  if (reason === 'moved_elsewhere') return 'its mouth now encloses mostly other water';
+  if (reason === 'clip_failed')
+    return 'its mouth could not be re-fitted (the outline clipper failed)';
+  return `this bay's mouth no longer fits it (${reason})`;
+}
+
+/** The note a bay carries when a moved shore leaves its mouth unable to stand for the bay. */
 function staleMouthNote(reason: ChordRejection | 'moved_elsewhere', when: string): string {
-  if (reason === 'moved_elsewhere') {
-    return `${when}, and its mouth now encloses mostly other water while its old outline no longer fits the lake. Edit the mouth.`;
-  }
-  if (reason === 'clip_failed') {
-    return `${when}, and this bay's mouth could not be re-fitted to it (the outline clipper failed), so its outline was re-clipped. Edit the mouth.`;
-  }
-  return `${when} and this bay's mouth no longer fits it (${reason}). Edit the mouth.`;
+  return `${when}, and ${mouthTrouble(reason)}. Edit the mouth.`;
 }
 
 /**
  * The review a jump asks for (D215): the re-fit would change the bay a lot — its size by half again
  * or by a third, or where it sits — so the old outline was kept; or the old outline no longer fit the
- * lake, so the re-fit, holding most of the bay's surviving water, was applied.
+ * lake, so the re-fit, standing for the bay's surviving water, was applied; or a later move re-fitted
+ * a bay whose outline an earlier review had kept.
  */
-function jumpNote(outcome: 'kept' | 'refitted', when: string): string {
-  return outcome === 'kept'
-    ? `${when}, and re-fitting this bay's mouth would change it a lot (its size by half again or by a third, or where it sits), so its outline was kept. Check the mouth.`
-    : `${when}, and this bay's old outline no longer fit the lake, so its mouth was re-fitted — which changed it a lot. Check the mouth.`;
+function jumpNote(outcome: 'kept' | 'refitted' | 'refitted_later', when: string): string {
+  if (outcome === 'kept') {
+    return `${when}, and re-fitting this bay's mouth would change it a lot (its size by half again or by a third, or where it sits), so its outline was kept. Check the mouth.`;
+  }
+  if (outcome === 'refitted') {
+    return `${when}, and this bay's old outline no longer fit the lake, so its mouth was re-fitted — which changed it a lot. Check the mouth.`;
+  }
+  return `${when} again, and this bay — its outline kept at an earlier move — has been re-fitted to its mouth. Check the mouth.`;
 }
 
 /**
@@ -1198,16 +1208,24 @@ export const restore = mutation({
       try {
         oldGeometry = deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
       } catch (error) {
+        // Only the clip's refusal means "the old outline does not fit"; anything else is a bug.
+        if (!(error instanceof ConvexError)) throw error;
         oldRefusal = error;
       }
     }
     const plan = chord ? chordRederivationPlan(chord, oldGeometry !== null) : null;
     const geometry = plan?.use === 'chord' && chord?.ok ? chord : oldGeometry;
     if (!geometry) {
+      // Neither the re-fit nor the old outline: say both — what is wrong with the mouth, and why the
+      // old outline is refused (its own code and retained fraction ride along).
+      const old = (
+        oldRefusal as ConvexError<{ code: string; message: string; retainedFraction?: number }>
+      ).data;
       if (plan && 'stale' in plan && plan.stale) {
         throw new ConvexError({
+          ...old,
           code: `sub_area_mouth_${plan.stale}`,
-          message: `${staleMouthNote(plan.stale, 'The shoreline moved while this bay was delisted')} Its old outline no longer fits the lake either.`,
+          message: `The shoreline moved while this bay was delisted, and ${mouthTrouble(plan.stale)}; its old outline will not come back either: ${old.message}`,
         });
       }
       throw oldRefusal;

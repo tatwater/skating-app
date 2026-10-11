@@ -1152,8 +1152,8 @@ function SubAreaTool({
                 {bay.mouthStale ? (
                   <span className="block text-warning text-xs">{bay.mouthStale}</span>
                 ) : null}
-                {/* A re-fit a moved shoreline asked a person to check (D215): the mouth still
-                    fits, so it is drawn; Edit mouth and save is how the question is answered. */}
+                {/* A re-fit a moved shoreline asked a person to check (D215). The mouth is drawn
+                    over a re-fitted outline, not over a kept one; Edit mouth and save answers it. */}
                 {bay.mouthReview ? (
                   <span className="block text-warning text-xs">{bay.mouthReview.note}</span>
                 ) : null}

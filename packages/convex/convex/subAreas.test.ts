@@ -3073,6 +3073,17 @@ describe('sub-areas by chord (D201)', () => {
       expect((await t.run((ctx) => ctx.db.get(id)))?.mouthReview).toBeUndefined();
     });
 
+    test('a later re-fit over a kept outline turns its review into a re-fit’s', async () => {
+      const { t, id, eastShore } = await cornerBay();
+      await eastShore(-72.3);
+      expect((await t.run((ctx) => ctx.db.get(id)))?.mouthReview?.outcome).toBe('kept');
+      // The shore comes back to where the bay was drawn: the re-fit is no jump now, and is applied.
+      await eastShore(-72.5);
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.mouthReview).toMatchObject({ outcome: 'refitted' });
+      expect(row?.mouthReview?.note).toMatch(/again.*has been re-fitted to its mouth/);
+    });
+
     test('a jump re-fits when the old outline no longer fits the lake — asked about, never delisted', async () => {
       const { t, id, area, eastShore } = await cornerBay();
       // 0.1° in: three quarters of the old corner is now land; the re-fit is half the size.
@@ -3118,7 +3129,7 @@ describe('sub-areas by chord (D201)', () => {
       const row = await t.run((ctx) => ctx.db.get(id));
       expect(row?.removedAt).toBeUndefined();
       expect(row?.mouthStale).toMatch(
-        /while this bay was delisted and this bay's mouth no longer fits/,
+        /while this bay was delisted, and this bay's mouth no longer fits/,
       );
     });
   });
@@ -3160,7 +3171,7 @@ describe('sub-areas by chord (D201)', () => {
       const { t, mod, id } = await straddlingBay();
       await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
       await expect(mod.as.mutation(api.subAreas.restore, { subAreaId: id })).rejects.toThrow(
-        /encloses mostly other water.*no longer fits the lake either/,
+        /encloses mostly other water; its old outline will not come back either/,
       );
       expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
     });

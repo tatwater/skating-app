@@ -707,9 +707,11 @@ export type RederivedChord =
       /** Too different from the old bay to apply unseen (D215). */
       jumped: boolean;
       /**
-       * The re-fit holds at least {@link CHORD_REDERIVE_SAME_WATER} of the old bay's water that is
-       * still water — measured, never assumed. Only then may a jump replace an old outline that no
-       * longer fits the lake (`chordRederivationPlan`).
+       * For a jump: the re-fit holds at least {@link CHORD_REDERIVE_SAME_WATER} of the old bay's water
+       * that is still water, and is no more than {@link CHORD_REDERIVE_MAX_GROWTH} times that
+       * water's area — measured, and `false` whenever it cannot be. Only then may a jump replace an
+       * old outline that no longer fits the lake (`chordRederivationPlan`). For a re-fit that did not
+       * jump it is `true`: there is nothing it could be asked to authorize.
        */
       sameWater: boolean;
     });
@@ -723,6 +725,14 @@ export const CHORD_REDERIVE_MIN_OVERLAP = 0.5;
 
 /** The share of the old bay's surviving water a re-fit must hold to be called the same water. */
 export const CHORD_REDERIVE_SAME_WATER = 0.8;
+
+/**
+ * How big a re-fit may be against the surviving water it stands in for and still be called the same
+ * water. A mouth re-snapped along a shore that moved in grows the bay into water it did not hold —
+ * the corner whose shore came 8 km in doubles its surviving water — but a sliver of surviving water
+ * must never authorize most of the lake, which is orders of magnitude, not a few times.
+ */
+export const CHORD_REDERIVE_MAX_GROWTH = 3;
 
 /**
  * Re-derive a stored mouth against a parent whose outline may have moved — the parent re-clip after
@@ -825,7 +835,12 @@ export function rederiveChordSubArea(
   if (jumped && keptHeld !== null) {
     try {
       const surviving = coveredFraction(previous, parent);
-      sameWater = surviving > 0 && keptHeld / surviving >= CHORD_REDERIVE_SAME_WATER;
+      // Holding the surviving water is not enough: a sliver of it must not authorize a re-fit that
+      // is most of the lake. The re-fit is held to the size of what it is standing in for.
+      sameWater =
+        surviving > 0 &&
+        keptHeld / surviving >= CHORD_REDERIVE_SAME_WATER &&
+        after <= surviving * before * CHORD_REDERIVE_MAX_GROWTH;
     } catch {
       sameWater = false;
     }

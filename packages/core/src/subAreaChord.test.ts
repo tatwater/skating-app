@@ -826,12 +826,19 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
       jumped: true,
       sameWater: false,
     });
-    // An old outline mostly over land now: only its surviving water counts, and all of that is in
-    // the corner — the same water, though the corner is twice the size.
+    // An old outline mostly over land now: all of its surviving water is in the corner, but the
+    // corner is four times that water — a sliver does not stand in for a bay that size.
     expect(rederiveChordSubArea(lake, mouth, box(-72.6, 43.9, -72.45, 44.05))).toMatchObject({
       ok: true,
       jumped: true,
-      sameWater: true,
+      sameWater: false,
+    });
+    // An old outline over land but for a sliver past the mouth: the rest of the lake holds all of
+    // that sliver, and the sliver must not stand in for the rest of the lake.
+    expect(rederiveChordSubArea(lake, mouth, box(-73.0, 43.9, -72.9, 44.01))).toMatchObject({
+      ok: true,
+      jumped: true,
+      sameWater: false,
     });
     // An old outline split down the middle by the mouth: the corner holds half its water — not the
     // same water.
