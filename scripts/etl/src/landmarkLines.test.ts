@@ -4,6 +4,7 @@ import {
   type BodyLine,
   landmarkLines,
   packLines,
+  runCompleteness,
   runIsComplete,
 } from './landmarkLines';
 import type { PlacedLandmark } from './landmarkMatch';
@@ -28,6 +29,45 @@ describe('runIsComplete', () => {
     expect(runIsComplete(['VT', 'NH', 'ME', 'MA', 'NY'], ALL)).toBe(true);
     expect(runIsComplete(['vt'], ALL)).toBe(false);
     expect(runIsComplete(['vt', 'nh', 'me', 'ma'], ALL)).toBe(false);
+  });
+});
+
+describe('runCompleteness', () => {
+  const counts = { 'vt.osm': 9_000, 'vt.gnis': 1_200 };
+  const baseline = { 'vt.osm': 9_000, 'vt.gnis': 1_250, 'ny.osm': 55_000 };
+
+  it('vouches for a full run whose sources read what they read last time, and moves the baseline', () => {
+    expect(runCompleteness(ALL, ALL, counts, baseline, false)).toEqual({
+      complete: true,
+      shortfalls: [],
+      baseline: { 'vt.osm': 9_000, 'vt.gnis': 1_200, 'ny.osm': 55_000 },
+    });
+    // No baseline yet: only an empty source is caught, and this run becomes the baseline.
+    expect(runCompleteness(ALL, ALL, counts, undefined, false)).toMatchObject({
+      complete: true,
+      baseline: counts,
+    });
+  });
+
+  it('will not vouch for a source that came back empty or short, and keeps the old baseline', () => {
+    const short = runCompleteness(ALL, ALL, { 'vt.osm': 4_000, 'vt.gnis': 0 }, baseline, false);
+    expect(short.complete).toBe(false);
+    expect(short.shortfalls).toEqual([
+      "vt.osm: 4000 candidates, 56% under the last good run's 9000",
+      'vt.gnis: no candidates',
+    ]);
+    expect(short.baseline).toBe(baseline);
+    // Within the margin is fine.
+    expect(runCompleteness(ALL, ALL, { 'vt.osm': 8_200 }, baseline, false).complete).toBe(true);
+  });
+
+  it('vouches for a real shrink when told so, and never for a partial run', () => {
+    const real = runCompleteness(ALL, ALL, { 'vt.osm': 4_000 }, baseline, true);
+    expect(real).toMatchObject({ complete: true, baseline: { 'vt.osm': 4_000 } });
+    expect(real.shortfalls).toHaveLength(1);
+    const partial = runCompleteness(['vt'], ALL, counts, baseline, false);
+    expect(partial).toMatchObject({ complete: false, shortfalls: [] });
+    expect(partial.baseline).toMatchObject(counts);
   });
 });
 

@@ -6263,7 +6263,9 @@ the proposal lane — so will skaters.
 **What a re-run and a merge do.** A run of every state is the whole of what the catalogs place: a
 catalog row it no longer places is retired as the catalogs' drop (`catalogDroppedAt`), never a
 person's, and comes back when a run places it again. A run of some states drops nothing — a Vermont
-pond can hold a New Hampshire village's label. A moderator's row is never dropped; restoring a
+pond can hold a New Hampshire village's label — and neither does one whose sources came back short:
+a missing landmark is a removal only when every state's OSM and GNIS read what the last good run
+read (within 10%), never because an extract was truncated. A moderator's row is never dropped; restoring a
 dropped one makes it theirs, and *Keep off* makes the drop a person's removal. A body merged into
 another (D36) takes its landmarks along, the survivor's rows deciding: a same-place twin absorbs the
 moved row (folded, `mergedIntoId`), a twin a person removed holds it removed, and any label a bay of

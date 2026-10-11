@@ -8,6 +8,7 @@
  *   pnpm --filter @skating/etl landmarks --refresh-bodies      # re-export the body outlines
  *   pnpm --filter @skating/etl landmarks --refresh             # re-run osmium
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
+ *   pnpm --filter @skating/etl landmarks --accept-source-drop  # a source really shrank; retire anyway
  *
  * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }`; a
  * run of every state marks each line `complete` and writes an empty one for a body it placed nothing
@@ -40,7 +41,7 @@ import type { Feature } from 'geojson';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
 import { applyCorpus, parseMentions } from './landmarkCorpus';
-import { landmarkLines, runIsComplete } from './landmarkLines';
+import { landmarkLines, runCompleteness } from './landmarkLines';
 import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
 import {
   dedupeOsmById,
@@ -53,6 +54,8 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
 const SCRATCH = join(ROOT, '.scratch', 'landmarks');
 const BODIES = join(SCRATCH, 'bodies.ndjson');
+/** Each source's candidate count on the last run that vouched for a complete list (`runCompleteness`). */
+const SOURCE_BASELINE = join(SCRATCH, 'source-baseline.json');
 const ALL_STATES = ['vt', 'nh', 'me', 'ma', 'ny'] as const;
 
 function log(message: string): void {
@@ -241,7 +244,30 @@ async function main(): Promise<void> {
     perBody.push(landmarks.length);
     for (const l of landmarks) byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
   }
-  const complete = runIsComplete(selected, ALL_STATES);
+  // A run retires only what its sources vouch for: a short or empty extract is not a removal.
+  const previousSummary = join(SCRATCH, 'summary.json');
+  const baseline = existsSync(SOURCE_BASELINE)
+    ? (JSON.parse(readFileSync(SOURCE_BASELINE, 'utf8')) as Record<string, number>)
+    : existsSync(previousSummary)
+      ? (JSON.parse(readFileSync(previousSummary, 'utf8')) as { bySource?: Record<string, number> })
+          .bySource
+      : undefined;
+  const check = runCompleteness(
+    selected,
+    ALL_STATES,
+    bySource,
+    baseline,
+    args.includes('--accept-source-drop'),
+  );
+  for (const shortfall of check.shortfalls) log(`source check: ${shortfall}`);
+  const complete = check.complete;
+  if (check.shortfalls.length > 0 && !complete) {
+    log(
+      'NOT marking this run complete — it will add and update, and retire nothing. Re-run with --refresh if an extract is broken, or pass --accept-source-drop if the shrink is real.',
+    );
+  }
+  if (check.baseline)
+    writeFileSync(SOURCE_BASELINE, `${JSON.stringify(check.baseline, null, 2)}\n`);
   const lines = landmarkLines(
     bodies.map((b) => b.id),
     byBody,
@@ -256,6 +282,7 @@ async function main(): Promise<void> {
     states: selected,
     corpusApplied: corpus !== undefined,
     complete,
+    sourceShortfalls: check.shortfalls,
     bodiesExportedAt: statSync(BODIES).mtimeMs,
     bySource,
     ...counts,

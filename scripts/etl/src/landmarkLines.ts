@@ -24,6 +24,44 @@ export function runIsComplete(selected: readonly string[], all: readonly string[
   return all.every((s) => ran.has(s.toLowerCase()));
 }
 
+/** How far a source's candidate count may fall below its last good count and still vouch. */
+export const MAX_SOURCE_SHRINK = 0.1;
+
+/**
+ * May this run vouch for a complete list? Every state must have run, and **every source must have
+ * read what it read last time** — a truncated or empty cached extract (an osmium run cut short, a
+ * GNIS file half-downloaded) would otherwise read as thousands of catalog removals and retire valid
+ * labels. A source with no candidates, or more than {@link MAX_SOURCE_SHRINK} under its last good
+ * count (`state.osm`, `state.gnis`), is a shortfall; any shortfall leaves the run incomplete — it
+ * still adds and updates, and retires nothing — unless `acceptShrink` says the drop is real.
+ *
+ * The baseline moves only on a run that vouches, so one bad extract cannot lower the bar for the
+ * next. With no baseline yet, only an empty source is caught.
+ */
+export function runCompleteness(
+  selected: readonly string[],
+  all: readonly string[],
+  counts: Readonly<Record<string, number>>,
+  baseline: Readonly<Record<string, number>> | undefined,
+  acceptShrink: boolean,
+): { complete: boolean; shortfalls: string[]; baseline: Record<string, number> | undefined } {
+  const shortfalls: string[] = [];
+  for (const [source, n] of Object.entries(counts)) {
+    const last = baseline?.[source];
+    if (n === 0) shortfalls.push(`${source}: no candidates`);
+    else if (last !== undefined && n < last * (1 - MAX_SOURCE_SHRINK)) {
+      const pct = Math.round((1 - n / last) * 100);
+      shortfalls.push(`${source}: ${n} candidates, ${pct}% under the last good run's ${last}`);
+    }
+  }
+  const vouches = shortfalls.length === 0 || acceptShrink;
+  return {
+    complete: runIsComplete(selected, all) && vouches,
+    shortfalls,
+    baseline: vouches ? { ...baseline, ...counts } : baseline,
+  };
+}
+
 /**
  * One line per body for the loader. A partial run writes only the bodies it placed something on;
  * a complete run writes every exported body, an empty line where nothing landed, each marked

@@ -1143,6 +1143,30 @@ describe('a merge carries the landmarks (D36 / D202)', () => {
     expect(rerun).toMatchObject({ removedHeld: 0, created: 0 });
   });
 
+  test('a twin without a footprint takes the moved row’s, and its specific kind', async () => {
+    const t = harness();
+    const survivor = await seedBody(t);
+    const loser = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await importFor(t, {
+      waterBodyId: survivor,
+      landmarks: [
+        imported('Gull Island', ISLAND, { kind: 'other', externalIds: ['gnis:9'], source: 'gnis' }),
+      ],
+      dryRun: false,
+    });
+    await importFor(t, {
+      waterBodyId: loser,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
+      dryRun: false,
+    });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    const live = (await rowsOf(t, survivor)).filter((r) => r.removedAt === undefined);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ kind: 'island', areaSqM: 42_000 });
+    expect(live[0]?.externalIds.sort()).toEqual(['gnis:9', 'osm:way/1']);
+  });
+
   test('a moderator’s twin from the merged lake keeps the moderator’s name and point', async () => {
     const t = harness();
     const survivor = await seedBody(t);

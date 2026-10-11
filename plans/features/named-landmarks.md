@@ -138,7 +138,9 @@ moderator's worklist and the proposal lane's first customers.
 - *A re-run must be able to forget a place, too* (Greptile on #83) — a feature a later run no longer
   placed on a lake stayed labeled forever. A run of every state now marks each body's line
   `complete` (an empty line if it placed nothing) and the import retires the catalog rows such a line
-  lacks — softly, since reports point at rows by id. Not a partial run: a VT pond 500 m from an NH
+  lacks — softly, since reports point at rows by id. And only when the sources vouch (Greptile's
+  second round): a truncated or empty cached extract would have read as thousands of removals, so
+  each state's OSM and GNIS count must be within 10% of the last good run's or nothing is retired. Not a partial run: a VT pond 500 m from an NH
   village holds a label only the NH catalogs place. A candidate skipped for a bay's name still keeps
   its row (the far Mud Bay); a moderator's new row at the same place wins over a returning drop.
 - *Bridges are drawn sparse, and stop at the shore* (Greptile on #83, measured 2026-10-10) — the

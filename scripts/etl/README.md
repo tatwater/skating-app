@@ -713,10 +713,14 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
 - **It also forgets — on a run of every state only.** That run writes a line for every exported
   body, marked `complete` (an empty one if nothing landed), and a catalog row a complete line no
   longer has is retired (`dropped`), back if a later run places it (`returned`). A run of some
-  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place. A row a
-  merge moved after the body export the run matched against is never dropped (the loader sends the
-  export's time). Read `dropped` on the dry run before `--apply` by hand — a broken extract shows up
-  there as thousands, and a batch whose drops pass a mutation's write limit fails whole.
+  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place. Nor
+  does a run whose sources came back short: each state's OSM and GNIS candidate count is checked
+  against the last run that vouched (`.scratch/landmarks/source-baseline.json`), and one that is
+  empty or more than 10% under leaves the run incomplete — it adds and updates, and retires nothing.
+  `--refresh` if an extract is broken; `--accept-source-drop` on the transform if the shrink is
+  real. A row a merge moved after the body export the run matched against is never dropped (the
+  loader sends the export's time). Still read `dropped` on the dry run before `--apply` by hand, and
+  a batch whose drops pass a mutation's write limit fails whole.
 - **A mouth's id is where it meets the shore** (`osm:way/1#in@44.0213,-73.1002`), never its place in
   the list, so a crossing found or lost upstream cannot hand one mouth's id to another.
 
