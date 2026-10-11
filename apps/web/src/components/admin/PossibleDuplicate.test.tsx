@@ -1,5 +1,6 @@
 import type { Id } from '@skating/convex/dataModel';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 
@@ -25,15 +26,15 @@ describe('PossibleDuplicate', () => {
         name="Long Point"
         lookalikes={{}}
         onShow={vi.fn()}
-        onSamePlace={vi.fn()}
+        onSamePlace={vi.fn(async () => {})}
       />,
     );
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('names the landmark and the other proposal, shows each pair, and answers with the landmark', () => {
+  it('names the landmark and the other proposal, shows each pair, and answers with the landmark', async () => {
     const onShow = vi.fn();
-    const onSamePlace = vi.fn();
+    const onSamePlace = vi.fn(async () => {});
     render(
       <PossibleDuplicate
         ask={ask}
@@ -61,8 +62,12 @@ describe('PossibleDuplicate', () => {
       name: 'Long Point',
       other: { point: proposal.coord, kind: 'proposal', name: 'long point' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
-    expect(onSamePlace).toHaveBeenCalledWith('lm1');
+    // Confirmed first: it can answer with a landmark miles away, and nothing undoes it.
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    expect(onSamePlace).not.toHaveBeenCalled();
+    await userEvent.type(screen.getByRole('textbox'), 'The causeway end.');
+    await userEvent.click(screen.getByRole('button', { name: 'Answer with this landmark' }));
+    expect(onSamePlace).toHaveBeenCalledWith('lm1', 'The causeway end.');
   });
 
   it('holds Same place while a write is in flight', () => {
@@ -73,7 +78,7 @@ describe('PossibleDuplicate', () => {
         lookalikes={{ similarLandmark: landmark }}
         busy
         onShow={vi.fn()}
-        onSamePlace={vi.fn()}
+        onSamePlace={vi.fn(async () => {})}
       />,
     );
     expect(screen.getByRole('button', { name: 'Same place' })).toBeDisabled();

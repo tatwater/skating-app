@@ -75,10 +75,9 @@ import {
   decisionArgs,
   drawnBay,
   landmarkAskOf,
-  landmarkLookalikesView,
+  landmarkProposalView,
   listedBaysOf,
   matchBay,
-  matchLandmark,
   namedByModerator,
   namedLandmark,
   QUEUE_CAP,
@@ -552,26 +551,17 @@ export const listQueue = query({
         ...(r.kind === 'name_bay' && r.status === 'open' && body
           ? { drawnSubAreaId: matchBay(await baysOf(body._id), requestNames(r))?._id }
           : {}),
-        // For a landmark proposal (D202): the landmark that already answers it, if one was added.
+        // For a landmark proposal (D202): the landmark that already answers it, if one was added —
+        // else what it may duplicate, among the page's other landmark asks on this lake (what the
+        // queue itself shows).
         ...(r.kind === 'name_landmark' && r.status === 'open' && body
-          ? await (async (): Promise<
-              { existingLandmarkId?: Id<'bodyLandmarks'> } & ReturnType<
-                typeof landmarkLookalikesView
-              >
-            > => {
-              const landmarks = await landmarksOf(body._id);
-              const existing = matchLandmark(landmarks, landmarkAskOf(r));
-              if (existing) return { existingLandmarkId: existing._id };
-              // The page's other landmark asks on this lake — what the queue itself shows.
-              const others = (landmarkAsksByBody.get(body._id) ?? []).flatMap((a) =>
+          ? landmarkProposalView(
+              landmarkAskOf(r),
+              await landmarksOf(body._id),
+              (landmarkAsksByBody.get(body._id) ?? []).flatMap((a) =>
                 a.id === r._id ? [] : [a.row],
-              );
-              return landmarkLookalikesView(
-                landmarkAskOf(r),
-                landmarks,
-                others.map((o) => ({ requestId: o._id, name: o.name ?? '', coord: o.coord })),
-              );
-            })()
+              ),
+            )
           : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
@@ -885,6 +875,8 @@ export const openLandmarkRequestsForBody = query({
     const places = groupLandmarkAsks(read.map((r) => ({ ...landmarkAskOf(r), row: r })));
     // The body's landmarks read once, however many places are proposed.
     const landmarks = await liveLandmarksForBody(ctx, waterBodyId);
+    // Each place's first ask — what a moderator sees as rows, and so what a possible duplicate is.
+    const firstRows = places.flatMap((p) => (p[0] ? [p[0].row] : []));
     const proposals = [];
     for (const place of places) {
       const first = place[0];
@@ -893,12 +885,6 @@ export const openLandmarkRequestsForBody = query({
       for (const { row } of place) {
         if (row.reportId && !reportIds.includes(row.reportId)) reportIds.push(row.reportId);
       }
-      const existing = matchLandmark(landmarks, first);
-      const others = places.flatMap((p) =>
-        p[0] && p[0] !== first
-          ? [{ requestId: p[0].row._id, name: p[0].row.name ?? '', coord: p[0].row.coord }]
-          : [],
-      );
       proposals.push({
         requestId: first.row._id,
         name: first.row.name ?? '',
@@ -906,9 +892,11 @@ export const openLandmarkRequestsForBody = query({
         askers: place.length,
         reportIds,
         createdAt: first.row.createdAt,
-        ...(existing ? { existingLandmarkId: existing._id } : {}),
-        // A possible duplicate only matters while the proposal is not already answered.
-        ...(existing ? {} : landmarkLookalikesView(first, landmarks, others)),
+        ...landmarkProposalView(
+          first,
+          landmarks,
+          firstRows.filter((row) => row !== first.row),
+        ),
       });
     }
     return { proposals, more: rows.length > QUEUE_CAP };

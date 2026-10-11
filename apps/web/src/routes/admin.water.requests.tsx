@@ -58,6 +58,8 @@ function RequestQueue() {
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   /** The row on the map, and what it shows — its spot alone, or the spot and a lookalike. */
   const [picked, setPicked] = useState<{ id: string; review: ReviewPoints } | null>(null);
+  /** A *Same place* in flight — held, so a second click cannot send a second approve. */
+  const [answering, setAnswering] = useState(false);
   const first = rows?.[0];
   // Until the moderator picks, the oldest row — the one the queue says to answer first. Memoized on
   // its identity and spot: the query re-emits fresh objects, and a fresh review re-flies the map.
@@ -223,12 +225,16 @@ function RequestQueue() {
                       ask={row.coord}
                       name={row.name ?? ''}
                       lookalikes={row}
+                      busy={answering}
                       onShow={(review) => setPicked({ id: row._id, review })}
-                      onSamePlace={async (landmarkId) => {
+                      onSamePlace={async (landmarkId, note) => {
+                        if (answering) return;
+                        setAnswering(true);
                         try {
                           await approve({
                             requestId: row._id as Id<'waterBodyRequests'>,
                             landmarkId,
+                            ...(note ? { note } : {}),
                           });
                           setBanner({
                             tone: 'ok',
@@ -236,6 +242,9 @@ function RequestQueue() {
                           });
                         } catch (err) {
                           setBanner({ tone: 'error', text: messageOf(err) });
+                          throw err;
+                        } finally {
+                          setAnswering(false);
                         }
                       }}
                     />

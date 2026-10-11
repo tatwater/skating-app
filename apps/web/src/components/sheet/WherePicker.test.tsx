@@ -150,7 +150,7 @@ describe('a tap that took a landmark’s name', () => {
     expect(screen.getByLabelText('Name this spot')).toBeInTheDocument();
   });
 
-  it('pressing its lit chip lets go of the name, never the tap — the spot is what pins', () => {
+  it('pressing its lit chip toggles the name, never the tap — the spot is what pins', () => {
     render(
       <Harness
         initial={{
@@ -165,8 +165,13 @@ describe('a tap that took a landmark’s name', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Apple Island' }));
     expect(whereNow()?.point).toEqual({ coord: { lat: 44.5005, lng: -73.3 }, radiusMeters: 75 });
-    // Pressed again, it is the landmark chosen by name.
+    // Pressed again, the tap takes the name back, still where it landed.
     fireEvent.click(screen.getByRole('button', { name: 'Apple Island' }));
-    expect(whereNow()?.point).toMatchObject({ landmarkId: 'id-Apple Island', byName: true });
+    expect(whereNow()?.point).toEqual({
+      coord: { lat: 44.5005, lng: -73.3 },
+      radiusMeters: 75,
+      name: 'Apple Island',
+      landmarkId: 'id-Apple Island',
+    });
   });
 });

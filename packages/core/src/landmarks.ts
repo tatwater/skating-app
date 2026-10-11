@@ -304,9 +304,18 @@ export function groupLandmarkAsks<T extends LandmarkAsk>(asks: readonly T[]): T[
   return places;
 }
 
-/** Does any name of one fold (`landmarkNameKey`) to any name of the other? */
-function landmarkNamesShared(a: readonly string[], b: readonly string[]): boolean {
-  const keys = new Set(a.map(landmarkNameKey).filter((k) => k.length > 0));
+/** The keys a list of names folds to (`landmarkNameKey`), a name that folds to nothing dropped. */
+function landmarkNameKeys(names: readonly string[]): Set<string> {
+  return new Set(names.map(landmarkNameKey).filter((k) => k.length > 0));
+}
+
+/**
+ * Do two lists of names share a landmark's spelling — any name of one folding (`landmarkNameKey`) to
+ * any name of the other? The one name rule a proposal's filing, its possible duplicates and a
+ * moderator's answer to it all ask, so they cannot disagree about whether two spellings meet.
+ */
+export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): boolean {
+  const keys = landmarkNameKeys(a);
   return b.some((n) => keys.has(landmarkNameKey(n)));
 }
 
@@ -331,6 +340,9 @@ export function landmarkAskLookalikes<
   landmarks: readonly L[],
   otherAsks: readonly A[],
 ): { landmark?: LandmarkLookalike<L>; ask?: LandmarkLookalike<A> } {
+  // Folded once, not per item: the names come before the distance here (a lookalike is far by
+  // definition), so every landmark on the lake is name-tested — for every row a queue holds.
+  const askKeys = landmarkNameKeys(ask.names);
   const nearest = <T>(
     items: readonly T[],
     pointOf: (t: T) => LatLng,
@@ -339,7 +351,7 @@ export function landmarkAskLookalikes<
   ): LandmarkLookalike<T> | undefined => {
     let best: LandmarkLookalike<T> | undefined;
     for (const item of items) {
-      if (!landmarkNamesShared(ask.names, namesOf(item)) || samePlace(item)) continue;
+      if (!namesOf(item).some((n) => askKeys.has(landmarkNameKey(n))) || samePlace(item)) continue;
       const meters = haversineMeters(ask.coord, pointOf(item));
       if (!best || meters < best.meters) best = { item, meters };
     }

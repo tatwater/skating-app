@@ -103,12 +103,15 @@ describe('a tap on the lake', () => {
     expect(pressLandmarkChip(chosen, apple, 75)).toBeUndefined();
     // Another landmark's chip replaces the choice.
     expect(pressLandmarkChip(chosen, gull, 75)).toEqual(landmarkPoint(gull, 75));
-    // A tap named for Gull Rock keeps its spot and radius when the lit chip is pressed.
+    // A tap named for Gull Rock keeps its spot and radius when the lit chip is pressed…
     const tap = pointFromTap({ lat: 44.5005, lng: -73.3 }, [apple, gull], 120);
-    expect(pressLandmarkChip(tap, gull, 75)).toEqual({
-      coord: { lat: 44.5005, lng: -73.3 },
-      radiusMeters: 120,
-    });
+    const unnamed = pressLandmarkChip(tap, gull, 75);
+    expect(unnamed).toEqual({ coord: { lat: 44.5005, lng: -73.3 }, radiusMeters: 120 });
+    // …and pressed again, takes the name back without moving: on and off, never the spot.
+    expect(pressLandmarkChip(unnamed, gull, 75)).toEqual(tap);
+    // A tap too far from a landmark to be near it gives way to the landmark chosen by name.
+    const far = { coord: { lat: 44.6, lng: -73.3 }, radiusMeters: 75 };
+    expect(pressLandmarkChip(far, gull, 75)).toEqual(landmarkPoint(gull, 75));
   });
 
   it('a tap that lands on a label is still a tap — it never says it was chosen by name', () => {

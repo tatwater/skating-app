@@ -99,19 +99,39 @@ export function landmarkPoint(landmark: SheetLandmark, radiusMeters: number): Wh
 }
 
 /**
- * What pressing a landmark's chip does to the `where` point. Pressed fresh, it is the landmark chosen
- * by name; pressed again, that choice clears. A tap that took the landmark's name lights its chip
- * too, and pressing it then drops only the name: the tap is where the skater saw something — an open
- * or skim sighting pins there (D210) — so the spot must not go with the word.
+ * What pressing a landmark's chip does to the `where` point — a clean on/off for the name, and never
+ * the loss of a spot the skater marked. The tap is where they saw something: an open or skim sighting
+ * pins there (D210), so it must not go with the word.
+ *
+ * - No point, or a tap too far from this landmark to be near it: the landmark chosen by name.
+ * - The landmark chosen by name: pressed again, the choice clears.
+ * - A tap named for this landmark (its chip is lit): the name goes, the tap stays.
+ * - A tap near this landmark that carries no name for it (let go a moment ago, or never snapped):
+ *   it takes the name again, and stays where it landed — what {@link pointFromTap} would have made.
  */
 export function pressLandmarkChip(
   current: WherePoint | undefined,
   landmark: SheetLandmark,
   radiusMeters: number,
 ): WherePoint | undefined {
-  if (current?.landmarkId !== landmark._id) return landmarkPoint(landmark, radiusMeters);
-  if (current.byName === true) return undefined;
-  return { coord: current.coord, radiusMeters: current.radiusMeters };
+  if (current?.landmarkId === landmark._id) {
+    return current.byName === true
+      ? undefined
+      : { coord: current.coord, radiusMeters: current.radiusMeters };
+  }
+  if (
+    current &&
+    current.byName !== true &&
+    haversineMeters(current.coord, landmark.point) <= LANDMARK_SNAP_M
+  ) {
+    return {
+      coord: current.coord,
+      radiusMeters: current.radiusMeters,
+      name: landmark.name,
+      landmarkId: landmark._id,
+    };
+  }
+  return landmarkPoint(landmark, radiusMeters);
 }
 
 /**

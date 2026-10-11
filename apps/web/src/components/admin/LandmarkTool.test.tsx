@@ -267,6 +267,7 @@ describe('LandmarkTool', () => {
     expect(screen.getByRole('link', { name: /44\.3100, -73\.2100/ })).toBeInTheDocument();
     expect(screen.getByText('Possible duplicate')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({
       name: 'approve',
@@ -285,6 +286,58 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenLastCalledWith(null);
+  });
+
+  it('draws a pair until either end is decided, and Add moves the markers to its own proposal', () => {
+    const near = { lat: 44.31, lng: -73.21 };
+    const far = { lat: 44.61, lng: -73.21 };
+    const base = { askers: 1, reportIds: [], createdAt: 0, name: 'Long Point' };
+    const a = {
+      ...base,
+      requestId: 'reqA',
+      coord: near,
+      similarProposal: { requestId: 'reqB', name: 'Long Point', coord: far, meters: 33_000 },
+    };
+    const b = {
+      ...base,
+      requestId: 'reqB',
+      coord: far,
+      similarProposal: { requestId: 'reqA', name: 'Long Point', coord: near, meters: 33_000 },
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [a, b], more: false };
+    const { onReview, onPlacePoint, rerender } = renderTool();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
+    expect(onReview).toHaveBeenLastCalledWith({
+      ask: near,
+      name: 'Long Point',
+      other: { point: far, kind: 'proposal', name: 'Long Point' },
+    });
+    // Add on the other one: its own spot, alone.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add as landmark' })[1] as HTMLElement);
+    expect(onReview).toHaveBeenLastCalledWith({ ask: far, name: 'Long Point' });
+    expect(onPlacePoint).toHaveBeenCalledWith(far);
+    // Show the pair again, then decide the far end: the pair leaves the map.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [{ ...a, similarProposal: undefined }],
+      more: false,
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={onPlacePoint}
         onReview={onReview}
         onResult={vi.fn()}
       />,

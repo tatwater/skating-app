@@ -133,10 +133,13 @@ export function LandmarkTool({
   const [busy, setBusy] = useState(false);
   /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
   const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
-  /** The proposal shown on the map, so its markers go when it is decided. */
-  const [reviewing, setReviewing] = useState<Id<'waterBodyRequests'> | null>(null);
-  const review = (requestId: Id<'waterBodyRequests'>, points: ReviewPoints) => {
-    setReviewing(requestId);
+  /**
+   * The proposals drawn on the map — one, or a pair shown together — so the markers go when any of
+   * them is decided, rather than leaving a ring labeled "(proposal)" over a closed question.
+   */
+  const [reviewing, setReviewing] = useState<readonly Id<'waterBodyRequests'>[]>([]);
+  const review = (requestIds: readonly Id<'waterBodyRequests'>[], points: ReviewPoints) => {
+    setReviewing(requestIds);
     onReview(points);
   };
   /** The corpus name the drop form is placing — saving the landmark marks it placed. */
@@ -211,8 +214,12 @@ export function LandmarkTool({
       setAnswering(null);
     }
     // A proposal answered or declined leaves the map with the list.
-    if (reviewing && proposals && !proposals.some((p) => p.requestId === reviewing)) {
-      setReviewing(null);
+    if (
+      reviewing.length > 0 &&
+      proposals &&
+      !reviewing.every((id) => proposals.some((p) => p.requestId === id))
+    ) {
+      setReviewing([]);
       onReview(null);
     }
   }, [placingName, corpusNames, answering, proposals, reviewing, onReview]);
@@ -490,7 +497,7 @@ export function LandmarkTool({
                     type="button"
                     className="underline-offset-2 hover:underline"
                     title="Show on the map"
-                    onClick={() => review(p.requestId, { ask: p.coord, name: p.name })}
+                    onClick={() => review([p.requestId], { ask: p.coord, name: p.name })}
                   >
                     {p.name}
                   </button>
@@ -522,6 +529,8 @@ export function LandmarkTool({
                         reset();
                         setName(p.name);
                         setAnswering(p.requestId);
+                        // The markers follow the proposal being added, never another one's.
+                        review([p.requestId], { ask: p.coord, name: p.name });
                         onPlacePoint(p.coord);
                       }}
                     >
@@ -546,22 +555,35 @@ export function LandmarkTool({
                     }}
                   />
                 </span>
-                <span className="flex w-full flex-col gap-1">
+                {/* A div, not a span: the badge below is a block of paragraphs. */}
+                <div className="flex w-full flex-col gap-1">
                   <GoogleMapsLink coord={p.coord} />
                   <PossibleDuplicate
                     ask={p.coord}
                     name={p.name}
                     lookalikes={p}
                     busy={busy}
-                    onShow={(points) => review(p.requestId, points)}
-                    onSamePlace={(landmarkId) =>
-                      void run(
-                        () => approveRequest({ requestId: p.requestId, landmarkId }),
+                    onShow={(points) =>
+                      review(
+                        points.other?.kind === 'proposal' && p.similarProposal
+                          ? [p.requestId, p.similarProposal.requestId]
+                          : [p.requestId],
+                        points,
+                      )
+                    }
+                    onSamePlace={(landmarkId, note) =>
+                      run(
+                        () =>
+                          approveRequest({
+                            requestId: p.requestId,
+                            landmarkId,
+                            ...(note ? { note } : {}),
+                          }),
                         `“${p.name}” answered with the landmark already there.`,
                       )
                     }
                   />
-                </span>
+                </div>
               </li>
             ))}
           </ul>

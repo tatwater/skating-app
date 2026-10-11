@@ -1,25 +1,21 @@
+import type { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { formatDistanceMiles, type LatLng } from '@skating/core';
+import type { FunctionReturnType } from 'convex/server';
 import { googleMapsUrl } from '../../lib/googleMaps';
 import type { ReviewPoints } from '../../lib/reviewMarkers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { ReasonDialog } from './ReasonDialog';
 
-/** A proposal's possible duplicates, as the server reports them (`landmarkLookalikesView`). */
-export interface Lookalikes {
-  similarLandmark?: {
-    landmarkId: Id<'bodyLandmarks'>;
-    name: string;
-    point: LatLng;
-    meters: number;
-  };
-  similarProposal?: {
-    requestId: Id<'waterBodyRequests'>;
-    name: string;
-    coord: LatLng;
-    meters: number;
-  };
-}
+/**
+ * A proposal's possible duplicates, as the server reports them (`landmarkProposalView`) — read off
+ * the query's own type, so the badge and the server cannot drift apart.
+ */
+export type Lookalikes = Pick<
+  FunctionReturnType<typeof api.corpusRequests.openLandmarkRequestsForBody>['proposals'][number],
+  'similarLandmark' | 'similarProposal'
+>;
 
 /** A spot's second look: the coordinate, linked out to Google Maps with a pin on it. */
 export function GoogleMapsLink({ coord }: { coord: LatLng }) {
@@ -55,7 +51,8 @@ export function PossibleDuplicate({
   lookalikes: Lookalikes;
   busy?: boolean;
   onShow: (review: ReviewPoints) => void;
-  onSamePlace: (landmarkId: Id<'bodyLandmarks'>) => void;
+  /** Answer the proposal with this landmark — confirmed first, with an optional note the skaters read. */
+  onSamePlace: (landmarkId: Id<'bodyLandmarks'>, note: string) => Promise<unknown>;
 }) {
   const { similarLandmark: landmark, similarProposal: proposal } = lookalikes;
   if (!landmark && !proposal) return null;
@@ -81,15 +78,22 @@ export function PossibleDuplicate({
           >
             Show both
           </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={busy}
-            title={`Answer this proposal with the landmark “${landmark.name}”`}
-            onClick={() => onSamePlace(landmark.landmarkId)}
-          >
-            Same place
-          </Button>
+          {/* Confirmed, like the queue's Approve: it can answer a proposal with a landmark miles
+              away, the skaters read the answer, and nothing undoes it. */}
+          <ReasonDialog
+            trigger={
+              <Button variant="ghost" size="xs" disabled={busy}>
+                Same place
+              </Button>
+            }
+            title={`Answer with “${landmark.name}”?`}
+            description={`The skaters who named this spot read that it is the landmark “${landmark.name}”, ${formatDistanceMiles(landmark.meters)} away. Show both first if you have not looked.`}
+            confirmLabel="Answer with this landmark"
+            confirmVariant="default"
+            requireReason={false}
+            reasonPlaceholder="Optional note the skaters will read"
+            onConfirm={(note) => onSamePlace(landmark.landmarkId, note)}
+          />
         </p>
       ) : null}
       {proposal ? (

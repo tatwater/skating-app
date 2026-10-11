@@ -19,12 +19,13 @@ import {
   landmarkAnswersAsk,
   landmarkAsksAreSamePlace,
   landmarkNameKey,
+  landmarkNamesMeet,
   MAX_OPEN_LANDMARK_REQUESTS_PER_USER,
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { landmarksForBody } from './landmarkRows';
-import { landmarkAskOf, landmarkNamesMeet, QUEUE_CAP } from './requestDecisions';
+import { landmarkAskOf, QUEUE_CAP } from './requestDecisions';
 
 export async function fileLandmarkProposals(
   ctx: MutationCtx,

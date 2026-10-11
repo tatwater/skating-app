@@ -668,6 +668,31 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     });
   });
 
+  test('another proposal is a possible duplicate by any of its spellings, both ways', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    await seedAsks(t, lake, skater.id, at, 1);
+    // Filed under another name, with this one as a spelling.
+    await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_landmark',
+        status: 'open',
+        requesterId: skater.id,
+        coord: far,
+        waterBodyId: lake,
+        name: 'Pointe Longue',
+        aliases: ['Long Point'],
+        nameKey: 'pointe longue',
+        createdAt: Date.now(),
+      }),
+    );
+    const { proposals } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+      waterBodyId: lake,
+    });
+    expect(proposals.map((p) => p.similarProposal?.name)).toEqual(['Pointe Longue', 'Long Point']);
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(queue.map((r) => r.similarProposal?.name)).toEqual(['Pointe Longue', 'Long Point']);
+  });
+
   test('a moderator can say a far proposal is a landmark already there — by its name only', async () => {
     const { t, lake, mod, skater } = await lakeWithAsks();
     const [ask] = await seedAsks(t, lake, skater.id, at, 1);
@@ -675,6 +700,7 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     const known = await seedLandmark(t, lake, 'Long Point', { point: far });
     const cedar = await seedLandmark(t, lake, 'Cedar Island', { point: far });
     const other = await seedLandmark(t, await seedBody(t, 'osm/2'), 'Long Point', { point: at });
+    const gone = await seedLandmark(t, lake, 'Long Point', { point: far, removed: true });
     vi.setSystemTime(NOW + 60_000);
     // Without the moderator's word, a landmark that far answers nothing.
     await expect(mod.as.mutation(api.corpusRequests.approve, { requestId: ask })).rejects.toThrow(
@@ -686,6 +712,10 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     await expect(
       mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: other }),
     ).rejects.toThrow(/not on this lake/);
+    // Taken off the map since the row was drawn: said so, not "not on this lake".
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: gone }),
+    ).rejects.toThrow(/taken off the map/);
     await mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: known });
     expect(await t.run((ctx) => ctx.db.get(ask))).toMatchObject({
       status: 'approved',

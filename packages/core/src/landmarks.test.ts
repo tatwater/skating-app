@@ -17,6 +17,7 @@ import {
   landmarkLabelFeatures,
   landmarkLabelMinZoom,
   landmarkNameKey,
+  landmarkNamesMeet,
   landmarkProminence,
   landmarkSourceCheck,
   landmarkSourceReasons,
@@ -281,6 +282,17 @@ describe('landmarksAreSamePlace', () => {
     expect(LANDMARK_SAME_PLACE_RADIUS_M.narrows).toBeGreaterThan(
       LANDMARK_SAME_PLACE_RADIUS_M.island,
     );
+  });
+});
+
+describe('landmarkNamesMeet', () => {
+  it('meets when any name of one folds to any name of the other', () => {
+    expect(landmarkNamesMeet(['The Gut'], ['North Hero Gut', 'gut'])).toBe(true);
+    expect(landmarkNamesMeet(['Long Point'], ['Cedar Island'])).toBe(false);
+  });
+
+  it('never meets on a name that folds to nothing', () => {
+    expect(landmarkNamesMeet(['—'], ['…'])).toBe(false);
   });
 });
 

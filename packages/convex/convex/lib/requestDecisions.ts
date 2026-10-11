@@ -15,7 +15,7 @@ import {
   landmarkAnswersAsk,
   landmarkAskLookalikes,
   landmarkAsksAreSamePlace,
-  landmarkNameKey,
+  landmarkNamesMeet,
   requestNameKey,
   requestNameKeyFor,
 } from '@skating/core';
@@ -369,12 +369,6 @@ export async function approveNamedBayRequest(
 
 // ── Landmarks (D202) ───────────────────────────────────────────────────────────────────────────
 
-/** Do two lists of names share a landmark's spelling? `namesMeet`, by the landmark fold. */
-export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): boolean {
-  const keys = new Set(a.map(landmarkNameKey).filter((k) => k.length > 0));
-  return b.some((n) => keys.has(landmarkNameKey(n)));
-}
-
 /**
  * The live landmark among `rows` that answers this ask — its name *and* its place
  * (`landmarkAnswersAsk`) — if any, for callers holding the rows. The nearest wins when two do.
@@ -404,8 +398,15 @@ export async function namedByModerator(
   landmarkId: Id<'bodyLandmarks'>,
 ): Promise<Doc<'bodyLandmarks'>> {
   const landmark = await ctx.db.get(landmarkId);
-  if (!landmark || landmark.waterBodyId !== waterBodyId || landmark.removedAt !== undefined) {
+  if (!landmark || landmark.waterBodyId !== waterBodyId) {
     throw new ConvexError('That landmark is not on this lake');
+  }
+  // Taken off the map since the row was drawn (a colleague's removal, a merge's fold) — say so,
+  // rather than "not on this lake" for the landmark the moderator is looking at on it.
+  if (landmark.removedAt !== undefined) {
+    throw new ConvexError(
+      `"${landmark.name}" has been taken off the map — it answers nothing now.`,
+    );
   }
   if (!landmarkNamesMeet(requestNames(request), [landmark.name, ...landmark.aliases])) {
     throw new ConvexError(
@@ -415,16 +416,11 @@ export async function namedByModerator(
   return landmark;
 }
 
-/**
- * A proposal's possible duplicates, as the moderator's rows show them (`landmarkAskLookalikes`): the
- * nearest live landmark and the nearest other proposal that share a name with it at another place.
- * `others` are the other proposals' first asks — what a moderator sees as rows.
- */
-export function landmarkLookalikesView(
-  ask: LandmarkAsk,
-  landmarks: readonly Doc<'bodyLandmarks'>[],
-  others: readonly { requestId: Id<'waterBodyRequests'>; name: string; coord: LatLng }[],
-): {
+/** A landmark proposal as a moderator's row shows it (D202) — the queue's and the lake editor's. */
+export interface LandmarkProposalView {
+  /** The live landmark that already answers it — the row offers "approve" rather than "add". */
+  existingLandmarkId?: Id<'bodyLandmarks'>;
+  /** Possible duplicates, while nothing answers it (`landmarkLookalikesView`). */
   similarLandmark?: {
     landmarkId: Id<'bodyLandmarks'>;
     name: string;
@@ -437,11 +433,43 @@ export function landmarkLookalikesView(
     coord: LatLng;
     meters: number;
   };
-} {
+}
+
+/**
+ * What a moderator's row says of a landmark proposal: the landmark that already answers it, or —
+ * while none does — what it may duplicate. A possible duplicate only matters while the proposal is
+ * not already answered. `others` are the other open asks the moderator sees as rows.
+ */
+export function landmarkProposalView(
+  ask: LandmarkAsk,
+  landmarks: readonly Doc<'bodyLandmarks'>[],
+  others: readonly Doc<'waterBodyRequests'>[],
+): LandmarkProposalView {
+  const existing = matchLandmark(landmarks, ask);
+  return existing
+    ? { existingLandmarkId: existing._id }
+    : landmarkLookalikesView(ask, landmarks, others);
+}
+
+/**
+ * A proposal's possible duplicates, as the moderator's rows show them (`landmarkAskLookalikes`): the
+ * nearest live landmark and the nearest other proposal that share a name with it at another place —
+ * by any of the other's names, as the ask is matched by any of its own.
+ */
+function landmarkLookalikesView(
+  ask: LandmarkAsk,
+  landmarks: readonly Doc<'bodyLandmarks'>[],
+  others: readonly Doc<'waterBodyRequests'>[],
+): Pick<LandmarkProposalView, 'similarLandmark' | 'similarProposal'> {
   const found = landmarkAskLookalikes(
     ask,
     landmarks.filter((l) => l.removedAt === undefined),
-    others.map((o) => ({ ...o, names: [o.name] })),
+    others.map((o) => ({
+      requestId: o._id,
+      name: o.name ?? '',
+      coord: o.coord,
+      names: requestNames(o),
+    })),
   );
   return {
     ...(found.landmark
