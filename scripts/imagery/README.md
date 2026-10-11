@@ -603,9 +603,10 @@ always-on footprint the cost model is avoiding. `--build-only --push` builds, pu
 ```bash
 cp .env.example .env.local          # then set FLY_IMAGE (step 5) and MASK_SEASON
 
-# One granule, plumbing only — proves the box reads COGs and writes R2.
+# One granule, plumbing only — proves the box reads COGs and writes R2. Any id Earth Search still
+# lists will do; the catalog drops old ones (S2B_18TXP_20260115_0_L2A now 404s).
 fly machine run "$FLY_IMAGE" --app skating-imagery --region sjc --rm --restart no \
-  -- S2B_18TXP_20260115_0_L2A --smoke
+  -- S2A_18TXP_20261008_1_L2A --smoke
 
 # A whole pass, MAX_PARALLEL Machines alive at a time.
 ./fan-out.sh granules.txt

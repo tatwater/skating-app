@@ -269,9 +269,9 @@ a main-based schema cannot validate; that branch is never pushed. What the real 
   `R2_ENDPOINT`, `FLY_IMAGE`; 🟢 `FLY_API_TOKEN` 2026-10-09 — a deploy token scoped to
   `skating-imagery`, one year (`convex-dev-live-imagery` in `fly tokens list`).
 - 🟢 `publish-search-plan` for `winter-2026-27`, 2026-10-09 (50 empty / 50 kept tiles).
-- #82–#84 merged 2026-10-11 and are merged into this branch, so dev deploys from it directly; the local combined deploy branch is retired.
-- **A new cutter image before imagery starts:** `cut-granule.sh` now writes the nothing-to-cut record
-  the pump needs to call a pass *empty*. Until `FLY_IMAGE` on Convex dev names an image built from
-  this branch (`fly deploy` in `scripts/imagery`), an empty pass whose Machine is gone reads as
-  *failed* — loud, and *Retry failed* recovers it.
+- 🟢 #82–#84 merged 2026-10-11 and are merged into this branch, so dev deploys from it directly; the local combined deploy branch is retired.
+- 🟢 **A new cutter image before imagery starts** (2026-10-11): `cut-granule.sh` writes the
+  nothing-to-cut record the pump needs to call a pass *empty*; the image built from this branch
+  (`fly deploy --build-only --push`, `deployment-01M4PM9DRGFJDYBYFSDDACEYQT`) passed its smoke test
+  and is pinned as `FLY_IMAGE` on dev.
 - The masks predate the 2026-09-19/21 corpus seed; a re-bake is still the register's item.

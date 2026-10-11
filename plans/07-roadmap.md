@@ -580,7 +580,7 @@ observations (D160). *A skater asks "do I get in the car?" against a water body 
 - **An always-on LibreWXR** — ~$760/yr for what cutting costs ~$5/mo
 
 ## Phase A06i — The season watch
-🟡 **In progress** 2026-10-06 · PR #85 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214
+🟢 **Complete** 2026-10-11 · PR #85 · [plan](./phases/A06i-season-watch.md) · D212 D213 D214
 
 The daily season checker opened winter-2026-27 on 3 October on one 31 °F night at two summit tarns
 and mailed staff that the skating season had begun, without saying which sentinel or what it
@@ -590,14 +590,19 @@ first 20 °F sentinel night), winter region-wide (which lakes froze), the end. I
 roster are versioned settings an admin edits on `/admin/seasons`, previewed against every season
 back to 2016-17 from stored and archived lows, each season keeping the version that decided it, and
 a too-early watch can be reset (D213). Once an admin presses *Start imagery*, Convex polls the
-satellite catalog every six hours and cuts each new pass on Fly (D214). *An operator can read why the
+satellite catalog every six hours and cuts each new pass on Fly (D214). Review hardened both jobs
+against slow and partial answers: deadlines inside the action limit, lows cut from hourly readings
+by the lake's own midnight, and *empty* only on the cutter's record. *An operator can read why the
 watch opened, tune it against past winters, and leave the season's imagery to run itself.*
 
 #### Data runs
 - **2026-10-09 — on dev:** the legacy winter-2026-27 row stamped (v0) and its opening night filled; the search plan published (50 empty / 50 kept tiles); the history fill started (33 requests, 2016-17 onward)
+- **2026-10-11 — lows re-cut:** the 308 stored lows (28 lakes × 11 seasons) backed up, cleared and re-filled from hourly readings — 33 requests, 75 minutes apart; the daily tick: 28 lakes in 10 requests, 2.6 s
+- **2026-10-11 — cutter image:** `deployment-01M4PM9DRGFJDYBYFSDDACEYQT` built from this branch (writes the nothing-to-cut record), smoke-tested on `S2A_18TXP_20261008_1_L2A`, pinned as `FLY_IMAGE` on dev
 
 #### Owed
 - The first *Start imagery* on dev — every setting is in place; the first real spawn is the token's first use
+- The lows re-fill finishes ~2026-10-13 11:00 UTC — its report (timings, failures, Open-Meteo use)
 - Matt's thresholds — the reason the settings page exists; the triggers are unchanged until then. ⚠ Winter region-wide was recorded for 2026-10-07 on one cold night, so a warm October fortnight would end the watch
 
 ## Phase A07a — The unified corpus
