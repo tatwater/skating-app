@@ -33,6 +33,15 @@ export async function firstToday(ctx: MutationCtx, key: string): Promise<boolean
   return true;
 }
 
+/** The New York day `key` was last used, or `null` — for a caller deciding on a day it was given. */
+export async function lastUsedOn(ctx: MutationCtx, key: string): Promise<string | null> {
+  return (await throttleRow(ctx, key))?.lastOn ?? null;
+}
+
+export async function markUsedOn(ctx: MutationCtx, key: string, day: string): Promise<void> {
+  await upsert(ctx, key, { lastOn: day });
+}
+
 /** Until when `key` is busy, or `null`. */
 export async function busyUntil(ctx: MutationCtx, key: string): Promise<number | null> {
   return (await throttleRow(ctx, key))?.until ?? null;

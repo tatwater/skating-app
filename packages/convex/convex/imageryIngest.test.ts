@@ -717,6 +717,39 @@ describe('the staff emails — one a day, in order (D212)', () => {
     ]);
   });
 
+  test("a reset the same day does not send a second email: the day's mark is not on the row", async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.seasonWatch.ensureSettings, {});
+    const open = (opensOn: string) =>
+      t.mutation(internal.imageryIngest.recordSeasonOpen, {
+        season: 'winter-2026-27',
+        opensOn,
+        openedBy: ['sentinel'],
+        winterFrom: null,
+        sitesSampled: 3,
+        settings: DEFAULT_SEASON_WATCH_SETTINGS,
+      });
+    await open('2026-10-03');
+    expect(await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-04' })).toEqual(
+      { sent: 'opened' },
+    );
+    // Reset the same day — the row, and its lastEmailOn, move to the superseded table — and the
+    // watch reopens at once.
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query('imageryIngestSeasons').first();
+      if (row) await ctx.db.delete(row._id);
+    });
+    await open('2026-10-03');
+    expect(await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-04' })).toEqual(
+      { sent: null },
+    );
+    expect(await broadcasts(t)).toHaveLength(1);
+    // The next day it goes.
+    expect(await t.mutation(internal.imageryIngest.sendNextEmail, { today: '2026-10-05' })).toEqual(
+      { sent: 'opened' },
+    );
+  });
+
   test('nothing is sent before any settings exist', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryIngest.recordSeasonOpen, {

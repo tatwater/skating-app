@@ -61,6 +61,7 @@ import {
   type MutationCtx,
 } from './_generated/server';
 import { openMeteoCallWeight } from './lib/apiMeter';
+import { lastUsedOn, markUsedOn } from './lib/dailyThrottle';
 import { composeSeasonEmail, newYorkDate, type SeasonEmail } from './lib/seasonWatchEmails';
 import {
   namedSiteLow,
@@ -295,10 +296,18 @@ export const recordSeasonOpen = internalMutation({
  * together — a retried tick cannot mail anyone twice, and a failed one loses nothing. An imagery
  * reminder whose imagery has since been started is dropped without spending the day's slot.
  */
+/**
+ * The day the last watch email went, kept outside the season rows: a reset moves its row to the
+ * superseded table, and the day's mark must not go with it, or a reopening the same day would send a
+ * second email (D212).
+ */
+const WATCH_EMAIL_KEY = 'season-watch-email';
+
 export const sendNextEmail = internalMutation({
   args: { today: v.string() },
   handler: async (ctx, { today }): Promise<{ sent: string | null }> => {
     const rows = await ctx.db.query('imageryIngestSeasons').take(50);
+    if ((await lastUsedOn(ctx, WATCH_EMAIL_KEY)) === today) return { sent: null };
     if (rows.some((r) => r.lastEmailOn === today)) return { sent: null };
     const settingsRow = await ctx.db
       .query('seasonWatchSettings')
@@ -324,6 +333,7 @@ export const sendNextEmail = internalMutation({
           settings,
           sentinelNames: sentinels.map((s) => s.name),
         });
+        await markUsedOn(ctx, WATCH_EMAIL_KEY, today);
         await ctx.db.patch(row._id, {
           emailQueue: queue,
           lastEmailOn: today,
