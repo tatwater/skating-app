@@ -1229,6 +1229,70 @@ describe('buildIndex', () => {
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 0 });
   });
 
+  test('a row saved before ETags were kept is read again — it may predate a recut', async () => {
+    const t = convexTest(schema, modules);
+    const a = s2('19TEA', '20261005');
+    const key = `frames/${SEASON}/${a}.json`;
+    // Saved by an earlier build, with no ETag and the old details; the bucket holds the recut.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryFrames', {
+        season: SEASON,
+        manifestKey: key,
+        granuleId: a,
+        capturedAt: '2026-10-05T15:30:00Z',
+        cloudCoverPct: 40,
+        bodyCount: 12,
+        bands: ['visual', 'scl'],
+      }),
+    );
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    stub(
+      world({
+        manifests: new Map<string, unknown>([
+          [key, manifest(a, '2026-10-05T15:30:00Z', { bands: ['visual'], bodyCount: 15 })],
+        ]),
+      }),
+    );
+    await t.action(internal.imageryLive.buildIndex, {});
+    const [row] = await t.run((ctx) => ctx.db.query('imageryFrames').collect());
+    expect(row).toMatchObject({ bodyCount: 15, bands: ['visual'] });
+    expect(row?.etag).toBeDefined();
+  });
+
+  test('stale rows past the per-build cap wait for the next tick, with the request standing', async () => {
+    const t = convexTest(schema, modules);
+    const manifests = new Map<string, unknown>();
+    const keys: string[] = [];
+    for (let i = 0; i < 401; i++) {
+      const g = s2(`19T${String(i).padStart(3, '0')}`, '20261005');
+      const key = `frames/${SEASON}/${g}.json`;
+      keys.push(key);
+      manifests.set(key, manifest(g, '2026-10-05T15:30:00Z'));
+    }
+    await t.run(async (ctx) => {
+      for (const key of keys) {
+        await ctx.db.insert('imageryFrames', {
+          season: SEASON,
+          manifestKey: key,
+          granuleId: key,
+          capturedAt: '2026-10-05T15:30:00Z',
+          cloudCoverPct: 40,
+          bodyCount: 1,
+          bands: ['visual'],
+        });
+      }
+    });
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    stub(world({ manifests }));
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 400, deferred: 1 });
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
+    // The next tick reads the last one and completes the request.
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 1 });
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
+  });
+
   test('a failed rebuild alerts the admins', async () => {
     const t = convexTest(schema, modules);
     await t.mutation(internal.imageryLive.markIndexDirty, {});

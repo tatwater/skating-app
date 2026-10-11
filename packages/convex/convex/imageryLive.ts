@@ -163,6 +163,9 @@ const LOST_CLAIM_MS = 10 * 60_000;
 /** Manifests fetched at once while indexing. */
 const MANIFEST_CONCURRENCY = 8;
 
+/** Saved rows one build reads again (changed, or written before ETags were kept); the rest wait. */
+const REREAD_CAP = 400;
+
 type Outcome = Doc<'imageryRuns'>['outcome'];
 type Status = Doc<'imageryGranules'>['status'];
 type Settled = 'queued' | 'landed' | 'empty' | 'failed';
@@ -1140,16 +1143,9 @@ const frameRow = v.object({
 });
 
 export const syncFrames = internalMutation({
-  args: {
-    add: v.array(frameRow),
-    remove: v.array(v.id('imageryFrames')),
-    stamp: v.optional(v.array(v.object({ id: v.id('imageryFrames'), etag: v.string() }))),
-  },
-  handler: async (ctx, { add, remove, stamp }) => {
+  args: { add: v.array(frameRow), remove: v.array(v.id('imageryFrames')) },
+  handler: async (ctx, { add, remove }) => {
     for (const id of remove) await ctx.db.delete(id);
-    for (const { id, etag } of stamp ?? []) {
-      if (await ctx.db.get(id)) await ctx.db.patch(id, { etag });
-    }
     for (const row of add) {
       const existing = await ctx.db
         .query('imageryFrames')
@@ -1195,6 +1191,8 @@ export const buildIndex = internalAction({
     try {
       const result = await buildIndexOnce(ctx);
       if (result === null) return null;
+      // Stale rows past the cap are still to read: the request stands, and the next tick goes on.
+      if (result.deferred > 0) return { frames: result.frames };
       // Built even with a manifest it could not read, so a frame landing later is not held back;
       // what it could not read is retried after a wait that doubles while it keeps failing.
       const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
@@ -1219,7 +1217,7 @@ export const buildIndex = internalAction({
 
 async function buildIndexOnce(
   ctx: ActionCtx,
-): Promise<{ frames: number; unreadable: number; season: string } | null> {
+): Promise<{ frames: number; unreadable: number; deferred: number; season: string } | null> {
   const startedAt = Date.now();
   const season = archiveSeasonAt(startedAt);
   const config = configured();
@@ -1244,26 +1242,24 @@ async function buildIndexOnce(
     // ⚠ **A saved row is reused only while its manifest is unchanged.** A recut (`backfill`) writes
     // the same key again; its ETag is what says so, and a stale row would carry the old bands,
     // footprint and body count into the index — over the CLI's corrected one.
-    // A row written before ETags were kept adopts the listed one unread (`stamp` below): re-reading
-    // a whole season of manifests in one build would cost the action limit for nothing.
+    // A row written before ETags were kept is stale too — it may predate a recut — and is read
+    // again; at most `REREAD_CAP` stale rows a build, so a whole season of them cannot run a build
+    // past the action limit (the rest wait, and the request stands for the next tick).
     const current = (r: Doc<'imageryFrames'>) => {
       const etag = etagOf.get(r.manifestKey);
-      return etag === undefined || r.etag === undefined || r.etag === etag;
+      return etag === undefined || r.etag === etag;
     };
-    const stamp = rows.flatMap((r) => {
-      const etag = etagOf.get(r.manifestKey);
-      return r.etag === undefined && etag !== undefined
-        ? [{ id: r._id as Id<'imageryFrames'>, etag }]
-        : [];
-    });
     const byKey = new Map(rows.map((r) => [r.manifestKey, r]));
     const remove = rows
       .filter((r) => !listedSet.has(r.manifestKey))
       .map((r) => r._id as Id<'imageryFrames'>);
-    const fresh = listed.filter((k) => {
+    const unseen = listed.filter((k) => !byKey.has(k));
+    const stale = listed.filter((k) => {
       const row = byKey.get(k);
-      return !row || !current(row);
+      return row !== undefined && !current(row);
     });
+    const fresh = [...unseen, ...stale.slice(0, REREAD_CAP)];
+    const deferred = Math.max(0, stale.length - REREAD_CAP);
     const added: ReturnType<typeof frameFromManifest>[] = [];
     const reread = new Set<string>();
     let unreadable = 0;
@@ -1286,11 +1282,10 @@ async function buildIndexOnce(
         } else unreadable++;
       }
     }
-    for (let i = 0; i < Math.max(added.length, remove.length, stamp.length); i += 100) {
+    for (let i = 0; i < Math.max(added.length, remove.length); i += 100) {
       await ctx.runMutation(internal.imageryLive.syncFrames, {
         add: added.slice(i, i + 100),
         remove: remove.slice(i, i + 100),
-        stamp: stamp.slice(i, i + 100),
       });
     }
 
@@ -1335,10 +1330,11 @@ async function buildIndexOnce(
         added: added.length,
         removed: remove.length,
         unreadable,
+        ...(deferred > 0 ? { deferred } : {}),
         frames: index.frames.length,
       },
     });
-    return { frames: index.frames.length, unreadable, season };
+    return { frames: index.frames.length, unreadable, deferred, season };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await ctx.runMutation(internal.imageryLive.alertAdmins, {
