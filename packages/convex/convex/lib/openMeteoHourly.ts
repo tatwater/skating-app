@@ -133,6 +133,16 @@ export async function fetchHourlyRows(
         const json = await attempt(`${url}?${query.toString()}`, Math.min(FETCH_TIMEOUT_MS, left));
         // One coordinate answers with an object, several with an array.
         const answered = Array.isArray(json) ? json : [json];
+        // ⚠ **Every site asked for, or the answer is not one.** A short answer would leave sites
+        // undefined without counting a failure, and the tick would decide on fewer lakes than its
+        // sample — the very thing its all-or-nothing rule refuses (Greptile, PR #85).
+        const whole = chunk.sites.filter((_, j) => Array.isArray(answered[j]?.hourly?.time)).length;
+        if (whole < chunk.sites.length) {
+          throw new FetchFailure(
+            `Open-Meteo answered for ${whole} of ${chunk.sites.length} sites`,
+            true,
+          );
+        }
         chunk.sites.forEach((_, j) => {
           rows[chunk.start + j] = answered[j];
         });

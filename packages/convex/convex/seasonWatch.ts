@@ -18,11 +18,13 @@
  */
 
 import {
+  addDaysIso,
   archiveSeasonAt,
   archiveSeasonLabel,
   type DailyLow,
   DEFAULT_SEASON_WATCH_SETTINGS,
   dailyLowsFromOpenMeteo,
+  daysBetween,
   EARLIEST_START_MONTH_DAY,
   expandLows,
   MAX_ROSTER_SITES,
@@ -777,16 +779,26 @@ export function historySeasons(nowMs: number): string[] {
 }
 
 /**
- * Whether a stored season leaves a fill nothing to add. The current season: once it has lows at all
- * (the live watch keeps it up). A past season: once the archive has been over it — a season the
- * live watch kept ends at its close, and the spring a thaw rule replays is still to fill.
+ * Whether a stored season leaves a fill nothing to add. The current season: once its lows reach
+ * back to the floor (the live watch keeps them up from there). A past season: once the archive has
+ * been over it — a season the live watch kept ends at its close, and the spring a thaw rule replays
+ * is still to fill.
  */
 export function holdsSeason(
-  doc: Pick<Doc<'seasonWatchSeries'>, 'source' | 'archiveFilledAt'> | null,
+  doc: Pick<Doc<'seasonWatchSeries'>, 'season' | 'source' | 'archiveFilledAt' | 'firstDate'> | null,
   isCurrent: boolean,
 ): boolean {
   if (!doc) return false;
-  return isCurrent || doc.source === 'archive' || doc.archiveFilledAt !== undefined;
+  if (doc.source === 'archive' || doc.archiveFilledAt !== undefined) return true;
+  // ⚠ **The season under way is whole only back to its floor.** The live watch keeps 92 days, so a
+  // lake added in February starts in November: its autumn is still to fill from the archive
+  // (Greptile, PR #85). A day or two of slack for an edge night the day-cutter drops.
+  return isCurrent && doc.firstDate <= addDaysIso(seasonFloorOf(doc.season), 2);
+}
+
+/** A season's first night any fill keeps: 1 September of its start year. */
+function seasonFloorOf(season: string): string {
+  return `${seasonStartYear(season)}-${EARLIEST_START_MONTH_DAY}`;
 }
 
 /**
@@ -919,55 +931,81 @@ export const fillSeason = internalAction({
     const sites = planned.filter((s) => !held.has(s.waterBodyId));
     if (sites.length === 0) return null;
     const year = seasonStartYear(season);
-    const params = new URLSearchParams({
-      // Hourly, cut into days here (`dailyLowsFromOpenMeteo`): Open-Meteo's daily lows cut every day
-      // at the offset in force when the request is made — the same cut the daily tick refuses.
-      hourly: 'temperature_2m',
-      timezone: 'auto',
-      timeformat: 'unixtime',
-      temperature_unit: 'celsius',
-    });
     // From the earliest floor the editor accepts (1 September), so a preview can move the floor
     // earlier than October and still have every night the live cron would count.
-    const floor = `${year}-${EARLIEST_START_MONTH_DAY}`;
-    let days: number;
+    const floor = seasonFloorOf(season);
+    const today = newYorkDate(now);
+
+    // The passes to make. A past season: the archive, floor to June. The season under way: the
+    // forecast endpoint's last 92 days (what the live watch reads), and — once the floor is further
+    // back than that — the archive for the rest, fetched second so it fills gaps around the kept
+    // live nights without replacing them (`storeSeries`), and marks the season whole.
+    const passes: { url: string; source: 'forecast' | 'archive'; range: Record<string, string> }[] =
+      [];
     if (isCurrent) {
-      params.set('past_days', '92');
-      params.set('forecast_days', '1');
-      days = 93;
+      passes.push({
+        url: FORECAST_URL,
+        source: 'forecast',
+        range: { past_days: '92', forecast_days: '1' },
+      });
+      if (addDaysIso(today, -92) > floor) {
+        passes.push({
+          url: ARCHIVE_URL,
+          source: 'archive',
+          range: { start_date: floor, end_date: addDaysIso(today, -1) },
+        });
+      }
     } else {
-      params.set('start_date', floor);
-      params.set('end_date', `${year + 1}-06-30`);
-      days = 303;
+      passes.push({
+        url: ARCHIVE_URL,
+        source: 'archive',
+        range: { start_date: floor, end_date: `${year + 1}-06-30` },
+      });
     }
-    const fetched = await fetchHourlyRows(
-      isCurrent ? FORECAST_URL : ARCHIVE_URL,
-      params,
-      sites,
-      days,
-      openMeteoMeter(ctx, days),
-    );
-    const rows = fetched.rows;
-    await ctx.runMutation(internal.seasonWatch.storeSeries, {
-      season,
-      source: isCurrent ? 'forecast' : 'archive',
-      sites: sites.flatMap((site, i) => {
-        // No answer for this site at all: send nothing, so it is still lacking and asked again.
-        if (!rows[i]?.hourly?.time) return [];
-        return [
-          {
-            ...site,
-            days: dailyLowsFromOpenMeteo(rows[i], site.lng).filter((d) => d.date >= floor),
-          },
-        ];
-      }),
-    });
-    // What came is stored; what did not stays lacking for the next plan — and the failure is seen.
-    if (fetched.failed > 0) {
-      throw new Error(
-        `${fetched.lastError} filling ${season} (${fetched.failed} of ${fetched.requests} requests)`,
+
+    const failures: string[] = [];
+    for (const pass of passes) {
+      const params = new URLSearchParams({
+        // Hourly, cut into days here (`dailyLowsFromOpenMeteo`): Open-Meteo's daily lows cut every
+        // day at the offset in force when the request is made — the cut the daily tick refuses.
+        hourly: 'temperature_2m',
+        timezone: 'auto',
+        timeformat: 'unixtime',
+        temperature_unit: 'celsius',
+        ...pass.range,
+      });
+      const days =
+        pass.range.start_date && pass.range.end_date
+          ? daysBetween(pass.range.start_date, pass.range.end_date) + 1
+          : 93;
+      const fetched = await fetchHourlyRows(
+        pass.url,
+        params,
+        sites,
+        days,
+        openMeteoMeter(ctx, days),
       );
+      const rows = fetched.rows;
+      await ctx.runMutation(internal.seasonWatch.storeSeries, {
+        season,
+        source: pass.source,
+        sites: sites.flatMap((site, i) => {
+          // No answer for this site at all: send nothing, so it is still lacking and asked again.
+          if (!rows[i]?.hourly?.time) return [];
+          return [
+            {
+              ...site,
+              days: dailyLowsFromOpenMeteo(rows[i], site.lng).filter((d) => d.date >= floor),
+            },
+          ];
+        }),
+      });
+      if (fetched.failed > 0) {
+        failures.push(`${fetched.lastError} (${fetched.failed} of ${fetched.requests} requests)`);
+      }
     }
+    // What came is stored; what did not stays lacking for the next plan — and the failure is seen.
+    if (failures.length > 0) throw new Error(`${failures.join('; ')} filling ${season}`);
     return null;
   },
 });

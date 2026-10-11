@@ -135,4 +135,29 @@ describe('fetchHourlyRows', () => {
     expect(out.rows.every((r) => r === undefined)).toBe(true);
     expect(out.lastError).toMatch(/out of time after 0 s/);
   });
+
+  test('an answer missing a requested site is a failed request, retried once', async () => {
+    const sites = [0, 1, 2].map((i) => ({ lat: 44 + i, lng: -71.65 }));
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls++;
+        const lats = (new URL(url).searchParams.get('latitude') ?? '').split(',');
+        // Always one site short.
+        return new Response(JSON.stringify(lats.slice(1).map(() => hourlyRow('2026-10-01', [1]))));
+      }),
+    );
+    const out = await fetchHourlyRows(
+      'https://x.test',
+      new URLSearchParams(),
+      sites,
+      93,
+      async () => {},
+    );
+    expect(calls).toBe(2);
+    expect(out.failed).toBe(1);
+    expect(out.rows.every((r) => r === undefined)).toBe(true);
+    expect(out.lastError).toBe('Open-Meteo answered for 2 of 3 sites');
+  });
 });

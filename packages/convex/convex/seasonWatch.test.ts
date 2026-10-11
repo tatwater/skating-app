@@ -428,8 +428,8 @@ describe('the overview and the stored lows', () => {
         // The state from the first write stays: a later write without one does not erase it.
         state: 'NH',
         source: 'forecast',
-        // Kept live and still the current season: whole so far (a fill would leave it be).
-        whole: true,
+        // Kept live, but starting 1 October: the season's September is still to fill.
+        whole: false,
         firstDate: '2026-10-01',
         lows: [3, -1, -2],
       },
@@ -750,10 +750,11 @@ describe('history', () => {
         }),
       );
     }
+    // The season under way, kept back to its floor: whole.
     await t.mutation(internal.seasonWatch.storeSeries, {
       season: 'winter-2026-27',
       source: 'forecast',
-      sites: [{ ...site, days: [{ date: '2026-10-01', minTempC: 1 }] }],
+      sites: [{ ...site, days: [{ date: '2026-09-01', minTempC: 1 }] }],
     });
     const plan = async () => {
       // Each plan here stands for a later day, after the last fill's hold.
@@ -818,15 +819,18 @@ describe('history', () => {
           : new Response('[]'),
       ),
     );
-    await t.action(internal.seasonWatch.fillSeason, {
-      season: 'winter-2025-26',
-      sites: [a, b].map((id, i) => ({
-        waterBodyId: id as Id<'waterBodies'>,
-        name: `Lake ${i}`,
-        lat: 44 + i / 100,
-        lng: -71.65,
-      })),
-    });
+    // An answer without a requested site is a failed request — stored for the rest, then thrown.
+    await expect(
+      t.action(internal.seasonWatch.fillSeason, {
+        season: 'winter-2025-26',
+        sites: [a, b].map((id, i) => ({
+          waterBodyId: id as Id<'waterBodies'>,
+          name: `Lake ${i}`,
+          lat: 44 + i / 100,
+          lng: -71.65,
+        })),
+      }),
+    ).rejects.toThrow(/answered for 0 of 1 sites/);
     const docs = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2025-26' });
     const byId = new Map(docs.map((d) => [d.waterBodyId as string, d]));
     expect(byId.get(a as string)?.archiveFilledAt).toBeDefined();
@@ -932,9 +936,76 @@ describe('history', () => {
           lng: -71.65,
         })),
       }),
-    ).rejects.toThrow(/Open-Meteo 429 Too Many filling winter-2025-26 \(1 of 2 requests\)/);
+    ).rejects.toThrow(/Open-Meteo 429 Too Many \(1 of 2 requests\) filling winter-2025-26/);
     const docs = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2025-26' });
     expect(docs.map((d) => d.waterBodyId)).toEqual([a]);
+  });
+
+  test('a lake added mid-season gets its autumn from the archive; the season is whole once it reaches the floor', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2027-02-10T17:00:00Z'));
+    const t = convexTest(schema, modules);
+    const [lake] = await seedLakes(t, 1);
+    const site = { waterBodyId: lake as Id<'waterBodies'>, name: 'Lake 0', lat: 44, lng: -71.65 };
+    // The live watch has kept its last 92 days: November on.
+    await t.mutation(internal.seasonWatch.storeSeries, {
+      season: 'winter-2026-27',
+      source: 'forecast',
+      sites: [{ ...site, days: [{ date: '2026-11-10', minTempC: -3 }] }],
+    });
+    const held = () =>
+      t.query(internal.seasonWatch.heldSites, {
+        season: 'winter-2026-27',
+        waterBodyIds: [site.waterBodyId],
+        isCurrent: true,
+      });
+    expect(await held()).toEqual([]);
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        const archive = url.includes('archive-api');
+        // The forecast says -3 on 10 Nov again; the archive has September through February.
+        return new Response(
+          JSON.stringify(
+            archive ? hourlyRow('2026-09-01', [5, 4, 3]) : hourlyRow('2026-11-10', [-3]),
+          ),
+        );
+      }),
+    );
+    await t.action(internal.seasonWatch.fillSeason, { season: 'winter-2026-27', sites: [site] });
+    // The forecast first, then the archive from the floor to yesterday.
+    expect(urls[0]).toContain('api.open-meteo.com/v1/forecast');
+    expect(urls[1]).toContain('archive-api.open-meteo.com');
+    expect(urls[1]).toContain('start_date=2026-09-01');
+    expect(urls[1]).toContain('end_date=2027-02-09');
+    const [doc] = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2026-27' });
+    // The autumn is filled, the live night kept, and the season whole.
+    expect(doc).toMatchObject({ source: 'forecast', firstDate: '2026-09-01' });
+    expect(doc?.archiveFilledAt).toBeDefined();
+    expect(await held()).toEqual([site.waterBodyId]);
+  });
+
+  test('in October the forecast already reaches the floor: no archive pass for the season under way', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-11T17:00:00Z'));
+    const t = convexTest(schema, modules);
+    const [lake] = await seedLakes(t, 1);
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return new Response(JSON.stringify(hourlyRow('2026-09-01', [5])));
+      }),
+    );
+    await t.action(internal.seasonWatch.fillSeason, {
+      season: 'winter-2026-27',
+      sites: [{ waterBodyId: lake as Id<'waterBodies'>, name: 'Lake 0', lat: 44, lng: -71.65 }],
+    });
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('api.open-meteo.com/v1/forecast');
   });
 
   test('a failed archive request throws', async () => {

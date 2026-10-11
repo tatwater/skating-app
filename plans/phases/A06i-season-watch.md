@@ -220,6 +220,15 @@ it lives in `dailyThrottle`, not on the resettable row. Re-filling the lows on d
 hourly answers arriving slowly or cut off from Convex, so the tick and the fill fetch three sites a
 request with one retry (`fetchHourlyRows`).
 
+Later passes (2026-10-11, rounds three to seven) hardened the two background jobs against slow and
+partial answers. The index reads manifests against a time budget, saving each group as it lands;
+manifests it cannot read are remembered in `imageryUnreadable` and read last, least recently tried
+first, so they hold back neither good frames nor a repaired one; a recut is caught by its ETag. The
+pump has one deadline for its checks and spawns, settles each group of checks as it finishes, and
+asks the bucket itself (signed) whether a frame landed. The hourly weather fetch has an overall
+deadline, refuses an answer missing a requested site, and the history fill reaches a season under
+way back to its floor through the archive, so a lake added in February gets its autumn.
+
 ### §6 — `/admin/seasons`
 
 The current watch (state, dates, sentinels, *Reset*), imagery (*Start* / *Pause*, the run history),
