@@ -9,6 +9,7 @@
  * at most {@link SITE_DAYS_PER_FETCH} site-days — three sites of the tick's 93 days, one site of an
  * archive season — a few run at once, each attempt times out, and an answer that did not arrive
  * whole, a timeout or a 5xx is asked again once. A 4xx is not: a refusal or the quota is no blip.
+ * The whole fetch has a deadline ({@link FETCH_BUDGET_MS}) the caller can finish inside.
  *
  * A request that still fails leaves its sites' rows `undefined` rather than throwing, so each caller
  * decides what part of an answer is worth: the fill stores what came, the tick decides on nothing
@@ -29,6 +30,15 @@ const FETCHES_AT_ONCE = 3;
 
 /** One attempt's deadline: a stalled answer is retried, not waited on to the action limit. */
 const FETCH_TIMEOUT_MS = 60_000;
+
+/**
+ * The whole fetch's deadline. ⚠ **Well inside Convex's 10-minute action limit**, so the caller still
+ * has time to store what came and — for the daily tick — send its email in `finally`: at 80 sites
+ * (ten sentinels, ten pinned, a sample of sixty) a stalled API could otherwise spend nine waves of
+ * a timeout and a retry, ~18 minutes, and the action would be killed mid-loop (Greptile, PR #85).
+ * Past it, no attempt starts, and the requests left count as failed.
+ */
+const FETCH_BUDGET_MS = 5 * 60_000;
 
 export interface HourlyFetch {
   /** One row per site, in order; `undefined` where its request failed twice. */
@@ -68,10 +78,13 @@ class FetchFailure extends Error {
   }
 }
 
-async function attempt(url: string): Promise<OpenMeteoHourlyRow | OpenMeteoHourlyRow[]> {
+async function attempt(
+  url: string,
+  timeoutMs: number,
+): Promise<OpenMeteoHourlyRow | OpenMeteoHourlyRow[]> {
   let res: Response;
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     throw new FetchFailure(`Open-Meteo did not answer: ${String(error)}`, true);
   }
@@ -92,7 +105,9 @@ export async function fetchHourlyRows(
   sites: readonly { lat: number; lng: number }[],
   days: number,
   meter: Meter,
+  budgetMs: number = FETCH_BUDGET_MS,
 ): Promise<HourlyFetch> {
+  const deadline = Date.now() + budgetMs;
   const size = Math.max(1, Math.floor(SITE_DAYS_PER_FETCH / days));
   const chunks: { start: number; sites: (typeof sites)[number][] }[] = [];
   for (let i = 0; i < sites.length; i += size) {
@@ -107,9 +122,15 @@ export async function fetchHourlyRows(
     query.set('latitude', chunk.sites.map((s) => s.lat.toFixed(4)).join(','));
     query.set('longitude', chunk.sites.map((s) => s.lng.toFixed(4)).join(','));
     for (let n = 1; ; n++) {
+      const left = deadline - Date.now();
+      if (left <= 0) {
+        failed++;
+        lastError = `Open-Meteo: out of time after ${Math.round(budgetMs / 1000)} s`;
+        return;
+      }
       await meter(chunk.sites.length);
       try {
-        const json = await attempt(`${url}?${query.toString()}`);
+        const json = await attempt(`${url}?${query.toString()}`, Math.min(FETCH_TIMEOUT_MS, left));
         // One coordinate answers with an object, several with an array.
         const answered = Array.isArray(json) ? json : [json];
         chunk.sites.forEach((_, j) => {

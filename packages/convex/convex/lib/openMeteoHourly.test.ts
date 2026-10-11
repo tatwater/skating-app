@@ -108,4 +108,31 @@ describe('fetchHourlyRows', () => {
     expect(out.rows[2]?.hourly?.time?.length).toBe(24);
     expect(out.lastError).toMatch(/Open-Meteo (429|502)/);
   });
+
+  test('a stalled API runs out the budget, not the action: no attempt starts past it', async () => {
+    // Every answer stalls until its timeout — at most what is left of the budget.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          }),
+      ),
+    );
+    const sites = Array.from({ length: 9 }, (_, i) => ({ lat: 44 + i, lng: -71.65 }));
+    const started = Date.now();
+    const out = await fetchHourlyRows(
+      'https://x.test',
+      new URLSearchParams(),
+      sites,
+      303, // nine requests: three waves of three
+      async () => {},
+      200,
+    );
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(out.failed).toBe(9);
+    expect(out.rows.every((r) => r === undefined)).toBe(true);
+    expect(out.lastError).toMatch(/out of time after 0 s/);
+  });
 });
