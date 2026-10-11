@@ -351,10 +351,12 @@ export const fileAsSpelling = mutation({
       ...row.aliases,
     ]);
     const aliases = names?.aliases ?? landmark.aliases;
-    // The spelling must land: a landmark already at its spelling cap would drop it silently, and
-    // the name would leave the queue with nothing to show for it.
-    const carries = [landmark.name, ...aliases].some(
-      (n) => landmarkNameKey(n) === landmarkNameKey(row.name),
+    // Every spelling must land: a landmark near its spelling cap would drop the row's later ones
+    // silently, and the name would leave the queue with them lost. A spelling no landmark could
+    // carry (blank, or too long) is the only one let go — never the row's own name.
+    const kept = new Set([landmark.name, ...aliases].map(landmarkNameKey));
+    const carries = [row.name, ...row.aliases].every(
+      (n) => kept.has(landmarkNameKey(n)) || (n !== row.name && !normalizeLandmarkNames(n)),
     );
     if (!carries) {
       throw new ConvexError(

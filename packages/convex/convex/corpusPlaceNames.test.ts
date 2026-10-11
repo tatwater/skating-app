@@ -405,14 +405,33 @@ describe('placing a name', () => {
     await load(t, [
       name('Kingsland Bay', { waterBodyId: lake }),
       name('The Hawk', { waterBodyId: lake }),
+      name('Hawk Shoal', { waterBodyId: lake, aliases: ['Hawks Shoal'] }),
+      name('Hawk Light', { waterBodyId: lake, aliases: ['H'.repeat(81)] }),
     ]);
     const open = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
     const bay = open.find((r) => r.name === 'Kingsland Bay');
     const hawk = open.find((r) => r.name === 'The Hawk');
-    if (!bay || !hawk) throw new Error('not loaded');
+    const shoal = open.find((r) => r.name === 'Hawk Shoal');
+    const light = open.find((r) => r.name === 'Hawk Light');
+    if (!bay || !hawk || !shoal || !light) throw new Error('not loaded');
     await expect(
       mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: hawk._id, landmarkId: point }),
     ).rejects.toThrow(/as many spellings/);
+    // Room for the name but not its other spelling: refused, not placed with "Hawks Shoal" lost.
+    const eleven = Array.from({ length: 11 }, (_, i) => `Hawkins Spelling ${i}`);
+    await mod.as.mutation(api.landmarks.update, { landmarkId: point, aliases: eleven });
+    await expect(
+      mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: shoal._id, landmarkId: point }),
+    ).rejects.toThrow(/as many spellings/);
+    expect((await t.run((ctx) => ctx.db.get(point)))?.aliases).toEqual(eleven);
+    expect((await t.run((ctx) => ctx.db.get(shoal._id)))?.status).toBe('open');
+    // A spelling no landmark could carry (too long) is let go; the name itself lands.
+    await mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, {
+      id: light._id,
+      landmarkId: point,
+    });
+    expect((await t.run((ctx) => ctx.db.get(point)))?.aliases).toEqual([...eleven, 'Hawk Light']);
+    expect((await t.run((ctx) => ctx.db.get(light._id)))?.status).toBe('placed');
     await mod.as.mutation(api.landmarks.update, { landmarkId: point, aliases: [] });
     await expect(
       mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: bay._id, landmarkId: point }),
