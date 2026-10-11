@@ -6240,7 +6240,9 @@ properly crosses the walked shore is refused; one that only touches it (a click 
 meters past a corner) is a zero-width spike the clipper drops, not a crossing. The queue reuses
 A07b because a corpus-shaped table would have been a second queue with no second answer.
 
-**Related:** D60, D175, D179, D202, A02 Decision 10, A09.
+**Related:** D60, D175, D179, D202, D215, A02 Decision 10, A09.
+
+*Amended by D215 (2026-10-11): a re-derivation keeps the bay's water rather than the stored `side`, and a re-fit that changes the bay a lot waits for a moderator.*
 
 ## D202 — A place skaters steer by but do not skate is a landmark: a labeled point, never a sub-area (Named landmarks)
 
@@ -6672,3 +6674,44 @@ cron tick cannot be lost or doubled, and one actor under a lease makes the cap, 
 backoff a single check.
 
 **Related:** D147, D148, D149, D213, [`phase-A06i`](./phases/A06i-season-watch.md).
+
+## D215 — A chord bay re-derived against a moved shore keeps its water, and a jump waits for a moderator (D201)
+
+D201 stores a bay as its mouth — two shore points, a `side` and a sagitta — and re-derives the
+outline whenever the lake's shoreline moves (a re-import whose footprint changed, a merge, a
+restore). The `side` is the moderator's click against the shore *as it was*; re-snapped to a new
+shore, the mouth line can pass that click, and the bay becomes the rest of the lake. How far the
+shore has to move is how far the click was from the mouth: a click deep in the bay survives almost
+anything, one just inside the mouth flips on a routine refinement. Founder call, 2026-10-11:
+
+- **The same water.** Each of the mouth's two regions is built into a bay exactly as a moderator's
+  mouth would be — chord or bow, clipped — and the re-derivation keeps the one most like the bay's
+  current outline (intersection over union: an outward bow makes the two builds overlap, so the
+  share each holds is not enough), never the one holding the old click. The rest of the lake is kept
+  only when it is more like the old bay; when the bay's own region cannot be built, the
+  answer is that region's refusal. A fresh `side` is stored on the open water kept (off the mouth
+  line, off any island), so the editor's click-based preview shows the same bay and saving from it
+  cannot make the flip real; the ends stay as drawn. Where the clipper cannot measure overlap
+  (near-coincident outlines), the old bay's own open-water point picks the region instead.
+- **A jump waits.** A re-fit more than half again bigger or a third smaller than the bay was, or
+  overlapping it less than half (it moved more than it stayed), is not applied unseen. While the old
+  outline still fits the lake it stays, re-clipped. Where it no longer fits, the re-fit is applied
+  only if it holds at least 80% of the old bay's surviving water (the old bay against the lake
+  itself) — measured, and never assumed when the clipper cannot measure it — and otherwise the old
+  outline fails as any unfit outline does. Either way the bay carries `mouthReview` (or, for the
+  last case, `mouthStale`), shown in the editor — which draws the mouth over a re-fitted outline but
+  not over a kept one; a review is cleared only by a moderator's mouth save, never by a later
+  re-import. The re-clip and a restore read one rule
+  (`chordRederivationPlan`), and write the mouth only when something changed.
+
+A moderator's own mouth — drawn, edited, saved — still picks its side by the click: that click is
+against the shore they are looking at.
+
+**Why:** a refined OSM outline, a source swap (OSM / NHD / 3DHP disagree by tens to hundreds of
+meters), a merge that adds an arm, a mouth point that re-snaps across a narrows, or a broken
+relation in one fetch can each move a mouth line past a click. A bay that silently became the
+whole lake would stamp every report on it; one that silently doubled would claim water nobody drew.
+Dev had no chord bays when this landed (all 128 were drawn or seeded), so nothing was re-derived
+under the old rule.
+
+**Related:** D5, D201, A02 Decision 10, A09.

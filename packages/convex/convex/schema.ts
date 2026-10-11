@@ -1576,6 +1576,17 @@ export default defineSchema({
      * freehand save. Never silent (D5) — a stale mouth drawn as the bay's edge would be a lie.
      */
     mouthStale: v.optional(v.string()),
+    /**
+     * Set when a moved shoreline re-fitted the mouth to something a moderator should see before
+     * trusting (D215): the bay would have changed a lot, so its old outline was kept, or the old
+     * outline no longer fit the lake, so the re-fit was applied. Unlike `mouthStale` the mouth
+     * still derives, so no re-import clears this — only a moderator's chord or freehand save.
+     * `outcome` says which: the editor draws the mouth over a re-fitted outline, and not over a kept
+     * one (the refreshed mouth describes the re-fit, not the edge it would be drawn on).
+     */
+    mouthReview: v.optional(
+      v.object({ outcome: v.union(v.literal('kept'), v.literal('refitted')), note: v.string() }),
+    ),
   })
     // Every non-map read is scoped to a parent already in hand — the report being created knows its
     // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
