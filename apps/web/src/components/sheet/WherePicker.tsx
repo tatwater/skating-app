@@ -1,10 +1,10 @@
 import {
   COMPASS_SECTORS,
   describeWhere,
-  landmarkPoint,
   landmarksForSheet,
   MAX_LANDMARK_NAME_LENGTH,
   pointFromTap,
+  pressLandmarkChip,
   type Sector,
   searchLandmarks,
   WHERE_EXTENTS,
@@ -105,7 +105,7 @@ export function WherePicker({
   const found = finding ? searchLandmarks(landmarks, finding) : [];
   const chosenLandmark = where?.point?.landmarkId;
   const pickLandmark = (l: (typeof landmarks)[number]) =>
-    set({ point: chosenLandmark === l._id ? undefined : landmarkPoint(l, POINT_RADIUS_M) });
+    set({ point: pressLandmarkChip(where?.point, l, POINT_RADIUS_M) });
   // A tapped point no landmark answers to may be named — and the name goes to the moderators as a
   // proposal when the report posts (`name_landmark`).
   const unnamedTap = where?.point !== undefined && where.point.landmarkId === undefined;

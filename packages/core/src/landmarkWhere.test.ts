@@ -6,6 +6,7 @@ import {
   landmarksForSheet,
   nearestLandmark,
   pointFromTap,
+  pressLandmarkChip,
   type SheetLandmark,
   searchLandmarks,
 } from './landmarkWhere';
@@ -93,6 +94,20 @@ describe('a tap on the lake', () => {
       name: 'Apple Island',
       landmarkId: 'id-Apple Island',
       byName: true,
+    });
+  });
+
+  it('a chip pressed fresh chooses the landmark, pressed again clears it, and on a tap drops only the name', () => {
+    const chosen = pressLandmarkChip(undefined, apple, 75);
+    expect(chosen).toEqual(landmarkPoint(apple, 75));
+    expect(pressLandmarkChip(chosen, apple, 75)).toBeUndefined();
+    // Another landmark's chip replaces the choice.
+    expect(pressLandmarkChip(chosen, gull, 75)).toEqual(landmarkPoint(gull, 75));
+    // A tap named for Gull Rock keeps its spot and radius when the lit chip is pressed.
+    const tap = pointFromTap({ lat: 44.5005, lng: -73.3 }, [apple, gull], 120);
+    expect(pressLandmarkChip(tap, gull, 75)).toEqual({
+      coord: { lat: 44.5005, lng: -73.3 },
+      radiusMeters: 120,
     });
   });
 
