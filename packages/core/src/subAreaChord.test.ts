@@ -770,6 +770,29 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
     expect(rederiveChordSubArea(lake, mouth, elsewhere)).toMatchObject({ ok: true, jumped: true });
   });
 
+  it('keeps a bowed bay on its own side, though both bowed builds overlap (Greptile on #87)', () => {
+    // A ~10 km square lake, a north–south mouth 4.9 km from the west shore, bowed 4 km. Each side's
+    // bay reaches across the mouth into the other, so the smaller holds over half of the larger.
+    const square = box(-73.0, 44.0, -72.874, 44.09);
+    const across = {
+      a: { lat: 44.09, lng: -72.9383 },
+      b: { lat: 44.0, lng: -72.9383 },
+      sagittaM: 4_000,
+    };
+    for (const side of [
+      { lat: 44.045, lng: -72.9 }, // the east bay, bowed west — the larger
+      { lat: 44.045, lng: -72.97 }, // the west bay, bowed east — the smaller
+    ]) {
+      const drawn = chordSubArea(square, { ...across, side });
+      if (!drawn.ok) throw new Error(drawn.reason);
+      const again = rederiveChordSubArea(square, { ...across, side }, drawn.polygon);
+      if (!again.ok) throw new Error(again.reason);
+      expect(again.jumped).toBe(false);
+      expect(area(again)).toBeCloseTo(area(drawn), -4);
+      expect(polygonIoU(again.polygon, drawn.polygon)).toBeGreaterThan(0.99);
+    }
+  });
+
   it('keeps the larger side for a bay that really was the larger side', () => {
     const rest = chordSubArea(lake, { ...mouth, side: { lat: 44.5, lng: -73.0 } });
     if (!rest.ok) throw new Error(rest.reason);

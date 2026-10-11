@@ -739,12 +739,14 @@ export const CHORD_REDERIVE_MAX_GROWTH = 3;
  * a re-import or a merge, and a restore (D215). Two rules on top of `chordSubArea`:
  *
  * 1. **The same water.** The re-snapped ends bound two regions; each is built into a bay exactly as
- *    a moderator's mouth would be (chord or bow, clipped), and the bay is the one that holds more
- *    of `previous` — its outline before this — never the one holding the stored `side`. That click
- *    was where a moderator pointed against the *old* shore; a mouth line that moved past it would
- *    otherwise turn the bay into the rest of the lake. The bay-sized build is weighed first; the
- *    other (most of a giant lake) is built only when that is not a clear majority, or to measure a
- *    jump. The rest of the lake is kept only when it holds the larger share of the old bay, and when
+ *    a moderator's mouth would be (chord or bow, clipped), and the bay is the one most like
+ *    `previous` — its outline before this — by intersection over union, never the one holding the
+ *    stored `side`. That click was where a moderator pointed against the *old* shore; a mouth line
+ *    that moved past it would otherwise turn the bay into the rest of the lake. Likeness, not the
+ *    share held: an outward bow makes each side's bay reach across the mouth, so the two overlap. A
+ *    straight or inward mouth's builds cannot, and there the bay-sized one holding a majority settles
+ *    it without building the other (most of a giant lake). The rest of the lake is kept only when
+ *    it is more like the old bay, and when
  *    the bay-sized region cannot be built and the rest holds less than half of it, the answer is
  *    that region's refusal — exactly what a moderator drawing that mouth would meet. When the
  *    clipper cannot measure overlap at all (near-coincident outlines), the old bay's own open-water
@@ -788,16 +790,32 @@ export function rederiveChordSubArea(
   let kept: Kept;
   // The share of `previous` the kept bay holds — `null` when the clipper could not say.
   let keptHeld: number | null;
+  const before = surfaceAreaSqM(previous);
+  // How alike a build is to the old bay — intersection over union, from the share of the old bay
+  // it holds. Not the share alone: an outward bow makes each side's bay reach across the mouth into
+  // the other, so the two builds overlap, and the smaller can hold most of a bay that was the larger
+  // while the larger holds all of it (Greptile on #87). Union is exact even when one contains the other.
+  const likeness = (r: ChordResult, share: number) => {
+    if (!r.ok) return -1;
+    const shared = share * before;
+    const union = before + surfaceAreaSqM(r.polygon) - shared;
+    return union > 0 ? shared / union : 0;
+  };
   try {
     const held = (r: ChordResult) => (r.ok ? coveredFraction(previous, r.polygon) : 0);
     const inSmall = held(small);
-    if (small.ok && inSmall >= 0.5) {
+    // The short cut, for a straight or inward mouth only: their builds sit each inside its own
+    // region and cannot overlap, so a majority of the old bay in the small one settles it.
+    if (small.ok && inSmall >= 0.5 && mouth.sagittaM <= 0) {
       kept = { bay: small, region: smaller.polygon };
       keptHeld = inSmall;
     } else {
       const big = buildLarge();
       const inLarge = held(big);
-      if (big.ok && (small.ok ? inLarge > inSmall : inLarge >= 0.5)) {
+      if (
+        big.ok &&
+        (small.ok ? likeness(big, inLarge) > likeness(small, inSmall) : inLarge >= 0.5)
+      ) {
         kept = { bay: big, region: larger.polygon };
         keptHeld = inLarge;
       } else if (small.ok) {
@@ -808,21 +826,25 @@ export function rederiveChordSubArea(
       }
     }
   } catch {
+    // The old bay's own open-water point picks — unless it lies in both builds, as it can where an
+    // outward bow makes them overlap: then nothing measured says which side the bay is, and the
+    // answer is a refusal (the old outline stays, re-clipped), never a guess.
     const inside = fetchOrigin(previous);
     if (!inside) return { ok: false, reason: 'clip_failed' };
+    const big = buildLarge();
     if (small.ok && pointInPolygon(inside, small.polygon)) {
-      kept = { bay: small, region: smaller.polygon };
-    } else {
-      const big = buildLarge();
-      if (!big.ok || !pointInPolygon(inside, big.polygon)) {
+      if (big !== small && big.ok && pointInPolygon(inside, big.polygon)) {
         return { ok: false, reason: 'clip_failed' };
       }
+      kept = { bay: small, region: smaller.polygon };
+    } else if (big !== small && big.ok && pointInPolygon(inside, big.polygon)) {
       kept = { bay: big, region: larger.polygon };
+    } else {
+      return { ok: false, reason: 'clip_failed' };
     }
     keptHeld = null;
   }
 
-  const before = surfaceAreaSqM(previous);
   const after = surfaceAreaSqM(kept.bay.polygon);
   const shared = keptHeld === null ? null : keptHeld * before;
   const overlap =

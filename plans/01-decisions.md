@@ -6544,9 +6544,10 @@ shore has to move is how far the click was from the mouth: a click deep in the b
 anything, one just inside the mouth flips on a routine refinement. Founder call, 2026-10-11:
 
 - **The same water.** Each of the mouth's two regions is built into a bay exactly as a moderator's
-  mouth would be — chord or bow, clipped — and the re-derivation keeps the one that holds more of
-  the bay's current outline, never the one holding the old click. The rest of the lake is kept only
-  when it holds the larger share of the old bay; when the bay's own region cannot be built, the
+  mouth would be — chord or bow, clipped — and the re-derivation keeps the one most like the bay's
+  current outline (intersection over union: an outward bow makes the two builds overlap, so the
+  share each holds is not enough), never the one holding the old click. The rest of the lake is kept
+  only when it is more like the old bay; when the bay's own region cannot be built, the
   answer is that region's refusal. A fresh `side` is stored on the open water kept (off the mouth
   line, off any island), so the editor's click-based preview shows the same bay and saving from it
   cannot make the flip real; the ends stay as drawn. Where the clipper cannot measure overlap

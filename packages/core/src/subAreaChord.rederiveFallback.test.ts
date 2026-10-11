@@ -141,4 +141,38 @@ describe('rederiveChordSubArea when the overlap cannot be measured (D215)', () =
       clipper.chokeOn = null;
     }
   });
+
+  it('refuses a bowed mouth whose old bay’s point lies where the two bowed builds overlap', () => {
+    const square: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-73.0, 44.0],
+          [-72.874, 44.0],
+          [-72.874, 44.09],
+          [-73.0, 44.09],
+          [-73.0, 44.0],
+        ],
+      ],
+    };
+    const across = {
+      a: { lat: 44.09, lng: -72.9383 },
+      b: { lat: 44.0, lng: -72.9383 },
+      sagittaM: 4_000,
+    };
+    for (const side of [
+      { lat: 44.045, lng: -72.9 },
+      { lat: 44.045, lng: -72.97 },
+    ]) {
+      const drawn = chordSubArea(square, { ...across, side });
+      if (!drawn.ok) throw new Error(drawn.reason);
+      const again = rederiveChordSubArea(square, { ...across, side }, drawn.polygon);
+      // Either the same bay, found by its own point, or a refusal — never the other side.
+      if (again.ok) {
+        expect(surfaceAreaSqM(again.polygon)).toBeCloseTo(surfaceAreaSqM(drawn.polygon), -4);
+      } else {
+        expect(again.reason).toBe('clip_failed');
+      }
+    }
+  });
 });
