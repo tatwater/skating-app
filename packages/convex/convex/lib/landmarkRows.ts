@@ -8,6 +8,7 @@
 import {
   distanceToShorelineMeters,
   filledPolygon,
+  haversineMeters,
   type LandmarkKind,
   landmarkNameKey,
   landmarksAreSamePlace,
@@ -124,19 +125,72 @@ export class LandmarkRowIndex {
     for (const n of [row.name, ...row.aliases]) push(this.byName, landmarkNameKey(n));
   }
 
-  resolve(probe: LandmarkProbe): Doc<'bodyLandmarks'> | undefined {
-    const identity = identityOf(probe);
-    const byId = [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))];
-    const byPlace = [
-      ...new Set(identity.names.flatMap((n) => this.byName.get(landmarkNameKey(n)) ?? [])),
-    ].filter((row) => landmarksAreSamePlace(identityOf(row), identity));
+  /**
+   * The rows a set of probes are — every candidate of one body's line, or every live row a merge
+   * moves — decided together, so no probe takes a row that is another's nearer match:
+   *
+   * 1. A probe whose upstream id names a **live** row is that row — the feature itself.
+   * 2. The rest take same-place rows **closest pair first** across all of them, live before removed
+   *    (a person's removal before the catalogs' drop), each row to one probe — two mouths of one
+   *    river near one row both lose nothing, and neither takes the other's.
+   * 3. A probe still without a row falls back to a removed row its id names.
+   */
+  assign<P extends LandmarkProbe>(probes: readonly P[]): Map<P, Doc<'bodyLandmarks'>> {
     const tier = (row: Doc<'bodyLandmarks'>) =>
       row.removedAt === undefined ? 0 : row.catalogDroppedAt === undefined ? 1 : 2;
-    for (const t of [0, 1, 2]) {
-      const hit = byId.find((row) => tier(row) === t) ?? byPlace.find((row) => tier(row) === t);
-      if (hit) return hit;
+    const idRows = new Map(
+      probes.map((probe) => [
+        probe,
+        [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))].sort(
+          (a, b) => tier(a) - tier(b),
+        ),
+      ]),
+    );
+    // A row some probe's id names is that feature's: never another probe's by place, or two
+    // probes would land on it — the id's in step 3, the place match's in step 2.
+    const idNamed = new Set([...idRows.values()].flat().map((row) => row._id));
+    const out = new Map<P, Doc<'bodyLandmarks'>>();
+    const taken = new Set<Id<'bodyLandmarks'>>();
+    for (const probe of probes) {
+      const live = idRows.get(probe)?.find((row) => tier(row) === 0);
+      if (live) {
+        out.set(probe, live);
+        taken.add(live._id);
+      }
     }
-    return undefined;
+    const pairs: { probe: P; row: Doc<'bodyLandmarks'>; tier: number; meters: number }[] = [];
+    for (const probe of probes) {
+      if (out.has(probe)) continue;
+      const identity = identityOf(probe);
+      const byId = idRows.get(probe)?.[0];
+      const rows = new Set(
+        identity.names.flatMap((n) => this.byName.get(landmarkNameKey(n)) ?? []),
+      );
+      for (const row of rows) {
+        if (taken.has(row._id) || idNamed.has(row._id)) continue;
+        if (!landmarksAreSamePlace(identityOf(row), identity)) continue;
+        // A removed row the probe's own id names outranks a same-tier place match (step 3 takes it).
+        if (byId && tier(row) >= tier(byId)) continue;
+        pairs.push({
+          probe,
+          row,
+          tier: tier(row),
+          meters: haversineMeters(row.point, probe.point),
+        });
+      }
+    }
+    pairs.sort((a, b) => a.tier - b.tier || a.meters - b.meters);
+    for (const { probe, row } of pairs) {
+      if (out.has(probe) || taken.has(row._id)) continue;
+      out.set(probe, row);
+      taken.add(row._id);
+    }
+    for (const probe of probes) {
+      if (out.has(probe)) continue;
+      const byId = idRows.get(probe)?.[0];
+      if (byId) out.set(probe, byId);
+    }
+    return out;
   }
 }
 
@@ -235,11 +289,49 @@ export async function retireNamedAsBay(
   return retireNamedAsBays(ctx, actorId, waterBodyId, [bay]);
 }
 
-type BayNaming = {
+export type BayNaming = {
   _id: Id<'waterBodySubAreas'>;
   polygon: Polygon | MultiPolygon;
   names: readonly string[];
 };
+
+/**
+ * **The one rule for "this bay names that landmark"** (D202): any of the landmark's names matching any
+ * of the bay's, and the landmark on the bay's water or within {@link BAY_NAME_RETIRE_RADIUS_M} of its
+ * outline. Every writer asks it — the retirement when a bay is drawn, renamed, redrawn or restored;
+ * the import's `alreadyBay` skip; a moderator's create, edit and restore — so a same-named place
+ * across the lake (Champlain's other Mud Bay) is a landmark to all of them, never to some.
+ */
+export function bayNaming<B extends BayNaming>(
+  landmark: { point: { lat: number; lng: number }; names: readonly string[] },
+  bays: readonly B[],
+): B | undefined {
+  const keys = landmark.names.map(landmarkNameKey);
+  return bays.find(
+    (bay) =>
+      bay.names.some((n) => keys.includes(landmarkNameKey(n))) &&
+      (pointInPolygon(landmark.point, filledPolygon(bay.polygon)) ||
+        distanceToShorelineMeters(landmark.point, bay.polygon) <= BAY_NAME_RETIRE_RADIUS_M),
+  );
+}
+
+/** A body's live bays as `bayNaming` reads them. */
+export async function liveBaysForNaming(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<BayNaming[]> {
+  const bays = await ctx.db
+    .query('waterBodySubAreas')
+    .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+    .collect();
+  return bays
+    .filter((bay) => bay.removedAt === undefined)
+    .map((bay) => ({
+      _id: bay._id,
+      polygon: bay.polygon as unknown as Polygon | MultiPolygon,
+      names: [bay.name, ...(bay.aliases ?? [])],
+    }));
+}
 
 /** {@link retireNamedAsBay} for several bays over one read of the body's landmarks. */
 export async function retireNamedAsBays(
@@ -249,22 +341,11 @@ export async function retireNamedAsBays(
   bays: readonly BayNaming[],
 ): Promise<number> {
   if (bays.length === 0) return 0;
-  const named = bays.map((bay) => ({
-    bay,
-    keys: new Set(bay.names.map(landmarkNameKey)),
-    water: filledPolygon(bay.polygon),
-  }));
   let retired = 0;
   for (const row of await liveLandmarksForBody(ctx, waterBodyId)) {
-    const rowKeys = [row.name, ...row.aliases].map(landmarkNameKey);
-    const match = named.find(
-      ({ bay, keys, water }) =>
-        rowKeys.some((key) => keys.has(key)) &&
-        (pointInPolygon(row.point, water) ||
-          distanceToShorelineMeters(row.point, bay.polygon) <= BAY_NAME_RETIRE_RADIUS_M),
-    );
-    if (!match) continue;
-    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, match.bay._id);
+    const bay = bayNaming({ point: row.point, names: [row.name, ...row.aliases] }, bays);
+    if (!bay) continue;
+    await retireAsPromoted(ctx, actorId, row._id, waterBodyId, bay._id);
     retired++;
   }
   return retired;
@@ -299,30 +380,48 @@ export async function repointLandmarksOnMerge(
   loserId: Id<'waterBodies'>,
   survivorId: Id<'waterBodies'>,
   actorId: Id<'profiles'> | undefined,
+  /** Did the merge move any of the loser's bays? Then the survivor's own labels meet new bays. */
+  baysMoved: boolean,
 ): Promise<{ repointed: number; folded: number; overCap: number; retiredAsBay: number }> {
   const moving = await landmarksForBody(ctx, loserId);
-  const staying = await landmarksForBody(ctx, survivorId);
-  if (moving.length === 0 && staying.length === 0) {
+  // Nothing moved — no landmark, no bay — and nothing on the survivor can have changed: skip its
+  // reads, which `retireAbsorbedBodies` would otherwise pay once per label-less loser.
+  if (moving.length === 0 && !baysMoved) {
     return { repointed: 0, folded: 0, overCap: 0, retiredAsBay: 0 };
   }
+  const staying = await landmarksForBody(ctx, survivorId);
   const index = new LandmarkRowIndex(staying);
   const now = Date.now();
   let live = staying.filter((row) => row.removedAt === undefined).length;
   let folded = 0;
   let overCap = 0;
+  // Decided together, against the survivor's rows only: two of the loser's places near one survivor
+  // row cannot both fold into it, and neither takes the other's nearer twin.
+  const twins = index.assign(moving.filter((row) => row.removedAt === undefined));
   for (const row of moving) {
     if (row.removedAt !== undefined) continue;
-    const twin = index.resolve(row);
+    const twin = twins.get(row);
     if (twin && twin.catalogDroppedAt === undefined) {
       if (twin.removedAt === undefined) {
         const takeRow = twin.moderatorEditedAt === undefined && row.moderatorEditedAt !== undefined;
         const keeper = takeRow ? row : twin;
+        const other = takeRow ? twin : row;
+        // What the keeper lacks, the other supplies — as the ETL's same-place fold does: a footprint
+        // (an OSM island's area folded into a GNIS point drives its prominence and label zoom), and,
+        // for a catalog keeper only, a specific kind over `other` (a GNIS "Island" folded into an OSM
+        // rock is an island). A moderator's name, kind and point are their call, `other` included.
+        const areaSqM = keeper.areaSqM ?? other.areaSqM;
+        const kind =
+          keeper.kind === 'other' && keeper.moderatorEditedAt === undefined
+            ? other.kind
+            : keeper.kind;
         const reportCount = (twin.reportCount ?? 0) + (row.reportCount ?? 0);
         const corpusMessages = Math.max(twin.corpusMessages ?? 0, row.corpusMessages ?? 0);
         const patch = {
           name: keeper.name,
-          kind: keeper.kind,
+          kind,
           point: keeper.point,
+          ...(areaSqM !== undefined ? { areaSqM } : {}),
           ...(takeRow ? { moderatorEditedAt: row.moderatorEditedAt } : {}),
           externalIds: [...new Set([...twin.externalIds, ...row.externalIds])],
           aliases:
@@ -334,11 +433,13 @@ export async function repointLandmarksOnMerge(
             ])?.aliases ?? keeper.aliases,
           ...(corpusMessages > 0 ? { corpusMessages } : {}),
           ...(reportCount > 0 ? { reportCount } : {}),
+          // A merge changed what this row stands for: a run matched against an export older than
+          // now keeps the folded footprint and kind, and does not drop the row.
+          movedAt: now,
           updatedAt: now,
         };
         await ctx.db.patch(twin._id, patch);
         Object.assign(twin, patch);
-        index.add(twin);
       }
       await ctx.db.patch(row._id, {
         waterBodyId: survivorId,
@@ -377,7 +478,6 @@ export async function repointLandmarksOnMerge(
       continue;
     }
     await ctx.db.patch(row._id, { waterBodyId: survivorId, movedAt: now, updatedAt: now });
-    index.add({ ...row, waterBodyId: survivorId });
     live++;
   }
   for (const row of moving) {
@@ -385,19 +485,12 @@ export async function repointLandmarksOnMerge(
     await ctx.db.patch(row._id, { waterBodyId: survivorId, updatedAt: now });
   }
 
-  const bays = (
-    await ctx.db
-      .query('waterBodySubAreas')
-      .withIndex('by_parent', (q) => q.eq('waterBodyId', survivorId))
-      .collect()
-  )
-    .filter((bay) => bay.removedAt === undefined)
-    .map((bay) => ({
-      _id: bay._id,
-      polygon: bay.polygon as unknown as Polygon | MultiPolygon,
-      names: [bay.name, ...(bay.aliases ?? [])],
-    }));
-  const retiredAsBay = await retireNamedAsBays(ctx, actorId, survivorId, bays);
+  const retiredAsBay = await retireNamedAsBays(
+    ctx,
+    actorId,
+    survivorId,
+    await liveBaysForNaming(ctx, survivorId),
+  );
   return { repointed: moving.length, folded, overCap, retiredAsBay };
 }
 
@@ -408,19 +501,12 @@ export async function repointLandmarksOnMerge(
 export async function assertNotABayName(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-  names: readonly string[],
+  landmark: { point: { lat: number; lng: number }; names: readonly string[] },
 ): Promise<void> {
-  const keys = new Set(names.map(landmarkNameKey));
-  const bays = await ctx.db
-    .query('waterBodySubAreas')
-    .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
-    .collect();
-  const bay = bays.find(
-    (b) =>
-      b.removedAt === undefined &&
-      [b.name, ...(b.aliases ?? [])].some((n) => keys.has(landmarkNameKey(n))),
-  );
-  if (bay) throw new ConvexError(`"${bay.name}" is a bay on this lake — it is already on the map`);
+  const bay = bayNaming(landmark, await liveBaysForNaming(ctx, waterBodyId));
+  if (bay) {
+    throw new ConvexError(`"${bay.names[0]}" is a bay on this lake — it is already on the map`);
+  }
 }
 
 /**

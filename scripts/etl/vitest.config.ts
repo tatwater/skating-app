@@ -50,7 +50,7 @@ export default defineConfig({
         // one place and which corpus name attaches where live in `landmarkSource.ts`,
         // `landmarkMatch.ts` and `landmarkCorpus.ts`, all covered.
         'src/landmarkCli.ts',
-        'src/loadLandmarks.ts', // batching + `convex run`; the upsert rules are in `landmarks.importBatch`
+        'src/loadLandmarks.ts', // batching + `convex run`; the upsert rules are in `landmarks.importBatch`; the packing and refusals in `landmarkLines.ts`
         'src/loadLandmarkNames.ts', // batching + `convex run`; the rules are in `corpusPlaceNames.importBatch`
         'src/loadReconciliation.ts',
         'src/resolveMergeDuplicates.ts', // reads the artifact, calls one mutation; the rules are tested

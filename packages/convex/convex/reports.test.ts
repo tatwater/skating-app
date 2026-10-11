@@ -1,8 +1,12 @@
 import {
   buildReportInput,
+  coveredFraction,
   emptyReportForm,
+  type HazardShape,
+  hazardFootprint,
   reportFormFromReport,
   sectorFrame,
+  sectorPolygons,
   sectorWitness,
 } from '@skating/core';
 import { defineSchema } from 'convex/server';
@@ -363,7 +367,7 @@ describe('reports.create', () => {
       expect(report?.hazardIdsCreated).toEqual([hazards[0]?._id]);
     });
 
-    test('derives nothing for the whole lake, for a restricted poster, or where the author drew it', async () => {
+    test('derives nothing for the whole lake, for a restricted poster, or where the author drew all of it', async () => {
       const t = convexTestWithGeo();
       const { id } = await seedBody(t);
       const asUser = await seedUser(t, 'clerk_a');
@@ -376,30 +380,20 @@ describe('reports.create', () => {
         sightings: [{ type: 'open' }],
       });
       expect(await hazardsOf(t)).toHaveLength(0);
-      // The author drew the open water in the south already: one pin, the drawn one. Drawn at the
-      // south wedge's own witness point, from the same frame the server derives from.
-      const body = await t.run((ctx) => ctx.db.get(id as Id<'waterBodies'>));
-      const frame = sectorFrame(POLYGON, body?.interiorPoint ?? undefined);
-      if (!frame) throw new Error('the fixture has a frame');
-      const south = sectorWitness(frame, 'S');
+      // The author drew open water over the whole lake already, the south end and all: one pin,
+      // the drawn one.
       await asUser.mutation(api.reports.create, {
         ...OBSERVED,
         waterBodyId: id,
         skateEndTime: SKATE_TIME,
         observedFrom: 'on_ice',
         sightings: [{ type: 'open', where: { sector: 'S' } }],
-        hazards: [
-          {
-            type: 'open_water',
-            geometryKind: 'point_radius',
-            geometry: { type: 'Point', coordinates: [south.lng, south.lat] },
-            radiusMeters: 40,
-          },
-        ],
+        hazards: [{ type: 'open_water', geometryKind: 'polygon', geometry: POLYGON }],
       });
       const afterDrawn = await hazardsOf(t);
       expect(afterDrawn).toHaveLength(1);
-      expect(afterDrawn[0]?.geometryKind).toBe('point_radius');
+      expect(afterDrawn[0]?.geometryKind).toBe('polygon');
+      expect(afterDrawn[0]?.description).toBeUndefined(); // not "Seen, not skated: …"
       // A poster whose hazard posting is restricted keeps the sighting and gets no pin.
       const restricted = await seedUser(t, 'clerk_r');
       await t.run(async (ctx) => {
@@ -420,6 +414,55 @@ describe('reports.create', () => {
       expect((await t.run((ctx) => ctx.db.get(rid)))?.sightings).toEqual([
         { type: 'skim', where: { sector: 'N' } },
       ]);
+    });
+
+    test('a smaller pin drawn inside the reported area does not shrink its warning (Greptile P1 on #82)', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      // A 40 m pin at the south wedge's own witness point, from the same frame the server derives
+      // from — touching the wedge, covering almost none of it.
+      const body = await t.run((ctx) => ctx.db.get(id as Id<'waterBodies'>));
+      const frame = sectorFrame(POLYGON, body?.interiorPoint ?? undefined);
+      if (!frame) throw new Error('the fixture has a frame');
+      const south = sectorWitness(frame, 'S');
+      const reportId = await asUser.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sightings: [{ type: 'open', where: { sector: 'S' } }],
+        hazards: [
+          {
+            type: 'open_water',
+            geometryKind: 'point_radius',
+            geometry: { type: 'Point', coordinates: [south.lng, south.lat] },
+            radiusMeters: 40,
+          },
+        ],
+      });
+      const hazards = await hazardsOf(t);
+      expect(hazards.map((h) => h.geometryKind).sort()).toEqual(['point_radius', 'polygon']);
+      // Whatever auto-merge made of the two, the pins left standing still warn over the whole wedge.
+      const wedge = sectorPolygons(frame, POLYGON).S;
+      if (!wedge) throw new Error('the fixture has a south wedge');
+      const standing = hazards.filter((h) => h.mergedIntoHazardId === undefined);
+      const covered = Math.max(
+        ...standing.map((h) =>
+          coveredFraction(
+            wedge,
+            (h.clippedFootprint as ReturnType<typeof hazardFootprint> | undefined) ??
+              hazardFootprint({
+                geometryKind: h.geometryKind,
+                geometry: h.geometry as HazardShape['geometry'],
+                ...(h.radiusMeters !== undefined ? { radiusMeters: h.radiusMeters } : {}),
+              }),
+          ),
+        ),
+      );
+      expect(covered).toBeGreaterThan(0.999);
+      const report = await t.run((ctx) => ctx.db.get(reportId));
+      expect(report?.hazardIdsCreated?.length).toBeGreaterThan(0);
     });
 
     test('an edit pins only the sightings it adds, never the ones it kept', async () => {

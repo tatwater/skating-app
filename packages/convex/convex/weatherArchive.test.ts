@@ -118,10 +118,11 @@ function asViewer(t: ReturnType<typeof convexTest>) {
 }
 
 /**
- * An Open-Meteo `iso8601` response covering `dates`, 24 hours each. `temps` is per-date so a test can
- * make one day cold and another mild without hand-writing 48 numbers.
+ * An Open-Meteo `unixtime` response covering `dates`, 24 hours each, in `zone` (UTC unless a test is
+ * about the zone). `temps` is per-date so a test can make one day cold and another mild without
+ * hand-writing 48 numbers.
  */
-function isoResponse(
+function unixResponse(
   dates: string[],
   opts: {
     tempFor?: (date: string, hour: number) => number;
@@ -131,17 +132,20 @@ function isoResponse(
     /** WMO code by flat hour index — the variable A06h Workstream 4 added. */
     codeFor?: (index: number) => number;
     hoursPerDay?: number;
+    /** The zone the response claims, and the offset it stamps — as if fetched at request time. */
+    zone?: { timezone: string; utcOffsetSeconds: number; offsetFor: (date: string) => number };
   } = {},
 ) {
   const hoursPerDay = opts.hoursPerDay ?? 24;
-  const time: string[] = [];
+  const zone = opts.zone ?? { timezone: 'UTC', utcOffsetSeconds: 0, offsetFor: () => 0 };
+  const time: number[] = [];
   const temperature_2m: number[] = [];
   const snowfall: number[] = [];
   const wind_speed_10m: number[] = [];
   const wind_direction_10m: number[] = [];
   for (const date of dates) {
     for (let h = 0; h < hoursPerDay; h++) {
-      time.push(`${date}T${String(h).padStart(2, '0')}:00`);
+      time.push((dayMsOf(date) + h * 3_600_000 - zone.offsetFor(date) * 1000) / 1000);
       temperature_2m.push(opts.tempFor ? opts.tempFor(date, h) : -5);
       snowfall.push(opts.snowFor ? opts.snowFor(date, h) : 0);
       wind_speed_10m.push(opts.windFor ? opts.windFor(date, h) : 3);
@@ -150,6 +154,8 @@ function isoResponse(
   }
   const n = time.length;
   return {
+    timezone: zone.timezone,
+    utc_offset_seconds: zone.utcOffsetSeconds,
     hourly: {
       time,
       temperature_2m,
@@ -188,18 +194,18 @@ function dayMsOf(localDate: string): number {
 }
 
 describe('weatherArchive: the request builder (D153)', () => {
-  test('asks for iso8601 local stamps, not unixtime — the DST fix', async () => {
+  test('asks for unixtime, not iso8601 local stamps — the DST fix', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
-    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async (_url: string) => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId });
 
     const params = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
-    // The entire reason this module has its own request builder: one `utc_offset_seconds` per response
-    // misfiles an hour either side of a DST change, and both transitions fall inside a season.
-    expect(params.get('timeformat')).toBe('iso8601');
+    // Open-Meteo's local stamps carry the request-time offset for every hour, so they misfile an hour
+    // either side of a DST change; the zone comes back under `auto` and the stamping happens here.
+    expect(params.get('timeformat')).toBe('unixtime');
     expect(params.get('timezone')).toBe('auto');
     // Still the cell's snapped center and band elevation — the key must not fork from `weather.ts`.
     expect(params.get('latitude')).toBe('44');
@@ -209,7 +215,7 @@ describe('weatherArchive: the request builder (D153)', () => {
   test('a first touch pulls the 92-day ceiling, not the panel window', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
-    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async (_url: string) => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 7 });
@@ -224,7 +230,7 @@ describe('weatherArchive: the request builder (D153)', () => {
     const waterBodyId = await seedBody(t);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId });
     const rows = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
@@ -252,7 +258,7 @@ describe('weatherArchive: storage', () => {
       'fetch',
       vi.fn(async () =>
         okJson(
-          isoResponse(dates, {
+          unixResponse(dates, {
             tempFor: (_d, h) => (h < 12 ? -8 : -2),
             snowFor: (d, h) => (d === dates[1] && h === 4 ? 3 : 0),
             windFor: () => 2,
@@ -285,7 +291,7 @@ describe('weatherArchive: storage', () => {
     const dates = recentDates(3);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(dates, { tempFor: () => -5 }))),
+      vi.fn(async () => okJson(unixResponse(dates, { tempFor: () => -5 }))),
     );
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
@@ -296,7 +302,7 @@ describe('weatherArchive: storage', () => {
     // predicate that sums a span.
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(dates, { tempFor: () => -12 }))),
+      vi.fn(async () => okJson(unixResponse(dates, { tempFor: () => -12 }))),
     );
     await t.action(internal.weatherArchive.refreshTierDays, { tier: 'browse' });
 
@@ -310,7 +316,7 @@ describe('weatherArchive: storage', () => {
     const dates = recentDates(2);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(dates, { hoursPerDay: 10 }))),
+      vi.fn(async () => okJson(unixResponse(dates, { hoursPerDay: 10 }))),
     );
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
       waterBodyId,
@@ -345,7 +351,7 @@ describe('weatherArchive: storage', () => {
     const dates = recentDates(5).slice(3);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(dates))),
+      vi.fn(async () => okJson(unixResponse(dates))),
     );
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
       waterBodyId,
@@ -402,7 +408,7 @@ describe('weatherArchive: the season gate (D161)', () => {
     const t = convexTest(schema, modules);
     await seedBody(t);
     await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
@@ -433,7 +439,7 @@ describe('weatherArchive: the season gate (D161)', () => {
       }),
     );
 
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
     const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
     expect(result.started).toBe(true);
@@ -466,7 +472,7 @@ describe('weatherArchive: the season gate (D161)', () => {
       }),
     );
 
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
     const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
     await t.finishInProgressScheduledFunctions();
@@ -501,7 +507,7 @@ describe('weatherArchive: the season gate (D161)', () => {
       'fetch',
       vi.fn(async (url: string) => {
         urls.push(url);
-        return okJson(isoResponse(recentDates(SEASON_OPEN_PAST_DAYS)));
+        return okJson(unixResponse(recentDates(SEASON_OPEN_PAST_DAYS)));
       }),
     );
 
@@ -545,7 +551,7 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(dates))),
+      vi.fn(async () => okJson(unixResponse(dates))),
     );
     const result = await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
     expect(result.repaired).toBeGreaterThan(0);
@@ -630,7 +636,7 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
     const t = convexTest(schema, modules);
     await seedBody(t);
     await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
@@ -723,7 +729,7 @@ describe('weatherArchive: honest coverage on a giant (A06h hole 2)', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
       waterBodyId,
@@ -737,7 +743,7 @@ describe('weatherArchive: honest coverage on a giant (A06h hole 2)', () => {
     const waterBodyId = await seedBody(t);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
       waterBodyId,
@@ -772,7 +778,7 @@ describe('weatherArchive: honest coverage on a giant (A06h hole 2)', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
       waterBodyId,
@@ -786,7 +792,7 @@ describe('weatherArchive: the public read guard', () => {
   test('returns null to an unauthenticated caller and spends nothing', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
     const result = await t.action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId });
     expect(result).toBeNull();
@@ -799,7 +805,7 @@ describe('weatherArchive: the public read guard', () => {
     await t.run((ctx) => ctx.db.patch(waterBodyId, { removedAt: Date.now() }));
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
     expect(
       await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId }),
@@ -810,7 +816,7 @@ describe('weatherArchive: the public read guard', () => {
     const t = convexTest(schema, modules);
     const a = await seedBody(t, { lat: 44.0163, lng: -72.0331 }, 338);
     const b = await seedBody(t, { lat: 44.0151, lng: -72.0339 }, 330);
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(9))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(9))));
     vi.stubGlobal('fetch', fetchMock);
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
@@ -836,7 +842,7 @@ describe('weatherArchive: the public read guard', () => {
     // day that does not exist yet. (The rest of this file mints local dates off the UTC clock, which
     // is exactly why the skew hid.)
     const dates = recentDates(8).slice(0, 7);
-    const fetchMock = vi.fn(async () => okJson(isoResponse(dates)));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(dates)));
     vi.stubGlobal('fetch', fetchMock);
 
     const first = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
@@ -883,7 +889,7 @@ describe('weatherArchive: the cell registry has a producer (and a reconciler)', 
     const before = await t.run((ctx) => ctx.db.query('weatherCells').collect());
     expect(before).toHaveLength(0);
 
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
     const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
     await t.finishInProgressScheduledFunctions();
@@ -1280,7 +1286,7 @@ describe('weatherArchive: hourly rows for the timeline (A06h Workstream 4)', () 
     const dates = recentDates(3);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(dates))),
+      vi.fn(async () => okJson(unixResponse(dates))),
     );
 
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
@@ -1305,7 +1311,7 @@ describe('weatherArchive: hourly rows for the timeline (A06h Workstream 4)', () 
       'fetch',
       // 66 = freezing rain. The whole reason the twelfth variable is worth 9%.
       vi.fn(async () =>
-        okJson(isoResponse(recentDates(2), { codeFor: (i) => (i === 5 ? 66 : 0) })),
+        okJson(unixResponse(recentDates(2), { codeFor: (i) => (i === 5 ? 66 : 0) })),
       ),
     );
 
@@ -1325,7 +1331,7 @@ describe('weatherArchive: hourly rows for the timeline (A06h Workstream 4)', () 
     await seedBody(t);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
 
     await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
@@ -1344,7 +1350,7 @@ describe('weatherArchive: hourly rows for the timeline (A06h Workstream 4)', () 
     const waterBodyId = await seedBody(t);
     const dates = recentDates(3);
 
-    const fetchMock = vi.fn(async () => okJson(isoResponse(dates)));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(dates)));
     vi.stubGlobal('fetch', fetchMock);
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
 
@@ -1371,7 +1377,7 @@ describe('weatherArchive: hourly rows for the timeline (A06h Workstream 4)', () 
     const waterBodyId = await seedBody(t);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
@@ -1393,7 +1399,7 @@ describe('weatherArchive: the hourly row version (A06h Workstream 4)', () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
     const dates = recentDates(3);
-    const fetchMock = vi.fn(async () => okJson(isoResponse(dates)));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(dates)));
     vi.stubGlobal('fetch', fetchMock);
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
@@ -1416,7 +1422,7 @@ describe('weatherArchive: the hourly row version (A06h Workstream 4)', () => {
   test('leaves current rows alone — the check is staleness, not a refetch on every open', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
@@ -1431,7 +1437,7 @@ describe('weatherArchive: the hourly row version (A06h Workstream 4)', () => {
     const waterBodyId = await seedBody(t);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(2), { dirFor: () => 315 }))),
+      vi.fn(async () => okJson(unixResponse(recentDates(2), { dirFor: () => 315 }))),
     );
 
     await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 2 });
@@ -1474,6 +1480,164 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
     expect(jan?.timeZone).toBe('America/New_York');
   });
 
+  test('files each fetched hour under the date the lake was on, not the one Open-Meteo labels', async () => {
+    // ⚠ **The bug, one layer down.** Open-Meteo stamps every hour with the request-time offset, so a
+    // fetch on 3 November (EST) labeled the EDT days before the change an hour late — and the archive
+    // used to read those labels as the lake's own clock. This response is built exactly that way.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2025, 10, 3, 15));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      const coldAt = Date.UTC(2025, 10, 1, 4); // 00:00 EDT on 1 Nov; Open-Meteo says 23:00 on the 31st
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson(
+            unixResponse(['2025-10-31', '2025-11-01', '2025-11-02', '2025-11-03'], {
+              zone: {
+                timezone: 'America/New_York',
+                utcOffsetSeconds: -5 * 3600,
+                offsetFor: () => -5 * 3600,
+              },
+              tempFor: (d, h) => (dayMsOf(d) + (h + 5) * 3_600_000 === coldAt ? -12 : 2),
+            }),
+          ),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 4 });
+
+      const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      const on = (date: string) => rows.find((r) => r.localDate === date);
+      expect(on('2025-11-01')?.minTempC).toBe(-12);
+      // The window opened at 01:00 EDT on the 31st, so that day is a stub and is not written over
+      // whatever the archive already held for it.
+      expect(on('2025-10-31')).toBeUndefined();
+      // Fall-back day: 25 hours, both 01:00s.
+      expect(on('2025-11-02')?.hours).toBe(25);
+      expect(on('2025-11-02')?.utcOffsetSeconds).toBe(-5 * 3600);
+      expect(on('2025-11-01')?.utcOffsetSeconds).toBe(-4 * 3600);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('drops the one-hour stub before the window when a spring fetch reaches back into EST', async () => {
+    // The other direction: fetched in EDT, the window opens at 00:00 EDT on the 5th — 23:00 EST on
+    // the 4th. The 4th is one hour and must not be written; the 5th is whole from its own midnight.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2025, 2, 12, 15));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      const dates = Array.from(
+        { length: 8 },
+        (_, i) => `2025-03-${String(5 + i).padStart(2, '0')}`,
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson(
+            unixResponse(dates, {
+              zone: {
+                timezone: 'America/New_York',
+                utcOffsetSeconds: -4 * 3600,
+                offsetFor: () => -4 * 3600,
+              },
+            }),
+          ),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 7 });
+
+      const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      const on = (date: string) => rows.find((r) => r.localDate === date);
+      expect(on('2025-03-04')).toBeUndefined();
+      expect(on('2025-03-05')?.hours).toBe(24);
+      expect(on('2025-03-09')?.hours).toBe(23); // spring-forward: no 02:00
+      expect(on('2025-03-12')?.hours).toBe(24);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("never writes a day the lake has not reached — the spring-forward night's tomorrow stub", async () => {
+    // Fetched at 01:30 EST on the night the clocks change, Open-Meteo cuts the window at EST
+    // midnight: its last hour is 04:00Z on the 10th, which is 00:00 EDT *tomorrow* at the lake.
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2025, 2, 9, 6, 30));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson(
+            unixResponse(['2025-03-06', '2025-03-07', '2025-03-08', '2025-03-09'], {
+              zone: {
+                timezone: 'America/New_York',
+                utcOffsetSeconds: -5 * 3600,
+                offsetFor: () => -5 * 3600,
+              },
+            }),
+          ),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 4 });
+
+      const days = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      expect(days.map((r) => r.localDate).sort()).toEqual([
+        '2025-03-06',
+        '2025-03-07',
+        '2025-03-08',
+        '2025-03-09',
+      ]);
+      expect(days.find((r) => r.localDate === '2025-03-09')?.hours).toBe(23);
+      const hourDays = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+      expect(hourDays.some((r) => r.localDate === '2025-03-10')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('stamps by the response offset when no zone came back, and claims none', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 0, 20, 15));
+    try {
+      const t = convexTest(schema, modules);
+      const waterBodyId = await seedBody(t);
+      const coldAt = Date.UTC(2026, 0, 18, 4); // 23:00 on the 17th at −5 h
+      const dates = ['2026-01-17', '2026-01-18', '2026-01-19', '2026-01-20'];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          okJson({
+            ...unixResponse(dates, {
+              zone: { timezone: 'UTC', utcOffsetSeconds: -5 * 3600, offsetFor: () => -5 * 3600 },
+              tempFor: (d, h) => (dayMsOf(d) + (h + 5) * 3_600_000 === coldAt ? -12 : 2),
+            }),
+            timezone: undefined,
+          }),
+        ),
+      );
+
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 4 });
+
+      const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+      expect(rows.map((r) => r.localDate).sort()).toEqual(dates);
+      const jan17 = rows.find((r) => r.localDate === '2026-01-17');
+      expect(jan17?.minTempC).toBe(-12);
+      expect(jan17?.hours).toBe(24);
+      expect(jan17?.timeZone).toBeUndefined();
+      expect(jan17?.utcOffsetSeconds).toBe(-5 * 3600);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('falls back to the response-wide offset when no zone came back', async () => {
     // Older Open-Meteo behavior, or a response we could not read a zone from. One number for every
     // date is wrong-ish, and it is still better than nothing — but it must not claim a zone.
@@ -1502,7 +1666,7 @@ describe('weatherArchive: a bay is its own place (A06h open question 5)', () => 
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, ANCHOR, 30);
     const bay = await seedBay(t, lake, 'Malletts Bay', BAY);
-    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async (_url: string) => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
@@ -1534,7 +1698,7 @@ describe('weatherArchive: a bay is its own place (A06h open question 5)', () => 
     const bay = await seedBay(t, lake, 'Shelburne Bay', BAY);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+      vi.fn(async () => okJson(unixResponse(recentDates(3)))),
     );
 
     const forBay = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
@@ -1560,7 +1724,7 @@ describe('weatherArchive: a bay is its own place (A06h open question 5)', () => 
     const other = await seedBody(t, { lat: 45.0, lng: -70.0 }, 200);
     const gone = await seedBay(t, lake, 'Old Cove', BAY, { removedAt: Date.now() });
     const foreign = await seedBay(t, other, 'Elsewhere Bay', { lat: 45.05, lng: -70.05 });
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     for (const subAreaId of [gone, foreign]) {
@@ -1819,7 +1983,7 @@ describe('weatherArchive: the sub-area spread reads Tier B (A06h open question 5
     await t.run((ctx) => ctx.db.patch(gone, { removedAt: Date.now() }));
     // The membership registry is the list of live bays — the walk writes it.
     await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(3))));
     vi.stubGlobal('fetch', fetchMock);
 
     // Closed season: nothing is spent.
@@ -1898,7 +2062,7 @@ describe('weatherArchive: the sub-area spread reads Tier B (A06h open question 5
     await seedBay(t, lake, 'North Bay', NORTH);
     await seedBay(t, lake, 'Also North', { lat: NORTH.lat + 0.01, lng: NORTH.lng + 0.01 });
     await seedBay(t, lake, 'South Bay', SOUTH);
-    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(5))));
+    const fetchMock = vi.fn(async () => okJson(unixResponse(recentDates(5))));
     vi.stubGlobal('fetch', fetchMock);
 
     const res = await t.action(internal.weatherArchive.primeSubAreaWeather, {

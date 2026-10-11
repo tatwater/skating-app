@@ -361,8 +361,12 @@ export const fileAsSpelling = mutation({
         `"${landmark.name}" already carries as many spellings as a landmark keeps — edit it to make room`,
       );
     }
-    // The checks an edit runs: never a bay's name, never the same place as another landmark.
-    await assertNotABayName(ctx, landmark.waterBodyId, [row.name, ...row.aliases]);
+    // The checks an edit runs: never a name a bay here answers to (by the one rule, at the
+    // landmark's own point — the spellings join it there), never the same place as another landmark.
+    await assertNotABayName(ctx, landmark.waterBodyId, {
+      point: landmark.point,
+      names: [row.name, ...row.aliases],
+    });
     assertNotDuplicate(
       await liveLandmarksForBody(ctx, landmark.waterBodyId),
       { ...landmark, aliases },

@@ -546,6 +546,7 @@ export const importCanonical = internalMutation({
     }
     let inserted = 0;
     let updated = 0;
+    let landmarksRetired = 0;
     let queuedForMerge = 0;
     let conflicts = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
@@ -685,6 +686,9 @@ export const importCanonical = internalMutation({
           if (resynced.reclipped > 0 || resynced.delisted > 0) {
             await scheduleRestamp(ctx, existing._id);
           }
+          // A chord bay re-derived against the new shore may have grown onto a same-named label
+          // and retired it (D202); the run reports how many, since no person took that action.
+          landmarksRetired += resynced.landmarksRetired;
         }
         updated++;
       } else {
@@ -740,6 +744,7 @@ export const importCanonical = internalMutation({
       updated,
       queuedForMerge,
       conflicts,
+      landmarksRetired,
       unresolved: unresolved.slice(0, 20),
     };
   },
@@ -3099,7 +3104,13 @@ export async function mergeBodyInto(
     const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actorId);
     // Landmarks too (D202), after the bays: folded into the survivor's twins, then checked against
     // the survivor's bays — the merged set of both lakes' — for a label a bay now names.
-    const landmarks = await repointLandmarksOnMerge(ctx, loserId, survivorId, actorId);
+    const landmarks = await repointLandmarksOnMerge(
+      ctx,
+      loserId,
+      survivorId,
+      actorId,
+      subAreas.repointed > 0,
+    );
 
     const repointed = {
       reports: reports.length,

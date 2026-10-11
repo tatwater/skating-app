@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acceptsLoad,
   applyRefusal,
   type BodyLine,
+  EXPORT_CLOCK_SLACK_MS,
   landmarkLines,
+  matchedAtOf,
   packLines,
   runIsComplete,
+  summarySources,
+  withOneRetry,
 } from './landmarkLines';
 import type { PlacedLandmark } from './landmarkMatch';
 
@@ -28,6 +33,29 @@ describe('runIsComplete', () => {
     expect(runIsComplete(['VT', 'NH', 'ME', 'MA', 'NY'], ALL)).toBe(true);
     expect(runIsComplete(['vt'], ALL)).toBe(false);
     expect(runIsComplete(['vt', 'nh', 'me', 'ma'], ALL)).toBe(false);
+  });
+});
+
+describe('summarySources', () => {
+  it('turns the summary’s per-source counts into what the importer weighs, or nothing', () => {
+    expect(summarySources({ bySource: { 'vt.osm': 9, 'vt.gnis': 1 } })).toEqual([
+      { source: 'vt.osm', count: 9 },
+      { source: 'vt.gnis', count: 1 },
+    ]);
+    expect(summarySources({})).toBeUndefined();
+    expect(summarySources(undefined)).toBeUndefined();
+  });
+});
+
+describe('acceptsLoad', () => {
+  const complete = [{ waterBodyId: 'a', landmarks: [], complete: true }];
+  const partial = [{ waterBodyId: 'a', landmarks: [{}] }];
+
+  it('moves the bar only for an applied complete load with no failed batch', () => {
+    expect(acceptsLoad({ apply: true, lines: complete, failedBatches: 0 })).toBe(true);
+    expect(acceptsLoad({ apply: false, lines: complete, failedBatches: 0 })).toBe(false);
+    expect(acceptsLoad({ apply: true, lines: partial, failedBatches: 0 })).toBe(false);
+    expect(acceptsLoad({ apply: true, lines: complete, failedBatches: 1 })).toBe(false);
   });
 });
 
@@ -80,5 +108,35 @@ describe('applyRefusal', () => {
     expect(applyRefusal({ corpusApplied: false }, flags)).toMatch(/--without-corpus/);
     expect(applyRefusal(undefined, flags)).toMatch(/--without-corpus/);
     expect(applyRefusal({ corpusApplied: false }, { withoutCorpus: true })).toBeNull();
+  });
+});
+
+describe('matchedAtOf', () => {
+  it('is when the export began, less the clock slack — or nothing when the summary does not say', () => {
+    expect(matchedAtOf({ bodiesExportedAt: 1_000_000.7 })).toEqual({
+      matchedAt: Math.floor(1_000_000.7 - EXPORT_CLOCK_SLACK_MS),
+    });
+    expect(matchedAtOf({})).toEqual({});
+    expect(matchedAtOf(undefined)).toEqual({});
+  });
+});
+
+describe('withOneRetry', () => {
+  it('returns the first answer, or the second after one failure, and says when it retried', () => {
+    expect(withOneRetry(() => 1)).toBe(1);
+    let calls = 0;
+    let retried = 0;
+    const flaky = () => {
+      calls++;
+      if (calls === 1) throw new Error('401');
+      return 2;
+    };
+    expect(withOneRetry(flaky, () => retried++)).toBe(2);
+    expect(retried).toBe(1);
+    expect(() =>
+      withOneRetry(() => {
+        throw new Error('down');
+      }),
+    ).toThrow('down');
   });
 });

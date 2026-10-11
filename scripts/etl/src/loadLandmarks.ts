@@ -2,7 +2,7 @@
  * The landmark loader (glue, D202) — reads `landmarks.ndjson` from `pnpm landmarks` and writes it
  * through `landmarks:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--prod]
+ *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--accept-source-drop] [--accept-mass-drop] [--prod]
  *
  * Batches are packed by **landmark count across bodies**: ten thousand bodies hold one or two each,
  * and a spawn per body would be hours of `convex run` for seconds of writes. A body is never split
@@ -18,7 +18,16 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
-import { applyRefusal, type BodyLine, packLines, type TransformSummary } from './landmarkLines';
+import {
+  acceptsLoad,
+  applyRefusal,
+  type BodyLine,
+  matchedAtOf,
+  packLines,
+  summarySources,
+  type TransformSummary,
+  withOneRetry,
+} from './landmarkLines';
 
 const DEFAULT_INPUT = join(
   fileURLToPath(new URL('..', import.meta.url)),
@@ -46,6 +55,7 @@ type Counts = Record<
   | 'alreadyBay'
   | 'invalidName'
   | 'dropped'
+  | 'dropsHeld'
   | 'returned',
   number
 >;
@@ -112,30 +122,36 @@ function main(): void {
     alreadyBay: 0,
     invalidName: 0,
     dropped: 0,
+    dropsHeld: 0,
     returned: 0,
   };
+  // A complete line retires rows only when the run's sources vouch for it against the deployment's
+  // last accepted load; the importer says when they do not, and the operator may overrule it.
+  const sources = summarySources(summary);
+  const acceptSourceDrop = args.includes('--accept-source-drop');
+  // A separate word: excusing a real catalog shrink must not also lift the per-lake brake.
+  const acceptMassDrop = args.includes('--accept-mass-drop');
+  let batchesRetried = 0;
+  const shortfalls = new Set<string>();
   let failedBatches = 0;
   let consecutive = 0;
   for (const [i, batch] of batches.entries()) {
     try {
       const call = () =>
-        convexRun<Counts>('landmarks:importBatch', {
+        convexRun<Counts & { shortfalls?: string[] }>('landmarks:importBatch', {
           bodies: batch,
           ...(campaignId !== undefined ? { campaignId } : {}),
-          ...(summary?.bodiesExportedAt !== undefined
-            ? { matchedAt: Math.floor(summary.bodiesExportedAt) }
-            : {}),
+          ...matchedAtOf(summary),
+          ...(sources !== undefined ? { sources } : {}),
+          ...(acceptSourceDrop ? { acceptSourceDrop } : {}),
+          ...(acceptMassDrop ? { acceptMassDrop } : {}),
           dryRun: !apply,
         });
-      let counts: Counts;
-      try {
-        counts = call();
-      } catch {
-        // One retry: the CLI's own auth check intermittently answers 401 mid-run (seen on the first
-        // dry run, 2026-09-29), and the batch is idempotent — a second attempt is always safe.
-        counts = call();
-      }
+      // A first attempt that committed before the CLI failed shows its writes as `unchanged` on the
+      // retry: counted, so the run says its numbers may under-report rather than do so quietly.
+      const counts = withOneRetry(call, () => batchesRetried++);
       for (const key of Object.keys(totals) as (keyof Counts)[]) totals[key] += counts[key] ?? 0;
+      for (const shortfall of counts.shortfalls ?? []) shortfalls.add(shortfall);
       consecutive = 0;
     } catch (err) {
       failedBatches++;
@@ -157,10 +173,50 @@ function main(): void {
     }
   }
 
+  for (const shortfall of shortfalls) {
+    process.stderr.write(`[landmarks] sources do not vouch — nothing retired: ${shortfall}\n`);
+  }
+  if (totals.dropsHeld > 0) {
+    process.stderr.write(
+      `[landmarks] ${totals.dropsHeld} drops held by the per-lake brake — a lake was about to lose most of its labels. Check the extract and the matcher; --accept-mass-drop if it is real.\n`,
+    );
+  }
+  // Only now, with every batch landed, may this load become the bar the next one is held to.
+  const notes: string[] = [];
+  if (sources !== undefined && acceptsLoad({ apply, lines, failedBatches })) {
+    const accept = () =>
+      convexRun<{ accepted: boolean; shortfalls: string[] }>('landmarks:acceptCompleteLoad', {
+        sources,
+        ...(campaignId !== undefined ? { campaignId } : {}),
+        ...(acceptSourceDrop ? { acceptSourceDrop } : {}),
+      });
+    let note: string;
+    try {
+      // Recording the bar twice is harmless: the second row is the same bar.
+      const result = withOneRetry(accept);
+      note = result.accepted
+        ? 'source counts accepted as the deployment’s new baseline'
+        : `source counts NOT accepted as the baseline (${result.shortfalls.join('; ')})`;
+    } catch (err) {
+      // Every batch landed; only the bar did not move, so the next load is held to the old one. Said
+      // in the run log and the exit code, never left to throw past the run's own record.
+      note = `source counts could not be recorded as the baseline (${err instanceof Error ? err.message.slice(0, 200) : String(err)})`;
+      process.exitCode = 1;
+    }
+    notes.push(note);
+    process.stderr.write(`[landmarks] ${note}\n`);
+  }
+
   logger.count('bodies', lines.length);
   logger.count('landmarksRead', landmarkCount);
   for (const [name, value] of Object.entries(totals)) logger.count(name, value);
   logger.count('batchesFailed', failedBatches);
+  logger.count('batchesRetried', batchesRetried);
+  if (batchesRetried > 0) {
+    notes.push(
+      `${batchesRetried} batch(es) retried: a first attempt that committed before failing is counted as unchanged, so created/updated/dropped may under-report`,
+    );
+  }
   logger.stage({
     name: 'load',
     detail:
@@ -177,7 +233,7 @@ function main(): void {
     logger.failed(new Error(`${failedBatches} batch(es) failed`));
     process.exitCode = 1;
   } else {
-    logger.succeed();
+    logger.succeed(notes);
   }
 }
 

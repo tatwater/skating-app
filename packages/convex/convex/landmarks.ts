@@ -5,9 +5,9 @@
  * Three writers, one table:
  *
  * - **The ETL** (`scripts/etl load-landmarks`) — OSM + GNIS, matched to a body *offline* against a
- *   geometry export (`listBodyGeometry`), then written one body per call (`importForBody`). Matching
- *   here, per point, would read the candidate body's polygon once per landmark — Champlain's ~300 KB
- *   for each of its several hundred — which is the A06d parking pass's 105 GB mistake again.
+ *   geometry export (`listBodyGeometry`), then written in batches of whole bodies (`importBatch`).
+ *   Matching here, per point, would read the candidate body's polygon once per landmark —
+ *   Champlain's ~300 KB for each of its several hundred — the A06d parking pass's 105 GB mistake.
  * - **A moderator** on the lake editor: drop a point, name it, pick a kind; rename, move, re-kind,
  *   remove, restore. An edit sets `moderatorEditedAt`, and a re-run of the ETL then leaves the name,
  *   kind and point alone.
@@ -20,11 +20,16 @@
 
 import {
   LANDMARK_KINDS,
+  type LandmarkSourceCheck,
+  landmarkDropsHeld,
   landmarkLabelMinZoom,
-  landmarkNameKey,
   landmarkProminence,
+  landmarkSourceCheck,
+  landmarkSourceReasons,
+  landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
+  nextLandmarkSourceBar,
   normalizeLandmarkNames,
 } from '@skating/core';
 import { ConvexError, type Infer, v } from 'convex/values';
@@ -42,6 +47,7 @@ import {
   assertNotABayName,
   assertNotDuplicate,
   auditLandmark,
+  bayNaming,
   identityOf,
   isCatalogsLive,
   LandmarkRowIndex,
@@ -191,6 +197,13 @@ const importedLandmark = v.object({
  * on a complete body that no candidate resolved to is retired with `catalogDroppedAt` — soft, so the
  * ids that point at it still resolve — and a later run that places it again brings it back
  * (`returned`). Only the catalogs' own rows: a moderator's row, or one a moderator edited, is theirs.
+ *
+ * **Only when the sources vouch.** `complete` retires nothing unless the run's per-source counts
+ * (`sources`) clear the bar this deployment accepted (`landmarkSourceCheck`, each source's highest
+ * accepted count) — a truncated extract is not a removal, and the first complete load on a
+ * deployment only sets the bar. And a lake about to lose more than half its catalog rows holds them (`dropsHeld`,
+ * `landmarkDropsHeld`). Each has its own override, on the operator's word — `acceptSourceDrop`,
+ * `acceptMassDrop` — so excusing a real catalog shrink never also switches off the brake.
  */
 type ImportCounts = {
   created: number;
@@ -203,6 +216,8 @@ type ImportCounts = {
   alreadyBay: number;
   invalidName: number;
   dropped: number;
+  /** Rows a complete line would have dropped, held by the per-lake brake (`landmarkDropsHeld`). */
+  dropsHeld: number;
   returned: number;
 };
 
@@ -218,8 +233,20 @@ function emptyCounts(): ImportCounts {
     alreadyBay: 0,
     invalidName: 0,
     dropped: 0,
+    dropsHeld: 0,
     returned: 0,
   };
+}
+
+/** A placement's id names its feature up to the `#` (`osm:way/1#in@44.02,-73.10` → `osm:way/1`). */
+function featureIdOf(id: string): string {
+  return id.split('#')[0] as string;
+}
+
+const sourceCounts = v.array(v.object({ source: v.string(), count: v.number() }));
+
+async function acceptedBaseline(ctx: QueryCtx) {
+  return ctx.db.query('landmarkSourceBaselines').withIndex('by_accepted_at').order('desc').first();
 }
 
 export const importBatch = internalMutation({
@@ -235,20 +262,69 @@ export const importBatch = internalMutation({
     campaignId: v.optional(v.string()),
     /** When the body export the run was matched against was taken (`summary.bodiesExportedAt`). */
     matchedAt: v.optional(v.number()),
+    /** What each catalog source read on this run (`summary.bySource`) — what vouches for `complete`. */
+    sources: v.optional(sourceCounts),
+    /** The operator says a source shortfall is real (`--accept-source-drop`). */
+    acceptSourceDrop: v.optional(v.boolean()),
+    /** The operator says a lake's mass drop is real (`--accept-mass-drop`) — a separate word. */
+    acceptMassDrop: v.optional(v.boolean()),
     dryRun: v.optional(v.boolean()),
   },
-  handler: async (ctx, { bodies, campaignId, matchedAt, dryRun }) => {
+  handler: async (ctx, args) => {
+    const { bodies, campaignId, matchedAt, dryRun } = args;
+    const acceptSourceDrop = args.acceptSourceDrop === true;
+    // A line's `complete` retires rows only when the run's sources vouch for it against the last load
+    // this deployment accepted. Checked here, in the one writer, so no caller can skip it.
+    let check: LandmarkSourceCheck = { blocking: [], shrinks: [] };
+    if (bodies.some((b) => b.complete === true)) {
+      check = landmarkSourceCheck(args.sources, (await acceptedBaseline(ctx))?.sources);
+    }
+    // The operator may excuse a shrink, never a block (no bar yet, no counts, an empty source).
+    const vouched = landmarkSourcesVouch(check, acceptSourceDrop);
+    const shortfalls = landmarkSourceReasons(check);
     const total = emptyCounts();
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
-        complete: complete === true,
+        complete: complete === true && vouched,
         matchedAt,
+        acceptMassDrop: args.acceptMassDrop === true,
         campaignId,
         write: dryRun === false,
       });
       for (const key of Object.keys(total) as (keyof ImportCounts)[]) total[key] += counts[key];
     }
-    return total;
+    return { ...total, shortfalls: vouched ? [] : shortfalls };
+  },
+});
+
+/**
+ * Record a complete load as the deployment's new source baseline (D202) — called by the loader after
+ * an applied complete run with no failed batch, never by a dry run or a transform. Refused (and the
+ * old bar kept) when the run's own sources fall short of it — a shrink unless the operator said it is
+ * real, a block always; with no bar yet, the run is held only to having read something from every
+ * source. The bar moves up freely and down only on the operator's word (`nextLandmarkSourceBar`).
+ */
+export const acceptCompleteLoad = internalMutation({
+  args: {
+    sources: sourceCounts,
+    campaignId: v.optional(v.string()),
+    acceptSourceDrop: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { sources, campaignId, acceptSourceDrop }) => {
+    const baseline = await acceptedBaseline(ctx);
+    // With no bar yet, the run is held to having read something from every source it names.
+    const check = landmarkSourceCheck(sources, baseline?.sources ?? sources);
+    const accept = acceptSourceDrop === true;
+    const shortfalls = landmarkSourceReasons(check);
+    if (!landmarkSourcesVouch(check, accept)) return { accepted: false, shortfalls };
+    await ctx.db.insert('landmarkSourceBaselines', {
+      // Never lowered without the operator's word, and then only the sources they excused.
+      sources: nextLandmarkSourceBar(sources, baseline?.sources, check, accept),
+      ...(campaignId !== undefined ? { campaignId } : {}),
+      ...(accept && check.shrinks.length > 0 ? { acceptedShrink: true } : {}),
+      acceptedAt: Date.now(),
+    });
+    return { accepted: true, shortfalls };
   },
 });
 
@@ -267,11 +343,13 @@ async function importOneBody(
   {
     complete,
     matchedAt,
+    acceptMassDrop,
     campaignId,
     write,
   }: {
     complete: boolean;
     matchedAt: number | undefined;
+    acceptMassDrop: boolean;
     campaignId: string | undefined;
     write: boolean;
   },
@@ -289,35 +367,42 @@ async function importOneBody(
   }
 
   const candidates = await stampCandidates(ctx, waterBodyId);
-  // A name a live bay already answers to is the bay's (D202): "Malletts Bay" the village and
-  // "Malletts Bay" the sub-area would be two labels saying one thing, and the bay is the place.
-  const bayKeys = new Set(
-    candidates.flatMap(({ ref }) => [ref.name, ...(ref.aliases ?? [])].map(landmarkNameKey)),
-  );
+  // A name a live bay here already answers to is the bay's (D202): "Malletts Bay" the village and
+  // "Malletts Bay" the sub-area would be two labels saying one thing — the one rule, `bayNaming`.
+  const bays = candidates.map(({ ref, polygon }) => ({
+    _id: ref._id,
+    polygon,
+    names: [ref.name, ...(ref.aliases ?? [])],
+  }));
 
   // ── Resolve every candidate to its row ───────────────────────────────────────────────────────
-  // The one rule a merge also uses (`LandmarkRowIndex`): live rows first, then a person's removal,
-  // then the catalogs' own drop. A candidate skipped below still claims the row it resolves to, so a
-  // complete line never drops a row only because this run declined to write it.
+  // The one rule a merge also uses (`LandmarkRowIndex.assign`), decided for the whole line at once:
+  // a live row an upstream id names, then same-place rows closest pair first (live before removed),
+  // so a river's two mouths near one row each keep their own. A candidate skipped below still claims
+  // the row it resolves to, so a complete line never drops a row only because this run declined to
+  // write it. (A name too broken to keep resolves by its ids alone.)
   const index = new LandmarkRowIndex(rows);
-  const byRow = new Map<Id<'bodyLandmarks'>, Group>();
-  const claimed = new Set<Id<'bodyLandmarks'>>();
-  const fresh: Group[] = [];
-  for (const raw of landmarks) {
+  const entries = landmarks.map((raw) => {
     const names = normalizeLandmarkNames(raw.name, raw.aliases);
-    if (!names) {
+    const probe: Incoming = names
+      ? { ...raw, name: names.name, aliases: names.aliases }
+      : { ...raw, name: '', aliases: [] };
+    return { probe, valid: names !== null };
+  });
+  const assigned = index.assign(entries.map((e) => e.probe));
+  const claimed = new Set([...assigned.values()].map((row) => row._id));
+  const byRow = new Map<Id<'bodyLandmarks'>, Group>();
+  const fresh: Group[] = [];
+  for (const { probe: incoming, valid } of entries) {
+    const existing = assigned.get(incoming);
+    if (!valid) {
       counts.invalidName++;
-      const row = index.resolve({ ...raw, name: '', aliases: [] });
-      if (row) claimed.add(row._id);
       continue;
     }
-    const incoming: Incoming = { ...raw, name: names.name, aliases: names.aliases };
-    const existing = index.resolve(incoming);
-    // Every name, as `assertNotABayName` refuses a moderator's: an alias that is the bay's names it.
-    // The row it answers to is kept as it is — the far Mud Bay the bay rule leaves standing stays.
-    if ([names.name, ...names.aliases].some((n) => bayKeys.has(landmarkNameKey(n)))) {
+    // The row it answers to is kept as it is — and the far Mud Bay the rule leaves alone is no
+    // bay's, so it loads like any landmark.
+    if (bayNaming({ point: incoming.point, names: [incoming.name, ...incoming.aliases] }, bays)) {
       counts.alreadyBay++;
-      if (existing) claimed.add(existing._id);
       continue;
     }
     if (existing) {
@@ -358,13 +443,20 @@ async function importOneBody(
 
   // ── Rows this run no longer places — first, so their room goes to what it does ──────────────
   if (complete) {
-    for (const row of rows) {
-      if (!isCatalogsLive(row) || byRow.has(row._id) || claimed.has(row._id)) continue;
-      // A merge moved it here after the export this run matched against, which placed its
-      // catalogs on the merged lake: this line could not have had it.
-      if (row.movedAt !== undefined && (matchedAt === undefined || row.movedAt > matchedAt)) {
-        continue;
-      }
+    const dropping = rows.filter(
+      (row) =>
+        isCatalogsLive(row) &&
+        !byRow.has(row._id) &&
+        !claimed.has(row._id) &&
+        // A merge moved it here after the export this run matched against, which placed its
+        // catalogs on the merged lake: this line could not have had it.
+        !(row.movedAt !== undefined && (matchedAt === undefined || row.movedAt > matchedAt)),
+    );
+    // The per-lake brake: most of a lake's labels do not leave in one run on the catalogs' say-so.
+    const held =
+      !acceptMassDrop && landmarkDropsHeld(dropping.length, rows.filter(isCatalogsLive).length);
+    if (held) counts.dropsHeld += dropping.length;
+    for (const row of held ? [] : dropping) {
       counts.dropped++;
       live--;
       if (write) {
@@ -381,11 +473,23 @@ async function importOneBody(
   /** The catalogs' word on a row they own: this run's name, kind, point and spellings. */
   const catalogPatch = (existing: Doc<'bodyLandmarks'>, members: readonly Incoming[]) => {
     const first = members[0] as Incoming;
+    // A footprint and a specific kind the row holds from a merge's fold are kept by a run matched
+    // against an export older than that merge (it could not have seen the folded feature); any other
+    // run is the catalogs' word, and a footprint they no longer draw goes.
+    const predatesMerge =
+      existing.movedAt !== undefined && (matchedAt === undefined || existing.movedAt > matchedAt);
+    const areaSqM =
+      members.find((m) => m.areaSqM !== undefined)?.areaSqM ??
+      (predatesMerge ? existing.areaSqM : undefined);
     return {
       name: first.name,
-      kind: first.kind,
+      // The specific kind wins, as in the ETL's own fold: a GNIS "other" and an OSM island resolved
+      // to one row are an island, whichever came first in the line.
+      kind:
+        members.find((m) => m.kind !== 'other')?.kind ??
+        (predatesMerge ? existing.kind : first.kind),
       point: first.point,
-      areaSqM: first.areaSqM,
+      areaSqM,
       // Whichever catalog the name and point came from this run — the editor shows it as provenance.
       source: first.source,
       subAreaId: subAreaFor(first.point, candidates)?.subAreaId,
@@ -427,10 +531,17 @@ async function importOneBody(
     let patch: Partial<Doc<'bodyLandmarks'>>;
     if (existing.moderatorEditedAt !== undefined) {
       counts.moderatorHeld++;
+      // Spellings come only with a feature the row did not already carry: one the moderator deleted
+      // from a feature it knows stays deleted, run after run. (A mouth's id is its feature's up to
+      // the `#`, so a redrawn shore is not a new feature.)
+      const known = new Set(existing.externalIds.map(featureIdOf));
+      const newcomers = members.filter((m) =>
+        m.externalIds.some((id) => !known.has(featureIdOf(id))),
+      );
       patch = {
         externalIds: idsOf(members, existing.externalIds),
         aliases:
-          normalizeLandmarkNames(existing.name, [...existing.aliases, ...spellingsOf(members)])
+          normalizeLandmarkNames(existing.name, [...existing.aliases, ...spellingsOf(newcomers)])
             ?.aliases ?? existing.aliases,
         corpusMessages: corpusOf(members, existing.corpusMessages),
       };
@@ -502,12 +613,18 @@ function cleanNames(name: string, aliases: readonly string[] | undefined) {
   return names;
 }
 
-async function requireBody(
+/**
+ * A body a moderator may put a label on: one on the map. A merged or removed body is listed nowhere,
+ * and a label written to it from a stale editor tab — after the merge moved the rest — would be
+ * stranded for good.
+ */
+async function requireListedBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<Doc<'waterBodies'>> {
   const body = await ctx.db.get(waterBodyId);
   if (!body) throw new ConvexError('That water body no longer exists');
+  if (!isListed(body)) throw new ConvexError('That water body is not on the map');
   return body;
 }
 
@@ -529,11 +646,14 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
-    await requireBody(ctx, args.waterBodyId);
+    await requireListedBody(ctx, args.waterBodyId);
     const names = cleanNames(args.name, args.aliases);
     const rows = await liveLandmarksForBody(ctx, args.waterBodyId);
     assertNotDuplicate(rows, { kind: args.kind, point: args.point, ...names });
-    await assertNotABayName(ctx, args.waterBodyId, [names.name, ...names.aliases]);
+    await assertNotABayName(ctx, args.waterBodyId, {
+      point: args.point,
+      names: [names.name, ...names.aliases],
+    });
     if (rows.filter((row) => row.removedAt === undefined).length >= MAX_LANDMARKS_PER_BODY) {
       throw new ConvexError(`This lake already has ${MAX_LANDMARKS_PER_BODY} landmarks`);
     }
@@ -597,7 +717,7 @@ export const update = mutation({
     const rows = await liveLandmarksForBody(ctx, row.waterBodyId);
     const kind = args.kind ?? row.kind;
     assertNotDuplicate(rows, { kind, point, ...names }, row._id);
-    await assertNotABayName(ctx, row.waterBodyId, [names.name, ...names.aliases]);
+    await assertNotABayName(ctx, row.waterBodyId, { point, names: [names.name, ...names.aliases] });
     const now = Date.now();
     const moved = args.point !== undefined;
     await ctx.db.patch(row._id, {
@@ -653,10 +773,14 @@ export const restore = mutation({
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     if (row.removedAt === undefined) return;
+    await requireListedBody(ctx, row.waterBodyId);
     const rows = await liveLandmarksForBody(ctx, row.waterBodyId);
     assertNotDuplicate(rows, row, row._id);
     // A landmark retired because it became a bay (D202) stays retired while the bay lives.
-    await assertNotABayName(ctx, row.waterBodyId, [row.name, ...row.aliases]);
+    await assertNotABayName(ctx, row.waterBodyId, {
+      point: row.point,
+      names: [row.name, ...row.aliases],
+    });
     if (rows.filter((r) => r.removedAt === undefined).length >= MAX_LANDMARKS_PER_BODY) {
       throw new ConvexError(`This lake already has ${MAX_LANDMARKS_PER_BODY} landmarks`);
     }
@@ -664,11 +788,11 @@ export const restore = mutation({
     await ctx.db.patch(landmarkId, {
       removedAt: undefined,
       updatedAt: now,
-      // A row the catalogs dropped comes back on a moderator's word, and is theirs from now on — or
-      // the next complete run would drop it again.
-      ...(row.catalogDroppedAt !== undefined
-        ? { catalogDroppedAt: undefined, moderatorEditedAt: now }
-        : {}),
+      // Restored on a moderator's word, so theirs from now on, whatever retired it — a person, a
+      // promotion, the catalogs, a merge: a catalog row left catalog-owned would be dropped again by
+      // the next complete run that does not place it.
+      catalogDroppedAt: undefined,
+      moderatorEditedAt: now,
       // A row a merge folded away is a place again once a moderator brings it back.
       mergedIntoId: undefined,
     });

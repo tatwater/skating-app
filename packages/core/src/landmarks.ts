@@ -95,6 +95,116 @@ export const MAX_LANDMARK_ALIASES = 12;
  */
 export const MAX_LANDMARKS_PER_BODY = 1_500;
 
+/** One catalog source's candidate count on a run — `vt.osm`, `ny.gnis`. */
+export interface LandmarkSourceCount {
+  source: string;
+  count: number;
+}
+
+/**
+ * How far a source's count may fall below the deployment's last accepted load and still vouch. A
+ * month of real catalog edits moves a state's named landmarks by well under this; a truncated extract
+ * loses far more. Tight on purpose — a false alarm costs the operator `--accept-source-drop`, a miss
+ * costs the lake its labels.
+ */
+export const MAX_LANDMARK_SOURCE_SHRINK = 0.03;
+
+/** What a run's sources say against the deployment's bar, split by what an operator may excuse. */
+export interface LandmarkSourceCheck {
+  /**
+   * What no word excuses: no bar yet (the first complete load only sets it), no counts from the run,
+   * a source that read nothing. Each is a run that cannot know what it is missing.
+   */
+  blocking: string[];
+  /**
+   * A source more than {@link MAX_LANDMARK_SOURCE_SHRINK} under the bar, or one the bar has that the
+   * run did not read (a state left out, a key renamed) — `--accept-source-drop` excuses these, and
+   * only these sources' bars then move down.
+   */
+  shrinks: { source: string; reason: string }[];
+}
+
+/**
+ * Can a run's sources vouch that its list is complete (D202)? A run retires the catalog rows it no
+ * longer places, so a truncated or empty extract (an osmium run cut short, a half-downloaded GNIS
+ * file) must never read as removals. Measured against the **bar this deployment accepted**
+ * (`nextLandmarkSourceBar`), never against a transform that was not loaded.
+ */
+export function landmarkSourceCheck(
+  sources: readonly LandmarkSourceCount[] | undefined,
+  baseline: readonly LandmarkSourceCount[] | undefined,
+): LandmarkSourceCheck {
+  const blocking: string[] = [];
+  const shrinks: LandmarkSourceCheck['shrinks'] = [];
+  if (!sources || sources.length === 0) {
+    return { blocking: ['the run did not say what its sources read'], shrinks };
+  }
+  if (!baseline) blocking.push('no complete load has been accepted on this deployment yet');
+  for (const { source, count } of sources) {
+    if (count === 0) blocking.push(`${source}: no candidates`);
+  }
+  const read = new Map(sources.map((s) => [s.source, s.count]));
+  for (const { source, count: bar } of baseline ?? []) {
+    const now = read.get(source);
+    if (now === undefined) shrinks.push({ source, reason: `${source}: not read this run` });
+    else if (now > 0 && now < bar * (1 - MAX_LANDMARK_SOURCE_SHRINK)) {
+      const pct = Math.round((1 - now / bar) * 100);
+      shrinks.push({
+        source,
+        reason: `${source}: ${now} candidates, ${pct}% under the accepted ${bar}`,
+      });
+    }
+  }
+  return { blocking, shrinks };
+}
+
+/** Every reason a check gives, blocks first — what the loader prints. */
+export function landmarkSourceReasons(check: LandmarkSourceCheck): string[] {
+  return [...check.blocking, ...check.shrinks.map((s) => s.reason)];
+}
+
+/** May a complete load retire? Nothing blocking, and any shrink excused by the operator. */
+export function landmarkSourcesVouch(check: LandmarkSourceCheck, acceptShrink: boolean): boolean {
+  return check.blocking.length === 0 && (check.shrinks.length === 0 || acceptShrink);
+}
+
+/**
+ * The bar after an accepted load: each source's **highest** accepted count, so the bar never drifts
+ * down in steps each under the margin — a slow real decline surfaces as a shrink once it passes the
+ * margin. Only a shrink the operator excused (`acceptShrink`) moves down, to what the run read, and
+ * an excused unread source leaves the bar; every other source keeps its highest count.
+ */
+export function nextLandmarkSourceBar(
+  sources: readonly LandmarkSourceCount[],
+  baseline: readonly LandmarkSourceCount[] | undefined,
+  check: LandmarkSourceCheck,
+  acceptShrink: boolean,
+): LandmarkSourceCount[] {
+  const excused = new Set(acceptShrink ? check.shrinks.map((s) => s.source) : []);
+  const read = new Map(sources.map((s) => [s.source, s.count]));
+  const bar = new Map((baseline ?? []).map((s) => [s.source, s.count]));
+  const next = sources.map(({ source, count }) => ({
+    source,
+    count: excused.has(source) ? count : Math.max(count, bar.get(source) ?? 0),
+  }));
+  for (const [source, count] of bar) {
+    if (!read.has(source) && !excused.has(source)) next.push({ source, count });
+  }
+  return next;
+}
+
+/**
+ * The per-lake brake on a complete load's drops (D202): a body about to lose more than half its live
+ * catalog rows, and more than {@link DROP_BRAKE_MIN} of them, holds them instead. Whatever the cause —
+ * an extract that read short in one corner, a shore redrawn so the matcher places its landmarks
+ * elsewhere — a lake does not lose most of its labels in one run without an operator saying so.
+ */
+export const DROP_BRAKE_MIN = 10;
+
+export function landmarkDropsHeld(dropping: number, catalogLive: number): boolean {
+  return dropping > DROP_BRAKE_MIN && dropping * 2 > catalogLive;
+}
+
 /**
  * How far apart two sightings of one place, by name, may be — per kind, because a place's size is.
  * An island's GNIS point and its OSM interior sit within a kilometer; a passage's GNIS point and its
@@ -214,6 +324,11 @@ const METERS_PER_PX_Z0 = 78_271.517;
  *
  * Crowding is the renderer's job, not this function's: labels are symbols with collision on, sorted
  * by prominence, so a lonely name shows at its zoom and a crowded one waits until there is room.
+ *
+ * **A whole zoom, rounded up.** Both maps hold a label back with a layer `filter`, and MapLibre
+ * evaluates a filter's `zoom` at the integer tile zoom — a 12.2 would show at 13, not 12.2. So the
+ * threshold is stated as the integer the maps can honor: the first whole zoom at which the place has
+ * earned its label, never one before.
  */
 export function landmarkLabelMinZoom(input: LandmarkProminenceInput & { lat: number }): number {
   const byProminence = 15 - landmarkProminence(input) / 2;
@@ -223,7 +338,7 @@ export function landmarkLabelMinZoom(input: LandmarkProminenceInput & { lat: num
     const bySize = Math.log2((METERS_PER_PX_Z0 * cosLat * LABEL_FIT_PX) / Math.sqrt(input.areaSqM));
     zoom = Math.min(zoom, bySize);
   }
-  return Math.min(LANDMARK_LABEL_MAX_ZOOM, Math.max(LANDMARK_LABEL_MIN_ZOOM, zoom));
+  return Math.ceil(Math.min(LANDMARK_LABEL_MAX_ZOOM, Math.max(LANDMARK_LABEL_MIN_ZOOM, zoom)));
 }
 
 /**

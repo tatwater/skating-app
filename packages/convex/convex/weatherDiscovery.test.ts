@@ -302,9 +302,9 @@ describe('the digest (D165)', () => {
     for (let i = 3; i >= 0; i--) {
       dates.push(new Date(today() - i * DAY_MS).toISOString().slice(0, 10));
     }
-    const time: string[] = [];
+    const time: number[] = [];
     for (const d of dates)
-      for (let h = 0; h < 24; h++) time.push(`${d}T${String(h).padStart(2, '0')}:00`);
+      for (let h = 0; h < 24; h++) time.push(Date.parse(`${d}T00:00:00Z`) / 1000 + h * 3600);
     const n = time.length;
     vi.stubGlobal(
       'fetch',

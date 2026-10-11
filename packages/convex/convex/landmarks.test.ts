@@ -117,6 +117,17 @@ function imported(
   };
 }
 
+/** What the catalogs read on a test run — and, seeded, what the deployment last accepted. */
+const SOURCES = [
+  { source: 'vt.osm', count: 100 },
+  { source: 'vt.gnis', count: 10 },
+];
+
+/** Give the deployment an accepted complete load, so a complete line's sources can vouch for it. */
+async function seedBaseline(t: ReturnType<typeof harness>, sources = SOURCES) {
+  await t.run((ctx) => ctx.db.insert('landmarkSourceBaselines', { sources, acceptedAt: 0 }));
+}
+
 /** One body through the batch import — the shape every test here wants. */
 function importFor(
   t: ReturnType<typeof harness>,
@@ -126,11 +137,16 @@ function importFor(
     campaignId?: string;
     dryRun?: boolean;
     complete?: boolean;
+    sources?: { source: string; count: number }[];
+    acceptSourceDrop?: boolean;
+    acceptMassDrop?: boolean;
   },
 ) {
   const { waterBodyId, landmarks, complete, ...rest } = args;
   return t.mutation(internal.landmarks.importBatch, {
     bodies: [{ waterBodyId, landmarks, ...(complete !== undefined ? { complete } : {}) }],
+    // A complete line carries what its sources read, as the loader sends it.
+    ...(complete ? { sources: SOURCES } : {}),
     ...rest,
   });
 }
@@ -661,9 +677,17 @@ describe('landmarks and bays', () => {
         waterBodyId: body,
         name: 'kingsland bay',
         kind: 'other',
-        point: { lat: 44.9, lng: -72.6 },
+        point: { lat: 44.25, lng: -73.25 },
       }),
     ).rejects.toThrow(/is a bay on this lake/);
+    // The same name across the lake is another place — the one rule the retirement also reads.
+    const far = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'kingsland bay',
+      kind: 'other',
+      point: { lat: 44.9, lng: -72.6 },
+    });
+    await mod.as.mutation(api.landmarks.update, { landmarkId: far, kind: 'bay' });
   });
 
   test('promoting a landmark to a bay retires it in the same write', async () => {
@@ -727,6 +751,7 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
 
   test('a complete line retires the catalog row it no longer has, and a later one brings it back', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     await importFor(t, { waterBodyId: body, landmarks: [A, B], complete: true, dryRun: false });
 
@@ -761,6 +786,7 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
 
   test('an empty complete line retires every catalog row; an empty line on a bare body reads nothing more', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     const bare = await seedBody(t);
     await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
@@ -769,6 +795,7 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
         { waterBodyId: body, landmarks: [], complete: true },
         { waterBodyId: bare, landmarks: [], complete: true },
       ],
+      sources: SOURCES,
       dryRun: false,
     });
     expect(counts.dropped).toBe(2);
@@ -786,6 +813,7 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
 
   test('a moderator’s rows are theirs: never dropped, and a removal still holds', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
@@ -821,6 +849,7 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
 
   test('a moderator restoring a dropped row vouches for it, so the next run keeps it', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
@@ -847,6 +876,7 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
 
   test('a dropped row does not come back past the cap', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
     await importFor(t, { waterBodyId: body, landmarks: [A], complete: true, dryRun: false });
@@ -905,6 +935,7 @@ describe('what a drop must not do (self-review)', () => {
 
   test('a dropped row does not return beside the live one a moderator put there meanwhile', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
@@ -931,6 +962,7 @@ describe('what a drop must not do (self-review)', () => {
 
   test('a dropped row a moderator edited, or chose to keep off, stays off', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     const C = imported('Hen Island', { lat: 44.7, lng: -73.0 }, { externalIds: ['osm:way/3'] });
@@ -955,8 +987,9 @@ describe('what a drop must not do (self-review)', () => {
     expect((await t.run((ctx) => ctx.db.get(butler)))?.name).toBe('Butler Isle');
   });
 
-  test('a candidate skipped for a bay’s name or a bad name still keeps its row', async () => {
+  test('a far same-named place loads past a bay, and a candidate with a bad name keeps its row', async () => {
     const t = harness();
+    await seedBaseline(t);
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     // The far Mud Bay, 80 km from the bay drawn below: the bay rule leaves it standing.
@@ -977,7 +1010,9 @@ describe('what a drop must not do (self-review)', () => {
       complete: true,
       dryRun: false,
     });
-    expect(counts).toMatchObject({ alreadyBay: 1, invalidName: 1, dropped: 0 });
+    // The far Mud Bay is no bay's (80 km off): it refreshes like any landmark. The blank name is
+    // skipped, and still keeps its row.
+    expect(counts).toMatchObject({ alreadyBay: 0, invalidName: 1, dropped: 0, unchanged: 1 });
     expect((await rowsOf(t, body)).every((r) => r.removedAt === undefined)).toBe(true);
   });
 
@@ -1143,6 +1178,30 @@ describe('a merge carries the landmarks (D36 / D202)', () => {
     expect(rerun).toMatchObject({ removedHeld: 0, created: 0 });
   });
 
+  test('a twin without a footprint takes the moved row’s, and its specific kind', async () => {
+    const t = harness();
+    const survivor = await seedBody(t);
+    const loser = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await importFor(t, {
+      waterBodyId: survivor,
+      landmarks: [
+        imported('Gull Island', ISLAND, { kind: 'other', externalIds: ['gnis:9'], source: 'gnis' }),
+      ],
+      dryRun: false,
+    });
+    await importFor(t, {
+      waterBodyId: loser,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
+      dryRun: false,
+    });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    const live = (await rowsOf(t, survivor)).filter((r) => r.removedAt === undefined);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ kind: 'island', areaSqM: 42_000 });
+    expect(live[0]?.externalIds.sort()).toEqual(['gnis:9', 'osm:way/1']);
+  });
+
   test('a moderator’s twin from the merged lake keeps the moderator’s name and point', async () => {
     const t = harness();
     const survivor = await seedBody(t);
@@ -1205,6 +1264,7 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
 
   test('a row a merge moved is not dropped by a run matched against an export older than the merge', async () => {
     const t = harness();
+    await seedBaseline(t);
     const survivor = await seedBody(t);
     const loser = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1218,6 +1278,7 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
     const run = (matchedAt?: number) =>
       t.mutation(internal.landmarks.importBatch, {
         bodies: [{ waterBodyId: survivor, landmarks: [], complete: true }],
+        sources: SOURCES,
         ...(matchedAt !== undefined ? { matchedAt } : {}),
         dryRun: false,
       });
@@ -1229,6 +1290,7 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
 
   test('a twin the catalogs dropped does not hold the moved row; the moved row stays live', async () => {
     const t = harness();
+    await seedBaseline(t);
     const survivor = await seedBody(t);
     const loser = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1304,6 +1366,7 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
 
   test('a catalog row moved past the cap comes back when a run has room for it', async () => {
     const t = harness();
+    await seedBaseline(t);
     const survivor = await seedBody(t);
     const loser = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1328,12 +1391,532 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
     const moved = (await rowsOf(t, survivor)).find((r) => r.name === 'Hen Island');
     expect(moved?.catalogDroppedAt).toBeDefined();
     // A complete run that keeps only Hen Island drops the rocks and brings it back.
+    // Dropping all 1,500 rocks is the per-lake brake's case: held, unless the operator says so.
+    const held = await importFor(t, {
+      waterBodyId: survivor,
+      landmarks: [hen],
+      complete: true,
+      dryRun: true,
+    });
+    expect(held).toMatchObject({ dropped: 0, dropsHeld: MAX_LANDMARKS_PER_BODY, returned: 0 });
     const counts = await importFor(t, {
       waterBodyId: survivor,
       landmarks: [hen],
       complete: true,
+      acceptMassDrop: true,
       dryRun: false,
     });
     expect(counts).toMatchObject({ returned: 1, dropped: MAX_LANDMARKS_PER_BODY });
+  });
+});
+
+describe('a complete load retires only what its sources vouch for (Greptile, third round)', () => {
+  const A = imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'] });
+  const B = imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] });
+
+  test('with no accepted load on the deployment, a complete line retires nothing and says why', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [A],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts.dropped).toBe(0);
+    expect(counts.shortfalls).toEqual([
+      'no complete load has been accepted on this deployment yet',
+    ]);
+  });
+
+  test('a source that read short of the accepted load retires nothing, unless the operator says so', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
+    const short = [
+      { source: 'vt.osm', count: 50 },
+      { source: 'vt.gnis', count: 10 },
+    ];
+    const held = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [A],
+      complete: true,
+      sources: short,
+      dryRun: false,
+    });
+    expect(held).toMatchObject({ dropped: 0 });
+    expect(held.shortfalls).toEqual(['vt.osm: 50 candidates, 50% under the accepted 100']);
+    // No sources at all cannot vouch either.
+    const unsaid = await t.mutation(internal.landmarks.importBatch, {
+      bodies: [{ waterBodyId: body, landmarks: [A], complete: true }],
+      dryRun: false,
+    });
+    expect(unsaid.dropped).toBe(0);
+    const meant = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [A],
+      complete: true,
+      sources: short,
+      acceptSourceDrop: true,
+      dryRun: false,
+    });
+    expect(meant).toMatchObject({ dropped: 1, shortfalls: [] });
+  });
+
+  test('the bar moves only on an accepted complete load, and never down without the operator', async () => {
+    const t = harness();
+    const accept = (sources: { source: string; count: number }[], acceptSourceDrop?: boolean) =>
+      t.mutation(internal.landmarks.acceptCompleteLoad, {
+        sources,
+        campaignId: 'c1',
+        ...(acceptSourceDrop !== undefined ? { acceptSourceDrop } : {}),
+      });
+    const bars = () => t.run((ctx) => ctx.db.query('landmarkSourceBaselines').collect());
+
+    // The first load sets the bar — but not with a source that read nothing.
+    expect(await accept([{ source: 'vt.osm', count: 0 }])).toMatchObject({ accepted: false });
+    expect(await accept(SOURCES)).toEqual({ accepted: true, shortfalls: [] });
+    // A short load does not lower it…
+    const short = [
+      { source: 'vt.osm', count: 50 },
+      { source: 'vt.gnis', count: 10 },
+    ];
+    expect(await accept(short)).toMatchObject({ accepted: false });
+    expect(await bars()).toHaveLength(1);
+    // …unless the operator says the shrink is real, and that is recorded.
+    expect(await accept(short, true)).toMatchObject({ accepted: true });
+    const all = await bars();
+    expect(all).toHaveLength(2);
+    expect(all[1]).toMatchObject({ sources: short, campaignId: 'c1', acceptedShrink: true });
+  });
+
+  test('a lake about to lose most of its catalog labels holds them (the per-lake brake)', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    const many = Array.from({ length: 12 }, (_, i) =>
+      imported(
+        `Rock ${i}`,
+        { lat: 44.1 + i * 0.01, lng: -73.3 },
+        {
+          kind: 'other',
+          externalIds: [`gnis:r${i}`],
+        },
+      ),
+    );
+    await importFor(t, { waterBodyId: body, landmarks: many, dryRun: false });
+    const held = await importFor(t, {
+      waterBodyId: body,
+      landmarks: many.slice(0, 1),
+      complete: true,
+      dryRun: false,
+    });
+    expect(held).toMatchObject({ dropped: 0, dropsHeld: 11 });
+    expect((await rowsOf(t, body)).every((r) => r.removedAt === undefined)).toBe(true);
+    const meant = await importFor(t, {
+      waterBodyId: body,
+      landmarks: many.slice(0, 1),
+      complete: true,
+      // Excusing a source shrink does not lift the brake: that takes its own word.
+      acceptSourceDrop: true,
+      dryRun: true,
+    });
+    expect(meant).toMatchObject({ dropped: 0, dropsHeld: 11 });
+    const lifted = await importFor(t, {
+      waterBodyId: body,
+      landmarks: many.slice(0, 1),
+      complete: true,
+      acceptMassDrop: true,
+      dryRun: false,
+    });
+    expect(lifted).toMatchObject({ dropped: 11, dropsHeld: 0 });
+  });
+});
+
+describe('a merge never overrides a moderator’s call (Greptile, third round)', () => {
+  test('a moderator’s `other` stays `other` beside a catalog twin of a specific kind', async () => {
+    const t = harness();
+    const survivor = await seedBody(t);
+    const loser = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: survivor,
+      name: 'Gull Island',
+      kind: 'other',
+      point: ISLAND,
+    });
+    await importFor(t, {
+      waterBodyId: loser,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
+      dryRun: false,
+    });
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row).toMatchObject({ kind: 'other', name: 'Gull Island', point: ISLAND });
+    // The footprint is a fact about the place, not a classification: it still comes across.
+    expect(row?.areaSqM).toBe(42_000);
+    expect(row?.externalIds).toEqual(['osm:way/1']);
+  });
+});
+
+describe('the review of the third round', () => {
+  test('two places near one row each keep their own: a place match is the nearest unclaimed row', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    // Two "Otter Creek" rocks 1.67 km apart, inside each other's 1 km radius only at the margin.
+    const at = (lat: number, id: string) =>
+      imported('Otter Creek', { lat, lng: -73.3 }, { kind: 'other', externalIds: [id] });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.2, 'osm:a')], dryRun: false });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.215, 'osm:b')], dryRun: false });
+    // A redrawn shore gives both new ids; the second sits 0.95 km from the first row and 0.72 km
+    // from the second — the first row was the first match in index order, the second is the nearest.
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [at(44.203, 'osm:a2'), at(44.2085, 'osm:b2')],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ dropped: 0, created: 0, updated: 2 });
+    const rows = (await rowsOf(t, body)).sort((a, b) => a.point.lat - b.point.lat);
+    expect(rows.map((r) => r.point.lat)).toEqual([44.203, 44.2085]);
+  });
+
+  test('a restore vouches for the row, whatever retired it, so a complete run keeps it', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const B = imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] });
+    await importFor(t, { waterBodyId: body, landmarks: [B], dryRun: false });
+    const id = (await rowsOf(t, body))[0]?._id as Id<'bodyLandmarks'>;
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: id });
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: id });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.moderatorEditedAt).toBeDefined();
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts.dropped).toBe(0);
+  });
+
+  test('a moderator cannot put a label on, or restore one to, a lake that is not on the map', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const merged = await seedBody(t, { dedupStatus: 'merged' });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await expect(
+      mod.as.mutation(api.landmarks.create, {
+        waterBodyId: merged,
+        name: 'Bird Poop Rock',
+        kind: 'other',
+        point: ISLAND,
+      }),
+    ).rejects.toThrow(/not on the map/);
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Bird Poop Rock',
+      kind: 'other',
+      point: ISLAND,
+    });
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: id });
+    await t.run((ctx) => ctx.db.patch(id, { waterBodyId: merged }));
+    await expect(mod.as.mutation(api.landmarks.restore, { landmarkId: id })).rejects.toThrow(
+      /not on the map/,
+    );
+  });
+
+  test('a bay redrawn to reach a same-named landmark retires it', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Kingsland Bay',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.35, 44.15)] },
+    });
+    // 7 km east of the bay: another place, until the bay is drawn over it.
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Kingsland Bay',
+      kind: 'bay',
+      point: { lat: 44.125, lng: -73.27 },
+    });
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: bay,
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.25, 44.15)] },
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
+  });
+
+  test('a seeded batch of bays retires the labels they name, once per lake', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Mud Bay',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    await t.mutation(internal.subAreas.importSeed, {
+      actorUserId: mod.id,
+      seed: [
+        {
+          waterBodyId: body,
+          name: 'Mud Bay',
+          box: { minLat: 44.1, minLng: -73.4, maxLat: 44.3, maxLng: -73.2 },
+        },
+        {
+          waterBodyId: body,
+          name: 'Deep Bay',
+          box: { minLat: 44.6, minLng: -73.4, maxLat: 44.65, maxLng: -73.3 },
+        },
+      ],
+      dryRun: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
+  });
+
+  test('a moderator’s deleted alias stays deleted; a new feature still brings its spelling', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const carry = (ids: string[], aliases: string[]) =>
+      imported('Carry Bay', { lat: 44.2, lng: -73.3 }, { kind: 'bay', externalIds: ids, aliases });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [carry(['gnis:1'], ['Carletons Prize'])],
+      dryRun: false,
+    });
+    const id = (await rowsOf(t, body))[0]?._id as Id<'bodyLandmarks'>;
+    await mod.as.mutation(api.landmarks.update, { landmarkId: id, aliases: [] });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [carry(['gnis:1'], ['Carletons Prize'])],
+      dryRun: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.aliases).toEqual([]);
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [carry(['gnis:1', 'osm:node/7'], ['Carry Cove'])],
+      dryRun: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.aliases).toEqual(['Carry Cove']);
+  });
+
+  test('a footprint the catalogs stopped drawing goes; one a merge folded in survives an older export', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
+      dryRun: false,
+    });
+    const gnisOnly = imported('Gull Island', ISLAND, {
+      kind: 'other',
+      externalIds: ['gnis:9'],
+      source: 'gnis',
+    });
+    // No merge touched it: this run is the catalogs' word, and the polygon is gone upstream.
+    await importFor(t, { waterBodyId: body, landmarks: [gnisOnly], dryRun: false });
+    const [plain] = await rowsOf(t, body);
+    expect(plain?.areaSqM).toBeUndefined();
+    expect(plain?.kind).toBe('other');
+
+    // A merge folds the OSM island back in; a run matched against an export from before the merge
+    // keeps what the fold brought — a fresh export's run would carry the OSM feature itself.
+    const survivor = await seedBody(t);
+    const loser = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await importFor(t, { waterBodyId: survivor, landmarks: [gnisOnly], dryRun: false });
+    await importFor(t, {
+      waterBodyId: loser,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/2'], areaSqM: 42_000 })],
+      dryRun: false,
+    });
+    const exportedBefore = Date.now() - 1;
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    await t.mutation(internal.landmarks.importBatch, {
+      bodies: [{ waterBodyId: survivor, landmarks: [gnisOnly] }],
+      matchedAt: exportedBefore,
+      dryRun: false,
+    });
+    const kept = (await rowsOf(t, survivor)).find((r) => r.removedAt === undefined);
+    expect(kept).toMatchObject({ kind: 'island', areaSqM: 42_000 });
+  });
+});
+
+describe('the verification pass', () => {
+  test('a line decides its matches together: an earlier candidate cannot take a later one’s only row', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    const at = (lat: number, id: string) =>
+      imported('Otter Creek', { lat, lng: -73.3 }, { kind: 'other', externalIds: [id] });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.2, 'osm:a')], dryRun: false });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.1865, 'osm:b')], dryRun: false });
+    // New ids for both. The first candidate is 0.6 km from the 44.2 row and 0.9 km from the other;
+    // the second is 0.3 km from the 44.2 row and too far from the other to be it at all.
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [at(44.1946, 'osm:a2'), at(44.2027, 'osm:b2')],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ created: 0, dropped: 0, updated: 2 });
+  });
+
+  test('the operator may excuse a shrink, never a missing bar, missing counts or an empty source', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const A = imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'] });
+    const B = imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] });
+    await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
+    const run = (sources?: { source: string; count: number }[]) =>
+      t.mutation(internal.landmarks.importBatch, {
+        bodies: [{ waterBodyId: body, landmarks: [A], complete: true }],
+        ...(sources ? { sources } : {}),
+        acceptSourceDrop: true,
+        dryRun: true,
+      });
+    // No bar on the deployment yet: the first complete load only sets it.
+    expect((await run(SOURCES)).dropped).toBe(0);
+    await seedBaseline(t);
+    expect((await run()).dropped).toBe(0);
+    expect(
+      (
+        await run([
+          { source: 'vt.osm', count: 100 },
+          { source: 'vt.gnis', count: 0 },
+        ])
+      ).dropped,
+    ).toBe(0);
+    expect(
+      (
+        await run([
+          { source: 'vt.osm', count: 50 },
+          { source: 'vt.gnis', count: 10 },
+        ])
+      ).dropped,
+    ).toBe(1);
+  });
+
+  test('the bar never moves down without the operator, so it cannot be walked down in small steps', async () => {
+    const t = harness();
+    const accept = (count: number, acceptSourceDrop?: boolean) =>
+      t.mutation(internal.landmarks.acceptCompleteLoad, {
+        sources: [{ source: 'ny.osm', count }],
+        ...(acceptSourceDrop ? { acceptSourceDrop } : {}),
+      });
+    const bar = async () =>
+      (
+        await t.run((ctx) =>
+          ctx.db.query('landmarkSourceBaselines').withIndex('by_accepted_at').order('desc').first(),
+        )
+      )?.sources;
+    await accept(55_000);
+    await accept(53_400); // 2.9% under: vouches, but the bar holds
+    expect(await bar()).toEqual([{ source: 'ny.osm', count: 55_000 }]);
+    expect(await accept(52_000)).toMatchObject({ accepted: false }); // 5.5% under the bar it kept
+    await accept(56_000);
+    expect(await bar()).toEqual([{ source: 'ny.osm', count: 56_000 }]);
+    await accept(40_000, true);
+    expect(await bar()).toEqual([{ source: 'ny.osm', count: 40_000 }]);
+  });
+});
+
+test('when one id names a person’s takedown and a catalog drop, the takedown holds', async () => {
+  const t = harness();
+  const body = await seedBody(t);
+  const row = (extra: { catalogDroppedAt?: number }) =>
+    t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId: body,
+        name: 'Butler Island',
+        kind: 'island',
+        point: { lat: 44.5, lng: -73.2 },
+        source: 'osm',
+        externalIds: ['osm:way/2'],
+        aliases: [],
+        removedAt: 1,
+        ...extra,
+        createdAt: 0,
+        updatedAt: 0,
+      }),
+    );
+  await row({ catalogDroppedAt: 1 });
+  await row({});
+  const counts = await importFor(t, {
+    waterBodyId: body,
+    landmarks: [
+      imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] }),
+    ],
+    dryRun: false,
+  });
+  expect(counts).toMatchObject({ removedHeld: 1, returned: 0, created: 0 });
+});
+
+describe('the last pass', () => {
+  test('a removed row an id names is that feature’s alone: a same-named neighbor gets its own row', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const at = (lat: number, id: string) =>
+      imported('Otter Creek', { lat, lng: -73.3 }, { kind: 'other', externalIds: [id] });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.2, 'osm:a')], dryRun: false });
+    const taken = (await rowsOf(t, body))[0]?._id as Id<'bodyLandmarks'>;
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: taken });
+    // The removed row's own feature, and another mouth 0.3 km off with a different id: the takedown
+    // holds the first, and the second is a place of its own, not folded into the takedown.
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [at(44.2027, 'osm:b'), at(44.2, 'osm:a')],
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ removedHeld: 1, created: 1 });
+  });
+
+  test('the specific kind wins among a row’s candidates, whichever came first in the line', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['gnis:9', 'osm:way/1'] })],
+      dryRun: false,
+    });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [
+        imported('Gull Island', ISLAND, { kind: 'other', externalIds: ['gnis:9'], source: 'gnis' }),
+        imported('Gull Island', { lat: 44.7501, lng: -72.75 }, { externalIds: ['osm:way/1'] }),
+      ],
+      dryRun: false,
+    });
+    const [row] = await rowsOf(t, body);
+    expect(row?.kind).toBe('island');
+  });
+
+  test('a source no longer read is a shrink the operator may excuse, and it leaves the bar', async () => {
+    const t = harness();
+    await seedBaseline(t);
+    const only = [{ source: 'vt.osm', count: 100 }];
+    expect(
+      await t.mutation(internal.landmarks.acceptCompleteLoad, { sources: only }),
+    ).toMatchObject({ accepted: false, shortfalls: ['vt.gnis: not read this run'] });
+    expect(
+      await t.mutation(internal.landmarks.acceptCompleteLoad, {
+        sources: only,
+        acceptSourceDrop: true,
+      }),
+    ).toMatchObject({ accepted: true });
+    const bar = await t.run((ctx) =>
+      ctx.db.query('landmarkSourceBaselines').withIndex('by_accepted_at').order('desc').first(),
+    );
+    expect(bar).toMatchObject({ sources: only, acceptedShrink: true });
   });
 });

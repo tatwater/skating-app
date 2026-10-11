@@ -420,6 +420,40 @@ describe('placing a name', () => {
     expect((await t.run((ctx) => ctx.db.get(bay._id)))?.status).toBe('open');
   });
 
+  test('a far landmark may take a spelling a bay across the lake answers to — the one bay rule', async () => {
+    const t = harness();
+    const lake = await seedBody(t, 'Lake Champlain');
+    const mod = await seedUser(t, 'mod');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: lake,
+      name: 'Mud Bay',
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-73.4, 44.1],
+            [-73.2, 44.1],
+            [-73.2, 44.3],
+            [-73.4, 44.3],
+            [-73.4, 44.1],
+          ],
+        ],
+      },
+    });
+    // The other Mud Bay, 70 km up the lake: a reference the bay rule leaves to the landmarks.
+    const far = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: lake,
+      name: 'Mud Cove',
+      kind: 'bay',
+      point: { lat: 44.9, lng: -72.6 },
+    });
+    await load(t, [name('Mud Bay', { waterBodyId: lake })]);
+    const [row] = await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake });
+    if (!row) throw new Error('not loaded');
+    await mod.as.mutation(api.corpusPlaceNames.fileAsSpelling, { id: row._id, landmarkId: far });
+    expect((await t.run((ctx) => ctx.db.get(far)))?.aliases).toEqual(['Mud Bay']);
+  });
+
   test('a name already on the map, unsure which, loads as such', async () => {
     const t = harness();
     const lake = await seedBody(t, 'Lake Champlain');

@@ -1752,9 +1752,9 @@ export default defineSchema({
    * tier for a day, which a prefix cannot do.
    *
    * **`dayMs` is `Date.UTC(y, m, d)` of the lake's LOCAL date** — a sortable key, not an instant.
-   * Hours are assigned to days from the local date strings Open-Meteo returns under
-   * `timeformat=iso8601`, never by shifting a UTC timestamp, because a response carries one
-   * `utc_offset_seconds` for its whole span and both DST transitions fall inside a skating season.
+   * Hours are assigned to days by `localStampAt` against the response's IANA zone, hour by hour —
+   * never by one `utc_offset_seconds`, and never from Open-Meteo's `iso8601` stamps, which both carry
+   * the request-time offset for the whole span. Both DST transitions fall inside a skating season.
    */
   weatherDays: defineTable({
     cellKey: v.string(), // `weatherCellFor(tier, …).key`
@@ -1907,8 +1907,7 @@ export default defineSchema({
      * ⚠ **Not always 24, and `localHour` is stored per hour rather than implied by array position.**
      * DST days are 23 or 25 hours and both transitions fall inside a skating season, so an array
      * indexed by position would misattribute every hour after the change. Storing the local hour the
-     * lake actually experienced is what lets the chart place a mark without a timezone database —
-     * the same reasoning that made the archive ask for `timeformat=iso8601` in the first place.
+     * lake actually experienced is what lets the chart place a mark without a timezone database.
      */
     /**
      * Which generation of `storableHour` wrote this row — see `HOURLY_ROW_VERSION`.
@@ -2753,8 +2752,10 @@ export default defineSchema({
      */
     mergedIntoId: v.optional(v.id('bodyLandmarks')),
     /**
-     * When a merge moved this row onto its body (D36). A complete ETL run matched against a body
-     * export older than this never drops the row: the export placed its catalogs on the merged lake.
+     * When a merge last changed what this row stands for (D36): moved it onto its body, or folded a
+     * twin from the merged lake into it. A complete ETL run matched against a body export older than
+     * this never drops the row, and keeps the footprint and kind the fold brought — that export
+     * placed the merged lake's catalogs on the lake that no longer exists.
      */
     movedAt: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')),
@@ -2816,6 +2817,23 @@ export default defineSchema({
     .index('by_ask_key', ['askKey'])
     .index('by_status_messages', ['status', 'messages'])
     .index('by_water_body_status', ['waterBodyId', 'status']),
+
+  /**
+   * What each catalog source read on the complete landmark loads this deployment accepted (D202) —
+   * the bar a later load's sources must clear before it may retire anything (`landmarkSourceCheck`).
+   * In the deployment, not a scratch file, because it vouches for what *this deployment's* rows were
+   * built from; written only after a complete load applied without a failed batch
+   * (`landmarks.acceptCompleteLoad`), so a transform nobody loaded never moves it. One row per
+   * accepted load; the newest is the bar, each source at its highest accepted count unless the
+   * operator excused a shrink (`nextLandmarkSourceBar`).
+   */
+  landmarkSourceBaselines: defineTable({
+    sources: v.array(v.object({ source: v.string(), count: v.number() })),
+    campaignId: v.optional(v.string()),
+    /** The operator said a shortfall was a real shrink (`--accept-source-drop`). */
+    acceptedShrink: v.optional(v.boolean()),
+    acceptedAt: v.number(),
+  }).index('by_accepted_at', ['acceptedAt']),
 
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).

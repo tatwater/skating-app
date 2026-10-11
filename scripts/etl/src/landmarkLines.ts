@@ -5,6 +5,7 @@
  * `complete` is what lets the importer retire a catalog row, so the rule that marks one is tested.
  */
 
+import type { LandmarkSourceCount } from '@skating/core';
 import type { PlacedLandmark } from './landmarkMatch';
 
 export interface BodyLine {
@@ -76,6 +77,8 @@ export function packLines(lines: readonly BodyLine[], batchSize: number): BodyLi
 export interface TransformSummary {
   corpusApplied?: boolean;
   complete?: boolean;
+  /** Each catalog source's candidate count, `vt.osm` / `vt.gnis` — what vouches for `complete`. */
+  bySource?: Record<string, number>;
   /**
    * When `bodies.ndjson` was exported (epoch ms) — sent with every batch as `matchedAt`, so the
    * importer never drops a row a merge moved onto its body after the export the run was matched to.
@@ -96,4 +99,61 @@ export function applyRefusal(
     return 'the transform ran without the corpus (--mentions); applying it would erase every corpus count and community spelling. Re-run the transform with --mentions, or pass --without-corpus to mean it.';
   }
   return null;
+}
+
+/**
+ * What the run's sources read, as the importer weighs them against the deployment's last accepted
+ * complete load (`landmarkSourceCheck`). `undefined` — and so no retirement — when the summary
+ * does not say.
+ */
+export function summarySources(
+  summary: TransformSummary | undefined,
+): LandmarkSourceCount[] | undefined {
+  const bySource = summary?.bySource;
+  if (!bySource) return undefined;
+  return Object.entries(bySource).map(([source, count]) => ({ source, count }));
+}
+
+/**
+ * Should the loader ask the deployment to take this load as its new source baseline? Only an applied
+ * load with complete lines and not one failed batch: a dry run, a partial run, or a load some of whose
+ * bodies never landed must not move the bar a later load is held to. (The deployment re-checks the
+ * sources itself, `landmarks.acceptCompleteLoad`.)
+ */
+export function acceptsLoad(run: {
+  apply: boolean;
+  lines: readonly BodyLine[];
+  failedBatches: number;
+}): boolean {
+  return run.apply && run.failedBatches === 0 && run.lines.some((l) => l.complete === true);
+}
+
+/** How far this machine's clock may run ahead of the deployment's when stamping the export. */
+export const EXPORT_CLOCK_SLACK_MS = 5 * 60 * 1000;
+
+/**
+ * The `matchedAt` the importer weighs a merged row's `movedAt` against: when the body export began
+ * reading, less {@link EXPORT_CLOCK_SLACK_MS} — the export is stamped by this machine and `movedAt` by
+ * the deployment, and erring early only spares a moved row one more run. `{}` (spare every moved
+ * row) when the summary does not say.
+ */
+export function matchedAtOf(summary: TransformSummary | undefined): { matchedAt?: number } {
+  const at = summary?.bodiesExportedAt;
+  return at === undefined ? {} : { matchedAt: Math.floor(at - EXPORT_CLOCK_SLACK_MS) };
+}
+
+/**
+ * Run a `convex run` once more if it throws — the CLI's own auth check intermittently answers 401
+ * mid-run (seen on the first dry run, 2026-09-29), and every call the loader makes is idempotent, so
+ * a second attempt is always safe. Any error is retried once, because the CLI does not tell an auth
+ * blip from anything else; a deterministic failure just fails twice. `onRetry` lets the caller say
+ * so: a first attempt that committed before the CLI failed shows its writes as already done.
+ */
+export function withOneRetry<T>(call: () => T, onRetry: () => void = () => {}): T {
+  try {
+    return call();
+  } catch {
+    onRetry();
+    return call();
+  }
 }

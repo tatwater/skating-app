@@ -29,7 +29,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  statSync,
+  renameSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -55,6 +55,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
 const SCRATCH = join(ROOT, '.scratch', 'landmarks');
 const BODIES = join(SCRATCH, 'bodies.ndjson');
+const BODIES_META = join(SCRATCH, 'bodies.meta.json');
 /**
  * Every state the corpus covers — the archive list the merge reads, never a copy of it. Adding a
  * region is adding it there (and to GNIS's list, which `archive.test.ts` holds in step); a copy here
@@ -78,6 +79,10 @@ async function readLines(path: string, onLine: (line: string) => void): Promise<
 /** Page every listed body's outline out of the deployment, once, into the cache. */
 function exportBodies(): void {
   mkdirSync(SCRATCH, { recursive: true });
+  // When the export *began* reading: a merge after this may have moved a lake's landmarks onto a
+  // survivor whose page was already read, so this — not when the file landed — is what the run was
+  // matched against (`matchedAt`). Recorded beside the cache, since a file's mtime moves with a copy.
+  const startedAt = Date.now();
   const lines: string[] = [];
   let cursor: string | undefined;
   let pages = 0;
@@ -92,8 +97,19 @@ function exportBodies(): void {
     if (page.isDone) break;
     cursor = page.cursor;
   }
-  writeFileSync(BODIES, `${lines.join('\n')}\n`);
+  // Renamed into place, so an export cut short never becomes the cache every later run matches against.
+  writeFileSync(`${BODIES}.partial`, `${lines.join('\n')}\n`);
+  renameSync(`${BODIES}.partial`, BODIES);
+  writeFileSync(`${BODIES_META}.partial`, `${JSON.stringify({ startedAt })}\n`);
+  renameSync(`${BODIES_META}.partial`, BODIES_META);
   log(`bodies: ${lines.length.toLocaleString()} listed bodies exported`);
+}
+
+/** When the cached export began reading — `{}` when the cache predates the record. */
+function bodiesExportedAt(): { bodiesExportedAt?: number } {
+  if (!existsSync(BODIES_META)) return {};
+  const { startedAt } = JSON.parse(readFileSync(BODIES_META, 'utf8')) as { startedAt?: number };
+  return typeof startedAt === 'number' ? { bodiesExportedAt: startedAt } : {};
 }
 
 async function loadBodies(): Promise<MatchBody[]> {
@@ -131,14 +147,22 @@ function osmFeatureFile(state: string, refresh: boolean): string {
     );
   }
   const { filename } = JSON.parse(readFileSync(manifestPath, 'utf8')) as { filename: string };
-  const filtered = join(SCRATCH, `osm-${state}.pbf`);
+  // Written under a `.partial` name and renamed only on success: the cache is reused on every later
+  // run, so an osmium run cut short must never leave a truncated file where a whole one belongs — a
+  // complete load would read its missing features as removals (D202).
+  const filtered = join(SCRATCH, `osm-${state}.partial.pbf`);
+  const partial = join(SCRATCH, `osm-${state}.partial.geojsonseq`);
   log(`${state}: filtering landmark features…`);
   const step1 = spawnSync('osmium', osmLandmarkFilterArgs(join(dir, filename), filtered), {
     encoding: 'utf8',
   });
   if (step1.status !== 0) throw new Error(`${state}: osmium tags-filter exited ${step1.status}`);
-  const step2 = spawnSync('osmium', osmLandmarkExportArgs(filtered, out), { encoding: 'utf8' });
+  const step2 = spawnSync('osmium', osmLandmarkExportArgs(filtered, partial), {
+    encoding: 'utf8',
+  });
   if (step2.status !== 0) throw new Error(`${state}: osmium export exited ${step2.status}`);
+  renameSync(filtered, join(SCRATCH, `osm-${state}.pbf`));
+  renameSync(partial, out);
   return out;
 }
 
@@ -263,6 +287,8 @@ async function main(): Promise<void> {
     perBody.push(landmarks.length);
     for (const l of landmarks) byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
   }
+  // Complete on a run of every state; whether its sources vouch for that is the deployment's call,
+  // against the last load it accepted (`landmarks.importBatch`, from `summary.bySource`).
   const complete = runIsComplete(selected, ALL_STATES);
   const lines = landmarkLines(
     bodies.map((b) => b.id),
@@ -278,7 +304,9 @@ async function main(): Promise<void> {
     states: selected,
     corpusApplied: corpus !== undefined,
     complete,
-    bodiesExportedAt: statSync(BODIES).mtimeMs,
+    // Absent for a cache exported before the start was recorded: the importer then never drops a
+    // row a merge moved, rather than guess.
+    ...bodiesExportedAt(),
     bySource,
     ...counts,
     bodiesWithLandmarks: byBody.size,

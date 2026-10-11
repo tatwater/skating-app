@@ -719,14 +719,30 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
   The names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's
   worklist.
 - **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
-  edit keeps its name, kind and point, and a name a live bay carries (or an alias of it) is skipped.
+  edit keeps its name, kind and point (and a spelling they deleted stays deleted), and a landmark a
+  live bay names — any name of either, within 1 km of the bay — is skipped.
 - **It also forgets — on a run of every state only.** That run writes a line for every exported
   body, marked `complete` (an empty one if nothing landed), and a catalog row a complete line no
   longer has is retired (`dropped`), back if a later run places it (`returned`). A run of some
-  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place. A row a
-  merge moved after the body export the run matched against is never dropped (the loader sends the
-  export's time). Read `dropped` on the dry run before `--apply` by hand — a broken extract shows up
-  there as thousands, and a batch whose drops pass a mutation's write limit fails whole.
+  states drops nothing: a Vermont pond can hold a label only New Hampshire's catalogs place.
+- **Retiring needs the sources to vouch, and the deployment keeps the bar.** The loader sends each
+  state's OSM and GNIS candidate counts (`summary.bySource`); the importer retires nothing unless
+  every one is within 3% of the last complete load *this deployment accepted*
+  (`landmarkSourceBaselines`), and the loader moves that bar only after an applied complete load
+  with no failed batch — a transform nobody loaded, or a dry run, never does — and only ever *up*:
+  a source's bar is its highest accepted count unless the operator says a shrink is real, so it
+  cannot be walked down in steps under the margin. The **first** complete load on a deployment
+  retires nothing and sets the bar; the next one retires. No flag excuses a missing bar, missing
+  counts or a source that read nothing. On top, a
+  lake about to lose more than half its catalog labels (and more than 10) holds them (`dropsHeld`).
+  Both print on the dry run. `--refresh` if an extract is broken; on the loader,
+  `--accept-source-drop` if a source really shrank and `--accept-mass-drop` if a lake really lost
+  most of its labels — separate words, so excusing one never lifts the other. Every osmium output
+  and the body export are written under a `.partial` name and renamed on success, so a run cut short
+  never leaves a truncated cache. A row a merge moved after the body export *began* reading is never
+  dropped (`bodies.meta.json` records the start; the loader sends it, less five minutes of clock
+  slack). Still read `dropped` on the dry run before `--apply` by hand, and
+  a batch whose drops pass a mutation's write limit fails whole.
 - **A mouth's id is where it meets the shore** (`osm:way/1#in@44.0213,-73.1002`), never its place in
   the list, so a crossing found or lost upstream cannot hand one mouth's id to another.
 

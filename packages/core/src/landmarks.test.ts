@@ -9,13 +9,19 @@ import {
   LANDMARK_LABEL_MAX_ZOOM,
   LANDMARK_LABEL_MIN_ZOOM,
   LANDMARK_SAME_PLACE_RADIUS_M,
+  landmarkDropsHeld,
   landmarkLabelFeatures,
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
+  landmarkSourceCheck,
+  landmarkSourceReasons,
+  landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARK_ALIASES,
   MAX_LANDMARK_NAME_LENGTH,
+  MAX_LANDMARK_SOURCE_SHRINK,
+  nextLandmarkSourceBar,
   normalizeLandmarkNames,
   subAreaForLandmark,
 } from './landmarks';
@@ -105,6 +111,11 @@ describe('landmarkLabelMinZoom', () => {
     );
   });
 
+  it('is a whole zoom, rounded up — the zoom a MapLibre filter can honor, never one early', () => {
+    // A ~1 km² island at 44.5° draws big enough at z11.7: the maps' filters can show it at 12.
+    expect(landmarkLabelMinZoom({ kind: 'island', areaSqM: 1_000_000, lat: 44.5 })).toBe(12);
+  });
+
   it('never leaves the label band, whatever the inputs', () => {
     fc.assert(
       fc.property(
@@ -116,6 +127,7 @@ describe('landmarkLabelMinZoom', () => {
           const zoom = landmarkLabelMinZoom({ kind, areaSqM, corpusMessages, lat });
           expect(zoom).toBeGreaterThanOrEqual(LANDMARK_LABEL_MIN_ZOOM);
           expect(zoom).toBeLessThanOrEqual(LANDMARK_LABEL_MAX_ZOOM);
+          expect(Number.isInteger(zoom)).toBe(true);
         },
       ),
     );
@@ -299,5 +311,133 @@ describe('corpus name dismissal reasons', () => {
     for (const reason of CORPUS_NAME_DISMISS_REASONS) {
       expect(CORPUS_NAME_DISMISS_LABELS[reason]).toBeTruthy();
     }
+  });
+});
+
+describe('landmarkSourceCheck', () => {
+  const baseline = [
+    { source: 'vt.osm', count: 9_000 },
+    { source: 'vt.gnis', count: 1_200 },
+  ];
+
+  it('vouches for sources that read what the accepted load read, within the margin', () => {
+    const check = landmarkSourceCheck(
+      [
+        { source: 'vt.osm', count: 8_800 },
+        { source: 'vt.gnis', count: 1_300 },
+        { source: 'ny.osm', count: 50_000 },
+      ],
+      baseline,
+    );
+    expect(check).toEqual({ blocking: [], shrinks: [] });
+    expect(landmarkSourcesVouch(check, false)).toBe(true);
+  });
+
+  it('calls a short or unread source a shrink the operator may excuse', () => {
+    const check = landmarkSourceCheck([{ source: 'vt.osm', count: 4_000 }], baseline);
+    expect(landmarkSourceReasons(check)).toEqual([
+      'vt.osm: 4000 candidates, 56% under the accepted 9000',
+      'vt.gnis: not read this run',
+    ]);
+    expect(check.blocking).toEqual([]);
+    expect(landmarkSourcesVouch(check, false)).toBe(false);
+    expect(landmarkSourcesVouch(check, true)).toBe(true);
+  });
+
+  it('blocks — past any excuse — an empty source, no bar, or no counts', () => {
+    const check = landmarkSourceCheck(
+      [
+        { source: 'vt.osm', count: 9_000 },
+        { source: 'vt.gnis', count: 0 },
+      ],
+      baseline,
+    );
+    expect(landmarkSourceReasons(check)).toEqual(['vt.gnis: no candidates']);
+    expect(landmarkSourcesVouch(check, true)).toBe(false);
+    expect(landmarkSourceCheck(baseline, undefined).blocking).toEqual([
+      'no complete load has been accepted on this deployment yet',
+    ]);
+    expect(landmarkSourceCheck(undefined, baseline).blocking).toHaveLength(1);
+    expect(landmarkSourceCheck([], baseline).blocking).toHaveLength(1);
+  });
+
+  it('never vouches for a source under the margin unless excused (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 1e6 }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (bar, f) => {
+          const now = Math.max(1, Math.floor(bar * f));
+          const check = landmarkSourceCheck(
+            [{ source: 's', count: now }],
+            [{ source: 's', count: bar }],
+          );
+          const within = now >= bar * (1 - MAX_LANDMARK_SOURCE_SHRINK);
+          return landmarkSourcesVouch(check, false) === within && check.blocking.length === 0;
+        },
+      ),
+    );
+  });
+});
+
+describe('nextLandmarkSourceBar', () => {
+  const bar = [
+    { source: 'ny.osm', count: 55_000 },
+    { source: 'vt.osm', count: 9_000 },
+    { source: 'nh.gnis', count: 1_600 },
+  ];
+  const next = (sources: { source: string; count: number }[], accept: boolean) =>
+    nextLandmarkSourceBar(sources, bar, landmarkSourceCheck(sources, bar), accept);
+
+  it('only rises without the operator: steps under the margin cannot walk it down', () => {
+    expect(
+      next(
+        [
+          { source: 'ny.osm', count: 53_400 },
+          { source: 'vt.osm', count: 9_500 },
+          { source: 'nh.gnis', count: 1_600 },
+        ],
+        false,
+      ),
+    ).toEqual([
+      { source: 'ny.osm', count: 55_000 },
+      { source: 'vt.osm', count: 9_500 },
+      { source: 'nh.gnis', count: 1_600 },
+    ]);
+    expect(
+      nextLandmarkSourceBar(bar, undefined, landmarkSourceCheck(bar, undefined), false),
+    ).toEqual(bar);
+  });
+
+  it('lowers only the shrinks the operator excused, and lets an excused unread source go', () => {
+    // vt.osm really shrank, nh.gnis is no longer read; ny.osm read 2.9% low and is not excused.
+    expect(
+      next(
+        [
+          { source: 'ny.osm', count: 53_400 },
+          { source: 'vt.osm', count: 4_000 },
+        ],
+        true,
+      ),
+    ).toEqual([
+      { source: 'ny.osm', count: 55_000 },
+      { source: 'vt.osm', count: 4_000 },
+    ]);
+    // Passing the flag with nothing to excuse moves nothing down.
+    expect(
+      next(
+        bar.map((s) => ({ ...s, count: s.count - 10 })),
+        true,
+      ),
+    ).toEqual(bar);
+  });
+});
+
+describe('landmarkDropsHeld', () => {
+  it('holds a drop of more than half a lake’s catalog rows, past the floor', () => {
+    expect(landmarkDropsHeld(11, 20)).toBe(true);
+    expect(landmarkDropsHeld(10, 12)).toBe(false); // at the floor: a small lake may lose its few
+    expect(landmarkDropsHeld(11, 22)).toBe(false); // exactly half
+    expect(landmarkDropsHeld(1, 1)).toBe(false);
   });
 });

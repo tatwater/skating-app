@@ -12,7 +12,14 @@
       // package as `nitro`, not `vite`, so it infers no `VITE_` prefix. Hence the wildcard —
       // every `VITE_*` var is baked into the client bundle at build time, so every one of them
       // both belongs in the build environment and must participate in the hash.
-      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN", "VITE_*"]
+      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN", "VITE_*"],
+      // Set on the Vercel project but not read by the build itself — declared only so Vercel stops
+      // warning that strict mode drops them. The Clerk keys are read by the server at runtime
+      // (`apps/web/src/start.ts`), which Vercel supplies to its functions directly; the Font Awesome
+      // token is used by `vercel.json`'s installCommand, which runs before turbo. `passThroughEnv`,
+      // not `env`: none of them changes the build's output, so none belongs in the cache key — a
+      // rotated secret would otherwise throw away a perfectly good cached build.
+      "passThroughEnv": ["CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY", "FONTAWESOME_NPM_AUTH_TOKEN"]
     },
     "check-types": {
       "dependsOn": ["^check-types"]

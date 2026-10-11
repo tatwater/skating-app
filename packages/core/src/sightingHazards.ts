@@ -19,8 +19,14 @@
  */
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
-import { haversineMeters, type LatLng, simplifyPath } from './geometry';
-import { HAZARD_MAX_VERTICES, type HazardShape } from './hazardGeometry';
+import {
+  coveredFraction,
+  haversineMeters,
+  type LatLng,
+  polygonUnion,
+  simplifyPath,
+} from './geometry';
+import { HAZARD_MAX_VERTICES, type HazardShape, hazardFootprint } from './hazardGeometry';
 import { type PartitionSector, sectorFrame, sectorPolygons } from './sectorGeometry';
 import type { HazardType, Sighting } from './types';
 import type { Where } from './where';
@@ -29,11 +35,67 @@ import type { Where } from './where';
 export const SIGHTING_PIN_HINT =
   'Open water or skim ice with a place goes on the map as a hazard, under your name.';
 
-/** Does any of these sightings become a pin? The sheet shows `SIGHTING_PIN_HINT` when it does. */
+/**
+ * Does any of these sightings become a pin? The sheet shows `SIGHTING_PIN_HINT` when it does, so
+ * this is the server's rule (`whereNamesPinShape`), not "has a `where`": a sighting near shore or
+ * of an extent alone has a place and no pin, and the hint must not promise one.
+ */
 export function sightingsMakePins(
   sightings: readonly { type: Sighting; where?: Where }[],
+  /** The body's landmark label points by id, so a landmark chosen by name promises no pin. */
+  landmarkPoints?: Readonly<Record<string, LatLng>>,
 ): boolean {
-  return sightings.some((s) => SIGHTING_HAZARD_TYPE[s.type] !== undefined && s.where !== undefined);
+  return sightings.some(
+    (s) =>
+      SIGHTING_HAZARD_TYPE[s.type] !== undefined &&
+      s.where !== undefined &&
+      whereNamesPinShape(s.where, landmarkPoints),
+  );
+}
+
+/** A body's landmarks as the label points `whereNamesPinShape` reads, by id — `undefined` with none. */
+export function landmarkPointsOf(
+  body: { landmarks: readonly { _id: string; point: LatLng }[] } | null | undefined,
+): Record<string, LatLng> | undefined {
+  if (!body || body.landmarks.length === 0) return undefined;
+  return Object.fromEntries(body.landmarks.map((l) => [l._id, l.point]));
+}
+
+/**
+ * Is this `where`'s point a landmark chosen by name — at the landmark's own label point, not a tap
+ * that took its name (D202)? Without the label points nothing is: a tap is the safe reading, since
+ * it pins its circle rather than nothing.
+ */
+export function landmarkChosenByName(
+  where: Where,
+  landmarkPoints?: Readonly<Record<string, LatLng>>,
+): boolean {
+  const id = where.point?.landmarkId;
+  const label = id !== undefined ? landmarkPoints?.[id] : undefined;
+  return (
+    label !== undefined &&
+    where.point !== undefined &&
+    haversineMeters(label, where.point.coord) < LABEL_POINT_M
+  );
+}
+
+/**
+ * Does this `where` name a shape a pin can take — a tapped point, a partition wedge (of the lake or
+ * of a bay), or a bay whole (`head` / `mouth` read as the bay)? The one rule both the sheet's hint
+ * and `sightingHazardShape` read. The server can still derive nothing from a shape this accepts —
+ * a bay the body does not know, an outline with no frame, a wedge no simplification fits — and those
+ * are the edges the sheet cannot see from where it stands.
+ */
+export function whereNamesPinShape(
+  where: Where,
+  landmarkPoints?: Readonly<Record<string, LatLng>>,
+): boolean {
+  // A landmark chosen by name is a place, not a spot on the water (D202): it pins only what the
+  // rest of the `where` names. A tap that took a landmark's name is still the tap.
+  if (where.point && !landmarkChosenByName(where, landmarkPoints)) return true;
+  if (where.sector === undefined) return where.subAreaId !== undefined;
+  if (PARTITION.has(where.sector)) return true;
+  return where.subAreaId !== undefined && (where.sector === 'head' || where.sector === 'mouth');
 }
 
 /** The sightings that are hazards when located, and the hazard each one is. */
@@ -131,16 +193,8 @@ export function sightingHazardShape(
 ): { type: HazardType; shape: HazardShape } | null {
   const type = SIGHTING_HAZARD_TYPE[sighting.type];
   const where = sighting.where;
-  if (!type || !where) return null;
-  const label =
-    where.point?.landmarkId !== undefined
-      ? ctx.landmarkPoints?.[where.point.landmarkId]
-      : undefined;
-  const chosenByName =
-    label !== undefined &&
-    where.point !== undefined &&
-    haversineMeters(label, where.point.coord) < LABEL_POINT_M;
-  if (where.point && !chosenByName) {
+  if (!type || !where || !whereNamesPinShape(where, ctx.landmarkPoints)) return null;
+  if (where.point && !landmarkChosenByName(where, ctx.landmarkPoints)) {
     return {
       type,
       shape: {
@@ -152,19 +206,49 @@ export function sightingHazardShape(
   }
   const bay = where.subAreaId !== undefined ? ctx.bays?.[where.subAreaId] : undefined;
   if (where.subAreaId !== undefined && !bay) return null; // a bay this body does not know
-  let area: Polygon | MultiPolygon | null = null;
-  if (where.sector !== undefined && PARTITION.has(where.sector)) {
-    area = bay
-      ? wedgeOf(bay, where.sector as PartitionSector)
-      : wedgeOf(ctx.outline, where.sector as PartitionSector, ctx.interiorPoint);
-  } else if (
-    bay &&
-    (where.sector === undefined || where.sector === 'head' || where.sector === 'mouth')
-  ) {
-    // The whole bay: `head` and `mouth` wait on the chord editor's mouth line (A09), and a bay is
-    // the honest superset of either.
-    area = bay;
-  }
+  const sector =
+    where.sector !== undefined && PARTITION.has(where.sector)
+      ? (where.sector as PartitionSector)
+      : null;
+  // Past `whereNamesPinShape`, no partition wedge means the bay whole: `head` and `mouth` wait on
+  // the chord editor's mouth line (A09), and a bay is the honest superset of either.
+  const area =
+    sector === null
+      ? (bay ?? null)
+      : bay
+        ? wedgeOf(bay, sector)
+        : wedgeOf(ctx.outline, sector, ctx.interiorPoint);
   const fitted = area ? fitToVertexCap(area) : null;
   return fitted ? { type, shape: { geometryKind: 'polygon', geometry: fitted } } : null;
+}
+
+/**
+ * How much of a derived pin the author's own pins must cover for it to be theirs already: all of
+ * it, give or take the clipper's float noise.
+ */
+const DRAWN_COVERS_FRACTION = 0.999;
+
+/**
+ * Did the author already draw this — pins of the same type that, together, cover the derived
+ * shape? Covering, not touching (Greptile P1 on #82): a small pin inside a reported wedge is a
+ * finer claim about *part* of it, and skipping the wedge for it would leave the rest of what they
+ * reported unwarned. Both are written then, and auto-merge folds touching pins into one whose
+ * footprint is the union, so two pins for one lead still ends as one without losing warned area.
+ * Fails open: a footprint or clipper failure reads as "not covered", and the derived pin is written.
+ */
+export function drawnCoversDerived(
+  derived: { type: HazardType; shape: HazardShape },
+  drawn: readonly { type: HazardType; shape: HazardShape }[],
+): boolean {
+  const same = drawn.filter((d) => d.type === derived.type);
+  if (same.length === 0) return false;
+  try {
+    const cover = polygonUnion(same.map((d) => hazardFootprint(d.shape)));
+    return (
+      cover !== null &&
+      coveredFraction(hazardFootprint(derived.shape), cover) >= DRAWN_COVERS_FRACTION
+    );
+  } catch {
+    return false;
+  }
 }
