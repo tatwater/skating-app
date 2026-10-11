@@ -49,6 +49,12 @@ Merged by `scripts/etl` into one record per body with our own key (D93), best-of
 one admission floor applied once (D109/D110); every loader replays the merge's path from
 `merge-manifest.json` (provenance is the default). Refused bodies are logged, never silently dropped.
 
+The same two archives name the **landmarks** a body is steered by (D202): OSM's islands, capes,
+beaches, bay nodes, straits, waterways, bridges, marinas, lighthouses, dams, villages and shore
+businesses, and GNIS's Island, Cape, Beach, Bay, Harbor, Gut, Channel, Bar, Pillar and Populated
+Place rows — matched to bodies offline, no new source and no new archive
+([`scripts/etl` § The landmark pass](../scripts/etl/README.md)).
+
 *Considered:* **Overpass API** for OSM — rejected for extracts, which are reproducible, archivable
 and don't rate-limit a five-state pull. **NHD as the outline** — the D92 bake-off against OSM over
 2,359 lakes with real depth soundings was a dead heat (63% ties); OSM stays by the cheaper-pipeline

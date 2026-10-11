@@ -7,6 +7,10 @@
 > direction, not a proper noun"* (that half became the D193 amendment — `head` / `mouth` sectors).
 > This doc is the label half. A10's §Later item "named-landmark ETL" moves here. Delete when it
 > ships; the record is the register row and D202.
+>
+> **Building 2026-09-29, in two PRs stacked on A10-9 (#82):** the data, the labels and the
+> moderator's card first; the sheet, skater proposals and extraction second. Founder calls at
+> kickoff are under *Kickoff calls*; what the first PR built and found is under *Built*.
 
 ## What the corpus says
 
@@ -65,3 +69,122 @@ put-ins (the reads the drawer already makes), never viewport-wide.
 never a sub-area.** The corpus's skated-message count is the test (≥ 2 → sub-area candidate); a
 moderator can promote a landmark to a sub-area with the chord tool when its reports show it earned
 one.
+
+## Kickoff calls (founder, 2026-09-29)
+
+- **The kinds to cover, on as many bodies as possible:** named beaches, islands, peninsulas,
+  bridges, marinas, channels and rivers (inlets, outlets, passthroughs), towns and villages,
+  lighthouses — and the "murkier" shore owners: camps, campgrounds, hotels, resorts, restaurants.
+  The build added dams (a reservoir's reference point) and named rocks, reefs and shoals (GNIS
+  `Bar` / `Pillar`, OSM `natural=rock`).
+- **Businesses by how long they last, not only by whether they stand alone:** a camp, campground,
+  resort or hotel is always a landmark; a restaurant, café, bar or general store only when no other
+  named business is within 250 m (a row of five is a street). A store skaters meet at that OSM
+  lacks ("Hero's Welcome") comes from a moderator or a skater's proposal.
+- **Every listed body, not only the corpus's** — but only landmarks on or beside a body we carry;
+  the matching is the filter that makes the volume sane.
+- **Labels by size and loneliness:** a name appears when its footprint draws big enough, or when its
+  prominence earns it, and where names crowd the important ones win; put-ins outrank labels at
+  whole-lake scale. Prominence from the corpus now and from reports as they come. A tap near a
+  known landmark takes its name.
+- **Selected-body only, for now.** Labels, contours and markers appearing on zoom without a
+  selection — perhaps by auto-selecting the lake a skater has zoomed to — is a design question for
+  later (deferred register).
+- **Skaters propose landmarks** — "bird poop rock" is in no catalog, and if skaters steer by it,
+  it belongs on the map. A seventh request kind, `name_landmark`, like `name_bay` (D201).
+
+## Built
+
+**PR 1 (#83) — the table, the ETL, the labels, the moderator’s card.**
+
+- `bodyLandmarks` (D202): name, kind (13), point, footprint area, bay stamp (A09, holes filled so an
+  island is in the bay around it), source, upstream ids as an array (one island is an OSM way *and*
+  a GNIS point), aliases, `corpusMessages`, `reportCount`, `moderatorEditedAt`, soft `removedAt`.
+  Capped at 1,500 live per body at the write, so the per-body read can take the cap.
+- `scripts/etl`: `pnpm landmarks` exports listed bodies' outlines once (`landmarks:listBodyGeometry`,
+  ~45 MB, cached), runs osmium over the five archived extracts and reads GNIS, places each candidate
+  by its kind's rule offline, merges same-place sightings per kind radius, and attaches the corpus.
+  `pnpm load-landmarks` writes through `landmarks:importBatch`, dry unless `--apply`.
+- Both maps label the focused lake; the lake editor gets a Landmarks card (find, edit, move, remove,
+  restore, drop, *Draw as bay*).
+
+**The first data run (dev, 2026-09-29, campaign `landmarks-20260929`):** 155,945 candidates (OSM
+131,111 + GNIS 24,834) → 24,087 placed → 23,989 rows on 10,600 of 24,953 listed bodies. By kind: 9,501 river
+mouths, 6,154 shore towns, 2,653 dams, 1,683 islands, 1,157 points, 1,137 establishments, 932
+reference bays, 391 beaches, 166 marinas, 103 bridges, 93 narrows, 93 rocks and shoals, 24
+lighthouses. 28,771 crowded businesses dropped by the standalone rule; 96 skipped because a live
+bay already carries the name. Champlain holds ~560, Winnipesaukee ~370, Lake George ~315. A re-run
+is idempotent (23,989 unchanged). The corpus: 154 of 391 place names attached, 16 ambiguous, 221
+unmatched — the unmatched list (`.scratch/landmarks/corpus-unmatched.csv`, gitignored) is the
+moderator's worklist and the proposal lane's first customers.
+
+**What the data taught the build** (each a rule now, with a test):
+
+- *Two catalogs, one island* — an OSM polygon and a GNIS point for the same place sit up to a
+  kilometer apart, a passage's two ends five. The merge radius is per kind.
+- *The corpus's alias lists are an LLM's clusters, not spellings* — Carry Bay's carried "Carleton's
+  Prize", Malletts Bay's "inner bay". An alias attaches only when it resembles the name.
+- *A named parent is binding* — Champlain's "Northwest Bay" (26 messages) must not lend its count to
+  Lake George's; neither catalog has Champlain's, so it goes on the unmatched list (and to the chord
+  queue, where it already is).
+- *Apple Island is not an island any more* — a causeway joined it to South Hero, and neither
+  catalog lists it on Champlain. An island joined to land falls back to the shore rule.
+- *The corpus's kinds are loose* — "Leavitt Beach" is filed under `bay`; a corpus bay may attach to
+  anything on the water, never to the village or the business that shares its name.
+- *Numbered campsites are not names* — Green River Reservoir's thirty "Campsite #N".
+- *A re-run must be able to forget* — the importer first unioned stored and incoming spellings, so a
+  spelling a later run dropped could never leave; and two candidates for one row took turns
+  overwriting it. It now resolves every candidate to its row first and writes each row once.
+- *A re-run must be able to forget a place, too* (Greptile on #83) — a feature a later run no longer
+  placed on a lake stayed labeled forever. A run of every state now marks each body's line
+  `complete` (an empty line if it placed nothing) and the import retires the catalog rows such a line
+  lacks — softly, since reports point at rows by id. And only when the sources vouch (Greptile's
+  second and third rounds): a truncated or empty cached extract would have read as thousands of
+  removals, so each state's OSM and GNIS count must be within 3% of the last complete load the
+  *deployment* accepted — a local baseline moved on every transform, loaded or not, and could drift
+  down in steps under the margin. The importer enforces it; the loader moves the bar only after a
+  clean applied load; a lake losing most of its labels at once holds them; and the caches are
+  renamed into place, so an interrupted osmium run no longer leaves a truncated file to reuse. Not a partial run: a VT pond 500 m from an NH
+  village holds a label only the NH catalogs place. A candidate skipped for a bay's name still keeps
+  its row (the far Mud Bay); a moderator's new row at the same place wins over a returning drop.
+- *Bridges are drawn sparse, and stop at the shore* (Greptile on #83, measured 2026-10-10) — the
+  vertex test missed a span with one vertex on each bank, so lines are now cut against the shore by
+  segment. Requiring a true crossing would have dropped 30 of 103 bridges, nearly all the bridge at
+  a lake's outlet or a deck OSM split the water at (vertices 0–1 m off it on both sides), so a span
+  within 25 m still counts. River mouths gain 49 labels (9,501 → 9,550), placed on the shore line,
+  and a mouth's id is now where it meets the shore — the old positional `#in0` would have shifted
+  under the new crossings and handed one mouth's id to another.
+- *A merge must carry the labels* (Greptile on #83) — `mergeBodyInto` moved every other child but
+  left landmarks on the tombstone. They move now, folded into the survivor's twins, by the same
+  resolver the import uses (`LandmarkRowIndex`), so the two writers cannot disagree about a pair.
+  A moved row carries `movedAt`, and a run matched against a body export older than the merge never
+  drops it — that export placed its catalogs on the lake that no longer exists.
+  A fold fills what the kept row lacks — a footprint, a specific kind over `other` — but never a
+  moderator's name, kind or point: their `other` is a call, not a gap.
+- *The review of Greptile's third round* — the bay-name rule had three versions (retire within 1 km;
+  refuse and skip anywhere on the lake), which locked Champlain's far Mud Bay against edits; it is
+  one now (`bayNaming`), redraws included. Place matches take the nearest row nobody in the run has
+  claimed, or a river's two mouths near one row collapse onto it. A restore always vouches. Labels
+  carry a whole `minZoom`, rounded up, because a MapLibre filter reads the integer tile zoom. Its verification
+  pass: the bar only rises unless the operator lowers it (each accepted load could otherwise shave
+  2.9%); the override excuses a shrink, never a missing bar or an empty source; matches are decided
+  closest pair first across the whole line; a chord bay the re-clip regrows retires labels too; and
+  a folded footprint survives only a run older than the merge — one the catalogs dropped goes.
+- *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
+  Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
+
+**The self-review (`/code-review xhigh`) before the PR opened** found fifteen; all fixed: a bay could
+take a landmark's name by rename, restore or import without retiring it (the retire moved into the
+one sub-area insert, plus rename and restore, and only within 1 km — Champlain has two Mud Bays);
+a promoted landmark could be restored beside its bay (refused now); the loader split giants across
+calls, undoing resolve-then-write (a body now travels whole); a run without `--mentions` would have
+erased every corpus count (refused unless meant); "same place" had three rules in three places (one
+in core now); the editor's labels named no font (a silent 404 on Protomaps' glyph host); and the
+smaller ones — the landmark restamp pages like the others, the bay stamp prefilters by bbox, the
+geometry export pages by bytes, `source` follows the catalog that won, the drop form starts empty.
+
+**PR 2 — the consumers** (next): `where.point.landmarkId` beside the name; the sheet's landmark
+chips (ranked, a search for the rest) and tap-to-name; `reportCount` bumped when a report names one
+(a monotonic tally that orders labels — never a claim about the ice); `name_landmark` proposals,
+filed when a skater names a spot in the sheet, answered on the lake editor; the extraction
+contract's landmark candidates.

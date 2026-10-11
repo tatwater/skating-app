@@ -2730,6 +2730,100 @@ describe('sub-areas by chord (D201)', () => {
     ).rejects.toThrow(/already has a sub-area called "NW Bay"/);
   });
 
+  test('a re-import that grows a chord bay onto a same-named landmark retires it (D202)', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reimportEast = (maxLng: number) =>
+      t.mutation(internal.waterBodies.importCanonical, {
+        bodies: [
+          {
+            source: 'osm' as const,
+            externalId: 'way/1',
+            osmId: 'way/1',
+            name: 'Lake Champlain',
+            type: 'lakePond' as const,
+            polygon: rect(-73.5, 44.0, maxLng, 45.0),
+            bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng },
+            centroid: { lat: 44.5, lng: -72.95 },
+            surfaceAreaSqM: 8.8e9,
+          },
+        ],
+      });
+    await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: {
+        a: { lat: 44.2, lng: -72.5 },
+        b: { lat: 44.0, lng: -72.7 },
+        side: { lat: 44.02, lng: -72.52 },
+        sagittaM: 0,
+      },
+    });
+    // ~3 km east of the bay, past the shore as it stands: another place, until the shore moves.
+    const landmark = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      kind: 'bay',
+      point: { lat: 44.02, lng: -72.46 },
+    });
+    // The east shore moves out to -72.45 — a routine re-fit (D215): the mouth re-snaps and the bay
+    // grows over the label.
+    const result = await reimportEast(-72.45);
+    expect(result.landmarksRetired).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(landmark)))?.removedAt).toBeDefined();
+  });
+
+  test('a jump keeps the outline and the label until the moderator answers the review (D202, D215)', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const { subAreaId } = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: {
+        a: { lat: 44.2, lng: -72.5 },
+        b: { lat: 44.0, lng: -72.7 },
+        side: { lat: 44.02, lng: -72.52 },
+        sagittaM: 0,
+      },
+    });
+    const landmark = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      kind: 'bay',
+      point: { lat: 44.02, lng: -72.42 },
+    });
+    // Out to -72.4: the corner would grow by half — a jump. The old outline still fits, so it stays,
+    // and the label it never reached stays with it.
+    const result = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          osmId: 'way/1',
+          name: 'Lake Champlain',
+          type: 'lakePond' as const,
+          polygon: rect(-73.5, 44.0, -72.4, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.4 },
+          centroid: { lat: 44.5, lng: -72.95 },
+          surfaceAreaSqM: 8.8e9,
+        },
+      ],
+    });
+    expect(result.landmarksRetired).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(landmark)))?.removedAt).toBeUndefined();
+    // The moderator answers by saving the mouth: the re-fit lands, and the label it covers retires.
+    const row = await t.run((ctx) => ctx.db.get(subAreaId));
+    expect(row?.mouthReview?.outcome).toBe('kept');
+    await mod.as.mutation(api.subAreas.updateChord, {
+      subAreaId,
+      mouth: row?.mouth as NonNullable<typeof row>['mouth'] & object,
+    });
+    expect((await t.run((ctx) => ctx.db.get(landmark)))?.removedAt).toBeDefined();
+    expect((await t.run((ctx) => ctx.db.get(subAreaId)))?.mouthReview).toBeUndefined();
+  });
+
   test('restore re-derives a chord bay from its mouth — the shore it comes back to, not the one it left', async () => {
     const t = harness();
     const body = await seedCanonicalBody(t);
