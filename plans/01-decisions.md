@@ -6237,7 +6237,7 @@ A07b because a corpus-shaped table would have been a second queue with no second
 
 **Related:** D60, D175, D179, D202, D215, A02 Decision 10, A09.
 
-*Amended by D215 (2026-10-11): a re-derivation keeps the bay's water rather than the stored `side`, and a re-fit that changes the bay's size by half or more waits for a moderator.*
+*Amended by D215 (2026-10-11): a re-derivation keeps the bay's water rather than the stored `side`, and a re-fit that changes the bay a lot waits for a moderator.*
 
 ## D203 — The lake on a card is a still silhouette drawn from geometry, never a map or a minted image (A10-2b)
 
@@ -6492,15 +6492,18 @@ shore, the mouth line can pass that click, and the bay becomes the rest of the l
 shore has to move is how far the click was from the mouth: a click deep in the bay survives almost
 anything, one just inside the mouth flips on a routine refinement. Founder call, 2026-10-11:
 
-- **The same water.** A re-derivation keeps whichever of the mouth's two regions holds more of the
-  bay's current outline — never the region holding the old click — and stores a fresh `side` deep
-  in the water it kept, so the editor's click-based preview shows the same bay and saving from it
-  cannot make the flip real. The ends stay as drawn; every derivation re-snaps them.
-- **A jump waits.** A re-fit more than half again bigger, or a third smaller, than the bay was is
-  not applied unseen: the old outline, re-clipped, stays while it still fits the lake, and the
-  mouth carries a note the editor shows ("check the mouth"). Where the old outline no longer fits —
-  a shore moved in over most of it — the re-fit is applied, because the first rule has already
-  kept the right water, and the note says so: a bay whose mouth still fits is never delisted for it.
+- **The same water.** Each of the mouth's two regions is built into a bay exactly as a moderator's
+  mouth would be — chord or bow, clipped — and the re-derivation keeps the one that holds more of
+  the bay's current outline, never the one holding the old click. It stores a fresh `side` on the
+  open water it kept (off the mouth line, off any island), so the editor's click-based preview
+  shows the same bay and saving from it cannot make the flip real. The ends stay as drawn; every
+  derivation re-snaps them. When the overlap cannot be measured, nothing is re-fitted.
+- **A jump waits.** A re-fit more than half again bigger or a third smaller than the bay was, or
+  overlapping it less than half (it moved more than it stayed), is not applied unseen: the old
+  outline, re-clipped, stays while it still fits the lake. Where it no longer fits — a shore moved
+  in over most of it — the re-fit is applied, because the first rule has already kept the right
+  water: a bay whose mouth still fits is never delisted for it. Either way the bay carries
+  `mouthReview`, shown in the editor, which no re-import clears — only a moderator's mouth save.
 
 A moderator's own mouth — drawn, edited, saved — still picks its side by the click: that click is
 against the shore they are looking at.

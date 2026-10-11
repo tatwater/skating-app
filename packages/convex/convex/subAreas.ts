@@ -399,68 +399,75 @@ export async function reclipSubAreasToParent(
     // `rederiveChordSubArea`). Only when the mouth no longer works on the new outline (a point now
     // nearest an island, say), or the re-fit would change the bay by half or more, does it fall
     // through to the plain re-clip, mouth kept for the editor to fix from.
-    let mouthStale: string | undefined;
+    // The plain re-clip of the stored outline — computed at most once per bay, here or below.
+    let oldClip: ReturnType<typeof clipSubAreaToParent> | undefined;
     if (subArea.mouth !== undefined) {
       const previous = subArea.polygon as unknown as Polygon | MultiPolygon;
       const chord = rederiveChordSubArea(parentPolygon, subArea.mouth, previous);
-      // A jump (D215) is not applied unseen: the old outline, re-clipped, stays — when it still
-      // fits the lake — and the mouth is flagged. Where it no longer fits, the re-fit (the same
-      // water, by construction) is applied and flagged, rather than delist a bay that still fits.
-      const keepOld = chord.ok && chord.jumped && clipSubAreaToParent(previous, parentPolygon).ok;
-      if (!chord.ok || keepOld) {
+      if (!chord.ok) {
         // Never silent (D5): the outline below is re-clipped the plain way, and the row says the
         // mouth needs fixing — the editor shows it on the bay and stops drawing the stale line.
-        mouthStale = chord.ok
-          ? staleMouthNote('jumped', 'The shoreline moved')
-          : staleMouthNote(chord.reason, 'The shoreline moved');
+        const mouthStale = staleMouthNote(chord.reason, 'The shoreline moved');
         console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${mouthStale} (D201)`);
         if (subArea.mouthStale !== mouthStale) await ctx.db.patch(subArea._id, { mouthStale });
-      }
-      if (chord.ok && !keepOld) {
-        // By overlap, not by coordinates: the clipper may start the ring at a different vertex
-        // when the parent's other shores change, and that is the same shape, not a moved one.
-        // The overlap is a turf intersect of two near-coincident outlines — the case the clipper
-        // can choke on — and this runs inside an ETL chunk that must not abort for one bay, so a
-        // throw reads as "changed" and the bay is simply re-derived.
-        const unchanged = (() => {
-          try {
-            return polygonIoU(previous, chord.polygon) > 1 - 1e-6;
-          } catch {
-            return false;
-          }
-        })();
-        if (!unchanged) {
-          await rederiveSubArea(ctx, subArea, {
-            polygon: chord.polygon,
-            listed: parentListed,
-            clearDelistReason: false,
-            // The stored ends stay as drawn (each derivation re-snaps them); the side is refreshed
-            // to a point deep in the water kept, so the editor's click-based preview shows it too.
-            mouth: { ...subArea.mouth, side: chord.mouth.side },
-          });
-          if (chord.jumped) {
-            await ctx.db.patch(subArea._id, {
-              mouthStale: staleMouthNote('refitted', 'The shoreline moved'),
+      } else {
+        // The ends stay as drawn (every derivation re-snaps them); the side follows the open water
+        // the re-fit kept, so the editor's click-based preview shows that bay (D215).
+        const mouth = { ...subArea.mouth, side: chord.mouth.side };
+        if (chord.jumped) {
+          // A jump is not applied unseen: the old outline, re-clipped, stays while it still fits
+          // the lake. Where it no longer fits, the re-fit — the same water, by construction — is
+          // applied rather than delist a bay whose mouth still fits. Either way a moderator is
+          // asked, in a note only their own mouth save clears.
+          oldClip = clipSubAreaToParent(previous, parentPolygon);
+          const mouthReview = jumpNote(oldClip.ok ? 'kept' : 'refitted', 'The shoreline moved');
+          console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${mouthReview} (D215)`);
+          await ctx.db.patch(subArea._id, { mouth, mouthReview, mouthStale: undefined });
+          if (!oldClip.ok) {
+            await rederiveSubArea(ctx, subArea, {
+              polygon: chord.polygon,
+              listed: parentListed,
+              clearDelistReason: false,
             });
+            reclipped++;
+            continue;
           }
-          reclipped++;
+        } else {
+          // By overlap, not by coordinates: the clipper may start the ring at a different vertex
+          // when the parent's other shores change, and that is the same shape, not a moved one.
+          // The overlap is a turf intersect of two near-coincident outlines — the case the clipper
+          // can choke on — and this runs inside an ETL chunk that must not abort for one bay, so a
+          // throw reads as "changed" and the bay is simply re-derived.
+          const unchanged = (() => {
+            try {
+              return polygonIoU(previous, chord.polygon) > 1 - 1e-6;
+            } catch {
+              return false;
+            }
+          })();
+          // The mouth fits again: a stale note goes. A review note stays for its moderator.
+          await ctx.db.patch(subArea._id, { mouth, mouthStale: undefined });
+          if (!unchanged) {
+            await rederiveSubArea(ctx, subArea, {
+              polygon: chord.polygon,
+              listed: parentListed,
+              clearDelistReason: false,
+            });
+            reclipped++;
+            continue;
+          }
+          await syncSubAreaCells(ctx, subArea._id, {
+            bbox: subArea.bbox,
+            minVisibleZoom: subArea.minVisibleZoom,
+            listed: parentListed,
+          });
           continue;
         }
-        if (subArea.mouthStale !== undefined) {
-          await ctx.db.patch(subArea._id, { mouthStale: undefined });
-        }
-        await syncSubAreaCells(ctx, subArea._id, {
-          bbox: subArea.bbox,
-          minVisibleZoom: subArea.minVisibleZoom,
-          listed: parentListed,
-        });
-        continue;
       }
     }
-    const result = clipSubAreaToParent(
-      subArea.polygon as unknown as Polygon | MultiPolygon,
-      parentPolygon,
-    );
+    const result =
+      oldClip ??
+      clipSubAreaToParent(subArea.polygon as unknown as Polygon | MultiPolygon, parentPolygon);
     if (!result.ok) {
       const why = `No longer fits ${parent.name} after its outline changed (${result.reason}). Redraw it.`;
       console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${why} (A02/D60)`);
@@ -574,19 +581,20 @@ async function insertSubArea(
   return subAreaId;
 }
 
-/**
- * The note a bay carries when its mouth needs a moderator after a moved shore — what the editor
- * shows on it. A jump (D215) kept the old outline, or was applied because the old one no longer fit;
- * any other refusal means the mouth no longer fits at all.
- */
-function staleMouthNote(reason: ChordRejection | 'jumped' | 'refitted', when: string): string {
-  if (reason === 'jumped') {
-    return `${when} enough that re-fitting this bay's mouth would change its size by half or more, so its outline was kept. Check the mouth.`;
-  }
-  if (reason === 'refitted') {
-    return `${when} enough that this bay's size changed by half or more when its mouth was re-fitted (its old outline no longer fit the lake). Check the mouth.`;
-  }
+/** The note a bay carries when a moved shore leaves its mouth unable to derive at all (D201). */
+function staleMouthNote(reason: ChordRejection, when: string): string {
   return `${when} and this bay's mouth no longer fits it (${reason}). Edit the mouth.`;
+}
+
+/**
+ * The review a jump asks for (D215): the re-fit would change the bay a lot — its size by half again
+ * or by a third, or where it sits — so the old outline was kept; or the old outline no longer fit the
+ * lake, so the re-fit was applied.
+ */
+function jumpNote(outcome: 'kept' | 'refitted', when: string): string {
+  return outcome === 'kept'
+    ? `${when}, and re-fitting this bay's mouth would change it a lot (its size by half again or by a third, or where it sits), so its outline was kept. Check the mouth.`
+    : `${when}, and this bay's old outline no longer fit the lake, so its mouth was re-fitted — which changed it a lot. Check the mouth.`;
 }
 
 /**
@@ -625,7 +633,9 @@ export async function rederiveSubArea(
   const geometryChanged = !sameOutline(subArea.polygon, next.polygon);
   await ctx.db.patch(subArea._id, {
     // A mouth written (or cleared) by a moderator is the fix the stale note asked for.
-    ...(next.mouth === undefined ? {} : { mouth: next.mouth ?? undefined, mouthStale: undefined }),
+    ...(next.mouth === undefined
+      ? {}
+      : { mouth: next.mouth ?? undefined, mouthStale: undefined, mouthReview: undefined }),
     polygon: derived.polygon,
     bbox: derived.bbox,
     centroid: derived.centroid,
@@ -1160,20 +1170,21 @@ export const restore = mutation({
           subArea.polygon as unknown as Polygon | MultiPolygon,
         )
       : null;
-    // A jump (D215) keeps the stored outline when it still fits the lake, else takes the re-fit;
-    // either way the mouth is flagged below.
-    const oldFits = (() => {
+    // A jump (D215) keeps the stored outline when it still fits the lake, else takes the re-fit —
+    // and asks a moderator either way. The stored outline is derived only when it is needed (no
+    // chord, a refusal, a jump), and a refusal of it is thrown once.
+    let oldGeometry: ReturnType<typeof deriveGeometry> | null = null;
+    let oldRefusal: unknown;
+    if (!chord?.ok || chord.jumped) {
       try {
-        return deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
-      } catch {
-        return null;
+        oldGeometry = deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
+      } catch (error) {
+        oldRefusal = error;
       }
-    })();
-    const useChord = chord?.ok === true && !(chord.jumped && oldFits);
-    const geometry =
-      useChord && chord?.ok
-        ? chord
-        : (oldFits ?? deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent));
+    }
+    const useChord = chord?.ok === true && !(chord.jumped && oldGeometry);
+    const geometry = useChord && chord?.ok ? chord : oldGeometry;
+    if (!geometry) throw oldRefusal;
 
     await ctx.db.patch(subAreaId, {
       removedAt: undefined,
@@ -1191,21 +1202,25 @@ export const restore = mutation({
         polygon: geometry.polygon,
         listed: subAreaListed({ removedAt: undefined }, parent),
         clearDelistReason: true,
-        // As the re-clip does (D215): the ends as drawn, the side refreshed into the water kept.
-        ...(useChord && chord?.ok && subArea.mouth
-          ? { mouth: { ...subArea.mouth, side: chord.mouth.side } }
-          : {}),
       },
     );
-    // Recorded, never silent: a mouth that no longer fits the outline the bay came back to, or
-    // one whose re-fit jumped (D215).
-    if (subArea.mouth && chord && (!chord.ok || chord.jumped)) {
+    // Recorded, never silent: a mouth that no longer fits the outline the bay came back to, or a
+    // re-fit that jumped. A mouth that fits takes the side the re-fit found (D215), as the re-clip
+    // does, so the editor's preview shows the water kept.
+    if (subArea.mouth && chord) {
       const when = 'The shoreline moved while this bay was delisted';
-      await ctx.db.patch(subAreaId, {
-        mouthStale: !chord.ok
-          ? staleMouthNote(chord.reason, when)
-          : staleMouthNote(useChord ? 'refitted' : 'jumped', when),
-      });
+      await ctx.db.patch(
+        subAreaId,
+        chord.ok
+          ? {
+              mouth: { ...subArea.mouth, side: chord.mouth.side },
+              mouthStale: undefined,
+              ...(chord.jumped
+                ? { mouthReview: jumpNote(useChord ? 'refitted' : 'kept', when) }
+                : {}),
+            }
+          : { mouthStale: staleMouthNote(chord.reason, when) },
+      );
     }
     await audit(ctx, actor._id, 'restore', subAreaId, `Restored "${subArea.name}"`, {
       waterBodyId: subArea.waterBodyId,
@@ -1878,6 +1893,7 @@ export const listForBody = query({
         // The mouth a chord bay was derived from (D201) — what the editor re-opens with.
         ...(row.mouth !== undefined ? { mouth: row.mouth } : {}),
         ...(row.mouthStale !== undefined ? { mouthStale: row.mouthStale } : {}),
+        ...(row.mouthReview !== undefined ? { mouthReview: row.mouthReview } : {}),
         removed: row.removedAt !== undefined,
         // Why the *system* retired it, if it did — the editor renders this next to the row, which is
         // the whole point of storing it rather than logging it (A02).

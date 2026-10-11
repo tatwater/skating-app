@@ -850,6 +850,7 @@ function SubAreaTool({
     systemDelistReason?: string;
     mouth?: SubAreaMouth;
     mouthStale?: string;
+    mouthReview?: string;
   }[];
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
@@ -1146,6 +1147,11 @@ function SubAreaTool({
                 {/* A mouth the moved shoreline no longer fits (D201) — Edit mouth is the fix. */}
                 {bay.mouthStale ? (
                   <span className="block text-warning text-xs">{bay.mouthStale}</span>
+                ) : null}
+                {/* A re-fit a moved shoreline asked a person to check (D215): the mouth still
+                    fits, so it is drawn; Edit mouth and save is how the question is answered. */}
+                {bay.mouthReview ? (
+                  <span className="block text-warning text-xs">{bay.mouthReview}</span>
                 ) : null}
                 {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
                     automatic: a bay's seaward edge is a judgment a skater can prove wrong by

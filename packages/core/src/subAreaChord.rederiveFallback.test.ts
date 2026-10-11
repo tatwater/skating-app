@@ -2,7 +2,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, it, vi } from 'vitest';
 
 // The clipper behind `coveredFraction` can choke on near-coincident outlines (the re-clip guards its
-// own overlap the same way); here it always does, so the fallback is what runs.
+// own overlap the same way); here it always does.
 vi.mock('./geometry', async (original) => ({
   ...(await original<typeof import('./geometry')>()),
   coveredFraction: () => {
@@ -13,7 +13,7 @@ vi.mock('./geometry', async (original) => ({
 const { chordSubArea, rederiveChordSubArea } = await import('./subAreaChord');
 
 describe('rederiveChordSubArea when the overlap cannot be measured (D215)', () => {
-  it('falls back to the stored click, still under the tripwire', () => {
+  it('refuses rather than fall back to the stored click — the caller keeps the old outline', () => {
     const lake: Polygon = {
       type: 'Polygon',
       coordinates: [
@@ -35,8 +35,8 @@ describe('rederiveChordSubArea when the overlap cannot be measured (D215)', () =
     const byClick = chordSubArea(lake, mouth);
     if (!byClick.ok) throw new Error('the fixture bay must derive');
     expect(rederiveChordSubArea(lake, mouth, byClick.polygon)).toEqual({
-      ...byClick,
-      jumped: false,
+      ok: false,
+      reason: 'clip_failed',
     });
   });
 });

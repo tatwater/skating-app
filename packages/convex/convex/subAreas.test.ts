@@ -2755,8 +2755,8 @@ describe('sub-areas by chord (D201)', () => {
           osmId: 'way/1',
           name: 'Lake Champlain',
           type: 'lakePond' as const,
-          polygon: rect(-73.5, 44.0, -72.55, 45.0),
-          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.55 },
+          polygon: rect(-73.5, 44.0, -72.52, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.52 },
           centroid: { lat: 44.5, lng: -73.05 },
           surfaceAreaSqM: 7.8e9,
         },
@@ -2766,7 +2766,7 @@ describe('sub-areas by chord (D201)', () => {
     const row = await t.run((ctx) => ctx.db.get(id));
     const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
     // Re-derived: the hypotenuse starts at the re-snapped point on the new shore.
-    expect(ring.some(([lng, lat]) => lng === -72.55 && lat === 44.2)).toBe(true);
+    expect(ring.some(([lng, lat]) => lng === -72.52 && lat === 44.2)).toBe(true);
     expect(row?.mouthStale).toBeUndefined();
   });
 
@@ -2907,9 +2907,9 @@ describe('sub-areas by chord (D201)', () => {
       mouth,
     });
 
-    // The refined outline pulls the east shore 0.05° west. `a` re-snaps to the new shore and the
-    // bay's hypotenuse now runs from (−72.55, 44.2) — a vertex a plain clip of the old triangle
-    // could never produce (the clip would cut the old hypotenuse at (−72.55, 44.15)).
+    // The refined outline pulls the east shore 0.02° west. `a` re-snaps to the new shore and the
+    // bay's hypotenuse now runs from (−72.52, 44.2) — a vertex a plain clip of the old triangle
+    // could never produce (the clip would cut the old hypotenuse at (−72.52, 44.18)).
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -2918,8 +2918,8 @@ describe('sub-areas by chord (D201)', () => {
           osmId: 'way/1',
           name: 'Lake Champlain',
           type: 'lakePond' as const,
-          polygon: rect(-73.5, 44.0, -72.55, 45.0),
-          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.55 },
+          polygon: rect(-73.5, 44.0, -72.52, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.52 },
           centroid: { lat: 44.5, lng: -73.05 },
           surfaceAreaSqM: 7.8e9,
         },
@@ -2932,9 +2932,10 @@ describe('sub-areas by chord (D201)', () => {
     // refreshed to a point deep in the water kept (D215).
     expect(row?.mouth).toMatchObject({ a: mouth.a, b: mouth.b, sagittaM: mouth.sagittaM });
     expect(row?.mouthStale).toBeUndefined();
+    expect(row?.mouthReview).toBeUndefined();
     const ring = (row?.polygon as { coordinates: number[][][] } | undefined)?.coordinates[0] ?? [];
-    expect(ring.some(([lng, lat]) => lng === -72.55 && lat === 44.2)).toBe(true);
-    expect(ring.some(([lng, lat]) => lng === -72.55 && Math.abs((lat ?? 0) - 44.15) < 1e-6)).toBe(
+    expect(ring.some(([lng, lat]) => lng === -72.52 && lat === 44.2)).toBe(true);
+    expect(ring.some(([lng, lat]) => lng === -72.52 && Math.abs((lat ?? 0) - 44.18) < 1e-6)).toBe(
       false,
     );
   });
@@ -3010,11 +3011,11 @@ describe('sub-areas by chord (D201)', () => {
   });
 
   describe('a moved shore keeps the same water, and a jump waits for a moderator (D215)', () => {
-    // Across the south-east corner, the click close to the mouth line — the case that flipped.
+    // Across the south-east corner, the click just inside the mouth line — the case that flipped.
     const NEAR_CLICK = {
       a: { lat: 44.2, lng: -72.5 },
       b: { lat: 44.0, lng: -72.7 },
-      side: { lat: 44.05, lng: -72.65 },
+      side: { lat: 44.05, lng: -72.64 },
       sagittaM: 0,
     };
     async function cornerBay() {
@@ -3040,28 +3041,45 @@ describe('sub-areas by chord (D201)', () => {
       expect(row?.surfaceAreaSqM).toBeGreaterThan(area);
       expect(row?.surfaceAreaSqM).toBeLessThan(area * 1.5);
       expect(row?.mouthStale).toBeUndefined();
+      expect(row?.mouthReview).toBeUndefined();
+      expect(row?.mouth).toMatchObject({ a: NEAR_CLICK.a, b: NEAR_CLICK.b, sagittaM: 0 });
       expect(row?.mouth?.side).not.toEqual(NEAR_CLICK.side);
       expect(pointInPolygon(row?.mouth?.side as LatLng, row?.polygon as Polygon)).toBe(true);
     });
 
-    test('a jump keeps the old outline while it still fits, and flags the mouth', async () => {
-      const { t, id, area, eastShore } = await cornerBay();
+    test('a jump keeps the old outline while it still fits, and asks until a moderator saves', async () => {
+      const { t, mod, id, area, eastShore } = await cornerBay();
       // 0.2° out: re-fitted, the corner would more than double; the old one still fits the lake.
       await eastShore(-72.3);
       const row = await t.run((ctx) => ctx.db.get(id));
       expect(row?.surfaceAreaSqM).toBeCloseTo(area, -3);
-      expect(row?.mouth).toEqual(NEAR_CLICK);
-      expect(row?.mouthStale).toMatch(/outline was kept\. Check the mouth/);
+      expect(row?.mouthReview).toMatch(/outline was kept\. Check the mouth/);
+      expect(row?.mouthStale).toBeUndefined();
+      // The side follows the water the re-fit kept, so Edit mouth previews the corner, not the lake.
+      expect(row?.mouth?.side).not.toEqual(NEAR_CLICK.side);
+      const listed = await mod.as.query(api.subAreas.listForBody, {
+        waterBodyId: row?.waterBodyId as Id<'waterBodies'>,
+      });
+      expect(listed.find((b) => b._id === id)?.mouthReview).toMatch(/Check the mouth/);
+      // A later re-import that changes nothing does not answer the question for the moderator…
+      await eastShore(-72.31);
+      expect((await t.run((ctx) => ctx.db.get(id)))?.mouthReview).toMatch(/Check the mouth/);
+      // …their mouth save does.
+      await mod.as.mutation(api.subAreas.updateChord, {
+        subAreaId: id,
+        mouth: row?.mouth as typeof NEAR_CLICK,
+      });
+      expect((await t.run((ctx) => ctx.db.get(id)))?.mouthReview).toBeUndefined();
     });
 
-    test('a jump re-fits when the old outline no longer fits the lake — flagged, never delisted', async () => {
+    test('a jump re-fits when the old outline no longer fits the lake — asked about, never delisted', async () => {
       const { t, id, area, eastShore } = await cornerBay();
       // 0.1° in: three quarters of the old corner is now land; the re-fit is half the size.
       await eastShore(-72.6);
       const row = await t.run((ctx) => ctx.db.get(id));
       expect(row?.removedAt).toBeUndefined();
       expect(row?.surfaceAreaSqM).toBeLessThan(area * 0.6);
-      expect(row?.mouthStale).toMatch(/re-fitted/);
+      expect(row?.mouthReview).toMatch(/re-fitted/);
     });
 
     test('a restore treats a jump the same way: the outline kept if it fits, else the re-fit', async () => {
@@ -3075,8 +3093,32 @@ describe('sub-areas by chord (D201)', () => {
         await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
         const row = await t.run((ctx) => ctx.db.get(id));
         expect(row?.removedAt).toBeUndefined();
-        expect(row?.mouthStale).toMatch(expected);
+        expect(row?.mouthReview).toMatch(expected);
+        expect(row?.mouthReview).toMatch(/while this bay was delisted/);
       }
+    });
+
+    test('a restore whose mouth no longer fits says so, and a refused old outline still refuses', async () => {
+      const { t, mod, id } = await cornerBay();
+      await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+      // An islet captures `a` while the bay is retired: the mouth refuses; the old outline fits.
+      await reimportLake(
+        t,
+        {
+          type: 'Polygon' as const,
+          coordinates: [
+            rect(-73.5, 44.0, -72.48, 45.0).coordinates[0] as number[][],
+            rect(-72.502, 44.198, -72.498, 44.202).coordinates[0] as number[][],
+          ],
+        } as ReturnType<typeof rect>,
+        { maxLng: -72.48 },
+      );
+      await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.removedAt).toBeUndefined();
+      expect(row?.mouthStale).toMatch(
+        /while this bay was delisted and this bay's mouth no longer fits/,
+      );
     });
   });
 

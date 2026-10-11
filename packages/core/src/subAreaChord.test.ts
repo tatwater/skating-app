@@ -679,76 +679,106 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
     ],
   });
   const lake = box(-73.5, 44.0, -72.5, 45.0);
-  // A corner bay at the south-east, the moderator's click close to the mouth line.
+  // A south-east corner bay; the click is just inside the mouth line (which runs lat = lng + 116.7).
   const mouth: SubAreaMouth = {
     a: { lat: 44.2, lng: -72.5 },
     b: { lat: 44.0, lng: -72.7 },
-    side: { lat: 44.05, lng: -72.65 },
+    side: { lat: 44.05, lng: -72.64 },
     sagittaM: 0,
   };
   const before = chordSubArea(lake, mouth);
   if (!before.ok) throw new Error('the fixture bay must derive');
+  const area = (r: { polygon: Polygon | MultiPolygon }) => surfaceAreaSqM(r.polygon);
+  /** Meters from the mouth line a → b to `p` (local, flat). */
+  const offMouthM = (p: LatLng, a: LatLng, b: LatLng) => {
+    const k = Math.cos(a.lat * DEG) * EARTH_RADIUS_M * DEG;
+    const [bx, by] = [(b.lng - a.lng) * k, (b.lat - a.lat) * EARTH_RADIUS_M * DEG];
+    const [px, py] = [(p.lng - a.lng) * k, (p.lat - a.lat) * EARTH_RADIUS_M * DEG];
+    return Math.abs(bx * py - by * px) / Math.hypot(bx, by);
+  };
 
-  it('is the bay it was when the shore has not moved, with a side deep inside it', () => {
+  it('is the bay it was when the shore has not moved, its side on the water and well off the mouth', () => {
     const again = rederiveChordSubArea(lake, mouth, before.polygon);
-    expect(again.ok && surfaceAreaSqM(again.polygon)).toBeCloseTo(
-      surfaceAreaSqM(before.polygon),
-      -2,
-    );
-    if (!again.ok) throw new Error('unreachable');
+    if (!again.ok) throw new Error(again.reason);
+    expect(again.jumped).toBe(false);
+    expect(area(again)).toBeCloseTo(area(before), -3);
     expect(pointInPolygon(again.mouth.side, again.polygon)).toBe(true);
+    expect(offMouthM(again.mouth.side, again.mouth.a, again.mouth.b)).toBeGreaterThan(1_000);
+  });
+
+  it('keeps a bowed bay through an unchanged shore — its bulge is weighed, not its straight chord', () => {
+    const bowed = { ...mouth, sagittaM: maxSagittaM(mouth.a, mouth.b) * 0.75 };
+    const first = chordSubArea(lake, bowed);
+    if (!first.ok) throw new Error(first.reason);
+    const again = rederiveChordSubArea(lake, bowed, first.polygon);
+    if (!again.ok) throw new Error(again.reason);
+    expect(again.jumped).toBe(false);
+    expect(area(again)).toBeCloseTo(area(first), -3);
+    // The fresh side picks the same bay when the editor derives by click.
+    const byFreshSide = chordSubArea(lake, again.mouth);
+    expect(byFreshSide.ok && area(byFreshSide)).toBeCloseTo(area(again), -3);
   });
 
   it('keeps the corner when the shore moves past the stored click — which alone would flip it', () => {
-    // The east shore moves out 0.05°: the mouth re-snaps to it, and the old click is now west of
-    // the new mouth line, on the rest-of-the-lake side.
+    // The east shore moves out 0.05°: the old click is now west of the re-snapped mouth line.
     const moved = box(-73.5, 44.0, -72.45, 45.0);
     const byClick = chordSubArea(moved, mouth);
-    expect(byClick.ok && surfaceAreaSqM(byClick.polygon)).toBeGreaterThan(
-      10 * surfaceAreaSqM(before.polygon),
-    );
+    expect(byClick.ok && area(byClick)).toBeGreaterThan(10 * area(before));
     const kept = rederiveChordSubArea(moved, mouth, before.polygon);
-    if (!kept.ok) throw new Error(`expected the corner, got ${kept.reason}`);
-    const ratio = surfaceAreaSqM(kept.polygon) / surfaceAreaSqM(before.polygon);
-    expect(ratio).toBeGreaterThan(1);
-    expect(ratio).toBeLessThan(CHORD_REDERIVE_MAX_AREA_RATIO);
-    // The fresh side picks the same water when the editor derives by click.
+    if (!kept.ok) throw new Error(kept.reason);
+    expect(kept.jumped).toBe(false);
+    expect(area(kept) / area(before)).toBeGreaterThan(1);
+    expect(area(kept) / area(before)).toBeLessThan(CHORD_REDERIVE_MAX_AREA_RATIO);
     const byFreshSide = chordSubArea(moved, kept.mouth);
-    expect(byFreshSide.ok && surfaceAreaSqM(byFreshSide.polygon)).toBeCloseTo(
-      surfaceAreaSqM(kept.polygon),
-      -2,
-    );
+    expect(byFreshSide.ok && area(byFreshSide)).toBeCloseTo(area(kept), -3);
   });
 
-  it('marks a re-fit that would change the bay by half or more, either way, as a jump', () => {
-    // The east shore moves out 0.2°: the corner more than doubles.
-    const grown = rederiveChordSubArea(box(-73.5, 44.0, -72.3, 45.0), mouth, before.polygon);
-    expect(grown).toMatchObject({ ok: true, jumped: true });
-    // Measured against a much bigger "previous", the same bay is a collapse.
-    expect(rederiveChordSubArea(lake, mouth, box(-73.0, 44.0, -72.5, 44.5))).toMatchObject({
+  it('puts the fresh side on water, not on an island inside the bay', () => {
+    const islanded: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        lake.coordinates[0] as Position[],
+        box(-72.6, 44.02, -72.52, 44.12).coordinates[0] as Position[],
+      ],
+    };
+    const first = chordSubArea(islanded, { ...mouth, side: { lat: 44.01, lng: -72.55 } });
+    if (!first.ok) throw new Error(first.reason);
+    const again = rederiveChordSubArea(islanded, mouth, first.polygon);
+    if (!again.ok) throw new Error(again.reason);
+    expect(pointInPolygon(again.mouth.side, islanded)).toBe(true);
+    const candidates = chordCandidates(islanded, mouth.a, mouth.b);
+    if (!candidates.ok) throw new Error(candidates.reason);
+    expect(onCandidateWater(islanded, candidates.sides, again.mouth.side)).toBe(true);
+  });
+
+  it('flags a re-fit that changes the bay by half again or a third, or that moved more than it stayed', () => {
+    // 0.2° out: the corner more than doubles.
+    expect(
+      rederiveChordSubArea(box(-73.5, 44.0, -72.3, 45.0), mouth, before.polygon),
+    ).toMatchObject({
       ok: true,
       jumped: true,
     });
-    // 0.1° in: three quarters of the old corner is land now, in neither region — the corner is
-    // still the one that holds what is left of it, and at half the size it is a jump.
+    // 0.1° in: three quarters of the old corner is land, in neither region; the corner still holds
+    // what is left of it, at half the size.
     const shrunk = rederiveChordSubArea(box(-73.5, 44.0, -72.6, 45.0), mouth, before.polygon);
     expect(shrunk).toMatchObject({ ok: true, jumped: true });
-    expect(shrunk.ok && surfaceAreaSqM(shrunk.polygon)).toBeLessThan(
-      surfaceAreaSqM(before.polygon),
-    );
-    // A previous bay that really was the larger side keeps the larger side.
-    const rest = chordSubArea(lake, { ...mouth, side: { lat: 44.5, lng: -73.0 } });
-    if (!rest.ok) throw new Error('the rest of the lake must derive');
-    const keptRest = rederiveChordSubArea(lake, mouth, rest.polygon);
-    if (!keptRest.ok) throw new Error(`expected the rest of the lake, got ${keptRest.reason}`);
-    expect(surfaceAreaSqM(keptRest.polygon)).toBeCloseTo(surfaceAreaSqM(rest.polygon), -4);
-    // An ordinary move is not.
-    expect(
-      rederiveChordSubArea(box(-73.5, 44.0, -72.45, 45.0), mouth, before.polygon),
-    ).toMatchObject({ ok: true, jumped: false });
+    expect(shrunk.ok && area(shrunk)).toBeLessThan(area(before));
+    // About the same size, but mostly elsewhere: a third of an overlap is a moved bay.
+    const elsewhere = box(-72.6, 43.9, -72.45, 44.05);
+    expect(rederiveChordSubArea(lake, mouth, elsewhere)).toMatchObject({ ok: true, jumped: true });
   });
 
-  it('passes on the chord’s own refusals, and falls back to the click when overlap cannot decide', () => {
+  it('keeps the larger side for a bay that really was the larger side', () => {
+    const rest = chordSubArea(lake, { ...mouth, side: { lat: 44.5, lng: -73.0 } });
+    if (!rest.ok) throw new Error(rest.reason);
+    const kept = rederiveChordSubArea(lake, mouth, rest.polygon);
+    if (!kept.ok) throw new Error(kept.reason);
+    expect(area(kept)).toBeCloseTo(area(rest), -5);
+    expect(kept.jumped).toBe(false);
+  });
+
+  it('passes on the snap’s refusals and a mouth whose regions both cut the shore', () => {
     expect(rederiveChordSubArea(lake, { ...mouth, b: mouth.a }, before.polygon)).toMatchObject({
       ok: false,
       reason: 'coincident',
@@ -756,19 +786,5 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
     expect(
       rederiveChordSubArea(lake, { ...mouth, a: { lat: Number.NaN, lng: 0 } }, before.polygon),
     ).toMatchObject({ ok: false, reason: 'degenerate' });
-    // An empty "previous" covers nothing: the larger side is kept, and the tripwire has no area to
-    // hold it to — the click decides nothing here; the overlap did.
-    const empty: Polygon = {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [-72.6, 44.1],
-          [-72.6, 44.1],
-          [-72.6, 44.1],
-          [-72.6, 44.1],
-        ],
-      ],
-    };
-    expect(rederiveChordSubArea(lake, mouth, empty).ok).toBe(true);
   });
 });

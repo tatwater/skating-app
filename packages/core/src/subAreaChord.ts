@@ -31,6 +31,7 @@
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { coveredFraction, type LatLng, pointInPolygon, surfaceAreaSqM } from './geometry';
+import { fetchOrigin } from './lakeGeometry';
 import { clipSubAreaToParent, type SubAreaClipRejection } from './subArea';
 
 // ── Vocabulary ─────────────────────────────────────────────────────────────────────────────────
@@ -617,7 +618,23 @@ function regionSideAt(a: LatLng, b: LatLng, region: Polygon): LatLng | null {
 export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth): ChordResult {
   const pick = chooseCandidate(parent, mouth);
   if (!pick.ok) return pick;
-  const { a, b, chosen, polygon: candidate } = pick;
+  return constructBay(parent, pick.a, pick.b, pick.chosen, pick.polygon, mouth);
+}
+
+/**
+ * Build the bay from one candidate region: close it with the chord or the arc, refuse a closing line
+ * that cuts the shore, clip to the parent. The half of the derivation after the region is chosen —
+ * shared by `chordSubArea` (chosen by the click) and `rederiveChordSubArea` (chosen by the water the
+ * bay already had, D215), so the two can never build a region differently.
+ */
+function constructBay(
+  parent: Polygon | MultiPolygon,
+  a: LatLng,
+  b: LatLng,
+  chosen: Position[],
+  candidate: Polygon,
+  mouth: SubAreaMouth,
+): ChordResult {
   const arcSide = regionSideAt(a, b, candidate) ?? mouth.side;
   const sagittaM = clampSagitta(a, b, mouth.sagittaM);
 
@@ -666,31 +683,21 @@ export function chordSubArea(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
 export const CHORD_REDERIVE_MAX_AREA_RATIO = 1.5;
 
 /**
- * A point well inside `region`, away from its mouth `a → b`: part of the way from the chord's
- * midpoint toward the shore vertex farthest from it, the first such point that is inside. Stored
- * as a re-derived bay's `side`, so the editor's preview — which still picks its side by that point
- * — shows the water the server kept, and a later click-based derivation has margin to spare.
+ * A point on the bay's open water, strictly inside the region it was built from — stored as a
+ * re-derived bay's `side` (D215), so the editor's click-based preview picks the same region, with
+ * margin: `fetchOrigin` puts it in the most open water, never on the mouth line or on an island.
+ * Usually found on the bay itself; an outward-bowed bay can put its most open water in the bulge,
+ * beyond the region, and then it is the region's own water that is searched.
  */
-function deepSide(a: LatLng, b: LatLng, region: Polygon): LatLng | null {
-  const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
-  let far: LatLng | null = null;
-  let farM = -1;
-  for (const [lng, lat] of region.coordinates[0] ?? []) {
-    const p = { lat: lat as number, lng: lng as number };
-    const [x, y] = toLocal(p, mid);
-    const d = Math.hypot(x, y);
-    if (d > farM) {
-      farM = d;
-      far = p;
-    }
-  }
-  if (far) {
-    for (const t of [0.5, 0.35, 0.2, 0.1, 0.05]) {
-      const p = { lat: mid.lat + (far.lat - mid.lat) * t, lng: mid.lng + (far.lng - mid.lng) * t };
-      if (pointInPolygon(p, region)) return p;
-    }
-  }
-  return regionSideAt(a, b, region);
+function waterSide(
+  parent: Polygon | MultiPolygon,
+  bay: Polygon | MultiPolygon,
+  region: Polygon,
+): LatLng | null {
+  const onBay = fetchOrigin(bay);
+  if (onBay && pointInPolygon(onBay, region)) return onBay;
+  const water = clipSubAreaToParent(region, parent, 0);
+  return water.ok ? fetchOrigin(water.polygon) : null;
 }
 
 /** A re-derived chord: `chordSubArea`'s answer, and — when it holds — whether it jumped (D215). */
@@ -699,67 +706,84 @@ export type RederivedChord =
   | (Extract<ChordResult, { ok: true }> & { jumped: boolean });
 
 /**
+ * The overlap a re-fit must keep with the bay it was — intersection over union — not to be a jump
+ * (D215): below it the bay has moved more than it has stayed, whatever its area did (a mouth point
+ * that re-snapped across a narrows). A refined outline keeps it near 1.
+ */
+export const CHORD_REDERIVE_MIN_OVERLAP = 0.5;
+
+/**
  * Re-derive a stored mouth against a parent whose outline may have moved — the parent re-clip after
  * a re-import or a merge, and a restore (D215). Two rules on top of `chordSubArea`:
  *
- * 1. **The same water.** The re-snapped ends bound two regions, and the bay is the one `previous`
- *    (its outline before this) mostly lies in — not the one holding the stored `side`. That click
- *    was where a moderator pointed against the *old* shore; a mouth line that moved past it (a click
- *    near the mouth, a refined outline) would otherwise turn the bay into the rest of the lake. The
- *    returned mouth carries a fresh `side`, deep in the region kept.
- * 2. **A tripwire.** A result more than {@link CHORD_REDERIVE_MAX_AREA_RATIO} times bigger or smaller
- *    than `previous` comes back `jumped`. The caller does not apply a change that size unseen: it
- *    keeps the old outline (re-clipped) and flags the mouth for a moderator — or, where the old
- *    outline no longer fits the lake at all, applies this one (the same water, by rule 1) and flags
- *    it, rather than delist a bay whose mouth still re-fits.
+ * 1. **The same water.** The re-snapped ends bound two regions; each is built into a bay exactly as
+ *    a moderator's mouth would be (chord or bow, clipped), and the bay is the one that holds more
+ *    of `previous` — its outline before this — never the one holding the stored `side`. That click
+ *    was where a moderator pointed against the *old* shore; a mouth line that moved past it (a
+ *    click near the mouth, a refined outline) would otherwise turn the bay into the rest of the
+ *    lake. The bay-sized build is weighed first, and the other (most of a giant lake) is built only
+ *    when that is not a clear majority. The returned mouth carries a fresh `side` on the water kept.
+ * 2. **A jump flag.** A re-fit more than {@link CHORD_REDERIVE_MAX_AREA_RATIO} times bigger or smaller
+ *    than `previous`, or overlapping it less than {@link CHORD_REDERIVE_MIN_OVERLAP}, comes back
+ *    `jumped`; the caller does not apply that unseen (`subAreas.reclipSubAreasToParent`).
  *
- * Anything the overlap cannot decide (an intersection the clipper chokes on) falls back to the
- * stored `side`, still under the tripwire.
+ * When the overlap cannot be measured (the clipper chokes on near-coincident outlines) the answer is
+ * a refusal (`clip_failed`), never a derivation by the old click: the caller keeps the old outline.
  */
 export function rederiveChordSubArea(
   parent: Polygon | MultiPolygon,
   mouth: SubAreaMouth,
   previous: Polygon | MultiPolygon,
 ): RederivedChord {
-  const guard = (result: ChordResult): RederivedChord => {
-    if (!result.ok) return result;
-    const before = surfaceAreaSqM(previous);
-    const after = surfaceAreaSqM(result.polygon);
-    const jumped =
-      before > 0 &&
-      (after > before * CHORD_REDERIVE_MAX_AREA_RATIO ||
-        after * CHORD_REDERIVE_MAX_AREA_RATIO < before);
-    return { ...result, jumped };
-  };
   if (!finiteMouth(mouth)) return { ok: false, reason: 'degenerate' };
   const snapped = snapPair(parent, mouth.a, mouth.b);
   if (!snapped.ok) return snapped;
-  const candidates = candidateRings(parent, snapped.a, snapped.b)
+  const a = snapped.a.point;
+  const b = snapped.b.point;
+  const regions = candidateRings(parent, snapped.a, snapped.b)
     .filter((path) => path.length >= 3)
     .map((path) => {
       const polygon: Polygon = { type: 'Polygon', coordinates: [closeRing(path)] };
-      return { polygon, area: surfaceAreaSqM(polygon) };
+      return { path, polygon, area: surfaceAreaSqM(polygon) };
     })
     .sort((x, y) => x.area - y.area);
-  const smaller = candidates[0];
-  const larger = candidates[candidates.length - 1];
-  if (!smaller || !larger) return guard(chordSubArea(parent, mouth));
-  let kept: Polygon;
+  const smaller = regions[0];
+  const larger = regions[regions.length - 1];
+  if (!smaller || !larger) return { ok: false, reason: 'degenerate' };
+  const build = (r: typeof smaller) => constructBay(parent, a, b, r.path, r.polygon, mouth);
+
+  let kept: { bay: Extract<ChordResult, { ok: true }>; region: Polygon; held: number };
   try {
-    // Whichever region holds more of the old bay. Usually that is the smaller by a majority, and
-    // the larger (most of a giant lake) is never intersected; when it isn't — a shore moved in so far
-    // that most of the old bay is land now, in neither region — the two are weighed against each
-    // other, never against the old bay's whole area. On an island ring the two nest, and the
-    // smaller (the notch) holds the bay either way.
-    const inSmaller = coveredFraction(previous, smaller.polygon);
-    kept =
-      inSmaller >= 0.5 || inSmaller >= coveredFraction(previous, larger.polygon)
-        ? smaller.polygon
-        : larger.polygon;
+    const small = build(smaller);
+    const inSmall = small.ok ? coveredFraction(previous, small.polygon) : 0;
+    if (small.ok && inSmall >= 0.5) {
+      kept = { bay: small, region: smaller.polygon, held: inSmall };
+    } else {
+      const large = smaller === larger ? small : build(larger);
+      const inLarge = large.ok ? coveredFraction(previous, large.polygon) : 0;
+      if (large.ok && (!small.ok || inLarge > inSmall)) {
+        kept = { bay: large, region: larger.polygon, held: inLarge };
+      } else if (small.ok) {
+        kept = { bay: small, region: smaller.polygon, held: inSmall };
+      } else {
+        // Neither region builds a bay (both closing lines cut the shore, say): the small one's
+        // refusal is the one a moderator would have met drawing it.
+        return small;
+      }
+    }
   } catch {
-    return guard(chordSubArea(parent, mouth));
+    return { ok: false, reason: 'clip_failed' };
   }
-  const side = deepSide(snapped.a.point, snapped.b.point, kept);
-  if (!side) return guard(chordSubArea(parent, mouth));
-  return guard(chordSubArea(parent, { ...mouth, side }));
+
+  const side = waterSide(parent, kept.bay.polygon, kept.region) ?? kept.bay.mouth.side;
+  const before = surfaceAreaSqM(previous);
+  const after = surfaceAreaSqM(kept.bay.polygon);
+  const shared = kept.held * before;
+  const overlap = before + after - shared > 0 ? shared / (before + after - shared) : 0;
+  const jumped =
+    before > 0 &&
+    (after > before * CHORD_REDERIVE_MAX_AREA_RATIO ||
+      after * CHORD_REDERIVE_MAX_AREA_RATIO < before ||
+      overlap < CHORD_REDERIVE_MIN_OVERLAP);
+  return { ...kept.bay, mouth: { ...kept.bay.mouth, side }, jumped };
 }
