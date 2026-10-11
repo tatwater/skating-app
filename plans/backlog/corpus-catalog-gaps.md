@@ -19,7 +19,7 @@ on 1 of 39 — retired. The corpus splits the 39 by *skated* messages: **16 dest
 ≥ 2 messages) are `name_bay` requests for the chord editor (D201, shipped 2026-09-21 —
 `seed-bay-requests` files them from `seed/bays/bay-requests.json`, built by `build-bay-requests`
 from `mentions.csv` + `classification.csv`, and the rule reproduces the sixteen exactly);
-**23 reference points** become labels through [`features/named-landmarks.md`](../features/named-landmarks.md).
+**23 reference points** became labels through the named landmarks (D202, 2026-09-29).
 "The Broads" exists on **both** Sunapee and Winnipesaukee.
 
 | Name | State | Messages | Detail |

@@ -1,12 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  CORPUS_NAME_DISMISS_LABELS,
+  CORPUS_NAME_DISMISS_REASONS,
   filledPolygon,
+  groupLandmarkAsks,
   LANDMARK_KIND_LABELS,
   LANDMARK_KINDS,
   LANDMARK_LABEL_MAX_ZOOM,
   LANDMARK_LABEL_MIN_ZOOM,
   LANDMARK_SAME_PLACE_RADIUS_M,
+  landmarkAnswersAsk,
+  landmarkAsksAreSamePlace,
   landmarkDropsHeld,
   landmarkLabelFeatures,
   landmarkLabelMinZoom,
@@ -278,6 +283,40 @@ describe('landmarksAreSamePlace', () => {
   });
 });
 
+describe('a skater’s ask as a place (Greptile P1 on #84)', () => {
+  const at = (lat: number, lng: number) => ({ lat, lng });
+  const ask = (lat: number, name = 'Long Point') => ({ names: [name], coord: at(lat, -73.3) });
+
+  it('is one place with another ask by one name within the `other` radius, never across the lake', () => {
+    expect(landmarkAsksAreSamePlace(ask(44.5), ask(44.505, 'long pt.'))).toBe(false); // other name
+    expect(landmarkAsksAreSamePlace(ask(44.5), ask(44.505))).toBe(true); // ~560 m
+    expect(landmarkAsksAreSamePlace(ask(44.5), ask(44.6))).toBe(false); // ~11 km
+  });
+
+  it('is answered by a landmark of its name at its place, by the landmark kind’s radius', () => {
+    const point = {
+      kind: 'point' as const,
+      name: 'Long Point',
+      aliases: [],
+      point: at(44.5, -73.3),
+    };
+    expect(landmarkAnswersAsk(point, ask(44.505))).toBe(true);
+    expect(landmarkAnswersAsk(point, ask(44.6))).toBe(false);
+    expect(landmarkAnswersAsk({ ...point, aliases: ['The Point'] }, ask(44.5, 'the point'))).toBe(
+      true,
+    );
+    // A narrows' name reaches further than a point's.
+    expect(landmarkAnswersAsk({ ...point, kind: 'narrows' }, ask(44.53))).toBe(true);
+    expect(landmarkAnswersAsk(point, ask(44.53))).toBe(false);
+  });
+
+  it('groups asks oldest first under the first ask of each place', () => {
+    const asks = [ask(44.5), ask(44.6), ask(44.505), ask(44.5, 'Gull Rock'), ask(44.604)];
+    expect(groupLandmarkAsks(asks)).toEqual([[asks[0], asks[2]], [asks[1], asks[4]], [asks[3]]]);
+    expect(groupLandmarkAsks([])).toEqual([]);
+  });
+});
+
 describe('filledPolygon', () => {
   it('drops the holes, so an island is inside the water around it', () => {
     const filled = filledPolygon({
@@ -301,6 +340,14 @@ describe('filledPolygon', () => {
     });
     expect(filled.coordinates).toHaveLength(1);
     expect(filled.coordinates[0]).toHaveLength(1);
+  });
+});
+
+describe('corpus name dismissal reasons', () => {
+  it('labels every reason', () => {
+    for (const reason of CORPUS_NAME_DISMISS_REASONS) {
+      expect(CORPUS_NAME_DISMISS_LABELS[reason]).toBeTruthy();
+    }
   });
 });
 

@@ -6,7 +6,7 @@
  * fallback never existed as anything but a sledgehammer. This is the scalpel: a skater points at
  * water — or at a lake we know but shelved — and asks. A moderator answers.
  *
- * Six kinds of request — one per non-active standing, and two more things a person can ask for
+ * Seven kinds of request — one per non-active standing, and two more things a person can ask for
  * (`standing.ts`):
  *
  * - **`activate`** — the body is in the corpus and dormant. *"Put it back on the active map."* The
@@ -23,6 +23,11 @@
  *   name and a point, a moderator draws it with the chord tool, and approving it is the record
  *   that the bay was asked for. The corpus seed's sixteen destination bays are filed this way too,
  *   so the one-off list and every future ask are the same queue, on the same page.
+ * - **`name_landmark`** — a place skaters steer by that no map has (D202): *"bird poop rock"*. Filed
+ *   by the report write when a skater names a spot on the lake that no landmark answers to — the
+ *   name and the point they tapped, and the report that used it. A moderator adds it as a landmark
+ *   from the lake editor, which answers every ask for the same name at once. Not a drawer action: a
+ *   landmark is a point, and the sheet is where a skater already has the lake under a finger.
  *
  * ## Why a request is a proposal and a moderator admits (D107)
  *
@@ -65,6 +70,7 @@ export const REQUEST_KINDS = [
   'contest_access',
   'takedown',
   'name_bay',
+  'name_landmark',
 ] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];
 
@@ -79,8 +85,14 @@ export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 /** A skater's note on a request — one sentence, rendered to a moderator. */
 export const MAX_REQUEST_NOTE_LENGTH = 280;
 
-/** The name a `name_bay` request carries — a place name, not a sentence. */
+/** The name a `name_bay` or `name_landmark` request carries — a place name, not a sentence. */
 export const MAX_REQUEST_NAME_LENGTH = 80;
+
+/**
+ * How many landmark proposals one person may have open (D202) — their own budget beside the lake
+ * and bay asks. Past it, a named spot still posts with its report; it just files no ask.
+ */
+export const MAX_OPEN_LANDMARK_REQUESTS_PER_USER = 10;
 
 /**
  * The key two `name_bay` asks share when they are the same question: the name folded to letters
@@ -94,6 +106,21 @@ export function requestNameKey(name: string): string {
     .replace(/\bsaint\b/g, 'st')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+/**
+ * The key two spellings of one landmark share (D202): `requestNameKey`'s fold plus a leading "the"
+ * dropped, because "the Gut" and "Gut" are one place and the corpus writes both. Lives here, beside
+ * the fold it extends, so a landmark proposal and a landmark are keyed by one rule;
+ * `landmarks.ts` re-exports it.
+ */
+export function landmarkNameKey(name: string): string {
+  return requestNameKey(name).replace(/^the /, '');
+}
+
+/** The key a naming request is grouped by: a bay's fold, or a landmark's for a landmark ask. */
+export function requestNameKeyFor(kind: RequestKind, name: string): string {
+  return kind === 'name_landmark' ? landmarkNameKey(name) : requestNameKey(name);
 }
 
 /**
@@ -146,6 +173,8 @@ export function requestKindLabel(kind: RequestKind): string {
       return 'I own this — take it off the map';
     case 'name_bay':
       return 'Name a bay on this lake';
+    case 'name_landmark':
+      return 'Name a place on this lake';
   }
 }
 
@@ -204,6 +233,15 @@ export function requestPrompt(kind: RequestKind): RequestPrompt {
         placeholder: 'The big bay north of the causeway; we skate it as its own trip.',
         name: { label: 'The bay’s name', placeholder: 'Malletts Bay' },
       };
+    case 'name_landmark':
+      return {
+        title: 'Name a place on this lake',
+        description:
+          'A rock, a point, a camp — somewhere skaters steer by that the map doesn’t name yet. ' +
+          'A moderator adds it as a label.',
+        placeholder: 'The big rock the gulls sit on, off the north shore.',
+        name: { label: 'What skaters call it', placeholder: 'Bird Poop Rock' },
+      };
   }
 }
 
@@ -222,6 +260,8 @@ export function requestKindTitle(kind: RequestKind): string {
       return 'Takedown';
     case 'name_bay':
       return 'Name a bay';
+    case 'name_landmark':
+      return 'Name a landmark';
   }
 }
 
@@ -240,7 +280,9 @@ export function describeRequestOutcome(request: {
           ? 'A moderator added this water to the map.'
           : request.kind === 'name_bay'
             ? 'A moderator drew this bay as a place of its own.'
-            : 'A moderator put this lake back on the active map.'
+            : request.kind === 'name_landmark'
+              ? 'A moderator added this place to the map.'
+              : 'A moderator put this lake back on the active map.'
       : 'A moderator reviewed your request and left things as they are.';
   return request.decisionNote ? `${head} ${request.decisionNote}` : head;
 }

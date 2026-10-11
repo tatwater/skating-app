@@ -299,6 +299,40 @@ The coverage here is 11,114 lakes rather than the 1,193 we started with. Wind ma
 different hazards — pressure ridges, which need a long fetch, and wind holes, which do not — and the
 original cutoff had been chosen for the first while quietly deciding the second.
 
+### Landmarks — 23,989 names on 10,600 lakes
+
+The islands, points, beaches, bays, narrows, river mouths, bridges, marinas, lighthouses, dams, shore
+towns and waterside camps a lake is steered by. Skaters locate things by them — half the reports in
+the community's emails say *where* something was, and a large share say it by a name: "off Apple
+Island", "between Bear Island and Jolly Island", "a wind hole west of the bird poop rock". Until
+September 2026 none of those names were on the map.
+
+They come from **OpenStreetMap and USGS GNIS**, matched to the lake they belong to by a rule for
+each kind of place: an island has to sit inside the lake's shoreline, a point or a beach within a
+short walk of it, a town within 750 meters, a river where it actually meets the water. A restaurant
+counts only when it stands alone — a row of five on the shore is a street, not a place anyone steers
+by — while a camp, a resort or a hotel always counts, because they own the shoreline and outlast
+their signs. That rule alone set aside 28,771 businesses.
+
+Then **the community's emails supply the names skaters actually use.** When the emails name a place
+the catalogs also have, the landmark gains the community's spellings and how often they're used,
+and that count is what decides which names you see first when you zoom in. It's how "Isle LaMotte"
+finds Isle La Motte.
+
+Two things to know:
+
+**A landmark is a name on a lake, never a place of its own.** It has no page, no reports, no feed —
+that's what a *bay* is, and the line between them is whether skaters go there to skate. Kingsland Bay
+is a name you steer by; Malletts Bay is somewhere you go. A landmark that starts being skated can be
+drawn as a bay, and the label gives way to it.
+
+**The catalogs don't know everything the community does.** 237 names in the emails matched nothing
+— some aren't places at all, some are outside the region, and some are exactly the local knowledge
+no map has. **Apple Island** is in neither catalog: a causeway joined it to South Hero years ago, so
+OSM no longer calls it an island, and yet 24 emails do. Those names wait in a queue for a moderator
+to place on the map. And when a skater names a spot in a report that no landmark answers to —
+"bird poop rock" — the name goes to the same moderators as a proposal.
+
 ---
 
 ## What this means when you open a lake
@@ -313,6 +347,8 @@ them:
   same sentence.
 - **The contours** either say a state surveyed them or say we fitted them.
 - **The wind** describes an average winter over five years, not today.
+- **The labels** are names — the catalogs', spelled the way the community spells them. A name says
+  where something is, and nothing about the ice there.
 
 **None of it says whether the ice is safe.** It's context for a decision you make with your own eyes,
 a spud bar, and other people's recent reports. Everything on this page describes the *lake*. Nothing
@@ -332,6 +368,9 @@ on it describes the *ice*.
 - **About 1,100 bodies are `unclassified`** — we're confident it's water, and no source said what
   kind.
 - **~300 possible duplicate pairs** are queued for human review rather than merged automatically.
+- **Landmarks are only as good as their names.** A place no catalog, email or skater has named isn't
+  on the map, a business that closed may still be, and one-mention names from the emails wait at the
+  back of the moderators' queue.
 - **A missing pond is fixable.** A specific request overrides every threshold on this page, and that
   escape hatch is what makes the rules above safe to be strict.
 
@@ -345,4 +384,5 @@ on it describes the *ice*.
 
 For the engineering record: [`plans/phases/A07a-unified-corpus.md`](../plans/phases/A07a-unified-corpus.md)
 (the full phase, with the operator's runbook at the bottom) and
-[`plans/01-decisions.md`](../plans/01-decisions.md) (**D92–D105**, **D109–D137**).
+[`plans/01-decisions.md`](../plans/01-decisions.md) (**D92–D105**, **D109–D137**; landmarks are
+**D202**).

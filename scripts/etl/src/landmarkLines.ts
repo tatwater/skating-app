@@ -26,6 +26,19 @@ export function runIsComplete(selected: readonly string[], all: readonly string[
 }
 
 /**
+ * Must the run export the body outlines before matching? Always for a complete run: it retires what
+ * it does not place, so a cached export taken before a campaign or a moderator redrew a shore would
+ * read that lake's landmarks as gone. A partial run retires nothing, so the cache serves it.
+ */
+export function mustExportBodies(run: {
+  cached: boolean;
+  refresh: boolean;
+  complete: boolean;
+}): boolean {
+  return !run.cached || run.refresh || run.complete;
+}
+
+/**
  * One line per body for the loader. A partial run writes only the bodies it placed something on;
  * a complete run writes every exported body, an empty line where nothing landed, each marked
  * `complete` — the empty line is how a lake whose last landmark moved off it loses the label.

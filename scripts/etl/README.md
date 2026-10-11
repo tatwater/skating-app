@@ -313,10 +313,14 @@ re-derivable, and they are kilobytes.
 > the *corpus* or re-importing one *state's OSM extract*.
 >
 > ```bash
-> ./run-corpus.sh n7-20260807            # A07a: three catalogs → the master list → the corpus
+> ./run-corpus.sh n7-20260807            # A07a: three catalogs → the master list → the corpus → its landmarks
 > ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
 > ./run-canonical.sh n6c-20260802 vt nh  # …or just some
 > ```
+> `run-corpus.sh` ends with the landmark stage (D202): it re-exports the loaded bodies, matches OSM +
+> GNIS to them, loads the landmarks and the corpus's unplaced names — all applied, all idempotent.
+> It needs the corpus inventory (`--mentions=`, defaulting to the path the inventory tool writes),
+> or `--without-corpus`, or `--skip-landmarks`; it refuses at the start rather than after the merge.
 > Each is the manual steps below, in order, with the arguments that carry provenance already
 > wired — the campaign id, and for the OSM path the extract manifest, transform summary and filter
 > command. Both write `importRuns` rows visible at **`/admin/imports`**. Read on if you are doing
@@ -686,8 +690,11 @@ let the patchiness argue for hand-entering the rest; that is the trap D70 exists
 
 Islands, points, reference bays, narrows, river mouths, bridges, marinas, lighthouses, dams, shore
 towns, and the camps, resorts and lone restaurants on the shore — from the archived OSM extracts and
-GNIS, named by the community corpus. Labels and a `where`, never places
-([`plans/features/named-landmarks.md`](../../plans/features/named-landmarks.md)).
+GNIS, named by the community corpus. Labels and a `where`, never places (D202 in
+[`plans/01-decisions.md`](../../plans/01-decisions.md)).
+
+**A corpus campaign runs this stage itself** (`run-corpus.sh`, last); the commands are for running
+it on its own — after a moderator session, a new OSM extract, or a fresh corpus inventory:
 
 ```sh
 pnpm --filter @skating/etl landmarks --mentions=<training_data/google_group/mentions/mentions.csv>
@@ -696,13 +703,18 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
 ```
 
 - **Matching is offline.** The first run exports every listed body's outline once
-  (`landmarks:listBodyGeometry`, ~500 pages, ~8 minutes) to `.scratch/landmarks/bodies.ndjson`;
-  later runs reuse it. `--refresh-bodies` after a campaign moves or admits bodies. Never match per
-  point in a mutation — that reads a giant's polygon once per landmark.
+  (`landmarks:listBodyGeometry`, ~500 pages, ~8 minutes) to `.scratch/landmarks/bodies.ndjson`.
+  A run of every state always re-exports it: its lines retire what it does not place, so an outline
+  redrawn since a cached export would retire that lake's landmarks. A run of some states reuses the
+  cache — `--refresh-bodies` after a campaign moves or admits bodies. Never match per point in a
+  mutation — that reads a giant's polygon once per landmark.
 - **One rule per kind** (`landmarkMatch.ts`): islands inside the outer shore, bays and narrows on
   the water, points / beaches / marinas / businesses on the nearest shore, towns on every body within
   750 m, bridges on each body they cross (segments cut against the shore, so a two-vertex span over a
   pond counts) or stop within 25 m of, rivers at each mouth. Restaurants only when standalone.
+- **The names nothing matched go to a moderator.** `corpus-names.ndjson` (beside the CSV) loads
+  with `pnpm --filter @skating/etl load-landmark-names --campaign=<id> [--apply]` into the queue on
+  `/admin/water/place-names`; a re-load refreshes open names and never reopens a decided one.
 - **`--mentions` is required** (gitignored input), or `--without-corpus` to mean it: the load
   replaces a catalog row's corpus count and spellings with the run's, so a run without the corpus
   would erase them — and `load-landmarks --apply` refuses one unless told `--without-corpus` too.

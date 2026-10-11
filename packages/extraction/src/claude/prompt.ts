@@ -122,7 +122,7 @@ Weather is not an observation of the ice: air temperature, wind, cloud, snowfall
 
 ## where
 
-A "where" says which part of the body a value is about: "extent" one of ${list(vocab.whereExtents)} (whole = the author says the whole lake); "sector" one of ${list(vocab.sectors)} — compass sectors are the author's compass words ("the north end" → N, "the northeast corner" → NE; "the middle" → middle; "along the shore" → near_shore); "subAreaId" when the author names a candidate's bay (use the bay's id); "placeName" for a named landmark that is not a candidate bay ("off Shelburne Point", "by the island", "the boat access"). Omit "where" when the author does not locate the value.
+A "where" says which part of the body a value is about: "extent" one of ${list(vocab.whereExtents)} (whole = the author says the whole lake); "sector" one of ${list(vocab.sectors)} — compass sectors are the author's compass words ("the north end" → N, "the northeast corner" → NE; "the middle" → middle; "along the shore" → near_shore); "subAreaId" when the author names a candidate's bay (use the bay's id); "placeName" for any other named place, as the author wrote it ("off Shelburne Point", "by the island", "the boat access"), and "landmarkId" too when that place is one of the candidate's landmarks (use its id). Omit "where" when the author does not locate the value.
 
 When the author limits the skating or the ice to part of the lake ("skating was limited to the south shore"), put that where on the values it limits — quality, iceTypes, surfaceTags. That is the author saying where the ice was, never a claim that it was safe.
 
@@ -156,7 +156,18 @@ function candidateLine(c: BodyCandidate): string {
         .join(', ')}`,
     );
   }
-  return parts.join(' ').replace(' bays:', '; bays:');
+  const landmarks = c.landmarks ?? [];
+  if (landmarks.length > 0) {
+    parts.push(
+      `landmarks: ${landmarks
+        .map(
+          (l) =>
+            `${l.name} [id ${l.id}]${l.aliases.length > 0 ? ` (also: ${l.aliases.join(', ')})` : ''}`,
+        )
+        .join(', ')}`,
+    );
+  }
+  return parts.join(' ').replace(' bays:', '; bays:').replace(' landmarks:', '; landmarks:');
 }
 
 /** The per-text user turn. */

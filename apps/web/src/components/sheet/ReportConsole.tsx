@@ -1284,7 +1284,8 @@ function Instrument({
                 ? {
                     onPickSector: (s: CompassSector) =>
                       mode.onChange({ ...(mode.where ?? {}), sector: s }),
-                    onPick: (coord: LatLng) => mode.onChange(whereClickOnWater(mode.where, coord)),
+                    onPick: (coord: LatLng) =>
+                      mode.onChange(whereClickOnWater(mode.where, coord, body?.landmarks ?? [])),
                   }
                 : mode?.kind === 'putIn'
                   ? {

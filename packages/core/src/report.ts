@@ -23,6 +23,7 @@
  */
 
 import { isValidCoord, type LatLng } from './geometry';
+import { landmarkAsksAreSamePlace } from './landmarks';
 import {
   type ChipInput,
   chipKeys,
@@ -637,17 +638,55 @@ export function locatedSubAreaIds(
   report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
 ): string[] {
   const ids: string[] = [];
-  const located: readonly { where?: Where }[] = [
+  for (const item of locatedParts(report)) {
+    const id = item.where?.subAreaId;
+    if (id !== undefined && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/** Every located part of a report — the chips, the readings, the sightings — in one list. */
+export function locatedParts(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): readonly { where?: Where }[] {
+  return [
     ...report.iceTypes,
     ...report.surfaceTags,
     ...(report.iceThickness?.readings ?? []),
     ...(report.sightings ?? []),
   ];
-  for (const item of located) {
-    const id = item.where?.subAreaId;
-    if (id !== undefined && !ids.includes(id)) ids.push(id);
+}
+
+/**
+ * The spots a report named that no landmark answers to — a point with a typed name and no id
+ * (D202). Each is a proposal a moderator may accept (`name_landmark`). Once per place — a name
+ * *and* a spot (`namedSpotsAreSamePlace`): a report that names both of Champlain's Long Points
+ * names two places (#84 review).
+ */
+export function locatedNamedSpots(
+  report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
+): { name: string; coord: LatLng }[] {
+  const spots: { name: string; coord: LatLng }[] = [];
+  for (const item of locatedParts(report)) {
+    const point = item.where?.point;
+    if (!point?.name || point.landmarkId !== undefined) continue;
+    const spot = { name: point.name, coord: point.coord };
+    // The landmark fold: "St. Albans Rock" and "Saint Albans rock" at one spot are one proposal.
+    if (spots.some((s) => namedSpotsAreSamePlace(s, spot))) continue;
+    spots.push(spot);
   }
-  return ids;
+  return spots;
+}
+
+/** Are two named spots one place — `landmarkAsksAreSamePlace`, the rule a landmark ask is held to? */
+export function namedSpotsAreSamePlace(
+  a: { name: string; coord: LatLng },
+  b: { name: string; coord: LatLng },
+): boolean {
+  return landmarkAsksAreSamePlace(
+    { names: [a.name], coord: a.coord },
+    { names: [b.name], coord: b.coord },
+  );
 }
 
 export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): MinimumSetTerm[] {

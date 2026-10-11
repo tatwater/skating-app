@@ -84,6 +84,10 @@ export const where = v.object({
       coord: latLng,
       radiusMeters: v.number(),
       name: v.optional(v.string()),
+      // The landmark the point stands for (D202) — checked against the body at the write.
+      landmarkId: v.optional(v.string()),
+      // Chosen by name (a chip or the search), not a tap — `WherePoint.byName`.
+      byName: v.optional(v.boolean()),
     }),
   ),
 });
