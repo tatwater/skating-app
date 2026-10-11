@@ -42,7 +42,6 @@ import {
   evaluateSeason,
   expandLows,
   firstSentinelNightAtOrBelow,
-  type OpenMeteoHourlyRow,
   type SeasonWatchSettings,
   type SiteLow,
   type SiteSeries,
@@ -69,6 +68,7 @@ import {
   rosterSite,
   seasonWatchSettings,
 } from './lib/seasonWatchValidators';
+import { fetchHourlyRows } from './seasonWatch';
 
 type NamedSiteLow = Infer<typeof namedSiteLow>;
 
@@ -367,12 +367,10 @@ interface GateSite {
  * force when the request is made, so a November tick split every October day at the wrong midnight.
  * `dailyLowsFromOpenMeteo` cuts them by the zone — the same cut the history fill stores.
  *
- * Multi-coordinate form: passing comma-separated `latitude`/`longitude` returns one object per site.
+ * Multi-coordinate form, a few sites a request (`seasonWatch.fetchHourlyRows`).
  */
 async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   const params = new URLSearchParams({
-    latitude: sites.map((s) => s.lat.toFixed(4)).join(','),
-    longitude: sites.map((s) => s.lng.toFixed(4)).join(','),
     hourly: 'temperature_2m',
     past_days: String(MAX_PAST_DAYS),
     forecast_days: '1',
@@ -380,19 +378,17 @@ async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
     timeformat: 'unixtime',
     temperature_unit: 'celsius',
   });
-
-  const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
-  try {
-    await ctx.runMutation(internal.weather.recordOpenMeteoCallMutation, {
-      weightedCalls: openMeteoCallWeight(1, MAX_PAST_DAYS + 1) * sites.length,
-      nowMs: Date.now(),
-    });
-  } catch (err) {
-    console.warn('externalApiCalls metering failed (fetch continues)', err);
-  }
-  if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText}`);
-  const json = (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
-  const rows = Array.isArray(json) ? json : [json];
+  // A few sites a request: hourly answers are large, and one for every site has arrived cut off.
+  const rows = await fetchHourlyRows(OPEN_METEO_URL, params, sites, async (n) => {
+    try {
+      await ctx.runMutation(internal.weather.recordOpenMeteoCallMutation, {
+        weightedCalls: openMeteoCallWeight(1, MAX_PAST_DAYS + 1) * n,
+        nowMs: Date.now(),
+      });
+    } catch (err) {
+      console.warn('externalApiCalls metering failed (fetch continues)', err);
+    }
+  });
 
   return sites.map((site, i) => ({
     site,

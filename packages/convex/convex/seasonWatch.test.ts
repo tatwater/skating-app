@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { HISTORY_FIRST_SEASON_YEAR, historySeasons } from './seasonWatch';
+import { fetchHourlyRows, HISTORY_FIRST_SEASON_YEAR, historySeasons } from './seasonWatch';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -902,6 +902,50 @@ describe('history', () => {
     expect(urls[1]).toContain('past_days=92');
     const calls = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
     expect(calls[0]?.calls).toBe(2);
+  });
+
+  test('hourly rows come a few sites a request, with one retry for an answer cut off', async () => {
+    const sites = Array.from({ length: 7 }, (_, i) => ({ lat: 44 + i / 100, lng: -71.65 }));
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls++;
+        // The second request's first answer arrives cut off mid-array, as one did from Convex.
+        if (calls === 2) return new Response('[{"hourly":{"time":[1,2');
+        const lats = (new URL(url).searchParams.get('latitude') ?? '').split(',');
+        return new Response(JSON.stringify(lats.map(() => hourlyRow('2026-10-01', [1]))));
+      }),
+    );
+    const metered: number[] = [];
+    const rows = await fetchHourlyRows(
+      'https://api.open-meteo.com/v1/forecast',
+      new URLSearchParams({ hourly: 'temperature_2m' }),
+      sites,
+      async (n) => {
+        metered.push(n);
+      },
+    );
+    expect(rows).toHaveLength(7);
+    expect(rows.every((r) => r?.hourly?.time?.length === 24)).toBe(true);
+    // Three requests (3 + 3 + 1 sites) plus the retry; each attempt metered by its sites.
+    expect(metered).toEqual([3, 3, 3, 1]);
+  });
+
+  test('a refusal is not retried; a second failure is thrown', async () => {
+    const one = [{ lat: 44, lng: -71.65 }];
+    const fetchFn = vi.fn(async () => new Response('', { status: 429, statusText: 'Too Many' }));
+    vi.stubGlobal('fetch', fetchFn);
+    await expect(
+      fetchHourlyRows('https://x.test', new URLSearchParams(), one, async () => {}),
+    ).rejects.toThrow(/Open-Meteo 429/);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const flaky = vi.fn(async () => new Response('', { status: 502, statusText: 'Bad Gateway' }));
+    vi.stubGlobal('fetch', flaky);
+    await expect(
+      fetchHourlyRows('https://x.test', new URLSearchParams(), one, async () => {}),
+    ).rejects.toThrow(/Open-Meteo 502/);
+    expect(flaky).toHaveBeenCalledTimes(2);
   });
 
   test('a failed archive request throws', async () => {

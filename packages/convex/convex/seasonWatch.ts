@@ -889,7 +889,54 @@ export const heldSites = internalQuery({
     await heldIn(ctx, season, waterBodyIds, isCurrent),
 });
 
-/** Fill one season for a handful of sites — one Open-Meteo request. */
+/**
+ * Sites per Open-Meteo hourly request. Hourly readings are ~24× the daily form, and from Convex a
+ * 12-site answer (430 KB for 92 days) has taken a minute to arrive — or arrived cut off mid-array
+ * (2026-10-11, the first request of a history fill). A few sites a request keeps each answer small.
+ */
+const HOURLY_SITES_PER_FETCH = 3;
+
+/**
+ * Each site's Open-Meteo hourly row, fetched a few sites at a time ({@link HOURLY_SITES_PER_FETCH}),
+ * one retry per request for an answer that failed to arrive whole or a server error (never a 4xx:
+ * a refusal or the quota is not a blip). `meter` is told each attempt's site count, so the call
+ * meter counts what was actually asked for. Shared by the daily tick and the history fill.
+ */
+export async function fetchHourlyRows(
+  url: string,
+  params: URLSearchParams,
+  sites: readonly { lat: number; lng: number }[],
+  meter: (siteCount: number) => Promise<void>,
+): Promise<(OpenMeteoHourlyRow | undefined)[]> {
+  const out: (OpenMeteoHourlyRow | undefined)[] = [];
+  for (let i = 0; i < sites.length; i += HOURLY_SITES_PER_FETCH) {
+    const chunk = sites.slice(i, i + HOURLY_SITES_PER_FETCH);
+    const query = new URLSearchParams(params);
+    query.set('latitude', chunk.map((s) => s.lat.toFixed(4)).join(','));
+    query.set('longitude', chunk.map((s) => s.lng.toFixed(4)).join(','));
+    let json: OpenMeteoHourlyRow | OpenMeteoHourlyRow[] | undefined;
+    for (let attempt = 1; json === undefined; attempt++) {
+      await meter(chunk.length);
+      try {
+        const res = await fetch(`${url}?${query.toString()}`);
+        if (!res.ok) {
+          const error = new Error(`Open-Meteo ${res.status} ${res.statusText}`);
+          if (res.status < 500 || attempt >= 2) throw error;
+          continue;
+        }
+        json = (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
+      } catch (error) {
+        if (attempt >= 2 || /Open-Meteo 4\d\d/.test(String(error))) throw error;
+      }
+    }
+    // One coordinate answers with an object, several with an array.
+    const rows = Array.isArray(json) ? json : [json];
+    out.push(...chunk.map((_, j) => rows[j]));
+  }
+  return out;
+}
+
+/** Fill one season for a handful of sites — a few sites per Open-Meteo request. */
 export const fillSeason = internalAction({
   args: {
     season: v.string(),
@@ -918,8 +965,6 @@ export const fillSeason = internalAction({
     if (sites.length === 0) return null;
     const year = seasonStartYear(season);
     const params = new URLSearchParams({
-      latitude: sites.map((s) => s.lat.toFixed(4)).join(','),
-      longitude: sites.map((s) => s.lng.toFixed(4)).join(','),
       // Hourly, cut into days here (`dailyLowsFromOpenMeteo`): Open-Meteo's daily lows cut every day
       // at the offset in force when the request is made — the same cut the daily tick refuses.
       hourly: 'temperature_2m',
@@ -940,14 +985,17 @@ export const fillSeason = internalAction({
       params.set('end_date', `${year + 1}-06-30`);
       days = 303;
     }
-    const res = await fetch(`${isCurrent ? FORECAST_URL : ARCHIVE_URL}?${params.toString()}`);
-    await ctx.runMutation(internal.weather.recordOpenMeteoCallMutation, {
-      weightedCalls: openMeteoCallWeight(1, days) * sites.length,
-      nowMs: now,
-    });
-    if (!res.ok) throw new Error(`Open-Meteo ${res.status} ${res.statusText} filling ${season}`);
-    const json = (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
-    const rows = Array.isArray(json) ? json : [json];
+    const rows = await fetchHourlyRows(
+      isCurrent ? FORECAST_URL : ARCHIVE_URL,
+      params,
+      sites,
+      async (n) => {
+        await ctx.runMutation(internal.weather.recordOpenMeteoCallMutation, {
+          weightedCalls: openMeteoCallWeight(1, days) * n,
+          nowMs: now,
+        });
+      },
+    );
     await ctx.runMutation(internal.seasonWatch.storeSeries, {
       season,
       source: isCurrent ? 'forecast' : 'archive',
