@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  exists,
   getJson,
   getPublicJson,
-  listKeys,
+  listObjects,
   parseListObjects,
   publicExists,
   putJson,
@@ -49,13 +50,11 @@ describe('listing', () => {
         '<ListBucketResult><Contents><Key>frames/a&amp;b.json</Key><ETag>&quot;abc123&quot;</ETag></Contents><Contents><Key>frames/c.json</Key></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>t&lt;1</NextContinuationToken></ListBucketResult>',
       ),
     ).toEqual({
-      keys: ['frames/a&b.json', 'frames/c.json'],
       objects: [{ key: 'frames/a&b.json', etag: 'abc123' }, { key: 'frames/c.json' }],
       truncated: true,
       next: 't<1',
     });
     expect(parseListObjects('<IsTruncated>false</IsTruncated>')).toEqual({
-      keys: [],
       objects: [],
       truncated: false,
       next: null,
@@ -72,12 +71,15 @@ describe('listing', () => {
         expect(req.headers.get('authorization')).toMatch(/^AWS4-HMAC-SHA256/);
         return new Response(
           req.url.includes('continuation-token')
-            ? '<Key>b.json</Key><IsTruncated>false</IsTruncated>'
-            : '<Key>a.json</Key><IsTruncated>true</IsTruncated><NextContinuationToken>n</NextContinuationToken>',
+            ? '<Contents><Key>b.json</Key><ETag>"2"</ETag></Contents><IsTruncated>false</IsTruncated>'
+            : '<Contents><Key>a.json</Key><ETag>"1"</ETag></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>n</NextContinuationToken>',
         );
       }),
     );
-    expect(await listKeys(config(), 'frames/winter-2026-27/')).toEqual(['a.json', 'b.json']);
+    expect(await listObjects(config(), 'frames/winter-2026-27/')).toEqual([
+      { key: 'a.json', etag: '1' },
+      { key: 'b.json', etag: '2' },
+    ]);
     expect(urls[0]).toContain('https://acct.r2.cloudflarestorage.com/skating-imagery?list-type=2');
     expect(urls[0]).toContain('prefix=frames%2Fwinter-2026-27%2F');
   });
@@ -105,6 +107,26 @@ describe('listing', () => {
     expect(seen).toHaveLength(3);
   });
 
+  it('asks the bucket itself whether an object exists — a signed HEAD, sent once', async () => {
+    const seen: Request[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string) => {
+        const req = input instanceof Request ? input : new Request(input);
+        seen.push(req);
+        if (req.url.endsWith('/there.json')) return new Response(null);
+        if (req.url.endsWith('/broken.json')) return new Response(null, { status: 500 });
+        return new Response(null, { status: 404 });
+      }),
+    );
+    expect(await exists(config(), 'there.json')).toBe(true);
+    expect(seen[0]?.method).toBe('HEAD');
+    expect(seen[0]?.headers.get('authorization')).toContain('AWS4-HMAC-SHA256');
+    expect(await exists(config(), 'gone.json')).toBe(false);
+    await expect(exists(config(), 'broken.json')).rejects.toThrow(/R2 head broken.json: 500/);
+    expect(seen).toHaveLength(3);
+  });
+
   it('refuses a listing that never ends, and reports a failed one', async () => {
     vi.stubGlobal(
       'fetch',
@@ -115,12 +137,12 @@ describe('listing', () => {
           ),
       ),
     );
-    await expect(listKeys(config(), 'p/')).rejects.toThrow(/still truncated/);
+    await expect(listObjects(config(), 'p/')).rejects.toThrow(/still truncated/);
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 403, statusText: 'Forbidden' })),
     );
-    await expect(listKeys(config(), 'p/')).rejects.toThrow(/R2 list p\/: 403/);
+    await expect(listObjects(config(), 'p/')).rejects.toThrow(/R2 list p\/: 403/);
   });
 });
 

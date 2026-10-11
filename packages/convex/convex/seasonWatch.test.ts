@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { fetchHourlyRows, HISTORY_FIRST_SEASON_YEAR, historySeasons } from './seasonWatch';
+import { HISTORY_FIRST_SEASON_YEAR, historySeasons } from './seasonWatch';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -809,17 +809,21 @@ describe('history', () => {
         }),
       );
     }
-    // Lake 0 answered with only null nights; Lake 1 is missing from the answer.
+    // Lake 0 answered with only null nights; Lake 1's answer came back without its row.
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify([hourlyRow('2026-04-20', [null])]))),
+      vi.fn(async (url: string) =>
+        new URL(url).searchParams.get('latitude') === '44.0000'
+          ? new Response(JSON.stringify([hourlyRow('2026-04-20', [null])]))
+          : new Response('[]'),
+      ),
     );
     await t.action(internal.seasonWatch.fillSeason, {
       season: 'winter-2025-26',
       sites: [a, b].map((id, i) => ({
         waterBodyId: id as Id<'waterBodies'>,
         name: `Lake ${i}`,
-        lat: 44,
+        lat: 44 + i / 100,
         lng: -71.65,
       })),
     });
@@ -904,48 +908,33 @@ describe('history', () => {
     expect(calls[0]?.calls).toBe(2);
   });
 
-  test('hourly rows come a few sites a request, with one retry for an answer cut off', async () => {
-    const sites = Array.from({ length: 7 }, (_, i) => ({ lat: 44 + i / 100, lng: -71.65 }));
-    let calls = 0;
+  test('a fill stores what came and throws for what did not', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-06T12:00:00Z'));
+    const t = convexTest(schema, modules);
+    const [a, b] = await seedLakes(t, 2);
+    // An archive season is one site a request: the first answers, the second refuses.
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string) => {
-        calls++;
-        // The second request's first answer arrives cut off mid-array, as one did from Convex.
-        if (calls === 2) return new Response('[{"hourly":{"time":[1,2');
-        const lats = (new URL(url).searchParams.get('latitude') ?? '').split(',');
-        return new Response(JSON.stringify(lats.map(() => hourlyRow('2026-10-01', [1]))));
+      vi.fn(async (url: string) =>
+        new URL(url).searchParams.get('latitude') === '44.0000'
+          ? new Response(JSON.stringify(hourlyRow('2025-10-01', [1, 2])))
+          : new Response('', { status: 429, statusText: 'Too Many' }),
+      ),
+    );
+    await expect(
+      t.action(internal.seasonWatch.fillSeason, {
+        season: 'winter-2025-26',
+        sites: [a, b].map((id, i) => ({
+          waterBodyId: id as Id<'waterBodies'>,
+          name: `Lake ${i}`,
+          lat: 44 + i / 100,
+          lng: -71.65,
+        })),
       }),
-    );
-    const metered: number[] = [];
-    const rows = await fetchHourlyRows(
-      'https://api.open-meteo.com/v1/forecast',
-      new URLSearchParams({ hourly: 'temperature_2m' }),
-      sites,
-      async (n) => {
-        metered.push(n);
-      },
-    );
-    expect(rows).toHaveLength(7);
-    expect(rows.every((r) => r?.hourly?.time?.length === 24)).toBe(true);
-    // Three requests (3 + 3 + 1 sites) plus the retry; each attempt metered by its sites.
-    expect(metered).toEqual([3, 3, 3, 1]);
-  });
-
-  test('a refusal is not retried; a second failure is thrown', async () => {
-    const one = [{ lat: 44, lng: -71.65 }];
-    const fetchFn = vi.fn(async () => new Response('', { status: 429, statusText: 'Too Many' }));
-    vi.stubGlobal('fetch', fetchFn);
-    await expect(
-      fetchHourlyRows('https://x.test', new URLSearchParams(), one, async () => {}),
-    ).rejects.toThrow(/Open-Meteo 429/);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    const flaky = vi.fn(async () => new Response('', { status: 502, statusText: 'Bad Gateway' }));
-    vi.stubGlobal('fetch', flaky);
-    await expect(
-      fetchHourlyRows('https://x.test', new URLSearchParams(), one, async () => {}),
-    ).rejects.toThrow(/Open-Meteo 502/);
-    expect(flaky).toHaveBeenCalledTimes(2);
+    ).rejects.toThrow(/Open-Meteo 429 Too Many filling winter-2025-26 \(1 of 2 requests\)/);
+    const docs = await t.query(internal.seasonWatch.seasonSeries, { season: 'winter-2025-26' });
+    expect(docs.map((d) => d.waterBodyId)).toEqual([a]);
   });
 
   test('a failed archive request throws', async () => {

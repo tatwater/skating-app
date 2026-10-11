@@ -134,11 +134,13 @@ function stub(w: World) {
         if (key && !url.searchParams.has('list-type')) {
           const found = w.manifests.get(key);
           if (found === 'error') return new Response('', { status: 500, statusText: 'Err' });
-          if (found === undefined || found === null) return new Response('', { status: 404 });
-          return json(found);
+          if (found === undefined || found === null) return new Response(null, { status: 404 });
+          return req.method === 'HEAD' ? new Response(null) : json(found);
         }
-        // The listing, each object with an ETag that changes when its content does.
+        // The listing of one prefix, each object with an ETag that changes when its content does.
+        const prefix = url.searchParams.get('prefix') ?? '';
         const contents = [...w.manifests.entries()]
+          .filter(([k]) => k.startsWith(prefix))
           .map(
             ([k, v]) => `<Contents><Key>${k}</Key><ETag>&quot;${etag(v)}&quot;</ETag></Contents>`,
           )

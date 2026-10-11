@@ -75,6 +75,7 @@ import type * as lib_metrics from "../lib/metrics.js";
 import type * as lib_notificationEmail from "../lib/notificationEmail.js";
 import type * as lib_notificationQueue from "../lib/notificationQueue.js";
 import type * as lib_notificationResolve from "../lib/notificationResolve.js";
+import type * as lib_openMeteoHourly from "../lib/openMeteoHourly.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoOrphans from "../lib/photoOrphans.js";
 import type * as lib_postSync from "../lib/postSync.js";
@@ -200,6 +201,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notificationEmail": typeof lib_notificationEmail;
   "lib/notificationQueue": typeof lib_notificationQueue;
   "lib/notificationResolve": typeof lib_notificationResolve;
+  "lib/openMeteoHourly": typeof lib_openMeteoHourly;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoOrphans": typeof lib_photoOrphans;
   "lib/postSync": typeof lib_postSync;

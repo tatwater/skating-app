@@ -52,7 +52,6 @@ export function r2ConfigFromEnv(
 
 /** One page of a ListObjectsV2 response. XML by regex: the shape is fixed and tiny. */
 export function parseListObjects(xml: string): {
-  keys: string[];
   /** Each object's key and ETag — the ETag changes when the object is overwritten. */
   objects: ListedObject[];
   truncated: boolean;
@@ -65,7 +64,6 @@ export function parseListObjects(xml: string): {
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&amp;/g, '&');
-  const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map((m) => decodeXml(m[1] as string));
   const blocks = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)];
   const parsedObjects = blocks.flatMap((m) => {
     const block = m[1] as string;
@@ -79,11 +77,10 @@ export function parseListObjects(xml: string): {
       },
     ];
   });
-  // A listing without `<Contents>` wrappers (no real S3 sends one) still yields its keys.
-  const objects = blocks.length > 0 ? parsedObjects : keys.map((key) => ({ key }));
+  const objects = parsedObjects;
   const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
   const next = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(xml)?.[1];
-  return { keys, objects, truncated, next: next ? decodeXml(next) : null };
+  return { objects, truncated, next: next ? decodeXml(next) : null };
 }
 
 export interface ListedObject {
@@ -93,11 +90,6 @@ export interface ListedObject {
 
 /** The most pages a listing may follow — a season is ~15 pages of 1,000; this is a loop guard. */
 const MAX_LIST_PAGES = 100;
-
-/** Every key under `prefix`. */
-export async function listKeys(config: R2Config, prefix: string): Promise<string[]> {
-  return (await listObjects(config, prefix)).map((o) => o.key);
-}
 
 /** Every object under `prefix`, with its ETag. */
 export async function listObjects(config: R2Config, prefix: string): Promise<ListedObject[]> {
@@ -144,6 +136,20 @@ export async function getJson<T>(config: R2Config, key: string): Promise<T | nul
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`R2 get ${key}: ${res.status} ${res.statusText}`);
   return (await res.json()) as T;
+}
+
+/**
+ * Whether an object exists, asked of the bucket itself with a signed HEAD, sent once — past any CDN,
+ * which may have cached the 404 from before the object was written.
+ */
+export async function exists(config: R2Config, key: string): Promise<boolean> {
+  const signed = await config.client.sign(`${config.endpoint}/${config.bucket}/${key}`, {
+    method: 'HEAD',
+  });
+  const res = await fetch(signed, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`R2 head ${key}: ${res.status} ${res.statusText}`);
+  return true;
 }
 
 /** Read a public object as JSON, or `null` on a 404. */

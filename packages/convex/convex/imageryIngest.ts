@@ -60,8 +60,8 @@ import {
   internalQuery,
   type MutationCtx,
 } from './_generated/server';
-import { openMeteoCallWeight } from './lib/apiMeter';
 import { lastUsedOn, markUsedOn } from './lib/dailyThrottle';
+import { fetchHourlyRows, openMeteoMeter } from './lib/openMeteoHourly';
 import { composeSeasonEmail, newYorkDate, type SeasonEmail } from './lib/seasonWatchEmails';
 import {
   namedSiteLow,
@@ -69,7 +69,6 @@ import {
   rosterSite,
   seasonWatchSettings,
 } from './lib/seasonWatchValidators';
-import { fetchHourlyRows } from './seasonWatch';
 
 type NamedSiteLow = Infer<typeof namedSiteLow>;
 
@@ -290,19 +289,19 @@ export const recordSeasonOpen = internalMutation({
 });
 
 /**
- * Send the next queued staff email, if none has gone out today (D212: never two on one day).
- *
- * The send is scheduled **inside** this mutation, so "taken off the queue" and "sent" commit
- * together — a retried tick cannot mail anyone twice, and a failed one loses nothing. An imagery
- * reminder whose imagery has since been started is dropped without spending the day's slot.
- */
-/**
  * The day the last watch email went, kept outside the season rows: a reset moves its row to the
  * superseded table, and the day's mark must not go with it, or a reopening the same day would send a
  * second email (D212).
  */
 const WATCH_EMAIL_KEY = 'season-watch-email';
 
+/**
+ * Send the next queued staff email, if none has gone out today (D212: never two on one day).
+ *
+ * The send is scheduled **inside** this mutation, so "taken off the queue" and "sent" commit
+ * together — a retried tick cannot mail anyone twice, and a failed one loses nothing. An imagery
+ * reminder whose imagery has since been started is dropped without spending the day's slot.
+ */
 export const sendNextEmail = internalMutation({
   args: { today: v.string() },
   handler: async (ctx, { today }): Promise<{ sent: string | null }> => {
@@ -377,7 +376,7 @@ interface GateSite {
  * force when the request is made, so a November tick split every October day at the wrong midnight.
  * `dailyLowsFromOpenMeteo` cuts them by the zone — the same cut the history fill stores.
  *
- * Multi-coordinate form, a few sites a request (`seasonWatch.fetchHourlyRows`).
+ * Multi-coordinate form, a few sites a request (`lib/openMeteoHourly`).
  */
 async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
   const params = new URLSearchParams({
@@ -388,17 +387,20 @@ async function fetchDailyLows(ctx: ActionCtx, sites: readonly GateSite[]) {
     timeformat: 'unixtime',
     temperature_unit: 'celsius',
   });
-  // A few sites a request: hourly answers are large, and one for every site has arrived cut off.
-  const rows = await fetchHourlyRows(OPEN_METEO_URL, params, sites, async (n) => {
-    try {
-      await ctx.runMutation(internal.weather.recordOpenMeteoCallMutation, {
-        weightedCalls: openMeteoCallWeight(1, MAX_PAST_DAYS + 1) * n,
-        nowMs: Date.now(),
-      });
-    } catch (err) {
-      console.warn('externalApiCalls metering failed (fetch continues)', err);
-    }
-  });
+  const fetched = await fetchHourlyRows(
+    OPEN_METEO_URL,
+    params,
+    sites,
+    MAX_PAST_DAYS + 1,
+    openMeteoMeter(ctx, MAX_PAST_DAYS + 1),
+  );
+  // ⚠ **All of the sample or none of it.** Deciding on the sites that answered would shrink the
+  // sample, and a shrinking sample is how one freezing pond comes to clear `corpusFraction` alone.
+  // A failed tick is retried tomorrow; its email still goes (the `finally` above).
+  if (fetched.failed > 0) {
+    throw new Error(`${fetched.lastError} (${fetched.failed} of ${fetched.requests} requests)`);
+  }
+  const rows = fetched.rows;
 
   return sites.map((site, i) => ({
     site,

@@ -28,7 +28,6 @@ import {
   MAX_ROSTER_SITES,
   MAX_SAMPLE_SITES,
   mergeLows,
-  type OpenMeteoHourlyRow,
   type SeasonWatchSettings,
   seasonStartYear,
   validateSeasonWatchSettings,
@@ -46,12 +45,12 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { openMeteoCallWeight } from './lib/apiMeter';
 import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { busyUntil, setBusyUntil } from './lib/dailyThrottle';
 import { clearBackoff } from './lib/imageryPump';
 import { isListed } from './lib/listing';
+import { fetchHourlyRows, openMeteoMeter } from './lib/openMeteoHourly';
 import { newYorkDate } from './lib/seasonWatchEmails';
 import {
   rosterSite as rosterSiteValidator,
@@ -732,7 +731,10 @@ export const requestHistoryFill = mutation({
 const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
-/** Sites per archive request: 12 × ~22 weighted calls stays under Open-Meteo's 600-a-minute cap. */
+/**
+ * Sites per planned fill request — one `fillSeason` action, which fetches them a few at a time
+ * (`lib/openMeteoHourly`). 12 × ~22 weighted calls a request, 75 minutes apart.
+ */
 const HISTORY_SITES_PER_REQUEST = 12;
 
 /**
@@ -889,54 +891,7 @@ export const heldSites = internalQuery({
     await heldIn(ctx, season, waterBodyIds, isCurrent),
 });
 
-/**
- * Sites per Open-Meteo hourly request. Hourly readings are ~24× the daily form, and from Convex a
- * 12-site answer (430 KB for 92 days) has taken a minute to arrive — or arrived cut off mid-array
- * (2026-10-11, the first request of a history fill). A few sites a request keeps each answer small.
- */
-const HOURLY_SITES_PER_FETCH = 3;
-
-/**
- * Each site's Open-Meteo hourly row, fetched a few sites at a time ({@link HOURLY_SITES_PER_FETCH}),
- * one retry per request for an answer that failed to arrive whole or a server error (never a 4xx:
- * a refusal or the quota is not a blip). `meter` is told each attempt's site count, so the call
- * meter counts what was actually asked for. Shared by the daily tick and the history fill.
- */
-export async function fetchHourlyRows(
-  url: string,
-  params: URLSearchParams,
-  sites: readonly { lat: number; lng: number }[],
-  meter: (siteCount: number) => Promise<void>,
-): Promise<(OpenMeteoHourlyRow | undefined)[]> {
-  const out: (OpenMeteoHourlyRow | undefined)[] = [];
-  for (let i = 0; i < sites.length; i += HOURLY_SITES_PER_FETCH) {
-    const chunk = sites.slice(i, i + HOURLY_SITES_PER_FETCH);
-    const query = new URLSearchParams(params);
-    query.set('latitude', chunk.map((s) => s.lat.toFixed(4)).join(','));
-    query.set('longitude', chunk.map((s) => s.lng.toFixed(4)).join(','));
-    let json: OpenMeteoHourlyRow | OpenMeteoHourlyRow[] | undefined;
-    for (let attempt = 1; json === undefined; attempt++) {
-      await meter(chunk.length);
-      try {
-        const res = await fetch(`${url}?${query.toString()}`);
-        if (!res.ok) {
-          const error = new Error(`Open-Meteo ${res.status} ${res.statusText}`);
-          if (res.status < 500 || attempt >= 2) throw error;
-          continue;
-        }
-        json = (await res.json()) as OpenMeteoHourlyRow | OpenMeteoHourlyRow[];
-      } catch (error) {
-        if (attempt >= 2 || /Open-Meteo 4\d\d/.test(String(error))) throw error;
-      }
-    }
-    // One coordinate answers with an object, several with an array.
-    const rows = Array.isArray(json) ? json : [json];
-    out.push(...chunk.map((_, j) => rows[j]));
-  }
-  return out;
-}
-
-/** Fill one season for a handful of sites — a few sites per Open-Meteo request. */
+/** Fill one season for a handful of sites (`lib/openMeteoHourly` fetches them a few at a time). */
 export const fillSeason = internalAction({
   args: {
     season: v.string(),
@@ -985,17 +940,14 @@ export const fillSeason = internalAction({
       params.set('end_date', `${year + 1}-06-30`);
       days = 303;
     }
-    const rows = await fetchHourlyRows(
+    const fetched = await fetchHourlyRows(
       isCurrent ? FORECAST_URL : ARCHIVE_URL,
       params,
       sites,
-      async (n) => {
-        await ctx.runMutation(internal.weather.recordOpenMeteoCallMutation, {
-          weightedCalls: openMeteoCallWeight(1, days) * n,
-          nowMs: now,
-        });
-      },
+      days,
+      openMeteoMeter(ctx, days),
     );
+    const rows = fetched.rows;
     await ctx.runMutation(internal.seasonWatch.storeSeries, {
       season,
       source: isCurrent ? 'forecast' : 'archive',
@@ -1010,6 +962,12 @@ export const fillSeason = internalAction({
         ];
       }),
     });
+    // What came is stored; what did not stays lacking for the next plan — and the failure is seen.
+    if (fetched.failed > 0) {
+      throw new Error(
+        `${fetched.lastError} filling ${season} (${fetched.failed} of ${fetched.requests} requests)`,
+      );
+    }
     return null;
   },
 });

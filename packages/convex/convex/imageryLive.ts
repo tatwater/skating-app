@@ -101,6 +101,7 @@ import {
   SPAWN_BREAKER,
 } from './lib/imageryPump';
 import {
+  exists,
   getJson,
   getPublicJson,
   listObjects,
@@ -781,9 +782,6 @@ async function check(
     if (await publicExists(config.r2, `frames/${granule.season}/${granule.granuleId}.json`)) {
       return settle('landed');
     }
-    if (await publicExists(config.r2, emptyMarkerKey(granule.season, granule.granuleId))) {
-      return settle('empty');
-    }
     let exitCode: number | null = null;
     if (granule.machineId) {
       const machine = await getMachine(config.fly, granule.machineId);
@@ -791,6 +789,11 @@ async function check(
       exitCode = machine?.exitCode ?? null;
     } else if (age < LOST_CLAIM_MS) {
       return { kind: 'young' }; // a claim whose spawn call may still be returning
+    }
+    // Gone: did it record nothing to cut? Asked of the bucket, signed — a CDN may have cached the
+    // 404 from while the cut was still running.
+    if (await exists(config.r2, emptyMarkerKey(granule.season, granule.granuleId))) {
+      return settle('empty');
     }
     // Gone without a frame or a nothing-to-cut record. The first miss is always retried: a spawn
     // that never started, a crash and an image too old to write the record all look the same here.
@@ -1137,9 +1140,16 @@ const frameRow = v.object({
 });
 
 export const syncFrames = internalMutation({
-  args: { add: v.array(frameRow), remove: v.array(v.id('imageryFrames')) },
-  handler: async (ctx, { add, remove }) => {
+  args: {
+    add: v.array(frameRow),
+    remove: v.array(v.id('imageryFrames')),
+    stamp: v.optional(v.array(v.object({ id: v.id('imageryFrames'), etag: v.string() }))),
+  },
+  handler: async (ctx, { add, remove, stamp }) => {
     for (const id of remove) await ctx.db.delete(id);
+    for (const { id, etag } of stamp ?? []) {
+      if (await ctx.db.get(id)) await ctx.db.patch(id, { etag });
+    }
     for (const row of add) {
       const existing = await ctx.db
         .query('imageryFrames')
@@ -1197,7 +1207,7 @@ export const buildIndex = internalAction({
           key: 'imagery-index-unreadable',
           season: result.season,
           problem: 'Some cut frames cannot be read into the imagery index',
-          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read, so ${n === 1 ? 'that frame is' : 'those frames are'} missing from the public timeline. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
+          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
         });
       }
       return { frames: result.frames };
@@ -1234,10 +1244,18 @@ async function buildIndexOnce(
     // ⚠ **A saved row is reused only while its manifest is unchanged.** A recut (`backfill`) writes
     // the same key again; its ETag is what says so, and a stale row would carry the old bands,
     // footprint and body count into the index — over the CLI's corrected one.
+    // A row written before ETags were kept adopts the listed one unread (`stamp` below): re-reading
+    // a whole season of manifests in one build would cost the action limit for nothing.
     const current = (r: Doc<'imageryFrames'>) => {
       const etag = etagOf.get(r.manifestKey);
-      return etag === undefined || r.etag === etag;
+      return etag === undefined || r.etag === undefined || r.etag === etag;
     };
+    const stamp = rows.flatMap((r) => {
+      const etag = etagOf.get(r.manifestKey);
+      return r.etag === undefined && etag !== undefined
+        ? [{ id: r._id as Id<'imageryFrames'>, etag }]
+        : [];
+    });
     const byKey = new Map(rows.map((r) => [r.manifestKey, r]));
     const remove = rows
       .filter((r) => !listedSet.has(r.manifestKey))
@@ -1268,10 +1286,11 @@ async function buildIndexOnce(
         } else unreadable++;
       }
     }
-    for (let i = 0; i < Math.max(added.length, remove.length); i += 100) {
+    for (let i = 0; i < Math.max(added.length, remove.length, stamp.length); i += 100) {
       await ctx.runMutation(internal.imageryLive.syncFrames, {
         add: added.slice(i, i + 100),
         remove: remove.slice(i, i + 100),
+        stamp: stamp.slice(i, i + 100),
       });
     }
 
