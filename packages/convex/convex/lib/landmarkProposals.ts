@@ -7,16 +7,24 @@
  * `name_landmark` request (D179's lane), answered on the lake editor, where adding the landmark
  * approves every ask for the same place.
  *
- * Quiet by design: a report must never fail because its proposal could not be filed. A name a live
- * landmark or bay already answers to, the same ask already open from this person, or a person past
- * their budget simply files nothing, and the report posts.
+ * Quiet by design: a report must never fail because its proposal could not be filed. A place a
+ * landmark already is, a name a bay answers to, the same place already asked for by this person, or
+ * a person past their budget simply files nothing, and the report posts. "The same place" is a
+ * name *and* a spot (`landmarkAnswersAsk`, `landmarkAsksAreSamePlace`): the Long Point across the
+ * lake from a known one is still a proposal (Greptile P1 on #84).
  */
 
-import { landmarkNameKey, MAX_OPEN_LANDMARK_REQUESTS_PER_USER } from '@skating/core';
+import {
+  type LandmarkAsk,
+  landmarkAnswersAsk,
+  landmarkAsksAreSamePlace,
+  landmarkNameKey,
+  MAX_OPEN_LANDMARK_REQUESTS_PER_USER,
+} from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { landmarksForBody } from './landmarkRows';
-import { landmarkNamesMeet, QUEUE_CAP } from './requestDecisions';
+import { landmarkAskOf, landmarkNamesMeet, QUEUE_CAP } from './requestDecisions';
 
 export async function fileLandmarkProposals(
   ctx: MutationCtx,
@@ -35,21 +43,22 @@ export async function fileLandmarkProposals(
   let budget =
     MAX_OPEN_LANDMARK_REQUESTS_PER_USER - open.filter((r) => r.kind === 'name_landmark').length;
   // Removed landmarks count as known: a place a moderator took down is not re-proposed by an edit
-  // of an old report that named it.
-  const known = [
-    ...(await landmarksForBody(ctx, body._id)).map((l) => [l.name, ...l.aliases]),
-    [...bayNames],
-  ];
-  const asked = new Set(
-    open
-      .filter((r) => r.kind === 'name_landmark' && r.waterBodyId === body._id)
-      .map((r) => r.nameKey ?? landmarkNameKey(r.name ?? '')),
-  );
+  // of an old report that named it. A bay is known by name alone — it is the whole bay.
+  const landmarks = await landmarksForBody(ctx, body._id);
+  const asked: LandmarkAsk[] = open
+    .filter((r) => r.kind === 'name_landmark' && r.waterBodyId === body._id)
+    .map(landmarkAskOf);
   let filed = 0;
   for (const spot of spots) {
     if (budget <= 0) break;
     const key = landmarkNameKey(spot.name);
-    if (!key || asked.has(key) || known.some((names) => landmarkNamesMeet([spot.name], names))) {
+    const ask = { names: [spot.name], coord: spot.coord };
+    if (
+      !key ||
+      landmarkNamesMeet([spot.name], bayNames) ||
+      landmarks.some((l) => landmarkAnswersAsk(l, ask)) ||
+      asked.some((a) => landmarkAsksAreSamePlace(a, ask))
+    ) {
       continue;
     }
     await ctx.db.insert('waterBodyRequests', {
@@ -63,7 +72,7 @@ export async function fileLandmarkProposals(
       reportId,
       createdAt: Date.now(),
     });
-    asked.add(key);
+    asked.push(ask);
     budget--;
     filed++;
   }

@@ -8,7 +8,15 @@
  * helpers do.
  */
 
-import { landmarkNameKey, requestNameKey, requestNameKeyFor } from '@skating/core';
+import {
+  haversineMeters,
+  type LandmarkAsk,
+  landmarkAnswersAsk,
+  landmarkAsksAreSamePlace,
+  landmarkNameKey,
+  requestNameKey,
+  requestNameKeyFor,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -23,8 +31,14 @@ export const QUEUE_CAP = 200;
  * Up to `limit` of the other open asks that share this one's question: the same kind on the same
  * body, or — for an `admit` — the same catalog feature (Greptile, PR #63: admits have no body to
  * group by, and two taps on one pond were two independent decisions). An unresolved admit has no
- * siblings yet. Both index ranges are exactly the sibling set, so `capped` means there are more,
+ * siblings yet. Those index ranges are exactly the sibling set, so `capped` means there are more,
  * not that a filter ate the page (second pass).
+ *
+ * A landmark ask is the exception: its siblings are the asks for the same *place*, and a place is a
+ * name and a spot (`landmarkAsksAreSamePlace`) — two Long Points on one lake are two questions
+ * (Greptile P1 on #84). No index range is a place, so it pages through the lake's open landmark
+ * asks by cursor and filters each page; `capped` then comes with the `cursor` to resume from, since
+ * the asks a filter left open would otherwise fill the next page again, forever.
  *
  * `asOf` bounds the range to rows that existed then, on the index's implicit `_creationTime` tail:
  * a decision closes the group *as it stood when the moderator answered*, and an ask filed while
@@ -35,15 +49,46 @@ export async function openSiblings(
   request: Doc<'waterBodyRequests'>,
   limit: number,
   asOf: number = Number.POSITIVE_INFINITY,
-  /**
-   * For an approved bay ask: the sub-area that answered it. Its name *and* aliases are the
-   * question then — the moderator who saved "Northwest Bay" with the alias "NW Bay" has answered
-   * the "NW Bay" ask too, which no name fold could join (Greptile, PR #76).
-   */
-  answeredBy?: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'> | null,
-): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean }> {
+  answer: {
+    /**
+     * For an approved bay ask: the sub-area that answered it. Its name *and* aliases are the
+     * question then — the moderator who saved "Northwest Bay" with the alias "NW Bay" has answered
+     * the "NW Bay" ask too, which no name fold could join (Greptile, PR #76).
+     */
+    subArea?: Pick<Doc<'waterBodySubAreas'>, 'name' | 'aliases'> | null;
+    /** For an approved landmark ask: the landmark that answered it — every ask it is the place of. */
+    landmark?: Doc<'bodyLandmarks'> | null;
+    /** For a landmark ask: where the last page ended. */
+    cursor?: string;
+  } = {},
+): Promise<{ rows: Doc<'waterBodyRequests'>[]; capped: boolean; cursor?: string }> {
   const none = { rows: [], capped: false };
   let rows: Doc<'waterBodyRequests'>[];
+  if (request.kind === 'name_landmark') {
+    const waterBodyId = request.waterBodyId;
+    if (waterBodyId === undefined) return none;
+    const page = await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_water_body', (q) =>
+        q
+          .eq('waterBodyId', waterBodyId)
+          .eq('kind', 'name_landmark')
+          .eq('status', 'open')
+          .lte('_creationTime', asOf),
+      )
+      .paginate({ numItems: limit, cursor: answer.cursor ?? null });
+    const asked = landmarkAskOf(request);
+    const { landmark } = answer;
+    const same = page.page.filter(
+      (r) =>
+        r._id !== request._id &&
+        (landmarkAsksAreSamePlace(asked, landmarkAskOf(r)) ||
+          (landmark != null && landmarkAnswersAsk(landmark, landmarkAskOf(r)))),
+    );
+    return page.isDone
+      ? { rows: same, capped: false }
+      : { rows: same, capped: true, cursor: page.continueCursor };
+  }
   if (request.kind === 'admit') {
     if (request.candidateExternalId === undefined) return none;
     rows = await ctx.db
@@ -55,14 +100,16 @@ export async function openSiblings(
           .lte('_creationTime', asOf),
       )
       .take(limit + 2);
-  } else if (request.kind === 'name_bay' || request.kind === 'name_landmark') {
-    // A bay's (or a landmark's) siblings are the asks for the *same place* — every name the
-    // answer carries when there is one, else the ask's own — each an exact range on the stored key.
+  } else if (request.kind === 'name_bay') {
+    // A bay's siblings are the asks for the *same bay* — every name the answer carries when there
+    // is one, else the ask's own — each an exact range on the stored key.
     const waterBodyId = request.waterBodyId;
     const kind = request.kind;
     if (waterBodyId === undefined) return none;
     const keys = new Set([requestKeyOf(request)]);
-    for (const n of answeredBy ? bayNames(answeredBy) : []) keys.add(requestNameKeyFor(kind, n));
+    for (const n of answer.subArea ? bayNames(answer.subArea) : []) {
+      keys.add(requestNameKeyFor(kind, n));
+    }
     rows = [];
     for (const key of keys) {
       rows.push(
@@ -97,6 +144,13 @@ export async function openSiblings(
   return { rows: others.slice(0, limit), capped: others.length > limit };
 }
 
+/** A `name_landmark` ask as core's same-place rule reads it: its names and the spot marked. */
+export function landmarkAskOf(
+  r: Pick<Doc<'waterBodyRequests'>, 'name' | 'aliases' | 'coord'>,
+): LandmarkAsk {
+  return { names: requestNames(r), coord: r.coord };
+}
+
 /** What a decision writes on every row it closes — carried to the continuation unchanged. */
 export const decisionArgs = {
   requestId: v.id('waterBodyRequests'),
@@ -107,6 +161,8 @@ export const decisionArgs = {
   admittedWaterBodyId: v.optional(v.id('waterBodies')),
   subAreaId: v.optional(v.id('waterBodySubAreas')),
   landmarkId: v.optional(v.id('bodyLandmarks')),
+  /** A landmark decision's drain: where the last page of the lake's asks ended (`openSiblings`). */
+  cursor: v.optional(v.string()),
 };
 export type Decision = {
   requestId: Id<'waterBodyRequests'>;
@@ -119,6 +175,8 @@ export type Decision = {
   subAreaId?: Id<'waterBodySubAreas'>;
   /** For an approved `name_landmark`: the landmark that answered it (D202). */
   landmarkId?: Id<'bodyLandmarks'>;
+  /** Where the drain of a landmark decision resumes — set only on its scheduled pages. */
+  cursor?: string;
 };
 
 export async function closeRow(
@@ -157,21 +215,26 @@ export async function closeRow(
  * is the transaction's bound — `QUEUE_CAP` patches plus as many audit rows — so a sibling group of
  * any size drains in bounded steps instead of one mutation that grows until it cannot commit
  * (Greptile, PR #63, third pass). Each page comes back empty of the rows the last one closed, and
- * the range ends at `decision.now`, so the drain converges on the group the moderator saw.
+ * the range ends at `decision.now`, so the drain converges on the group the moderator saw. A
+ * landmark decision's pages leave the other places' asks open, so it resumes from a cursor instead.
  */
 export async function closeSiblingPage(
   ctx: MutationCtx,
   request: Doc<'waterBodyRequests'>,
   decision: Decision,
 ): Promise<void> {
-  const answeredBy = decision.subAreaId
-    ? await ctx.db.get(decision.subAreaId)
-    : decision.landmarkId
-      ? await ctx.db.get(decision.landmarkId)
-      : null;
-  const { rows, capped } = await openSiblings(ctx, request, QUEUE_CAP, decision.now, answeredBy);
+  const { rows, capped, cursor } = await openSiblings(ctx, request, QUEUE_CAP, decision.now, {
+    subArea: decision.subAreaId ? await ctx.db.get(decision.subAreaId) : null,
+    landmark: decision.landmarkId ? await ctx.db.get(decision.landmarkId) : null,
+    ...(decision.cursor !== undefined ? { cursor: decision.cursor } : {}),
+  });
   for (const row of rows) await closeRow(ctx, row, decision);
-  if (capped) await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, decision);
+  if (capped) {
+    await ctx.scheduler.runAfter(0, internal.corpusRequests.closeSiblings, {
+      ...decision,
+      ...(cursor !== undefined ? { cursor } : {}),
+    });
+  }
 }
 
 /**
@@ -310,25 +373,30 @@ export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): b
   return b.some((n) => keys.has(landmarkNameKey(n)));
 }
 
-/** The live landmark among `rows` answering to one of `names`, if any — for callers holding the rows. */
+/**
+ * The live landmark among `rows` that answers this ask — its name *and* its place
+ * (`landmarkAnswersAsk`) — if any, for callers holding the rows. The nearest wins when two do.
+ */
 export function matchLandmark(
   rows: readonly Doc<'bodyLandmarks'>[],
-  names: readonly string[],
+  ask: LandmarkAsk,
 ): Doc<'bodyLandmarks'> | null {
-  return (
-    rows.find(
-      (row) => row.removedAt === undefined && landmarkNamesMeet(names, [row.name, ...row.aliases]),
-    ) ?? null
-  );
+  let best: { row: Doc<'bodyLandmarks'>; meters: number } | null = null;
+  for (const row of rows) {
+    if (row.removedAt !== undefined || !landmarkAnswersAsk(row, ask)) continue;
+    const meters = haversineMeters(row.point, ask.coord);
+    if (!best || meters < best.meters) best = { row, meters };
+  }
+  return best?.row ?? null;
 }
 
-/** The live landmark on this body that answers to a `name_landmark` ask's name, if one exists. */
+/** The live landmark on this body that answers a `name_landmark` ask, if one exists. */
 export async function namedLandmark(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-  names: readonly string[],
+  ask: LandmarkAsk,
 ): Promise<Doc<'bodyLandmarks'> | null> {
-  return matchLandmark(await liveLandmarksForBody(ctx, waterBodyId), names);
+  return matchLandmark(await liveLandmarksForBody(ctx, waterBodyId), ask);
 }
 
 /**

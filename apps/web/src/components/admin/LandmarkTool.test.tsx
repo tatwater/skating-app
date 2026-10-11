@@ -24,7 +24,7 @@ const { calls, refusal, useMutation } = vi.hoisted(() => {
 });
 /** What each query returns, by the name the mocked `api` gives it; anything unset is empty. */
 const { queryResults, useQuery } = vi.hoisted(() => {
-  const queryResults: Record<string, unknown[]> = {};
+  const queryResults: Record<string, unknown> = {};
   return {
     queryResults,
     useQuery: vi.fn(
@@ -243,6 +243,24 @@ describe('LandmarkTool', () => {
     });
   });
 
+  it('says when more proposals wait than the card holds (Greptile P2 on #84)', () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Bird Poop Rock',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { unmount } = renderTool();
+    expect(screen.queryByText(/More are waiting/)).not.toBeInTheDocument();
+    unmount();
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: true };
+    renderTool();
+    expect(screen.getByText(/More are waiting/)).toBeInTheDocument();
+  });
+
   it('reports a refused write in the server’s words', async () => {
     const { ConvexError } = await import('convex/values');
     refusal.next = new ConvexError('"Apple Island" is already a landmark here');
@@ -260,25 +278,28 @@ describe('LandmarkTool', () => {
   });
 
   it('answers a skater’s proposal by adding the landmark with the ask attached', async () => {
-    queryResults.openLandmarkRequestsForBody = [
-      {
-        requestId: 'req1',
-        name: 'Bird Poop Rock',
-        coord: { lat: 44.31, lng: -73.21 },
-        askers: 2,
-        reportIds: [],
-        createdAt: 0,
-      },
-      {
-        requestId: 'req2',
-        name: 'Apple Island',
-        coord: { lat: 44.5, lng: -73.3 },
-        askers: 1,
-        reportIds: [],
-        createdAt: 0,
-        existingLandmarkId: 'lm-Apple Island',
-      },
-    ];
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [
+        {
+          requestId: 'req1',
+          name: 'Bird Poop Rock',
+          coord: { lat: 44.31, lng: -73.21 },
+          askers: 2,
+          reportIds: [],
+          createdAt: 0,
+        },
+        {
+          requestId: 'req2',
+          name: 'Apple Island',
+          coord: { lat: 44.5, lng: -73.3 },
+          askers: 1,
+          reportIds: [],
+          createdAt: 0,
+          existingLandmarkId: 'lm-Apple Island',
+        },
+      ],
+      more: false,
+    };
     const onPlacePoint = vi.fn();
     const { rerender } = renderTool({ onPlacePoint });
     expect(screen.getByText(/2 skaters/)).toBeInTheDocument();

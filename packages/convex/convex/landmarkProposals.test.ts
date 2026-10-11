@@ -3,6 +3,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { QUEUE_CAP } from './corpusRequests';
 import schema from './schema';
 
 /**
@@ -100,14 +101,14 @@ async function seedLandmark(
   t: ReturnType<typeof convexTest>,
   waterBodyId: Id<'waterBodies'>,
   name: string,
-  extra: { removed?: boolean } = {},
+  extra: { removed?: boolean; point?: { lat: number; lng: number } } = {},
 ) {
   return t.run((ctx) =>
     ctx.db.insert('bodyLandmarks', {
       waterBodyId,
       name,
       kind: 'island',
-      point: { lat: 0.5, lng: 0.5 },
+      point: extra.point ?? { lat: 0.5, lng: 0.5 },
       source: 'osm',
       externalIds: [],
       aliases: [],
@@ -119,6 +120,8 @@ async function seedLandmark(
 }
 
 const at = { lat: 0.4, lng: 0.4 };
+/** Another spot on the same lake, ~31 km from `at` — another place by any name. */
+const far = { lat: 0.6, lng: 0.6 };
 
 function located(point: { name?: string; landmarkId?: string }) {
   return { coord: at, radiusMeters: 75, ...point };
@@ -215,7 +218,7 @@ describe('a report that names a landmark', () => {
           .then((rows) => rows.filter((h) => h.waterBodyId === lake).map((h) => h.geometryKind)),
       );
       const report = await t.run((ctx) => ctx.db.get(reportId));
-      return { pins, point: report?.sightings[0]?.where?.point };
+      return { pins, point: report?.sightings?.[0]?.where?.point };
     };
     // A thumb on the label took the landmark's name: still a tap, still a pin.
     expect((await post('osm/1', {})).pins).toEqual(['point_radius']);
@@ -313,7 +316,7 @@ describe('a report that names a spot no map has', () => {
   test('one report naming a place two ways files one ask; "the Gut" meets the landmark "Gut"', async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, 'osm/1');
-    await seedLandmark(t, lake, 'Gut');
+    await seedLandmark(t, lake, 'Gut', { point: at });
     const { as } = await seedUser(t, 'skater');
     await as.mutation(api.reports.create, {
       ...OBSERVED,
@@ -330,10 +333,10 @@ describe('a report that names a spot no map has', () => {
     expect((await requests(t)).map((r) => r.name)).toEqual(['St. Albans Rock']);
   });
 
-  test('files nothing for a name a landmark or a bay already answers to', async () => {
+  test('files nothing for a place a landmark already is, or a name a bay answers to', async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, 'osm/1');
-    await seedLandmark(t, lake, 'Apple Island');
+    await seedLandmark(t, lake, 'Apple Island', { point: at });
     const { id: skater, as } = await seedUser(t, 'skater');
     await t.run((ctx) =>
       ctx.db.insert('waterBodySubAreas', {
@@ -361,6 +364,28 @@ describe('a report that names a spot no map has', () => {
       ],
     });
     expect(await requests(t)).toHaveLength(0);
+  });
+
+  test('files the same name at another place — two Long Points are two proposals (Greptile P1 on #84)', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, 'osm/1');
+    await seedLandmark(t, lake, 'Long Point', { point: far });
+    const { as } = await seedUser(t, 'skater');
+    const post = (coord: { lat: number; lng: number }) =>
+      as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: lake,
+        skateEndTime: SKATE_TIME,
+        iceTypes: [
+          {
+            type: 'black_ice',
+            where: { point: { coord, radiusMeters: 75, name: 'Long Point' } },
+          },
+        ],
+      });
+    await post(at); // far from the known Long Point: a proposal
+    await post({ lat: 0.4005, lng: 0.4 }); // ~56 m on: the same place, already asked
+    expect((await requests(t)).map((r) => r.coord)).toEqual([at]);
   });
 
   test('stops at the person’s budget, and the report still posts', async () => {
@@ -462,20 +487,21 @@ describe('a moderator answering proposals', () => {
 
   test('sees one row per place, with who asked and where', async () => {
     const { lake, mod } = await twoAsks();
-    const queue = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+    const { proposals, more } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
       waterBodyId: lake,
     });
-    expect(queue).toHaveLength(1);
-    expect(queue[0]).toMatchObject({ name: 'Bird Poop Rock', askers: 2, coord: at });
-    expect(queue[0]?.reportIds).toHaveLength(2);
-    expect(queue[0]?.existingLandmarkId).toBeUndefined();
+    expect(more).toBe(false);
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]).toMatchObject({ name: 'Bird Poop Rock', askers: 2, coord: at });
+    expect(proposals[0]?.reportIds).toHaveLength(2);
+    expect(proposals[0]?.existingLandmarkId).toBeUndefined();
   });
 
   test('adding the landmark with the ask attached answers everyone who asked', async () => {
     const { t, lake, mod } = await twoAsks();
-    const [row] = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
-      waterBodyId: lake,
-    });
+    const {
+      proposals: [row],
+    } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId: lake });
     if (!row) throw new Error('no queue row');
     const id = await mod.as.mutation(api.landmarks.create, {
       waterBodyId: lake,
@@ -494,9 +520,9 @@ describe('a moderator answering proposals', () => {
 
   test('refuses an answer that does not carry the asked-for name', async () => {
     const { lake, mod } = await twoAsks();
-    const [row] = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
-      waterBodyId: lake,
-    });
+    const {
+      proposals: [row],
+    } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId: lake });
     if (!row) throw new Error('no queue row');
     await expect(
       mod.as.mutation(api.landmarks.create, {
@@ -511,21 +537,130 @@ describe('a moderator answering proposals', () => {
 
   test('approving from the queue needs the landmark to exist; declining needs a reason', async () => {
     const { t, lake, mod } = await twoAsks();
-    const [row] = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
-      waterBodyId: lake,
-    });
+    const {
+      proposals: [row],
+    } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId: lake });
     if (!row) throw new Error('no queue row');
     await expect(
       mod.as.mutation(api.corpusRequests.approve, { requestId: row.requestId }),
     ).rejects.toThrow(/add it in the lake editor first/);
-    const landmark = await seedLandmark(t, lake, 'Bird Poop Rock');
+    // One by that name across the lake answers nobody here.
+    await seedLandmark(t, lake, 'Bird Poop Rock', { point: far });
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, { requestId: row.requestId }),
+    ).rejects.toThrow(/near that spot/);
+    const landmark = await seedLandmark(t, lake, 'Bird Poop Rock', { point: at });
     const queue = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
       waterBodyId: lake,
     });
-    expect(queue[0]?.existingLandmarkId).toBe(landmark);
+    expect(queue.proposals[0]?.existingLandmarkId).toBe(landmark);
     await mod.as.mutation(api.corpusRequests.approve, { requestId: row.requestId });
     expect(
       (await requests(t)).every((r) => r.status === 'approved' && r.landmarkId === landmark),
     ).toBe(true);
+  });
+});
+
+describe('two places by one name (Greptile P1 and P2 on #84)', () => {
+  /** Open `Long Point` asks written straight to the table — `create` files one per person. */
+  async function seedAsks(
+    t: ReturnType<typeof convexTest>,
+    lake: Id<'waterBodies'>,
+    requesterId: Id<'profiles'>,
+    coord: { lat: number; lng: number },
+    n: number,
+  ) {
+    return t.run(async (ctx) => {
+      const ids: Id<'waterBodyRequests'>[] = [];
+      for (let i = 0; i < n; i++) {
+        ids.push(
+          await ctx.db.insert('waterBodyRequests', {
+            kind: 'name_landmark',
+            status: 'open',
+            requesterId,
+            coord,
+            waterBodyId: lake,
+            name: 'Long Point',
+            nameKey: 'long point',
+            createdAt: Date.now(),
+          }),
+        );
+      }
+      return ids;
+    });
+  }
+
+  async function lakeWithAsks() {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, 'osm/1');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const skater = await seedUser(t, 'skater');
+    return { t, lake, mod, skater };
+  }
+
+  const statusesAt = async (t: ReturnType<typeof convexTest>, coord: { lat: number }) =>
+    (await requests(t)).filter((r) => r.coord.lat === coord.lat).map((r) => r.status);
+
+  test('are two rows, and adding one answers only the asks for it', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    await seedAsks(t, lake, skater.id, at, 2);
+    await seedAsks(t, lake, skater.id, far, 1);
+    vi.setSystemTime(NOW + 60_000);
+    const { proposals } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+      waterBodyId: lake,
+    });
+    expect(proposals.map((p) => [p.coord, p.askers])).toEqual([
+      [at, 2],
+      [far, 1],
+    ]);
+    // The moderator's queue counts askers by place too.
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(queue.map((r) => r.askers)).toEqual([2, 2, 1]);
+
+    const near = proposals[0];
+    if (!near) throw new Error('no proposal');
+    await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: lake,
+      name: 'Long Point',
+      kind: 'point',
+      point: near.coord,
+      requestId: near.requestId,
+    });
+    expect(await statusesAt(t, at)).toEqual(['approved', 'approved']);
+    expect(await statusesAt(t, far)).toEqual(['open']);
+    // The other Long Point is still a question, and the new landmark is not its answer.
+    const after = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+      waterBodyId: lake,
+    });
+    expect(after.proposals).toHaveLength(1);
+    expect(after.proposals[0]).toMatchObject({ coord: far });
+    expect(after.proposals[0]?.existingLandmarkId).toBeUndefined();
+    expect(
+      (await mod.as.query(api.corpusRequests.listQueue, {}))[0]?.existingLandmarkId,
+    ).toBeUndefined();
+  });
+
+  test('a decision drains its place past pages full of the other place’s asks', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    // The other place's asks first, so every page the drain reads starts full of rows it leaves.
+    await seedAsks(t, lake, skater.id, far, QUEUE_CAP + 20);
+    vi.setSystemTime(NOW + 1);
+    const [first, ...rest] = await seedAsks(t, lake, skater.id, at, 30);
+    if (!first) throw new Error('no ask');
+    vi.setSystemTime(NOW + 60_000);
+    await mod.as.mutation(api.corpusRequests.decline, { requestId: first, note: 'Not a place.' });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await statusesAt(t, at)).toEqual(Array(rest.length + 1).fill('declined'));
+    expect((await statusesAt(t, far)).every((s) => s === 'open')).toBe(true);
+  });
+
+  test('a lake past the read says more are waiting', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    await seedAsks(t, lake, skater.id, at, QUEUE_CAP + 1);
+    const { proposals, more } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+      waterBodyId: lake,
+    });
+    expect(more).toBe(true);
+    expect(proposals[0]?.askers).toBe(QUEUE_CAP);
   });
 });

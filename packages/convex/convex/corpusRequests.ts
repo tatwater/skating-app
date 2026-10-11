@@ -29,6 +29,7 @@
 import {
   ADMIT_KNOWN_WATER_MARGIN_M,
   catalogQueryUrl,
+  groupLandmarkAsks,
   isActive,
   MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
@@ -71,6 +72,7 @@ import {
   decide,
   decisionArgs,
   drawnBay,
+  landmarkAskOf,
   listedBaysOf,
   matchBay,
   matchLandmark,
@@ -451,6 +453,8 @@ export const openCountsForBody = query({
 function questionKey(r: Doc<'waterBodyRequests'>): string {
   if (r.kind === 'admit') return r.candidateExternalId ? `admit:${r.candidateExternalId}` : r._id;
   if (r.kind === 'name_bay' || r.kind === 'name_landmark') {
+    // A landmark ask's question is its place, which `listQueue` groups from the page; this name key
+    // stands only for one it could not place.
     return `${r.kind}:${r.waterBodyId}:${requestKeyOf(r)}`;
   }
   return `${r.kind}:${r.waterBodyId}`;
@@ -476,10 +480,27 @@ export const listQueue = query({
       .take(QUEUE_CAP + 1);
     const pageIsPartial = rows.length > QUEUE_CAP;
     const page = rows.slice(0, QUEUE_CAP);
+    // A landmark ask's question is a place, not a name (Greptile P1 on #84): the page's asks on
+    // each lake grouped as the lake editor groups them, each keyed by its place's first ask.
+    const landmarkAsksByBody = new Map<string, Doc<'waterBodyRequests'>[]>();
+    for (const r of page) {
+      if (r.status !== 'open' || r.kind !== 'name_landmark' || !r.waterBodyId) continue;
+      landmarkAsksByBody.set(r.waterBodyId, [...(landmarkAsksByBody.get(r.waterBodyId) ?? []), r]);
+    }
+    const placeOf = new Map<string, string>();
+    for (const asks of landmarkAsksByBody.values()) {
+      const places = groupLandmarkAsks(asks.map((r) => ({ ...landmarkAskOf(r), id: r._id })));
+      for (const place of places)
+        for (const ask of place) placeOf.set(ask.id, place[0]?.id ?? ask.id);
+    }
+    const questionOf = (r: Doc<'waterBodyRequests'>) => {
+      const place = placeOf.get(r._id);
+      return place !== undefined ? `name_landmark:${place}` : questionKey(r);
+    };
     const askersByQuestion = new Map<string, number>();
     for (const r of page) {
       if (r.status !== 'open') continue;
-      const key = questionKey(r);
+      const key = questionOf(r);
       askersByQuestion.set(key, (askersByQuestion.get(key) ?? 0) + 1);
     }
     // A lake's bays are read once however many of its bay asks the page holds — Champlain's
@@ -522,7 +543,9 @@ export const listQueue = query({
           : {}),
         // For a landmark proposal (D202): the landmark that already answers it, if one was added.
         ...(r.kind === 'name_landmark' && r.status === 'open' && body
-          ? { existingLandmarkId: matchLandmark(await landmarksOf(body._id), requestNames(r))?._id }
+          ? {
+              existingLandmarkId: matchLandmark(await landmarksOf(body._id), landmarkAskOf(r))?._id,
+            }
           : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
@@ -538,7 +561,7 @@ export const listQueue = query({
             }
           : {}),
         /** Distinct people with the same open ask on the same lake — the rank. */
-        askers: askersByQuestion.get(questionKey(r)) ?? 1,
+        askers: askersByQuestion.get(questionOf(r)) ?? 1,
         /** The queue is a backlog past the cap, so the rank counts only what this page holds. */
         ...(pageIsPartial && r.status === 'open' ? { askersCapped: true } : {}),
         ...(r.candidate
@@ -654,10 +677,11 @@ export const approve = mutation({
           // The same shape as a bay: the act is adding the landmark on the lake editor (with the
           // request attached, which approves from there); approving from the queue is for one added
           // before the ask, and needs it to exist by the name asked for.
-          const landmark = await namedLandmark(ctx, body._id, requestNames(request));
+          // By name *and* place: a Long Point across the lake answers nobody who marked this one.
+          const landmark = await namedLandmark(ctx, body._id, landmarkAskOf(request));
           if (!landmark) {
             throw new ConvexError(
-              `No landmark called "${request.name}" on ${body.name} yet — add it in the lake editor first, then approve.`,
+              `No landmark called "${request.name}" near that spot on ${body.name} yet — add it in the lake editor first, then approve.`,
             );
           }
           answeringLandmarkId = landmark._id;
@@ -797,9 +821,14 @@ export const openBayRequestsForBody = query({
 
 /**
  * Moderator: the lake editor's landmark proposals (D202) — this body's open `name_landmark` asks,
- * one row per place (grouped by name key, oldest first): the name, the spot the first skater tapped,
- * how many named it, the reports that did, and — when a landmark by that name already exists — its
- * id, so the row offers "approve" rather than "add".
+ * one row per place, oldest first. A place is a name *and* a spot (`groupLandmarkAsks`): two
+ * skaters who named two different Long Points are two rows, each answered on its own (Greptile P1
+ * on #84). Each row carries the name, the spot its first skater marked, how many named it, the
+ * reports that did, and — when a landmark by that name already stands there — its id, so the row
+ * offers "approve" rather than "add".
+ *
+ * Reads the oldest {@link QUEUE_CAP} asks; past that, `more` says the rest are waiting, and they
+ * surface here as these are answered (Greptile P2 on #84). A lake's asks are not capped at filing.
  */
 export const openLandmarkRequestsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
@@ -810,43 +839,31 @@ export const openLandmarkRequestsForBody = query({
       .withIndex('by_water_body', (q) =>
         q.eq('waterBodyId', waterBodyId).eq('kind', 'name_landmark').eq('status', 'open'),
       )
-      .take(QUEUE_CAP);
-    const byKey = new Map<
-      string,
-      {
-        requestId: Id<'waterBodyRequests'>;
-        name: string;
-        coord: { lat: number; lng: number };
-        askers: number;
-        reportIds: Id<'reports'>[];
-        createdAt: number;
-      }
-    >();
-    for (const r of rows.sort((x, y) => x.createdAt - y.createdAt)) {
-      const key = requestKeyOf(r);
-      const entry = byKey.get(key);
-      if (entry) {
-        entry.askers += 1;
-        if (r.reportId && !entry.reportIds.includes(r.reportId)) entry.reportIds.push(r.reportId);
-        continue;
-      }
-      byKey.set(key, {
-        requestId: r._id,
-        name: r.name ?? '',
-        coord: r.coord,
-        askers: 1,
-        reportIds: r.reportId ? [r.reportId] : [],
-        createdAt: r.createdAt,
-      });
-    }
+      .take(QUEUE_CAP + 1);
+    const read = rows.slice(0, QUEUE_CAP).sort((x, y) => x.createdAt - y.createdAt);
+    const places = groupLandmarkAsks(read.map((r) => ({ ...landmarkAskOf(r), row: r })));
     // The body's landmarks read once, however many places are proposed.
     const landmarks = await liveLandmarksForBody(ctx, waterBodyId);
-    const out = [];
-    for (const entry of byKey.values()) {
-      const existing = matchLandmark(landmarks, [entry.name]);
-      out.push({ ...entry, ...(existing ? { existingLandmarkId: existing._id } : {}) });
+    const proposals = [];
+    for (const place of places) {
+      const first = place[0];
+      if (!first) continue;
+      const reportIds: Id<'reports'>[] = [];
+      for (const { row } of place) {
+        if (row.reportId && !reportIds.includes(row.reportId)) reportIds.push(row.reportId);
+      }
+      const existing = matchLandmark(landmarks, first);
+      proposals.push({
+        requestId: first.row._id,
+        name: first.row.name ?? '',
+        coord: first.row.coord,
+        askers: place.length,
+        reportIds,
+        createdAt: first.row.createdAt,
+        ...(existing ? { existingLandmarkId: existing._id } : {}),
+      });
     }
-    return out;
+    return { proposals, more: rows.length > QUEUE_CAP };
   },
 });
 

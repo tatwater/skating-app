@@ -6300,7 +6300,12 @@ never on a tie.
 **Proposed by skaters.** A spot a skater names that no landmark answers to — "bird poop rock" — is
 filed by the report write as a seventh request kind, `name_landmark` (D179's lane, D201's shape),
 with the spot and the report; quietly, on a budget of ten open per person, never failing the report.
-A moderator adds it from the lake editor, which answers every ask for the same place.
+A moderator adds it from the lake editor, which answers every ask for the same place. *The same
+place* is a name **and** a spot (#84 review): an ask reads as kind `other` in the same-place rule, so
+two Long Points on one lake are two proposals, a landmark at one answers nobody who marked the
+other, and the second is filed even once the first is on the map. A lake's open asks are not
+capped (the founder's call: a cap would turn proposals away to spare the drain its paging); a
+decision drains its place by cursor, and the editor lists the oldest 200 and says when more wait.
 
 **The corpus's leftovers are a queue, not a file.** The names the corpus uses that no landmark
 took load into `corpusPlaceNames` (a count and a spelling, never message text — L5a) with their lake

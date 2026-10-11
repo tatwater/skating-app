@@ -252,6 +252,55 @@ export function landmarksAreSamePlace(a: LandmarkIdentity, b: LandmarkIdentity):
   return haversineMeters(a.point, b.point) <= radius;
 }
 
+/** A skater's ask for a landmark (D202, `name_landmark`): the names it goes by, and the spot marked. */
+export interface LandmarkAsk {
+  names: readonly string[];
+  coord: LatLng;
+}
+
+/** An ask as the same-place rule sees it — it has no kind, so it agrees with any (`other`'s radius). */
+function askIdentity(ask: LandmarkAsk): LandmarkIdentity {
+  return { kind: 'other', point: ask.coord, names: ask.names };
+}
+
+/**
+ * Is this ask for this landmark — a name of one folding to a name of the other, *and* the same place
+ * by {@link landmarksAreSamePlace}? A name alone is not enough: Champlain has two Long Points, and
+ * a landmark at one answers nobody who marked the other (Greptile P1 on #84).
+ */
+export function landmarkAnswersAsk(
+  landmark: { kind: LandmarkKind; point: LatLng; name: string; aliases: readonly string[] },
+  ask: LandmarkAsk,
+): boolean {
+  return landmarksAreSamePlace(
+    { kind: landmark.kind, point: landmark.point, names: [landmark.name, ...landmark.aliases] },
+    askIdentity(ask),
+  );
+}
+
+/** Are two asks for one place — one name, marked within the same-place radius of each other? */
+export function landmarkAsksAreSamePlace(a: LandmarkAsk, b: LandmarkAsk): boolean {
+  return landmarksAreSamePlace(askIdentity(a), askIdentity(b));
+}
+
+/**
+ * The asks as places, for the lake editor's proposals: each ask, oldest first, joins the oldest
+ * place whose **first** ask it is the same place as, else starts one. The first ask stands for its
+ * place — its spot is where the editor flies, its id what a decision is made on — and a decision
+ * closes every open ask that is the same place as it (`openSiblings`). An ask within reach of two
+ * places' first asks is listed under the older and answered by whichever is decided first: by the
+ * rule it is the same place as either.
+ */
+export function groupLandmarkAsks<T extends LandmarkAsk>(asks: readonly T[]): T[][] {
+  const places: T[][] = [];
+  for (const ask of asks) {
+    const place = places.find((p) => landmarkAsksAreSamePlace(p[0] as T, ask));
+    if (place) place.push(ask);
+    else places.push([ask]);
+  }
+  return places;
+}
+
 /** The key two spellings of one landmark share — defined beside `requestNameKey` (`corpusRequests.ts`). */
 export { landmarkNameKey } from './corpusRequests';
 
