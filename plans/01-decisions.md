@@ -6245,9 +6245,11 @@ bridge, a marina, a lighthouse, a dam, the town on the shore, or the camp or res
 stretch of it is a **landmark** — a `bodyLandmarks` row: a name, a kind and a point on one body, with
 no page, favorite, feed or bounty. The corpus's skated-message count is the test (≥ 2 skated
 messages → a sub-area candidate, the rule that reproduced the founder's sixteen destination bays),
-and the two never name the same water twice: a landmark whose name a live bay answers to is not
-loaded, and drawing a bay retires the landmark of the same name in the same write (or, by id, the
-one a moderator promoted with *Draw as bay*).
+and the two never name the same water twice: a bay *names* a landmark when any name of one is any
+name of the other and the landmark is on the bay's water or within 1 km of it — one rule every
+writer reads. Such a landmark is not loaded or added, and drawing, redrawing, renaming or restoring
+a bay retires it in the same write (or, by id, the one a moderator promoted with *Draw as bay*). A
+same-named place across the lake (Champlain's other Mud Bay) is a landmark to all of them.
 
 **Where they come from.** OSM and GNIS, over every listed body, matched offline against a one-time
 export of the bodies' outlines (never a per-point lookup — the A06d parking pass's 105 GB lesson),

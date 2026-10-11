@@ -2,7 +2,7 @@
  * The landmark loader (glue, D202) — reads `landmarks.ndjson` from `pnpm landmarks` and writes it
  * through `landmarks:importBatch`, **dry unless `--apply`**.
  *
- *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--accept-source-drop]
+ *   pnpm --filter @skating/etl load-landmarks [.scratch/landmarks/landmarks.ndjson] [--campaign=<id>] [--apply] [--without-corpus] [--accept-source-drop] [--accept-mass-drop]
  *
  * Batches are packed by **landmark count across bodies**: ten thousand bodies hold one or two each,
  * and a spawn per body would be hours of `convex run` for seconds of writes. A body is never split
@@ -22,6 +22,7 @@ import {
   acceptsLoad,
   applyRefusal,
   type BodyLine,
+  matchedAtOf,
   packLines,
   summarySources,
   type TransformSummary,
@@ -120,6 +121,9 @@ function main(): void {
   // last accepted load; the importer says when they do not, and the operator may overrule it.
   const sources = summarySources(summary);
   const acceptSourceDrop = args.includes('--accept-source-drop');
+  // A separate word: excusing a real catalog shrink must not also lift the per-lake brake.
+  const acceptMassDrop = args.includes('--accept-mass-drop');
+  let batchesRetried = 0;
   const shortfalls = new Set<string>();
   let failedBatches = 0;
   let consecutive = 0;
@@ -129,11 +133,10 @@ function main(): void {
         convexRun<Counts & { shortfalls?: string[] }>('landmarks:importBatch', {
           bodies: batch,
           ...(campaignId !== undefined ? { campaignId } : {}),
-          ...(summary?.bodiesExportedAt !== undefined
-            ? { matchedAt: Math.floor(summary.bodiesExportedAt) }
-            : {}),
+          ...matchedAtOf(summary),
           ...(sources !== undefined ? { sources } : {}),
           ...(acceptSourceDrop ? { acceptSourceDrop } : {}),
+          ...(acceptMassDrop ? { acceptMassDrop } : {}),
           dryRun: !apply,
         });
       let counts: Counts & { shortfalls?: string[] };
@@ -141,7 +144,10 @@ function main(): void {
         counts = call();
       } catch {
         // One retry: the CLI's own auth check intermittently answers 401 mid-run (seen on the first
-        // dry run, 2026-09-29), and the batch is idempotent — a second attempt is always safe.
+        // dry run, 2026-09-29), and the batch is idempotent — a second attempt is always safe. But if
+        // the first call committed before the CLI failed, the retry sees its writes as already done
+        // and counts them `unchanged`: the run says so rather than under-report quietly.
+        batchesRetried++;
         counts = call();
       }
       for (const key of Object.keys(totals) as (keyof Counts)[]) totals[key] += counts[key] ?? 0;
@@ -197,6 +203,12 @@ function main(): void {
   logger.count('landmarksRead', landmarkCount);
   for (const [name, value] of Object.entries(totals)) logger.count(name, value);
   logger.count('batchesFailed', failedBatches);
+  logger.count('batchesRetried', batchesRetried);
+  if (batchesRetried > 0) {
+    notes.push(
+      `${batchesRetried} batch(es) retried: a first attempt that committed before failing is counted as unchanged, so created/updated/dropped may under-report`,
+    );
+  }
   logger.stage({
     name: 'load',
     detail:

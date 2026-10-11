@@ -129,6 +129,10 @@ export function LandmarkTool({
     );
   const shown = matching.slice(0, LIST_LIMIT);
 
+  /**
+   * Back to rest — and disarmed: a drop or a move left armed would take the next map click and open
+   * the new-landmark form beside whatever comes next, bound to the same name and kind.
+   */
   const reset = () => {
     setEditing(null);
     setMoving(null);
@@ -136,6 +140,7 @@ export function LandmarkTool({
     setKind('other');
     setAliases('');
     onClearPoint();
+    onArm(false);
   };
 
   const run = async (write: () => Promise<unknown>, ok: string) => {
@@ -261,7 +266,14 @@ export function LandmarkTool({
                       {moving === l._id ? 'Click the map…' : 'Move'}
                     </Button>
                     {PROMOTABLE.has(l.kind) ? (
-                      <Button variant="ghost" size="xs" onClick={() => onPromote(l)}>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => {
+                          reset();
+                          onPromote(l);
+                        }}
+                      >
                         Draw as bay
                       </Button>
                     ) : null}

@@ -709,7 +709,8 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
   The names it cannot attach land in `.scratch/landmarks/corpus-unmatched.csv` — a moderator's
   worklist.
 - **The load is idempotent and safe to repeat**: a removed landmark stays removed, a moderator's
-  edit keeps its name, kind and point, and a name a live bay carries (or an alias of it) is skipped.
+  edit keeps its name, kind and point (and a spelling they deleted stays deleted), and a landmark a
+  live bay names — any name of either, within 1 km of the bay — is skipped.
 - **It also forgets — on a run of every state only.** That run writes a line for every exported
   body, marked `complete` (an empty one if nothing landed), and a catalog row a complete line no
   longer has is retired (`dropped`), back if a later run places it (`returned`). A run of some
@@ -721,10 +722,13 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
   with no failed batch — a transform nobody loaded, or a dry run, never does. So the **first**
   complete load on a deployment retires nothing and sets the bar; the next one retires. On top, a
   lake about to lose more than half its catalog labels (and more than 10) holds them (`dropsHeld`).
-  Both print on the dry run. `--refresh` if an extract is broken; `--accept-source-drop` on the
-  loader if the shrink is real. Every osmium output and the body export are written under a
-  `.partial` name and renamed on success, so a run cut short never leaves a truncated cache. A row a merge moved after the body export the run matched against is never dropped (the
-  loader sends the export's time). Still read `dropped` on the dry run before `--apply` by hand, and
+  Both print on the dry run. `--refresh` if an extract is broken; on the loader,
+  `--accept-source-drop` if a source really shrank and `--accept-mass-drop` if a lake really lost
+  most of its labels — separate words, so excusing one never lifts the other. Every osmium output
+  and the body export are written under a `.partial` name and renamed on success, so a run cut short
+  never leaves a truncated cache. A row a merge moved after the body export *began* reading is never
+  dropped (`bodies.meta.json` records the start; the loader sends it, less five minutes of clock
+  slack). Still read `dropped` on the dry run before `--apply` by hand, and
   a batch whose drops pass a mutation's write limit fails whole.
 - **A mouth's id is where it meets the shore** (`osm:way/1#in@44.0213,-73.1002`), never its place in
   the list, so a crossing found or lost upstream cannot hand one mouth's id to another.

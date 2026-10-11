@@ -139,6 +139,7 @@ function importFor(
     complete?: boolean;
     sources?: { source: string; count: number }[];
     acceptSourceDrop?: boolean;
+    acceptMassDrop?: boolean;
   },
 ) {
   const { waterBodyId, landmarks, complete, ...rest } = args;
@@ -676,9 +677,17 @@ describe('landmarks and bays', () => {
         waterBodyId: body,
         name: 'kingsland bay',
         kind: 'other',
-        point: { lat: 44.9, lng: -72.6 },
+        point: { lat: 44.25, lng: -73.25 },
       }),
     ).rejects.toThrow(/is a bay on this lake/);
+    // The same name across the lake is another place — the one rule the retirement also reads.
+    const far = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'kingsland bay',
+      kind: 'other',
+      point: { lat: 44.9, lng: -72.6 },
+    });
+    await mod.as.mutation(api.landmarks.update, { landmarkId: far, kind: 'bay' });
   });
 
   test('promoting a landmark to a bay retires it in the same write', async () => {
@@ -978,7 +987,7 @@ describe('what a drop must not do (self-review)', () => {
     expect((await t.run((ctx) => ctx.db.get(butler)))?.name).toBe('Butler Isle');
   });
 
-  test('a candidate skipped for a bay’s name or a bad name still keeps its row', async () => {
+  test('a far same-named place loads past a bay, and a candidate with a bad name keeps its row', async () => {
     const t = harness();
     await seedBaseline(t);
     const body = await seedBody(t);
@@ -1001,7 +1010,9 @@ describe('what a drop must not do (self-review)', () => {
       complete: true,
       dryRun: false,
     });
-    expect(counts).toMatchObject({ alreadyBay: 1, invalidName: 1, dropped: 0 });
+    // The far Mud Bay is no bay's (80 km off): it refreshes like any landmark. The blank name is
+    // skipped, and still keeps its row.
+    expect(counts).toMatchObject({ alreadyBay: 0, invalidName: 1, dropped: 0, unchanged: 1 });
     expect((await rowsOf(t, body)).every((r) => r.removedAt === undefined)).toBe(true);
   });
 
@@ -1392,7 +1403,7 @@ describe('a merge, the survivor’s rows deciding (self-review)', () => {
       waterBodyId: survivor,
       landmarks: [hen],
       complete: true,
-      acceptSourceDrop: true,
+      acceptMassDrop: true,
       dryRun: false,
     });
     expect(counts).toMatchObject({ returned: 1, dropped: MAX_LANDMARKS_PER_BODY });
@@ -1508,10 +1519,19 @@ describe('a complete load retires only what its sources vouch for (Greptile, thi
       waterBodyId: body,
       landmarks: many.slice(0, 1),
       complete: true,
+      // Excusing a source shrink does not lift the brake: that takes its own word.
       acceptSourceDrop: true,
+      dryRun: true,
+    });
+    expect(meant).toMatchObject({ dropped: 0, dropsHeld: 11 });
+    const lifted = await importFor(t, {
+      waterBodyId: body,
+      landmarks: many.slice(0, 1),
+      complete: true,
+      acceptMassDrop: true,
       dryRun: false,
     });
-    expect(meant).toMatchObject({ dropped: 11, dropsHeld: 0 });
+    expect(lifted).toMatchObject({ dropped: 11, dropsHeld: 0 });
   });
 });
 
@@ -1538,5 +1558,173 @@ describe('a merge never overrides a moderator’s call (Greptile, third round)',
     // The footprint is a fact about the place, not a classification: it still comes across.
     expect(row?.areaSqM).toBe(42_000);
     expect(row?.externalIds).toEqual(['osm:way/1']);
+  });
+});
+
+describe('the review of the third round', () => {
+  test('two places near one row each keep their own: a place match is the nearest unclaimed row', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    // Two "Otter Creek" rocks 1.67 km apart, inside each other's 1 km radius only at the margin.
+    const at = (lat: number, id: string) =>
+      imported('Otter Creek', { lat, lng: -73.3 }, { kind: 'other', externalIds: [id] });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.2, 'osm:a')], dryRun: false });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.215, 'osm:b')], dryRun: false });
+    // A redrawn shore gives both new ids; the second sits 0.95 km from the first row and 0.72 km
+    // from the second — the first row was the first match in index order, the second is the nearest.
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [at(44.203, 'osm:a2'), at(44.2085, 'osm:b2')],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ dropped: 0, created: 0, updated: 2 });
+    const rows = (await rowsOf(t, body)).sort((a, b) => a.point.lat - b.point.lat);
+    expect(rows.map((r) => r.point.lat)).toEqual([44.203, 44.2085]);
+  });
+
+  test('a restore vouches for the row, whatever retired it, so a complete run keeps it', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const B = imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] });
+    await importFor(t, { waterBodyId: body, landmarks: [B], dryRun: false });
+    const id = (await rowsOf(t, body))[0]?._id as Id<'bodyLandmarks'>;
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: id });
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: id });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.moderatorEditedAt).toBeDefined();
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts.dropped).toBe(0);
+  });
+
+  test('a moderator cannot put a label on, or restore one to, a lake that is not on the map', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const merged = await seedBody(t, { dedupStatus: 'merged' });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await expect(
+      mod.as.mutation(api.landmarks.create, {
+        waterBodyId: merged,
+        name: 'Bird Poop Rock',
+        kind: 'other',
+        point: ISLAND,
+      }),
+    ).rejects.toThrow(/not on the map/);
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Bird Poop Rock',
+      kind: 'other',
+      point: ISLAND,
+    });
+    await mod.as.mutation(api.landmarks.remove, { landmarkId: id });
+    await t.run((ctx) => ctx.db.patch(id, { waterBodyId: merged }));
+    await expect(mod.as.mutation(api.landmarks.restore, { landmarkId: id })).rejects.toThrow(
+      /not on the map/,
+    );
+  });
+
+  test('a bay redrawn to reach a same-named landmark retires it', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Kingsland Bay',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.35, 44.15)] },
+    });
+    // 7 km east of the bay: another place, until the bay is drawn over it.
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Kingsland Bay',
+      kind: 'bay',
+      point: { lat: 44.125, lng: -73.27 },
+    });
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: bay,
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.25, 44.15)] },
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
+  });
+
+  test('a seeded batch of bays retires the labels they name, once per lake', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Mud Bay',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    await t.mutation(internal.subAreas.importSeed, {
+      actorUserId: mod.id,
+      seed: [
+        {
+          waterBodyId: body,
+          name: 'Mud Bay',
+          box: { minLat: 44.1, minLng: -73.4, maxLat: 44.3, maxLng: -73.2 },
+        },
+        {
+          waterBodyId: body,
+          name: 'Deep Bay',
+          box: { minLat: 44.6, minLng: -73.4, maxLat: 44.65, maxLng: -73.3 },
+        },
+      ],
+      dryRun: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
+  });
+
+  test('a moderator’s deleted alias stays deleted; a new feature still brings its spelling', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const carry = (ids: string[], aliases: string[]) =>
+      imported('Carry Bay', { lat: 44.2, lng: -73.3 }, { kind: 'bay', externalIds: ids, aliases });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [carry(['gnis:1'], ['Carletons Prize'])],
+      dryRun: false,
+    });
+    const id = (await rowsOf(t, body))[0]?._id as Id<'bodyLandmarks'>;
+    await mod.as.mutation(api.landmarks.update, { landmarkId: id, aliases: [] });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [carry(['gnis:1'], ['Carletons Prize'])],
+      dryRun: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.aliases).toEqual([]);
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [carry(['gnis:1', 'osm:node/7'], ['Carry Cove'])],
+      dryRun: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.aliases).toEqual(['Carry Cove']);
+  });
+
+  test('a run without a footprint or a specific kind keeps the ones the row has', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
+      dryRun: false,
+    });
+    await importFor(t, {
+      waterBodyId: body,
+      landmarks: [
+        imported('Gull Island', ISLAND, { kind: 'other', externalIds: ['gnis:9'], source: 'gnis' }),
+      ],
+      dryRun: false,
+    });
+    const [row] = await rowsOf(t, body);
+    expect(row).toMatchObject({ kind: 'island', areaSqM: 42_000 });
   });
 });

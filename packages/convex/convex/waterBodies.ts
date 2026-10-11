@@ -3099,7 +3099,13 @@ export async function mergeBodyInto(
     const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actorId);
     // Landmarks too (D202), after the bays: folded into the survivor's twins, then checked against
     // the survivor's bays — the merged set of both lakes' — for a label a bay now names.
-    const landmarks = await repointLandmarksOnMerge(ctx, loserId, survivorId, actorId);
+    const landmarks = await repointLandmarksOnMerge(
+      ctx,
+      loserId,
+      survivorId,
+      actorId,
+      subAreas.repointed > 0,
+    );
 
     const repointed = {
       reports: reports.length,

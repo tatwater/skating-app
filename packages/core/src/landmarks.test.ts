@@ -106,6 +106,11 @@ describe('landmarkLabelMinZoom', () => {
     );
   });
 
+  it('is a whole zoom, rounded up — the zoom a MapLibre filter can honor, never one early', () => {
+    // A ~1 km² island at 44.5° draws big enough at z11.7: the maps' filters can show it at 12.
+    expect(landmarkLabelMinZoom({ kind: 'island', areaSqM: 1_000_000, lat: 44.5 })).toBe(12);
+  });
+
   it('never leaves the label band, whatever the inputs', () => {
     fc.assert(
       fc.property(
@@ -117,6 +122,7 @@ describe('landmarkLabelMinZoom', () => {
           const zoom = landmarkLabelMinZoom({ kind, areaSqM, corpusMessages, lat });
           expect(zoom).toBeGreaterThanOrEqual(LANDMARK_LABEL_MIN_ZOOM);
           expect(zoom).toBeLessThanOrEqual(LANDMARK_LABEL_MAX_ZOOM);
+          expect(Number.isInteger(zoom)).toBe(true);
         },
       ),
     );

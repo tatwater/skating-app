@@ -29,7 +29,6 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -54,6 +53,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
 const SCRATCH = join(ROOT, '.scratch', 'landmarks');
 const BODIES = join(SCRATCH, 'bodies.ndjson');
+const BODIES_META = join(SCRATCH, 'bodies.meta.json');
 const ALL_STATES = ['vt', 'nh', 'me', 'ma', 'ny'] as const;
 
 function log(message: string): void {
@@ -72,6 +72,10 @@ async function readLines(path: string, onLine: (line: string) => void): Promise<
 /** Page every listed body's outline out of the deployment, once, into the cache. */
 function exportBodies(): void {
   mkdirSync(SCRATCH, { recursive: true });
+  // When the export *began* reading: a merge after this may have moved a lake's landmarks onto a
+  // survivor whose page was already read, so this — not when the file landed — is what the run was
+  // matched against (`matchedAt`). Recorded beside the cache, since a file's mtime moves with a copy.
+  const startedAt = Date.now();
   const lines: string[] = [];
   let cursor: string | undefined;
   let pages = 0;
@@ -89,7 +93,16 @@ function exportBodies(): void {
   // Renamed into place, so an export cut short never becomes the cache every later run matches against.
   writeFileSync(`${BODIES}.partial`, `${lines.join('\n')}\n`);
   renameSync(`${BODIES}.partial`, BODIES);
+  writeFileSync(`${BODIES_META}.partial`, `${JSON.stringify({ startedAt })}\n`);
+  renameSync(`${BODIES_META}.partial`, BODIES_META);
   log(`bodies: ${lines.length.toLocaleString()} listed bodies exported`);
+}
+
+/** When the cached export began reading — `{}` when the cache predates the record. */
+function bodiesExportedAt(): { bodiesExportedAt?: number } {
+  if (!existsSync(BODIES_META)) return {};
+  const { startedAt } = JSON.parse(readFileSync(BODIES_META, 'utf8')) as { startedAt?: number };
+  return typeof startedAt === 'number' ? { bodiesExportedAt: startedAt } : {};
 }
 
 async function loadBodies(): Promise<MatchBody[]> {
@@ -269,7 +282,9 @@ async function main(): Promise<void> {
     states: selected,
     corpusApplied: corpus !== undefined,
     complete,
-    bodiesExportedAt: statSync(BODIES).mtimeMs,
+    // Absent for a cache exported before the start was recorded: the importer then never drops a
+    // row a merge moved, rather than guess.
+    ...bodiesExportedAt(),
     bySource,
     ...counts,
     bodiesWithLandmarks: byBody.size,

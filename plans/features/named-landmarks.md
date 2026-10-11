@@ -161,6 +161,11 @@ moderator's worklist and the proposal lane's first customers.
   drops it — that export placed its catalogs on the lake that no longer exists.
   A fold fills what the kept row lacks — a footprint, a specific kind over `other` — but never a
   moderator's name, kind or point: their `other` is a call, not a gap.
+- *The review of Greptile's third round* — the bay-name rule had three versions (retire within 1 km;
+  refuse and skip anywhere on the lake), which locked Champlain's far Mud Bay against edits; it is
+  one now (`bayNaming`), redraws included. Place matches take the nearest row nobody in the run has
+  claimed, or a river's two mouths near one row collapse onto it. A restore always vouches. Labels
+  carry a whole `minZoom`, rounded up, because a MapLibre filter reads the integer tile zoom.
 - *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
   Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
 

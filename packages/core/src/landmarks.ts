@@ -277,6 +277,11 @@ const METERS_PER_PX_Z0 = 78_271.517;
  *
  * Crowding is the renderer's job, not this function's: labels are symbols with collision on, sorted
  * by prominence, so a lonely name shows at its zoom and a crowded one waits until there is room.
+ *
+ * **A whole zoom, rounded up.** Both maps hold a label back with a layer `filter`, and MapLibre
+ * evaluates a filter's `zoom` at the integer tile zoom — a 12.2 would show at 13, not 12.2. So the
+ * threshold is stated as the integer the maps can honor: the first whole zoom at which the place has
+ * earned its label, never one before.
  */
 export function landmarkLabelMinZoom(input: LandmarkProminenceInput & { lat: number }): number {
   const byProminence = 15 - landmarkProminence(input) / 2;
@@ -286,7 +291,7 @@ export function landmarkLabelMinZoom(input: LandmarkProminenceInput & { lat: num
     const bySize = Math.log2((METERS_PER_PX_Z0 * cosLat * LABEL_FIT_PX) / Math.sqrt(input.areaSqM));
     zoom = Math.min(zoom, bySize);
   }
-  return Math.min(LANDMARK_LABEL_MAX_ZOOM, Math.max(LANDMARK_LABEL_MIN_ZOOM, zoom));
+  return Math.ceil(Math.min(LANDMARK_LABEL_MAX_ZOOM, Math.max(LANDMARK_LABEL_MIN_ZOOM, zoom)));
 }
 
 /**

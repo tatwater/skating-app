@@ -127,3 +127,17 @@ export function acceptsLoad(run: {
 }): boolean {
   return run.apply && run.failedBatches === 0 && run.lines.some((l) => l.complete === true);
 }
+
+/** How far this machine's clock may run ahead of the deployment's when stamping the export. */
+export const EXPORT_CLOCK_SLACK_MS = 5 * 60 * 1000;
+
+/**
+ * The `matchedAt` the importer weighs a merged row's `movedAt` against: when the body export began
+ * reading, less {@link EXPORT_CLOCK_SLACK_MS} — the export is stamped by this machine and `movedAt` by
+ * the deployment, and erring early only spares a moved row one more run. `{}` (spare every moved
+ * row) when the summary does not say.
+ */
+export function matchedAtOf(summary: TransformSummary | undefined): { matchedAt?: number } {
+  const at = summary?.bodiesExportedAt;
+  return at === undefined ? {} : { matchedAt: Math.floor(at - EXPORT_CLOCK_SLACK_MS) };
+}

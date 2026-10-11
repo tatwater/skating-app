@@ -3,7 +3,9 @@ import {
   acceptsLoad,
   applyRefusal,
   type BodyLine,
+  EXPORT_CLOCK_SLACK_MS,
   landmarkLines,
+  matchedAtOf,
   packLines,
   runIsComplete,
   summarySources,
@@ -105,5 +107,15 @@ describe('applyRefusal', () => {
     expect(applyRefusal({ corpusApplied: false }, flags)).toMatch(/--without-corpus/);
     expect(applyRefusal(undefined, flags)).toMatch(/--without-corpus/);
     expect(applyRefusal({ corpusApplied: false }, { withoutCorpus: true })).toBeNull();
+  });
+});
+
+describe('matchedAtOf', () => {
+  it('is when the export began, less the clock slack — or nothing when the summary does not say', () => {
+    expect(matchedAtOf({ bodiesExportedAt: 1_000_000.7 })).toEqual({
+      matchedAt: Math.floor(1_000_000.7 - EXPORT_CLOCK_SLACK_MS),
+    });
+    expect(matchedAtOf({})).toEqual({});
+    expect(matchedAtOf(undefined)).toEqual({});
   });
 });

@@ -118,6 +118,16 @@ describe('LandmarkTool', () => {
     );
   });
 
+  it('disarms a pending drop when an edit or a promotion starts', () => {
+    const { onArm, onPromote } = renderTool({ armed: true });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    expect(onArm).toHaveBeenLastCalledWith(false);
+    onArm.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Draw as bay' }));
+    expect(onArm).toHaveBeenLastCalledWith(false);
+    expect(onPromote).toHaveBeenCalled();
+  });
+
   it('filters by name or kind, and says when nothing matches', () => {
     renderTool();
     const filter = screen.getByPlaceholderText('Find by name, alias or kind');

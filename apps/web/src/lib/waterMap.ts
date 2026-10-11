@@ -688,8 +688,8 @@ export const LANDMARK_SOURCE_ID = 'landmark-labels';
  * reference, the bay is the place.
  *
  * Each feature carries its own `minZoom` (`landmarkLabelMinZoom` — its footprint's size or its
- * prominence) and the filter holds it back until then; MapLibre evaluates a zoom filter at integer
- * zooms, which is the granularity the zoom was computed for. `symbol-sort-key` is the negated
+ * prominence) and the filter holds it back until then. MapLibre evaluates a filter's zoom at the
+ * integer tile zoom, so that `minZoom` is a whole zoom (rounded up in core). `symbol-sort-key` is the negated
  * prominence, so where two names collide the one skaters use more is placed first and the other
  * waits — the founder's "reveal the important ones first" without a rule per kind. Validated in a
  * test for the reason `summaryCardLayer` is: an invalid layer does not draw and does not say so.
