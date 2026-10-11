@@ -31,6 +31,8 @@ import {
   catalogQueryUrl,
   groupLandmarkAsks,
   isActive,
+  type LandmarkAsk,
+  landmarkAsksAreSamePlace,
   MAX_REQUEST_NAME_LENGTH,
   MAX_REQUEST_NOTE_LENGTH,
   nearestBodyForPoint,
@@ -453,7 +455,7 @@ export const openCountsForBody = query({
 function questionKey(r: Doc<'waterBodyRequests'>): string {
   if (r.kind === 'admit') return r.candidateExternalId ? `admit:${r.candidateExternalId}` : r._id;
   if (r.kind === 'name_bay' || r.kind === 'name_landmark') {
-    // A landmark ask's question is its place, which `listQueue` groups from the page; this name key
+    // A landmark ask's question is its place, which `listQueue` counts from the page; this name key
     // stands only for one it could not place.
     return `${r.kind}:${r.waterBodyId}:${requestKeyOf(r)}`;
   }
@@ -480,29 +482,33 @@ export const listQueue = query({
       .take(QUEUE_CAP + 1);
     const pageIsPartial = rows.length > QUEUE_CAP;
     const page = rows.slice(0, QUEUE_CAP);
-    // A landmark ask's question is a place, not a name (Greptile P1 on #84): the page's asks on
-    // each lake grouped as the lake editor groups them, each keyed by its place's first ask.
-    const landmarkAsksByBody = new Map<string, Doc<'waterBodyRequests'>[]>();
+    // A landmark ask's question is a place, not a name (Greptile P1 on #84). Every row here can be
+    // decided, and deciding one closes the asks that are the same place as *it* (`openSiblings`) —
+    // so that is what its count counts. Grouping by each place's first ask, as the lake editor does
+    // (where only the first ask is decided), would disagree once asks chain past the radius: A, B
+    // 700 m on, C 700 m past that — B's decision closes all three.
+    const landmarkAsksByBody = new Map<string, { id: string; ask: LandmarkAsk }[]>();
     for (const r of page) {
       if (r.status !== 'open' || r.kind !== 'name_landmark' || !r.waterBodyId) continue;
-      landmarkAsksByBody.set(r.waterBodyId, [...(landmarkAsksByBody.get(r.waterBodyId) ?? []), r]);
+      const asks = landmarkAsksByBody.get(r.waterBodyId) ?? [];
+      asks.push({ id: r._id, ask: landmarkAskOf(r) });
+      landmarkAsksByBody.set(r.waterBodyId, asks);
     }
-    const placeOf = new Map<string, string>();
+    const landmarkAskers = new Map<string, number>();
     for (const asks of landmarkAsksByBody.values()) {
-      const places = groupLandmarkAsks(asks.map((r) => ({ ...landmarkAskOf(r), id: r._id })));
-      for (const place of places)
-        for (const ask of place) placeOf.set(ask.id, place[0]?.id ?? ask.id);
+      for (const a of asks) {
+        const same = asks.filter((b) => b.id !== a.id && landmarkAsksAreSamePlace(a.ask, b.ask));
+        landmarkAskers.set(a.id, 1 + same.length);
+      }
     }
-    const questionOf = (r: Doc<'waterBodyRequests'>) => {
-      const place = placeOf.get(r._id);
-      return place !== undefined ? `name_landmark:${place}` : questionKey(r);
-    };
     const askersByQuestion = new Map<string, number>();
     for (const r of page) {
-      if (r.status !== 'open') continue;
-      const key = questionOf(r);
+      if (r.status !== 'open' || landmarkAskers.has(r._id)) continue;
+      const key = questionKey(r);
       askersByQuestion.set(key, (askersByQuestion.get(key) ?? 0) + 1);
     }
+    const askersOf = (r: Doc<'waterBodyRequests'>) =>
+      landmarkAskers.get(r._id) ?? askersByQuestion.get(questionKey(r)) ?? 1;
     // A lake's bays are read once however many of its bay asks the page holds — Champlain's
     // bays carry ~1,100-vertex outlines, and a read per ask repeats them.
     const baysByBody = new Map<string, Doc<'waterBodySubAreas'>[]>();
@@ -561,7 +567,7 @@ export const listQueue = query({
             }
           : {}),
         /** Distinct people with the same open ask on the same lake — the rank. */
-        askers: askersByQuestion.get(questionOf(r)) ?? 1,
+        askers: askersOf(r),
         /** The queue is a backlog past the cap, so the rank counts only what this page holds. */
         ...(pageIsPartial && r.status === 'open' ? { askersCapped: true } : {}),
         ...(r.candidate

@@ -22,8 +22,8 @@
  * contract, not in the schema.
  */
 
-import { landmarkNameKey } from './corpusRequests';
 import { isValidCoord, type LatLng } from './geometry';
+import { landmarkAsksAreSamePlace } from './landmarks';
 import {
   type ChipInput,
   chipKeys,
@@ -659,7 +659,9 @@ export function locatedParts(
 
 /**
  * The spots a report named that no landmark answers to — a point with a typed name and no id
- * (D202). Each is a proposal a moderator may accept (`name_landmark`). Once per name.
+ * (D202). Each is a proposal a moderator may accept (`name_landmark`). Once per place — a name
+ * *and* a spot (`namedSpotsAreSamePlace`): a report that names both of Champlain's Long Points
+ * names two places (#84 review).
  */
 export function locatedNamedSpots(
   report: Pick<NormalizedReport, 'iceTypes' | 'surfaceTags' | 'iceThickness' | 'sightings'>,
@@ -668,12 +670,23 @@ export function locatedNamedSpots(
   for (const item of locatedParts(report)) {
     const point = item.where?.point;
     if (!point?.name || point.landmarkId !== undefined) continue;
-    const name = point.name;
-    // The landmark fold: "St. Albans Rock" and "Saint Albans rock" are one proposal, not two.
-    if (spots.some((s) => landmarkNameKey(s.name) === landmarkNameKey(name))) continue;
-    spots.push({ name, coord: point.coord });
+    const spot = { name: point.name, coord: point.coord };
+    // The landmark fold: "St. Albans Rock" and "Saint Albans rock" at one spot are one proposal.
+    if (spots.some((s) => namedSpotsAreSamePlace(s, spot))) continue;
+    spots.push(spot);
   }
   return spots;
+}
+
+/** Are two named spots one place — `landmarkAsksAreSamePlace`, the rule a landmark ask is held to? */
+export function namedSpotsAreSamePlace(
+  a: { name: string; coord: LatLng },
+  b: { name: string; coord: LatLng },
+): boolean {
+  return landmarkAsksAreSamePlace(
+    { names: [a.name], coord: a.coord },
+    { names: [b.name], coord: b.coord },
+  );
 }
 
 export function minimumSetGaps(report: MinimumSetReport, hazardCount: number): MinimumSetTerm[] {

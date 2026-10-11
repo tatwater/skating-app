@@ -243,13 +243,16 @@ export interface LandmarkIdentity {
  */
 export function landmarksAreSamePlace(a: LandmarkIdentity, b: LandmarkIdentity): boolean {
   if (a.kind !== b.kind && a.kind !== 'other' && b.kind !== 'other') return false;
-  const keys = new Set(a.names.map(landmarkNameKey));
-  if (!b.names.some((n) => keys.has(landmarkNameKey(n)))) return false;
+  // The distance before the names: it is the cheap test, and the queue asks this of every ask
+  // against every landmark on a lake — most of them far away.
   const radius = Math.max(
     LANDMARK_SAME_PLACE_RADIUS_M[a.kind],
     LANDMARK_SAME_PLACE_RADIUS_M[b.kind],
   );
-  return haversineMeters(a.point, b.point) <= radius;
+  const near = haversineMeters(a.point, b.point) <= radius;
+  if (!near) return false;
+  const keys = new Set(a.names.map(landmarkNameKey));
+  return b.names.some((n) => keys.has(landmarkNameKey(n)));
 }
 
 /** A skater's ask for a landmark (D202, `name_landmark`): the names it goes by, and the spot marked. */

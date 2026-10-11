@@ -711,4 +711,23 @@ describe('locatedNamedSpots (D202)', () => {
   it('collects each typed name no landmark answers to, once per spelling', () => {
     expect(locatedNamedSpots(report)).toEqual([{ name: 'Bird Poop Rock', coord: at }]);
   });
+
+  it('collects one name at two places twice — two Long Points are two proposals (#84 review)', () => {
+    const across = { lat: 44.6, lng: -73.3 }; // ~11 km on
+    const near = { lat: 44.5005, lng: -73.3 }; // ~56 m on
+    const longPoint = (coord: { lat: number; lng: number }, name = 'Long Point') => ({
+      type: 'open' as const,
+      where: { point: { coord, radiusMeters: 75, name } },
+    });
+    expect(
+      locatedNamedSpots({
+        iceTypes: [],
+        surfaceTags: [],
+        sightings: [longPoint(at), longPoint(near, 'long point'), longPoint(across)],
+      }),
+    ).toEqual([
+      { name: 'Long Point', coord: at },
+      { name: 'Long Point', coord: across },
+    ]);
+  });
 });

@@ -549,11 +549,16 @@ describe('a moderator answering proposals', () => {
     await expect(
       mod.as.mutation(api.corpusRequests.approve, { requestId: row.requestId }),
     ).rejects.toThrow(/near that spot/);
+    // Two that answer (~220 m off, then at the spot): the nearer is the answer, whatever the order.
+    await seedLandmark(t, lake, 'Bird Poop Rock', { point: { lat: 0.402, lng: 0.4 } });
     const landmark = await seedLandmark(t, lake, 'Bird Poop Rock', { point: at });
     const queue = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
       waterBodyId: lake,
     });
     expect(queue.proposals[0]?.existingLandmarkId).toBe(landmark);
+    expect((await mod.as.query(api.corpusRequests.listQueue, {}))[0]?.existingLandmarkId).toBe(
+      landmark,
+    );
     await mod.as.mutation(api.corpusRequests.approve, { requestId: row.requestId });
     expect(
       (await requests(t)).every((r) => r.status === 'approved' && r.landmarkId === landmark),
@@ -662,5 +667,47 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     });
     expect(more).toBe(true);
     expect(proposals[0]?.askers).toBe(QUEUE_CAP);
+  });
+
+  test('the queue counts for each row what deciding that row closes, when asks chain (#84 review)', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    // ~700 m apart in a line: A and B are one place, B and C are one place, A and C are not.
+    const [a, b, c] = [at, { lat: 0.4063, lng: 0.4 }, { lat: 0.4126, lng: 0.4 }];
+    if (!a || !b || !c) throw new Error('no spots');
+    await seedAsks(t, lake, skater.id, a, 1);
+    vi.setSystemTime(NOW + 1);
+    const [middle] = await seedAsks(t, lake, skater.id, b, 1);
+    vi.setSystemTime(NOW + 2);
+    await seedAsks(t, lake, skater.id, c, 1);
+    if (!middle) throw new Error('no ask');
+    vi.setSystemTime(NOW + 60_000);
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(queue.map((r) => r.askers)).toEqual([2, 3, 2]);
+    // B's row said three, and B's decision closes three.
+    await mod.as.mutation(api.corpusRequests.decline, { requestId: middle, note: 'Not a place.' });
+    expect((await requests(t)).map((r) => r.status)).toEqual(['declined', 'declined', 'declined']);
+  });
+
+  test('an edit that moves a named spot to another place by that name proposes it (#84 review)', async () => {
+    const { t, lake, skater } = await lakeWithAsks();
+    const post = (coord: { lat: number; lng: number }) => ({
+      ...OBSERVED,
+      skateEndTime: SKATE_TIME,
+      iceTypes: [
+        {
+          type: 'black_ice' as const,
+          where: { point: { coord, radiusMeters: 75, name: 'Long Point' } },
+        },
+      ],
+    });
+    const reportId = await skater.as.mutation(api.reports.create, {
+      ...post(at),
+      waterBodyId: lake,
+    });
+    // A nudge is the same place; the far Long Point is a new one.
+    await skater.as.mutation(api.reports.update, { reportId, ...post({ lat: 0.4005, lng: 0.4 }) });
+    expect((await requests(t)).map((r) => r.coord)).toEqual([at]);
+    await skater.as.mutation(api.reports.update, { reportId, ...post(far) });
+    expect((await requests(t)).map((r) => r.coord)).toEqual([at, far]);
   });
 });

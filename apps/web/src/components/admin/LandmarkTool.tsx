@@ -528,7 +528,8 @@ export function LandmarkTool({
           </ul>
           {proposalQueue?.more ? (
             <p className="text-foreground-muted text-xs">
-              More are waiting. The oldest are listed, and the rest appear as these are answered.
+              Only the oldest 200 asks are counted here. More are waiting, and they show as these
+              are answered.
             </p>
           ) : null}
         </div>

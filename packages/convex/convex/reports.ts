@@ -15,11 +15,11 @@ import {
   type IceType,
   iceTypeKeys,
   isFormRoundTripOf,
-  landmarkNameKey,
   locatedNamedSpots,
   locatedParts,
   locatedSubAreaIds,
   memberSubAreaIds,
+  namedSpotsAreSamePlace,
   RECOMMENDED_MIN_PHOTOS,
   RECOMMENDED_RECENCY_HOURS,
   type RecommendableReport,
@@ -561,10 +561,13 @@ export const update = mutation({
       updatedAt: now,
     });
     // A spot the edit newly names that no map has is proposed like one posted with the Report —
-    // on a lake still on the map, never one removed or merged away since (D202).
+    // on a lake still on the map, never one removed or merged away since (D202). "Newly" is by place,
+    // a name *and* a spot: moving "Long Point" to the other Long Point names a new place (#84).
     if (body && isListed(body)) {
-      const before = new Set(locatedNamedSpots(existing).map((spot) => landmarkNameKey(spot.name)));
-      const added = locatedNamedSpots(n).filter((spot) => !before.has(landmarkNameKey(spot.name)));
+      const before = locatedNamedSpots(existing);
+      const added = locatedNamedSpots(n).filter(
+        (spot) => !before.some((was) => namedSpotsAreSamePlace(was, spot)),
+      );
       await fileLandmarkProposals(
         ctx,
         profile._id,

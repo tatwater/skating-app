@@ -84,7 +84,8 @@ export async function deriveSightingHazards(
     bayNames[id] = bay.name;
   }
   // A landmark chosen by name sits on its label point — land, often — so its point pins nothing
-  // (D202); the core rule tells a chosen landmark from a tap by that point.
+  // (D202). The core rule (`landmarkChosenByName`) reads the picker's `byName`, and pins anyway
+  // once the point no longer sits on the label these points give.
   const landmarkPoints: Record<string, { lat: number; lng: number }> = {};
   for (const id of new Set(
     args.sightings.flatMap((s) => (s.where?.point?.landmarkId ? [s.where.point.landmarkId] : [])),
