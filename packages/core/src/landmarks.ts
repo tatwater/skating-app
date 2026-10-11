@@ -109,35 +109,69 @@ export interface LandmarkSourceCount {
  */
 export const MAX_LANDMARK_SOURCE_SHRINK = 0.03;
 
+/** What a run's sources say against the deployment's bar, split by what an operator may excuse. */
+export interface LandmarkSourceCheck {
+  /**
+   * What no word excuses: no bar yet (the first complete load only sets it), no counts from the run,
+   * a source that read nothing, a source the bar has that this run did not read. None of these is a
+   * catalog shrinking; each is a run that cannot know what it is missing.
+   */
+  blocking: string[];
+  /** A source more than {@link MAX_LANDMARK_SOURCE_SHRINK} under the bar — `--accept-source-drop`. */
+  shrinks: string[];
+}
+
 /**
- * Why a run's sources cannot vouch that its list is complete — `[]` when they can (D202). A run
- * retires the catalog rows it no longer places, so a truncated or empty extract (an osmium run cut
- * short, a half-downloaded GNIS file) must never read as removals. Measured against the counts of the
- * **last complete load the deployment accepted**, never against a transform that was not loaded: a
- * source the baseline has that this run did not read, one that read nothing, or one more than
- * {@link MAX_LANDMARK_SOURCE_SHRINK} under its accepted count is a shortfall. No baseline at all is
- * one too — the first complete load establishes it and retires nothing.
+ * Can a run's sources vouch that its list is complete (D202)? A run retires the catalog rows it no
+ * longer places, so a truncated or empty extract (an osmium run cut short, a half-downloaded GNIS
+ * file) must never read as removals. Measured against the **bar this deployment accepted**
+ * (`nextLandmarkSourceBar`), never against a transform that was not loaded.
  */
-export function landmarkSourceShortfalls(
+export function landmarkSourceCheck(
   sources: readonly LandmarkSourceCount[] | undefined,
   baseline: readonly LandmarkSourceCount[] | undefined,
-): string[] {
-  if (!sources || sources.length === 0) return ['the run did not say what its sources read'];
-  if (!baseline) return ['no complete load has been accepted on this deployment yet'];
-  const read = new Map(sources.map((s) => [s.source, s.count]));
-  const shortfalls: string[] = [];
-  for (const { source, count } of sources) {
-    if (count === 0) shortfalls.push(`${source}: no candidates`);
+): LandmarkSourceCheck {
+  const blocking: string[] = [];
+  const shrinks: string[] = [];
+  if (!sources || sources.length === 0) {
+    return { blocking: ['the run did not say what its sources read'], shrinks };
   }
-  for (const { source, count: last } of baseline) {
+  if (!baseline) blocking.push('no complete load has been accepted on this deployment yet');
+  for (const { source, count } of sources) {
+    if (count === 0) blocking.push(`${source}: no candidates`);
+  }
+  const read = new Map(sources.map((s) => [s.source, s.count]));
+  for (const { source, count: bar } of baseline ?? []) {
     const now = read.get(source);
-    if (now === undefined) shortfalls.push(`${source}: not read this run`);
-    else if (now > 0 && now < last * (1 - MAX_LANDMARK_SOURCE_SHRINK)) {
-      const pct = Math.round((1 - now / last) * 100);
-      shortfalls.push(`${source}: ${now} candidates, ${pct}% under the accepted ${last}`);
+    if (now === undefined) blocking.push(`${source}: not read this run`);
+    else if (now > 0 && now < bar * (1 - MAX_LANDMARK_SOURCE_SHRINK)) {
+      const pct = Math.round((1 - now / bar) * 100);
+      shrinks.push(`${source}: ${now} candidates, ${pct}% under the accepted ${bar}`);
     }
   }
-  return shortfalls;
+  return { blocking, shrinks };
+}
+
+/** May a complete load retire? Nothing blocking, and any shrink excused by the operator. */
+export function landmarkSourcesVouch(check: LandmarkSourceCheck, acceptShrink: boolean): boolean {
+  return check.blocking.length === 0 && (check.shrinks.length === 0 || acceptShrink);
+}
+
+/**
+ * The bar after an accepted load: each source's **highest** accepted count, so the bar never drifts
+ * down in steps each under the margin — a slow real decline surfaces as a shrink once it passes the
+ * margin, and only the operator's word (`acceptShrink`) lowers the bar to what the run read.
+ */
+export function nextLandmarkSourceBar(
+  sources: readonly LandmarkSourceCount[],
+  baseline: readonly LandmarkSourceCount[] | undefined,
+  acceptShrink: boolean,
+): LandmarkSourceCount[] {
+  const bar = new Map((baseline ?? []).map((s) => [s.source, s.count]));
+  return sources.map(({ source, count }) => ({
+    source,
+    count: acceptShrink ? count : Math.max(count, bar.get(source) ?? 0),
+  }));
 }
 
 /**

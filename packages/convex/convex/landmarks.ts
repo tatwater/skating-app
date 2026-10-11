@@ -21,12 +21,15 @@
 import {
   LANDMARK_KINDS,
   type LandmarkKind,
+  type LandmarkSourceCheck,
   landmarkDropsHeld,
   landmarkLabelMinZoom,
   landmarkProminence,
-  landmarkSourceShortfalls,
+  landmarkSourceCheck,
+  landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARKS_PER_BODY,
+  nextLandmarkSourceBar,
   normalizeLandmarkNames,
 } from '@skating/core';
 import { ConvexError, type Infer, v } from 'convex/values';
@@ -269,11 +272,13 @@ export const importBatch = internalMutation({
     const acceptSourceDrop = args.acceptSourceDrop === true;
     // A line's `complete` retires rows only when the run's sources vouch for it against the last load
     // this deployment accepted. Checked here, in the one writer, so no caller can skip it.
-    let shortfalls: string[] = [];
+    let check: LandmarkSourceCheck = { blocking: [], shrinks: [] };
     if (bodies.some((b) => b.complete === true)) {
-      shortfalls = landmarkSourceShortfalls(args.sources, (await acceptedBaseline(ctx))?.sources);
+      check = landmarkSourceCheck(args.sources, (await acceptedBaseline(ctx))?.sources);
     }
-    const vouched = shortfalls.length === 0 || acceptSourceDrop;
+    // The operator may excuse a shrink, never a block (no bar yet, no counts, an empty source).
+    const vouched = landmarkSourcesVouch(check, acceptSourceDrop);
+    const shortfalls = [...check.blocking, ...check.shrinks];
     const total = emptyCounts();
     for (const { waterBodyId, landmarks, complete } of bodies) {
       const counts = await importOneBody(ctx, waterBodyId, landmarks, {
@@ -292,8 +297,9 @@ export const importBatch = internalMutation({
 /**
  * Record a complete load as the deployment's new source baseline (D202) — called by the loader after
  * an applied complete run with no failed batch, never by a dry run or a transform. Refused (and the
- * old bar kept) when the run's own sources fall short of it, unless the operator said the shrink is
- * real; with no bar yet, the run is held only to having read something from every source.
+ * old bar kept) when the run's own sources fall short of it — a shrink unless the operator said it is
+ * real, a block always; with no bar yet, the run is held only to having read something from every
+ * source. The bar moves up freely and down only on the operator's word (`nextLandmarkSourceBar`).
  */
 export const acceptCompleteLoad = internalMutation({
   args: {
@@ -303,12 +309,16 @@ export const acceptCompleteLoad = internalMutation({
   },
   handler: async (ctx, { sources, campaignId, acceptSourceDrop }) => {
     const baseline = await acceptedBaseline(ctx);
-    const shortfalls = landmarkSourceShortfalls(sources, baseline?.sources ?? sources);
-    if (shortfalls.length > 0 && acceptSourceDrop !== true) return { accepted: false, shortfalls };
+    // With no bar yet, the run is held to having read something from every source it names.
+    const check = landmarkSourceCheck(sources, baseline?.sources ?? sources);
+    const accept = acceptSourceDrop === true;
+    const shortfalls = [...check.blocking, ...check.shrinks];
+    if (!landmarkSourcesVouch(check, accept)) return { accepted: false, shortfalls };
     await ctx.db.insert('landmarkSourceBaselines', {
-      sources,
+      // Never lowered without the operator's word, so the bar cannot drift down in small steps.
+      sources: nextLandmarkSourceBar(sources, baseline?.sources, accept),
       ...(campaignId !== undefined ? { campaignId } : {}),
-      ...(shortfalls.length > 0 ? { acceptedShrink: true } : {}),
+      ...(check.shrinks.length > 0 ? { acceptedShrink: true } : {}),
       acceptedAt: Date.now(),
     });
     return { accepted: true, shortfalls };
@@ -363,33 +373,33 @@ async function importOneBody(
   }));
 
   // ── Resolve every candidate to its row ───────────────────────────────────────────────────────
-  // The one rule a merge also uses (`LandmarkRowIndex`): live rows first, then a person's removal,
-  // then the catalogs' own drop. Candidates an upstream id already answers for go first, and a row
-  // one candidate took is not another's by place — two mouths of one river near one row each keep
-  // their own. A candidate skipped below still claims the row it resolves to, so a complete line
-  // never drops a row only because this run declined to write it.
+  // The one rule a merge also uses (`LandmarkRowIndex.assign`), decided for the whole line at once:
+  // a live row an upstream id names, then same-place rows closest pair first (live before removed),
+  // so a river's two mouths near one row each keep their own. A candidate skipped below still claims
+  // the row it resolves to, so a complete line never drops a row only because this run declined to
+  // write it. (A name too broken to keep resolves by its ids alone.)
   const index = new LandmarkRowIndex(rows);
+  const entries = landmarks.map((raw) => {
+    const names = normalizeLandmarkNames(raw.name, raw.aliases);
+    const probe: Incoming = names
+      ? { ...raw, name: names.name, aliases: names.aliases }
+      : { ...raw, name: '', aliases: [] };
+    return { probe, valid: names !== null };
+  });
+  const assigned = index.assign(entries.map((e) => e.probe));
   const byRow = new Map<Id<'bodyLandmarks'>, Group>();
   const claimed = new Set<Id<'bodyLandmarks'>>();
   const fresh: Group[] = [];
-  const ordered = [
-    ...landmarks.filter((raw) => index.knowsId(raw)),
-    ...landmarks.filter((raw) => !index.knowsId(raw)),
-  ];
-  for (const raw of ordered) {
-    const names = normalizeLandmarkNames(raw.name, raw.aliases);
-    if (!names) {
+  for (const { probe: incoming, valid } of entries) {
+    const existing = assigned.get(incoming);
+    if (existing) claimed.add(existing._id);
+    if (!valid) {
       counts.invalidName++;
-      const row = index.resolve({ ...raw, name: '', aliases: [] }, claimed);
-      if (row) claimed.add(row._id);
       continue;
     }
-    const incoming: Incoming = { ...raw, name: names.name, aliases: names.aliases };
-    const existing = index.resolve(incoming, claimed);
-    if (existing) claimed.add(existing._id);
     // The row it answers to is kept as it is — and the far Mud Bay the rule leaves alone is no
     // bay's, so it loads like any landmark.
-    if (bayNaming({ point: incoming.point, names: [names.name, ...names.aliases] }, bays)) {
+    if (bayNaming({ point: incoming.point, names: [incoming.name, ...incoming.aliases] }, bays)) {
       counts.alreadyBay++;
       continue;
     }
@@ -461,13 +471,17 @@ async function importOneBody(
   /** The catalogs' word on a row they own: this run's name, kind, point and spellings. */
   const catalogPatch = (existing: Doc<'bodyLandmarks'>, members: readonly Incoming[]) => {
     const first = members[0] as Incoming;
-    // A footprint and a specific kind are facts the row may hold from a feature this run did not
-    // carry — a merge folded an OSM island into this GNIS point, and the export is the old one — so
-    // a run without them keeps them rather than erasing them.
-    const areaSqM = members.find((m) => m.areaSqM !== undefined)?.areaSqM ?? existing.areaSqM;
+    // A footprint and a specific kind the row holds from a merge's fold are kept by a run matched
+    // against an export older than that merge (it could not have seen the folded feature); any other
+    // run is the catalogs' word, and a footprint they no longer draw goes.
+    const predatesMerge =
+      existing.movedAt !== undefined && (matchedAt === undefined || existing.movedAt > matchedAt);
+    const areaSqM =
+      members.find((m) => m.areaSqM !== undefined)?.areaSqM ??
+      (predatesMerge ? existing.areaSqM : undefined);
     return {
       name: first.name,
-      kind: first.kind === 'other' ? existing.kind : first.kind,
+      kind: predatesMerge && first.kind === 'other' ? existing.kind : first.kind,
       point: first.point,
       areaSqM,
       // Whichever catalog the name and point came from this run — the editor shows it as provenance.

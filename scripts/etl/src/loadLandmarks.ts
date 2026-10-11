@@ -178,23 +178,36 @@ function main(): void {
   }
   if (totals.dropsHeld > 0) {
     process.stderr.write(
-      `[landmarks] ${totals.dropsHeld} drops held by the per-lake brake — a lake was about to lose most of its labels. Check the extract; --accept-source-drop if it is real.\n`,
+      `[landmarks] ${totals.dropsHeld} drops held by the per-lake brake — a lake was about to lose most of its labels. Check the extract and the matcher; --accept-mass-drop if it is real.\n`,
     );
   }
   // Only now, with every batch landed, may this load become the bar the next one is held to.
   const notes: string[] = [];
   if (sources !== undefined && acceptsLoad({ apply, lines, failedBatches })) {
-    const result = convexRun<{ accepted: boolean; shortfalls: string[] }>(
-      'landmarks:acceptCompleteLoad',
-      {
+    const accept = () =>
+      convexRun<{ accepted: boolean; shortfalls: string[] }>('landmarks:acceptCompleteLoad', {
         sources,
         ...(campaignId !== undefined ? { campaignId } : {}),
         ...(acceptSourceDrop ? { acceptSourceDrop } : {}),
-      },
-    );
-    const note = result.accepted
-      ? 'source counts accepted as the deployment’s new baseline'
-      : `source counts NOT accepted as the baseline (${result.shortfalls.join('; ')})`;
+      });
+    let note: string;
+    try {
+      let result: { accepted: boolean; shortfalls: string[] };
+      try {
+        result = accept();
+      } catch {
+        // The same intermittent 401 the batches retry; recording a bar twice is harmless.
+        result = accept();
+      }
+      note = result.accepted
+        ? 'source counts accepted as the deployment’s new baseline'
+        : `source counts NOT accepted as the baseline (${result.shortfalls.join('; ')})`;
+    } catch (err) {
+      // Every batch landed; only the bar did not move, so the next load is held to the old one. Said
+      // in the run log and the exit code, never left to throw past the run's own record.
+      note = `source counts could not be recorded as the baseline (${err instanceof Error ? err.message.slice(0, 200) : String(err)})`;
+      process.exitCode = 1;
+    }
     notes.push(note);
     process.stderr.write(`[landmarks] ${note}\n`);
   }

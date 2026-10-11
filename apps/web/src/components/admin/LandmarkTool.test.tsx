@@ -128,6 +128,12 @@ describe('LandmarkTool', () => {
     expect(onPromote).toHaveBeenCalled();
   });
 
+  it('leaves another tool’s arming alone', () => {
+    const { onArm } = renderTool({ armed: false });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    expect(onArm).not.toHaveBeenCalled();
+  });
+
   it('filters by name or kind, and says when nothing matches', () => {
     renderTool();
     const filter = screen.getByPlaceholderText('Find by name, alias or kind');

@@ -165,7 +165,11 @@ moderator's worklist and the proposal lane's first customers.
   refuse and skip anywhere on the lake), which locked Champlain's far Mud Bay against edits; it is
   one now (`bayNaming`), redraws included. Place matches take the nearest row nobody in the run has
   claimed, or a river's two mouths near one row collapse onto it. A restore always vouches. Labels
-  carry a whole `minZoom`, rounded up, because a MapLibre filter reads the integer tile zoom.
+  carry a whole `minZoom`, rounded up, because a MapLibre filter reads the integer tile zoom. Its verification
+  pass: the bar only rises unless the operator lowers it (each accepted load could otherwise shave
+  2.9%); the override excuses a shrink, never a missing bar or an empty source; matches are decided
+  closest pair first across the whole line; a chord bay the re-clip regrows retires labels too; and
+  a folded footprint survives only a run older than the merge — one the catalogs dropped goes.
 - *Rendered, not argued*: the label layer drawn outside the app on Champlain's real rows shows
   Valcour, Savage, South Hero and Keeler Bay at z11, the reefs and points by z14.
 

@@ -1709,7 +1709,7 @@ describe('the review of the third round', () => {
     expect((await t.run((ctx) => ctx.db.get(id)))?.aliases).toEqual(['Carry Cove']);
   });
 
-  test('a run without a footprint or a specific kind keeps the ones the row has', async () => {
+  test('a footprint the catalogs stopped drawing goes; one a merge folded in survives an older export', async () => {
     const t = harness();
     const body = await seedBody(t);
     await importFor(t, {
@@ -1717,14 +1717,146 @@ describe('the review of the third round', () => {
       landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
       dryRun: false,
     });
+    const gnisOnly = imported('Gull Island', ISLAND, {
+      kind: 'other',
+      externalIds: ['gnis:9'],
+      source: 'gnis',
+    });
+    // No merge touched it: this run is the catalogs' word, and the polygon is gone upstream.
+    await importFor(t, { waterBodyId: body, landmarks: [gnisOnly], dryRun: false });
+    const [plain] = await rowsOf(t, body);
+    expect(plain?.areaSqM).toBeUndefined();
+    expect(plain?.kind).toBe('other');
+
+    // A merge folds the OSM island back in; a run matched against an export from before the merge
+    // keeps what the fold brought — a fresh export's run would carry the OSM feature itself.
+    const survivor = await seedBody(t);
+    const loser = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await importFor(t, { waterBodyId: survivor, landmarks: [gnisOnly], dryRun: false });
     await importFor(t, {
-      waterBodyId: body,
-      landmarks: [
-        imported('Gull Island', ISLAND, { kind: 'other', externalIds: ['gnis:9'], source: 'gnis' }),
-      ],
+      waterBodyId: loser,
+      landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/2'], areaSqM: 42_000 })],
       dryRun: false,
     });
-    const [row] = await rowsOf(t, body);
-    expect(row).toMatchObject({ kind: 'island', areaSqM: 42_000 });
+    const exportedBefore = Date.now() - 1;
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    await t.mutation(internal.landmarks.importBatch, {
+      bodies: [{ waterBodyId: survivor, landmarks: [gnisOnly] }],
+      matchedAt: exportedBefore,
+      dryRun: false,
+    });
+    const kept = (await rowsOf(t, survivor)).find((r) => r.removedAt === undefined);
+    expect(kept).toMatchObject({ kind: 'island', areaSqM: 42_000 });
   });
+});
+
+describe('the verification pass', () => {
+  test('a line decides its matches together: an earlier candidate cannot take a later one’s only row', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedBaseline(t);
+    const at = (lat: number, id: string) =>
+      imported('Otter Creek', { lat, lng: -73.3 }, { kind: 'other', externalIds: [id] });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.2, 'osm:a')], dryRun: false });
+    await importFor(t, { waterBodyId: body, landmarks: [at(44.1865, 'osm:b')], dryRun: false });
+    // New ids for both. The first candidate is 0.6 km from the 44.2 row and 0.9 km from the other;
+    // the second is 0.3 km from the 44.2 row and too far from the other to be it at all.
+    const counts = await importFor(t, {
+      waterBodyId: body,
+      landmarks: [at(44.1946, 'osm:a2'), at(44.2027, 'osm:b2')],
+      complete: true,
+      dryRun: false,
+    });
+    expect(counts).toMatchObject({ created: 0, dropped: 0, updated: 2 });
+  });
+
+  test('the operator may excuse a shrink, never a missing bar, missing counts or an empty source', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const A = imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'] });
+    const B = imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] });
+    await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
+    const run = (sources?: { source: string; count: number }[]) =>
+      t.mutation(internal.landmarks.importBatch, {
+        bodies: [{ waterBodyId: body, landmarks: [A], complete: true }],
+        ...(sources ? { sources } : {}),
+        acceptSourceDrop: true,
+        dryRun: true,
+      });
+    // No bar on the deployment yet: the first complete load only sets it.
+    expect((await run(SOURCES)).dropped).toBe(0);
+    await seedBaseline(t);
+    expect((await run()).dropped).toBe(0);
+    expect(
+      (
+        await run([
+          { source: 'vt.osm', count: 100 },
+          { source: 'vt.gnis', count: 0 },
+        ])
+      ).dropped,
+    ).toBe(0);
+    expect(
+      (
+        await run([
+          { source: 'vt.osm', count: 50 },
+          { source: 'vt.gnis', count: 10 },
+        ])
+      ).dropped,
+    ).toBe(1);
+  });
+
+  test('the bar never moves down without the operator, so it cannot be walked down in small steps', async () => {
+    const t = harness();
+    const accept = (count: number, acceptSourceDrop?: boolean) =>
+      t.mutation(internal.landmarks.acceptCompleteLoad, {
+        sources: [{ source: 'ny.osm', count }],
+        ...(acceptSourceDrop ? { acceptSourceDrop } : {}),
+      });
+    const bar = async () =>
+      (
+        await t.run((ctx) =>
+          ctx.db.query('landmarkSourceBaselines').withIndex('by_accepted_at').order('desc').first(),
+        )
+      )?.sources;
+    await accept(55_000);
+    await accept(53_400); // 2.9% under: vouches, but the bar holds
+    expect(await bar()).toEqual([{ source: 'ny.osm', count: 55_000 }]);
+    expect(await accept(52_000)).toMatchObject({ accepted: false }); // 5.5% under the bar it kept
+    await accept(56_000);
+    expect(await bar()).toEqual([{ source: 'ny.osm', count: 56_000 }]);
+    await accept(40_000, true);
+    expect(await bar()).toEqual([{ source: 'ny.osm', count: 40_000 }]);
+  });
+});
+
+test('when one id names a person’s takedown and a catalog drop, the takedown holds', async () => {
+  const t = harness();
+  const body = await seedBody(t);
+  const row = (extra: { catalogDroppedAt?: number }) =>
+    t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId: body,
+        name: 'Butler Island',
+        kind: 'island',
+        point: { lat: 44.5, lng: -73.2 },
+        source: 'osm',
+        externalIds: ['osm:way/2'],
+        aliases: [],
+        removedAt: 1,
+        ...extra,
+        createdAt: 0,
+        updatedAt: 0,
+      }),
+    );
+  await row({ catalogDroppedAt: 1 });
+  await row({});
+  const counts = await importFor(t, {
+    waterBodyId: body,
+    landmarks: [
+      imported('Butler Island', { lat: 44.5, lng: -73.2 }, { externalIds: ['osm:way/2'] }),
+    ],
+    dryRun: false,
+  });
+  expect(counts).toMatchObject({ removedHeld: 1, returned: 0, created: 0 });
 });

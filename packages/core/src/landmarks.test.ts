@@ -12,11 +12,13 @@ import {
   landmarkLabelMinZoom,
   landmarkNameKey,
   landmarkProminence,
-  landmarkSourceShortfalls,
+  landmarkSourceCheck,
+  landmarkSourcesVouch,
   landmarksAreSamePlace,
   MAX_LANDMARK_ALIASES,
   MAX_LANDMARK_NAME_LENGTH,
   MAX_LANDMARK_SOURCE_SHRINK,
+  nextLandmarkSourceBar,
   normalizeLandmarkNames,
   subAreaForLandmark,
 } from './landmarks';
@@ -301,67 +303,87 @@ describe('filledPolygon', () => {
   });
 });
 
-describe('landmarkSourceShortfalls', () => {
+describe('landmarkSourceCheck', () => {
   const baseline = [
     { source: 'vt.osm', count: 9_000 },
     { source: 'vt.gnis', count: 1_200 },
   ];
 
   it('vouches for sources that read what the accepted load read, within the margin', () => {
-    expect(landmarkSourceShortfalls(baseline, baseline)).toEqual([]);
-    expect(
-      landmarkSourceShortfalls(
-        [
-          { source: 'vt.osm', count: 8_800 },
-          { source: 'vt.gnis', count: 1_300 },
-          { source: 'ny.osm', count: 50_000 },
-        ],
-        baseline,
-      ),
-    ).toEqual([]);
+    const check = landmarkSourceCheck(
+      [
+        { source: 'vt.osm', count: 8_800 },
+        { source: 'vt.gnis', count: 1_300 },
+        { source: 'ny.osm', count: 50_000 },
+      ],
+      baseline,
+    );
+    expect(check).toEqual({ blocking: [], shrinks: [] });
+    expect(landmarkSourcesVouch(check, false)).toBe(true);
   });
 
-  it('names every source that is empty, short, or not read', () => {
-    expect(
-      landmarkSourceShortfalls(
-        [
-          { source: 'vt.osm', count: 4_000 },
-          { source: 'ny.gnis', count: 0 },
-        ],
-        baseline,
-      ),
-    ).toEqual([
+  it('calls a short source a shrink the operator may excuse', () => {
+    const check = landmarkSourceCheck(
+      [
+        { source: 'vt.osm', count: 4_000 },
+        { source: 'vt.gnis', count: 1_200 },
+      ],
+      baseline,
+    );
+    expect(check).toEqual({
+      blocking: [],
+      shrinks: ['vt.osm: 4000 candidates, 56% under the accepted 9000'],
+    });
+    expect(landmarkSourcesVouch(check, false)).toBe(false);
+    expect(landmarkSourcesVouch(check, true)).toBe(true);
+  });
+
+  it('blocks — past any excuse — an empty source, an unread one, no bar, or no counts', () => {
+    const check = landmarkSourceCheck([{ source: 'ny.gnis', count: 0 }], baseline);
+    expect(check.blocking).toEqual([
       'ny.gnis: no candidates',
-      'vt.osm: 4000 candidates, 56% under the accepted 9000',
+      'vt.osm: not read this run',
       'vt.gnis: not read this run',
     ]);
-  });
-
-  it('will not vouch without a baseline or without the run’s own counts', () => {
-    expect(landmarkSourceShortfalls(baseline, undefined)).toEqual([
+    expect(landmarkSourcesVouch(check, true)).toBe(false);
+    expect(landmarkSourceCheck(baseline, undefined).blocking).toEqual([
       'no complete load has been accepted on this deployment yet',
     ]);
-    expect(landmarkSourceShortfalls(undefined, baseline)).toHaveLength(1);
-    expect(landmarkSourceShortfalls([], baseline)).toHaveLength(1);
+    expect(landmarkSourceCheck(undefined, baseline).blocking).toHaveLength(1);
+    expect(landmarkSourceCheck([], baseline).blocking).toHaveLength(1);
   });
 
-  it('never vouches for a source under the margin (property)', () => {
+  it('never vouches for a source under the margin unless excused (property)', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 1e6 }),
         fc.double({ min: 0, max: 1, noNaN: true }),
-        (last, f) => {
-          const now = Math.floor(last * f);
-          const out = landmarkSourceShortfalls(
+        (bar, f) => {
+          const now = Math.max(1, Math.floor(bar * f));
+          const check = landmarkSourceCheck(
             [{ source: 's', count: now }],
-            [{ source: 's', count: last }],
+            [{ source: 's', count: bar }],
           );
-          return now >= last * (1 - MAX_LANDMARK_SOURCE_SHRINK)
-            ? out.length === 0
-            : out.length === 1;
+          const within = now >= bar * (1 - MAX_LANDMARK_SOURCE_SHRINK);
+          return landmarkSourcesVouch(check, false) === within && check.blocking.length === 0;
         },
       ),
     );
+  });
+});
+
+describe('nextLandmarkSourceBar', () => {
+  const bar = [{ source: 'ny.osm', count: 55_000 }];
+
+  it('never lowers the bar without the operator: steps under the margin cannot ratchet it down', () => {
+    expect(nextLandmarkSourceBar([{ source: 'ny.osm', count: 53_400 }], bar, false)).toEqual(bar);
+    expect(nextLandmarkSourceBar([{ source: 'ny.osm', count: 56_000 }], bar, false)).toEqual([
+      { source: 'ny.osm', count: 56_000 },
+    ]);
+    expect(nextLandmarkSourceBar([{ source: 'ny.osm', count: 40_000 }], bar, true)).toEqual([
+      { source: 'ny.osm', count: 40_000 },
+    ]);
+    expect(nextLandmarkSourceBar(bar, undefined, false)).toEqual(bar);
   });
 });
 

@@ -6268,8 +6268,9 @@ person's, and comes back when a run places it again. A run of some states drops 
 pond can hold a New Hampshire village's label — and neither does one whose sources came back short:
 a missing landmark is a removal only when every state's OSM and GNIS read within 3% of what the last
 complete load *this deployment accepted* read, never because an extract was truncated. The bar is
-kept in the deployment and moves only after a complete load applies cleanly, so the first one sets
-it and retires nothing; and a lake about to lose most of its catalog labels at once holds them. A moderator's row is never dropped; restoring a
+kept in the deployment, moves only after a complete load applies cleanly and never down without the
+operator's word, so the first load sets it and retires nothing; and a lake about to lose most of its
+catalog labels at once holds them. A moderator's row is never dropped; restoring a
 dropped one makes it theirs, and *Keep off* makes the drop a person's removal. A body merged into
 another (D36) takes its landmarks along, the survivor's rows deciding: a same-place twin absorbs the
 moved row (folded, `mergedIntoId`), a twin a person removed holds it removed, and any label a bay of

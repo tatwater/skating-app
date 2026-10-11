@@ -719,8 +719,11 @@ pnpm --filter @skating/etl load-landmarks --campaign=landmarks-<yyyymmdd> --appl
   state's OSM and GNIS candidate counts (`summary.bySource`); the importer retires nothing unless
   every one is within 3% of the last complete load *this deployment accepted*
   (`landmarkSourceBaselines`), and the loader moves that bar only after an applied complete load
-  with no failed batch — a transform nobody loaded, or a dry run, never does. So the **first**
-  complete load on a deployment retires nothing and sets the bar; the next one retires. On top, a
+  with no failed batch — a transform nobody loaded, or a dry run, never does — and only ever *up*:
+  a source's bar is its highest accepted count unless the operator says a shrink is real, so it
+  cannot be walked down in steps under the margin. The **first** complete load on a deployment
+  retires nothing and sets the bar; the next one retires. No flag excuses a missing bar, missing
+  counts or a source that read nothing. On top, a
   lake about to lose more than half its catalog labels (and more than 10) holds them (`dropsHeld`).
   Both print on the dry run. `--refresh` if an extract is broken; on the loader,
   `--accept-source-drop` if a source really shrank and `--accept-mass-drop` if a lake really lost

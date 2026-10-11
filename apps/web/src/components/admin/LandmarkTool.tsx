@@ -130,8 +130,9 @@ export function LandmarkTool({
   const shown = matching.slice(0, LIST_LIMIT);
 
   /**
-   * Back to rest — and disarmed: a drop or a move left armed would take the next map click and open
-   * the new-landmark form beside whatever comes next, bound to the same name and kind.
+   * Back to rest — and, if this tool holds the map's click, disarmed: a drop or a move left armed
+   * would take the next click and open the new-landmark form beside whatever comes next. Only its
+   * own arming: the slot is shared, and a put-in or feature tool armed elsewhere is not this tool's.
    */
   const reset = () => {
     setEditing(null);
@@ -140,7 +141,7 @@ export function LandmarkTool({
     setKind('other');
     setAliases('');
     onClearPoint();
-    onArm(false);
+    if (armed) onArm(false);
   };
 
   const run = async (write: () => Promise<unknown>, ok: string) => {

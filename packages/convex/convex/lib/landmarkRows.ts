@@ -126,36 +126,63 @@ export class LandmarkRowIndex {
   }
 
   /**
-   * The row this probe is. A place match is the **nearest** same-place row, and never one in
-   * `claimed` — a row another candidate of this run (or another row of this merge) already took:
-   * two distinct places within one row's radius (a river's two mouths) must not both land on it,
-   * leaving the other row unclaimed and dropped. An id is the feature itself and is never excluded.
+   * The rows a set of probes are — every candidate of one body's line, or every live row a merge
+   * moves — decided together, so no probe takes a row that is another's nearer match:
+   *
+   * 1. A probe whose upstream id names a **live** row is that row — the feature itself.
+   * 2. The rest take same-place rows **closest pair first** across all of them, live before removed
+   *    (a person's removal before the catalogs' drop), each row to one probe — two mouths of one
+   *    river near one row both lose nothing, and neither takes the other's.
+   * 3. A probe still without a row falls back to a removed row its id names.
    */
-  resolve(
-    probe: LandmarkProbe,
-    claimed: ReadonlySet<Id<'bodyLandmarks'>> = new Set(),
-  ): Doc<'bodyLandmarks'> | undefined {
-    const identity = identityOf(probe);
-    const byId = [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))];
-    const byPlace = [
-      ...new Set(identity.names.flatMap((n) => this.byName.get(landmarkNameKey(n)) ?? [])),
-    ]
-      .filter((row) => !claimed.has(row._id) && landmarksAreSamePlace(identityOf(row), identity))
-      .sort(
-        (a, b) => haversineMeters(a.point, probe.point) - haversineMeters(b.point, probe.point),
-      );
+  assign<P extends LandmarkProbe>(probes: readonly P[]): Map<P, Doc<'bodyLandmarks'>> {
     const tier = (row: Doc<'bodyLandmarks'>) =>
       row.removedAt === undefined ? 0 : row.catalogDroppedAt === undefined ? 1 : 2;
-    for (const t of [0, 1, 2]) {
-      const hit = byId.find((row) => tier(row) === t) ?? byPlace.find((row) => tier(row) === t);
-      if (hit) return hit;
+    const out = new Map<P, Doc<'bodyLandmarks'>>();
+    const taken = new Set<Id<'bodyLandmarks'>>();
+    const idRows = (probe: P) =>
+      [...new Set(probe.externalIds.flatMap((id) => this.byId.get(id) ?? []))].sort(
+        (a, b) => tier(a) - tier(b),
+      );
+    for (const probe of probes) {
+      const live = idRows(probe).find((row) => tier(row) === 0);
+      if (live) {
+        out.set(probe, live);
+        taken.add(live._id);
+      }
     }
-    return undefined;
-  }
-
-  /** Does any of the probe's upstream ids name an indexed row? (The importer resolves those first.) */
-  knowsId(probe: Pick<LandmarkProbe, 'externalIds'>): boolean {
-    return probe.externalIds.some((id) => this.byId.has(id));
+    const pairs: { probe: P; row: Doc<'bodyLandmarks'>; tier: number; meters: number }[] = [];
+    for (const probe of probes) {
+      if (out.has(probe)) continue;
+      const identity = identityOf(probe);
+      const idTier = idRows(probe)[0];
+      const rows = new Set(
+        identity.names.flatMap((n) => this.byName.get(landmarkNameKey(n)) ?? []),
+      );
+      for (const row of rows) {
+        if (taken.has(row._id) || !landmarksAreSamePlace(identityOf(row), identity)) continue;
+        // A removed row the probe's own id names outranks a same-tier place match (step 3 takes it).
+        if (idTier && tier(row) >= tier(idTier)) continue;
+        pairs.push({
+          probe,
+          row,
+          tier: tier(row),
+          meters: haversineMeters(row.point, probe.point),
+        });
+      }
+    }
+    pairs.sort((a, b) => a.tier - b.tier || a.meters - b.meters);
+    for (const { probe, row } of pairs) {
+      if (out.has(probe) || taken.has(row._id)) continue;
+      out.set(probe, row);
+      taken.add(row._id);
+    }
+    for (const probe of probes) {
+      if (out.has(probe)) continue;
+      const removed = idRows(probe)[0];
+      if (removed) out.set(probe, removed);
+    }
+    return out;
   }
 }
 
@@ -260,7 +287,6 @@ export type BayNaming = {
   names: readonly string[];
 };
 
-/** {@link retireNamedAsBay} for several bays over one read of the body's landmarks. */
 /**
  * **The one rule for "this bay names that landmark"** (D202): any of the landmark's names matching any
  * of the bay's, and the landmark on the bay's water or within {@link BAY_NAME_RETIRE_RADIUS_M} of its
@@ -299,6 +325,7 @@ export async function liveBaysForNaming(
     }));
 }
 
+/** {@link retireNamedAsBay} for several bays over one read of the body's landmarks. */
 export async function retireNamedAsBays(
   ctx: MutationCtx,
   actorId: Id<'profiles'> | undefined,
@@ -360,11 +387,12 @@ export async function repointLandmarksOnMerge(
   let live = staying.filter((row) => row.removedAt === undefined).length;
   let folded = 0;
   let overCap = 0;
-  const twinned = new Set<Id<'bodyLandmarks'>>();
+  // Decided together, against the survivor's rows only: two of the loser's places near one survivor
+  // row cannot both fold into it, and neither takes the other's nearer twin.
+  const twins = index.assign(moving.filter((row) => row.removedAt === undefined));
   for (const row of moving) {
     if (row.removedAt !== undefined) continue;
-    const twin = index.resolve(row, twinned);
-    if (twin) twinned.add(twin._id);
+    const twin = twins.get(row);
     if (twin && twin.catalogDroppedAt === undefined) {
       if (twin.removedAt === undefined) {
         const takeRow = twin.moderatorEditedAt === undefined && row.moderatorEditedAt !== undefined;
@@ -397,6 +425,9 @@ export async function repointLandmarksOnMerge(
             ])?.aliases ?? keeper.aliases,
           ...(corpusMessages > 0 ? { corpusMessages } : {}),
           ...(reportCount > 0 ? { reportCount } : {}),
+          // A merge changed what this row stands for: a run matched against an export older than
+          // now keeps the folded footprint and kind, and does not drop the row.
+          movedAt: now,
           updatedAt: now,
         };
         await ctx.db.patch(twin._id, patch);

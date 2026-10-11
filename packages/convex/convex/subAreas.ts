@@ -401,6 +401,9 @@ export async function reclipSubAreasToParent(
   const parentListed = isActive(parent);
   let reclipped = 0;
   let delisted = 0;
+  // A chord bay re-derived against a moved shore can *grow* (the mouth re-snaps outward), and may
+  // then name a landmark it was too far from — retired once for the parent, after the loop.
+  const regrown: BayNaming[] = [];
 
   for (const subArea of await subAreasForBody(ctx, waterBodyId)) {
     // An already-delisted bay is left as it is: re-clipping it would silently resurrect geometry the
@@ -447,6 +450,11 @@ export async function reclipSubAreasToParent(
             listed: parentListed,
             clearDelistReason: false,
           });
+          regrown.push({
+            _id: subArea._id,
+            polygon: chord.polygon,
+            names: [subArea.name, ...(subArea.aliases ?? [])],
+          });
           reclipped++;
           continue;
         }
@@ -484,6 +492,7 @@ export async function reclipSubAreasToParent(
       listed: parentListed,
     });
   }
+  if (regrown.length > 0) await retireNamedAsBays(ctx, actorId, waterBodyId, regrown);
   // The re-stamp is the caller's: `importCanonical` and `merge` both schedule one when this reports
   // movement, and the ETL gates it so an unchanged batch schedules nothing.
   return { reclipped, delisted };
@@ -544,10 +553,10 @@ async function insertSubArea(
     curatedBoost?: number;
     createdByUserId: Id<'profiles'>;
     /**
-     * A batch loader inserting many bays on one parent retires their landmarks once, after the loop
-     * (`retireNamedAsBays`), rather than re-reading the parent's labels per bay.
+     * A batch loader inserting many bays collects them here, by parent, and retires their landmarks
+     * once per parent after the loop (`retireCollected`) rather than re-reading the labels per bay.
      */
-    deferLandmarkRetirement?: boolean;
+    retireInto?: Map<Id<'waterBodies'>, BayNaming[]>;
     now: number;
   },
 ): Promise<Id<'waterBodySubAreas'>> {
@@ -580,20 +589,34 @@ async function insertSubArea(
   // Every way a bay is born — chord, freehand, paste, seed, import — retires the landmark that
   // named the same water (D202), here in the one insert rather than in each caller (or, for a batch,
   // once per parent after it).
-  if (!input.deferLandmarkRetirement) {
-    await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, {
-      _id: subAreaId,
-      polygon: derived.polygon,
-      names: [input.name, ...input.aliases],
-    });
+  const naming = {
+    _id: subAreaId,
+    polygon: derived.polygon,
+    names: [input.name, ...input.aliases],
+  };
+  if (input.retireInto) {
+    const list = input.retireInto.get(input.waterBodyId) ?? [];
+    list.push(naming);
+    input.retireInto.set(input.waterBodyId, list);
+  } else {
+    await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, naming);
   }
   return subAreaId;
 }
 
+/** Retire, once per parent, the landmarks a batch of inserted bays name (`insertSubArea.retireInto`). */
+async function retireCollected(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  named: ReadonlyMap<Id<'waterBodies'>, BayNaming[]>,
+): Promise<void> {
+  for (const [waterBodyId, bays] of named) await retireNamedAsBays(ctx, actorId, waterBodyId, bays);
+}
+
 /**
- * A live bay's new outline retires the landmarks it now names (D202) — a moderator's redraw or
- * chord edit, the two ways a bay's water moves. The parent re-clip only ever shrinks a bay to its
- * lake, so it cannot bring a landmark newly within reach, and does not call this.
+ * A live bay's new outline retires the landmarks it now names (D202) — a moderator's redraw or chord
+ * edit. (The parent re-clip does the same for the chord bays it re-derives, once per parent; a plain
+ * re-clip only shrinks a bay to its lake and cannot bring a landmark newly within reach.)
  */
 async function retireLandmarksForRedraw(
   ctx: MutationCtx,
@@ -1755,13 +1778,7 @@ export const importSeed = internalMutation({
     const bar = minRetainedFraction ?? SEED_MIN_RETAINED_FRACTION;
     const results: Array<Record<string, unknown>> = [];
     const restamp = new Set<Id<'waterBodies'>>();
-    // The bays inserted per parent, whose landmark retirement runs once after the loop.
     const named = new Map<Id<'waterBodies'>, BayNaming[]>();
-    const namingBays = (id: Id<'waterBodies'>) => {
-      const list = named.get(id) ?? [];
-      named.set(id, list);
-      return list;
-    };
 
     for (const row of seed) {
       const parent = await ctx.db.get(row.waterBodyId);
@@ -1818,13 +1835,8 @@ export const importSeed = internalMutation({
         polygon: clip.polygon,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
         createdByUserId: actorUserId,
-        deferLandmarkRetirement: true,
+        retireInto: named,
         now,
-      });
-      namingBays(row.waterBodyId).push({
-        _id: subAreaId,
-        polygon: clip.polygon,
-        names: [row.name.trim(), ...normalizeAliases(row.aliases)],
       });
       await ctx.db.insert('moderationActions', {
         actorId: actorUserId,
@@ -1841,9 +1853,7 @@ export const importSeed = internalMutation({
 
     // One re-stamp per touched parent, after the whole batch — fourteen bays on Champlain should
     // schedule one sweep, not fourteen.
-    for (const [waterBodyId, bays] of named) {
-      await retireNamedAsBays(ctx, actorUserId, waterBodyId, bays);
-    }
+    await retireCollected(ctx, actorUserId, named);
     for (const waterBodyId of restamp) await scheduleRestamp(ctx, waterBodyId);
     return {
       drawn: results.filter((r) => r.ok === true && r.dryRun !== true).length,
@@ -1990,13 +2000,7 @@ export const importBaySubAreas = internalMutation({
   handler: async (ctx, { actorUserId, bays, dryRun }) => {
     const results: Array<Record<string, unknown>> = [];
     const restamp = new Set<Id<'waterBodies'>>();
-    // The bays inserted per parent, whose landmark retirement runs once after the loop.
     const named = new Map<Id<'waterBodies'>, BayNaming[]>();
-    const namingBays = (id: Id<'waterBodies'>) => {
-      const list = named.get(id) ?? [];
-      named.set(id, list);
-      return list;
-    };
     let created = 0;
 
     for (const bay of bays) {
@@ -2053,10 +2057,9 @@ export const importBaySubAreas = internalMutation({
         aliases: [],
         polygon: clip.polygon,
         createdByUserId: actorUserId,
-        deferLandmarkRetirement: true,
+        retireInto: named,
         now,
       });
-      namingBays(parent._id).push({ _id: subAreaId, polygon: clip.polygon, names: [name] });
       await ctx.db.insert('moderationActions', {
         actorId: actorUserId,
         action: 'create_sub_area',
@@ -2071,9 +2074,7 @@ export const importBaySubAreas = internalMutation({
       results.push({ ...summary, subAreaId });
     }
 
-    for (const [waterBodyId, bays] of named) {
-      await retireNamedAsBays(ctx, actorUserId, waterBodyId, bays);
-    }
+    await retireCollected(ctx, actorUserId, named);
     for (const waterBodyId of restamp) await scheduleRestamp(ctx, waterBodyId);
     return {
       applied: dryRun === false,
