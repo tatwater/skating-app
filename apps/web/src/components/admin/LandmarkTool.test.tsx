@@ -83,6 +83,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
     onFocus: vi.fn(),
     onPromote: vi.fn(),
     onPlacePoint: vi.fn(),
+    onReview: vi.fn(),
     onResult: vi.fn(),
   };
   const view = render(
@@ -233,6 +234,7 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={vi.fn()}
+        onReview={vi.fn()}
         onResult={vi.fn()}
       />,
     );
@@ -241,6 +243,53 @@ describe('LandmarkTool', () => {
       name: 'update',
       args: { landmarkId: 'lm-Apple Island', point: { lat: 44.6, lng: -73.4 } },
     });
+  });
+
+  it('shows a proposal on the map, flags a possible duplicate, and answers it with the landmark', async () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Long Point',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+      similarLandmark: {
+        landmarkId: 'lm-Long Point',
+        name: 'Long Point',
+        point: { lat: 44.36, lng: -73.21 },
+        meters: 5_560,
+      },
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { onReview, rerender } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    expect(onReview).toHaveBeenLastCalledWith({ ask: proposal.coord, name: 'Long Point' });
+    expect(screen.getByRole('link', { name: /44\.3100, -73\.2100/ })).toBeInTheDocument();
+    expect(screen.getByText('Possible duplicate')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({
+      name: 'approve',
+      args: { requestId: 'req1', landmarkId: 'lm-Long Point' },
+    });
+    // Answered: the proposal leaves the list, and its markers leave the map.
+    queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenLastCalledWith(null);
   });
 
   it('says when more proposals wait than the card holds (Greptile P2 on #84)', () => {
@@ -316,6 +365,7 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={onPlacePoint}
+        onReview={vi.fn()}
         onResult={vi.fn()}
       />,
     );
@@ -367,6 +417,7 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={vi.fn()}
+        onReview={vi.fn()}
         onResult={vi.fn()}
       />,
     );

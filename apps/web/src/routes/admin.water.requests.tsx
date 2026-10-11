@@ -10,11 +10,14 @@ import {
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
+import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleDuplicate';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
+import type { ReviewPoints } from '../lib/reviewMarkers';
 
 /**
  * The request queue (A07b PR 2 / D107) — **a skater asked; a moderator answers.**
@@ -29,6 +32,11 @@ import { Card, CardContent } from '../components/ui/card';
  * Approving performs the act through the verb the lake editor uses — activate, restore, remove,
  * confirm access, admit — and closes every sibling ask with it. Declining takes a note the skater
  * reads. Both are one dialog, so a moderator clearing a queue of forty does not learn a second UI.
+ *
+ * Every request has a spot, so every row can be seen: the map beside the list follows the row the
+ * moderator picks (the first, until they pick), and the coordinate links out to Google Maps for a
+ * second look. A landmark proposal that shares its name with a landmark or another proposal elsewhere
+ * on the lake says so, and *Show both* draws the pair (D202).
  */
 export const Route = createFileRoute('/admin/water/requests')({ component: RequestQueue });
 
@@ -48,6 +56,30 @@ function RequestQueue() {
   const decline = useMutation(api.corpusRequests.decline);
   const reresolve = useMutation(api.corpusRequests.reresolve);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  /** The row on the map, and what it shows — its spot alone, or the spot and a lookalike. */
+  const [picked, setPicked] = useState<{ id: string; review: ReviewPoints } | null>(null);
+  const first = rows?.[0];
+  // Until the moderator picks, the oldest row — the one the queue says to answer first. Memoized on
+  // its identity and spot: the query re-emits fresh objects, and a fresh review re-flies the map.
+  const firstId = first?._id;
+  const firstLat = first?.coord.lat;
+  const firstLng = first?.coord.lng;
+  const firstName = first?.name;
+  const firstReview = useMemo(
+    () =>
+      firstId !== undefined && firstLat !== undefined && firstLng !== undefined
+        ? {
+            id: firstId,
+            review: {
+              ask: { lat: firstLat, lng: firstLng },
+              ...(firstName ? { name: firstName } : {}),
+            },
+          }
+        : null,
+    [firstId, firstLat, firstLng, firstName],
+  );
+  // A row decided off the page (or by this moderator) leaves the map with the list.
+  const current = picked && rows?.some((r) => r._id === picked.id) ? picked : firstReview;
 
   return (
     <div className="flex flex-col gap-6">
@@ -85,222 +117,262 @@ function RequestQueue() {
           {status === 'open' ? 'Nothing waiting — every ask has an answer.' : 'Nothing here yet.'}
         </AdminEmpty>
       ) : (
-        <div className="flex flex-col gap-3">
-          {rows.map((row) => (
-            <Card key={row._id}>
-              <CardContent className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-medium text-foreground">
-                    {requestKindTitle(row.kind)}
-                    {/* The bay a `name_bay` asks for — the question itself (D201). */}
-                    {row.name ? <span className="ml-2">— {row.name}</span> : null}
-                    {/* A capped count is a floor, shown even at "1+" — the queue is a backlog and
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+          {/* A height, never an inset: MapLibre forces its container's position (it would collapse). */}
+          <div className="h-72 overflow-hidden rounded-lg border border-border lg:sticky lg:top-4 lg:order-last lg:h-[32rem]">
+            <RequestPreviewMap review={current?.review ?? null} />
+          </div>
+          <div className="flex flex-col gap-3">
+            {rows.map((row) => (
+              <Card key={row._id} className={current?.id === row._id ? 'ring-2 ring-primary' : ''}>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="font-medium text-foreground">
+                      {requestKindTitle(row.kind)}
+                      {/* The bay a `name_bay` asks for — the question itself (D201). */}
+                      {row.name ? <span className="ml-2">— {row.name}</span> : null}
+                      {/* A capped count is a floor, shown even at "1+" — the queue is a backlog and
                         the rest of this lake's askers may sit past the page (Greptile, PR #63). */}
-                    {row.askers > 1 || row.askersCapped ? (
-                      <span
-                        className="ml-2 font-mono text-foreground-muted text-xs"
-                        title={
-                          row.askersCapped
-                            ? 'The queue is past its page; more may have asked for this lake.'
-                            : undefined
-                        }
-                      >
-                        {row.askers}
-                        {row.askersCapped ? '+' : ''} people
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="font-mono text-foreground-muted text-xs">
-                    {new Date(row.createdAt).toLocaleDateString()} · {row.requester.displayName}
-                  </p>
-                </div>
-
-                {row.body ? (
-                  <p className="text-sm">
-                    <Link
-                      to="/admin/water/$id"
-                      params={{ id: row.body._id }}
-                      className="underline underline-offset-2"
-                    >
-                      {row.body.name || '(unnamed)'}
-                    </Link>
-                    <span className="ml-2 text-foreground-muted">
-                      {waterBodyClassLabel(row.body.type)} · {row.body.states.join(' ')} ·{' '}
-                      {formatAreaAcres(row.body.surfaceAreaSqM)}
-                    </span>
-                    <span className="ml-2 text-foreground-muted">
-                      — {describeStanding(row.body.standing) ?? 'active'}
-                    </span>
-                  </p>
-                ) : row.candidate ? (
-                  <p className="text-sm">
-                    <span className="text-foreground">
-                      {row.candidate.name || '(unnamed in the catalog)'}
-                    </span>
-                    <span className="ml-2 text-foreground-muted">
-                      {row.candidate.cls
-                        ? waterBodyClassLabel(row.candidate.cls)
-                        : `3DHP feature type ${row.candidate.featureType} — not a class we hold`}{' '}
-                      · {formatAreaAcres(row.candidate.surfaceAreaSqM)} · 3DHP{' '}
-                      {row.candidate.externalId}
-                    </span>{' '}
-                    <a
-                      href={row.candidate.serviceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary underline-offset-2 hover:underline"
-                    >
-                      outline ↗
-                    </a>
-                  </p>
-                ) : (
-                  <p className="text-foreground-muted text-sm">
-                    {row.resolveError
-                      ? `Catalog lookup: ${row.resolveError}`
-                      : 'Waiting for the catalog lookup…'}
-                    <span className="ml-2 font-mono text-xs">
-                      {row.coord.lat.toFixed(4)}, {row.coord.lng.toFixed(4)}
-                    </span>
-                  </p>
-                )}
-
-                {row.note ? (
-                  <blockquote className="border-border border-l-2 pl-3 text-foreground-muted text-sm">
-                    {row.note}
-                  </blockquote>
-                ) : null}
-                {row.activityId ? (
-                  <p className="text-foreground-muted text-xs">
-                    Backed by a recorded skate over this water.
-                  </p>
-                ) : null}
-
-                {row.status === 'open' ? (
-                  <div className="flex flex-wrap gap-2">
-                    {/* A bay is drawn, not approved: until a sub-area by that name exists on the
-                        lake the only act is the drawing, in the lake editor's chord tool, which
-                        approves the ask itself. Approve here is for a bay already drawn. */}
-                    {row.kind === 'name_bay' && row.body && !row.drawnSubAreaId ? (
-                      <Link
-                        to="/admin/water/$id"
-                        params={{ id: row.body._id }}
-                        className={buttonVariants({ size: 'sm' })}
-                      >
-                        Draw it in the lake editor
-                      </Link>
-                    ) : null}
-                    {/* A landmark proposal (D202) is answered the same way: add the landmark on the
-                        lake editor, which approves every ask for it. */}
-                    {row.kind === 'name_landmark' && row.body && !row.existingLandmarkId ? (
-                      <Link
-                        to="/admin/water/$id"
-                        params={{ id: row.body._id }}
-                        className={buttonVariants({ size: 'sm' })}
-                      >
-                        Add it in the lake editor
-                      </Link>
-                    ) : null}
-                    <ReasonDialog
-                      trigger={
-                        <Button
-                          size="sm"
-                          variant={
-                            (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
-                            (row.kind === 'name_landmark' && !row.existingLandmarkId)
-                              ? 'outline'
-                              : 'default'
-                          }
-                          disabled={
-                            (row.kind === 'admit' && !row.candidate) ||
-                            (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
-                            (row.kind === 'name_landmark' && !row.existingLandmarkId)
+                      {row.askers > 1 || row.askersCapped ? (
+                        <span
+                          className="ml-2 font-mono text-foreground-muted text-xs"
+                          title={
+                            row.askersCapped
+                              ? 'The queue is past its page; more may have asked for this lake.'
+                              : undefined
                           }
                         >
-                          Approve
-                        </Button>
+                          {row.askers}
+                          {row.askersCapped ? '+' : ''} people
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="font-mono text-foreground-muted text-xs">
+                      {new Date(row.createdAt).toLocaleDateString()} · {row.requester.displayName}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="xs"
+                      variant={current?.id === row._id ? 'secondary' : 'ghost'}
+                      onClick={() =>
+                        setPicked({
+                          id: row._id,
+                          review: { ask: row.coord, ...(row.name ? { name: row.name } : {}) },
+                        })
                       }
-                      title={`Approve — ${requestKindTitle(row.kind).toLowerCase()}`}
-                      description={approveDescription(row.kind)}
-                      confirmLabel="Approve"
-                      requireReason={false}
-                      reasonPlaceholder="Optional note the skater will read"
-                      onConfirm={async (note) => {
+                    >
+                      Show on map
+                    </Button>
+                    <GoogleMapsLink coord={row.coord} />
+                  </div>
+
+                  {row.body ? (
+                    <p className="text-sm">
+                      <Link
+                        to="/admin/water/$id"
+                        params={{ id: row.body._id }}
+                        className="underline underline-offset-2"
+                      >
+                        {row.body.name || '(unnamed)'}
+                      </Link>
+                      <span className="ml-2 text-foreground-muted">
+                        {waterBodyClassLabel(row.body.type)} · {row.body.states.join(' ')} ·{' '}
+                        {formatAreaAcres(row.body.surfaceAreaSqM)}
+                      </span>
+                      <span className="ml-2 text-foreground-muted">
+                        — {describeStanding(row.body.standing) ?? 'active'}
+                      </span>
+                    </p>
+                  ) : row.candidate ? (
+                    <p className="text-sm">
+                      <span className="text-foreground">
+                        {row.candidate.name || '(unnamed in the catalog)'}
+                      </span>
+                      <span className="ml-2 text-foreground-muted">
+                        {row.candidate.cls
+                          ? waterBodyClassLabel(row.candidate.cls)
+                          : `3DHP feature type ${row.candidate.featureType} — not a class we hold`}{' '}
+                        · {formatAreaAcres(row.candidate.surfaceAreaSqM)} · 3DHP{' '}
+                        {row.candidate.externalId}
+                      </span>{' '}
+                      <a
+                        href={row.candidate.serviceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary underline-offset-2 hover:underline"
+                      >
+                        outline ↗
+                      </a>
+                    </p>
+                  ) : (
+                    <p className="text-foreground-muted text-sm">
+                      {row.resolveError
+                        ? `Catalog lookup: ${row.resolveError}`
+                        : 'Waiting for the catalog lookup…'}
+                    </p>
+                  )}
+
+                  {row.note ? (
+                    <blockquote className="border-border border-l-2 pl-3 text-foreground-muted text-sm">
+                      {row.note}
+                    </blockquote>
+                  ) : null}
+                  {row.kind === 'name_landmark' && row.status === 'open' ? (
+                    <PossibleDuplicate
+                      ask={row.coord}
+                      name={row.name ?? ''}
+                      lookalikes={row}
+                      onShow={(review) => setPicked({ id: row._id, review })}
+                      onSamePlace={async (landmarkId) => {
                         try {
                           await approve({
                             requestId: row._id as Id<'waterBodyRequests'>,
-                            ...(note ? { note } : {}),
+                            landmarkId,
                           });
-                          setBanner({ tone: 'ok', text: 'Approved.' });
+                          setBanner({
+                            tone: 'ok',
+                            text: 'Answered with the landmark already there.',
+                          });
                         } catch (err) {
                           setBanner({ tone: 'error', text: messageOf(err) });
-                          throw err;
                         }
                       }}
                     />
-                    <ReasonDialog
-                      trigger={
-                        <Button size="sm" variant="outline">
-                          Decline
-                        </Button>
-                      }
-                      title="Decline this request"
-                      description="The skater reads your note on the lake. Declining keeps the record — a lake four people asked for stays a lake four people asked for."
-                      confirmLabel="Decline"
-                      confirmVariant="secondary"
-                      requireReason={true}
-                      reasonPlaceholder="Why not — what they can do instead"
-                      onConfirm={async (note) => {
-                        try {
-                          await decline({
-                            requestId: row._id as Id<'waterBodyRequests'>,
-                            note,
-                          });
-                          setBanner({ tone: 'ok', text: 'Declined.' });
-                        } catch (err) {
-                          setBanner({ tone: 'error', text: messageOf(err) });
-                          throw err;
-                        }
-                      }}
-                    />
-                    {row.kind === 'admit' ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={async () => {
-                          try {
-                            await reresolve({ requestId: row._id as Id<'waterBodyRequests'> });
-                            setBanner({ tone: 'ok', text: 'Asked the catalog again.' });
-                          } catch (err) {
-                            setBanner({ tone: 'error', text: messageOf(err) });
-                          }
-                        }}
-                      >
-                        Look up again
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="text-foreground-muted text-xs">
-                    {row.status === 'approved' ? 'Approved' : 'Declined'}
-                    {row.decidedAt ? ` ${new Date(row.decidedAt).toLocaleDateString()}` : ''}
-                    {row.decisionNote ? ` — ${row.decisionNote}` : ''}
-                    {row.admittedWaterBodyId ? (
-                      <>
-                        {' · '}
+                  ) : null}
+                  {row.activityId ? (
+                    <p className="text-foreground-muted text-xs">
+                      Backed by a recorded skate over this water.
+                    </p>
+                  ) : null}
+
+                  {row.status === 'open' ? (
+                    <div className="flex flex-wrap gap-2">
+                      {/* A bay is drawn, not approved: until a sub-area by that name exists on the
+                        lake the only act is the drawing, in the lake editor's chord tool, which
+                        approves the ask itself. Approve here is for a bay already drawn. */}
+                      {row.kind === 'name_bay' && row.body && !row.drawnSubAreaId ? (
                         <Link
                           to="/admin/water/$id"
-                          params={{ id: row.admittedWaterBodyId }}
-                          className="underline underline-offset-2"
+                          params={{ id: row.body._id }}
+                          className={buttonVariants({ size: 'sm' })}
                         >
-                          the admitted body
+                          Draw it in the lake editor
                         </Link>
-                      </>
-                    ) : null}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                      ) : null}
+                      {/* A landmark proposal (D202) is answered the same way: add the landmark on the
+                        lake editor, which approves every ask for it. */}
+                      {row.kind === 'name_landmark' && row.body && !row.existingLandmarkId ? (
+                        <Link
+                          to="/admin/water/$id"
+                          params={{ id: row.body._id }}
+                          className={buttonVariants({ size: 'sm' })}
+                        >
+                          Add it in the lake editor
+                        </Link>
+                      ) : null}
+                      <ReasonDialog
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant={
+                              (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
+                              (row.kind === 'name_landmark' && !row.existingLandmarkId)
+                                ? 'outline'
+                                : 'default'
+                            }
+                            disabled={
+                              (row.kind === 'admit' && !row.candidate) ||
+                              (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
+                              (row.kind === 'name_landmark' && !row.existingLandmarkId)
+                            }
+                          >
+                            Approve
+                          </Button>
+                        }
+                        title={`Approve — ${requestKindTitle(row.kind).toLowerCase()}`}
+                        description={approveDescription(row.kind)}
+                        confirmLabel="Approve"
+                        requireReason={false}
+                        reasonPlaceholder="Optional note the skater will read"
+                        onConfirm={async (note) => {
+                          try {
+                            await approve({
+                              requestId: row._id as Id<'waterBodyRequests'>,
+                              ...(note ? { note } : {}),
+                            });
+                            setBanner({ tone: 'ok', text: 'Approved.' });
+                          } catch (err) {
+                            setBanner({ tone: 'error', text: messageOf(err) });
+                            throw err;
+                          }
+                        }}
+                      />
+                      <ReasonDialog
+                        trigger={
+                          <Button size="sm" variant="outline">
+                            Decline
+                          </Button>
+                        }
+                        title="Decline this request"
+                        description="The skater reads your note on the lake. Declining keeps the record — a lake four people asked for stays a lake four people asked for."
+                        confirmLabel="Decline"
+                        confirmVariant="secondary"
+                        requireReason={true}
+                        reasonPlaceholder="Why not — what they can do instead"
+                        onConfirm={async (note) => {
+                          try {
+                            await decline({
+                              requestId: row._id as Id<'waterBodyRequests'>,
+                              note,
+                            });
+                            setBanner({ tone: 'ok', text: 'Declined.' });
+                          } catch (err) {
+                            setBanner({ tone: 'error', text: messageOf(err) });
+                            throw err;
+                          }
+                        }}
+                      />
+                      {row.kind === 'admit' ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            try {
+                              await reresolve({ requestId: row._id as Id<'waterBodyRequests'> });
+                              setBanner({ tone: 'ok', text: 'Asked the catalog again.' });
+                            } catch (err) {
+                              setBanner({ tone: 'error', text: messageOf(err) });
+                            }
+                          }}
+                        >
+                          Look up again
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-foreground-muted text-xs">
+                      {row.status === 'approved' ? 'Approved' : 'Declined'}
+                      {row.decidedAt ? ` ${new Date(row.decidedAt).toLocaleDateString()}` : ''}
+                      {row.decisionNote ? ` — ${row.decisionNote}` : ''}
+                      {row.admittedWaterBodyId ? (
+                        <>
+                          {' · '}
+                          <Link
+                            to="/admin/water/$id"
+                            params={{ id: row.admittedWaterBodyId }}
+                            className="underline underline-offset-2"
+                          >
+                            the admitted body
+                          </Link>
+                        </>
+                      ) : null}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
     </div>

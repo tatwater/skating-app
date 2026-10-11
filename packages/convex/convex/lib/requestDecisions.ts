@@ -11,7 +11,9 @@
 import {
   haversineMeters,
   type LandmarkAsk,
+  type LatLng,
   landmarkAnswersAsk,
+  landmarkAskLookalikes,
   landmarkAsksAreSamePlace,
   landmarkNameKey,
   requestNameKey,
@@ -388,6 +390,81 @@ export function matchLandmark(
     if (!best || meters < best.meters) best = { row, meters };
   }
   return best?.row ?? null;
+}
+
+/**
+ * The landmark a moderator named as a landmark ask's answer, whatever the distance — this lake's own,
+ * live, and carrying the asked-for name (as its name or a spelling). Refused otherwise: "it's Grand
+ * Isle" answers a "Grand Isle" ask, never a "Long Point" one.
+ */
+export async function namedByModerator(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  request: Doc<'waterBodyRequests'>,
+  landmarkId: Id<'bodyLandmarks'>,
+): Promise<Doc<'bodyLandmarks'>> {
+  const landmark = await ctx.db.get(landmarkId);
+  if (!landmark || landmark.waterBodyId !== waterBodyId || landmark.removedAt !== undefined) {
+    throw new ConvexError('That landmark is not on this lake');
+  }
+  if (!landmarkNamesMeet(requestNames(request), [landmark.name, ...landmark.aliases])) {
+    throw new ConvexError(
+      `"${landmark.name}" doesn't carry the name that was asked for ("${request.name}").`,
+    );
+  }
+  return landmark;
+}
+
+/**
+ * A proposal's possible duplicates, as the moderator's rows show them (`landmarkAskLookalikes`): the
+ * nearest live landmark and the nearest other proposal that share a name with it at another place.
+ * `others` are the other proposals' first asks — what a moderator sees as rows.
+ */
+export function landmarkLookalikesView(
+  ask: LandmarkAsk,
+  landmarks: readonly Doc<'bodyLandmarks'>[],
+  others: readonly { requestId: Id<'waterBodyRequests'>; name: string; coord: LatLng }[],
+): {
+  similarLandmark?: {
+    landmarkId: Id<'bodyLandmarks'>;
+    name: string;
+    point: LatLng;
+    meters: number;
+  };
+  similarProposal?: {
+    requestId: Id<'waterBodyRequests'>;
+    name: string;
+    coord: LatLng;
+    meters: number;
+  };
+} {
+  const found = landmarkAskLookalikes(
+    ask,
+    landmarks.filter((l) => l.removedAt === undefined),
+    others.map((o) => ({ ...o, names: [o.name] })),
+  );
+  return {
+    ...(found.landmark
+      ? {
+          similarLandmark: {
+            landmarkId: found.landmark.item._id,
+            name: found.landmark.item.name,
+            point: found.landmark.item.point,
+            meters: Math.round(found.landmark.meters),
+          },
+        }
+      : {}),
+    ...(found.ask
+      ? {
+          similarProposal: {
+            requestId: found.ask.item.requestId,
+            name: found.ask.item.name,
+            coord: found.ask.item.coord,
+            meters: Math.round(found.ask.meters),
+          },
+        }
+      : {}),
+  };
 }
 
 /** The live landmark on this body that answers a `name_landmark` ask, if one exists. */

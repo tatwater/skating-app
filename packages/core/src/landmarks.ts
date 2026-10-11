@@ -304,6 +304,62 @@ export function groupLandmarkAsks<T extends LandmarkAsk>(asks: readonly T[]): T[
   return places;
 }
 
+/** Does any name of one fold (`landmarkNameKey`) to any name of the other? */
+function landmarkNamesShared(a: readonly string[], b: readonly string[]): boolean {
+  const keys = new Set(a.map(landmarkNameKey).filter((k) => k.length > 0));
+  return b.some((n) => keys.has(landmarkNameKey(n)));
+}
+
+/** One lookalike: the thing, and how far it is from the ask. */
+export interface LandmarkLookalike<T> {
+  item: T;
+  meters: number;
+}
+
+/**
+ * What a proposal looks like without being (D202): the nearest landmark, and the nearest other
+ * place's ask, that share one of its names but are **not** the same place by the same-place rule.
+ * Either is a possible duplicate a moderator should see before adding: a skater who typed "Grand
+ * Isle" 3 km from its label may mean the island, and two skaters' Long Points may be one point
+ * marked far apart — or Champlain's two. Never a verdict; the moderator decides, on the map.
+ */
+export function landmarkAskLookalikes<
+  L extends { kind: LandmarkKind; point: LatLng; name: string; aliases: readonly string[] },
+  A extends LandmarkAsk,
+>(
+  ask: LandmarkAsk,
+  landmarks: readonly L[],
+  otherAsks: readonly A[],
+): { landmark?: LandmarkLookalike<L>; ask?: LandmarkLookalike<A> } {
+  const nearest = <T>(
+    items: readonly T[],
+    pointOf: (t: T) => LatLng,
+    namesOf: (t: T) => readonly string[],
+    samePlace: (t: T) => boolean,
+  ): LandmarkLookalike<T> | undefined => {
+    let best: LandmarkLookalike<T> | undefined;
+    for (const item of items) {
+      if (!landmarkNamesShared(ask.names, namesOf(item)) || samePlace(item)) continue;
+      const meters = haversineMeters(ask.coord, pointOf(item));
+      if (!best || meters < best.meters) best = { item, meters };
+    }
+    return best;
+  };
+  const landmark = nearest(
+    landmarks,
+    (l) => l.point,
+    (l) => [l.name, ...l.aliases],
+    (l) => landmarkAnswersAsk(l, ask),
+  );
+  const other = nearest(
+    otherAsks,
+    (a) => a.coord,
+    (a) => a.names,
+    (a) => landmarkAsksAreSamePlace(a, ask),
+  );
+  return { ...(landmark ? { landmark } : {}), ...(other ? { ask: other } : {}) };
+}
+
 /** The key two spellings of one landmark share — defined beside `requestNameKey` (`corpusRequests.ts`). */
 export { landmarkNameKey } from './corpusRequests';
 

@@ -12,6 +12,7 @@ import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';
 import { useMapCanvas } from '../../lib/mapCanvas';
+import { addReviewLayers, type ReviewPoints, showReview } from '../../lib/reviewMarkers';
 import {
   boundsForBody,
   buildMapStyle,
@@ -49,6 +50,8 @@ export interface LakeEditorData {
   draftPolygon: GeoJSON.Geometry | null;
   /** Named landmarks (D202) — a dot each, labeled by prominence where there is room. */
   landmarks?: readonly { name: string; point: LatLng; prominence: number }[];
+  /** A proposal under review (D202): its spot, and what it may duplicate — framed when it changes. */
+  review?: ReviewPoints | null;
 }
 
 /**
@@ -295,6 +298,9 @@ export function LakeEditorMap({
         },
       });
 
+      // Last, so a proposal under review sits over everything it is being checked against.
+      addReviewLayers(map, pinHalo);
+
       map.on('click', (e) => {
         onMapClickRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
       });
@@ -430,6 +436,12 @@ export function LakeEditorMap({
     });
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
   }, [loaded, data.samplePoints, data.suggestedPoints, setData]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mapRef is a ref; the review is the trigger.
+  useEffect(() => {
+    if (!loaded || !mapRef.current) return;
+    showReview(mapRef.current, data.review ?? null);
+  }, [loaded, data.review]);
 
   useEffect(() => {
     if (!loaded) return;

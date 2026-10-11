@@ -46,7 +46,8 @@ class FakeMap {
     return source ? { setData: (data: unknown) => sources.set(id, { data }) } : undefined;
   }
   remove() {}
-  fitBounds() {}
+  fitBounds = vi.fn();
+  flyTo = vi.fn();
   resize() {}
   /** `useMapCanvas` reaches in to collapse the attribution ⓘ at mount — see its own test. */
   getContainer() {
@@ -295,6 +296,41 @@ describe('LakeEditorMap — what gets drawn', () => {
     );
     expect(featureCount('editor-draft')).toBe(0);
     expect(featureCount('editor-sub-areas')).toBe(2);
+  });
+
+  it('draws a proposal under review over everything, frames it, and clears it (D202)', () => {
+    const featureCount = () =>
+      (
+        (sources.get('review-points')?.data as GeoJSON.FeatureCollection | undefined)?.features ??
+        []
+      ).length;
+    const { rerender } = render(<LakeEditorMap data={data()} />);
+    const map = loadMap();
+    expect(map?.layers.at(-1)).toBe('review-labels');
+    expect(featureCount()).toBe(0);
+
+    const ask = { lat: 44.3, lng: -73.1 };
+    rerender(<LakeEditorMap data={data({ review: { ask, name: 'Long Point' } })} />);
+    expect(featureCount()).toBe(1);
+    expect(map?.flyTo).toHaveBeenCalledWith({ center: [-73.1, 44.3], zoom: 14, animate: true });
+
+    const other = {
+      point: { lat: 44.4, lng: -73.0 },
+      kind: 'landmark' as const,
+      name: 'Long Point',
+    };
+    rerender(<LakeEditorMap data={data({ review: { ask, other } })} />);
+    expect(featureCount()).toBe(3);
+    expect(map?.fitBounds).toHaveBeenLastCalledWith(
+      [
+        [-73.1, 44.3],
+        [-73.0, 44.4],
+      ],
+      { padding: 60, maxZoom: 14, animate: true },
+    );
+
+    rerender(<LakeEditorMap data={data({ review: null })} />);
+    expect(featureCount()).toBe(0);
   });
 
   it('hands the map a dark style when the app is in dark mode (D34)', () => {

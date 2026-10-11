@@ -10,11 +10,13 @@ import {
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
+import type { ReviewPoints } from '../../lib/reviewMarkers';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { errorText, ToolCard } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
+import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
@@ -90,6 +92,7 @@ export function LandmarkTool({
   onFocus,
   onPromote,
   onPlacePoint,
+  onReview,
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
@@ -102,6 +105,8 @@ export function LandmarkTool({
   onPromote: (landmark: EditorLandmark) => void;
   /** Put the drop form's point here and show it — a skater's proposed spot. */
   onPlacePoint: (point: LatLng) => void;
+  /** Mark a proposal on the map — and what it may duplicate — and bring it into view. */
+  onReview: (review: ReviewPoints | null) => void;
   onResult: SetBanner;
 }) {
   const create = useMutation(api.landmarks.create);
@@ -128,6 +133,12 @@ export function LandmarkTool({
   const [busy, setBusy] = useState(false);
   /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
   const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
+  /** The proposal shown on the map, so its markers go when it is decided. */
+  const [reviewing, setReviewing] = useState<Id<'waterBodyRequests'> | null>(null);
+  const review = (requestId: Id<'waterBodyRequests'>, points: ReviewPoints) => {
+    setReviewing(requestId);
+    onReview(points);
+  };
   /** The corpus name the drop form is placing — saving the landmark marks it placed. */
   const [placingName, setPlacingName] = useState<Id<'corpusPlaceNames'> | null>(null);
   /** The corpus name being filed as another spelling, and the landmark chosen for it. */
@@ -199,7 +210,12 @@ export function LandmarkTool({
     if (answering && proposals && !proposals.some((p) => p.requestId === answering)) {
       setAnswering(null);
     }
-  }, [placingName, corpusNames, answering, proposals]);
+    // A proposal answered or declined leaves the map with the list.
+    if (reviewing && proposals && !proposals.some((p) => p.requestId === reviewing)) {
+      setReviewing(null);
+      onReview(null);
+    }
+  }, [placingName, corpusNames, answering, proposals, reviewing, onReview]);
 
   const startEdit = (l: EditorLandmark) => {
     reset();
@@ -470,7 +486,14 @@ export function LandmarkTool({
             {proposals.map((p) => (
               <li key={p.requestId} className="flex flex-wrap items-center justify-between gap-x-2">
                 <span className="min-w-0 flex-1 truncate">
-                  {p.name}
+                  <button
+                    type="button"
+                    className="underline-offset-2 hover:underline"
+                    title="Show on the map"
+                    onClick={() => review(p.requestId, { ask: p.coord, name: p.name })}
+                  >
+                    {p.name}
+                  </button>
                   <span className="text-foreground-muted">
                     {' '}
                     — {p.askers} {p.askers === 1 ? 'skater' : 'skaters'}
@@ -521,6 +544,22 @@ export function LandmarkTool({
                         'Declined.',
                       );
                     }}
+                  />
+                </span>
+                <span className="flex w-full flex-col gap-1">
+                  <GoogleMapsLink coord={p.coord} />
+                  <PossibleDuplicate
+                    ask={p.coord}
+                    name={p.name}
+                    lookalikes={p}
+                    busy={busy}
+                    onShow={(points) => review(p.requestId, points)}
+                    onSamePlace={(landmarkId) =>
+                      void run(
+                        () => approveRequest({ requestId: p.requestId, landmarkId }),
+                        `“${p.name}” answered with the landmark already there.`,
+                      )
+                    }
                   />
                 </span>
               </li>

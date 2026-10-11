@@ -6305,7 +6305,12 @@ place* is a name **and** a spot (#84 review): an ask reads as kind `other` in th
 two Long Points on one lake are two proposals, a landmark at one answers nobody who marked the
 other, and the second is filed even once the first is on the map. A lake's open asks are not
 capped (the founder's call: a cap would turn proposals away to spare the drain its paging); a
-decision drains its place by cursor, and the editor lists the oldest 200 and says when more wait.
+decision drains its place by cursor, and the editor lists the oldest 200 and says when more wait. A
+name the rule does not join — a landmark or another proposal by it elsewhere on the lake — is a
+**possible duplicate**, badged on the proposal in the same queue rather than a queue of its own
+(founder, 2026-10-11): the moderator sees the pair on the map and decides, *Same place* answering
+the proposal with the landmark already there, *Add* making a second. The request queue carries one
+preview map for every kind of ask and a Google Maps link-out per spot (only the coordinate leaves).
 
 **The corpus's leftovers are a queue, not a file.** The names the corpus uses that no landmark
 took load into `corpusPlaceNames` (a count and a spelling, never message text — L5a) with their lake

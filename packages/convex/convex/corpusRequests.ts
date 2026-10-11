@@ -75,9 +75,11 @@ import {
   decisionArgs,
   drawnBay,
   landmarkAskOf,
+  landmarkLookalikesView,
   listedBaysOf,
   matchBay,
   matchLandmark,
+  namedByModerator,
   namedLandmark,
   QUEUE_CAP,
   requestKeyOf,
@@ -487,11 +489,14 @@ export const listQueue = query({
     // so that is what its count counts. Grouping by each place's first ask, as the lake editor does
     // (where only the first ask is decided), would disagree once asks chain past the radius: A, B
     // 700 m on, C 700 m past that — B's decision closes all three.
-    const landmarkAsksByBody = new Map<string, { id: string; ask: LandmarkAsk }[]>();
+    const landmarkAsksByBody = new Map<
+      string,
+      { id: string; ask: LandmarkAsk; row: Doc<'waterBodyRequests'> }[]
+    >();
     for (const r of page) {
       if (r.status !== 'open' || r.kind !== 'name_landmark' || !r.waterBodyId) continue;
       const asks = landmarkAsksByBody.get(r.waterBodyId) ?? [];
-      asks.push({ id: r._id, ask: landmarkAskOf(r) });
+      asks.push({ id: r._id, ask: landmarkAskOf(r), row: r });
       landmarkAsksByBody.set(r.waterBodyId, asks);
     }
     const landmarkAskers = new Map<string, number>();
@@ -549,9 +554,24 @@ export const listQueue = query({
           : {}),
         // For a landmark proposal (D202): the landmark that already answers it, if one was added.
         ...(r.kind === 'name_landmark' && r.status === 'open' && body
-          ? {
-              existingLandmarkId: matchLandmark(await landmarksOf(body._id), landmarkAskOf(r))?._id,
-            }
+          ? await (async (): Promise<
+              { existingLandmarkId?: Id<'bodyLandmarks'> } & ReturnType<
+                typeof landmarkLookalikesView
+              >
+            > => {
+              const landmarks = await landmarksOf(body._id);
+              const existing = matchLandmark(landmarks, landmarkAskOf(r));
+              if (existing) return { existingLandmarkId: existing._id };
+              // The page's other landmark asks on this lake — what the queue itself shows.
+              const others = (landmarkAsksByBody.get(body._id) ?? []).flatMap((a) =>
+                a.id === r._id ? [] : [a.row],
+              );
+              return landmarkLookalikesView(
+                landmarkAskOf(r),
+                landmarks,
+                others.map((o) => ({ requestId: o._id, name: o.name ?? '', coord: o.coord })),
+              );
+            })()
           : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
@@ -620,10 +640,22 @@ export const queueCount = query({
  * approved with it — four people asked, and one decision answers all four.
  */
 export const approve = mutation({
-  args: { requestId: v.id('waterBodyRequests'), note: v.optional(v.string()) },
-  handler: async (ctx, { requestId, note }) => {
+  args: {
+    requestId: v.id('waterBodyRequests'),
+    note: v.optional(v.string()),
+    /**
+     * For a landmark ask: the landmark the moderator says it is — a possible duplicate confirmed
+     * ("it's Grand Isle"), at a spot the same-place rule would not have joined. It must carry the
+     * asked-for name and be this lake's own.
+     */
+    landmarkId: v.optional(v.id('bodyLandmarks')),
+  },
+  handler: async (ctx, { requestId, note, landmarkId }) => {
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
+    if (landmarkId !== undefined && request.kind !== 'name_landmark') {
+      throw new ConvexError('Only a landmark request is answered by a landmark');
+    }
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     const actor = await requireContributorRole(
       ctx,
@@ -683,8 +715,11 @@ export const approve = mutation({
           // The same shape as a bay: the act is adding the landmark on the lake editor (with the
           // request attached, which approves from there); approving from the queue is for one added
           // before the ask, and needs it to exist by the name asked for.
-          // By name *and* place: a Long Point across the lake answers nobody who marked this one.
-          const landmark = await namedLandmark(ctx, body._id, landmarkAskOf(request));
+          // By name *and* place: a Long Point across the lake answers nobody who marked this one —
+          // unless the moderator, looking at both on the map, says it does.
+          const landmark = landmarkId
+            ? await namedByModerator(ctx, body._id, request, landmarkId)
+            : await namedLandmark(ctx, body._id, landmarkAskOf(request));
           if (!landmark) {
             throw new ConvexError(
               `No landmark called "${request.name}" near that spot on ${body.name} yet — add it in the lake editor first, then approve.`,
@@ -859,6 +894,11 @@ export const openLandmarkRequestsForBody = query({
         if (row.reportId && !reportIds.includes(row.reportId)) reportIds.push(row.reportId);
       }
       const existing = matchLandmark(landmarks, first);
+      const others = places.flatMap((p) =>
+        p[0] && p[0] !== first
+          ? [{ requestId: p[0].row._id, name: p[0].row.name ?? '', coord: p[0].row.coord }]
+          : [],
+      );
       proposals.push({
         requestId: first.row._id,
         name: first.row.name ?? '',
@@ -867,6 +907,8 @@ export const openLandmarkRequestsForBody = query({
         reportIds,
         createdAt: first.row.createdAt,
         ...(existing ? { existingLandmarkId: existing._id } : {}),
+        // A possible duplicate only matters while the proposal is not already answered.
+        ...(existing ? {} : landmarkLookalikesView(first, landmarks, others)),
       });
     }
     return { proposals, more: rows.length > QUEUE_CAP };
