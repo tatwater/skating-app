@@ -180,9 +180,11 @@ function LakeEditor() {
                   polygon: s.polygon as GeoJSON.Geometry,
                   centroid: s.centroid,
                   // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
-                  // until a moderator checks it, is one under review (D215): its outline may be the
-                  // old one the re-fit was kept from.
-                  ...(s.mouth && !s.mouthStale && !s.mouthReview ? { mouth: s.mouth } : {}),
+                  // until a moderator checks it, is the mouth of a bay whose old outline was kept
+                  // (D215): it describes the re-fit, not the edge it would be drawn on.
+                  ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
+                    ? { mouth: s.mouth }
+                    : {}),
                 })),
               putIns: putIns ?? [],
               parkingAreas: access?.parking ?? [],
@@ -852,7 +854,7 @@ function SubAreaTool({
     systemDelistReason?: string;
     mouth?: SubAreaMouth;
     mouthStale?: string;
-    mouthReview?: string;
+    mouthReview?: { outcome: 'kept' | 'refitted'; note: string };
   }[];
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
@@ -1153,7 +1155,7 @@ function SubAreaTool({
                 {/* A re-fit a moved shoreline asked a person to check (D215): the mouth still
                     fits, so it is drawn; Edit mouth and save is how the question is answered. */}
                 {bay.mouthReview ? (
-                  <span className="block text-warning text-xs">{bay.mouthReview}</span>
+                  <span className="block text-warning text-xs">{bay.mouthReview.note}</span>
                 ) : null}
                 {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
                     automatic: a bay's seaward edge is a judgment a skater can prove wrong by

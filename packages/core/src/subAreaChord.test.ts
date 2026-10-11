@@ -826,12 +826,23 @@ describe('rederiveChordSubArea — a moved shore keeps the same water (D215)', (
       jumped: true,
       sameWater: false,
     });
-    // An old "bay" mostly off in other water is not.
-    const elsewhere = rederiveChordSubArea(lake, mouth, box(-72.6, 43.9, -72.45, 44.05));
-    expect(elsewhere).toMatchObject({ ok: true, jumped: true });
+    // An old outline mostly over land now: only its surviving water counts, and all of that is in
+    // the corner — the same water, though the corner is twice the size.
+    expect(rederiveChordSubArea(lake, mouth, box(-72.6, 43.9, -72.45, 44.05))).toMatchObject({
+      ok: true,
+      jumped: true,
+      sameWater: true,
+    });
+    // An old outline split down the middle by the mouth: the corner holds half its water — not the
+    // same water.
+    expect(rederiveChordSubArea(lake, mouth, box(-72.7, 44.0, -72.6, 44.1))).toMatchObject({
+      ok: true,
+      jumped: true,
+      sameWater: false,
+    });
   });
 
-  it('passes on the snap’s refusals and a mouth whose regions both cut the shore', () => {
+  it('passes on the snap’s refusals', () => {
     expect(rederiveChordSubArea(lake, { ...mouth, b: mouth.a }, before.polygon)).toMatchObject({
       ok: false,
       reason: 'coincident',

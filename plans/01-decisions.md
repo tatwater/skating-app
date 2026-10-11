@@ -6503,10 +6503,12 @@ anything, one just inside the mouth flips on a routine refinement. Founder call,
 - **A jump waits.** A re-fit more than half again bigger or a third smaller than the bay was, or
   overlapping it less than half (it moved more than it stayed), is not applied unseen. While the old
   outline still fits the lake it stays, re-clipped. Where it no longer fits, the re-fit is applied
-  only if it holds at least 80% of the old bay's surviving water — measured — and otherwise the old
+  only if it holds at least 80% of the old bay's surviving water (the old bay against the lake
+  itself) — measured, and never assumed when the clipper cannot measure it — and otherwise the old
   outline fails as any unfit outline does. Either way the bay carries `mouthReview` (or, for the
-  last case, `mouthStale`), shown in the editor; a review is cleared only by a moderator's mouth
-  save, never by a later re-import. The re-clip and a restore read one rule
+  last case, `mouthStale`), shown in the editor — which draws the mouth over a re-fitted outline but
+  not over a kept one; a review is cleared only by a moderator's mouth save, never by a later
+  re-import. The re-clip and a restore read one rule
   (`chordRederivationPlan`), and write the mouth only when something changed.
 
 A moderator's own mouth — drawn, edited, saved — still picks its side by the click: that click is

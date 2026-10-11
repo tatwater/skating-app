@@ -3053,17 +3053,18 @@ describe('sub-areas by chord (D201)', () => {
       await eastShore(-72.3);
       const row = await t.run((ctx) => ctx.db.get(id));
       expect(row?.surfaceAreaSqM).toBeCloseTo(area, -3);
-      expect(row?.mouthReview).toMatch(/outline was kept\. Check the mouth/);
+      expect(row?.mouthReview).toMatchObject({ outcome: 'kept' });
+      expect(row?.mouthReview?.note).toMatch(/outline was kept\. Check the mouth/);
       expect(row?.mouthStale).toBeUndefined();
       // The side follows the water the re-fit kept, so Edit mouth previews the corner, not the lake.
       expect(row?.mouth?.side).not.toEqual(NEAR_CLICK.side);
       const listed = await mod.as.query(api.subAreas.listForBody, {
         waterBodyId: row?.waterBodyId as Id<'waterBodies'>,
       });
-      expect(listed.find((b) => b._id === id)?.mouthReview).toMatch(/Check the mouth/);
+      expect(listed.find((b) => b._id === id)?.mouthReview?.note).toMatch(/Check the mouth/);
       // A later re-import that changes nothing does not answer the question for the moderator…
       await eastShore(-72.31);
-      expect((await t.run((ctx) => ctx.db.get(id)))?.mouthReview).toMatch(/Check the mouth/);
+      expect((await t.run((ctx) => ctx.db.get(id)))?.mouthReview?.outcome).toBe('kept');
       // …their mouth save does.
       await mod.as.mutation(api.subAreas.updateChord, {
         subAreaId: id,
@@ -3079,7 +3080,7 @@ describe('sub-areas by chord (D201)', () => {
       const row = await t.run((ctx) => ctx.db.get(id));
       expect(row?.removedAt).toBeUndefined();
       expect(row?.surfaceAreaSqM).toBeLessThan(area * 0.6);
-      expect(row?.mouthReview).toMatch(/re-fitted/);
+      expect(row?.mouthReview).toMatchObject({ outcome: 'refitted' });
     });
 
     test('a restore treats a jump the same way: the outline kept if it fits, else the re-fit', async () => {
@@ -3093,8 +3094,8 @@ describe('sub-areas by chord (D201)', () => {
         await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
         const row = await t.run((ctx) => ctx.db.get(id));
         expect(row?.removedAt).toBeUndefined();
-        expect(row?.mouthReview).toMatch(expected);
-        expect(row?.mouthReview).toMatch(/while this bay was delisted/);
+        expect(row?.mouthReview?.note).toMatch(expected);
+        expect(row?.mouthReview?.note).toMatch(/while this bay was delisted/);
       }
     });
 
@@ -3119,6 +3120,49 @@ describe('sub-areas by chord (D201)', () => {
       expect(row?.mouthStale).toMatch(
         /while this bay was delisted and this bay's mouth no longer fits/,
       );
+    });
+  });
+
+  describe('a jump onto other water, when the old outline no longer fits (D215)', () => {
+    // Half the stored outline is south of the lake's south shore, and of what is still water, the
+    // corner's mouth splits it down the middle: neither the old outline nor the re-fit is the bay.
+    const STRADDLING = rect(-72.7, 43.9, -72.6, 44.1);
+    async function straddlingBay() {
+      const t = harness();
+      const body = await seedCanonicalBody(t);
+      const mod = await seedUser(t, 'mod', 'moderator');
+      const { subAreaId: id } = await mod.as.mutation(api.subAreas.createFromChord, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        mouth: {
+          a: { lat: 44.2, lng: -72.5 },
+          b: { lat: 44.0, lng: -72.7 },
+          side: { lat: 44.05, lng: -72.55 },
+          sagittaM: 0,
+        },
+      });
+      await t.run((ctx) => ctx.db.patch(id, { polygon: STRADDLING }));
+      const mouth = (await t.run((ctx) => ctx.db.get(id)))?.mouth;
+      return { t, mod, id, mouth };
+    }
+
+    test('a re-import delists it with the reason, and leaves the mouth as drawn', async () => {
+      const { t, id, mouth } = await straddlingBay();
+      // A footprint change too small to move the corner, so the re-clip runs.
+      await reimportLake(t, rect(-73.5, 44.0, -72.5, 45.0001), { maxLat: 45.0001 });
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.mouthStale).toMatch(/encloses mostly other water/);
+      expect(row?.mouth).toEqual(mouth);
+      expect(row?.removedAt).toBeDefined();
+    });
+
+    test('a restore refuses, saying what is wrong with the mouth', async () => {
+      const { t, mod, id } = await straddlingBay();
+      await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+      await expect(mod.as.mutation(api.subAreas.restore, { subAreaId: id })).rejects.toThrow(
+        /encloses mostly other water.*no longer fits the lake either/,
+      );
+      expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
     });
   });
 

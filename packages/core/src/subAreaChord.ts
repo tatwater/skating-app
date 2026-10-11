@@ -738,7 +738,7 @@ export const CHORD_REDERIVE_SAME_WATER = 0.8;
  *    the bay-sized region cannot be built and the rest holds less than half of it, the answer is
  *    that region's refusal — exactly what a moderator drawing that mouth would meet. When the
  *    clipper cannot measure overlap at all (near-coincident outlines), the old bay's own open-water
- *    point decides instead — no clipper — and nothing is called the same water.
+ *    point decides instead — no clipper — and the jump is judged by area alone.
  * 2. **A jump flag.** A re-fit more than {@link CHORD_REDERIVE_MAX_AREA_RATIO} times bigger or smaller
  *    than `previous`, or overlapping it less than {@link CHORD_REDERIVE_MIN_OVERLAP}, comes back
  *    `jumped`; `chordRederivationPlan` decides what the server does with it.
@@ -776,38 +776,26 @@ export function rederiveChordSubArea(
 
   type Kept = { bay: Extract<ChordResult, { ok: true }>; region: Polygon };
   let kept: Kept;
-  let overlap: number | null = null;
-  let sameWater = false;
-  const before = surfaceAreaSqM(previous);
+  // The share of `previous` the kept bay holds — `null` when the clipper could not say.
+  let keptHeld: number | null;
   try {
     const held = (r: ChordResult) => (r.ok ? coveredFraction(previous, r.polygon) : 0);
     const inSmall = held(small);
-    let inLarge: number | null = null;
     if (small.ok && inSmall >= 0.5) {
       kept = { bay: small, region: smaller.polygon };
+      keptHeld = inSmall;
     } else {
       const big = buildLarge();
-      inLarge = held(big);
+      const inLarge = held(big);
       if (big.ok && (small.ok ? inLarge > inSmall : inLarge >= 0.5)) {
         kept = { bay: big, region: larger.polygon };
+        keptHeld = inLarge;
       } else if (small.ok) {
         kept = { bay: small, region: smaller.polygon };
+        keptHeld = inSmall;
       } else {
         return small;
       }
-    }
-    const keptHeld = kept.bay === small ? inSmall : (inLarge as number);
-    const after = surfaceAreaSqM(kept.bay.polygon);
-    const shared = keptHeld * before;
-    overlap = before + after - shared > 0 ? shared / (before + after - shared) : 0;
-    // Of the old bay's water that is still water — in one region or the other — how much the
-    // re-fit holds. Measured when it matters: a jump the server might apply.
-    if (jumpedBy(before, after, overlap)) {
-      inLarge ??= held(buildLarge());
-      const surviving = inSmall + inLarge;
-      sameWater = surviving > 0 && keptHeld / surviving >= CHORD_REDERIVE_SAME_WATER;
-    } else {
-      sameWater = true;
     }
   } catch {
     const inside = fetchOrigin(previous);
@@ -816,19 +804,37 @@ export function rederiveChordSubArea(
       kept = { bay: small, region: smaller.polygon };
     } else {
       const big = buildLarge();
-      if (!big.ok || !pointInPolygon(inside, big.polygon))
+      if (!big.ok || !pointInPolygon(inside, big.polygon)) {
         return { ok: false, reason: 'clip_failed' };
+      }
       kept = { bay: big, region: larger.polygon };
     }
-    overlap = null;
-    sameWater = false;
+    keptHeld = null;
+  }
+
+  const before = surfaceAreaSqM(previous);
+  const after = surfaceAreaSqM(kept.bay.polygon);
+  const shared = keptHeld === null ? null : keptHeld * before;
+  const overlap =
+    shared === null ? null : before + after - shared > 0 ? shared / (before + after - shared) : 0;
+  const jumped = jumpedBy(before, after, overlap);
+  // Of the old bay's water that is still water (the old bay against the lake itself), how much the
+  // re-fit holds — measured only for a jump, the one case the server might apply on it, and never
+  // assumed: anything the clipper cannot measure is not the same water.
+  let sameWater = !jumped;
+  if (jumped && keptHeld !== null) {
+    try {
+      const surviving = coveredFraction(previous, parent);
+      sameWater = surviving > 0 && keptHeld / surviving >= CHORD_REDERIVE_SAME_WATER;
+    } catch {
+      sameWater = false;
+    }
   }
 
   const side =
     waterSide(parent, kept.bay.polygon, kept.region) ??
     regionSideAt(a, b, kept.region) ??
     kept.bay.mouth.side;
-  const jumped = jumpedBy(before, surfaceAreaSqM(kept.bay.polygon), overlap);
   return { ...kept.bay, mouth: { ...kept.bay.mouth, side }, jumped, sameWater };
 }
 
