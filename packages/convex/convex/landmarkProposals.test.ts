@@ -186,6 +186,50 @@ describe('a report that names a landmark', () => {
     expect((await t.run((ctx) => ctx.db.get(foreign)))?.reportCount).toBeUndefined();
   });
 
+  test('an open sighting at a landmark pins its circle unless the landmark was chosen by name (Greptile P1 on #84)', async () => {
+    const t = convexTest(schema, modules);
+    const { as } = await seedUser(t, 'skater');
+    const label = { lat: 0.5, lng: 0.5 }; // seedLandmark's point
+    // One lake per case: touching pins auto-merge, and a hazard does not name its report.
+    const post = async (externalId: string, point: { byName?: boolean }, removed = false) => {
+      const lake = await seedBody(t, externalId);
+      const landmarkId = await seedLandmark(t, lake, 'Apple Island', { removed });
+      const reportId = await as.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: lake,
+        skateEndTime: SKATE_TIME,
+        observedFrom: 'on_ice',
+        sightings: [
+          {
+            type: 'open',
+            where: {
+              point: { coord: label, radiusMeters: 75, name: 'Apple Island', landmarkId, ...point },
+            },
+          },
+        ],
+      });
+      const pins = await t.run((ctx) =>
+        ctx.db
+          .query('hazards')
+          .collect()
+          .then((rows) => rows.filter((h) => h.waterBodyId === lake).map((h) => h.geometryKind)),
+      );
+      const report = await t.run((ctx) => ctx.db.get(reportId));
+      return { pins, point: report?.sightings[0]?.where?.point };
+    };
+    // A thumb on the label took the landmark's name: still a tap, still a pin.
+    expect((await post('osm/1', {})).pins).toEqual(['point_radius']);
+    // The chip: the island is land, so nothing — and the choice is kept on the report.
+    const chosen = await post('osm/2', { byName: true });
+    expect(chosen.pins).toEqual([]);
+    expect(chosen.point?.byName).toBe(true);
+    // A chip for a landmark removed since: the id goes, the flag with it, and the spot pins.
+    const orphan = await post('osm/3', { byName: true }, true);
+    expect(orphan.pins).toEqual(['point_radius']);
+    expect(orphan.point).not.toHaveProperty('byName');
+    expect(orphan.point).not.toHaveProperty('landmarkId');
+  });
+
   test('a landmark’s id carries its own name, whatever the client sent', async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, 'osm/1');

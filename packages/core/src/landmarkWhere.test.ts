@@ -92,7 +92,12 @@ describe('a tap on the lake', () => {
       radiusMeters: 150,
       name: 'Apple Island',
       landmarkId: 'id-Apple Island',
+      byName: true,
     });
+  });
+
+  it('a tap that lands on a label is still a tap — it never says it was chosen by name', () => {
+    expect(pointFromTap(apple.point, [apple, gull], 75)).not.toHaveProperty('byName');
   });
 });
 

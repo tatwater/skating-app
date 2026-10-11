@@ -62,21 +62,20 @@ export function landmarkPointsOf(
 }
 
 /**
- * Is this `where`'s point a landmark chosen by name — at the landmark's own label point, not a tap
- * that took its name (D202)? Without the label points nothing is: a tap is the safe reading, since
- * it pins its circle rather than nothing.
+ * Is this `where`'s point a landmark chosen by name, not a tap that took its name (D202)? The
+ * picker says which (`byName`, set only by a chip or the search) — never the distance alone, since
+ * a thumb can land on the label (Greptile P1 on #84). And the point must still sit on the label: a
+ * landmark moved since the choice leaves a point that is no longer where the label is. Anything
+ * short of both reads as a tap, the safe reading, since a tap pins its circle rather than nothing.
  */
 export function landmarkChosenByName(
   where: Where,
   landmarkPoints?: Readonly<Record<string, LatLng>>,
 ): boolean {
-  const id = where.point?.landmarkId;
-  const label = id !== undefined ? landmarkPoints?.[id] : undefined;
-  return (
-    label !== undefined &&
-    where.point !== undefined &&
-    haversineMeters(label, where.point.coord) < LABEL_POINT_M
-  );
+  const point = where.point;
+  if (point?.byName !== true || point.landmarkId === undefined) return false;
+  const label = landmarkPoints?.[point.landmarkId];
+  return label !== undefined && haversineMeters(label, point.coord) < LABEL_POINT_M;
 }
 
 /**
@@ -112,13 +111,13 @@ export interface SightingGeometryContext {
   /** The body's bays by id, for a `where` that names one. */
   bays?: Readonly<Record<string, Polygon | MultiPolygon>>;
   /**
-   * The label points of the landmarks the sightings name (D202), by id — a point *at* one is the
-   * landmark chosen by name, not a tap, and has no water geometry of its own.
+   * The label points of the landmarks the sightings name (D202), by id — a point chosen by name
+   * that still sits on one has no water geometry of its own (`landmarkChosenByName`).
    */
   landmarkPoints?: Readonly<Record<string, LatLng>>;
 }
 
-/** A point this close to a landmark's label point is that label point (a chip, not a tap). */
+/** A point chosen by name this close to its landmark's label point still sits on the label. */
 const LABEL_POINT_M = 1;
 
 const PARTITION = new Set<string>(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'middle']);

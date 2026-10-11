@@ -516,14 +516,18 @@ export async function assertNotABayName(
  * - a live landmark of *this* body: the point keeps the id and takes the landmark's **own name** (a
  *   client cannot pair Apple Island's id with words of its choosing);
  * - anything else — another lake's landmark, one removed or promoted to a bay since the draft was
- *   saved, a string that is not an id: the id is dropped and the author's words stay. A report must
+ *   saved, a string that is not an id: the id is dropped (with `byName`, so the point pins as the
+ *   spot it now is) and the author's words stay. A report must
  *   never fail because a label changed under it; an old report whose landmark became a bay still
  *   says "near Kingsland Bay", and an offline draft still posts.
  */
 export async function resolveLocatedLandmarks(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-  wheres: readonly ({ point?: { name?: string; landmarkId?: string } } | undefined)[],
+  wheres: readonly (
+    | { point?: { name?: string; landmarkId?: string; byName?: boolean } }
+    | undefined
+  )[],
 ): Promise<Doc<'bodyLandmarks'>[]> {
   const rows = new Map<string, Doc<'bodyLandmarks'> | null>();
   for (const where of wheres) {
@@ -540,7 +544,11 @@ export async function resolveLocatedLandmarks(
     }
     const row = rows.get(id);
     if (row) point.name = row.name;
-    else delete point.landmarkId;
+    else {
+      // Without its landmark the point is a spot like any other, and pins its circle.
+      delete point.landmarkId;
+      delete point.byName;
+    }
   }
   return [...rows.values()].filter((row): row is Doc<'bodyLandmarks'> => row !== null);
 }

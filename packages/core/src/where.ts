@@ -45,6 +45,13 @@ export interface WherePoint {
   name?: string;
   /** The `bodyLandmarks` row the point stands for; the server checks it is the body's own. */
   landmarkId?: string;
+  /**
+   * The skater chose the landmark itself — a chip or the search — so `coord` is its label point,
+   * not a spot they marked (D202). Only `landmarkPoint` sets it: a tap that took a landmark's name
+   * never carries it, however near the label the thumb landed, and so always pins its circle.
+   * Meaningless without `landmarkId`, and dropped with it.
+   */
+  byName?: boolean;
 }
 
 export interface Where {
@@ -144,6 +151,7 @@ export function validateWhere(
       const point: WherePoint = { coord, radiusMeters };
       if (trimmed) point.name = trimmed;
       if (landmarkId) point.landmarkId = landmarkId;
+      if (landmarkId && where.point.byName === true) point.byName = true;
       normalized.point = point;
     }
   }

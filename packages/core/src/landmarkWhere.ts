@@ -87,9 +87,15 @@ export function nearestLandmark(
   return best?.landmark ?? null;
 }
 
-/** A `where` point standing for a landmark: its point, its name, its id. */
+/** A `where` point standing for a landmark chosen by name: its point, its name, its id. */
 export function landmarkPoint(landmark: SheetLandmark, radiusMeters: number): WherePoint {
-  return { coord: landmark.point, radiusMeters, name: landmark.name, landmarkId: landmark._id };
+  return {
+    coord: landmark.point,
+    radiusMeters,
+    name: landmark.name,
+    landmarkId: landmark._id,
+    byName: true,
+  };
 }
 
 /**

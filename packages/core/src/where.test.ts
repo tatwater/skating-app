@@ -64,6 +64,25 @@ describe('validateWhere', () => {
     expect(errors.map((e) => e.field)).toEqual(['w.point.name', 'w.point.name']);
   });
 
+  it('keeps a chosen-by-name flag only beside a landmark id (D202)', () => {
+    const coord = { lat: 44.5, lng: -73.3 };
+    const chosen = {
+      coord,
+      radiusMeters: 75,
+      name: 'Apple Island',
+      landmarkId: 'lm1',
+      byName: true,
+    };
+    expect(validate({ point: chosen }).normalized).toEqual({ point: chosen });
+    // A flag with no landmark is a plain spot: it pins its circle.
+    expect(
+      validate({ point: { coord, radiusMeters: 75, name: 'Long Point', byName: true } }).normalized,
+    ).toEqual({ point: { coord, radiusMeters: 75, name: 'Long Point' } });
+    expect(
+      validate({ point: { ...chosen, byName: false } }).normalized?.point?.byName,
+    ).toBeUndefined();
+  });
+
   it('accepts each part alone and any composition of them', () => {
     expect(validate({ extent: 'patches' }).normalized).toEqual({ extent: 'patches' });
     expect(validate({ subAreaId: ' sa1 ' }).normalized).toEqual({ subAreaId: 'sa1' });
