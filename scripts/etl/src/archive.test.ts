@@ -10,6 +10,7 @@ import {
   parsePublishedMd5,
   runTableRow,
 } from './archive';
+import { GNIS_STATE_CODES } from './gnisSource';
 
 const VT: ExtractSource = { state: 'VT', slug: 'vermont' };
 
@@ -24,6 +25,13 @@ describe('EXTRACT_SOURCES', () => {
     const clipped = EXTRACT_SOURCES.filter((s) => s.clipBBox);
     expect(clipped.map((s) => s.state)).toEqual(['NY']);
     expect(clipped[0]?.clipBBox?.[1]).toBe(41.3);
+  });
+
+  it('names the same states GNIS is archived for — adding a region is adding it to both', () => {
+    // The merge reads both lists, and the landmark pass reads this one for its states and GNIS's
+    // files for each: a state in one and not the other has lakes with no names, or names with no
+    // lakes, and neither fails loudly.
+    expect(EXTRACT_SOURCES.map((s) => s.state).sort()).toEqual([...GNIS_STATE_CODES].sort());
   });
 
   it('builds a filesystem-safe archive key per state', () => {

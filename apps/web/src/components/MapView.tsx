@@ -18,6 +18,7 @@ import {
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
+  landmarkLabelFeatures,
   mapFilters,
   NO_HELD_FRAMES,
   parseAerialScene,
@@ -87,6 +88,8 @@ import {
   frameForCoord,
   INITIAL_CENTER,
   INITIAL_ZOOM,
+  LANDMARK_SOURCE_ID,
+  landmarkLabelLayer,
   MAP_FLAVORS,
   OSM_ATTRIBUTION,
   PIN_HALO_COLOR,
@@ -392,6 +395,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
 
+  // Named landmarks for the focused lake (D202) — the islands, points and reference bays skaters
+  // steer by. Per body like the put-ins above, never a viewport read: a label is part of *this*
+  // lake's detail, and the per-body cap is what bounds it.
+  const landmarks = useQuery(
+    api.landmarks.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  );
+
   // Hazards + known features for the focused lake (Phase 09a). Deliberately scoped to the open body,
   // not the viewport: hazards are only ever queried per body, which is what keeps this off the
   // path `listInViewport` had to be fixed for twice (PRs #10/#11) before A01 made it bounded.
@@ -554,6 +565,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'line-dasharray': [3, 2],
         },
       });
+      // Landmark names (D202) — text on the map, never a marker with an affordance: a landmark has
+      // no page, so nothing here is clickable. Added *before* the bay labels so a bay name wins a
+      // crowded spot (MapLibre places the upper layer's symbols first), and far beneath every pin.
+      // Each name waits for its own zoom (its footprint's size, or its prominence), and where two
+      // collide the more prominent is placed first; the one that does not fit does not draw.
+      map.addSource(LANDMARK_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer(landmarkLabelLayer(subAreaPalette));
       map.addLayer({
         id: 'sub-area-label',
         type: 'symbol',
@@ -890,6 +908,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const approaches = map.getSource(APPROACH_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
     approaches?.setData(approachesToFeatureCollection(putIns ?? []));
   }, [putIns, loaded, mapRef.current]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const source = map.getSource(LANDMARK_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    // Cleared with the lake: a closed drawer leaves no stranded names over the regional view.
+    source?.setData(
+      highlightWaterBodyId && landmarks
+        ? landmarkLabelFeatures(landmarks, putIns ?? [])
+        : EMPTY_FEATURES,
+    );
+  }, [landmarks, putIns, highlightWaterBodyId, loaded, mapRef.current]);
 
   // The recorded path behind the open report (Phase 08) — cleared when the drawer closes. The drawer
   // pushes it up rather than the map fetching it, matching how photo pins already work: the map is

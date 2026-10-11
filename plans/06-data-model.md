@@ -49,7 +49,10 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `waterBodyCells` | the ladder-grid spatial index: one row per (body, cell) — the read path every viewport and "near" query walks — D5 as rebuilt in A01 |
 | `waterBodySubAreas` | a named region inside one polygon — a bay, an arm — with aliases for the ten spellings of Malletts Bay; a place in its own right since A09; since D201 usually derived from a stored `mouth` (two shoreline points, a side, a sagitta) — D60 |
 | `waterBodySubAreaCells` | the same cell index for bays — A09 |
-| `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay — D179, D201 |
+| `bodyLandmarks` | a named point on one body that skaters steer by — island, point, reference bay, narrows, river mouth, bridge, marina, lighthouse, dam, shore town, camp or resort; a label and a `where`, never a place; upstream ids as an array, corpus mentions as prominence, capped per body at the write — D202 |
+| `corpusPlaceNames` | a place the community's emails name that no landmark took, with its mention count and the lake it is on when known — a moderator's queue (`/admin/water/place-names`): placed on the map, filed as a landmark's spelling, or dismissed with a reason — D202 |
+| `landmarkSourceBaselines` | what each catalog source (`vt.osm`, `ny.gnis`) read on the complete landmark loads this deployment accepted — the bar a later load must clear before it retires a catalog row; one row per accepted load, the newest is the bar — D202 |
+| `waterBodyRequests` | a skater asking for a body: activate, admit (resolved live against 3DHP), restore, contest access, takedown, and — the sub-area queue — name a bay; and a place a report named that no map has, filed by the report write — D179, D201, D202 |
 | `adminAreas` · `adminAreaCells` | town / county / state polygons and their cells, for the place a point resolves to — Phase 05 |
 | `regionStats` | per-state deciles of area, depth, elevation — the comparison basis for generated captions — D70 |
 | `bathymetryCoverage` | which bodies have contour tiles and whose credit line to render — A06b |

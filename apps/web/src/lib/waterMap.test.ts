@@ -8,12 +8,15 @@ import {
   featureIdForBody,
   frameForCoord,
   GEOLOCATION_FRAME_ZOOM,
+  LANDMARK_SOURCE_ID,
+  landmarkLabelLayer,
   type MappableBody,
   type MappableSubArea,
   NORTHEAST_REGION_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
   qualityDotString,
+  SUB_AREA_PALETTE,
   SUMMARY_CARD_PALETTE,
   subAreasToFeatureCollection,
   summaryCardLayer,
@@ -681,5 +684,32 @@ describe('summaryCardLayer', () => {
     const layout = summaryCardLayer(SUMMARY_CARD_PALETTE.white).layout as Record<string, unknown>;
     expect(layout['text-allow-overlap']).toBe(false);
     expect(layout['text-optional']).toBe(true);
+  });
+});
+
+describe('landmarkLabelLayer (D202)', () => {
+  it.each(['white', 'dark'] as const)('is a valid MapLibre layer in the %s palette', (flavor) => {
+    const errors = validateStyleMin({
+      version: 8,
+      glyphs: 'https://example.com/{fontstack}/{range}.pbf',
+      sources: {
+        [LANDMARK_SOURCE_ID]: {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        },
+      },
+      layers: [landmarkLabelLayer(SUB_AREA_PALETTE[flavor])],
+    } as never);
+    expect(errors.map((e) => e.message)).toEqual([]);
+  });
+
+  it('holds each name back until its own zoom, and places the more prominent first', () => {
+    const layer = landmarkLabelLayer(SUB_AREA_PALETTE.white) as {
+      filter?: unknown;
+      layout?: Record<string, unknown>;
+    };
+    expect(layer.filter).toEqual(['<=', ['get', 'minZoom'], ['zoom']]);
+    expect(layer.layout?.['symbol-sort-key']).toEqual(['get', 'sortKey']);
+    expect(layer.layout?.['text-allow-overlap']).toBe(false);
   });
 });

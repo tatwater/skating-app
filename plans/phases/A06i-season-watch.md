@@ -250,5 +250,5 @@ a main-based schema cannot validate; that branch is never pushed. What the real 
   `R2_ENDPOINT`, `FLY_IMAGE`; 🟢 `FLY_API_TOKEN` 2026-10-09 — a deploy token scoped to
   `skating-imagery`, one year (`convex-dev-live-imagery` in `fly tokens list`).
 - 🟢 `publish-search-plan` for `winter-2026-27`, 2026-10-09 (50 empty / 50 kept tiles).
-- Dev runs the combined branch until #82–#84 merge; after they do, rebase this PR and push it.
+- #82–#84 merged 2026-10-11 and are merged into this branch, so dev deploys from it directly; the local combined deploy branch is retired.
 - The masks predate the 2026-09-19/21 corpus seed; a re-bake is still the register's item.

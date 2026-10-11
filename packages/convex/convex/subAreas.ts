@@ -65,6 +65,13 @@ import {
 import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
+import {
+  type BayNaming,
+  retireAsPromoted,
+  retireNamedAsBay,
+  retireNamedAsBays,
+  subAreaFor,
+} from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
@@ -90,7 +97,14 @@ const SEED_MIN_RETAINED_FRACTION = 0.35;
  * just re-resolved; walking reports first would rebuild each of them from a stamp about to change.
  * Put-ins and features follow because nothing else depends on them.
  */
-const RESTAMP_TABLES = ['gpsActivities', 'reports', 'hazards', 'putIns', 'bodyFeatures'] as const;
+const RESTAMP_TABLES = [
+  'gpsActivities',
+  'reports',
+  'hazards',
+  'putIns',
+  'bodyFeatures',
+  'bodyLandmarks',
+] as const;
 type RestampTable = (typeof RESTAMP_TABLES)[number];
 
 /**
@@ -197,6 +211,8 @@ function toCandidates(
       ref: row,
       polygon: row.polygon as unknown as Polygon | MultiPolygon,
       surfaceAreaSqM: row.surfaceAreaSqM,
+      // The landmark stamp's prefilter (D202); the other rules ignore it.
+      bbox: row.bbox,
     }));
 }
 
@@ -379,12 +395,15 @@ export async function reclipSubAreasToParent(
   parent: Doc<'waterBodies'>,
   /** The human whose action triggered this, when there was one (a merge). Absent for the ETL. */
   actorId?: Id<'profiles'>,
-): Promise<{ reclipped: number; delisted: number }> {
+): Promise<{ reclipped: number; delisted: number; landmarksRetired: number }> {
   const parentPolygon = parent.polygon as unknown as Polygon | MultiPolygon;
   // `isActive`, not `isListed`: the bay's cells follow the lake's standing (see `subAreaListed`).
   const parentListed = isActive(parent);
   let reclipped = 0;
   let delisted = 0;
+  // A chord bay re-derived against a moved shore can *grow* (the mouth re-snaps outward), and may
+  // then name a landmark it was too far from — retired once for the parent, after the loop.
+  const regrown: BayNaming[] = [];
 
   for (const subArea of await subAreasForBody(ctx, waterBodyId)) {
     // An already-delisted bay is left as it is: re-clipping it would silently resurrect geometry the
@@ -431,6 +450,11 @@ export async function reclipSubAreasToParent(
             listed: parentListed,
             clearDelistReason: false,
           });
+          regrown.push({
+            _id: subArea._id,
+            polygon: chord.polygon,
+            names: [subArea.name, ...(subArea.aliases ?? [])],
+          });
           reclipped++;
           continue;
         }
@@ -468,9 +492,11 @@ export async function reclipSubAreasToParent(
       listed: parentListed,
     });
   }
+  const landmarksRetired =
+    regrown.length > 0 ? await retireNamedAsBays(ctx, actorId, waterBodyId, regrown) : 0;
   // The re-stamp is the caller's: `importCanonical` and `merge` both schedule one when this reports
   // movement, and the ETL gates it so an unchanged batch schedules nothing.
-  return { reclipped, delisted };
+  return { reclipped, delisted, landmarksRetired };
 }
 
 /**
@@ -527,6 +553,11 @@ async function insertSubArea(
     mouth?: SubAreaMouth;
     curatedBoost?: number;
     createdByUserId: Id<'profiles'>;
+    /**
+     * A batch loader inserting many bays collects them here, by parent, and retires their landmarks
+     * once per parent after the loop (`retireCollected`) rather than re-reading the labels per bay.
+     */
+    retireInto?: Map<Id<'waterBodies'>, BayNaming[]>;
     now: number;
   },
 ): Promise<Id<'waterBodySubAreas'>> {
@@ -556,7 +587,50 @@ async function insertSubArea(
     minVisibleZoom: derived.minVisibleZoom,
     listed: true, // every insert path has just proved the parent is listed
   });
+  // Every way a bay is born — chord, freehand, paste, seed, import — retires the landmark that
+  // named the same water (D202), here in the one insert rather than in each caller (or, for a batch,
+  // once per parent after it).
+  const naming = {
+    _id: subAreaId,
+    polygon: derived.polygon,
+    names: [input.name, ...input.aliases],
+  };
+  if (input.retireInto) {
+    const list = input.retireInto.get(input.waterBodyId) ?? [];
+    list.push(naming);
+    input.retireInto.set(input.waterBodyId, list);
+  } else {
+    await retireNamedAsBay(ctx, input.createdByUserId, input.waterBodyId, naming);
+  }
   return subAreaId;
+}
+
+/** Retire, once per parent, the landmarks a batch of inserted bays name (`insertSubArea.retireInto`). */
+async function retireCollected(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  named: ReadonlyMap<Id<'waterBodies'>, BayNaming[]>,
+): Promise<void> {
+  for (const [waterBodyId, bays] of named) await retireNamedAsBays(ctx, actorId, waterBodyId, bays);
+}
+
+/**
+ * A live bay's new outline retires the landmarks it now names (D202) — a moderator's redraw or chord
+ * edit. (The parent re-clip does the same for the chord bays it re-derives, once per parent; a plain
+ * re-clip only shrinks a bay to its lake and cannot bring a landmark newly within reach.)
+ */
+async function retireLandmarksForRedraw(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  subArea: Doc<'waterBodySubAreas'>,
+  polygon: Polygon | MultiPolygon,
+): Promise<void> {
+  if (subArea.removedAt !== undefined) return;
+  await retireNamedAsBay(ctx, actorId, subArea.waterBodyId, {
+    _id: subArea._id,
+    polygon,
+    names: [subArea.name, ...(subArea.aliases ?? [])],
+  });
 }
 
 /**
@@ -838,6 +912,8 @@ export const create = mutation({
     /** The drawn outline. Clipped to the parent before storage — never stored as supplied. */
     polygon: geoJson,
     curatedBoost: v.optional(v.number()),
+    /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
+    promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -862,6 +938,9 @@ export const create = mutation({
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
     });
+    if (args.promoteLandmarkId !== undefined) {
+      await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
+    }
     // A new bay claims reports and hazards that already sit inside it, so the label appears on the
     // history too rather than only on what's filed from now on.
     await scheduleRestamp(ctx, args.waterBodyId);
@@ -888,6 +967,8 @@ export const redraw = mutation({
       // A free-drawn outline is not the one the mouth describes, so the mouth goes (D201).
       mouth: null,
     });
+    // A bay drawn bigger or elsewhere may now name a landmark it was too far from before (D202).
+    await retireLandmarksForRedraw(ctx, actor._id, subArea, geometry.polygon);
     await audit(ctx, actor._id, 'redraw_sub_area', subAreaId, `Redrew "${subArea.name}"`, {
       waterBodyId: subArea.waterBodyId,
       clipped: geometry.clipped,
@@ -938,6 +1019,8 @@ export const createFromChord = mutation({
     mouth: subAreaMouth,
     curatedBoost: v.optional(v.number()),
     requestId: v.optional(v.id('waterBodyRequests')),
+    /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
+    promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
     const actor = await requireContributorRole(ctx, 'moderator');
@@ -970,6 +1053,9 @@ export const createFromChord = mutation({
       args.requestId === undefined
         ? undefined
         : await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
+    if (args.promoteLandmarkId !== undefined) {
+      await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
+    }
     await scheduleRestamp(ctx, args.waterBodyId);
     // What happened to the ask, so the editor says so: an ask decided elsewhere while this bay was
     // being drawn keeps the answer it got, and "answered the ask" would be untrue.
@@ -997,6 +1083,7 @@ export const updateChord = mutation({
       clearDelistReason: true,
       mouth: geometry.mouth,
     });
+    await retireLandmarksForRedraw(ctx, actor._id, subArea, geometry.polygon);
     await audit(ctx, actor._id, 'redraw_sub_area', subAreaId, `Redrew "${subArea.name}" by chord`, {
       waterBodyId: subArea.waterBodyId,
       via: 'chord',
@@ -1053,6 +1140,14 @@ export const rename = mutation({
         : `Updated aliases for "${nextName}"`,
       { waterBodyId: subArea.waterBodyId, aliases: nextAliases },
     );
+    // A name the bay now answers to is the bay's — a live landmark saying it retires (D202).
+    if (subArea.removedAt === undefined) {
+      await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+        _id: subAreaId,
+        polygon: subArea.polygon as unknown as Polygon | MultiPolygon,
+        names: [nextName, ...nextAliases],
+      });
+    }
     // Only the name is denormalized, so an alias-only edit changes nothing downstream — skip the job.
     if (nextName !== subArea.name) await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1158,6 +1253,12 @@ export const restore = mutation({
       waterBodyId: subArea.waterBodyId,
       geometryChanged,
       ...(chord ? { via: chord.ok ? 'chord' : 'reclip' } : {}),
+    });
+    // A bay back on the map takes its names back from any landmark that carried them meanwhile.
+    await retireNamedAsBay(ctx, actor._id, subArea.waterBodyId, {
+      _id: subAreaId,
+      polygon: geometry.polygon as Polygon | MultiPolygon,
+      names: [subArea.name, ...(subArea.aliases ?? [])],
     });
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -1379,6 +1480,22 @@ export const restampParent = internalMutation({
           .paginate(opts);
         for (const row of p.page) {
           const nextId = smallestContainingSubArea(hazardCenter(row), candidates)?._id;
+          if (row.subAreaId === nextId) continue;
+          await ctx.db.patch(row._id, { subAreaId: nextId });
+          changed++;
+        }
+        page = p;
+        break;
+      }
+      case 'bodyLandmarks': {
+        // The landmark stamp (D202): holes filled, so an island is in the bay around it. Paged like
+        // every other table — a giant's landmarks against its bays is real work per row.
+        const p = await ctx.db
+          .query('bodyLandmarks')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const nextId = subAreaFor(row.point, candidates)?.subAreaId;
           if (row.subAreaId === nextId) continue;
           await ctx.db.patch(row._id, { subAreaId: nextId });
           changed++;
@@ -1662,6 +1779,7 @@ export const importSeed = internalMutation({
     const bar = minRetainedFraction ?? SEED_MIN_RETAINED_FRACTION;
     const results: Array<Record<string, unknown>> = [];
     const restamp = new Set<Id<'waterBodies'>>();
+    const named = new Map<Id<'waterBodies'>, BayNaming[]>();
 
     for (const row of seed) {
       const parent = await ctx.db.get(row.waterBodyId);
@@ -1718,6 +1836,7 @@ export const importSeed = internalMutation({
         polygon: clip.polygon,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
         createdByUserId: actorUserId,
+        retireInto: named,
         now,
       });
       await ctx.db.insert('moderationActions', {
@@ -1735,6 +1854,7 @@ export const importSeed = internalMutation({
 
     // One re-stamp per touched parent, after the whole batch — fourteen bays on Champlain should
     // schedule one sweep, not fourteen.
+    await retireCollected(ctx, actorUserId, named);
     for (const waterBodyId of restamp) await scheduleRestamp(ctx, waterBodyId);
     return {
       drawn: results.filter((r) => r.ok === true && r.dryRun !== true).length,
@@ -1881,6 +2001,7 @@ export const importBaySubAreas = internalMutation({
   handler: async (ctx, { actorUserId, bays, dryRun }) => {
     const results: Array<Record<string, unknown>> = [];
     const restamp = new Set<Id<'waterBodies'>>();
+    const named = new Map<Id<'waterBodies'>, BayNaming[]>();
     let created = 0;
 
     for (const bay of bays) {
@@ -1937,6 +2058,7 @@ export const importBaySubAreas = internalMutation({
         aliases: [],
         polygon: clip.polygon,
         createdByUserId: actorUserId,
+        retireInto: named,
         now,
       });
       await ctx.db.insert('moderationActions', {
@@ -1953,6 +2075,7 @@ export const importBaySubAreas = internalMutation({
       results.push({ ...summary, subAreaId });
     }
 
+    await retireCollected(ctx, actorUserId, named);
     for (const waterBodyId of restamp) await scheduleRestamp(ctx, waterBodyId);
     return {
       applied: dryRun === false,

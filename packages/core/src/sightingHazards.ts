@@ -11,11 +11,21 @@
  * large on purpose — under-drawing a hazard is the dangerous direction of error
  * (`HAZARD_DEFAULT_RADIUS_M`). A sighting that names no shape derives nothing: the whole lake
  * "still open" is the lake's state, not a spot; `near_shore` is a band around every shore; an
- * extent alone or a landmark name has no geometry yet (named landmarks, A10 § Later).
+ * extent alone has no geometry. A **landmark chosen by name** (D202) is not a spot either: its
+ * point is where its label sits — an island's middle, a headland's tip, the town — which is land,
+ * and a circle there would pin the open water on the island and miss the water. It pins what the
+ * rest of its `where` names (a wedge, a bay), else nothing. A *tap* that took a landmark's name is
+ * still the tap, and pins its circle.
  */
 
 import type { MultiPolygon, Polygon, Position } from 'geojson';
-import { coveredFraction, type LatLng, polygonUnion, simplifyPath } from './geometry';
+import {
+  coveredFraction,
+  haversineMeters,
+  type LatLng,
+  polygonUnion,
+  simplifyPath,
+} from './geometry';
 import { HAZARD_MAX_VERTICES, type HazardShape, hazardFootprint } from './hazardGeometry';
 import { type PartitionSector, sectorFrame, sectorPolygons } from './sectorGeometry';
 import type { HazardType, Sighting } from './types';
@@ -32,13 +42,40 @@ export const SIGHTING_PIN_HINT =
  */
 export function sightingsMakePins(
   sightings: readonly { type: Sighting; where?: Where }[],
+  /** The body's landmark label points by id, so a landmark chosen by name promises no pin. */
+  landmarkPoints?: Readonly<Record<string, LatLng>>,
 ): boolean {
   return sightings.some(
     (s) =>
       SIGHTING_HAZARD_TYPE[s.type] !== undefined &&
       s.where !== undefined &&
-      whereNamesPinShape(s.where),
+      whereNamesPinShape(s.where, landmarkPoints),
   );
+}
+
+/** A body's landmarks as the label points `whereNamesPinShape` reads, by id — `undefined` with none. */
+export function landmarkPointsOf(
+  body: { landmarks: readonly { _id: string; point: LatLng }[] } | null | undefined,
+): Record<string, LatLng> | undefined {
+  if (!body || body.landmarks.length === 0) return undefined;
+  return Object.fromEntries(body.landmarks.map((l) => [l._id, l.point]));
+}
+
+/**
+ * Is this `where`'s point a landmark chosen by name, not a tap that took its name (D202)? The
+ * picker says which (`byName`, set only by a chip or the search) — never the distance alone, since
+ * a thumb can land on the label (Greptile P1 on #84). And the point must still sit on the label: a
+ * landmark moved since the choice leaves a point that is no longer where the label is. Anything
+ * short of both reads as a tap, the safe reading, since a tap pins its circle rather than nothing.
+ */
+export function landmarkChosenByName(
+  where: Where,
+  landmarkPoints?: Readonly<Record<string, LatLng>>,
+): boolean {
+  const point = where.point;
+  if (point?.byName !== true || point.landmarkId === undefined) return false;
+  const label = landmarkPoints?.[point.landmarkId];
+  return label !== undefined && haversineMeters(label, point.coord) < LABEL_POINT_M;
 }
 
 /**
@@ -48,8 +85,13 @@ export function sightingsMakePins(
  * a bay the body does not know, an outline with no frame, a wedge no simplification fits — and those
  * are the edges the sheet cannot see from where it stands.
  */
-export function whereNamesPinShape(where: Where): boolean {
-  if (where.point) return true;
+export function whereNamesPinShape(
+  where: Where,
+  landmarkPoints?: Readonly<Record<string, LatLng>>,
+): boolean {
+  // A landmark chosen by name is a place, not a spot on the water (D202): it pins only what the
+  // rest of the `where` names. A tap that took a landmark's name is still the tap.
+  if (where.point && !landmarkChosenByName(where, landmarkPoints)) return true;
   if (where.sector === undefined) return where.subAreaId !== undefined;
   if (PARTITION.has(where.sector)) return true;
   return where.subAreaId !== undefined && (where.sector === 'head' || where.sector === 'mouth');
@@ -68,7 +110,15 @@ export interface SightingGeometryContext {
   interiorPoint?: LatLng;
   /** The body's bays by id, for a `where` that names one. */
   bays?: Readonly<Record<string, Polygon | MultiPolygon>>;
+  /**
+   * The label points of the landmarks the sightings name (D202), by id — a point chosen by name
+   * that still sits on one has no water geometry of its own (`landmarkChosenByName`).
+   */
+  landmarkPoints?: Readonly<Record<string, LatLng>>;
 }
+
+/** A point chosen by name this close to its landmark's label point still sits on the label. */
+const LABEL_POINT_M = 1;
 
 const PARTITION = new Set<string>(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'middle']);
 
@@ -142,8 +192,8 @@ export function sightingHazardShape(
 ): { type: HazardType; shape: HazardShape } | null {
   const type = SIGHTING_HAZARD_TYPE[sighting.type];
   const where = sighting.where;
-  if (!type || !where || !whereNamesPinShape(where)) return null;
-  if (where.point) {
+  if (!type || !where || !whereNamesPinShape(where, ctx.landmarkPoints)) return null;
+  if (where.point && !landmarkChosenByName(where, ctx.landmarkPoints)) {
     return {
       type,
       shape: {

@@ -4,6 +4,7 @@ import {
   humanizeEnum,
   ICE_TYPES,
   type IceType,
+  landmarkPointsOf,
   OBSERVED_FROM,
   OBSERVED_FROM_LABELS,
   type ObservedFrom,
@@ -221,7 +222,10 @@ function ObservedFromSection({ report, body, dispatch, gaps, timeZone }: Section
             }}
           />
           {refused ? <SheetHint>{`Say where — ${SIGHTING_FROM_ICE_MESSAGE}.`}</SheetHint> : null}
-          {sightingsMakePins(seen.map((c) => c.value)) ? (
+          {sightingsMakePins(
+            seen.map((c) => c.value),
+            landmarkPointsOf(body),
+          ) ? (
             <SheetHint>{SIGHTING_PIN_HINT}</SheetHint>
           ) : null}
           {cards.length > 0 && !asking ? (
