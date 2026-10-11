@@ -566,6 +566,22 @@ describe('properties', () => {
       fc.property(chordArb, ({ a, b }) => {
         const c = chordCandidates(LAKE, a, b);
         if (!c.ok) return true;
+        // ⚠ Only a chord across the water splits the ring. One outside it — CI seed 1968237578 drew
+        // a chord 4.6 cm past a reflex corner — puts a land sliver in both "sides", and the sum
+        // overshoots by twice the sliver. `chordSubArea` refuses such a chord (`disjoint`, or
+        // `crosses_shore` for one that clips a headland); the candidates by design do not.
+        const straight = chordSubArea(LAKE, {
+          a,
+          b,
+          side: sideOf(c.sides[c.smaller]),
+          sagittaM: 0,
+        });
+        if (
+          !straight.ok &&
+          (straight.reason === 'disjoint' || straight.reason === 'crosses_shore')
+        ) {
+          return true;
+        }
         const whole = surfaceAreaSqM({ type: 'Polygon', coordinates: [OUTER] });
         const sum = surfaceAreaSqM(c.sides[0]) + surfaceAreaSqM(c.sides[1]);
         return Math.abs(sum - whole) / whole < 1e-6;
