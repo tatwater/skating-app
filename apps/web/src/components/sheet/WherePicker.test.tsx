@@ -67,7 +67,7 @@ describe('WherePicker landmarks (D202)', () => {
     expect(screen.getByRole('button', { name: 'Cedar Island' })).toBeInTheDocument();
   });
 
-  it('choosing a landmark is choosing its point, name and id; choosing it again clears it', () => {
+  it('choosing a landmark is choosing its point, name and id — by name; choosing it again clears it', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'Apple Island' }));
     expect(whereNow()?.point).toEqual({
@@ -75,6 +75,7 @@ describe('WherePicker landmarks (D202)', () => {
       radiusMeters: 75,
       name: 'Apple Island',
       landmarkId: 'id-Apple Island',
+      byName: true,
     });
     expect(screen.getByText('Near Apple Island')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Apple Island' }));
