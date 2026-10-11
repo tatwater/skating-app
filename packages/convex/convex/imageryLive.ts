@@ -270,8 +270,19 @@ export const markIndexDirty = internalMutation({
 });
 
 export const markIndexBuilt = internalMutation({
-  args: { seq: v.number(), unreadable: v.optional(v.number()) },
-  handler: async (ctx, { seq, unreadable }) => await markBuilt(ctx, 'index', seq, unreadable),
+  args: {
+    seq: v.number(),
+    unreadableKeys: v.optional(v.array(v.string())),
+    complete: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { seq, unreadableKeys, complete }) =>
+    await markBuilt(ctx, 'index', seq, unreadableKeys ?? [], complete ?? true),
+});
+
+/** The manifests the last index build could not read. */
+export const unreadableKeys = internalQuery({
+  args: {},
+  handler: async (ctx) => (await jobRow(ctx, 'index'))?.unreadableKeys ?? [],
 });
 
 /** Whether a tick has anything to do: a cut in flight, or one queued and allowed to start. */
@@ -1197,16 +1208,17 @@ export const buildIndex = internalAction({
     try {
       const result = await buildIndexOnce(ctx);
       if (result === null) return null;
-      // Stale rows past the cap are still to read: the request stands, and the next tick goes on.
-      if (result.deferred > 0) return { frames: result.frames };
       // Built even with a manifest it could not read, so a frame landing later is not held back;
-      // what it could not read is retried after a wait that doubles while it keeps failing.
+      // what it could not read is retried after a wait that doubles while it keeps failing. With
+      // readable manifests still unread (the read budget ran out) the request stands, and the next
+      // tick goes on — the unreadable ones get their wait and alert all the same.
       const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
         seq,
-        unreadable: result.unreadable,
+        unreadableKeys: result.unreadableKeys,
+        complete: result.deferred === 0,
       });
       if (retryInMs !== null) {
-        const n = result.unreadable;
+        const n = result.unreadableKeys.length;
         await ctx.runMutation(internal.imageryLive.alertAdmins, {
           key: 'imagery-index-unreadable',
           season: result.season,
@@ -1221,9 +1233,12 @@ export const buildIndex = internalAction({
   },
 });
 
-async function buildIndexOnce(
-  ctx: ActionCtx,
-): Promise<{ frames: number; unreadable: number; deferred: number; season: string } | null> {
+async function buildIndexOnce(ctx: ActionCtx): Promise<{
+  frames: number;
+  unreadableKeys: string[];
+  deferred: number;
+  season: string;
+} | null> {
   const startedAt = Date.now();
   const season = archiveSeasonAt(startedAt);
   const config = configured();
@@ -1263,8 +1278,16 @@ async function buildIndexOnce(
       const row = byKey.get(k);
       return row !== undefined && !current(row);
     });
-    // New frames first: a frame missing from the timeline matters more than a recut's details.
-    const fresh = [...unseen, ...stale];
+    // New frames first — a frame missing from the timeline matters more than a recut's details —
+    // and ⚠ **manifests the last build could not read last of all**: every build starts from the
+    // top, so one that stalls at the front would spend every budget, and the good frames behind it
+    // would never be reached (Greptile, PR #85).
+    const failing = new Set<string>(await ctx.runQuery(internal.imageryLive.unreadableKeys, {}));
+    const fresh = [
+      ...unseen.filter((k) => !failing.has(k)),
+      ...stale.filter((k) => !failing.has(k)),
+      ...[...unseen, ...stale].filter((k) => failing.has(k)),
+    ];
     for (let i = 0; i < remove.length; i += 100) {
       await ctx.runMutation(internal.imageryLive.syncFrames, {
         add: [],
@@ -1273,7 +1296,7 @@ async function buildIndexOnce(
     }
     const added: ReturnType<typeof frameFromManifest>[] = [];
     const reread = new Set<string>();
-    let unreadable = 0;
+    const failedNow: string[] = [];
     let next = 0;
     while (next < fresh.length && Date.now() - startedAt < READ_BUDGET_MS) {
       const group = fresh.slice(next, next + MANIFEST_CONCURRENCY);
@@ -1290,7 +1313,9 @@ async function buildIndexOnce(
         }),
       );
       const landed = batch.filter((row): row is NonNullable<typeof row> => row !== null);
-      unreadable += batch.length - landed.length;
+      group.forEach((key, j) => {
+        if (batch[j] === null) failedNow.push(key);
+      });
       // Saved as it lands: a build stopped by the clock keeps what it read.
       if (landed.length > 0) {
         await ctx.runMutation(internal.imageryLive.syncFrames, { add: landed, remove: [] });
@@ -1300,7 +1325,12 @@ async function buildIndexOnce(
         reread.add(row.manifestKey);
       }
     }
-    const deferred = fresh.length - next;
+    // Unread for want of time: readable ones are deferred (the request stands); known-unreadable
+    // ones are still unreadable, and wait for their retry like the ones that failed just now.
+    const unread = fresh.slice(next);
+    const deferred = unread.filter((k) => !failing.has(k)).length;
+    const unreadableKeys = [...failedNow, ...unread.filter((k) => failing.has(k))];
+    const unreadable = unreadableKeys.length;
 
     // A changed manifest that could not be read keeps its old row until it can (counted unreadable,
     // so it is retried): an older description of the frame beats no frame.
@@ -1347,7 +1377,7 @@ async function buildIndexOnce(
         frames: index.frames.length,
       },
     });
-    return { frames: index.frames.length, unreadable, deferred, season };
+    return { frames: index.frames.length, unreadableKeys, deferred, season };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await ctx.runMutation(internal.imageryLive.alertAdmins, {

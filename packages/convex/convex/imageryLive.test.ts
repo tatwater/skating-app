@@ -1178,7 +1178,7 @@ describe('buildIndex', () => {
     await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
     // …and that build still cannot read it: the admin's retry stands — due now, not pushed back.
     expect(
-      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2, unreadable: 1 }),
+      await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2, unreadableKeys: ['k'] }),
     ).toEqual({ retryInMs: 0 });
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 1 });
   });
@@ -1293,6 +1293,82 @@ describe('buildIndex', () => {
     expect(await saved()).toHaveLength(20);
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 4 });
+  });
+
+  test('manifests that stall go to the back, so the readable frames behind them are reached', async () => {
+    const t = convexTest(schema, modules);
+    const manifests = new Map<string, unknown>();
+    const stalling = new Set<string>();
+    // Sixteen manifests that stall to their timeout and fail, listed ahead of four good ones.
+    for (let i = 0; i < 20; i++) {
+      const g = s2(`19T${String(i).padStart(3, '0')}`, '20261005');
+      const key = `frames/${SEASON}/${g}.json`;
+      if (i < 16) stalling.add(key);
+      manifests.set(key, manifest(g, '2026-10-05T15:30:00Z'));
+    }
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    stub(world({ manifests }));
+    const fetchFn = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const key = new URL(req.url).pathname.replace('/skating-imagery/', '');
+        if (req.url.startsWith(ENDPOINT) && req.method === 'GET' && stalling.has(key)) {
+          vi.advanceTimersByTime(30_000);
+          return new Response('', { status: 504, statusText: 'Timeout' });
+        }
+        return fetchFn(req);
+      }),
+    );
+    const good = async () =>
+      (await t.run((ctx) => ctx.db.query('imageryFrames').collect())).map((r) => r.manifestKey);
+    // Two builds spend their budgets on the stalling front of the list, remembering each failure.
+    await t.action(internal.imageryLive.buildIndex, {});
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await good()).toEqual([]);
+    expect(await t.query(internal.imageryLive.unreadableKeys, {})).toHaveLength(16);
+    // The third reads the good frames first, the known-unreadable ones behind them.
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect(await good()).toHaveLength(4);
+    // Nothing readable is left, so the request is satisfied; the sixteen wait for their retry.
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
+    expect((await runState(t, 'index'))?.retryAt).toBeGreaterThan(Date.now());
+    expect(await t.query(internal.imageryLive.unreadableKeys, {})).toHaveLength(16);
+  });
+
+  test('a build cut short still sets the unreadable retry and alert', async () => {
+    const t = convexTest(schema, modules);
+    const manifests = new Map<string, unknown>();
+    for (let i = 0; i < 12; i++) {
+      const g = s2(`19T${String(i).padStart(3, '0')}`, '20261005');
+      manifests.set(
+        `frames/${SEASON}/${g}.json`,
+        i === 0 ? 'error' : manifest(g, '2026-10-05T15:30:00Z'),
+      );
+    }
+    await t.mutation(internal.imageryLive.markIndexDirty, {});
+    stub(world({ manifests }));
+    const fetchFn = globalThis.fetch;
+    // Every read takes 30 s: the first group of eight uses the budget, and one of them fails.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        if (req.url.startsWith(ENDPOINT) && req.url.includes('/frames/') && req.method === 'GET') {
+          vi.advanceTimersByTime(30_000);
+        }
+        return fetchFn(req);
+      }),
+    );
+    await t.action(internal.imageryLive.buildIndex, {});
+    expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 7, unreadable: 1, deferred: 4 });
+    // Readable manifests are left: the request stands — and the failure still has its wait and email.
+    expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
+    expect((await runState(t, 'index'))?.retryAt).toBeGreaterThan(Date.now());
+    expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
+      heading: 'Some cut frames cannot be read into the imagery index',
+    });
   });
 
   test('a failed rebuild alerts the admins', async () => {

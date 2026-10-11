@@ -1395,6 +1395,8 @@ export default defineSchema({
      */
     unreadableStreak: v.optional(v.number()),
     retryAt: v.optional(v.number()),
+    /** The manifests the last build could not read — the next reads them last, behind good ones. */
+    unreadableKeys: v.optional(v.array(v.string())),
     /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
     dirtySeq: v.optional(v.number()),
     builtSeq: v.optional(v.number()),
