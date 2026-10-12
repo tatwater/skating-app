@@ -359,7 +359,18 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
   `season`, `people`, `instruments`) over a shared `console.css` + `chrome.js`, with the README
   carrying what each shows and what v1 leaves out. The signature is the **season tape** in the top
-  bar of every mode — the console's clock is the winter, not the time of day. Founder review next.
+  bar of every mode — the console's clock is the winter, not the time of day. **Founder review
+  (2026-10-12), folded into v1.1:** the tape stays, centered, one line, the same place and width on
+  every page, hover-labeled; the top bar carries an **App** switch back to Map, Latest, Post and
+  Settings (`g a`) and a **staff avatar stack** (lit = present), and no clock; the Overview's cards
+  take the height they need and the audit feed fills the rest, with a cost meter; the inbox's
+  flow-through list (the next lanes follow the current one, so `j` runs to zero) stays, revisited
+  if other staff dislike it; the body console's **left column is read-only and every value is a
+  deep link** that opens the right tool and lights the row it names (the inspector needs an
+  addressable highlight: `?tab=names&lit=alias:Mascoma`); a dead local run can be **marked
+  failed** from Machinery, the reason auto-filled from the diagnostics where they can name it.
+  Deeper interaction wireframes are not drawn; the novel interactions (the task round-trip, the
+  deep-link highlight, the palette) are prototyped first in code.
 
 ## §7 — The questions, and the founder's calls (2026-10-12)
 
