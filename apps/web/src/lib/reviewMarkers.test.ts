@@ -1,6 +1,15 @@
+import { renderHook } from '@testing-library/react';
 import type maplibregl from 'maplibre-gl';
 import { describe, expect, it, vi } from 'vitest';
-import { REVIEW_SOURCE_ID, reviewFeatures, showReview } from './reviewMarkers';
+import {
+  REVIEW_SOURCE_ID,
+  type ReviewRow,
+  type ReviewShow,
+  reviewFeatures,
+  rowReview,
+  showReview,
+  useRowReview,
+} from './reviewMarkers';
 
 const ask = { lat: 44.5, lng: -73.3 };
 const point = { lat: 44.6, lng: -73.1 };
@@ -71,5 +80,71 @@ describe('showReview', () => {
     expect(none.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
     expect(none.map.flyTo).not.toHaveBeenCalled();
     expect(none.map.fitBounds).not.toHaveBeenCalled();
+  });
+});
+
+describe('rowReview — the map draws what the row says now (Greptile P2 on #88)', () => {
+  const row = {
+    coord: ask,
+    name: 'Gull Rock',
+    similarLandmark: { point, name: 'Gull Rock' },
+    similarProposal: { coord: { lat: 44.8, lng: -73.3 }, name: 'gull rock' },
+  };
+
+  it('is the spot alone, or the spot with the lookalike asked for', () => {
+    expect(rowReview(row, 'spot')).toEqual({ ask, name: 'Gull Rock' });
+    expect(rowReview(row, 'landmark')).toEqual({
+      ask,
+      name: 'Gull Rock',
+      other: { point, kind: 'landmark', name: 'Gull Rock' },
+    });
+    expect(rowReview(row, 'proposal')?.other).toEqual({
+      point: { lat: 44.8, lng: -73.3 },
+      kind: 'proposal',
+      name: 'gull rock',
+    });
+    expect(rowReview({ coord: ask }, 'spot')).toEqual({ ask });
+  });
+
+  it('drops a pair end the row no longer reports — decided, removed or displaced', () => {
+    const { similarProposal: _, ...decided } = row;
+    expect(rowReview(decided, 'proposal')).toEqual({ ask, name: 'Gull Rock' });
+    const { similarLandmark: __, ...removed } = row;
+    expect(rowReview(removed, 'landmark')).toEqual({ ask, name: 'Gull Rock' });
+    // A landmark moved (or a nearer one in its place) draws where the row says it is now.
+    const moved = {
+      ...row,
+      similarLandmark: { point: { lat: 44.7, lng: -73.2 }, name: 'Gull Rock' },
+    };
+    expect(rowReview(moved, 'landmark').other?.point).toEqual({ lat: 44.7, lng: -73.2 });
+  });
+});
+
+describe('useRowReview — steady across re-emits, fresh on a click', () => {
+  type Props = { row: ReviewRow | undefined; show: ReviewShow; pick: unknown };
+
+  it('holds one object while the row says the same, and hands a new one on a change or a pick', () => {
+    const pick = { id: 'a' };
+    const { result, rerender } = renderHook(
+      ({ row, show, pick }: Props) => useRowReview(row, show, pick),
+      { initialProps: { row: { coord: ask, name: 'Gull Rock' }, show: 'spot', pick } as Props },
+    );
+    const first = result.current;
+    expect(first).toEqual({ ask, name: 'Gull Rock' });
+    // The query re-emits: fresh objects, the same values — the map holds still.
+    rerender({ row: { coord: { ...ask }, name: 'Gull Rock' }, show: 'spot', pick });
+    expect(result.current).toBe(first);
+    // The moderator clicks Show again: the same drawing, a new object, so the canvas re-centers.
+    const again = { id: 'a' };
+    rerender({ row: { coord: ask, name: 'Gull Rock' }, show: 'spot', pick: again });
+    const second = result.current;
+    expect(second).not.toBe(first);
+    expect(second).toEqual(first);
+    // What it draws changes, with no click: a new review. No row: nothing.
+    rerender({ row: { coord: point, name: 'Gull Rock' }, show: 'spot', pick: again });
+    expect(result.current).not.toBe(second);
+    expect(result.current?.ask).toEqual(point);
+    rerender({ row: undefined, show: 'spot', pick: again });
+    expect(result.current).toBeNull();
   });
 });

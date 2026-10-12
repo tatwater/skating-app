@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { formatDistanceMiles, type LatLng } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 import { googleMapsUrl } from '../../lib/googleMaps';
-import type { ReviewPoints } from '../../lib/reviewMarkers';
+import type { ReviewShow } from '../../lib/reviewMarkers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { ReasonDialog } from './ReasonDialog';
@@ -39,18 +39,18 @@ export function GoogleMapsLink({ coord }: { coord: LatLng }) {
  * proposal with the landmark that is already there. "Different place" is the row's own *Add*.
  */
 export function PossibleDuplicate({
-  ask,
-  name,
   lookalikes,
   busy = false,
   onShow,
   onSamePlace,
 }: {
-  ask: LatLng;
-  name: string;
   lookalikes: Lookalikes;
   busy?: boolean;
-  onShow: (review: ReviewPoints) => void;
+  /**
+   * Draw the spot with this lookalike. Which one, not where: the caller draws it from the row as it
+   * stands (`useRowReview`), so a lookalike decided or moved since the click shows as it is now.
+   */
+  onShow: (lookalike: Exclude<ReviewShow, 'spot'>) => void;
   /** Answer the proposal with this landmark — confirmed first, with an optional note the skaters read. */
   onSamePlace: (landmarkId: Id<'bodyLandmarks'>, note: string) => Promise<unknown>;
 }) {
@@ -65,17 +65,7 @@ export function PossibleDuplicate({
             “{landmark.name}” is already a landmark, {formatDistanceMiles(landmark.meters)} from
             this spot.
           </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() =>
-              onShow({
-                ask,
-                name,
-                other: { point: landmark.point, kind: 'landmark', name: landmark.name },
-              })
-            }
-          >
+          <Button variant="ghost" size="xs" onClick={() => onShow('landmark')}>
             Show both
           </Button>
           {/* Confirmed, like the queue's Approve: it can answer a proposal with a landmark miles
@@ -101,17 +91,7 @@ export function PossibleDuplicate({
           <span>
             Another “{proposal.name}” proposal is {formatDistanceMiles(proposal.meters)} away.
           </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() =>
-              onShow({
-                ask,
-                name,
-                other: { point: proposal.coord, kind: 'proposal', name: proposal.name },
-              })
-            }
-          >
+          <Button variant="ghost" size="xs" onClick={() => onShow('proposal')}>
             Show both
           </Button>
         </p>

@@ -10,7 +10,7 @@ import {
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
-import type { ReviewPoints } from '../../lib/reviewMarkers';
+import { type ReviewPoints, type ReviewShow, useRowReview } from '../../lib/reviewMarkers';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -133,15 +133,11 @@ export function LandmarkTool({
   const [busy, setBusy] = useState(false);
   /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
   const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
-  /**
-   * The proposals drawn on the map — one, or a pair shown together — so the markers go when any of
-   * them is decided, rather than leaving a ring labeled "(proposal)" over a closed question.
-   */
-  const [reviewing, setReviewing] = useState<readonly Id<'waterBodyRequests'>[]>([]);
-  const review = (requestIds: readonly Id<'waterBodyRequests'>[], points: ReviewPoints) => {
-    setReviewing(requestIds);
-    onReview(points);
-  };
+  /** The proposal on the map, and what of it — its spot, or its spot paired with a lookalike. */
+  const [reviewing, setReviewing] = useState<{
+    id: Id<'waterBodyRequests'>;
+    show: ReviewShow;
+  } | null>(null);
   /** The corpus name the drop form is placing — saving the landmark marks it placed. */
   const [placingName, setPlacingName] = useState<Id<'corpusPlaceNames'> | null>(null);
   /** The corpus name being filed as another spelling, and the landmark chosen for it. */
@@ -213,16 +209,18 @@ export function LandmarkTool({
     if (answering && proposals && !proposals.some((p) => p.requestId === answering)) {
       setAnswering(null);
     }
-    // A proposal answered or declined leaves the map with the list.
-    if (
-      reviewing.length > 0 &&
-      proposals &&
-      !reviewing.every((id) => proposals.some((p) => p.requestId === id))
-    ) {
-      setReviewing([]);
-      onReview(null);
-    }
-  }, [placingName, corpusNames, answering, proposals, reviewing, onReview]);
+  }, [placingName, corpusNames, answering, proposals]);
+
+  // What the map draws is rebuilt from the proposal's row as it stands (`useRowReview`), the request
+  // queue's rule: the proposal answered or declined leaves the map with the list; a pair's other end
+  // leaves when the row stops reporting it — decided, removed, or displaced by a nearer one. The same
+  // object across the query's re-emits, so the canvas moves when what it shows changes or the
+  // moderator clicks again — and handing it on again is a no-op for a state setter.
+  const reviewedRow = reviewing ? proposals?.find((p) => p.requestId === reviewing.id) : undefined;
+  const review = useRowReview(reviewedRow, reviewing?.show ?? 'spot', reviewing);
+  useEffect(() => {
+    onReview(review);
+  }, [review, onReview]);
 
   const startEdit = (l: EditorLandmark) => {
     reset();
@@ -497,7 +495,7 @@ export function LandmarkTool({
                     type="button"
                     className="underline-offset-2 hover:underline"
                     title="Show on the map"
-                    onClick={() => review([p.requestId], { ask: p.coord, name: p.name })}
+                    onClick={() => setReviewing({ id: p.requestId, show: 'spot' })}
                   >
                     {p.name}
                   </button>
@@ -530,7 +528,7 @@ export function LandmarkTool({
                         setName(p.name);
                         setAnswering(p.requestId);
                         // The markers follow the proposal being added, never another one's.
-                        review([p.requestId], { ask: p.coord, name: p.name });
+                        setReviewing({ id: p.requestId, show: 'spot' });
                         onPlacePoint(p.coord);
                       }}
                     >
@@ -559,18 +557,9 @@ export function LandmarkTool({
                 <div className="flex w-full flex-col gap-1">
                   <GoogleMapsLink coord={p.coord} />
                   <PossibleDuplicate
-                    ask={p.coord}
-                    name={p.name}
                     lookalikes={p}
                     busy={busy}
-                    onShow={(points) =>
-                      review(
-                        points.other?.kind === 'proposal' && p.similarProposal
-                          ? [p.requestId, p.similarProposal.requestId]
-                          : [p.requestId],
-                        points,
-                      )
-                    }
+                    onShow={(show) => setReviewing({ id: p.requestId, show })}
                     onSamePlace={(landmarkId, note) =>
                       run(
                         () =>

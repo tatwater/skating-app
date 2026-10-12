@@ -21,13 +21,7 @@ const proposal = {
 describe('PossibleDuplicate', () => {
   it('says nothing when nothing shares the name elsewhere', () => {
     const { container } = render(
-      <PossibleDuplicate
-        ask={ask}
-        name="Long Point"
-        lookalikes={{}}
-        onShow={vi.fn()}
-        onSamePlace={vi.fn(async () => {})}
-      />,
+      <PossibleDuplicate lookalikes={{}} onShow={vi.fn()} onSamePlace={vi.fn(async () => {})} />,
     );
     expect(container).toBeEmptyDOMElement();
   });
@@ -37,8 +31,6 @@ describe('PossibleDuplicate', () => {
     const onSamePlace = vi.fn(async () => {});
     render(
       <PossibleDuplicate
-        ask={ask}
-        name="Long Point"
         lookalikes={{ similarLandmark: landmark, similarProposal: proposal }}
         onShow={onShow}
         onSamePlace={onSamePlace}
@@ -51,17 +43,9 @@ describe('PossibleDuplicate', () => {
     expect(screen.getByText(/Another “long point” proposal is 6\.9 mi away/)).toBeInTheDocument();
     const [showLandmark, showProposal] = screen.getAllByRole('button', { name: 'Show both' });
     fireEvent.click(showLandmark as HTMLElement);
-    expect(onShow).toHaveBeenLastCalledWith({
-      ask,
-      name: 'Long Point',
-      other: { point: landmark.point, kind: 'landmark', name: 'Long Point' },
-    });
+    expect(onShow).toHaveBeenLastCalledWith('landmark');
     fireEvent.click(showProposal as HTMLElement);
-    expect(onShow).toHaveBeenLastCalledWith({
-      ask,
-      name: 'Long Point',
-      other: { point: proposal.coord, kind: 'proposal', name: 'long point' },
-    });
+    expect(onShow).toHaveBeenLastCalledWith('proposal');
     // Confirmed first: it can answer with a landmark miles away, and nothing undoes it.
     await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
     expect(onSamePlace).not.toHaveBeenCalled();
@@ -73,8 +57,6 @@ describe('PossibleDuplicate', () => {
   it('holds Same place while a write is in flight', () => {
     render(
       <PossibleDuplicate
-        ask={ask}
-        name="Long Point"
         lookalikes={{ similarLandmark: landmark }}
         busy
         onShow={vi.fn()}

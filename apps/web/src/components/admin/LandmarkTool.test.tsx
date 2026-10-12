@@ -293,7 +293,7 @@ describe('LandmarkTool', () => {
     expect(onReview).toHaveBeenLastCalledWith(null);
   });
 
-  it('draws a pair until either end is decided, and Add moves the markers to its own proposal', () => {
+  it('draws a pair until its other end is decided, and Add moves the markers to its own proposal', () => {
     const near = { lat: 44.31, lng: -73.21 };
     const far = { lat: 44.61, lng: -73.21 };
     const base = { askers: 1, reportIds: [], createdAt: 0, name: 'Long Point' };
@@ -321,7 +321,7 @@ describe('LandmarkTool', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Add as landmark' })[1] as HTMLElement);
     expect(onReview).toHaveBeenLastCalledWith({ ask: far, name: 'Long Point' });
     expect(onPlacePoint).toHaveBeenCalledWith(far);
-    // Show the pair again, then decide the far end: the pair leaves the map.
+    // Show the pair again, then decide the far end: its ring leaves, the near spot stays.
     fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
     queryResults.openLandmarkRequestsForBody = {
       proposals: [{ ...a, similarProposal: undefined }],
@@ -342,7 +342,50 @@ describe('LandmarkTool', () => {
         onResult={vi.fn()}
       />,
     );
-    expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(onReview).toHaveBeenLastCalledWith({ ask: near, name: 'Long Point' });
+  });
+
+  it('holds the map still when the query re-emits, and re-frames when the moderator clicks again', () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Long Point',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { onReview, rerender } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    const first = onReview.mock.lastCall?.[0];
+    expect(first).toEqual({ ask: proposal.coord, name: 'Long Point' });
+    const shown = onReview.mock.calls.length;
+    // A re-emit: fresh objects, the same values.
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [{ ...proposal, coord: { ...proposal.coord } }],
+      more: false,
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenCalledTimes(shown);
+    // The moderator panned away and clicks the name again: the same spot, handed on afresh.
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    expect(onReview).toHaveBeenCalledTimes(shown + 1);
+    expect(onReview.mock.lastCall?.[0]).toEqual(first);
+    expect(onReview.mock.lastCall?.[0]).not.toBe(first);
   });
 
   it('says when more proposals wait than the card holds (Greptile P2 on #84)', () => {

@@ -10,14 +10,14 @@ import {
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleDuplicate';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import type { ReviewPoints } from '../lib/reviewMarkers';
+import { type ReviewShow, useRowReview } from '../lib/reviewMarkers';
 
 /**
  * The request queue (A07b PR 2 / D107) — **a skater asked; a moderator answers.**
@@ -56,32 +56,17 @@ function RequestQueue() {
   const decline = useMutation(api.corpusRequests.decline);
   const reresolve = useMutation(api.corpusRequests.reresolve);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  /** The row on the map, and what it shows — its spot alone, or the spot and a lookalike. */
-  const [picked, setPicked] = useState<{ id: string; review: ReviewPoints } | null>(null);
+  /** The row on the map, and what of it — its spot alone, or the spot paired with a lookalike. */
+  const [picked, setPicked] = useState<{ id: string; show: ReviewShow } | null>(null);
   /** A *Same place* in flight — held, so a second click cannot send a second approve. */
   const [answering, setAnswering] = useState(false);
-  const first = rows?.[0];
-  // Until the moderator picks, the oldest row — the one the queue says to answer first. Memoized on
-  // its identity and spot: the query re-emits fresh objects, and a fresh review re-flies the map.
-  const firstId = first?._id;
-  const firstLat = first?.coord.lat;
-  const firstLng = first?.coord.lng;
-  const firstName = first?.name;
-  const firstReview = useMemo(
-    () =>
-      firstId !== undefined && firstLat !== undefined && firstLng !== undefined
-        ? {
-            id: firstId,
-            review: {
-              ask: { lat: firstLat, lng: firstLng },
-              ...(firstName ? { name: firstName } : {}),
-            },
-          }
-        : null,
-    [firstId, firstLat, firstLng, firstName],
-  );
-  // A row decided off the page (or by this moderator) leaves the map with the list.
-  const current = picked && rows?.some((r) => r._id === picked.id) ? picked : firstReview;
+  // The picked row while it is listed, else the oldest — the one the queue says to answer first. What
+  // the map draws is rebuilt from that row each render (`useRowReview`), so a decided pair end, a
+  // removed or moved landmark, a nearer lookalike all show as the row now says; held steady across the
+  // query's re-emits, and fresh on every click, so *Show* re-centers what is already drawn.
+  const pickedRow = picked ? rows?.find((r) => r._id === picked.id) : undefined;
+  const shownRow = pickedRow ?? rows?.[0];
+  const review = useRowReview(shownRow, pickedRow && picked ? picked.show : 'spot', picked);
 
   return (
     <div className="flex flex-col gap-6">
@@ -122,11 +107,14 @@ function RequestQueue() {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           {/* A height, never an inset: MapLibre forces its container's position (it would collapse). */}
           <div className="h-72 overflow-hidden rounded-lg border border-border lg:sticky lg:top-4 lg:order-last lg:h-[32rem]">
-            <RequestPreviewMap review={current?.review ?? null} />
+            <RequestPreviewMap review={review} />
           </div>
           <div className="flex flex-col gap-3">
             {rows.map((row) => (
-              <Card key={row._id} className={current?.id === row._id ? 'ring-2 ring-primary' : ''}>
+              <Card
+                key={row._id}
+                className={shownRow?._id === row._id ? 'ring-2 ring-primary' : ''}
+              >
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium text-foreground">
@@ -156,13 +144,8 @@ function RequestQueue() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="xs"
-                      variant={current?.id === row._id ? 'secondary' : 'ghost'}
-                      onClick={() =>
-                        setPicked({
-                          id: row._id,
-                          review: { ask: row.coord, ...(row.name ? { name: row.name } : {}) },
-                        })
-                      }
+                      variant={shownRow?._id === row._id ? 'secondary' : 'ghost'}
+                      onClick={() => setPicked({ id: row._id, show: 'spot' })}
                     >
                       Show on map
                     </Button>
@@ -222,11 +205,9 @@ function RequestQueue() {
                   ) : null}
                   {row.kind === 'name_landmark' && row.status === 'open' ? (
                     <PossibleDuplicate
-                      ask={row.coord}
-                      name={row.name ?? ''}
                       lookalikes={row}
                       busy={answering}
-                      onShow={(review) => setPicked({ id: row._id, review })}
+                      onShow={(show) => setPicked({ id: row._id, show })}
                       onSamePlace={async (landmarkId, note) => {
                         if (answering) return;
                         setAnswering(true);
