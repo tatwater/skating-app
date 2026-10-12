@@ -239,7 +239,8 @@ function RequestQueue() {
                   {row.kind === 'name_landmark' && row.status === 'open' ? (
                     <PossibleDuplicate
                       lookalikes={row}
-                      busy={answering || locked(row._id) || landmarkDrifted(picked, row._id, row)}
+                      busy={answering || locked(row._id)}
+                      stale={landmarkDrifted(picked, row._id, row)}
                       onShow={(show) => setPicked(pickReview(row._id, row, show))}
                       onSamePlace={async (landmarkId, note) => {
                         if (answering) return;

@@ -854,10 +854,11 @@ export const openBayRequestsForBody = query({
  * Moderator: what became of what a moderator has on the map (D202) — the proposal they picked, the
  * other proposal or the landmark it is paired with. The map freezes what was picked; this says what
  * changed under it and who changed it, so the surface can explain and lock rather than morph. `byMe`
- * lets it clear quietly after the moderator's own act. A landmark is named by the actor of its last
- * audited act only when that act explains its state — a removal at or after the row's, or an edit (a
- * move is one). A change no person made (a catalog drop or an ETL write, which leave no audit row; a
- * merge the ETL ran) names nobody, never whoever touched the row before it.
+ * lets it clear quietly after the moderator's own act. A landmark is named by the actor of the
+ * audited act that explains its state — a removed row's last act, if a removal at or after the row's;
+ * a live row's latest move, never a later rename or re-spelling. A change no person made (a catalog
+ * drop or an ETL write, which leave no audit row; a merge the ETL ran) names nobody, never whoever
+ * touched the row before it.
  */
 export const reviewState = query({
   args: {
@@ -902,26 +903,42 @@ export const reviewState = query({
       | undefined;
     if (landmarkId) {
       const row = await ctx.db.get(landmarkId);
-      const last = await ctx.db
+      // A landmark's audit trail, newest first.
+      const trail = ctx.db
         .query('moderationActions')
         .withIndex('by_target', (q) =>
           q.eq('targetType', 'bodyLandmark').eq('targetId', landmarkId),
         )
-        .order('desc')
-        .first();
+        .order('desc');
       const removedAt = row?.removedAt;
-      const explains =
-        last !== null &&
-        (removedAt !== undefined
-          ? (last.action === 'remove' || last.action === 'promote_landmark') &&
-            last.createdAt >= removedAt
-          : last.action === 'edit_landmark');
+      // Who to name is whoever's act explains what the map would show changed: the removal, or the
+      // latest *move* — not the latest edit, since a spelling or kind change after a colleague's move
+      // would otherwise take the credit, and read as the viewer's own (Greptile P2 on #88). A change
+      // no audited act explains (a catalog drop, a merge, an ETL move) names nobody.
+      let explaining: Doc<'moderationActions'> | undefined;
+      if (removedAt !== undefined) {
+        const last = await trail.first();
+        if (
+          last &&
+          (last.action === 'remove' || last.action === 'promote_landmark') &&
+          last.createdAt >= removedAt
+        ) {
+          explaining = last;
+        }
+      } else {
+        // A handful of rows per landmark, bounded anyway.
+        explaining = (await trail.take(QUEUE_CAP)).find(
+          (a) =>
+            a.action === 'edit_landmark' &&
+            (a.metadata as { moved?: boolean } | undefined)?.moved === true,
+        );
+      }
       landmark = row
         ? {
             removed: removedAt !== undefined,
             name: row.name,
             point: row.point,
-            ...(explains ? await actor(last.actorId) : { byMe: false }),
+            ...(explaining ? await actor(explaining.actorId) : { byMe: false }),
           }
         : { removed: true, byMe: false };
     }

@@ -67,6 +67,108 @@ describe('PossibleDuplicate', () => {
   });
 });
 
+describe('Same place, while the row moves under it (Greptile P1 on #88)', () => {
+  const nearer = {
+    landmarkId: 'lm2' as Id<'bodyLandmarks'>,
+    name: 'Long Point',
+    point: { lat: 44.505, lng: -73.3 },
+    meters: 560,
+  };
+
+  it('answers the landmark the open dialog named, never one that arrived after', async () => {
+    const onSamePlace = vi.fn(async () => {});
+    const view = (similarLandmark: typeof landmark) => (
+      <PossibleDuplicate
+        lookalikes={{ similarLandmark }}
+        onShow={vi.fn()}
+        onSamePlace={onSamePlace}
+      />
+    );
+    const { rerender } = render(view(landmark));
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('2.1 mi away');
+    // A colleague adds a nearer Long Point: the row's lookalike changes; the dialog does not.
+    rerender(view(nearer));
+    expect(screen.getByRole('dialog')).toHaveTextContent('2.1 mi away');
+    await userEvent.click(screen.getByRole('button', { name: 'Answer with this landmark' }));
+    expect(onSamePlace).toHaveBeenCalledWith('lm1', '');
+    // Closed, the next dialog is about the row as it stands.
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('0.3 mi away');
+  });
+
+  it('holds an open confirm when the row locks, and a stale row only from opening a new one', async () => {
+    const view = (props: { busy?: boolean; stale?: boolean }) => (
+      <PossibleDuplicate
+        lookalikes={{ similarLandmark: landmark }}
+        {...props}
+        onShow={vi.fn()}
+        onSamePlace={vi.fn(async () => {})}
+      />
+    );
+    const { rerender } = render(view({}));
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    rerender(view({ stale: true }));
+    expect(screen.getByRole('button', { name: 'Answer with this landmark' })).toBeEnabled();
+    rerender(view({ busy: true }));
+    expect(screen.getByRole('button', { name: 'Answer with this landmark' })).toBeDisabled();
+  });
+
+  it('holds the confirm when the landmark it names moves or is renamed under it', async () => {
+    const view = (similarLandmark: typeof landmark) => (
+      <PossibleDuplicate
+        lookalikes={{ similarLandmark }}
+        onShow={vi.fn()}
+        onSamePlace={vi.fn(async () => {})}
+      />
+    );
+    const { rerender } = render(view(landmark));
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    const confirm = () => screen.getByRole('button', { name: 'Answer with this landmark' });
+    expect(confirm()).toBeEnabled();
+    // A colleague moves it miles off: the dialog still reads 2.1 mi, so the answer waits, and says why.
+    rerender(view({ ...landmark, point: { lat: 44.7, lng: -73.3 }, meters: 22_240 }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('2.1 mi away');
+    expect(screen.getByRole('dialog')).toHaveTextContent(/moved or renamed since you opened this/);
+    expect(confirm()).toBeDisabled();
+    // Renamed in place, the same.
+    rerender(view({ ...landmark, name: 'Long Pt' }));
+    expect(confirm()).toBeDisabled();
+    rerender(view(landmark));
+    expect(confirm()).toBeEnabled();
+  });
+
+  it('never carries a note drafted for one landmark into the answer for another', async () => {
+    const onSamePlace = vi.fn(async () => {});
+    const view = (similarLandmark: typeof landmark) => (
+      <PossibleDuplicate
+        lookalikes={{ similarLandmark }}
+        onShow={vi.fn()}
+        onSamePlace={onSamePlace}
+      />
+    );
+    const { rerender } = render(view(landmark));
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    await userEvent.type(screen.getByRole('textbox'), 'The causeway end.');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    rerender(view(nearer));
+    await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    expect(screen.getByRole('textbox')).toHaveValue('');
+  });
+
+  it('does not open for a stale row', () => {
+    render(
+      <PossibleDuplicate
+        lookalikes={{ similarLandmark: landmark }}
+        stale
+        onShow={vi.fn()}
+        onSamePlace={vi.fn(async () => {})}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeDisabled();
+  });
+});
+
 describe('GoogleMapsLink', () => {
   it('shows the coordinate and opens it in a new tab', () => {
     render(<GoogleMapsLink coord={ask} />);

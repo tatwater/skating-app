@@ -2,6 +2,7 @@ import type { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { formatDistanceMiles, type LatLng } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
+import { useState } from 'react';
 import { googleMapsUrl } from '../../lib/googleMaps';
 import type { ReviewShow } from '../../lib/reviewMarkers';
 import { Badge } from '../ui/badge';
@@ -41,11 +42,18 @@ export function GoogleMapsLink({ coord }: { coord: LatLng }) {
 export function PossibleDuplicate({
   lookalikes,
   busy = false,
+  stale = false,
   onShow,
   onSamePlace,
 }: {
   lookalikes: Lookalikes;
+  /** A write in flight, or the row locked by a colleague's decision: *Same place* waits, open or not. */
   busy?: boolean;
+  /**
+   * The row's landmark is no longer the one on the map (`landmarkDrifted`): a new *Same place* waits
+   * for *Show both* — but one already open answers the landmark it named, which is what was checked.
+   */
+  stale?: boolean;
   /**
    * Draw the spot with this lookalike. Which one, not where: the caller freezes the pair from the row
    * at the click (`pickReview`), and says so if a colleague decides or moves it since (`watchReview`).
@@ -54,7 +62,26 @@ export function PossibleDuplicate({
   /** Answer the proposal with this landmark — confirmed first, with an optional note the skaters read. */
   onSamePlace: (landmarkId: Id<'bodyLandmarks'>, note: string) => Promise<unknown>;
 }) {
-  const { similarLandmark: landmark, similarProposal: proposal } = lookalikes;
+  const { similarLandmark: live, similarProposal: proposal } = lookalikes;
+  /**
+   * The landmark a *Same place* dialog is about, frozen when it opens (Greptile P1 on #88). The row's
+   * lookalike can change under an open dialog — a nearer landmark added — and the dialog must neither
+   * re-word itself nor answer with a landmark the moderator never read or checked.
+   */
+  const [confirming, setConfirming] = useState<NonNullable<Lookalikes['similarLandmark']> | null>(
+    null,
+  );
+  const landmark = confirming ?? live;
+  /**
+   * The very landmark the open dialog names, moved or renamed since it opened: the answer goes by id,
+   * so it would name a place the dialog no longer describes. It waits; the next dialog reads it anew.
+   */
+  const changed =
+    confirming !== null &&
+    live?.landmarkId === confirming.landmarkId &&
+    (live.name !== confirming.name ||
+      live.point.lat !== confirming.point.lat ||
+      live.point.lng !== confirming.point.lng);
   if (!landmark && !proposal) return null;
   return (
     <div className="flex w-full flex-col gap-1 text-foreground-muted text-xs">
@@ -71,8 +98,11 @@ export function PossibleDuplicate({
           {/* Confirmed, like the queue's Approve: it can answer a proposal with a landmark miles
               away, the skaters read the answer, and nothing undoes it. */}
           <ReasonDialog
+            // One dialog per landmark: a note drafted for one never rides into the answer for
+            // another (skaters read it). Stable while open — `landmark` is frozen then.
+            key={landmark.landmarkId}
             trigger={
-              <Button variant="ghost" size="xs" disabled={busy}>
+              <Button variant="ghost" size="xs" disabled={busy || stale}>
                 Same place
               </Button>
             }
@@ -82,6 +112,15 @@ export function PossibleDuplicate({
             confirmVariant="default"
             requireReason={false}
             reasonPlaceholder="Optional note the skaters will read"
+            extraFields={
+              changed ? (
+                <p className="text-destructive text-sm">
+                  This landmark was moved or renamed since you opened this. Cancel and look again.
+                </p>
+              ) : undefined
+            }
+            onOpenChange={(open) => setConfirming(open ? (live ?? null) : null)}
+            confirmDisabled={busy || changed}
             onConfirm={(note) => onSamePlace(landmark.landmarkId, note)}
           />
         </p>

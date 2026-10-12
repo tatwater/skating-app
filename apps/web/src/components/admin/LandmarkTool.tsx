@@ -594,7 +594,8 @@ export function LandmarkTool({
                   <GoogleMapsLink coord={p.coord} />
                   <PossibleDuplicate
                     lookalikes={p}
-                    busy={busy || locked(p.requestId) || landmarkDrifted(reviewing, p.requestId, p)}
+                    busy={busy || locked(p.requestId)}
+                    stale={landmarkDrifted(reviewing, p.requestId, p)}
                     onShow={(show) => showOnMap(p, show)}
                     onSamePlace={(landmarkId, note) =>
                       run(

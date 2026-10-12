@@ -792,6 +792,10 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     const moved = { lat: 0.61, lng: 0.6 };
     await colleague.as.mutation(api.landmarks.update, { landmarkId: landmark, point: moved });
     expect((await state()).landmark).toMatchObject({ point: moved, by: 'colleague', byMe: false });
+    // This moderator then edits its spellings: the move is still the colleague's, never "mine"
+    // (Greptile P2 on #88) — the latest edit is not the latest move.
+    await mod.as.mutation(api.landmarks.update, { landmarkId: landmark, aliases: ['Long Pt'] });
+    expect((await state()).landmark).toMatchObject({ point: moved, by: 'colleague', byMe: false });
     await t.run((ctx) =>
       ctx.db.patch(landmark, { removedAt: NOW + 120_000, catalogDroppedAt: NOW + 120_000 }),
     );
