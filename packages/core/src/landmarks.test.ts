@@ -11,11 +11,13 @@ import {
   LANDMARK_LABEL_MIN_ZOOM,
   LANDMARK_SAME_PLACE_RADIUS_M,
   landmarkAnswersAsk,
+  landmarkAskLookalikes,
   landmarkAsksAreSamePlace,
   landmarkDropsHeld,
   landmarkLabelFeatures,
   landmarkLabelMinZoom,
   landmarkNameKey,
+  landmarkNamesMeet,
   landmarkProminence,
   landmarkSourceCheck,
   landmarkSourceReasons,
@@ -280,6 +282,53 @@ describe('landmarksAreSamePlace', () => {
     expect(LANDMARK_SAME_PLACE_RADIUS_M.narrows).toBeGreaterThan(
       LANDMARK_SAME_PLACE_RADIUS_M.island,
     );
+  });
+});
+
+describe('landmarkNamesMeet', () => {
+  it('meets when any name of one folds to any name of the other', () => {
+    expect(landmarkNamesMeet(['The Gut'], ['North Hero Gut', 'gut'])).toBe(true);
+    expect(landmarkNamesMeet(['Long Point'], ['Cedar Island'])).toBe(false);
+  });
+
+  it('never meets on a name that folds to nothing', () => {
+    expect(landmarkNamesMeet(['—'], ['…'])).toBe(false);
+  });
+});
+
+describe('landmarkAskLookalikes — a possible duplicate, never a verdict', () => {
+  const at = (lat: number, lng = -73.3) => ({ lat, lng });
+  const ask = { names: ['Grand Isle'], coord: at(44.5) };
+  const island = (lat: number, name = 'Grand Isle', aliases: string[] = []) => ({
+    kind: 'island' as const,
+    point: at(lat),
+    name,
+    aliases,
+  });
+
+  it('finds the nearest landmark by one of its names that is not the same place', () => {
+    const near = island(44.53); // ~3.3 km: past the island radius
+    const farther = island(44.6);
+    expect(landmarkAskLookalikes(ask, [farther, near], [])).toEqual({
+      landmark: { item: near, meters: expect.closeTo(3_336, -1) },
+    });
+    // By an alias too.
+    const aliased = island(44.53, 'North Hero', ['grand isle']);
+    expect(landmarkAskLookalikes(ask, [aliased], []).landmark?.item).toBe(aliased);
+  });
+
+  it('is nothing for the landmark that answers it, or for other names', () => {
+    expect(landmarkAskLookalikes(ask, [island(44.505), island(44.53, 'Cedar Island')], [])).toEqual(
+      {},
+    );
+  });
+
+  it('finds the nearest other place’s ask by one of its names', () => {
+    const elsewhere = { names: ['grand isle'], coord: at(44.6) };
+    const same = { names: ['Grand Isle'], coord: at(44.505) };
+    expect(landmarkAskLookalikes(ask, [], [same, elsewhere])).toEqual({
+      ask: { item: elsewhere, meters: expect.closeTo(11_120, -2) },
+    });
   });
 });
 

@@ -28,6 +28,8 @@ export function ReasonDialog({
   reasonPlaceholder = 'Why?',
   requireReason = true,
   extraFields,
+  onOpenChange,
+  confirmDisabled = false,
   onConfirm,
 }: {
   trigger: ReactNode;
@@ -38,9 +40,17 @@ export function ReasonDialog({
   reasonPlaceholder?: string;
   requireReason?: boolean;
   extraFields?: ReactNode;
+  /** Told when the dialog opens or closes — for a caller that freezes what it is about at open. */
+  onOpenChange?: (open: boolean) => void;
+  /** Hold the confirm while what it would act on is no longer the caller's to act on. */
+  confirmDisabled?: boolean;
   onConfirm: (reason: string) => Promise<unknown>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,7 +98,11 @@ export function ReasonDialog({
           <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button variant={confirmVariant} onClick={confirm} disabled={blocked || busy}>
+          <Button
+            variant={confirmVariant}
+            onClick={confirm}
+            disabled={blocked || busy || confirmDisabled}
+          >
             {confirmLabel}
           </Button>
         </DialogFooter>

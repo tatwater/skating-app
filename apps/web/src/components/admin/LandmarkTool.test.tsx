@@ -1,5 +1,6 @@
 import type { Id } from '@skating/convex/dataModel';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { calls, refusal, useMutation } = vi.hoisted(() => {
@@ -45,6 +46,7 @@ vi.mock('@skating/convex/api', () => ({
       approve: { _name: 'approve' },
       decline: { _name: 'decline' },
       openLandmarkRequestsForBody: { _name: 'openLandmarkRequestsForBody' },
+      reviewState: { _name: 'reviewState' },
     },
     corpusPlaceNames: {
       openForBody: { _name: 'openForBody' },
@@ -83,6 +85,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
     onFocus: vi.fn(),
     onPromote: vi.fn(),
     onPlacePoint: vi.fn(),
+    onReview: vi.fn(),
     onResult: vi.fn(),
   };
   const view = render(
@@ -106,6 +109,8 @@ beforeEach(() => {
   calls.length = 0;
   refusal.next = null;
   for (const key of Object.keys(queryResults)) delete queryResults[key];
+  // A pick's requests stand until a test says otherwise (`useReviewWatch`).
+  queryResults.reviewState = { requests: [] };
 });
 
 describe('LandmarkTool', () => {
@@ -233,6 +238,7 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={vi.fn()}
+        onReview={vi.fn()}
         onResult={vi.fn()}
       />,
     );
@@ -241,6 +247,279 @@ describe('LandmarkTool', () => {
       name: 'update',
       args: { landmarkId: 'lm-Apple Island', point: { lat: 44.6, lng: -73.4 } },
     });
+  });
+
+  it('shows a proposal on the map, flags a possible duplicate, and answers it with the landmark', async () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Long Point',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+      similarLandmark: {
+        landmarkId: 'lm-Long Point',
+        name: 'Long Point',
+        point: { lat: 44.36, lng: -73.21 },
+        meters: 5_560,
+      },
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { onReview, rerender } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    expect(onReview).toHaveBeenLastCalledWith({ ask: proposal.coord, name: 'Long Point' });
+    expect(screen.getByRole('link', { name: /44\.3100, -73\.2100/ })).toBeInTheDocument();
+    expect(screen.getByText('Possible duplicate')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({
+      name: 'approve',
+      args: {
+        requestId: 'req1',
+        sameAs: {
+          landmarkId: 'lm-Long Point',
+          name: 'Long Point',
+          point: { lat: 44.36, lng: -73.21 },
+        },
+      },
+    });
+    // Answered by this moderator: the proposal leaves the list, and its markers leave the map quietly.
+    queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    queryResults.reviewState = {
+      requests: [
+        {
+          requestId: 'req1',
+          status: 'approved',
+          name: 'Long Point',
+          by: 'Teagan',
+          byMe: true,
+          answeredWith: 'Long Point',
+        },
+      ],
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('freezes a pair a colleague closed, says who, locks the row, and goes back on Back', () => {
+    const near = { lat: 44.31, lng: -73.21 };
+    const far = { lat: 44.61, lng: -73.21 };
+    const base = { askers: 1, reportIds: [], createdAt: 0, name: 'Long Point' };
+    const a = {
+      ...base,
+      requestId: 'reqA',
+      coord: near,
+      similarProposal: { requestId: 'reqB', name: 'Long Point', coord: far, meters: 33_000 },
+    };
+    const b = {
+      ...base,
+      requestId: 'reqB',
+      coord: far,
+      similarProposal: { requestId: 'reqA', name: 'Long Point', coord: near, meters: 33_000 },
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [a, b], more: false };
+    const { onReview, onPlacePoint, rerender } = renderTool();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
+    expect(onReview).toHaveBeenLastCalledWith({
+      ask: near,
+      name: 'Long Point',
+      other: { point: far, kind: 'proposal', name: 'Long Point' },
+    });
+    // Add on the other one: its own spot, alone.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add as landmark' })[1] as HTMLElement);
+    expect(onReview).toHaveBeenLastCalledWith({ ask: far, name: 'Long Point' });
+    expect(onPlacePoint).toHaveBeenCalledWith(far);
+    // Show the pair again; a colleague declines the far end.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
+    const pair = onReview.mock.lastCall?.[0];
+    const calls = onReview.mock.calls.length;
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [{ ...a, similarProposal: undefined }],
+      more: false,
+    };
+    queryResults.reviewState = {
+      requests: [
+        { requestId: 'reqA', status: 'open', name: 'Long Point' },
+        { requestId: 'reqB', status: 'declined', name: 'Long Point', by: 'Mathew', byMe: false },
+      ],
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={onPlacePoint}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    // The map keeps what was picked; the card says what happened, and the row waits.
+    expect(onReview).toHaveBeenCalledTimes(calls);
+    expect(onReview.mock.lastCall?.[0]).toBe(pair);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The other “Long Point” proposal was declined by Mathew. This pair is closed.',
+    );
+    expect(screen.getByRole('button', { name: 'Add as landmark' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeDisabled();
+    // A closed pick goes Back, not Clear: one way out, the one that explains.
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add as landmark' })).toBeEnabled();
+  });
+
+  it('keeps a nearer lookalike off the map, and Same place waits until it is drawn', () => {
+    const coord = { lat: 44.31, lng: -73.21 };
+    const lookalike = (landmarkId: string, lat: number) => ({
+      landmarkId,
+      name: 'Long Point',
+      point: { lat, lng: -73.21 },
+      meters: Math.round((lat - coord.lat) * 111_000),
+    });
+    const proposal = {
+      requestId: 'req1',
+      name: 'Long Point',
+      coord,
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+      similarLandmark: lookalike('lm-far', 44.4),
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { onReview, rerender } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Show both' }));
+    const pair = onReview.mock.lastCall?.[0];
+    const shown = onReview.mock.calls.length;
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeEnabled();
+    // A colleague adds a nearer "Long Point": the row now names it; the map keeps the far one.
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [{ ...proposal, similarLandmark: lookalike('lm-near', 44.33) }],
+      more: false,
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenCalledTimes(shown);
+    expect(onReview.mock.lastCall?.[0]).toBe(pair);
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeDisabled();
+    // Show both again draws the landmark Same place would name, and the answer is open again.
+    fireEvent.click(screen.getByRole('button', { name: 'Show both' }));
+    expect(onReview.mock.lastCall?.[0]).toMatchObject({
+      other: { kind: 'landmark', point: { lat: 44.33, lng: -73.21 } },
+    });
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeEnabled();
+  });
+
+  it('holds the map still when the query re-emits, and re-frames when the moderator clicks again', () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Long Point',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { onReview, rerender } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    const first = onReview.mock.lastCall?.[0];
+    expect(first).toEqual({ ask: proposal.coord, name: 'Long Point' });
+    const shown = onReview.mock.calls.length;
+    // A re-emit: fresh objects, the same values.
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [{ ...proposal, coord: { ...proposal.coord } }],
+      more: false,
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenCalledTimes(shown);
+    // The moderator panned away and clicks the name again: the same spot, handed on afresh.
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    expect(onReview).toHaveBeenCalledTimes(shown + 1);
+    expect(onReview.mock.lastCall?.[0]).toEqual(first);
+    expect(onReview.mock.lastCall?.[0]).not.toBe(first);
+  });
+
+  it('keeps Same place open with the server’s reason when the landmark moved since you looked', async () => {
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [
+        {
+          requestId: 'req1',
+          name: 'Long Point',
+          coord: { lat: 44.31, lng: -73.21 },
+          askers: 1,
+          reportIds: [],
+          createdAt: 0,
+          similarLandmark: {
+            landmarkId: 'lm-Long Point',
+            name: 'Long Point',
+            point: { lat: 44.36, lng: -73.21 },
+            meters: 5_560,
+          },
+        },
+      ],
+      more: false,
+    };
+    const { onResult } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    const reason = '"Long Point" has moved since you looked at it. Cancel and look again.';
+    // As the client receives it: the sentence in `data`, the transport's wrapping in `message`.
+    const refused = new ConvexError(reason);
+    refused.message = `[CONVEX M(corpusRequests:approve)] [Request ID: x] Server Error\nUncaught ConvexError: ${reason}\n  Called by client`;
+    refusal.next = refused;
+    fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
+    // The dialog stays open and says why in the server's own words — not the transport's.
+    const dialog = screen.getByRole('dialog');
+    expect(await within(dialog).findByText(reason)).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('[CONVEX');
+    expect(onResult).toHaveBeenCalledWith({ tone: 'error', text: reason });
   });
 
   it('says when more proposals wait than the card holds (Greptile P2 on #84)', () => {
@@ -316,6 +595,7 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={onPlacePoint}
+        onReview={vi.fn()}
         onResult={vi.fn()}
       />,
     );
@@ -333,6 +613,122 @@ describe('LandmarkTool', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]).toEqual({ name: 'approve', args: { requestId: 'req2' } });
+  });
+
+  it('keeps the form when a colleague declines its proposal, says so, and saves it as the moderator’s own', async () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Bird Poop Rock',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const props = {
+      waterBodyId: BODY,
+      landmarks: [],
+      armed: false,
+      onArm: vi.fn(),
+      onClearPoint: vi.fn(),
+      onFocus: vi.fn(),
+      onPromote: vi.fn(),
+      onPlacePoint: vi.fn(),
+      onReview: vi.fn(),
+      onResult: vi.fn(),
+    };
+    const { rerender } = render(<LandmarkTool {...props} point={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    expect(screen.getByRole('button', { name: 'Save landmark' })).toBeEnabled();
+    // Mathew declines it mid-form: nothing is wiped, and the form says what saving now means.
+    queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    queryResults.reviewState = {
+      requests: [
+        {
+          requestId: 'req1',
+          status: 'declined',
+          name: 'Bird Poop Rock',
+          by: 'Mathew',
+          byMe: false,
+        },
+      ],
+    };
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '“Bird Poop Rock” was declined by Mathew. Saving now adds the landmark without answering the skaters.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save anyway' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.name).toBe('create');
+    expect(calls[0]?.args).not.toHaveProperty('requestId');
+    // Nobody was answered, and the banner never says otherwise.
+    await waitFor(() =>
+      expect(props.onResult).toHaveBeenCalledWith({ tone: 'ok', text: 'Added “Bird Poop Rock”.' }),
+    );
+  });
+
+  it('lets go of its proposal quietly when the moderator closed it themselves', async () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Bird Poop Rock',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const props = {
+      waterBodyId: BODY,
+      landmarks: [],
+      armed: false,
+      onArm: vi.fn(),
+      onClearPoint: vi.fn(),
+      onFocus: vi.fn(),
+      onPromote: vi.fn(),
+      onPlacePoint: vi.fn(),
+      onReview: vi.fn(),
+      onResult: vi.fn(),
+    };
+    const { rerender } = render(<LandmarkTool {...props} point={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    // Declined by this moderator in another tab: no alert, the form stays, and it is unlinked.
+    queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    queryResults.reviewState = {
+      requests: [
+        { requestId: 'req1', status: 'declined', name: 'Bird Poop Rock', by: 'Teagan', byMe: true },
+      ],
+    };
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.args).not.toHaveProperty('requestId');
+  });
+
+  it('clears a pick that still stands by hand', () => {
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [
+        {
+          requestId: 'req1',
+          name: 'Long Point',
+          coord: { lat: 44.31, lng: -73.21 },
+          askers: 1,
+          reportIds: [],
+          createdAt: 0,
+        },
+      ],
+      more: false,
+    };
+    const { onReview } = renderTool();
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 
   it('places a corpus name with its spellings, or files it as another spelling', async () => {
@@ -367,6 +763,7 @@ describe('LandmarkTool', () => {
         onFocus={vi.fn()}
         onPromote={vi.fn()}
         onPlacePoint={vi.fn()}
+        onReview={vi.fn()}
         onResult={vi.fn()}
       />,
     );

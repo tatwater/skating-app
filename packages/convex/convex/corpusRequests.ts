@@ -75,9 +75,10 @@ import {
   decisionArgs,
   drawnBay,
   landmarkAskOf,
+  landmarkProposalView,
   listedBaysOf,
   matchBay,
-  matchLandmark,
+  namedByModerator,
   namedLandmark,
   QUEUE_CAP,
   requestKeyOf,
@@ -487,11 +488,14 @@ export const listQueue = query({
     // so that is what its count counts. Grouping by each place's first ask, as the lake editor does
     // (where only the first ask is decided), would disagree once asks chain past the radius: A, B
     // 700 m on, C 700 m past that — B's decision closes all three.
-    const landmarkAsksByBody = new Map<string, { id: string; ask: LandmarkAsk }[]>();
+    const landmarkAsksByBody = new Map<
+      string,
+      { id: string; ask: LandmarkAsk; row: Doc<'waterBodyRequests'> }[]
+    >();
     for (const r of page) {
       if (r.status !== 'open' || r.kind !== 'name_landmark' || !r.waterBodyId) continue;
       const asks = landmarkAsksByBody.get(r.waterBodyId) ?? [];
-      asks.push({ id: r._id, ask: landmarkAskOf(r) });
+      asks.push({ id: r._id, ask: landmarkAskOf(r), row: r });
       landmarkAsksByBody.set(r.waterBodyId, asks);
     }
     const landmarkAskers = new Map<string, number>();
@@ -547,11 +551,17 @@ export const listQueue = query({
         ...(r.kind === 'name_bay' && r.status === 'open' && body
           ? { drawnSubAreaId: matchBay(await baysOf(body._id), requestNames(r))?._id }
           : {}),
-        // For a landmark proposal (D202): the landmark that already answers it, if one was added.
+        // For a landmark proposal (D202): the landmark that already answers it, if one was added —
+        // else what it may duplicate, among the page's other landmark asks on this lake (what the
+        // queue itself shows).
         ...(r.kind === 'name_landmark' && r.status === 'open' && body
-          ? {
-              existingLandmarkId: matchLandmark(await landmarksOf(body._id), landmarkAskOf(r))?._id,
-            }
+          ? landmarkProposalView(
+              landmarkAskOf(r),
+              await landmarksOf(body._id),
+              (landmarkAsksByBody.get(body._id) ?? []).flatMap((a) =>
+                a.id === r._id ? [] : [a.row],
+              ),
+            )
           : {}),
         ...(r.activityId !== undefined ? { activityId: r.activityId } : {}),
         ...(body
@@ -620,10 +630,25 @@ export const queueCount = query({
  * approved with it — four people asked, and one decision answers all four.
  */
 export const approve = mutation({
-  args: { requestId: v.id('waterBodyRequests'), note: v.optional(v.string()) },
-  handler: async (ctx, { requestId, note }) => {
+  args: {
+    requestId: v.id('waterBodyRequests'),
+    note: v.optional(v.string()),
+    /**
+     * For a landmark ask: the landmark the moderator says it is — a possible duplicate confirmed
+     * ("it's Grand Isle"), at a spot the same-place rule would not have joined — and the name and
+     * point they saw it by. It must carry the asked-for name, be this lake's own, and still stand
+     * there under that name.
+     */
+    sameAs: v.optional(
+      v.object({ landmarkId: v.id('bodyLandmarks'), name: v.string(), point: latLng }),
+    ),
+  },
+  handler: async (ctx, { requestId, note, sameAs }) => {
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
+    if (sameAs !== undefined && request.kind !== 'name_landmark') {
+      throw new ConvexError('Only a landmark request is answered by a landmark');
+    }
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     const actor = await requireContributorRole(
       ctx,
@@ -683,8 +708,11 @@ export const approve = mutation({
           // The same shape as a bay: the act is adding the landmark on the lake editor (with the
           // request attached, which approves from there); approving from the queue is for one added
           // before the ask, and needs it to exist by the name asked for.
-          // By name *and* place: a Long Point across the lake answers nobody who marked this one.
-          const landmark = await namedLandmark(ctx, body._id, landmarkAskOf(request));
+          // By name *and* place: a Long Point across the lake answers nobody who marked this one —
+          // unless the moderator, looking at both on the map, says it does.
+          const landmark = sameAs
+            ? await namedByModerator(ctx, body._id, request, sameAs.landmarkId, sameAs)
+            : await namedLandmark(ctx, body._id, landmarkAskOf(request));
           if (!landmark) {
             throw new ConvexError(
               `No landmark called "${request.name}" near that spot on ${body.name} yet — add it in the lake editor first, then approve.`,
@@ -826,6 +854,102 @@ export const openBayRequestsForBody = query({
 });
 
 /**
+ * Moderator: what became of what a moderator has on the map (D202) — the proposal they picked, the
+ * other proposal or the landmark it is paired with. The map freezes what was picked; this says what
+ * changed under it and who changed it, so the surface can explain and lock rather than morph. `byMe`
+ * lets it clear quietly after the moderator's own act. A landmark is named by the actor of the
+ * audited act that explains its state — a removed row's last act, if a removal at or after the row's;
+ * a live row's latest move, never a later rename or re-spelling. A change no person made (a catalog
+ * drop or an ETL write, which leave no audit row; a merge the ETL ran) names nobody, never whoever
+ * touched the row before it.
+ */
+export const reviewState = query({
+  args: {
+    requestIds: v.array(v.id('waterBodyRequests')),
+    landmarkId: v.optional(v.id('bodyLandmarks')),
+  },
+  handler: async (ctx, { requestIds, landmarkId }) => {
+    const me = await requireRole(ctx, 'moderator');
+    if (requestIds.length > 2) throw new ConvexError('A review holds at most two requests');
+    const actor = async (id: Id<'profiles'> | undefined) => {
+      const profile = id ? await ctx.db.get(id) : null;
+      return profile ? { by: profile.displayName, byMe: profile._id === me._id } : { byMe: false };
+    };
+    const requests = [];
+    for (const requestId of requestIds) {
+      const r = await ctx.db.get(requestId);
+      if (!r) {
+        requests.push({ requestId, status: 'gone' as const });
+        continue;
+      }
+      if (r.status === 'open') {
+        requests.push({ requestId, status: 'open' as const, name: r.name ?? '' });
+        continue;
+      }
+      const answer = r.landmarkId ? await ctx.db.get(r.landmarkId) : null;
+      requests.push({
+        requestId,
+        status: r.status,
+        name: r.name ?? '',
+        ...(await actor(r.decidedByUserId)),
+        ...(answer ? { answeredWith: answer.name } : {}),
+      });
+    }
+    let landmark:
+      | {
+          removed: boolean;
+          name?: string;
+          point?: { lat: number; lng: number };
+          by?: string;
+          byMe: boolean;
+        }
+      | undefined;
+    if (landmarkId) {
+      const row = await ctx.db.get(landmarkId);
+      // A landmark's audit trail, newest first.
+      const trail = ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'bodyLandmark').eq('targetId', landmarkId),
+        )
+        .order('desc');
+      const removedAt = row?.removedAt;
+      // Who to name is whoever's act explains what the map would show changed: the removal, or the
+      // latest *move* — not the latest edit, since a spelling or kind change after a colleague's move
+      // would otherwise take the credit, and read as the viewer's own (Greptile P2 on #88). A change
+      // no audited act explains (a catalog drop, a merge, an ETL move) names nobody.
+      let explaining: Doc<'moderationActions'> | undefined;
+      if (removedAt !== undefined) {
+        const last = await trail.first();
+        if (
+          last &&
+          (last.action === 'remove' || last.action === 'promote_landmark') &&
+          last.createdAt >= removedAt
+        ) {
+          explaining = last;
+        }
+      } else {
+        // A handful of rows per landmark, bounded anyway.
+        explaining = (await trail.take(QUEUE_CAP)).find(
+          (a) =>
+            a.action === 'edit_landmark' &&
+            (a.metadata as { moved?: boolean } | undefined)?.moved === true,
+        );
+      }
+      landmark = row
+        ? {
+            removed: removedAt !== undefined,
+            name: row.name,
+            point: row.point,
+            ...(explaining ? await actor(explaining.actorId) : { byMe: false }),
+          }
+        : { removed: true, byMe: false };
+    }
+    return { requests, ...(landmark ? { landmark } : {}) };
+  },
+});
+
+/**
  * Moderator: the lake editor's landmark proposals (D202) — this body's open `name_landmark` asks,
  * one row per place, oldest first. A place is a name *and* a spot (`groupLandmarkAsks`): two
  * skaters who named two different Long Points are two rows, each answered on its own (Greptile P1
@@ -850,6 +974,8 @@ export const openLandmarkRequestsForBody = query({
     const places = groupLandmarkAsks(read.map((r) => ({ ...landmarkAskOf(r), row: r })));
     // The body's landmarks read once, however many places are proposed.
     const landmarks = await liveLandmarksForBody(ctx, waterBodyId);
+    // Each place's first ask — what a moderator sees as rows, and so what a possible duplicate is.
+    const firstRows = places.flatMap((p) => (p[0] ? [p[0].row] : []));
     const proposals = [];
     for (const place of places) {
       const first = place[0];
@@ -858,7 +984,6 @@ export const openLandmarkRequestsForBody = query({
       for (const { row } of place) {
         if (row.reportId && !reportIds.includes(row.reportId)) reportIds.push(row.reportId);
       }
-      const existing = matchLandmark(landmarks, first);
       proposals.push({
         requestId: first.row._id,
         name: first.row.name ?? '',
@@ -866,7 +991,11 @@ export const openLandmarkRequestsForBody = query({
         askers: place.length,
         reportIds,
         createdAt: first.row.createdAt,
-        ...(existing ? { existingLandmarkId: existing._id } : {}),
+        ...landmarkProposalView(
+          first,
+          landmarks,
+          firstRows.filter((row) => row !== first.row),
+        ),
       });
     }
     return { proposals, more: rows.length > QUEUE_CAP };

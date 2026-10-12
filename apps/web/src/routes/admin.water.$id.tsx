@@ -51,6 +51,7 @@ import {
   createChordDraw,
 } from '../lib/chordDraw';
 import { createPolygonDraw, type PolygonDrawControl, parsePastedPolygon } from '../lib/polygonDraw';
+import type { ReviewPoints } from '../lib/reviewMarkers';
 
 /**
  * The per-lake editor (A02 / D61) — **one lake, one canvas, every per-body lever**.
@@ -118,6 +119,8 @@ function LakeEditor() {
   );
   const [putInPoint, setPutInPoint] = useState<LatLng | null>(null);
   const [landmarkPoint, setLandmarkPoint] = useState<LatLng | null>(null);
+  /** A landmark proposal under review — its spot, and what it may duplicate — drawn on the canvas. */
+  const [review, setReview] = useState<ReviewPoints | null>(null);
   /** A landmark handed to the chord tool to be drawn as a bay (D202) — consumed when it arms. */
   const [promotion, setPromotion] = useState<EditorLandmark | null>(null);
   const [parkingPoint, setParkingPoint] = useState<LatLng | null>(null);
@@ -208,6 +211,7 @@ function LakeEditor() {
               // convention. Which tool owns which is answered by the card holding it, each of which
               // prints its own coordinate; the map's job here is only to say "not saved yet".
               landmarks: liveLandmarks,
+              review,
               suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint, landmarkPoint]
                 .flat()
                 .filter((p): p is LatLng => p !== null),
@@ -268,6 +272,7 @@ function LakeEditor() {
               setLandmarkPoint(point);
               drawTargetRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 14 });
             }}
+            onReview={setReview}
             onResult={setBanner}
           />
           <DepthTool body={body} onResult={setBanner} />

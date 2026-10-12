@@ -10,14 +10,23 @@ import {
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
+import type { ReviewPoints, ReviewShow } from '../../lib/reviewMarkers';
+import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../../lib/reviewWatch';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { errorText, ToolCard } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
+import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
+import { ReviewClosedNotice } from './ReviewClosedNotice';
+import { useReviewWatch } from './useReviewWatch';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
+/** A skater's proposal as the card lists it (`openLandmarkRequestsForBody`). */
+type Proposal = FunctionReturnType<
+  typeof api.corpusRequests.openLandmarkRequestsForBody
+>['proposals'][number];
 
 type SetBanner = (banner: { tone: 'ok' | 'error'; text: string } | null) => void;
 
@@ -90,6 +99,7 @@ export function LandmarkTool({
   onFocus,
   onPromote,
   onPlacePoint,
+  onReview,
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
@@ -102,6 +112,8 @@ export function LandmarkTool({
   onPromote: (landmark: EditorLandmark) => void;
   /** Put the drop form's point here and show it — a skater's proposed spot. */
   onPlacePoint: (point: LatLng) => void;
+  /** Mark a proposal on the map — and what it may duplicate — and bring it into view. */
+  onReview: (review: ReviewPoints | null) => void;
   onResult: SetBanner;
 }) {
   const create = useMutation(api.landmarks.create);
@@ -127,7 +139,19 @@ export function LandmarkTool({
   const [aliases, setAliases] = useState('');
   const [busy, setBusy] = useState(false);
   /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
-  const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
+  const [answering, setAnswering] = useState<PickedReview | null>(null);
+  /**
+   * What became of it. A colleague closing it never wipes the form — the moderator may be mid-save —
+   * but the form says so plainly and saves without the request (founder, 2026-10-11).
+   */
+  const formWatch = useReviewWatch(answering);
+  const answeringClosed = formWatch.kind === 'closed';
+  /**
+   * The proposal on the map, frozen at the click (`pickReview`): a colleague deciding what it is about
+   * says so and locks its rows (`useReviewWatch`), rather than the map changing under the moderator.
+   */
+  const [reviewing, setReviewing] = useState<PickedReview | null>(null);
+  const watch = useReviewWatch(reviewing);
   /** The corpus name the drop form is placing — saving the landmark marks it placed. */
   const [placingName, setPlacingName] = useState<Id<'corpusPlaceNames'> | null>(null);
   /** The corpus name being filed as another spelling, and the landmark chosen for it. */
@@ -165,14 +189,25 @@ export function LandmarkTool({
     if (armed) onArm(false);
   };
 
-  const run = async (write: () => Promise<unknown>, ok: string) => {
+  /**
+   * A write, held (`busy`) while in flight, its outcome on the banner. `rethrow` hands a refusal on to
+   * a dialog that stays open to show it — as the server's own sentence, since the dialog shows an
+   * error's `message` and a ConvexError's is the transport's.
+   */
+  const run = async (
+    write: () => Promise<unknown>,
+    ok: string,
+    { rethrow = false }: { rethrow?: boolean } = {},
+  ) => {
     setBusy(true);
     try {
       await write();
       onResult({ tone: 'ok', text: ok });
       return true;
     } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+      const text = errorText(err);
+      onResult({ tone: 'error', text });
+      if (rethrow) throw new Error(text);
       return false;
     } finally {
       setBusy(false);
@@ -190,16 +225,36 @@ export function LandmarkTool({
     void run(() => update({ landmarkId: id, point }), 'Moved.');
   }, [moving, point]);
 
-  // A name or proposal the form is answering can be decided elsewhere meanwhile (dismissed here, by
-  // a colleague, on the triage page); the form lets go of it rather than save against a closed row.
+  // A corpus name the form is placing can be decided elsewhere meanwhile (dismissed here, or on the
+  // triage page); the form lets go of it rather than save against a closed row.
   useEffect(() => {
     if (placingName && corpusNames && !corpusNames.some((c) => c._id === placingName)) {
       setPlacingName(null);
     }
-    if (answering && proposals && !proposals.some((p) => p.requestId === answering)) {
-      setAnswering(null);
-    }
-  }, [placingName, corpusNames, answering, proposals]);
+  }, [placingName, corpusNames]);
+  // A proposal the moderator closed themselves (another tab) lets go quietly; one a colleague closed
+  // stays linked, so the form can say who — and saves without it (`answeringClosed`).
+  useEffect(() => {
+    if (formWatch.kind === 'mine') setAnswering(null);
+  }, [formWatch.kind]);
+
+  const showOnMap = (proposal: Proposal, show: ReviewShow): PickedReview => {
+    const picked = pickReview(proposal.requestId, proposal, show);
+    setReviewing(picked);
+    onReview(picked.review);
+    return picked;
+  };
+  const back = () => {
+    setReviewing(null);
+    onReview(null);
+  };
+  // The moderator's own answer needs no explaining: the review clears as the row does.
+  useEffect(() => {
+    if (watch.kind !== 'mine') return;
+    setReviewing(null);
+    onReview(null);
+  }, [watch.kind, onReview]);
+  const locked = (id: string) => locksRow(reviewing, watch, id);
 
   const startEdit = (l: EditorLandmark) => {
     reset();
@@ -463,14 +518,33 @@ export function LandmarkTool({
         </div>
       ) : null}
 
+      {/* Outside the list: the proposal it is about may have left it. */}
+      {watch.kind === 'closed' ? (
+        <ReviewClosedNotice text={watch.text} backLabel="Back" onBack={back} />
+      ) : null}
       {proposals && proposals.length > 0 ? (
         <div className="flex flex-col gap-1 border-border border-t pt-2">
-          <p className="text-sm">Named by skaters</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm">Named by skaters</p>
+            {/* A pick still standing can be cleared by hand; a closed one goes Back above. */}
+            {reviewing && watch.kind === 'live' ? (
+              <Button variant="ghost" size="xs" onClick={back}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
           <ul className="space-y-1 text-sm">
             {proposals.map((p) => (
               <li key={p.requestId} className="flex flex-wrap items-center justify-between gap-x-2">
                 <span className="min-w-0 flex-1 truncate">
-                  {p.name}
+                  <button
+                    type="button"
+                    className="underline-offset-2 hover:underline"
+                    title="Show on the map"
+                    onClick={() => showOnMap(p, 'spot')}
+                  >
+                    {p.name}
+                  </button>
                   <span className="text-foreground-muted">
                     {' '}
                     — {p.askers} {p.askers === 1 ? 'skater' : 'skaters'}
@@ -481,7 +555,7 @@ export function LandmarkTool({
                     <Button
                       variant="ghost"
                       size="xs"
-                      disabled={busy}
+                      disabled={busy || locked(p.requestId)}
                       onClick={() =>
                         void run(
                           () => approveRequest({ requestId: p.requestId }),
@@ -493,12 +567,15 @@ export function LandmarkTool({
                     </Button>
                   ) : (
                     <Button
-                      variant={answering === p.requestId ? 'default' : 'ghost'}
+                      variant={answering?.id === p.requestId ? 'default' : 'ghost'}
                       size="xs"
+                      disabled={locked(p.requestId)}
                       onClick={() => {
                         reset();
                         setName(p.name);
-                        setAnswering(p.requestId);
+                        // The markers follow the proposal being added, never another one's — and the
+                        // form watches the same pick.
+                        setAnswering(showOnMap(p, 'spot'));
                         onPlacePoint(p.coord);
                       }}
                     >
@@ -507,7 +584,7 @@ export function LandmarkTool({
                   )}
                   <ReasonDialog
                     trigger={
-                      <Button variant="ghost" size="xs">
+                      <Button variant="ghost" size="xs" disabled={locked(p.requestId)}>
                         Decline
                       </Button>
                     }
@@ -523,6 +600,30 @@ export function LandmarkTool({
                     }}
                   />
                 </span>
+                {/* A div, not a span: the badge below is a block of paragraphs. */}
+                <div className="flex w-full flex-col gap-1">
+                  <GoogleMapsLink coord={p.coord} />
+                  <PossibleDuplicate
+                    lookalikes={p}
+                    busy={busy || locked(p.requestId)}
+                    stale={landmarkDrifted(reviewing, p.requestId, p)}
+                    onShow={(show) => showOnMap(p, show)}
+                    // Rethrown: a refusal (moved since you looked) keeps the dialog open with its
+                    // reason, as the request queue's does.
+                    onSamePlace={(sameAs, note) =>
+                      run(
+                        () =>
+                          approveRequest({
+                            requestId: p.requestId,
+                            sameAs,
+                            ...(note ? { note } : {}),
+                          }),
+                        `“${p.name}” answered with the landmark already there.`,
+                        { rethrow: true },
+                      )
+                    }
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -580,6 +681,14 @@ export function LandmarkTool({
               onChange={(e) => setAliases(e.target.value)}
               aria-label="Other spellings"
             />
+            {formWatch.kind === 'closed' ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-sm"
+              >
+                {formWatch.text} Saving now adds the landmark without answering the skaters.
+              </p>
+            ) : null}
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -593,10 +702,13 @@ export function LandmarkTool({
                         kind,
                         point,
                         aliases: splitAliases(aliases),
-                        ...(answering ? { requestId: answering } : {}),
+                        // Closed by a colleague: the landmark is the moderator's own now.
+                        ...(answering && !answeringClosed
+                          ? { requestId: answering.id as Id<'waterBodyRequests'> }
+                          : {}),
                         ...(placingName ? { corpusNameId: placingName } : {}),
                       }),
-                    answering
+                    answering && !answeringClosed
                       ? `Added “${name.trim()}” and answered the skaters who named it.`
                       : placingName
                         ? `Placed “${name.trim()}”.`
@@ -605,7 +717,7 @@ export function LandmarkTool({
                   if (saved) reset();
                 }}
               >
-                {busy ? 'Saving…' : 'Save landmark'}
+                {busy ? 'Saving…' : answeringClosed ? 'Save anyway' : 'Save landmark'}
               </Button>
               <Button size="sm" variant="outline" onClick={reset}>
                 Cancel

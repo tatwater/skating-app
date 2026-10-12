@@ -11,9 +11,11 @@
 import {
   haversineMeters,
   type LandmarkAsk,
+  type LatLng,
   landmarkAnswersAsk,
+  landmarkAskLookalikes,
   landmarkAsksAreSamePlace,
-  landmarkNameKey,
+  landmarkNamesMeet,
   requestNameKey,
   requestNameKeyFor,
 } from '@skating/core';
@@ -367,12 +369,6 @@ export async function approveNamedBayRequest(
 
 // ── Landmarks (D202) ───────────────────────────────────────────────────────────────────────────
 
-/** Do two lists of names share a landmark's spelling? `namesMeet`, by the landmark fold. */
-export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): boolean {
-  const keys = new Set(a.map(landmarkNameKey).filter((k) => k.length > 0));
-  return b.some((n) => keys.has(landmarkNameKey(n)));
-}
-
 /**
  * The live landmark among `rows` that answers this ask — its name *and* its place
  * (`landmarkAnswersAsk`) — if any, for callers holding the rows. The nearest wins when two do.
@@ -388,6 +384,141 @@ export function matchLandmark(
     if (!best || meters < best.meters) best = { row, meters };
   }
   return best?.row ?? null;
+}
+
+/**
+ * The landmark a moderator named as a landmark ask's answer, whatever the distance — this lake's own,
+ * live, and carrying the asked-for name (as its name or a spelling). Refused otherwise: "it's Grand
+ * Isle" answers a "Grand Isle" ask, never a "Long Point" one.
+ */
+export async function namedByModerator(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  request: Doc<'waterBodyRequests'>,
+  landmarkId: Id<'bodyLandmarks'>,
+  /**
+   * What the moderator saw — the name and point their *Same place* dialog showed. A landmark moved or
+   * renamed since is refused: the answer must be the landmark they checked, as they checked it
+   * (Greptile P1 on #88). Compared here, at the write, because no client watch sees every way a row
+   * changes.
+   */
+  seen: { name: string; point: LatLng },
+): Promise<Doc<'bodyLandmarks'>> {
+  const landmark = await ctx.db.get(landmarkId);
+  if (!landmark || landmark.waterBodyId !== waterBodyId) {
+    throw new ConvexError('That landmark is not on this lake');
+  }
+  // Taken off the map since the row was drawn (a colleague's removal, a merge's fold) — say so,
+  // rather than "not on this lake" for the landmark the moderator is looking at on it.
+  if (landmark.removedAt !== undefined) {
+    throw new ConvexError(
+      `"${landmark.name}" has been taken off the map — it answers nothing now.`,
+    );
+  }
+  if (landmark.point.lat !== seen.point.lat || landmark.point.lng !== seen.point.lng) {
+    throw new ConvexError(
+      `"${landmark.name}" has moved since you looked at it. Cancel and look again.`,
+    );
+  }
+  if (landmark.name !== seen.name) {
+    throw new ConvexError(
+      `"${seen.name}" has been renamed "${landmark.name}" since you looked at it. Cancel and look again.`,
+    );
+  }
+  if (!landmarkNamesMeet(requestNames(request), [landmark.name, ...landmark.aliases])) {
+    throw new ConvexError(
+      `"${landmark.name}" doesn't carry the name that was asked for ("${request.name}").`,
+    );
+  }
+  // A landmark now answers the ask at its own spot (added without the request attached, or by a
+  // catalog run) — one the dialog never showed, since a row offers *Same place* only while none does.
+  // That one is the answer; the far one the dialog named is no longer the question.
+  const here = await namedLandmark(ctx, waterBodyId, landmarkAskOf(request));
+  if (here && here._id !== landmark._id) {
+    throw new ConvexError(
+      `"${here.name}" now stands at this spot — cancel, and approve the proposal with it instead.`,
+    );
+  }
+  return landmark;
+}
+
+/** A landmark proposal as a moderator's row shows it (D202) — the queue's and the lake editor's. */
+export interface LandmarkProposalView {
+  /** The live landmark that already answers it — the row offers "approve" rather than "add". */
+  existingLandmarkId?: Id<'bodyLandmarks'>;
+  /** Possible duplicates, while nothing answers it (`landmarkLookalikesView`). */
+  similarLandmark?: {
+    landmarkId: Id<'bodyLandmarks'>;
+    name: string;
+    point: LatLng;
+    meters: number;
+  };
+  similarProposal?: {
+    requestId: Id<'waterBodyRequests'>;
+    name: string;
+    coord: LatLng;
+    meters: number;
+  };
+}
+
+/**
+ * What a moderator's row says of a landmark proposal: the landmark that already answers it, or —
+ * while none does — what it may duplicate. A possible duplicate only matters while the proposal is
+ * not already answered. `others` are the other open asks the moderator sees as rows.
+ */
+export function landmarkProposalView(
+  ask: LandmarkAsk,
+  landmarks: readonly Doc<'bodyLandmarks'>[],
+  others: readonly Doc<'waterBodyRequests'>[],
+): LandmarkProposalView {
+  const existing = matchLandmark(landmarks, ask);
+  return existing
+    ? { existingLandmarkId: existing._id }
+    : landmarkLookalikesView(ask, landmarks, others);
+}
+
+/**
+ * A proposal's possible duplicates, as the moderator's rows show them (`landmarkAskLookalikes`): the
+ * nearest live landmark and the nearest other proposal that share a name with it at another place —
+ * by any of the other's names, as the ask is matched by any of its own.
+ */
+function landmarkLookalikesView(
+  ask: LandmarkAsk,
+  landmarks: readonly Doc<'bodyLandmarks'>[],
+  others: readonly Doc<'waterBodyRequests'>[],
+): Pick<LandmarkProposalView, 'similarLandmark' | 'similarProposal'> {
+  const found = landmarkAskLookalikes(
+    ask,
+    landmarks.filter((l) => l.removedAt === undefined),
+    others.map((o) => ({
+      requestId: o._id,
+      name: o.name ?? '',
+      coord: o.coord,
+      names: requestNames(o),
+    })),
+  );
+  return {
+    ...(found.landmark
+      ? {
+          similarLandmark: {
+            landmarkId: found.landmark.item._id,
+            name: found.landmark.item.name,
+            point: found.landmark.item.point,
+            meters: Math.round(found.landmark.meters),
+          },
+        }
+      : {}),
+    ...(found.ask
+      ? {
+          similarProposal: {
+            requestId: found.ask.item.requestId,
+            name: found.ask.item.name,
+            coord: found.ask.item.coord,
+            meters: Math.round(found.ask.meters),
+          },
+        }
+      : {}),
+  };
 }
 
 /** The live landmark on this body that answers a `name_landmark` ask, if one exists. */

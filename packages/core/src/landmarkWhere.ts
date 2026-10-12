@@ -99,6 +99,42 @@ export function landmarkPoint(landmark: SheetLandmark, radiusMeters: number): Wh
 }
 
 /**
+ * What pressing a landmark's chip does to the `where` point — a clean on/off for the name, and never
+ * the loss of a spot the skater marked. The tap is where they saw something: an open or skim sighting
+ * pins there (D210), so it must not go with the word.
+ *
+ * - No point, or a tap too far from this landmark to be near it: the landmark chosen by name.
+ * - The landmark chosen by name: pressed again, the choice clears.
+ * - A tap named for this landmark (its chip is lit): the name goes, the tap stays.
+ * - A tap near this landmark that carries no name for it (let go a moment ago, or never snapped):
+ *   it takes the name again, and stays where it landed — what {@link pointFromTap} would have made.
+ */
+export function pressLandmarkChip(
+  current: WherePoint | undefined,
+  landmark: SheetLandmark,
+  radiusMeters: number,
+): WherePoint | undefined {
+  if (current?.landmarkId === landmark._id) {
+    return current.byName === true
+      ? undefined
+      : { coord: current.coord, radiusMeters: current.radiusMeters };
+  }
+  if (
+    current &&
+    current.byName !== true &&
+    haversineMeters(current.coord, landmark.point) <= LANDMARK_SNAP_M
+  ) {
+    return {
+      coord: current.coord,
+      radiusMeters: current.radiusMeters,
+      name: landmark.name,
+      landmarkId: landmark._id,
+    };
+  }
+  return landmarkPoint(landmark, radiusMeters);
+}
+
+/**
  * What a tap on the lake becomes: the tapped coordinate, named for the nearest landmark within
  * {@link LANDMARK_SNAP_M} when there is one (the tap stays where it landed — the skater meant *there*,
  * near the landmark, not the landmark's label point).

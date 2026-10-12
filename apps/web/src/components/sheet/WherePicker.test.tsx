@@ -149,4 +149,29 @@ describe('a tap that took a landmark’s name', () => {
     expect(whereNow()?.point).toEqual({ coord: { lat: 44.6003, lng: -73.4 }, radiusMeters: 75 });
     expect(screen.getByLabelText('Name this spot')).toBeInTheDocument();
   });
+
+  it('pressing its lit chip toggles the name, never the tap — the spot is what pins', () => {
+    render(
+      <Harness
+        initial={{
+          point: {
+            coord: { lat: 44.5005, lng: -73.3 },
+            radiusMeters: 75,
+            name: 'Apple Island',
+            landmarkId: 'id-Apple Island',
+          },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Apple Island' }));
+    expect(whereNow()?.point).toEqual({ coord: { lat: 44.5005, lng: -73.3 }, radiusMeters: 75 });
+    // Pressed again, the tap takes the name back, still where it landed.
+    fireEvent.click(screen.getByRole('button', { name: 'Apple Island' }));
+    expect(whereNow()?.point).toEqual({
+      coord: { lat: 44.5005, lng: -73.3 },
+      radiusMeters: 75,
+      name: 'Apple Island',
+      landmarkId: 'id-Apple Island',
+    });
+  });
 });

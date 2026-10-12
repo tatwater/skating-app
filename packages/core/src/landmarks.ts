@@ -304,6 +304,74 @@ export function groupLandmarkAsks<T extends LandmarkAsk>(asks: readonly T[]): T[
   return places;
 }
 
+/** The keys a list of names folds to (`landmarkNameKey`), a name that folds to nothing dropped. */
+function landmarkNameKeys(names: readonly string[]): Set<string> {
+  return new Set(names.map(landmarkNameKey).filter((k) => k.length > 0));
+}
+
+/**
+ * Do two lists of names share a landmark's spelling — any name of one folding (`landmarkNameKey`) to
+ * any name of the other? The one name rule a proposal's filing, its possible duplicates and a
+ * moderator's answer to it all ask, so they cannot disagree about whether two spellings meet.
+ */
+export function landmarkNamesMeet(a: readonly string[], b: readonly string[]): boolean {
+  const keys = landmarkNameKeys(a);
+  return b.some((n) => keys.has(landmarkNameKey(n)));
+}
+
+/** One lookalike: the thing, and how far it is from the ask. */
+export interface LandmarkLookalike<T> {
+  item: T;
+  meters: number;
+}
+
+/**
+ * What a proposal looks like without being (D202): the nearest landmark, and the nearest other
+ * place's ask, that share one of its names but are **not** the same place by the same-place rule.
+ * Either is a possible duplicate a moderator should see before adding: a skater who typed "Grand
+ * Isle" 3 km from its label may mean the island, and two skaters' Long Points may be one point
+ * marked far apart — or Champlain's two. Never a verdict; the moderator decides, on the map.
+ */
+export function landmarkAskLookalikes<
+  L extends { kind: LandmarkKind; point: LatLng; name: string; aliases: readonly string[] },
+  A extends LandmarkAsk,
+>(
+  ask: LandmarkAsk,
+  landmarks: readonly L[],
+  otherAsks: readonly A[],
+): { landmark?: LandmarkLookalike<L>; ask?: LandmarkLookalike<A> } {
+  // Folded once, not per item: the names come before the distance here (a lookalike is far by
+  // definition), so every landmark on the lake is name-tested — for every row a queue holds.
+  const askKeys = landmarkNameKeys(ask.names);
+  const nearest = <T>(
+    items: readonly T[],
+    pointOf: (t: T) => LatLng,
+    namesOf: (t: T) => readonly string[],
+    samePlace: (t: T) => boolean,
+  ): LandmarkLookalike<T> | undefined => {
+    let best: LandmarkLookalike<T> | undefined;
+    for (const item of items) {
+      if (!namesOf(item).some((n) => askKeys.has(landmarkNameKey(n))) || samePlace(item)) continue;
+      const meters = haversineMeters(ask.coord, pointOf(item));
+      if (!best || meters < best.meters) best = { item, meters };
+    }
+    return best;
+  };
+  const landmark = nearest(
+    landmarks,
+    (l) => l.point,
+    (l) => [l.name, ...l.aliases],
+    (l) => landmarkAnswersAsk(l, ask),
+  );
+  const other = nearest(
+    otherAsks,
+    (a) => a.coord,
+    (a) => a.names,
+    (a) => landmarkAsksAreSamePlace(a, ask),
+  );
+  return { ...(landmark ? { landmark } : {}), ...(other ? { ask: other } : {}) };
+}
+
 /** The key two spellings of one landmark share — defined beside `requestNameKey` (`corpusRequests.ts`). */
 export { landmarkNameKey } from './corpusRequests';
 

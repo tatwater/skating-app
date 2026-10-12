@@ -645,6 +645,234 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     ).toBeUndefined();
   });
 
+  test('each shows the other as a possible duplicate, and a far landmark by the name too', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    await seedAsks(t, lake, skater.id, at, 1);
+    await seedAsks(t, lake, skater.id, far, 1);
+    const elsewhere = { lat: 0.2, lng: 0.2 }; // ~31 km from `at`
+    const known = await seedLandmark(t, lake, 'Long Point', { point: elsewhere });
+    const { proposals } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+      waterBodyId: lake,
+    });
+    expect(proposals[0]).toMatchObject({
+      coord: at,
+      similarLandmark: { landmarkId: known, name: 'Long Point', point: elsewhere },
+      similarProposal: { name: 'Long Point', coord: far, requestId: proposals[1]?.requestId },
+    });
+    expect(proposals[0]?.similarProposal?.meters).toBeGreaterThan(30_000);
+    // The queue page says the same of each row.
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(queue[0]).toMatchObject({
+      similarLandmark: { landmarkId: known },
+      similarProposal: { coord: far },
+    });
+  });
+
+  test('another proposal is a possible duplicate by any of its spellings, both ways', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    await seedAsks(t, lake, skater.id, at, 1);
+    // Filed under another name, with this one as a spelling.
+    await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_landmark',
+        status: 'open',
+        requesterId: skater.id,
+        coord: far,
+        waterBodyId: lake,
+        name: 'Pointe Longue',
+        aliases: ['Long Point'],
+        nameKey: 'pointe longue',
+        createdAt: Date.now(),
+      }),
+    );
+    const { proposals } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+      waterBodyId: lake,
+    });
+    expect(proposals.map((p) => p.similarProposal?.name)).toEqual(['Pointe Longue', 'Long Point']);
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(queue.map((r) => r.similarProposal?.name)).toEqual(['Pointe Longue', 'Long Point']);
+  });
+
+  test('a moderator can say a far proposal is a landmark already there — by its name only', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const [ask] = await seedAsks(t, lake, skater.id, at, 1);
+    if (!ask) throw new Error('no ask');
+    const known = await seedLandmark(t, lake, 'Long Point', { point: far });
+    const cedar = await seedLandmark(t, lake, 'Cedar Island', { point: far });
+    const other = await seedLandmark(t, await seedBody(t, 'osm/2'), 'Long Point', { point: at });
+    const gone = await seedLandmark(t, lake, 'Long Point', { point: far, removed: true });
+    vi.setSystemTime(NOW + 60_000);
+    // Without the moderator's word, a landmark that far answers nothing.
+    await expect(mod.as.mutation(api.corpusRequests.approve, { requestId: ask })).rejects.toThrow(
+      /near that spot/,
+    );
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: cedar, name: 'Cedar Island', point: far },
+      }),
+    ).rejects.toThrow(/doesn't carry the name/);
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: other, name: 'Long Point', point: at },
+      }),
+    ).rejects.toThrow(/not on this lake/);
+    // Taken off the map since the row was drawn: said so, not "not on this lake".
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: gone, name: 'Long Point', point: far },
+      }),
+    ).rejects.toThrow(/taken off the map/);
+    // Moved since the moderator looked: refused, so the answer is the landmark they checked, where
+    // they checked it (Greptile P1 on #88).
+    const elsewhere = { lat: 0.65, lng: 0.6 };
+    await t.run((ctx) => ctx.db.patch(known, { point: elsewhere }));
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: known, name: 'Long Point', point: far },
+      }),
+    ).rejects.toThrow(/has moved since you looked/);
+    // Renamed since, even to a name that still carries the asked-for one: refused too — the skaters
+    // read the name the dialog showed.
+    await t.run((ctx) => ctx.db.patch(known, { name: 'Long Pt', aliases: ['Long Point'] }));
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: known, name: 'Long Point', point: elsewhere },
+      }),
+    ).rejects.toThrow(/"Long Point" has been renamed "Long Pt" since you looked/);
+    await mod.as.mutation(api.corpusRequests.approve, {
+      requestId: ask,
+      sameAs: { landmarkId: known, name: 'Long Pt', point: elsewhere },
+    });
+    expect(await t.run((ctx) => ctx.db.get(ask))).toMatchObject({
+      status: 'approved',
+      landmarkId: known,
+    });
+  });
+
+  test('a far landmark never answers a proposal a landmark at its own spot now answers', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const [ask] = await seedAsks(t, lake, skater.id, at, 1);
+    if (!ask) throw new Error('no ask');
+    const known = await seedLandmark(t, lake, 'Long Point', { point: far });
+    vi.setSystemTime(NOW + 60_000);
+    // Added at the skaters' spot while a Same place dialog for the far one was open — without the
+    // request attached, so the ask is still open, and the dialog never showed it.
+    const here = await seedLandmark(t, lake, 'Long Point', { point: at });
+    const sameAsFar = { landmarkId: known, name: 'Long Point', point: far };
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, { requestId: ask, sameAs: sameAsFar }),
+    ).rejects.toThrow(/"Long Point" now stands at this spot/);
+    // The one at the spot answers it — named by the moderator or not.
+    await mod.as.mutation(api.corpusRequests.approve, {
+      requestId: ask,
+      sameAs: { landmarkId: here, name: 'Long Point', point: at },
+    });
+    expect(await t.run((ctx) => ctx.db.get(ask))).toMatchObject({
+      status: 'approved',
+      landmarkId: here,
+    });
+  });
+
+  test('only a landmark request takes a landmark as its answer', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const landmark = await seedLandmark(t, lake, 'Long Point', { point: at });
+    const activate = await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'activate',
+        status: 'open',
+        requesterId: skater.id,
+        coord: at,
+        waterBodyId: lake,
+        createdAt: Date.now(),
+      }),
+    );
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: activate,
+        sameAs: { landmarkId: landmark, name: 'Long Point', point: at },
+      }),
+    ).rejects.toThrow(/Only a landmark request/);
+  });
+
+  test('reviewState says what became of a review, and who did it', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const colleague = await seedUser(t, 'colleague', 'moderator');
+    const [a] = await seedAsks(t, lake, skater.id, at, 1);
+    const [b] = await seedAsks(t, lake, skater.id, far, 1);
+    if (!a || !b) throw new Error('no asks');
+    const landmark = await seedLandmark(t, lake, 'Long Point', { point: far });
+    vi.setSystemTime(NOW + 60_000);
+    const state = () =>
+      mod.as.query(api.corpusRequests.reviewState, { requestIds: [a, b], landmarkId: landmark });
+    expect(await state()).toMatchObject({
+      requests: [
+        { requestId: a, status: 'open' },
+        { requestId: b, status: 'open' },
+      ],
+      landmark: { removed: false, name: 'Long Point', point: far, byMe: false },
+    });
+    // A colleague declines the other end, and takes the landmark down.
+    await colleague.as.mutation(api.corpusRequests.decline, { requestId: b, note: 'Not a place.' });
+    await colleague.as.mutation(api.landmarks.remove, { landmarkId: landmark });
+    expect(await state()).toMatchObject({
+      requests: [
+        { requestId: a, status: 'open' },
+        { requestId: b, status: 'declined', by: 'colleague', byMe: false },
+      ],
+      landmark: { removed: true, by: 'colleague', byMe: false },
+    });
+    // The moderator's own answer reads as theirs, with the landmark that answered it.
+    await seedLandmark(t, lake, 'Long Point', { point: at });
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: a });
+    expect((await state()).requests[0]).toMatchObject({
+      status: 'approved',
+      by: 'mod',
+      byMe: true,
+      answeredWith: 'Long Point',
+    });
+    // A request that no longer exists is gone; a review holds two at most; skaters cannot ask.
+    await t.run((ctx) => ctx.db.delete(b));
+    expect((await state()).requests[1]).toEqual({ requestId: b, status: 'gone' });
+    // A landmark is named only by the act that explains it: a restore says nothing of a move, a
+    // colleague's move is theirs, and a catalog drop after it is nobody's.
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: landmark });
+    expect((await state()).landmark).toEqual({
+      removed: false,
+      name: 'Long Point',
+      point: far,
+      byMe: false,
+    });
+    const moved = { lat: 0.61, lng: 0.6 };
+    await colleague.as.mutation(api.landmarks.update, { landmarkId: landmark, point: moved });
+    expect((await state()).landmark).toMatchObject({ point: moved, by: 'colleague', byMe: false });
+    // This moderator then edits its spellings: the move is still the colleague's, never "mine"
+    // (Greptile P2 on #88) — the latest edit is not the latest move.
+    await mod.as.mutation(api.landmarks.update, { landmarkId: landmark, aliases: ['Long Pt'] });
+    expect((await state()).landmark).toMatchObject({ point: moved, by: 'colleague', byMe: false });
+    await t.run((ctx) =>
+      ctx.db.patch(landmark, { removedAt: NOW + 120_000, catalogDroppedAt: NOW + 120_000 }),
+    );
+    expect((await state()).landmark).toEqual({
+      removed: true,
+      name: 'Long Point',
+      point: moved,
+      byMe: false,
+    });
+    await t.run((ctx) => ctx.db.delete(landmark));
+    expect((await state()).landmark).toEqual({ removed: true, byMe: false });
+    await expect(
+      mod.as.query(api.corpusRequests.reviewState, { requestIds: [a, a, a] }),
+    ).rejects.toThrow(/at most two/);
+    await expect(
+      skater.as.query(api.corpusRequests.reviewState, { requestIds: [a] }),
+    ).rejects.toThrow();
+  });
+
   test('a decision drains its place past pages full of the other place’s asks', async () => {
     const { t, lake, mod, skater } = await lakeWithAsks();
     // The other place's asks first, so every page the drain reads starts full of rows it leaves.

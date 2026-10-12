@@ -1,10 +1,10 @@
 import {
   COMPASS_SECTORS,
   describeWhere,
-  landmarkPoint,
   landmarksForSheet,
   MAX_LANDMARK_NAME_LENGTH,
   pointFromTap,
+  pressLandmarkChip,
   type Sector,
   searchLandmarks,
   WHERE_EXTENTS,
@@ -154,11 +154,7 @@ export function WherePicker({
               compact
               label={l.name}
               tier={chosenLandmark === l._id ? 'solid' : undefined}
-              onPress={() =>
-                set({
-                  point: chosenLandmark === l._id ? undefined : landmarkPoint(l, POINT_RADIUS_M),
-                })
-              }
+              onPress={() => set({ point: pressLandmarkChip(where?.point, l, POINT_RADIUS_M) })}
             />
           ))}
           {more > 0 && finding === null ? (
