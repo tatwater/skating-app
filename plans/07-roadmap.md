@@ -811,7 +811,7 @@ and Instruments — every existing lever re-homed, none lost. *An operator opens
 knows what needs them, does it where they found it, and watches the machinery work.*
 
 #### Deferred
-- ❓ **Which season statistics the nightly rollup carries** (D220) — the plan's §10 list, three tiers; the founder picks
+- 🟢 **Which season statistics the nightly rollup carries** (D220) — all of the plan's §10 tiers 1 and 2, picked 2026-10-12; tier 3 is PostHog's when it lands
 - ⚪ **A hosted ETL runner** (GitHub Actions or a Fly machine over the R2 archives) — D218 builds the run vocabulary for it; its own decision when the laptop stops being the runner
 - ⚪ **Invoice entries for Anthropic and Zed** in the cost ledger (D219) — the table is shaped for them; typed in when the bills come
 - ⚪ **Client-side usage statistics** (sessions, map and lake views, search) — no instrumentation exists (D29); a product question first
@@ -823,7 +823,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - **A second admin app** — D37 stands
 
 #### Owed
-- The §10 statistics pick, then static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
+- Static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
 - The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
 

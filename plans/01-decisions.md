@@ -6863,9 +6863,20 @@ season's reports, contributors, most-reported lakes, bodies activated and remove
 fetch counts at read time would scan whole tables once a season; the founder chose the cheaper
 shape: **extend Phase 07-2's `metricSnapshots` rollup with a season key**, computed nightly by the
 existing cron, so the Season page reads a few hundred small rows. The change log comes live from
-the indexed audit table and the run rows, bounded by the season's dates. **Which statistics** is a
-founder pick from the plan's §10 list (the ones that will be read, not the ones that can be
-computed); until picked, the rollup carries the free tier only.
+the indexed audit table and the run rows, bounded by the season's dates. **Which statistics:** the
+founder picked **all of the plan's §10 tiers 1 and 2** (2026-10-12) — reports and posts by
+vantage, contributors and new accounts, the most-reported lakes, bodies activated / demoted /
+removed / restored / admitted, POIs added by operators and by the ETL, hazards filed / confirmed /
+archived / merged, inbox throughput with time to resolution, bounties, external calls and cost
+per provider, notifications pushed and emailed, photos and bytes — beside the tier-1 facts the
+watch already stores.
+
+**Facts vs. behavior (asked the same day):** statistics about *our own records* stay in-house —
+nothing a third party observes can produce them, and shipping them out to query them back adds a
+vendor, latency and a second source of truth, on a location app with minors (L12). *Behavior* —
+sessions, screens, funnels, retention, search — is PostHog's (D29) when the alpha produces the
+questions; the Season page's tier-3 slot links out to it rather than rebuilding its charts, and
+Instruments gains a flags panel then. PostHog is not wired in B01.
 
 **Why:** cost, and the founder said so; a nightly number is current enough for a season view.
 

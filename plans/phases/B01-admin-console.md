@@ -2,10 +2,10 @@
 
 > **Status:** scoped, 2026-10-12. Nothing built. This doc is the record of the founder's brief, the
 > inventory of what `/admin` does today, the diagnosis, the information architecture, the founder's
-> calls (§7, minted as **D216–D222**), the workstreams (§8), and the one pick still open (§10, the
-> season statistics). The raw inventory is
+> calls (§7, minted as **D216–D222**), the workstreams (§8), and the season-statistics pick (§10,
+> all of tiers 1 and 2). The raw inventory is
 > [`research/admin-surface-inventory-2026-10-12.md`](../research/admin-surface-inventory-2026-10-12.md).
-> Next: the §10 pick, then static wireframes per mode in `skating-mockups/admin-console/`.
+> Next: static wireframes per mode in `skating-mockups/admin-console/`.
 
 Phase 07 built `/admin` as *work queues plus a control room* (D37), and every phase since added a
 page for its own feature: the lake editor (A02), body features (A05a), hazard identity (A05c), ice
@@ -493,7 +493,10 @@ capability map), D218 (where each job runs; scope, heartbeat, event stream; no r
 cost ledger), D220 (nightly season rollup; the statistics are a §10 pick), D221 (outlines trusted;
 merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation axis; `canFlag`).
 
-## §10 — Season statistics: the options (open; the founder picks)
+## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
+
+**The call:** every tier-1 and tier-2 statistic below is in; tier 3 waits for PostHog (D29, the
+split recorded on D220 — facts about our own records stay in-house, behavior is PostHog's).
 
 D220 rolls the chosen statistics up nightly per season. The list below is every number the brief
 named or the data can give, in three tiers by what it costs to have. The recommendation is the
