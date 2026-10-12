@@ -374,6 +374,8 @@ describe('LandmarkTool', () => {
     );
     expect(screen.getByRole('button', { name: 'Add as landmark' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Decline' })).toBeDisabled();
+    // A closed pick goes Back, not Clear: one way out, the one that explains.
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(onReview).toHaveBeenLastCalledWith(null);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -568,6 +570,122 @@ describe('LandmarkTool', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]).toEqual({ name: 'approve', args: { requestId: 'req2' } });
+  });
+
+  it('keeps the form when a colleague declines its proposal, says so, and saves it as the moderator’s own', async () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Bird Poop Rock',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const props = {
+      waterBodyId: BODY,
+      landmarks: [],
+      armed: false,
+      onArm: vi.fn(),
+      onClearPoint: vi.fn(),
+      onFocus: vi.fn(),
+      onPromote: vi.fn(),
+      onPlacePoint: vi.fn(),
+      onReview: vi.fn(),
+      onResult: vi.fn(),
+    };
+    const { rerender } = render(<LandmarkTool {...props} point={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    expect(screen.getByRole('button', { name: 'Save landmark' })).toBeEnabled();
+    // Mathew declines it mid-form: nothing is wiped, and the form says what saving now means.
+    queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    queryResults.reviewState = {
+      requests: [
+        {
+          requestId: 'req1',
+          status: 'declined',
+          name: 'Bird Poop Rock',
+          by: 'Mathew',
+          byMe: false,
+        },
+      ],
+    };
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '“Bird Poop Rock” was declined by Mathew. Saving now adds the landmark without answering the skaters.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save anyway' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.name).toBe('create');
+    expect(calls[0]?.args).not.toHaveProperty('requestId');
+    // Nobody was answered, and the banner never says otherwise.
+    await waitFor(() =>
+      expect(props.onResult).toHaveBeenCalledWith({ tone: 'ok', text: 'Added “Bird Poop Rock”.' }),
+    );
+  });
+
+  it('lets go of its proposal quietly when the moderator closed it themselves', async () => {
+    const proposal = {
+      requestId: 'req1',
+      name: 'Bird Poop Rock',
+      coord: { lat: 44.31, lng: -73.21 },
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const props = {
+      waterBodyId: BODY,
+      landmarks: [],
+      armed: false,
+      onArm: vi.fn(),
+      onClearPoint: vi.fn(),
+      onFocus: vi.fn(),
+      onPromote: vi.fn(),
+      onPlacePoint: vi.fn(),
+      onReview: vi.fn(),
+      onResult: vi.fn(),
+    };
+    const { rerender } = render(<LandmarkTool {...props} point={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    // Declined by this moderator in another tab: no alert, the form stays, and it is unlinked.
+    queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    queryResults.reviewState = {
+      requests: [
+        { requestId: 'req1', status: 'declined', name: 'Bird Poop Rock', by: 'Teagan', byMe: true },
+      ],
+    };
+    rerender(<LandmarkTool {...props} point={proposal.coord} />);
+    expect(screen.getByDisplayValue('Bird Poop Rock')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.args).not.toHaveProperty('requestId');
+  });
+
+  it('clears a pick that still stands by hand', () => {
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [
+        {
+          requestId: 'req1',
+          name: 'Long Point',
+          coord: { lat: 44.31, lng: -73.21 },
+          askers: 1,
+          reportIds: [],
+          createdAt: 0,
+        },
+      ],
+      more: false,
+    };
+    const { onReview } = renderTool();
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Long Point' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 
   it('places a corpus name with its spellings, or files it as another spelling', async () => {

@@ -123,6 +123,18 @@ function RequestQueue() {
           {/* A height, never an inset: MapLibre forces its container's position (it would collapse). */}
           <div className="relative h-72 overflow-hidden rounded-lg border border-border lg:sticky lg:top-4 lg:order-last lg:h-[32rem]">
             <RequestPreviewMap review={review} />
+            {/* A pick still standing can be cleared by hand, back to the oldest row. Top-left: the
+                zoom buttons hold the top-right corner. */}
+            {picked && watch.kind === 'live' ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                className="absolute top-2 left-2 z-10 shadow-sm"
+                onClick={() => setPicked(null)}
+              >
+                Clear
+              </Button>
+            ) : null}
             {watch.kind === 'closed' ? (
               <div className="absolute inset-x-2 top-2 z-10">
                 <ReviewClosedNotice

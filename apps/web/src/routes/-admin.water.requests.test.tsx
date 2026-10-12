@@ -139,10 +139,22 @@ describe('the request queue’s review', () => {
     const [lakeDecline, nearDecline] = screen.getAllByRole('button', { name: 'Decline' });
     expect(lakeDecline).toBeEnabled();
     expect(nearDecline).toBeDisabled();
+    // A closed pick goes Back, not Clear: one way out, the one that explains.
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Back to queue' }));
     expect(drawn()).toEqual({ ask: lakeSpot });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Decline' })[1]).toBeEnabled();
+  });
+
+  it('clears a pick that still stands by hand, back to the oldest row', () => {
+    render(<RequestQueue />);
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
+    expect(drawn().other).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(drawn()).toEqual({ ask: lakeSpot });
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 
   it('clears quietly after the moderator’s own decision', () => {
