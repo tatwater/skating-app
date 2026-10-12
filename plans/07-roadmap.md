@@ -795,6 +795,28 @@ lack of signal.*
 - 🟢 Jev access granted 2026-09-19 (`TYPESAFE_API_KEY` on dev); the harness still takes any engine
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
+## Phase B01 — The admin console: one surface, organized by what an operator is doing
+⚪ **Scoped** 2026-10-12 · [plan](./phases/B01-admin-console.md)
+
+Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
+for its own feature; sixteen nav items later the surface is organized by table, not by task — an
+operator reads four pages to learn what needs them and still misses eight queues, fixes a lake in
+a 2,900-line editor whose map scrolls away, and watches a corpus campaign through a read-only
+history that cannot tell a live run from a dead one. This phase rebuilds the surface around the
+operator's tasks as a dense, keyboard-first console in the report console's register: an Overview
+that counts every lane, an Inbox where everything a person filed completes in place, a Corpus
+backlog of what the machines could not settle, a Body console with the map as the instrument,
+Machinery with live runs and triggers, a Season view with statistics and a cost ledger, People,
+and Instruments — every existing lever re-homed, none lost. *An operator opens one surface and
+knows what needs them, does it where they found it, and watches the machinery work.*
+
+#### Deferred
+- ❓ **The fifteen questions in the plan's §7** — the inbox/corpus split, task modes, run triggers vs. a runner, the cost ledger, season rollups, polygon editing, photo takedown, mute, seeding dev, sequencing, naming, the mobile bar
+
+#### Owed
+- The founder's answers to §7, then the wireframes (`skating-mockups/admin-console/`), then the `D#`s and the workstreams firmed up
+- `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
+
 ## Phase B03 — The skater web app
 🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
 

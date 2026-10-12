@@ -74,7 +74,7 @@ const RULES: Rule[] = [
     // decision only A–C/E–H are, since `D50/D3` is two decisions.
     name: 'slash form ("A08/B4", "D84/C4", "§2.1/B2")',
     pattern:
-      /(?:(?:\b(?:A0\d[a-z]?|0\d[ab]?|10)|§\d(?:\.\d+)?[a-z]?)\/[A-H]\d?[a-z]?|\bD\d+\/[ABCEFGH]\d?[a-z]?)\b(?![-–→.\d])/gu,
+      /(?:(?:\b(?:[AB]0\d[a-z]?|0\d[ab]?|10)|§\d(?:\.\d+)?[a-z]?)\/[A-H]\d?[a-z]?|\bD\d+\/[ABCEFGH]\d?[a-z]?)\b(?![-–→.\d])/gu,
   },
 ];
 
@@ -171,6 +171,7 @@ describe('every phase doc is headed "# Phase <token> — <title>"', () => {
       '# Phase 02a — Map',
       '# Phase A06e — Imagery',
       '# Phase A03 / A04 — Accounts',
+      '# Phase B01 — The admin console',
     ]) {
       expect(PHASE_H1.test(ok), ok).toBe(true);
     }
