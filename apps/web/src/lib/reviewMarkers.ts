@@ -73,11 +73,10 @@ export interface ReviewRow {
 }
 
 /**
- * What the map draws for a row, **rebuilt from the row on every render** rather than copied when the
- * moderator clicked (Greptile P2 on #88). The server reports a lookalike only while it stands — an open
- * proposal on the page, a live landmark sharing the name — so a pair's other end leaves the map the
- * moment it is decided, removed or displaced by a nearer one, and a moved landmark's ring moves with
- * it. Asked for a pair the row no longer reports, it is the spot alone.
+ * What the map draws for a row: its spot, or its spot paired with the lookalike asked for — as the
+ * row reports it at that moment. A pick freezes this at the click (`pickReview`); the oldest row,
+ * shown until the moderator picks, is drawn from the row as it stands (`useRowReview`). Asked for a
+ * pair the row does not report, it is the spot alone.
  */
 export function rowReview(row: ReviewRow, show: ReviewShow): ReviewPoints {
   const spot: ReviewPoints = { ask: row.coord, ...(row.name ? { name: row.name } : {}) };
@@ -93,19 +92,13 @@ export function rowReview(row: ReviewRow, show: ReviewShow): ReviewPoints {
 }
 
 /**
- * `rowReview` held steady for a canvas, which frames a review each time it is handed a new one. The
- * same object while what it draws is unchanged — the query re-emits fresh rows, and each would re-fly
- * the map — and a new one when what it draws changes, or when the moderator picks again: `pick` is
- * the click's state, a fresh object per click, so *Show* re-centers a spot they have panned away from.
+ * A row's spot held steady for a canvas, which frames a review each time it is handed a new one — for
+ * the row shown until the moderator picks one. The same object while what it draws is unchanged (the
+ * query re-emits fresh rows, and each would re-fly the map), a new one when it changes.
  */
-export function useRowReview(
-  row: ReviewRow | undefined,
-  show: ReviewShow,
-  pick: unknown,
-): ReviewPoints | null {
-  const key = row ? JSON.stringify(rowReview(row, show)) : '';
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `pick` is the click — a new one re-frames.
-  return useMemo(() => (key ? (JSON.parse(key) as ReviewPoints) : null), [key, pick]);
+export function useRowReview(row: ReviewRow | undefined): ReviewPoints | null {
+  const key = row ? JSON.stringify(rowReview(row, 'spot')) : '';
+  return useMemo(() => (key ? (JSON.parse(key) as ReviewPoints) : null), [key]);
 }
 
 /** Add the review's source and layers — once, in a canvas's `onLoad`. */

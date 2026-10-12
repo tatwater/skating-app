@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   REVIEW_SOURCE_ID,
   type ReviewRow,
-  type ReviewShow,
   reviewFeatures,
   rowReview,
   showReview,
@@ -83,7 +82,7 @@ describe('showReview', () => {
   });
 });
 
-describe('rowReview — the map draws what the row says now (Greptile P2 on #88)', () => {
+describe('rowReview — what a row draws at the moment it is read', () => {
   const row = {
     coord: ask,
     name: 'Gull Rock',
@@ -106,7 +105,7 @@ describe('rowReview — the map draws what the row says now (Greptile P2 on #88)
     expect(rowReview({ coord: ask }, 'spot')).toEqual({ ask });
   });
 
-  it('drops a pair end the row no longer reports — decided, removed or displaced', () => {
+  it('is the spot alone for a pair end the row does not report, and the end where the row has it', () => {
     const { similarProposal: _, ...decided } = row;
     expect(rowReview(decided, 'proposal')).toEqual({ ask, name: 'Gull Rock' });
     const { similarLandmark: __, ...removed } = row;
@@ -120,31 +119,27 @@ describe('rowReview — the map draws what the row says now (Greptile P2 on #88)
   });
 });
 
-describe('useRowReview — steady across re-emits, fresh on a click', () => {
-  type Props = { row: ReviewRow | undefined; show: ReviewShow; pick: unknown };
-
-  it('holds one object while the row says the same, and hands a new one on a change or a pick', () => {
-    const pick = { id: 'a' };
+describe('useRowReview — the unpicked row, steady across re-emits', () => {
+  it('holds one object while the row says the same, and hands a new one when it changes', () => {
     const { result, rerender } = renderHook(
-      ({ row, show, pick }: Props) => useRowReview(row, show, pick),
-      { initialProps: { row: { coord: ask, name: 'Gull Rock' }, show: 'spot', pick } as Props },
+      ({ row }: { row: ReviewRow | undefined }) => useRowReview(row),
+      { initialProps: { row: { coord: ask, name: 'Gull Rock' } as ReviewRow | undefined } },
     );
     const first = result.current;
     expect(first).toEqual({ ask, name: 'Gull Rock' });
     // The query re-emits: fresh objects, the same values — the map holds still.
-    rerender({ row: { coord: { ...ask }, name: 'Gull Rock' }, show: 'spot', pick });
+    rerender({ row: { coord: { ...ask }, name: 'Gull Rock' } });
     expect(result.current).toBe(first);
-    // The moderator clicks Show again: the same drawing, a new object, so the canvas re-centers.
-    const again = { id: 'a' };
-    rerender({ row: { coord: ask, name: 'Gull Rock' }, show: 'spot', pick: again });
-    const second = result.current;
-    expect(second).not.toBe(first);
-    expect(second).toEqual(first);
-    // What it draws changes, with no click: a new review. No row: nothing.
-    rerender({ row: { coord: point, name: 'Gull Rock' }, show: 'spot', pick: again });
-    expect(result.current).not.toBe(second);
+    // A lookalike on the row is not drawn: the unpicked row is its spot alone.
+    rerender({
+      row: { coord: ask, name: 'Gull Rock', similarLandmark: { point, name: 'Gull Rock' } },
+    });
+    expect(result.current).toBe(first);
+    // What it draws changes: a new review. No row: nothing.
+    rerender({ row: { coord: point, name: 'Gull Rock' } });
+    expect(result.current).not.toBe(first);
     expect(result.current?.ask).toEqual(point);
-    rerender({ row: undefined, show: 'spot', pick: again });
+    rerender({ row: undefined });
     expect(result.current).toBeNull();
   });
 });

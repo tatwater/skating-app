@@ -10,14 +10,17 @@ import {
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { GoogleMapsLink, PossibleDuplicate } from '../components/admin/PossibleDuplicate';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { RequestPreviewMap } from '../components/admin/RequestPreviewMap';
+import { ReviewClosedNotice } from '../components/admin/ReviewClosedNotice';
+import { useReviewWatch } from '../components/admin/useReviewWatch';
 import { Button, buttonVariants } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { type ReviewShow, useRowReview } from '../lib/reviewMarkers';
+import { useRowReview } from '../lib/reviewMarkers';
+import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../lib/reviewWatch';
 
 /**
  * The request queue (A07b PR 2 / D107) — **a skater asked; a moderator answers.**
@@ -56,17 +59,25 @@ function RequestQueue() {
   const decline = useMutation(api.corpusRequests.decline);
   const reresolve = useMutation(api.corpusRequests.reresolve);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  /** The row on the map, and what of it — its spot alone, or the spot paired with a lookalike. */
-  const [picked, setPicked] = useState<{ id: string; show: ReviewShow } | null>(null);
+  /**
+   * The row on the map, frozen at the click (`pickReview`). A colleague deciding what it is about says
+   * so over the map and locks its rows (`useReviewWatch`) until the moderator goes *Back to queue* —
+   * the map never changes under them. Until they pick, the oldest row is shown, as it stands.
+   */
+  const [picked, setPicked] = useState<PickedReview | null>(null);
+  // Watched only on the open queue: a decided row was decided before the click, by whoever did it.
+  const watch = useReviewWatch(status === 'open' ? picked : null);
+  // The moderator's own answer needs no explaining: the pick clears as the row does.
+  useEffect(() => {
+    if (watch.kind === 'mine') setPicked(null);
+  }, [watch.kind]);
   /** A *Same place* in flight — held, so a second click cannot send a second approve. */
   const [answering, setAnswering] = useState(false);
-  // The picked row while it is listed, else the oldest — the one the queue says to answer first. What
-  // the map draws is rebuilt from that row each render (`useRowReview`), so a decided pair end, a
-  // removed or moved landmark, a nearer lookalike all show as the row now says; held steady across the
-  // query's re-emits, and fresh on every click, so *Show* re-centers what is already drawn.
-  const pickedRow = picked ? rows?.find((r) => r._id === picked.id) : undefined;
-  const shownRow = pickedRow ?? rows?.[0];
-  const review = useRowReview(shownRow, pickedRow && picked ? picked.show : 'spot', picked);
+  const first = rows?.[0];
+  const firstReview = useRowReview(first);
+  const review = picked ? picked.review : firstReview;
+  const shownId = picked ? picked.id : first?._id;
+  const locked = (id: string) => locksRow(picked, watch, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,7 +92,10 @@ function RequestQueue() {
             key={s}
             size="sm"
             variant={s === status ? 'default' : 'outline'}
-            onClick={() => setStatus(s)}
+            onClick={() => {
+              setStatus(s);
+              setPicked(null);
+            }}
           >
             {s[0]?.toUpperCase()}
             {s.slice(1)}
@@ -99,22 +113,29 @@ function RequestQueue() {
         </p>
       ) : null}
 
-      {rows === undefined ? null : rows.length === 0 ? (
+      {/* A closed review keeps its map and notice even when the row it was about left the list. */}
+      {rows === undefined ? null : rows.length === 0 && picked === null ? (
         <AdminEmpty>
           {status === 'open' ? 'Nothing waiting — every ask has an answer.' : 'Nothing here yet.'}
         </AdminEmpty>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           {/* A height, never an inset: MapLibre forces its container's position (it would collapse). */}
-          <div className="h-72 overflow-hidden rounded-lg border border-border lg:sticky lg:top-4 lg:order-last lg:h-[32rem]">
+          <div className="relative h-72 overflow-hidden rounded-lg border border-border lg:sticky lg:top-4 lg:order-last lg:h-[32rem]">
             <RequestPreviewMap review={review} />
+            {watch.kind === 'closed' ? (
+              <div className="absolute inset-x-2 top-2 z-10">
+                <ReviewClosedNotice
+                  text={watch.text}
+                  backLabel="Back to queue"
+                  onBack={() => setPicked(null)}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-col gap-3">
             {rows.map((row) => (
-              <Card
-                key={row._id}
-                className={shownRow?._id === row._id ? 'ring-2 ring-primary' : ''}
-              >
+              <Card key={row._id} className={shownId === row._id ? 'ring-2 ring-primary' : ''}>
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium text-foreground">
@@ -144,8 +165,8 @@ function RequestQueue() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="xs"
-                      variant={shownRow?._id === row._id ? 'secondary' : 'ghost'}
-                      onClick={() => setPicked({ id: row._id, show: 'spot' })}
+                      variant={shownId === row._id ? 'secondary' : 'ghost'}
+                      onClick={() => setPicked(pickReview(row._id, row, 'spot'))}
                     >
                       Show on map
                     </Button>
@@ -206,8 +227,8 @@ function RequestQueue() {
                   {row.kind === 'name_landmark' && row.status === 'open' ? (
                     <PossibleDuplicate
                       lookalikes={row}
-                      busy={answering}
-                      onShow={(show) => setPicked({ id: row._id, show })}
+                      busy={answering || locked(row._id) || landmarkDrifted(picked, row._id, row)}
+                      onShow={(show) => setPicked(pickReview(row._id, row, show))}
                       onSamePlace={async (landmarkId, note) => {
                         if (answering) return;
                         setAnswering(true);
@@ -272,6 +293,7 @@ function RequestQueue() {
                                 : 'default'
                             }
                             disabled={
+                              locked(row._id) ||
                               (row.kind === 'admit' && !row.candidate) ||
                               (row.kind === 'name_bay' && !row.drawnSubAreaId) ||
                               (row.kind === 'name_landmark' && !row.existingLandmarkId)
@@ -300,7 +322,7 @@ function RequestQueue() {
                       />
                       <ReasonDialog
                         trigger={
-                          <Button size="sm" variant="outline">
+                          <Button size="sm" variant="outline" disabled={locked(row._id)}>
                             Decline
                           </Button>
                         }

@@ -45,6 +45,7 @@ vi.mock('@skating/convex/api', () => ({
       approve: { _name: 'approve' },
       decline: { _name: 'decline' },
       openLandmarkRequestsForBody: { _name: 'openLandmarkRequestsForBody' },
+      reviewState: { _name: 'reviewState' },
     },
     corpusPlaceNames: {
       openForBody: { _name: 'openForBody' },
@@ -107,6 +108,8 @@ beforeEach(() => {
   calls.length = 0;
   refusal.next = null;
   for (const key of Object.keys(queryResults)) delete queryResults[key];
+  // A pick's requests stand until a test says otherwise (`useReviewWatch`).
+  queryResults.reviewState = { requests: [] };
 });
 
 describe('LandmarkTool', () => {
@@ -273,8 +276,20 @@ describe('LandmarkTool', () => {
       name: 'approve',
       args: { requestId: 'req1', landmarkId: 'lm-Long Point' },
     });
-    // Answered: the proposal leaves the list, and its markers leave the map.
+    // Answered by this moderator: the proposal leaves the list, and its markers leave the map quietly.
     queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
+    queryResults.reviewState = {
+      requests: [
+        {
+          requestId: 'req1',
+          status: 'approved',
+          name: 'Long Point',
+          by: 'Teagan',
+          byMe: true,
+          answeredWith: 'Long Point',
+        },
+      ],
+    };
     rerender(
       <LandmarkTool
         waterBodyId={BODY}
@@ -291,9 +306,10 @@ describe('LandmarkTool', () => {
       />,
     );
     expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('draws a pair until its other end is decided, and Add moves the markers to its own proposal', () => {
+  it('freezes a pair a colleague closed, says who, locks the row, and goes back on Back', () => {
     const near = { lat: 44.31, lng: -73.21 };
     const far = { lat: 44.61, lng: -73.21 };
     const base = { askers: 1, reportIds: [], createdAt: 0, name: 'Long Point' };
@@ -321,11 +337,19 @@ describe('LandmarkTool', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Add as landmark' })[1] as HTMLElement);
     expect(onReview).toHaveBeenLastCalledWith({ ask: far, name: 'Long Point' });
     expect(onPlacePoint).toHaveBeenCalledWith(far);
-    // Show the pair again, then decide the far end: its ring leaves, the near spot stays.
+    // Show the pair again; a colleague declines the far end.
     fireEvent.click(screen.getAllByRole('button', { name: 'Show both' })[0] as HTMLElement);
+    const pair = onReview.mock.lastCall?.[0];
+    const calls = onReview.mock.calls.length;
     queryResults.openLandmarkRequestsForBody = {
       proposals: [{ ...a, similarProposal: undefined }],
       more: false,
+    };
+    queryResults.reviewState = {
+      requests: [
+        { requestId: 'reqA', status: 'open', name: 'Long Point' },
+        { requestId: 'reqB', status: 'declined', name: 'Long Point', by: 'Mathew', byMe: false },
+      ],
     };
     rerender(
       <LandmarkTool
@@ -342,7 +366,72 @@ describe('LandmarkTool', () => {
         onResult={vi.fn()}
       />,
     );
-    expect(onReview).toHaveBeenLastCalledWith({ ask: near, name: 'Long Point' });
+    // The map keeps what was picked; the card says what happened, and the row waits.
+    expect(onReview).toHaveBeenCalledTimes(calls);
+    expect(onReview.mock.lastCall?.[0]).toBe(pair);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The other “Long Point” proposal was declined by Mathew. This pair is closed.',
+    );
+    expect(screen.getByRole('button', { name: 'Add as landmark' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onReview).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add as landmark' })).toBeEnabled();
+  });
+
+  it('keeps a nearer lookalike off the map, and Same place waits until it is drawn', () => {
+    const coord = { lat: 44.31, lng: -73.21 };
+    const lookalike = (landmarkId: string, lat: number) => ({
+      landmarkId,
+      name: 'Long Point',
+      point: { lat, lng: -73.21 },
+      meters: Math.round((lat - coord.lat) * 111_000),
+    });
+    const proposal = {
+      requestId: 'req1',
+      name: 'Long Point',
+      coord,
+      askers: 1,
+      reportIds: [],
+      createdAt: 0,
+      similarLandmark: lookalike('lm-far', 44.4),
+    };
+    queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+    const { onReview, rerender } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Show both' }));
+    const pair = onReview.mock.lastCall?.[0];
+    const shown = onReview.mock.calls.length;
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeEnabled();
+    // A colleague adds a nearer "Long Point": the row now names it; the map keeps the far one.
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [{ ...proposal, similarLandmark: lookalike('lm-near', 44.33) }],
+      more: false,
+    };
+    rerender(
+      <LandmarkTool
+        waterBodyId={BODY}
+        landmarks={[]}
+        armed={false}
+        point={null}
+        onArm={vi.fn()}
+        onClearPoint={vi.fn()}
+        onFocus={vi.fn()}
+        onPromote={vi.fn()}
+        onPlacePoint={vi.fn()}
+        onReview={onReview}
+        onResult={vi.fn()}
+      />,
+    );
+    expect(onReview).toHaveBeenCalledTimes(shown);
+    expect(onReview.mock.lastCall?.[0]).toBe(pair);
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeDisabled();
+    // Show both again draws the landmark Same place would name, and the answer is open again.
+    fireEvent.click(screen.getByRole('button', { name: 'Show both' }));
+    expect(onReview.mock.lastCall?.[0]).toMatchObject({
+      other: { kind: 'landmark', point: { lat: 44.33, lng: -73.21 } },
+    });
+    expect(screen.getByRole('button', { name: 'Same place' })).toBeEnabled();
   });
 
   it('holds the map still when the query re-emits, and re-frames when the moderator clicks again', () => {

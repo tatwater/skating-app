@@ -741,6 +741,76 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     ).rejects.toThrow(/Only a landmark request/);
   });
 
+  test('reviewState says what became of a review, and who did it', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const colleague = await seedUser(t, 'colleague', 'moderator');
+    const [a] = await seedAsks(t, lake, skater.id, at, 1);
+    const [b] = await seedAsks(t, lake, skater.id, far, 1);
+    if (!a || !b) throw new Error('no asks');
+    const landmark = await seedLandmark(t, lake, 'Long Point', { point: far });
+    vi.setSystemTime(NOW + 60_000);
+    const state = () =>
+      mod.as.query(api.corpusRequests.reviewState, { requestIds: [a, b], landmarkId: landmark });
+    expect(await state()).toMatchObject({
+      requests: [
+        { requestId: a, status: 'open' },
+        { requestId: b, status: 'open' },
+      ],
+      landmark: { removed: false, name: 'Long Point', point: far, byMe: false },
+    });
+    // A colleague declines the other end, and takes the landmark down.
+    await colleague.as.mutation(api.corpusRequests.decline, { requestId: b, note: 'Not a place.' });
+    await colleague.as.mutation(api.landmarks.remove, { landmarkId: landmark });
+    expect(await state()).toMatchObject({
+      requests: [
+        { requestId: a, status: 'open' },
+        { requestId: b, status: 'declined', by: 'colleague', byMe: false },
+      ],
+      landmark: { removed: true, by: 'colleague', byMe: false },
+    });
+    // The moderator's own answer reads as theirs, with the landmark that answered it.
+    await seedLandmark(t, lake, 'Long Point', { point: at });
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: a });
+    expect((await state()).requests[0]).toMatchObject({
+      status: 'approved',
+      by: 'mod',
+      byMe: true,
+      answeredWith: 'Long Point',
+    });
+    // A request that no longer exists is gone; a review holds two at most; skaters cannot ask.
+    await t.run((ctx) => ctx.db.delete(b));
+    expect((await state()).requests[1]).toEqual({ requestId: b, status: 'gone' });
+    // A landmark is named only by the act that explains it: a restore says nothing of a move, a
+    // colleague's move is theirs, and a catalog drop after it is nobody's.
+    await mod.as.mutation(api.landmarks.restore, { landmarkId: landmark });
+    expect((await state()).landmark).toEqual({
+      removed: false,
+      name: 'Long Point',
+      point: far,
+      byMe: false,
+    });
+    const moved = { lat: 0.61, lng: 0.6 };
+    await colleague.as.mutation(api.landmarks.update, { landmarkId: landmark, point: moved });
+    expect((await state()).landmark).toMatchObject({ point: moved, by: 'colleague', byMe: false });
+    await t.run((ctx) =>
+      ctx.db.patch(landmark, { removedAt: NOW + 120_000, catalogDroppedAt: NOW + 120_000 }),
+    );
+    expect((await state()).landmark).toEqual({
+      removed: true,
+      name: 'Long Point',
+      point: moved,
+      byMe: false,
+    });
+    await t.run((ctx) => ctx.db.delete(landmark));
+    expect((await state()).landmark).toEqual({ removed: true, byMe: false });
+    await expect(
+      mod.as.query(api.corpusRequests.reviewState, { requestIds: [a, a, a] }),
+    ).rejects.toThrow(/at most two/);
+    await expect(
+      skater.as.query(api.corpusRequests.reviewState, { requestIds: [a] }),
+    ).rejects.toThrow();
+  });
+
   test('a decision drains its place past pages full of the other place’s asks', async () => {
     const { t, lake, mod, skater } = await lakeWithAsks();
     // The other place's asks first, so every page the drain reads starts full of rows it leaves.

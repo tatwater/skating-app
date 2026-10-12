@@ -851,6 +851,85 @@ export const openBayRequestsForBody = query({
 });
 
 /**
+ * Moderator: what became of what a moderator has on the map (D202) — the proposal they picked, the
+ * other proposal or the landmark it is paired with. The map freezes what was picked; this says what
+ * changed under it and who changed it, so the surface can explain and lock rather than morph. `byMe`
+ * lets it clear quietly after the moderator's own act. A landmark is named by the actor of its last
+ * audited act only when that act explains its state — a removal at or after the row's, or an edit (a
+ * move is one). A change no person made (a catalog drop or an ETL write, which leave no audit row; a
+ * merge the ETL ran) names nobody, never whoever touched the row before it.
+ */
+export const reviewState = query({
+  args: {
+    requestIds: v.array(v.id('waterBodyRequests')),
+    landmarkId: v.optional(v.id('bodyLandmarks')),
+  },
+  handler: async (ctx, { requestIds, landmarkId }) => {
+    const me = await requireRole(ctx, 'moderator');
+    if (requestIds.length > 2) throw new ConvexError('A review holds at most two requests');
+    const actor = async (id: Id<'profiles'> | undefined) => {
+      const profile = id ? await ctx.db.get(id) : null;
+      return profile ? { by: profile.displayName, byMe: profile._id === me._id } : { byMe: false };
+    };
+    const requests = [];
+    for (const requestId of requestIds) {
+      const r = await ctx.db.get(requestId);
+      if (!r) {
+        requests.push({ requestId, status: 'gone' as const });
+        continue;
+      }
+      if (r.status === 'open') {
+        requests.push({ requestId, status: 'open' as const, name: r.name ?? '' });
+        continue;
+      }
+      const answer = r.landmarkId ? await ctx.db.get(r.landmarkId) : null;
+      requests.push({
+        requestId,
+        status: r.status,
+        name: r.name ?? '',
+        ...(await actor(r.decidedByUserId)),
+        ...(answer ? { answeredWith: answer.name } : {}),
+      });
+    }
+    let landmark:
+      | {
+          removed: boolean;
+          name?: string;
+          point?: { lat: number; lng: number };
+          by?: string;
+          byMe: boolean;
+        }
+      | undefined;
+    if (landmarkId) {
+      const row = await ctx.db.get(landmarkId);
+      const last = await ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'bodyLandmark').eq('targetId', landmarkId),
+        )
+        .order('desc')
+        .first();
+      const removedAt = row?.removedAt;
+      const explains =
+        last !== null &&
+        (removedAt !== undefined
+          ? (last.action === 'remove' || last.action === 'promote_landmark') &&
+            last.createdAt >= removedAt
+          : last.action === 'edit_landmark');
+      landmark = row
+        ? {
+            removed: removedAt !== undefined,
+            name: row.name,
+            point: row.point,
+            ...(explains ? await actor(last.actorId) : { byMe: false }),
+          }
+        : { removed: true, byMe: false };
+    }
+    return { requests, ...(landmark ? { landmark } : {}) };
+  },
+});
+
+/**
  * Moderator: the lake editor's landmark proposals (D202) — this body's open `name_landmark` asks,
  * one row per place, oldest first. A place is a name *and* a spot (`groupLandmarkAsks`): two
  * skaters who named two different Long Points are two rows, each answered on its own (Greptile P1

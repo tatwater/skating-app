@@ -47,8 +47,8 @@ export function PossibleDuplicate({
   lookalikes: Lookalikes;
   busy?: boolean;
   /**
-   * Draw the spot with this lookalike. Which one, not where: the caller draws it from the row as it
-   * stands (`useRowReview`), so a lookalike decided or moved since the click shows as it is now.
+   * Draw the spot with this lookalike. Which one, not where: the caller freezes the pair from the row
+   * at the click (`pickReview`), and says so if a colleague decides or moves it since (`watchReview`).
    */
   onShow: (lookalike: Exclude<ReviewShow, 'spot'>) => void;
   /** Answer the proposal with this landmark — confirmed first, with an optional note the skaters read. */

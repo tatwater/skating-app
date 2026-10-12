@@ -10,7 +10,8 @@ import {
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useState } from 'react';
-import { type ReviewPoints, type ReviewShow, useRowReview } from '../../lib/reviewMarkers';
+import type { ReviewPoints, ReviewShow } from '../../lib/reviewMarkers';
+import { landmarkDrifted, locksRow, type PickedReview, pickReview } from '../../lib/reviewWatch';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -18,8 +19,14 @@ import { errorText, ToolCard } from './adminUi';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
 import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
+import { ReviewClosedNotice } from './ReviewClosedNotice';
+import { useReviewWatch } from './useReviewWatch';
 
 export type EditorLandmark = FunctionReturnType<typeof api.landmarks.listForEditor>[number];
+/** A skater's proposal as the card lists it (`openLandmarkRequestsForBody`). */
+type Proposal = FunctionReturnType<
+  typeof api.corpusRequests.openLandmarkRequestsForBody
+>['proposals'][number];
 
 type SetBanner = (banner: { tone: 'ok' | 'error'; text: string } | null) => void;
 
@@ -133,11 +140,12 @@ export function LandmarkTool({
   const [busy, setBusy] = useState(false);
   /** The proposal the drop form is answering — saving the landmark approves every ask for it. */
   const [answering, setAnswering] = useState<Id<'waterBodyRequests'> | null>(null);
-  /** The proposal on the map, and what of it — its spot, or its spot paired with a lookalike. */
-  const [reviewing, setReviewing] = useState<{
-    id: Id<'waterBodyRequests'>;
-    show: ReviewShow;
-  } | null>(null);
+  /**
+   * The proposal on the map, frozen at the click (`pickReview`): a colleague deciding what it is about
+   * says so and locks its rows (`useReviewWatch`), rather than the map changing under the moderator.
+   */
+  const [reviewing, setReviewing] = useState<PickedReview | null>(null);
+  const watch = useReviewWatch(reviewing);
   /** The corpus name the drop form is placing — saving the landmark marks it placed. */
   const [placingName, setPlacingName] = useState<Id<'corpusPlaceNames'> | null>(null);
   /** The corpus name being filed as another spelling, and the landmark chosen for it. */
@@ -211,16 +219,22 @@ export function LandmarkTool({
     }
   }, [placingName, corpusNames, answering, proposals]);
 
-  // What the map draws is rebuilt from the proposal's row as it stands (`useRowReview`), the request
-  // queue's rule: the proposal answered or declined leaves the map with the list; a pair's other end
-  // leaves when the row stops reporting it — decided, removed, or displaced by a nearer one. The same
-  // object across the query's re-emits, so the canvas moves when what it shows changes or the
-  // moderator clicks again — and handing it on again is a no-op for a state setter.
-  const reviewedRow = reviewing ? proposals?.find((p) => p.requestId === reviewing.id) : undefined;
-  const review = useRowReview(reviewedRow, reviewing?.show ?? 'spot', reviewing);
+  const showOnMap = (proposal: Proposal, show: ReviewShow) => {
+    const picked = pickReview(proposal.requestId, proposal, show);
+    setReviewing(picked);
+    onReview(picked.review);
+  };
+  const back = () => {
+    setReviewing(null);
+    onReview(null);
+  };
+  // The moderator's own answer needs no explaining: the review clears as the row does.
   useEffect(() => {
-    onReview(review);
-  }, [review, onReview]);
+    if (watch.kind !== 'mine') return;
+    setReviewing(null);
+    onReview(null);
+  }, [watch.kind, onReview]);
+  const locked = (id: string) => locksRow(reviewing, watch, id);
 
   const startEdit = (l: EditorLandmark) => {
     reset();
@@ -484,6 +498,10 @@ export function LandmarkTool({
         </div>
       ) : null}
 
+      {/* Outside the list: the proposal it is about may have left it. */}
+      {watch.kind === 'closed' ? (
+        <ReviewClosedNotice text={watch.text} backLabel="Back" onBack={back} />
+      ) : null}
       {proposals && proposals.length > 0 ? (
         <div className="flex flex-col gap-1 border-border border-t pt-2">
           <p className="text-sm">Named by skaters</p>
@@ -495,7 +513,7 @@ export function LandmarkTool({
                     type="button"
                     className="underline-offset-2 hover:underline"
                     title="Show on the map"
-                    onClick={() => setReviewing({ id: p.requestId, show: 'spot' })}
+                    onClick={() => showOnMap(p, 'spot')}
                   >
                     {p.name}
                   </button>
@@ -509,7 +527,7 @@ export function LandmarkTool({
                     <Button
                       variant="ghost"
                       size="xs"
-                      disabled={busy}
+                      disabled={busy || locked(p.requestId)}
                       onClick={() =>
                         void run(
                           () => approveRequest({ requestId: p.requestId }),
@@ -523,12 +541,13 @@ export function LandmarkTool({
                     <Button
                       variant={answering === p.requestId ? 'default' : 'ghost'}
                       size="xs"
+                      disabled={locked(p.requestId)}
                       onClick={() => {
                         reset();
                         setName(p.name);
                         setAnswering(p.requestId);
                         // The markers follow the proposal being added, never another one's.
-                        setReviewing({ id: p.requestId, show: 'spot' });
+                        showOnMap(p, 'spot');
                         onPlacePoint(p.coord);
                       }}
                     >
@@ -537,7 +556,7 @@ export function LandmarkTool({
                   )}
                   <ReasonDialog
                     trigger={
-                      <Button variant="ghost" size="xs">
+                      <Button variant="ghost" size="xs" disabled={locked(p.requestId)}>
                         Decline
                       </Button>
                     }
@@ -558,8 +577,8 @@ export function LandmarkTool({
                   <GoogleMapsLink coord={p.coord} />
                   <PossibleDuplicate
                     lookalikes={p}
-                    busy={busy}
-                    onShow={(show) => setReviewing({ id: p.requestId, show })}
+                    busy={busy || locked(p.requestId) || landmarkDrifted(reviewing, p.requestId, p)}
+                    onShow={(show) => showOnMap(p, show)}
                     onSamePlace={(landmarkId, note) =>
                       run(
                         () =>
