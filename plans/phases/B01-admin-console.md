@@ -356,6 +356,10 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   for one.
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
+  **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
+  `season`, `people`, `instruments`) over a shared `console.css` + `chrome.js`, with the README
+  carrying what each shows and what v1 leaves out. The signature is the **season tape** in the top
+  bar of every mode — the console's clock is the winter, not the time of day. Founder review next.
 
 ## §7 — The questions, and the founder's calls (2026-10-12)
 
