@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-⚪ **Scoped** 2026-10-12 · [plan](./phases/B01-admin-console.md)
+⚪ **Scoped** 2026-10-12 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an
@@ -811,10 +811,20 @@ and Instruments — every existing lever re-homed, none lost. *An operator opens
 knows what needs them, does it where they found it, and watches the machinery work.*
 
 #### Deferred
-- ❓ **The fifteen questions in the plan's §7** — the inbox/corpus split, task modes, run triggers vs. a runner, the cost ledger, season rollups, polygon editing, photo takedown, mute, seeding dev, sequencing, naming, the mobile bar
+- ❓ **Which season statistics the nightly rollup carries** (D220) — the plan's §10 list, three tiers; the founder picks
+- ⚪ **A hosted ETL runner** (GitHub Actions or a Fly machine over the R2 archives) — D218 builds the run vocabulary for it; its own decision when the laptop stops being the runner
+- ⚪ **Invoice entries for Anthropic and Zed** in the cost ledger (D219) — the table is shaped for them; typed in when the bills come
+- ⚪ **Client-side usage statistics** (sessions, map and lake views, search) — no instrumentation exists (D29); a product question first
+
+#### Ruled out
+- **Polygon editing and splitting a body** — D221; imported outlines are trusted, merge and sub-areas are the levers; trigger: a lake they cannot express
+- **Mute or a shadow state** — D222; restricting actions or sign-in is enough
+- **Computing season statistics at read time** — D220; nightly is cheaper and current enough
+- **A second admin app** — D37 stands
 
 #### Owed
-- The founder's answers to §7, then the wireframes (`skating-mockups/admin-console/`), then the `D#`s and the workstreams firmed up
+- The §10 statistics pick, then static wireframes per mode (`skating-mockups/admin-console/`, dark, 1440 × 900) reviewed before React
+- The dev inbox seed (§8 §2) — the founder's OK is given; the examples are the build's to invent
 - `planConventions.test.ts` accepts the `B` era (done in this phase's first commit)
 
 ## Phase B03 — The skater web app

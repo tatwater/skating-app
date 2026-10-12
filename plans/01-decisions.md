@@ -6740,7 +6740,169 @@ under the old rule.
 
 **Related:** D5, D201, A02 Decision 10, A09.
 
-*(D216–D231 are minted in other trees and arrive when they merge.)*
+## D216 — The admin surface is organized by what an operator is doing, not by table (B01)
+
+**2026-10-12, founder calls at the B01 kickoff.** Phase 07's `/admin` (D37) grew one nav item per
+feature until sixteen pages sat side by side with no relationship an operator could read; the
+dashboard counted four of a dozen queues, and the real workbench — the lake editor — was reached
+only by hand-off. The surface is rebuilt as **eight modes**, each a task: Overview, Inbox, Corpus,
+Body console, Machinery, Season, People, Instruments (`plans/phases/B01-admin-console.md` §5).
+
+- **A feature adds a lane inside a mode, never a nav item.** The rail is the eight modes and stays
+  the eight modes.
+- **A person-filed item is Inbox; a machine-found item is Corpus.** Flags, access reports, corpus
+  requests, place asks, drawn bodies and support tickets wait on a person and sit in the Inbox,
+  whose goal is zero. Intake reasons, duplicate groups, chord re-fits, the ETL's leftover place
+  names from the community's emails (loaded by a machine, nobody waiting) and the pre-ice pass are
+  Corpus — a backlog with "done" semantics per task, not a queue to empty.
+- **Every task completes where it is found.** A queue row opens its handler in the inspector. A
+  geometry ask (draw a bay, place a landmark, approve a drawn outline) opens **the one body
+  editor through a second door** — `/admin/body/$id?task=<id>` — which arms the tool, shows the
+  ask in the banner, and returns to the queue on save. One editor, two doors; never an embedded
+  copy.
+- **Everything links.** A lake, a person, a run, a flag, an audit row is a link to its console
+  page, and each console page lists what is asked of it.
+- **The console takes the viewport** like the report console (A10-6, D206): one shell, a rail,
+  resizable panes, a command palette, list keys, a status bar, in the same visual register. Desktop
+  is the focus; **mobile is reachable everywhere and optimized nowhere**, the map editor view-only
+  below `lg`.
+- **Names** — Body console, People, Machinery, Instruments — are provisional and cheap to change.
+- **Nothing is lost.** The plan's §1 table maps every lever that exists today to its new home;
+  the old routes redirect until that table is all 🟢.
+
+**Why:** the founder *is* the operator (D61), and "what needs me?" was unanswerable from the
+surface as built. Organizing by intent is the only shape that survives the next feature.
+
+**Related:** D37, D61, D179, D202, D206.
+
+## D217 — Operator access control is a capability map, read by both the client and the server (B01)
+
+**2026-10-12, founder call.** The admin-only line stays where D37 drew it — role-granting, PII
+(support), the constants — plus what later phases added (imports, seasons; now Machinery). But the
+line is encoded today as a list of route prefixes in the layout and a per-function `requireRole`
+call, and the two disagree in places (admin-only buttons drawn for moderators; read queries behind
+the write gate). The founder wants adjusting access to be easy going forward, so:
+
+- **One capability map in `@skating/core`**: a named capability (`inbox.support`, `people.role`,
+  `machinery.trigger`, `body.remove`, …) → the minimum role, with a comment saying why. The server
+  gates a function by capability (`requireCapability(ctx, 'people.role')`, built on `requireRole`),
+  the client asks the same map before drawing a control, and the rail hides a mode the caller can't
+  use. A control the server will refuse for this role is **never drawn**.
+- **Role model unchanged**: `member < moderator < admin`. The map is where the line moves when it
+  moves; nothing else changes.
+- A test holds every gated function to a capability in the map, so a new function can't gate
+  itself ad hoc.
+
+**Why:** two encodings of one rule drift (they already have). A map is one place to read the
+policy and one place to change it.
+
+**Related:** D37, D50, D57.
+
+## D218 — Every job says where it runs; the console triggers what it can and shows the command for the rest (B01)
+
+**2026-10-12, founder call.** No ETL runner in this phase — the corpus passes (`run-corpus.sh`,
+`run-canonical.sh`, the archive and enrichment loaders) keep running on the operator's machine
+against gigabytes of extracts. What changes is that the machinery is **visible and honest**:
+
+- **A registry of jobs**, each with where it runs (`convex` cron, `convex` on demand, `local`
+  CLI), its schedule or trigger, and its last run. A job Convex can run itself gets a **Trigger**
+  in the console (the standing and recurrence rollovers, region stats, the analytics rollup, an
+  imagery poll, a weather sweep, the catalog measure), with a dry-run where one exists. A local
+  job gets **instructions**: the exact command, copy-paste ready, with the campaign id and flags
+  filled in, and what to expect afterward.
+- **Every run has a scope** — `full-canonical`, `single-source`, `enrichment`, `seed`, `rollover`,
+  `archive` — stored on the row, so "a full re-import" vs. "a gap-fill from one source" is read,
+  not inferred from `kind` and `label`.
+- **Every run has a heartbeat and an event stream.** A loader that flushes progress stamps a
+  heartbeat; a run silent past its interval reads **stalled**, never *running*. Events are
+  timestamped lines a run page tails live, the Vercel-build-log feel; the local log file stops
+  being the only record.
+- **Crons are listed** — all thirty, with schedule, last outcome, next due, and whether the last
+  window was missed.
+
+A hosted runner (GitHub Actions `workflow_dispatch`, or a Fly machine reading archives from R2) is
+a separate decision: it moves the ETL's credentials and its 100 GB reads off the laptop, and the
+vocabulary above is built so it can land without a redesign.
+
+**Why:** the founder wants to watch the machinery work and catch a pipeline going wrong; today the
+only signals are a terminal that scrolled past and a row that says `running` after the process
+died.
+
+**Related:** D37, A06c §6.2, A06i, D214.
+
+## D219 — A cost ledger: every third party, every day, in its own unit, with dollars where a rate is known (B01)
+
+**2026-10-12, founder call.** Open-Meteo is metered today (calls and weighted calls per UTC day,
+D158); nothing else is. The founder wants running costs for **every** third party, with stand-in
+units where a dollar figure isn't derivable, and a place for the bills that arrive by invoice.
+
+- **One ledger table**, one row per provider per UTC day: the **native units** (requests, tokens
+  in and out, machine-minutes, bytes stored or egressed, emails sent, pushes sent) and, where a
+  rate is known, the **estimated dollars** and the rate used. Metered rows are written by the
+  meters (the existing Open-Meteo meter generalized; ORS; Anthropic from the extraction contract's
+  usage; Fly machine-minutes from the imagery pump; Resend and Expo from delivery; R2 from the
+  mirror; Convex and Vercel from whatever their APIs expose, else nothing).
+- **Invoice rows** are typed in on Machinery: provider, period, amount, note — for the bills
+  (Convex, Vercel, Clerk, Anthropic, Zed, …) when they come. Later; the table is shaped for them
+  from the start.
+- **Machinery reads it by provider; Season sums it by season.** Where a provider has only units,
+  the console shows the units and says so; it never invents a dollar.
+- **Nothing throttles on it.** The ledger counts (as the Open-Meteo meter does); the guards that
+  exist (`POLL_CAP`, `MAX_LIVE_MACHINES`, the ORS circuit breaker) stay where they are.
+
+**Why:** "what does a season cost" has one answer today (Open-Meteo call counts) and the real
+spend is spread over nine providers.
+
+**Related:** D158, D214, D35.
+
+## D220 — Season statistics are rolled up nightly per season, not computed at read time (B01)
+
+**2026-10-12, founder call.** A season is `seasonOf(now)`, derived and never stored
+(`packages/core/src/season.ts`); the ice watch (A06i) is the only season *record*. Computing the
+season's reports, contributors, most-reported lakes, bodies activated and removed, POIs added and
+fetch counts at read time would scan whole tables once a season; the founder chose the cheaper
+shape: **extend Phase 07-2's `metricSnapshots` rollup with a season key**, computed nightly by the
+existing cron, so the Season page reads a few hundred small rows. The change log comes live from
+the indexed audit table and the run rows, bounded by the season's dates. **Which statistics** is a
+founder pick from the plan's §10 list (the ones that will be read, not the ones that can be
+computed); until picked, the rollup carries the free tier only.
+
+**Why:** cost, and the founder said so; a nightly number is current enough for a season view.
+
+**Related:** D212, D213, Phase 07-2's metric channels.
+
+## D221 — Imported outlines are trusted; merge and sub-areas are the geometry levers (B01)
+
+**2026-10-12, founder call.** Polygon editing — vertices, splits — is **deferred indefinitely**.
+The body console's Shape tab offers **merge into** (`waterBodies.merge`, today reachable only from
+the duplicates page) and sub-areas by chord and freehand (D201); it does not edit the lake's own
+outline, and a body is never split into two. An operator-edited outline would need a mutation with
+consequences (area, bbox, interior point, weather cells, sub-area clipping, D215's re-fit, and a
+rule for surviving the next campaign), and no example yet needs it. **Trigger to revisit:** a
+specific lake whose imported outline is wrong in a way merge and a sub-area cannot express.
+
+**Related:** D5, D36, D201, D215.
+
+## D222 — Discipline is permissions, suspension, ban and role; photos gain a moderation axis; flagging is a permission (B01)
+
+**2026-10-12, founder calls.**
+
+- **No mute, no shadow state.** The levers are the per-action posting permissions (D57), the
+  bounty cap, suspend, ban (which locks sign-in), lift, and role grant/revoke (admin). *Blocking or
+  restricting users from certain actions, or from signing in at all, is enough control.* The
+  founder's earlier mention of "mute" is withdrawn.
+- **Photos get `moderationStatus`** (visible / hidden / removed, audited, restorable) — the one
+  flaggable thing with no lever. Takedown of a photo hides it everywhere it is attached.
+- **Restore exists.** `setModerationStatus('visible')` has had no caller since Phase 07; the Inbox
+  and People draw it.
+- **Flagging is a per-user permission** (`canFlag`, default on), switched off from People with a
+  reason, so one person cannot flood the queue; moderators are exempt.
+- Two edges fixed with it: a lapsed suspension resets `status` to active on the sweep (today it
+  only lifts at read time), and *Lift* is never offered on a deleting or deleted account.
+
+**Related:** D32, D37, D50, D57, D62.
+
+*(D223–D231 are minted in other trees and arrive when they merge.)*
 
 ## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
 
