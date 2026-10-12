@@ -60,7 +60,7 @@ export function AdminLayout() {
 }
 
 /** Paths only an admin may reach — a moderator is bounced back to the dashboard. */
-const ADMIN_ONLY_PREFIXES = ['/admin/support', '/admin/tuning', '/admin/imports'];
+const ADMIN_ONLY_PREFIXES = ['/admin/support', '/admin/tuning', '/admin/imports', '/admin/seasons'];
 
 interface NavItem {
   to: string;
@@ -92,6 +92,7 @@ const NAV: NavItem[] = [
   // D160's dark instrument. It has to be *reachable* to be an instrument at all — a page nobody can
   // navigate to is a page nobody judges the model from, which is the whole reason it was built.
   { to: '/admin/ice-calibration', label: 'Ice calibration' },
+  { to: '/admin/seasons', label: 'Seasons', adminOnly: true },
   { to: '/admin/support', label: 'Support', adminOnly: true },
   { to: '/admin/tuning', label: 'Tuning', adminOnly: true },
   { to: '/admin/imports', label: 'Imports', adminOnly: true },

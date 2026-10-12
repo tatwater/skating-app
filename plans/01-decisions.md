@@ -4812,6 +4812,10 @@ founder asked for over calendar-year invalidation.
 **Backfill last season on first build**, so the feature ships with a full scrubber rather than an empty
 one that fills over three weeks.
 
+**Amended 2026-10-06 (A06i, D214):** *"the cron notices and an operator acts"* now means an admin
+presses *Start imagery* once a season; from then the cuts run from Convex every six hours until the
+watch ends. The weather gate itself is unchanged, and its thresholds became editable settings (D213).
+
 **Related:** [D56](#d56--weather-driven-dynamic-hazard-decay--the-expanded-weather-since-variable-set), [D63](#d63--a-season-is-july-1--june-30-and-it-is-derived-rather-than-stored-a05a), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ---
@@ -6236,7 +6240,9 @@ properly crosses the walked shore is refused; one that only touches it (a click 
 meters past a corner) is a zero-width spike the clipper drops, not a crossing. The queue reuses
 A07b because a corpus-shaped table would have been a second queue with no second answer.
 
-**Related:** D60, D175, D179, D202, A02 Decision 10, A09.
+**Related:** D60, D175, D179, D202, D215, A02 Decision 10, A09.
+
+*Amended by D215 (2026-10-11): a re-derivation keeps the bay's water rather than the stored `side`, and a re-fit that changes the bay a lot waits for a moderator.*
 
 ## D202 — A place skaters steer by but do not skate is a landmark: a labeled point, never a sub-area (Named landmarks)
 
@@ -6584,3 +6590,133 @@ parking, access and inflow facts the contract had nowhere to put — "use these 
 corpus stronger, not just feed reports".
 
 **Related:** D3, D186, D196, D200, A06d.
+
+## D212 — The season checker announces an ice watch, never a season, one email a day (A06i)
+
+**Decided (2026-10-06, founder, after the first real opening).** The checker's verdict is a
+*monitoring window* — when we start watching the weather corpus-wide and when imagery is worth
+starting — and nothing it says may read as a skating season or as ice (D3). Its staff emails:
+
+1. **Ice Watch Has Begun** — the sentinels that fired, as a table of names and overnight lows (°F,
+   with °C in brackets), the rule that fired, how many ordinary lakes froze that night, what changes
+   now and what to expect next.
+2. **Time to Start Satellite Imagery** — the first night a **sentinel** reaches the imagery line
+   (20 °F by default), sent only if imagery has not been started.
+3. **Winter Has Set In Region-Wide** — how many ordinary lakes froze, which, and that this measures
+   air, not ice.
+4. **Ice Watch Has Ended**.
+
+**Never two on one day:** each fact is queued on the season row with what it measured, and the daily
+tick sends the oldest if nothing went out that New York day. Recipients are unchanged: every active
+moderator and admin, one message each.
+
+**Why:** the first email (*"Skating season winter-2026-27 has begun"*, 4 October) went out on a 31 °F
+night at two summit tarns with nobody skating, and said only *"Opened by: sentinel"* — nobody could
+tell which sentinel, how cold, or what to change. A claim the data cannot support is the D3 failure
+in a staff inbox before it is one in a skater's.
+
+**Related:** D3, D149, D161, D213, [`phase-A06i`](./phases/A06i-season-watch.md).
+
+## D213 — The watch's thresholds are versioned settings, previewed against every past season (A06i)
+
+**Decided (2026-10-06, founder).** Every knob of the season watch — the floor date, the freezing
+line, consecutive sentinel nights, the corpus and winter fractions, the imagery line, the thaw line
+and run, the sample size, the sentinel and pinned rosters — lives in `seasonWatchSettings` as
+versions; the highest is current and an admin saves a new one on `/admin/seasons`. Rules:
+
+- **A season keeps the version that opened it**, copied onto its row: tightening a threshold in
+  January cannot rewrite why October's watch began. Later facts (the imagery line, winter, the end)
+  are looked for under the current settings, from the recorded opening.
+- **Every edit is previewed** against every season back to 2016-17, through the same
+  `evaluateSeason` the cron runs, using the lows the watch now keeps (`seasonWatchSeries`) and
+  Open-Meteo's archive for seasons before it existed — beside admin-entered field dates (first and
+  last skated), so a rule can be judged by how far ahead of real skating it fires.
+- **A watch can be reset**: its row moves whole into `imageryIngestSeasonsSuperseded`, the weather
+  sweep and live imagery stand down, and the next tick decides again under the current settings;
+  the re-sent opening email names the notice it replaces.
+- **Roster entries are water-body ids**, following merges to their survivor; the defaults still
+  resolve by exact name and state when version 1 is seeded.
+
+**Why:** the defaults (one night at or below freezing at any sentinel after 1 October) fire in the
+first days of October nearly every year — 1 October 2025, 3 October 2026 — weeks before anyone
+skates, and the founder wanted to tune them with Matt against evidence rather than by editing
+constants blind. The preview is what keeps a stricter-sounding setting from doing the opposite of
+its label.
+
+**Related:** D3, D149, D212, [`phase-A06i`](./phases/A06i-season-watch.md).
+
+## D214 — Live imagery runs from Convex once started: a six-hourly catalog poll, Fly cuts, an index built by listing (A06i)
+
+**Decided (2026-10-06, founder).** After an admin presses *Start imagery*, Convex polls Earth Search
+every six hours for new Sentinel-2 L2A and Sentinel-1 GRD items over the mask extent, selects them
+with A06e's rules (moved to core) and queues each slot once, oldest first, at most 300 a poll — a
+capped poll advances its window only to the newest pass it queued, so nothing over the cap is lost.
+**One leased pump on a fixed 3-minute cron** is the only thing that touches Fly: it settles cuts in
+flight against the manifests in R2 (one retry; exit zero without a frame is *empty*, non-zero twice
+is *failed*), starts new ones only while imagery is running, up to `fan-out.sh`'s live-Machine cap
+and with its exact Machine configuration, and backs off half an hour when Fly or the archive is
+failing; a refused spawn spends no attempt, three in a row trip a breaker that reopens half-way
+(one probe) after the backoff, and a timed-out spawn is left in flight rather than refused. A
+second lease on a 10-minute cron rebuilds the index — `index/<season>.json`, and
+`index/latest.json` on turnover — by listing the bucket, whenever a frame has landed. Admins
+(not moderators) are emailed on a failure, a hit cap or missing configuration, at most once per
+kind per day.
+
+**Why:** a whole season cuts for about $1.50 of Fly compute (A06e), so the human-before-spend step
+D149 kept guarded almost nothing and cost a terminal session every few days. A poll rather than an
+orbit schedule because the moment that matters is when a processed granule reaches the catalog,
+which lags the pass by hours to a day on no schedule. Convex rather than GitHub Actions because the
+season row, the run history and the alerts already live there; what the cron cannot compute
+(`ogrinfo`'s mask extent and empty-tile survey) is published once per mask bake as
+`masks/<season>-search.json`. D148's condition holds: the Fly surface is one file (`lib/fly.ts`),
+and the CLIs stay for past seasons.
+
+**Why one pump on a fixed tick** (three review rounds of the build, 2026-10-06): separate
+self-rescheduling spawn and reconcile chains multiplied, each sized its batch from its own reading of
+live Machines — the overshoot `fan-out.sh` measured — and kept spawning after *Pause*; single pumps
+that scheduled their own next run then kept finding new ways to lose, stack or wedge it. A fixed
+cron tick cannot be lost or doubled, and one actor under a lease makes the cap, *Pause* and every
+backoff a single check.
+
+**Related:** D147, D148, D149, D213, [`phase-A06i`](./phases/A06i-season-watch.md).
+
+## D215 — A chord bay re-derived against a moved shore keeps its water, and a jump waits for a moderator (D201)
+
+D201 stores a bay as its mouth — two shore points, a `side` and a sagitta — and re-derives the
+outline whenever the lake's shoreline moves (a re-import whose footprint changed, a merge, a
+restore). The `side` is the moderator's click against the shore *as it was*; re-snapped to a new
+shore, the mouth line can pass that click, and the bay becomes the rest of the lake. How far the
+shore has to move is how far the click was from the mouth: a click deep in the bay survives almost
+anything, one just inside the mouth flips on a routine refinement. Founder call, 2026-10-11:
+
+- **The same water.** Each of the mouth's two regions is built into a bay exactly as a moderator's
+  mouth would be — chord or bow, clipped — and the re-derivation keeps the one most like the bay's
+  current outline (intersection over union: an outward bow makes the two builds overlap, so the
+  share each holds is not enough), never the one holding the old click. The rest of the lake is kept
+  only when it is more like the old bay; when the bay's own region cannot be built, the
+  answer is that region's refusal. A fresh `side` is stored on the open water kept (off the mouth
+  line, off any island), so the editor's click-based preview shows the same bay and saving from it
+  cannot make the flip real; the ends stay as drawn. Where the clipper cannot measure overlap
+  (near-coincident outlines), the old bay's own open-water point picks the region instead.
+- **A jump waits.** A re-fit more than half again bigger or a third smaller than the bay was, or
+  overlapping it less than half (it moved more than it stayed), is not applied unseen. While the old
+  outline still fits the lake it stays, re-clipped. Where it no longer fits, the re-fit is applied
+  only if it holds at least 80% of the old bay's surviving water (the old bay against the lake
+  itself) — measured, and never assumed when the clipper cannot measure it — and otherwise the old
+  outline fails as any unfit outline does. Either way the bay carries `mouthReview` (or, for the
+  last case, `mouthStale`), shown in the editor — which draws the mouth over a re-fitted outline but
+  not over a kept one; a review is cleared only by a moderator's mouth save, never by a later
+  re-import. The re-clip and a restore read one rule
+  (`chordRederivationPlan`), and write the mouth only when something changed.
+
+A moderator's own mouth — drawn, edited, saved — still picks its side by the click: that click is
+against the shore they are looking at.
+
+**Why:** a refined OSM outline, a source swap (OSM / NHD / 3DHP disagree by tens to hundreds of
+meters), a merge that adds an arm, a mouth point that re-snaps across a narrows, or a broken
+relation in one fetch can each move a mouth line past a click. A bay that silently became the
+whole lake would stamp every report on it; one that silently doubled would claim water nobody drew.
+Dev had no chord bays when this landed (all 128 were drawn or seeded), so nothing was re-derived
+under the old rule.
+
+**Related:** D5, D201, A02 Decision 10, A09.

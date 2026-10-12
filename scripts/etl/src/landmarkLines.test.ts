@@ -6,6 +6,7 @@ import {
   EXPORT_CLOCK_SLACK_MS,
   landmarkLines,
   matchedAtOf,
+  mustExportBodies,
   packLines,
   runIsComplete,
   summarySources,
@@ -33,6 +34,15 @@ describe('runIsComplete', () => {
     expect(runIsComplete(['VT', 'NH', 'ME', 'MA', 'NY'], ALL)).toBe(true);
     expect(runIsComplete(['vt'], ALL)).toBe(false);
     expect(runIsComplete(['vt', 'nh', 'me', 'ma'], ALL)).toBe(false);
+  });
+});
+
+describe('mustExportBodies', () => {
+  it('never lets a complete run match against the cache, which it would retire against', () => {
+    expect(mustExportBodies({ cached: true, refresh: false, complete: true })).toBe(true);
+    expect(mustExportBodies({ cached: true, refresh: false, complete: false })).toBe(false);
+    expect(mustExportBodies({ cached: true, refresh: true, complete: false })).toBe(true);
+    expect(mustExportBodies({ cached: false, refresh: false, complete: false })).toBe(true);
   });
 });
 

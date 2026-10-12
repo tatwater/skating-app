@@ -30,8 +30,8 @@
  * bucket it was built by listing.
  */
 
-import type { FrameBodyStats, IndexedFrame, SeasonIndex } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
+import type { FrameBodyStats, IndexedFrame, SeasonIndex } from './imageryArchive';
 
 /** One cut granule, as the Machine that cut it recorded. Producer-side only. */
 export interface FrameManifest {

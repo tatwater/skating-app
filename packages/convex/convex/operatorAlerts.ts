@@ -19,7 +19,11 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalQuery } from './_generated/server';
 import { clerkEmailForSubject } from './lib/clerkEmail';
+import { emailBlock, renderBlocksHtml, renderBlocksText } from './lib/emailBlocks';
 import { escapeHtml, sendEmail } from './lib/resend';
+import { literals } from './lib/validators';
+
+const STAFF_ROLES = ['moderator', 'admin'] as const;
 
 /**
  * Send one operator alert. `deepLinkPath` is appended to `WEB_APP_URL` to make the "Open in /admin"
@@ -68,10 +72,10 @@ export const send = internalAction({
  * action, while this stays a cheap indexed read that a mutation could also use.
  */
 export const staffSubjects = internalQuery({
-  args: {},
-  handler: async (ctx) => {
+  args: { roles: v.optional(v.array(literals(STAFF_ROLES))) },
+  handler: async (ctx, { roles }) => {
     const out: { subject: string; displayName: string; role: string }[] = [];
-    for (const role of ['moderator', 'admin'] as const) {
+    for (const role of roles ?? STAFF_ROLES) {
       const rows = await ctx.db
         .query('profiles')
         .withIndex('by_role', (q) => q.eq('role', role))
@@ -102,6 +106,13 @@ export const staffSubjects = internalQuery({
  * moderator. At operator scale the extra sends cost nothing, and `lib/resend` already takes one
  * address.
  *
+ * ## Blocks, and who
+ *
+ * `blocks` (A06i) carries headings, lists and tables, rendered once to HTML and once to aligned
+ * plain text (`lib/emailBlocks`); `lines` stays for a caller with only paragraphs. `roles` narrows
+ * the list — the live imagery job's alerts go to admins only (founder, 2026-10-06), since only an
+ * admin can act on a Fly or R2 credential.
+ *
  * ⚠ **Best-effort per recipient, never all-or-nothing.** One person's Clerk lookup failing must not
  * stop the rest of the list being told; the loop logs and continues, and the return value reports
  * what actually went out so a caller (or a log reader) can tell "nobody is configured" from "nobody
@@ -111,14 +122,16 @@ export const broadcastToStaff = internalAction({
   args: {
     subject: v.string(),
     heading: v.string(),
-    lines: v.array(v.string()),
+    lines: v.optional(v.array(v.string())),
+    blocks: v.optional(v.array(emailBlock)),
     deepLinkPath: v.string(),
+    roles: v.optional(v.array(literals(STAFF_ROLES))),
   },
   handler: async (
     ctx,
-    { subject, heading, lines, deepLinkPath },
+    { subject, heading, lines, blocks, deepLinkPath, roles },
   ): Promise<{ recipients: number; sent: number }> => {
-    const staff = await ctx.runQuery(internal.operatorAlerts.staffSubjects, {});
+    const staff = await ctx.runQuery(internal.operatorAlerts.staffSubjects, roles ? { roles } : {});
     if (staff.length === 0) {
       console.warn(`Operator broadcast skipped: no active staff — ${subject}`);
       return { recipients: 0, sent: 0 };
@@ -126,13 +139,16 @@ export const broadcastToStaff = internalAction({
 
     const base = process.env.WEB_APP_URL ?? '';
     const link = `${base}${deepLinkPath}`;
-    const bodyLines = lines.map((l) => `<p style="margin:0 0 8px">${escapeHtml(l)}</p>`).join('');
-    const html = `<div style="font-family:system-ui,sans-serif;max-width:520px">
+    const content = [
+      ...(lines ?? []).map((text) => ({ kind: 'paragraph' as const, text })),
+      ...(blocks ?? []),
+    ];
+    const html = `<div style="font-family:system-ui,sans-serif;max-width:560px">
       <h2 style="margin:0 0 12px">${escapeHtml(heading)}</h2>
-      ${bodyLines}
+      ${renderBlocksHtml(content)}
       <p style="margin:16px 0 0"><a href="${escapeHtml(link)}" style="color:#0b69ff">Open in /admin →</a></p>
     </div>`;
-    const text = `${heading}\n\n${lines.join('\n')}\n\nOpen: ${link}`;
+    const text = `${heading}\n\n${renderBlocksText(content)}\n\nOpen: ${link}`;
 
     let sent = 0;
     for (const person of staff) {

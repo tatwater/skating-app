@@ -98,6 +98,9 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `STRAVA_CLIENT_ID` · `STRAVA_CLIENT_SECRET` | ✅ | ⬜ | id no · secret **yes** |
 | `GOOGLE_PHOTOS_CLIENT_ID` · `GOOGLE_PHOTOS_CLIENT_SECRET` | ✅ 2026-09-28 | ⬜ | id no · secret **yes** |
 | `WEB_APP_URL` | ✅ the Vercel deployment URL | ⬜ the prod URL | no |
+| `IMAGERY_ARCHIVE_URL` | ⬜ owed — A06i live imagery; the same base as web's `VITE_IMAGERY_ARCHIVE_URL` | ⬜ | no |
+| `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_ENDPOINT` · `R2_BUCKET` | ⬜ owed — A06i lists `frames/` and writes `index/` in `skating-imagery` (`R2_BUCKET` defaults to it) | ⬜ | key id no · secret **yes** |
+| `FLY_API_TOKEN` · `FLY_IMAGE` · `FLY_APP` · `FLY_REGION` | ⬜ owed — A06i spawns cut Machines; `FLY_IMAGE` is the pinned cutter image, `FLY_APP`/`FLY_REGION` default to `skating-imagery`/`sjc` | ⬜ | token **yes** |
 | `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 
 ### 2b. Mobile — EAS environments (`development`, `preview`, `production`) and local `apps/mobile/.env.local`

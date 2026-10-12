@@ -193,8 +193,12 @@ function LakeEditor() {
                   name: s.name,
                   polygon: s.polygon as GeoJSON.Geometry,
                   centroid: s.centroid,
-                  // A stale mouth is not the bay's edge any more — drawing it would say it was.
-                  ...(s.mouth && !s.mouthStale ? { mouth: s.mouth } : {}),
+                  // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
+                  // until a moderator checks it, is the mouth of a bay whose old outline was kept
+                  // (D215): it describes the re-fit, not the edge it would be drawn on.
+                  ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
+                    ? { mouth: s.mouth }
+                    : {}),
                 })),
               putIns: putIns ?? [],
               parkingAreas: access?.parking ?? [],
@@ -875,6 +879,7 @@ function SubAreaTool({
     systemDelistReason?: string;
     mouth?: SubAreaMouth;
     mouthStale?: string;
+    mouthReview?: { outcome: 'kept' | 'refitted'; note: string };
   }[];
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
@@ -1190,6 +1195,11 @@ function SubAreaTool({
                 {/* A mouth the moved shoreline no longer fits (D201) — Edit mouth is the fix. */}
                 {bay.mouthStale ? (
                   <span className="block text-warning text-xs">{bay.mouthStale}</span>
+                ) : null}
+                {/* A re-fit a moved shoreline asked a person to check (D215). The mouth is drawn
+                    over a re-fitted outline, not over a kept one; Edit mouth and save answers it. */}
+                {bay.mouthReview ? (
+                  <span className="block text-warning text-xs">{bay.mouthReview.note}</span>
                 ) : null}
                 {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
                     automatic: a bay's seaward edge is a judgment a skater can prove wrong by

@@ -3,9 +3,9 @@
  * in `landmarkSource.ts` (what a feature is), `landmarkMatch.ts` (which body it belongs to, what is
  * one place) and `landmarkCorpus.ts` (the community's names), all at full coverage.
  *
- *   pnpm --filter @skating/etl landmarks                       # all five states
- *   pnpm --filter @skating/etl landmarks VT NH                 # some
- *   pnpm --filter @skating/etl landmarks --refresh-bodies      # re-export the body outlines
+ *   pnpm --filter @skating/etl landmarks                       # all five states (re-exports the bodies)
+ *   pnpm --filter @skating/etl landmarks VT NH                 # some (reuses the cached bodies)
+ *   pnpm --filter @skating/etl landmarks VT --refresh-bodies   # some, against fresh outlines
  *   pnpm --filter @skating/etl landmarks --refresh             # re-run osmium
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *
@@ -20,7 +20,9 @@
  *
  * Bodies are matched **here**, against `landmarks:listBodyGeometry` exported once to
  * `.scratch/landmarks/bodies.ndjson` (~45 MB, every listed body's outline), not per point in a
- * mutation. The export is cached; `--refresh-bodies` re-reads it after a campaign moves bodies.
+ * mutation. A run of every state always re-exports it, since its lines retire what it does not place
+ * and a shore redrawn since the cache would read as landmarks gone (`mustExportBodies`); a partial
+ * run reuses the cache unless `--refresh-bodies`.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -42,7 +44,7 @@ import { EXTRACT_SOURCES } from './archive';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
 import { gnisColumnIndexes, gnisTextPath } from './gnisSource';
 import { applyCorpus, corpusNameRecords, parseMentions } from './landmarkCorpus';
-import { landmarkLines, runIsComplete } from './landmarkLines';
+import { landmarkLines, mustExportBodies, runIsComplete } from './landmarkLines';
 import { BodyIndex, type MatchBody, placeLandmarks } from './landmarkMatch';
 import {
   dedupeOsmById,
@@ -213,7 +215,16 @@ async function main(): Promise<void> {
   }
 
   mkdirSync(SCRATCH, { recursive: true });
-  if (!existsSync(BODIES) || args.includes('--refresh-bodies')) exportBodies();
+  const complete = runIsComplete(selected, ALL_STATES);
+  if (
+    mustExportBodies({
+      cached: existsSync(BODIES),
+      refresh: args.includes('--refresh-bodies'),
+      complete,
+    })
+  ) {
+    exportBodies();
+  }
   const bodies = await loadBodies();
   const index = new BodyIndex(bodies);
   log(`${bodies.length.toLocaleString()} listed bodies indexed`);
@@ -287,9 +298,9 @@ async function main(): Promise<void> {
     perBody.push(landmarks.length);
     for (const l of landmarks) byKind[l.kind] = (byKind[l.kind] ?? 0) + 1;
   }
-  // Complete on a run of every state; whether its sources vouch for that is the deployment's call,
-  // against the last load it accepted (`landmarks.importBatch`, from `summary.bySource`).
-  const complete = runIsComplete(selected, ALL_STATES);
+  // Complete on a run of every state (matched against a fresh export, above); whether its sources
+  // vouch for that is the deployment's call, against the last load it accepted
+  // (`landmarks.importBatch`, from `summary.bySource`).
   const lines = landmarkLines(
     bodies.map((b) => b.id),
     byBody,

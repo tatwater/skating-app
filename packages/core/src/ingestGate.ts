@@ -32,7 +32,7 @@
  * one weather series should not stall a season.
  */
 
-import { COMPLETE_DAY_MIN_HOURS, localStampAt } from './weatherDay';
+import { approximateUtcOffsetSeconds, COMPLETE_DAY_MIN_HOURS, localStampAt } from './weatherDay';
 
 /** A day's low at one sample site. */
 export interface DailyLow {
@@ -75,6 +75,19 @@ export interface GateOptions {
   thawC?: number;
   /** Consecutive all-thawed days before ingest stops. */
   thawRunDays?: number;
+  /**
+   * Consecutive nights at or below {@link GateOptions.freezeC} **at one sentinel** before that
+   * sentinel opens the season (A06i §1). One — a single cold night — is the rule D149 shipped with;
+   * a larger number asks a summit to stay cold rather than merely dip. A night with no reading breaks
+   * the run, for the same reason a gap never counts as thaw: a missing series must not decide.
+   */
+  sentinelNights?: number;
+}
+
+/** One site's low on the night a rule fired, so a reader can see what was measured, not only that. */
+export interface SiteLow {
+  siteId: string;
+  lowC: number;
 }
 
 /**
@@ -123,11 +136,39 @@ export function dailyLowsFromHourly(
     .map(([date, d]) => ({ date, minTempC: d.min }));
 }
 
+/** One site's object in an Open-Meteo `hourly=temperature_2m&timeformat=unixtime&timezone=auto` answer. */
+export interface OpenMeteoHourlyRow {
+  /** The zone Open-Meteo resolved under `timezone=auto` — what makes a local day knowable. */
+  timezone?: string;
+  /** The offset at request time, not at any hour in the response; a fallback only. */
+  utc_offset_seconds?: number;
+  hourly?: { time?: (number | null)[]; temperature_2m?: (number | null)[] };
+}
+
+/**
+ * A site's local-day lows from its Open-Meteo hourly row ({@link dailyLowsFromHourly}), cut by the
+ * zone Open-Meteo resolved — or, without one, its request-time offset, or one from the longitude.
+ * The daily tick and the history fill (forecast and archive alike) both read through here, so the
+ * lows they store agree on where a day begins.
+ */
+export function dailyLowsFromOpenMeteo(
+  row: OpenMeteoHourlyRow | undefined,
+  lng: number,
+): DailyLow[] {
+  return dailyLowsFromHourly(
+    row?.hourly?.time ?? [],
+    row?.hourly?.temperature_2m ?? [],
+    typeof row?.timezone === 'string' && row.timezone.length > 0 ? row.timezone : null,
+    row?.utc_offset_seconds ?? approximateUtcOffsetSeconds(lng),
+  );
+}
+
 export const DEFAULT_FREEZE_C = 0;
 export const DEFAULT_CORPUS_FRACTION = 0.1;
 export const DEFAULT_WINTER_FRACTION = 0.5;
 export const DEFAULT_THAW_C = 0;
 export const DEFAULT_THAW_RUN_DAYS = 10;
+export const DEFAULT_SENTINEL_NIGHTS = 1;
 
 export interface GateWindow {
   /** First date ingest should look, or `null` if the season has not opened in this data. */
@@ -144,6 +185,31 @@ export interface GateWindow {
   closesOn: string | null;
   /** Why it opened — a sentinel freeze, a corpus-wide signal, or both on the same day. */
   openedBy: ('sentinel' | 'corpus')[];
+  /**
+   * What the opening night measured: every sentinel that fired, with its low on `opensOn`, and how
+   * many ordinary sites froze out of how many reported. `null` while the season has not opened.
+   *
+   * Carried so the staff email can say *which* sentinel and *how cold* (A06i) rather than the bare
+   * word `sentinel` — the first season-open email said only that, and nobody could tell what to tune.
+   */
+  opening: { sentinels: SiteLow[]; corpus: { frozen: number; reporting: number } } | null;
+  /**
+   * What the night winter established measured: the ordinary sites that froze, coldest first, out of
+   * how many reported. `null` while winter has not established.
+   */
+  winter: { frozen: SiteLow[]; reporting: number } | null;
+}
+
+const DAY_MS = 86_400_000;
+
+/** `YYYY-MM-DD` shifted by whole days, in UTC — dates here are labels, not instants. */
+export function addDaysIso(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Coldest first, then by id, so a table of them reads the same on every render. */
+function byLow(a: SiteLow, b: SiteLow): number {
+  return a.lowC === b.lowC ? a.siteId.localeCompare(b.siteId) : a.lowC - b.lowC;
 }
 
 /** Every distinct date across the sites, ascending. */
@@ -218,24 +284,34 @@ function lowsOn(sites: readonly SiteSeries[], date: string, index: LowIndex): Ma
 export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions = {}): GateWindow {
   const freezeC = options.freezeC ?? DEFAULT_FREEZE_C;
   const corpusFraction = options.corpusFraction ?? DEFAULT_CORPUS_FRACTION;
-  const winterFraction = options.winterFraction ?? DEFAULT_WINTER_FRACTION;
-  // `thawC` / `thawRunDays` are read by `thawClose`, which owns the closing half — see below.
+  const sentinelNights = Math.max(1, Math.floor(options.sentinelNights ?? DEFAULT_SENTINEL_NIGHTS));
+  // `winterFraction` is read by `winterOnOrAfter`, `thawC` / `thawRunDays` by `thawClose`.
 
   const sentinels = sites.filter((s) => s.sentinel);
   const others = sites.filter((s) => !s.sentinel);
   const dates = allDates(sites);
   const index = indexLows(sites);
 
+  /** Whether `siteId` was at or below freezing on `date` and each of the `nights − 1` nights before. */
+  const coldRun = (siteId: string, date: string): boolean => {
+    const byDate = index.get(siteId);
+    for (let back = 0; back < sentinelNights; back++) {
+      const low = byDate?.get(addDaysIso(date, -back));
+      if (low === undefined || low > freezeC) return false;
+    }
+    return true;
+  };
+
   let opensOn: string | null = null;
   const openedBy: GateWindow['openedBy'] = [];
+  let opening: GateWindow['opening'] = null;
 
   for (const date of dates) {
     const lows = lowsOn(sites, date, index);
 
-    const sentinelFroze = sentinels.some((s) => {
-      const low = lows.get(s.siteId);
-      return low !== undefined && low <= freezeC;
-    });
+    const fired: SiteLow[] = sentinels
+      .filter((s) => coldRun(s.siteId, date))
+      .map((s) => ({ siteId: s.siteId, lowC: lows.get(s.siteId) as number }));
 
     // The corpus signal needs sites that actually reported. Dividing by the roster rather than by the
     // respondents would let a day of missing data read as "hardly anything froze".
@@ -243,15 +319,28 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
     const frozen = reporting.filter((s) => (lows.get(s.siteId) as number) <= freezeC);
     const corpusFired = reporting.length > 0 && frozen.length / reporting.length >= corpusFraction;
 
-    if (sentinelFroze || corpusFired) {
+    if (fired.length > 0 || corpusFired) {
       opensOn = date;
-      if (sentinelFroze) openedBy.push('sentinel');
+      if (fired.length > 0) openedBy.push('sentinel');
       if (corpusFired) openedBy.push('corpus');
+      opening = {
+        sentinels: fired.sort(byLow),
+        corpus: { frozen: frozen.length, reporting: reporting.length },
+      };
       break;
     }
   }
 
-  if (opensOn === null) return { opensOn: null, winterFrom: null, closesOn: null, openedBy: [] };
+  if (opensOn === null) {
+    return {
+      opensOn: null,
+      winterFrom: null,
+      closesOn: null,
+      openedBy: [],
+      opening: null,
+      winter: null,
+    };
+  }
 
   // ⚠ **Ice-out can only follow ice-in, and skipping this step loses whole winters.**
   //
@@ -263,22 +352,55 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   // So closing is measured from the date the *region* froze: a majority of ordinary sites on one day.
   // Opening takes almost anything (10%) because being early is cheap; this takes a majority because
   // being wrong here throws away the season.
-  let winterFrom: string | null = null;
-  for (const date of dates) {
-    if (date < opensOn) continue;
+  const established = winterOnOrAfter(sites, opensOn, options);
+  const winterFrom = established?.date ?? null;
+  const winter: GateWindow['winter'] = established
+    ? { frozen: established.frozen, reporting: established.reporting }
+    : null;
+  if (winterFrom === null) {
+    return { opensOn, winterFrom: null, closesOn: null, openedBy, opening, winter: null };
+  }
+
+  return {
+    opensOn,
+    winterFrom,
+    closesOn: thawClose(sites, winterFrom, options),
+    openedBy,
+    opening,
+    winter,
+  };
+}
+
+/**
+ * The first night on or after `from` on which at least `winterFraction` of the **ordinary** sites
+ * that reported were at or below freezing — winter established region-wide — with the sites that
+ * froze, coldest first.
+ *
+ * Split out of {@link ingestWindow} for the live watch (A06i): a season already open under one set
+ * of settings looks for winter from its *recorded* opening date, not from wherever a re-run of the
+ * opening rule would land under today's settings — which, after a stricter edit, could be later or
+ * nowhere, and winter would then never be found for a season that is plainly in it.
+ */
+export function winterOnOrAfter(
+  sites: readonly SiteSeries[],
+  from: string,
+  options: GateOptions = {},
+): { date: string; frozen: SiteLow[]; reporting: number } | null {
+  const freezeC = options.freezeC ?? DEFAULT_FREEZE_C;
+  const winterFraction = options.winterFraction ?? DEFAULT_WINTER_FRACTION;
+  const others = sites.filter((s) => !s.sentinel);
+  const index = indexLows(sites);
+  for (const date of allDates(sites)) {
+    if (date < from) continue;
     const lows = lowsOn(others, date, index);
-    const reporting = [...lows.values()];
-    if (
-      reporting.length > 0 &&
-      reporting.filter((l) => l <= freezeC).length / reporting.length >= winterFraction
-    ) {
-      winterFrom = date;
-      break;
+    const frozen = [...lows]
+      .filter(([, low]) => low <= freezeC)
+      .map(([siteId, lowC]) => ({ siteId, lowC }));
+    if (lows.size > 0 && frozen.length / lows.size >= winterFraction) {
+      return { date, frozen: frozen.sort(byLow), reporting: lows.size };
     }
   }
-  if (winterFrom === null) return { opensOn, winterFrom: null, closesOn: null, openedBy };
-
-  return { opensOn, winterFrom, closesOn: thawClose(sites, winterFrom, options), openedBy };
+  return null;
 }
 
 /**
