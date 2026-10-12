@@ -51,7 +51,10 @@ describe('PossibleDuplicate', () => {
     expect(onSamePlace).not.toHaveBeenCalled();
     await userEvent.type(screen.getByRole('textbox'), 'The causeway end.');
     await userEvent.click(screen.getByRole('button', { name: 'Answer with this landmark' }));
-    expect(onSamePlace).toHaveBeenCalledWith('lm1', 'The causeway end.');
+    expect(onSamePlace).toHaveBeenCalledWith(
+      { landmarkId: 'lm1', name: 'Long Point', point: landmark.point },
+      'The causeway end.',
+    );
   });
 
   it('holds Same place while a write is in flight', () => {
@@ -91,7 +94,11 @@ describe('Same place, while the row moves under it (Greptile P1 on #88)', () => 
     rerender(view(nearer));
     expect(screen.getByRole('dialog')).toHaveTextContent('2.1 mi away');
     await userEvent.click(screen.getByRole('button', { name: 'Answer with this landmark' }));
-    expect(onSamePlace).toHaveBeenCalledWith('lm1', '');
+    // The landmark it named, as it showed it: the server refuses it if it has moved or been renamed.
+    expect(onSamePlace).toHaveBeenCalledWith(
+      { landmarkId: 'lm1', name: 'Long Point', point: landmark.point },
+      '',
+    );
     // Closed, the next dialog is about the row as it stands.
     await userEvent.click(screen.getByRole('button', { name: 'Same place' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('0.3 mi away');

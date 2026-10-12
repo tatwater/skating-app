@@ -635,15 +635,18 @@ export const approve = mutation({
     note: v.optional(v.string()),
     /**
      * For a landmark ask: the landmark the moderator says it is — a possible duplicate confirmed
-     * ("it's Grand Isle"), at a spot the same-place rule would not have joined. It must carry the
-     * asked-for name and be this lake's own.
+     * ("it's Grand Isle"), at a spot the same-place rule would not have joined — and the name and
+     * point they saw it by. It must carry the asked-for name, be this lake's own, and still stand
+     * there under that name.
      */
-    landmarkId: v.optional(v.id('bodyLandmarks')),
+    sameAs: v.optional(
+      v.object({ landmarkId: v.id('bodyLandmarks'), name: v.string(), point: latLng }),
+    ),
   },
-  handler: async (ctx, { requestId, note, landmarkId }) => {
+  handler: async (ctx, { requestId, note, sameAs }) => {
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
-    if (landmarkId !== undefined && request.kind !== 'name_landmark') {
+    if (sameAs !== undefined && request.kind !== 'name_landmark') {
       throw new ConvexError('Only a landmark request is answered by a landmark');
     }
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
@@ -707,8 +710,8 @@ export const approve = mutation({
           // before the ask, and needs it to exist by the name asked for.
           // By name *and* place: a Long Point across the lake answers nobody who marked this one —
           // unless the moderator, looking at both on the map, says it does.
-          const landmark = landmarkId
-            ? await namedByModerator(ctx, body._id, request, landmarkId)
+          const landmark = sameAs
+            ? await namedByModerator(ctx, body._id, request, sameAs.landmarkId, sameAs)
             : await namedLandmark(ctx, body._id, landmarkAskOf(request));
           if (!landmark) {
             throw new ConvexError(

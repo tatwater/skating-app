@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The `-` prefix keeps this file out of the generated route tree (`routeFileIgnorePrefix`).
@@ -105,6 +106,7 @@ const drawn = () => JSON.parse(screen.getByTestId('map').textContent ?? 'null');
 beforeEach(() => {
   for (const key of Object.keys(queryResults)) delete queryResults[key];
   reviewArgs.length = 0;
+  useMutation.mockImplementation(() => async () => undefined);
   queryResults.queueCount = { count: 3, capped: false };
   queryResults.reviewState = { requests: [] };
   queryResults['listQueue:open'] = [
@@ -194,5 +196,29 @@ describe('the request queue’s review', () => {
     expect(reviewArgs.at(-1)).toBe('skip');
     expect(drawn()).toEqual({ ask: lakeSpot });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('the request queue’s Same place', () => {
+  it('keeps the dialog open with the server’s reason when the answer is refused', async () => {
+    const reason = '"Long Point" has moved since you looked at it. Cancel and look again.';
+    // As the client receives it: the sentence in `data`, the transport's wrapping in `message`.
+    const refused = new ConvexError(reason);
+    refused.message = `[CONVEX M(corpusRequests:approve)] [Request ID: x] Server Error\nUncaught ConvexError: ${reason}\n  Called by client`;
+    useMutation.mockImplementation(() => async () => {
+      throw refused;
+    });
+    queryResults['listQueue:open'] = [
+      {
+        ...proposal('reqA', near),
+        similarLandmark: { landmarkId: 'lmF', name: 'Long Point', point: far, meters: 33_000 },
+      },
+    ];
+    render(<RequestQueue />);
+    fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
+    const dialog = screen.getByRole('dialog');
+    expect(await within(dialog).findByText(reason)).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('[CONVEX');
   });
 });

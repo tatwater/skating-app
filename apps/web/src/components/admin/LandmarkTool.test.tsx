@@ -1,5 +1,6 @@
 import type { Id } from '@skating/convex/dataModel';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { calls, refusal, useMutation } = vi.hoisted(() => {
@@ -274,7 +275,14 @@ describe('LandmarkTool', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({
       name: 'approve',
-      args: { requestId: 'req1', landmarkId: 'lm-Long Point' },
+      args: {
+        requestId: 'req1',
+        sameAs: {
+          landmarkId: 'lm-Long Point',
+          name: 'Long Point',
+          point: { lat: 44.36, lng: -73.21 },
+        },
+      },
     });
     // Answered by this moderator: the proposal leaves the list, and its markers leave the map quietly.
     queryResults.openLandmarkRequestsForBody = { proposals: [], more: false };
@@ -477,6 +485,41 @@ describe('LandmarkTool', () => {
     expect(onReview).toHaveBeenCalledTimes(shown + 1);
     expect(onReview.mock.lastCall?.[0]).toEqual(first);
     expect(onReview.mock.lastCall?.[0]).not.toBe(first);
+  });
+
+  it('keeps Same place open with the server’s reason when the landmark moved since you looked', async () => {
+    queryResults.openLandmarkRequestsForBody = {
+      proposals: [
+        {
+          requestId: 'req1',
+          name: 'Long Point',
+          coord: { lat: 44.31, lng: -73.21 },
+          askers: 1,
+          reportIds: [],
+          createdAt: 0,
+          similarLandmark: {
+            landmarkId: 'lm-Long Point',
+            name: 'Long Point',
+            point: { lat: 44.36, lng: -73.21 },
+            meters: 5_560,
+          },
+        },
+      ],
+      more: false,
+    };
+    const { onResult } = renderTool();
+    fireEvent.click(screen.getByRole('button', { name: 'Same place' }));
+    const reason = '"Long Point" has moved since you looked at it. Cancel and look again.';
+    // As the client receives it: the sentence in `data`, the transport's wrapping in `message`.
+    const refused = new ConvexError(reason);
+    refused.message = `[CONVEX M(corpusRequests:approve)] [Request ID: x] Server Error\nUncaught ConvexError: ${reason}\n  Called by client`;
+    refusal.next = refused;
+    fireEvent.click(await screen.findByRole('button', { name: 'Answer with this landmark' }));
+    // The dialog stays open and says why in the server's own words — not the transport's.
+    const dialog = screen.getByRole('dialog');
+    expect(await within(dialog).findByText(reason)).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('[CONVEX');
+    expect(onResult).toHaveBeenCalledWith({ tone: 'error', text: reason });
   });
 
   it('says when more proposals wait than the card holds (Greptile P2 on #84)', () => {

@@ -189,14 +189,25 @@ export function LandmarkTool({
     if (armed) onArm(false);
   };
 
-  const run = async (write: () => Promise<unknown>, ok: string) => {
+  /**
+   * A write, held (`busy`) while in flight, its outcome on the banner. `rethrow` hands a refusal on to
+   * a dialog that stays open to show it — as the server's own sentence, since the dialog shows an
+   * error's `message` and a ConvexError's is the transport's.
+   */
+  const run = async (
+    write: () => Promise<unknown>,
+    ok: string,
+    { rethrow = false }: { rethrow?: boolean } = {},
+  ) => {
     setBusy(true);
     try {
       await write();
       onResult({ tone: 'ok', text: ok });
       return true;
     } catch (err) {
-      onResult({ tone: 'error', text: errorText(err) });
+      const text = errorText(err);
+      onResult({ tone: 'error', text });
+      if (rethrow) throw new Error(text);
       return false;
     } finally {
       setBusy(false);
@@ -597,15 +608,18 @@ export function LandmarkTool({
                     busy={busy || locked(p.requestId)}
                     stale={landmarkDrifted(reviewing, p.requestId, p)}
                     onShow={(show) => showOnMap(p, show)}
-                    onSamePlace={(landmarkId, note) =>
+                    // Rethrown: a refusal (moved since you looked) keeps the dialog open with its
+                    // reason, as the request queue's does.
+                    onSamePlace={(sameAs, note) =>
                       run(
                         () =>
                           approveRequest({
                             requestId: p.requestId,
-                            landmarkId,
+                            sameAs,
                             ...(note ? { note } : {}),
                           }),
                         `“${p.name}” answered with the landmark already there.`,
+                        { rethrow: true },
                       )
                     }
                   />

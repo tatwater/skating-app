@@ -707,19 +707,74 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
       /near that spot/,
     );
     await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: cedar }),
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: cedar, name: 'Cedar Island', point: far },
+      }),
     ).rejects.toThrow(/doesn't carry the name/);
     await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: other }),
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: other, name: 'Long Point', point: at },
+      }),
     ).rejects.toThrow(/not on this lake/);
     // Taken off the map since the row was drawn: said so, not "not on this lake".
     await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: gone }),
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: gone, name: 'Long Point', point: far },
+      }),
     ).rejects.toThrow(/taken off the map/);
-    await mod.as.mutation(api.corpusRequests.approve, { requestId: ask, landmarkId: known });
+    // Moved since the moderator looked: refused, so the answer is the landmark they checked, where
+    // they checked it (Greptile P1 on #88).
+    const elsewhere = { lat: 0.65, lng: 0.6 };
+    await t.run((ctx) => ctx.db.patch(known, { point: elsewhere }));
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: known, name: 'Long Point', point: far },
+      }),
+    ).rejects.toThrow(/has moved since you looked/);
+    // Renamed since, even to a name that still carries the asked-for one: refused too — the skaters
+    // read the name the dialog showed.
+    await t.run((ctx) => ctx.db.patch(known, { name: 'Long Pt', aliases: ['Long Point'] }));
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: ask,
+        sameAs: { landmarkId: known, name: 'Long Point', point: elsewhere },
+      }),
+    ).rejects.toThrow(/"Long Point" has been renamed "Long Pt" since you looked/);
+    await mod.as.mutation(api.corpusRequests.approve, {
+      requestId: ask,
+      sameAs: { landmarkId: known, name: 'Long Pt', point: elsewhere },
+    });
     expect(await t.run((ctx) => ctx.db.get(ask))).toMatchObject({
       status: 'approved',
       landmarkId: known,
+    });
+  });
+
+  test('a far landmark never answers a proposal a landmark at its own spot now answers', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const [ask] = await seedAsks(t, lake, skater.id, at, 1);
+    if (!ask) throw new Error('no ask');
+    const known = await seedLandmark(t, lake, 'Long Point', { point: far });
+    vi.setSystemTime(NOW + 60_000);
+    // Added at the skaters' spot while a Same place dialog for the far one was open — without the
+    // request attached, so the ask is still open, and the dialog never showed it.
+    const here = await seedLandmark(t, lake, 'Long Point', { point: at });
+    const sameAsFar = { landmarkId: known, name: 'Long Point', point: far };
+    await expect(
+      mod.as.mutation(api.corpusRequests.approve, { requestId: ask, sameAs: sameAsFar }),
+    ).rejects.toThrow(/"Long Point" now stands at this spot/);
+    // The one at the spot answers it — named by the moderator or not.
+    await mod.as.mutation(api.corpusRequests.approve, {
+      requestId: ask,
+      sameAs: { landmarkId: here, name: 'Long Point', point: at },
+    });
+    expect(await t.run((ctx) => ctx.db.get(ask))).toMatchObject({
+      status: 'approved',
+      landmarkId: here,
     });
   });
 
@@ -737,7 +792,10 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
       }),
     );
     await expect(
-      mod.as.mutation(api.corpusRequests.approve, { requestId: activate, landmarkId: landmark }),
+      mod.as.mutation(api.corpusRequests.approve, {
+        requestId: activate,
+        sameAs: { landmarkId: landmark, name: 'Long Point', point: at },
+      }),
     ).rejects.toThrow(/Only a landmark request/);
   });
 

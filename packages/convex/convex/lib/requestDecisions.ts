@@ -396,6 +396,13 @@ export async function namedByModerator(
   waterBodyId: Id<'waterBodies'>,
   request: Doc<'waterBodyRequests'>,
   landmarkId: Id<'bodyLandmarks'>,
+  /**
+   * What the moderator saw — the name and point their *Same place* dialog showed. A landmark moved or
+   * renamed since is refused: the answer must be the landmark they checked, as they checked it
+   * (Greptile P1 on #88). Compared here, at the write, because no client watch sees every way a row
+   * changes.
+   */
+  seen: { name: string; point: LatLng },
 ): Promise<Doc<'bodyLandmarks'>> {
   const landmark = await ctx.db.get(landmarkId);
   if (!landmark || landmark.waterBodyId !== waterBodyId) {
@@ -408,9 +415,28 @@ export async function namedByModerator(
       `"${landmark.name}" has been taken off the map — it answers nothing now.`,
     );
   }
+  if (landmark.point.lat !== seen.point.lat || landmark.point.lng !== seen.point.lng) {
+    throw new ConvexError(
+      `"${landmark.name}" has moved since you looked at it. Cancel and look again.`,
+    );
+  }
+  if (landmark.name !== seen.name) {
+    throw new ConvexError(
+      `"${seen.name}" has been renamed "${landmark.name}" since you looked at it. Cancel and look again.`,
+    );
+  }
   if (!landmarkNamesMeet(requestNames(request), [landmark.name, ...landmark.aliases])) {
     throw new ConvexError(
       `"${landmark.name}" doesn't carry the name that was asked for ("${request.name}").`,
+    );
+  }
+  // A landmark now answers the ask at its own spot (added without the request attached, or by a
+  // catalog run) — one the dialog never showed, since a row offers *Same place* only while none does.
+  // That one is the answer; the far one the dialog named is no longer the question.
+  const here = await namedLandmark(ctx, waterBodyId, landmarkAskOf(request));
+  if (here && here._id !== landmark._id) {
+    throw new ConvexError(
+      `"${here.name}" now stands at this spot — cancel, and approve the proposal with it instead.`,
     );
   }
   return landmark;

@@ -59,8 +59,16 @@ export function PossibleDuplicate({
    * at the click (`pickReview`), and says so if a colleague decides or moves it since (`watchReview`).
    */
   onShow: (lookalike: Exclude<ReviewShow, 'spot'>) => void;
-  /** Answer the proposal with this landmark — confirmed first, with an optional note the skaters read. */
-  onSamePlace: (landmarkId: Id<'bodyLandmarks'>, note: string) => Promise<unknown>;
+  /**
+   * Answer the proposal with this landmark — confirmed first, with an optional note the skaters read.
+   * The one the dialog named, *by the name and point it showed*: the server refuses a landmark moved
+   * or renamed since (Greptile P1 on #88), whatever the client saw of it. A refusal rejects, so the
+   * dialog stays open with the reason.
+   */
+  onSamePlace: (
+    sameAs: { landmarkId: Id<'bodyLandmarks'>; name: string; point: LatLng },
+    note: string,
+  ) => Promise<unknown>;
 }) {
   const { similarLandmark: live, similarProposal: proposal } = lookalikes;
   /**
@@ -73,8 +81,9 @@ export function PossibleDuplicate({
   );
   const landmark = confirming ?? live;
   /**
-   * The very landmark the open dialog names, moved or renamed since it opened: the answer goes by id,
-   * so it would name a place the dialog no longer describes. It waits; the next dialog reads it anew.
+   * The very landmark the open dialog names, moved or renamed since it opened, as far as this row can
+   * see: the confirm waits and says why, before the server would refuse it. The next dialog reads it
+   * anew.
    */
   const changed =
     confirming !== null &&
@@ -121,7 +130,12 @@ export function PossibleDuplicate({
             }
             onOpenChange={(open) => setConfirming(open ? (live ?? null) : null)}
             confirmDisabled={busy || changed}
-            onConfirm={(note) => onSamePlace(landmark.landmarkId, note)}
+            onConfirm={(note) =>
+              onSamePlace(
+                { landmarkId: landmark.landmarkId, name: landmark.name, point: landmark.point },
+                note,
+              )
+            }
           />
         </p>
       ) : null}

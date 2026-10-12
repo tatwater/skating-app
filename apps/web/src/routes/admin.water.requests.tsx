@@ -242,13 +242,13 @@ function RequestQueue() {
                       busy={answering || locked(row._id)}
                       stale={landmarkDrifted(picked, row._id, row)}
                       onShow={(show) => setPicked(pickReview(row._id, row, show))}
-                      onSamePlace={async (landmarkId, note) => {
+                      onSamePlace={async (sameAs, note) => {
                         if (answering) return;
                         setAnswering(true);
                         try {
                           await approve({
                             requestId: row._id as Id<'waterBodyRequests'>,
-                            landmarkId,
+                            sameAs,
                             ...(note ? { note } : {}),
                           });
                           setBanner({
@@ -256,8 +256,11 @@ function RequestQueue() {
                             text: 'Answered with the landmark already there.',
                           });
                         } catch (err) {
-                          setBanner({ tone: 'error', text: messageOf(err) });
-                          throw err;
+                          const text = messageOf(err);
+                          setBanner({ tone: 'error', text });
+                          // The dialog stays open on the refusal and shows `message` — the server's
+                          // own sentence, not the transport's.
+                          throw new Error(text);
                         } finally {
                           setAnswering(false);
                         }
