@@ -370,6 +370,18 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   on the target and a dotted track. The pass is the Body console in **three skins over one base**
   (`pass/body.html?skin=a|b|c`: Instrument, Table, Plate) so the founder picks per element; the
   chosen set becomes the token and component sheet, then a decision.
+  **Pass 3 (2026-10-13).** The founder restated the brief — simple white, black and grayscale,
+  not the boards' blue; take the weights, when a label inverts, the chart and map styles, solid
+  versus dotted versus connecting lines, corner ticks, accent color only for data — and asked for
+  three or more variations to pick from per element. They are in
+  `skating-mockups/admin-variants/` (README: the per-frame notes, the axis table, the open flags):
+  **V1 Field** (no filled panels; rules, slugs, brackets, space; white lit), **V2 Plates**
+  (corner-marked plates, the wireframes' tables, meters under every value; ice lit), **V3 Trace**
+  (corner-dot plates joined by stepped traces that encode sources → machinery → queues; a dashed
+  region around what waits on a person; inverted value boxes; sliders), each on the Overview and
+  the Body console drawn from the real Mascoma record. Open: white or ice for selection; rail
+  names under the type floor; the single display word. Next: the founder's picks → one merged
+  system → the token sheet → a decision.
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
