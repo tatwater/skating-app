@@ -354,6 +354,22 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
 - **Mobile.** The rail collapses to a bottom bar; lists and inspectors stack; the map in the body
   console is view-only below `lg`; nothing is *unreachable* on a phone, and nothing is optimized
   for one.
+- **The visual register (founder calls, 2026-10-12).** The restrained end of the HUD boards,
+  with two or three signature devices used consistently, decoration only where it encodes state.
+  **Saira, Saira Semi Condensed and Martian Mono** debut on the web here (the A10 reservation is
+  lifted for the admin console). **Neutral grayscale ink** — not the boards' blue cast — with the
+  A10 accents by meaning only: ice for geography and selection, amber for needs-you, red for
+  safety and failure. **Motion** on appearance, interaction and live data; nothing ambient;
+  reduced-motion respected. **Type floor:** 14 px body, 12 px assistive, 10 px kickers, labels
+  and numerals. The inspiration is one project, *The Table* (Behance 95170531): eleven frames
+  saved with the founder's notes in `skating-mockups/admin-console/inspiration/` and indexed in
+  that folder's README; the vocabulary taken from it — tracked small-caps labels with a kicker
+  above and a hairline or dotted leader beneath, inverted-block section titles, hollow-circle
+  bullets with the selected row bright, panels bracketed by L-lines with endpoint dots, hollow
+  markers on thin charts, segmented meters, boxed readouts, the map as gray plates with a reticle
+  on the target and a dotted track. The pass is the Body console in **three skins over one base**
+  (`pass/body.html?skin=a|b|c`: Instrument, Table, Plate) so the founder picks per element; the
+  chosen set becomes the token and component sheet, then a decision.
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
