@@ -396,8 +396,13 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   rail is the FontAwesome set (tachograph-digital, inbox, cabinet-filing, map-location-dot,
   calendar-days, users, engine, sliders); **the clouded-pass override is in scope for B01**.
   **V5** (`overview-v5` + `?go=1`, `body-v5`, `season-v5`, `imagery-v5`) is that read applied;
-  the dock has three states and an inspector-card twin. Next: the founder's read of V5 → the
-  token sheet → decisions (the register; the override).
+  the dock has three states and an inspector-card twin. **The founder's read of V5 (2026-10-14):**
+  go-mode stays (every G-binding is the ordinary key chip turned blue, the spent G greyed; the
+  tape, search, avatars and status bar dim too); the Season page's word stays *Winter 26–27*;
+  the admin's thumb lands on skipped passes only with the *Imagery* tab open; machinery colors:
+  red = will not recover without a person, amber = late or retrying; the layer menu stays open at
+  desktop width (a collapsed state exists for narrow maps and is never used inside a mode). Next:
+  the token sheet → decisions (the register; the override).
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
