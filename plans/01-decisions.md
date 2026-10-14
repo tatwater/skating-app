@@ -6913,7 +6913,79 @@ specific lake whose imported outline is wrong in a way merge and a sub-area cann
 
 **Related:** D32, D37, D50, D57, D62.
 
-*(D223–D231 are minted in other trees and arrive when they merge.)*
+## D223 — The admin console's visual register: a field, not panels; grayscale ink; blue means a transient mode (B01)
+
+**2026-10-13 and 14, founder calls**, after three compositions and two merges in
+`skating-mockups/admin-variants/` (its README carries every pick and the renders).
+
+- **A field, not panels.** No filled cards and no card borders; structure is thin rules, inverted
+  slugs with a leader to an end square, an L-bracket on a chart, dotted row separators and space.
+  Corner marks appear nowhere by default. One display word per page (the mode, the body's name,
+  the winter), set in the page and never in the navbar. Tables are kicker heads over a rule with
+  dotted rows; the audit feed is one live, infinite table that fades at its foot.
+- **Neutral ink.** Grayscale with no blue cast. Accents only where the data means them: **ice** is
+  water, geography and the ice watch; **amber** waits on a person; **red** will not recover
+  without a person. For machinery that is the whole rule — red for a stalled run with no
+  heartbeat or a failed job whose retries are spent, amber for late or retrying — because *failed*
+  cannot read as "the cron will try again".
+- **Blue is the color of a transient mode.** The task chip, the mode bar over the map, the ask the
+  task belongs to, and go-mode's chips are ice; ordinary selection (a lane, a list row, a plate)
+  stays white. Chosen after a side-by-side of white against blue on the Body console.
+- **Temperature is one scale**, from the app's color plate: cold cyan, brightest under 20 °F (the
+  good news), neutral gray at freezing, amber to orange above it. The sentinel matrix and anything
+  else that colors a temperature use it; a low is never "warned" in amber.
+- **Type.** Saira for everything typeset, Martian Mono for values; 14 px body, 12 px assistive,
+  10 px kickers; the rail's names are 8 px Saira Medium at 10 % tracking under the icons
+  (FontAwesome Sharp Light: tachograph-digital, inbox, cabinet-filing, map-location-dot,
+  calendar-days, users, engine, sliders), which the founder checked in Figma.
+- **The navbar lockup** is the season light on the left, the tape, a solid *Day n* badge on the
+  right; every tick on the tape explains itself on hover, including last winter's first skate.
+- **Keyboard.** No key chips on cards. `G` is a mode of its own: the page, the tape, the search,
+  the avatars and the status bar dim, every destination shows its ordinary key chip turned blue
+  with the spent `G` greyed and the finishing letter lit, `Esc` leaves. Keys look like keys
+  everywhere, at one size.
+- **The map.** The grid is hundredths of a degree, labeled at the edges, filling the panel; marks
+  are glyphs in colored squares with a white bracket on hover, a straight leader to a padded slug
+  over the name; the layer menu is pill toggles on plates with every key, open at desktop width,
+  collapsing to toggles under about 600 px and never inside a mode; a mode's to-do is a numbered
+  list aligned to the mode bar, with a real paste field.
+- **Words.** *Bodies*, never *lakes*, wherever the thing counted may be a bay, a dammed river or
+  the sea. The circuit (what feeds what, drawn as stepped traces between plates) lives on the
+  Season page with uneven columns, not on the Overview.
+
+**Why:** two earlier passes re-skinned the wireframe skeleton and read as a generic dark
+dashboard; what the founder recognized in the reference boards was the void and the rules, not the
+cards. The register is written down so the component sheet (deferred for now) and every later
+page start from the same calls rather than from the renders.
+
+**Related:** D3, D206, D216, [`phase-B01`](./phases/B01-admin-console.md) §6,
+`skating-mockups/admin-variants/README.md`.
+
+## D224 — An admin can show a clouded or clipped pass to skaters, per frame, from the Imagery tab (B01)
+
+**2026-10-14, founder.** In scope for B01.
+
+- A pass the cutter skipped (cloud over the threshold, a clipped footprint) stays drawn on the
+  freeze-up stepper for everyone, short and dim with its reason — as today. An admin may mark it
+  **shown anyway**: a per-frame, per-band override carrying who and when. The app then treats the
+  pass as landable and keeps the cloud figure in the caption; the console draws its mark amber,
+  names the blame beside the caption with a link to the audit row, and offers one action, *hide
+  from skaters again*. Every toggle writes one audit row.
+- **Where the thumb may rest.** Only with the Body console's *Imagery* tab open does the admin's
+  thumb land on a skipped pass (so the frame can be judged before the call); with any other tab the
+  dock behaves exactly like the app's stepper. The *Imagery* tab also carries the pass table —
+  every pass this winter, its band, its cloud figure, and whether skaters see it and by whose call.
+- Never a body-wide or season-wide rule, and never a changed threshold: the cutter's judgment
+  stands; the override is one frame an operator has looked at.
+
+**Why:** the cloud threshold is a heuristic over a whole footprint, and an operator looking at the
+frame can know better — thin high cloud over a clear shore is the common case. Skaters lose
+nothing, because the caveat stays on the caption (D84: the caption names what is on the map), and
+the tab rule keeps the admin's own map honest by default.
+
+**Related:** D84, D214, D216, D223, A06e §3.4 (the stepper's blocked stops).
+
+*(D225–D231 are minted in other trees and arrive when they merge.)*
 
 ## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
 

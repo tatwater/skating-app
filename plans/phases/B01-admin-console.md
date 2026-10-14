@@ -2,7 +2,7 @@
 
 > **Status:** scoped, 2026-10-12. Nothing built. This doc is the record of the founder's brief, the
 > inventory of what `/admin` does today, the diagnosis, the information architecture, the founder's
-> calls (§7, minted as **D216–D222**), the workstreams (§8), and the season-statistics pick (§10,
+> calls (§7, minted as **D216–D222**; the look's D223–D224 came 2026-10-14), the workstreams (§8), and the season-statistics pick (§10,
 > all of tiers 1 and 2). The raw inventory is
 > [`research/admin-surface-inventory-2026-10-12.md`](../research/admin-surface-inventory-2026-10-12.md).
 > Next: static wireframes per mode in `skating-mockups/admin-console/`.
@@ -555,7 +555,9 @@ for every new query, mutation and index, `fast-check` for the rollup's season bu
 D216 (organized by intent; Inbox vs. Corpus; one editor, two doors; the shell; mobile), D217 (the
 capability map), D218 (where each job runs; scope, heartbeat, event stream; no runner), D219 (the
 cost ledger), D220 (nightly season rollup; the statistics are a §10 pick), D221 (outlines trusted;
-merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation axis; `canFlag`).
+merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation axis; `canFlag`). **Added 2026-10-14:** D223 (the visual register: a field, not panels; grayscale ink;
+blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
+to skaters, per frame, from the Imagery tab).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
