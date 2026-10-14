@@ -401,8 +401,21 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   tape, search, avatars and status bar dim too); the Season page's word stays *Winter 26–27*;
   the admin's thumb lands on skipped passes only with the *Imagery* tab open; machinery colors:
   red = will not recover without a person, amber = late or retrying; the layer menu stays open at
-  desktop width (a collapsed state exists for narrow maps and is never used inside a mode). Next:
-  the token sheet → decisions (the register; the override).
+  desktop width (a collapsed state exists for narrow maps and is never used inside a mode). D223 and D224 followed the same day.
+  **V5, the other modes (2026-10-14):** the six pages the admin-hud round drew are redrawn in
+  the register — `inbox-v5`, `corpus-v5`, `bodies-v5`, `machinery-v5`, `people-v5`,
+  `instruments-v5` over `v5-pages.css` — with the display word as the page's *subject* (the
+  lane, the task, the campaign, the person, the section), lanes as the Season page draws them,
+  one-left-edge rows, inspectors as blocks over dotted rules with the stable action bar (primary
+  wears the corner dots; destructive is a hairline box until armed). Four explorations for the
+  founder before the build: the ⌘K palette and the *Bodies* lookup (`palette-v5`, `lookup-v5`),
+  three more inbox handlers and inbox zero (`handlers-v5`: a drawn body, a support ticket with
+  the note and reply, a place ask with a lookalike), the cost ledger with the invoice form
+  (`ledger-v5`, D219), and the mobile bar (`mobile-v5`, D216). Open: green for *allowed* on
+  People (round three) versus D223's palette (drawn white); the palette's actions in one list
+  via ⇥. The Inbox was also rebuilt in **Paper** (the *Gli* file, *Admin Dashboard* page) over a
+  token set, as the trial of iterating there instead of by PNG; what ports and what does not is
+  in the admin-variants README.
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
