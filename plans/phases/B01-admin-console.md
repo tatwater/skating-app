@@ -380,8 +380,16 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   (corner-dot plates joined by stepped traces that encode sources → machinery → queues; a dashed
   region around what waits on a person; inverted value boxes; sliders), each on the Overview and
   the Body console drawn from the real Mascoma record. Open: white or ice for selection; rail
-  names under the type floor; the single display word. Next: the founder's picks → one merged
-  system → the token sheet → a decision.
+  names under the type floor; the single display word. **The founder's read, same day:** V1's
+  no-filled-panels field is the base; grayscale with white highlights first (a blue comparison
+  kept alongside); the circuit belongs on the Season page, not the Overview; V3's navbar lockup
+  and lake header; V1's cards with V2's machinery matrix; V3's sentinel chart with an ice-ramp
+  matrix; V2's POI squares; the layer menu, the bay-mode to-do and the matrix need deeper work;
+  8 px rail names are fine under icons; the big page word lives in the page, never the navbar.
+  **V4** (`overview-v4`, `body-v4` + `?blue=1`, `season-v4`, `explore-v4`) is that merge, with
+  the aerial layer docking the app's freeze-up stepper and an admin override for clouded passes
+  (a product addition; needs a D# if it stays). Next: the founder's read of V4 → the token
+  sheet → a decision.
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
