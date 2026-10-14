@@ -388,8 +388,16 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   8 px rail names are fine under icons; the big page word lives in the page, never the navbar.
   **V4** (`overview-v4`, `body-v4` + `?blue=1`, `season-v4`, `explore-v4`) is that merge, with
   the aerial layer docking the app's freeze-up stepper and an admin override for clouded passes
-  (a product addition; needs a D# if it stays). Next: the founder's read of V4 → the token
-  sheet → a decision.
+  (a product addition; needs a D# if it stays). **The founder's read of V4 (2026-10-14):** blue
+  for transient modes (confirmed by the comparison); "bodies", never "lakes", for anything that
+  may be a bay or a river; the circuit stays on Season but with uneven columns; the Season page
+  keeps every lane and section of the wireframe; the matrix follows the temperature scale (cold
+  cyan → neutral → warm orange); no key hints on cards — `G` as a go-mode is the proposal; the
+  rail is the FontAwesome set (tachograph-digital, inbox, cabinet-filing, map-location-dot,
+  calendar-days, users, engine, sliders); **the clouded-pass override is in scope for B01**.
+  **V5** (`overview-v5` + `?go=1`, `body-v5`, `season-v5`, `imagery-v5`) is that read applied;
+  the dock has three states and an inspector-card twin. Next: the founder's read of V5 → the
+  token sheet → decisions (the register; the override).
 - **Wireframes first.** Before any React, a static HTML mockup per mode in
   `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
   **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
