@@ -328,8 +328,6 @@ describe('undo: a body’s identity and water (D226)', () => {
     expect(row?.meanDepthSource).toBe('operator');
   });
 
-  // The registry's reason rule names a mode `never` that `SATELLITE_IMAGERY_MODES` does not have
-  // (`off` is the withholding one), so this test passes a reason rather than asserting the rule.
   test('a satellite mode undoes to auto, and the undo of that puts "off" back', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -341,6 +339,10 @@ describe('undo: a body’s identity and water (D226)', () => {
 
     const back = await newestOn(t, 'waterbody', id);
     expect(back.undoesActionId).toBe(off._id);
+    // Putting `off` back withholds the link, so it asks why (D226).
+    await expect(mod.as.mutation(api.undo.run, { actionId: back._id })).rejects.toThrow(
+      /needs a reason/i,
+    );
     await mod.as.mutation(api.undo.run, { actionId: back._id, reason: 'the link misleads here' });
     expect((await body(t, id))?.satelliteImagery).toBe('off');
   });

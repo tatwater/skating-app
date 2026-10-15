@@ -128,6 +128,8 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: always,
     capability: 'inbox.drawnBody',
   },
+  // A boost value never takes anything away by itself; but a boost can wake a shelved body, and
+  // undoing that boost shelves it again — the handler asks a reason in that case (undoHandlersBody).
   set_curated_boost: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_reference_links: { undo: setPrev, takesAway: never, capability: 'body.identity' },
   set_water_body_name: { undo: setPrev, takesAway: never, capability: 'body.identity' },
@@ -141,13 +143,23 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: (standing) => standing !== 'active',
     capability: 'body.standing',
   },
-  activate_body: { undo: setPrev, takesAway: never, capability: 'body.standing' },
-  demote_body: { undo: setPrev, takesAway: always, capability: 'body.standing' },
+  // The machine's standing rows undo like a person's: the rule reads the standing put back.
+  activate_body: {
+    undo: setPrev,
+    takesAway: (standing) => standing !== 'active',
+    capability: 'body.standing',
+  },
+  demote_body: {
+    undo: setPrev,
+    takesAway: (standing) => standing !== 'active',
+    capability: 'body.standing',
+  },
   set_weather_sample_points: { undo: setPrev, takesAway: never, capability: 'body.water' },
   set_lake_depth: { undo: setPrev, takesAway: never, capability: 'body.water' },
   set_satellite_imagery: {
     undo: setPrev,
-    takesAway: (mode) => mode === 'never',
+    // `off` withholds the link (D70/D75); `auto` and `on` give it.
+    takesAway: (mode) => mode === 'off',
     capability: 'body.water',
   },
 

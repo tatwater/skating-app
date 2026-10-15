@@ -53,6 +53,10 @@ describe('the undo registry (D226)', () => {
     expect(UNDO_POLICY.set_posting_permission.takesAway(true)).toBe(false);
     expect(UNDO_POLICY.set_standing.takesAway('dormant')).toBe(true);
     expect(UNDO_POLICY.set_standing.takesAway('active')).toBe(false);
+    expect(UNDO_POLICY.set_satellite_imagery.takesAway('off')).toBe(true);
+    expect(UNDO_POLICY.set_satellite_imagery.takesAway('auto')).toBe(false);
+    expect(UNDO_POLICY.demote_body.takesAway('active')).toBe(false);
+    expect(UNDO_POLICY.activate_body.takesAway('dormant')).toBe(true);
   });
 
   test('the owed register names a workstream and a plan for each', () => {
