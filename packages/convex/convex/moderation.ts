@@ -17,6 +17,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import { requireCapability, requireRole } from './lib/auth';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
@@ -100,7 +101,7 @@ async function derivePostVisibility(
       if (member && member.moderationStatus === 'visible') return;
     }
     await ctx.db.patch(postId, { moderationStatus: 'hidden' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: audit.actorId,
       action: 'hide',
       targetType: 'post',
@@ -117,7 +118,7 @@ async function derivePostVisibility(
       .first();
     if (last?.metadata?.derivedFromReportId === undefined) return;
     await ctx.db.patch(postId, { moderationStatus: 'visible' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: audit.actorId,
       action: 'restore',
       targetType: 'post',
@@ -171,7 +172,7 @@ export async function authorRemoveReport(
   }
 
   await applyReportStatus(ctx, report, 'removed', audit);
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId: author._id,
     action: 'author_delete',
     targetType: 'report',
@@ -181,7 +182,7 @@ export async function authorRemoveReport(
     createdAt: now,
   });
   if (post && emptiesPost) {
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: author._id,
       action: 'author_delete',
       targetType: 'post',
@@ -217,7 +218,7 @@ export async function authorRemovePost(
     if (!report || report.moderationStatus === 'removed') continue;
     const memberPrior = report.moderationStatus;
     await applyReportStatus(ctx, report, 'removed', audit);
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: author._id,
       action: 'author_delete',
       targetType: 'report',
@@ -227,7 +228,7 @@ export async function authorRemovePost(
       createdAt: now,
     });
   }
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId: author._id,
     action: 'author_delete',
     targetType: 'post',
@@ -274,7 +275,7 @@ export const setModerationStatus = mutation({
         if (args.status !== 'visible') {
           if (report.moderationStatus !== 'visible') continue;
           await applyReportStatus(ctx, report, args.status, audit);
-          await ctx.db.insert('moderationActions', {
+          await writeAudit(ctx, {
             actorId: actor._id,
             action: ACTION_FOR_STATUS[args.status],
             targetType: 'report',
@@ -296,7 +297,7 @@ export const setModerationStatus = mutation({
             .first();
           if (last?.metadata?.cascadedFromPostId !== post._id) continue;
           await applyReportStatus(ctx, report, 'visible', audit);
-          await ctx.db.insert('moderationActions', {
+          await writeAudit(ctx, {
             actorId: actor._id,
             action: 'restore',
             targetType: 'report',
@@ -327,7 +328,7 @@ export const setModerationStatus = mutation({
       }
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: ACTION_FOR_STATUS[args.status],
       targetType: args.targetType,
@@ -372,7 +373,7 @@ export const resolveFlag = mutation({
     // `waterBodies.setPublicAccess`, which closes flags as a side effect of ruling on a lake.
     await closeFlag(ctx, flag, args.resolution, actor._id, now);
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: args.resolution === 'actioned' ? 'resolve_flag' : 'dismiss_flag',
       targetType: 'contentFlag',
@@ -790,7 +791,7 @@ async function auditUser(
   reason: string,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     targetType: 'user',

@@ -30,6 +30,7 @@ import {
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { syncCellsForParent } from '../subAreas';
+import { writeAudit } from './audit';
 import { syncWaterBodyCells } from './cellIndex';
 import { isListed } from './listing';
 import { bodyWeatherCell } from './sampling';
@@ -163,7 +164,7 @@ export async function transitionStanding(
   if (became === 'inactive') await dropWeatherMembership(ctx, body._id);
 
   if (became !== null && opts.audit !== false) {
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       ...(opts.actorId !== undefined ? { actorId: opts.actorId } : {}),
       action: became === 'active' ? 'activate_body' : opts.actorId ? 'set_standing' : 'demote_body',
       targetType: 'waterbody',

@@ -11,6 +11,7 @@ import { normalizeUsername, type TrustClass, type UserStatus } from '@skating/co
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import { requireCapability, requireRole } from './lib/auth';
 import { trustClassFor } from './lib/reputation';
 import { literals } from './lib/validators';
@@ -90,7 +91,7 @@ export const grantRole = mutation({
     if (!target) throw new ConvexError('User not found');
 
     await ctx.db.patch(userId, { role });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'grant_role',
       targetType: 'user',
@@ -117,7 +118,7 @@ export const revokeRole = mutation({
     if (!target) throw new ConvexError('User not found');
 
     await ctx.db.patch(userId, { role: 'member' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'revoke_role',
       targetType: 'user',

@@ -677,7 +677,8 @@ patch would skip all of that and leave derived state wrong.
 1. **`lib/audit.ts`, one writer.** `writeAudit(ctx, { action, target, reason, prev, next,
    undoes? })` replaces the 51 inserts. `prev` is typed per verb, so a writer whose inverse needs
    it does not compile without it.
-2. **An undo registry in core**, `packages/core/src/undoPolicy.ts`: for each of the 59 verbs, its
+2. **An undo registry**, `packages/convex/convex/lib/undoPolicy.ts` (beside `MODERATION_ACTIONS`;
+   History rows carry `canUndo` and `needsReason` from the server, so the client needs no copy): for each of the 59 verbs, its
    `inverse` (a verb, or `none` with the reason), whether it **takes something away** (D226's
    reason rule, which the reason dialog reads too), and the capability it needs (D217). A test
    holds the registry exhaustive over `MODERATION_ACTIONS`, as D217's test does for gated functions.

@@ -16,6 +16,7 @@ import { type HazardShape, hazardBbox, isPubliclyVisible, isValidHazardShape } f
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import { requireCapability, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
@@ -284,7 +285,7 @@ async function audit(
   reason: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     targetType: 'bodyFeature',

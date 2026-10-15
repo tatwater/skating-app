@@ -15,6 +15,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import {
   assertNotABayName,
@@ -53,7 +54,7 @@ async function audit(
   reason: string,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     targetType: 'corpusPlaceName',

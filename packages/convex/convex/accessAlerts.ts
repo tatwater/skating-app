@@ -50,6 +50,7 @@ import {
   query,
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
+import { writeAudit } from './lib/audit';
 import { requireCapability, requireContributor } from './lib/auth';
 import {
   ACCESS_ALERT_KINDS,
@@ -297,7 +298,7 @@ export const retract = mutation({
     });
 
     if (isModerator && !isAuthor) {
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: profile._id,
         action: 'retract_access_alert',
         targetType: 'accessAlert',
@@ -348,7 +349,7 @@ export const setOfficial = mutation({
       });
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: official ? 'pin_access_alert' : 'unpin_access_alert',
       targetType: 'accessAlert',

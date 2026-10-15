@@ -46,6 +46,7 @@ import type * as landmarks from "../landmarks.js";
 import type * as lib_accessLimits from "../lib/accessLimits.js";
 import type * as lib_activityConnections from "../lib/activityConnections.js";
 import type * as lib_apiMeter from "../lib/apiMeter.js";
+import type * as lib_audit from "../lib/audit.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authorView from "../lib/authorView.js";
 import type * as lib_autoFlag from "../lib/autoFlag.js";
@@ -99,6 +100,7 @@ import type * as lib_seasonWatchValidators from "../lib/seasonWatchValidators.js
 import type * as lib_sightingHazards from "../lib/sightingHazards.js";
 import type * as lib_standing from "../lib/standing.js";
 import type * as lib_storageBlobs from "../lib/storageBlobs.js";
+import type * as lib_undoPolicy from "../lib/undoPolicy.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as moderation from "../moderation.js";
 import type * as notificationDelivery from "../notificationDelivery.js";
@@ -175,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   "lib/accessLimits": typeof lib_accessLimits;
   "lib/activityConnections": typeof lib_activityConnections;
   "lib/apiMeter": typeof lib_apiMeter;
+  "lib/audit": typeof lib_audit;
   "lib/auth": typeof lib_auth;
   "lib/authorView": typeof lib_authorView;
   "lib/autoFlag": typeof lib_autoFlag;
@@ -228,6 +231,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sightingHazards": typeof lib_sightingHazards;
   "lib/standing": typeof lib_standing;
   "lib/storageBlobs": typeof lib_storageBlobs;
+  "lib/undoPolicy": typeof lib_undoPolicy;
   "lib/validators": typeof lib_validators;
   moderation: typeof moderation;
   notificationDelivery: typeof notificationDelivery;

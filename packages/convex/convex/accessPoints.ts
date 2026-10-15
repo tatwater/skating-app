@@ -58,6 +58,7 @@ import {
 } from './_generated/server';
 import { loadLiveAlertsForBody } from './accessAlerts';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessLimits';
+import { writeAudit } from './lib/audit';
 import { requireCapability, requireContributor } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
@@ -644,7 +645,7 @@ export const detachPhoto = mutation({
     await ctx.db.delete(accessPhotoId);
 
     if (isModerator && !isUploader) {
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: profile._id,
         action: 'remove',
         targetType: row.targetType === 'put_in' ? 'putIn' : 'parkingArea',
@@ -912,7 +913,7 @@ export const setOfficialParking = mutation({
       await linkParkingToBody(ctx, parkingAreaId, waterBodyId, false);
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_parking_area',
       targetType: 'parkingArea',
@@ -1016,7 +1017,7 @@ export const setPutInAccess = mutation({
     // case, where a stale `drive_up` outlives the measurement it came from.
     await recomputeAccessKind(ctx, putIn.waterBodyId);
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action:
         args.approachKindOverride || args.clearApproachOverride

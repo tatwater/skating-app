@@ -18,6 +18,7 @@ import { ConvexError, type Infer, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { postedAccess as postedAccessValidator } from './lib/validators';
 
@@ -110,7 +111,7 @@ export const setPostedAccess = mutation({
     const prev = doc.postedAccess;
     await patchTarget(ctx, target, next);
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_posted_access',
       targetType: target.type,

@@ -25,6 +25,7 @@ import {
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { writeAudit } from './audit';
 import { recomputeBodySummary } from './bodySummary';
 
 /**
@@ -199,7 +200,7 @@ export async function mergeHazards(
   // Every merge is audited, including the automatic ones — that is the whole reason auto-merge is
   // acceptable to ship. `actorId` is absent when the machine did it, because naming the creating
   // skater would record a member as having taken a moderation action they never took.
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     ...(actorId !== undefined ? { actorId } : {}),
     action: 'merge_hazards',
     targetType: 'hazard',
@@ -234,7 +235,7 @@ export async function unmergeHazard(
     const fresh = await ctx.db.get(survivor._id);
     if (fresh) await refreshMergedFootprint(ctx, fresh);
   }
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action: 'unmerge_hazards',
     targetType: 'hazard',

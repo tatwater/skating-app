@@ -3227,15 +3227,35 @@ export default defineSchema({
     targetId: v.string(),
     reason: v.string(), // required — accountability for appeals/reversals
     metadata: v.optional(v.any()), // e.g. prior/new state, mergedIntoId, suspendedUntil
+    /**
+     * Set when this row undoes an earlier one (D226, B01 §11). The undo is a new action with its own
+     * row — the audit log stays append-only — and History finds "undone by" through `by_undoes`.
+     * Equality reads only, so the unset value on every other row never matches (no sparse-index trap).
+     */
+    undoesActionId: v.optional(v.id('moderationActions')),
     createdAt: v.number(),
   })
     .index('by_target', ['targetType', 'targetId'])
+    .index('by_undoes', ['undoesActionId'])
     .index('by_actor', ['actorId'])
     // The 07-2 rollup's day slice (A05c). Auto-merge is the one mechanism that changes a row without a
     // human, and its unmerge rate is the only empirical check on the bar — which means counting merges
     // per day, which means reading this table by time. Without the index that is a scan of an
     // append-only audit log, i.e. the exact unbounded-growth shape the Phase 07-2 rule forbids.
     .index('by_created_at', ['createdAt']),
+
+  /**
+   * What an audited action replaced, when it is too big for the audit row (D226, B01 §11): a
+   * sub-area's previous polygon, a body's previous weather grid, and every row a body merge moved
+   * or deleted. Written in the same mutation as the action, read only by its undo, keyed by the
+   * audit row. `part` orders a payload split across rows (a merge of a busy body).
+   */
+  auditSnapshots: defineTable({
+    actionId: v.id('moderationActions'),
+    part: v.number(),
+    payload: v.any(),
+    createdAt: v.number(),
+  }).index('by_action', ['actionId', 'part']),
 
   supportTickets: defineTable({
     userId: v.optional(v.id('profiles')), // absent when the Clerk user has no profile row yet

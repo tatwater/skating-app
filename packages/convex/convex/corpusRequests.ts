@@ -59,6 +59,7 @@ import {
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
+import { writeAudit } from './lib/audit';
 import { getCurrentProfile, requireCapability, requireContributor } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { syncWaterBodyCells } from './lib/cellIndex';
@@ -1223,7 +1224,7 @@ async function admitCandidate(
   });
   const inserted = await ctx.db.get(id);
   if (inserted) await registerWeatherMembership(ctx, inserted, now);
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId: actor._id,
     action: 'set_included_by_request',
     targetType: 'waterbody',

@@ -35,6 +35,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
 import { insertBodyFeature } from './bodyFeatures';
+import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
@@ -770,7 +771,7 @@ async function audit(
   reason: string,
   metadata: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     // A recurrence row is a statement *about* a body feature's justification, so the audit targets the

@@ -24,6 +24,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
+import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { HIDE_SUPPRESS_METERS, isSuppressed } from './lib/putInSuppression';
 import { activateOnEvidence } from './lib/standing';
@@ -302,7 +303,7 @@ export const setOfficial = mutation({
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_put_in', // a dedicated verb — placing an official marker, not un-hiding one
       targetType: 'waterbody',
@@ -353,7 +354,7 @@ export const hide = mutation({
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'hide',
       targetType: 'waterbody',

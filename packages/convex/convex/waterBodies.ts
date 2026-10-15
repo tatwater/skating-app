@@ -79,6 +79,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { writeAudit } from './lib/audit';
 import {
   getCurrentProfile,
   requireCapability,
@@ -2663,7 +2664,7 @@ export const approve = mutation({
     // Sub-areas inherit the parent's listing (Decision 11), so every mutation that moves it has to
     // move theirs — a bay is only reachable while the lake it names is.
     await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'approved' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'approve_waterbody',
       targetType: 'waterbody',
@@ -2702,7 +2703,7 @@ export const remove = mutation({
       { removedAt: now, removedByUserId: actor._id, removalReason: args.reason },
       { actorId: actor._id, audit: false, now },
     );
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'remove',
       targetType: 'waterbody',
@@ -2742,7 +2743,7 @@ export const restore = mutation({
       now,
       extraPatch: { removedAt: undefined, removedByUserId: undefined, removalReason: undefined },
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'restore',
       targetType: 'waterbody',
@@ -2852,7 +2853,7 @@ export const setPublicAccess = mutation({
       }
     }
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_public_access',
       targetType: 'waterbody',
@@ -2943,7 +2944,7 @@ export const reject = mutation({
       listed: isListed({ ...body, reviewStatus: 'rejected' }),
     });
     await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'rejected' });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'reject_waterbody',
       targetType: 'waterbody',
@@ -3158,7 +3159,7 @@ export async function mergeBodyInto(
     // longer belong to it.
     await recomputeBodySummary(ctx, survivorId);
     await recomputeBodySummary(ctx, loserId);
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',
       targetType: 'waterbody',
@@ -3440,7 +3441,7 @@ export const setCuratedBoost = mutation({
       await transitionStanding(ctx, body, { curatedBoost }, { audit: false });
     }
     const after = await ctx.db.get(waterBodyId);
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_curated_boost',
       targetType: 'waterbody',
@@ -3489,7 +3490,7 @@ export const setReferenceLinks = mutation({
 
     const trimmed = links.map((link) => ({ label: link.label.trim(), url: link.url.trim() }));
     await ctx.db.patch(waterBodyId, { referenceLinks: trimmed });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_reference_links',
       targetType: 'waterbody',
@@ -3542,7 +3543,7 @@ export const setSatelliteImagery = mutation({
     await ctx.db.patch(waterBodyId, { satelliteImagery: mode === 'auto' ? undefined : mode });
     const after = satelliteImageryAvailable({ ...body, satelliteImagery: mode });
 
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_satellite_imagery',
       targetType: 'waterbody',
@@ -3605,7 +3606,7 @@ export const setWeatherSamplePoints = mutation({
     await ctx.db.patch(waterBodyId, {
       weatherSamplePoints: points.length > 0 ? points : undefined,
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_weather_sample_points',
       targetType: 'waterbody',
@@ -3728,7 +3729,7 @@ export const setDepth = mutation({
     if (Object.keys(patch).length === 0) return waterBodyId; // a save that touched nothing
 
     await ctx.db.patch(waterBodyId, patch);
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_lake_depth',
       targetType: 'waterbody',
@@ -3915,7 +3916,7 @@ export const setWaterBodyName = mutation({
         nameClaims: catalog.length > 0 ? catalog : undefined,
         searchText: searchTextFor(restored, aliasesFor(catalog, restored)),
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
         targetType: 'waterbody',
@@ -3951,7 +3952,7 @@ export const setWaterBodyName = mutation({
         nameClaims: next,
         searchText: searchTextFor(chosen, aliasesFor(next, chosen)),
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
         targetType: 'waterbody',
@@ -3981,7 +3982,7 @@ export const setWaterBodyName = mutation({
       nameClaims: next,
       searchText: searchTextFor(match.value, aliasesFor(next, match.value)),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_water_body_name',
       targetType: 'waterbody',
@@ -4031,7 +4032,7 @@ export const clearDepthOverride = mutation({
     patch.depthSourceNote = undefined;
 
     await ctx.db.patch(waterBodyId, patch);
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_lake_depth',
       targetType: 'waterbody',
@@ -5789,7 +5790,7 @@ export const dismissDuplicates = mutation({
     if (first === undefined) {
       throw new ConvexError('Nothing to dismiss — every body in this group is already merged');
     }
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'dismiss_duplicate',
       targetType: 'waterbody',
@@ -6243,7 +6244,7 @@ export const setIncludedByRequest = internalMutation({
     } else {
       await ctx.db.patch(key, { includedByRequest: included ? true : undefined });
     }
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actorUserId,
       action: 'set_included_by_request',
       targetType: 'waterbody',

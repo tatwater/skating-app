@@ -66,7 +66,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-
+import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
@@ -941,7 +941,7 @@ async function audit(
   reason: string,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
-  await ctx.db.insert('moderationActions', {
+  await writeAudit(ctx, {
     actorId,
     action,
     targetType: 'waterBodySubArea',
@@ -1390,7 +1390,7 @@ export const setCuratedBoost = mutation({
       minVisibleZoom: scores.minVisibleZoom,
       listed: subAreaListed(subArea, parent),
     });
-    await ctx.db.insert('moderationActions', {
+    await writeAudit(ctx, {
       actorId: actor._id,
       action: 'set_curated_boost',
       targetType: 'waterBodySubArea',
@@ -1945,7 +1945,7 @@ export const importSeed = internalMutation({
         retireInto: named,
         now,
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actorUserId,
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
@@ -2169,7 +2169,7 @@ export const importBaySubAreas = internalMutation({
         retireInto: named,
         now,
       });
-      await ctx.db.insert('moderationActions', {
+      await writeAudit(ctx, {
         actorId: actorUserId,
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
