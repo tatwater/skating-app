@@ -185,13 +185,14 @@ remove) or the person (posting permission, suspend, ban).
 
 ## §5 — The proposed information architecture
 
-Eight modes. The left rail lists them with a count where a count means work; `g` then a letter
+Nine modes (Reports added by D225, 2026-10-14). The left rail lists them with a count where a count means work; `g` then a letter
 jumps; `⌘K` opens the palette from anywhere.
 
 | Mode | Route | Gate | What it is |
 | --- | --- | --- | --- |
 | **Overview** | `/admin` | mod | The HUD: season state strip, inbox depth by lane, corpus backlog by task, machinery health (last run per pipeline, stalls, backoffs), cost meters (admin), the audit feed with links |
 | **Inbox** | `/admin/inbox` | mod (support lane admin) | Everything a *person* filed that waits on a person. One list, lanes, a handler per kind in the inspector, Inbox Zero |
+| **Reports** | `/admin/reports` | mod | Every report, post, comment and photo, read in full: lanes for flagged, edited, contradicted, hidden; the report with its edit history, flags, thread and author; hide, remove, restore. Flags are decided in the Inbox (D225) |
 | **Corpus** | `/admin/corpus` | mod | What the *machines* could not settle, as tasks: duplicates, class and name conflicts, orphan bays, chord re-fits, place names, the pre-ice pass (recurrence, promotion), standing lanes, enrichment gaps; plus a browser over every body including removed and rejected |
 | **Body console** | `/admin/body/$id` | mod (remove/restore admin) | One lake, one canvas, every lever: the report-console layout with the map as the instrument |
 | **Machinery** | `/admin/machinery` | admin | Pipelines and runs: ETL campaigns, crons, imagery, weather appends, notifications, external calls and cost; live tails; triggers for what is safe to trigger |
@@ -416,221 +417,15 @@ resolution, support volume) — here, not on the overview. The Open-Meteo meter 
   via ⇥. The Inbox was also rebuilt in **Paper** (the *Gli* file, *Admin Dashboard* page) over a
   token set, as the trial of iterating there instead of by PNG; what ports and what does not is
   in the admin-variants README.
-- **Wireframes first.** Before any React, a static HTML mockup per mode in
-  `skating-mockups/admin-console/` (the A10 pattern), rendered dark at 1440 × 900 and reviewed.
-  **v1 exists (2026-10-12):** eight pages (`overview`, `inbox`, `corpus`, `body`, `machinery`,
-  `season`, `people`, `instruments`) over a shared `console.css` + `chrome.js`, with the README
-  carrying what each shows and what v1 leaves out. The signature is the **season tape** in the top
-  bar of every mode — the console's clock is the winter, not the time of day. **Founder review
-  (2026-10-12), folded into v1.1:** the tape stays, centered, one line, the same place and width on
-  every page, hover-labeled; the top bar carries an **App** switch back to Map, Latest, Post and
-  Settings (`g a`) and a **staff avatar stack** (lit = present), and no clock; the Overview's cards
-  take the height they need and the audit feed fills the rest, with a cost meter; the inbox's
-  flow-through list (the next lanes follow the current one, so `j` runs to zero) stays, revisited
-  if other staff dislike it; the body console's **left column is read-only and every value is a
-  deep link** that opens the right tool and lights the row it names (the inspector needs an
-  addressable highlight: `?tab=names&lit=alias:Mascoma`); a dead local run can be **marked
-  failed** from Machinery, the reason auto-filled from the diagnostics where they can name it.
-  Deeper interaction wireframes are not drawn; the novel interactions (the task round-trip, the
-  deep-link highlight, the palette) are prototyped first in code.
-
-## §7 — The questions, and the founder's calls (2026-10-12)
-
-The forks that changed the build, asked with a recommendation each. **The calls** (same day):
-
-1. Inbox is what a person filed; Corpus is what a machine found; email place names are Corpus —
-   **yes** (D216).
-2. Geometry asks open the one body editor through a task door, never an embedded copy — **yes**
-   (D216).
-3. Audience and the admin-only line as drawn — **yes, and make access easy to adjust going
-   forward** → a capability map in core, read by client and server (D217).
-4. Run triggers — **no runner now.** Show where each job runs; trigger what the dashboard can;
-   for local jobs show instructions with copy-paste commands (D218).
-5. Cost ledger — **both** metered and invoiced; where dollars aren't derivable, record the native
-   unit (tokens, minutes, requests); **every** third party if possible; a place for Anthropic and
-   Zed bills later (D219).
-6. Season statistics — **nightly rollup** if it saves money; **which statistics is decided
-   together from a list** → §10, still open (D220).
-7. Polygon editing — **pushed indefinitely.** Merge and sub-areas are enough until a lake proves
-   otherwise (D221).
-8. Splits — **no** (D221).
-9. Photo takedown — **yes** (D222).
-10. Mute — **withdrawn.** Restricting actions or sign-in is enough control (D222).
-11. Per-user flagging permission — **yes** (D222).
-12. Seeding the inbox on dev — **yes**; the build invents realistic examples (§8 §2).
-13. Sequencing as proposed — **yes**.
-14. Names as proposed — **yes, for now**.
-15. Mobile bar as proposed — **yes** (D216).
-
-The questions as asked, kept for the record:
-
-1. **Inbox vs. Corpus — the split.** Recommendation: *Inbox* is what a **person** filed (flags,
-   access reports, requests, place asks, drawn bodies, tickets); *Corpus* is what a **machine**
-   found (intake reasons, duplicates, chord re-fits, email place names, the pre-ice pass). The
-   email place names are the gray row: the community's words, loaded by the ETL. Corpus, because
-   nobody is waiting on an answer.
-2. **"Every task completes from the inbox."** For geometry asks (draw a bay, place a landmark,
-   approve a drawn body) the handler *is* the body console in a task mode, opened in place and
-   returning on save. Recommendation: same route (`/admin/body/$id?task=`), not an embedded copy —
-   one editor, two doors.
-3. **Who is this for.** The founder, Matt (admin), and possible volunteer moderators. The
-   admin-only line stays where D37 drew it plus imports and seasons; Machinery is admin. Confirm.
-4. **Triggering runs from the web.** Convex-native jobs (rollovers, region stats, imagery, weather
-   sweeps, analytics) can be triggered now. The ETL (`run-corpus.sh`, `run-canonical.sh`) runs on
-   a laptop against gigabytes of extracts. Options: (a) *watch only* — a heartbeat, an event log
-   and a stalled state, the CLI stays the trigger; (b) a **runner** — GitHub Actions
-   `workflow_dispatch` or a Fly machine pulling archives from R2, started from the console, logs
-   streamed back. Recommendation: (a) in this phase with the run vocabulary built for (b); (b) is
-   its own decision because it moves the ETL's credentials and 100 GB reads off the laptop.
-5. **The cost ledger.** What it records: metered estimates (calls × a rate table, for Open-Meteo,
-   ORS, Anthropic, Fly machine-minutes), or manual monthly entries (Convex, Vercel, Clerk, Resend,
-   R2 invoices), or both. Recommendation: both, in one `costLedger` table — metered rows written
-   by the meters, invoice rows typed in on Machinery — and Season reads it. Which providers matter
-   for v1?
-6. **Season statistics — stored or computed.** Computing over `reports`, `moderationActions`,
-   `importRuns`, `externalApiCalls` at read time is bounded by the season's date range but reads
-   whole tables; a nightly per-season rollup is a `seasonSnapshots` table keyed by season and
-   metric. Recommendation: extend the existing `metricSnapshots` rollup (Phase 07-2) with a season
-   key and the new metrics; compute the change log live from the indexed audit table. **Which
-   statistics are must-have for v1?** The brief's list is long; the first season's rollup only
-   needs the ones that will be read.
-7. **Polygon editing.** In scope for this phase, or a follow-on? It is a new mutation with
-   consequences (area, bbox, interior point, weather cells, sub-area clipping, D215's re-fit, the
-   next import's merge rules — does an operator-edited outline survive a campaign the way a chosen
-   name does?). Recommendation: in this phase as the last workstream, behind an *operator outline*
-   that the import respects like `setWaterBodyName`.
-8. **Merging bodies from the console** ("join bodies") exists as `waterBodies.merge`; it needs a
-   home in the Shape tab and in Corpus → Duplicates. Confirm that a *split* (one body into two) is
-   not asked for.
-9. **Photo takedown.** Flags on photos exist with no verb. Add a moderation axis to `photos`
-   (hide/remove/restore, audited)? Recommendation: yes, it is the one flaggable thing without a
-   lever.
-10. **Mute.** Does the brief's *mute* mean `canPostComments: false` (exists), a new
-    comment-and-thumb silence, or a shadow state (content visible only to its author)? A shadow
-    state is a bigger lift and a policy question. Recommendation: mute = comments + thumbs,
-    labeled *Mute*, audited; no shadow state.
-11. **The user flagging permission** (the founder's `CLAUDE_NOTES` item): a per-user `canFlag`,
-    default on, switched off from People. In scope? Recommendation: yes, small.
-12. **Seeding the inbox on dev.** Every person-filed queue is empty. A seed script that files
-    representative flags, requests, tickets, drawn bodies and place asks from the second dev
-    account (`sarah`) is how the inbox gets designed against something real. OK to seed dev?
-13. **Sequencing.** This is several PRs. Proposed order (§8): the shell and Overview → Inbox →
-    Body console → Corpus → Machinery → Season → People → Instruments and the redirects. The
-    season is weeks away; the corpus backlog and the body console are where real work is today;
-    the machinery view matters most when the next campaign runs. Reorder?
-14. **Naming.** *Body console* for `/admin/body/$id` (the code says "lake editor"); *People* for
-    users; *Machinery* for runs and crons; *Instruments* for tuning and calibration. Objections?
-15. **Mobile.** Confirm the bar: reachable everywhere, optimized nowhere; the map editor view-only
-    on phones.
-
-## §8 — Workstreams (firmed up 2026-10-12; order is the founder's call 13)
-
-Wireframes come first (§6, a static HTML mockup per mode, reviewed before React). Then, one PR
-per workstream unless two are small enough to share one; the roadmap entry flips 🟡 at the first.
-
-- **§1 — The shell, the capability map, and Overview.** The console frame (rail, top bar, status
-  bar, resizable panes), the command palette, keyboard routing, dark and light; the capability
-  map in core with `requireCapability` on the server and the same map gating every control on the
-  client, plus the test that holds every gated function to it (D217); Overview with honest counts
-  for every lane (indexes where a count needs one) and the audit feed with links. Old routes
-  redirect. *The register's first 🟢 rows.*
-- **§2 — Inbox, and the seed.** Lanes, the list, the inspector, every handler in §5.2;
-  `useReviewWatch` generalized to every item; restore for hidden content; photos'
-  `moderationStatus` (D222); the support note and reply with an audit target; the `reviewing`
-  status used or removed; **a dev seed** that files realistic flags (every reason, a safety flag,
-  an auto flag with occurrences), access reports (one disputing a prior ruling), requests of every
-  kind, place asks with a lookalike, a drawn body over a known lake, and tickets of every category,
-  from the second dev account — invented by the build, run with `CONVEX_RUN_AS`.
-- **§3 — Body console.** The frame over `mapCanvas`; the layer rack; every existing tool re-homed
-  into the tabs; the public-access ruling, lot editing, aliases, and **merge into** added (D221:
-  no outline editing, no split); task modes (`?task=`); moderators see only what they can do; the
-  `RemovalTool` reason bug, the doubled History heading, `window.prompt` renames and the
-  `RestoreGate` dead end fixed on the way.
-- **§4 — Corpus.** The task lanes with *done* semantics (clearing `reviewReason` on decision; the
-  chord re-fit lane across lakes; the pre-ice pass dated); the browser over every body.
-- **§5 — Machinery.** The job registry with where-it-runs, trigger or instructions (D218); run
-  scope, heartbeat and event stream; the cron list with last outcome and next due; the cost
-  ledger (D219) with the meters generalized and the invoice form; the catalog-coverage card;
-  `imageryRuns` and `importRuns` read through one list; stalled runs.
-- **§6 — Season.** The season page, the per-season rollup (D220, the §10 pick), the change log,
-  past seasons; A06i's components re-homed; the cost summary from the ledger.
-- **§7 — People.** Browse lists; the detail drawing what `getAdmin` returns; the flagging
-  permission; the suspension-expiry and lift-on-deleted bugs; D50's trust-score leak closed; no
-  mute (D222).
-- **§8 — Instruments and the close.** Tuning and calibration re-homed; the operational-health
-  charts; the §1 table all 🟢, the redirects, the roadmap entry closed.
-
-Tests land with each (D40): Vitest for the keyboard, palette and capability models, `convex-test`
-for every new query, mutation and index, `fast-check` for the rollup's season bucketing.
-
-## §9 — Decisions minted
-
-D216 (organized by intent; Inbox vs. Corpus; one editor, two doors; the shell; mobile), D217 (the
-capability map), D218 (where each job runs; scope, heartbeat, event stream; no runner), D219 (the
-cost ledger), D220 (nightly season rollup; the statistics are a §10 pick), D221 (outlines trusted;
-merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation axis; `canFlag`). **Added 2026-10-14:** D223 (the visual register: a field, not panels; grayscale ink;
-blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
-to skaters, per frame, from the Imagery tab).
-
-## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
-
-**The call:** every tier-1 and tier-2 statistic below is in; tier 3 waits for PostHog (D29, the
-split recorded on D220 — facts about our own records stay in-house, behavior is PostHog's).
-
-D220 rolls the chosen statistics up nightly per season. The list below is every number the brief
-named or the data can give, in three tiers by what it costs to have. The recommendation is the
-first two tiers for v1, with the third left until the instrumentation it needs exists for another
-reason.
-
-**Tier 1 — free: already stored per season, or one indexed read.** No rollup needed; the Season
-page reads them directly.
-
-| Statistic | Source |
-| --- | --- |
-| Watch opened, first imagery-line night, winter region-wide, watch closed, and what opened it | `imageryIngestSeasons` (A06i) |
-| Coldest night per sentinel, first freezing night, nights below the imagery line | `seasonWatchSeries` |
-| First and last skated (field dates) | `seasonFieldDates` |
-| Imagery: granules queued, landed, empty, failed; frames | `imageryCounts`, `imageryFrames` |
-| Hazard recurrence clusters by seasons seen | `hazardRecurrence` (already a metric) |
-| The standing rollover's scanned / demoted / retained | the `standing_rollover` run row |
-
-**Tier 2 — cheap: one nightly pass over indexed rows, bounded by the season's dates.** The rollup
-(D220) writes one row per statistic per season per night; the page reads the latest.
-
-| Statistic | Source | Why it earns its row |
-| --- | --- | --- |
-| Reports and posts filed; reports by vantage (on the ice / from shore) | `reports`, `posts` by `skateEndTime` | the headline usage number |
-| Distinct contributors; new accounts | `reports` authors, `profiles.createdAt` | the second headline |
-| **Most-reported lakes** (top 20, with report and contributor counts) | `reports` by body | the brief's "most popular lakes" |
-| Bodies activated, demoted, removed, restored, admitted | `moderationActions` by action + `standing` events | the corpus change log's totals |
-| Put-ins, lots, landmarks, sub-areas, features added by operators and by the ETL | audit rows + `importRuns` counts | "new POIs for lakes" |
-| Hazards filed, confirmed, archived, merged | `hazards`, `hazardConfirmations`, audit rows | the safety picture |
-| Inbox throughput: flags filed and resolved, requests decided, tickets resolved, median time to resolution | `contentFlags`, `waterBodyRequests`, `supportTickets` (two of these are metrics already) | "how are we keeping up" |
-| Bounties opened and fulfilled | `bounties` | small, already partly rolled up |
-| External calls and cost per provider | the ledger (D219) | "how often we fetched weather and imagery, and what it cost" |
-| Notifications pushed and emailed | `notifications` stamps | cheap once indexed; says whether the pipeline ran |
-| Photos uploaded and bytes | `photos` | storage is a cost line |
-
-**Tier 3 — needs instrumentation that does not exist.** No client analytics (D29 deferred PostHog;
-Phase 07-2 allows one narrow authenticated client signal): sessions, map views, lake page views,
-search terms, drive-time notifications tapped, the feed read. Each would be a forward-only counter
-or a client signal with its own design, and each is a product question before a statistics one.
-**Recommendation:** not in B01; revisit when a product decision wants one.
-
-**Record freezes**, from the brief: the coldest night per season at each sentinel is tier 1; a
-*record* across seasons is the minimum over the tier-1 rows, computed at read time. Lake-by-lake
-freeze dates do not exist — the watch samples sentinels and a sample of lakes, and D3 forbids
-saying a lake froze; the page will say *coldest overnight air low*, never *froze*.
-
-## Ruled out
-
-- **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
-  boundary, and the console reuses the app's components and map shell.
-- **Editable constants in the console** — Phase 07-2's settled decision 1 stands; the instruments
-  make the effect legible, the code is where a constant changes.
-- **An ETL runner in this phase** — D218; a hosted runner is its own decision, and the run
-  vocabulary is built so it can land without a redesign.
-- **Polygon editing and splitting a body** — D221; deferred indefinitely, trigger: a lake that
-  merge and a sub-area cannot express.
-- **Mute and shadow states** — D222; restricting actions or sign-in is enough.
-- **Computing season statistics at read time** — D220; a nightly rollup is cheaper.
+  **The parity pass (2026-10-14):** the mocks checked against today's `/admin`
+  (`research/b01-mock-parity-2026-10-14.md`), then the founder's calls — Reports as a ninth mode
+  with the in-context controls kept (D225); undo for every action and a reason only when something
+  is taken away (D226) — and the mocks the first build workstreams need: the six remaining Body
+  console tabs with their map modes (Names; Places in landmark mode; Access in parking mode; Water
+  with the sample-point preview; Hazards; Standing), the Reports mode, four more inbox handlers
+  (access reports with a dispute, admit, an access-alert flag with unpin, a photo flag), the task
+  round trip as four frames, a states sheet (the reason dialog's six states, toasts and undo,
+  autosave, colleague locks, standing in every state) and a live sheet (a run going quiet, the
+  audit feed arriving, list states, the moderator's console, the `?` key sheet). All 31 V5 pages
+  are in Paper; the first import is on an archive page. Corpus, Machinery, Season and Instruments
+  are mocked just before their workstreams.

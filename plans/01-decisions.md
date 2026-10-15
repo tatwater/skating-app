@@ -6985,7 +6985,58 @@ the tab rule keeps the admin's own map honest by default.
 
 **Related:** D84, D214, D216, D223, A06e §3.4 (the stepper's blocked stops).
 
-*(D225–D231 are minted in other trees and arrive when they merge.)*
+## D225 — Reports are a mode of the console, and moderators keep their in-context controls (B01)
+
+**2026-10-14, founder.** Reports are their own kind of thing: most never need moderating, and when
+one does it is usually because another person asked. They get a **ninth mode, Reports**
+(`/admin/reports`, rail between Inbox and Corpus, `G R`): lanes for recent, flagged, edited after
+posting, contradicted by the weather (private), hidden or removed, and later auto-flagged; posts,
+comments and photos as neighboring lanes. Its inspector shows the report, its photos, **its edit
+history** (D205's `RevisionHistory`, which today exists only on public pages), its flags, its
+thread, its author, and the levers: hide, remove, restore, lock comments, the person menu.
+
+- **The in-context controls stay.** A moderator on a report, hazard, comment or profile in the app
+  keeps the same levers layered over the skater UI (today's `ModeratorActions` and friends), now
+  through the console's one reason dialog, with restore, and with the edit history beside them.
+  Acting where you are and acting from a queue are both legitimate; they call the same mutations
+  and write the same audit rows.
+- **Who decides a flag.** A flag is decided in the Inbox; the Reports mode shows what the report is
+  and what happened to it, and links there. One item, one decision, two views.
+
+**Why:** reports are the app's core content and the thing a moderator most needs to *read* —
+edits, photos, thread, author — which a flag handler sized for a decision can't hold. Keeping
+the in-context levers means the console is where you go to work through things, not the only
+place you are allowed to act.
+
+**Related:** D3, D37, D205, D216, D217, D223.
+
+## D226 — Every operator action can be undone; a reason is asked when an action takes something away (B01)
+
+**2026-10-14, founder.** "Every action should have an undo, just to be safe" — except what is
+meant to be permanent and destructive (finalizing an account deletion; purging storage after a
+removal window).
+
+- **Undo, twice over.** A toast offers undo for ten seconds after any action; after that, History
+  lists every reversible action with its own Undo, Restore, Unmerge or Reactivate. An undo is a new
+  action with its own audit row. A row whose effect was overtaken says so instead of offering undo.
+- **What this adds.** Reactivate a demoted known feature; unpin an access alert (the server has
+  `setOfficial(false)`; no screen offered it); restore hidden or removed content, photos included
+  (D222); reopen a dismissed place name; restore a rejected user-drawn body to review (today's
+  `RestoreGate` dead end); undo a merge (bodies, hazards) where the data allows — where it can't,
+  the merge dialog says so before it runs.
+- **A reason when something is taken away.** Hide, remove, decline, demote, suspend, ban, dormant,
+  take off the map and **no public access** ask a reason; giving something back — confirm open,
+  restore, unhide, unpin, reactivate, bring back — acts on one press with no reason. The
+  public-access ruling on a body's public page follows the same rule, so ruling it closed there
+  now asks why (today it takes no reason either way).
+
+**Why:** an operator console used in passing will be misclicked, and a reason asked for every
+action trains people to type "ok". Undo makes mistakes cheap; the asymmetric reason keeps the
+audit log meaningful where it matters, on the actions skaters feel.
+
+**Related:** D37, D202, D216, D222, D223, D225.
+
+*(D227–D231 are minted in other trees and arrive when they merge.)*
 
 ## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
 

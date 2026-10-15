@@ -126,10 +126,20 @@ interaction for it have been drawn yet.
 7. **The map's hover, selection and mode states** beyond the one hover drawn.
 8. **Light mode** — D223 says "the same ramp inverted"; not drawn.
 
-## Not in the plan yet (from the inventory)
+## Not in the plan yet (from the inventory) — decided 2026-10-14
 
-- Unpin an access alert (`setOfficial(false)` exists; no UI).
-- Reactivate a demoted known feature (no mutation).
-- A home for content edit history (`RevisionHistory`) inside the console.
-- The inline controls on public pages (§11 of the inventory) keep working; the inline access
-  ruling there takes no reason today, unlike every other audited action.
+- Unpin an access alert — **in** (D226; drawn on the second handlers sheet).
+- Reactivate a demoted known feature — **in**, with undo for every action (D226; drawn on Hazards).
+- A home for content edit history — **the Reports mode** (D225), and beside the in-context
+  controls on public pages.
+- The inline access ruling on public pages — **a reason only when ruling it closed** (D226).
+
+## Drawn since (2026-10-14, the same day)
+
+Body console: Names, Places (landmark mode), Access (parking mode), Water (sample points),
+Hazards, Standing. Inbox: access reports with a dispute, admit, access-alert flag, photo flag.
+Reports mode. The task round trip (four frames). States: the reason dialog, toasts and undo,
+autosave, colleague locks, standing in every state. Live: a run going quiet, the feed arriving,
+list states, the moderator's console, the key sheet. Still to mock, just before their
+workstreams: Corpus's other lanes, Machinery's landing and crons, Season's settings editor and
+replay, Instruments' histogram and scatter.
