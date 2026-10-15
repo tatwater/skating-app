@@ -14,7 +14,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, internalQuery, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { IMPORT_RUN_KINDS, WEATHER_CELL_INVALIDATING_KINDS } from './lib/enums';
 import { literals } from './lib/validators';
 import { RECONCILE_DEBOUNCE_MS } from './weatherArchive';
@@ -259,7 +259,7 @@ export const list = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { kind, campaignId, limit }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.read');
     const take = Math.min(200, Math.max(1, limit ?? 50));
     if (campaignId !== undefined) {
       return await ctx.db
@@ -297,7 +297,7 @@ export const listForBackfill = internalQuery({
 export const get = query({
   args: { runId: v.id('importRuns') },
   handler: async (ctx, { runId }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.read');
     return await ctx.db.get(runId);
   },
 });

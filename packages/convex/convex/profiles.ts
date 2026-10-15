@@ -47,6 +47,8 @@ import {
 import {
   canReceiveNotifications,
   getCurrentProfile,
+  hasCapability,
+  requireCapability,
   requireContributor,
   requireProfile,
   requireRole,
@@ -1069,7 +1071,7 @@ export const searchProfiles = query({
 });
 
 /**
- * The operator detail view of a user (D37/D50/D57). `requireRole('moderator')`: a moderator sees the
+ * The operator detail view of a user (D37/D50/D57). `requireCapability('people.read')`: a moderator sees the
  * lifecycle state, posting perms, and the **private, non-scoring `contradictionCount`** (their D57
  * lever's input) — but the **raw trust/bounty numbers stay admin-only** (D50), gated on the *viewer's*
  * role server-side so they never leave the deployment for a moderator. Bundles the user's recent
@@ -1079,8 +1081,8 @@ export const searchProfiles = query({
 export const getAdmin = query({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    const viewer = await requireRole(ctx, 'moderator');
-    const isAdmin = viewer.role === 'admin';
+    const viewer = await requireCapability(ctx, 'people.read');
+    const isAdmin = hasCapability(viewer, 'people.trustScore');
     const target = await ctx.db.get(userId);
     if (!target) return null;
 

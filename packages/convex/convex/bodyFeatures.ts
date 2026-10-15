@@ -16,7 +16,7 @@ import { type HazardShape, hazardBbox, isPubliclyVisible, isValidHazardShape } f
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
@@ -51,12 +51,12 @@ export const listForBody = query({
 
 /**
  * Operator: recent active body features across all bodies (D37/D53), each with its water-body name, for
- * the `/admin/features` management page. `requireRole('moderator')`; bounded (never scans the corpus).
+ * the `/admin/features` management page. `requireCapability('corpus.read')`; bounded (never scans the corpus).
  */
 export const listRecent = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const features = await ctx.db.query('bodyFeatures').order('desc').take(100);
     const active = features.filter((f) => f.active);
     return Promise.all(
@@ -91,7 +91,7 @@ export const create = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const body = await resolveSurvivor(ctx, args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
@@ -142,7 +142,7 @@ export const promote = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { hazardId, type, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const hazard = await ctx.db.get(hazardId);
     if (!hazard) throw new ConvexError('Hazard not found');
@@ -184,7 +184,7 @@ export const promote = mutation({
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },
   handler: async (ctx, { bodyFeatureId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const feature = await ctx.db.get(bodyFeatureId);
     if (!feature) throw new ConvexError('Body feature not found');

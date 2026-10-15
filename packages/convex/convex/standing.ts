@@ -28,7 +28,7 @@ import { INACTIVE_SEASONS, isActive, retainsActive, seasonOf, standingOf } from 
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, mutation, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { takeCappedResult } from './lib/scan';
 import { activateBody, anyFavorite, demoteBody, lastActivityAt } from './lib/standing';
 import { literals } from './lib/validators';
@@ -57,7 +57,7 @@ export const setStanding = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, standing, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.standing');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const current = standingOf(body);
@@ -127,7 +127,7 @@ export type StandingLane = (typeof LANES)[number];
 export const listLane = query({
   args: { lane: literals(LANES), limit: v.optional(v.number()) },
   handler: async (ctx, { lane, limit }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const cap = Math.min(LANE_CAP, Math.max(1, limit ?? LANE_CAP));
     const source =
       lane === 'removed'
@@ -180,7 +180,7 @@ export const listLane = query({
 export const listRecentActivations = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const cap = Math.min(LANE_CAP, Math.max(1, limit ?? 50));
     const rows = await ctx.db
       .query('waterBodies')

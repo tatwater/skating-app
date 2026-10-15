@@ -58,7 +58,7 @@ import {
 } from './_generated/server';
 import { loadLiveAlertsForBody } from './accessAlerts';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessLimits';
-import { requireContributor, requireContributorRole } from './lib/auth';
+import { requireCapability, requireContributor } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { activateOnEvidence } from './lib/standing';
@@ -865,7 +865,7 @@ export const setOfficialParking = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const now = Date.now();
     const name = args.name?.trim() || undefined;
 
@@ -947,7 +947,7 @@ export const setPutInAccess = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const putIn = await ctx.db.get(args.putInId);
     if (!putIn) throw new ConvexError('Put-in not found');
 

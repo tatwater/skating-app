@@ -1,6 +1,6 @@
 /**
  * Moderation functions (D32/D37) — the minimal founder takedown path. Role-gated
- * (`requireRole('moderator')`); every action writes **exactly one** `moderationActions` audit row
+ * (each gated by a capability, D217); every action writes **exactly one** `moderationActions` audit row
  * (accountability for appeals/reversals). This is the inline hide/remove/restore + flag-resolution
  * surface; the full `/admin` work queues + email alerts are Phase 07 (D37/D38).
  *
@@ -17,7 +17,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability, requireRole } from './lib/auth';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
@@ -34,7 +34,7 @@ const ACTION_FOR_STATUS = {
 } as const;
 
 /**
- * Set a report's or comment's moderation status (D32/D37). `requireRole('moderator')`; patches the
+ * Set a report's or comment's moderation status (D32/D37). `requireCapability('content.moderate')`; patches the
  * target and writes one `hide` / `remove` / `restore` audit row with the required reason. A no-op
  * status change (already at `status`) still records the action — the moderator asserted a decision.
  */
@@ -246,7 +246,7 @@ export const setModerationStatus = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'content.moderate');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const now = Date.now();
 
@@ -341,7 +341,7 @@ export const setModerationStatus = mutation({
 });
 
 /**
- * Resolve a content flag (D32/D37). `requireRole('moderator')`; sets the flag terminal status
+ * Resolve a content flag (D32/D37). `requireCapability('inbox.flag')`; sets the flag terminal status
  * (`actioned` / `dismissed`) + `resolvedBy`/`resolvedAt` and writes one `resolve_flag` /
  * `dismiss_flag` audit row. Taking down the flagged content is a separate `setModerationStatus`
  * call (so the two decisions are each audited).
@@ -353,7 +353,7 @@ export const resolveFlag = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.flag');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
 
     const flag = await ctx.db.get(args.flagId);
@@ -385,7 +385,7 @@ export const resolveFlag = mutation({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Admin queue queries (Phase 07 read side). Every one gates `requireRole('moderator')`,
+// Admin queue queries (Phase 07 read side). Every one gates on a read capability (D217),
 // reads off an index, and is bounded — a queue read never `.collect()`s a whole table.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -626,7 +626,7 @@ export const listFlags = query({
     standard: FlagView[];
     accessReports: AccessReportGroup[];
   }> => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.read');
     const open = await ctx.db
       .query('contentFlags')
       .withIndex('by_status', (q) => q.eq('status', 'open'))
@@ -729,7 +729,7 @@ export const listActions = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<ActionView[]> => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'audit.read');
     const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
     const { targetType, targetId, actorId } = args;
@@ -810,7 +810,7 @@ async function auditUser(
 export const banUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -839,7 +839,7 @@ export const banUser = mutation({
 export const suspendUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
   handler: async (ctx, { userId, reason, suspendedUntil }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
       throw new ConvexError('Suspension must end in the future');
@@ -865,7 +865,7 @@ export const suspendUser = mutation({
 export const unbanUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -904,7 +904,7 @@ export const setBountyPostLimit = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { userId, limit, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
       throw new ConvexError('A bounty limit has to be a whole number, zero or more');
@@ -941,7 +941,7 @@ export const setPostingPermission = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { userId, permission, allowed, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'people.discipline');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     await loadModeratableUser(ctx, actor, userId);
 

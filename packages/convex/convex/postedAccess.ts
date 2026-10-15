@@ -18,7 +18,7 @@ import { ConvexError, type Infer, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { mutation } from './_generated/server';
-import { requireContributorRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { postedAccess as postedAccessValidator } from './lib/validators';
 
 /** The three things a sign can be nailed to. Literals match `MODERATION_TARGET_TYPES`. */
@@ -95,7 +95,7 @@ export const setPostedAccess = mutation({
     postedAccess: v.union(postedAccessValidator, v.null()),
   },
   handler: async (ctx, { target, postedAccess }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
 
     const doc = await getTarget(ctx, target);
     if (!doc) throw new ConvexError(NOT_FOUND[target.type]);

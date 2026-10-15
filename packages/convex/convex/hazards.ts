@@ -65,8 +65,8 @@ import {
 import {
   assertCanPostHazards,
   getCurrentProfile,
+  requireCapability,
   requireContributor,
-  requireContributorRole,
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
@@ -726,7 +726,7 @@ export const listPromotionCandidates = query({
     season: v.optional(v.number()),
   },
   handler: async (ctx, { waterBodyId, season }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const now = Date.now();
@@ -934,7 +934,7 @@ const MERGE_AUDIT_WINDOW_DAYS = 120;
 export const listRecentMerges = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const since = Date.now() - MERGE_AUDIT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     const rows = await ctx.db
       .query('moderationActions')
@@ -980,7 +980,7 @@ export const listRecentMerges = query({
 export const unmerge = mutation({
   args: { hazardId: v.id('hazards'), reason: v.string() },
   handler: async (ctx, { hazardId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.preIce');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
     const loser = await ctx.db.get(hazardId);

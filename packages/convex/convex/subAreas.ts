@@ -67,7 +67,7 @@ import {
   query,
 } from './_generated/server';
 
-import { requireContributorRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import {
@@ -985,7 +985,7 @@ export const create = mutation({
     promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const name = args.name.trim();
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
@@ -1021,7 +1021,7 @@ export const create = mutation({
 export const redraw = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), polygon: geoJson },
   handler: async (ctx, { subAreaId, polygon }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     const parent = await requireParent(ctx, subArea.waterBodyId);
@@ -1092,7 +1092,7 @@ export const createFromChord = mutation({
     promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const name = args.name.trim();
     if (!name) throw new ConvexError('A sub-area needs a name');
     const parent = await requireParent(ctx, args.waterBodyId);
@@ -1140,7 +1140,7 @@ export const createFromChord = mutation({
 export const updateChord = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), mouth: subAreaMouth },
   handler: async (ctx, { subAreaId, mouth }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     const parent = await requireParent(ctx, subArea.waterBodyId);
@@ -1179,7 +1179,7 @@ export const rename = mutation({
     aliases: v.optional(v.array(v.string())),
   },
   handler: async (ctx, { subAreaId, name, aliases }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     if (name === undefined && aliases === undefined) {
@@ -1232,7 +1232,7 @@ export const rename = mutation({
 export const remove = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), reason: v.optional(v.string()) },
   handler: async (ctx, { subAreaId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     if (subArea.removedAt !== undefined) throw new ConvexError('Sub-area is already removed');
@@ -1275,7 +1275,7 @@ export const remove = mutation({
 export const restore = mutation({
   args: { subAreaId: v.id('waterBodySubAreas') },
   handler: async (ctx, { subAreaId }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.shape');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     if (subArea.removedAt === undefined) throw new ConvexError('Sub-area is not removed');
@@ -1375,7 +1375,7 @@ export const restore = mutation({
 export const setCuratedBoost = mutation({
   args: { subAreaId: v.id('waterBodySubAreas'), curatedBoost: v.number() },
   handler: async (ctx, { subAreaId, curatedBoost }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
     const subArea = await ctx.db.get(subAreaId);
     if (!subArea) throw new ConvexError('Sub-area not found');
     const parent = await ctx.db.get(subArea.waterBodyId);
@@ -2324,7 +2324,7 @@ const MOUTH_LINE_SCAN_CAP = 200;
 export const adminStatsForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const season = seasonOf(Date.now());
     const from = seasonStartMs(season);
     const to = seasonEndMs(season);

@@ -36,7 +36,7 @@ import {
 import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
-import { requireProfile, requireRole } from './lib/auth';
+import { requireCapability, requireProfile } from './lib/auth';
 import { bumpMetricCounter, writeMetricSnapshot } from './lib/metrics';
 
 /**
@@ -100,7 +100,7 @@ interface MetricPoint {
 export const series = query({
   args: { metrics: v.array(v.string()), days: v.optional(v.number()) },
   handler: async (ctx, { metrics, days }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'instruments.tuning');
     const now = Date.now();
     const window = Math.min(Math.max(1, days ?? DEFAULT_SERIES_DAYS), MAX_SERIES_DAYS);
     const dates = metricDayRange(now, window);
@@ -141,7 +141,7 @@ function toPoint(date: string, row: Doc<'metricSnapshots'> | undefined): MetricP
 export const latest = query({
   args: { metrics: v.array(v.string()), lookbackDays: v.optional(v.number()) },
   handler: async (ctx, { metrics, lookbackDays }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'instruments.tuning');
     const now = Date.now();
     const window = Math.min(Math.max(1, lookbackDays ?? 7), MAX_SERIES_DAYS);
     const dates = metricDayRange(now, window);
@@ -291,7 +291,7 @@ export const renameMetricKey = internalMutation({
 export const catalogHistory = query({
   args: { metric: v.string() },
   handler: async (ctx, { metric }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'machinery.read');
     if (!(metric in METRICS)) return [];
     const rows = await ctx.db
       .query('metricSnapshots')
@@ -314,7 +314,7 @@ export const catalogHistory = query({
 export const catalog = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'instruments.tuning');
     return Object.entries(METRIC_SPECS).map(([key, spec]) => ({
       key: key as MetricKey,
       label: spec.label,
@@ -343,7 +343,7 @@ const GATE_EVENT_SCAN_CAP = 1000;
 export const bountyGateScatter = query({
   args: { days: v.optional(v.number()) },
   handler: async (ctx, { days }) => {
-    await requireRole(ctx, 'admin');
+    await requireCapability(ctx, 'instruments.tuning');
     const now = Date.now();
     const window = Math.min(Math.max(1, days ?? DEFAULT_SERIES_DAYS), MAX_SERIES_DAYS);
     const since = metricDayStart(metricDay(now - (window - 1) * 24 * 60 * 60 * 1000));
@@ -413,7 +413,7 @@ const TREND_REACTION_READ_BUDGET = 12_000;
 export const contributorTrend = query({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'people.read');
     const target = await ctx.db.get(userId);
     if (!target) return null;
 

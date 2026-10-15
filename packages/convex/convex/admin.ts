@@ -3,7 +3,7 @@
  * (D13): that one is filtered to **public** profiles and excludes blocked/deleted accounts because it
  * powers ordinary user browsing. Operators need the opposite — find **any** account (private,
  * suspended, banned, or deleted) by name or exact handle to act on it — so this query drops the
- * visibility filter and is `requireRole('moderator')`-gated instead. Raw trust numbers are NOT returned
+ * visibility filter and is gated by `requireCapability('people.read')` instead. Raw trust numbers are NOT returned
  * here (they're admin-only, D50, and live on `profiles.getAdmin`); this is just the search hit list.
  */
 
@@ -11,7 +11,7 @@ import { normalizeUsername, type TrustClass, type UserStatus } from '@skating/co
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability, requireRole } from './lib/auth';
 import { trustClassFor } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -34,7 +34,7 @@ interface UserHit {
 export const userSearch = query({
   args: { query: v.string() },
   handler: async (ctx, { query: raw }): Promise<UserHit[]> => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'people.read');
     const term = raw.trim();
     if (term.length === 0) return [];
     const now = Date.now();
@@ -83,7 +83,7 @@ export const userSearch = query({
 export const grantRole = mutation({
   args: { userId: v.id('profiles'), role: literals(['moderator', 'admin']), reason: v.string() },
   handler: async (ctx, { userId, role, reason }) => {
-    const actor = await requireContributorRole(ctx, 'admin');
+    const actor = await requireCapability(ctx, 'people.role');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (userId === actor._id) throw new ConvexError('You cannot change your own role');
     const target = await ctx.db.get(userId);
@@ -110,7 +110,7 @@ export const grantRole = mutation({
 export const revokeRole = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'admin');
+    const actor = await requireCapability(ctx, 'people.role');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
     const target = await ctx.db.get(userId);

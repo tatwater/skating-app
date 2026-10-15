@@ -15,7 +15,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -201,7 +201,7 @@ export const listQueue = query({
     minMessages: v.optional(v.number()),
   },
   handler: async (ctx, { status, minMessages }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const rows = await ctx.db
       .query('corpusPlaceNames')
       .withIndex('by_status_messages', (q) =>
@@ -238,7 +238,7 @@ export const listQueue = query({
 export const openForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const rows = await ctx.db
       .query('corpusPlaceNames')
       .withIndex('by_water_body_status', (q) =>
@@ -269,7 +269,7 @@ async function openRow(ctx: QueryCtx, id: Id<'corpusPlaceNames'>) {
 export const setLake = mutation({
   args: { id: v.id('corpusPlaceNames'), waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { id, waterBodyId }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.placeNames');
     const row = await openRow(ctx, id);
     const body = await ctx.db.get(waterBodyId);
     if (!body || !isListed(body)) throw new ConvexError('That lake is not on the map');
@@ -285,7 +285,7 @@ export const dismiss = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, { id, reason, note }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.placeNames');
     const row = await openRow(ctx, id);
     const trimmed = note?.trim();
     const now = Date.now();
@@ -312,7 +312,7 @@ export const dismiss = mutation({
 export const reopen = mutation({
   args: { id: v.id('corpusPlaceNames') },
   handler: async (ctx, { id }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.placeNames');
     const row = await ctx.db.get(id);
     if (!row) throw new ConvexError('That name is no longer in the queue');
     if (row.status !== 'dismissed') throw new ConvexError('Only a dismissed name can be reopened');
@@ -335,7 +335,7 @@ export const reopen = mutation({
 export const fileAsSpelling = mutation({
   args: { id: v.id('corpusPlaceNames'), landmarkId: v.id('bodyLandmarks') },
   handler: async (ctx, { id, landmarkId }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.placeNames');
     const row = await openRow(ctx, id);
     const landmark = await ctx.db.get(landmarkId);
     if (!landmark || landmark.removedAt !== undefined) {

@@ -81,10 +81,9 @@ import {
 } from './_generated/server';
 import {
   getCurrentProfile,
+  requireCapability,
   requireContributor,
-  requireContributorRole,
   requireProfile,
-  requireRole,
 } from './lib/auth';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
@@ -2640,7 +2639,7 @@ export const findMatchCandidates = query({
 export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.drawnBody');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     // Only user-created bodies enter the review queue; approving canonical (OSM/NHD)
@@ -2690,7 +2689,7 @@ export const approve = mutation({
 export const remove = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'admin');
+    const actor = await requireCapability(ctx, 'body.remove');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     // Idempotency + no duplicate audit rows: only an on-map body can be removed.
@@ -2730,7 +2729,7 @@ export const remove = mutation({
 export const restore = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'admin');
+    const actor = await requireCapability(ctx, 'body.remove');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (body.removedAt === undefined) throw new ConvexError('Water body is not removed');
@@ -2780,7 +2779,7 @@ export const setPublicAccess = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, verdict, note, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'access.rule');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -2927,7 +2926,7 @@ const MAX_ACCESS_REPORTS_COUNTED = 50;
 export const reject = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'inbox.drawnBody');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (body.source !== 'user') {
@@ -2980,7 +2979,7 @@ export const merge = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { survivorId, loserId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.duplicates');
     if (survivorId === loserId) throw new ConvexError('Cannot merge a water body into itself');
     const survivor = await ctx.db.get(survivorId);
     const loser = await ctx.db.get(loserId);
@@ -3420,7 +3419,7 @@ export const get = query({
 export const setCuratedBoost = mutation({
   args: { waterBodyId: v.id('waterBodies'), curatedBoost: v.number() },
   handler: async (ctx, { waterBodyId, curatedBoost }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3475,7 +3474,7 @@ export const setReferenceLinks = mutation({
     links: v.array(v.object({ label: v.string(), url: v.string() })),
   },
   handler: async (ctx, { waterBodyId, links }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (links.length > MAX_REFERENCE_LINKS) {
@@ -3533,7 +3532,7 @@ export const setSatelliteImagery = mutation({
     mode: literals(SATELLITE_IMAGERY_MODES),
   },
   handler: async (ctx, { waterBodyId, mode }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3583,7 +3582,7 @@ export const setSatelliteImagery = mutation({
 export const setWeatherSamplePoints = mutation({
   args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
   handler: async (ctx, { waterBodyId, points }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
@@ -3663,7 +3662,7 @@ export const setDepth = mutation({
     sourceNote: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, { waterBodyId, meanDepthM, maxDepthM, sourceNote }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -3784,7 +3783,7 @@ export const listReviewQueue = query({
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, { reason, cursor }) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const page = await ctx.db
       .query('waterBodies')
       .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
@@ -3821,7 +3820,7 @@ export const listReviewQueue = query({
 export const reviewQueueCounts = query({
   args: {},
   handler: async (ctx) => {
-    await requireContributorRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const counts: Record<string, { count: number; capped: boolean; advisory: boolean }> = {};
     for (const reason of REVIEW_REASONS) {
       const rows = await ctx.db
@@ -3890,7 +3889,7 @@ export const setWaterBodyName = mutation({
     name: v.union(v.string(), v.null()),
   },
   handler: async (ctx, { waterBodyId, name }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.identity');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -4011,7 +4010,7 @@ export const clearDepthOverride = mutation({
     measurements: v.array(literals(['mean', 'max'] as const)),
   },
   handler: async (ctx, { waterBodyId, measurements }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.water');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -5432,7 +5431,7 @@ const CURATED_SCAN_CAP = CURATED_LIST_CAP * 2;
 export const listCurated = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     const rows = await takeCapped(
       ctx.db.query('waterBodies').withIndex('by_curated_boost', (q) => q.gt('curatedBoost', 0)),
       CURATED_SCAN_CAP,
@@ -5462,7 +5461,7 @@ export const listCurated = query({
 export const listPendingReview = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'inbox.read');
     // A moderator queue is meant to be short; if it isn't, showing a bounded page beats failing the
     // whole screen, and the log says the queue is running away (A01).
     return takeCapped(
@@ -5521,7 +5520,7 @@ export type DedupSummary = ReturnType<typeof dedupSummary>;
 export const listDedupCandidates = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     // Both match-on-create tiers land in the queue, near-certain first (D36) — a body flagged as
     // almost certainly a duplicate is the one a moderator should merge before anything else, and
     // before more reports accumulate on the wrong row.
@@ -5633,7 +5632,7 @@ export const listDedupCandidates = query({
 export const getDedupGroup = query({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
   handler: async (ctx, { waterBodyIds }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'corpus.read');
     if (waterBodyIds.length > DEDUP_GROUP_CAP) {
       throw new ConvexError(`A dedup group holds at most ${DEDUP_GROUP_CAP} bodies`);
     }
@@ -5770,7 +5769,7 @@ async function countAttachments(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
 export const dismissDuplicates = mutation({
   args: { waterBodyIds: v.array(v.id('waterBodies')), reason: v.optional(v.string()) },
   handler: async (ctx, { waterBodyIds, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'corpus.duplicates');
     if (waterBodyIds.length < 1) throw new ConvexError('Nothing to dismiss');
     if (waterBodyIds.length > DEDUP_GROUP_CAP) {
       throw new ConvexError(`A dedup group holds at most ${DEDUP_GROUP_CAP} bodies`);

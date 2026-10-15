@@ -42,7 +42,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { requireContributorRole, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import {
   assertNotABayName,
   assertNotDuplicate,
@@ -107,7 +107,7 @@ export const listForBody = query({
 export const listForEditor = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    await requireRole(ctx, 'moderator');
+    await requireCapability(ctx, 'body.read');
     const rows = await landmarksForBody(ctx, waterBodyId);
     return rows
       .map((row) => ({
@@ -645,7 +645,7 @@ export const create = mutation({
     corpusNameId: v.optional(v.id('corpusPlaceNames')),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.places');
     await requireListedBody(ctx, args.waterBodyId);
     const names = cleanNames(args.name, args.aliases);
     const rows = await liveLandmarksForBody(ctx, args.waterBodyId);
@@ -709,7 +709,7 @@ export const update = mutation({
     aliases: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.places');
     const row = await ctx.db.get(args.landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     const names = cleanNames(args.name ?? row.name, args.aliases ?? row.aliases);
@@ -744,7 +744,7 @@ export const update = mutation({
 export const remove = mutation({
   args: { landmarkId: v.id('bodyLandmarks'), reason: v.optional(v.string()) },
   handler: async (ctx, { landmarkId, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.places');
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     // A row the catalogs dropped is already off the map, but a run that places it again would bring
@@ -769,7 +769,7 @@ export const remove = mutation({
 export const restore = mutation({
   args: { landmarkId: v.id('bodyLandmarks') },
   handler: async (ctx, { landmarkId }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.places');
     const row = await ctx.db.get(landmarkId);
     if (!row) throw new ConvexError('That landmark no longer exists');
     if (row.removedAt === undefined) return;

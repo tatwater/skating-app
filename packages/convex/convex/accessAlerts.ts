@@ -50,7 +50,7 @@ import {
   query,
 } from './_generated/server';
 import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
-import { requireContributor, requireContributorRole } from './lib/auth';
+import { requireCapability, requireContributor } from './lib/auth';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_TARGETS,
@@ -325,7 +325,7 @@ export const retract = mutation({
 export const setOfficial = mutation({
   args: { accessAlertId: v.id('accessAlerts'), official: v.boolean(), reason: v.string() },
   handler: async (ctx, { accessAlertId, official, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'access.alert');
     const alert = await ctx.db.get(accessAlertId);
     if (!alert) throw new ConvexError('Access alert not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');

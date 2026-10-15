@@ -24,7 +24,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
-import { requireContributorRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { HIDE_SUPPRESS_METERS, isSuppressed } from './lib/putInSuppression';
 import { activateOnEvidence } from './lib/standing';
 import { latLng } from './lib/validators';
@@ -258,7 +258,7 @@ export const setOfficial = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { waterBodyId, coord, name, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const trimmedName = name?.trim();
@@ -337,7 +337,7 @@ export const setOfficial = mutation({
 export const hide = mutation({
   args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.string() },
   handler: async (ctx, { waterBodyId, coord, reason }) => {
-    const actor = await requireContributorRole(ctx, 'moderator');
+    const actor = await requireCapability(ctx, 'body.access');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');

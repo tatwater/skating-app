@@ -1680,6 +1680,23 @@ describe('a ghost is a ghost everywhere (PR #30 review)', () => {
     // ...but the read still works. Blocking it would be the same mistake as putting the ghost gate in
     // `requireProfile`: reviewing the state of things on the way out is reasonable.
     await expect(mod.as.query(api.waterBodies.listCurated, {})).resolves.toBeDefined();
+
+    // The reads that used to sit behind the write gate (D217 found them): queries name a read
+    // capability now, so a departing operator keeps them like every other read.
+    await expect(mod.as.query(api.waterBodies.reviewQueueCounts, {})).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.waterBodies.listReviewQueue, { reason: 'name-conflict' }),
+    ).resolves.toBeDefined();
+    await expect(mod.as.query(api.hazards.listRecentMerges, {})).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.recurrence.listForBodyAdmin, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
+    await expect(
+      mod.as.query(api.subAreas.adminStatsForBody, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
   });
 
   /**

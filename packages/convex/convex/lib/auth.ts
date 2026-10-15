@@ -8,15 +8,18 @@
  * server-side. Callers get a `ConvexError` they can branch on.
  */
 
-import type { UserRole } from '@skating/core';
+import {
+  CAPABILITIES,
+  type Capability,
+  type ReadCapability,
+  roleMeets,
+  type UserRole,
+} from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
 type Ctx = QueryCtx | MutationCtx;
-
-/** Role precedence: admin ⊇ moderator ⊇ member (D37). */
-const ROLE_RANK: Record<UserRole, number> = { member: 0, moderator: 1, admin: 2 };
 
 /** The caller's profile, or `null` if unauthenticated / not yet provisioned. */
 export async function getCurrentProfile(ctx: Ctx): Promise<Doc<'profiles'> | null> {
@@ -144,9 +147,41 @@ export async function requireContributorRole(
   return profile;
 }
 
+/**
+ * The caller's profile, or throw unless they hold `capability` (D217).
+ *
+ * The capability map in `@skating/core` says the minimum role and whether the capability writes; the
+ * write flag picks the gate — {@link requireContributorRole} for a write (refused to an operator on
+ * their way out), {@link requireRole} for a read (kept through the window). The overloads make a
+ * query's context accept only a read capability; `capabilities.test.ts` holds mutations to writes.
+ */
+export async function requireCapability(
+  ctx: MutationCtx,
+  capability: Capability,
+): Promise<Doc<'profiles'>>;
+export async function requireCapability(
+  ctx: QueryCtx,
+  capability: ReadCapability,
+): Promise<Doc<'profiles'>>;
+export async function requireCapability(
+  ctx: Ctx,
+  capability: Capability,
+): Promise<Doc<'profiles'>> {
+  const rule = CAPABILITIES[capability];
+  return rule.write ? requireContributorRole(ctx, rule.role) : requireRole(ctx, rule.role);
+}
+
+/** Whether an already-loaded profile holds `capability` — for a field or a branch, not a gate. */
+export function hasCapability(
+  profile: Pick<Doc<'profiles'>, 'role'> | null | undefined,
+  capability: Capability,
+): boolean {
+  return profile != null && roleMeets(profile.role, CAPABILITIES[capability].role);
+}
+
 /** The rank comparison itself, shared so the two role gates can't drift on what "at least" means. */
 function assertRole(profile: Doc<'profiles'>, minRole: UserRole): void {
-  if (ROLE_RANK[profile.role] < ROLE_RANK[minRole]) {
+  if (!roleMeets(profile.role, minRole)) {
     throw new ConvexError(`Requires ${minRole} role`);
   }
 }
