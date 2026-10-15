@@ -638,7 +638,7 @@ or a client signal with its own design, and each is a product question before a 
 freeze dates do not exist — the watch samples sentinels and a sample of lakes, and D3 forbids
 saying a lake froze; the page will say *coldest overnight air low*, never *froze*.
 
-## §11 — Undo (D226): the design (2026-10-14, for the founder's sign-off)
+## §11 — Undo (D226): the design (2026-10-14; the founder's calls the same day)
 
 D226 says every operator action undoes, from its toast for ten seconds and from History after
 that, and asks a reason only when an action takes something away. This is how, from what the
@@ -727,7 +727,17 @@ merge change-set recording. The new inverses land with the screens that use them
 Vitest for the registry and the reason rule; `convex-test` for each class's round trip (act, undo,
 state equals before, side effects included), for "overtaken", and for capability refusals.
 
-### Questions for the founder
+### The founder's calls (2026-10-14)
+
+1. The simple rule: a later write on the same target means no undo; History links to it.
+2. Yes: anyone holding the inverse's capability can undo anyone's action from History, and the
+   undo row names both people.
+3. Yes: a skater who asked hears the answer — **email, push and the in-app notifications page**
+   (which already exists on web and mobile, A08), through the settle queue so an undo inside the
+   window cancels it. Built in §2 as a new notification type on the existing pipeline.
+4. Removed photos purge after 30 days (permanent, said in the dialog); everything else stays soft.
+
+### The questions as asked
 
 1. **"A later write means no undo."** Keep that simple rule, or try harder (undo when the later
    write touched different fields)? Recommendation: the simple rule; History links to what
