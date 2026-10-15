@@ -23,6 +23,7 @@ import type * as clerkAdmin from "../clerkAdmin.js";
 import type * as comments from "../comments.js";
 import type * as conditions from "../conditions.js";
 import type * as contentFlags from "../contentFlags.js";
+import type * as console from "../console.js";
 import type * as contentRevisions from "../contentRevisions.js";
 import type * as contradictions from "../contradictions.js";
 import type * as corpusPlaceNames from "../corpusPlaceNames.js";
@@ -160,6 +161,7 @@ declare const fullApi: ApiFromModules<{
   comments: typeof comments;
   conditions: typeof conditions;
   contentFlags: typeof contentFlags;
+  console: typeof console;
   contentRevisions: typeof contentRevisions;
   contradictions: typeof contradictions;
   corpusPlaceNames: typeof corpusPlaceNames;
