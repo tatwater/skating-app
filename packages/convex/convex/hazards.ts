@@ -981,14 +981,23 @@ export const unmerge = mutation({
   args: { hazardId: v.id('hazards'), reason: v.string() },
   handler: async (ctx, { hazardId, reason }) => {
     const actor = await requireCapability(ctx, 'corpus.preIce');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
-    const loser = await ctx.db.get(hazardId);
-    if (!loser) throw new ConvexError('Hazard not found');
-    if (loser.mergedIntoHazardId === undefined) throw new ConvexError('Hazard is not merged');
-    await unmergeHazard(ctx, loser, { actorId: actor._id, reason });
+    await unmergeImpl(ctx, actor, { hazardId, reason });
   },
 });
+
+/** `unmerge`'s body — also what undoing a merge runs, automatic or not (D226). */
+export async function unmergeImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { hazardId, reason }: { hazardId: Id<'hazards'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
+  const loser = await ctx.db.get(hazardId);
+  if (!loser) throw new ConvexError('Hazard not found');
+  if (loser.mergedIntoHazardId === undefined) throw new ConvexError('Hazard is not merged');
+  await unmergeHazard(ctx, loser, { actorId: actor._id, reason });
+}
 
 /**
  * The author's own hazards on a body that aren't yet attached to any report — the D55 auto-bundle

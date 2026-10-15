@@ -638,48 +638,77 @@ export const suppress = mutation({
   args: { recurrenceId: v.id('hazardRecurrence'), reason: v.string() },
   handler: async (ctx, { recurrenceId, reason }) => {
     const actor = await requireCapability(ctx, 'corpus.preIce');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const row = await ctx.db.get(recurrenceId);
-    if (!row) throw new ConvexError('Recurrence not found');
-    await ctx.db.patch(recurrenceId, {
-      suppressedAt: Date.now(),
-      suppressedByUserId: actor._id,
-      suppressReason: reason.trim(),
-      publiclyVisible: false,
-    });
-    await audit(ctx, actor._id, 'suppress_recurrence', recurrenceId, reason.trim(), {
-      waterBodyId: row.waterBodyId,
-    });
+    await suppressImpl(ctx, actor, { recurrenceId, reason });
   },
 });
+
+/** What a suppression or its lifting replaced, recorded as `prev` so the undo can tell (D226). */
+function suppressionPrev(row: Doc<'hazardRecurrence'>) {
+  return {
+    suppressedAt: row.suppressedAt ?? null,
+    suppressedByUserId: row.suppressedByUserId ?? null,
+    suppressReason: row.suppressReason ?? null,
+  };
+}
+
+/** `suppress`'s body — also what undoing an unsuppress runs (D226). */
+export async function suppressImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { recurrenceId, reason }: { recurrenceId: Id<'hazardRecurrence'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const row = await ctx.db.get(recurrenceId);
+  if (!row) throw new ConvexError('Recurrence not found');
+  await ctx.db.patch(recurrenceId, {
+    suppressedAt: Date.now(),
+    suppressedByUserId: actor._id,
+    suppressReason: reason.trim(),
+    publiclyVisible: false,
+  });
+  await audit(ctx, actor._id, 'suppress_recurrence', recurrenceId, reason.trim(), {
+    waterBodyId: row.waterBodyId,
+    prev: suppressionPrev(row),
+  });
+}
 
 /** Undo a suppression. The cluster returns to the queue and regains the public bar on the next pass. */
 export const unsuppress = mutation({
   args: { recurrenceId: v.id('hazardRecurrence'), reason: v.string() },
   handler: async (ctx, { recurrenceId, reason }) => {
     const actor = await requireCapability(ctx, 'corpus.preIce');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    const row = await ctx.db.get(recurrenceId);
-    if (!row) throw new ConvexError('Recurrence not found');
-    await ctx.db.patch(recurrenceId, {
-      suppressedAt: undefined,
-      suppressedByUserId: undefined,
-      suppressReason: undefined,
-      // Recomputed here rather than left to the next rollover: an operator who un-suppresses expects
-      // the cluster to behave normally now, not next July.
-      publiclyVisible: isPubliclyVisible({
-        family: row.family,
-        seasonsObserved: row.seasonsObserved,
-        ...(row.promotedToFeatureId !== undefined
-          ? { promotedToFeatureId: row.promotedToFeatureId }
-          : {}),
-      }),
-    });
-    await audit(ctx, actor._id, 'unsuppress_recurrence', recurrenceId, reason.trim(), {
-      waterBodyId: row.waterBodyId,
-    });
+    await unsuppressImpl(ctx, actor, { recurrenceId, reason });
   },
 });
+
+/** `unsuppress`'s body — also what undoing a suppression runs (D226). */
+export async function unsuppressImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { recurrenceId, reason }: { recurrenceId: Id<'hazardRecurrence'>; reason: string },
+): Promise<void> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const row = await ctx.db.get(recurrenceId);
+  if (!row) throw new ConvexError('Recurrence not found');
+  await ctx.db.patch(recurrenceId, {
+    suppressedAt: undefined,
+    suppressedByUserId: undefined,
+    suppressReason: undefined,
+    // Recomputed here rather than left to the next rollover: an operator who un-suppresses expects
+    // the cluster to behave normally now, not next July.
+    publiclyVisible: isPubliclyVisible({
+      family: row.family,
+      seasonsObserved: row.seasonsObserved,
+      ...(row.promotedToFeatureId !== undefined
+        ? { promotedToFeatureId: row.promotedToFeatureId }
+        : {}),
+    }),
+  });
+  await audit(ctx, actor._id, 'unsuppress_recurrence', recurrenceId, reason.trim(), {
+    waterBodyId: row.waterBodyId,
+    prev: suppressionPrev(row),
+  });
+}
 
 /**
  * Graduate a whole cluster into a permanent body feature (§8.2).

@@ -28,7 +28,7 @@ const postedAccessTarget = v.union(
   v.object({ type: v.literal('putIn'), id: v.id('putIns') }),
   v.object({ type: v.literal('parkingArea'), id: v.id('parkingAreas') }),
 );
-type PostedAccessTarget = Infer<typeof postedAccessTarget>;
+export type PostedAccessTarget = Infer<typeof postedAccessTarget>;
 
 // The validator and the core type must stay structurally identical — assert it at compile time so
 // drift in either is a build error rather than a silent DB/runtime mismatch (the `weatherSinceSummary`
@@ -97,36 +97,52 @@ export const setPostedAccess = mutation({
   },
   handler: async (ctx, { target, postedAccess }) => {
     const actor = await requireCapability(ctx, 'body.access');
-
-    const doc = await getTarget(ctx, target);
-    if (!doc) throw new ConvexError(NOT_FOUND[target.type]);
-
-    let next: PostedAccess | undefined;
-    if (postedAccess !== null) {
-      const error = postedAccessError(postedAccess);
-      if (error) throw new ConvexError(error);
-      next = normalize(postedAccess);
-    }
-
-    const prev = doc.postedAccess;
-    await patchTarget(ctx, target, next);
-
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'set_posted_access',
-      targetType: target.type,
-      targetId: target.id,
-      reason: describeChange(next),
-      // `prev` alongside the new value (the A06c §6.1 convention): an audit row that records only what a
-      // field *became* can answer "who changed this" and never "changed it from what", which is most
-      // of what someone reading a wrong closure back would want.
-      metadata: { postedAccess: next ?? null, prev: { postedAccess: prev ?? null } },
-      createdAt: Date.now(),
-    });
-
-    return target.id;
+    return setPostedAccessImpl(ctx, actor, { target, postedAccess });
   },
 });
+
+/**
+ * `setPostedAccess`'s body — also what undoing one runs, given the row's `prev` (D226). The mutation
+ * writes the rule itself as the audit reason; an undo's `reason` (the operator's, or the engine's
+ * "Undid …") is appended to it so the row says both what was put back and why.
+ */
+export async function setPostedAccessImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    target,
+    postedAccess,
+    reason,
+  }: { target: PostedAccessTarget; postedAccess: PostedAccess | null; reason?: string },
+): Promise<PostedAccessTarget['id']> {
+  const doc = await getTarget(ctx, target);
+  if (!doc) throw new ConvexError(NOT_FOUND[target.type]);
+
+  let next: PostedAccess | undefined;
+  if (postedAccess !== null) {
+    const error = postedAccessError(postedAccess);
+    if (error) throw new ConvexError(error);
+    next = normalize(postedAccess);
+  }
+
+  const prev = doc.postedAccess;
+  await patchTarget(ctx, target, next);
+
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_posted_access',
+    targetType: target.type,
+    targetId: target.id,
+    reason: reason ? `${describeChange(next)} — ${reason}` : describeChange(next),
+    // `prev` alongside the new value (the A06c §6.1 convention): an audit row that records only what a
+    // field *became* can answer "who changed this" and never "changed it from what", which is most
+    // of what someone reading a wrong closure back would want.
+    metadata: { postedAccess: next ?? null, prev: { postedAccess: prev ?? null } },
+    createdAt: Date.now(),
+  });
+
+  return target.id;
+}
 
 /**
  * Drop a whitespace-only note so it stores as absent rather than as an empty citation.

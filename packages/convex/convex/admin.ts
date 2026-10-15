@@ -9,8 +9,8 @@
 
 import { normalizeUsername, type TrustClass, type UserStatus } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { Doc } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import { type MutationCtx, mutation, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { trustClassFor } from './lib/reputation';
@@ -85,24 +85,35 @@ export const grantRole = mutation({
   args: { userId: v.id('profiles'), role: literals(['moderator', 'admin']), reason: v.string() },
   handler: async (ctx, { userId, role, reason }) => {
     const actor = await requireCapability(ctx, 'people.role');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    if (userId === actor._id) throw new ConvexError('You cannot change your own role');
-    const target = await ctx.db.get(userId);
-    if (!target) throw new ConvexError('User not found');
-
-    await ctx.db.patch(userId, { role });
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'grant_role',
-      targetType: 'user',
-      targetId: userId,
-      reason,
-      metadata: { role, priorRole: target.role },
-      createdAt: Date.now(),
-    });
-    return userId;
+    return grantRoleImpl(ctx, actor, { userId, role, reason });
   },
 });
+
+export type ElevatedRole = 'moderator' | 'admin';
+
+/** `grantRole`'s body, self-guard included — also what an undo that restores a role runs (D226). */
+export async function grantRoleImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, role, reason }: { userId: Id<'profiles'>; role: ElevatedRole; reason: string },
+): Promise<Id<'profiles'>> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  if (userId === actor._id) throw new ConvexError('You cannot change your own role');
+  const target = await ctx.db.get(userId);
+  if (!target) throw new ConvexError('User not found');
+
+  await ctx.db.patch(userId, { role });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'grant_role',
+    targetType: 'user',
+    targetId: userId,
+    reason,
+    metadata: { role, priorRole: target.role },
+    createdAt: Date.now(),
+  });
+  return userId;
+}
 
 /**
  * Revoke all elevated roles back to `member` (D37 — **admin-only**). Guards against an admin revoking
@@ -112,21 +123,30 @@ export const revokeRole = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'people.role');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
-    const target = await ctx.db.get(userId);
-    if (!target) throw new ConvexError('User not found');
-
-    await ctx.db.patch(userId, { role: 'member' });
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'revoke_role',
-      targetType: 'user',
-      targetId: userId,
-      reason,
-      metadata: { priorRole: target.role },
-      createdAt: Date.now(),
-    });
-    return userId;
+    return revokeRoleImpl(ctx, actor, { userId, reason });
   },
 });
+
+/** `revokeRole`'s body, self-guard included — also what an undo back to `member` runs (D226). */
+export async function revokeRoleImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+): Promise<Id<'profiles'>> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
+  const target = await ctx.db.get(userId);
+  if (!target) throw new ConvexError('User not found');
+
+  await ctx.db.patch(userId, { role: 'member' });
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'revoke_role',
+    targetType: 'user',
+    targetId: userId,
+    reason,
+    metadata: { priorRole: target.role },
+    createdAt: Date.now(),
+  });
+  return userId;
+}
