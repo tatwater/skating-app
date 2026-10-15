@@ -162,3 +162,17 @@ export type WriteCapability = Exclude<Capability, ReadCapability>;
 export function can(role: UserRole | undefined, capability: Capability): boolean {
   return role !== undefined && roleMeets(role, CAPABILITIES[capability].role);
 }
+
+/**
+ * The client's whole question before drawing a control: the role holds the capability, and — for a
+ * write — the operator is not on their way out. The same split the server draws (`requireCapability`
+ * picks `requireContributorRole` for a write), so a control is drawn exactly when the server would
+ * accept it.
+ */
+export function canUse(
+  role: UserRole | undefined,
+  leaving: boolean,
+  capability: Capability,
+): boolean {
+  return can(role, capability) && !(CAPABILITIES[capability].write && leaving);
+}

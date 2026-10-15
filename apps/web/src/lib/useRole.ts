@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import { isLeaving } from '@skating/core';
+import { type Capability, canUse, isLeaving } from '@skating/core';
 import { useQuery } from 'convex/react';
 
 export type Role = 'member' | 'moderator' | 'admin';
@@ -31,6 +31,11 @@ export function useRole(): {
   /** The reason `canModerate` is false while `isModerator` is true. */
   leaving: boolean;
   isLoading: boolean;
+  /**
+   * Whether to draw a control gated by `capability` (D217): the same map the server gates on, with
+   * the same read/write split. The console asks this, not the role.
+   */
+  can: (capability: Capability) => boolean;
 } {
   const profile = useQuery(api.profiles.current, {});
   const role = profile?.role as Role | undefined;
@@ -44,5 +49,6 @@ export function useRole(): {
     canModerate: isModerator && !leaving,
     leaving,
     isLoading: profile === undefined,
+    can: (capability) => canUse(role, leaving, capability),
   };
 }

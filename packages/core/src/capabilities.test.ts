@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAPABILITIES, type Capability, can, ROLE_RANK, roleMeets } from './capabilities';
+import { CAPABILITIES, type Capability, can, canUse, ROLE_RANK, roleMeets } from './capabilities';
 
 const ALL = Object.keys(CAPABILITIES) as Capability[];
 
@@ -53,5 +53,13 @@ describe('the capability map (D217)', () => {
     expect(roleMeets('moderator', 'moderator')).toBe(true);
     expect(roleMeets('moderator', 'admin')).toBe(false);
     expect(roleMeets('admin', 'moderator')).toBe(true);
+  });
+
+  it('a leaving operator keeps reads and loses writes, as on the server', () => {
+    expect(canUse('moderator', true, 'inbox.read')).toBe(true);
+    expect(canUse('moderator', true, 'inbox.flag')).toBe(false);
+    expect(canUse('moderator', false, 'inbox.flag')).toBe(true);
+    expect(canUse('moderator', false, 'people.role')).toBe(false);
+    expect(canUse(undefined, false, 'inbox.read')).toBe(false);
   });
 });
