@@ -42,7 +42,7 @@ import {
 import { v } from 'convex/values';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
-import { requireCapability, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { bodyWeatherCell } from './lib/sampling';
 import { OPEN_METEO_PROVIDER } from './weather';
 

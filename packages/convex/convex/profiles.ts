@@ -51,7 +51,6 @@ import {
   requireCapability,
   requireContributor,
   requireProfile,
-  requireRole,
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';

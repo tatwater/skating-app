@@ -36,5 +36,31 @@ export async function writeAudit(
   entry: AuditEntry,
 ): Promise<Id<'moderationActions'>> {
   const { createdAt, ...row } = entry;
-  return ctx.db.insert('moderationActions', { ...row, createdAt: createdAt ?? Date.now() });
+  const undoesActionId = row.undoesActionId ?? UNDOING.get(ctx);
+  return ctx.db.insert('moderationActions', {
+    ...row,
+    ...(undoesActionId !== undefined ? { undoesActionId } : {}),
+    createdAt: createdAt ?? Date.now(),
+  });
+}
+
+/**
+ * The undo an in-flight mutation is performing, keyed by its context. An undo runs the inverse verb's
+ * own helper, which writes its own audit rows the ordinary way; every row written while `fn` runs is
+ * tagged with the row it undoes, so a cascade (a Post's restore bringing back its reports) is tagged
+ * too, with no helper having to thread the id through.
+ */
+const UNDOING = new WeakMap<object, Id<'moderationActions'>>();
+
+export async function asUndoOf<T>(
+  ctx: MutationCtx,
+  actionId: Id<'moderationActions'>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  UNDOING.set(ctx, actionId);
+  try {
+    return await fn();
+  } finally {
+    UNDOING.delete(ctx);
+  }
 }

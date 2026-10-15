@@ -12,7 +12,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
-import { requireCapability, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { trustClassFor } from './lib/reputation';
 import { literals } from './lib/validators';
 

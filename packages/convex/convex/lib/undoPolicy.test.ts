@@ -1,7 +1,7 @@
 import { CAPABILITIES } from '@skating/core';
 import { describe, expect, test } from 'vitest';
 import { MODERATION_ACTIONS } from './enums';
-import { UNDO_POLICY, undoOwed } from './undoPolicy';
+import { UNDO_POLICY, undoCapability, undoOwed } from './undoPolicy';
 
 describe('the undo registry (D226)', () => {
   test('covers every audited verb, and nothing else', () => {
@@ -17,8 +17,24 @@ describe('the undo registry (D226)', () => {
   });
 
   test('every undo needs a write capability', () => {
-    for (const rule of Object.values(UNDO_POLICY))
-      expect(CAPABILITIES[rule.capability].write).toBe(true);
+    for (const rule of Object.values(UNDO_POLICY)) {
+      for (const t of [
+        'report',
+        'waterbody',
+        'waterBodySubArea',
+        'bodyLandmark',
+        'putIn',
+      ] as const) {
+        expect(CAPABILITIES[undoCapability(rule, t)].write).toBe(true);
+      }
+    }
+  });
+
+  test('a shared verb takes the lever of its target', () => {
+    expect(undoCapability(UNDO_POLICY.remove, 'report')).toBe('content.moderate');
+    expect(undoCapability(UNDO_POLICY.remove, 'waterbody')).toBe('body.remove');
+    expect(undoCapability(UNDO_POLICY.restore, 'waterBodySubArea')).toBe('body.shape');
+    expect(undoCapability(UNDO_POLICY.hide, 'putIn')).toBe('body.access');
   });
 
   test('a verb that cannot be undone says why', () => {

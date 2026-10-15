@@ -100,6 +100,8 @@ import type * as lib_seasonWatchValidators from "../lib/seasonWatchValidators.js
 import type * as lib_sightingHazards from "../lib/sightingHazards.js";
 import type * as lib_standing from "../lib/standing.js";
 import type * as lib_storageBlobs from "../lib/storageBlobs.js";
+import type * as lib_undo from "../lib/undo.js";
+import type * as lib_undoHandlers from "../lib/undoHandlers.js";
 import type * as lib_undoPolicy from "../lib/undoPolicy.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as moderation from "../moderation.js";
@@ -125,6 +127,7 @@ import type * as storageHygiene from "../storageHygiene.js";
 import type * as strava from "../strava.js";
 import type * as subAreas from "../subAreas.js";
 import type * as support from "../support.js";
+import type * as undo from "../undo.js";
 import type * as waterBodies from "../waterBodies.js";
 import type * as waterBodyFavorites from "../waterBodyFavorites.js";
 import type * as weather from "../weather.js";
@@ -231,6 +234,8 @@ declare const fullApi: ApiFromModules<{
   "lib/sightingHazards": typeof lib_sightingHazards;
   "lib/standing": typeof lib_standing;
   "lib/storageBlobs": typeof lib_storageBlobs;
+  "lib/undo": typeof lib_undo;
+  "lib/undoHandlers": typeof lib_undoHandlers;
   "lib/undoPolicy": typeof lib_undoPolicy;
   "lib/validators": typeof lib_validators;
   moderation: typeof moderation;
@@ -256,6 +261,7 @@ declare const fullApi: ApiFromModules<{
   strava: typeof strava;
   subAreas: typeof subAreas;
   support: typeof support;
+  undo: typeof undo;
   waterBodies: typeof waterBodies;
   waterBodyFavorites: typeof waterBodyFavorites;
   weather: typeof weather;

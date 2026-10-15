@@ -21,7 +21,7 @@
  */
 
 import type { Capability } from '@skating/core';
-import type { ModerationAction } from './audit';
+import type { ModerationAction, ModerationTargetType } from './audit';
 
 export type Workstream = '§2 Inbox' | '§3 Body console' | '§4 Corpus' | '§6 Season';
 
@@ -36,7 +36,33 @@ export interface UndoRule {
   undo: UndoKind;
   /** Whether putting this value in place takes something away from skaters (D226). */
   takesAway: (value?: unknown) => boolean;
-  capability: Capability;
+  /** What the undoer must hold — per target where a verb is shared across kinds. */
+  capability: Capability | ((targetType: ModerationTargetType) => Capability);
+}
+
+/**
+ * The shared verbs (`hide`, `remove`, `restore`) act on content and on corpus objects alike; the
+ * lever is the target's, not the verb's.
+ */
+const byTarget = (targetType: ModerationTargetType): Capability => {
+  switch (targetType) {
+    case 'waterbody':
+      return 'body.remove';
+    case 'waterBodySubArea':
+      return 'body.shape';
+    case 'bodyLandmark':
+      return 'body.places';
+    case 'putIn':
+    case 'parkingArea':
+      return 'body.access';
+    default:
+      return 'content.moderate';
+  }
+};
+
+/** The capability an undo of `row` needs. */
+export function undoCapability(rule: UndoRule, targetType: ModerationTargetType): Capability {
+  return typeof rule.capability === 'function' ? rule.capability(targetType) : rule.capability;
 }
 
 const always = () => true;
@@ -56,9 +82,9 @@ const later = (workstream: Workstream, plan: string): UndoKind => ({
 
 export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   // ── Content (reports, posts, comments, hazards, photos; sub-areas and landmarks share the verbs) ──
-  hide: { undo: inverse('restore'), takesAway: always, capability: 'content.moderate' },
-  remove: { undo: inverse('restore'), takesAway: always, capability: 'content.moderate' },
-  restore: { undo: inverse('priorStatus'), takesAway: never, capability: 'content.moderate' },
+  hide: { undo: inverse('restore'), takesAway: always, capability: byTarget },
+  remove: { undo: inverse('restore'), takesAway: always, capability: byTarget },
+  restore: { undo: inverse('priorStatus'), takesAway: never, capability: byTarget },
   author_delete: {
     undo: {
       kind: 'none',

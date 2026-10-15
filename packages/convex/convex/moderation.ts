@@ -18,13 +18,14 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { writeAudit } from './lib/audit';
-import { requireCapability, requireRole } from './lib/auth';
+import { requireCapability } from './lib/auth';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
 import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
+import { type UndoState, undoState } from './lib/undo';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -248,6 +249,27 @@ export const setModerationStatus = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'content.moderate');
+    return setContentStatus(ctx, actor, args);
+  },
+});
+
+export type ContentTargetType = keyof typeof MODERATION_TABLE;
+
+/**
+ * The body of {@link setModerationStatus}, callable by an undo (D226) so the restore runs the same
+ * cascade the hide did — a Post brings back the reports *it* hid, and every count and card follows.
+ */
+export async function setContentStatus(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    targetType: ContentTargetType;
+    targetId: string;
+    status: ModerationStatus;
+    reason: string;
+  },
+): Promise<Id<'reports'> | Id<'posts'> | Id<'comments'> | Id<'hazards'>> {
+  {
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const now = Date.now();
 
@@ -338,8 +360,8 @@ export const setModerationStatus = mutation({
       createdAt: now,
     });
     return targetId;
-  },
-});
+  }
+}
 
 /**
  * Resolve a content flag (D32/D37). `requireCapability('inbox.flag')`; sets the flag terminal status
@@ -701,10 +723,20 @@ interface ActionView {
   metadata?: unknown;
   createdAt: number;
   actor: QueueUser | null;
+  /** Set on the row an undo wrote: the row it undid (D226). */
+  undoesActionId?: string;
+  /** Whether the viewer can undo this row now, and if not, why (D226). */
+  undo: UndoState;
 }
 
-async function toActionView(ctx: QueryCtx, a: Doc<'moderationActions'>): Promise<ActionView> {
+async function toActionView(
+  ctx: QueryCtx,
+  viewer: Doc<'profiles'>,
+  a: Doc<'moderationActions'>,
+): Promise<ActionView> {
   return {
+    ...(a.undoesActionId !== undefined ? { undoesActionId: a.undoesActionId } : {}),
+    undo: await undoState(ctx, viewer, a),
     id: a._id,
     action: a.action,
     targetType: a.targetType,
@@ -730,7 +762,7 @@ export const listActions = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<ActionView[]> => {
-    await requireCapability(ctx, 'audit.read');
+    const viewer = await requireCapability(ctx, 'audit.read');
     const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
 
     const { targetType, targetId, actorId } = args;
@@ -753,7 +785,7 @@ export const listActions = query({
 
     const filtered =
       args.action !== undefined ? rows.filter((r) => r.action === args.action) : rows;
-    return Promise.all(filtered.map((a) => toActionView(ctx, a)));
+    return Promise.all(filtered.map((a) => toActionView(ctx, viewer, a)));
   },
 });
 
@@ -812,6 +844,25 @@ export const banUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
+    return banImpl(ctx, actor, { userId, reason });
+  },
+});
+
+/** What a lifecycle action replaced — the whole status, so its undo puts back exactly that (D226). */
+function statusPrev(target: Doc<'profiles'>) {
+  return {
+    status: target.status,
+    statusReason: target.statusReason ?? null,
+    suspendedUntil: target.suspendedUntil ?? null,
+  };
+}
+
+export async function banImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+): Promise<Id<'profiles'>> {
+  {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -821,15 +872,15 @@ export const banUser = mutation({
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
     });
-    await auditUser(ctx, actor._id, 'ban', userId, reason);
+    await auditUser(ctx, actor._id, 'ban', userId, reason, { prev: statusPrev(target) });
     // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: true,
     });
     return userId;
-  },
-});
+  }
+}
 
 /**
  * Temporarily suspend a user until `suspendedUntil` (D37). The Convex gate (`requireProfile`) rejects
@@ -841,11 +892,25 @@ export const suspendUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
   handler: async (ctx, { userId, reason, suspendedUntil }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
+    return suspendImpl(ctx, actor, { userId, reason, suspendedUntil });
+  },
+});
+
+export async function suspendImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    userId,
+    reason,
+    suspendedUntil,
+  }: { userId: Id<'profiles'>; reason: string; suspendedUntil: number },
+): Promise<Id<'profiles'>> {
+  {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
       throw new ConvexError('Suspension must end in the future');
     }
-    await loadModeratableUser(ctx, actor, userId);
+    const target = await loadModeratableUser(ctx, actor, userId);
 
     await ctx.db.patch(userId, {
       status: 'suspended',
@@ -853,10 +918,13 @@ export const suspendUser = mutation({
       suspendedUntil,
       moderatedByUserId: actor._id,
     });
-    await auditUser(ctx, actor._id, 'suspend', userId, reason, { suspendedUntil });
+    await auditUser(ctx, actor._id, 'suspend', userId, reason, {
+      suspendedUntil,
+      prev: statusPrev(target),
+    });
     return userId;
-  },
-});
+  }
+}
 
 /**
  * Lift a ban or suspension (D37) — returns the account to `active`, clears the suspension window +
@@ -867,6 +935,16 @@ export const unbanUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
+    return unbanImpl(ctx, actor, { userId, reason });
+  },
+});
+
+export async function unbanImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, reason }: { userId: Id<'profiles'>; reason: string },
+): Promise<Id<'profiles'>> {
+  {
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -876,14 +954,14 @@ export const unbanUser = mutation({
       suspendedUntil: undefined,
       moderatedByUserId: actor._id,
     });
-    await auditUser(ctx, actor._id, 'unban', userId, reason);
+    await auditUser(ctx, actor._id, 'unban', userId, reason, { prev: statusPrev(target) });
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: false,
     });
     return userId;
-  },
-});
+  }
+}
 
 /**
  * Set (or clear) a requester's **open-bounty cap** (D57's deferred bounty lever, built in A02).
@@ -906,20 +984,29 @@ export const setBountyPostLimit = mutation({
   },
   handler: async (ctx, { userId, limit, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
-      throw new ConvexError('A bounty limit has to be a whole number, zero or more');
-    }
-    await loadModeratableUser(ctx, actor, userId);
-
-    await ctx.db.patch(userId, { activeBountyPostLimit: limit });
-    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
-      permission: 'bounties',
-      limit: limit ?? null,
-    });
-    return userId;
+    return setBountyLimitImpl(ctx, actor, { userId, limit, reason });
   },
 });
+
+export async function setBountyLimitImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  { userId, limit, reason }: { userId: Id<'profiles'>; limit?: number; reason: string },
+): Promise<Id<'profiles'>> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+    throw new ConvexError('A bounty limit has to be a whole number, zero or more');
+  }
+  const target = await loadModeratableUser(ctx, actor, userId);
+
+  await ctx.db.patch(userId, { activeBountyPostLimit: limit });
+  await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+    permission: 'bounties',
+    limit: limit ?? null,
+    prev: { limit: target.activeBountyPostLimit ?? null },
+  });
+  return userId;
+}
 
 /** Which `profiles` boolean each posting surface maps to (D57). */
 const POSTING_PERMISSION_FIELD = {
@@ -943,14 +1030,32 @@ export const setPostingPermission = mutation({
   },
   handler: async (ctx, { userId, permission, allowed, reason }) => {
     const actor = await requireCapability(ctx, 'people.discipline');
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    await loadModeratableUser(ctx, actor, userId);
-
-    await ctx.db.patch(userId, { [POSTING_PERMISSION_FIELD[permission]]: allowed });
-    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
-      permission,
-      allowed,
-    });
-    return userId;
+    return setPostingPermissionImpl(ctx, actor, { userId, permission, allowed, reason });
   },
 });
+
+export type PostingPermission = keyof typeof POSTING_PERMISSION_FIELD;
+
+export async function setPostingPermissionImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    userId,
+    permission,
+    allowed,
+    reason,
+  }: { userId: Id<'profiles'>; permission: PostingPermission; allowed: boolean; reason: string },
+): Promise<Id<'profiles'>> {
+  if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+  const target = await loadModeratableUser(ctx, actor, userId);
+
+  const field = POSTING_PERMISSION_FIELD[permission];
+  await ctx.db.patch(userId, { [field]: allowed });
+  await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+    permission,
+    allowed,
+    // Missing means allowed (D57), so the prior value is always a boolean.
+    prev: { allowed: target[field] !== false },
+  });
+  return userId;
+}
