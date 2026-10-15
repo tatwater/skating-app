@@ -24,10 +24,24 @@
  * Removal (D48) stays what it was: a human act with a reason. Nothing here deletes.
  */
 
-import { INACTIVE_SEASONS, isActive, retainsActive, seasonOf, standingOf } from '@skating/core';
+import {
+  type DormancyReason,
+  INACTIVE_SEASONS,
+  isActive,
+  retainsActive,
+  seasonOf,
+  standingOf,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import { internalAction, internalMutation, mutation, query } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import {
+  internalAction,
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  query,
+} from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { takeCappedResult } from './lib/scan';
 import { activateBody, anyFavorite, demoteBody, lastActivityAt } from './lib/standing';
@@ -56,8 +70,35 @@ export const setStanding = mutation({
     note: v.optional(v.string()),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, { waterBodyId, standing, note, reason }) => {
+  handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'body.standing');
+    return setStandingImpl(ctx, actor, args);
+  },
+});
+
+/**
+ * `setStanding`'s body, shared with the undo of a standing change (D226). The undo of an activation
+ * shelves the body for the reason it was shelved before — `dormancyReason`, which the mutation never
+ * passes (a moderator's hand is always `moderator`).
+ */
+export async function setStandingImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  {
+    waterBodyId,
+    standing,
+    note,
+    reason,
+    dormancyReason = 'moderator',
+  }: {
+    waterBodyId: Id<'waterBodies'>;
+    standing: 'active' | 'dormant';
+    note?: string;
+    reason?: string;
+    dormancyReason?: DormancyReason;
+  },
+): Promise<Id<'waterBodies'>> {
+  {
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const current = standingOf(body);
@@ -81,7 +122,11 @@ export const setStanding = mutation({
       await demoteBody(
         ctx,
         body,
-        { reason: 'moderator', byUserId: actor._id, ...(trimmedNote ? { note: trimmedNote } : {}) },
+        {
+          reason: dormancyReason,
+          byUserId: actor._id,
+          ...(trimmedNote ? { note: trimmedNote } : {}),
+        },
         { actorId: actor._id, ...(reason?.trim() ? { reason: reason.trim() } : {}) },
       );
       return waterBodyId;
@@ -103,8 +148,8 @@ export const setStanding = mutation({
       ...(reason?.trim() ? { reason: reason.trim() } : {}),
     });
     return waterBodyId;
-  },
-});
+  }
+}
 
 // ── The standing lists ─────────────────────────────────────────────────────────────────────────
 
