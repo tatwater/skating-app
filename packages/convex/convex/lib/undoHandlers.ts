@@ -13,7 +13,6 @@
  */
 
 import type { Doc, Id } from '../_generated/dataModel';
-import type { MutationCtx } from '../_generated/server';
 import {
   banImpl,
   type ContentTargetType,
@@ -24,37 +23,17 @@ import {
   suspendImpl,
   unbanImpl,
 } from '../moderation';
-import type { ModerationAction } from './audit';
+import type { ModerationAction, ModerationTargetType } from './audit';
+import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
+import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
 import { UNDO_POLICY } from './undoPolicy';
-
-export interface UndoCall {
-  ctx: MutationCtx;
-  actor: Doc<'profiles'>;
-  row: Doc<'moderationActions'>;
-  reason: string;
-}
-
-export interface UndoHandler {
-  blocked?: (row: Doc<'moderationActions'>) => string | null;
-  undoTakesAway: (row: Doc<'moderationActions'>) => boolean;
-  run: (call: UndoCall) => Promise<void>;
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: metadata is `v.any()` in the schema; each handler reads its own shape.
-type Meta = Record<string, any>;
-const meta = (row: Doc<'moderationActions'>): Meta => (row.metadata ?? {}) as Meta;
-
-const PREDATES = 'This was done before undo existed, and nothing records what it replaced.';
+import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
 // ── Content: reports, posts, comments, hazards ────────────────────────────────────────────────────
 
-const CONTENT_TARGETS = new Set<string>(['report', 'post', 'comment', 'hazard']);
 type ContentStatus = 'visible' | 'hidden' | 'removed';
 
 function contentBlocked(row: Doc<'moderationActions'>): string | null {
-  if (!CONTENT_TARGETS.has(row.targetType)) {
-    return 'Undo for this kind of item lands with the Body console.';
-  }
   // A row a Post's verdict wrote for one of its members is undone with the Post, not on its own.
   if (meta(row).cascadedFromPostId !== undefined || meta(row).derivedFromReportId !== undefined) {
     return 'This followed from a Post; undo it on the Post.';
@@ -183,12 +162,46 @@ const undoPostingPermission: UndoHandler = {
   },
 };
 
-export const UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
+const CONTENT: TargetUndo = {
   hide: contentUndoTakedown,
   remove: contentUndoTakedown,
   restore: contentUndoRestore,
+};
+
+/** `hide`, `remove` and `restore` are shared across kinds; each kind brings its own undo. */
+const TARGET_UNDO: Partial<Record<ModerationTargetType, TargetUndo>> = {
+  report: CONTENT,
+  post: CONTENT,
+  comment: CONTENT,
+  hazard: CONTENT,
+  ...BODY_TARGET_UNDO,
+  ...CORPUS_TARGET_UNDO,
+};
+
+function shared(verb: keyof TargetUndo): UndoHandler {
+  const forRow = (row: Doc<'moderationActions'>) => TARGET_UNDO[row.targetType]?.[verb];
+  return {
+    blocked: (row) => {
+      const h = forRow(row);
+      return h ? (h.blocked?.(row) ?? null) : 'Undo for this kind of item is not built yet.';
+    },
+    undoTakesAway: (row) => forRow(row)?.undoTakesAway(row) ?? false,
+    run: async (call) => {
+      const h = forRow(call.row);
+      if (!h) throw new Error(`no undo for ${verb} on ${call.row.targetType}`);
+      await h.run(call);
+    },
+  };
+}
+
+export const UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
+  hide: shared('hide'),
+  remove: shared('remove'),
+  restore: shared('restore'),
   ban: undoDiscipline,
   suspend: undoDiscipline,
   unban: undoLift,
   set_posting_permission: undoPostingPermission,
+  ...BODY_UNDO_HANDLERS,
+  ...CORPUS_UNDO_HANDLERS,
 };

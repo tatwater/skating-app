@@ -20,8 +20,9 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
-import { UNDO_HANDLERS, type UndoHandler } from './undoHandlers';
+import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability } from './undoPolicy';
+import type { UndoHandler } from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
 export const TOAST_UNDO_MS = 10_000;
