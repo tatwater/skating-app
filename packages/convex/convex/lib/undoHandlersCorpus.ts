@@ -41,9 +41,12 @@ const priorRoleOf = (row: Doc<'moderationActions'>): Role | undefined => meta(ro
 
 /** grant_role / revoke_role → the role it replaced. Both ask a reason (the registry's rule). */
 const undoRoleChange: UndoHandler = {
-  blocked: (row) => {
+  blocked: (row, viewer) => {
     const prior = priorRoleOf(row);
     if (prior === undefined) return PREDATES;
+    if (viewer !== undefined && row.targetId === viewer._id) {
+      return 'This changed your own role; another admin has to undo it.';
+    }
     if (row.action === 'revoke_role' && prior === 'member') {
       return 'Nothing was revoked: they were already a member.';
     }

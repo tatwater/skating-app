@@ -181,9 +181,11 @@ const TARGET_UNDO: Partial<Record<ModerationTargetType, TargetUndo>> = {
 function shared(verb: keyof TargetUndo): UndoHandler {
   const forRow = (row: Doc<'moderationActions'>) => TARGET_UNDO[row.targetType]?.[verb];
   return {
-    blocked: (row) => {
+    blocked: (row, viewer) => {
       const h = forRow(row);
-      return h ? (h.blocked?.(row) ?? null) : 'Undo for this kind of item is not built yet.';
+      return h
+        ? (h.blocked?.(row, viewer) ?? null)
+        : 'Undo for this kind of item is not built yet.';
     },
     undoTakesAway: (row) => forRow(row)?.undoTakesAway(row) ?? false,
     run: async (call) => {

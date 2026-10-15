@@ -205,6 +205,20 @@ describe('undo: roles (D226)', () => {
       other.as.mutation(api.undo.run, { actionId: grant._id, reason: 'step down' }),
     ).rejects.toThrow(/your own role/i);
     expect((await t.run((ctx) => ctx.db.get(other.id)))?.role).toBe('admin');
+    // History doesn't offer it in the first place: the viewer reaches `blocked`.
+    const history = await other.as.query(api.moderation.listActions, {
+      targetType: 'user',
+      targetId: other.id,
+    });
+    expect(history[0]?.undo).toEqual({
+      state: 'unavailable',
+      why: expect.stringMatching(/your own role/),
+    });
+    const forAdmin = await admin.as.query(api.moderation.listActions, {
+      targetType: 'user',
+      targetId: other.id,
+    });
+    expect(forAdmin[0]?.undo.state).toBe('available');
   });
 
   test('a grant recorded before undo, and a revoke of a member, say why they cannot undo', async () => {

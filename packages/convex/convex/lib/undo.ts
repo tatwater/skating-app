@@ -41,7 +41,7 @@ function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
 /** Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads. */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
-  viewer: Pick<Doc<'profiles'>, 'role'>,
+  viewer: Pick<Doc<'profiles'>, '_id' | 'role'>,
   row: Doc<'moderationActions'>,
 ): Promise<UndoState> {
   const rule = UNDO_POLICY[row.action];
@@ -67,7 +67,7 @@ export async function undoState(
     return { state: 'overtaken', byActionId: newest._id };
   }
 
-  const blocked = handler.blocked?.(row) ?? null;
+  const blocked = handler.blocked?.(row, viewer) ?? null;
   if (blocked) return { state: 'unavailable', why: blocked };
   if (!hasCapability(viewer, undoCapability(rule, row.targetType))) {
     return { state: 'unavailable', why: 'Undoing this takes a role you do not hold.' };

@@ -14,8 +14,12 @@ export interface UndoCall {
   reason: string;
 }
 
+/** Who is asking — enough to refuse a self-targeting undo before it is offered. */
+export type UndoViewer = Pick<Doc<'profiles'>, '_id' | 'role'>;
+
 export interface UndoHandler {
-  blocked?: (row: Doc<'moderationActions'>) => string | null;
+  /** Why this row can't be undone — by anyone, or (when it depends on who asks) by `viewer`. */
+  blocked?: (row: Doc<'moderationActions'>, viewer?: UndoViewer) => string | null;
   undoTakesAway: (row: Doc<'moderationActions'>) => boolean;
   run: (call: UndoCall) => Promise<void>;
 }
