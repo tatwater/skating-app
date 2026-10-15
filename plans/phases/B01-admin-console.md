@@ -728,6 +728,31 @@ merge change-set recording. The new inverses land with the screens that use them
 Vitest for the registry and the reason rule; `convex-test` for each class's round trip (act, undo,
 state equals before, side effects included), for "overtaken", and for capability refusals.
 
+### What §1 built (2026-10-14)
+
+`lib/audit.ts` is the only audit writer (`writeAudit`, plus `writeSnapshot`/`readSnapshot` for
+`auditSnapshots`); `lib/undoPolicy.ts` is the registry, `lib/undo.ts` the engine, `undo.run` and
+`undo.latestOwn` the API, and `lib/undoHandlers*.ts` the handlers; `listActions` rows carry each
+row's undo state for the viewer, and `blocked(row, viewer)` hides an undo the viewer could never run
+(a change to their own role). Undoable now: content hide/remove/restore (a Post with its members),
+ban, suspend, lift, posting rights and the bounty limit, role changes, every body setter
+(boost, links, name, depth, satellite link, weather grid, access ruling, included-by-request),
+standing, a body's removal (admin), sub-area create/redraw/rename/remove/restore, landmark
+create/edit/remove/restore, access pins, approach overrides, posted rules, promotions, recurrence
+suppression, hazard merges. Body merges write their change set to `auditSnapshots` (the ETL's merges
+too). `undoOwed()` lists what §2–§4 still owe.
+
+**What some undos leave behind** — each is the forward verb's own behavior, kept rather than patched
+around:
+- Flags a no-public-access ruling closed stay closed after its undo (reopening flags is §2).
+- An undone dormancy restarts its clock; a body restore clears any stored dormancy.
+- A sub-area redraw's undo puts the outline and mouth back but not `mouthStale`, `mouthReview`,
+  `systemDelistReason` or the cleared derived depth; landmarks the redraw retired stay retired.
+- Undoing a sub-area create does not reopen the request it answered or restore a promoted landmark.
+- Undoing a hazard merge also keeps the pair from auto-merging again (the unmerge verb's rule).
+- Rows the engine can't see change — an author's own retraction, an ETL re-route — are checked when
+  the undo runs, not when History draws it.
+
 ### The founder's calls (2026-10-14)
 
 1. The simple rule: a later write on the same target means no undo; History links to it.
