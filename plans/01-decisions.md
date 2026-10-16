@@ -7036,7 +7036,30 @@ audit log meaningful where it matters, on the actions skaters feel.
 
 **Related:** D37, D202, D216, D222, D223, D225.
 
-*(D227–D231 are minted in other trees and arrive when they merge.)*
+## D227 — Invoices in the cost ledger are edited by named people, not by a role (B01)
+
+**2026-10-16, founder call.** "I (Teagan) should be the only user allowed to submit, modify, or
+remove invoices from this ledger. I'm the only one developing / paying for things right now. This
+may not always be the case, but the users who should be allowed to make these changes will always
+be a select few."
+
+- **A per-person grant**, `canEditLedger` on the profile, not a role and not a capability a role
+  confers: being an admin does not let you add, change or delete an invoice. Everyone who can read
+  the ledger (D217's `machinery.read`) sees the invoices and their history.
+- **Teagan holds it from the start.** Whatever seeds the operator accounts sets it on Teagan's
+  profile — on dev now, and on prod when prod is first initialized. No screen grants or revokes it
+  in this phase; adding a second editor is a data change, audited like any other.
+- **Invoices are editable and deletable** by a holder: selecting an invoice opens *Edit invoice* in
+  place of *Add an invoice*; delete confirms. Every add, change and delete writes an audit row, and
+  the ledger shows that history beside the form (D226: a delete undoes; a change undoes to the
+  prior amount).
+
+**Why:** the ledger records what the founder pays for; who may change it follows who pays, which no
+role models.
+
+**Related:** D217, D219, D226.
+
+*(D228–D231 are minted in other trees and arrive when they merge.)*
 
 ## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
 

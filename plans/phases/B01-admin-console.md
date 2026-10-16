@@ -307,6 +307,14 @@ The run vocabulary gains what the brief asks for and the data lacks: a **scope**
 `full-canonical`, `single-source`, `enrichment`, `seed`, `rollover`, `archive` — so the list can
 say *full re-import* vs. *gap-fill* without inference.
 
+**Added 2026-10-16 (founder: yes to both).** Two pieces of new build work the review-2 mocks drew:
+a **per-run record for every cron** (today only the imagery pump and the standing rollover leave
+one), so a cron's page can list its runs, their outcomes and their durations; and **Fly machine
+logs** for the imagery cutters, fetched per granule, so a cutter run has a log to tail like a
+corpus run. The Machinery mode is laid out as **Health** (the landing page: what needs a look,
+7-day failures, heartbeats, quotas and spend, every job) plus **one page per pipeline**; whether
+Notifications, Analytics, Hygiene and Rollovers each keep a page is decided once they are mocked.
+
 ### §5.6 — Season
 
 `/admin/season` is this season: the watch (A06i's card), imagery state, field dates, and the
@@ -586,7 +594,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
