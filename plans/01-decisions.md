@@ -7043,21 +7043,41 @@ remove invoices from this ledger. I'm the only one developing / paying for thing
 may not always be the case, but the users who should be allowed to make these changes will always
 be a select few."
 
-- **A per-person grant**, `canEditLedger` on the profile, not a role and not a capability a role
-  confers: being an admin does not let you add, change or delete an invoice. Everyone who can read
-  the ledger (D217's `machinery.read`) sees the invoices and their history.
-- **Teagan holds it from the start.** Whatever seeds the operator accounts sets it on Teagan's
-  profile — on dev now, and on prod when prod is first initialized. No screen grants or revokes it
-  in this phase; adding a second editor is a data change, audited like any other.
+**Refined 2026-10-17, founder call.** "Let's seed me as the person with invoice editing permission,
+but let's add it as a row to the user profile page IF the user has been made an Admin (not
+Moderator), modifiable only by admins who already have the permission to edit invoices. So
+initially, only I would see the option to grant it to another admin. But if I grant it to another
+admin, only then should they see the ability to grant it to other admins."
+
+- **A per-person grant**, `canEditLedger` on the profile, not a role: being an admin does not let
+  you add, change or delete an invoice. It is one row of D217's map, `machinery.ledger` — the admin
+  role **and** the grant (a capability row may now name a per-person `grant` the server and the
+  client both read). The grant means nothing without the admin role. Everyone who can read the
+  ledger (`machinery.read`) sees the invoices and their history.
+- **A row on an admin's People page**, drawn only for a viewer who holds the grant: a holder gives it
+  to another admin (no reason asked) or takes it (a reason asked, D226). So at first only Teagan
+  sees the row; whoever Teagan gives it to sees it next. A moderator's or member's page has no row.
+- **Never no editor.** Taking it from the last holder who can still act is refused — a holder can
+  step down only once another admin holds it, and the last holder can't be demoted out of admin
+  until someone else is given it. A holder on their way out (D62) doesn't count.
+- **A demotion clears it.** Moving a holder out of admin takes the grant in the same mutation, with
+  its own audit row; a later promotion back, or the undo of the demotion, does not restore it — a
+  holder gives it again on purpose.
+- **Undo (D226).** A grant undoes to a revoke (asks a reason); a revoke undoes to a grant (no
+  reason); only a holder undoes either. The grant a demotion cleared has no undo of its own.
+- **Teagan holds it from the start.** No seed path for operator accounts exists (the first admin is
+  set by hand, Phase 07), so an internal mutation seeds it by handle, idempotently, audited as the
+  system: `ledger:seedEditor` — on dev now, and on prod after the founder's admin role at first init.
 - **Invoices are editable and deletable** by a holder: selecting an invoice opens *Edit invoice* in
   place of *Add an invoice*; delete confirms. Every add, change and delete writes an audit row, and
   the ledger shows that history beside the form (D226: a delete undoes; a change undoes to the
   prior amount).
 
 **Why:** the ledger records what the founder pays for; who may change it follows who pays, which no
-role models.
+role models. A grant only a holder can pass on keeps it to "a select few" without a code change
+each time the few change.
 
-**Related:** D217, D219, D226.
+**Related:** D37, D62, D217, D219, D226.
 
 *(D228–D231 are minted in other trees and arrive when they merge.)*
 

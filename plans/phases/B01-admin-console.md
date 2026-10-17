@@ -315,6 +315,11 @@ corpus run. The Machinery mode is laid out as **Health** (the landing page: what
 7-day failures, heartbeats, quotas and spend, every job) plus **one page per pipeline**; whether
 Notifications, Analytics, Hygiene and Rollovers each keep a page is decided once they are mocked.
 
+**Added 2026-10-17.** The stalled-run alarm's **Keep waiting** snooze starts at **30 minutes**, a
+placeholder. Tune it once the heartbeat (D218) records per-flush times: take the longest quiet gap
+between flushes in runs that finished normally and set the snooze to 2–3× that. Consider letting
+the alarm clear itself on the run's next flush instead of on a fixed timer.
+
 ### §5.6 — Season
 
 `/admin/season` is this season: the watch (A06i's card), imagery state, field dates, and the
@@ -334,6 +339,12 @@ role card (admin); open inbox items about this person. New levers, if the founde
 (a comment-only restriction already exists as `canPostComments`; "mute" may be that), restore
 hidden content by this person, and a per-user *flagging* permission (the founder's own note in
 `CLAUDE_NOTES`: a lever to stop someone flooding the queue).
+
+**Added 2026-10-17 (D227, refined).** An admin's page carries an **invoice editing** row, drawn
+only for a viewer who holds that grant (`getAdmin`'s `canChangeLedgerEditor`); `lastLedgerEditor`
+says why the last holder's switch can't be turned off. The server half is built
+(`ledger.grantEditor` / `revokeEditor` / `seedEditor`, `lib/ledgerEditors.ts`); the row lands with
+this workstream's screen.
 
 ### §5.8 — Instruments
 
@@ -594,7 +605,7 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it.
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -760,6 +771,9 @@ around:
 - Undoing a hazard merge also keeps the pair from auto-merging again (the unmerge verb's rule).
 - Rows the engine can't see change — an author's own retraction, an ETL re-route — are checked when
   the undo runs, not when History draws it.
+- **Added 2026-10-17 (D227).** Undoing an invoice editor's demotion gives back the admin role, not
+  invoice editing: the demotion cleared the grant with its own row first, and that row has no undo
+  of its own. A holder gives it again.
 
 ### The founder's calls (2026-10-14)
 

@@ -35,7 +35,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `profiles` | one row per person: Clerk mirrors, visibility, role, status, DOB (minor status derived at read), the private home coordinate and its cached isochrones (D11, D18), notification prefs, reputation points, the aggregate opt-out — D41, D50, D58 |
+| `profiles` | one row per person: Clerk mirrors, visibility, role, the per-person invoice-editing grant on an admin (`canEditLedger`, D227), status, DOB (minor status derived at read), the private home coordinate and its cached isochrones (D11, D18), notification prefs, reputation points, the aggregate opt-out — D41, D50, D58 |
 | `pushTokens` | one row per (person, device) that registered for Expo push — A08 |
 | `blocks` | a block is also a mute; it never hides a report, only the person — D32, D3 |
 | `dataExports` | one row per export request; the bundle lives in file storage — D33/D62 |
