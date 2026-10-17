@@ -55,6 +55,7 @@ import {
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
+import { isLastLedgerEditor } from './lib/ledgerEditors';
 import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
@@ -1135,6 +1136,17 @@ export const getAdmin = query({
         createdAt: a.createdAt,
       })),
       openFlagCount: openFlags.length,
+      // Invoice editing (D227) — only an admin can hold it, so the row exists only on an admin. The
+      // control is drawn only when `canChangeLedgerEditor`: the viewer is an admin who holds it and
+      // is not on their way out (`machinery.ledger`, the server's gate). `lastLedgerEditor` says why
+      // a holder's revoke is refused before anyone presses it.
+      ...(target.role === 'admin'
+        ? {
+            ledgerEditor: target.canEditLedger === true,
+            canChangeLedgerEditor: hasCapability(viewer, 'machinery.ledger') && !isLeaving(viewer),
+            lastLedgerEditor: await isLastLedgerEditor(ctx, target),
+          }
+        : {}),
     };
   },
 });

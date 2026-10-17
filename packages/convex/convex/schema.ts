@@ -294,6 +294,13 @@ export default defineSchema({
     activeBountyPostLimit: v.optional(v.number()),
     contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
+    /**
+     * May add, change and delete invoices in the cost ledger, and give or take this from another
+     * admin (D227) — a per-person grant, not a role: being an admin does not confer it, and it means
+     * nothing without the admin role (`machinery.ledger` needs both). Absent ⇒ not held. Cleared in the
+     * same mutation that takes the admin role away, so a later re-promotion never restores it.
+     */
+    canEditLedger: v.optional(v.boolean()),
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
     statusReason: v.optional(v.string()),
     suspendedUntil: v.optional(v.number()), // temp suspension; null on ban = indefinite (D37)

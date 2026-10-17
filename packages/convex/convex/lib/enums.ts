@@ -313,6 +313,10 @@ export const MODERATION_ACTIONS = [
   'dismiss_flag',
   'grant_role',
   'revoke_role',
+  // Gave or took invoice editing in the cost ledger (D227): a per-person grant on an admin, given only
+  // by an admin who holds it. A demotion out of admin writes its own `revoke_ledger_editor` first.
+  'grant_ledger_editor',
+  'revoke_ledger_editor',
   'set_posting_permission', // restrict/restore a canPost* right — finer than ban/suspend (D57, Phase 07)
   'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 09a)
   'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)

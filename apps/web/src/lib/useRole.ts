@@ -33,7 +33,8 @@ export function useRole(): {
   isLoading: boolean;
   /**
    * Whether to draw a control gated by `capability` (D217): the same map the server gates on, with
-   * the same read/write split. The console asks this, not the role.
+   * the same read/write split, and the per-person grants a row may need on top of the role (D227's
+   * invoice editing). The console asks this, not the role.
    */
   can: (capability: Capability) => boolean;
 } {
@@ -49,6 +50,6 @@ export function useRole(): {
     canModerate: isModerator && !leaving,
     leaving,
     isLoading: profile === undefined,
-    can: (capability) => canUse(role, leaving, capability),
+    can: (capability) => canUse(role, leaving, capability, profile ?? {}),
   };
 }

@@ -14,8 +14,11 @@ export interface UndoCall {
   reason: string;
 }
 
-/** Who is asking — enough to refuse a self-targeting undo before it is offered. */
-export type UndoViewer = Pick<Doc<'profiles'>, '_id' | 'role'>;
+/**
+ * Who is asking — enough to refuse a self-targeting undo before it is offered, and to read a
+ * per-person grant a capability needs (D227).
+ */
+export type UndoViewer = Pick<Doc<'profiles'>, '_id' | 'role' | 'canEditLedger'>;
 
 export interface UndoHandler {
   /** Why this row can't be undone — by anyone, or (when it depends on who asks) by `viewer`. */

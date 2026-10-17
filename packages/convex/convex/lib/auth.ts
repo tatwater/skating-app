@@ -11,6 +11,9 @@
 import {
   CAPABILITIES,
   type Capability,
+  can,
+  type Grant,
+  grantFor,
   type ReadCapability,
   roleMeets,
   type UserRole,
@@ -154,6 +157,9 @@ export async function requireContributorRole(
  * write flag picks the gate — {@link requireContributorRole} for a write (refused to an operator on
  * their way out), {@link requireRole} for a read (kept through the window). The overloads make a
  * query's context accept only a read capability; `capabilities.test.ts` holds mutations to writes.
+ *
+ * A row that names a per-person grant (D227 — `machinery.ledger` needs `canEditLedger`) is refused
+ * unless the profile also holds the grant: the role is necessary, not sufficient.
  */
 export async function requireCapability(
   ctx: MutationCtx,
@@ -168,15 +174,30 @@ export async function requireCapability(
   capability: Capability,
 ): Promise<Doc<'profiles'>> {
   const rule = CAPABILITIES[capability];
-  return rule.write ? requireContributorRole(ctx, rule.role) : requireRole(ctx, rule.role);
+  const profile = rule.write
+    ? await requireContributorRole(ctx, rule.role)
+    : await requireRole(ctx, rule.role);
+  const grant = grantFor(capability);
+  if (grant !== undefined && profile[grant] !== true) {
+    throw new ConvexError(GRANT_REQUIRED[grant]);
+  }
+  return profile;
 }
 
-/** Whether an already-loaded profile holds `capability` — for a field or a branch, not a gate. */
+/** What a caller who holds the role but not the grant is told. */
+const GRANT_REQUIRED: Record<Grant, string> = {
+  canEditLedger: 'Only an admin who has been given invoice editing can do this',
+};
+
+/**
+ * Whether an already-loaded profile holds `capability` — for a field or a branch, not a gate. A grant
+ * row (D227) also reads the grant off the profile, so a viewer passed without it holds none.
+ */
 export function hasCapability(
-  profile: Pick<Doc<'profiles'>, 'role'> | null | undefined,
+  profile: Pick<Doc<'profiles'>, 'role' | 'canEditLedger'> | null | undefined,
   capability: Capability,
 ): boolean {
-  return profile != null && roleMeets(profile.role, CAPABILITIES[capability].role);
+  return profile != null && can(profile.role, capability, profile);
 }
 
 /** The rank comparison itself, shared so the two role gates can't drift on what "at least" means. */

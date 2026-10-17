@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { CAPABILITIES, type Capability, can, canUse, ROLE_RANK, roleMeets } from './capabilities';
+import {
+  CAPABILITIES,
+  type Capability,
+  can,
+  canUse,
+  GRANTS,
+  grantFor,
+  type HeldGrants,
+  ROLE_RANK,
+  roleMeets,
+} from './capabilities';
 
 const ALL = Object.keys(CAPABILITIES) as Capability[];
+const EVERY_GRANT: HeldGrants = Object.fromEntries(GRANTS.map((g) => [g, true]));
 
 describe('the capability map (D217)', () => {
   it('ranks the three roles in order', () => {
@@ -13,13 +24,37 @@ describe('the capability map (D217)', () => {
     for (const cap of ALL) expect(can('member', cap)).toBe(false);
   });
 
-  it('gives an admin every capability', () => {
-    for (const cap of ALL) expect(can('admin', cap)).toBe(true);
+  it('gives an admin every capability that needs no grant, and the rest with the grant', () => {
+    for (const cap of ALL) {
+      expect(can('admin', cap)).toBe(grantFor(cap) === undefined);
+      expect(can('admin', cap, EVERY_GRANT)).toBe(true);
+    }
   });
 
-  it('gives a moderator exactly the moderator rows', () => {
-    for (const cap of ALL)
+  it('gives a moderator exactly the moderator rows, grants or not', () => {
+    for (const cap of ALL) {
       expect(can('moderator', cap)).toBe(CAPABILITIES[cap].role === 'moderator');
+      expect(can('moderator', cap, EVERY_GRANT)).toBe(CAPABILITIES[cap].role === 'moderator');
+    }
+  });
+
+  it('a grant row needs the role and the grant, set to true (D227)', () => {
+    expect(grantFor('machinery.ledger')).toBe('canEditLedger');
+    expect(grantFor('people.role')).toBeUndefined();
+    expect(can('admin', 'machinery.ledger', { canEditLedger: true })).toBe(true);
+    expect(can('admin', 'machinery.ledger', { canEditLedger: false })).toBe(false);
+    expect(can('admin', 'machinery.ledger', {})).toBe(false);
+    // The grant on a non-admin is inert: the role is still necessary.
+    expect(can('moderator', 'machinery.ledger', { canEditLedger: true })).toBe(false);
+    expect(can('member', 'machinery.ledger', { canEditLedger: true })).toBe(false);
+    // A grant row is a write: an editor on their way out loses it like any other write.
+    expect(canUse('admin', false, 'machinery.ledger', { canEditLedger: true })).toBe(true);
+    expect(canUse('admin', true, 'machinery.ledger', { canEditLedger: true })).toBe(false);
+  });
+
+  it('every grant a row names is a known grant, and every grant is used', () => {
+    const named = new Set(ALL.map(grantFor).filter((g) => g !== undefined));
+    expect([...named].sort()).toEqual([...GRANTS].sort());
   });
 
   it('refuses an unknown role (signed out)', () => {
@@ -41,6 +76,7 @@ describe('the capability map (D217)', () => {
       'inbox.support.read',
       'instruments.tuning',
       'machinery.read',
+      'machinery.ledger',
       'season.read',
       'season.settings',
       'body.remove',

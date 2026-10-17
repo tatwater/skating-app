@@ -1,5 +1,5 @@
 /**
- * Undo handlers for roles, access alerts, approaches, posted rules, known features, recurrence and
+ * Undo handlers for roles, invoice editing, access alerts, approaches, posted rules, known features, recurrence and
  * hazard merges (D226, B01 §11). Composed into `UNDO_HANDLERS` by `undoHandlers.ts`; the shapes are
  * `undoTypes.ts`'s.
  *
@@ -20,6 +20,7 @@ import { unmergeImpl } from '../hazards';
 import { type PostedAccessTarget, setPostedAccessImpl } from '../postedAccess';
 import { suppressImpl, unsuppressImpl } from '../recurrence';
 import type { ModerationAction, ModerationTargetType } from './audit';
+import { grantLedgerEditorImpl, revokeLedgerEditorImpl } from './ledgerEditors';
 import { UNDO_POLICY } from './undoPolicy';
 import { meta, PREDATES, type TargetUndo, type UndoCall, type UndoHandler } from './undoTypes';
 
@@ -54,6 +55,29 @@ const undoRoleChange: UndoHandler = {
   },
   undoTakesAway: (row) => UNDO_POLICY[row.action].takesAway(priorRoleOf(row)),
   run: (call) => restoreRole(call, priorRoleOf(call.row) as Role),
+};
+
+// ── Invoice editing (D227): grant ↔ revoke ────────────────────────────────────────────────────────
+
+/**
+ * grant_ledger_editor → taken again. Through the revoke's own helper, so the last-editor rule holds:
+ * the seeded first editor's grant can't be undone while they are the only one.
+ */
+const undoLedgerGrant: UndoHandler = {
+  undoTakesAway: () => UNDO_POLICY.revoke_ledger_editor.takesAway(),
+  run: ({ ctx, actor, row, reason }) =>
+    revokeLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason }),
+};
+
+/** revoke_ledger_editor → given back, unless it went with a demotion (undo that instead). */
+const undoLedgerRevoke: UndoHandler = {
+  blocked: (row) =>
+    meta(row).cause === 'role_change'
+      ? 'This went with a role change. Undoing that does not give it back; a holder gives it again.'
+      : null,
+  undoTakesAway: () => UNDO_POLICY.grant_ledger_editor.takesAway(),
+  run: ({ ctx, actor, row, reason }) =>
+    grantLedgerEditorImpl(ctx, actor, { userId: row.targetId as Id<'profiles'>, reason }),
 };
 
 // ── Access alerts: pin ↔ unpin ────────────────────────────────────────────────────────────────────
@@ -224,6 +248,8 @@ const undoMerge: UndoHandler = {
 export const CORPUS_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   grant_role: undoRoleChange,
   revoke_role: undoRoleChange,
+  grant_ledger_editor: undoLedgerGrant,
+  revoke_ledger_editor: undoLedgerRevoke,
   pin_access_alert: undoPin,
   unpin_access_alert: undoUnpin,
   set_approach_kind: undoApproachKind,

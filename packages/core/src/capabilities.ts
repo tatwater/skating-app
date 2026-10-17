@@ -13,6 +13,12 @@
  * holds every gated function to that.
  *
  * Role model unchanged (D37): `member < moderator < admin`.
+ *
+ * **Per-person grants (D227).** A few rows need more than a role: the role is necessary, not
+ * sufficient, and the person must also hold a named grant stored on their profile. Invoices in the
+ * cost ledger are the first — being an admin does not let you edit them; an admin who holds
+ * `canEditLedger` can. Such a row names its `grant`, and every check below (and the server's
+ * `requireCapability` / `hasCapability`) reads it, so a grant row is still one row in one map.
  */
 
 import type { UserRole } from './types';
@@ -25,6 +31,13 @@ export function roleMeets(role: UserRole, minRole: UserRole): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[minRole];
 }
 
+/** The per-person grants a capability can require, each a boolean field on the profile (D227). */
+export const GRANTS = ['canEditLedger'] as const;
+export type Grant = (typeof GRANTS)[number];
+
+/** The grants a person holds, read straight off their profile: absent means not held. */
+export type HeldGrants = Partial<Record<Grant, boolean>>;
+
 export interface CapabilityRule {
   /** The lowest role that holds it. */
   readonly role: Exclude<UserRole, 'member'>;
@@ -32,6 +45,8 @@ export interface CapabilityRule {
   readonly write: boolean;
   /** Why the line is where it is — the sentence to read before moving it. */
   readonly why: string;
+  /** A per-person grant the holder must also carry (D227); the role alone is not enough. */
+  readonly grant?: Grant;
 }
 
 const read = <R extends CapabilityRule['role']>(role: R, why: string) => ({
@@ -42,6 +57,13 @@ const read = <R extends CapabilityRule['role']>(role: R, why: string) => ({
 const write = <R extends CapabilityRule['role']>(role: R, why: string) => ({
   role,
   write: true as const,
+  why,
+});
+/** A write that also needs a per-person grant (D227). */
+const granted = <R extends CapabilityRule['role']>(role: R, grant: Grant, why: string) => ({
+  role,
+  write: true as const,
+  grant,
   why,
 });
 
@@ -129,6 +151,11 @@ export const CAPABILITIES = {
     'admin',
     'Start, pause, retry and poll the live imagery pipeline (A06i).',
   ),
+  'machinery.ledger': granted(
+    'admin',
+    'canEditLedger',
+    'Add, change and delete invoices, and give or take that right from another admin (D227).',
+  ),
 
   // ── Season ────────────────────────────────────────────────────────────────────────────────────
   'season.read': read('admin', 'The season watch, its settings and the replay (A06i, D213).'),
@@ -158,9 +185,23 @@ export type ReadCapability = {
 /** Capabilities a mutation may name. */
 export type WriteCapability = Exclude<Capability, ReadCapability>;
 
-/** Whether `role` holds `capability`. The client's question before drawing a control. */
-export function can(role: UserRole | undefined, capability: Capability): boolean {
-  return role !== undefined && roleMeets(role, CAPABILITIES[capability].role);
+/** The per-person grant `capability` needs on top of its role, if any (D227). */
+export function grantFor(capability: Capability): Grant | undefined {
+  return (CAPABILITIES[capability] as CapabilityRule).grant;
+}
+
+/**
+ * Whether `role` (with the grants this person holds) has `capability`. The client's question before
+ * drawing a control. A grant row needs both: the role, and the grant set to `true`.
+ */
+export function can(
+  role: UserRole | undefined,
+  capability: Capability,
+  grants: HeldGrants = {},
+): boolean {
+  if (role === undefined || !roleMeets(role, CAPABILITIES[capability].role)) return false;
+  const grant = grantFor(capability);
+  return grant === undefined || grants[grant] === true;
 }
 
 /**
@@ -173,6 +214,7 @@ export function canUse(
   role: UserRole | undefined,
   leaving: boolean,
   capability: Capability,
+  grants: HeldGrants = {},
 ): boolean {
-  return can(role, capability) && !(CAPABILITIES[capability].write && leaving);
+  return can(role, capability, grants) && !(CAPABILITIES[capability].write && leaving);
 }

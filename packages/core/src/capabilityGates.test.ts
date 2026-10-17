@@ -8,13 +8,15 @@
  * - no `requireRole(…)` or `requireContributorRole(…)` call outside `lib/auth.ts`;
  * - every `requireCapability` inside an exported `mutation` names a **write** capability (the type
  *   system already holds queries to reads: a query's context only matches the read overload);
- * - every capability named exists in the map.
+ * - every capability named exists in the map;
+ * - a per-person grant (D227) is set only by the module that holds its rules, so no write skips the
+ *   audit row or the last-holder check.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { CAPABILITIES, type Capability } from './capabilities';
+import { CAPABILITIES, type Capability, GRANTS } from './capabilities';
 
 const CONVEX = resolve(__dirname, '../../convex/convex');
 
@@ -37,7 +39,7 @@ function enclosing(text: string, at: number): { name: string; kind: string } | n
     /export const (\w+) = (query|mutation|action|internalQuery|internalMutation|internalAction)\(/g;
   let found: { name: string; kind: string } | null = null;
   for (let m = re.exec(text); m !== null && m.index < at; m = re.exec(text))
-    found = { name: m[1], kind: m[2] };
+    found = { name: m[1] as string, kind: m[2] as string };
   return found;
 }
 
@@ -58,7 +60,7 @@ describe('every operator gate names a capability (D217)', () => {
   const calls = FILES.flatMap((f) =>
     [...f.text.matchAll(/requireCapability\(ctx, '([^']+)'\)/g)].map((m) => ({
       file: f.name,
-      capability: m[1],
+      capability: m[1] as string,
       fn: enclosing(f.text, m.index ?? 0),
     })),
   );
@@ -91,5 +93,17 @@ describe('every operator gate names a capability (D217)', () => {
       (c) => !used.has(c) && !fieldChecks.has(c),
     );
     expect(unused).toEqual([]);
+  });
+
+  test('a per-person grant is set only by its rules module (D227)', () => {
+    const RULES: Record<(typeof GRANTS)[number], string> = {
+      canEditLedger: join('lib', 'ledgerEditors.ts'),
+    };
+    for (const grant of GRANTS) {
+      const setters = FILES.filter((f) =>
+        new RegExp(`\\b${grant}: (true|false|undefined)\\b`).test(f.text),
+      ).map((f) => f.name);
+      expect(setters).toEqual([RULES[grant]]);
+    }
   });
 });

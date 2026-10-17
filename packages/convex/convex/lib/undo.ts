@@ -22,7 +22,7 @@ import { asUndoOf } from './audit';
 import { hasCapability } from './auth';
 import { UNDO_HANDLERS } from './undoHandlers';
 import { UNDO_POLICY, undoCapability } from './undoPolicy';
-import type { UndoHandler } from './undoTypes';
+import type { UndoHandler, UndoViewer } from './undoTypes';
 
 /** How long after acting the toast offers its undo (D226). History has no limit. */
 export const TOAST_UNDO_MS = 10_000;
@@ -41,7 +41,7 @@ function handlerFor(row: Doc<'moderationActions'>): UndoHandler | null {
 /** Whether `row` can be undone by `viewer`, and if not, why. Bounded: two index reads. */
 export async function undoState(
   ctx: QueryCtx | MutationCtx,
-  viewer: Pick<Doc<'profiles'>, '_id' | 'role'>,
+  viewer: UndoViewer,
   row: Doc<'moderationActions'>,
 ): Promise<UndoState> {
   const rule = UNDO_POLICY[row.action];
