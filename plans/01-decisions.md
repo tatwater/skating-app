@@ -7069,7 +7069,8 @@ admin, only then should they see the ability to grant it to other admins."
   reason); only a holder undoes either. The grant a demotion cleared has no undo of its own.
 - **Teagan holds it from the start.** No seed path for operator accounts exists (the first admin is
   set by hand, Phase 07), so an internal mutation seeds it by handle, idempotently, audited as the
-  system: `ledger:seedEditor` — on dev now, and on prod after the founder's admin role at first init.
+  system: `ledger:seedEditor` — the founder is `@admin1` on dev (seeded at this phase's first dev
+  push) and will be `@teagan` on prod (seeded after the founder's admin role at first init).
 - **Invoices are editable and deletable** by a holder: selecting an invoice opens *Edit invoice* in
   place of *Add an invoice*; delete confirms. Every add, change and delete writes an audit row, and
   the ledger shows that history beside the form (D226: a delete undoes; a change undoes to the

@@ -34,11 +34,13 @@ export const revokeEditor = mutation({
 });
 
 /**
- * Seed the first invoice editor (D227: Teagan, from the start) — on dev now, and on prod after the
- * founder's admin role is set by hand at first init. Idempotent: an existing holder is left alone
- * and no row is written. The audit row has no actor: the system gave it.
+ * Seed the first invoice editor (D227: Teagan, from the start) — `@admin1` on dev at this branch's
+ * first push there, and `@teagan` on prod after the founder's admin role is set by hand at first
+ * init. Idempotent: an existing holder is left alone and no row is written. The audit row has no
+ * actor: the system gave it.
  *
- * `pnpm --filter @skating/convex exec convex run ledger:seedEditor '{"username":"<handle>"}'`
+ * `pnpm --filter @skating/convex exec convex run ledger:seedEditor '{"username":"admin1"}'`
+ * `pnpm --filter @skating/convex exec convex run --prod ledger:seedEditor '{"username":"teagan"}'`
  */
 export const seedEditor = internalMutation({
   args: { username: v.string() },

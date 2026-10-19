@@ -345,7 +345,10 @@ only for a viewer who holds that grant and isn't on their way out — `getAdmin`
 and `lastLedgerEditor` to that viewer alone, so a non-holder learns neither the row nor who holds it
 (founder call, 2026-10-18); `lastLedgerEditor` says why the last holder's switch can't be turned
 off. The server half is built (`ledger.grantEditor` / `revokeEditor` / `seedEditor`,
-`lib/ledgerEditors.ts`); the row lands with this workstream's screen.
+`lib/ledgerEditors.ts`); the row lands with this workstream's screen. **Seed at this branch's first
+dev push** (the founder is `@admin1` there, an admin with no grant as of 2026-10-18):
+`pnpm --filter @skating/convex exec convex run ledger:seedEditor '{"username":"admin1"}'`; prod's
+`@teagan` is a step in `docs/deployment-and-release.md`'s cutover.
 
 ### §5.8 — Instruments
 
