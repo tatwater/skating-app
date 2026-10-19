@@ -1136,14 +1136,13 @@ export const getAdmin = query({
         createdAt: a.createdAt,
       })),
       openFlagCount: openFlags.length,
-      // Invoice editing (D227) — only an admin can hold it, so the row exists only on an admin. The
-      // control is drawn only when `canChangeLedgerEditor`: the viewer is an admin who holds it and
-      // is not on their way out (`machinery.ledger`, the server's gate). `lastLedgerEditor` says why
-      // a holder's revoke is refused before anyone presses it.
-      ...(target.role === 'admin'
+      // Invoice editing (D227) — only an admin can hold it, so the row exists only on an admin, and
+      // only for a viewer who can change it: an admin who holds it and is not on their way out
+      // (`machinery.ledger`, the server's gate). Anyone else gets neither the row nor who holds it.
+      // `lastLedgerEditor` says why a holder's revoke is refused before anyone presses it.
+      ...(target.role === 'admin' && hasCapability(viewer, 'machinery.ledger') && !isLeaving(viewer)
         ? {
             ledgerEditor: target.canEditLedger === true,
-            canChangeLedgerEditor: hasCapability(viewer, 'machinery.ledger') && !isLeaving(viewer),
             lastLedgerEditor: await isLastLedgerEditor(ctx, target),
           }
         : {}),

@@ -458,41 +458,34 @@ describe('undo (D226)', () => {
 });
 
 describe('profiles.getAdmin: the People row (D227)', () => {
-  test('a holder sees the row on an admin and can change it', async () => {
+  const ROW = ['ledgerEditor', 'lastLedgerEditor'] as const;
+
+  test('a holder sees the row on an admin, their own page included', async () => {
     const t = convexTest(schema, modules);
     const founder = await editor(t, 'founder');
     const other = await seedUser(t, 'other', 'admin');
 
     const onOther = await founder.as.query(api.profiles.getAdmin, { userId: other.id });
-    expect(onOther).toMatchObject({
-      ledgerEditor: false,
-      canChangeLedgerEditor: true,
-      lastLedgerEditor: false,
-    });
+    expect(onOther).toMatchObject({ ledgerEditor: false, lastLedgerEditor: false });
     const onSelf = await founder.as.query(api.profiles.getAdmin, { userId: founder.id });
-    expect(onSelf).toMatchObject({
-      ledgerEditor: true,
-      canChangeLedgerEditor: true,
-      lastLedgerEditor: true,
-    });
+    expect(onSelf).toMatchObject({ ledgerEditor: true, lastLedgerEditor: true });
   });
 
-  test('an admin without it, or a moderator, cannot change it', async () => {
+  test('an admin without it, or a moderator, sees no row and not who holds it', async () => {
     const t = convexTest(schema, modules);
     const founder = await editor(t, 'founder');
     const admin = await seedUser(t, 'admin', 'admin');
     const mod = await seedUser(t, 'mod', 'moderator');
 
-    expect(await admin.as.query(api.profiles.getAdmin, { userId: founder.id })).toMatchObject({
-      ledgerEditor: true,
-      canChangeLedgerEditor: false,
-    });
-    expect(await mod.as.query(api.profiles.getAdmin, { userId: founder.id })).toMatchObject({
-      canChangeLedgerEditor: false,
-    });
+    for (const viewer of [admin, mod]) {
+      for (const userId of [founder.id, admin.id]) {
+        const view = await viewer.as.query(api.profiles.getAdmin, { userId });
+        for (const key of ROW) expect(view).not.toHaveProperty(key);
+      }
+    }
   });
 
-  test('a holder on their way out cannot change it', async () => {
+  test('a holder on their way out sees no row', async () => {
     const t = convexTest(schema, modules);
     await editor(t, 'founder');
     const leaving = await seedUser(t, 'leaving', 'admin', {
@@ -500,9 +493,8 @@ describe('profiles.getAdmin: the People row (D227)', () => {
       deletionRequestedAt: Date.now(),
     });
     const other = await seedUser(t, 'other', 'admin');
-    expect(await leaving.as.query(api.profiles.getAdmin, { userId: other.id })).toMatchObject({
-      canChangeLedgerEditor: false,
-    });
+    const view = await leaving.as.query(api.profiles.getAdmin, { userId: other.id });
+    for (const key of ROW) expect(view).not.toHaveProperty(key);
   });
 
   test('a moderator or member has no row at all', async () => {
@@ -512,9 +504,7 @@ describe('profiles.getAdmin: the People row (D227)', () => {
     const member = await seedUser(t, 'member');
     for (const userId of [mod.id, member.id]) {
       const view = await founder.as.query(api.profiles.getAdmin, { userId });
-      expect(view).not.toHaveProperty('ledgerEditor');
-      expect(view).not.toHaveProperty('canChangeLedgerEditor');
-      expect(view).not.toHaveProperty('lastLedgerEditor');
+      for (const key of ROW) expect(view).not.toHaveProperty(key);
     }
   });
 });

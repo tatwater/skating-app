@@ -7057,6 +7057,8 @@ admin, only then should they see the ability to grant it to other admins."
 - **A row on an admin's People page**, drawn only for a viewer who holds the grant: a holder gives it
   to another admin (no reason asked) or takes it (a reason asked, D226). So at first only Teagan
   sees the row; whoever Teagan gives it to sees it next. A moderator's or member's page has no row.
+  An admin without the grant sees nothing of it — not the row, and not who holds it, on their own
+  page or anyone's (founder call, 2026-10-18); the server leaves it off their wire.
 - **Never no editor.** Taking it from the last holder who can still act is refused — a holder can
   step down only once another admin holds it, and the last holder can't be demoted out of admin
   until someone else is given it. A holder on their way out (D62) doesn't count.

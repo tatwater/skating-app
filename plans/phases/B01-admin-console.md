@@ -341,10 +341,11 @@ hidden content by this person, and a per-user *flagging* permission (the founder
 `CLAUDE_NOTES`: a lever to stop someone flooding the queue).
 
 **Added 2026-10-17 (D227, refined).** An admin's page carries an **invoice editing** row, drawn
-only for a viewer who holds that grant (`getAdmin`'s `canChangeLedgerEditor`); `lastLedgerEditor`
-says why the last holder's switch can't be turned off. The server half is built
-(`ledger.grantEditor` / `revokeEditor` / `seedEditor`, `lib/ledgerEditors.ts`); the row lands with
-this workstream's screen.
+only for a viewer who holds that grant and isn't on their way out — `getAdmin` sends `ledgerEditor`
+and `lastLedgerEditor` to that viewer alone, so a non-holder learns neither the row nor who holds it
+(founder call, 2026-10-18); `lastLedgerEditor` says why the last holder's switch can't be turned
+off. The server half is built (`ledger.grantEditor` / `revokeEditor` / `seedEditor`,
+`lib/ledgerEditors.ts`); the row lands with this workstream's screen.
 
 ### §5.8 — Instruments
 
