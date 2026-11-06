@@ -11,6 +11,9 @@
 @import "@skating/design/tokens.css";
 @import "@skating/design/tailwind.css";
 
+/* The kit's shared mechanics (optical spacing, `lit:` / `pressed:`, corner dots) — `kit.css`. */
+@import "./kit.css";
+
 /*
  * FontAwesome's core stylesheet, pinned into the `base` layer on purpose. Its `.svg-inline--fa`
  * rule sets `height: 1em`, which has the same specificity as Tailwind's `size-4` — unlayered, the

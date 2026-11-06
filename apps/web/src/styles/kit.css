@@ -1,0 +1,97 @@
+/*
+ * The kit's shared mechanics: optical spacing, interaction variants and the corner-dot ornament.
+ * Imported once from `app.css` (and so by Storybook's preview). Everything here reads the generated
+ * tokens (`@skating/design`) — no literal color, size or duration lives in this file. The only
+ * literal lengths are drawing values D233 keeps in px: the dot glow's blur.
+ *
+ * Optical spacing (D234): a gap token measures content to content. Two sanctioned mechanisms keep
+ * the arithmetic out of call sites; a component picks one, a composition never corrects by hand.
+ */
+
+/*
+ * Bleed — an interactive container carries padding for its hover wash and hit area, and the same
+ * amount of negative margin, so its *content* lands exactly where bare text would. One token pair
+ * (`--gap-hit-x` / `--gap-hit-y`, denser on admin than on skater) is the only source of both
+ * numbers. Use it when the wash should paint beyond the content (a row, a bare text button).
+ */
+@utility bleed {
+  padding: var(--gap-hit-y) var(--gap-hit-x);
+  margin: calc(-1 * var(--gap-hit-y)) calc(-1 * var(--gap-hit-x));
+}
+
+/*
+ * Expanded hit target — the layout box *is* the visual box, and a positioned pseudo-element grows
+ * the pointer area by the same token pair. Use it when nothing paints beyond the visual (a bare
+ * icon). Claims `::before`; the corner dots below claim `::after`.
+ */
+@utility hit {
+  position: relative;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--gap-hit-y)) calc(-1 * var(--gap-hit-x));
+  }
+}
+
+/*
+ * Text trimmed to its letterforms: the half-leading above cap height and below the baseline is cut,
+ * so a measured gap meets ink, not line box. Where `text-box` is unsupported the gap is a little
+ * looser, never broken.
+ */
+@utility text-trim {
+  text-box: trim-both cap alphabetic;
+}
+
+/*
+ * The corner dots — the console's mark of the primary action and of every action button's
+ * hover/focus look: four `stroke-note` squares just outside the box's corners, in `--dot-color`
+ * with a `--dot-glow` halo. A component drives them with custom properties only (`--dot-opacity`
+ * 0 → 1), so the fade rides the motion tokens and collapses under reduced motion.
+ */
+@utility corner-dots {
+  &::after {
+    --dot: var(--dot-color, var(--fg));
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--stroke-hair));
+    pointer-events: none;
+    background:
+      linear-gradient(var(--dot), var(--dot)) left top / var(--stroke-note) var(--stroke-note)
+      no-repeat,
+      linear-gradient(var(--dot), var(--dot)) right top / var(--stroke-note) var(--stroke-note)
+      no-repeat,
+      linear-gradient(var(--dot), var(--dot)) left bottom / var(--stroke-note) var(--stroke-note)
+      no-repeat,
+      linear-gradient(var(--dot), var(--dot)) right bottom / var(--stroke-note) var(--stroke-note)
+      no-repeat;
+    /* 4px: the audited `glow-ice` blur (drawing, so px — D233). */
+    filter: drop-shadow(0 0 4px var(--dot-glow, transparent));
+    opacity: var(--dot-opacity, 0);
+    transition:
+      opacity var(--duration-fast) var(--easing-standard),
+      filter var(--duration-fast) var(--easing-standard);
+  }
+}
+
+/*
+ * `lit:` — hovered (on a device that hovers) or keyboard-focused, and live. One variant for both,
+ * because the console's rule is that the hover look and the focus look are the same look.
+ * Disabled and busy controls never light.
+ */
+@custom-variant lit {
+  &:where(:not([data-disabled], [aria-busy="true"])) {
+    @media (hover: hover) {
+      &:hover {
+        @slot;
+      }
+    }
+
+    &:focus-visible {
+      @slot;
+    }
+  }
+}
+
+/* `pressed:` — the pointer or key is down on a live control. */
+@custom-variant pressed (&:where(:not([data-disabled], [aria-busy="true"])):active);
