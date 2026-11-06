@@ -13,8 +13,10 @@ import {
   hazardTypeLabel,
   healingNote,
   NO_ALERT_IS_NOT_ALL_CLEAR,
+  NO_KNOWN_HAZARDS,
   relativeWhen,
   stalenessCaveat,
+  UNREPORTED_HAZARDS_POSSIBLE,
   verdictHelp,
   verdictLabel,
   warningHeadline,
@@ -112,6 +114,7 @@ describe('never asserts safety (D3)', () => {
   it('holds for the standing caveats', () => {
     assertNoReassurance(FOOTPRINT_IS_APPROXIMATE, 'FOOTPRINT_IS_APPROXIMATE');
     assertNoReassurance(BODY_FEATURE_CAVEAT, 'BODY_FEATURE_CAVEAT');
+    assertNoReassurance(UNREPORTED_HAZARDS_POSSIBLE, 'UNREPORTED_HAZARDS_POSSIBLE');
   });
 });
 
@@ -213,6 +216,22 @@ describe('warningHeadline', () => {
 
   it('names the hazard type', () => {
     expect(warningHeadline('pressure_ridge', 100)).toContain('Pressure ridge');
+  });
+});
+
+describe("a lake's hazard list (no standing caveat)", () => {
+  it('carries the founder-approved (i) wording exactly', () => {
+    expect(UNREPORTED_HAZARDS_POSSIBLE).toBe(
+      "It's possible there are unreported hazards on this ice.",
+    );
+  });
+
+  // The empty state is the one place "safe" may appear, and only negated: an empty list must say
+  // outright that it is not an all-clear.
+  it('says in its empty state that no marker does not mean safe ice', () => {
+    expect(NO_KNOWN_HAZARDS).toMatch(/does not mean the ice is safe/);
+    expect(NO_KNOWN_HAZARDS).toMatch(/nobody has reported/);
+    expect(NO_KNOWN_HAZARDS.replace('does not mean the ice is safe', '')).not.toMatch(/\bsafe\b/i);
   });
 });
 

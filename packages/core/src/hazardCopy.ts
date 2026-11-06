@@ -250,6 +250,21 @@ export const NO_ALERT_IS_NOT_ALL_CLEAR =
   'No alert does not mean the ice is safe — it only means nothing has been reported near you.';
 
 /**
+ * A lake's hazard list carries no standing caveat: it is titled "Known hazards", and this sentence
+ * sits behind the (i) beside that title. Founder-approved wording — it names the gap in what is
+ * known, never the state of the ice (D3).
+ */
+export const UNREPORTED_HAZARDS_POSSIBLE =
+  "It's possible there are unreported hazards on this ice.";
+
+/**
+ * A lake's hazard list with nothing on it. The absence of a marker is not information, so the empty
+ * state says so in full rather than showing an empty list (D3).
+ */
+export const NO_KNOWN_HAZARDS =
+  'No known hazards. That does not mean the ice is safe — only that nobody has reported one on this lake.';
+
+/**
  * The standing caveat under any hazard footprint. Reinforces that the shape is an approximation drawn
  * by a person, not a surveyed boundary (D3/D51).
  */
