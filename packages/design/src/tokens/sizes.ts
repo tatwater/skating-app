@@ -43,6 +43,9 @@ export type FontSizeKey = (typeof FONT_SIZE_KEYS)[number];
  * (`.words .ti`, `.empty .ptt`), a headline value 20, the display word 22 (`.pnh .ttl`) and the
  * large display 26 (`.lh .disp`). The rail and the wordmark have no skater counterpart and keep
  * admin's sizes.
+ *
+ * The console has **one display size**, 20: its `disp-lg` is kept as a key (so the key set stays
+ * whole and nothing that reads it breaks) but resolves to `disp`'s value. Skater keeps two.
  */
 export const fontSize = {
   admin: assertUnitClass('fontSize', {
@@ -56,7 +59,7 @@ export const fontSize = {
     h: rem(16),
     stat: rem(18),
     disp: rem(20),
-    'disp-lg': rem(22),
+    'disp-lg': rem(20), // one console display size: the same as `disp`
   }),
   skater: assertUnitClass('fontSize', {
     rail: rem(8),
@@ -266,13 +269,37 @@ export const breakpoint = assertUnitClass('breakpoint', {
 
 // ── Shape ─────────────────────────────────────────────────────────────────────────────────────
 
-/** Radii, in px (drawing). The field is square; keys, toggles and people's circles aren't. */
+/**
+ * Radii, in px (drawing). **Only what you can press is rounded; containers are square.**
+ *
+ * - `container` — badges, tags, cards, panels, popovers, tooltips, dialogs and sheets: square on
+ *   both surfaces.
+ * - `control` — anything pressable (buttons, inputs, selectable chips, clickable rows). Per
+ *   surface; see `controlRadius` below.
+ * - `key` — keyboard hints, rounded like chiclet keys on both surfaces: the one container that
+ *   isn't square.
+ * - `toggle` — a switch's track; `full` — people's circles and dots.
+ */
 export const radius = assertUnitClass('radius', {
   none: px(0),
-  key: px(2),
+  container: px(0),
+  key: px(3),
   toggle: px(6),
   full: px(9999),
 });
+
+/** Radius keys that differ by surface. */
+export const SURFACE_RADIUS_KEYS = ['control'] as const;
+export type SurfaceRadiusKey = (typeof SURFACE_RADIUS_KEYS)[number];
+
+/**
+ * The control radius per surface: skater's pressable things take 2 px; the console's stay square.
+ * Whether console controls move to 2 px is an open call, and either answer is this one value.
+ */
+export const controlRadius = {
+  admin: assertUnitClass('radius', { control: px(0) }),
+  skater: assertUnitClass('radius', { control: px(2) }),
+} as const satisfies Record<Surface, Record<SurfaceRadiusKey, Length>>;
 
 /** Border widths, in px (drawing). */
 export const border = assertUnitClass('border', {

@@ -20,6 +20,8 @@
  * - `alias` — the same value as another key in the same map.
  * - `data` — a data scale with its own value per mode (bathymetry) or one value for both
  *   (temperature): a reading, not chrome, so it isn't inverted.
+ * - `fixed` — a mark whose value is designed for each mode rather than derived (the favorite star):
+ *   its light value isn't computed from the dark one, so the contrast suite checks it as drawn.
  */
 
 import type { OverlayName, PrimitiveName } from './primitives';
@@ -46,7 +48,8 @@ export type ColorSpec =
       readonly audit?: OverlayName;
     }
   | { readonly role: 'alias'; readonly of: string }
-  | { readonly role: 'data'; readonly dark: PrimitiveName; readonly light: PrimitiveName };
+  | { readonly role: 'data'; readonly dark: PrimitiveName; readonly light: PrimitiveName }
+  | { readonly role: 'fixed'; readonly dark: PrimitiveName; readonly light: PrimitiveName };
 
 const overlay = (
   base: OverlayBase,
@@ -130,6 +133,10 @@ export const colorSpecs = {
   'acc-dim': { role: 'ink', dark: 'ice-dim' }, // ice at rest: a pill border, a quiet link
   warn: { role: 'accent', dark: 'amber' },
   bad: { role: 'accent', dark: 'red' },
+
+  // Marks with a designed value per mode. `star` fills a *set* favorite only; an unset star stays
+  // an outline in the ink it sits with.
+  star: { role: 'fixed', dark: 'star-dark', light: 'star-light' },
 
   // Inverse — a solid ink plate (the primary button) and the text on it.
   'inv-bg': { role: 'ink', dark: 'w' },

@@ -25,6 +25,7 @@ import {
   opacity,
   radius,
   SIZE_KEYS,
+  SURFACE_RADIUS_KEYS,
   space,
   tracking,
   zIndex,
@@ -178,6 +179,12 @@ export const registry: readonly TokenEntry[] = [
   ),
   ...GAP_KEYS.map((key) =>
     entry('gap', key, 'surface', `--gap-${key}`, `--spacing-${key}`, (map) => length(map.gap[key])),
+  ),
+  // The control radius is the surface's (`rounded-control`); containers and keys are shared below.
+  ...SURFACE_RADIUS_KEYS.map((key) =>
+    entry('radius', key, 'surface', `--corner-${key}`, `--radius-${key}`, (map) =>
+      length(map.radius[key]),
+    ),
   ),
   // Shared by every map. The spacing ruler isn't wired into Tailwind: its `--spacing` arithmetic
   // already yields the same values (see `space` in sizes.ts).

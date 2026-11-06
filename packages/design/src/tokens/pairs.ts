@@ -84,13 +84,19 @@ export const INK_KEEPS_OFF: Readonly<Partial<Record<ColorKey, readonly Ground[]>
 export const PLATE_PAIRS: ReadonlyArray<readonly [ColorKey, ColorKey]> = [['inv-fg', 'inv-bg']];
 
 /**
- * Non-text marks that carry meaning (WCAG 1.4.11, 3:1): the focus ring and the selection rule are
- * drawn in `fg`, on any solid ground.
+ * Non-text marks that carry meaning (WCAG 1.4.11, 3:1). The focus ring and the selection rule are
+ * drawn in `fg`, on any solid ground. A set favorite's `star` is an icon fill, not text, so it is
+ * held to 3:1 rather than AA — on every ground but the ones in `MARK_KEEPS_OFF`.
  */
+export const MARK_KEEPS_OFF: Readonly<Partial<Record<ColorKey, readonly Ground[]>>> = {
+  star: ['lift-18'], // 2.66 in the light maps — a hover bracket never carries a set star
+};
+
 export const NON_TEXT_PAIRS: ReadonlyArray<readonly [ColorKey, Ground]> = [
   ['fg', 'bg'],
   ['fg', 'panel'],
   ['fg', 'raise'],
+  ...GROUNDS.filter((g) => !MARK_KEEPS_OFF.star?.includes(g)).map((g) => ['star', g] as const),
 ];
 
 /** Keys the contrast rule doesn't apply to, and why. */

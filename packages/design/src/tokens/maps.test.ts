@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { WCAG_AA_LARGE, WCAG_AA_NORMAL } from '../contrast';
 import { allThemeMaps, resolveColors, type ThemeMap, themeMaps } from './maps';
-import { composite, contrastOfRgb, contrastOklch, inGamut, rgbToOklch, toRgb } from './oklch';
+import {
+  composite,
+  contrastOfRgb,
+  contrastOklch,
+  inGamut,
+  rgbToOklch,
+  toHex,
+  toRgb,
+} from './oklch';
 import {
   CONTRAST_EXEMPT,
   GROUNDS,
   type Ground,
   INK_KEEPS_OFF,
   isDataKey,
+  MARK_KEEPS_OFF,
   NON_TEXT_PAIRS,
   PLATE_PAIRS,
   TEXT_PAIRS,
 } from './pairs';
 import { COLOR_KEYS, type ColorKey, type ColorSpec, colorSpecs } from './semantic';
-import { FONT_SIZE_KEYS, GAP_KEYS, SIZE_KEYS } from './sizes';
+import { FONT_SIZE_KEYS, GAP_KEYS, radius, SIZE_KEYS, SURFACE_RADIUS_KEYS } from './sizes';
 
 const mapName = (m: ThemeMap) => `${m.surface} ${m.mode}`;
 
@@ -43,6 +52,7 @@ describe('the four maps', () => {
       expect(Object.keys(map.fontSize)).toEqual([...FONT_SIZE_KEYS]);
       expect(Object.keys(map.size)).toEqual([...SIZE_KEYS]);
       expect(Object.keys(map.gap)).toEqual([...GAP_KEYS]);
+      expect(Object.keys(map.radius)).toEqual([...SURFACE_RADIUS_KEYS]);
       for (const [key, c] of Object.entries(map.colors)) expect(inGamut(c), key).toBe(true);
     },
   );
@@ -64,14 +74,57 @@ describe('the four maps', () => {
       themeMaps.admin.dark.size.btn.value,
     );
   });
+
+  it('give the console one display size and the skater app two', () => {
+    const { admin, skater } = themeMaps;
+    expect(admin.dark.fontSize['disp-lg']).toEqual(admin.dark.fontSize.disp);
+    expect(skater.dark.fontSize['disp-lg'].value).toBeGreaterThan(skater.dark.fontSize.disp.value);
+  });
+});
+
+describe('radii: only what you can press is rounded', () => {
+  it('rounds skater controls 2 px and keeps console controls square, in both modes', () => {
+    for (const mode of ['dark', 'light'] as const) {
+      expect(themeMaps.skater[mode].radius.control).toEqual({ unit: 'px', value: 2 });
+      expect(themeMaps.admin[mode].radius.control).toEqual({ unit: 'px', value: 0 });
+    }
+  });
+
+  it('keeps containers square and rounds keyboard hints like chiclet keys, on both surfaces', () => {
+    expect(radius.container).toEqual({ unit: 'px', value: 0 });
+    expect(radius.key).toEqual({ unit: 'px', value: 3 });
+    expect(radius.full.value).toBeGreaterThan(1000); // people's circles and dots
+  });
+});
+
+describe('the favorite star', () => {
+  it('is the designed gold in each mode, the same on both surfaces', () => {
+    for (const surface of ['admin', 'skater'] as const) {
+      expect(toHex(themeMaps[surface].dark.colors.star)).toBe('#f3b71a');
+      expect(toHex(themeMaps[surface].light.colors.star)).toBe('#a26b00');
+    }
+  });
+
+  it('is held as a non-text mark, never paired where it is kept off', () => {
+    const starGrounds = NON_TEXT_PAIRS.filter(([mark]) => mark === 'star').map(([, g]) => g);
+    expect(starGrounds.length).toBeGreaterThan(0);
+    for (const [mark, off] of Object.entries(MARK_KEEPS_OFF)) {
+      const on = NON_TEXT_PAIRS.filter(([m]) => m === mark).map(([, g]) => g);
+      expect(
+        off.filter((g) => on.includes(g)),
+        mark,
+      ).toEqual([]);
+    }
+  });
 });
 
 describe('every color key is accounted for by the contrast rule', () => {
-  it('as an ink, a ground, a plate pair, exempt, or data', () => {
+  it('as an ink, a ground, a plate pair, a non-text mark, exempt, or data', () => {
     const covered = new Set<string>([
       ...Object.keys(TEXT_PAIRS),
       ...GROUNDS,
       ...PLATE_PAIRS.flat(),
+      ...NON_TEXT_PAIRS.map(([mark]) => mark),
       ...Object.keys(CONTRAST_EXEMPT),
     ]);
     const loose = COLOR_KEYS.filter((k) => !covered.has(k) && !isDataKey(k));
@@ -104,7 +157,7 @@ describe.each(allThemeMaps.map((m) => [mapName(m), m] as const))('%s contrast', 
     );
   });
 
-  it.each(NON_TEXT_PAIRS)('%s (focus ring, selection rule) holds 3:1 on %s', (mark, ground) => {
+  it.each(NON_TEXT_PAIRS)('%s (a non-text mark) holds 3:1 on %s', (mark, ground) => {
     expect(contrastOn(map, mark, ground)).toBeGreaterThanOrEqual(WCAG_AA_LARGE);
   });
 

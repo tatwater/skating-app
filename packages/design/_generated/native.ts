@@ -21,6 +21,7 @@ export const nativeThemes = {
         'acc-dim': '#1a8aa0',
         warn: '#f3b71a',
         bad: '#ff4a55',
+        star: '#f3b71a',
         'inv-bg': '#f7f7f7',
         'inv-fg': '#050505',
         'acc-tint': 'rgba(47, 211, 244, 0.05)',
@@ -91,7 +92,7 @@ export const nativeThemes = {
         h: 16,
         stat: 18,
         disp: 20,
-        'disp-lg': 22,
+        'disp-lg': 20,
       },
       size: {
         status: 26,
@@ -126,6 +127,9 @@ export const nativeThemes = {
         'hit-x': 8,
         'hit-y': 6,
       },
+      radius: {
+        control: 0,
+      },
       shadow: {
         ring: 'inset 0px 0px 0px 1px #383838',
         'select-rule': 'inset 2px 0px 0px 0px #f7f7f7',
@@ -154,6 +158,7 @@ export const nativeThemes = {
         'acc-dim': '#007589',
         warn: '#7c5b00',
         bad: '#c3002a',
+        star: '#a26b00',
         'inv-bg': '#050505',
         'inv-fg': '#f7f7f7',
         'acc-tint': 'rgba(0, 106, 125, 0.0377)',
@@ -224,7 +229,7 @@ export const nativeThemes = {
         h: 16,
         stat: 18,
         disp: 20,
-        'disp-lg': 22,
+        'disp-lg': 20,
       },
       size: {
         status: 26,
@@ -258,6 +263,9 @@ export const nativeThemes = {
         'bar-gap': 14,
         'hit-x': 8,
         'hit-y': 6,
+      },
+      radius: {
+        control: 0,
       },
       shadow: {
         ring: 'inset 0px 0px 0px 1px #bebebe',
@@ -289,6 +297,7 @@ export const nativeThemes = {
         'acc-dim': '#1a8aa0',
         warn: '#f3b71a',
         bad: '#ff4a55',
+        star: '#f3b71a',
         'inv-bg': '#f7f7f7',
         'inv-fg': '#050505',
         'acc-tint': 'rgba(47, 211, 244, 0.05)',
@@ -394,6 +403,9 @@ export const nativeThemes = {
         'hit-x': 12,
         'hit-y': 10,
       },
+      radius: {
+        control: 2,
+      },
       shadow: {
         ring: 'inset 0px 0px 0px 1px #383838',
         'select-rule': 'inset 2px 0px 0px 0px #f7f7f7',
@@ -422,6 +434,7 @@ export const nativeThemes = {
         'acc-dim': '#007589',
         warn: '#7c5b00',
         bad: '#c3002a',
+        star: '#a26b00',
         'inv-bg': '#050505',
         'inv-fg': '#f7f7f7',
         'acc-tint': 'rgba(0, 106, 125, 0.0377)',
@@ -526,6 +539,9 @@ export const nativeThemes = {
         'bar-gap': 28,
         'hit-x': 12,
         'hit-y': 10,
+      },
+      radius: {
+        control: 2,
       },
       shadow: {
         ring: 'inset 0px 0px 0px 1px #bebebe',
@@ -594,7 +610,8 @@ export const nativeTokens = {
   },
   radius: {
     none: 0,
-    key: 2,
+    container: 0,
+    key: 3,
     toggle: 6,
     full: 9999,
   },

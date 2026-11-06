@@ -4,7 +4,7 @@
  * Colors resolve per mode from `semantic.ts`'s roles; the light values are derived here, at build
  * time, from the dark ones — deterministically, so the same source always yields the same maps.
  * Both surfaces share one color map per mode today (two maps pointing at the same values); density
- * — type sizes, part sizes and semantic gaps — is what differs by surface.
+ * — type sizes, part sizes and semantic gaps — and the control radius are what differ by surface.
  */
 
 import { WCAG_AA_NORMAL } from '../contrast';
@@ -28,6 +28,7 @@ import {
   type OverlayBase,
 } from './semantic';
 import {
+  controlRadius,
   type FontSizeKey,
   fontSize,
   type GapKey,
@@ -35,6 +36,7 @@ import {
   type SizeKey,
   SURFACES,
   type Surface,
+  type SurfaceRadiusKey,
   size,
 } from './sizes';
 import type { Length } from './units';
@@ -47,6 +49,8 @@ export interface ThemeMap {
   readonly fontSize: Readonly<Record<FontSizeKey, Length>>;
   readonly size: Readonly<Record<SizeKey, Length>>;
   readonly gap: Readonly<Record<GapKey, Length>>;
+  /** The radii that differ by surface (the control radius); the rest are shared. */
+  readonly radius: Readonly<Record<SurfaceRadiusKey, Length>>;
 }
 
 const prim = (name: PrimitiveName): Oklch => primitives[name];
@@ -93,6 +97,7 @@ export function resolveColors(
     switch (spec.role) {
       case 'base':
       case 'data':
+      case 'fixed':
         return prim(spec[mode]);
       case 'ground':
       case 'ink': {
@@ -154,6 +159,7 @@ export const themeMaps = Object.fromEntries(
           fontSize: fontSize[surface],
           size: size[surface],
           gap: gap[surface],
+          radius: controlRadius[surface],
         } satisfies ThemeMap,
       ]),
     ),

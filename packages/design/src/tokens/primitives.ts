@@ -2,7 +2,9 @@
  * Primitive colors, in OKLCH — the only place a raw color is written (D232).
  *
  * Converted once from the audited admin palette by `scripts/convert-audit.ts` (2026-11-06); the
- * trailing comment on each line is the audited hex, kept for provenance only. Edit the OKLCH
+ * trailing comment on each line is the audited hex, kept for provenance only. The two `star`
+ * primitives come from the skater web mocks (`skater-web/skater.css`, 2026-11-06), not the audit;
+ * their comments are those mocks' hex. Edit the OKLCH
  * values here; nothing else in the repo may hold a raw color. No semantic meaning lives here —
  * `semantic.ts` maps these onto roles per surface and mode.
  */
@@ -23,6 +25,8 @@ export const primitives = {
   'ice-dim': { l: 0.5851, c: 0.0977, h: 215.16 }, // #1a8aa0
   amber: { l: 0.8128, c: 0.1623, h: 83.9 }, // #f3b71a
   red: { l: 0.6713, c: 0.2164, h: 22.08 }, // #ff4a55
+  'star-dark': { l: 0.8128, c: 0.1623, h: 83.9 }, // #f3b71a
+  'star-light': { l: 0.5721, c: 0.1214, h: 73.76 }, // #a26b00
   'temp-cold-4': { l: 0.8699, c: 0.1126, h: 211.82 }, // #6fe8ff
   'temp-cold-3': { l: 0.8012, c: 0.1334, h: 215.49 }, // #2fd3f4
   'temp-cold-2': { l: 0.6439, c: 0.1085, h: 216.84 }, // #1f9db8

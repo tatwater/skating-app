@@ -15,6 +15,7 @@
   --acc-dim: oklch(0.5169 0.0913 215.16);
   --warn: oklch(0.4926 0.1011 83.9);
   --bad: oklch(0.5163 0.208 22.08);
+  --star: oklch(0.5721 0.1214 73.76);
   --inv-bg: oklch(0.1149 0 0);
   --inv-fg: oklch(0.9761 0 0);
   --acc-tint: oklch(0.4829 0.0855 215.49 / 0.0377);
@@ -113,6 +114,7 @@
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
   --gap-hit-y: 0.625rem;
+  --corner-control: 2px;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -153,7 +155,8 @@
   --lead-body: 1.45;
   --lead-loose: 1.8;
   --corner-none: 0px;
-  --corner-key: 2px;
+  --corner-container: 0px;
+  --corner-key: 3px;
   --corner-toggle: 6px;
   --corner-full: 9999px;
   --stroke-hair: 1px;
@@ -211,7 +214,7 @@
   --type-h: 1rem;
   --type-stat: 1.125rem;
   --type-disp: 1.25rem;
-  --type-disp-lg: 1.375rem;
+  --type-disp-lg: 1.25rem;
   --size-status: 1.625rem;
   --size-top: 2.75rem;
   --size-rail: 4rem;
@@ -241,6 +244,7 @@
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
   --gap-hit-y: 0.375rem;
+  --corner-control: 0px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -259,6 +263,7 @@
     --acc-dim: oklch(0.5851 0.0977 215.16);
     --warn: oklch(0.8128 0.1623 83.9);
     --bad: oklch(0.6713 0.2164 22.08);
+    --star: oklch(0.8128 0.1623 83.9);
     --inv-bg: oklch(0.9761 0 0);
     --inv-fg: oklch(0.1149 0 0);
     --acc-tint: oklch(0.8012 0.1334 215.49 / 0.05);
@@ -336,6 +341,7 @@
   --acc-dim: oklch(0.5851 0.0977 215.16);
   --warn: oklch(0.8128 0.1623 83.9);
   --bad: oklch(0.6713 0.2164 22.08);
+  --star: oklch(0.8128 0.1623 83.9);
   --inv-bg: oklch(0.9761 0 0);
   --inv-fg: oklch(0.1149 0 0);
   --acc-tint: oklch(0.8012 0.1334 215.49 / 0.05);
@@ -412,6 +418,7 @@
   --acc-dim: oklch(0.5169 0.0913 215.16);
   --warn: oklch(0.4926 0.1011 83.9);
   --bad: oklch(0.5163 0.208 22.08);
+  --star: oklch(0.5721 0.1214 73.76);
   --inv-bg: oklch(0.1149 0 0);
   --inv-fg: oklch(0.9761 0 0);
   --acc-tint: oklch(0.4829 0.0855 215.49 / 0.0377);
@@ -488,6 +495,7 @@
   --acc-dim: oklch(0.5851 0.0977 215.16);
   --warn: oklch(0.8128 0.1623 83.9);
   --bad: oklch(0.6713 0.2164 22.08);
+  --star: oklch(0.8128 0.1623 83.9);
   --inv-bg: oklch(0.9761 0 0);
   --inv-fg: oklch(0.1149 0 0);
   --acc-tint: oklch(0.8012 0.1334 215.49 / 0.05);
@@ -556,7 +564,7 @@
   --type-h: 1rem;
   --type-stat: 1.125rem;
   --type-disp: 1.25rem;
-  --type-disp-lg: 1.375rem;
+  --type-disp-lg: 1.25rem;
   --size-status: 1.625rem;
   --size-top: 2.75rem;
   --size-rail: 4rem;
@@ -586,6 +594,7 @@
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
   --gap-hit-y: 0.375rem;
+  --corner-control: 0px;
 }
 
 :root[data-surface="admin"][data-mode="light"] {
@@ -604,6 +613,7 @@
   --acc-dim: oklch(0.5169 0.0913 215.16);
   --warn: oklch(0.4926 0.1011 83.9);
   --bad: oklch(0.5163 0.208 22.08);
+  --star: oklch(0.5721 0.1214 73.76);
   --inv-bg: oklch(0.1149 0 0);
   --inv-fg: oklch(0.9761 0 0);
   --acc-tint: oklch(0.4829 0.0855 215.49 / 0.0377);
@@ -672,7 +682,7 @@
   --type-h: 1rem;
   --type-stat: 1.125rem;
   --type-disp: 1.25rem;
-  --type-disp-lg: 1.375rem;
+  --type-disp-lg: 1.25rem;
   --size-status: 1.625rem;
   --size-top: 2.75rem;
   --size-rail: 4rem;
@@ -702,6 +712,7 @@
   --gap-bar-gap: 0.875rem;
   --gap-hit-x: 0.5rem;
   --gap-hit-y: 0.375rem;
+  --corner-control: 0px;
 }
 
 :root[data-surface="skater"][data-mode="dark"] {
@@ -720,6 +731,7 @@
   --acc-dim: oklch(0.5851 0.0977 215.16);
   --warn: oklch(0.8128 0.1623 83.9);
   --bad: oklch(0.6713 0.2164 22.08);
+  --star: oklch(0.8128 0.1623 83.9);
   --inv-bg: oklch(0.9761 0 0);
   --inv-fg: oklch(0.1149 0 0);
   --acc-tint: oklch(0.8012 0.1334 215.49 / 0.05);
@@ -818,6 +830,7 @@
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
   --gap-hit-y: 0.625rem;
+  --corner-control: 2px;
 }
 
 :root[data-surface="skater"][data-mode="light"] {
@@ -836,6 +849,7 @@
   --acc-dim: oklch(0.5169 0.0913 215.16);
   --warn: oklch(0.4926 0.1011 83.9);
   --bad: oklch(0.5163 0.208 22.08);
+  --star: oklch(0.5721 0.1214 73.76);
   --inv-bg: oklch(0.1149 0 0);
   --inv-fg: oklch(0.9761 0 0);
   --acc-tint: oklch(0.4829 0.0855 215.49 / 0.0377);
@@ -934,6 +948,7 @@
   --gap-bar-gap: 1.75rem;
   --gap-hit-x: 0.75rem;
   --gap-hit-y: 0.625rem;
+  --corner-control: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
