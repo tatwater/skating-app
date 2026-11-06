@@ -40,13 +40,15 @@ const button = (canvasElement: HTMLElement, name?: string | RegExp) =>
 
 /** How every button in an action bar rests: outlined, kicker label. Lights on hover and focus. */
 export const Outline: Story = {
-  play: async ({ canvasElement, args }) => {
+  play: async ({ canvasElement, args, globals }) => {
     const el = button(canvasElement, 'Promote');
     await userEvent.click(el);
     await expect(args.onClick).toHaveBeenCalledOnce();
-    // Square, kicker type: the register's two most visible breaks from shadcn.
+    // The surface's control radius (square on the console) and kicker type: the register's two
+    // most visible breaks from shadcn.
+    const surface = globals.surface as tokens.Surface;
     const style = getComputedStyle(el);
-    await expect(style.borderRadius).toBe('0px');
+    await expect(style.borderRadius).toBe(`${tokens.controlRadius[surface].control.value}px`);
     await expect(style.textTransform).toBe('uppercase');
   },
 };
@@ -352,6 +354,14 @@ export const FourUp: Story = {
     const admin = [...quads].filter((q) => q.dataset.surface === 'admin').map(height);
     const skater = [...quads].filter((q) => q.dataset.surface === 'skater').map(height);
     await expect(Math.max(...admin)).toBeLessThan(Math.min(...skater));
+    // …and takes its surface's control radius: rounded on skater, square on the console.
+    for (const q of quads) {
+      const primary = q.querySelector('[data-variant="primary"]') as HTMLElement;
+      const surface = q.dataset.surface as tokens.Surface;
+      await expect(getComputedStyle(primary).borderRadius).toBe(
+        `${tokens.controlRadius[surface].control.value}px`,
+      );
+    }
     const field = (q: HTMLElement) => getComputedStyle(q).backgroundColor;
     await expect(new Set([...quads].map(field)).size).toBeGreaterThan(1);
   },

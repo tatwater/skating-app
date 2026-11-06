@@ -14,7 +14,8 @@ import { cn } from '@/lib/utils';
  *   own type step (D233).
  * - **Density is the surface's.** There is no compact size: `h-btn`, `text-kick` and the hit pad
  *   resolve per `data-surface`, so the same Button is denser on admin than on skater.
- * - **Square** (`rounded-none`): the field is square; only keys, toggles and people are not.
+ * - **The control radius** (`rounded-control`): pressable things take the surface's control radius —
+ *   rounded on skater, square on the console. Containers are square everywhere.
  * - **No red at rest.** `danger` rests like any outlined action; red appears only once it is
  *   `armed` (a confirm step), and an armed button that waits for something (a reason) is `armed`
  *   *and* `disabled` — its label dims to `bad-dim`.
@@ -39,7 +40,7 @@ const FACED: Array<'outline' | 'primary' | 'danger' | 'link'> = [
 const buttonVariants = cva(
   [
     'group/button relative inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap select-none outline-none',
-    'rounded-none font-(family-name:--family-sans)',
+    'rounded-control font-(family-name:--family-sans)',
     'transition-[background-color,color,box-shadow] duration-(--duration-fast) ease-standard',
     'pressed:duration-(--duration-instant) focus-visible:shadow-focus',
     'data-disabled:cursor-default aria-busy:cursor-progress',

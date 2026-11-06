@@ -26,7 +26,10 @@ side.
 - **Relative units.** Sizes and spacing are in `rem` (or `em` where an inset should track its own
   text), so the layout grows with the reader's font size. Only drawing — borders, rings, radii,
   shadows — stays in pixels.
-- **Square.** Everything is square but keys, toggles and people's circles.
+- **Only what you can press is rounded.** Buttons, inputs, selectable chips and clickable rows take
+  the surface's control radius (`rounded-control`: rounded on skater, square on the console).
+  Containers — badges, cards, panels, popovers, tooltips, dialogs, sheets — are square on both.
+  Keyboard hints round like chiclet keys (`rounded-key`); switches and people's circles keep theirs.
 - **Motion is quick and quiet.** Hover, focus and press fade on the motion tokens (80, 120, 200,
   320 ms) with no bounce; with reduced motion on, every duration is zero. A loading state keeps
   its final size, so nothing jumps as content arrives.
