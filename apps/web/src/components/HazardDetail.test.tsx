@@ -71,7 +71,7 @@ describe('HazardView', () => {
     renderWithRouter(<HazardView data={data()} onConfirm={vi.fn()} />);
     expect(await screen.findByRole('button', { name: /Still here/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Healing — still unsafe/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Fully healed & safe/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fully healed/ })).toBeInTheDocument();
   });
 
   it('confirms "still here" in one click', async () => {
@@ -94,7 +94,7 @@ describe('HazardView', () => {
     const onConfirm = vi.fn();
     renderWithRouter(<HazardView data={data()} onConfirm={onConfirm} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Fully healed & safe/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Fully healed/ }));
     expect(onConfirm).not.toHaveBeenCalled();
     expect(screen.getByText(/retires the marker for everyone/)).toBeInTheDocument();
 
@@ -105,10 +105,10 @@ describe('HazardView', () => {
   it('lets the skater back out of the destructive verdict', async () => {
     const onConfirm = vi.fn();
     renderWithRouter(<HazardView data={data()} onConfirm={onConfirm} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Fully healed & safe/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Fully healed/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Fully healed & safe/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Fully healed/ })).toBeInTheDocument();
   });
 
   it('relabels the verdicts for a ridge crossing', async () => {
@@ -204,7 +204,7 @@ describe('HazardView', () => {
 
     it('does not expand the destructive "fully healed" step when deep-linked (D3)', async () => {
       renderWithRouter(<HazardView data={data()} onConfirm={vi.fn()} action="confirm" />);
-      await screen.findByRole('button', { name: /Fully healed & safe/ });
+      await screen.findByRole('button', { name: /Fully healed/ });
       // The second-tap confirmation copy only appears once the skater taps "Fully healed" themselves.
       expect(screen.queryByText(/retires the marker for everyone/)).not.toBeInTheDocument();
     });

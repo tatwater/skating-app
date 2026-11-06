@@ -107,7 +107,7 @@ export function verdictLabel(verdict: HazardVerdict, type: HazardType): string {
     case 'healing_unsafe':
       return 'Healing — still unsafe';
     case 'fully_healed':
-      return 'Fully healed & safe';
+      return 'Fully healed';
     case 'never_existed':
       return 'Nothing here — never was';
   }

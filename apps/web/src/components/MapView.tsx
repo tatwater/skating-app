@@ -1638,7 +1638,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // rounding or border: it is the surface now, not a card on one.
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full overflow-hidden" />
-      {/* "This is skateable" — the right-click ask (A07b PR 2). */}
+      {/* "People skate here" — the right-click ask (A07b PR 2). */}
       {admitCoord ? <AdmitPrompt coord={admitCoord} onClose={() => setAdmitCoord(null)} /> : null}
       <ReturnToRegion
         visible={regionOffscreen}

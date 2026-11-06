@@ -225,7 +225,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // pass exists to remove. The window is only the seed, for the frames before the first layout.
   const { height: windowHeight } = useWindowDimensions();
   const [mapHeight, setMapHeight] = useState(windowHeight);
-  // "This is skateable" — the long-press ask (A07b PR 2). Set by `onMapLongPress`, cleared by the prompt.
+  // "People skate here" — the long-press ask (A07b PR 2). Set by `onMapLongPress`, cleared by the prompt.
   const [admitCoord, setAdmitCoord] = useState<{ lat: number; lng: number } | null>(null);
   const onMapLayout = useCallback((event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout;
