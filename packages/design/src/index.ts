@@ -4,3 +4,4 @@ export * from './contrast';
 export * from './hue';
 export * from './scales';
 export * from './themes';
+export * as tokens from './tokens';

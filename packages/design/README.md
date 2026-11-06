@@ -6,7 +6,47 @@ consumes these via Tailwind, mobile via Tamagui, each projecting the same values
 into its own idiom. Consumed as raw TypeScript source (no build step), like
 `@skating/core`.
 
-## Modules
+## The token system (`tokens`, D232–D234)
+
+The new register's single source of truth, exported as the `tokens` namespace beside the older
+`themes` below (which web, mobile and email still read until the kit's re-skin moves them over).
+
+- **`src/tokens/primitives.ts`** — every raw color, in OKLCH. Converted once from the audited admin
+  palette (`scripts/audit-colors.json`, by `scripts/convert-audit.ts`); the audited hex survives
+  only as a provenance comment. Nothing else in the repo may hold a raw color.
+- **`semantic.ts`** — one semantic key set (`bg`, `panel`, `raise`, `line`, `line2`, `fg`,
+  `fg1`–`fg3`, `acc`, `warn`, `bad`, washes, lifts, plates, `inv-bg`/`inv-fg`, `scrim`, `shade`,
+  the temperature and depth scales). Each key has a *role* that binds admin dark to the audit and
+  says how light is derived (the ramp inverted by contrast; accents as light as AA allows).
+- **`maps.ts`** — the four maps, `themeMaps[surface][mode]`: `admin|skater` × `dark|light`. Both
+  surfaces share colors today; density (type sizes, part sizes, semantic gaps) rides the surface.
+- **`sizes.ts`** + **`units.ts`** — every non-color token, each length tagged with its unit class
+  (rem for type, space, sizes and breakpoints; em for tracking; unitless line-height; px only for
+  borders, radii, shadows and optical nudges). A length in the wrong class is refused.
+- **`pairs.ts`** — which ink sits on which ground; the contrast suite runs it on every map.
+- **`registry.ts`** — every token once, flat and walkable (`walkTokens()` for the Paper push).
+- **`emit.ts`** — the generators.
+
+### Regenerating
+
+```bash
+pnpm --filter @skating/design generate
+```
+
+writes `_generated/` (committed; a test fails if it drifts from the source):
+
+| File | For | Shape |
+| --- | --- | --- |
+| `tokens.css` | `apps/web` | custom properties in `oklch()`; `:root` defaults (skater, light; the OS's dark when no mode is stated) and one `:root[data-surface][data-mode]` block per map |
+| `tailwind.css` | `apps/web` | Tailwind v4 `@theme inline` wiring: `bg-panel`, `text-fg3`, `text-row`, `h-btn`, `p-gutter`, `shadow-focus`, `phone:` … |
+| `native.ts` | mobile (`@skating/design/native`) | `nativeThemes[surface][mode]` with hex / `rgba()` colors (React Native parses no OKLCH) and dp sizes; `nativeTokens` for the shared scales |
+| `tokens.json` | the Paper push | every token resolved in every map, CSS and hex forms |
+
+The Tailwind wiring never redefines a Tailwind default to a different value (a test reads
+Tailwind's own `theme.css`): `leading-tight`/`-snug`/`-loose` and `font-sans`/`-mono` are
+deferred (`TAILWIND_DEFERRED`) until the current UI's uses of them are re-skinned.
+
+## Modules (the older palette)
 
 - **`colors`** — primitive color ramps (50→950). The only place raw hex lives;
   cool/icy to match the FUI, winter-ice aesthetic (00-vision). No semantic meaning.
@@ -46,6 +86,7 @@ radius.lg            // 12
 ## Scripts
 
 ```bash
+pnpm --filter @skating/design generate     # regenerate _generated/ from the token source
 pnpm --filter @skating/design test         # Vitest + coverage
 pnpm --filter @skating/design test:watch   # watch mode
 pnpm --filter @skating/design check-types  # tsc --noEmit
