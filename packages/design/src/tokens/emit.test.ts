@@ -124,6 +124,11 @@ describe('the registry', () => {
       if (e.varies === 'surface') expect(byMode, e.name).toBe(false);
       if (e.varies === 'mode') expect(bySurface, e.name).toBe(false);
     }
+    // Colors vary on both axes, and at least one shows it on each.
+    const colors = registry.filter((e) => e.group === 'color');
+    expect(colors.every((e) => e.varies === 'both')).toBe(true);
+    expect(colors.some((e) => differs(e, 'admin', 'dark', 'skater', 'dark'))).toBe(true);
+    expect(colors.some((e) => differs(e, 'skater', 'light', 'admin', 'light'))).toBe(true);
   });
 });
 
@@ -153,6 +158,22 @@ describe('CSS output', () => {
     expect(css).toContain('@media (prefers-color-scheme: dark) {');
     expect(css).toContain('@media (prefers-reduced-motion: reduce) {');
     expect(css).toContain('--duration-base: 0ms;');
+  });
+
+  it('gives a surface stated without a mode its own palette, in either OS scheme', () => {
+    const fg3 = (map: (typeof themeMaps)['admin']['dark']) =>
+      cssValue({ kind: 'color', color: map.colors.fg3 });
+    const blockOf = (selector: string) => {
+      const start = css.indexOf(`${selector} {`);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    expect(blockOf(':root[data-surface="admin"]')).toContain(
+      `--fg3: ${fg3(themeMaps.admin.light)};`,
+    );
+    expect(blockOf(':root[data-surface="admin"]:not([data-mode])')).toContain(
+      `--fg3: ${fg3(themeMaps.admin.dark)};`,
+    );
+    expect(blockOf(':root:not([data-mode])')).toContain(`--fg3: ${fg3(themeMaps.skater.dark)};`);
   });
 
   it('sets color-scheme only where a mode is stated', () => {

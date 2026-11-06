@@ -1,10 +1,12 @@
 /**
  * The four theme maps: surface (`admin` | `skater`) × mode (`dark` | `light`) (D232).
  *
- * Colors resolve per mode from `semantic.ts`'s roles; the light values are derived here, at build
- * time, from the dark ones — deterministically, so the same source always yields the same maps.
- * Both surfaces share one color map per mode today (two maps pointing at the same values); density
- * — type sizes, part sizes and semantic gaps — and the control radius are what differ by surface.
+ * Colors resolve per surface × mode: from `semantic.ts`'s roles, with the map's designed values
+ * (`designedColors`) in place of the role's where it has them. A derived light value is computed
+ * here, at build time, from the dark one — deterministically, so the same source always yields the
+ * same maps. Admin dark is the audit and admin light is derived; skater dark is the audit with its
+ * own tertiary gray, and skater light is the mocks' designed palette. Density — type sizes, part
+ * sizes and semantic gaps — and the control radius also differ by surface.
  */
 
 import { WCAG_AA_NORMAL } from '../contrast';
@@ -23,6 +25,9 @@ import {
   type ColorKey,
   type ColorSpec,
   colorSpecs,
+  type DesignedColor,
+  type DesignedMap,
+  designedColors,
   MODES,
   type Mode,
   type OverlayBase,
@@ -56,12 +61,14 @@ export interface ThemeMap {
 const prim = (name: PrimitiveName): Oklch => primitives[name];
 
 /**
- * Resolve every semantic color for one mode. Throws on an unknown or circular reference, so a
- * broken spec fails the build rather than emitting a hole.
+ * Resolve every semantic color for one mode, taking `designed` values over the roles' where given.
+ * Throws on an unknown or circular reference, so a broken spec fails the build rather than
+ * emitting a hole.
  */
 export function resolveColors(
   mode: Mode,
   specs: Readonly<Record<string, ColorSpec>> = colorSpecs,
+  designed: Readonly<Record<string, DesignedColor>> = {},
 ): Record<string, Oklch> {
   const resolved: Record<string, Oklch> = {};
   const resolving = new Set<string>();
@@ -73,7 +80,8 @@ export function resolveColors(
     if (!spec) throw new Error(`Unknown color key: ${key}`);
     if (resolving.has(key)) throw new Error(`Circular color reference at ${key}`);
     resolving.add(key);
-    const value = compute(spec);
+    const hand = designed[key];
+    const value = hand === undefined ? compute(spec) : fromDesign(hand);
     resolving.delete(key);
     resolved[key] = value;
     return value;
@@ -91,6 +99,11 @@ export function resolveColors(
       throw new Error(`An overlay can't sit on ${b.key}, which is itself an ${keyed.role}`);
     }
     return prim(keyed.dark);
+  };
+
+  const fromDesign = (d: DesignedColor): Oklch => {
+    if (typeof d === 'string') return prim(d);
+    return withAlpha('key' in d ? resolve(d.key) : prim(d.primitive), d.alpha);
   };
 
   const compute = (spec: ColorSpec): Oklch => {
@@ -141,11 +154,7 @@ function darkFieldSpec(specs: Readonly<Record<string, ColorSpec>>) {
   return specs[fieldKey(specs)] as Extract<ColorSpec, { role: 'base' }>;
 }
 
-const colorsByMode = Object.fromEntries(
-  MODES.map((mode) => [mode, resolveColors(mode) as Record<ColorKey, Oklch>]),
-) as Record<Mode, Record<ColorKey, Oklch>>;
-
-/** The four maps, `themeMaps[surface][mode]`. Both surfaces share each mode's color object. */
+/** The four maps, `themeMaps[surface][mode]`. */
 export const themeMaps = Object.fromEntries(
   SURFACES.map((surface) => [
     surface,
@@ -155,7 +164,11 @@ export const themeMaps = Object.fromEntries(
         {
           surface,
           mode,
-          colors: colorsByMode[mode],
+          colors: resolveColors(
+            mode,
+            colorSpecs,
+            (designedColors[surface][mode] ?? {}) as DesignedMap,
+          ) as Record<ColorKey, Oklch>,
           fontSize: fontSize[surface],
           size: size[surface],
           gap: gap[surface],

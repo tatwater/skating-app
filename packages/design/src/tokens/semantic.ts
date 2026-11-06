@@ -2,8 +2,8 @@
  * Semantic color tokens: one key set, resolved per surface × mode (D232). Components read only these.
  *
  * Each key has a **role**, and the role says both what the dark map binds it to (straight from the
- * audit) and how the light map is derived from that — the light maps are computed and then checked
- * by the contrast suite, never designed board by board (research doc §1):
+ * audit) and how a light map is derived from that — computed, then checked by the contrast suite
+ * (research doc §1) — unless the map is designed (below):
  *
  * - `base` — the field. Dark is the ramp's bottom (void); light is the ramp's top (w).
  * - `ground` / `ink` — "the ramp inverted": the light value keeps the dark value's hue and chroma
@@ -22,9 +22,17 @@
  *   (temperature): a reading, not chrome, so it isn't inverted.
  * - `fixed` — a mark whose value is designed for each mode rather than derived (the favorite star):
  *   its light value isn't computed from the dark one, so the contrast suite checks it as drawn.
+ *
+ * The roles are the default. A map can instead take **designed** values key by key
+ * (`designedColors`): hand-picked colors that the derivation doesn't touch, checked by the contrast
+ * suite as drawn. Skater light is designed (the approved web mocks, founder 2026-11-06), so each
+ * mode can grow its own character, such as glows that suit the dark; admin light stays derived until
+ * it has mocks of its own. A key a designed map leaves out still derives, measured against that
+ * map's designed field and accents.
  */
 
 import type { OverlayName, PrimitiveName } from './primitives';
+import type { Surface } from './sizes';
 
 /** The two modes (the `data-mode` axis). */
 export const MODES = ['dark', 'light'] as const;
@@ -55,8 +63,8 @@ const overlay = (
   base: OverlayBase,
   alpha: number,
   light: 'match' | 'keep',
-  audit: OverlayName,
-): ColorSpec => ({ role: 'overlay', base, alpha, light, audit });
+  audit?: OverlayName,
+): ColorSpec => ({ role: 'overlay', base, alpha, light, ...(audit ? { audit } : {}) });
 
 /**
  * The ground an accent label must still pass AA on in the light map: the selection plate (the
@@ -155,6 +163,9 @@ export const colorSpecs = {
   'bad-wash': overlay(onKey('bad'), 0.12, 'match', 'red-wash'),
   'bad-dim': overlay(onKey('bad'), 0.42, 'match', 'red-dim'), // an armed danger button that waits
   'bad-glow': overlay(onKey('bad'), 0.45, 'match', 'red-glow'),
+  // The search highlight behind matched text (with a 1 px ice underline, drawn by the component).
+  // From the skater mocks, not the audit: ice at 24% on dark.
+  'acc-mark': overlay(onKey('acc'), 0.24, 'match'),
 
   // Lifts — ink at an alpha over the field.
   'lift-03': overlay(INK_PURE, 0.03, 'match', 'lift-03'), // a striped or hovered row
@@ -182,3 +193,62 @@ export const colorSpecs = {
 
 export type ColorKey = keyof typeof colorSpecs;
 export const COLOR_KEYS = Object.keys(colorSpecs) as ColorKey[];
+
+/**
+ * A designed value: a primitive, or a designed alpha over another key in the same map (so a wash
+ * follows its designed accent) or over a primitive.
+ */
+export type DesignedColor =
+  | PrimitiveName
+  | { readonly key: ColorKey; readonly alpha: number }
+  | { readonly primitive: PrimitiveName; readonly alpha: number };
+
+export type DesignedMap = Readonly<Partial<Record<ColorKey, DesignedColor>>>;
+
+/**
+ * Hand-picked values that replace the role's value in one map. Source: the approved skater web
+ * mocks — `skater-web/skater.css` (the `body` and `body.light` blocks, `lat.css`'s search mark) and
+ * the *Gli · Web app · Review 3* Paper file's `--color-light-*` and `--color-fg3-dark` tokens
+ * (2026-11-06). Where the two disagree, Paper's token wins: light amber is Paper's #A26B00,
+ * where the boards' CSS drew #C25400 (flagged to the founder, 2026-11-06).
+ *
+ * Skater light keys left out derive as before, against the designed white field: `acc-dim`,
+ * `fg-disabled`, the tints, strong washes, glows and `warn-line`, `bad-dim`, the lifts,
+ * `plate-solid`, `map-plate`, `map-foot` and `scrim-deep`. The mocks give no light value for them.
+ */
+export const designedColors: Readonly<
+  Record<Surface, Readonly<Partial<Record<Mode, DesignedMap>>>>
+> = {
+  admin: {},
+  skater: {
+    dark: {
+      fg3: 'skater-dark-fg3', // the mock's own gray: clears 4.5:1 on every dark ground
+    },
+    light: {
+      // Bright outdoor glare: higher contrast, never washed.
+      bg: 'skater-light-bg',
+      panel: 'skater-light-panel',
+      raise: 'skater-light-raise',
+      line: 'skater-light-line',
+      line2: 'skater-light-line2',
+      fg: 'skater-light-fg',
+      fg1: 'skater-light-fg1',
+      fg2: 'skater-light-fg2',
+      fg3: 'skater-light-fg3',
+      acc: 'skater-light-ice',
+      warn: 'skater-light-amber',
+      bad: 'skater-light-red',
+      'inv-bg': 'skater-light-fg', // the primary button is solid ink; inv-fg (the field) is white
+      'acc-wash': { key: 'acc', alpha: 0.09 }, // rgba(10,125,156,.09)
+      'warn-wash': { key: 'warn', alpha: 0.1 }, // the mock's .10, over the designed amber
+      'bad-wash': { key: 'bad', alpha: 0.08 }, // rgba(210,31,44,.08)
+      'acc-mark': { key: 'acc', alpha: 0.22 }, // rgba(10,125,156,.22)
+      plate: { key: 'bg', alpha: 0.92 }, // rgba(255,255,255,.92)
+      scrim: { key: 'fg', alpha: 0.32 }, // rgba(10,10,10,.32): a lighter dim, still dark
+      // Shadows soften on white: the tooltip's .12, the sheets' .18 (skater.css, rep.css, act.css).
+      shade: { primitive: 'black', alpha: 0.12 },
+      'shade-strong': { primitive: 'black', alpha: 0.18 },
+      'shade-deep': { primitive: 'black', alpha: 0.18 },
+    },
+  },
+};

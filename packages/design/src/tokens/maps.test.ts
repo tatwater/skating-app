@@ -8,6 +8,7 @@ import {
   inGamut,
   rgbToOklch,
   toHex,
+  toNativeColor,
   toRgb,
 } from './oklch';
 import {
@@ -19,9 +20,12 @@ import {
   MARK_KEEPS_OFF,
   NON_TEXT_PAIRS,
   PLATE_PAIRS,
+  SHORTFALL_FLOOR,
+  SHORTFALLS,
   TEXT_PAIRS,
 } from './pairs';
-import { COLOR_KEYS, type ColorKey, type ColorSpec, colorSpecs } from './semantic';
+import { primitives } from './primitives';
+import { COLOR_KEYS, type ColorKey, type ColorSpec, colorSpecs, designedColors } from './semantic';
 import { FONT_SIZE_KEYS, GAP_KEYS, radius, SIZE_KEYS, SURFACE_RADIUS_KEYS } from './sizes';
 
 const mapName = (m: ThemeMap) => `${m.surface} ${m.mode}`;
@@ -57,9 +61,16 @@ describe('the four maps', () => {
     },
   );
 
-  it('share colors between surfaces and density between modes', () => {
-    expect(themeMaps.skater.dark.colors).toBe(themeMaps.admin.dark.colors);
-    expect(themeMaps.skater.light.colors).toBe(themeMaps.admin.light.colors);
+  it('give each surface its own palette and share density between modes', () => {
+    // Skater dark is the audit with its own tertiary gray; nothing else differs.
+    const differs = COLOR_KEYS.filter(
+      (k) => toHex(themeMaps.skater.dark.colors[k]) !== toHex(themeMaps.admin.dark.colors[k]),
+    );
+    expect(differs).toEqual(['fg3']);
+    expect(toHex(themeMaps.skater.dark.colors.fg3)).toBe('#8a8a8a');
+    expect(toHex(themeMaps.skater.light.colors.bg)).not.toBe(
+      toHex(themeMaps.admin.light.colors.bg),
+    );
     expect(themeMaps.admin.light.fontSize).toBe(themeMaps.admin.dark.fontSize);
     expect(themeMaps.skater.dark.size).not.toBe(themeMaps.admin.dark.size);
   });
@@ -142,14 +153,30 @@ describe('every color key is accounted for by the contrast rule', () => {
   });
 });
 
-describe.each(allThemeMaps.map((m) => [mapName(m), m] as const))('%s contrast', (_name, map) => {
+describe.each(allThemeMaps.map((m) => [mapName(m), m] as const))('%s contrast', (name, map) => {
+  const shortfalls = SHORTFALLS[name as keyof typeof SHORTFALLS] ?? {};
+  const short = (ink: ColorKey, ground: Ground) => shortfalls[ink]?.includes(ground) ?? false;
   const textCases = Object.entries(TEXT_PAIRS).flatMap(([ink, grounds]) =>
     (grounds as readonly Ground[]).map((ground) => [ink as ColorKey, ground] as const),
   );
+  const passing = textCases.filter(([ink, ground]) => !short(ink, ground));
+  const shortCases = Object.entries(shortfalls).flatMap(([ink, grounds]) =>
+    (grounds as readonly Ground[]).map((ground) => [ink as ColorKey, ground] as const),
+  );
 
-  it.each(textCases)('%s passes AA on %s', (ink, ground) => {
+  it.each(passing)('%s passes AA on %s', (ink, ground) => {
     expect(contrastOn(map, ink, ground)).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
   });
+
+  // A recorded shortfall awaits a founder call: it must be a real pair, still short (or the entry
+  // is stale and comes off the list), and no worse than the floor.
+  if (shortCases.length) {
+    it.each(shortCases)('records %s on %s as short of AA, above the floor', (ink, ground) => {
+      expect(TEXT_PAIRS[ink]).toContain(ground);
+      expect(contrastOn(map, ink, ground)).toBeLessThan(WCAG_AA_NORMAL);
+      expect(contrastOn(map, ink, ground)).toBeGreaterThanOrEqual(SHORTFALL_FLOOR);
+    });
+  }
 
   it.each(PLATE_PAIRS)('%s passes AA on %s', (ink, plate) => {
     expect(contrastOklch(map.colors[ink], map.colors[plate])).toBeGreaterThanOrEqual(
@@ -180,7 +207,61 @@ describe.each(allThemeMaps.map((m) => [mapName(m), m] as const))('%s contrast', 
   });
 });
 
-describe('the light maps are derived, not designed', () => {
+describe('skater light is designed: the approved mocks, value for value', () => {
+  const light = themeMaps.skater.light.colors;
+
+  it.each([
+    ['bg', '#ffffff'],
+    ['panel', '#f6f6f6'],
+    ['raise', '#eeeeee'],
+    ['line', '#e1e1e1'],
+    ['line2', '#c4c4c4'],
+    ['fg', '#0a0a0a'],
+    ['fg1', '#262626'],
+    ['fg2', '#474747'],
+    ['fg3', '#6b6b6b'],
+    ['acc', '#0a7d9c'],
+    ['warn', '#a26b00'],
+    ['bad', '#d21f2c'],
+    ['inv-bg', '#0a0a0a'],
+    ['inv-fg', '#ffffff'],
+  ] as const)('%s is %s', (key, hex) => {
+    expect(toHex(light[key])).toBe(hex);
+  });
+
+  it.each([
+    ['acc-wash', 'rgba(10, 125, 156, 0.09)'],
+    ['warn-wash', 'rgba(162, 107, 0, 0.1)'],
+    ['bad-wash', 'rgba(210, 31, 44, 0.08)'],
+    ['acc-mark', 'rgba(10, 125, 156, 0.22)'],
+    ['plate', 'rgba(255, 255, 255, 0.92)'],
+    ['scrim', 'rgba(10, 10, 10, 0.32)'],
+    ['shade', 'rgba(0, 0, 0, 0.12)'],
+    ['shade-strong', 'rgba(0, 0, 0, 0.18)'],
+    ['shade-deep', 'rgba(0, 0, 0, 0.18)'],
+  ] as const)('%s is %s', (key, rgba) => {
+    expect(toNativeColor(light[key])).toBe(rgba);
+  });
+
+  it('takes no designed value from the derivation: each one is its primitive or a designed alpha', () => {
+    for (const [key, d] of Object.entries(designedColors.skater.light ?? {})) {
+      const c = light[key as ColorKey];
+      if (typeof d === 'string') expect(c, key).toEqual(primitives[d]);
+      else expect(c.alpha, key).toBe(d.alpha);
+    }
+  });
+
+  it('still derives what the mocks leave out, against the designed field', () => {
+    // A lift keeps its dark contrast from the field, here the designed white.
+    const dark = themeMaps.skater.dark.colors;
+    const ratio =
+      contrastOklch(light['lift-08'], light.bg) / contrastOklch(dark['lift-08'], dark.bg);
+    expect(ratio).toBeGreaterThanOrEqual(1 - 1e-9);
+    expect(ratio).toBeLessThan(1.01);
+  });
+});
+
+describe('admin light is derived, not designed', () => {
   const dark = themeMaps.admin.dark.colors;
   const light = themeMaps.admin.light.colors;
   const darkAgainstField = (k: ColorKey) => contrastOklch(dark[k], dark.bg);
@@ -236,6 +317,25 @@ describe('resolveColors refuses a broken spec', () => {
         x: { role: 'alias', of: 'nope' },
       }),
     ).toThrow(/Unknown color key: nope/);
+  });
+
+  it('on a designed value keyed onto an unknown key', () => {
+    expect(() =>
+      resolveColors(
+        'light',
+        { bg: { role: 'base', dark: 'void', light: 'w' }, x: { role: 'alias', of: 'bg' } },
+        { x: { key: 'nope' as ColorKey, alpha: 0.1 } },
+      ),
+    ).toThrow(/Unknown color key: nope/);
+  });
+
+  it('takes a designed alpha over a primitive', () => {
+    const out = resolveColors(
+      'light',
+      { bg: { role: 'base', dark: 'void', light: 'w' }, x: { role: 'alias', of: 'bg' } },
+      { x: { primitive: 'black', alpha: 0.5 } },
+    );
+    expect(out.x).toEqual({ ...primitives.black, alpha: 0.5 });
   });
 
   it('on a cycle', () => {

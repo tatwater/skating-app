@@ -51,8 +51,11 @@ export type TokenValue =
   | { readonly kind: 'duration'; readonly ms: number }
   | { readonly kind: 'easing'; readonly bezier: readonly [number, number, number, number] };
 
-/** Which axis a token varies on: neither, the surface (density), or the mode (color). */
-export type Varies = 'none' | 'surface' | 'mode';
+/**
+ * Which axis a token varies on: neither, the surface (density), the mode, or both (color: each
+ * surface × mode map has its own palette).
+ */
+export type Varies = 'none' | 'surface' | 'mode' | 'both';
 
 export interface TokenEntry {
   /** Dotted group and key, e.g. `color.fg3`, `font-size.row`. Stable; a Paper push keys on it. */
@@ -162,9 +165,9 @@ export const shadows = {
 
 /** Every token, in output order. */
 export const registry: readonly TokenEntry[] = [
-  // Colors vary by mode (and would by surface, if a surface ever diverged).
+  // Colors vary by surface and mode: each map has its own palette.
   ...COLOR_KEYS.map((key) =>
-    entry('color', key, 'mode', `--${key}`, `--color-${key}`, (map) => color(map.colors[key])),
+    entry('color', key, 'both', `--${key}`, `--color-${key}`, (map) => color(map.colors[key])),
   ),
   // Density varies by surface.
   ...FONT_SIZE_KEYS.map((key) =>

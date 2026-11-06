@@ -14,14 +14,13 @@
  * `--color-g5`, `--color-lift-08`), the registry keeps semantic ones (`color.bg`, `color.fg3`).
  * Each semantic color's spec names the primitive (or, for an overlay, the audited overlay) it binds
  * to in the dark map, so the Paper name comes from `colorSpecs`, never a hand-kept table. Paper
- * files hold one mode's values per name: the dark map under the bare name; bathymetry under
- * `depth-dark-*` / `depth-light-*`; the skater file's light values under `--color-light-<key>`.
- * Groups Paper has no namespace for (gaps, borders, shadows, layers, motion) are not compared.
+ * files hold one mode's values per name: the audited palette under the bare name (admin dark, which
+ * is the audit, in either file); bathymetry under `depth-dark-*` / `depth-light-*`; the skater
+ * file's own values under `--color-light-<key>` and `--color-fg3-dark`. Groups Paper has no
+ * namespace for (gaps, borders, shadows, layers, motion) are not compared.
  *
- * The dark maps are canon. The skater file's light names (and `--color-fg3-dark`) are reported but
- * held out of the payload: the web mocks' light palette was designed (white ground, ice #0A7D9C)
- * while `skater/light` is derived, and they disagree on 13 values (2026-11-06). Which one moves is a
- * founder call, not a sync; drop the hold once it's made.
+ * Skater light is designed from those same mocks (founder, 2026-11-06), so the skater file's light
+ * names now sync like any other.
  */
 
 import { readFileSync } from 'node:fs';
@@ -65,6 +64,8 @@ const SKATER_LIGHT_KEYS = [
 
 /** Paper name → [registry name, map] for one surface. */
 function paperNames(surface: Surface): Map<string, [string, string]> {
+  // The bare names are the audit, which admin dark is; a surface's own values carry a suffix.
+  const audit = 'admin/dark';
   const dark = `${surface}/dark`;
   const light = `${surface}/light`;
   const out = new Map<string, [string, string]>();
@@ -74,11 +75,11 @@ function paperNames(surface: Surface): Map<string, [string, string]> {
       out.set(`--color-${key.replace('depth-', 'depth-dark-')}`, [token, dark]);
       out.set(`--color-${key.replace('depth-', 'depth-light-')}`, [token, light]);
     } else if (spec.role === 'overlay') {
-      if (spec.audit) out.set(`--color-${spec.audit}`, [token, dark]);
+      if (spec.audit) out.set(`--color-${spec.audit}`, [token, audit]);
     } else if (spec.role === 'data' || spec.role === 'fixed') {
-      out.set(`--color-${key}`, [token, dark]);
+      out.set(`--color-${key}`, [token, audit]);
     } else if (spec.role !== 'alias' && !out.has(`--color-${spec.dark}`)) {
-      out.set(`--color-${spec.dark}`, [token, dark]);
+      out.set(`--color-${spec.dark}`, [token, audit]);
     }
   }
   if (surface === 'skater') {
@@ -173,7 +174,6 @@ const names = paperNames(surface);
 const namespaces = new Set(paper.map((t) => t.name.replace(/^(--[a-z]+(?:-weight)?)-.*$/, '$1')));
 const rows: string[] = [];
 const payload: { name: string; value: string }[] = [];
-const held: string[] = [];
 const missing: string[] = [];
 for (const [name, [token, map]] of names) {
   const r = generated.maps[map]?.[token];
@@ -188,14 +188,12 @@ for (const [name, [token, map]] of names) {
   const now = resolve(t);
   if (same(now, code)) continue;
   rows.push(`${name}: ${now} → ${code}  (${token}, ${map})`);
-  if (name.startsWith('--color-light-') || name === '--color-fg3-dark') held.push(name);
-  else payload.push({ name, value: code });
+  payload.push({ name, value: code });
 }
 
 console.log(`${surface}: ${names.size} names mapped, ${paper.length} in the file`);
 console.log(`\ndiffers (${rows.length}):`);
-for (const r of rows)
-  console.log(`  ${r}${held.some((h) => r.startsWith(`${h}:`)) ? '  [held]' : ''}`);
+for (const r of rows) console.log(`  ${r}`);
 console.log(`\nmissing from the file, in a namespace it already holds (${missing.length}):`);
 for (const m of missing) console.log(`  ${m}`);
 const orphans = paper.filter((t) => !names.has(t.name)).map((t) => t.name);

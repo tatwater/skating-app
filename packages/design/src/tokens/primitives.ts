@@ -3,8 +3,10 @@
  *
  * Converted once from the audited admin palette by `scripts/convert-audit.ts` (2026-11-06); the
  * trailing comment on each line is the audited hex, kept for provenance only. The two `star`
- * primitives come from the skater web mocks (`skater-web/skater.css`, 2026-11-06), not the audit;
- * their comments are those mocks' hex. Edit the OKLCH
+ * primitives and the `skater-*` ones come from the approved skater web mocks
+ * (`skater-web/skater.css` and the *Gli · Web app · Review 3* Paper file, 2026-11-06), not the
+ * audit; their comments are those mocks' hex. They are hand-picked, not derived (see
+ * `designedColors` in `semantic.ts`). Edit the OKLCH
  * values here; nothing else in the repo may hold a raw color. No semantic meaning lives here —
  * `semantic.ts` maps these onto roles per surface and mode.
  */
@@ -27,6 +29,20 @@ export const primitives = {
   red: { l: 0.6713, c: 0.2164, h: 22.08 }, // #ff4a55
   'star-dark': { l: 0.8128, c: 0.1623, h: 83.9 }, // #f3b71a
   'star-light': { l: 0.5721, c: 0.1214, h: 73.76 }, // #a26b00
+  // The skater surface's designed palette. Dark differs from the audit only in its tertiary text.
+  'skater-dark-fg3': { l: 0.6334, c: 0, h: 0 }, // #8a8a8a
+  'skater-light-bg': { l: 1, c: 0, h: 0 }, // #ffffff
+  'skater-light-panel': { l: 0.9731, c: 0, h: 0 }, // #f6f6f6
+  'skater-light-raise': { l: 0.9491, c: 0, h: 0 }, // #eeeeee
+  'skater-light-line': { l: 0.9097, c: 0, h: 0 }, // #e1e1e1
+  'skater-light-line2': { l: 0.8203, c: 0, h: 0 }, // #c4c4c4
+  'skater-light-fg': { l: 0.1448, c: 0, h: 0 }, // #0a0a0a
+  'skater-light-fg1': { l: 0.2686, c: 0, h: 0 }, // #262626
+  'skater-light-fg2': { l: 0.3979, c: 0, h: 0 }, // #474747
+  'skater-light-fg3': { l: 0.5278, c: 0, h: 0 }, // #6b6b6b
+  'skater-light-ice': { l: 0.5482, c: 0.1005, h: 223.61 }, // #0a7d9c
+  'skater-light-amber': { l: 0.5721, c: 0.1214, h: 73.76 }, // #a26b00
+  'skater-light-red': { l: 0.5554, c: 0.2096, h: 24.81 }, // #d21f2c
   'temp-cold-4': { l: 0.8699, c: 0.1126, h: 211.82 }, // #6fe8ff
   'temp-cold-3': { l: 0.8012, c: 0.1334, h: 215.49 }, // #2fd3f4
   'temp-cold-2': { l: 0.6439, c: 0.1085, h: 216.84 }, // #1f9db8

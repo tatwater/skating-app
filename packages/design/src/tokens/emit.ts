@@ -129,10 +129,11 @@ function declarations(
  *
  * 1. `:root` — everything: the shared tokens plus the default map (`DEFAULT_SURFACE`,
  *    `DEFAULT_MODE`), which the color-scheme media query swaps when the page states no mode.
- * 2. `:root[data-surface="admin"]` — a surface stated without a mode gets its density.
+ * 2. `:root[data-surface="admin"]` — a surface stated without a mode gets its density and its
+ *    default-mode colors.
  * 3. `:root:not([data-mode])` under `prefers-color-scheme` — the OS's choice when the page states
- *    no mode.
- * 4. `:root[data-mode=…]` — a mode stated without a surface.
+ *    no mode (with `[data-surface=…]` for a surface other than the default, so it keeps its palette).
+ * 4. `:root[data-mode=…]` — a mode stated without a surface (the default surface's colors).
  * 5. `:root[data-surface=…][data-mode=…]` — the four maps, complete.
  *
  * Only a block that *states* a mode sets `color-scheme` (native scrollbars and form controls), so a
@@ -143,9 +144,13 @@ export function emitCss(entries: readonly TokenEntry[] = registry): string {
   validateRegistry(entries);
   const defaultMap = themeMaps[DEFAULT_SURFACE][DEFAULT_MODE];
   const varying = (e: TokenEntry) => e.varies !== 'none';
-  const byMode = (e: TokenEntry) => e.varies === 'mode';
-  const bySurface = (e: TokenEntry) => e.varies === 'surface';
+  const byMode = (e: TokenEntry) => e.varies === 'mode' || e.varies === 'both';
+  const bySurface = (e: TokenEntry) => e.varies === 'surface' || e.varies === 'both';
+  const byBoth = (e: TokenEntry) => e.varies === 'both';
   const scheme = (map: ThemeMap) => `color-scheme: ${map.mode};`;
+  const otherSurfaces = (Object.keys(themeMaps) as (keyof typeof themeMaps)[]).filter(
+    (s) => s !== DEFAULT_SURFACE,
+  );
 
   const out: string[] = [`/* ${GENERATED_NOTE} */`, ''];
   out.push(
@@ -154,13 +159,12 @@ export function emitCss(entries: readonly TokenEntry[] = registry): string {
       declarations(entries, defaultMap, () => true),
     ),
   );
-  for (const surface of Object.keys(themeMaps) as (keyof typeof themeMaps)[]) {
-    if (surface === DEFAULT_SURFACE) continue;
+  for (const surface of otherSurfaces) {
     out.push(
       '',
       block(
         `:root[data-surface="${surface}"]`,
-        declarations(entries, themeMaps[surface].light, bySurface),
+        declarations(entries, themeMaps[surface][DEFAULT_MODE], bySurface),
       ),
     );
   }
@@ -170,6 +174,13 @@ export function emitCss(entries: readonly TokenEntry[] = registry): string {
     '',
     `@media (prefers-color-scheme: ${osMode}) {`,
     block(':root:not([data-mode])', declarations(entries, osMap, byMode), '  '),
+    ...otherSurfaces.map((surface) =>
+      block(
+        `:root[data-surface="${surface}"]:not([data-mode])`,
+        declarations(entries, themeMaps[surface][osMode], byBoth),
+        '  ',
+      ),
+    ),
     '}',
   );
   for (const mode of ['dark', 'light'] as const) {
