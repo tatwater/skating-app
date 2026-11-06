@@ -16,6 +16,7 @@
     "check-types": "tsc --noEmit",
     "generate": "tsx scripts/generate.ts",
     "convert-audit": "tsx scripts/convert-audit.ts",
+    "paper-diff": "tsx scripts/paper-diff.ts",
     "test": "vitest run --coverage",
     "test:watch": "vitest"
   },
