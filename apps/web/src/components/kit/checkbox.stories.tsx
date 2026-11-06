@@ -188,6 +188,7 @@ export const FourUp: Story = {
         <Checkbox aria-label="Disabled" disabled />
       </div>
       <CheckboxRow label="Restore the post" description="Hidden 14 Oct by Sarah" defaultChecked />
+      <CheckboxRow label="Restore the photo" description="Removed by its author" disabled />
     </div>
   ),
   parameters: { fourUp: true },
@@ -195,6 +196,9 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
+      // A disabled row dims its words, sub-line included.
+      const off = must(q.querySelector<HTMLElement>('[data-slot="checkbox-row"][data-disabled]'));
+      await expect(getComputedStyle(off).color).toBe(computedColor(off, 'var(--fg-disabled)'));
       const el = must(q.querySelector('[role="checkbox"]')).getBoundingClientRect();
       const kick = resolvePx(q, 'var(--type-kick)');
       await expect(el.width).toBeCloseTo(kick * 1.4, 1);

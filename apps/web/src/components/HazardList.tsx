@@ -17,12 +17,12 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useState } from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from './kit/tooltip';
 import { useMapSelection } from './MapSelectionContext';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 /** A hazard row as the list renders it. */
 export interface HazardListItem {

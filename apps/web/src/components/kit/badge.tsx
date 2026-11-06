@@ -134,7 +134,8 @@ function TagRun({ className, children, ...props }: ComponentProps<'span'>) {
   return (
     <span data-slot="tag-run" className={cn('inline-flex items-center', className)} {...props}>
       {items.map((child, i) => (
-        <Fragment key={child.key ?? i}>
+        // `Children.toArray` keys every child.
+        <Fragment key={String(child.key)}>
           {i > 0 && <TagDot />}
           {child}
         </Fragment>

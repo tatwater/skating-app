@@ -57,13 +57,15 @@ export function paintedRgb(scope: Element, layers: readonly string[]): [number, 
   canvas.width = 1;
   canvas.height = 1;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  // Chromium always has a 2D context; the guard is for the type, not a case worth a test.
+  /* v8 ignore next */
   if (ctx === null) throw new Error('No 2D canvas to measure color with.');
   for (const layer of layers) {
     ctx.fillStyle = computedColor(scope, layer);
     ctx.fillRect(0, 0, 1, 1);
   }
-  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-  return [r ?? 0, g ?? 0, b ?? 0];
+  const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data.subarray(0, 3));
+  return [r, g, b] as [number, number, number];
 }
 
 /** WCAG 2 contrast between two painted colors (each a stack, bottom first). */
@@ -81,11 +83,18 @@ export function contrastBetween(
 export function computedColor(scope: Element, color: string): string {
   const probe = document.createElement('span');
   probe.style.color = color;
-  scope.append(probe);
+  // A void element (an input) can't hold the probe; its parent shares its theme.
+  const host = scope.matches(VOID) ? scope.parentElement : scope;
+  // Stories measure rendered elements, which always have a parent; the guard is for the type.
+  /* v8 ignore next */
+  if (host === null) throw new Error('Measure a void element only once it is in the page.');
+  host.append(probe);
   const value = getComputedStyle(probe).color;
   probe.remove();
   return value;
 }
+
+const VOID = 'input, textarea, select, img, br, hr';
 
 function luminance([r, g, b]: [number, number, number]): number {
   const lin = (c: number) => {
