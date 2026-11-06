@@ -2,7 +2,7 @@
  * The kit's shared mechanics: optical spacing, interaction variants and the corner-dot ornament.
  * Imported once from `app.css` (and so by Storybook's preview). Everything here reads the generated
  * tokens (`@skating/design`) — no literal color, size or duration lives in this file. The only
- * literal lengths are drawing values D233 keeps in px: the dot glow's blur.
+ * literal lengths are drawing values D233 keeps in px: the dot glow's blur and the LED's halo.
  *
  * Optical spacing (D234): a gap token measures content to content. Two sanctioned mechanisms keep
  * the arithmetic out of call sites; a component picks one, a composition never corrects by hand.
@@ -71,6 +71,30 @@
     transition:
       opacity var(--duration-fast) var(--easing-standard),
       filter var(--duration-fast) var(--easing-standard);
+  }
+}
+
+/*
+ * A live LED — a running state's square lamp: a halo in `--led-glow` that breathes on the lamp
+ * timing. Under reduced motion it holds still (the lamp's duration is zero there too, but a held
+ * halo reads better than a frozen frame). The ring and blur are drawing values, so px (D233).
+ */
+@utility led {
+  box-shadow:
+    0 0 0 2px var(--lift-12),
+    0 0 8px var(--led-glow, var(--glow));
+  animation: kit-led var(--duration-lamp) var(--easing-lamp) infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes kit-led {
+  50% {
+    box-shadow:
+      0 0 0 3px var(--lift-03),
+      0 0 3px var(--led-glow, var(--glow));
   }
 }
 

@@ -46,3 +46,51 @@ function pairs<T>(items: readonly T[]): Array<[T, T]> {
 
 /** Sub-pixel layout rounds; a junction is right when it's within a quarter pixel. */
 export const JUNCTION_TOLERANCE_PX = 0.25;
+
+/**
+ * The sRGB pixel a stack of CSS colors paints, bottom first, resolved in `scope`'s theme — so a
+ * translucent token (a lift, a wash) is measured as it renders over its ground. Any color syntax
+ * the browser parses (`oklch()`, `var(--line2)`) works: the canvas does the conversion.
+ */
+export function paintedRgb(scope: Element, layers: readonly string[]): [number, number, number] {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (ctx === null) throw new Error('No 2D canvas to measure color with.');
+  for (const layer of layers) {
+    ctx.fillStyle = computedColor(scope, layer);
+    ctx.fillRect(0, 0, 1, 1);
+  }
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  return [r ?? 0, g ?? 0, b ?? 0];
+}
+
+/** WCAG 2 contrast between two painted colors (each a stack, bottom first). */
+export function contrastBetween(
+  scope: Element,
+  a: readonly string[],
+  b: readonly string[],
+): number {
+  const la = luminance(paintedRgb(scope, a));
+  const lb = luminance(paintedRgb(scope, b));
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** A CSS color as the browser computes it in `scope`'s theme. */
+export function computedColor(scope: Element, color: string): string {
+  const probe = document.createElement('span');
+  probe.style.color = color;
+  scope.append(probe);
+  const value = getComputedStyle(probe).color;
+  probe.remove();
+  return value;
+}
+
+function luminance([r, g, b]: [number, number, number]): number {
+  const lin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}

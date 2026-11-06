@@ -46,6 +46,29 @@ export default defineConfig({
           ...storybookPlugins(),
           storybookTest({ configDir: fileURLToPath(new URL('./.storybook', import.meta.url)) }),
         ],
+        // Pre-bundled up front: a Base UI entry the optimizer discovers mid-run reloads the page
+        // under test and fails the whole file ("Vite unexpectedly reloaded a test") — on a cold
+        // cache, that is every CI run. Add a kit primitive's entry here when the kit adopts it.
+        optimizeDeps: {
+          include: [
+            '@base-ui/react/button',
+            '@base-ui/react/checkbox',
+            '@base-ui/react/checkbox-group',
+            '@base-ui/react/field',
+            '@base-ui/react/input',
+            '@base-ui/react/merge-props',
+            '@base-ui/react/radio',
+            '@base-ui/react/radio-group',
+            '@base-ui/react/switch',
+            '@base-ui/react/tabs',
+            '@base-ui/react/tooltip',
+            '@base-ui/react/use-render',
+            '@fortawesome/react-fontawesome',
+            '@fortawesome/sharp-light-svg-icons',
+            '@fortawesome/sharp-regular-svg-icons',
+            '@fortawesome/sharp-solid-svg-icons',
+          ],
+        },
         test: {
           name: 'storybook',
           browser: {
