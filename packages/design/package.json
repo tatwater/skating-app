@@ -10,13 +10,20 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
+    "convert-audit": "tsx scripts/convert-audit.ts",
     "test": "vitest run --coverage",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@skating/core": "workspace:*",
+    "@types/culori": "^4.0.1",
     "@vitest/coverage-v8": "^5.0.2",
     "fast-check": "^4.10.2",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "culori": "^4.0.2"
   }
 }
