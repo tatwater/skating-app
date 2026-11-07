@@ -9,6 +9,26 @@
 
 const CONVEX_URL_PLACEHOLDER = 'https://placeholder.convex.cloud';
 
+/**
+ * Where the browser sends PostHog traffic by default: a **same-origin path**, not PostHog's own
+ * domain (D235). `apps/web/vercel.json` rewrites it to `us.i.posthog.com`, so ingestion is
+ * first-party and a tracker blocker — which a meaningful share of this audience runs — sees a
+ * request to our own host rather than one it recognizes. Overridable with `VITE_POSTHOG_HOST` so
+ * falling back to direct ingestion is an env-var change and not a code change, which is the
+ * escape hatch if the rewrite ever stops being applied.
+ *
+ * The path is deliberately **not** `/analytics` or `/ingest`: PostHog's own proxy guide notes
+ * those names are the ones blocklists already carry.
+ */
+const POSTHOG_PROXY_PATH = '/rink';
+
+/**
+ * PostHog's app domain, kept separate from the ingestion host. Without it the SDK builds its
+ * "view this in PostHog" links (the toolbar, session links) against the proxy path, which is not
+ * a web UI and 404s. It is never a request destination — only a link target.
+ */
+const POSTHOG_UI_HOST = 'https://us.posthog.com';
+
 export const env = {
   convexUrl: import.meta.env.VITE_CONVEX_URL ?? CONVEX_URL_PLACEHOLDER,
   sentryDsn: import.meta.env.VITE_SENTRY_DSN ?? '',
@@ -35,12 +55,25 @@ export const env = {
   // none of this, so an unconfigured deployment shows the aerial and simply offers no timeline.
   // Public.
   imageryArchiveUrl: import.meta.env.VITE_IMAGERY_ARCHIVE_URL ?? '',
+  // Product analytics (D29's "later" half, wired in D235). The project token is public by design —
+  // it can only *write* events — which is why it rides the client bundle like the rest of this list.
+  // Absent, analytics stay inert: no init, no network, every `capture` a no-op. That is the same
+  // posture as the basemap and the imagery archive above, and it is why there is no throw here.
+  posthogKey: import.meta.env.VITE_POSTHOG_KEY ?? '',
+  // `||`, not `??`, for these two: both are documented in `.env.example` as blank-by-default
+  // overrides, and a blank line sets them to `''` rather than leaving them undefined. With `??`
+  // that empty string would win and silently point ingestion at the page's own root.
+  posthogHost: import.meta.env.VITE_POSTHOG_HOST || POSTHOG_PROXY_PATH,
+  posthogUiHost: import.meta.env.VITE_POSTHOG_UI_HOST || POSTHOG_UI_HOST,
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
 export const isConfigured = {
   convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
   sentry: env.sentryDsn.length > 0,
+  // Keyed on the token alone, not on the host: the host has a working default (the same-origin
+  // proxy), so a deployment that sets the token and nothing else is correctly configured.
+  posthog: env.posthogKey.length > 0,
   // No `bathymetry` entry: the contour layer needs the URL itself, not a boolean about it, so
   // `MapView` reads `env.bathymetryPmtilesUrl` and a second way to ask the same question would only
   // be a second thing to keep in step.

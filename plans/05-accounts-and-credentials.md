@@ -126,6 +126,8 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `VITE_CONVEX_URL` | |
 | `VITE_PMTILES_URL` · `VITE_WORLD_PMTILES_URL` · `VITE_BATHYMETRY_PMTILES_URL` · `VITE_IMAGERY_ARCHIVE_URL` | same values as mobile's |
 | `VITE_SENTRY_DSN` | public |
+| `VITE_POSTHOG_KEY` | public project token (write-only). Unset ⇒ analytics inert — no init, no network (D235) |
+| `VITE_POSTHOG_HOST` · `VITE_POSTHOG_UI_HOST` | optional overrides; blank ⇒ the same-origin `/rink` proxy and `https://us.posthog.com`. Set the host to `https://us.i.posthog.com` to bypass the proxy |
 | `VITE_APP_VERSION` | optional; unset → `web` in the support form |
 | `SENTRY_ORG` · `SENTRY_PROJECT` · `SENTRY_AUTH_TOKEN` | build-time; token **secret**; without it the plugin skips upload and builds still succeed |
 

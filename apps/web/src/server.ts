@@ -3,7 +3,6 @@ import './instrument.server';
 
 import { wrapFetchWithSentry } from '@sentry/tanstackstart-react';
 import handler, { createServerEntry } from '@tanstack/react-start/server-entry';
-import { posthogServerLogger } from './lib/posthogLogs.server';
 
 /**
  * Server entry (D26/D29). This replaces TanStack Start's default server entry so we can wrap
@@ -12,35 +11,8 @@ import { posthogServerLogger } from './lib/posthogLogs.server';
  */
 export default createServerEntry(
   wrapFetchWithSentry({
-    async fetch(request: Request) {
-      const startedAt = performance.now();
-
-      try {
-        const response = await handler.fetch(request);
-        posthogServerLogger?.emit({
-          severityText: 'INFO',
-          body: 'server request completed',
-          attributes: {
-            event: 'server_request_completed',
-            request_method: request.method,
-            response_status: response.status,
-            duration_ms: Math.round(performance.now() - startedAt),
-          },
-        });
-        return response;
-      } catch (error) {
-        posthogServerLogger?.emit({
-          severityText: 'ERROR',
-          body: 'server request failed',
-          attributes: {
-            event: 'server_request_failed',
-            request_method: request.method,
-            error_type: error instanceof Error ? error.name : 'unknown_error',
-            duration_ms: Math.round(performance.now() - startedAt),
-          },
-        });
-        throw error;
-      }
+    fetch(request: Request) {
+      return handler.fetch(request);
     },
   }),
 );

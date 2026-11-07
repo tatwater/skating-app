@@ -1,4 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && pnpm install"
+  "installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && pnpm install",
+  "rewrites": [
+    {
+      "source": "/rink/static/:path*",
+      "destination": "https://us-assets.i.posthog.com/static/:path*"
+    },
+    { "source": "/rink/:path*", "destination": "https://us.i.posthog.com/:path*" }
+  ]
 }
