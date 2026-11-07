@@ -1,7 +1,7 @@
 import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -1730,5 +1730,150 @@ describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-1
 
     expect(survivorCard?.topHazardTypes).toEqual(['open_water']);
     expect(loserCard?.topHazardTypes ?? []).toEqual([]);
+  });
+});
+
+/**
+ * The repair for a pin that disagrees with itself: a hazard whose footprint is on one lake while
+ * its `waterBodyId` names another. Dev shipped one — a pin drawn on Mascoma filed under an unnamed
+ * body two states away — and nothing in the write path had ever checked the two agree.
+ */
+describe('hazards.refileToFootprintBody', () => {
+  /** Degrees of latitude per meter, for placing a point a known distance off a shore. */
+  const DEG_PER_M = 1 / 111_320;
+
+  async function squareBody(
+    t: ReturnType<typeof convexTest>,
+    { name, lat, lng, half = 0.01 }: { name: string; lat: number; lng: number; half?: number },
+  ): Promise<Id<'waterBodies'>> {
+    const externalId = `way/${name.replace(/\s+/g, '-')}`;
+    const polygon = {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [lng - half, lat - half],
+          [lng + half, lat - half],
+          [lng + half, lat + half],
+          [lng - half, lat + half],
+          [lng - half, lat - half],
+        ],
+      ],
+    };
+    const body = {
+      name,
+      type: 'lakePond' as const,
+      source: 'osm' as const,
+      externalId,
+      osmId: externalId,
+      polygon,
+      bbox: { minLat: lat - half, minLng: lng - half, maxLat: lat + half, maxLng: lng + half },
+      centroid: { lat, lng },
+      surfaceAreaSqM: 1e6,
+    };
+    const id = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...body,
+        searchText: name,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+    // The A01 cell rows import builds are what `listedBodiesNearCoord` reads; a hand-inserted body
+    // is unreachable from any spatial lookup.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [body] });
+    return id;
+  }
+
+  /** A pin on `onLake`'s water, but filed under `filedUnder`. */
+  async function strayHazard(
+    t: ReturnType<typeof convexTest>,
+    filedUnder: Id<'waterBodies'>,
+    at: { lat: number; lng: number },
+  ) {
+    const author = (await seedUser(t, 'author')).id;
+    return t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: filedUnder,
+        type: 'open_water' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [at.lng, at.lat] },
+        radiusMeters: 40,
+        bbox: {
+          minLat: at.lat - 0.0002,
+          minLng: at.lng - 0.0002,
+          maxLat: at.lat + 0.0002,
+          maxLng: at.lng + 0.0002,
+        },
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        healingState: 'none' as const,
+        confirmCount: 0,
+        goneCount: 0,
+        snowHidden: false,
+        photoIds: [],
+        createdByUserId: author,
+        createdAt: Date.now(),
+        firstReportedAt: Date.now(),
+        lastConfirmedAt: Date.now(),
+      }),
+    );
+  }
+
+  test('refiles a pin to the lake its footprint is on', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(out).toMatchObject({ moved: true, reason: 'refiled', was: elsewhere, now: here });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: here });
+  });
+
+  test('says nothing until asked: a dry run reports the move and writes nothing', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId });
+    expect(out).toMatchObject({ moved: false, reason: 'dry-run', was: elsewhere, now: here });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: elsewhere });
+  });
+
+  test('leaves a pin that already agrees with itself alone', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const hazardId = await strayHazard(t, here, { lat: 43.61, lng: -72.13 });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(out).toMatchObject({ moved: false, reason: 'already-correct', was: here });
+  });
+
+  test('refuses to guess when no listed body is under the footprint', async () => {
+    const t = harness();
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    // Well clear of every shore: 2 km north of nothing at all.
+    const hazardId = await strayHazard(t, elsewhere, {
+      lat: 43.61 + 2000 * DEG_PER_M,
+      lng: -72.13,
+    });
+
+    const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(out).toMatchObject({ moved: false, reason: 'no-body-at-footprint', was: elsewhere });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: elsewhere });
+  });
+
+  test('the lake it leaves stops listing it and the lake it joins starts', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    const onHere = await t.query(api.hazards.listForBody, { waterBodyId: here });
+    const onElsewhere = await t.query(api.hazards.listForBody, { waterBodyId: elsewhere });
+    expect(onHere.map((h) => h._id)).toContain(hazardId);
+    expect(onElsewhere.map((h) => h._id)).not.toContain(hazardId);
   });
 });

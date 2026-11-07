@@ -42,6 +42,7 @@ import {
   isPassageMarker,
   isProvisional,
   isValidHazardShape,
+  nearestBodyForPoint,
   nearestLandmarkWithin,
   promotionTargetFor,
   rankPromotionCandidates,
@@ -54,7 +55,13 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import {
   assertCanPostHazards,
   getCurrentProfile,
@@ -74,6 +81,7 @@ import { takeCappedResult } from './lib/scan';
 import { activateOnEvidence } from './lib/standing';
 import { bbox, geoJson, literals } from './lib/validators';
 import { resolveSubAreaForPoint } from './subAreas';
+import { listedBodiesNearCoord } from './waterBodies';
 
 /**
  * The hazard body of an authoring call, minus the water body.
@@ -1084,3 +1092,72 @@ export async function loadVisibleHazard(
   const hazard = await resolveHazardSurvivor(ctx, hazardId);
   return isUserVisibleHazard(hazard) ? hazard : null;
 }
+
+// ── Repair: a pin filed under the wrong lake ──────────────────────────────────────────────────
+
+/**
+ * How far from a hazard's footprint center a body may be and still be a candidate.
+ *
+ * **Bounded on purpose** (CLAUDE.md: bound every corpus-wide read). Convex has no projection, so
+ * `listedBodiesNearCoord`'s box reads each candidate's whole document, `polygon` included — the
+ * A06d parking pass spent 105 GB and disabled the deployment by accepting the default margin.
+ * 300 m is the same parking-approach buffer coord→lake resolution uses, and a hazard's center is
+ * on the water by construction, so it is already generous.
+ */
+const REFILE_MARGIN_M = 300;
+
+/**
+ * File a hazard under the body its footprint is actually on.
+ *
+ * **The repair for a pin that disagrees with itself.** A hazard carries both a footprint and a
+ * `waterBodyId`, and nothing has ever checked that the two agree. When they don't, the pin draws in
+ * the right place — the map reads its geometry — while everything that reasons about *which lake
+ * this is* reads the id: the card names the wrong lake, the lake's own hazard list omits a pin
+ * drawn on it, and opening the card used to fly the camera to a body the skater never clicked.
+ * (`strayHazardFit` in the web app stops the flight; it does not make the row true.)
+ *
+ * Internal, and `apply` defaults to false: it reports what it would do and changes nothing until
+ * asked, because "move this pin to another lake" is not a thing to run speculatively over a corpus.
+ *
+ * Both bodies' summaries are recomputed when it moves — the one that is losing the pin as much as
+ * the one gaining it, or the old lake keeps counting a hazard it no longer has.
+ */
+export const refileToFootprintBody = internalMutation({
+  args: { hazardId: v.id('hazards'), apply: v.optional(v.boolean()) },
+  handler: async (ctx, { hazardId, apply = false }) => {
+    const hazard = await ctx.db.get(hazardId);
+    if (!hazard) throw new ConvexError('Hazard not found');
+
+    // The footprint's box center stands for the pin, as it does for the drawer's place line.
+    const center = {
+      lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
+      lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
+    };
+    const byId = await listedBodiesNearCoord(ctx, center, REFILE_MARGIN_M);
+    const matchId = nearestBodyForPoint(
+      center,
+      [...byId.values()].map((b) => ({
+        ref: b._id,
+        polygon: b.polygon as unknown as Polygon | MultiPolygon,
+        surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+      })),
+      REFILE_MARGIN_M,
+    );
+
+    const was = hazard.waterBodyId;
+    const wasName = (await ctx.db.get(was))?.name ?? null;
+    // No listed body under the pin is not a licence to guess: leave the row alone and say so.
+    if (matchId === null)
+      return { moved: false as const, reason: 'no-body-at-footprint', was, wasName };
+    if (matchId === was) return { moved: false as const, reason: 'already-correct', was, wasName };
+
+    const now = { was, wasName, now: matchId, nowName: byId.get(matchId)?.name ?? null };
+    if (!apply) return { moved: false as const, reason: 'dry-run', ...now };
+
+    await ctx.db.patch(hazardId, { waterBodyId: matchId });
+    // Both ends: the lake losing the pin stops counting it, the lake gaining it starts.
+    await recomputeBodySummary(ctx, was);
+    await recomputeBodySummary(ctx, matchId);
+    return { moved: true as const, reason: 'refiled', ...now };
+  },
+});
