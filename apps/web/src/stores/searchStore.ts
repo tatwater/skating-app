@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import { localStore, readJson, removeKey, writeJson } from './storage';
 
 /**
- * Global search (§2.1): open state (so `/` opens it from any page) and the recent picks. The
- * query text itself is component state and the results are Convex — neither belongs here.
+ * Global search (§2.1): the recent picks. Whether search is open lives in the chrome store, its one
+ * source; the query text itself is component state and the results are Convex — neither belongs
+ * here.
  *
  * Recents persist **owner-bound**, like `sheetStore`: on a shared browser, one account's search
  * history (which lakes, which people) must never surface for the next account.
@@ -26,10 +27,8 @@ interface PersistedRecents {
 }
 
 interface SearchState {
-  open: boolean;
   owner: string | null;
   recents: RecentPick[];
-  setOpen: (open: boolean) => void;
   /** Binds recents to the signed-in account; someone else's stored recents are discarded. */
   bindOwner: (owner: string | null) => void;
   /** Records a pick: deduplicated, newest first, capped at {@link MAX_RECENT_PICKS}. */
@@ -49,10 +48,8 @@ export function readPersistedRecents(
 }
 
 export const useSearchStore = create<SearchState>()((set, get) => ({
-  open: false,
   owner: null,
   recents: [],
-  setOpen: (open) => set({ open }),
   bindOwner: (owner) => {
     if (owner === get().owner) return;
     const restored = readPersistedRecents(localStore(), owner);

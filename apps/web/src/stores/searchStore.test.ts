@@ -12,7 +12,7 @@ const pick = (id: string): RecentPick => ({ kind: 'water_body', id });
 
 beforeEach(() => {
   localStorage.clear();
-  useSearchStore.setState({ ...initial, open: false, owner: null, recents: [] }, true);
+  useSearchStore.setState({ ...initial, owner: null, recents: [] }, true);
 });
 
 describe('recents', () => {
@@ -66,13 +66,6 @@ describe('owner binding', () => {
     useSearchStore.getState().bindOwner('user_b');
     expect(useSearchStore.getState().recents).toEqual([]);
     expect(localStorage.getItem('gli-search-recents')).toBeNull();
-  });
-});
-
-describe('open state', () => {
-  it('is plain state for the shell and the / hotkey', () => {
-    useSearchStore.getState().setOpen(true);
-    expect(useSearchStore.getState().open).toBe(true);
   });
 });
 

@@ -40,7 +40,7 @@ beforeEach(() => {
   resetFakes();
   localStorage.clear();
   useChromeStore.setState({ overlay: null });
-  useSearchStore.setState({ owner: null, recents: [], open: false });
+  useSearchStore.setState({ owner: null, recents: [] });
 });
 afterEach(() => useChromeStore.setState({ overlay: null }));
 
