@@ -13,7 +13,15 @@ import {
   weatherTimelineModel,
 } from '@skating/core';
 import { type WeatherChartPalette, WIND_FETCH_OPACITY, weatherChartPalette } from '@skating/design';
-import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -280,8 +288,11 @@ function Plot({
   palette: WeatherChartPalette;
   scrub: PositionedHour | null;
 }) {
-  const gradientId = 'lake-weather-temp';
-  const hatchId = 'lake-weather-hatch';
+  // Per instance: two charts on one page (a dark and a light one side by side, or the phone's and
+  // the desktop's) would otherwise both resolve `url(#…)` to the first, painting in its theme.
+  const uid = useId();
+  const gradientId = `lake-weather-temp-${uid}`;
+  const hatchId = `lake-weather-hatch-${uid}`;
   const top = model.boxes.temperature.top;
   const bottom = model.boxes.snowDepth.bottom;
   return (

@@ -117,7 +117,7 @@ export function ImageryView({ band, season, state, onBand, onSelect, onClose }: 
           Freeze-up timeline
         </h3>
         {season !== null && (
-          <span className="ms-auto font-(family-name:--family-mono) text-mono-sm text-fg2">
+          <span className="ms-auto shrink-0 whitespace-nowrap font-(family-name:--family-mono) text-mono-sm text-fg2">
             {formatSeasonLabel(season)}
           </span>
         )}

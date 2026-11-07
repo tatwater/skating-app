@@ -74,5 +74,9 @@ describe('MapFrame', () => {
     const float = slot.querySelector('[data-slot="map-float"]') as HTMLElement;
     expect(float).toHaveTextContent('timeline');
     expect(float.className).toContain('pointer-events-auto');
+    // On a phone the plate stops short of the dock's column (zoom, layers) at the top right.
+    expect(float.className).toContain(
+      'max-md:max-w-[calc(100%-3*var(--space-4)-var(--spacing-btn))]',
+    );
   });
 });

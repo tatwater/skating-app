@@ -12,7 +12,9 @@ export const MapFloatContext = createContext<HTMLElement | null>(null);
 
 /**
  * Floats `children` over the map, at its lower left (its top on a phone, where the lake's drawer
- * holds the bottom). Nothing renders until the frame's layer exists — and outside a frame, never.
+ * holds the bottom). On a phone it also stops short of the dock's column at the top right — a plate
+ * the full width of a 390 screen sat over the zoom and layer buttons. Nothing renders until the
+ * frame's layer exists — and outside a frame, never.
  */
 export function MapFloat({ children, className }: { children: ReactNode; className?: string }) {
   const slot = useContext(MapFloatContext);
@@ -23,6 +25,7 @@ export function MapFloat({ children, className }: { children: ReactNode; classNa
       className={cn(
         'pointer-events-auto absolute left-(--space-4) max-w-[calc(100%-2*var(--space-4))]',
         'bottom-(--space-4) max-md:top-(--space-4) max-md:bottom-auto',
+        'max-md:max-w-[calc(100%-3*var(--space-4)-var(--spacing-btn))]',
         className,
       )}
     >
