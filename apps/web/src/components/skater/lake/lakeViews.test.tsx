@@ -106,7 +106,7 @@ describe('the rows', () => {
           status: 'ready',
           cards: [
             { ...CARD_PAT, notesExcerpt: 'Black ice to the islands.', helpfulCount: 2 },
-            CARD_SARAH,
+            { ...CARD_SARAH, helpfulCount: 20, helpfulCountCapped: true, commentCount: 3 },
           ],
           canLoadMore: false,
           loadingMore: false,
@@ -122,6 +122,9 @@ describe('the rows', () => {
     expect(cards[0]).toHaveTextContent('Black ice to the islands.');
     expect(cards[0]).toHaveTextContent('Mascoma South');
     expect(cards[0]).toHaveAttribute('href', '/report/r1');
+    // The server's cap carries through: a floor, not a total.
+    expect(cards[1]).toHaveTextContent('20+ helpful');
+    expect(cards[1]).toHaveTextContent('3 comments');
     fireEvent.click(cards[1] as Element);
     expect(onOpen).toHaveBeenCalledWith('r2');
   });

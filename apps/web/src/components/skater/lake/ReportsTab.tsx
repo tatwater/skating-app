@@ -98,6 +98,8 @@ export function ReportsListView({
               {...(card.notesExcerpt !== undefined ? { excerpt: card.notesExcerpt } : {})}
               {...(card.helpfulCount !== undefined ? { helpfulCount: card.helpfulCount } : {})}
               {...(card.commentCount !== undefined ? { commentCount: card.commentCount } : {})}
+              helpfulCountCapped={card.helpfulCountCapped === true}
+              commentCountCapped={card.commentCountCapped === true}
               last={i === model.cards.length - 1}
             />
           ))}
