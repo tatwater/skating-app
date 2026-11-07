@@ -39,17 +39,20 @@ export function bountyCountsByBody(
   return counts;
 }
 
-/** Each body's recent report end times, from `reports.recentCardsForBodies`. Blocked authors don't count. */
+/**
+ * Each asked body's recent report end times, from `reports.recentCardsForBodies`. Every asked id gets
+ * an entry, so a missing one means "not read yet" and its label holds its slug back rather than
+ * claiming "No recent reports" before it knows. Blocked authors don't count.
+ */
 export function reportTimesByBody(
   cards: readonly { waterBodyId: string; skateEndTime: number; blocked?: boolean }[] | undefined,
+  askedIds: readonly string[],
 ): ReadonlyMap<string, number[]> | undefined {
   if (cards === undefined) return undefined;
-  const times = new Map<string, number[]>();
+  const times = new Map<string, number[]>(askedIds.map((id) => [id, []]));
   for (const card of cards) {
     if (card.blocked) continue;
-    const list = times.get(card.waterBodyId) ?? [];
-    list.push(card.skateEndTime);
-    times.set(card.waterBodyId, list);
+    times.get(card.waterBodyId)?.push(card.skateEndTime);
   }
   return times;
 }
@@ -71,7 +74,7 @@ export interface LakeLabelModel {
 export interface LabelInputs {
   favoriteIds: ReadonlySet<string>;
   bountyCounts: ReadonlyMap<string, number>;
-  /** Recent report times per body; `undefined` while the read is in flight. */
+  /** Recent report times per body; a body with no entry hasn't been read yet. */
   reportTimes: ReadonlyMap<string, number[]> | undefined;
   dimmedIds: ReadonlySet<string>;
   /** The focused lake: it *is* the view, so it carries no label (mock `mascomaOverlay`). */
@@ -107,7 +110,7 @@ export function buildLakeLabels(
       const inactive = !isActiveRow(body);
       const favorite = showFavorites && favoriteIds.has(body._id);
       const openBounties = bountyCounts.get(body._id) ?? 0;
-      const times = reportTimes === undefined ? undefined : (reportTimes.get(body._id) ?? []);
+      const times = reportTimes?.get(body._id);
       return {
         id: body._id,
         name: body.name,

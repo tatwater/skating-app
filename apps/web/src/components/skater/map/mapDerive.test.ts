@@ -71,15 +71,22 @@ describe('bountyCountsByBody / reportTimesByBody', () => {
     expect(bountyCountsByBody(undefined).size).toBe(0);
   });
 
-  it('groups report times by body, leaving out authors the viewer blocked', () => {
-    const times = reportTimesByBody([
-      { waterBodyId: 'a', skateEndTime: 1 },
-      { waterBodyId: 'a', skateEndTime: 2, blocked: true },
-      { waterBodyId: 'b', skateEndTime: 3 },
-    ]);
+  it('groups report times by asked body, leaving out authors the viewer blocked', () => {
+    const times = reportTimesByBody(
+      [
+        { waterBodyId: 'a', skateEndTime: 1 },
+        { waterBodyId: 'a', skateEndTime: 2, blocked: true },
+        { waterBodyId: 'b', skateEndTime: 3 },
+        { waterBodyId: 'not-asked', skateEndTime: 4 },
+      ],
+      ['a', 'b', 'c'],
+    );
     expect(times?.get('a')).toEqual([1]);
     expect(times?.get('b')).toEqual([3]);
-    expect(reportTimesByBody(undefined)).toBeUndefined();
+    // Asked and answered with nothing: a real "none". Never asked: no entry, so no claim.
+    expect(times?.get('c')).toEqual([]);
+    expect(times?.has('not-asked')).toBe(false);
+    expect(reportTimesByBody(undefined, ['a'])).toBeUndefined();
   });
 });
 
@@ -96,7 +103,10 @@ describe('buildLakeLabels', () => {
         ...baseInputs,
         favoriteIds: new Set(['mascoma']),
         bountyCounts: new Map([['crystal', 3]]),
-        reportTimes: new Map([['mascoma', [now - 1000]]]),
+        reportTimes: new Map([
+          ['mascoma', [now - 1000]],
+          ['crystal', []],
+        ]),
         dimmedIds: new Set(['crystal']),
         timeZone: 'America/New_York',
       },
@@ -124,9 +134,17 @@ describe('buildLakeLabels', () => {
     expect(labels[0]?.favorite).toBe(false);
   });
 
-  it('holds the slug back while the counts load', () => {
-    const labels = buildLakeLabels([body({ _id: 'a' })], { ...baseInputs, reportTimes: undefined });
-    expect(labels[0]?.slug).toBeNull();
+  it('holds the slug back while the counts load, and for a body the read never asked about', () => {
+    const loading = buildLakeLabels([body({ _id: 'a' })], {
+      ...baseInputs,
+      reportTimes: undefined,
+    });
+    expect(loading[0]?.slug).toBeNull();
+    const unasked = buildLakeLabels([body({ _id: 'a' })], {
+      ...baseInputs,
+      reportTimes: new Map(),
+    });
+    expect(unasked[0]?.slug).toBeNull();
   });
 
   it('caps the set, best first, and orders ties by id', () => {

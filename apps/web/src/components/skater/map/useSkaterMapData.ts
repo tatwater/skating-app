@@ -206,8 +206,16 @@ export function useSkaterMapData({
     [visible, countKey],
   );
   const cards = useQuery(api.reports.recentCardsForBodies, countArgs);
-  const retainedCards = useRetained(cards, countArgs === 'skip');
-  const reportTimes = useMemo(() => reportTimesByBody(retainedCards), [retainedCards]);
+  // Held with the ids it answered, so a re-keyed read keeps the counts it has without lending them
+  // to bodies it never asked about.
+  const answered = useRetained(
+    useMemo(() => (cards === undefined ? undefined : { key: countKey, cards }), [cards, countKey]),
+    countArgs === 'skip',
+  );
+  const reportTimes = useMemo(
+    () => (answered ? reportTimesByBody(answered.cards, answered.key.split(',')) : undefined),
+    [answered],
+  );
 
   const timeZone = viewer?.timezone ?? undefined;
   const labels = useMemo(

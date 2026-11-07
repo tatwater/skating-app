@@ -24,8 +24,10 @@ import {
 
 const id = fc.constantFrom('a', 'b', 'c');
 const bool = fc.boolean();
-const record = <K extends string>(keys: readonly K[]) =>
-  fc.record(Object.fromEntries(keys.map((k) => [k, bool])) as Record<K, fc.Arbitrary<boolean>>);
+const record = <K extends string>(keys: readonly K[]): fc.Arbitrary<Record<K, boolean>> =>
+  fc.record(Object.fromEntries(keys.map((k) => [k, bool]))) as unknown as fc.Arbitrary<
+    Record<K, boolean>
+  >;
 
 const fitArb: fc.Arbitrary<MapFit | null> = fc.oneof(
   fc.constant(null),

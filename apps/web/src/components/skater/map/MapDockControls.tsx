@@ -105,7 +105,8 @@ function RowText({ title, line }: { title: string; line?: string }) {
 /** Layout for a described switch row: text first, the switch at the row's end (board 3.16). */
 const ROW = cn(
   'w-full flex-row-reverse justify-between whitespace-normal',
-  'min-h-[46px] px-4 py-1.5 normal-case tracking-normal font-normal',
+  // A full-width row, not a bled label: its own padding, no negative margin pulling it into the kicker.
+  'm-0! min-h-[46px] px-4! py-1.5! normal-case tracking-normal font-normal',
 );
 
 function GroupKicker({ children, ruled }: { children: ReactNode; ruled?: boolean }) {

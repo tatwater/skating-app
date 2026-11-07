@@ -37,6 +37,7 @@ export function SkaterMap({ className }: { className?: string }) {
       data-slot="skater-map"
       data-map-spec={spec.id}
       data-visible={spec.visible ? '' : undefined}
+      role="region"
       aria-label="Map"
       aria-hidden={spec.visible ? undefined : true}
       inert={!spec.visible}
