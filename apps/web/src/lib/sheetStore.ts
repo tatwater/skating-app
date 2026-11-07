@@ -7,10 +7,16 @@
  * Nothing here decides anything: the pure model (core's `postSheet`) does, and this holds it.
  *
  * **What web adds is the refresh (§10.3).** A Post survives an accidental reload through
- * `localStorage`: the words, the chips, the put-in, every scalar. Photos do not, and cannot — a
- * picked file lives in a `File` this tab holds, and a reload has no way back to it — so they are
- * dropped on the way out and the restored sheet says so. That is the honest half of "keeps a
- * half-written Post across a refresh": the typing is what is expensive to lose.
+ * `localStorage`: the words, the chips, the put-in, every scalar.
+ *
+ * **Photos come back too, when the browser lets them (B03 §5).** The blobs live in IndexedDB
+ * (`sheetPhotos`); what the record holds is where each one was placed. The record is the one source
+ * of truth: it is written synchronously, it claims the photos, and the store of blobs is reconciled
+ * to that claim — so a blob can never outlive the draft that names it, whichever door the draft left
+ * by. `restoreStoredSheet` is the async read a restoring state renders over; when IndexedDB is gone,
+ * full, denied or slow it resolves to what `readStoredSheet` has always given, the words without the
+ * photos, and `useSheetPhotosLost` is how the sheet says so. The typing is what is expensive to lose,
+ * and no storage failure can cost it: the words are in hand before IndexedDB is asked anything.
  *
  * **A sheet belongs to the account that wrote it** (PR #77 review). A browser is shared more often
  * than a phone, and the stored copy outlives a session, so the record carries its owner — the
@@ -24,6 +30,7 @@
  */
 
 import {
+  type DraftPhoto,
   type PostDraft,
   type PostSheet,
   postCreateSent,
@@ -31,7 +38,14 @@ import {
   revivePostSheet,
 } from '@skating/core';
 import { useSyncExternalStore } from 'react';
-import { releaseAllSheetPhotos } from './sheetPhotos';
+import {
+  adoptSheetPhotos,
+  readSheetPhotos,
+  releaseAllSheetPhotos,
+  releaseRestoredPhotosExcept,
+  type SheetPhotoClaim,
+  syncSheetPhotos,
+} from './sheetPhotos';
 
 const STORAGE_KEY = 'skating.reportSheet.v2';
 /** The record as first built carried no owner, so it can never be restored — only removed. */
@@ -50,8 +64,24 @@ export interface StoredSheet {
   attempt: PostDraft | null;
 }
 
+/** What `restoreStoredSheet` finds: the sheet with its photos back, and how many could not come. */
+export interface RestoredSheet extends StoredSheet {
+  photosLost: number;
+}
+
+/**
+ * Where each photo sat when the record was written — the records `serializable` strips off the
+ * sheet, so that `sheet` stays what a reader without IndexedDB can use as it stands. Absent when the
+ * sheet had no photos, and on every record stored before this field.
+ */
+interface StoredPhotos {
+  reports?: Record<string, DraftPhoto[]>;
+  pool?: DraftPhoto[];
+}
+
 interface StoredRecord extends StoredSheet {
   owner: string;
+  photos?: StoredPhotos;
 }
 
 let current: PostSheet | null = null;
@@ -59,6 +89,22 @@ let attempt: PostDraft | null = null;
 let owner: string | null = null;
 /** When the open sheet last reached `localStorage` — the status bar's "saved in this browser". */
 let persistedAt: number | null = null;
+/** A photo read is in flight (`restoreStoredSheet`). */
+let restoring = false;
+let restoreToken = 0;
+let restoreInFlight: Promise<RestoredSheet | null> | null = null;
+/** What the last restore could not bring back, and for which draft — it says so only on that one. */
+let lostPhotos: { draftId: string; count: number } | null = null;
+/**
+ * A photo on the open sheet that will not survive a reload, for one of two reasons with two different
+ * clocks: the record that claims it could not be written, or the blob store refused it. Kept apart so
+ * that a reconcile finishing late cannot clear what a failed write has just said.
+ */
+let recordRefused = false;
+let blobsRefused = false;
+/** The claim last handed to the blob store, so a keystroke does not reconcile an unchanged set. */
+let lastClaim: string | null = null;
+let swept = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -84,6 +130,50 @@ function serializable(post: PostSheet): PostSheet {
   };
 }
 
+/** The photo records on a sheet, by where they sit. `undefined` when there are none. */
+function storedPhotos(post: PostSheet): StoredPhotos | undefined {
+  const reports: Record<string, DraftPhoto[]> = {};
+  for (const r of post.reports) if (r.photos.length > 0) reports[r.id] = r.photos;
+  const pool = post.photos ?? [];
+  if (Object.keys(reports).length === 0 && pool.length === 0) return undefined;
+  return { reports, ...(pool.length > 0 ? { pool } : {}) };
+}
+
+/** A stored list of photo records, tolerating whatever a torn or foreign record left there. */
+function photoList(value: unknown): DraftPhoto[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((p) => typeof (p as DraftPhoto | null)?.id === 'string');
+}
+
+/** What the record claims exists in the blob store. */
+function claimOf(record: StoredRecord): SheetPhotoClaim {
+  const inReports = Object.values(record.photos?.reports ?? {}).flatMap(photoList);
+  return {
+    owner: record.owner,
+    draftId: record.sheet.draftId,
+    photoIds: [...inReports, ...photoList(record.photos?.pool)].map((p) => p.id),
+  };
+}
+
+function photoIdsOf(post: PostSheet): string[] {
+  return [...post.reports.flatMap((r) => r.photos), ...(post.photos ?? [])].map((p) => p.id);
+}
+
+function onPhotosSynced(everyPhotoStored: boolean): void {
+  if (blobsRefused === !everyPhotoStored) return;
+  blobsRefused = !everyPhotoStored;
+  emit();
+}
+
+/** Hand the blob store a claim. The set of photos rarely changes; a keystroke must not reconcile. */
+function claimPhotos(claim: SheetPhotoClaim | null): void {
+  const key =
+    claim === null ? '' : JSON.stringify([claim.owner, claim.draftId, [...claim.photoIds].sort()]);
+  if (key === lastClaim) return;
+  lastClaim = key;
+  syncSheetPhotos(claim, onPhotosSynced);
+}
+
 function removeStored(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -93,13 +183,23 @@ function removeStored(): void {
   }
 }
 
+/** Anything that changes what is stored outdates a read in flight — its result is not to be used. */
+function cancelRestore(): void {
+  restoreToken++;
+  restoreInFlight = null;
+  restoring = false;
+}
+
 function persist(): void {
   if (typeof window === 'undefined') return;
+  cancelRestore();
   // An edit is never restored: the published Report is the durable copy, and a stale draft of it
   // restored over a later edit would silently undo someone else's save.
   if (current === null || current.mode.kind === 'edit') {
     persistedAt = null;
+    recordRefused = false;
     removeStored();
+    claimPhotos(null);
     return;
   }
   // A sheet with no signed-in author to file it under is not written down for the next one.
@@ -107,13 +207,80 @@ function persist(): void {
     persistedAt = null;
     return;
   }
-  const record: StoredRecord = { owner, sheet: serializable(current), attempt };
+  const photos = storedPhotos(current);
+  const record: StoredRecord = {
+    owner,
+    sheet: serializable(current),
+    attempt,
+    ...(photos !== undefined ? { photos } : {}),
+  };
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
     persistedAt = Date.now();
+    recordRefused = false;
+    claimPhotos(claimOf(record));
   } catch {
-    // A full or disabled store costs the restore, never the sheet in front of the author.
+    // A full or disabled store costs the restore, never the sheet in front of the author. The
+    // blobs stay matched to whatever record did survive, and these photos were never claimed.
+    const survivor = readRecord();
+    claimPhotos(survivor && claimOf(survivor));
+    recordRefused = photos !== undefined;
   }
+}
+
+/** The record as stored, if it has the shape of one — whoever's it is and however old. */
+function readRecord(): StoredRecord | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredRecord> | null;
+    const sheet = parsed?.sheet;
+    if (
+      typeof parsed?.owner !== 'string' ||
+      typeof sheet?.draftId !== 'string' ||
+      !Array.isArray(sheet.reports) ||
+      sheet.reports.length === 0
+    ) {
+      return null;
+    }
+    return parsed as StoredRecord;
+  } catch {
+    return null;
+  }
+}
+
+function isExpired(record: StoredRecord, now: number): boolean {
+  return now - record.sheet.openedAtMs > STORED_MAX_AGE_MS;
+}
+
+/**
+ * The record's sheet and attempt, as this build reads them. A sheet an earlier build stored carries
+ * that build's fields (D210 renamed one); every reader indexes this build's, so the record is
+ * revived before anything reads it. `null` when it cannot be.
+ */
+function wordsOf(record: StoredRecord): StoredSheet | null {
+  try {
+    const stored = record.attempt;
+    return {
+      sheet: revivePostSheet(record.sheet),
+      attempt: stored?.id === record.sheet.draftId ? revivePostDraft(stored) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The page's first look at the blob store, once per load: whatever a closed tab left that no live
+ * record names — a sign-out whose delete never ran, a draft that expired while nobody was here.
+ * The words of an expired draft stay where they are, inert (`readStoredSheet` refuses them).
+ */
+function sweepOnce(): void {
+  if (swept || typeof window === 'undefined') return;
+  swept = true;
+  const record = readRecord();
+  claimPhotos(record !== null && !isExpired(record, Date.now()) ? claimOf(record) : null);
 }
 
 /**
@@ -122,6 +289,7 @@ function persist(): void {
  * and leaves the stored one to the owner check in `readStoredSheet`.
  */
 export function bindSheetOwner(next: string | null): void {
+  sweepOnce();
   if (next === owner) return;
   owner = next;
   // The ownerless record the first build wrote is nobody's to restore; it goes on the first bind.
@@ -132,46 +300,98 @@ export function bindSheetOwner(next: string | null): void {
       // A disabled store holds nothing to remove.
     }
   }
-  if (current === null && attempt === null) return;
+  // A photo read started for the last account is not for this one, and what it held goes too.
+  cancelRestore();
   current = null;
   attempt = null;
   persistedAt = null;
+  lostPhotos = null;
+  recordRefused = false;
+  blobsRefused = false;
   releaseAllSheetPhotos();
   emit();
 }
 
 /** The sheet a reload left behind for the bound owner, if it is recent enough to be worth restoring. */
 export function readStoredSheet(now: number): StoredSheet | null {
-  if (typeof window === 'undefined' || owner === null) return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredRecord> | null;
-    if (parsed?.owner !== owner) return null;
-    const sheet = parsed.sheet;
-    if (
-      typeof sheet?.draftId !== 'string' ||
-      !Array.isArray(sheet.reports) ||
-      sheet.reports.length === 0
-    ) {
-      return null;
-    }
-    if (now - sheet.openedAtMs > STORED_MAX_AGE_MS) return null;
-    const stored = parsed.attempt;
-    // A sheet an earlier build stored carries that build's fields (D210 renamed one); every reader
-    // indexes this build's, so the record is revived before anything reads it.
-    return {
-      sheet: revivePostSheet(sheet),
-      attempt: stored?.id === sheet.draftId ? revivePostDraft(stored) : null,
-    };
-  } catch {
+  if (owner === null) return null;
+  const record = readRecord();
+  if (record === null || record.owner !== owner || isExpired(record, now)) return null;
+  return wordsOf(record);
+}
+
+async function runRestore(now: number): Promise<RestoredSheet | null> {
+  if (owner === null) return null;
+  const record = readRecord();
+  // Nothing readable stored: nothing can claim a blob. Another account's record is left alone — it
+  // is that author's until something overwrites it — but it is not this one's to read.
+  if (record === null) {
+    claimPhotos(null);
     return null;
   }
+  if (record.owner !== owner) return null;
+  if (isExpired(record, now)) {
+    removeStored();
+    claimPhotos(null);
+    return null;
+  }
+  // The words first, and they are final: nothing that happens in IndexedDB below can take them.
+  const words = wordsOf(record);
+  if (words === null) {
+    claimPhotos(null);
+    return null;
+  }
+  const claim = claimOf(record);
+  if (claim.photoIds.length === 0) return { ...words, photosLost: 0 };
+
+  const token = ++restoreToken;
+  restoring = true;
+  emit();
+  const rows = await readSheetPhotos(claim);
+  // The sheet, the account or the store moved on while this read: it answers nobody now.
+  if (token !== restoreToken) return null;
+  adoptSheetPhotos(rows);
+
+  const found = new Set(rows.map((row) => row.photoId));
+  const kept = (list: unknown) => photoList(list).filter((p) => found.has(p.id));
+  const pool = kept(record.photos?.pool);
+  const sheet: PostSheet = {
+    ...words.sheet,
+    reports: words.sheet.reports.map((r) => ({
+      ...r,
+      photos: kept(record.photos?.reports?.[r.id]),
+    })),
+    ...(pool.length > 0 ? { photos: pool } : {}),
+  };
+  const photosLost = claim.photoIds.length - photoIdsOf(sheet).length;
+  lostPhotos = photosLost > 0 ? { draftId: sheet.draftId, count: photosLost } : null;
+  restoring = false;
+  emit();
+  return { ...words, sheet, photosLost };
+}
+
+/**
+ * `readStoredSheet` with the photos back: the same gate, and the same shape for the route to check
+ * against its door and hand to `setSheet`. Every IndexedDB failure resolves to the words alone with
+ * `photosLost` counting what did not come, and `useSheetRestoring` is true for as long as it waits.
+ *
+ * `null` means nothing restored *for this call*: nothing stored, not this account's, expired, or
+ * outdated by a sheet being set while it read. Concurrent calls share one read — a remounting effect
+ * must not have its first call answered "nothing" and open a door over the real draft.
+ */
+export function restoreStoredSheet(now: number): Promise<RestoredSheet | null> {
+  if (restoreInFlight !== null) return restoreInFlight;
+  const flight: Promise<RestoredSheet | null> = runRestore(now).finally(() => {
+    if (restoreInFlight === flight) restoreInFlight = null;
+  });
+  restoreInFlight = flight;
+  return flight;
 }
 
 /** Forget the stored copy — after a Post lands, or when the author starts over. */
 export function clearStoredSheet(): void {
   removeStored();
+  claimPhotos(null);
 }
 
 /**
@@ -179,11 +399,16 @@ export function clearStoredSheet(): void {
  * author is leaving this browser, and what they were writing leaves with them.
  */
 export function forgetSheet(): void {
+  cancelRestore();
   current = null;
   attempt = null;
   persistedAt = null;
+  lostPhotos = null;
+  recordRefused = false;
+  blobsRefused = false;
   releaseAllSheetPhotos();
   removeStored();
+  claimPhotos(null);
   emit();
 }
 
@@ -194,6 +419,8 @@ export function forgetSheet(): void {
 export function setSheet(next: PostSheet | null, nextAttempt: PostDraft | null = null): void {
   current = next;
   attempt = next === null ? null : nextAttempt;
+  // A restore this door turned down brought back photos no sheet is using.
+  releaseRestoredPhotosExcept(next === null ? [] : photoIdsOf(next));
   persist();
   emit();
 }
@@ -243,11 +470,52 @@ export function usePersistedAt(): number | null {
   return useSyncExternalStore(subscribe, getPersistedAt, getServerPersistedAt);
 }
 
-/** Test seam: forget the open sheet and its owner without touching storage. */
+const getRestoring = () => restoring;
+const getServerRestoring = () => false;
+
+/** A restore is reading the photos back; the words arrive with them. */
+export function useSheetRestoring(): boolean {
+  return useSyncExternalStore(subscribe, getRestoring, getServerRestoring);
+}
+
+const getPhotosLost = () =>
+  lostPhotos?.draftId === current?.draftId ? (lostPhotos?.count ?? 0) : 0;
+const getServerPhotosLost = () => 0;
+
+/** How many of the open sheet's photos the restore could not bring back — the sheet says so. */
+export function useSheetPhotosLost(): number {
+  return useSyncExternalStore(subscribe, getPhotosLost, getServerPhotosLost);
+}
+
+/** The author has seen it: the sheet stops saying its photos were lost. */
+export function dismissSheetPhotosLost(): void {
+  if (lostPhotos === null) return;
+  lostPhotos = null;
+  emit();
+}
+
+const getPhotosNotKept = () => current !== null && (recordRefused || blobsRefused);
+const getServerPhotosNotKept = () => false;
+
+/**
+ * Storage refused a photo on the open sheet (quota, a private window). It is still here and still
+ * posts; it will not be here after a reload. Cleared when a later change gets every photo stored.
+ */
+export function useSheetPhotosNotKept(): boolean {
+  return useSyncExternalStore(subscribe, getPhotosNotKept, getServerPhotosNotKept);
+}
+
+/** Test seam: forget the open sheet and its owner without touching storage — a reload, in effect. */
 export function resetSheetStoreForTests(): void {
+  cancelRestore();
   current = null;
   attempt = null;
   owner = null;
   persistedAt = null;
+  lostPhotos = null;
+  recordRefused = false;
+  blobsRefused = false;
+  lastClaim = null;
+  swept = false;
   listeners.clear();
 }
