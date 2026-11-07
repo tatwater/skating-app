@@ -74,5 +74,21 @@ things that currently ship dark behind constants.
   `.vercel/output/config.json`, which can supersede it, and the failure is silent — the SSR
   catch-all answers 200 and every event disappears with nothing in any log.) `VITE_POSTHOG_HOST`
   is the switch when that exists, so no code has to change.
+- **The wizard's dashboard needs an `environment` filter, and one more insight.** "Analytics basics
+  (wizard)" (2316668) holds five insights covering nine of the ten events — `report_updated` is the
+  one nothing queries. None filters on `environment`, so once production traffic arrives each needs
+  `environment = production` or preview clicks land in the same funnels. The project's test-account
+  filter is a cohort rule and will *not* do this job: preview traffic comes from real signed-in
+  people. Also worth knowing, the pinned landing dashboard is the generic "Your starter dashboard",
+  not the wizard's, and reads empty.
+- **Delivery is unverified, and that is not the same as expected.** As of 2026-11-07, just after
+  #91 merged, the project had never ingested an event (`ingested_event: false`). At that moment
+  nothing had exercised the client: the preview deployment sits behind Vercel's access protection,
+  and production had not yet served a page load.
+
+  That is a dated observation, so do not read it as a standing explanation. **Once production has
+  served a page, an empty project means delivery is broken**, and the first thing to check is that
+  `VITE_POSTHOG_KEY` is set for the Production environment and not only Preview — the app is built
+  to stay silent without it rather than fail, so a missing key looks exactly like no traffic.
 - **Cost:** free tier is 1M events/month. Autocapture is the unpredictable half — worth a look at
   real volume once the alpha has traffic, since it is one line to turn off.
