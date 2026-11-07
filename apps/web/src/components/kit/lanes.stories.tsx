@@ -164,7 +164,23 @@ export const Keyboard: Story = {
     await userEvent.keyboard('{Enter}');
     await expect(args.onSelect).toHaveBeenCalledWith('corpus');
     await expect(row(nav, /Corpus/)).toHaveAttribute('aria-current', 'true');
-    row(nav, /Corpus/).blur();
+
+    // G and ? pass through to the keyboard layer (go-mode, the key sheet) when no type-ahead
+    // run is under way — the middle list's rule. Mid-run they are ordinary letters.
+    await new Promise((r) => setTimeout(r, 600));
+    const seen: string[] = [];
+    const see = (e: KeyboardEvent) => {
+      if (!e.defaultPrevented) seen.push(e.key);
+    };
+    document.addEventListener('keydown', see);
+    await userEvent.keyboard('g');
+    await userEvent.keyboard('?');
+    await expect(seen).toEqual(['g', '?']); // both left for the page
+    await expect(row(nav, /Corpus/)).toHaveFocus(); // and neither moved the cursor
+    await userEvent.keyboard('rolloverg'); // a run under way: g is type-ahead…
+    await expect(seen).toEqual(['g', '?']); // …so it no longer reaches the page
+    document.removeEventListener('keydown', see);
+    row(nav, document.activeElement?.textContent ?? /Corpus/).blur();
   },
 };
 

@@ -42,7 +42,7 @@ export function tokenMergeTheme(
   return theme;
 }
 
-const twMerge = extendTailwindMerge({
+const twMerge = extendTailwindMerge<'text-trim'>({
   extend: {
     theme: tokenMergeTheme(),
     // kit.css's own utilities: each its own group, so `text-trim` never

@@ -119,10 +119,14 @@ function Lanes({
     if (event.key === 'Home') return move(0);
     if (event.key === 'End') return move(all.length - 1);
     if (event.key.length !== 1 || event.key === ' ') return;
+    const now = event.timeStamp;
+    const running = typed.current.text !== '' && now - typed.current.at <= TYPEAHEAD_MS;
+    // G and ? belong to the keyboard layer (go-mode, the key sheet) unless a type-ahead run is
+    // under way — the same rule as the middle list, so go-mode opens from a focused lane.
+    if (!running && /^[g?]$/i.test(event.key)) return;
     // Type-ahead: letters typed close together build one search; a fresh letter starts over.
     event.preventDefault();
-    const now = event.timeStamp;
-    const text = now - typed.current.at > TYPEAHEAD_MS ? event.key : typed.current.text + event.key;
+    const text = running ? typed.current.text + event.key : event.key;
     typed.current = { text, at: now };
     const query = text.toLocaleLowerCase();
     // One letter looks past the current lane (so pressing it again cycles); more keep it.
