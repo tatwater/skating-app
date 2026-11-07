@@ -8,6 +8,7 @@ import {
   describeApproach,
   directionsUrl,
   isHikeIn,
+  orderAccessPutIns,
   type PostedAccess,
 } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
@@ -130,9 +131,16 @@ export function directionsFor(
 }
 
 /**
- * One card per stored put-in, core's recommended way in first, the rest in the server's order.
- * Each card's own trip is resolved through `chooseAccessTarget` on that put-in alone, so a card and
- * the header's Directions can never disagree about what a launch's lot is or how far the walk is.
+ * One card per stored put-in, **in core's order** (`orderAccessPutIns`) rather than the server's:
+ * unblocked first, then the source ladder, then a launch with a lot over one without, then the
+ * shorter walk. The list used to show core's one recommended way in on top and leave everything
+ * below it in whatever order the rows arrived in, which made the second card down an accident.
+ *
+ * Reading the same order core routes by is what keeps the card at the top of this list and the
+ * launch the header's Directions aims at the same launch.
+ *
+ * Each card's own trip is still resolved through `chooseAccessTarget` on that put-in alone, so a
+ * card and the header can never disagree about what a launch's lot is or how far the walk is.
  */
 export function putInCards(
   access: AccessData,
@@ -141,9 +149,7 @@ export function putInCards(
 ): PutInCardModel[] {
   const blocked = new Set<string>(access.blockedIds);
   const best = chooseAccessTarget(access.putIns, access.parking, blocked);
-  const ordered = best
-    ? [best.putIn as AccessPutInRow, ...access.putIns.filter((p) => p.id !== best.putIn.id)]
-    : access.putIns;
+  const ordered = orderAccessPutIns(access.putIns, blocked) as AccessPutInRow[];
   return ordered.map((p) => {
     // Never null: one put-in in, one target out.
     const target = chooseAccessTarget([p], access.parking, blocked) as AccessTarget;

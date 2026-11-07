@@ -14,6 +14,7 @@ import {
   HIKE_IN_ASSERT_M,
   isHikeIn,
   MAX_PLAUSIBLE_APPROACH_M,
+  orderAccessPutIns,
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
@@ -532,6 +533,92 @@ describe('chooseAccessTarget — the routing rule (D72)', () => {
   test('the approach is only reported when there is a lot to walk from', () => {
     const chosen = chooseAccessTarget([launch({ approachMeters: 700 })], []);
     expect(chosen?.approachMeters).toBeUndefined();
+  });
+});
+
+/**
+ * The order the lake's launches are offered in, and the bug it replaces. The old tiebreak read
+ * `approachMeters ?? 0`, which could not tell "no walk" from "nobody measured the walk" — so on a
+ * lake where every row is an unnamed OSM node, the one with no measurement at all came first. On
+ * dev that is Mascoma: a dead-end street outranked the boat launch everybody uses.
+ */
+describe('orderAccessPutIns', () => {
+  const at = (n: number) => ({ lat: 44.5 + n / 1000, lng: -72.5 });
+  const putIn = (id: string, over: Partial<AccessPutIn> = {}): AccessPutIn => ({
+    id,
+    coord: at(Number(id.replace(/\D/g, '')) || 0),
+    source: 'osm',
+    ...over,
+  });
+  const ids = (rows: readonly AccessPutIn[]) => rows.map((r) => r.id);
+
+  test('an unmeasured walk sorts last, not as a walk of zero', () => {
+    const unmeasured = putIn('p1', { parkingAreaId: 'lot' });
+    const measured = putIn('p2', { parkingAreaId: 'lot', approachMeters: 32 });
+    expect(ids(orderAccessPutIns([unmeasured, measured]))).toEqual(['p2', 'p1']);
+  });
+
+  test('a launch with a lot beats one without, however short the other’s walk', () => {
+    const noLot = putIn('p1', { approachMeters: 0 });
+    const withLot = putIn('p2', { parkingAreaId: 'lot', approachMeters: 700 });
+    expect(ids(orderAccessPutIns([noLot, withLot]))).toEqual(['p2', 'p1']);
+  });
+
+  test('the source ladder outranks the lot: a human’s pin wins', () => {
+    const official = putIn('p1', { source: 'official' });
+    const osmWithLot = putIn('p2', { parkingAreaId: 'lot', approachMeters: 10 });
+    expect(ids(orderAccessPutIns([osmWithLot, official]))).toEqual(['p1', 'p2']);
+  });
+
+  test('a blocked launch sorts below every open one, and is never dropped', () => {
+    const open = putIn('p1');
+    const blocked = putIn('p2', { source: 'official', parkingAreaId: 'lot' });
+    const order = orderAccessPutIns([blocked, open], new Set(['p2']));
+    expect(ids(order)).toEqual(['p1', 'p2']);
+    expect(order).toHaveLength(2);
+  });
+
+  test('a lot’s own alert blocks the launch that parks there', () => {
+    const viaBlockedLot = putIn('p1', { source: 'official', parkingAreaId: 'shut' });
+    const plain = putIn('p2');
+    expect(ids(orderAccessPutIns([viaBlockedLot, plain], new Set(['shut'])))).toEqual(['p2', 'p1']);
+  });
+
+  /** Mascoma, as dev has it: six OSM rows, three with lots and measured walks, two with neither. */
+  test('Mascoma: the boat launch comes first, the bare shore nodes last', () => {
+    const rows = [
+      putIn('unnamed-far', { parkingAreaId: 'lotA', approachMeters: 715 }),
+      putIn('boat-launch', { parkingAreaId: 'lotB', approachMeters: 32 }),
+      putIn('lakeside-ramp', { parkingAreaId: 'lotC', approachMeters: 48 }),
+      putIn('bare-node-1'),
+      putIn('bare-node-2'),
+      putIn('shakoma-beach', { parkingAreaId: 'lotB', approachMeters: 82 }),
+    ];
+    const order = ids(orderAccessPutIns(rows));
+    expect(order[0]).toBe('boat-launch');
+    expect(order.slice(0, 4)).toEqual([
+      'boat-launch',
+      'lakeside-ramp',
+      'shakoma-beach',
+      'unnamed-far',
+    ]);
+    expect(order.slice(4).sort()).toEqual(['bare-node-1', 'bare-node-2']);
+  });
+
+  test('it does not mutate what it is given', () => {
+    const rows = [putIn('p1'), putIn('p2', { source: 'official' })];
+    orderAccessPutIns(rows);
+    expect(ids(rows)).toEqual(['p1', 'p2']);
+  });
+
+  test('chooseAccessTarget routes to the row this order puts first', () => {
+    const rows = [
+      putIn('bare', {}),
+      putIn('launch', { parkingAreaId: 'lot1', approachMeters: 40 }),
+    ];
+    const parking = [{ id: 'lot1', coord: at(9), source: 'osm' as const }];
+    expect(chooseAccessTarget(rows, parking)?.putIn.id).toBe('launch');
+    expect(orderAccessPutIns(rows)[0]?.id).toBe('launch');
   });
 });
 
