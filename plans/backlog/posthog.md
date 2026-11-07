@@ -1,20 +1,55 @@
 # PostHog — product analytics, flags, session replay
 
-> **Backlog.** Decided in D29 as the "later" half of observability (Sentry now, PostHog when we
-> want usage insight); still not wired as of 2026-09-17. Register row: *PostHog* in the roadmap's deferred
-> register (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it) — flip it when
-> this lands.
+> **Landed on web** 2026-11-07, PR #91 — see **D235** for the calls. D29 decided *that* PostHog
+> arrives; D235 decided *how*. What is still deferred is **session replay** (L12) and **mobile**.
+> Register rows: *PostHog session replay* in the roadmap's deferred register
+> (`07-roadmap.md`; `03-tech-stack-options.md` § Deferred tech mirrors it).
 
-**What it's for:** the questions the in-house operator analytics (07-2, `metricSnapshots`) don't
+**What it was for:** the questions the in-house operator analytics (07-2, `metricSnapshots`) don't
 answer — funnels, retention, which surfaces skaters actually touch — plus feature flags for the
-things that currently ship dark behind constants (`PROFILE_REVEAL_ALL`,
-`RECURRENCE_ADVISORIES_PUBLIC`).
+things that currently ship dark behind constants.
 
-**Gates:**
-- **Session replay is legal-gated (L12):** this is a location app with minors on it. D29 already
-  settles the shape — replay ships **off**, is never recorded for `isMinor` users, and initializes
-  only after the profile resolves. The legal pass is Q10's.
-- **Cost:** free tier is 1M events/month; a ~20-person alpha won't dent it.
+## What landed (web only)
 
-**Trigger:** the friends alpha producing usage questions the Convex rollups can't answer; not
-before there are users to observe.
+- **Ten typed product events** — `apps/web/src/lib/analytics.ts` names each one and its property
+  type. Countable shape only: no report text, no note, no lake name, no coordinate, no id, and
+  nothing that reads as a claim about the ice (D3).
+- **Identity** — the Clerk `userId` and nothing else; resets on sign-out and before an account
+  switch (`components/PostHogIdentity.tsx`).
+- **Exception capture** alongside Sentry, which still owns error quality and alerting.
+- **Autocapture + SPA pageviews**, so questions nobody instrumented for stay answerable.
+- **First-party ingestion** — a same-origin `/rink` path rewritten in `apps/web/vercel.json`, so a
+  tracker blocker sees our host rather than a recognized analytics domain.
+- **A flags harness** — `lib/featureFlags.ts`, with **no flags registered**.
+
+## What is still open
+
+- **Session replay (L12, ⛔).** `disable_session_recording: true` at init — stricter than the
+  project's dashboard toggle, because a remote switch cannot start a recorder the client never
+  armed. D29's shape is unchanged and still owed in full before this moves: never recorded for
+  `isMinor` users, started only after the profile resolves, input and location masking on, and
+  `PRIVACY.md` revised. `posthogOptions.test.ts` fails if the line is flipped, which is the
+  intended friction. The legal pass is Q10's.
+- **Mobile is not instrumented.** `posthog-react-native` is a separate dependency and a separate
+  identity bridge; nothing on `apps/mobile` sends an event today. Worth doing once the web events
+  have been read for a season and the taxonomy has stopped moving — instrumenting two surfaces
+  against a contract that is still changing means fixing every rename twice.
+- **The flags harness is empty, and that was the finding.** This doc used to say flags would
+  replace `PROFILE_REVEAL_ALL` and `RECURRENCE_ADVISORIES_PUBLIC`. Neither survived:
+  - `RECURRENCE_ADVISORIES_PUBLIC` is read **only inside Convex**, where `isPubliclyVisible()`
+    stamps `publiclyVisible` onto the row at write time — deliberately, because a client-side
+    filter is "admin-only if you don't open the network tab". A browser flag cannot reach a
+    server-side trust boundary; Convex queries cannot make network calls at all; and because the
+    value is baked onto rows, flipping anything would need a backfill to be visible.
+  - `PROFILE_REVEAL_ALL` is client-side, but its real protection is `profileRevealEnabled()`
+    forcing it off against the production deployment — "a flag whose only protection is remember
+    to turn it off is a flag that ships on". A remote value is strictly weaker than that, and
+    mobile reads the same constant, so flagging only the web half would leave one rule with two
+    answers.
+
+  A flag belongs here when it is genuinely client-side, genuinely wants flipping without a
+  redeploy, and guards nothing a skater's safety rests on (D3) — the last of which is why neither
+  of the above qualified. Server-evaluated flags would need `posthog-node` in a Convex action; that
+  is a phase, not a follow-up.
+- **Cost:** free tier is 1M events/month. Autocapture is the unpredictable half — worth a look at
+  real volume once the alpha has traffic, since it is one line to turn off.

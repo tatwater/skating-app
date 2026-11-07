@@ -6803,3 +6803,68 @@ layout, and box-to-box spacing ships that noise to the eye. Measuring what is se
 in the kit exactly once, and every composition inherits it.
 
 **Related:** D223, D232, D233.
+
+## D235 — PostHog wired: a named event contract, no PII, no replay, first-party ingestion
+**Decided** 2026-11-07 (PR #91). D29 settled *that* PostHog arrives and left *how* open; the
+analytics half is now wired on web. Five calls shaped it, and four of them narrow what the
+vendor's own setup wizard produced.
+
+**Ingestion is first-party.** The browser posts to a same-origin path (`/rink`), rewritten to
+`us.i.posthog.com` in `apps/web/vercel.json`; `api_host` is that path and `ui_host` stays
+`https://us.posthog.com` so SDK-generated links still point at a web UI. A tracker blocker drops a
+meaningful and *unmeasurable* share of requests to a recognized analytics domain, and a biased
+sample is worse than a small one. `VITE_POSTHOG_HOST` overrides it, so falling back to direct
+ingestion is an env-var change rather than a code change. The path is deliberately not
+`/analytics` or `/ingest` — PostHog's own guide notes those names are already on blocklists.
+
+**Session replay is off at init, not off by configuration.** `disable_session_recording: true`
+rather than trusting the project's dashboard toggle: a remote switch cannot start a recorder the
+client never armed, so enabling replay is a code change that goes through review. That is the
+right amount of friction for the one feature here that can capture a 17-year-old's screen. L12
+stays ⛔ — replay still owes the `isMinor` gate, masking, and a `PRIVACY.md` revision, exactly as
+D29 wrote it. `posthogOptions.test.ts` fails if the line is ever flipped.
+
+**Identity is the Clerk `userId` and nothing else.** No email, no name, no person properties. The
+population includes 16- and 17-year-olds (D41), this is a location app, and the minor-data posture
+is one of the things still waiting on Q10. `/admin` already resolves a user id to a person, so
+every analysis that wants a name can have one without PostHog holding it — and account deletion
+has nothing to reach into PostHog for. The bridge also **resets** on sign-out and before an
+account switch; without those a shared device attributes one person's session to another, and a
+switch aliases two accounts into one.
+
+**Events are a typed contract, never content.** Ten events in `apps/web/src/lib/analytics.ts`, each
+with its property type. An event name is a schema read by charts that the call site cannot see: a
+typo does not fail, it starts a second empty series beside the one the dashboard reads. Properties
+are countable shape only — hazard type, photo count, whether a comment was a reply — never report
+text, a note, a lake name, a coordinate, or any id. And never a condition of the ice: these record
+what a person *did*, which is the only thing D3 permits an analytics event to claim.
+
+**Autocapture stays on** (founder call), so questions nobody instrumented for are still answerable.
+It is the one place this integration trades data minimization for optionality, and it is reversible
+in one line if alpha volume or the element text it collects turns out to matter.
+
+**Flags land as a harness with nothing in it.** `backlog/posthog.md` expected flags to replace
+`PROFILE_REVEAL_ALL` and `RECURRENCE_ADVISORIES_PUBLIC`; neither survived contact with the code.
+`RECURRENCE_ADVISORIES_PUBLIC` is read only inside Convex, where `isPubliclyVisible()` stamps
+`publiclyVisible` onto the row at write time — deliberately, because a client-side filter is
+"admin-only if you don't open the network tab" — so a browser flag cannot reach it, Convex queries
+cannot make network calls at all, and flipping anything would need a backfill to be visible.
+`PROFILE_REVEAL_ALL` is client-side but its real protection is `profileRevealEnabled()` forcing it
+off against the production deployment; a remote value is strictly weaker than a compile-time guard,
+and mobile reads the same constant, so flagging the web half would leave one rule with two answers.
+Both stay constants. A flag belongs in the harness when it is genuinely client-side, genuinely
+wants flipping without a redeploy, and guards nothing a skater's safety rests on.
+
+**Dropped from the wizard's output:** PostHog browser *Logs* (one lifecycle line per page load that
+a pageview already covers, billed separately from events) and an OpenTelemetry OTLP log exporter
+over the SSR fetch handler — four undeclared packages to emit two records per request that Sentry
+already wraps and Vercel already logs, buffered through a `BatchLogRecordProcessor` that a frozen
+serverless function silently discards. Server-side PostHog, if it is ever wanted, is `posthog-node`
+in one dependency and brings server-evaluated flags with it.
+
+**Unconfigured means absent.** No token ⇒ no provider, no init, no network, every `capture` a
+no-op and every flag its fallback — the posture `lib/env.ts` already takes for the basemap and the
+imagery archive. The wizard threw in development instead, which would have made a missing
+analytics key a blank page on a field app.
+
+**Related:** D3, D29, D41, D235's gate is L12; Q10.

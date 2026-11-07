@@ -43,7 +43,7 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 | L9 | Path-cluster hazard deduction over our own tracks | Q11, L14 | 🔬 | volume + calibration + the L14 pass |
 | L10 | OSM ODbL share-alike | D5 | 🟡 | bites only if we *publish* the derived database |
 | L11 | Landowner takedown — the wording and any obligation | D48, D179, Q10 | 🟡 | the lawyer |
-| L12 | PostHog session replay with minors and location | D29 | ⛔ | masking + minor exclusion + `PRIVACY.md` update, before enabling |
+| L12 | PostHog session replay with minors and location | D29, D235 | ⛔ | masking + minor exclusion + `PRIVACY.md` update, before enabling; the SDK now ships with recording disabled at init |
 | L13 | Data-source license conditions — Open-Meteo non-commercial; radar sources' size-dependent terms | D158, Q14 | 🟡 | stays plainly non-commercial; re-read at scale |
 | L14 | Aggregate / heatmap privacy for our own tracks | D41, D42, D58 | 🟡 | built (Phase 08); device verification owed; derivations need their own pass |
 | L15 | AGPL §13 network-service obligation | D157 | 🟢⏸ | dormant unless we run AGPL code as a service |
@@ -149,9 +149,16 @@ to honor a request wait on Q10.
 - [ ] Lawyer confirms the policy and the intake wording.
 - [ ] Hardening: a suppression list so a removed body can't be re-created from a track (D48 edge).
 
-## L12 — PostHog session replay (D29) ⛔
-Ships off, never for `isMinor`, starts only after the profile resolves. Not wired at all today
-([`backlog/posthog.md`](./backlog/posthog.md)).
+## L12 — PostHog session replay (D29, D235) ⛔
+Ships off, never for `isMinor`, starts only after the profile resolves. **PostHog itself is now
+wired on web** (D235) — events, identity, exception capture, a flags harness — and replay is the
+one piece held back: `disable_session_recording: true` at init rather than left to the project's
+dashboard toggle, so a remote switch cannot start a recorder the client never armed and turning it
+on is a reviewed code change. `posthogOptions.test.ts` fails if that line is flipped.
+
+Identity carries the Clerk `userId` only — no email, no name, no person properties — so what
+PostHog holds today is counts and a pseudonym, not PII. That is deliberate while the minor-data
+posture waits on Q10, and it is also what keeps this row's exposure limited to replay.
 - [ ] Input masking on (coordinates, PII); minor exclusion verified; `PRIVACY.md` updated — before
       enabling in prod.
 

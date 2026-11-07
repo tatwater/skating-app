@@ -22,6 +22,14 @@ Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
   (`instrument.server.ts` + `wrapFetchWithSentry` in `server.ts` + global request/function
   middleware in `start.ts`), plus a root `Sentry.ErrorBoundary`. The `sentryTanstackStart` Vite
   plugin uploads source maps when a build token is set. Session Replay is intentionally off (D29).
+- **PostHog** product analytics + feature flags (D29/D235), web only. `lib/analytics.ts` is the
+  typed event contract — ten events, countable properties only, no content and no ids;
+  `components/PostHogIdentity.tsx` binds Clerk's `userId` (and nothing else) and resets on
+  sign-out and account switch; `lib/posthogOptions.ts` holds the config, including the
+  `disable_session_recording` lock that L12 still gates. Ingestion goes to a same-origin `/rink`
+  path rewritten in `vercel.json`, so blockers see a first-party request. `lib/featureFlags.ts` is
+  the flags harness and is deliberately empty — D235 says why. No `VITE_POSTHOG_KEY` ⇒ no init, no
+  network, every capture a no-op.
 - **Vitest** (+ Testing Library / jsdom) for logic, components, and the token-parity guard.
 
 ## Navigation (D28/D47)

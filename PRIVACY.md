@@ -91,10 +91,24 @@ your reports"). The app is not directed at children under 16.
   it leaves your device. We **do not** send your IP address, cookies, request bodies,
   or the contents of any form to Sentry, and before anything is sent we remove
   location fields (coordinates, your home location, and everything derived from it),
-  your date of birth, bio, and connected-account credentials. Product analytics
-  (PostHog) are not enabled in the alpha. If enabled later, this notice will be
-  updated; **session replay will never record users under 18**, and where it is used
-  it will mask inputs and location data.
+  your date of birth, bio, and connected-account credentials.
+- **Product analytics (PostHog), on the website** — we record *that* certain actions
+  happened, so we can see where the app is confusing or broken: posting a report,
+  filing a hazard, commenting, favoriting a lake, finishing sign-up, and which pages
+  you visit. What we send is the **shape** of the action, never its content — for a
+  hazard, its type and how many photos it had, never your description or where it
+  was; for a comment, only whether it was a reply. We **do not** send report text,
+  comment or note text, coordinates, or your email or name. Alongside those, the
+  analytics tool automatically records the buttons and links you click and the page
+  addresses you visit, which includes the **on-screen label** of what you clicked —
+  so the name of a lake can appear there when you click on one. Once you're signed
+  in all of this is tied to an account identifier, not to your name or email, and
+  signing out stops the link. Uncaught errors are also sent here for context.
+  **Session replay — recording what you see and do on screen — is switched off**, and
+  it is off in the app's own code rather than only in a setting. If it is ever turned
+  on, this notice will be updated first; **it will never record users under 18**, and
+  where it is used it will mask inputs and location data.
+  The mobile app sends no product analytics at all.
 
 ## How we use it
 - To show peer ice reports on a map and feed, filtered to your drive-time range.
@@ -129,7 +143,8 @@ profile your individual reports are still public and show your name — a privat
 We use these services to run the app; they process data on our behalf:
 Convex (database & file storage), Clerk (authentication), Cloudflare (map tiles and the
 satellite-imagery archive), OpenRouteService (drive-time and walking routes), Open-Meteo and
-the US National Weather Service (weather), Sentry (crash/error), Resend (email notifications
+the US National Weather Service (weather), Sentry (crash/error), PostHog (website product
+analytics), Resend (email notifications
 and operator email), Expo and Apple/Google (app distribution & push), Google Photos — only when you pick from
 it — and — only if you connect it — Strava. Data you push to a fitness provider is also governed by that
 provider's own terms and privacy policy.
