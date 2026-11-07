@@ -144,7 +144,7 @@ export function verdictHelp(verdict: HazardVerdict, type: HazardType): string {
     case 'healing_unsafe':
       return 'It has changed but is still dangerous. The marker stays up so the next skater can read it.';
     case 'fully_healed':
-      return 'Only if the ice here is genuinely sound. Two of these retire the marker for everyone.';
+      return 'Only if what was reported is truly gone, not just hidden under snow. Two of these retire the marker for everyone.';
     case 'never_existed':
       return 'Not that it cleared — that there was never anything here. Use this for a pin in the wrong place, not for ice that changed. A moderator is told.';
   }

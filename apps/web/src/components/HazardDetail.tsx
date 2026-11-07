@@ -326,7 +326,7 @@ export function HazardView({
                     >
                       <p className="text-sm">
                         This retires the marker for everyone once one more skater agrees. Only if
-                        the ice here is genuinely sound.
+                        what was reported is truly gone, not just hidden under snow.
                       </p>
                       <div className="flex gap-2">
                         <Button

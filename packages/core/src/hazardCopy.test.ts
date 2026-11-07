@@ -164,7 +164,7 @@ describe('ridge_crossing relabeling (research §4)', () => {
   });
 
   // The help text has to invert with the label. Its `fully_healed` verdict means "the crossing is
-  // gone", so it must NOT fall through to the danger copy ("only if the ice here is genuinely sound"),
+  // gone", so it must NOT fall through to the danger copy ("only if what was reported is truly gone"),
   // which on a passage marker would tell someone at a closed crossing to leave the stale marker up.
   it('gives the help text its own passage-marker wording for all three verdicts', () => {
     const danger = new Set([
@@ -190,6 +190,18 @@ describe('the destructive verdict names its consequence', () => {
   // make that cost visible before the tap, not after.
   it('tells the skater that two of these retire the marker', () => {
     expect(verdictHelp('fully_healed', 'open_water')).toMatch(/two|retire/i);
+  });
+
+  // D3: retiring a hazard is a claim about the hazard, never about the ice. The copy says the
+  // reported thing is gone (and warns that snow can hide it), never that the ice is sound or safe.
+  it('says the hazard is gone, never that the ice is sound', () => {
+    for (const type of HAZARD_TYPES) {
+      const help = verdictHelp('fully_healed', type);
+      expect(help, type).not.toMatch(/\b(sound|safe|solid|good to go)\b/i);
+    }
+    expect(verdictHelp('fully_healed', 'open_water')).toMatch(
+      /truly gone, not just hidden under snow/,
+    );
   });
 
   it('explains that a healing verdict keeps the pin up', () => {
