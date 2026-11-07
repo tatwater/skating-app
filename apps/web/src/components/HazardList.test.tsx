@@ -1,3 +1,4 @@
+import { NO_ALERT_IS_NOT_ALL_CLEAR } from '@skating/core';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -87,14 +88,43 @@ describe('HazardListView', () => {
     expect(screen.getByText('Crossing')).toBeInTheDocument();
   });
 
-  // Non-negotiable: the absence of a marker is not information (D3/D54).
-  it('states that no alert does not mean the ice is safe', async () => {
+  // Non-negotiable: the absence of a marker is not information (D3/D54). A list says so through
+  // its title's (i), not a standing line under every list.
+  it('titles the list "Known hazards" with an (i) saying there may be unreported ones', async () => {
     renderWithRouter(<HazardListView hazards={[hazard()]} knownFeatures={[]} />);
-    expect(await screen.findByText(/does not mean the ice is safe/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Known hazards' })).toBeInTheDocument();
+    const info = screen.getByRole('button', {
+      name: "It's possible there are unreported hazards on this ice.",
+    });
+    // The words live in the tooltip, which opens on focus (and hover), not on the page at rest.
+    expect(
+      screen.queryByText("It's possible there are unreported hazards on this ice."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.focus(info);
+    expect(
+      await screen.findByText("It's possible there are unreported hazards on this ice."),
+    ).toBeInTheDocument();
   });
 
-  it('renders nothing at all when a lake has no hazards or known features', () => {
+  it('carries no standing caveat under the list', async () => {
+    renderWithRouter(<HazardListView hazards={[hazard()]} knownFeatures={[]} />);
+    await screen.findByText('Open water / lead');
+    expect(screen.queryByText(NO_ALERT_IS_NOT_ALL_CLEAR)).not.toBeInTheDocument();
+    expect(screen.queryByText(/does not mean the ice is safe/)).not.toBeInTheDocument();
+  });
+
+  // An empty list must never read as an all-clear: it says so in full (D3).
+  it('says in full that an empty list does not mean the ice is safe', async () => {
     const { container } = renderWithRouter(<HazardListView hazards={[]} knownFeatures={[]} />);
-    expect(container.textContent).toBe('');
+    expect(await screen.findByRole('heading', { name: 'Known hazards' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No known hazards. That does not mean the ice is safe — only that nobody has reported one on this lake.',
+      ),
+    ).toBeInTheDocument();
+    // Nothing else on the empty list could read as reassurance.
+    const text = (container.textContent ?? '').replace('does not mean the ice is safe', '');
+    expect(text).not.toMatch(/\bsafe\b|all[- ]clear|skateable/i);
   });
 });

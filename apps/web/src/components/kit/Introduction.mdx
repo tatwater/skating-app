@@ -1,0 +1,61 @@
+import { Meta } from '@storybook/addon-docs/blocks';
+
+<Meta title="Kit/Introduction" />
+
+# The kit
+
+The web app's components, built once and themed by tokens. Every story here is also a test: it
+must render, and its checks must pass, in a real browser.
+
+## Two axes, four themes
+
+The toolbar picks a **surface** (Admin or Skater) and a **mode** (Dark or Light). The surface
+carries density — type sizes, control and row heights, the hit pad — so the same component is
+denser on Admin without a "compact" prop. Stories marked **Four up** show all four themes side by
+side.
+
+## The rules
+
+- **Tokens only.** A component reads semantic tokens (`bg-panel`, `text-fg3`, `h-btn`,
+  `shadow-focus`, `duration-(--duration-fast)`) and never a primitive or a raw color. A re-skin is
+  a token change, not an edit to a component.
+- **Ink sits only on grounds it passes on.** Text and controls meet AA contrast on every ground
+  they're drawn on, in all four themes; the design package's pairing table says which.
+- **Props, not data.** A component takes plain props. It never queries the backend or reads the
+  route; a story is a board state, built from props alone.
+- **Relative units.** Sizes and spacing are in `rem` (or `em` where an inset should track its own
+  text), so the layout grows with the reader's font size. Only drawing — borders, rings, radii,
+  shadows — stays in pixels.
+- **Only what you can press is rounded.** Buttons, inputs, selectable chips and clickable rows take
+  the surface's control radius (`rounded-control`: rounded on skater, square on the console).
+  Containers — badges, cards, panels, popovers, tooltips, dialogs, sheets — are square on both.
+  Keyboard hints round like chiclet keys (`rounded-key`); switches and people's circles keep theirs.
+- **Motion is quick and quiet.** Hover, focus and press fade on the motion tokens (80, 120, 200,
+  320 ms) with no bounce; with reduced motion on, every duration is zero. A loading state keeps
+  its final size, so nothing jumps as content arrives.
+- **Overlay stories open on a press, never on mount.** A dialog, sheet, popover, menu, select,
+  tooltip or docked toast story shows its trigger; its check presses it, measures, and closes it
+  again, so every page stays browsable and Esc always closes what you open. Only a non-modal
+  overlay confined to its own frame (a four-up quad, a scoped dialog) is left open.
+
+## Optical spacing
+
+A gap token measures **content to content**, never box to box. When a component's box is bigger
+than what it shows — a padded row, a small icon with a generous touch area — the kit gives the
+difference back, in one of two ways:
+
+- **Bleed** (`bleed`): the element pads itself by the hit pad and takes the same amount back as
+  negative margin. Its wash paints beyond the content; its content lands where plain text would.
+- **Expanded hit target** (`hit`): the box is exactly what you see, and an invisible layer grows
+  the pointer area by the hit pad on every side.
+
+A composition never corrects a gap by hand; a component that needs a correction is a kit bug.
+The **Junction** stories measure these distances in the browser and fail when a padding change
+would widen a visual gap.
+
+## What breaks from the stock components
+
+- No red-at-rest destructive button: a danger action rests like any other and turns red only once
+  it's armed, as a confirm step.
+- No underlined link button: navigation is an outlined chip ending in "→".
+- No rounded corners, no lucide icons (the kit uses FontAwesome Sharp).

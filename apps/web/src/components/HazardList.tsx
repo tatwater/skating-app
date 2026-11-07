@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCircleInfo } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -9,11 +11,13 @@ import {
   humanizeEnum,
   isHazardVisibleByDefault,
   isPassageMarker,
-  NO_ALERT_IS_NOT_ALL_CLEAR,
+  NO_KNOWN_HAZARDS,
+  UNREPORTED_HAZARDS_POSSIBLE,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useState } from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from './kit/tooltip';
 import { useMapSelection } from './MapSelectionContext';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -29,12 +33,19 @@ export interface HazardListItem {
   healingState?: 'none' | 'healing_unsafe' | 'disputed';
 }
 
+const TITLE_CLASS = 'font-mono text-foreground-muted text-xs uppercase tracking-widest';
+
 /**
  * Presentational hazard list for a lake drawer.
  *
  * Stale hazards are **collapsed behind a toggle, never dropped** (D3). The server returns them
  * deliberately, and this is the one place the "show older" affordance lives — the distinction between
  * "nobody has checked lately" and "it's gone" has to survive all the way to the screen.
+ *
+ * **The absence of a marker is not information (D3)**, said two ways and never as a standing line
+ * under the list: the title is "Known hazards" with an (i) whose tooltip says there may be
+ * unreported ones, and a lake with nothing on it shows the full empty-state sentence rather than
+ * an empty list.
  */
 export function HazardListView({
   hazards,
@@ -48,11 +59,29 @@ export function HazardListView({
   const older = hazards.filter((h) => !isHazardVisibleByDefault(h.freshness));
   const visible = showOlder ? [...current, ...older] : current;
 
-  if (hazards.length === 0 && knownFeatures.length === 0) return null;
+  if (hazards.length === 0 && knownFeatures.length === 0) {
+    return (
+      <div className="flex flex-col gap-2">
+        <h3 className={TITLE_CLASS}>Known hazards</h3>
+        <p className="text-foreground-muted text-sm">{NO_KNOWN_HAZARDS}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">Hazards</h3>
+      <div className="flex items-center gap-1.5">
+        <h3 className={TITLE_CLASS}>Known hazards</h3>
+        <Tooltip>
+          <TooltipTrigger
+            aria-label={UNREPORTED_HAZARDS_POSSIBLE}
+            className="inline-flex size-4 cursor-help items-center justify-center text-foreground-muted outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <FontAwesomeIcon icon={faCircleInfo} className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent>{UNREPORTED_HAZARDS_POSSIBLE}</TooltipContent>
+        </Tooltip>
+      </div>
 
       {knownFeatures.length > 0 ? (
         <Card size="sm">
@@ -110,9 +139,6 @@ export function HazardListView({
             : `Show ${older.length} older marker${older.length === 1 ? '' : 's'}`}
         </Button>
       ) : null}
-
-      {/* Stated wherever hazards are surfaced: the absence of a marker is not information (D3). */}
-      <p className="text-foreground-muted text-xs">{NO_ALERT_IS_NOT_ALL_CLEAR}</p>
     </div>
   );
 }

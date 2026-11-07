@@ -1,0 +1,16 @@
+/*
+ * The canvas takes the theme's real field, ink and face — set on the preview root by the toolbar
+ * decorator — so a component is judged on the ground it will sit on, never Storybook's white.
+ * Unlayered, so it outranks the legacy `body` rule in `app.css`'s base layer.
+ */
+html[data-surface] body,
+html[data-surface] .docs-story {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--family-sans);
+}
+
+/* The four-up draws its own fields edge to edge. */
+html[data-surface] body:has([data-four-up]) #storybook-root {
+  padding: 0;
+}

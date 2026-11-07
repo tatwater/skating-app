@@ -70,6 +70,10 @@ jobs:
       - name: Type-check
         run: pnpm check-types
 
+      # The web app's stories run as tests in headless Chromium (Storybook's Vitest addon).
+      - name: Install Playwright's Chromium for the story tests
+        run: pnpm --filter @skating/web exec playwright install --with-deps chromium-headless-shell
+
       - name: Test (with coverage)
         run: pnpm test
 
