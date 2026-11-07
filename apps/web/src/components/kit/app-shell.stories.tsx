@@ -523,7 +523,7 @@ export const Resize: Story = {
 };
 
 /**
- * Narrower than `lg` the panes stack — no groups, no separators — each a screen tall, and main
+ * Narrower than `lg` the panes stack — no separators — each a screen tall, and main
  * scrolls through them. The Tab order is the same.
  */
 export const Stacked: Story = {
@@ -544,6 +544,62 @@ export const Stacked: Story = {
     within(pane(canvasElement, 'Lanes')).getByRole('button', { name: /Open/ }).focus();
     await userEvent.tab();
     await expect(list(canvasElement)).toHaveFocus();
+  },
+};
+
+/** A shell whose width F2 toggles across `lg`, from wherever focus is. */
+function Resizing() {
+  const [wide, setWide] = useState(true);
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: a test harness hears F2 bubble up from the shell
+    <div
+      onKeyDown={(event) => {
+        if (event.key === 'F2') setWide((w) => !w);
+      }}
+    >
+      <AppShell
+        className={wide ? 'h-[40rem] w-[80rem]' : 'h-[40rem] w-[48rem]'}
+        rail={null}
+        lanes={<p className="m-0 p-gutter text-row text-fg2">Lanes</p>}
+        middle={<p className="m-0 p-gutter text-row text-fg2">List</p>}
+        inspector={
+          <textarea aria-label="Note" className="m-gutter text-row text-fg" defaultValue="" />
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * Crossing `lg` re-lays the panes without remounting them: a half-typed note in the inspector
+ * (uncontrolled, so only the DOM holds it) keeps its text and its focus as the panes stack, and
+ * again as they group back up.
+ */
+export const ResizeKeepsDrafts: Story = {
+  render: () => <Resizing />,
+  play: async ({ canvasElement }) => {
+    const shell = slot(canvasElement, 'app-shell');
+    const note = within(canvasElement).getByRole('textbox', { name: 'Note' });
+    await userEvent.click(note);
+    await userEvent.keyboard('Ridge reported twice');
+    await userEvent.keyboard('{F2}');
+    await waitFor(() => expect(shell).toHaveAttribute('data-stacked'));
+    await expect(separators(canvasElement)).toHaveLength(0);
+    await expect(within(canvasElement).getByRole('textbox', { name: 'Note' })).toBe(note);
+    await expect(note).toHaveValue('Ridge reported twice');
+    await expect(note).toHaveFocus();
+    await userEvent.keyboard('{F2}');
+    await waitFor(() => expect(shell).not.toHaveAttribute('data-stacked'));
+    await expect(separators(canvasElement)).toHaveLength(2);
+    await expect(within(canvasElement).getByRole('textbox', { name: 'Note' })).toBe(note);
+    await expect(note).toHaveValue('Ridge reported twice');
+    await expect(note).toHaveFocus();
+    // Grouped again, the panes are back at their column widths.
+    await near(
+      pane(canvasElement, 'Lanes').getBoundingClientRect().width,
+      resolvePx(shell, 'var(--size-lanes)'),
+      1,
+    );
   },
 };
 

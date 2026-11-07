@@ -1,7 +1,6 @@
 import { tokens } from '@skating/design';
 import {
   createContext,
-  Fragment,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -46,7 +45,8 @@ import { type KeyHint, KeyRegistryProvider, StatusBar, type StatusBarProps } fro
  *   `onLayoutChanged` to hear the operator's (the route keeps it in a cookie, so the server renders
  *   the operator's widths). A layout's keys are the panes on the page, so key a stored layout by
  *   them. A page without panes passes `children`. Narrower than the `lg` breakpoint the panes
- *   stack, one screen each, and main scrolls through them.
+ *   stack, one screen each, and main scrolls through them — the same panes, never remounted, so a
+ *   resize across `lg` keeps a pane's drafts, scroll and focus.
  * - **The status bar** (`size-status`, 26 px) along main's foot.
  *
  * The keyboard is wired once, here: the shell is the `KeysProvider` and the status bar's key
@@ -229,6 +229,13 @@ function AppShell(props: AppShellProps) {
     </KeysProvider>
   );
 }
+
+/**
+ * Stacked, the pane group and each panel's two boxes (the library's flex item and its inner
+ * scroller) render no box of their own, so the sections are main's flex children. Important, to
+ * beat the library's inline `display: flex`.
+ */
+const STACKED_GROUP = 'contents! [&>[data-panel]]:contents! [&>[data-panel]>*]:contents!';
 
 /** Go-mode's dim: everything but the rail steps back while its letters light. */
 const DIM = 'transition-opacity duration-(--duration-fast) ease-standard';
@@ -416,11 +423,14 @@ function ShellFrame({
         >
           {present.length === 0 ? (
             children
-          ) : stacked ? (
-            present.map((name) => <Fragment key={name}>{pane(name)}</Fragment>)
           ) : (
+            // One tree for both layouts, so crossing `lg` never remounts a pane (a draft, a scroll
+            // position and focus all survive a resize). Stacked, the separators go and the group's
+            // and panels' boxes step aside (`display: contents`, over the library's inline flex):
+            // the panes lay out as main's own column, a screen tall each.
             <ResizablePanelGroup
               data-slot="shell-panes"
+              className={cn(stacked && STACKED_GROUP)}
               defaultLayout={defaultLayout}
               onLayoutChanged={(layout, meta) => {
                 // The group's own first layout isn't the operator's; only theirs is stored.
@@ -428,7 +438,7 @@ function ShellFrame({
               }}
             >
               {present.flatMap((name, i) => [
-                ...(i > 0 ? [<ResizableHandle key={`${name}-edge`} />] : []),
+                ...(i > 0 && !stacked ? [<ResizableHandle key={`${name}-edge`} />] : []),
                 <ResizablePanel
                   key={name}
                   id={name}
