@@ -30,6 +30,7 @@ import {
   switchDraftKind,
   undoDraftPlacement,
 } from '@skating/core';
+import { usePostHog } from '@posthog/react';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -498,6 +499,7 @@ export function HazardForm({
    */
   onClose: () => void;
 }) {
+  const posthog = usePostHog();
   const createHazard = useMutation(api.hazards.create);
   const confirmHazard = useMutation(api.hazardConfirmations.confirm);
   /**
@@ -837,6 +839,11 @@ export function HazardForm({
         // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
         ...(dismissed ? { dismissedDuplicateOf: dismissed as Id<'hazards'> } : {}),
       });
+      posthog.capture('hazard_reported', {
+        hazard_type: type,
+        geometry_kind: shape.geometryKind,
+        photo_count: photoIds.length,
+      });
       clearDraft();
       onClose();
     } catch (e) {
@@ -865,6 +872,7 @@ export function HazardForm({
         verdict: 'still_there',
         via: 'duplicate_nudge',
       });
+      posthog.capture('existing_hazard_confirmed', { confirmation_source: 'duplicate_nudge' });
       clearDraft();
       onClose();
     } catch (e) {

@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { usePostHog } from '@posthog/react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
@@ -24,6 +25,7 @@ export function BountyForm({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const posthog = usePostHog();
   const create = useAction(api.bounties.create);
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
@@ -45,6 +47,7 @@ export function BountyForm({
         waterBodyId,
         ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
       });
+      posthog.capture('bounty_posted', { scoped_to_sub_area: subAreaId !== '' });
       onOpenChange(false);
       navigate({ to: '/bounty/$id', params: { id } });
     } catch (err) {

@@ -8,6 +8,7 @@ import {
   normalizeUsername,
   parseDateOfBirth,
 } from '@skating/core';
+import { usePostHog } from '@posthog/react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { ConvexError } from 'convex/values';
@@ -31,6 +32,7 @@ import { RISK_ACK_VERSION } from '../lib/riskAck';
 export const Route = createFileRoute('/onboarding')({ component: OnboardingPage });
 
 function OnboardingPage() {
+  const posthog = usePostHog();
   const upsertFromClerk = useMutation(api.profiles.upsertFromClerk);
 
   const [displayName, setDisplayName] = useState('');
@@ -64,6 +66,7 @@ function OnboardingPage() {
         riskAckVersion: RISK_ACK_VERSION,
         // The acceptance time is stamped server-side (trust boundary, D37) — not sent.
       });
+      posthog.capture('onboarding_completed');
       // Success: no navigation — the AuthGate reacts to the now-provisioned profile.
     } catch (err) {
       // ConvexErrors carry a user-safe message in `.data` (e.g. "Username is already taken");

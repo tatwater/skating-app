@@ -3,6 +3,7 @@ import { faStar as faStarOutline } from '@fortawesome/sharp-light-svg-icons';
 import { faStar as faStarSolid } from '@fortawesome/sharp-solid-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { usePostHog } from '@posthog/react';
 import { useMutation, useQuery } from 'convex/react';
 import { Button } from './ui/button';
 
@@ -28,7 +29,15 @@ export function FavoriteButton({
   const target = { waterBodyId, ...(subAreaId !== undefined ? { subAreaId } : {}) };
   const favorited = useQuery(api.waterBodyFavorites.isFavorite, target);
   const toggle = useMutation(api.waterBodyFavorites.toggle);
+  const posthog = usePostHog();
   const isFav = favorited === true;
+
+  const onToggle = async () => {
+    await toggle(target);
+    posthog.capture(isFav ? 'water_body_unfavorited' : 'water_body_favorited', {
+      target_type: subAreaId === undefined ? 'water_body' : 'sub_area',
+    });
+  };
 
   return (
     <Button
@@ -37,7 +46,7 @@ export function FavoriteButton({
       size={showLabel ? 'sm' : 'icon'}
       aria-pressed={isFav}
       aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
-      onClick={() => void toggle(target)}
+      onClick={() => void onToggle()}
       disabled={favorited === undefined}
     >
       <FontAwesomeIcon

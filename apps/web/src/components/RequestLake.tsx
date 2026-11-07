@@ -12,6 +12,7 @@ import {
   type StandingInput,
   standingOf,
 } from '@skating/core';
+import { usePostHog } from '@posthog/react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
@@ -165,6 +166,7 @@ function RequestDialog({
   onClose: () => void;
   onSubmit: (note: string, name?: string) => Promise<void>;
 }) {
+  const posthog = usePostHog();
   const [note, setNote] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +208,7 @@ function RequestDialog({
               setError(null);
               try {
                 await onSubmit(note.trim(), prompt.name ? name.trim() : undefined);
+                posthog.capture('water_body_request_submitted', { request_kind: kind });
                 onClose();
               } catch (err) {
                 setError(messageOf(err));
