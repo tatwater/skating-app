@@ -23,6 +23,10 @@ vi.mock('convex/react', () => ({ useQuery: () => m.stats }));
 vi.mock('../components/skater/SkaterShell', () => ({
   SkaterShell: ({ children }: { children: ReactNode }) => <div data-testid="shell">{children}</div>,
 }));
+// The sheet's host reads the router; its own suite (`ReportSheetHost.test.tsx`) mounts it in one.
+vi.mock('../components/skater/sheet/ReportSheetHost', () => ({
+  ReportSheetHost: () => <span data-testid="report-sheet-host" />,
+}));
 vi.mock('../components/skater/settings/SettingsPage', () => ({
   SettingsPage: (props: Record<string, unknown>) => {
     m.settings(props);
@@ -135,6 +139,7 @@ describe('the skater layout', () => {
     const Layout = component(SkaterRoute);
     render(<Layout />);
     expect(screen.getByTestId('shell')).toContainElement(screen.getByTestId('outlet'));
+    expect(screen.getByTestId('shell')).toContainElement(screen.getByTestId('report-sheet-host'));
   });
 });
 
