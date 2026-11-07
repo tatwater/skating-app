@@ -35,15 +35,6 @@ export function dayKicker(ms: number, now: number, timeZone?: string): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'long', day: 'numeric', ...zone });
 }
 
-/** "9:05 AM" */
-export function clockLabel(ms: number, timeZone?: string): string {
-  return new Date(ms).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    ...(timeZone ? { timeZone } : {}),
-  });
-}
-
 /** "Dec 28" */
 export function shortDay(ms: number, timeZone?: string): string {
   return new Date(ms).toLocaleDateString('en-US', {

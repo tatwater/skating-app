@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   type BountyDetail,
   bountyCards,
-  clockLabel,
   dayKicker,
   expiresLabel,
   plural,
@@ -25,9 +24,7 @@ describe('dates', () => {
     expect(dayKicker(Date.UTC(2027, 0, 16, 9), Date.UTC(2027, 0, 16, 18), 'UTC')).toBe('Today');
   });
 
-  it('formats clocks and short days', () => {
-    expect(clockLabel(new Date(2027, 0, 13, 9, 5).getTime())).toBe('9:05 AM');
-    expect(clockLabel(Date.UTC(2027, 0, 13, 15, 40), 'UTC')).toBe('3:40 PM');
+  it('formats short days', () => {
     expect(shortDay(new Date(2026, 11, 28).getTime())).toBe('Dec 28');
     expect(shortDay(Date.UTC(2026, 11, 28, 12), 'UTC')).toBe('Dec 28');
   });

@@ -6,6 +6,7 @@ import {
   LEAVING_PROFILE_NOTICE,
   type PostCardData,
 } from '@skating/core';
+import type { HistoryState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -15,8 +16,9 @@ import { Badge } from '../../kit/badge';
 import { Button } from '../../kit/button';
 import { Section } from '../../kit/section-slug';
 import { Skeleton } from '../../kit/skeleton';
+import { FeedCard } from '../cards/FeedCard';
+import { panelLinkState } from '../panels/panelNavigation';
 import { INK_PRIMARY } from '../styles';
-import { ProfileReportRow } from './ProfileReportRow';
 
 export interface ProfileHeadModel {
   name: string;
@@ -69,7 +71,8 @@ export function ProfileView({
   /** Your bounties (your own profile only). */
   bounties?: ReactNode;
   now: number;
-  onNavigate: (href: string) => void;
+  /** `state` rides along when a report card opens, so the card knows it came from a profile. */
+  onNavigate: (href: string, state?: HistoryState) => void;
 }) {
   if (model.kind === 'loading') return <ProfileSkeleton />;
   if (model.kind === 'unavailable') return <Unavailable onNavigate={onNavigate} />;
@@ -120,12 +123,15 @@ export function ProfileView({
               <p className="m-0 text-fg2 text-row">No reports yet.</p>
             ) : (
               <div className="flex flex-col gap-(--space-6)">
-                {model.posts.map((post) => (
-                  <ProfileReportRow
+                {model.posts.map((post, i) => (
+                  <FeedCard
                     key={post.postId}
                     post={post}
                     now={now}
-                    onNavigate={onNavigate}
+                    head="date"
+                    reportHref={(id) => `/report/${id}`}
+                    onOpenReport={(id) => onNavigate(`/report/${id}`, panelLinkState('profile'))}
+                    last={i === model.posts.length - 1}
                   />
                 ))}
               </div>

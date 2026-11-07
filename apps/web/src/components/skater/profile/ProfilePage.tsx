@@ -3,6 +3,7 @@ import { faBan, faFlag, faPen, faRotateLeft } from '@fortawesome/sharp-light-svg
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { DELETION_GRACE_MS, isLeaving } from '@skating/core';
+import type { HistoryState } from '@tanstack/react-router';
 import { useMutation, useQueries, useQuery } from 'convex/react';
 import { useState } from 'react';
 
@@ -36,7 +37,7 @@ export function ProfilePage({
   onNavigate,
 }: {
   username: string;
-  onNavigate: (href: string) => void;
+  onNavigate: (href: string, state?: HistoryState) => void;
 }) {
   const profile = useQuery(api.profiles.getPublicProfile, { username });
   const me = useQuery(api.profiles.current, {});

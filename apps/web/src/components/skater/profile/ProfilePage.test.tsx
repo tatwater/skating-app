@@ -124,7 +124,7 @@ describe('someone else’s profile', () => {
     expect(within(post as HTMLElement).getByText('Mascoma South')).toBeInTheDocument();
     expect(within(post as HTMLElement).getByText('From shore')).toBeInTheDocument();
     fireEvent.click(within(post as HTMLElement).getAllByRole('link')[0] as HTMLElement);
-    expect(navigate).toHaveBeenCalledWith('/report/rep1');
+    expect(navigate).toHaveBeenCalledWith('/report/rep1', { panelSource: 'profile' });
     // Not yours: no bounties, no moderator tools for a member.
     expect(screen.queryByText('Your bounties')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Moderator tools' })).toBeNull();

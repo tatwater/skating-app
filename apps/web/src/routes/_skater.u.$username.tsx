@@ -11,5 +11,12 @@ export const Route = createFileRoute('/_skater/u/$username')({ component: Profil
 function ProfileRoute() {
   const { username } = Route.useParams();
   const router = useRouter();
-  return <ProfilePage username={username} onNavigate={(href) => router.history.push(href)} />;
+  return (
+    <ProfilePage
+      username={username}
+      onNavigate={(href, state) =>
+        state === undefined ? router.history.push(href) : router.history.push(href, state)
+      }
+    />
+  );
 }

@@ -197,7 +197,7 @@ export const Yours: Story = {
       await expect(getComputedStyle(stats).borderRadius).toBe('0px');
       await expect(within(q).getByText('1 open')).toBeInTheDocument();
       await expect(within(q).queryByText(/pts|points/i)).toBeNull();
-      for (const post of q.querySelectorAll('[data-slot="profile-post"]')) {
+      for (const post of q.querySelectorAll('[data-slot="feed-card"]')) {
         await expect(post).toHaveClass('ph-no-capture');
       }
     }

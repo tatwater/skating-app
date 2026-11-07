@@ -119,11 +119,13 @@ describe('/u/$username', () => {
     render(<Page />);
     const props = m.profile.mock.lastCall?.[0] as {
       username: string;
-      onNavigate: (h: string) => void;
+      onNavigate: (h: string, state?: unknown) => void;
     };
     expect(props.username).toBe('placasse');
     props.onNavigate('/latest');
     expect(m.push).toHaveBeenCalledWith('/latest');
+    props.onNavigate('/report/rep1', { panelSource: 'profile' });
+    expect(m.push).toHaveBeenLastCalledWith('/report/rep1', { panelSource: 'profile' });
   });
 });
 
