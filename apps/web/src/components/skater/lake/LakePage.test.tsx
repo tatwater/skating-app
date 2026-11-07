@@ -558,8 +558,9 @@ describe('About (1.9, 1.14)', () => {
 describe('actions over the sidebar (row 3)', () => {
   it('opens as an inset over the tab, and Esc leaves by dropping the param', () => {
     answer();
-    renderLake({ act: 'hazard', tab: 'about' });
-    const pane = screen.getByRole('region', { name: 'Report a hazard' });
+    // Imagery: the hazard flow opens in the report sheet's frame instead (Review 2).
+    renderLake({ act: 'imagery', tab: 'about' });
+    const pane = screen.getByRole('region', { name: 'Latest imagery' });
     expect(within(pane).getByRole('button', { name: 'Back to Mascoma Lake' })).toHaveFocus();
     expect(document.querySelector('[data-slot="lake-tab-panel"]')).toHaveAttribute('inert');
     act(() => {
