@@ -127,6 +127,38 @@ describe('ReportPanel', () => {
     expect(panelFakes.navigate).toHaveBeenCalledWith({ to: '/', replace: true });
   });
 
+  it('opens hosted (Latest): back to the host, the host closes, and no map is declared', async () => {
+    seed();
+    const onClose = vi.fn();
+    render(
+      <PanelColumn>
+        <ReportPanel reportId="r1" host={{ backTo: 'Latest', onClose }} />
+      </PanelColumn>,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: /Back to Latest/ }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(panelFakes.navigate).not.toHaveBeenCalled();
+    expect(useSkaterMapStore.getState().specs.view?.visible).toBe(false);
+  });
+
+  it('keeps the host’s name on the head while loading and when the report is gone', async () => {
+    const host = { backTo: 'Latest', onClose: vi.fn() };
+    const { unmount } = render(
+      <PanelColumn>
+        <ReportPanel reportId="r1" host={host} />
+      </PanelColumn>,
+    );
+    expect(await screen.findByRole('button', { name: /Back to Latest/ })).toBeInTheDocument();
+    unmount();
+    fakes.queries.set('reports:get', null);
+    render(
+      <PanelColumn>
+        <ReportPanel reportId="r1" host={host} />
+      </PanelColumn>,
+    );
+    expect(await screen.findByRole('button', { name: /Back to Latest/ })).toBeInTheDocument();
+  });
+
   it('draws the report from the reader’s side, frames the survivor lake with the path and pins', async () => {
     seed();
     fakes.queries.set('profiles:current', { _id: 'u2', status: 'active', displayName: 'Kate' });
