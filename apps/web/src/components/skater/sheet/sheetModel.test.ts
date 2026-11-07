@@ -1,6 +1,7 @@
 import {
   emptySheet,
   openPostSheet,
+  type PostSheet,
   type ReportRefusal,
   SHEET_SECTIONS,
   sheetReducer,
@@ -136,9 +137,45 @@ describe('lakes', () => {
     expect(restarted.reports[0]?.sheet.fields.quality.chips).toEqual([]);
     expect(restarted.dirty).toBe(true);
 
-    const two = { ...answered, reports: [...answered.reports, { ...first, id: 'second' }] };
-    expect(removeLake(two, 'second', NOW, mint).reports.map((r) => r.id)).toEqual([first.id]);
+    const two = {
+      ...answered,
+      reports: [...answered.reports, { ...first, id: 'second', photos: [] }],
+    };
+    const one = removeLake(two, 'second', NOW, mint);
+    expect(one.reports.map((r) => r.id)).toEqual([first.id]);
+    expect(one.photos).toBe(two.photos);
     expect(removeLake(answered, 'missing', NOW, mint)).toBe(answered);
+    expect(removeLake(two, 'missing', NOW, mint)).toBe(two);
+  });
+
+  it('keeps a removed lake’s photos in the pool when other lakes stay, un-placed', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Mascoma Lake' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    const pinned = {
+      id: 'ph1',
+      fullUri: 'f1',
+      thumbUri: 't1',
+      coord: { lat: 43.6, lng: -72.1 },
+      placeOnMap: true,
+    };
+    const loose = { id: 'ph2', fullUri: 'f2', thumbUri: 't2', placeOnMap: false };
+    const pooled = { id: 'ph0', fullUri: 'f0', thumbUri: 't0', placeOnMap: false };
+    const two: PostSheet = {
+      ...post,
+      photos: [pooled],
+      reports: [first, { ...first, id: 'second', photos: [pinned, loose] }],
+    };
+    const one = removeLake(two, 'second', NOW, mint);
+    expect(one.reports.map((r) => r.id)).toEqual([first.id]);
+    expect(one.photos).toEqual([pooled, { ...pinned, placeOnMap: false }, loose]);
+    expect(one.dirty).toBe(true);
+    // A sheet from before the pool gets one.
+    const { photos: _none, ...prePool } = two;
+    expect(removeLake(prePool, 'second', NOW, mint).photos).toEqual([
+      { ...pinned, placeOnMap: false },
+      loose,
+    ]);
   });
 
   it('un-places the only lake’s photos when it goes, so a re-pick never posts the old pins', () => {

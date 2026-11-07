@@ -129,12 +129,17 @@ export function setReportBody(
 
 /**
  * Remove a lake (5.4.1): its answers go with it; the Post's words and photos stay. With other lakes
- * the Report goes; as the only one it starts over on *Which lake?*, keeping its photos, un-placed.
+ * the Report goes and its photos wait in the Post's pool, un-placed, for the day (or the author) to
+ * put them on another; as the only one it starts over on *Which lake?*, keeping its photos, un-placed.
  */
 export function removeLake(post: PostSheet, reportId: string, now: number, mint: Mint): PostSheet {
-  if (post.reports.length > 1) return removeReport(post, reportId);
   const report = post.reports.find((r) => r.id === reportId);
   if (report === undefined) return post;
+  if (post.reports.length > 1) {
+    const without = removeReport(post, reportId);
+    if (report.photos.length === 0) return without;
+    return { ...without, photos: [...(post.photos ?? []), ...unplaced(report.photos)] };
+  }
   const showPutIn = report.sheet.scalars.showPutIn;
   const fresh = openReport({ ...(showPutIn !== undefined ? { showPutIn } : {}) }, now, mint);
   // The photos stay, but not their pins: the fresh Report has no lake for them to be on.
