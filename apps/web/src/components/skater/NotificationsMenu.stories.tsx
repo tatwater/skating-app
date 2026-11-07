@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, sameColor } from '../kit/measure';
-import { must } from '../kit/storyKit';
+import { must, settled } from '../kit/storyKit';
 import { NotificationsMenuView } from './NotificationsMenuView';
 import { NOTIFICATIONS, SkaterPair } from './storySupport';
 
@@ -54,6 +54,13 @@ export const UnreadAndRead: Story = {
     </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
+    // Opening puts focus on the first row, a beat after the plate mounts. Wait for it to land, so
+    // the reads below can't race it: a focused row is lit, and its wash gives way to the lit fill.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        canvasElement.querySelector('[data-slot="notification-row"][href]'),
+      ),
+    );
     for (const q of canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')) {
       const p = await waitFor(() => must(plate(q)));
       await expect(getComputedStyle(p).borderRadius).toBe('0px');
@@ -62,9 +69,11 @@ export const UnreadAndRead: Story = {
         (h) => h.textContent,
       );
       await expect(groups).toEqual(['New', 'Earlier']);
+      // An unread row at rest (not the focused one) wears the ice wash.
       const unread = must(
-        p.querySelector<HTMLElement>('[data-slot="notification-row"][data-unread]'),
+        p.querySelector<HTMLElement>('[data-slot="notification-row"][data-unread]:not(:focus)'),
       );
+      await settled(unread);
       await expect(getComputedStyle(unread).backgroundColor).toEqual(
         sameColor(computedColor(unread, 'var(--acc-wash)')),
       );
