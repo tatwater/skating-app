@@ -6937,6 +6937,15 @@ accepted:
   published commitment in `PRIVACY.md` quietly becomes false with nothing failing. Lake and town
   names are **not** masked — they are places, and the notice discloses them.
 
+  **Owed, and it is the predicted case arriving one PR later:** B01's kit avatar
+  (`components/kit/avatar.tsx`, merged in #90) takes a person's `name` and puts it in
+  `aria-label` on the root. Autocapture collects element attributes, and Sentry's DOM breadcrumb
+  serializer lists `aria-label` among the five it copies into a breadcrumb message — so both
+  processors would receive full names once that kit renders to a real screen. Nothing leaks today:
+  the kit is Storybook-only, used by `top-bar-parts` and `rail-item` and no route. It needs
+  `ph-no-capture` on that root before the admin console ships, and the same question asked of any
+  kit component that grows a name.
+
 **Flags land as a harness with nothing in it.** `backlog/posthog.md` expected flags to replace
 `PROFILE_REVEAL_ALL` and `RECURRENCE_ADVISORIES_PUBLIC`; neither survived contact with the code.
 `RECURRENCE_ADVISORIES_PUBLIC` is read only inside Convex, where `isPubliclyVisible()` stamps
