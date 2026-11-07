@@ -1790,12 +1790,13 @@ describe('hazards.refileToFootprintBody', () => {
     t: ReturnType<typeof convexTest>,
     filedUnder: Id<'waterBodies'>,
     at: { lat: number; lng: number },
-    extra: { clippedFootprint?: Polygon } = {},
+    extra: { clippedFootprint?: Polygon; mergedIntoHazardId?: Id<'hazards'>; who?: string } = {},
   ) {
-    const author = (await seedUser(t, 'author')).id;
+    const author = (await seedUser(t, extra.who ?? 'author')).id;
     return t.run((ctx) =>
       ctx.db.insert('hazards', {
         ...(extra.clippedFootprint ? { clippedFootprint: extra.clippedFootprint } : {}),
+        ...(extra.mergedIntoHazardId ? { mergedIntoHazardId: extra.mergedIntoHazardId } : {}),
         waterBodyId: filedUnder,
         type: 'open_water' as const,
         geometryKind: 'point_radius' as const,
@@ -1892,6 +1893,38 @@ describe('hazards.refileToFootprintBody', () => {
     expect(after?.clippedFootprint).toBeUndefined();
     // And the bbox is the footprint's own, not the old lake's clip — 150 km of latitude apart.
     expect(after?.bbox.minLat).toBeGreaterThan(43.6);
+  });
+
+  test('a merge survivor keeps every folded-in pin’s warned ice, and they move with it', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const lngPerM = DEG_PER_M / Math.cos((43.61 * Math.PI) / 180);
+    // Two reporters, 100 m apart on Mascoma, both filed under Far Pond; the second folded into the
+    // first. On a survivor, `clippedFootprint` is the *union* of both drawings — so a refile that
+    // rebuilt the shape from the survivor's own circle would quietly un-warn the other 100 m.
+    const survivor = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const foldedLng = -72.13 + 100 * lngPerM;
+    const folded = await strayHazard(
+      t,
+      elsewhere,
+      { lat: 43.61, lng: foldedLng },
+      { mergedIntoHazardId: survivor, who: 'other' },
+    );
+
+    await t.mutation(internal.hazards.refileToFootprintBody, {
+      hazardId: survivor,
+      apply: true,
+    });
+
+    const after = await t.run((ctx) => ctx.db.get(survivor));
+    expect(after?.waterBodyId).toBe(here);
+    // The stored shape still reaches the folded pin: its halo and the proximity check are one
+    // polygon, so a bbox that stopped at the survivor's own 40 m would be ice nobody is warned about.
+    expect(after?.bbox.maxLng).toBeGreaterThanOrEqual(foldedLng);
+    // And the folded pin moved too — `unmergeHazard` recomputes on its own `waterBodyId`, so left
+    // behind it would come back filed under the lake this repair just corrected.
+    expect(await t.run((ctx) => ctx.db.get(folded))).toMatchObject({ waterBodyId: here });
   });
 
   test('says nothing until asked: a dry run reports the move and writes nothing', async () => {

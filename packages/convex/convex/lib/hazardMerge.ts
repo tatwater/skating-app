@@ -105,8 +105,16 @@ function toCandidate(hazard: Doc<'hazards'>): MergeCandidate {
  * The survivor's own `geometry` / `radiusMeters` / `bufferMeters` are left untouched: those are what a
  * person drew, and a merge is not a correction of their drawing. That is also what lets `unmerge`
  * restore the original footprint by simply recomputing from them.
+ *
+ * **Exported because a refile needs it too** (`hazards.refileToFootprintBody`). Moving a pin to
+ * another lake has to re-clip its footprint against that lake, and "the footprint" on a survivor is
+ * this union — rebuilding from the survivor's own drawing would drop every other reporter's warned
+ * ice. Calling this after the move keeps one answer to what a hazard's footprint is.
  */
-async function refreshMergedFootprint(ctx: MutationCtx, survivor: Doc<'hazards'>): Promise<void> {
+export async function refreshMergedFootprint(
+  ctx: MutationCtx,
+  survivor: Doc<'hazards'>,
+): Promise<void> {
   const chain = await ctx.db
     .query('hazards')
     .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', survivor._id))

@@ -71,7 +71,12 @@ import {
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
-import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
+import {
+  refreshMergedFootprint,
+  resolveHazardSurvivor,
+  tryAutoMerge,
+  unmergeHazard,
+} from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
@@ -1165,37 +1170,39 @@ export const refileToFootprintBody = internalMutation({
     // was legitimately near the old lake's shore carries a polygon clipped to *that* shoreline, and
     // every reader prefers a stored clip to the live footprint.
     //
-    // So rebuild from the raw geometry, which never moved, and clip it against the destination.
-    // `clipFootprintToBody` answers null for "no clip needed" and `undefined` in a patch removes
-    // the field, so a stale clip is cleared rather than left behind. The bbox comes from the *same*
-    // polygon that gets stored, as it does at create — it is the index prefilter, the drawn halo
-    // and the measured distance, and those three may never disagree (D3).
-    const shape: HazardShape = {
-      geometryKind: hazard.geometryKind,
-      geometry: hazard.geometry as HazardShape['geometry'],
-      ...(hazard.radiusMeters !== undefined ? { radiusMeters: hazard.radiusMeters } : {}),
-      ...(hazard.bufferMeters !== undefined ? { bufferMeters: hazard.bufferMeters } : {}),
-    };
-    const clippedFootprint = clipFootprintToBody(
-      hazardFootprint(shape),
-      byId.get(matchId)?.polygon as Polygon | MultiPolygon,
-    );
-    const bbox = hazardBbox(shape, clippedFootprint);
+    // So move the id first, then let `refreshMergedFootprint` rebuild the shape against the lake the
+    // row now names. It is the one function that already answers "what is this hazard's footprint":
+    // the union of every drawing folded into this pin when it is a merge survivor, the pin's own
+    // drawing when nothing is folded in, clipped to the body either way, with the bbox taken from
+    // the same polygon it stores. Rebuilding from `hazard.geometry` here instead would be right for
+    // a lone pin and silently wrong for a survivor — it would overwrite the union with the
+    // survivor's own circle and drop every other reporter's warned ice off the map and out of the
+    // proximity check, which is a hazard's warning area shrinking with nobody saying so (D3).
+    //
+    // The pins folded into it move too. They are hidden from every list, but `unmergeHazard`
+    // recomputes on `loser.waterBodyId` and restores them as standalone pins — left behind, each
+    // would come back filed under the lake this repair just corrected.
+    const chain = await ctx.db
+      .query('hazards')
+      .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', hazardId))
+      .collect();
+    await ctx.db.patch(hazardId, { waterBodyId: matchId });
+    for (const folded of chain) await ctx.db.patch(folded._id, { waterBodyId: matchId });
+    const moved = await ctx.db.get(hazardId);
+    if (moved) await refreshMergedFootprint(ctx, moved);
 
     // **The bay stamp moves with the lake.** `subAreaId`/`subAreaName` were resolved at create
     // against the *old* body's bays (`insertHazard`), so carrying them over would have the card say
     // "Far Pond — North Bay" with North Bay a bay of Mascoma. Re-resolved the same way the write
-    // path resolves it — at the *new* bbox's center, since re-clipping may have moved it, and the
-    // create path measures the bay at the center of the bbox it stores — and cleared when the new
-    // lake has no bay under the pin.
+    // path resolves it — at the center of the bbox that re-clip just stored, because that is where
+    // the create path measures it — and cleared when the new lake has no bay under the pin:
+    // `undefined` in a patch removes the field, which is what "in no named bay" means.
+    const reclipped = (await ctx.db.get(hazardId)) ?? hazard;
     const subArea = await resolveSubAreaForPoint(ctx, matchId, {
-      lat: (bbox.minLat + bbox.maxLat) / 2,
-      lng: (bbox.minLng + bbox.maxLng) / 2,
+      lat: (reclipped.bbox.minLat + reclipped.bbox.maxLat) / 2,
+      lng: (reclipped.bbox.minLng + reclipped.bbox.maxLng) / 2,
     });
     await ctx.db.patch(hazardId, {
-      waterBodyId: matchId,
-      bbox,
-      clippedFootprint: clippedFootprint ?? undefined,
       subAreaId: subArea?.subAreaId,
       subAreaName: subArea?.subAreaName,
     });
