@@ -151,8 +151,8 @@ to honor a request wait on Q10.
 
 ## L12 — PostHog session replay (D29, D235) ⛔
 Ships off, never for `isMinor`, starts only after the profile resolves. **PostHog itself is now
-wired on web** (D235) — events, identity, exception capture, a flags harness — and replay is the
-one piece held back: `disable_session_recording: true` at init rather than left to the project's
+wired on web** (D235) — events, identity, autocapture, a flags harness; errors stay Sentry's
+alone — and replay is the one piece held back: `disable_session_recording: true` at init rather than left to the project's
 dashboard toggle, so a remote switch cannot start a recorder the client never armed and turning it
 on is a reviewed code change. `posthogOptions.test.ts` fails if that line is flipped.
 

@@ -51,10 +51,14 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
  * which writes `.vercel/output` instead of `.output` — so the old `.output` sits there stale and
  * looks like proof that nothing changed.
  *
- * Absent (a local `vite dev` or `vite build`, and CI) it is `development`, which is the honest
+ * Guarded on `VERCEL_ENV` being present rather than assigned unconditionally, because Vite's env
+ * loader applies `process.env` *over* the `.env` files — so an unconditional write here would beat
+ * a developer's own `VITE_DEPLOY_ENV=preview` in `.env` and make the override `.env.example`
+ * documents impossible. Vercel's value stays authoritative where there is one; everywhere else the
+ * local value survives, and with neither, `lib/env.ts` falls back to `development` — the honest
  * answer for every build that is not Vercel's.
  */
-process.env.VITE_DEPLOY_ENV = process.env.VERCEL_ENV ?? 'development';
+if (process.env.VERCEL_ENV) process.env.VITE_DEPLOY_ENV = process.env.VERCEL_ENV;
 
 export default defineConfig({
   server: { port: 3000 },
