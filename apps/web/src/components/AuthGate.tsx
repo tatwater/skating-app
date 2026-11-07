@@ -18,13 +18,13 @@ const GOOGLE_PHOTOS_CALLBACK = '/google-photos/callback';
 /**
  * The areas still drawn inside the old `AppShell` — the pages B03 hasn't migrated yet. Everything
  * else (`/`, `/water/…`, and a path no route matches) renders bare: the skater layout or the screen
- * brings its own chrome. Each entry retires as its page migrates: report/hazard/bounty with agent
- * E, settings/u/about/notifications with G, feed with H, post with I. At close-out only `/admin`
- * stays.
+ * brings its own chrome. Each entry retires as its page migrates (report/hazard/bounty went with
+ * the panels): settings/u/about/notifications with G, feed with H, post with I. At close-out only
+ * `/admin` stays.
  */
 const OLD_SHELL_EXACT = ['/feed', '/notifications', '/post', '/about'];
 const OLD_SHELL_TREES = ['/admin', '/settings'];
-const OLD_SHELL_CHILDREN = ['/u/', '/report/', '/hazard/', '/bounty/'];
+const OLD_SHELL_CHILDREN = ['/u/'];
 
 /**
  * Whether the router matched nothing: the root's `notFoundComponent` is about to render, and it

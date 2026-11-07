@@ -147,9 +147,6 @@ describe('usesOldShell', () => {
     '/u/skater',
     '/notifications',
     '/post',
-    '/report/r1',
-    '/hazard/h1',
-    '/bounty/b1',
     '/about',
   ])('keeps %s in the old shell', (path) => {
     expect(usesOldShell(path)).toBe(true);
@@ -163,6 +160,9 @@ describe('usesOldShell', () => {
     '/feedback',
     '/u/',
     '/report',
+    '/report/r1',
+    '/hazard/h1',
+    '/bounty/b1',
     '/about/team',
   ])('renders %s bare', (path) => {
     expect(usesOldShell(path)).toBe(false);
