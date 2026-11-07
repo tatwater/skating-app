@@ -1,10 +1,10 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useTheme } from 'next-themes';
 import { useEffect } from 'react';
 import { env } from '../../lib/env';
 import { useMapCanvas } from '../../lib/mapCanvas';
 import { addReviewLayers, type ReviewPoints, showReview } from '../../lib/reviewMarkers';
 import { DEMO_PMTILES_URL, MAP_FLAVORS, PIN_HALO_COLOR } from '../../lib/waterMap';
+import { useTheme } from '../theme-provider';
 
 /**
  * The request queue's map (D202 follow-up) — **one canvas beside the list, following the row the

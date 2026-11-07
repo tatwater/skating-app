@@ -74,6 +74,7 @@ import { noteLandmarksNamed, resolveLocatedLandmarks } from './landmarkRows';
 import { isListed } from './listing';
 import { enqueueActorNotification } from './notificationQueue';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './photoAccess';
+import { refreshPostSearchText } from './postSync';
 import { syncReportSubAreas } from './reportSubAreas';
 import { awardPointEvent, checkAndAwardBadges } from './reputation';
 import { postSnapshotOf, recordRevision } from './revisions';
@@ -643,6 +644,7 @@ export async function createPost(
     photoIds: postPhotoIds(members),
     latestSkateEndTime: Math.max(...members.map((m) => m.skateEndTime)),
   });
+  await refreshPostSearchText(ctx, postId);
   return { postId, reportIds };
 }
 
@@ -793,4 +795,5 @@ export async function editPostWords(
     now,
   );
   await ctx.db.patch(existing._id, { title, body, editedAt: now, updatedAt: now });
+  await refreshPostSearchText(ctx, existing._id);
 }

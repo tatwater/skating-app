@@ -32,11 +32,14 @@ import {
  * `native` is our own in-app recorder and is the only one wired today. It matters that it's a
  * first-class provider value rather than a special case: an activity recorded here is **our**
  * first-party data, legally free to aggregate and draw on public reports, where a track pulled from
- * `strava` never could be (L7). The remaining values are the deferred watch adapters, kept so adding
- * one later is an adapter, not a schema migration.
+ * `strava` never could be (L7). `gpx` is a file the skater chose to import (B03 §11): their own export,
+ * so clean under L7 as well, and trusted like `native` for now (D239, see `gpsActivities.ingestTrack`).
+ * The remaining values are the deferred watch adapters, kept so adding one later is an adapter, not a
+ * schema migration.
  */
 export const ACTIVITY_PROVIDERS = [
   'native',
+  'gpx',
   'strava',
   'garmin',
   'coros',

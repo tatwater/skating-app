@@ -29,7 +29,14 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
 import { requireContributor, requireProfile } from './lib/auth';
-import { bodyInfoFor, loadFeedViewer, servedFeedSeason, toPostCard } from './lib/feedCards';
+import {
+  bodyInfoFor,
+  loadFeedViewer,
+  resolveFeedSkater,
+  servedFeedSeason,
+  toPostCard,
+} from './lib/feedCards';
+import { refreshPostSearchText } from './lib/postSync';
 import { createPost, editPostWords, postArgs } from './lib/reportWrite';
 import { authorRemovePost } from './moderation';
 
@@ -118,6 +125,13 @@ export const remove = mutation({
  * moderation gate stays in-index precisely because *it* could empty every page; user filters can't
  * strand the same way since the cursor still advances through visible Posts. A Post whose every
  * member a moderator hid on its own is dropped here too — rare, and the cursor still advances.)
+ *
+ * **The skater filter (B03 §11)** is its own argument rather than a field of `filters`: `filters` is
+ * the saved preference the map also reads (D166), and "show me this person" is a question about one
+ * page. It lists one person's Posts, so it answers to the profile's rule, not the feed's
+ * (`resolveFeedSkater`): when it can't be honored the page is empty with `skaterUnavailable: true`,
+ * and without it the result is what it always was. The season falls back to the newest this skater
+ * posted in, for the same reason the whole feed's does.
  */
 export const listFeed = query({
   args: {
@@ -125,9 +139,12 @@ export const listFeed = query({
     filters: v.optional(v.any()),
     /** Browse one season explicitly. Absent ⇒ {@link servedFeedSeason} decides — see its note. */
     season: v.optional(v.number()),
+    /** Only this skater's Posts, by username. Absent or blank ⇒ everyone's. */
+    skater: v.optional(v.string()),
   },
-  handler: async (ctx, { paginationOpts, filters: rawFilters, season }) => {
+  handler: async (ctx, { paginationOpts, filters: rawFilters, season, skater }) => {
     const viewer = await loadFeedViewer(ctx, rawFilters);
+    const skaterId = await resolveFeedSkater(ctx, skater, viewer.caches.viewer ?? null);
 
     // Which season this page is actually serving (D63) — either the one asked for or the newest one
     // that has anything in it. Resolved before the read so every page of a scroll agrees.
@@ -135,19 +152,42 @@ export const listFeed = query({
     const served =
       season !== undefined && isBrowsableSeason(season)
         ? season
-        : await servedFeedSeason(ctx, current);
+        : await servedFeedSeason(ctx, current, skaterId ?? undefined);
+    if (skaterId === null) {
+      return {
+        page: [] as PostCardData[],
+        isDone: true,
+        continueCursor: '',
+        season: served,
+        isPastSeason: served !== current,
+        skaterUnavailable: true as const,
+      };
+    }
 
     // Moderation-only gate (D32), applied *in* the index rather than after `paginate`. The season
     // bound rides the same index's range field, so it narrows the read rather than filtering its
     // output — the one gate that could empty every page stays in-index for the documented reason.
-    const result = await ctx.db
-      .query('posts')
-      .withIndex('by_moderation_and_latest_skate_end_time', (q) =>
-        q
-          .eq('moderationStatus', 'visible')
-          .gte('latestSkateEndTime', seasonStartMs(served))
-          .lt('latestSkateEndTime', seasonEndMs(served)),
-      )
+    // One skater's Posts read that person's own index instead, with the gate as a filter: their
+    // hidden Posts are few, and `paginate` applies it before it counts a page.
+    const result = await (skaterId === undefined
+      ? ctx.db
+          .query('posts')
+          .withIndex('by_moderation_and_latest_skate_end_time', (q) =>
+            q
+              .eq('moderationStatus', 'visible')
+              .gte('latestSkateEndTime', seasonStartMs(served))
+              .lt('latestSkateEndTime', seasonEndMs(served)),
+          )
+      : ctx.db
+          .query('posts')
+          .withIndex('by_author_latest_skate_end_time', (q) =>
+            q
+              .eq('authorId', skaterId)
+              .gte('latestSkateEndTime', seasonStartMs(served))
+              .lt('latestSkateEndTime', seasonEndMs(served)),
+          )
+          .filter((q) => q.eq(q.field('moderationStatus'), 'visible'))
+    )
       .order('desc')
       .paginate(paginationOpts);
 
@@ -161,6 +201,111 @@ export const listFeed = query({
     // `season` + `isPastSeason` are what let the client label the fallback instead of silently mixing
     // two winters. Sent on every page so a client that started mid-scroll still knows what it's showing.
     return { ...result, page, season: served, isPastSeason: served !== current };
+  },
+});
+
+/** Matches read per search. Each is one document read, before a page's cards are hydrated. */
+const SEARCH_MATCH_CAP = 100;
+const SEARCH_QUERY_MAX_CHARS = 200;
+const SEARCH_PAGE_MAX = 50;
+
+type SearchKey = { latestSkateEndTime: number; _id: string };
+
+/** Newest skate first, then a stable tie-break, so a cursor can find its place again. */
+function compareNewestFirst(a: SearchKey, b: SearchKey): number {
+  return (
+    b.latestSkateEndTime - a.latestSkateEndTime || (a._id < b._id ? 1 : a._id > b._id ? -1 : 0)
+  );
+}
+
+function searchCursor(post: SearchKey): string {
+  return `${post.latestSkateEndTime}:${post._id}`;
+}
+
+/**
+ * Where a search page starts: the first match after the cursor's place in the order. A place rather
+ * than a row, because this is a live query: a Post hidden or edited mid-scroll can leave the matches,
+ * and looking for it by id would start the list over.
+ */
+function searchPageStart(matches: readonly SearchKey[], cursor: string | null): number {
+  if (cursor === null) return 0;
+  const split = cursor.indexOf(':');
+  const place = {
+    latestSkateEndTime: Number(cursor.slice(0, split)),
+    _id: cursor.slice(split + 1),
+  };
+  const next = matches.findIndex((post) => compareNewestFirst(place, post) < 0);
+  return next === -1 ? matches.length : next;
+}
+
+/**
+ * Text search over Latest (B03 §11, board 4.9): the Posts whose words mention the term, newest skate
+ * first, under the viewer's filters. It reads `posts.searchText` — the title, the prose and the
+ * visible members' typed words (`postSearchText`).
+ *
+ * **The same visibility as `listFeed`, by the same code.** The moderation gate is in the index, and
+ * every result goes through `toPostCard`, so a member a moderator hid or a body a takedown removed
+ * drops out exactly as it does from the feed. A blocked author's Post is still returned, with
+ * `blocked: true` (D3), and a private author's too (D13): a search finds reports, it doesn't list a
+ * person. `skater` narrows to one person, and that does answer to the profile's rule, as in `listFeed`.
+ *
+ * **Why the pages are built here.** A search index only returns relevance order, and the board reads
+ * "newest first", so this takes the most relevant {@link SEARCH_MATCH_CAP} Posts, sorts those by skate
+ * time and pages through them with its own cursor. Only the page's cards are hydrated. Past the cap
+ * `truncated` says so rather than letting the list read as everything (D5). `matched` counts Posts
+ * before the viewer's filters, so it is only "N reports mention this" when no filter is on. Every
+ * season is searched: asking for a word is going to look on purpose (D63), and the card shows its date.
+ */
+export const searchFeed = query({
+  args: {
+    query: v.string(),
+    paginationOpts: paginationOptsValidator,
+    filters: v.optional(v.any()),
+    /** Only this skater's Posts, by username (see `listFeed`). */
+    skater: v.optional(v.string()),
+  },
+  handler: async (ctx, { query: rawQuery, paginationOpts, filters, skater }) => {
+    const nothing = {
+      page: [] as PostCardData[],
+      isDone: true,
+      continueCursor: '',
+      matched: 0,
+      truncated: false,
+    };
+    const term = rawQuery.trim().slice(0, SEARCH_QUERY_MAX_CHARS);
+    if (term === '') return nothing;
+
+    const viewer = await loadFeedViewer(ctx, filters);
+    const skaterId = await resolveFeedSkater(ctx, skater, viewer.caches.viewer ?? null);
+    if (skaterId === null) return { ...nothing, skaterUnavailable: true as const };
+
+    const hits = await ctx.db
+      .query('posts')
+      .withSearchIndex('search_text', (s) => {
+        const visible = s.search('searchText', term).eq('moderationStatus', 'visible');
+        return skaterId === undefined ? visible : visible.eq('authorId', skaterId);
+      })
+      .take(SEARCH_MATCH_CAP + 1);
+    const truncated = hits.length > SEARCH_MATCH_CAP;
+    const matches = hits.slice(0, SEARCH_MATCH_CAP).sort(compareNewestFirst);
+
+    const start = searchPageStart(matches, paginationOpts.cursor);
+    const size = Math.min(Math.max(1, paginationOpts.numItems), SEARCH_PAGE_MAX);
+    const posts = matches.slice(start, start + size);
+
+    const page: PostCardData[] = [];
+    for (const post of posts) {
+      const card = await toPostCard(ctx, post, viewer);
+      if (card) page.push(card);
+    }
+    const last = posts[posts.length - 1];
+    return {
+      page,
+      isDone: start + size >= matches.length,
+      continueCursor: last ? searchCursor(last) : '',
+      matched: matches.length,
+      truncated,
+    };
   },
 });
 
@@ -229,6 +374,7 @@ export const backfillFromReports = internalMutation({
       if (report.postId !== undefined) continue;
       const postId: Id<'posts'> = await ctx.db.insert('posts', legacyPostFor(report));
       await ctx.db.patch(report._id, { postId });
+      await refreshPostSearchText(ctx, postId);
       created++;
       for (const photoId of new Set(report.photoIds)) {
         const photo = await ctx.db.get(photoId);
@@ -248,5 +394,27 @@ export const backfillFromReports = internalMutation({
       });
     }
     return { scanned: page.page.length, created, photosStamped, photosShared, isDone: page.isDone };
+  },
+});
+
+/**
+ * Give every existing Post its `searchText` (B03 §11). Paginated and self-scheduling; idempotent, since
+ * a Post whose text is already right writes nothing, so a re-run finishes what a partial pass left.
+ * Search works before it has run, and just can't find the older Posts. Each Post costs a read per
+ * member, at most `POST_MAX_REPORTS`, so a batch of 100 stays well inside one transaction.
+ *
+ * `pnpm exec convex run posts:backfillSearchText`, after the schema that adds the field has deployed.
+ */
+export const backfillSearchText = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db.query('posts').paginate({ cursor: cursor ?? null, numItems: 100 });
+    for (const post of page.page) await refreshPostSearchText(ctx, post._id);
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.posts.backfillSearchText, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { scanned: page.page.length, isDone: page.isDone };
   },
 });

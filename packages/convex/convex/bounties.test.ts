@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { reportAnswersBounty } from './bounties';
 import schema from './schema';
 
 /**
@@ -895,6 +896,95 @@ describe('bounties fulfillment', () => {
 
     expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('open');
     expect((await t.run((ctx) => ctx.db.get(author.id)))?.bountyPoints ?? 0).toBe(0);
+  });
+});
+
+describe('a bounty is answered by a skate after it opened, not a write-up (B03 §11, c-td43kf)', () => {
+  // A week that fits the D199 window: Saturday's skate, Sunday's bounty, Monday's write-up.
+  const SATURDAY = Date.UTC(2026, 0, 10, 16);
+  const SUNDAY = Date.UTC(2026, 0, 11, 16);
+  const MONDAY = Date.UTC(2026, 0, 12, 16);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(SUNDAY);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Sunday's bounty, then the clock moves to Monday, when the author sits down to write. */
+  async function sundayBounty() {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    vi.setSystemTime(MONDAY);
+    return { t, requester, author, waterBodyId, bountyId };
+  }
+
+  test('a Monday write-up of a Saturday skate leaves the Sunday bounty open and untouched', async () => {
+    const { t, requester, author, waterBodyId, bountyId } = await sundayBounty();
+    const reportId = await seedReport(author, waterBodyId, SATURDAY);
+
+    const bounty = await t.run((ctx) => ctx.db.get(bountyId));
+    expect(bounty?.fulfillingReportIds).toEqual([]);
+    expect(bounty?.status).toBe('open');
+    // Nobody is told an answer came in, and the author isn't told someone was waiting on this one.
+    const notes = await flushAllDue(t);
+    expect(notes.map((n) => n.type)).not.toContain('bounty_answered');
+    expect(await author.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(0);
+
+    // A helpful thumb from the requester is a thumb, and nothing more.
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+      bountyId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('open');
+    expect((await t.run((ctx) => ctx.db.get(author.id)))?.bountyPoints ?? 0).toBe(0);
+  });
+
+  test('a Monday write-up of a Monday skate still answers it', async () => {
+    const { t, requester, author, waterBodyId, bountyId } = await sundayBounty();
+    const reportId = await seedReport(author, waterBodyId, MONDAY - HOUR);
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.fulfillingReportIds).toEqual([reportId]);
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+      bountyId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('fulfilled');
+  });
+
+  test('a skate ending the instant the bounty opened counts; one a moment earlier does not', () => {
+    expect(reportAnswersBounty({ skateEndTime: SUNDAY }, { createdAt: SUNDAY })).toBe(true);
+    expect(reportAnswersBounty({ skateEndTime: SUNDAY - 1 }, { createdAt: SUNDAY })).toBe(false);
+  });
+
+  test('re-dating an attached report to before the bounty stops it fulfilling or being offered', async () => {
+    const { t, requester, author, waterBodyId, bountyId } = await sundayBounty();
+    const reportId = await seedReport(author, waterBodyId, MONDAY - HOUR);
+    await author.as.mutation(api.reports.update, {
+      ...OBSERVED,
+      reportId,
+      skateEndTime: SATURDAY,
+      iceTypes: ['black_ice'],
+    });
+
+    const detail = await requester.as.query(api.bounties.getDetail, { bountyId });
+    expect(detail?.fulfillingReports).toEqual([]);
+    expect(await author.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(0);
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+      bountyId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('open');
   });
 });
 

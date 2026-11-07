@@ -56,10 +56,13 @@ import {
   sheetPhotoBlob,
   sheetPhotoPreview,
 } from '../../lib/sheetPhotos';
+import { useResendOnReconnect } from '../../lib/sheetReconnect';
 import {
   clearStoredSheet,
+  type SheetSender,
+  type SheetSendResult,
+  sendSheet,
   setSheet,
-  setSheetAttempt,
   updateSheet,
   usePersistedAt,
   useSheet,
@@ -211,6 +214,27 @@ function Console({ post }: { post: PostSheet }) {
     void navigate({ to: '/report/$id', params: { id: to.reportId } });
   };
 
+  /** Sends a create: the sheet and the attempt to resume from, as the store hands them over. */
+  const sender =
+    (now: number): SheetSender =>
+    (sheet, previous) =>
+      postSheetOnWeb(convex, sheet, now, previous);
+
+  /** What came of a send — *Post* pressed, or a resend when the connection came back. */
+  const afterSend = (result: SheetSendResult) => {
+    if (result.kind === 'skipped') return;
+    if (result.kind === 'refused') {
+      setMessage(result.message);
+      return;
+    }
+    // After the refusal branch, so a sheet the server turned down is not counted as posted.
+    analytics.capture('report_posted', { report_count: post.reports.length });
+    done({ reportId: result.reportId });
+  };
+
+  // A transient failure the author hasn't touched since goes out again when the connection returns.
+  useResendOnReconnect((sheet, previous) => sender(Date.now())(sheet, previous), afterSend);
+
   const onPost = async () => {
     setMessage(null);
     const now = Date.now();
@@ -239,15 +263,8 @@ function Console({ post }: { post: PostSheet }) {
         done({ reportId });
         return;
       }
-      const outcome = await postSheetOnWeb(convex, post, now, attempt);
-      if (outcome.kind === 'refused') {
-        setSheetAttempt(outcome.draft);
-        setMessage(outcome.message);
-        return;
-      }
-      // After the refusal branch, so a sheet the server turned down is not counted as posted.
-      analytics.capture('report_posted', { report_count: post.reports.length });
-      done({ reportId: outcome.reportId });
+      // Through the store, so *Post* and a reconnect's resend share one lock and one record.
+      afterSend(await sendSheet(sender(now)));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {

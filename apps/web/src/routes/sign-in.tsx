@@ -1,20 +1,20 @@
-import { SignIn } from '@clerk/tanstack-react-start';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { ChipLink } from '../components/skater/auth/ChipLink';
+import { SignInFlow } from '../components/skater/auth/SignInFlow';
+import { SystemStage } from '../components/skater/auth/SystemStage';
 
 /**
- * Sign-in (D26). We use Clerk's prebuilt `<SignIn>` component rather than hand-rolling the
- * flow with `useSignIn` (as mobile does): this SDK version exposes the newer "signals"
- * custom-flow API, and the prebuilt component gives email/password + verification, error
- * handling, and resend for free — same outcome, far less surface. `routing="hash"` keeps
- * Clerk's multi-step flow on this single path (no catch-all route needed). On success the
- * `AuthGate` takes over: a provisioned user lands in the app, a new one goes to onboarding.
+ * Sign-in (D26), a custom flow over the region (B03 §1.6, 8.1–8.3). On success the `AuthGate` takes
+ * over: a provisioned user lands in the app, a new one goes to onboarding.
  */
 export const Route = createFileRoute('/sign-in')({ component: SignInPage });
 
 function SignInPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <SignIn routing="hash" signUpUrl="/sign-up" fallbackRedirectUrl="/" />
-    </div>
+    <SystemStage corner={<ChipLink link={<Link to="/about" />}>About Gli</ChipLink>}>
+      <SignInFlow
+        otherLink={<ChipLink link={<Link to="/sign-up" />}>Create an account</ChipLink>}
+      />
+    </SystemStage>
   );
 }

@@ -339,6 +339,11 @@ describe('the grace window', () => {
               { type: 'black_ice', where: { sector: 'N' }, note: 'past my cousin’s dock' },
             ],
             surfaceTags: [{ type: 'glass', note: 'like a mirror' }],
+            // The fourth nested-note seam (D210), missed until B03's agent S flagged it: a
+            // sighting's note is the author's prose too, and it rides the same purge clock.
+            // A located sighting needs its vantage stated (D210's rule).
+            observedFrom: 'on_ice',
+            sightings: [{ type: 'open', where: { sector: 'S' }, note: 'off my dock at home' }],
           },
         ],
       }),
@@ -350,10 +355,43 @@ describe('the grace window', () => {
     const post = await t.run((ctx) => ctx.db.get(postId));
     expect(post?.title).toBeUndefined();
     expect(post?.body).toBeUndefined();
+    // The search field is a copy of those words: they can't be found either (B03 §11).
+    expect(post?.searchText).toBeUndefined();
     expect(post?.reportIds).toEqual(reportIds);
     const report = await t.run((ctx) => ctx.db.get(reportIds[0] as Id<'reports'>));
     expect(report?.iceTypes).toEqual([{ type: 'black_ice', where: { sector: 'N' } }]);
     expect(report?.surfaceTags).toEqual([{ type: 'glass' }]);
+    expect(report?.sightings).toEqual([{ type: 'open', where: { sector: 'S' } }]);
+  });
+
+  test('a member redacted on its own clock leaves the search field, and the fresher member stays (B03 §11)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    // One Post: an aged member and one still inside the window, so the Post itself isn't redacted yet.
+    const { postId } = await postedLongAgo(() =>
+      user.as.mutation(api.posts.create, {
+        reports: [
+          { ...OBSERVED, waterBodyId: bodyId, skateEndTime: T0 - LONG_AGO, notes: 'cousins dock' },
+          { ...OBSERVED, waterBodyId: bodyId, skateEndTime: T0 - LONG_AGO, notes: 'public launch' },
+        ],
+      }),
+    );
+    const before = await t.run((ctx) => ctx.db.get(postId));
+    const [aged] = before?.reportIds ?? [];
+    await t.run(async (ctx) => {
+      const fresh = before?.reportIds[1] as Id<'reports'>;
+      await ctx.db.patch(fresh, { skateEndTime: Date.now() });
+      await ctx.db.patch(postId, { latestSkateEndTime: Date.now() });
+    });
+    expect(aged).toBeDefined();
+    expect(before?.searchText).toContain('cousins dock');
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const post = await t.run((ctx) => ctx.db.get(postId));
+    expect(post?.searchText).toBe('public launch');
   });
 
   test('the edit history goes with the words: an aged revision is erased, a fresh one waits (A10-3)', async () => {

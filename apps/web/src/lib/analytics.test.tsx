@@ -1,6 +1,13 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type AnalyticsEventName, useAnalytics } from './analytics';
+import {
+  ANALYTICS_ENUMS,
+  type AnalyticsEventName,
+  bucketPointCount,
+  bucketQueryLength,
+  bucketUnreadCount,
+  useAnalytics,
+} from './analytics';
 
 const mocks = vi.hoisted(() => {
   const capture = vi.fn();
@@ -105,21 +112,59 @@ describe('useAnalytics', () => {
  * is exactly the review conversation a rename should trigger.
  */
 describe('the event contract', () => {
-  const EXPECTED: readonly AnalyticsEventName[] = [
-    'onboarding_completed',
-    'report_posted',
-    'report_updated',
-    'hazard_reported',
-    'existing_hazard_confirmed',
-    'bounty_posted',
-    'comment_created',
-    'water_body_favorited',
-    'water_body_unfavorited',
-    'water_body_request_submitted',
-  ];
+  /**
+   * `Record<AnalyticsEventName, true>` rather than an array: adding an event without adding it
+   * here is now a compile error in both directions, so the list can't quietly fall behind the
+   * interface.
+   */
+  const EXPECTED: Record<AnalyticsEventName, true> = {
+    onboarding_completed: true,
+    report_posted: true,
+    report_updated: true,
+    hazard_reported: true,
+    existing_hazard_confirmed: true,
+    bounty_posted: true,
+    comment_created: true,
+    water_body_favorited: true,
+    water_body_unfavorited: true,
+    water_body_request_submitted: true,
+    // The B03 skater-web taxonomy (D240).
+    water_body_opened: true,
+    water_body_tab_viewed: true,
+    report_viewed: true,
+    hazard_viewed: true,
+    bounty_viewed: true,
+    search_opened: true,
+    search_result_opened: true,
+    search_no_results: true,
+    latest_filter_changed: true,
+    latest_report_opened: true,
+    wanted_bounty_opened: true,
+    report_sheet_opened: true,
+    report_sheet_refused: true,
+    report_sheet_abandoned: true,
+    report_draft_restored: true,
+    report_post_retried: true,
+    report_photos_added: true,
+    gpx_import_started: true,
+    gpx_import_completed: true,
+    hazard_flow_started: true,
+    hazard_verdict_submitted: true,
+    map_layer_toggled: true,
+    imagery_opened: true,
+    return_to_region_used: true,
+    directions_opened: true,
+    notifications_opened: true,
+    notification_opened: true,
+    theme_changed: true,
+    strava_connect_started: true,
+    sign_in_code_sent: true,
+    sign_in_completed: true,
+  };
+  const names = Object.keys(EXPECTED);
 
   it('names every event in snake_case, which is what PostHog groups on', () => {
-    for (const name of EXPECTED) expect(name).toMatch(/^[a-z][a-z0-9_]*$/);
+    for (const name of names) expect(name).toMatch(/^[a-z][a-z0-9_]*$/);
   });
 
   /**
@@ -127,8 +172,57 @@ describe('the event contract', () => {
    * posted, confirmed, favorited — and a name built on a condition word would be a claim.
    */
   it('names no event after a condition of the ice (D3)', () => {
-    for (const name of EXPECTED) {
+    for (const name of names) {
       expect(name).not.toMatch(/safe|unsafe|skateable|good|bad|thick|solid|clear/);
     }
+  });
+
+  /**
+   * The same rule over every enum *value* an event can carry (D240). The hazard verdicts are the
+   * author's own claims as labeled in the UI — 'fully_healed', 'still_there' — and deliberately
+   * none of them matches a go/no-go word: the test is what keeps a future value honest.
+   */
+  it('carries no enum value that reads as an all-clear or a recommendation (D3)', () => {
+    const CONDITION_CLAIM =
+      /safe|skateable|good_to_go|all_clear|ok_to|go_no_go|conditions_(ok|good)|recommend(ed)?_ice/;
+    for (const [key, values] of Object.entries(ANALYTICS_ENUMS)) {
+      for (const value of values) {
+        expect(`${key}:${value}`).not.toMatch(CONDITION_CLAIM);
+      }
+    }
+  });
+});
+
+describe('the bucket helpers', () => {
+  it('bucket boundaries land where the labels say', () => {
+    expect(bucketQueryLength(1)).toBe('1-2');
+    expect(bucketQueryLength(2)).toBe('1-2');
+    expect(bucketQueryLength(3)).toBe('3-5');
+    expect(bucketQueryLength(5)).toBe('3-5');
+    expect(bucketQueryLength(6)).toBe('6-11');
+    expect(bucketQueryLength(11)).toBe('6-11');
+    expect(bucketQueryLength(12)).toBe('12+');
+
+    expect(bucketPointCount(1)).toBe('1-99');
+    expect(bucketPointCount(99)).toBe('1-99');
+    expect(bucketPointCount(100)).toBe('100-999');
+    expect(bucketPointCount(999)).toBe('100-999');
+    expect(bucketPointCount(1000)).toBe('1000-9999');
+    expect(bucketPointCount(9999)).toBe('1000-9999');
+    expect(bucketPointCount(10000)).toBe('10000+');
+
+    expect(bucketUnreadCount(0)).toBe('0');
+    expect(bucketUnreadCount(-2)).toBe('0');
+    expect(bucketUnreadCount(1)).toBe('1-3');
+    expect(bucketUnreadCount(3)).toBe('1-3');
+    expect(bucketUnreadCount(4)).toBe('4-9');
+    expect(bucketUnreadCount(9)).toBe('4-9');
+    expect(bucketUnreadCount(10)).toBe('10+');
+  });
+
+  it('every bucket label is a value of its enum', () => {
+    expect(ANALYTICS_ENUMS.query_length_bucket).toContain(bucketQueryLength(4));
+    expect(ANALYTICS_ENUMS.point_count_bucket).toContain(bucketPointCount(500));
+    expect(ANALYTICS_ENUMS.unread_bucket).toContain(bucketUnreadCount(2));
   });
 });

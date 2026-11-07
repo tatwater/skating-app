@@ -71,6 +71,7 @@ import { DEPARTED_CONTENT_MAX_AGE_MS } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './photoOrphans';
+import { refreshPostSearchText } from './postSync';
 
 /** Rows of any one kind touched per pass. Small: every caller re-runs until `more` is false. */
 export const REDACT_PAGE = 100;
@@ -261,6 +262,8 @@ export async function redactAgedContent(
     for (const post of page.page) {
       if (post.title === undefined && post.body === undefined) continue;
       await ctx.db.patch(post._id, { title: undefined, body: undefined });
+      // The search field is a copy of those words, and a copy a departed skater could still be found by.
+      await refreshPostSearchText(ctx, post._id);
       result.redacted.posts++;
     }
     return nextCursor(page);
@@ -317,6 +320,7 @@ export async function redactAgedContent(
       const patch = reportRedaction(report);
       if (patch === null) continue; // already clean — an idempotent re-run, or a report with no prose
       await ctx.db.patch(report._id, patch);
+      if (report.postId !== undefined) await refreshPostSearchText(ctx, report.postId);
       result.redacted.reports++;
     }
     return nextCursor(page);
@@ -528,19 +532,29 @@ export async function redactAgedContent(
 /**
  * The free text on one report, or `null` if there is none left to clear.
  *
- * Four places, and three are the easy ones to miss: every thickness reading carries its own `note`
- * ("through the ridge, water in the hole"), and since A10 so does every located ice or surface
- * chip — prose in nested arrays rather than a column. The readings and the chips themselves stay,
- * `where` included: a measurement is the single most valuable thing in a report, and a sector or a
- * bay is a location label, not the person. (`where.name` stays for the same reason — it names a
- * point on the lake, the way `subAreaName` does.)
+ * Five places, and four are the easy ones to miss: every thickness reading carries its own `note`
+ * ("through the ridge, water in the hole"), and since A10 so does every located ice, surface or
+ * sighting chip — prose in nested arrays rather than a column. (`sightings[].note` was the one
+ * this function missed until the B03 build's agent S flagged it, 2026-11-07 — the same seam, added
+ * by D210 after this function was written.) The readings and the chips themselves stay, `where`
+ * included: a measurement is the single most valuable thing in a report, and a sector or a bay is
+ * a location label, not the person. (`where.name` stays for the same reason — it names a point on
+ * the lake, the way `subAreaName` does.)
  */
 export function reportRedaction(report: Doc<'reports'>): Partial<Doc<'reports'>> | null {
   const readings = report.iceThickness?.readings ?? [];
+  const sightings = report.sightings ?? [];
   const hasReadingNotes = readings.some((r) => r.note !== undefined);
   const hasIceNotes = report.iceTypes.some((c) => c.note !== undefined);
   const hasSurfaceNotes = report.surfaceTags.some((c) => c.note !== undefined);
-  if (report.notes === undefined && !hasReadingNotes && !hasIceNotes && !hasSurfaceNotes)
+  const hasSightingNotes = sightings.some((c) => c.note !== undefined);
+  if (
+    report.notes === undefined &&
+    !hasReadingNotes &&
+    !hasIceNotes &&
+    !hasSurfaceNotes &&
+    !hasSightingNotes
+  )
     return null;
   return {
     notes: undefined,
@@ -557,6 +571,9 @@ export function reportRedaction(report: Doc<'reports'>): Partial<Doc<'reports'>>
       : {}),
     ...(hasSurfaceNotes
       ? { surfaceTags: report.surfaceTags.map(({ note: _dropped, ...rest }) => rest) }
+      : {}),
+    ...(hasSightingNotes
+      ? { sightings: sightings.map(({ note: _dropped, ...rest }) => rest) }
       : {}),
   };
 }

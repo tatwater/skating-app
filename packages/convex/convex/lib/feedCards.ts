@@ -20,6 +20,7 @@ import {
   type LngLat,
   matchesFilters,
   matchWeatherFilter,
+  normalizeUsername,
   type PostCardData,
   PUT_IN_CLIP_M,
   reportWhereSummary,
@@ -41,7 +42,7 @@ import { subAreaDriveCoordFor } from '../subAreas';
 import { loadFavorites, type ViewerFavorites } from '../waterBodyFavorites';
 import { getCurrentProfile } from './auth';
 import { publicAuthor } from './authorView';
-import { canSeePutIn, loadBlockedAuthorIds } from './reportVisibility';
+import { canSeePutIn, loadBlockedAuthorIds, profileAccess } from './reportVisibility';
 import { bodyWeatherCell, subAreaWeatherCell } from './sampling';
 
 /** A resolved survivor body's feed-relevant fields: display name + on-water centroid (for band calc). */
@@ -439,19 +440,54 @@ export async function reportMatchesFeed(
  * the *first* Post of a new season landing mid-scroll, which reactively re-answers the feed to the
  * live season — the correct outcome for the one moment a year it can happen.
  */
-export async function servedFeedSeason(ctx: QueryCtx, current: Season): Promise<Season> {
-  const newest = await ctx.db
-    .query('posts')
-    .withIndex('by_moderation_and_latest_skate_end_time', (q) =>
-      q.eq('moderationStatus', 'visible'),
-    )
-    .order('desc')
-    .first();
+export async function servedFeedSeason(
+  ctx: QueryCtx,
+  current: Season,
+  /** Narrow to one skater (B03 §11): this season, or the newest one *they* posted in. */
+  authorId?: Id<'profiles'>,
+): Promise<Season> {
+  const newest =
+    authorId === undefined
+      ? await ctx.db
+          .query('posts')
+          .withIndex('by_moderation_and_latest_skate_end_time', (q) =>
+            q.eq('moderationStatus', 'visible'),
+          )
+          .order('desc')
+          .first()
+      : await ctx.db
+          .query('posts')
+          .withIndex('by_author_latest_skate_end_time', (q) => q.eq('authorId', authorId))
+          .order('desc')
+          .filter((q) => q.eq(q.field('moderationStatus'), 'visible'))
+          .first();
   if (!newest) return current;
   // Clamped to the current season because `SKATE_TIME_FUTURE_TOLERANCE_MS` allows an hour of overhang:
   // within an hour of July 1 the newest Post can legitimately be *next* season's, and serving a
   // season that hasn't started would hide everything anyone skated in the one that has.
   return Math.min(seasonOf(newest.latestSkateEndTime), current);
+}
+
+/**
+ * The skater filter on Latest (B03 §11): whose Posts to list, by username. `undefined` means the
+ * filter is off (absent or blank). `null` means it can't be honored, and is one answer for "no such
+ * skater", "deleted", "blocked either way" and "private", so the filter can't tell those apart for
+ * anyone. A list of one person's reports is their history, so it answers to the profile's rule
+ * (`profileAccess`), not the feed's: the same Posts stay in the unfiltered feed either way (D3, D13).
+ */
+export async function resolveFeedSkater(
+  ctx: QueryCtx,
+  username: string | undefined,
+  viewer: Doc<'profiles'> | null,
+): Promise<Id<'profiles'> | null | undefined> {
+  const handle = normalizeUsername(username ?? '');
+  if (handle === '') return undefined;
+  const target = await ctx.db
+    .query('profiles')
+    .withIndex('by_username', (q) => q.eq('username', handle))
+    .unique();
+  if (!target) return null;
+  return (await profileAccess(ctx, target, viewer)) === 'full' ? target._id : null;
 }
 
 /**

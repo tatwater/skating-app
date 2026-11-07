@@ -74,7 +74,7 @@ vi.mock('pmtiles', () => ({ Protocol: class {} }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
 const theme = { resolvedTheme: 'light' };
-vi.mock('next-themes', () => ({ useTheme: () => theme }));
+vi.mock('../theme-provider', () => ({ useTheme: () => theme }));
 
 const { RequestPreviewMap } = await import('./RequestPreviewMap');
 

@@ -13,8 +13,8 @@ import {
   weatherTimelineModel,
 } from '@skating/core';
 import { type WeatherChartPalette, WIND_FETCH_OPACITY, weatherChartPalette } from '@skating/design';
-import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from './theme-provider';
 
 /**
  * The past-weather timeline (A06h Workstream 4) — **the drawing half only.**
@@ -81,7 +81,7 @@ export function WeatherTimeline({
   height?: number;
 }) {
   const { resolvedTheme } = useTheme();
-  // `resolvedTheme` is undefined until next-themes has read localStorage. Light is the D34 default,
+  // `resolvedTheme` is undefined until the provider has read the OS scheme. Light is the D34 default,
   // and a brief flash of the default beats rendering nothing.
   const palette = weatherChartPalette(resolvedTheme === 'dark' ? 'dark' : 'light');
 

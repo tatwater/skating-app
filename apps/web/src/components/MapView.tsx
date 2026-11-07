@@ -39,7 +39,6 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import { useFeedFilters } from '../lib/feedFiltersStore';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useTheme } from 'next-themes';
 import {
   useCallback,
   useEffect,
@@ -109,6 +108,7 @@ import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
 import { AdmitPrompt } from './RequestLake';
 import { ReturnToRegion } from './ReturnToRegion';
+import { useTheme } from './theme-provider';
 import { useFreezeUpFrame } from './useFreezeUpFrame';
 import { useFreezeUpSeam } from './useFreezeUpSeam';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';

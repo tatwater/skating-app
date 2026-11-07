@@ -11,7 +11,7 @@
  * annotate, not a gate). `loadBlockedAuthorIds` below is the single source of that block set.
  */
 
-import { canViewReport } from '@skating/core';
+import { canViewReport, isLeaving } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { defaultSampleAnchor } from './sampling';
@@ -40,6 +40,31 @@ export async function loadBlockedAuthorIds(
     .collect();
   for (const b of asBlocked) blocked.add(b.blockerId);
   return blocked;
+}
+
+/**
+ * How much of a person a viewer may browse (D13, D32, D62) — the one rule behind a profile page and
+ * anything else that lists one skater's history, such as the skater filter on Latest:
+ *
+ * - `hidden`: gone, or as good as. Deleted, leaving, or blocked in either direction.
+ * - `private`: name and avatar, and nothing to browse.
+ * - `full`: their history. Always, for your own.
+ *
+ * This is about the *person*. A block or a private profile never hides a *report* from the feed
+ * (D3, D13); it stops the app assembling that person's reports into a list for you.
+ */
+export async function profileAccess(
+  ctx: QueryCtx,
+  target: Doc<'profiles'>,
+  viewer: Pick<Doc<'profiles'>, '_id'> | null,
+): Promise<'hidden' | 'private' | 'full'> {
+  if (target.status === 'deleted') return 'hidden';
+  if (viewer?._id === target._id) return 'full';
+  if (isLeaving(target)) return 'hidden';
+  if (viewer !== null && (await loadBlockedAuthorIds(ctx, viewer._id)).has(target._id)) {
+    return 'hidden';
+  }
+  return target.profileVisibility === 'private' ? 'private' : 'full';
 }
 
 /**

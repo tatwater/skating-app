@@ -5,8 +5,8 @@
  * skill's validated palette, not something a DOM test can see.
  */
 import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from 'next-themes';
 import { describe, expect, it } from 'vitest';
+import { ThemeProvider } from '../theme-provider';
 import {
   ChartCard,
   ChartLegend,
@@ -18,7 +18,7 @@ import {
 } from './Charts';
 
 function withTheme(node: React.ReactNode) {
-  return render(<ThemeProvider attribute="class">{node}</ThemeProvider>);
+  return render(<ThemeProvider>{node}</ThemeProvider>);
 }
 
 describe('timeSeriesYAxis', () => {

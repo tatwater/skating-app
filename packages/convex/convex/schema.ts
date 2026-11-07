@@ -2420,13 +2420,26 @@ export default defineSchema({
     updatedAt: v.number(),
     /** When the author last edited the Post (the `reports.editedAt` rule: never `updatedAt`). */
     editedAt: v.optional(v.number()),
+    /**
+     * The words a search of Latest reads (B03 §11): the Post's title and prose, and what its
+     * **visible** members' authors typed. Derived; one writer, `refreshPostSearchText` in
+     * `lib/postSync.ts`, called from everything that changes those words or a member's verdict, so a
+     * hidden Report's words stop matching and a purge takes them out. Optional because a row before
+     * `posts.backfillSearchText` has none, and a Post with no words never gets one.
+     */
+    searchText: v.optional(v.string()),
   })
     // The newsfeed: newest skate-end first, moderation gate in the index (D28, D32).
     .index('by_moderation_and_latest_skate_end_time', ['moderationStatus', 'latestSkateEndTime'])
     // Profile history, newest first, bounded by a `.take()` (D13) — and the departed-user sweep.
     .index('by_author_latest_skate_end_time', ['authorId', 'latestSkateEndTime'])
     .index('by_author', ['authorId'])
-    .index('by_idempotency_key', ['idempotencyKey']),
+    .index('by_idempotency_key', ['idempotencyKey'])
+    // Latest's text search, with the moderation gate and the skater filter in the index.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['moderationStatus', 'authorId'],
+    }),
 
   /**
    * **What a Post or Report said before its author changed it** (A10-3, founder call 2026-09-21).

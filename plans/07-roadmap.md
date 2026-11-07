@@ -795,6 +795,26 @@ lack of signal.*
 - 🟢 Jev access granted 2026-09-19 (`TYPESAFE_API_KEY` on dev); the harness still takes any engine
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
+## Phase B03 — The skater web app
+🟡 **In progress** 2026-11-07 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
+
+The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
+Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
+opening over any page, Profile, Settings, a custom Clerk sign-in over the regional map, and the phone pass.
+Every path the outside world already links to keeps working; new views are search params validated on a
+skater layout route, so nothing opens over `/admin`. State follows the four-homes rule with Zustand alone;
+the report draft's photos move to IndexedDB so a reload loses nothing but what a browser cannot keep.
+PostHog extends the merged D235 (deduped pageviews, masked usernames, a wider taxonomy); Sentry gains
+route-level boundaries. Built by one governor and parallel agents in their own worktrees, four PRs. *A
+skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
+
+#### Deferred
+- ❓ **Session replay** — off at launch (the D235 test keeps it so); waits on the L12 legal pass → the plan's §4.2 posture
+- ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
+- ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5
+- ⚪ **The slow-pan region video** behind the sign-in screens — static per-theme PNGs ship; a React video library later
+- ⚪ **Filled depth bands** — the bathymetry archive holds contour lines, which MapLibre cannot fill between; the skater map ships banded contour lines with a shallowest-band fill on the focused lake. Real filled bands need the bathymetry pipeline to emit polygons and a re-tile → B03 §2
+
 ## Deferred register
 
 Everything deliberately not done, in one place, with what it waits on — grouped by the blocker, since

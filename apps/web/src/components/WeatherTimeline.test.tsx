@@ -2,8 +2,8 @@ import type { TimelineDayInput } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// `next-themes` reads `matchMedia` on mount; the chart only needs the resolved name.
-vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }));
+// The theme provider reads `matchMedia` on mount; the chart only needs the resolved name.
+vi.mock('./theme-provider', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }));
 
 /**
  * A `ResizeObserver` that actually reports a width.

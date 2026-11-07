@@ -30,13 +30,17 @@ import {
   clipPathEnds,
   type DedupActivity,
   dedupActivities,
+  FUTURE_REPORT_MESSAGE,
+  freshnessRefusal,
   isMinor,
+  isValidCoord,
   nearestBodyForPoint,
   PUT_IN_CLIP_M,
   pathOpacity,
   pointInPolygon,
   reportFreshness,
   resolveSeason,
+  STALE_REPORT_MESSAGE,
   samplePath,
   seasonEndMs,
   seasonOf,
@@ -45,6 +49,7 @@ import {
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -149,7 +154,62 @@ async function candidateBodiesForSamples(
 }
 
 /**
- * Ingest a recorded track (the native recorder's flush target).
+ * The key `planGpxImport` mints for a file (`gpx:<report>:<start>:<end>:<points>`). Every client that
+ * imports a GPX goes through that plan, so the prefix is what marks an import from a phone that
+ * predates the `provider` argument, and what finds the imports stored as `native` before it existed.
+ */
+const GPX_KEY_PREFIX = 'gpx:';
+/** The first string after every `gpx:` key: `;` is the code unit after `:`. */
+const GPX_KEY_END = 'gpx;';
+
+/**
+ * Most points a stored track can hold: Convex refuses an array past 8,192 values, so a longer one could
+ * only ever fail at the insert, with an error no skater can read. Long enough for a recorder that keeps a
+ * point per 5 m of movement to run about 40 km.
+ */
+export const MAX_TRACK_POINTS = 8192;
+
+/**
+ * Why a track can't be stored, or `null` when it can — one set of checks for a recording and an
+ * imported file (B03 §11). The argument validator only says a position is an array of numbers, so a
+ * `NaN`, an out-of-range degree or a position with no latitude arrives unless this refuses it.
+ */
+export function trackRefusal(args: {
+  path: { type: string; coordinates: unknown };
+  startTime: number;
+  endTime: number;
+  elapsedSeconds?: number;
+}): string | null {
+  if (args.path.type !== 'LineString') return 'A recorded track must be a LineString';
+  const coordinates = args.path.coordinates as number[][];
+  if (coordinates.length < 2) return 'Track has too few points';
+  if (coordinates.length > MAX_TRACK_POINTS) return 'Track has too many points';
+  for (const position of coordinates) {
+    const [lng, lat, elevation] = position as [number, number, number?];
+    if (
+      position.length < 2 ||
+      position.length > 3 ||
+      !isValidCoord({ lat, lng }) ||
+      (elevation !== undefined && !Number.isFinite(elevation))
+    ) {
+      return 'Track has an invalid point';
+    }
+  }
+  if (!Number.isFinite(args.startTime) || !Number.isFinite(args.endTime)) {
+    return 'Track has an invalid time';
+  }
+  if (!(args.endTime > args.startTime)) return 'Track ends before it starts';
+  if (
+    args.elapsedSeconds !== undefined &&
+    !(Number.isFinite(args.elapsedSeconds) && args.elapsedSeconds >= 0)
+  ) {
+    return 'Track has an invalid moving time';
+  }
+  return null;
+}
+
+/**
+ * Ingest a track: the native recorder's flush target, and an imported GPX file (`provider: 'gpx'`).
  *
  * Idempotent on `(provider, providerActivityId)` via `by_provider_activity`: the recorder mints the
  * key at session start and carries it across every retry, so a replayed flush returns the original
@@ -164,8 +224,10 @@ async function candidateBodiesForSamples(
  */
 export const ingestTrack = mutation({
   args: {
-    /** The client-generated session key — becomes `providerActivityId` for the `native` provider. */
+    /** The client-generated session or file key — becomes `providerActivityId`. */
     idempotencyKey: v.string(),
+    /** Absent means `native`, unless the key says it is an import (`GPX_KEY_PREFIX`). */
+    provider: v.optional(v.union(v.literal('native'), v.literal('gpx'))),
     path: geoJson,
     startTime: v.number(),
     endTime: v.number(),
@@ -177,26 +239,45 @@ export const ingestTrack = mutation({
   handler: async (ctx, args) => {
     const profile = await requireContributor(ctx);
     const now = Date.now();
+    // D239 (temporary — revert to seed-and-author-only when a native import path lands): an imported
+    // file is fully trusted, exactly as a recording is, though it can be drawn by hand. It takes every
+    // path `native` takes from here on: the lake hint, the public path through a report, the aggregate
+    // layer, the standing evidence. Only the label differs, and the label is what the revert will key on.
+    const provider =
+      args.provider === 'gpx' || args.idempotencyKey.startsWith(GPX_KEY_PREFIX) ? 'gpx' : 'native';
 
     // Idempotency short-circuit, before any work: a re-flushed skate returns its original row.
     // Scoped to the owner so a key collision can never hand back someone else's track.
-    const existing = await ctx.db
-      .query('gpsActivities')
-      .withIndex('by_provider_activity', (q) =>
-        q.eq('provider', 'native').eq('providerActivityId', args.idempotencyKey),
-      )
-      .unique();
+    const byKey = (stored: 'native' | 'gpx') =>
+      ctx.db
+        .query('gpsActivities')
+        .withIndex('by_provider_activity', (q) =>
+          q.eq('provider', stored).eq('providerActivityId', args.idempotencyKey),
+        )
+        .unique();
+    // An import stored as `native` before the label existed is the same file under its old label (its
+    // key carries the prefix, which is all `backfillGpxProvider` reads). Until that has relabeled it, a
+    // replay must still find it: a second row minted here would collide with it once relabeled, and
+    // every later `.unique()` on the key would throw. Any other key keeps the two spaces apart.
+    const legacyImport = provider === 'gpx' && args.idempotencyKey.startsWith(GPX_KEY_PREFIX);
+    const existing = (await byKey(provider)) ?? (legacyImport ? await byKey('native') : null);
     if (existing) {
       if (existing.userId !== profile._id) throw new ConvexError('Idempotency key conflict');
       return existing._id;
     }
 
-    if (args.path.type !== 'LineString') {
-      throw new ConvexError('A recorded track must be a LineString');
-    }
+    const refusal = trackRefusal(args);
+    if (refusal !== null) throw new ConvexError(refusal);
     const path = args.path as LineString;
-    if (path.coordinates.length < 2) throw new ConvexError('Track has too few points');
-    if (!(args.endTime > args.startTime)) throw new ConvexError('Track ends before it starts');
+
+    // The D199 window, for a file (a recording flushed late is still a record of a skate; it just can't
+    // become a report). An old import has no other use than a report that would be refused, and it would
+    // otherwise ask "Add a report?" about it and count as fresh evidence for a dormant lake.
+    if (provider === 'gpx') {
+      const stale = freshnessRefusal(args.endTime, now);
+      if (stale === 'too_old') throw new ConvexError(STALE_REPORT_MESSAGE);
+      if (stale === 'in_future') throw new ConvexError(FUTURE_REPORT_MESSAGE);
+    }
 
     // Resolve to a lake (D44). A client-supplied id is only a hint — re-resolve unless it checks out,
     // because the device's offline cache can be stale and the body may since have been merged away.
@@ -215,7 +296,7 @@ export const ingestTrack = mutation({
 
     const activityId = await ctx.db.insert('gpsActivities', {
       userId: profile._id,
-      provider: 'native',
+      provider,
       providerActivityId: args.idempotencyKey,
       sportType: 'IceSkate',
       startTime: args.startTime,
@@ -238,6 +319,36 @@ export const ingestTrack = mutation({
     // every body the track resolved to yields if the machine had shelved it.
     for (const bodyId of resolved.all) await activateOnEvidence(ctx, bodyId, 'track');
     return activityId;
+  },
+});
+
+/** Imports relabeled per pass. Each is one read and one write. */
+const GPX_RELABEL_BATCH = 200;
+
+/**
+ * Relabel the GPX imports stored as `native` (B03 §11). Importing a file has worked since A10-7, through
+ * `ingestTrack`, which could then only write `native`; D239's revert has to be able to find every one of
+ * them. Keyed on the file key's prefix, in the index, so it reads only imports. Idempotent: a relabeled
+ * row leaves the range. `pnpm exec convex run gpsActivities:backfillGpxProvider`, after the schema that
+ * widens the provider has deployed.
+ */
+export const backfillGpxProvider = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<{ relabeled: number }> => {
+    const rows = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_provider_activity', (q) =>
+        q
+          .eq('provider', 'native')
+          .gte('providerActivityId', GPX_KEY_PREFIX)
+          .lt('providerActivityId', GPX_KEY_END),
+      )
+      .take(GPX_RELABEL_BATCH);
+    for (const row of rows) await ctx.db.patch(row._id, { provider: 'gpx' });
+    if (rows.length === GPX_RELABEL_BATCH) {
+      await ctx.scheduler.runAfter(0, internal.gpsActivities.backfillGpxProvider, {});
+    }
+    return { relabeled: rows.length };
   },
 });
 
@@ -571,6 +682,14 @@ export async function linkActivityToReport(
   const requested = await ctx.db.get(activityId);
   if (!requested) throw new ConvexError('Activity not found');
   if (requested.userId !== userId) throw new ConvexError('Not your activity');
+  // D199 holds for an imported track at the link as well as the ingest: a file imported within the window
+  // can be attached days later, under a report whose own end time says something fresher.
+  if (
+    requested.provider === 'gpx' &&
+    freshnessRefusal(requested.endTime ?? requested.startTime, Date.now()) === 'too_old'
+  ) {
+    throw new ConvexError({ code: 'stale_report', message: STALE_REPORT_MESSAGE });
+  }
   let activity = requested;
   for (
     let hops = 0;

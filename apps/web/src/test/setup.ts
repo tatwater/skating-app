@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
 
-// jsdom has no `matchMedia`; `next-themes` (and anything that reads a media query) calls it on mount.
+// jsdom has no `matchMedia`; the theme provider (and anything that reads a media query) calls it on mount.
 // Stub a stable "no dark preference" matcher so themed components — the admin charts especially —
 // render under test instead of throwing.
 if (typeof window !== 'undefined' && !window.matchMedia) {

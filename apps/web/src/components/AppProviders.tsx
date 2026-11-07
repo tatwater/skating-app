@@ -2,15 +2,13 @@ import { ClerkProvider, useAuth } from '@clerk/tanstack-react-start';
 import * as Sentry from '@sentry/tanstackstart-react';
 import { ConvexReactClient } from 'convex/react';
 import { ConvexProviderWithClerk } from 'convex/react-clerk';
-import { useTheme } from 'next-themes';
 import { type ReactNode, useState } from 'react';
 import { CLERK_APPEARANCE } from '../lib/clerkAppearance';
 import { env } from '../lib/env';
 import { AnalyticsProvider } from './Analytics';
 import { PostHogIdentity } from './PostHogIdentity';
-import { ThemeProvider } from './theme-provider';
-import { Button } from './ui/button';
-import { Card, CardContent } from './ui/card';
+import { CrashScreen } from './skater/CrashScreen';
+import { ThemeProvider, useTheme } from './theme-provider';
 
 /**
  * App-wide providers (D26/D2/D7/D34), mirroring the mobile provider stack:
@@ -21,7 +19,7 @@ import { Card, CardContent } from './ui/card';
  *
  * The theme sits **outermost** (it used to be innermost) because Clerk's prebuilt components take
  * their palette as a prop rather than reading CSS, so `<ClerkProvider>` has to be able to see the
- * resolved theme. `next-themes` depends on neither Clerk nor Convex, so hoisting it is free.
+ * resolved theme. The theme provider depends on neither Clerk nor Convex, so hoisting it is free.
  *
  * The whole tree is wrapped in `Sentry.ErrorBoundary` (D29) — the web analog of mobile's
  * `Sentry.wrap(RootLayout)`: it reports render-time crashes and shows a recoverable fallback
@@ -35,7 +33,7 @@ import { Card, CardContent } from './ui/card';
  */
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
-    <Sentry.ErrorBoundary fallback={CrashFallback}>
+    <Sentry.ErrorBoundary fallback={({ resetError }) => <CrashScreen onRetry={resetError} />}>
       <ThemeProvider>
         <AnalyticsProvider>
           <AuthedProviders>{children}</AuthedProviders>
@@ -55,7 +53,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 function AuthedProviders({ children }: { children: ReactNode }) {
   const [convex] = useState(() => new ConvexReactClient(env.convexUrl));
   const { resolvedTheme } = useTheme();
-  // `resolvedTheme` is undefined until `next-themes` has read localStorage on the client. Light is
+  // `resolvedTheme` is undefined until the provider has read the OS scheme on the client. Light is
   // the D34 default, so falling back to it matches what the surrounding page paints on first frame.
   const appearance = CLERK_APPEARANCE[resolvedTheme === 'dark' ? 'dark' : 'light'];
 
@@ -65,24 +63,5 @@ function AuthedProviders({ children }: { children: ReactNode }) {
         <PostHogIdentity>{children}</PostHogIdentity>
       </ConvexProviderWithClerk>
     </ClerkProvider>
-  );
-}
-
-function CrashFallback({ resetError }: { resetError: () => void }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-sm">
-        <CardContent className="flex flex-col items-center gap-4 text-center">
-          <h1 className="font-bold font-mono text-foreground text-lg uppercase tracking-widest">
-            Something broke
-          </h1>
-          <p className="text-foreground-muted text-sm">
-            The app hit an unexpected error. It's been reported — try again, and if it keeps
-            happening, reload the page.
-          </p>
-          <Button onClick={resetError}>Try again</Button>
-        </CardContent>
-      </Card>
-    </div>
   );
 }

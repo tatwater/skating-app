@@ -24,7 +24,7 @@
  */
 @import "@fortawesome/fontawesome-svg-core/styles.css" layer(base);
 
-/* Dark mode is class-driven (next-themes toggles `.dark` on <html>), not media-driven,
+/* Dark mode is class-driven (the theme provider toggles `.dark` on <html>), not media-driven,
    so the user can pick a theme independent of OS (D34). */
 @custom-variant dark (&:where(.dark, .dark *));
 

@@ -52,7 +52,7 @@ import { fileLandmarkProposals } from './lib/landmarkProposals';
 import { resolveLocatedLandmarks } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos, syncReportPhotoLinks } from './lib/photoAccess';
-import { refreshPostLatestSkateEnd, syncPostPhotos } from './lib/postSync';
+import { refreshPostLatestSkateEnd, refreshPostSearchText, syncPostPhotos } from './lib/postSync';
 import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds, redactPutIn } from './lib/reportVisibility';
 import {
@@ -603,6 +603,8 @@ export const update = mutation({
         skateEndTime: n.skateEndTime,
       });
     }
+    // And what a search finds in the Post (B03 §11): the notes above are part of it.
+    if (existing.postId !== undefined) await refreshPostSearchText(ctx, existing.postId);
 
     // **An edit changes the card's inputs, so the card is recomputed (A06c §5).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report
