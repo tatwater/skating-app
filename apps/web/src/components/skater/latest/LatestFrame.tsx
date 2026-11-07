@@ -5,6 +5,7 @@ import { useChromeStore } from '@/stores/chromeStore';
 
 import { PanelColumn } from '../panels/InsetCard';
 import { LatestPhoneBar } from '../phone/LatestPhoneBar';
+import { useIsMidWidth } from '../phone/usePhoneLayout';
 
 /**
  * Latest's three columns (board 4.1): filters left (272), the feed center (640), Recommended and
@@ -15,16 +16,23 @@ import { LatestPhoneBar } from '../phone/LatestPhoneBar';
  *
  * Layout only; every piece inside is the kit's or a composition's. Below `xl` the right column
  * steps out; below `md` (row 9) the page shows one column at a time, switched by the phone bar.
+ *
+ * Recommended never steps out with it (D50): its reports are subtracted from the feed, so a hidden
+ * strip would hide them everywhere. Between `md` and `xl` it rides at the top of the feed column —
+ * one copy, mounted where it shows; below `md` it stays in the right column the phone bar opens.
  */
 export function LatestFrame({
   filters,
   feed,
+  recommended,
   aside,
   report,
   filterCount = 0,
 }: {
   filters: ReactNode;
   feed: ReactNode;
+  /** The Recommended strip: the right column's head, or the feed's between `md` and `xl`. */
+  recommended?: ReactNode;
   aside: ReactNode;
   /** The report card over the center column, when `?report=` names one. */
   report?: ReactNode;
@@ -35,6 +43,7 @@ export function LatestFrame({
   // Phone (row 9): one column at a time; an open report is over the feed, so the feed is the one.
   const chosen = useChromeStore((s) => s.latestPhonePane);
   const pane = open ? 'feed' : chosen;
+  const midWidth = useIsMidWidth();
   const phoneColumn = 'max-md:w-full max-md:flex-1 max-md:px-(--space-4) max-md:pt-(--space-4)';
   return (
     <div
@@ -65,6 +74,11 @@ export function LatestFrame({
           inert={open || undefined}
           className="h-full overflow-y-auto pt-(--space-7) pb-(--space-14) max-md:px-(--space-4) max-md:pt-(--space-4)"
         >
+          {midWidth && recommended && (
+            <div data-slot="latest-recommended-lead" className="mb-(--space-6)">
+              {recommended}
+            </div>
+          )}
           {feed}
         </div>
         {open && (
@@ -80,6 +94,7 @@ export function LatestFrame({
           pane === 'wanted' && `max-md:flex ${phoneColumn}`,
         )}
       >
+        {!midWidth && recommended}
         {aside}
       </aside>
     </div>

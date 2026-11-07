@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CARD_PAT } from '../panels/panelFixtures';
 import { polyfillAnimate } from '../panels/panelTestMocks';
+import { MID_QUERY } from '../phone/usePhoneLayout';
 import { FeedColumn, type FeedColumnProps } from './FeedColumn';
 import { FilterColumn } from './FilterColumn';
 import { LatestFrame } from './LatestFrame';
@@ -631,5 +632,48 @@ describe('LatestFrame', () => {
     expect(document.querySelector('[data-slot="latest-feed-scroll"]')).toBe(scroller);
     expect(scroller).toHaveAttribute('inert');
     expect(document.querySelector('[data-slot="panel-column"]')).toHaveTextContent('the card');
+  });
+
+  it('keeps Recommended visible where the right column steps out: atop the feed, md to xl (D50)', () => {
+    const original = window.matchMedia;
+    const mid = { matches: false };
+    window.matchMedia = ((query: string) => ({
+      matches: query === MID_QUERY && mid.matches,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const frame = () => (
+        <LatestFrame
+          filters={<p>f</p>}
+          feed={<p>the feed</p>}
+          recommended={<p>the strip</p>}
+          aside={<p>wanted</p>}
+        />
+      );
+      // At xl (and on a phone, where the bar opens it), the strip heads the right column.
+      const { unmount } = render(frame());
+      const right = screen.getByRole('complementary', { name: 'Recommended and wanted' });
+      expect(within(right).getByText('the strip')).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('main', { name: 'Latest' })).queryByText('the strip'),
+      ).toBeNull();
+      unmount();
+
+      // Between md and xl the right column is display:none, so the one copy moves to the feed's top.
+      mid.matches = true;
+      render(frame());
+      const feed = screen.getByRole('main', { name: 'Latest' });
+      expect(within(feed).getByText('the strip')).toBeInTheDocument();
+      expect(screen.getAllByText('the strip')).toHaveLength(1);
+      expect(
+        within(screen.getByRole('complementary', { name: 'Recommended and wanted' })).getByText(
+          'wanted',
+        ),
+      ).toBeInTheDocument();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });

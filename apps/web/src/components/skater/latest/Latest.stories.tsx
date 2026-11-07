@@ -196,19 +196,21 @@ function Page({
           />
         }
         feed={<FeedColumn {...props} />}
+        recommended={
+          state === 'no-reports' || state === 'loading' ? null : (
+            <RecommendedStrip
+              bundles={[
+                { waterBodyId: 'crystal', cards: [CRYSTAL, { ...CRYSTAL, reportId: 'c2' }] },
+              ]}
+              now={NOW}
+              reportHref={(id) => `/latest?report=${id}`}
+              onOpenReport={noop}
+            />
+          )
+        }
         aside={
           state === 'no-reports' || state === 'loading' ? null : (
-            <>
-              <RecommendedStrip
-                bundles={[
-                  { waterBodyId: 'crystal', cards: [CRYSTAL, { ...CRYSTAL, reportId: 'c2' }] },
-                ]}
-                now={NOW}
-                reportHref={(id) => `/latest?report=${id}`}
-                onOpenReport={noop}
-              />
-              <WantedColumn places={wanted ? WANTED : []} now={NOW} onOpenBounty={noop} />
-            </>
+            <WantedColumn places={wanted ? WANTED : []} now={NOW} onOpenBounty={noop} />
           )
         }
         report={report}

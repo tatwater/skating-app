@@ -11,13 +11,11 @@ import { useSyncExternalStore } from 'react';
  */
 export const PHONE_QUERY = '(max-width: 47.99rem)';
 
-function subscribe(onChange: () => void): () => void {
-  const list = window.matchMedia(PHONE_QUERY);
-  list.addEventListener('change', onChange);
-  return () => list.removeEventListener('change', onChange);
-}
-
-const getSnapshot = () => window.matchMedia(PHONE_QUERY).matches;
+/**
+ * Between `md` and `xl` (48–80 rem): wide enough for Latest's filters and feed, too narrow for its
+ * right column — the same edges as `md:` and `max-xl:`.
+ */
+export const MID_QUERY = '(min-width: 48rem) and (max-width: 79.99rem)';
 
 /**
  * The server, and the hydration pass, render the desktop answer; the client corrects it in the
@@ -26,7 +24,27 @@ const getSnapshot = () => window.matchMedia(PHONE_QUERY).matches;
  */
 const getServerSnapshot = () => false;
 
+/** A stable subscribe/snapshot pair per query, so a re-render never resubscribes. */
+function mediaStore(query: string) {
+  return {
+    subscribe(onChange: () => void): () => void {
+      const list = window.matchMedia(query);
+      list.addEventListener('change', onChange);
+      return () => list.removeEventListener('change', onChange);
+    },
+    getSnapshot: () => window.matchMedia(query).matches,
+  };
+}
+
+const phone = mediaStore(PHONE_QUERY);
+const mid = mediaStore(MID_QUERY);
+
 /** True below `md`: the phone's layout. */
 export function useIsPhone(): boolean {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(phone.subscribe, phone.getSnapshot, getServerSnapshot);
+}
+
+/** True between `md` and `xl`, where Latest's right column steps out. */
+export function useIsMidWidth(): boolean {
+  return useSyncExternalStore(mid.subscribe, mid.getSnapshot, getServerSnapshot);
 }

@@ -302,17 +302,17 @@ export function LatestPage({ search }: { search: LatestSearch }) {
           onClearSkater={() => setSearch({ skater: undefined }, { replace: true })}
         />
       }
-      aside={
-        <>
+      recommended={
+        recommended !== undefined && recommended.length > 0 ? (
           <RecommendedStrip
             bundles={recommended}
             now={now}
             reportHref={reportHref}
             onOpenReport={openReport}
           />
-          <WantedColumn places={wanted} now={now} onOpenBounty={openBounty} />
-        </>
+        ) : undefined
       }
+      aside={<WantedColumn places={wanted} now={now} onOpenBounty={openBounty} />}
       report={
         search.report !== undefined ? (
           <ReportPanel
