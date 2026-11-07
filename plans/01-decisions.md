@@ -1319,6 +1319,15 @@ at alpha scale. **Deferred:** the crowd-intelligence *derivations* over the aggr
 clearest-side, path-cluster hazard deduction L9/Q11) — legal now (our data) but need volume + a
 calibration/privacy pass before they render.
 
+**Amended 2026-11-08 (founder call, B03) — a thickness reading keeps its coordinate when the put-in
+is withheld.** The put-in opt-out (`showPutIn === false`) withholds the report's launch point from
+other skaters (`redactPutIn` serves the body's anchor in its place) and clips the track's ends; it
+does **not** redact the `coord` on an ice-thickness reading. A B03 security pass flagged that as a
+possible gap; it is intended. A reading's coordinate is a fact about the ice, placed by the skater
+on purpose, and *"that information is too useful to everyone else to hide; if the user didn't want
+to share, they wouldn't include it."* The opt-out is about where the skater came from, not about
+what they measured.
+
 ## D59 — Unified report freshness: the report is the unit of decay (Phase 08)
 **Decided (2026-07-24).** A GPS path has **no independent freshness** — it is a report's trusted
 extent (`reports.activityId → gpsActivities.path`), so its on-map opacity must be a pure function of
