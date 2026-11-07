@@ -14,6 +14,7 @@ vi.mock('./GlobalSearch', () => ({ GlobalSearch: () => <div>search</div> }));
 vi.mock('./NotificationsMenu', () => ({ NotificationsMenu: () => <div>bell</div> }));
 vi.mock('./AvatarMenu', () => ({ AvatarMenu: () => <div>avatar</div> }));
 
+import { SheetHostContext } from './chrome';
 import { SkaterTopBar } from './SkaterTopBar';
 
 beforeEach(() => {
@@ -40,6 +41,17 @@ describe('SkaterTopBar', () => {
     expect(fakes.push).toHaveBeenCalledWith('/water/w1?tab=weather&post=new', {
       reportSheetEntryRecorded: true,
     });
+  });
+
+  it('opens New report over Explore from a page with no sheet host under it', () => {
+    fakes.location = { pathname: '/about', searchStr: '' };
+    render(
+      <SheetHostContext.Provider value={false}>
+        <SkaterTopBar />
+      </SheetHostContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'New report' }));
+    expect(fakes.push).toHaveBeenCalledWith('/?post=new', { reportSheetEntryRecorded: true });
   });
 
   it('closes the open overlay on a new page, not on the first render', () => {

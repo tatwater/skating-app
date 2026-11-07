@@ -24,5 +24,5 @@ export function AboutPage() {
       onNavigate={(href) => router.history.push(href)}
     />
   );
-  return isSignedIn ? <SkaterShell>{view}</SkaterShell> : view;
+  return isSignedIn ? <SkaterShell sheetHost={false}>{view}</SkaterShell> : view;
 }

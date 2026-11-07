@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useAnalytics } from '@/lib/analytics';
 import { useChromeStore } from '@/stores/chromeStore';
 
-import { activeTopLevel, withNewReport } from '../chrome';
+import { activeTopLevel, useNewReportHref } from '../chrome';
 import { GlobalSearch } from '../GlobalSearch';
 import { NotificationsMenu } from '../NotificationsMenu';
 import { reportSheetLinkState } from '../sheet/sheetHostModel';
@@ -27,6 +27,7 @@ export function PhoneChrome({ live }: { live: boolean }) {
   const { capture } = useAnalytics();
   const location = useRouterState({ select: (s) => s.location });
   const { pathname, searchStr } = location;
+  const newReportHref = useNewReportHref();
 
   // A new page (not a new query on the same one) leaves no overlay hanging over it — the desktop
   // bar's rule, kept while it's the phone bar that's mounted.
@@ -65,7 +66,7 @@ export function PhoneChrome({ live }: { live: boolean }) {
         onNewReport={() => {
           // The door records itself, and says so in the state so the sheet's host doesn't count it again.
           capture('report_sheet_opened', { entry: 'phone_tab' });
-          router.history.push(withNewReport(pathname, searchStr), reportSheetLinkState());
+          router.history.push(newReportHref(pathname, searchStr), reportSheetLinkState());
         }}
       />
     </>

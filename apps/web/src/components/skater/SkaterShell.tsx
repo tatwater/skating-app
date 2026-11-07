@@ -4,6 +4,7 @@ import { deviceTimeZone, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
 
+import { SheetHostContext } from './chrome';
 import { useSearchOwnerBinding } from './GlobalSearch';
 import { NotFoundScreen } from './NotFoundScreen';
 import { OfflineOverPage } from './OfflineBoundary';
@@ -19,20 +20,32 @@ import { useSkaterSurface } from './useSkaterSurface';
  * on every app open — the device's time zone (the 8 pm digest's zone, A08 §3) and the Clerk mirrors
  * (email, avatar). Below `md` the phone chrome (row 9) takes `SkaterFrame`'s `phoneChrome` slot.
  */
-export function SkaterShell({ children }: { children: ReactNode }) {
+export function SkaterShell({
+  children,
+  sheetHost = true,
+}: {
+  children: ReactNode;
+  /**
+   * The report sheet's host is under this shell (the skater layout's is). `false` outside it —
+   * `/about`, the signed-in 404 — so New report opens over Explore instead of a `?post=` nothing reads.
+   */
+  sheetHost?: boolean;
+}) {
   useSkaterSurface();
   useAppOpenSync();
   useSearchOwnerBinding();
   // One bar's overlays at a time: the chrome store controls both bars' copies (row 9).
   const phone = useIsPhone();
   return (
-    <SkaterFrame
-      topBar={phone ? null : <SkaterTopBar />}
-      phoneChrome={<PhoneChrome live={phone} />}
-      overlay={<OfflineOverPage />}
-    >
-      {children}
-    </SkaterFrame>
+    <SheetHostContext.Provider value={sheetHost}>
+      <SkaterFrame
+        topBar={phone ? null : <SkaterTopBar />}
+        phoneChrome={<PhoneChrome live={phone} />}
+        overlay={<OfflineOverPage />}
+      >
+        {children}
+      </SkaterFrame>
+    </SheetHostContext.Provider>
   );
 }
 
@@ -71,7 +84,7 @@ export function NotFoundRoute() {
   const { isSignedIn } = useAuth();
   if (!isSignedIn) return <NotFoundScreen />;
   return (
-    <SkaterShell>
+    <SkaterShell sheetHost={false}>
       <NotFoundScreen />
     </SkaterShell>
   );
