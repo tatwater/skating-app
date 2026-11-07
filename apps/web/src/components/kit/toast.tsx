@@ -6,6 +6,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,7 +41,8 @@ import { Kbd } from './kbd';
  *   and the time bar ticks once a second instead of gliding.
  * - **The action's key works** while its toast is shown: the cap it wears (`kbd`, "⌘Z") is bound
  *   for as long as the toast is on screen — not while it waits behind the limit or is leaving —
- *   and released when it closes or is replaced. A newer toast claiming the same key wins. A key
+ *   and released when it closes or is replaced. Two shown toasts claiming the same key: the one
+ *   in front (the newer) wins, however they arrived. A key
  *   with ⌘ (or Ctrl, ⌥) acts from anywhere but a text field, where the field's own key (its undo)
  *   wins; a plain key (⏎, Esc) acts only when nothing has focus, since every control, list and
  *   dialog uses those. A key some handler already took (`defaultPrevented`) is left alone. Like
@@ -228,24 +230,28 @@ function Toaster({
   container,
   children,
 }: ToasterProps) {
-  // The shown toasts' keys, in the order they were claimed: the newest claim on a key wins.
-  const claims = useRef(new Map<string, KeyClaim & { order: number }>());
-  const order = useRef(0);
+  // The shown toasts' keys, by toast id. Which claim wins is read at the key press from the
+  // toasts' current order (`stack`, front first) — never from when a claim was made: two toasts
+  // that mount in one render claim in effect order, which is the list's, front first, so the
+  // last claim would be the older toast's.
+  const claims = useRef(new Map<string, KeyClaim>());
+  const stack = useRef<readonly string[]>([]);
   const claimKey = useCallback((id: string, claim: KeyClaim | null) => {
     if (claim === null) claims.current.delete(id);
-    else claims.current.set(id, { ...claim, order: ++order.current });
+    else claims.current.set(id, claim);
   }, []);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || event.isComposing) return;
       const mod = modKey();
-      let hit: (KeyClaim & { order: number }) | undefined;
-      for (const claim of claims.current.values()) {
-        if (
-          toastKeyMatches(claim.key, event, mod) &&
-          (hit === undefined || claim.order > hit.order)
-        )
+      // The frontmost shown toast that claims the key.
+      let hit: KeyClaim | undefined;
+      for (const id of stack.current) {
+        const claim = claims.current.get(id);
+        if (claim !== undefined && toastKeyMatches(claim.key, event, mod)) {
           hit = claim;
+          break;
+        }
       }
       if (hit === undefined || focusOwnsToastKey(hit.key)) return;
       event.preventDefault();
@@ -275,7 +281,7 @@ function Toaster({
                 'bottom-gutter left-gutter w-[min(var(--size-sheet-sm),calc(100vw-2*var(--gap-gutter)))]',
             )}
           >
-            <ToastList timeout={timeout} />
+            <ToastList timeout={timeout} stack={stack} />
           </ToastPrimitive.Viewport>
         </ToastPrimitive.Portal>
       </ClaimKeyContext.Provider>
@@ -283,8 +289,18 @@ function Toaster({
   );
 }
 
-function ToastList({ timeout }: { timeout: number }) {
+function ToastList({
+  timeout,
+  stack,
+}: {
+  timeout: number;
+  /** Where the Toaster's key listener reads the toasts' order: their ids, front (newest) first. */
+  stack: RefObject<readonly string[]>;
+}) {
   const { toasts } = ToastPrimitive.useToastManager();
+  useLayoutEffect(() => {
+    stack.current = toasts.map((t) => t.id);
+  }, [toasts, stack]);
   return toasts.map((t) => <KitToast key={t.id} toast={t} defaultTimeout={timeout} />);
 }
 
@@ -331,8 +347,8 @@ function KitToast({ toast: t, defaultTimeout }: { toast: ToastObject; defaultTim
   const key = useMemo(() => (kbd === undefined ? null : parseToastKey(kbd)), [kbd]);
   const shown = !t.limited && t.transitionStatus !== 'ending';
   const claimKey = use(ClaimKeyContext);
-  // The press, kept current without re-claiming: the manager's handle is new every render, and a
-  // re-claim would reorder the claims (the newest claim wins, so order must mean "shown last").
+  // The press, kept current without re-claiming: the manager's handle is new every render, and
+  // re-claiming on it would churn the claims for nothing.
   const pressNow = () => {
     action?.onAction();
     manager.close(t.id);

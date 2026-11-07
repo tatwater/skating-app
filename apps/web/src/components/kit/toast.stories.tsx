@@ -240,6 +240,59 @@ export const UndoByKey: Story = {
   },
 };
 
+const undoPhoto = fn();
+const undoReport = fn();
+
+/**
+ * Two toasts that arrive in one render, both on ⌘Z, both shown (a limit of two): the key undoes
+ * the one in front — the newer — not the one behind it, then the one behind once it's in front.
+ */
+export const UndoByKeyTogether: Story = {
+  render: () => (
+    <Frame limit={2}>
+      {(manager) => (
+        <Button
+          className="self-start"
+          onClick={() => {
+            toast(
+              { title: 'Photo hidden', action: { label: 'Undo', kbd: '⌘Z', onAction: undoPhoto } },
+              manager,
+            );
+            toast(
+              {
+                title: 'Report dismissed',
+                action: { label: 'Undo', kbd: '⌘Z', onAction: undoReport },
+              },
+              manager,
+            );
+          }}
+        >
+          Act twice
+        </Button>
+      )}
+    </Frame>
+  ),
+  beforeEach: () => {
+    undoPhoto.mockClear();
+    undoReport.mockClear();
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Act twice' }));
+    await waitFor(() => expect(toastsIn(canvasElement)).toHaveLength(2));
+    const [front] = toastsIn(canvasElement);
+    await expect(front).toHaveTextContent('Report dismissed');
+    await pressUndoKey();
+    await expect(undoReport).toHaveBeenCalledOnce();
+    await expect(undoPhoto).not.toHaveBeenCalled();
+    await waitFor(() => expect(toastsIn(canvasElement)).toHaveLength(1));
+    await expect(toastIn(canvasElement)).toHaveTextContent('Photo hidden');
+    await pressUndoKey();
+    await expect(undoPhoto).toHaveBeenCalledOnce();
+    await expect(undoReport).toHaveBeenCalledOnce();
+    await waitFor(() => expect(toastIn(canvasElement)).toBeNull());
+  },
+};
+
 const retry = fn();
 
 /** A plain key (⏎) acts only while nothing has focus: every control uses ⏎ for itself. */
