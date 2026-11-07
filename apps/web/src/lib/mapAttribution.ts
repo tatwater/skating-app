@@ -30,9 +30,19 @@
  * exactly what MapLibre's own minimize path and its toggle leave behind, so its toggle keeps working
  * from there (it reads the show class, and the native `<summary>` flips `open`). Once only: after
  * that the ⓘ is the skater's, and a source arriving later never re-folds what they opened.
+ *
+ * **One credit no source can declare: the contours'.** Whose contour lines are on screen is only
+ * known once their features are read, so the contour source carries no `attribution`; the canvas
+ * hands the credit in through `setExtraAttribution`, which keeps it in MapLibre's own
+ * `customAttribution` and asks the control to rebuild. It is the same rebuild a source arriving runs,
+ * so the fold above and the theme (all CSS, `styles/app.css`) see nothing new.
  */
 
 import maplibregl from 'maplibre-gl';
+
+/** The credit as text: `customAttribution` is HTML, and a tile's agency label is data. */
+const asHtmlText = (text: string) =>
+  text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 export class FoldedAttributionControl extends maplibregl.AttributionControl {
   constructor() {
@@ -60,5 +70,18 @@ export class FoldedAttributionControl extends maplibregl.AttributionControl {
         this._container.removeAttribute('open');
       }
     };
+  }
+
+  /**
+   * Show `text` with the sources' credits, replacing whatever was set before — or drop it with
+   * `null`. Replacing (one slot, not a list) is what keeps a credit from going stale or doubling
+   * when the lines in view change hands; MapLibre then dedupes it against the sources' credits as
+   * it does theirs against each other. Safe before the control is added: `onAdd` reads it.
+   */
+  setExtraAttribution(text: string | null): void {
+    const credit = text?.trim();
+    this.options.customAttribution = credit ? asHtmlText(credit) : undefined;
+    // Rebuilds only when the joined credits changed, and only then re-runs the (wrapped) compact.
+    if (this._map) this._updateAttributions();
   }
 }

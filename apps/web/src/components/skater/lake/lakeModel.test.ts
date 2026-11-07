@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 import {
   areaFact,
   axisLine,
-  contourCreditLine,
   depthFact,
   elevationFact,
   hazardListCopy,
@@ -243,17 +242,6 @@ describe('About', () => {
       { term: 'Length', value: '1 mi' },
     ]);
     expect(shapeRows({})).toEqual([]);
-  });
-
-  it('credits the contours only while they’re drawn — the basemap’s credit is the chip’s', () => {
-    expect(contourCreditLine(null)).toBeNull();
-    expect(contourCreditLine('  ')).toBeNull();
-    expect(contourCreditLine(' 5 ft contours, surveyed by NH GRANIT. ')).toBe(
-      '5 ft contours, surveyed by NH GRANIT.',
-    );
-    expect(contourCreditLine('depth contours, interpolated by us from published soundings.')).toBe(
-      'Depth contours, interpolated by us from published soundings.',
-    );
   });
 });
 

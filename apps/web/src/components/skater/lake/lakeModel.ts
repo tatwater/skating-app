@@ -340,13 +340,3 @@ export function shapeRows(body: {
   }
   return rows;
 }
-
-/**
- * The contours' credit as the sidebar's foot shows it — trimmed, its first letter capitalized — or
- * `null` when no contours are drawn. The tile is the authority, read by the map into its store.
- */
-export function contourCreditLine(contourCredit: string | null): string | null {
-  const credit = contourCredit?.trim();
-  if (!credit) return null;
-  return credit.charAt(0).toUpperCase() + credit.slice(1);
-}

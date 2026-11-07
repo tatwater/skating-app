@@ -52,6 +52,18 @@ export {
 } from '@skating/core';
 
 /**
+ * The contours' credit as the map's credits show it — trimmed, its first letter capitalized — or
+ * `null` when no contours are drawn. `formatContourCredit` writes it to follow *"Contours:"* in the
+ * layers popover, so it can open lowercase (*"depth contours, interpolated…"*); in the ⓘ it stands
+ * alone between the other credits.
+ */
+export function contourAttribution(contourCredit: string | null): string | null {
+  const credit = contourCredit?.trim();
+  if (!credit) return null;
+  return credit.charAt(0).toUpperCase() + credit.slice(1);
+}
+
+/**
  * Depth ramp per theme, within the brand hue.
  *
  * Not routed through the semantic theme roles (`primary`, `danger`, …) the way the hazard palette is,

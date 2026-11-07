@@ -59,6 +59,12 @@ export interface MapCanvasOptions {
   onViewport?: (view: { viewport: BBox; zoom: number }) => void;
   /** Extra MapLibre controls beyond attribution — the skater map wants navigation, the editor doesn't. */
   navigationControl?: boolean;
+  /**
+   * A credit for something drawn whose source can't declare one, shown in the map's own credits
+   * beside the sources' — the skater map's contour credit, which depends on whose lines are in
+   * view. `null`/omitted shows none. Changing it updates the credits in place, never the map.
+   */
+  extraAttribution?: string | null;
 }
 
 /**
@@ -97,6 +103,7 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     minZoom,
     fitBounds,
     navigationControl = true,
+    extraAttribution = null,
   } = options;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +117,10 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
   onLoadRef.current = options.onLoad;
   const onViewportRef = useRef(options.onViewport);
   onViewportRef.current = options.onViewport;
+  // The credits control of the live map, and the extra credit a re-created map starts from.
+  const attributionRef = useRef<FoldedAttributionControl | null>(null);
+  const extraAttributionRef = useRef(extraAttribution);
+  extraAttributionRef.current = extraAttribution;
 
   // `maxBounds` and `fitBounds` are array literals a caller usually rebuilds each render; compare by
   // value so the map isn't re-created on every parent render.
@@ -167,7 +178,10 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     map.keyboard.disableRotation();
     // The credits, compact and folded behind an ⓘ that stays on the map — see `mapAttribution`
     // for why MapLibre's own `compact: true` is not enough on its own.
-    map.addControl(new FoldedAttributionControl());
+    const attribution = new FoldedAttributionControl();
+    attribution.setExtraAttribution(extraAttributionRef.current);
+    map.addControl(attribution);
+    attributionRef.current = attribution;
     if (navigationControl) {
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     }
@@ -205,11 +219,17 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       setLoaded(false);
       map.remove();
       mapRef.current = null;
+      attributionRef.current = null;
       pmtilesUsers = Math.max(0, pmtilesUsers - 1);
       if (pmtilesUsers === 0) maplibregl.removeProtocol('pmtiles');
     };
     // `initialCenter` / `initialZoom` / `minZoom` are deliberately absent — see `initialViewRef`.
   }, [pmtilesUrl, worldPmtilesUrl, flavor, boundsKey, fitKey, navigationControl]);
+
+  // The credit follows the caller in place; a re-created map took the current one at construction.
+  useEffect(() => {
+    attributionRef.current?.setExtraAttribution(extraAttribution);
+  }, [extraAttribution]);
 
   return { containerRef, mapRef, loaded };
 }

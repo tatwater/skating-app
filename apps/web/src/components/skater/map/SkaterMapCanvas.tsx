@@ -12,6 +12,7 @@ import {
   CONTOUR_SOURCE_ID,
   CONTOUR_SOURCE_LAYER,
   type ContourFeatureProperties,
+  contourAttribution,
   contourBodyKey,
   contourCredit,
   contourFilter,
@@ -162,6 +163,8 @@ export default function SkaterMapCanvas() {
     initialCenter: initialCamera?.center ?? INITIAL_CENTER,
     initialZoom: initialCamera?.zoom ?? INITIAL_ZOOM,
     navigationControl: false,
+    // The contours' credit rides in the map's own ⓘ beside the basemap's, while they're drawn.
+    extraAttribution: contourAttribution(contourCreditLine),
     onViewport: (view) => {
       setQuery(view);
       const store = useSkaterMapStore.getState();

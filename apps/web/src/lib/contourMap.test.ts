@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hexToRgb, hueDistance } from '@skating/design';
 import { describe, expect, it } from 'vitest';
-import { CONTOUR_PALETTE } from './contourMap';
+import { CONTOUR_PALETTE, contourAttribution } from './contourMap';
 import { HAZARD_PALETTE } from './hazardMap';
 
 /**
@@ -53,6 +53,22 @@ describe('CONTOUR_PALETTE', () => {
     const light = (hex: string) => hexToRgb(hex).reduce((a, b) => a + b, 0);
     expect(light(CONTOUR_PALETTE.white.deep)).toBeLessThan(light(CONTOUR_PALETTE.white.shallow));
     expect(light(CONTOUR_PALETTE.dark.deep)).toBeGreaterThan(light(CONTOUR_PALETTE.dark.shallow));
+  });
+});
+
+describe('contourAttribution', () => {
+  it('is nothing while no contours are drawn', () => {
+    expect(contourAttribution(null)).toBeNull();
+    expect(contourAttribution('  ')).toBeNull();
+  });
+
+  it('stands alone in the map’s credits: trimmed, its first letter capitalized', () => {
+    expect(contourAttribution(' 5 ft contours, surveyed by NH GRANIT. ')).toBe(
+      '5 ft contours, surveyed by NH GRANIT.',
+    );
+    expect(contourAttribution('depth contours, interpolated by us from published soundings.')).toBe(
+      'Depth contours, interpolated by us from published soundings.',
+    );
   });
 });
 

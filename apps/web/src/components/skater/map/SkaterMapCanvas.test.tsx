@@ -74,7 +74,10 @@ class FakeMap {
   fire(event: string, e?: unknown) {
     for (const h of this.handlers.get(event) ?? []) h(e);
   }
-  addControl() {}
+  controls: unknown[] = [];
+  addControl(control: unknown) {
+    this.controls.push(control);
+  }
   addSource(id: string, spec: { data?: unknown }) {
     this.sources.set(id, spec.data);
   }
@@ -154,7 +157,10 @@ vi.mock('maplibre-gl', () => ({
     Map: FakeMap,
     addProtocol: vi.fn(),
     removeProtocol: vi.fn(),
-    AttributionControl: class {},
+    // `options` is where the folded credits control keeps the contours' credit.
+    AttributionControl: class {
+      options: Record<string, unknown> = {};
+    },
     NavigationControl: class {},
   },
 }));
@@ -214,6 +220,7 @@ const {
   LABEL_CLOCK_MS,
 } = await import('./SkaterMapCanvas');
 const { CONTOUR_LAYER_ID } = await import('@/lib/contourMap');
+const { FoldedAttributionControl } = await import('@/lib/mapAttribution');
 const { BANDS_LAYER_ID } = await import('@/lib/depthBands');
 
 // ── Data ──────────────────────────────────────────────────────────────────────────────────────
@@ -295,6 +302,13 @@ function Harness({
 }
 
 const map = () => FakeMap.instances.at(-1) as FakeMap;
+/** What the map's folded credits (the ⓘ) carry beyond the sources' own. */
+const chipCredit = () =>
+  (
+    map().controls.find((c) => c instanceof FoldedAttributionControl) as InstanceType<
+      typeof FoldedAttributionControl
+    >
+  ).options.customAttribution;
 const visibility = (id: string) => map().layers.get(id)?.layout.visibility;
 
 async function mount(spec = lakeMapSpec('mascoma'), handlers = {}) {
@@ -697,6 +711,36 @@ describe('depth', () => {
       'mascoma',
     );
     expect(screen.getByRole('img', { name: /Depth bands/ })).toBeInTheDocument();
+  });
+
+  /** One credit surface: the contours' credit is the map chip's, only while their lines are drawn. */
+  it('hands the contours’ credit to the map chip while drawn, and takes it back after', async () => {
+    const line = (agency: string, lane = 'surveyed') => ({
+      properties: { bodyId: 'way/123', depthFt: 10, agency, lane, intervalFt: 5 },
+    });
+    const view = await mount();
+    expect(chipCredit()).toBeUndefined();
+    // Bands alone credit nobody.
+    map().bandFeatures = [band(0)];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toBeUndefined();
+    map().sourceFeatures = [line('NH GRANIT')];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toMatch(/^5 ft contours, surveyed by .*NH GRANIT/);
+    // Another provider's lines in view: the credit is replaced, not added to.
+    map().sourceFeatures = [line('VCGI / NOAA', 'interpolated')];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toMatch(/^5 ft contours, interpolated by us from published soundings\. /);
+    expect(chipCredit()).not.toMatch(/NH GRANIT|surveyed/);
+    // Depth off: no contours drawn, no credit.
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    expect(chipCredit()).toBeUndefined();
+    // Off the lake, the same.
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toBeTruthy();
+    view.rerender(<Harness spec={exploreMapSpec()} />);
+    expect(chipCredit()).toBeUndefined();
   });
 
   it('stands the contours and the band fills down with the imagery on (D81)', async () => {

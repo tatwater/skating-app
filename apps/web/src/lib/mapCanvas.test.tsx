@@ -77,7 +77,10 @@ vi.mock('maplibre-gl', () => ({
     Map: FakeMap,
     addProtocol: (...args: unknown[]) => addProtocol(...args),
     removeProtocol: (...args: unknown[]) => removeProtocol(...args),
-    AttributionControl: class {},
+    // `options` is the one part of MapLibre's control the shell's extra credit is written to.
+    AttributionControl: class {
+      options: Record<string, unknown> = {};
+    },
     NavigationControl: class {},
   },
 }));
@@ -96,10 +99,21 @@ const BOUNDS: [[number, number], [number, number]] = [
  * A host that rebuilds every array-literal option on each render — which is what a real caller does.
  * `LakeEditorMap` derives its center from the body's bbox inline, so this is not a contrived case.
  */
-function Host({ tick, onLoad }: { tick: number; onLoad?: (map: unknown) => void }) {
+function Host({
+  tick,
+  onLoad,
+  flavor = 'white',
+  extraAttribution,
+}: {
+  tick: number;
+  onLoad?: (map: unknown) => void;
+  flavor?: 'white' | 'dark';
+  extraAttribution?: string | null;
+}) {
   const { containerRef } = useMapCanvas({
     pmtilesUrl: 'pmtiles://x',
-    flavor: 'white',
+    flavor,
+    extraAttribution,
     maxBounds: [
       [-73.5, 44],
       [-72.5, 45],
@@ -185,6 +199,36 @@ describe('useMapCanvas', () => {
     const map = FakeMap.instances[0];
     expect(map?.options.attributionControl).toBe(false);
     expect(map?.controls.filter((c) => c instanceof FoldedAttributionControl)).toHaveLength(1);
+  });
+
+  /**
+   * A credit no source declares (the skater map's contours') goes into the folded control's own
+   * slot, follows the caller in place — a changed credit is not a reason to rebuild the map — and a
+   * map re-created for a theme switch starts from the current one. How the control shows it is
+   * pinned against the real MapLibre control in `mapAttribution.test`.
+   */
+  it('hands the folded control the caller’s extra credit and keeps it current, in place', () => {
+    const credit = () => {
+      const control = FakeMap.instances
+        .at(-1)
+        ?.controls.find((c) => c instanceof FoldedAttributionControl) as InstanceType<
+        typeof FoldedAttributionControl
+      >;
+      return control.options.customAttribution;
+    };
+    const { rerender } = render(<Host tick={0} />);
+    expect(credit()).toBeUndefined();
+    rerender(<Host tick={0} extraAttribution="5 ft contours, surveyed by NH GRANIT." />);
+    expect(credit()).toBe('5 ft contours, surveyed by NH GRANIT.');
+    expect(FakeMap.instances).toHaveLength(1);
+    rerender(
+      <Host tick={0} flavor="dark" extraAttribution="5 ft contours, surveyed by NH GRANIT." />,
+    );
+    expect(FakeMap.instances).toHaveLength(2);
+    expect(credit()).toBe('5 ft contours, surveyed by NH GRANIT.');
+    rerender(<Host tick={0} flavor="dark" extraAttribution={null} />);
+    expect(credit()).toBeUndefined();
+    expect(FakeMap.instances).toHaveLength(2);
   });
 
   /**

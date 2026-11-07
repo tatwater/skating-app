@@ -14,7 +14,6 @@ import type { FunctionReturnType } from 'convex/server';
 import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo } from 'react';
 
 import { type FavoriteTargetType, useAnalytics } from '@/lib/analytics';
-import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { RequestButtons } from '../../RequestLake';
 import { LakeAction } from '../actions/LakeAction';
@@ -79,8 +78,6 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
     nav.replace(nav.with({ act: null, band: null, frame: null, hazard: null }));
   useEscapeToClose(act !== undefined, closeAct);
 
-  const contourCredit = useSkaterMapStore((s) => s.contourCredit);
-
   if (result === undefined) {
     return (
       <PhoneLakeDrawer label="Loading the lake">
@@ -125,7 +122,6 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
         bay={bay}
         tab={tab}
         nav={nav}
-        contourCredit={contourCredit}
         overlay={floated ? null : action}
       />
       {floated && action}
@@ -143,14 +139,12 @@ export function LakeSidebarView({
   bay,
   tab,
   nav,
-  contourCredit,
   overlay = null,
 }: {
   lake: Doc<'waterBodies'>;
   bay: Bay | null;
   tab: LakeTab;
   nav: PageNav;
-  contourCredit: string | null;
   overlay?: ReactNode;
 }) {
   const lakeName = waterBodyDisplayName(lake.name);
@@ -167,7 +161,6 @@ export function LakeSidebarView({
         <LakeTabs
           tab={tab}
           onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
-          contourCredit={contourCredit}
           overlay={overlay}
         >
           <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />

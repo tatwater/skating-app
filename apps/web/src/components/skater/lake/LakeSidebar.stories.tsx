@@ -188,12 +188,7 @@ function LakeFrame({
           </>
         }
         body={
-          <LakeTabs
-            tab={tab}
-            onTabChange={() => {}}
-            overlay={overlay}
-            contourCredit="5 ft contours, surveyed by NH GRANIT."
-          >
+          <LakeTabs tab={tab} onTabChange={() => {}} overlay={overlay}>
             {children}
           </LakeTabs>
         }
@@ -321,9 +316,9 @@ export const LakeReports: Story = {
     await expect(getComputedStyle(rows[rows.length - 1] as HTMLElement).borderBottomWidth).toBe(
       '0px',
     );
-    // The contours' credit rests at the foot; the basemap's is the map chip's, not the sidebar's.
-    await expect(q.getByText('5 ft contours, surveyed by NH GRANIT.')).toBeInTheDocument();
-    await expect(quad.textContent).not.toContain('OpenStreetMap');
+    // No credits in the sidebar: every one, the contours' too, is the map chip's.
+    await expect(quad.querySelector('[data-slot="lake-sidebar-foot"]')).toBeNull();
+    await expect(quad.textContent).not.toMatch(/OpenStreetMap|contours, surveyed/);
   },
 };
 

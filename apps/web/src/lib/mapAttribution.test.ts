@@ -58,7 +58,9 @@ class StubMap {
 }
 
 /** Mount the control the way `map.addControl` does: `onAdd`, then into the document. */
-function mount(control: maplibregl.AttributionControl = new FoldedAttributionControl()) {
+function mount<C extends maplibregl.AttributionControl = FoldedAttributionControl>(
+  control: C = new FoldedAttributionControl() as unknown as C,
+) {
   const map = new StubMap();
   const container = control.onAdd(map as unknown as maplibregl.Map) as HTMLDetailsElement;
   document.body.append(container);
@@ -181,6 +183,102 @@ describe('FoldedAttributionControl', () => {
     expect(summary.title).toBe('Toggle attribution');
     summary.focus();
     expect(document.activeElement).toBe(summary);
+  });
+
+  describe('the extra credit (the contours’)', () => {
+    const SURVEYED = '5 ft contours, surveyed by NH GRANIT.';
+    const INTERPOLATED =
+      'Depth contours, interpolated by us from published soundings. VCGI / NOAA.';
+
+    it('rides with the sources’ credits while set, and leaves with nothing behind', () => {
+      const { map, control, inner } = mount();
+      map.addSource('water', OSM);
+      control.setExtraAttribution(SURVEYED);
+      expect(inner.textContent).toBe(`${OSM} | ${SURVEYED}`);
+      control.setExtraAttribution(null);
+      expect(inner.textContent).toBe(OSM);
+    });
+
+    it('replaces the last one when the lines in view change hands: never stale, never doubled', () => {
+      const { map, control, inner } = mount();
+      map.addSource('water', OSM);
+      control.setExtraAttribution(SURVEYED);
+      control.setExtraAttribution(INTERPOLATED);
+      expect(inner.textContent).toBe(`${OSM} | ${INTERPOLATED}`);
+      control.setExtraAttribution(INTERPOLATED);
+      map.addSource('freeze-up', COPERNICUS);
+      expect(inner.textContent).toBe(`${OSM} | ${COPERNICUS} | ${INTERPOLATED}`);
+    });
+
+    it('shows once when a source declares the same credit', () => {
+      const { map, control, inner } = mount();
+      map.addSource('water', OSM);
+      map.addSource('contours', SURVEYED);
+      control.setExtraAttribution(SURVEYED);
+      expect(inner.textContent).toBe(`${OSM} | ${SURVEYED}`);
+    });
+
+    it('treats blank as none', () => {
+      const { map, control, inner } = mount();
+      map.addSource('water', OSM);
+      control.setExtraAttribution('   ');
+      expect(control.options.customAttribution).toBeUndefined();
+      expect(inner.textContent).toBe(OSM);
+    });
+
+    it('is text, never markup: a tile’s agency label is data', () => {
+      const { map, control, inner } = mount();
+      map.addSource('water', OSM);
+      control.setExtraAttribution('Maine DEP / MaineIF&W <img src=x onerror=alert(1)>');
+      expect(inner.querySelector('img')).toBeNull();
+      expect(inner.textContent).toBe(`${OSM} | Maine DEP / MaineIF&W <img src=x onerror=alert(1)>`);
+    });
+
+    it('can be set before the control is added, and shows on mount', () => {
+      const map = new StubMap();
+      map.style.tileManagers.water = source(OSM);
+      const control = new FoldedAttributionControl();
+      control.setExtraAttribution(SURVEYED);
+      const container = control.onAdd(map as unknown as maplibregl.Map);
+      expect(container.querySelector('.maplibregl-ctrl-attrib-inner')?.textContent).toBe(
+        `${OSM} | ${SURVEYED}`,
+      );
+      expect(shown(container)).toBe(false);
+    });
+
+    /** The fold and the skater's choice are untouched: the update is the rebuild a source runs. */
+    it('leaves folded credits folded as it comes and goes', () => {
+      const { map, control, container } = mount();
+      map.addSource('water', OSM);
+      control.setExtraAttribution(SURVEYED);
+      expect(container.classList.contains('maplibregl-compact')).toBe(true);
+      expect(shown(container)).toBe(false);
+      expect(container.open).toBe(false);
+      control.setExtraAttribution(null);
+      expect(shown(container)).toBe(false);
+      expect(container.open).toBe(false);
+    });
+
+    it('leaves credits the skater opened open as it comes and goes', () => {
+      const { map, control, container, summary } = mount();
+      map.addSource('water', OSM);
+      press(summary);
+      control.setExtraAttribution(SURVEYED);
+      control.setExtraAttribution(INTERPOLATED);
+      control.setExtraAttribution(null);
+      expect(shown(container)).toBe(true);
+      expect(container.open).toBe(true);
+    });
+
+    it('folds on arrival when it is the first credit the control gets', () => {
+      const { control, container, inner } = mount();
+      expect(container.classList.contains('maplibregl-attrib-empty')).toBe(true);
+      control.setExtraAttribution(SURVEYED);
+      expect(container.classList.contains('maplibregl-compact')).toBe(true);
+      expect(shown(container)).toBe(false);
+      expect(container.open).toBe(false);
+      expect(inner.textContent).toBe(SURVEYED);
+    });
   });
 
   it('unsubscribes on removal', () => {

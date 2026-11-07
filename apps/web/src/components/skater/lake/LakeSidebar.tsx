@@ -4,7 +4,6 @@ import { ScrollArea } from '@/components/kit/scroll-area';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/kit/tabs';
 import { cn } from '@/lib/utils';
 
-import { contourCreditLine } from './lakeModel';
 import { LAKE_TAB_LABELS, LAKE_TABS, type LakeTab } from './lakeSearch';
 
 /**
@@ -44,20 +43,13 @@ export function LakeSidebar({
 }
 
 /**
- * The scrolling body: the gutter on both sides, the sections a gap apart, and — only while contours
- * are drawn — their credit resting at the foot, pushed there when the content is short, after it
- * when it's long.
+ * The scrolling body: the gutter on both sides, the sections a gap apart.
+ *
+ * **No credits here.** The founder, seeing the basemap's twice: *"Let's only show the one in the
+ * chip over the map, NOT in the sidebar."* Every credit rides in the map's folded ⓘ — the sources'
+ * own, and the contours', which the canvas hands it while they're drawn.
  */
-export function SidebarBody({
-  children,
-  contourCredit = null,
-  className,
-}: {
-  children: ReactNode;
-  /** The contours' credit line while depth is drawn (the map store's `contourCredit`). */
-  contourCredit?: string | null;
-  className?: string;
-}) {
+export function SidebarBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <ScrollArea
       className="min-h-0 flex-1"
@@ -72,30 +64,8 @@ export function SidebarBody({
         )}
       >
         {children}
-        <SidebarFoot contourCredit={contourCredit} />
       </div>
     </ScrollArea>
-  );
-}
-
-/**
- * The contours' credit, at the foot, while depth is drawn — and nothing otherwise.
- *
- * **The basemap's credit is not here.** The founder, seeing it twice: *"Let's only show the one in
- * the chip over the map, NOT in the sidebar."* The chip carries it on its own — the basemap and water
- * sources declare `© OpenStreetMap contributors` as their MapLibre `attribution`, and the folded ⓘ
- * unions every active source's. The contour source declares none (its credit depends on whose lines
- * are drawn, which only the tile knows), so the chip can't carry that one yet, and the layers
- * popover alone is a credit behind a tap. Until the canvas hands the chip the contour credit, this
- * line stays.
- */
-export function SidebarFoot({ contourCredit = null }: { contourCredit?: string | null }) {
-  const line = contourCreditLine(contourCredit);
-  if (line === null) return null;
-  return (
-    <footer data-slot="lake-sidebar-foot" className="mt-auto pt-(--space-2_5) text-assist text-fg3">
-      <p className="m-0 [text-wrap:pretty]">{line}</p>
-    </footer>
   );
 }
 
@@ -108,13 +78,11 @@ export function LakeTabs({
   tab,
   onTabChange,
   overlay = null,
-  contourCredit = null,
   children,
 }: {
   tab: LakeTab;
   onTabChange: (tab: LakeTab) => void;
   overlay?: ReactNode;
-  contourCredit?: string | null;
   children: ReactNode;
 }) {
   const covered = overlay !== null;
@@ -138,7 +106,7 @@ export function LakeTabs({
           ))}
         </TabsList>
       </div>
-      <SidebarBody contourCredit={contourCredit}>
+      <SidebarBody>
         {overlay}
         <TabsPanel
           value={tab}
