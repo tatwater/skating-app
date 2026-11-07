@@ -143,7 +143,10 @@ describe('BountyPanel', () => {
     expect(screen.getByText('Rob Tremblay asked first')).toBeInTheDocument();
     expect(screen.getByText(/only a report from this bay fulfills it/)).toBeInTheDocument();
     expect(screen.queryByText(/pts|points/i)).toBeNull();
-    expect(useSkaterMapStore.getState().specs.view?.focus).toEqual({ bodyId: 'w1' });
+    expect(useSkaterMapStore.getState().specs.view?.focus).toEqual({
+      bodyId: 'w1',
+      subAreaId: 's1',
+    });
     expect(fakes.capture).toHaveBeenCalledWith('bounty_viewed', { source: 'deep_link' });
     // Candidates: the thumbs show their count; only the requester gets Not helpful.
     const rows = document.querySelectorAll('[data-slot="bounty-candidate"]');
@@ -190,6 +193,8 @@ describe('BountyPanel', () => {
     fakes.mutations.set('bounties:cancel', cancel);
     renderPanel();
     expect(await screen.findByText('You want a report')).toBeInTheDocument();
+    // A lake-wide bounty frames the lake, no bay.
+    expect(useSkaterMapStore.getState().specs.view?.focus).toEqual({ bodyId: 'w1' });
     expect(screen.getByText('A helpful thumb from you fulfills the bounty.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Helpful, 4' }));
     expect(fakes.mutations.get('ratings:rate')).toHaveBeenCalledWith(

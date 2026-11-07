@@ -97,8 +97,11 @@ export function BountyPanel({ bountyId }: { bountyId: string }) {
   const [askError, setAskError] = useState<string | null>(null);
 
   const spec = useMemo(
-    () => (bodyId === undefined ? PANEL_LOADING_SPEC : panelMapSpec(bodyId)),
-    [bodyId],
+    () =>
+      bodyId === undefined
+        ? PANEL_LOADING_SPEC
+        : panelMapSpec(bodyId, subAreaId !== undefined ? { subAreaId } : {}),
+    [bodyId, subAreaId],
   );
   useMapSpec(spec);
   usePanelViewed('bounty_viewed', bountyId);
