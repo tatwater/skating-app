@@ -52,8 +52,9 @@ These are the facts that shape the build. The calls the founder still has to mak
    and `posts.create`. The "14 days" was only in the mock. Nothing to build; the calendar just draws two rows
    with the last 7 days live.
 4. **GPX import has no server path.** `gpsActivities.ingestTrack` is hard-wired to `provider: 'native'`. D24 says
-   a *trusted* extent comes only from real device GPS, and a GPX file can be drawn by hand. That needs a founder
-   call (§6, Q5) plus server work.
+   a *trusted* extent comes only from real device GPS, and a GPX file can be drawn by hand. **Answered (founder,
+   2026-11-07): fully trusted for now** — a temporary D24 exception, to be reverted later (Q5, D239). The server
+   work (a `gpx` provider) is agent S's.
 5. **Feed filters live in two homes today.** D166 keeps one persisted filter store (`lib/feedFiltersStore.ts`:
    localStorage plus `profiles.feedFilterPrefs`), which **the map also reads** (weather and drive time dim
    non-matching bodies). The research doc's §4 puts "filters" in the URL. Applied to Latest, that would cut the
@@ -251,7 +252,7 @@ and days), `AlertDialog` (leave, remove a lake), `Toast`, `Note`, `Meter` (the s
 **Sections:**
 - **Account:** change email by code (7.3), sign out with an unsent draft (7.15).
 - **Your profile.**
-- **Home and drive time:** set or unset; change home by typed address (geocoder gap) or current location;
+- **Home and drive time:** set or unset; change home by typed address (the geocoder, agent S) or current location;
   traveling until a date.
 - **Notifications.**
 - **Reports and tracks:** connected accounts. Strava's official "Connect with Strava" button and "Powered by
@@ -417,7 +418,7 @@ Toasts use the kit's `toastManager`, so no store. Online/offline is a `useConnec
     `useSkateWeather`
   - `googlePhotos.available`/`begin`/`status`/`list`/`photo`/`close`/`abandon`/`complete`
   - `gpsActivities.listMine`/`setPromptState`, `strava.connectionStatus`/`pushActivity`
-  - **Gap: GPX ingest** (a provider other than native, and its trust tier, Q5)
+  - **Gap: GPX ingest** — a `gpx` provider beside `native`; fully trusted for now (Q5's answer, D239)
   - **Verify: the bounty-fill rule** against the skate time (c-td43kf)
   - Copy note: the D199 7-day window is already the server rule
 - **Profile:** `profiles.getPublicProfile`, `blocks.block`/`unblock`, `contentFlags.flag`,
@@ -427,14 +428,16 @@ Toasts use the kit's `toastManager`, so no store. Online/offline is a `useConnec
     `setShowPutInDefault`/`setAggregateTracksOptOut`, `blocks.myBlocks`/`unblock`, `support.create`
   - Data and account: `dataExport.requestExport`/`myExports`, `accountDeletion.requestDeletion`/`cancelDeletion`
   - Strava: `strava.beginConnect`/`connectionStatus`/`disconnect`; Clerk email change (existing `ChangeEmail`)
-  - **Gap: forward geocoding** for a typed home address (7.18): a provider choice with its ToS and quota
+  - **Gap: forward geocoding** for a typed home address (7.18) — in scope (Q6's answer); the provider choice
+    with its ToS and quota is agent S's first task, since nothing else hangs on which one
 - **Sign-in & system:** Clerk `useSignIn`/`useSignUp`, `profiles.upsertFromClerk`, `acceptCurrentRiskAck`,
   `regionStats.list` (About).
 
-Server gaps are their own call, never folded into a UI agent's batch: author filter, text search, GPX ingest,
-geocoder, and checking the bounty-fill rule. If the founder says yes, they make one server commit series (with
-`convex-test` per D40) — agent S in §5, the only agent that touches `packages/convex` or dev — ahead of the UI
-that needs them. The UI builds behind a flag in the meantime.
+Server gaps are their own workstream, never folded into a UI agent's batch — and **the founder approved all of
+them (2026-11-07)**: the author filter, text search, GPX ingest, the forward geocoder, and checking the
+bounty-fill rule. Agent S in §5 — the only agent that touches `packages/convex` or dev — lands them as one
+commit series (with `convex-test` per D40) ahead of the UI that needs them. The UI builds behind a flag in
+the meantime.
 
 ---
 
@@ -571,7 +574,7 @@ column is integrated, so the machine stays at 6–8 agents for the duration inst
 | Agent | Scope (owns) | Needs | Starts |
 |---|---|---|---|
 | **Gov** | foundations: deps (`zod`, `zustand`); the skater layout route + root search schema; route grammar and redirects (`/feed`→`/latest`, `/post`→`?post=`, `/notifications`→the bell); the theme cookie + server read + `.dark` sync; store skeletons; the `routeId` super-property, pageview dedupe and `/u/:username` masking; taxonomy types; region backdrop assets | main | T0 |
-| **S — server gaps** (if Q6 approves) | `packages/convex`: the text-search index, the author filter; the GPX provider and the bounty-fill verify per Q5 | nothing | T0 |
+| **S — server gaps** (all approved, founder 2026-11-07) | `packages/convex`: the text-search index, the author filter, the `gpx` provider (fully trusted, D239), the forward geocoder (the provider pick first — ToS and quota), the bounty-fill verify | nothing | T0 |
 | **P — sheet persistence** | `lib/sheetStore*`, `lib/sheetPhotos`: the IndexedDB photo store, resend-on-reconnect, `fast-check` invariants | nothing | T0 |
 | **A — shell** | `SkaterShell`, `SkaterTopBar`, `GlobalSearch`, `NotificationsMenu`, `AvatarMenu`/`ThemeMenu`, `Splash` on `CellLoader`, 404, crash, offline | Gov | T1 |
 | **B — map** | `SkaterMap` + the per-view map specs, `LakeLabel`, marks, badges, depth bands, dock, `useSkaterMapStore` | Gov | T1 |
@@ -635,20 +638,18 @@ before handoff.
 
    (The host question is settled and merged: direct cross-origin to the US cloud, the proxy reversed for the
    Clerk-cookie reason recorded in `env.ts`.)
-5. **What an imported GPX is worth.** D24: a trusted extent comes only from real device GPS, and a GPX file can be
-   made by hand. Options:
-   - (a) GPX only seeds the report's lake, day and time, and draws for the author alone (recommended).
-   - (b) GPX counts as a track but never as a public path.
-   - (c) GPX is fully trusted.
-
-   Either way it needs a server change (a provider other than native).
-6. **New server scope the boards assume.** Which of these are in this phase?
+5. **What an imported GPX is worth — answered (founder, 2026-11-07): (c), fully trusted, as a temporary
+   stop-gap.** The options were (a) GPX only seeds the report's lake, day and time and draws for the author
+   alone; (b) a track but never a public path; (c) fully trusted. The founder's reasoning: right now the
+   imported track is a big wow factor, and the early test users are not prone to meddling with it. This is a
+   deliberate, temporary exception to D24's "a trusted extent comes only from real device GPS" — **revert to
+   (a) once Garmin or another native import path lands** (the deferred row in the roadmap entry; D239). The
+   server change (a `gpx` provider beside `native`) is agent S's either way.
+6. **New server scope the boards assume — answered (founder, 2026-11-07): all three.**
    - Text search over reports (4.9)
    - A skater filter on Latest (4.8)
-   - A forward geocoder for typing a home address (7.18), which means a provider with its ToS and quota.
-     "Use my current location" is the fallback.
-
-   I'd take the skater filter and text search (one search index, behind a flag) and defer the geocoder.
+   - A forward geocoder for typing a home address (7.18) — the provider (with its ToS and quota) is agent
+     S's first pick; "Use my current location" stays as the fallback either way.
 7. **Phase shape — answered (founder, 2026-11-07):** it's **B03 — The skater web app**, this doc is the phase
    doc, and the ⚪ roadmap entry is written.
 
@@ -690,7 +691,10 @@ Garmin (already deferred under D24), and replay (L12).
   all-clear"). The sentence lives in `packages/core/src/hazardCopy.ts` beside the other D3 strings, so
   mobile and the console render the same words.
 - **D238:** public or gated web (Q1) and the web/native split (Q2): what the web never does.
-- **D239:** GPX import's trust tier (Q5), possibly as a further D24 amendment rather than a new number.
+- **D239:** GPX import's trust tier — **fully trusted for now** (founder, 2026-11-07), a deliberate temporary
+  D24 exception for the early testers' sake, **to be reverted to seed-and-author-only once Garmin or another
+  native import path lands** (the roadmap entry's deferred row keeps the obligation). Written as a D24
+  amendment rather than a free-standing number if that reads better in the register.
 - **D240:** the skater analytics posture on top of merged D235: routeId-deduped pageviews; `/u/:username`
   masked while lake and report ids stay (the D235 founder call, reaffirmed); masked autocapture text (per
   Q4b); the D3 event-name test; the `surface` super-property; and replay's recommended posture if Q4a is

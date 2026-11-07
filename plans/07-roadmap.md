@@ -811,6 +811,7 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 #### Deferred
 - ❓ **Session replay** — off at launch (the D235 test keeps it so); waits on the L12 legal pass → the plan's §4.2 posture
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
+- ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5
 - ⚪ **The slow-pan region video** behind the sign-in screens — static per-theme PNGs ship; a React video library later
 
 ## Deferred register
