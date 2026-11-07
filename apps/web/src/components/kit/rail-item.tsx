@@ -24,7 +24,7 @@ import { Kbd } from './kbd';
  * - **Hover and keyboard focus are one look** (the console's rule): the name and icon brighten;
  *   focus adds a hairline ring inside the item, so it never spills over its neighbors.
  * - **Go-mode** (`go`): G was pressed. Every item steps up to the quiet-bright ink, the count hides
- *   (its place is taken by the go chip — the ice key with the spent G greyed before the finishing
+ *   (its place is taken by the go chip — the ice key with the spent G grayed before the finishing
  *   letter), and the current mode stays full bright.
  * - **The app item** (`variant="app"`) is another place: shorter, in the quiet-bright ink, the
  *   new-tab mark for its icon and a hairline over it; it always opens in a new tab.

@@ -38,7 +38,7 @@ type OpenChangeDetails = { reason: string; event?: Event | undefined };
 export function useQuadOpen(frame: HTMLElement | null) {
   const [open, setOpen] = useState(false);
   const onOpenChange = (next: boolean, details: OpenChangeDetails) => {
-    // Whatever the reason (a press, focus leaving, a select's cancelled open), a close that lands
+    // Whatever the reason (a press, focus leaving, a select's canceled open), a close that lands
     // in another quad is ignored. Esc is never ignored.
     if (!next && details.reason !== 'escape-key') {
       const event = details.event;

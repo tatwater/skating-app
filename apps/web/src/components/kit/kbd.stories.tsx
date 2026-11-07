@@ -44,7 +44,7 @@ export const Lit: Story = {
 /** The recessed cap. */
 export const Dim: Story = { args: { variant: 'dim', children: '⇧⏎' } };
 
-/** Go-mode: G already pressed (greyed), the finishing letter lit, on ice. */
+/** Go-mode: G already pressed (grayed), the finishing letter lit, on ice. */
 export const Go: Story = {
   args: { variant: 'go', spent: 'G', children: 'I' },
   play: async ({ canvasElement }) => {

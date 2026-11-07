@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
  *   it is denser on the console and never makes the button it sits in taller.
  * - **Three looks.** `lit` — the light cap the console's buttons and status bar wear; `dim` — the
  *   recessed cap (a status-bar key that isn't the point); `go` — ice, the transient go-mode, with
- *   the key already pressed in the sequence (`spent`) greyed before the one that finishes it.
+ *   the key already pressed in the sequence (`spent`) grayed before the one that finishes it.
  * - **Disabled is inert, not hidden** (a layer with nothing to draw keeps its key): no fill, a
  *   hairline, the disabled ink.
  *
@@ -47,7 +47,7 @@ type KbdProps = ComponentProps<'kbd'> &
   VariantProps<typeof kbdVariants> & {
     /** Nothing listens for this key right now; the cap stays, faded. */
     disabled?: boolean;
-    /** `go` only: the key already pressed in the sequence ("G"), greyed before the finishing key. */
+    /** `go` only: the key already pressed in the sequence ("G"), grayed before the finishing key. */
     spent?: ReactNode;
   };
 

@@ -163,7 +163,8 @@ function MiddleList({
     },
     [cursorEntry],
   );
-  const rem = rootRem();
+  // Read once: `getComputedStyle` per render would restyle the page on every cursor move.
+  const rem = useMemo(rootRem, []);
   const virtualizer = useVirtualizer({
     count: virtual ? entries.length : 0,
     getScrollElement: () => viewport,
