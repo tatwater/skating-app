@@ -25,6 +25,7 @@ import type {
   SkateQuality,
   Suitability,
   SurfaceTag,
+  ThicknessMethod,
 } from './types';
 import { describeSighting } from './where';
 
@@ -215,6 +216,106 @@ export interface FeedCardData {
   silhouette?: SilhouetteData;
   /** The author changed this after posting (A10-3): the card says *edited*; the history is a moderator's. */
   edited?: true;
+  /** The readings at a glance (B03 §11) — `thicknessSummaryOf`. Absent when nothing was measured. */
+  thickness?: ThicknessSummary;
+  /**
+   * The start of the author's notes (B03 §11) — `notesExcerpt`. Author content, so it rides only
+   * where the whole report already rides: a card is only ever built for a visible report.
+   */
+  notesExcerpt?: string;
+  /**
+   * "Helpful" thumbs and the comments the viewer can see (blocked authors' and moderated comments
+   * aren't counted, matching the thread). Each is read up to `CARD_COUNT_CAP`; the `…Capped` flag
+   * says there were more. Set on every server-built card; absent on a card cached before B03.
+   */
+  helpfulCount?: number;
+  helpfulCountCapped?: true;
+  commentCount?: number;
+  commentCountCapped?: true;
+  /** The put-in's name (`resolvePutInName`) — only when the viewer may see the put-in at all. */
+  putInName?: string;
+}
+
+/**
+ * The most rows a card counts per tally (B03 §11). A page of feed cards is two capped reads each,
+ * so the cap is what keeps a page of popular reports inside a query's read budget; past it the card
+ * says "20+" rather than a number it didn't read.
+ */
+export const CARD_COUNT_CAP = 20;
+
+/** How long a card's notes excerpt runs, in characters, before it is cut at a word. */
+export const NOTES_EXCERPT_MAX = 140;
+
+/**
+ * The opening of a report's notes for a card: whitespace collapsed (a card is one or two lines), and
+ * cut at the last word boundary inside `max` with an ellipsis. `undefined` for absent or blank
+ * notes, so the card draws nothing rather than an empty quote.
+ */
+export function notesExcerpt(
+  notes: string | undefined,
+  max: number = NOTES_EXCERPT_MAX,
+): string | undefined {
+  const flat = (notes ?? '').replace(/\s+/g, ' ').trim();
+  if (flat.length === 0) return undefined;
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  // A single unbroken run longer than `max` is cut mid-word rather than not at all.
+  return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[\s.,;:!?-]+$/, '')}…`;
+}
+
+/**
+ * A report's thickness readings at a glance (B03 §11) — the thinnest and thickest figures given,
+ * how many readings there were, and how they were taken. **The thinnest leads** wherever this is
+ * drawn: a skater deciding from a card needs the weakest spot anyone found, not the average (D3 —
+ * and a reading is the author's, never a verdict of ours).
+ *
+ * `minCm`/`maxCm` span every reading with a figure: a single value, either end of a range, a lower
+ * bound's floor. `openEnded` marks that some reading was a lower bound ("4″+"), so the top of the
+ * span is not a ceiling. A poke-only report has readings but no figures, and carries just the
+ * count and methods. `undefined` when there are no readings.
+ */
+export interface ThicknessSummary {
+  readingCount: number;
+  minCm?: number;
+  maxCm?: number;
+  openEnded?: true;
+  methods: ThicknessMethod[];
+}
+
+export function thicknessSummaryOf(
+  iceThickness:
+    | {
+        readings: readonly {
+          valueCm?: number;
+          minCm?: number;
+          maxCm?: number;
+          method: ThicknessMethod;
+        }[];
+      }
+    | undefined,
+): ThicknessSummary | undefined {
+  const readings = iceThickness?.readings ?? [];
+  if (readings.length === 0) return undefined;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let openEnded = false;
+  const methods: ThicknessMethod[] = [];
+  for (const r of readings) {
+    if (!methods.includes(r.method)) methods.push(r.method);
+    const low = r.valueCm ?? r.minCm;
+    if (low === undefined) continue;
+    const high = r.valueCm ?? r.maxCm ?? low;
+    if (r.valueCm === undefined && r.maxCm === undefined) openEnded = true;
+    min = Math.min(min, low);
+    max = Math.max(max, high);
+  }
+  return {
+    readingCount: readings.length,
+    ...(Number.isFinite(min) ? { minCm: min, maxCm: max } : {}),
+    ...(openEnded ? { openEnded: true as const } : {}),
+    methods,
+  };
 }
 
 /**

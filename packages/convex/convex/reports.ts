@@ -36,18 +36,24 @@ import {
   toLocatedChip,
   validateReportInput,
 } from '@skating/core';
-import { paginationOptsValidator } from 'convex/server';
-import { ConvexError, v } from 'convex/values';
+import { type PaginationResult, paginationOptsValidator } from 'convex/server';
+import { ConvexError, type ObjectType, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { internalMutation, mutation, query } from './_generated/server';
+import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import { HAZARD_MAX_PER_REPORT } from './hazards';
 import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
-import { type BodyInfo, bodyInfoFor, type FeedCardCaches, toFeedCard } from './lib/feedCards';
+import {
+  type BodyInfo,
+  bodyInfoFor,
+  type FeedCardCaches,
+  loadFeedViewer,
+  toFeedCard,
+} from './lib/feedCards';
 import { fileLandmarkProposals } from './lib/landmarkProposals';
 import { resolveLocatedLandmarks } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
@@ -105,6 +111,32 @@ export const create = mutation({
   },
 });
 
+/** The arguments the two body lists share (`listByWaterBody`, `listCardsByWaterBody`). */
+const listByWaterBodyArgs = {
+  waterBodyId: v.id('waterBodies'),
+  /**
+   * Narrow to one named bay (A02 / D60) — the lake page's sub-area filter.
+   *
+   * Served by `by_sub_area_moderation_and_skate_end_time`, the same index the bounty gate uses, so
+   * this is a *narrower* read rather than the same read with rows dropped after: on Champlain,
+   * paginating the whole lake and filtering to Malletts Bay in JS would hand back short pages (or
+   * empty ones) while still paying for every report on 200 km of ice. The moderation gate stays
+   * inside the index for the reason its body-scoped sibling documents.
+   */
+  subAreaId: v.optional(v.id('waterBodySubAreas')),
+  /**
+   * Which season to list (D63) — the calendar year it starts in, `2024` being `'24/'25`. Absent ⇒
+   * **this** season, which is the map's and the list's only default state.
+   *
+   * Bounded on **both** sides even for the current season. `SKATE_TIME_FUTURE_TOLERANCE_MS` lets a
+   * report be filed up to an hour ahead, so within an hour of the boundary a report can legitimately
+   * carry next season's `skateEndTime` — and it belongs to next season, by the only definition of
+   * season there is. A lower-bound-only range would show it in June.
+   */
+  season: v.optional(v.number()),
+  paginationOpts: paginationOptsValidator,
+};
+
 /**
  * A water body's report feed — newest **skate-end time** first (D28), **paginated** for infinite
  * scroll so a popular lake's history never `.collect()`s an unbounded set. All reports are public
@@ -118,96 +150,10 @@ export const create = mutation({
  * a past season still resolves by permalink through `get`, labeled with the season it belongs to.
  */
 export const listByWaterBody = query({
-  args: {
-    waterBodyId: v.id('waterBodies'),
-    /**
-     * Narrow to one named bay (A02 / D60) — the lake page's sub-area filter.
-     *
-     * Served by `by_sub_area_moderation_and_skate_end_time`, the same index the bounty gate uses, so
-     * this is a *narrower* read rather than the same read with rows dropped after: on Champlain,
-     * paginating the whole lake and filtering to Malletts Bay in JS would hand back short pages (or
-     * empty ones) while still paying for every report on 200 km of ice. The moderation gate stays
-     * inside the index for the reason its body-scoped sibling documents.
-     */
-    subAreaId: v.optional(v.id('waterBodySubAreas')),
-    /**
-     * Which season to list (D63) — the calendar year it starts in, `2024` being `'24/'25`. Absent ⇒
-     * **this** season, which is the map's and the list's only default state.
-     *
-     * Bounded on **both** sides even for the current season. `SKATE_TIME_FUTURE_TOLERANCE_MS` lets a
-     * report be filed up to an hour ahead, so within an hour of the boundary a report can legitimately
-     * carry next season's `skateEndTime` — and it belongs to next season, by the only definition of
-     * season there is. A lower-bound-only range would show it in June.
-     */
-    season: v.optional(v.number()),
-    paginationOpts: paginationOptsValidator,
-  },
-  handler: async (ctx, { waterBodyId, subAreaId, season, paginationOpts }) => {
+  args: listByWaterBodyArgs,
+  handler: async (ctx, args) => {
     const viewer = await getCurrentProfile(ctx);
-    // `v.number()` admits `NaN` and `1e15`; both become index bounds that match nothing, so an empty
-    // lake would be the answer to a malformed question. `resolveSeason` lands those on the same
-    // default as no argument at all.
-    const target: Season = resolveSeason(season, seasonOf(Date.now()));
-    const from = seasonStartMs(target);
-    const to = seasonEndMs(target);
-    if (subAreaId !== undefined) {
-      // The bay index is keyed by sub-area alone, so `waterBodyId` contributes nothing to that read —
-      // which is exactly what makes an unvalidated pair a cross-lake leak: ask for Lake Morey while
-      // naming a Champlain bay and the page hands back Champlain's reports under Morey's header. Both
-      // clients only offer bays that came from `listForBody` for the body on screen, but that's a UI
-      // courtesy, not an authority (§7c) — the pairing is decided here.
-      //
-      // Checked against the **survivor** (D36): a merge repoints the loser's bays onto the survivor
-      // (`repointSubAreasOnMerge`), so a link still naming the merged-away body is a legitimate pair
-      // and shouldn't 400 someone's bookmark.
-      //
-      // A *delisted* bay is deliberately still filterable, unlike `bounties.create`, which rejects
-      // one: a bounty on an invisible bay is unfulfillable, whereas a bay's reports are the lake's
-      // reports either way — nothing is exposed by narrowing to them, and erroring a feed mid-scroll
-      // because a moderator delisted the bay is worse than serving it until the client's own bay list
-      // catches up and drops the filter.
-      const survivor = await resolveSurvivor(ctx, waterBodyId);
-      const subArea = await ctx.db.get(subAreaId);
-      if (!survivor || !subArea || subArea.waterBodyId !== survivor._id) {
-        throw new ConvexError('That sub-area is not on this water body');
-      }
-      // Off the `reportSubAreas` join since A09: a report can be a member of two bays (the two-bay
-      // skate), and a per-report index could only ever find it under one. The join carries the
-      // moderation gate and the skate time as mirrors precisely so this read stays *in* the index;
-      // the page is then hydrated one `get` per row, bounded by the page size.
-      const joined = await ctx.db
-        .query('reportSubAreas')
-        .withIndex('by_sub_area_moderation_skate_end', (q) =>
-          q
-            .eq('subAreaId', subAreaId)
-            .eq('moderationStatus', 'visible')
-            .gte('skateEndTime', from)
-            .lt('skateEndTime', to),
-        )
-        .order('desc')
-        .paginate(paginationOpts);
-      const page: Doc<'reports'>[] = [];
-      for (const row of joined.page) {
-        const report = await ctx.db.get(row.reportId);
-        // A mirror that has fallen behind the row it mirrors is the only way to reach here; the
-        // report's own status is the authority, so it is re-checked rather than trusted.
-        if (report && report.moderationStatus === 'visible') {
-          page.push(await redactPutIn(ctx, report, viewer));
-        }
-      }
-      return { ...joined, page };
-    }
-    const result = await ctx.db
-      .query('reports')
-      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-        q
-          .eq('waterBodyId', waterBodyId)
-          .eq('moderationStatus', 'visible')
-          .gte('skateEndTime', from)
-          .lt('skateEndTime', to),
-      )
-      .order('desc')
-      .paginate(paginationOpts);
+    const result = await pageBodyReports(ctx, args);
     // Served docs honor the put-in opt-out (`redactPutIn`); the rows themselves are untouched.
     return {
       ...result,
@@ -215,6 +161,108 @@ export const listByWaterBody = query({
     };
   },
 });
+
+/**
+ * The same page as `listByWaterBody` — same season, same bay narrowing, same moderation gate —
+ * as **cards** (B03 §11): each report through `toFeedCard`, the builder `toPostCard` and every other
+ * card surface share, so the lake's list carries the thickness summary, the notes excerpt, the
+ * tallies, the put-in name and the silhouette with every visibility rule those already honor (the
+ * put-in opt-out, the blocked-author flag). Per report rather than per Post: a Post can span lakes,
+ * and a lake's list is that lake's reports.
+ *
+ * Beside `listByWaterBody` rather than replacing it: installed mobile builds read the raw documents
+ * from that one, and a deployed function's shape is a contract with every APK in the field.
+ */
+export const listCardsByWaterBody = query({
+  args: listByWaterBodyArgs,
+  handler: async (ctx, args) => {
+    const result = await pageBodyReports(ctx, args);
+    const viewer = await loadFeedViewer(ctx, undefined);
+    const page: FeedCardData[] = [];
+    for (const r of result.page) {
+      page.push(
+        await toFeedCard(
+          ctx,
+          r,
+          viewer.caches,
+          { blocked: viewer.blocked, favorites: viewer.favorites },
+          viewer.now,
+        ),
+      );
+    }
+    return { ...result, page };
+  },
+});
+
+/** One page of a body's (or bay's) visible reports for a season — the read both lists share. */
+async function pageBodyReports(
+  ctx: QueryCtx,
+  { waterBodyId, subAreaId, season, paginationOpts }: ObjectType<typeof listByWaterBodyArgs>,
+): Promise<PaginationResult<Doc<'reports'>>> {
+  // `v.number()` admits `NaN` and `1e15`; both become index bounds that match nothing, so an empty
+  // lake would be the answer to a malformed question. `resolveSeason` lands those on the same
+  // default as no argument at all.
+  const target: Season = resolveSeason(season, seasonOf(Date.now()));
+  const from = seasonStartMs(target);
+  const to = seasonEndMs(target);
+  if (subAreaId !== undefined) {
+    // The bay index is keyed by sub-area alone, so `waterBodyId` contributes nothing to that read —
+    // which is exactly what makes an unvalidated pair a cross-lake leak: ask for Lake Morey while
+    // naming a Champlain bay and the page hands back Champlain's reports under Morey's header. Both
+    // clients only offer bays that came from `listForBody` for the body on screen, but that's a UI
+    // courtesy, not an authority (§7c) — the pairing is decided here.
+    //
+    // Checked against the **survivor** (D36): a merge repoints the loser's bays onto the survivor
+    // (`repointSubAreasOnMerge`), so a link still naming the merged-away body is a legitimate pair
+    // and shouldn't 400 someone's bookmark.
+    //
+    // A *delisted* bay is deliberately still filterable, unlike `bounties.create`, which rejects
+    // one: a bounty on an invisible bay is unfulfillable, whereas a bay's reports are the lake's
+    // reports either way — nothing is exposed by narrowing to them, and erroring a feed mid-scroll
+    // because a moderator delisted the bay is worse than serving it until the client's own bay list
+    // catches up and drops the filter.
+    const survivor = await resolveSurvivor(ctx, waterBodyId);
+    const subArea = await ctx.db.get(subAreaId);
+    if (!survivor || !subArea || subArea.waterBodyId !== survivor._id) {
+      throw new ConvexError('That sub-area is not on this water body');
+    }
+    // Off the `reportSubAreas` join since A09: a report can be a member of two bays (the two-bay
+    // skate), and a per-report index could only ever find it under one. The join carries the
+    // moderation gate and the skate time as mirrors precisely so this read stays *in* the index;
+    // the page is then hydrated one `get` per row, bounded by the page size.
+    const joined = await ctx.db
+      .query('reportSubAreas')
+      .withIndex('by_sub_area_moderation_skate_end', (q) =>
+        q
+          .eq('subAreaId', subAreaId)
+          .eq('moderationStatus', 'visible')
+          .gte('skateEndTime', from)
+          .lt('skateEndTime', to),
+      )
+      .order('desc')
+      .paginate(paginationOpts);
+    const page: Doc<'reports'>[] = [];
+    for (const row of joined.page) {
+      const report = await ctx.db.get(row.reportId);
+      // A mirror that has fallen behind the row it mirrors is the only way to reach here; the
+      // report's own status is the authority, so it is re-checked rather than trusted.
+      if (report && report.moderationStatus === 'visible') page.push(report);
+    }
+    return { ...joined, page };
+  }
+  const result = await ctx.db
+    .query('reports')
+    .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+      q
+        .eq('waterBodyId', waterBodyId)
+        .eq('moderationStatus', 'visible')
+        .gte('skateEndTime', from)
+        .lt('skateEndTime', to),
+    )
+    .order('desc')
+    .paginate(paginationOpts);
+  return result;
+}
 
 /**
  * A single report for its detail view — moderation-checked (hidden/removed excluded, D32).

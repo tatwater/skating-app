@@ -8,6 +8,8 @@
 
 import {
   bandForCoord,
+  CARD_COUNT_CAP,
+  canViewComment,
   clipPathEnds,
   type DriveTimeBands,
   digestIsFresh,
@@ -21,9 +23,11 @@ import {
   matchesFilters,
   matchWeatherFilter,
   normalizeUsername,
+  notesExcerpt,
   type PostCardData,
   PUT_IN_CLIP_M,
   reportWhereSummary,
+  resolvePutInName,
   type Season,
   type SilhouetteData,
   sanitizeFeedFilters,
@@ -33,6 +37,7 @@ import {
   silhouetteRings,
   standingOf,
   surfaceTagKeys,
+  thicknessSummaryOf,
   viewerDriveTime,
   visiblePostReports,
   type WeatherDiscoveryFilter,
@@ -167,6 +172,8 @@ export interface FeedCardCaches {
   bayRings?: Map<string, LngLat[] | null>;
   /** The viewer, for the put-in rule (Phase 04 #7): author and moderators see it regardless. */
   viewer?: Doc<'profiles'> | null;
+  /** A put-in's display name, per put-in id; `null` caches one that is gone or hidden (B03 §11). */
+  putInNames?: Map<string, string | null>;
 }
 
 /**
@@ -228,6 +235,8 @@ export async function toFeedCard(
   now: number,
 ): Promise<FeedCardData> {
   const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
+  const thickness = thicknessSummaryOf(r.iceThickness);
+  const excerpt = notesExcerpt(r.notes);
   return {
     reportId: r._id,
     waterBodyId: r.waterBodyId,
@@ -258,7 +267,78 @@ export async function toFeedCard(
     isFavorite: isFavoriteReport(sets.favorites, r),
     ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
     ...(await silhouetteFieldFor(ctx, r, body, caches)),
+    // The B03 card (§11): the readings at a glance, the start of the notes, the two tallies and the
+    // put-in's name. The excerpt is author content and rides only because the card does — a card is
+    // only ever built for a visible report, the same gate the full report sits behind.
+    ...(thickness ? { thickness } : {}),
+    ...(excerpt ? { notesExcerpt: excerpt } : {}),
+    ...(await cardCountsFor(ctx, r, caches.viewer?._id ?? '', sets.blocked)),
+    ...(await putInNameFor(ctx, r, body, caches)),
   };
+}
+
+/**
+ * The card's two tallies, each read up to `CARD_COUNT_CAP` (+1 to know there were more). Helpful
+ * thumbs are a public count (`ratings.summaryForTarget` shows the same); comments count only what
+ * this viewer's thread would show — moderation-visible and not a blocked author's (`canViewComment`).
+ */
+async function cardCountsFor(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  viewerId: string,
+  blocked: Set<string>,
+): Promise<{
+  helpfulCount: number;
+  helpfulCountCapped?: true;
+  commentCount: number;
+  commentCountCapped?: true;
+}> {
+  const [ratings, comments] = await Promise.all([
+    ctx.db
+      .query('reportRatings')
+      .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', r._id))
+      .take(CARD_COUNT_CAP + 1),
+    ctx.db
+      .query('comments')
+      .withIndex('by_report', (q) => q.eq('reportId', r._id))
+      .take(CARD_COUNT_CAP + 1),
+  ]);
+  const helpful = ratings.filter((x) => x.verdict === 'helpful').length;
+  const visible = comments.filter((c) =>
+    canViewComment(viewerId, c.authorId, c.moderationStatus, blocked),
+  ).length;
+  return {
+    helpfulCount: Math.min(helpful, CARD_COUNT_CAP),
+    ...(ratings.length > CARD_COUNT_CAP ? { helpfulCountCapped: true as const } : {}),
+    commentCount: Math.min(visible, CARD_COUNT_CAP),
+    ...(comments.length > CARD_COUNT_CAP ? { commentCountCapped: true as const } : {}),
+  };
+}
+
+/**
+ * `{ putInName }` when the report names a put-in the viewer may see: the same rule as the
+ * silhouette's put-in (Phase 04 #7 — withheld from everyone but the author and moderators), and
+ * never a launch a moderator hid. One read per distinct put-in on the page.
+ */
+async function putInNameFor(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  body: BodyInfo,
+  caches: FeedCardCaches,
+): Promise<{ putInName?: string }> {
+  if (r.putInId === undefined) return {};
+  if (r.showPutIn === false && !canSeePutIn(caches.viewer ?? null, r)) return {};
+  if (!caches.putInNames) caches.putInNames = new Map();
+  let name = caches.putInNames.get(r.putInId);
+  if (name === undefined) {
+    const putIn = await ctx.db.get(r.putInId);
+    name =
+      putIn && putIn.status === 'visible'
+        ? (resolvePutInName(putIn.name, putIn.coord, body.doc?.interiorPoint) ?? null)
+        : null;
+    caches.putInNames.set(r.putInId, name);
+  }
+  return name !== null ? { putInName: name } : {};
 }
 
 /** `{ silhouette }` when the body has a usable outline, else nothing — the card's optional field. */
