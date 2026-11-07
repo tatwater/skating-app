@@ -81,18 +81,22 @@ export function BountyPanelView({
         className="flex items-center gap-(--space-3_5) border border-solid border-line p-(--space-3_5)"
       >
         <span className="flex shrink-0" aria-hidden="true">
-          {data.wanters.slice(0, 4).map((w, i) => (
-            <Avatar
-              // Wanters are distinct people; a name can repeat, so the place breaks the tie.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above.
-              key={`${w.displayName}-${i}`}
-              name={w.displayName}
-              size="sm"
-              {...(w.profileImageUrl !== undefined ? { src: w.profileImageUrl } : {})}
-              className={cn('shadow-[0_0_0_3px_var(--bg)]', i > 0 && '-ms-[0.3125rem]')}
-              style={{ zIndex: 4 - i }}
-            />
-          ))}
+          {/* The first to ask leads, as the sub-line says. */}
+          {[...data.wanters]
+            .reverse()
+            .slice(0, 4)
+            .map((w, i) => (
+              <Avatar
+                // Wanters are distinct people; a name can repeat, so the place breaks the tie.
+                // biome-ignore lint/suspicious/noArrayIndexKey: see above.
+                key={`${w.displayName}-${i}`}
+                name={w.displayName}
+                size="sm"
+                {...(w.profileImageUrl !== undefined ? { src: w.profileImageUrl } : {})}
+                className={cn('shadow-[0_0_0_3px_var(--bg)]', i > 0 && '-ms-[0.3125rem]')}
+                style={{ zIndex: 4 - i }}
+              />
+            ))}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-(--space-0_5) text-row leading-body">
           <PersonName className="font-medium text-fg">

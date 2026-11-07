@@ -287,11 +287,15 @@ function VerdictRow({
   const quiet = verdict === 'fully_healed' || verdict === 'never_existed';
   return (
     <Button
-      variant="bare"
       data-attr={`hazard-verdict-${verdict.replace(/_/g, '-')}`}
       disabled={disabled}
       onClick={onPress}
-      className="h-auto w-full justify-start gap-(--space-3) px-(--space-3_5) py-[0.6875rem] text-left whitespace-normal inset-ring inset-ring-line2"
+      className={cn(
+        // A whole-row choice: the kit's outlined action in row type, its content filling the row.
+        'h-auto w-full justify-start px-(--space-3_5) py-[0.6875rem] text-left whitespace-normal',
+        'font-regular tracking-normal normal-case [--dot-opacity:0] lit:[--dot-opacity:0]',
+        '[&>[data-slot=label]]:flex-1 [&>[data-slot=label]]:gap-(--space-3)',
+      )}
     >
       <span className="flex min-w-0 flex-1 flex-col gap-(--space-0_5)">
         <span className={cn('text-[0.90625rem]', quiet ? 'text-fg1' : 'font-medium text-fg')}>

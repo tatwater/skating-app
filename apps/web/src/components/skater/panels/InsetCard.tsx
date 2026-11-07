@@ -165,7 +165,9 @@ export function InsetCard({
         data-slot="inset-card"
         className={cn(
           // The card's place: 12 px in from every edge of what it covers.
-          'inset-(--space-3) h-auto max-h-none w-auto max-w-none translate-x-0 translate-y-0 z-(--z-icard)',
+          // Above the scrim that dims what it covers. The column is its own stacking context
+          // (`isolate`), so these layers never rise over the page's menus and tips.
+          'inset-(--space-3) h-auto max-h-none w-auto max-w-none translate-x-0 translate-y-0 z-(--z-sheet)',
           // The ring that lifts it off the dimmed sidebar, and the corner squares of an inset card.
           'shadow-[0_0_0_5px_var(--bg),var(--box-shadow-modal)] corner-dots [--dot-color:var(--fg3)] [--dot-opacity:1]',
         )}
@@ -174,10 +176,12 @@ export function InsetCard({
           data-attr="inset-card-back"
           render={
             <Button
-              variant="bare"
               className={cn(
-                'h-11 w-full shrink-0 justify-start gap-(--space-2_5) rounded-none border-0 border-b border-solid border-line2 bg-raise pr-(--space-3) pl-(--space-4)',
-                'text-kick font-semibold tracking-head text-fg1 uppercase',
+                // The kit's outlined action, laid out as one full-width zone: the raised ground,
+                // ruled off below, no ring and no corner dots (the card's corners carry those).
+                'h-11 w-full shrink-0 justify-start rounded-none bg-raise pr-(--space-3) pl-(--space-4) inset-ring-0',
+                'border-0 border-b border-solid border-line2 [--dot-opacity:0] lit:[--dot-opacity:0]',
+                '[&>[data-slot=label]]:flex-1 [&>[data-slot=label]]:gap-(--space-2_5)',
               )}
             />
           }

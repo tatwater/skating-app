@@ -73,7 +73,7 @@ export const REPORT_PAT: ReportPanelData = {
     'Black ice from the launch to the islands, a skim of new snow past them. Drilled 5″ off the beach and 4″ near the islands. Wind picked up from the northwest around 11.',
   iceTypes: ['Black ice', 'Snow ice'],
   surfaceTags: ['Smooth', 'Snow covered'],
-  thickness: ['5″ · drilled · off the beach', '4″ · drilled · near the islands'],
+  thickness: ['5″ (drilled)', '4″ (drilled)'],
   snow: 'A skim, under ½″, past the islands',
   conditions: [
     { label: 'Air temp', value: '12 → 18°F' },
