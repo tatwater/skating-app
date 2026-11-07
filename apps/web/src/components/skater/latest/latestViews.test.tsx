@@ -475,6 +475,35 @@ describe('RecommendedStrip', () => {
     expect(onOpen).toHaveBeenCalledWith('rep1');
   });
 
+  it('opens every report a lake counts — the second is gone from the feed, so it lives here', () => {
+    const onOpen = vi.fn();
+    const second = {
+      ...REPORT,
+      reportId: 'rep2',
+      skateEndTime: NOW - 5 * 60 * 60 * 1000,
+      author: { username: 'mjones', displayName: 'Morgan Jones' },
+    };
+    render(
+      <RecommendedStrip
+        bundles={[{ waterBodyId: 'wb1', cards: [REPORT, second] }]}
+        now={NOW}
+        reportHref={(id) => `/latest?report=${id}`}
+        onOpenReport={onOpen}
+      />,
+    );
+    expect(
+      screen.getByRole('link', { name: /^Recommended: Mascoma Lake, 2 reports/ }),
+    ).toHaveAttribute('href', '/latest?report=rep1');
+    const other = screen.getByRole('link', { name: 'Also from Morgan Jones · 5 h' });
+    expect(other).toHaveAttribute('href', '/latest?report=rep2');
+    expect(other).toHaveClass('ph-no-capture');
+    expect(within(other).getByText('Morgan Jones')).toHaveClass('ph-no-capture');
+    fireEvent.click(other);
+    expect(onOpen).toHaveBeenCalledWith('rep2');
+    // One link per counted report, never a dropped one.
+    expect(screen.getAllByRole('link')).toHaveLength(2);
+  });
+
   it('says one report, and leaves out a quality it was not given', () => {
     render(
       <RecommendedStrip
