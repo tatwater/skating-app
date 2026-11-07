@@ -140,6 +140,37 @@ describe('lakes', () => {
     expect(removeLake(two, 'second', NOW, mint).reports.map((r) => r.id)).toEqual([first.id]);
     expect(removeLake(answered, 'missing', NOW, mint)).toBe(answered);
   });
+
+  it('un-places the only lake’s photos when it goes, so a re-pick never posts the old pins', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Mascoma Lake' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    const pinned = {
+      id: 'ph1',
+      fullUri: 'f',
+      thumbUri: 't',
+      coord: { lat: 43.6, lng: -72.1 },
+      placeOnMap: true,
+    };
+    const placed = { ...post, reports: [{ ...first, photos: [pinned] }] };
+    const restarted = removeLake(placed, first.id, NOW, mint);
+    const id = restarted.reports[0]?.id ?? '';
+    expect(restarted.reports[0]?.photos).toEqual([{ ...pinned, placeOnMap: false }]);
+    const repicked = setReportBody(restarted, id, { waterBodyId: 'b2', name: 'Morey Pond' });
+    expect(repicked.reports[0]?.photos.every((ph) => !ph.placeOnMap)).toBe(true);
+  });
+
+  it('un-places a Report’s photos when its lake changes, and keeps them on a re-pick of the same', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Mascoma Lake' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    const pinned = { id: 'ph1', fullUri: 'f', thumbUri: 't', placeOnMap: true };
+    const placed = { ...post, reports: [{ ...first, photos: [pinned] }] };
+    const same = setReportBody(placed, first.id, { waterBodyId: 'b1', name: 'Mascoma Lake' });
+    expect(same.reports[0]?.photos).toEqual([pinned]);
+    const other = setReportBody(placed, first.id, { waterBodyId: 'b2', name: 'Morey Pond' });
+    expect(other.reports[0]?.photos).toEqual([{ ...pinned, placeOnMap: false }]);
+  });
 });
 
 describe('the status line', () => {
