@@ -38,6 +38,16 @@ describe('useSkaterMapStore', () => {
     expect(readPersistedLayers(localStorage).depth).toBe(!DEFAULT_MAP_LAYERS.depth);
   });
 
+  it('never persists the imagery layer — a session mood, not a preference', () => {
+    useSkaterMapStore.getState().toggleLayer('imagery');
+    expect(useSkaterMapStore.getState().layers.imagery).toBe(true);
+    useSkaterMapStore.getState().toggleLayer('depth');
+    const stored = JSON.parse(localStorage.getItem('gli-map-layers') ?? '{}');
+    expect(stored).not.toHaveProperty('imagery');
+    expect(stored.depth).toBe(!DEFAULT_MAP_LAYERS.depth);
+    expect(readPersistedLayers(localStorage).imagery).toBe(false);
+  });
+
   it('has no hazards switch at all (D3: the row is locked on)', () => {
     expect(DEFAULT_MAP_LAYERS).not.toHaveProperty('hazards');
   });
@@ -120,6 +130,11 @@ describe('readPersistedLayers', () => {
     const layers = readPersistedLayers(localStorage);
     expect(layers).toEqual({ ...DEFAULT_MAP_LAYERS, tracks: true });
     expect(layers).not.toHaveProperty('hazards');
+  });
+
+  it('ignores an imagery key an older build stored: restore starts on the plain map', () => {
+    localStorage.setItem('gli-map-layers', JSON.stringify({ imagery: true, tracks: true }));
+    expect(readPersistedLayers(localStorage)).toEqual({ ...DEFAULT_MAP_LAYERS, tracks: true });
   });
 
   it('is the defaults with nothing stored, or junk', () => {
