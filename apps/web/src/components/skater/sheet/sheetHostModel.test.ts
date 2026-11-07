@@ -88,7 +88,9 @@ describe('sheetOpenEntry', () => {
     expect(
       sheetOpenEntry({ door: { kind: 'new', waterBodyId: 'b' }, landed: true, recorded: false }),
     ).toBe('water_body');
-    expect(sheetOpenEntry({ door: { kind: 'new' }, landed: true, recorded: false })).toBeNull();
+    expect(sheetOpenEntry({ door: { kind: 'new' }, landed: true, recorded: false })).toBe(
+      'deep_link',
+    );
   });
 });
 

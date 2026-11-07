@@ -189,7 +189,9 @@ describe('the header', () => {
     const link = screen.getByRole('link', { name: 'Add a report' });
     expect(link).toHaveAttribute('href', '/water/mascoma?tab=about&post=new&postBody=mascoma');
     fireEvent.click(link);
-    expect(fakes.push).toHaveBeenCalledWith('/water/mascoma?tab=about&post=new&postBody=mascoma');
+    expect(fakes.push).toHaveBeenCalledWith('/water/mascoma?tab=about&post=new&postBody=mascoma', {
+      reportSheetEntryRecorded: true,
+    });
     expect(fakes.capture).toHaveBeenCalledWith('report_sheet_opened', { entry: 'water_body' });
   });
 

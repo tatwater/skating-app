@@ -78,11 +78,10 @@ export function entryRecorded(state: unknown): boolean {
  * Which `report_sheet_opened` entry the host records for an open, or `null` for none.
  *
  * - A door that recorded itself (navigation state) records nothing more — no double count.
- * - In-app, a new sheet is always a door's (the top bar and the lake page each record their own,
- *   and `withNewReport`/`LakePage` predate the state flag), so the host records only an edit.
+ * - In-app, a new sheet is always a door's (the top bar and the lake page each record their own and
+ *   say so in the state), so the host records only an edit.
  * - Landed (a page load, a reload, the `/post` redirect): an edit is `edit`, a lake-seeded sheet is
- *   `water_body` (the old `/post?body=` links all came from a lake). A bare landing has no entry in
- *   the taxonomy yet (`deep_link` is not one of `report_sheet_entry`'s values), so it is not counted.
+ *   `water_body` (the old `/post?body=` links all came from a lake), and a bare one `deep_link`.
  */
 export function sheetOpenEntry(input: {
   door: SheetDoor;
@@ -93,7 +92,7 @@ export function sheetOpenEntry(input: {
   if (door.kind === 'none' || recorded) return null;
   if (door.kind === 'edit') return 'edit';
   if (!landed) return null;
-  return door.waterBodyId !== undefined ? 'water_body' : null;
+  return door.waterBodyId !== undefined ? 'water_body' : 'deep_link';
 }
 
 /**

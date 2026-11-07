@@ -21,6 +21,7 @@ import { LakeAction } from '../actions/LakeAction';
 import { withNewReport } from '../chrome';
 import { lakeMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
+import { reportSheetLinkState } from '../sheet/sheetHostModel';
 import { AboutTab } from './AboutTab';
 import { AccessTab } from './AccessTab';
 import { AlertStrip } from './AlertStrip';
@@ -265,7 +266,11 @@ function ConnectedHeader({
     ),
     newReport: leaving
       ? null
-      : nav.link(newReportHref, () => capture('report_sheet_opened', { entry: 'water_body' })),
+      : nav.link(
+          newReportHref,
+          () => capture('report_sheet_opened', { entry: 'water_body' }),
+          reportSheetLinkState(),
+        ),
     reportHazard: leaving ? null : nav.link(nav.with({ act: 'hazard' })),
     postBounty: leaving || !active ? null : nav.link(nav.with({ act: 'bounty' })),
     directions: coord

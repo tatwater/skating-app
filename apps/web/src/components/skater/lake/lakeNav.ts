@@ -26,14 +26,15 @@ export function hrefWith(pathname: string, search: string, edit: SearchEdit): st
 export interface PageNav {
   pathname: string;
   search: string;
-  push: (href: string) => void;
+  push: (href: string, state?: object) => void;
   replace: (href: string) => void;
   /** The current page's URL with `edit` applied. */
   with: (edit: SearchEdit) => string;
-  /** Props for an in-app link: a real `href`, a plain click handed to the router. */
+  /** Props for an in-app link: a real `href`, a plain click handed to the router (with `state`). */
   link: (
     href: string,
     before?: () => void,
+    state?: object,
   ) => { href: string; onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => void };
 }
 
@@ -41,7 +42,11 @@ export function usePageNav(): PageNav {
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const search = useRouterState({ select: (s) => s.location.searchStr });
-  const push = useCallback((href: string) => router.history.push(href), [router]);
+  const push = useCallback(
+    (href: string, state?: object) =>
+      state === undefined ? router.history.push(href) : router.history.push(href, state),
+    [router],
+  );
   const replace = useCallback((href: string) => router.history.replace(href), [router]);
   return {
     pathname,
@@ -49,13 +54,13 @@ export function usePageNav(): PageNav {
     push,
     replace,
     with: (edit) => hrefWith(pathname, search, edit),
-    link: (href, before) => ({
+    link: (href, before, state) => ({
       href,
       onClick: (event) => {
         if (!isPlainLeftClick(event)) return;
         event.preventDefault();
         before?.();
-        push(href);
+        push(href, state);
       },
     }),
   };

@@ -164,6 +164,26 @@ describe('opening', () => {
     expect(opened()).toEqual([['report_sheet_opened', { entry: 'edit' }]]);
   });
 
+  it('counts a bare landing as a deep link', async () => {
+    renderAt('/?post=new');
+    expect(await screen.findByTestId('sheet')).toBeInTheDocument();
+    expect(opened()).toEqual([['report_sheet_opened', { entry: 'deep_link' }]]);
+  });
+
+  it('records nothing for a new sheet a door already recorded', async () => {
+    const router = renderAt('/');
+    await screen.findByText('Explore');
+    await act(() =>
+      router.navigate({
+        to: '/',
+        search: { post: 'new', postBody: 'b1' },
+        state: reportSheetLinkState(),
+      } as never),
+    );
+    await screen.findByTestId('sheet');
+    expect(opened()).toEqual([]);
+  });
+
   it('records nothing for an edit a door already recorded', async () => {
     const router = renderAt('/');
     await screen.findByText('Explore');

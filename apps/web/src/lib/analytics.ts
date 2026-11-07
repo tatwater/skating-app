@@ -175,6 +175,8 @@ export const ANALYTICS_ENUMS = {
     'phone_tab',
     'edit',
     'recorded_skate',
+    // A bare `?post=new` landing: a shared or bookmarked link, a reload, the old `/post`.
+    'deep_link',
   ],
   report_photo_source: ['device', 'google_photos'],
   point_count_bucket: ['1-99', '100-999', '1000-9999', '10000+'],
