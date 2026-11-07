@@ -239,8 +239,8 @@ describe('a report row', () => {
     expect(row.when).toBe('Today · 11:40 AM');
     expect(row.where).toBe('Mascoma South · From shore');
     expect(row.badges).toEqual([
-      { label: "Don't go", tone: 'bad' },
-      { label: 'Good', tone: 'default' },
+      { label: "Don't go", kind: 'suitability', tone: 'bad' },
+      { label: 'Good', kind: 'quality', tone: 'default' },
     ]);
     expect(row.notes).toBe('Black ice from the launch.');
     expect(row.iceTypes).toEqual(['Black ice']);

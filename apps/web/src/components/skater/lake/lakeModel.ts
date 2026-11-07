@@ -297,8 +297,11 @@ export interface ReportRowModel {
   when: string;
   /** "Mascoma North · From shore". Empty when the report says neither. */
   where: string;
-  /** The author's claims, labeled: who it's for, then how it skated. */
-  badges: { label: string; tone: 'default' | 'bad' }[];
+  /**
+   * The author's claims, labeled: who it's for (an outline; "Don't go" in red), then how it skated
+   * (the filled face — the boards' `.bdg.solid`).
+   */
+  badges: { label: string; kind: 'suitability' | 'quality'; tone: 'default' | 'bad' }[];
   notes: string | null;
   iceTypes: string[];
   photoCount: number;
@@ -334,10 +337,13 @@ export function reportRowModel(r: ReportRowInput, now: number, timeZone?: string
   if (r.suitability) {
     badges.push({
       label: SUITABILITY_LABELS[r.suitability],
+      kind: 'suitability',
       tone: r.suitability === 'dont_go' ? 'bad' : 'default',
     });
   }
-  if (r.skateQuality) badges.push({ label: SKATE_QUALITY_LABELS[r.skateQuality], tone: 'default' });
+  if (r.skateQuality) {
+    badges.push({ label: SKATE_QUALITY_LABELS[r.skateQuality], kind: 'quality', tone: 'default' });
+  }
   const notes = r.notes?.trim();
   return {
     id: r._id,

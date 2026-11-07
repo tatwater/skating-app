@@ -27,17 +27,20 @@ export function ActionPane({
   act,
   backTo,
   onBack,
+  autoFocus = true,
 }: {
   act: LakeAct | 'request';
   /** Where Back goes: the lake's name, or "Explore". */
   backTo: string;
   onBack: () => void;
+  /** Take the focus on open (always, in the app; a side-by-side story gives it to one quad). */
+  autoFocus?: boolean;
 }) {
   const back = useRef<HTMLButtonElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new action takes the focus again.
   useEffect(() => {
-    back.current?.focus();
-  }, [act]);
+    if (autoFocus) back.current?.focus();
+  }, [act, autoFocus]);
   return (
     <section
       aria-label={LAKE_ACT_TITLES[act]}

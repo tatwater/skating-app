@@ -57,7 +57,7 @@ export function ReportRow({
       <span className="flex min-w-0 items-center gap-(--space-2_5)">
         <Avatar
           name={name}
-          size="sm"
+          size="md"
           {...(author?.imageUrl ? { src: author.imageUrl } : {})}
           aria-hidden="true"
         />
@@ -69,11 +69,18 @@ export function ReportRow({
       {row.where && <span className="text-assist text-fg2">{row.where}</span>}
       {row.badges.length > 0 && (
         <span className="flex flex-wrap gap-(--space-1_5)">
-          {row.badges.map((b) => (
-            <Badge key={b.label} variant="outline" tone={b.tone === 'bad' ? 'bad' : 'default'}>
-              {b.label}
-            </Badge>
-          ))}
+          {row.badges.map((b) =>
+            b.kind === 'quality' || b.tone === 'bad' ? (
+              // How it skated is the filled face; "Don't go" is the filled red (the boards' `.bdg.bad`).
+              <Badge key={b.label} variant="solid" tone={b.tone === 'bad' ? 'bad' : 'default'}>
+                {b.label}
+              </Badge>
+            ) : (
+              <Badge key={b.label} variant="outline">
+                {b.label}
+              </Badge>
+            ),
+          )}
         </span>
       )}
       {row.notes && (
@@ -84,7 +91,7 @@ export function ReportRow({
       {(row.iceTypes.length > 0 || row.photoCount > 0) && (
         <span className="flex flex-wrap items-center gap-(--space-1_5)">
           {row.iceTypes.map((t) => (
-            <Badge key={t} variant="outline" tone="dim">
+            <Badge key={t} variant="outline">
               {t}
             </Badge>
           ))}

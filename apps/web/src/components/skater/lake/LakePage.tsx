@@ -13,9 +13,7 @@ import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { type MouseEvent as ReactMouseEvent, useEffect, useMemo } from 'react';
 
-import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/kit/tabs';
 import { type FavoriteTargetType, useAnalytics } from '@/lib/analytics';
-import { cn } from '@/lib/utils';
 import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { RequestButtons } from '../../RequestLake';
@@ -27,11 +25,11 @@ import { AccessTab } from './AccessTab';
 import { ActionPane } from './ActionPane';
 import { AlertStrip } from './AlertStrip';
 import { type FavoriteState, LakeHeader, type LakeHeaderProps } from './LakeHeader';
-import { ExploreFrame, LakeSidebar, SidebarBody } from './LakeSidebar';
+import { ExploreFrame, LakeSidebar, LakeTabs } from './LakeSidebar';
 import { LakeSidebarSkeleton, LakeUnavailable, StandingNoticeView } from './LakeStates';
 import { areaFact, depthFact, elevationFact, lakeFacts, lakeKicker } from './lakeModel';
 import { type PageNav, useEscapeToClose, usePageNav } from './lakeNav';
-import { LAKE_TAB_LABELS, LAKE_TABS, type LakeSearch, type LakeTab } from './lakeSearch';
+import type { LakeSearch, LakeTab } from './lakeSearch';
 import { takeWaterBodyOpenSource } from './openSource';
 import { ReportsTab } from './ReportsTab';
 import { WeatherTab } from './WeatherTab';
@@ -104,36 +102,20 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
             </>
           }
           body={
-            <Tabs
-              value={tab}
-              onValueChange={(next) =>
-                nav.replace(nav.with({ tab: next === 'reports' ? null : String(next) }))
+            <LakeTabs
+              tab={tab}
+              onTabChange={(next) =>
+                nav.replace(nav.with({ tab: next === 'reports' ? null : next }))
               }
-              className="min-h-0 flex-1 gap-0"
-            >
-              <div className="border-0 border-b border-solid border-line px-gutter py-(--space-3)">
-                <TabsList aria-label="Lake sections" className="w-full">
-                  {LAKE_TABS.map((t) => (
-                    <TabsTab key={t} value={t} data-attr={`lake-tab-${t}`} className="flex-1">
-                      {LAKE_TAB_LABELS[t]}
-                    </TabsTab>
-                  ))}
-                </TabsList>
-              </div>
-              <SidebarBody contourCredit={contourCredit}>
-                {act !== undefined && (
+              contourCredit={contourCredit}
+              overlay={
+                act !== undefined ? (
                   <ActionPane act={act} backTo={bay ? bay.name : lakeName} onBack={closeAct} />
-                )}
-                <TabsPanel
-                  value={tab}
-                  data-slot="lake-tab-panel"
-                  inert={act !== undefined}
-                  className={cn(act !== undefined && 'opacity-25')}
-                >
-                  <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
-                </TabsPanel>
-              </SidebarBody>
-            </Tabs>
+                ) : null
+              }
+            >
+              <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
+            </LakeTabs>
           }
         />
       }
