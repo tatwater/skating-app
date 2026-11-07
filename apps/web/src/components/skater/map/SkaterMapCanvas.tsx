@@ -29,7 +29,7 @@ import {
 } from '@/lib/depthBands';
 import { env } from '@/lib/env';
 import type { Rect } from '@/lib/lakeLabelLayout';
-import { useMapCanvas } from '@/lib/mapCanvas';
+import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
 import {
   boundsForBody,
   DEMO_PMTILES_URL,
@@ -600,7 +600,7 @@ export default function SkaterMapCanvas() {
   const handlers = activeMapHandlers();
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0" data-slot="map-canvas" />
+      <div ref={containerRef} className={MAP_CONTAINER_CLASS} data-slot="map-canvas" />
       {map && loaded && spec.visible && (
         <MapMarksLayer
           map={map}
