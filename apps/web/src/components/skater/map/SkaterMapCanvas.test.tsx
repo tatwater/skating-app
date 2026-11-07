@@ -692,19 +692,29 @@ describe('clicks', () => {
   it('asks for a lake on unlisted water, never in the URL', async () => {
     await mount(exploreMapSpec());
     click([{ source: 'protomaps', sourceLayer: 'water', layer: { id: 'water' } }]);
-    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({ lng: -72.2, lat: 43.7 });
+    // With where it landed on screen (the canvas point, in the viewport), for the dialog to open by.
+    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({
+      lng: -72.2,
+      lat: 43.7,
+      screen: { x: 1, y: 1 },
+    });
     expect(navigate).not.toHaveBeenCalled();
   });
 
   it('asks on a right-click too, where the view takes requests', async () => {
     const view = await mount(exploreMapSpec());
     const preventDefault = vi.fn();
-    act(() => map().fire('contextmenu', { preventDefault, lngLat: { lng: -72, lat: 43 } }));
+    const at = { preventDefault, point: { x: 5, y: 7 }, lngLat: { lng: -72, lat: 43 } };
+    act(() => map().fire('contextmenu', at));
     expect(preventDefault).toHaveBeenCalled();
-    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({ lng: -72, lat: 43 });
+    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({
+      lng: -72,
+      lat: 43,
+      screen: { x: 5, y: 7 },
+    });
     useSkaterMapStore.getState().setPendingMapClick(null);
     view.rerender(<Harness spec={defineMapSpec({ id: 'latest' })} />);
-    act(() => map().fire('contextmenu', { preventDefault, lngLat: { lng: -72, lat: 43 } }));
+    act(() => map().fire('contextmenu', at));
     expect(useSkaterMapStore.getState().pendingMapClick).toBeNull();
   });
 

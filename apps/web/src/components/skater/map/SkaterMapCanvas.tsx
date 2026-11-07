@@ -146,6 +146,11 @@ export default function SkaterMapCanvas() {
 
   // ── Handlers, bound once per instance; they read the spec at event time ───────────────────
   function bindHandlers(map: maplibregl.Map) {
+    // A click's canvas point, in the viewport: where a dialog about it can open.
+    const screenOf = (point: { x: number; y: number }) => {
+      const box = map.getContainer().getBoundingClientRect();
+      return { x: box.left + point.x, y: box.top + point.y };
+    };
     const hitsAt = (point: maplibregl.PointLike): RenderedHit[] =>
       map.queryRenderedFeatures(point).map((f) => ({
         source: f.source,
@@ -178,7 +183,7 @@ export default function SkaterMapCanvas() {
           navigate({ to: '/water/$id', params: { id: action.bodyId } });
           break;
         case 'request':
-          useSkaterMapStore.getState().setPendingMapClick(coord);
+          useSkaterMapStore.getState().setPendingMapClick({ ...coord, screen: screenOf(e.point) });
           break;
         case 'none':
           break;
@@ -190,7 +195,11 @@ export default function SkaterMapCanvas() {
       const current = specRef.current.interactions;
       if (!current.requestLake || current.click !== 'navigate') return;
       e.preventDefault();
-      useSkaterMapStore.getState().setPendingMapClick({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+      useSkaterMapStore.getState().setPendingMapClick({
+        lng: e.lngLat.lng,
+        lat: e.lngLat.lat,
+        screen: screenOf(e.point),
+      });
     });
     map.on('mousemove', WATER_FILL_LAYER, (e) => {
       const id = e.features?.[0]?.properties?._id;

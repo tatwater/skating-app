@@ -101,6 +101,23 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
   const lake = result.body;
   const lakeName = waterBodyDisplayName(lake.name);
 
+  const action =
+    act !== undefined ? (
+      <LakeAction
+        act={act}
+        waterBodyId={lake._id}
+        lakeName={lakeName}
+        {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
+        {...(search.band !== undefined ? { band: search.band } : {})}
+        {...(search.frame !== undefined ? { frame: search.frame } : {})}
+        backTo={bay ? bay.name : lakeName}
+        nav={nav}
+        onBack={closeAct}
+      />
+    ) : null;
+  // Imagery floats over the map it paints (boards 3.14/3.15); every other action covers the tabs.
+  const floated = act === 'imagery';
+
   return (
     <PhoneLakeDrawer label={bay ? bay.name : lakeName} escapes={act === undefined}>
       <LakeSidebarView
@@ -109,22 +126,9 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
         tab={tab}
         nav={nav}
         contourCredit={contourCredit}
-        overlay={
-          act !== undefined ? (
-            <LakeAction
-              act={act}
-              waterBodyId={lake._id}
-              lakeName={lakeName}
-              {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
-              {...(search.band !== undefined ? { band: search.band } : {})}
-              {...(search.frame !== undefined ? { frame: search.frame } : {})}
-              backTo={bay ? bay.name : lakeName}
-              nav={nav}
-              onBack={closeAct}
-            />
-          ) : null
-        }
+        overlay={floated ? null : action}
       />
+      {floated && action}
     </PhoneLakeDrawer>
   );
 }

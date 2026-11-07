@@ -26,6 +26,7 @@ vi.mock('./BountyPane', () => ({
   },
 }));
 
+import { MapFloatContext } from '../map/MapFloat';
 import { LakeAction } from './LakeAction';
 
 /** The prop a mocked pane was last rendered with. */
@@ -78,15 +79,29 @@ describe('the lake’s actions, routed', () => {
 
   it('imagery carries the URL’s band and day, and writes edits back with replace', () => {
     const n = nav();
+    const onBack = vi.fn();
+    const slot = document.createElement('div');
+    document.body.append(slot);
     render(
-      <LakeAction act="imagery" {...base} band="vh" frame="2026-12-22" nav={n} onBack={vi.fn()} />,
+      <MapFloatContext.Provider value={slot}>
+        <LakeAction act="imagery" {...base} band="vh" frame="2026-12-22" nav={n} onBack={onBack} />
+      </MapFloatContext.Provider>,
     );
+    // Floated over the map, not over the tabs: its plate, in the map's float slot.
+    expect(slot.querySelector('[data-slot="imagery-plate"]')).not.toBeNull();
+    expect(seen.props.imagery).toMatchObject({ onClose: onBack });
     expect(seen.props.imagery).toMatchObject({ band: 'vh', frame: '2026-12-22' });
     (propOf('imagery', 'onSearch') as (e: object) => void)({
       frame: '2026-12-28',
       band: undefined,
     });
     expect(n.replace).toHaveBeenCalledWith('/water/mascoma?frame=2026-12-28');
+    slot.remove();
+  });
+
+  it('imagery floats nowhere outside a map frame', () => {
+    render(<LakeAction act="imagery" {...base} nav={nav()} onBack={vi.fn()} />);
+    expect(document.querySelector('[data-slot="imagery-plate"]')).toBeNull();
   });
 
   it('the access problem keeps its placeholder until it lands', () => {

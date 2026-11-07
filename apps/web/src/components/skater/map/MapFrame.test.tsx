@@ -14,6 +14,7 @@ vi.mock('./SkaterMap', () => ({
   },
 }));
 
+import { MapFloat } from './MapFloat';
 import { MapFrame } from './MapFrame';
 import { exploreMapSpec, lakeMapSpec } from './mapSpec';
 
@@ -56,5 +57,22 @@ describe('MapFrame', () => {
     act(() => useSkaterMapStore.getState().declareMapSpec('view', exploreMapSpec()));
     rerender(<MapFrame>explore again</MapFrame>);
     expect(maps.mounts).toBe(1);
+  });
+
+  it('floats a view’s plate over the map, in a layer that passes presses through', () => {
+    act(() => useSkaterMapStore.getState().declareMapSpec('view', lakeMapSpec('mascoma')));
+    render(
+      <MapFrame>
+        <MapFloat>
+          <p>timeline</p>
+        </MapFloat>
+      </MapFrame>,
+    );
+    const slot = document.querySelector('[data-slot="map-float-slot"]') as HTMLElement;
+    expect(mapColumn()).toContainElement(slot);
+    expect(slot.className).toContain('pointer-events-none');
+    const float = slot.querySelector('[data-slot="map-float"]') as HTMLElement;
+    expect(float).toHaveTextContent('timeline');
+    expect(float.className).toContain('pointer-events-auto');
   });
 });

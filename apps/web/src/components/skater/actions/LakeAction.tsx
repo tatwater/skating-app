@@ -1,13 +1,14 @@
 import { ActionPane } from '../lake/ActionPane';
 import type { PageNav } from '../lake/lakeNav';
 import type { LakeAct } from '../lake/lakeSearch';
+import { MapFloat } from '../map/MapFloat';
 import { BountyPane } from './BountyPane';
 import { HazardSheetHost } from './HazardSheetHost';
 import { ImageryPane } from './ImageryPane';
 
 /**
- * The lake's `?act=` actions (row 3), mounted in C's overlay slot: the imagery view inside C's
- * action frame (its Back, its Esc), the hazard flow in the New report sheet's frame over the page
+ * The lake's `?act=` actions (row 3): the imagery plate floated over the map (`MapFloat`; Esc
+ * still the page's), the hazard flow in the New report sheet's frame over the page
  * (Review 2; `HazardSheetHost`), the bounty as the dialog its boards draw over the lake. The access
  * problem is agent D's and keeps C's placeholder until it lands.
  */
@@ -55,22 +56,30 @@ export function LakeAction({
         />
       );
     case 'imagery':
+      // Floated over the map it paints (boards 3.14/3.15), not over the tabs: the sidebar stays.
       return (
-        <ActionPane act={act} backTo={backTo} onBack={onBack}>
-          <ImageryPane
-            waterBodyId={waterBodyId}
-            {...sub}
-            {...(band !== undefined ? { band } : {})}
-            {...(frame !== undefined ? { frame } : {})}
-            onSearch={(edit) =>
-              nav.replace(
-                nav.with(
-                  Object.fromEntries(Object.entries(edit).filter(([, v]) => v !== undefined)),
-                ),
-              )
-            }
-          />
-        </ActionPane>
+        <MapFloat>
+          <section
+            aria-label="Latest imagery"
+            data-slot="imagery-plate"
+            className="w-[33rem] max-w-full border border-solid border-line2 bg-plate-solid p-(--space-4) shadow-plate"
+          >
+            <ImageryPane
+              waterBodyId={waterBodyId}
+              {...sub}
+              {...(band !== undefined ? { band } : {})}
+              {...(frame !== undefined ? { frame } : {})}
+              onSearch={(edit) =>
+                nav.replace(
+                  nav.with(
+                    Object.fromEntries(Object.entries(edit).filter(([, v]) => v !== undefined)),
+                  ),
+                )
+              }
+              onClose={onBack}
+            />
+          </section>
+        </MapFloat>
       );
     default:
       return <ActionPane act={act} backTo={backTo} onBack={onBack} />;

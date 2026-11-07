@@ -19,6 +19,7 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
+import { MapFloatContext } from '../map/MapFloat';
 import { useBountyLakeId, useHazardLakeId, useReportLakeId } from '../panels/panelLake';
 import { LakeBehind } from './LakeBehind';
 import { LakePage } from './LakePage';
@@ -575,10 +576,8 @@ describe('About (1.9, 1.14)', () => {
 describe('actions over the sidebar (row 3)', () => {
   it('opens as an inset over the tab, and Esc leaves by dropping the param', () => {
     answer();
-    // Imagery: the hazard flow opens in the report sheet's frame instead (Review 2).
-    renderLake({ act: 'imagery', tab: 'about' });
-    const pane = screen.getByRole('region', { name: 'Latest imagery' });
-    expect(within(pane).getByRole('button', { name: 'Back to Mascoma Lake' })).toHaveFocus();
+    renderLake({ act: 'access-problem', tab: 'about' });
+    expect(screen.getByRole('button', { name: 'Back to Mascoma Lake' })).toHaveFocus();
     expect(document.querySelector('[data-slot="lake-tab-panel"]')).toHaveAttribute('inert');
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
@@ -586,11 +585,29 @@ describe('actions over the sidebar (row 3)', () => {
     expect(nav.replace).toHaveBeenCalledWith('/water/mascoma?tab=about');
   });
 
-  it('leaves the imagery action with its band and frame, by the Back button', () => {
+  it('floats the imagery over the map, leaving the tabs live; its close and Esc both leave', () => {
     answer();
-    renderLake({ act: 'imagery', band: 'vh', frame: '2027-01-12' });
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Mascoma Lake' }));
-    expect(nav.replace).toHaveBeenCalledWith('/water/mascoma');
+    const slot = document.createElement('div');
+    document.body.append(slot);
+    const search = { act: 'imagery', band: 'vh', frame: '2027-01-12' } as const;
+    fakes.location = {
+      pathname: '/water/mascoma',
+      searchStr: '?act=imagery&band=vh&frame=2027-01-12',
+    };
+    render(
+      <MapFloatContext.Provider value={slot}>
+        <LakePage id="mascoma" search={lakeSearchSchema.parse(search)} />
+      </MapFloatContext.Provider>,
+    );
+    const plate = within(slot).getByRole('region', { name: 'Latest imagery' });
+    expect(document.querySelector('[data-slot="lake-tab-panel"]')).not.toHaveAttribute('inert');
+    fireEvent.click(within(plate).getByRole('button', { name: 'Turn off imagery' }));
+    expect(nav.replace).toHaveBeenLastCalledWith('/water/mascoma');
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    });
+    expect(nav.replace).toHaveBeenCalledTimes(2);
+    slot.remove();
   });
 
   it('opens the imagery action from the map’s dock', () => {
