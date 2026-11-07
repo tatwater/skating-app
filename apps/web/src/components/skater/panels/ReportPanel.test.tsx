@@ -22,6 +22,7 @@ vi.mock('@/lib/analytics', async (load) => ({
 }));
 
 import { InsetCard, PanelColumn } from './InsetCard';
+import { PanelDrawerHost } from './PanelDrawer';
 import { REPORT_PAT } from './panelFixtures';
 import { PANEL_LOADING_SPEC, ReportPanel } from './ReportPanel';
 import { ReportPanelView } from './ReportPanelView';
@@ -127,34 +128,43 @@ describe('ReportPanel', () => {
     expect(panelFakes.navigate).toHaveBeenCalledWith({ to: '/', replace: true });
   });
 
-  it('opens hosted (Latest): back to the host, the host closes, and no map is declared', async () => {
+  it('opens hosted (Latest) as the page’s drawer: back to the host, the host closes, no map', async () => {
     seed();
     const onClose = vi.fn();
-    render(
-      <PanelColumn>
-        <ReportPanel reportId="r1" host={{ backTo: 'Latest', onClose }} />
-      </PanelColumn>,
+    const { unmount } = render(
+      <PanelDrawerHost drawer={<ReportPanel reportId="r1" host={{ backTo: 'Latest', onClose }} />}>
+        <p>the feed</p>
+      </PanelDrawerHost>,
     );
-    await userEvent.click(await screen.findByRole('button', { name: /Back to Latest/ }));
+    const back = await screen.findByRole('button', { name: /Back to Latest/ });
+    const drawer = back.closest('[data-slot="panel-drawer"]') as HTMLElement;
+    expect(drawer).not.toBeNull();
+    // Portaled into the page it covers, not the body.
+    expect(drawer.closest('[data-slot="panel-drawer-host"]')).not.toBeNull();
+    // The kind is said once: on the drawer's head, not again over the title.
+    expect(within(drawer).getAllByText('Report')).toHaveLength(1);
+    expect(drawer.querySelector('[data-slot="panel-drawer-body"]')).toHaveClass('ph-no-capture');
+    await userEvent.click(back);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(panelFakes.navigate).not.toHaveBeenCalled();
     expect(useSkaterMapStore.getState().specs.view?.visible).toBe(false);
+    unmount();
   });
 
   it('keeps the host’s name on the head while loading and when the report is gone', async () => {
     const host = { backTo: 'Latest', onClose: vi.fn() };
     const { unmount } = render(
-      <PanelColumn>
-        <ReportPanel reportId="r1" host={host} />
-      </PanelColumn>,
+      <PanelDrawerHost drawer={<ReportPanel reportId="r1" host={host} />}>
+        <p>the feed</p>
+      </PanelDrawerHost>,
     );
     expect(await screen.findByRole('button', { name: /Back to Latest/ })).toBeInTheDocument();
     unmount();
     fakes.queries.set('reports:get', null);
     render(
-      <PanelColumn>
-        <ReportPanel reportId="r1" host={host} />
-      </PanelColumn>,
+      <PanelDrawerHost drawer={<ReportPanel reportId="r1" host={host} />}>
+        <p>the feed</p>
+      </PanelDrawerHost>,
     );
     expect(await screen.findByRole('button', { name: /Back to Latest/ })).toBeInTheDocument();
   });

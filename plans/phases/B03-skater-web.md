@@ -203,7 +203,7 @@ layers, imagery, return to the region).
 
 | Path | Search params | What renders |
 |---|---|---|
-| `/latest` (`/feed` redirects) | `report?: reportId` (4.5–4.7: the report opens in the center column) · `q?: string` (debounced 300 ms; 4.9, behind the text-search gap) · `skater?: username` (4.8, behind the author-filter gap) · `view?: 'map'` (4.4) | Filters on the left · feed in the center · Recommended and *Wanted near you* on the right |
+| `/latest` (`/feed` redirects) | `report?: reportId` (4.5–4.7: the report opens as a drawer from the right, over a scrim on the page — founder, 2026-11-08) · `q?: string` (debounced 300 ms; 4.9, behind the text-search gap) · `skater?: username` (4.8, behind the author-filter gap) · `view?: 'map'` (4.4) | Filters on the left · feed in the center · Recommended and *Wanted near you* on the right |
 
 Filters (drive time, posted, quality, ice type, thickness, weather match) depend on Q3. My recommendation is that
 they stay in the persisted D166 store and out of the URL, with the URL carrying only the transient view state
@@ -757,5 +757,11 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
 - **Hazards over a satellite picture: on, with a peek (founder, 2026-11-08).** The marks stay locked on at
   full strength over imagery; the one a mouse rests on fades to 35% so the ice under it shows, and comes back
   on pointer-out. Keyboard focus and a touch never fade one — focus is inspecting the mark itself.
-- **Waiting on the founder:** Latest on a phone as a drawer or the center column; the "Weather at" default
-  (whole lake or the bay in view); whether a reading's coordinates are redacted on a public report.
+- **Latest's report is a drawer (founder, 2026-11-08).** The build had opened `?report=` over the center column;
+  the boards (4.5–4.7) draw a 500 px drawer from the right over a scrim on the whole page under the top bar, and
+  the founder picked the boards. It is the kit Sheet with a new `md` width (the `sheet-md` size token, 500);
+  `PanelDrawer` shares the inset card's mechanics (`useCardMechanics`) — deep-link Esc drops the param with
+  `replace`, a feed-opened one steps back, focus returns to the row, and the feed keeps its scroll under the
+  scrim. On a phone the same drawer takes the full width.
+- **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
+  coordinates are redacted on a public report.

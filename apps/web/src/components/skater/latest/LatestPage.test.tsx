@@ -143,7 +143,7 @@ describe('LatestPage', () => {
     expect(fakes.capture).toHaveBeenCalledWith('latest_filter_changed', { filter: 'snow_cover' });
   });
 
-  it('opens a report in the center column, from the feed, without resetting scroll', () => {
+  it('opens a report in the drawer, from the feed, without resetting scroll', () => {
     page();
     fireEvent.click(screen.getByRole('link', { name: /^Report on Mascoma South/ }));
     expect(fakes.capture).toHaveBeenCalledWith('latest_report_opened');
@@ -164,6 +164,10 @@ describe('LatestPage', () => {
     expect(m.hosts.at(-1)).toMatchObject({ reportId: 'rep1', host: { backTo: 'Latest' } });
     expect(document.querySelector('[data-slot="latest-feed-scroll"]')).toBe(scroller);
     expect(scroller).toHaveAttribute('inert');
+    // The report is the page's drawer, beside the columns rather than over the center one.
+    const opened = screen.getByRole('button', { name: 'Back to Latest' });
+    expect(opened.closest('[data-slot="panel-drawer-host"]')).not.toBeNull();
+    expect(opened.closest('main')).toBeNull();
     // The selected report is marked in the feed under the card.
     expect(document.querySelector('[aria-current="true"]')).not.toBeNull();
 
@@ -293,7 +297,7 @@ describe('LatestPage', () => {
     });
   });
 
-  it('opens a recommended report in the center column too', () => {
+  it('opens a recommended report in the drawer too', () => {
     fakes.queries.set('reports:recommended', [{ waterBodyId: 'wb1', cards: [REPORT] }]);
     page();
     fireEvent.click(screen.getByRole('link', { name: /^Recommended: Mascoma Lake/ }));

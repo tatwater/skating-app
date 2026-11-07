@@ -98,17 +98,12 @@ export interface InsetCardProps {
   container?: HTMLElement | null;
 }
 
-export function InsetCard({
-  backTo,
-  onClose,
-  returnKey,
-  label,
-  foot,
-  children,
-  container,
-}: InsetCardProps) {
-  const column = useContext(ColumnContext);
-  const target = container ?? column;
+/**
+ * What an opened card does whatever its shell — the inset card here, Latest's drawer
+ * (`PanelDrawer`): focus in on open and back to its row on close (by hand, since a route unmounting
+ * is not a dialog closing), and Esc that disarms an armed confirm first, else closes.
+ */
+export function useCardMechanics(onClose: () => void, returnKey: string) {
   const popupRef = useRef<HTMLDivElement>(null);
 
   // What held focus as the card opened — kept only if it sits outside the card (an opener that
@@ -154,6 +149,29 @@ export function InsetCard({
     [onClose],
   );
 
+  return { popupRef, registerEscape, onOpenChange };
+}
+
+/** Provides `useCardEscape` to what a card's body holds. */
+export const CardEscapeProvider = CardEscapeContext.Provider;
+
+/** Inside a drawer (`PanelDrawer`) the head names the card's kind, so `CardHead` doesn't repeat it. */
+const CardInDrawerContext = createContext(false);
+export const CardInDrawerProvider = CardInDrawerContext.Provider;
+
+export function InsetCard({
+  backTo,
+  onClose,
+  returnKey,
+  label,
+  foot,
+  children,
+  container,
+}: InsetCardProps) {
+  const column = useContext(ColumnContext);
+  const target = container ?? column;
+  const { popupRef, registerEscape, onOpenChange } = useCardMechanics(onClose, returnKey);
+
   return (
     <Dialog open modal={false} disablePointerDismissal onOpenChange={onOpenChange}>
       <DialogContent
@@ -196,7 +214,7 @@ export function InsetCard({
           <div
             data-slot="inset-card-body"
             // Report text, names and comments: never autocaptured (D240).
-            className="ph-no-capture flex min-h-0 flex-1 flex-col gap-(--space-5_5) overflow-y-auto px-(--space-4) pb-(--space-6) text-body leading-body text-fg1"
+            className="ph-no-capture flex min-h-0 flex-1 flex-col gap-(--space-5_5) overflow-y-auto px-(--card-pad) pb-(--space-6) text-body leading-body text-fg1 [--card-pad:var(--space-4)]"
           >
             {children}
           </div>
@@ -224,14 +242,17 @@ export function CardHead({
   title: ReactNode;
   where?: ReactNode;
 }) {
+  const inDrawer = useContext(CardInDrawerContext);
   return (
     <div
       data-slot="card-head"
-      className="-mx-(--space-4) flex shrink-0 flex-col gap-(--space-2_5) border-b border-solid border-line px-(--space-4) pt-(--space-4_5) pb-(--space-4)"
+      className="-mx-(--card-pad) flex shrink-0 flex-col gap-(--space-2_5) border-b border-solid border-line px-(--card-pad) pt-(--space-4_5) pb-(--space-4)"
     >
-      <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
-        {kind}
-      </span>
+      {!inDrawer && (
+        <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
+          {kind}
+        </span>
+      )}
       <DialogTitle className="text-disp leading-(--lead-snug) font-semibold tracking-key text-fg uppercase">
         {title}
       </DialogTitle>
@@ -288,7 +309,7 @@ export function PanelLoading() {
   return (
     <div data-slot="panel-loading" aria-busy="true" className="flex flex-col gap-(--space-5_5)">
       <span className="sr-only">Loading</span>
-      <div className="-mx-(--space-4) flex flex-col gap-(--space-2_5) border-b border-solid border-line px-(--space-4) pt-(--space-4_5) pb-(--space-4)">
+      <div className="-mx-(--card-pad) flex flex-col gap-(--space-2_5) border-b border-solid border-line px-(--card-pad) pt-(--space-4_5) pb-(--space-4)">
         <Skeleton className="h-[0.6875rem] w-16" />
         <Skeleton className="mt-(--space-1) h-6 w-[62%]" />
         <Skeleton className="h-3.5 w-[44%]" />

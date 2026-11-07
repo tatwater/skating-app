@@ -247,6 +247,66 @@ export const Stacked: Story = {
   },
 };
 
+/**
+ * `md`: the skater app's page drawer (Latest's open report, boards 4.5–4.7). The page under the top
+ * bar is its container, so the bar stays lit; the scrim covers the rest of the page, and the drawer
+ * docks to its right edge at `sheet-md`.
+ */
+export const PageDrawer: Story = {
+  render: () => {
+    function Page() {
+      const [page, setPage] = useState<HTMLElement | null>(null);
+      return (
+        <div className="flex h-[32rem] flex-col border border-solid border-line bg-bg">
+          <div
+            data-testid="top"
+            className="h-top shrink-0 border-0 border-b border-solid border-line bg-bg"
+          />
+          <div
+            ref={setPage}
+            data-testid="page"
+            className="relative flex min-h-0 flex-1 justify-center p-gutter text-row text-fg2"
+          >
+            <span>The feed</span>
+            {page !== null && (
+              <Sheet>
+                <SheetTrigger render={<Button />}>Open report</SheetTrigger>
+                <SheetContent container={page} size="md">
+                  <SheetHeader closeLabel="Back to Latest">
+                    <SheetTitle>Report</SheetTitle>
+                  </SheetHeader>
+                  <SheetBody>Black ice from the launch to the islands.</SheetBody>
+                </SheetContent>
+              </Sheet>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return <Page />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await openWith(canvasElement, 'Open report');
+    const panel = await waitFor(() => must(sheet()));
+    const page = canvas.getByTestId('page');
+    await expect(rectOf(must(scrim()))).toEqual(rectOf(page));
+    await expect(must(scrim()).getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      canvas.getByTestId('top').getBoundingClientRect().bottom,
+    );
+    await waitFor(() => expect(getComputedStyle(panel).translate).toBe('none'));
+    await expect(panel).toHaveAttribute('data-size', 'md');
+    const box = panel.getBoundingClientRect();
+    await near(box.width, resolvePx(panel, 'var(--size-sheet-md)'));
+    await near(box.right, page.getBoundingClientRect().right);
+    await expect(within(panel).getByRole('button', { name: /Back to Latest/ })).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Escape',
+    );
+    await closeWithEscape(sheet);
+  },
+};
+
 /** It slides in from its edge on `duration-slow` (zero under reduced motion); the scrim fades. */
 export const Motion: Story = {
   render: () => <Shell>{(main) => <RatesSheet container={main} />}</Shell>,

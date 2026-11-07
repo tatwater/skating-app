@@ -202,6 +202,7 @@ export const SIZE_KEYS = [
   'list',
   'inspector',
   'sheet-sm',
+  'sheet-md',
   'drawer',
   'sheet',
 ] as const;
@@ -229,6 +230,7 @@ const adminSize = assertUnitClass('size', {
   list: rem(340),
   inspector: rem(380),
   'sheet-sm': rem(440),
+  'sheet-md': rem(500),
   drawer: rem(820),
   sheet: rem(1000),
 });

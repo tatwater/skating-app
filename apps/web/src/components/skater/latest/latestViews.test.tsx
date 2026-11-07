@@ -640,7 +640,10 @@ describe('LatestFrame', () => {
     );
     expect(document.querySelector('[data-slot="latest-feed-scroll"]')).toBe(scroller);
     expect(scroller).toHaveAttribute('inert');
-    expect(document.querySelector('[data-slot="panel-column"]')).toHaveTextContent('the card');
+    // The drawer hangs off the page's host, beside the columns — never one of the flex row's items.
+    const host = document.querySelector('[data-slot="panel-drawer-host"]') as HTMLElement;
+    expect(host).toHaveTextContent('the card');
+    expect(document.querySelector('[data-slot="skater-page"]')).not.toHaveTextContent('the card');
   });
 
   it('keeps Recommended visible where the right column steps out: atop the feed, md to xl (D50)', () => {

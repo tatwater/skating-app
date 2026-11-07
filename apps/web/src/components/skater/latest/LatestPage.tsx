@@ -50,8 +50,8 @@ const META_PAGE = { numItems: 1, cursor: null };
 /**
  * `/latest` (B03 §1.2, row 4): filters left, the feed center, Recommended and *Wanted near you*
  * right. The filters are the saved D166 row (`useFeedFilters`) — the same store the Explore map dims
- * by — and only the transient view rides the URL (D242): `?report=` opens a report over the center
- * column, `?q=` searches (flagged), `?skater=` narrows to one person (flagged), `?view=map` puts
+ * by — and only the transient view rides the URL (D242): `?report=` opens a report as a drawer from
+ * the right, `?q=` searches (flagged), `?skater=` narrows to one person (flagged), `?view=map` puts
  * the matches on the region map.
  */
 export function LatestPage({ search }: { search: LatestSearch }) {
