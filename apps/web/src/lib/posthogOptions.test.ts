@@ -184,6 +184,22 @@ describe('before_send', () => {
     });
   });
 
+  it('scrubs the previous-pageview path and the session-entry copies the SDK stamps on', () => {
+    expect(
+      send({
+        $prev_pageview_pathname: '/u/teagan',
+        $session_entry_url: 'https://gli.app/u/teagan?__clerk_ticket=tok',
+        $session_entry_pathname: '/u/teagan',
+        $session_entry_referrer: 'https://gli.app/u/kate?tab=reports',
+      }),
+    ).toMatchObject({
+      $prev_pageview_pathname: '/u/:username',
+      $session_entry_url: 'https://gli.app/u/:username',
+      $session_entry_pathname: '/u/:username',
+      $session_entry_referrer: 'https://gli.app/u/:username',
+    });
+  });
+
   it('masks the profile segment in $pathname while keeping lake and report ids (D240)', () => {
     expect(
       send({

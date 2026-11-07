@@ -45,7 +45,12 @@ export function maskProfilePath(value: unknown): unknown {
   return value.replace(/\/u\/[^/?#]+/, '/u/:username');
 }
 
-/** The URL-valued properties PostHog attaches on its own, including the `$set_once` initials. */
+/**
+ * The URL-valued properties PostHog attaches on its own, including the `$set_once` initials. The
+ * SDK also stamps the previous pageview's path on `$pageview`/`$pageleave`, and the session's entry
+ * URL, path and referrer on **every** event — the copies a mask on `$current_url` alone would leave
+ * naming the person (and carrying the query) one event later.
+ */
 const URL_PROPERTIES = [
   '$current_url',
   '$referrer',
@@ -53,6 +58,10 @@ const URL_PROPERTIES = [
   '$initial_current_url',
   '$initial_referrer',
   '$initial_pathname',
+  '$prev_pageview_pathname',
+  '$session_entry_url',
+  '$session_entry_pathname',
+  '$session_entry_referrer',
 ] as const;
 
 /** Strip the query (credentials can ride in it), then mask the person-naming segment. */
