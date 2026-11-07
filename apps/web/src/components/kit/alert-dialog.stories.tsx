@@ -247,6 +247,33 @@ export const ArmLapses: Story = {
   },
 };
 
+/**
+ * A cancelled arm doesn't come back: arm Remove, Cancel, reopen — the action is at rest again, and
+ * its first press arms instead of acting.
+ */
+export const CancelDisarms: Story = {
+  render: () => <ReasonDialog {...REMOVE} />,
+  beforeEach: () => confirmed.mockClear(),
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Remove');
+    const first = await waitFor(() => must(popup()));
+    await userEvent.click(action(first));
+    await expect(action(first)).toHaveAttribute('data-armed');
+    await userEvent.click(within(first).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(popup()).toBeNull());
+
+    await openWith(canvasElement, 'Remove');
+    const dialog = await waitFor(() => must(popup()));
+    const remove = action(dialog);
+    await expect(remove).not.toHaveAttribute('data-armed');
+    await expect(dialog.querySelector('[data-slot="dialog-note"]')).toBeNull();
+    await userEvent.click(remove);
+    await expect(confirmed).not.toHaveBeenCalled();
+    await expect(remove).toHaveAttribute('data-armed');
+    await closeWithEscape(popup);
+  },
+};
+
 /** Typed confirmation, for what resets a season: the action waits for the word and the reason. */
 export const TypedConfirmation: Story = {
   render: () => (

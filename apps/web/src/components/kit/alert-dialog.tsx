@@ -67,8 +67,6 @@ function AlertDialogContent({
   children,
   ...props
 }: AlertDialogContentProps) {
-  // Lives as long as the popup: closing unmounts it, so a reopened dialog starts disarmed.
-  const [armed, setArmed] = useState(false);
   const position = container != null ? 'absolute' : 'fixed';
   return (
     <AlertDialogPrimitive.Portal container={container}>
@@ -89,10 +87,20 @@ function AlertDialogContent({
         }}
         {...props}
       >
-        <Arm.Provider value={{ armed, setArmed }}>{children}</Arm.Provider>
+        <ArmScope>{children}</ArmScope>
       </AlertDialogPrimitive.Popup>
     </AlertDialogPrimitive.Portal>
   );
+}
+
+/**
+ * The armed state, held inside the popup: `AlertDialogContent` itself stays mounted while the
+ * dialog is closed, but the popup's subtree unmounts — so a cancelled, armed action can't survive
+ * into the next open, and a reopened dialog always starts at rest.
+ */
+function ArmScope({ children }: { children: ReactNode }) {
+  const [armed, setArmed] = useState(false);
+  return <Arm.Provider value={{ armed, setArmed }}>{children}</Arm.Provider>;
 }
 
 /** The head: the question, then what happens. Ruled from the body. */
