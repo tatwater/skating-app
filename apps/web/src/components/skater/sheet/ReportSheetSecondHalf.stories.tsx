@@ -14,7 +14,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { setSheet } from '@/lib/sheetStore';
 import { must } from '../../kit/storyKit';
 import { HazardFlowView } from '../actions/HazardFlowView';
-import { chooseType, startDraft } from '../actions/hazardFlowModel';
+import { chooseDrawKind, chooseType, startDraft } from '../actions/hazardFlowModel';
 import { MASCOMA_INTERIOR, MASCOMA_PUT_INS, MASCOMA_RINGS } from '../map/mapStoryData';
 import { SkaterPair } from '../storySupport';
 import { AnotherReport } from './AnotherReport';
@@ -558,5 +558,98 @@ export const HazardStacked: Story = {
     await expect(getComputedStyle(top).borderRadius).toBe('0px');
     await userEvent.tab();
     await expect(document.activeElement?.getAttribute('data-attr')).toBe('hazard-sheet-close');
+  },
+};
+
+// ── Row 9: Report a hazard at a phone's width ─────────────────────────────────────────────────
+
+const flowHandlers = () => ({
+  onChooseType: fn(),
+  onClearType: fn(),
+  onChooseDrawKind: fn(),
+  onStopPlacing: fn(),
+  onUndo: fn(),
+  onFlipShore: fn(),
+  onResize: fn(),
+  onNoteChange: fn(),
+  onAddPhotos: fn(),
+  onRemovePhoto: fn(),
+  onConfirmNearby: fn(),
+  onFileDistinct: fn(),
+  onPost: fn(),
+  onCancel: fn(),
+});
+
+/** The frame at 390 × 844, at rest and while a line is being drawn. */
+function NarrowHazard({ placing }: { placing: boolean }) {
+  const typed = chooseType(startDraft('mascoma', false), 'thin_ice');
+  const draft = placing ? chooseDrawKind(typed, 'line') : typed;
+  return (
+    <div
+      data-slot="narrow-frame"
+      data-placing={placing ? '' : undefined}
+      className="relative h-[52.75rem] w-[24.375rem] overflow-hidden border border-solid border-line bg-bg"
+    >
+      <HazardSheetChrome
+        name="Mascoma Lake"
+        placing={placing}
+        onClose={fn()}
+        map={<div data-slot="narrow-map" className="absolute inset-0 bg-panel" />}
+      >
+        <HazardFlowView
+          draft={draft}
+          photos={[]}
+          lostPhotos={0}
+          nudge={null}
+          error={null}
+          submitting={false}
+          {...flowHandlers()}
+        />
+      </HazardSheetChrome>
+    </div>
+  );
+}
+
+/**
+ * Row 9: the hazard's frame on a phone is one column — the lake on top, the questions full-width
+ * under it — and gives the map more of it while placing, the line's Done still in reach below.
+ */
+export const HazardNarrow: Story = {
+  render: () => (
+    <SkaterPair height="54rem">
+      {() => (
+        <div className="flex gap-(--space-4) p-(--space-2)">
+          <NarrowHazard placing={false} />
+          <NarrowHazard placing />
+        </div>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const frame of canvasElement.querySelectorAll<HTMLElement>('[data-slot="narrow-frame"]')) {
+      const box = frame.getBoundingClientRect();
+      const lake = must(frame.querySelector<HTMLElement>('section[aria-label="The lake"]'));
+      const pane = must(frame.querySelector<HTMLElement>('aside[aria-label="The hazard"]'));
+      const map = must(frame.querySelector<HTMLElement>('[data-slot="narrow-map"]'));
+      // One column: the question pane spans the frame (its border aside) and sits under the map.
+      await expect(Math.abs(pane.getBoundingClientRect().width - (box.width - 2))).toBeLessThan(1);
+      await expect(pane.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        lake.getBoundingClientRect().bottom - 1,
+      );
+      await expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth);
+      // The map has real room, more of it while placing.
+      const share = map.getBoundingClientRect().height / box.height;
+      if (frame.hasAttribute('data-placing')) {
+        await expect(share).toBeGreaterThan(0.5);
+        await expect(within(pane).getByRole('button', { name: 'Done' })).toBeVisible();
+      } else {
+        await expect(share).toBeGreaterThan(0.3);
+        await expect(share).toBeLessThan(0.5);
+        await expect(within(pane).getByText('What did you see?')).toBeVisible();
+      }
+      // The top bar fits: Close stays inside the frame.
+      const close = within(frame).getByRole('button', { name: /Close/ });
+      await expect(close.getBoundingClientRect().right).toBeLessThanOrEqual(box.right);
+    }
   },
 };

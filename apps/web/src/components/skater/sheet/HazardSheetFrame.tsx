@@ -71,6 +71,8 @@ export function HazardSheetFrame({
   // Stacked, this sheet's map replaces the report's while it's open: two GL contexts, never three.
   useEffect(() => (stacked ? holdInstrument() : undefined), [stacked]);
 
+  // While the flow is placing, a narrow frame gives the map more of the column.
+  const placing = useHazardDraftStore((s) => s.draft?.placing === true);
   // A seed lands once the flow's draft is this lake's (the flow resets a draft from another lake).
   const ready = useHazardDraftStore((s) => s.bound && s.draft?.waterBodyId === waterBodyId);
   const seeded = useRef(false);
@@ -119,14 +121,16 @@ export function HazardSheetFrame({
         data-stacked={stacked ? '' : undefined}
         className={cn(
           'overflow-hidden bg-bg',
+          // A phone has no room to inset it: the frame takes the screen either way.
           stacked
-            ? 'top-3.5 right-4.5 bottom-3.5 left-4.5'
+            ? 'top-3.5 right-4.5 bottom-3.5 left-4.5 max-md:inset-0'
             : 'top-18 right-8 bottom-5 left-8 max-md:inset-0',
         )}
       >
         <DialogTitle className="sr-only">Report a hazard</DialogTitle>
         <HazardSheetChrome
           name={name}
+          placing={placing}
           onClose={() => exitRef.current()}
           map={
             body?.polygon ? (
@@ -179,31 +183,42 @@ export function HazardSheetFrame({
  * The frame's drawing, Convex-free (stories, render-compare): the top bar — *Report a hazard*, the
  * lake's tab, Close with its Esc — then the lake on the left under its name and the questions on
  * the right, the report sheet's two panes at the report sheet's widths.
+ *
+ * **Narrow** (the frame under 48 rem — a phone, row 9): one column, measured on the frame itself
+ * (a container query), so it holds stacked or standalone. The map on top — more of the column while
+ * the flow is placing, the question pane still below it, since the line's Undo and Done live there —
+ * and the questions full-width under it. The lake's name rides the top bar's tab alone.
  */
 export function HazardSheetChrome({
   name,
+  placing = false,
   onClose,
   map,
   children,
 }: {
   name: string;
+  /** The flow is placing: a narrow frame gives the map the larger share. */
+  placing?: boolean;
   onClose: () => void;
   map: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="flex size-full min-h-0 flex-col">
+    <div
+      data-slot="hazard-sheet-chrome"
+      className="@container/hazard flex size-full min-h-0 flex-col"
+    >
       <div
         data-slot="hazard-sheet-top"
         className="flex h-13 shrink-0 items-stretch border-0 border-b border-solid border-line pl-(--space-5_5)"
       >
-        <span className="mr-(--space-5_5) self-center text-kick leading-none font-medium tracking-head text-fg2 uppercase">
+        <span className="mr-(--space-5_5) shrink-0 self-center text-kick leading-none font-medium tracking-head text-fg2 uppercase @max-3xl/hazard:mr-(--space-3)">
           Report a hazard
         </span>
-        <div className="relative flex items-center border-0 border-r border-solid border-line bg-panel px-(--space-4_5) after:absolute after:right-0 after:-bottom-px after:left-0 after:h-0.5 after:bg-fg">
-          <span className="text-row font-semibold text-fg">{name}</span>
+        <div className="relative flex min-w-0 items-center border-0 border-r border-solid border-line bg-panel px-(--space-4_5) after:absolute after:right-0 after:-bottom-px after:left-0 after:h-0.5 after:bg-fg @max-3xl/hazard:px-(--space-3)">
+          <span className="truncate text-row font-semibold text-fg">{name}</span>
         </div>
-        <div className="ml-auto flex items-center pr-(--space-3_5)">
+        <div className="ml-auto flex shrink-0 items-center pr-(--space-3_5) pl-(--space-2)">
           <Button size="sm" data-attr="hazard-sheet-close" onClick={onClose}>
             Close
             <Kbd variant="dim" aria-hidden="true">
@@ -212,12 +227,17 @@ export function HazardSheetChrome({
           </Button>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 @max-3xl/hazard:flex-col">
         <section
           aria-label="The lake"
-          className="flex min-h-0 min-w-0 flex-1 flex-col border-0 border-r border-solid border-line"
+          data-placing={placing ? '' : undefined}
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col border-0 border-r border-solid border-line',
+            '@max-3xl/hazard:flex-none @max-3xl/hazard:border-r-0 @max-3xl/hazard:border-b',
+            placing ? '@max-3xl/hazard:h-[58%]' : '@max-3xl/hazard:h-[40%]',
+          )}
         >
-          <div className="flex h-14 shrink-0 items-center border-0 border-b border-solid border-line px-(--space-6)">
+          <div className="flex h-14 shrink-0 items-center border-0 border-b border-solid border-line px-(--space-6) @max-3xl/hazard:hidden">
             <h2 className="m-0 text-disp leading-none font-semibold tracking-kick text-fg uppercase">
               {name}
             </h2>
@@ -228,6 +248,7 @@ export function HazardSheetChrome({
           aria-label="The hazard"
           className={cn(
             'flex w-[29.25rem] shrink-0 flex-col overflow-y-auto px-(--space-6) pt-(--space-5_5)',
+            '@max-3xl/hazard:min-h-0 @max-3xl/hazard:w-full @max-3xl/hazard:flex-1 @max-3xl/hazard:px-(--space-4) @max-3xl/hazard:pt-(--space-4)',
             // The flow's foot (Cancel, Post hazard) rests at the pane's foot, as the report's does.
             '[&>[data-slot=hazard-flow]]:min-h-full [&_[data-slot=hazard-flow-foot]]:sticky [&_[data-slot=hazard-flow-foot]]:bottom-0 [&_[data-slot=hazard-flow-foot]]:mt-auto [&_[data-slot=hazard-flow-foot]]:bg-bg [&_[data-slot=hazard-flow-foot]]:pb-(--space-4)',
           )}

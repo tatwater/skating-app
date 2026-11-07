@@ -175,6 +175,17 @@ describe('HazardSheetFrame', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('tells its chrome while the flow is placing, so a narrow frame gives the map more room', async () => {
+    render(<HazardSheetFrame waterBodyId="mascoma" onClose={() => {}} />);
+    const dialog = await screen.findByRole('dialog', { name: 'Report a hazard' });
+    const lake = within(dialog).getByRole('region', { name: 'The lake' });
+    expect(lake).not.toHaveAttribute('data-placing');
+    act(() =>
+      useHazardDraftStore.setState({ draft: { waterBodyId: 'mascoma', placing: true } as never }),
+    );
+    expect(lake).toHaveAttribute('data-placing', '');
+  });
+
   it('hands the focus back to whatever opened it when one Esc closes it', async () => {
     function Opener() {
       const [open, setOpen] = useState(false);
