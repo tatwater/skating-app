@@ -248,12 +248,19 @@ export const ingestTrack = mutation({
 
     // Idempotency short-circuit, before any work: a re-flushed skate returns its original row.
     // Scoped to the owner so a key collision can never hand back someone else's track.
-    const existing = await ctx.db
-      .query('gpsActivities')
-      .withIndex('by_provider_activity', (q) =>
-        q.eq('provider', provider).eq('providerActivityId', args.idempotencyKey),
-      )
-      .unique();
+    const byKey = (stored: 'native' | 'gpx') =>
+      ctx.db
+        .query('gpsActivities')
+        .withIndex('by_provider_activity', (q) =>
+          q.eq('provider', stored).eq('providerActivityId', args.idempotencyKey),
+        )
+        .unique();
+    // An import stored as `native` before the label existed is the same file under its old label (its
+    // key carries the prefix, which is all `backfillGpxProvider` reads). Until that has relabeled it, a
+    // replay must still find it: a second row minted here would collide with it once relabeled, and
+    // every later `.unique()` on the key would throw. Any other key keeps the two spaces apart.
+    const legacyImport = provider === 'gpx' && args.idempotencyKey.startsWith(GPX_KEY_PREFIX);
+    const existing = (await byKey(provider)) ?? (legacyImport ? await byKey('native') : null);
     if (existing) {
       if (existing.userId !== profile._id) throw new ConvexError('Idempotency key conflict');
       return existing._id;

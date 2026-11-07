@@ -546,6 +546,38 @@ describe('an imported GPX (D239, fully trusted for now)', () => {
     });
   });
 
+  test('a replay before the backfill finds the import stored as native, and mints no second row', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedBody(t);
+    const legacy = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: user.id,
+        provider: 'native',
+        providerActivityId: 'gpx:r1:1:2:3',
+        sportType: 'IceSkate',
+        startTime: T0,
+        promptState: 'pending',
+        detectedAt: T0,
+      }),
+    );
+    const replay = await user.as.mutation(
+      api.gpsActivities.ingestTrack,
+      gpxArgs({ idempotencyKey: 'gpx:r1:1:2:3' }),
+    );
+    expect(replay).toBe(legacy);
+    // Relabeled afterward, the key still names one row, so the next replay still resolves.
+    await t.mutation(internal.gpsActivities.backfillGpxProvider, {});
+    expect(
+      await user.as.mutation(
+        api.gpsActivities.ingestTrack,
+        gpxArgs({ idempotencyKey: 'gpx:r1:1:2:3' }),
+      ),
+    ).toBe(legacy);
+    const rows = await t.run((ctx) => ctx.db.query('gpsActivities').collect());
+    expect(rows).toHaveLength(1);
+  });
+
   test('the backfill takes another pass when a batch comes back full', async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');

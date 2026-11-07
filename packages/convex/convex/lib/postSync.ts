@@ -70,8 +70,9 @@ export async function syncPostPhotos(
 
 /**
  * What a search of Latest can find in one Post: its title and prose, and the words typed on its
- * **visible** members — the report's notes, each thickness reading's note, each ice and surface
- * chip's note. A hidden member is out because a match on its words would hand back a Post whose card
+ * **visible** members — the report's notes, each thickness reading's note, each ice, surface and
+ * sighting chip's note (the same five places `reportRedaction` clears, so a purge takes every word
+ * this reads). A hidden member is out because a match on its words would hand back a Post whose card
  * doesn't show them, which says what the hidden Report said. Lake and bay names are out on purpose:
  * the top bar's search finds places, and a rename would have to re-stamp every Post on the lake.
  */
@@ -86,6 +87,7 @@ export function postSearchText(
     for (const reading of member.iceThickness?.readings ?? []) words.push(reading.note);
     for (const chip of member.iceTypes) words.push(chip.note);
     for (const chip of member.surfaceTags) words.push(chip.note);
+    for (const chip of member.sightings ?? []) words.push(chip.note);
   }
   const text = words.filter((word) => word !== undefined && word !== '').join('\n');
   return text === '' ? undefined : text;

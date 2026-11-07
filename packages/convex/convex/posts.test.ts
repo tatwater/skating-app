@@ -1137,7 +1137,7 @@ describe('text search over Latest (B03 §11, board 4.9)', () => {
           suitability: 'experienced_only',
           waterBodyId,
           skateEndTime: T0,
-          iceTypes: [{ type: 'black_ice', note: 'narrows looked grey' }],
+          iceTypes: [{ type: 'black_ice', note: 'narrows looked gray' }],
           surfaceTags: [{ type: 'glass', note: 'smooth past the narrows' }],
           iceThickness: {
             readings: [{ valueCm: 13, method: 'measured', note: 'drilled at the narrows' }],
@@ -1420,6 +1420,10 @@ describe('text search over Latest (B03 §11, board 4.9)', () => {
           member({ notes: 'held back', moderationStatus: 'hidden' }),
         ]),
       ).toBe('T\nB\nshown');
+      // A sighting chip's note is typed prose like the others (D210), and the purge clears it too.
+      expect(
+        postSearchText({}, [member({ sightings: [{ type: 'open', note: 'lead by the dam' }] })]),
+      ).toBe('lead by the dam');
     });
   });
 
