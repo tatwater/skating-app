@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
 import { ConvexError } from 'convex/values';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSheet, updateSheet, useSheet } from '@/lib/sheetStore';
 import { installFakeStore, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
@@ -172,6 +173,29 @@ describe('HazardSheetFrame', () => {
     fireEvent.click(dialog.querySelector('[data-attr="hazard-sheet-close"]') as HTMLElement);
     expect(onExitMode).toHaveBeenCalledTimes(2);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('hands the focus back to whatever opened it when one Esc closes it', async () => {
+    function Opener() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Report a hazard
+          </button>
+          {open && <HazardSheetFrame waterBodyId="mascoma" onClose={() => setOpen(false)} />}
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Opener />);
+    const opener = screen.getByRole('button', { name: 'Report a hazard' });
+    await user.click(opener);
+    const dialog = await screen.findByRole('dialog', { name: 'Report a hazard' });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(opener).toHaveFocus());
   });
 
   it('a click is nobody’s while the flow isn’t placing; Close leaves before the flow is ready', async () => {
