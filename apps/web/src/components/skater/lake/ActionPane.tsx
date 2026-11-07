@@ -39,7 +39,16 @@ export function ActionPane({
   const back = useRef<HTMLButtonElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new action takes the focus again.
   useEffect(() => {
-    if (autoFocus) back.current?.focus();
+    if (!autoFocus) return;
+    // Whatever opened the action (the header's link, the dock) gets the focus back when it closes;
+    // if that's gone, the sidebar's first control does, so the keyboard never drops to <body>.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const pane = back.current?.closest<HTMLElement>('[data-slot="lake-sidebar"]') ?? null;
+    back.current?.focus();
+    return () => {
+      if (opener?.isConnected && opener !== document.body) opener.focus();
+      else pane?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus();
+    };
   }, [act, autoFocus]);
   return (
     <section

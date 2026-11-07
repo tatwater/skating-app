@@ -7,6 +7,7 @@ import { convexReact } from '../testMocks';
 vi.mock('convex/react', () => convexReact);
 
 import { IceHistoryView, iceHistoryLines, LinksView } from './AboutTab';
+import { ActionPane } from './ActionPane';
 import { AlertStripView } from './AlertStrip';
 import { HazardListView } from './HazardList';
 import { LakeRow } from './LakeRow';
@@ -225,5 +226,38 @@ describe('notices', () => {
     expect(screen.getByText('Removed')).toBeInTheDocument();
     rerender(<StandingNoticeView standing={{ standing: 'active' }} />);
     expect(screen.queryByRole('note')).toBeNull();
+  });
+});
+
+describe('an action’s focus (§1.8)', () => {
+  it('takes the focus on open and hands it back to its opener on close', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const { unmount } = render(<ActionPane act="bounty" backTo="Mascoma Lake" onBack={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Back to Mascoma Lake' })).toHaveFocus();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it('falls back to the sidebar’s first control when the opener is gone', () => {
+    const { rerender } = render(
+      <aside data-slot="lake-sidebar">
+        <a href="/x">First</a>
+        <ActionPane act="imagery" backTo="Mascoma Lake" onBack={() => {}} />
+      </aside>,
+    );
+    rerender(
+      <aside data-slot="lake-sidebar">
+        <a href="/x">First</a>
+      </aside>,
+    );
+    expect(screen.getByRole('link', { name: 'First' })).toHaveFocus();
+  });
+
+  it('leaves the focus alone when it isn’t asked to take it', () => {
+    render(<ActionPane act="hazard" backTo="Explore" onBack={() => {}} autoFocus={false} />);
+    expect(screen.getByRole('button', { name: 'Back to Explore' })).not.toHaveFocus();
   });
 });
