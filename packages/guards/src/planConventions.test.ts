@@ -152,7 +152,7 @@ describe('plans/ and docs/ follow the workstream convention (§N.M, never a lett
  * skimming `plans/phases/` should not have to guess whether a bare `A01` is a doc or a citation.
  * `A03 / A04` is the one shared doc.
  */
-const PHASE_H1 = /^# Phase (?:\d\d[a-z]?|A\d\d[a-z]?(?: \/ A\d\d)?) — \S/u;
+const PHASE_H1 = /^# Phase (?:\d\d[a-z]?|[AB]\d\d[a-z]?(?: \/ A\d\d)?) — \S/u;
 
 describe('every phase doc is headed "# Phase <token> — <title>"', () => {
   test('no phase doc H1 deviates', () => {
