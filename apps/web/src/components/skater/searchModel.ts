@@ -1,5 +1,10 @@
 import type { SilhouetteData } from '@skating/core';
-import { INACTIVE_BADGE, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
+import {
+  INACTIVE_BADGE,
+  sqMetersToAcres,
+  waterBodyClassLabel,
+  waterBodyDisplayName,
+} from '@skating/core';
 
 import type { SearchResultKind } from '@/lib/analytics';
 import type { RecentPick } from '@/stores/searchStore';
@@ -25,6 +30,7 @@ export interface WaterHit {
   type: string;
   states: string[];
   inactive?: boolean;
+  surfaceAreaSqM?: number;
 }
 
 /** A public-profile hit, as `profiles.searchProfiles` returns it. */
@@ -33,6 +39,8 @@ export interface SkaterHit {
   username: string;
   displayName: string;
   profileImageUrl?: string;
+  /** The lifetime count, on rows that have the counter. */
+  reportCount?: number;
 }
 
 /** The slice of a recent-report card the sub-lines read. */
@@ -81,7 +89,20 @@ export function waterSubLine(type: string, states: readonly string[], inactive =
 }
 
 function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
+  return `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+}
+
+/** "1,143 acres" — whole acres, as the lake header rounds them; a pond under one reads "1 acre". */
+export function acresLabel(surfaceAreaSqM: number | undefined): string | undefined {
+  if (surfaceAreaSqM === undefined || !Number.isFinite(surfaceAreaSqM) || surfaceAreaSqM <= 0) {
+    return undefined;
+  }
+  return plural(Math.max(1, Math.round(sqMetersToAcres(surfaceAreaSqM))), 'acre', 'acres');
+}
+
+/** A sub-line with an extra fact on the end: "Reservoir · NH · 1,143 acres". */
+function withFact(line: string, fact: string | undefined): string {
+  return fact ? `${line} · ${fact}` : line;
 }
 
 /** The calendar day of `ms` in `timeZone`, as a sortable key. */
@@ -189,7 +210,7 @@ export function rowFromWaterHit(
     key: `water_body:${hit._id}`,
     kind: 'water_body',
     name,
-    sub: waterSubLine(hit.type, hit.states, hit.inactive),
+    sub: withFact(waterSubLine(hit.type, hit.states, hit.inactive), acresLabel(hit.surfaceAreaSqM)),
     ...(meta ? { meta } : {}),
     ...(silhouette ? { silhouette } : {}),
     href: hrefForPick(pick) as string,
@@ -203,7 +224,10 @@ export function rowFromSkater(hit: SkaterHit): SearchRow {
     key: `skater:${hit.userId}`,
     kind: 'skater',
     name: hit.displayName,
-    sub: `@${hit.username}`,
+    sub: withFact(
+      `@${hit.username}`,
+      hit.reportCount !== undefined ? plural(hit.reportCount, 'report', 'reports') : undefined,
+    ),
     href: hrefForPick(pick) as string,
     pick,
     ...(hit.profileImageUrl ? { imageUrl: hit.profileImageUrl } : {}),
@@ -236,7 +260,15 @@ export function buildResultGroups(
 
 /** A recent pick once its query has answered: enough to draw its row. */
 export type ResolvedPick =
-  | { kind: 'water_body'; name: string; type: string; states: string[]; inactive?: boolean }
+  | {
+      kind: 'water_body';
+      name: string;
+      type: string;
+      states: string[];
+      inactive?: boolean;
+      /** The lake's outline at card scale, for a row no recent report brought one to. */
+      outline?: Pick<SilhouetteData, 'rings' | 'bbox'>;
+    }
   | { kind: 'sub_area'; name: string; parentName: string }
   | { kind: 'skater'; displayName: string; username: string; imageUrl?: string };
 
@@ -265,7 +297,7 @@ export function buildRecentGroup(
     if (r.kind === 'water_body') {
       const mine = cards.filter((c) => c.waterBodyId === pick.id);
       const meta = recentReportsLabel(mine, now, timeZone);
-      const silhouette = outlineFrom(mine);
+      const silhouette = outlineFrom(mine) ?? r.outline;
       items.push({
         key: pickKey(pick),
         kind: 'water_body',

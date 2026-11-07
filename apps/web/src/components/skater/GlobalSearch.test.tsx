@@ -14,7 +14,13 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
-import { GlobalSearch, resolvePicks, useOpenSearch, useSearchOwnerBinding } from './GlobalSearch';
+import {
+  GlobalSearch,
+  recentArgs,
+  resolvePicks,
+  useOpenSearch,
+  useSearchOwnerBinding,
+} from './GlobalSearch';
 
 const HOUR = 3_600_000;
 const lake = {
@@ -152,7 +158,7 @@ describe('GlobalSearch', () => {
     expect(screen.queryByText(/No lakes, bays/)).toBeNull();
   });
 
-  it('shows the recents with no query, resolved through their queries', async () => {
+  it('shows the recents with no query, resolved in one read', async () => {
     useSearchStore.setState({
       owner: 'user_1',
       recents: [
@@ -161,20 +167,44 @@ describe('GlobalSearch', () => {
         { kind: 'skater', id: 'placasse' },
       ],
     });
-    fakes.queries.set('waterBodies:get', {
-      available: true,
-      body: { name: 'Mascoma Lake', type: 'reservoir', states: ['NH'] },
-    });
-    fakes.queries.set('subAreas:listForBody', [{ _id: 's1', name: 'Mascoma North' }]);
-    fakes.queries.set('profiles:getPublicProfile', {
-      username: 'placasse',
-      displayName: 'Pat Lacasse',
-    });
+    fakes.queries.set('search:resolveRecents', [
+      {
+        kind: 'water_body',
+        id: 'w1',
+        waterBodyId: 'w1',
+        name: 'Mascoma Lake',
+        type: 'reservoir',
+        states: ['NH'],
+      },
+      {
+        kind: 'sub_area',
+        id: 's1',
+        waterBodyId: 'w1',
+        name: 'Mascoma North',
+        parentName: 'Mascoma Lake',
+      },
+      {
+        kind: 'skater',
+        id: 'placasse',
+        username: 'placasse',
+        displayName: 'Pat Lacasse',
+        trustClass: 'new',
+      },
+    ]);
     act(() => useChromeStore.getState().setOverlay('search'));
     render(<GlobalSearch />);
     await screen.findByText('Recent');
     expect(screen.getByText('Mascoma North')).toBeInTheDocument();
     expect(screen.getByText('@placasse')).toBeInTheDocument();
+    // One call for every pick; a bay goes by its own sub-area id.
+    expect(fakes.calls.filter((c) => c.name === 'search:resolveRecents')[0]?.args).toEqual({
+      picks: [
+        { kind: 'water_body', id: 'w1' },
+        { kind: 'sub_area', id: 's1' },
+        { kind: 'skater', id: 'placasse' },
+      ],
+    });
+    expect(fakes.calls.some((c) => c.name === 'waterBodies:get')).toBe(false);
     fireEvent.click(screen.getByText('Mascoma North'));
     expect(fakes.push).toHaveBeenCalledWith('/water/w1?sub=s1');
   });
@@ -188,28 +218,62 @@ describe('GlobalSearch', () => {
   });
 });
 
-describe('resolvePicks', () => {
-  it('resolves what answered and drops what failed, vanished or never parsed', () => {
-    const picks = [
+describe('recentArgs and resolvePicks', () => {
+  it('sends a bay by its sub-area id and leaves out a pair that no longer parses', () => {
+    const { sent, args } = recentArgs([
+      { kind: 'water_body', id: 'w1' },
+      { kind: 'sub_area', id: 'broken' },
+      { kind: 'sub_area', id: 'w1/s1' },
+      { kind: 'skater', id: 'kd' },
+    ]);
+    expect(sent.map((p) => p.id)).toEqual(['w1', 'w1/s1', 'kd']);
+    expect(args).toEqual([
+      { kind: 'water_body', id: 'w1' },
+      { kind: 'sub_area', id: 's1' },
+      { kind: 'skater', id: 'kd' },
+    ]);
+  });
+
+  it('resolves the rows in the order sent, and drops a null or a mismatch', () => {
+    const sent = [
       { kind: 'water_body', id: 'w1' },
       { kind: 'water_body', id: 'gone' },
-      { kind: 'water_body', id: 'err' },
       { kind: 'sub_area', id: 'w1/s1' },
-      { kind: 'sub_area', id: 'w1/missing' },
-      { kind: 'sub_area', id: 'broken' },
       { kind: 'skater', id: 'kd' },
-      { kind: 'skater', id: 'nobody' },
       { kind: 'skater', id: 'photo' },
+      { kind: 'skater', id: 'odd' },
     ] as const;
-    const resolved = resolvePicks(picks, {
-      'water:w1': { available: true, body: { name: 'Mascoma Lake', type: 'reservoir' } },
-      'water:gone': { available: false },
-      'water:err': new Error('bad id'),
-      'bays:w1': [{ _id: 's1', name: 'Mascoma North' }],
-      'skater:kd': { username: 'kd', displayName: 'Kate Donovan' },
-      'skater:nobody': null,
-      'skater:photo': { username: 'photo', displayName: 'P', profileImageUrl: 'https://x/p.png' },
-    });
+    const outline = { rings: [], bbox: [0, 0, 1, 1] } as never;
+    const resolved = resolvePicks(sent, [
+      {
+        kind: 'water_body',
+        id: 'w1',
+        waterBodyId: 'w1',
+        name: 'Mascoma Lake',
+        type: 'reservoir',
+        states: [],
+        inactive: true,
+        outline,
+      },
+      null,
+      {
+        kind: 'sub_area',
+        id: 's1',
+        waterBodyId: 'w1',
+        name: 'Mascoma North',
+        parentName: 'Mascoma Lake',
+      },
+      { kind: 'skater', id: 'kd', username: 'kd', displayName: 'Kate Donovan', trustClass: 'new' },
+      {
+        kind: 'skater',
+        id: 'photo',
+        username: 'photo',
+        displayName: 'P',
+        profileImageUrl: 'https://x/p.png',
+        trustClass: 'new',
+      },
+      { kind: 'sub_area', id: 'x', waterBodyId: 'w1', name: 'X', parentName: 'Y' },
+    ]);
     expect([...resolved.keys()]).toEqual([
       'water_body:w1',
       'sub_area:w1/s1',
@@ -221,7 +285,10 @@ describe('resolvePicks', () => {
       name: 'Mascoma Lake',
       type: 'reservoir',
       states: [],
+      inactive: true,
+      outline,
     });
     expect(resolved.get('skater:photo')).toMatchObject({ imageUrl: 'https://x/p.png' });
+    expect(resolvePicks(sent, undefined).size).toBe(0);
   });
 });
