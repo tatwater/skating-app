@@ -10,12 +10,44 @@ import {
   openReport,
   type PostSheet,
   type ReportRefusal,
+  type ReportSheetState,
   removeReport,
   SHEET_SECTION_COUNT,
+  SHEET_SECTIONS,
   type SheetSection,
   sheetReducer,
   updateReport,
 } from '@skating/core';
+
+/** The questions the sheet keeps open by default (5.1): how it was, and what you saw. */
+export const OPEN_BY_DEFAULT: ReadonlySet<SheetSection> = new Set(['howWasIt', 'iceAndSurface']);
+
+/**
+ * The board's default fold: core opens every section; the web sheet keeps the minimum-set questions
+ * open and folds the rest to a line each. Only a sheet nothing has folded yet is folded — once the
+ * author (or this) has folded anything, their choice stands. `null` when there is nothing to do.
+ */
+export function defaultFold(sheet: ReportSheetState): ReportSheetState | null {
+  if (SHEET_SECTIONS.some((s) => sheet.collapsed[s])) return null;
+  return {
+    ...sheet,
+    collapsed: Object.fromEntries(
+      SHEET_SECTIONS.map((s) => [s, !OPEN_BY_DEFAULT.has(s)]),
+    ) as ReportSheetState['collapsed'],
+  };
+}
+
+/** Open the sections a refusal marks, so the author lands on what is needed. */
+export function openGaps(
+  sheet: ReportSheetState,
+  gaps: ReadonlySet<SheetSection>,
+): ReportSheetState {
+  if (![...gaps].some((s) => sheet.collapsed[s])) return sheet;
+  return {
+    ...sheet,
+    collapsed: { ...sheet.collapsed, ...Object.fromEntries([...gaps].map((s) => [s, false])) },
+  };
+}
 
 /** Which section a minimum-set term points at, for the *needed* mark (D189). */
 export const TERM_SECTION: Record<MinimumSetTerm, SheetSection | null> = {

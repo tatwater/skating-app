@@ -72,9 +72,11 @@ export function WhichLakeCards({
                 role="img"
                 aria-label="Garmin"
                 className="h-4 w-14 shrink-0 bg-fg2 [mask-position:left_center] [mask-repeat:no-repeat] [mask-size:contain]"
-                style={{ maskImage: `url(${garminMark})` }}
+                style={{ maskImage: `url("${garminMark}")` }}
               />
-              <span className="text-assist text-fg2">Sync skates from your watch</span>
+              <span className="min-w-0 truncate text-assist text-fg2">
+                Sync skates from your watch
+              </span>
               <Badge variant="outline" className="ml-auto">
                 Coming soon
               </Badge>

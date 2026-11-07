@@ -243,6 +243,12 @@ function Host({ door, navState }: { door: SheetDoor; navState: unknown }) {
         <DialogContent
           ref={setContainer}
           size="viewer"
+          // The words are where a report starts (5.1), or the lake search before a lake (5.2).
+          initialFocus={() =>
+            container?.querySelector<HTMLElement>(
+              '[data-attr="which-lake-search"], [data-attr="sheet-title"]',
+            ) ?? true
+          }
           data-slot="report-sheet-frame"
           className="top-18 right-8 bottom-5 left-8 overflow-hidden bg-bg max-md:inset-0"
         >

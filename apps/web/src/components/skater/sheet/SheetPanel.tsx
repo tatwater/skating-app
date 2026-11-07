@@ -69,7 +69,9 @@ export function SheetPanel({
         </span>
         <CollapsibleChevron className="text-fg3 group-data-panel-open/collapsible:rotate-90" />
       </CollapsiblePrimitive.Trigger>
-      <CollapsibleContent>
+      {/* Kept mounted while folded: a panel's own effects (the pinned minute, the bundle prompt's
+        candidates) are the sheet's, and must run whether or not the author has opened it. */}
+      <CollapsibleContent keepMounted>
         <div className="flex flex-col gap-(--space-2_5) pt-0.5 pb-(--space-4_5)">{children}</div>
       </CollapsibleContent>
     </Collapsible>

@@ -114,6 +114,9 @@ export function HazardsPanel({
     (ids: string[]) =>
       setReport(
         (r) => {
+          // The same set again is no change at all — returned as is, so the store sees nothing
+          // (a change, even a quiet one, disarms a Post waiting to resend).
+          if (sameIds(r.bundleCandidateIds, ids)) return r;
           const applySaved =
             r.savedHazardRefs !== undefined && r.bundleCandidateIds.length === 0 && ids.length > 0;
           return {
@@ -210,6 +213,10 @@ export function HazardsPanel({
       ) : null}
     </SheetPanel>
   );
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
 function centerOf(hazard: SheetHazard): LatLng {

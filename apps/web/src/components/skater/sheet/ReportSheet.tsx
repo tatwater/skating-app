@@ -14,6 +14,7 @@ import {
   reportsInTimeOrder,
   type SheetReport,
   sectionsFilled,
+  updateReport,
 } from '@skating/core';
 import { useConvex, useQuery } from 'convex/react';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
@@ -38,6 +39,7 @@ import { addSheetPhoto } from '@/lib/sheetPhotos';
 import { useResendOnReconnect } from '@/lib/sheetReconnect';
 import {
   dismissSheetPhotosLost,
+  getSheetResend,
   type SheetSender,
   type SheetSendResult,
   sendSheet,
@@ -57,10 +59,12 @@ import { ReportPanels } from './ReportPanels';
 import { StatusSquare } from './SheetPanel';
 import { SheetWords } from './SheetWords';
 import {
+  defaultFold,
   gapsFor,
   meterCells,
   meterLabel,
   missingCount,
+  openGaps,
   refusalMessage,
   removeLake,
   savedState,
@@ -132,6 +136,27 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
     if (active && active.id !== activeId) setActiveId(active.id);
   }, [active, activeId]);
 
+  // The board's fold (5.1): the minimum-set questions open, the rest a line each — once per sheet,
+  // quietly (the sheet's doing, not the author's), and never over a Post owed a resend.
+  useEffect(() => {
+    if (getSheetResend() !== 'none') return;
+    for (const r of post.reports) {
+      if (defaultFold(r.sheet) === null) continue;
+      // Folded inside the update, on the sheet as it stands then — never over a newer one.
+      updateSheet((p) =>
+        updateReport(
+          p,
+          r.id,
+          (x) => {
+            const folded = defaultFold(x.sheet);
+            return folded === null ? x : { ...x, sheet: folded };
+          },
+          { quiet: true },
+        ),
+      );
+    }
+  }, [post.reports]);
+
   // The photo pool re-runs its rules when a lake's outline arrives (A10-7). Quiet: the sheet's doing.
   useEffect(() => {
     if (!post.photos || post.photos.length === 0) return;
@@ -172,6 +197,12 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
     if (found.length > 0) {
       capture('report_sheet_refused', { missing_count: missingCount(found) });
       setMessage(refusalMessage(found, post.reports.length));
+      for (const r of post.reports) {
+        const gaps = gapsFor(found, r.id);
+        updateSheet((p) =>
+          updateReport(p, r.id, (x) => ({ ...x, sheet: openGaps(x.sheet, gaps) }), { quiet: true }),
+        );
+      }
       const gapReport = post.reports.find((r) => r.id === found[0]?.reportId);
       if (gapReport) setActiveId(gapReport.id);
       return;
@@ -512,7 +543,7 @@ function ReportTab({
         <span className={cn('text-row', selected ? 'font-semibold text-fg' : 'text-fg1')}>
           {name}
         </span>
-        {full && end !== undefined ? (
+        {full && end !== undefined && report.sheet.waterBodyId !== undefined ? (
           <span className="font-(family-name:--family-mono) text-mono-sm text-fg2">
             {start !== undefined ? `${clock(start)}–` : ''}
             {clock(end)}

@@ -16,7 +16,7 @@ describe('SheetPanel', () => {
       </SheetPanel>,
     );
     expect(screen.getByRole('button', { name: /^Snow/ })).toHaveTextContent('None');
-    expect(screen.queryByText('body')).not.toBeInTheDocument();
+    expect(screen.getByText('body')).not.toBeVisible();
     rerender(
       <SheetPanel label="Snow" summary="None" collapsed={false} onToggle={() => {}} gap>
         <p>body</p>
