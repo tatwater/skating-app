@@ -13,8 +13,8 @@ import {
   weatherTimelineModel,
 } from '@skating/core';
 import { type WeatherChartPalette, WIND_FETCH_OPACITY, weatherChartPalette } from '@skating/design';
-import { useTheme } from './theme-provider';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from './theme-provider';
 
 /**
  * The past-weather timeline (A06h Workstream 4) — **the drawing half only.**

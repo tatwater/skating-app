@@ -1,4 +1,3 @@
-import { useTheme } from '../theme-provider';
 import type { ReactNode } from 'react';
 import {
   Bar,
@@ -17,6 +16,7 @@ import {
   ZAxis,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import { useTheme } from '../theme-provider';
 import { Card, CardContent } from '../ui/card';
 import { CHART_TOKENS, type ChartStatus, chartSeries, statusColor } from './palette';
 

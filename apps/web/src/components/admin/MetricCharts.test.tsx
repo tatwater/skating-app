@@ -5,8 +5,8 @@
  * layout jsdom doesn't provide, so these assert the scaffolding around the SVG, not the plot.
  */
 import { render, screen } from '@testing-library/react';
-import { ThemeProvider } from '../theme-provider';
 import { describe, expect, it, vi } from 'vitest';
+import { ThemeProvider } from '../theme-provider';
 
 const { useQuery } = vi.hoisted(() => ({ useQuery: vi.fn() }));
 vi.mock('convex/react', () => ({ useQuery }));

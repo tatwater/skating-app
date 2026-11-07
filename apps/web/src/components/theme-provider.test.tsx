@@ -25,6 +25,7 @@ function Probe() {
 }
 
 const clearCookie = () => {
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the provider reads document.cookie
   document.cookie = `${THEME_COOKIE}=; max-age=0`;
 };
 
@@ -36,6 +37,7 @@ afterEach(() => {
 
 describe('ThemeProvider', () => {
   it('reads the stored preference from the cookie on first render', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the provider reads document.cookie
     document.cookie = `${THEME_COOKIE}=dark`;
     render(
       <ThemeProvider>
@@ -70,6 +72,7 @@ describe('ThemeProvider', () => {
   });
 
   it('returning to system deletes the cookie and removes data-mode', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the provider reads document.cookie
     document.cookie = `${THEME_COOKIE}=dark`;
     render(
       <ThemeProvider>

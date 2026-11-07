@@ -85,7 +85,9 @@ describe('applyThemePreference', () => {
 
 describe('THEME_INIT_SCRIPT', () => {
   const run = (cookie: string, prefersDark: boolean) => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the init script reads document.cookie
     document.cookie = `${THEME_COOKIE}=; max-age=0`; // reset between cases
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the init script reads document.cookie
     if (cookie) document.cookie = cookie;
     const original = window.matchMedia;
     window.matchMedia = ((query: string) => ({

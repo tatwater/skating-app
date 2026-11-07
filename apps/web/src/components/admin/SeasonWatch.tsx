@@ -5,7 +5,6 @@ import {
   type SeasonWatchSettings,
   validateSeasonWatchSettings,
 } from '@skating/core';
-import { useTheme } from '../theme-provider';
 import { type ReactNode, useState } from 'react';
 import {
   CartesianGrid,
@@ -29,6 +28,7 @@ import {
 } from '@/lib/seasonPreview';
 import { ChartLegend } from '../charts/Charts';
 import { CHART_TOKENS, chartSeries } from '../charts/palette';
+import { useTheme } from '../theme-provider';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';

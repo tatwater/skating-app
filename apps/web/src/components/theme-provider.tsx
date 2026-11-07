@@ -76,6 +76,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((preference: ThemePreference) => {
     setThemeState(preference);
+    // biome-ignore lint/suspicious/noDocumentCookie: the Cookie Store API is missing from Firefox; the theme cookie must be readable by the pre-paint script
     document.cookie = themeCookieString(preference);
   }, []);
 
