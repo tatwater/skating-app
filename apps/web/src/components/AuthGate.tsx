@@ -16,12 +16,35 @@ import { FirstLoadSplash } from './skater/OfflineBoundary';
 const GOOGLE_PHOTOS_CALLBACK = '/google-photos/callback';
 
 /**
+ * The areas still drawn inside the old `AppShell` — the pages B03 hasn't migrated yet. Everything
+ * else (`/`, `/water/…`, and a path no route matches) renders bare: the skater layout or the screen
+ * brings its own chrome. Each entry retires as its page migrates: report/hazard/bounty with agent
+ * E, settings/u/about/notifications with G, feed with H, post with I. At close-out only `/admin`
+ * stays.
+ */
+const OLD_SHELL_EXACT = ['/feed', '/notifications', '/post', '/about'];
+const OLD_SHELL_TREES = ['/admin', '/settings'];
+const OLD_SHELL_CHILDREN = ['/u/', '/report/', '/hazard/', '/bounty/'];
+
+/** Whether `pathname` is one of the pages that still sits in the old `AppShell`. */
+export function usesOldShell(pathname: string): boolean {
+  return (
+    OLD_SHELL_EXACT.includes(pathname) ||
+    OLD_SHELL_TREES.some((tree) => pathname === tree || pathname.startsWith(`${tree}/`)) ||
+    OLD_SHELL_CHILDREN.some(
+      (prefix) => pathname.startsWith(prefix) && pathname.length > prefix.length,
+    )
+  );
+}
+
+/**
  * Web counterpart to mobile's `Stack.Protected` gate (D26/D45), driven by the *same* pure
  * `resolveAuthRoute` (shared in `@skating/core`, D7). It resolves the auth/provisioning
  * state from Clerk + the reactive `profiles.current` query, then — because the web is
- * path-based — redirects the user into the right zone when they're in the wrong one. The
- * signed-in-and-provisioned (`app`) state is wrapped in the `AppShell`; the auth/onboarding/
- * re-ack pages render bare. We hold on the first-load splash while loading or mid-redirect so we
+ * path-based — redirects the user into the right zone when they're in the wrong one. In the
+ * signed-in-and-provisioned (`app`) state only the not-yet-migrated pages (`usesOldShell`) are
+ * wrapped in the old `AppShell`; the skater pages, the 404 and the auth/onboarding/re-ack pages
+ * render bare. We hold on the first-load splash while loading or mid-redirect so we
  * never flash the wrong surface; it turns into the offline screen if the socket never opens.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -44,6 +67,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (bare) return <>{children}</>;
   if (route === 'loading' || target) return <FirstLoadSplash />;
-  if (route === 'app') return <AppShell>{children}</AppShell>;
+  if (route === 'app' && usesOldShell(pathname)) return <AppShell>{children}</AppShell>;
   return <>{children}</>;
 }
