@@ -101,8 +101,10 @@ const SENT_COPY =
  * (`postSheet`, `flushPost`, `sendSheet`) — the same sheet the phone draws; this is the composition.
  */
 export function ReportSheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
+  // Phone (row 9): the instrument is a summary strip, which takes no mode.
+  const phone = useIsPhone();
   return (
-    <ConsoleModeProvider>
+    <ConsoleModeProvider instrument={!phone}>
       <Sheet post={post} exits={exits} />
     </ConsoleModeProvider>
   );

@@ -47,7 +47,7 @@ function clock(ms: number): string {
 export function PhotoTileMenu({ photo, reportId, trigger }: PhotoTileMenuSlotProps) {
   const post = useSheet();
   const outlines = useBodyOutlines();
-  const { setMode } = useConsoleMode();
+  const { setMode, instrument } = useConsoleMode();
   const container = useSheetContainer();
   const { capture } = useAnalytics();
   const [hazard, setHazard] = useState<{
@@ -135,11 +135,19 @@ export function PhotoTileMenu({ photo, reportId, trigger }: PhotoTileMenuSlotPro
           <DropdownMenuSeparator />
           <DropdownMenuItem
             data-attr="photo-tile-place"
-            disabled={reportId === null || lake === undefined}
+            // Placing is a click on the instrument; a phone's sheet has none (row 9).
+            disabled={reportId === null || lake === undefined || !instrument}
             icon={<FontAwesomeIcon icon={faLocationCrosshairs} />}
             onClick={place}
           >
-            Place it on the lake
+            {instrument ? (
+              'Place it on the lake'
+            ) : (
+              <span className="flex flex-col">
+                Place it on the lake
+                <span className="text-assist text-fg3">On a wider screen</span>
+              </span>
+            )}
           </DropdownMenuItem>
           <DropdownMenuItem
             data-attr="photo-tile-hazard"

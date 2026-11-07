@@ -40,7 +40,7 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
   const { putInId, parkingAreaId, point } = sheet.scalars;
   const [asking, setAsking] = useState(false);
   const [placing, setPlacing] = useState(false);
-  const { setMode } = useConsoleMode();
+  const { setMode, instrument } = useConsoleMode();
 
   const from = point ?? body?.frame?.origin;
   const nearest = useMemo(
@@ -79,7 +79,8 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
   const handlers = useRef({ choosePutIn, chooseLot, dispatch });
   handlers.current = { choosePutIn, chooseLot, dispatch };
   useEffect(() => {
-    if (!asking) return;
+    // A phone has no instrument to take the click (row 9): the chips answer alone.
+    if (!asking || !instrument) return;
     setMode({
       kind: 'putIn',
       onPickPin: (id, kind) =>
@@ -92,7 +93,12 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
       onExit: () => setAsking(false),
     });
     return () => setMode(null);
-  }, [asking, setMode]);
+  }, [asking, instrument, setMode]);
+  // Without the map, a launch past the first few has nowhere else to be chosen: name them all.
+  const named = instrument ? nearest.slice(0, NAMED_PUT_INS) : nearest;
+  // *Somewhere else* is a click on the shore. Without the map it can't be placed — only a spot
+  // already placed (on a wider screen) is shown, so it can still be taken back.
+  const elsewhereSet = putInId === undefined && point !== undefined;
 
   const conditions = selectedValues(sheet, 'accessConditions');
   const target = putInId !== undefined || parkingAreaId !== undefined;
@@ -116,7 +122,7 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
       {asking ? (
         <QuestionBlock title="Where did you get on?" onDone={() => setAsking(false)}>
           <div className="flex flex-wrap gap-1.5">
-            {nearest.slice(0, NAMED_PUT_INS).map((p) => (
+            {named.map((p) => (
               <SheetChip
                 key={p.id}
                 compact
@@ -125,33 +131,38 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
                 onClick={() => choosePutIn(putInId === p.id ? undefined : p.id)}
               />
             ))}
-            <SheetChip
-              compact
-              label={
-                putInId === undefined && point !== undefined
-                  ? 'Somewhere else · set'
-                  : placing
-                    ? 'Click the shore…'
-                    : 'Somewhere else'
-              }
-              {...((putInId === undefined && point !== undefined) || placing
-                ? { tier: 'solid' as const }
-                : {})}
-              onClick={() => {
-                if (putInId === undefined && point !== undefined) {
-                  dispatch({ type: 'setScalar', key: 'point', value: undefined });
-                  setPlacing(false);
-                } else setPlacing((p) => !p);
-              }}
-            />
+            {instrument || elsewhereSet ? (
+              <SheetChip
+                compact
+                label={
+                  elsewhereSet
+                    ? 'Somewhere else · set'
+                    : placing
+                      ? 'Click the shore…'
+                      : 'Somewhere else'
+                }
+                {...(elsewhereSet || placing ? { tier: 'solid' as const } : {})}
+                onClick={() => {
+                  if (elsewhereSet) {
+                    dispatch({ type: 'setScalar', key: 'point', value: undefined });
+                    setPlacing(false);
+                  } else setPlacing((p) => !p);
+                }}
+              />
+            ) : null}
           </div>
+          {instrument ? null : (
+            <SheetHint>
+              A spot on the shore that isn’t a launch is placed on the map, on a wider screen.
+            </SheetHint>
+          )}
         </QuestionBlock>
       ) : (
         <div className="flex flex-wrap items-center gap-1.5">
           <SubLabel>Where did you get on?</SubLabel>
           <SheetChip
             compact
-            label={chosenName ?? 'Choose on the lake'}
+            label={chosenName ?? (instrument ? 'Choose on the lake' : 'Choose a launch')}
             {...(chosenName !== undefined ? { tier: 'solid' as const } : {})}
             onClick={() => setAsking(true)}
           />

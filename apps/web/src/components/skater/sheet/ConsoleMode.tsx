@@ -43,6 +43,12 @@ export type ConsoleMode = (
 
 interface ConsoleModeValue {
   mode: ConsoleMode | null;
+  /**
+   * Whether there is an instrument to take a mode. A phone's sheet (row 9) draws the lake as a
+   * summary strip, with no map that can take a click, so a question that would arm a mode offers
+   * only what works without one — never an affordance that arms a mode nothing answers.
+   */
+  instrument: boolean;
   setMode: (mode: ConsoleMode | null) => void;
   /** Leave the mode from outside the question — and close the question that opened it. */
   exit: () => void;
@@ -50,28 +56,46 @@ interface ConsoleModeValue {
 
 const Ctx = createContext<ConsoleModeValue | null>(null);
 
-export function ConsoleModeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<ConsoleMode | null>(null);
+export function ConsoleModeProvider({
+  children,
+  instrument = true,
+}: {
+  children: ReactNode;
+  /** False on a phone: no instrument, so no mode is ever live. */
+  instrument?: boolean;
+}) {
+  const [stored, setMode] = useState<ConsoleMode | null>(null);
+  // A mode armed on a wide window and left when it narrows to a phone goes with the instrument.
+  const mode = instrument ? stored : null;
   // A mode is left by a click — the question's Done, or the instrument's — never by Escape: Esc is
   // the sheet's, one per screen (B03 Review 3). Leaving from the instrument closes the question
   // that opened it too, so the block and the instrument always agree.
   const value = useMemo(
     () => ({
       mode,
+      instrument,
       setMode,
       exit: () => {
         mode?.onExit?.();
         setMode(null);
       },
     }),
-    [mode],
+    [mode, instrument],
   );
   return <Ctx value={value}>{children}</Ctx>;
 }
 
-/** The mode and its setter. Outside the console (a test, a panel reused elsewhere) there is no mode. */
+/**
+ * The mode and its setter. Outside the console (a test, a panel reused elsewhere) there is no mode;
+ * the panels keep their console shape there.
+ */
 export function useConsoleMode(): ConsoleModeValue {
   return use(Ctx) ?? NO_MODE;
 }
 
-const NO_MODE: ConsoleModeValue = { mode: null, setMode: () => {}, exit: () => {} };
+const NO_MODE: ConsoleModeValue = {
+  mode: null,
+  instrument: true,
+  setMode: () => {},
+  exit: () => {},
+};

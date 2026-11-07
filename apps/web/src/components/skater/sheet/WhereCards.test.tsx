@@ -18,7 +18,13 @@ function ModeProbe() {
   );
 }
 
-function Harness({ initialOpen = true }: { initialOpen?: boolean }) {
+function Harness({
+  initialOpen = true,
+  instrument = true,
+}: {
+  initialOpen?: boolean;
+  instrument?: boolean;
+}) {
   const [open, setOpen] = useState(initialOpen);
   const [active, setActive] = useState<string | null>(null);
   const [wheres, setWheres] = useState<Record<string, Where | undefined>>({
@@ -40,7 +46,7 @@ function Harness({ initialOpen = true }: { initialOpen?: boolean }) {
     },
   ];
   return (
-    <ConsoleModeProvider>
+    <ConsoleModeProvider instrument={instrument}>
       <ModeProbe />
       <WhereCards
         cards={cards}
@@ -128,6 +134,18 @@ function ConsoleShapedHarness() {
     </>
   );
 }
+
+describe('WhereCards on a phone, with no instrument (row 9)', () => {
+  it('arms no where-mode; the picker takes the tap on its own lake', () => {
+    render(<Harness instrument={false} />);
+    expect(screen.getByText('Where is the black ice?')).toBeInTheDocument();
+    expect(screen.getByTestId('mode')).toHaveTextContent('none');
+    // The point chip places on the picker's own map (WherePicker's own placing), not a dead mode.
+    fireEvent.click(screen.getByRole('button', { name: 'A point on the lake' }));
+    expect(screen.getByRole('button', { name: 'Click the water…' })).toBeInTheDocument();
+    expect(screen.queryByText('Click the water where you mean.')).not.toBeInTheDocument();
+  });
+});
 
 describe('WhereCards inside a mode-reading parent', () => {
   it('settles: the mode is armed once, not on every render the arming itself causes', () => {

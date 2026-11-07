@@ -44,7 +44,7 @@ export function WhereCards({
   activeId: string | null;
   onActivate: (id: string) => void;
 }) {
-  const { setMode } = useConsoleMode();
+  const { setMode, instrument } = useConsoleMode();
   const [placing, setPlacing] = useState(false);
   const active = useMemo(
     () => cards.find((c) => c.id === activeId) ?? cards[0] ?? null,
@@ -65,6 +65,8 @@ export function WhereCards({
   const handlers = useRef({ onChange: active?.onChange, onClose });
   handlers.current = { onChange: active?.onChange, onClose };
   useEffect(() => {
+    // No instrument (a phone): the picker draws its own lake below and takes the tap there.
+    if (!instrument) return;
     if (!open || activeCardId === undefined || activeLabel === undefined) {
       setMode(null);
       return;
@@ -80,7 +82,7 @@ export function WhereCards({
       onExit: () => handlers.current.onClose(),
     });
     return () => setMode(null);
-  }, [open, activeCardId, activeWhere, activeLabel, setMode]);
+  }, [open, activeCardId, activeWhere, activeLabel, instrument, setMode]);
 
   if (!open || !active) return null;
   const next = () => {
@@ -151,11 +153,9 @@ export function WhereCards({
         {...(active.where !== undefined ? { where: active.where } : {})}
         body={body}
         onChange={active.onChange}
-        instrument
-        placing={placing}
-        onPlacing={setPlacing}
+        {...(instrument ? { instrument: true, placing, onPlacing: setPlacing } : {})}
       />
-      {placing ? <SheetHint>Click the water where you mean.</SheetHint> : null}
+      {instrument && placing ? <SheetHint>Click the water where you mean.</SheetHint> : null}
       {active.onAnotherPlace && active.where !== undefined ? (
         <button
           type="button"

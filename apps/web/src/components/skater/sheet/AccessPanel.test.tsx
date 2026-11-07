@@ -37,25 +37,36 @@ function openPutIn() {
   fireEvent.click(screen.getByRole('button', { name: 'Choose on the lake' }));
 }
 
-/** The instrument's Done, which leaves the mode from outside the question. */
+/** The instrument's Done, which leaves the mode from outside the question; and the mode it holds. */
 function InstrumentDone() {
-  const { exit } = useConsoleMode();
+  const { exit, mode } = useConsoleMode();
   return (
-    <button type="button" onClick={exit}>
-      Instrument done
-    </button>
+    <>
+      <button type="button" onClick={exit}>
+        Instrument done
+      </button>
+      <output data-testid="mode">{mode?.kind ?? 'none'}</output>
+    </>
   );
 }
 
 /** Drive the real reducer, so the panel is asserted against the rules and not against a spy. */
-function renderPanel(opts: { editing?: boolean } = {}) {
+function renderPanel(
+  opts: { editing?: boolean; instrument?: boolean; body?: SheetBody; point?: typeof LAUNCH } = {},
+) {
   const dispatched: SheetAction[] = [];
   let latest: SheetReport | undefined;
   function Wrapper() {
     const [report, setReport] = useState<SheetReport>(() => ({
       id: 'r1',
       idempotencyKey: 'k1',
-      sheet: emptySheet(NOW, 'wb1'),
+      sheet: opts.point
+        ? sheetReducer(emptySheet(NOW, 'wb1'), {
+            type: 'setScalar',
+            key: 'point',
+            value: opts.point,
+          })
+        : emptySheet(NOW, 'wb1'),
       photos: [],
       keptPhotoIds: [],
       bundleCandidateIds: [],
@@ -65,7 +76,7 @@ function renderPanel(opts: { editing?: boolean } = {}) {
     return (
       <AccessPanel
         report={report}
-        body={body}
+        body={opts.body ?? body}
         dispatch={(action) => {
           dispatched.push(action);
           setReport((r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }));
@@ -78,7 +89,7 @@ function renderPanel(opts: { editing?: boolean } = {}) {
     );
   }
   render(
-    <ConsoleModeProvider>
+    <ConsoleModeProvider instrument={opts.instrument ?? true}>
       <Wrapper />
       <InstrumentDone />
     </ConsoleModeProvider>,
@@ -124,6 +135,45 @@ describe('the put-in (§7.1 / D198)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'State launch' }));
     expect(get().sheet.scalars.putInId).toBeUndefined();
     expect(get().sheet.scalars.point).toBeUndefined();
+  });
+});
+
+describe('the put-in on a phone, with no instrument (row 9)', () => {
+  const many: SheetBody = {
+    ...body,
+    putIns: Array.from({ length: 6 }, (_, i) => ({
+      id: `put-${i}`,
+      coord: { lat: 43.9 + i / 100, lng: -72.15 },
+      name: `Launch ${i}`,
+      kind: 'putIn' as const,
+    })),
+  };
+
+  it('names every launch, arms no mode, and offers no shore click it cannot take', () => {
+    const { get } = renderPanel({ instrument: false, body: many });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a launch' }));
+    expect(screen.getByTestId('mode')).toHaveTextContent('none');
+    // All six, not the desktop's four: the map that holds the rest isn't here.
+    for (let i = 0; i < 6; i++) {
+      expect(screen.getByRole('button', { name: `Launch ${i}` })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: /Somewhere else/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/placed on the map, on a wider screen/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Launch 5' }));
+    expect(get().sheet.scalars.putInId).toBe('put-5');
+  });
+
+  it('a shore spot placed on a wider screen still shows, and can be taken back', () => {
+    const { get } = renderPanel({ instrument: false, point: LAUNCH });
+    fireEvent.click(screen.getByRole('button', { name: 'Somewhere else' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Somewhere else · set' }));
+    expect(get().sheet.scalars.point).toBeUndefined();
+  });
+
+  it('the desktop arms put-in mode, which a phone never does', () => {
+    renderPanel();
+    openPutIn();
+    expect(screen.getByTestId('mode')).toHaveTextContent('putIn');
   });
 });
 

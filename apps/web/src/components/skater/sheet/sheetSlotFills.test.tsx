@@ -493,11 +493,15 @@ describe('PhotoTileMenu', () => {
     return null;
   }
 
-  function mount(post: PostSheet, onMode: (kind: string | null) => void = () => {}) {
+  function mount(
+    post: PostSheet,
+    onMode: (kind: string | null) => void = () => {},
+    instrument = true,
+  ) {
     setSheet(post);
     const photo = post.reports[0]?.photos[0] as never;
     return render(
-      <ConsoleModeProvider>
+      <ConsoleModeProvider instrument={instrument}>
         <SheetContainerProvider value={document.body}>
           <PhotoTileMenu
             photo={photo}
@@ -519,6 +523,14 @@ describe('PhotoTileMenu', () => {
     let sheet: PostSheet | null = null;
     render(<SheetProbe onSheet={(p) => (sheet = p)} />);
     expect((sheet as PostSheet | null)?.reports[1]?.photos.map((p) => p.id)).toEqual(['ph']);
+  });
+
+  it('on a phone, with no instrument to click, placing is offered as disabled and says why', async () => {
+    mount(twoLakesWithPhoto(), () => {}, false);
+    await userEvent.click(screen.getByRole('button', { name: 'This photo’s lake and options' }));
+    const item = await screen.findByRole('menuitem', { name: /Place it on the lake/ });
+    expect(item).toHaveAttribute('aria-disabled', 'true');
+    expect(item).toHaveTextContent('On a wider screen');
   });
 
   it('places it on the lake through the instrument', async () => {
