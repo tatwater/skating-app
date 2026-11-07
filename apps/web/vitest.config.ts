@@ -68,6 +68,7 @@ export default defineConfig({
             '@base-ui/react/merge-props',
             '@base-ui/react/meter',
             '@base-ui/react/number-field',
+            '@base-ui/react/otp-field',
             '@base-ui/react/popover',
             '@base-ui/react/radio',
             '@base-ui/react/radio-group',
