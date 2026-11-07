@@ -35,12 +35,13 @@ export function useChromeOverlay(kind: ChromeOverlay): {
 /**
  * A modal surface the top bar must not open search over: a dialog, an alert dialog, or a sheet
  * (the New report sheet is a dialog). The bell's own plate is a dialog too, but it's chrome — `/`
- * from inside it moves to search, as the one-overlay rule says.
+ * from inside it moves to search, as the one-overlay rule says. An inset card (a report, hazard or
+ * bounty) is a non-modal dialog that *is* the page's column, so it doesn't block either.
  */
 export function blockingModalOpen(root: ParentNode = document): boolean {
   return (
     root.querySelector(
-      '[role="dialog"]:not([data-slot="popover-content"]),[role="alertdialog"],[data-slot="sheet-content"]',
+      '[role="dialog"]:not([data-slot="popover-content"]):not([data-slot="inset-card"]),[role="alertdialog"],[data-slot="sheet-content"]',
     ) !== null
   );
 }
