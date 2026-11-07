@@ -50,7 +50,8 @@ export function PhoneSearchView({
         aria-label={SEARCH_LABEL}
         onClick={() => onOpenChange(true)}
         className={cn(
-          'flex h-8.5 w-full min-w-0 cursor-pointer items-center gap-(--space-2) px-(--space-0_5)',
+          // Tight enough that the board's whole wording fits at 390 px: a 6 px icon gap, no inset.
+          'flex h-8.5 w-full min-w-0 cursor-pointer items-center gap-(--space-1_5) px-0',
           'rounded-control border-0 border-b border-solid border-line2 bg-transparent text-left',
           'text-assist leading-none whitespace-nowrap text-fg3 outline-none focus-visible:shadow-focus',
           className,

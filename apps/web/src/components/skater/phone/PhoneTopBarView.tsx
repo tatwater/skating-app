@@ -48,7 +48,7 @@ export function PhoneTopBarView({
       </a>
       <div
         data-slot="phone-search-slot"
-        className="mr-(--space-1_5) ml-(--space-3_5) flex min-w-0 flex-1"
+        className="mr-(--space-1) ml-(--space-3) flex min-w-0 flex-1"
       >
         {search}
       </div>
