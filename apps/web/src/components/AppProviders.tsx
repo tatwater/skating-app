@@ -7,9 +7,8 @@ import { CLERK_APPEARANCE } from '../lib/clerkAppearance';
 import { env } from '../lib/env';
 import { AnalyticsProvider } from './Analytics';
 import { PostHogIdentity } from './PostHogIdentity';
+import { CrashScreen } from './skater/CrashScreen';
 import { ThemeProvider, useTheme } from './theme-provider';
-import { Button } from './ui/button';
-import { Card, CardContent } from './ui/card';
 
 /**
  * App-wide providers (D26/D2/D7/D34), mirroring the mobile provider stack:
@@ -34,7 +33,7 @@ import { Card, CardContent } from './ui/card';
  */
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
-    <Sentry.ErrorBoundary fallback={CrashFallback}>
+    <Sentry.ErrorBoundary fallback={({ resetError }) => <CrashScreen onRetry={resetError} />}>
       <ThemeProvider>
         <AnalyticsProvider>
           <AuthedProviders>{children}</AuthedProviders>
@@ -64,24 +63,5 @@ function AuthedProviders({ children }: { children: ReactNode }) {
         <PostHogIdentity>{children}</PostHogIdentity>
       </ConvexProviderWithClerk>
     </ClerkProvider>
-  );
-}
-
-function CrashFallback({ resetError }: { resetError: () => void }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-sm">
-        <CardContent className="flex flex-col items-center gap-4 text-center">
-          <h1 className="font-bold font-mono text-foreground text-lg uppercase tracking-widest">
-            Something broke
-          </h1>
-          <p className="text-foreground-muted text-sm">
-            The app hit an unexpected error. It's been reported — try again, and if it keeps
-            happening, reload the page.
-          </p>
-          <Button onClick={resetError}>Try again</Button>
-        </CardContent>
-      </Card>
-    </div>
   );
 }

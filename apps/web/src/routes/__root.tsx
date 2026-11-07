@@ -1,8 +1,17 @@
-import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import * as Sentry from '@sentry/tanstackstart-react';
+import {
+  createRootRoute,
+  type ErrorComponentProps,
+  HeadContent,
+  Scripts,
+} from '@tanstack/react-router';
+import { type ReactNode, useEffect } from 'react';
 import { AppProviders } from '../components/AppProviders';
 import { AuthGate } from '../components/AuthGate';
 import { RouteAnalytics } from '../components/RouteAnalytics';
+import { CrashScreen } from '../components/skater/CrashScreen';
+import { NotFoundRoute } from '../components/skater/SkaterShell';
+import { isConfigured } from '../lib/env';
 import '../lib/fontawesome';
 import appCss from '../styles/app.css?url';
 
@@ -22,7 +31,20 @@ export const Route = createRootRoute({
     links: [{ rel: 'stylesheet', href: appCss }],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFoundRoute,
+  errorComponent: RootCrash,
 });
+
+/**
+ * The router's own error boundary catches a route's throw before `Sentry.ErrorBoundary` can, so it
+ * reports here — once per mount, and only when Sentry has a DSN — and shows the same crash screen.
+ */
+function RootCrash({ error, reset }: ErrorComponentProps) {
+  useEffect(() => {
+    if (isConfigured.sentry) Sentry.captureException(error);
+  }, [error]);
+  return <CrashScreen onRetry={reset} />;
+}
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
