@@ -34,8 +34,9 @@
  * wants what they pressed *Post* on. Any change they make afterward disarms it, as does a restore
  * that lost one of its photos — a half-made edit, or a Post silently missing a photo, must not go
  * out on its own because a network came back. A *sent* Post stays armed through both: it cannot
- * change, it may already be live, and only a retry finds out. `resendSheet` is what `useConnection`
- * calls; the store runs the send, one at a time, and takes no change while one is in flight.
+ * change, it may already be live, and only a retry finds out. `resendSheet` is what
+ * `useResendOnReconnect` calls; the store runs the send, one at a time, and takes no change while
+ * one is in flight.
  */
 
 import {
