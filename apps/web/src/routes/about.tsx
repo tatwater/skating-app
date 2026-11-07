@@ -1,71 +1,28 @@
+import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
-import { corpusCountLines, formatCorpusCount } from '@skating/core';
-import { createFileRoute } from '@tanstack/react-router';
+import { corpusCountLines } from '@skating/core';
+import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { DOC_URLS } from '../lib/links';
+import { SkaterShell } from '../components/skater/SkaterShell';
+import { AboutView } from '../components/skater/settings/AboutView';
 
 /**
- * About + license disclosure (D43). The app is AGPL-3.0 with a GPLv3 §7 App Store / Play
- * distribution exception; both are referenced here per the Phase 00 license-hygiene
- * requirement. Final legal wording remains Q10.
+ * About + the license disclosure (D43; boards 7.16, 7.17). Public, so it sits **outside** the
+ * skater layout: signed in, it mounts the skater shell itself (under the top bar); signed out it's
+ * bare but for the logo and the way in. Final legal wording remains Q10.
  */
 export const Route = createFileRoute('/about')({ component: AboutPage });
 
-const links = [
-  { href: DOC_URLS.license, label: 'AGPL-3.0 license' },
-  { href: DOC_URLS.licenseExceptions, label: 'App Store / Play exception' },
-  { href: DOC_URLS.privacy, label: 'Privacy notice' },
-  { href: DOC_URLS.terms, label: 'Terms (interim)' },
-];
-
-function AboutPage() {
-  const regionStats = useQuery(api.regionStats.list, {});
-  const counts = regionStats ? corpusCountLines(regionStats) : [];
-  return (
-    <div className="mx-auto flex max-w-prose flex-col gap-4 py-10">
-      <h1 className="font-semibold text-2xl text-foreground">Gli</h1>
-      <p className="text-foreground-muted">
-        A map-first, peer ice-reporting app for Nordic (wild) ice skating. Reports are named peers'
-        observations at a specific time and place — never a guarantee that ice is safe. You alone
-        decide whether to step on the ice.
-      </p>
-      {/* Both numbers, always (A07b, founder call): what the map knows and what it recommends. */}
-      {counts.length > 0 ? (
-        <>
-          <h2 className="font-semibold text-foreground text-lg">The map</h2>
-          <p className="text-foreground-muted">
-            Every lake we know about is on the map when you zoom in. The <em>active</em> ones — the
-            lakes people actually skate and can actually reach — are the ones we recommend, notify
-            about and show first.
-          </p>
-          <ul className="flex flex-col gap-1 text-foreground-muted text-sm">
-            {counts.map((line) => (
-              <li key={line.state}>
-                <span className="text-foreground">{line.stateName}</span> —{' '}
-                {formatCorpusCount(line)}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-      <h2 className="font-semibold text-foreground text-lg">License</h2>
-      <p className="text-foreground-muted">
-        Licensed under AGPL-3.0, with a GPLv3 §7 additional permission (an App Store / Google Play
-        distribution exception) so the app can ship on both stores.
-      </p>
-      <div className="flex flex-col gap-1">
-        {links.map((link) => (
-          <a
-            key={link.href}
-            className="text-primary hover:underline"
-            href={link.href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {link.label}
-          </a>
-        ))}
-      </div>
-    </div>
+export function AboutPage() {
+  const { isSignedIn } = useAuth();
+  const router = useRouter();
+  const stats = useQuery(api.regionStats.list, {});
+  const view = (
+    <AboutView
+      signedIn={isSignedIn === true}
+      counts={stats === undefined ? undefined : corpusCountLines(stats)}
+      onNavigate={(href) => router.history.push(href)}
+    />
   );
+  return isSignedIn ? <SkaterShell>{view}</SkaterShell> : view;
 }
