@@ -477,7 +477,8 @@ describe('stacked inside the report sheet (5.10.1)', () => {
       onDone,
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
-    expect(fakes.capture).toHaveBeenCalledWith('hazard_flow_started', { entry: 'report_sheet' });
+    // The report sheet's opener records the start; stacked, the flow doesn't record it again.
+    expect(fakes.capture).not.toHaveBeenCalledWith('hazard_flow_started', expect.anything());
     expect(useHazardDraftStore.getState().draft?.stackedInReport).toBe(true);
     expect(flowSpec()).toBeNull();
     const state = onMapState.mock.calls.at(-1)?.[0];

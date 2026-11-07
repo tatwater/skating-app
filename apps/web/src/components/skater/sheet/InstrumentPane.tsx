@@ -12,17 +12,21 @@ import {
   updateReport,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
+import type maplibregl from 'maplibre-gl';
 import { useCallback, useMemo, useState } from 'react';
 import { updateSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
 import { useConsoleMode } from './ConsoleMode';
 import { InstrumentMap } from './InstrumentMap';
+import { InstrumentOverlay } from './InstrumentOverlay';
 import type { InstrumentInput } from './instrumentFeatures';
+import { useInstrumentHeld } from './instrumentLease';
+import { pickOnInstrument } from './instrumentPick';
+import { mapProjection } from './instrumentProjection';
 import { Timeline } from './Timeline';
 import type { SheetBody } from './useSheetBody';
 import { useSkateWeather, useSkateWindowHours } from './useSkateWeather';
 import { WeatherBand } from './WeatherBand';
-import { whereClickOnWater } from './WhereCards';
 
 /**
  * The left pane (5.1): the lake on its own map, the day's ruler under it, the weather you had under
@@ -44,6 +48,8 @@ export function InstrumentPane({
   inert: boolean;
 }) {
   const { mode, exit } = useConsoleMode();
+  const held = useInstrumentHeld();
+  const [glMap, setGlMap] = useState<maplibregl.Map | null>(null);
   const sheet = report.sheet;
   const timeZone = body?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [end] = selectedValues(sheet, 'endTime');
@@ -128,13 +134,15 @@ export function InstrumentPane({
     [body, sheet.scalars, mode, report.photos, track],
   );
 
-  // A sub-mode's answer is a click on the water.
-  const onPick = (coord: LatLng) => {
-    if (mode?.kind === 'where')
-      mode.onChange(whereClickOnWater(mode.where, coord, body?.landmarks ?? []));
-    else if (mode?.kind === 'putIn') mode.onPickShore(coord);
-    else if (mode?.kind === 'place') mode.onPlace(coord);
-  };
+  // A sub-mode's answer is a click on the water (`pickOnInstrument`: the ring's sectors, a snap to
+  // a launch, a point).
+  const onPick = (coord: LatLng) =>
+    pickOnInstrument(mode, coord, {
+      ...(glMap !== null ? { projection: mapProjection(glMap) } : {}),
+      origin: body?.silhouette?.origin ?? null,
+      pins: input.pins,
+      landmarks: body?.landmarks ?? [],
+    });
 
   const name = report.bodyName ?? body?.name ?? 'This lake';
   const question =
@@ -190,9 +198,19 @@ export function InstrumentPane({
           <InstrumentMap
             input={input}
             onPick={onPick}
+            onMap={setGlMap}
+            suspended={held}
             label={`${name}, with your put-in and any photos you placed`}
             className="absolute inset-0"
-          />
+          >
+            <InstrumentOverlay
+              map={held ? null : glMap}
+              mode={mode}
+              silhouette={body?.silhouette ?? null}
+              pins={input.pins}
+              {...(input.chosenPinId !== undefined ? { chosenPinId: input.chosenPinId } : {})}
+            />
+          </InstrumentMap>
         ) : (
           <p className="m-0 pt-(--space-6) text-assist text-fg3">Drawing the lake…</p>
         )}

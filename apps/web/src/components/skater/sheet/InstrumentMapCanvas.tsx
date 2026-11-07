@@ -38,9 +38,12 @@ const FIT_PADDING = { top: 24, right: 24, bottom: 36, left: 24 };
 export default function InstrumentMapCanvas({
   input,
   onPick,
+  onMap,
 }: {
   input: InstrumentInput;
   onPick?: (coord: LatLng) => void;
+  /** The live map once it has loaded, and `null` when it goes — for what draws over it (K). */
+  onMap?: (map: maplibregl.Map | null) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'light' ? MAP_FLAVORS.light : MAP_FLAVORS.dark;
@@ -49,6 +52,8 @@ export default function InstrumentMapCanvas({
   // The latest pick handler, without re-binding the map's click on every render.
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const onMapRef = useRef(onMap);
+  onMapRef.current = onMap;
 
   const { containerRef, mapRef, loaded } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
@@ -130,6 +135,11 @@ export default function InstrumentMapCanvas({
     set(INSTRUMENT_SOURCES.marks, marks);
     set(INSTRUMENT_SOURCES.track, track);
   }, [loaded, mapRef, lake, marks, track]);
+
+  useEffect(() => {
+    onMapRef.current?.(loaded ? mapRef.current : null);
+    return () => onMapRef.current?.(null);
+  }, [loaded, mapRef]);
 
   // A lake picked after the map loaded: frame it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: bounds compare by their serialized key.

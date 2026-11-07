@@ -57,6 +57,7 @@ import { useIsPhone } from '../phone/usePhoneLayout';
 import { ConsoleModeProvider } from './ConsoleMode';
 import { InstrumentPane } from './InstrumentPane';
 import { LakeNameSearch } from './LakeNameSearch';
+import { PhotoSorter } from './PhotoSorter';
 import { ReportPanels } from './ReportPanels';
 import { StatusSquare } from './SheetPanel';
 import { SheetWords } from './SheetWords';
@@ -312,6 +313,7 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
           >
             <div className="flex min-h-0 flex-1 flex-col gap-(--space-5_5) overflow-y-auto px-(--space-6) pt-(--space-5) max-md:overflow-visible max-md:px-(--space-4)">
               <Notices sent={sent} photosLost={photosLost} photosNotKept={photosNotKept} />
+              <PhotoSorter post={post} activeId={active.id} onActivate={setActiveId} />
               <div
                 inert={posting || sent}
                 className={cn('flex flex-col gap-(--space-5_5)', (posting || sent) && 'opacity-50')}

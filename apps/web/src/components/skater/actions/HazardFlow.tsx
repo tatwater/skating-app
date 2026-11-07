@@ -45,8 +45,8 @@ export interface HazardFlowProps {
   subAreaId?: string;
   /**
    * Stacked inside the report sheet (board 5.10.1): the flow renders where the host puts it, marks
-   * the draft `stackedInReport`, fires `hazard_flow_started` with `entry: 'report_sheet'`, and never
-   * navigates — every way out is a callback.
+   * the draft `stackedInReport`, leaves `hazard_flow_started` to the opener (which recorded it with
+   * `entry: 'report_sheet'`), and never navigates — every way out is a callback.
    */
   stacked?: boolean;
   /**
@@ -123,7 +123,8 @@ export function HazardFlow({
     } else if (state.draft.stackedInReport !== stacked) {
       state.updateDraft({ stackedInReport: stacked });
     }
-    capture('hazard_flow_started', { entry: stacked ? 'report_sheet' : 'water_body' });
+    // Stacked, the report sheet's opener has already recorded the start (it knows the entry).
+    if (!stacked) capture('hazard_flow_started', { entry: 'water_body' });
   }, [bound, waterBodyId, stacked, capture]);
 
   const apply = (change: (current: HazardDraft) => HazardDraft) => {

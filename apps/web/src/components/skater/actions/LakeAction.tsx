@@ -2,13 +2,14 @@ import { ActionPane } from '../lake/ActionPane';
 import type { PageNav } from '../lake/lakeNav';
 import type { LakeAct } from '../lake/lakeSearch';
 import { BountyPane } from './BountyPane';
-import { HazardFlow } from './HazardFlow';
+import { HazardSheetHost } from './HazardSheetHost';
 import { ImageryPane } from './ImageryPane';
 
 /**
- * The lake's `?act=` actions (row 3), mounted in C's overlay slot: the hazard flow and the imagery
- * view inside C's action frame (its Back, its Esc), the bounty as the dialog its boards draw over the
- * lake. The access problem is agent D's and keeps C's placeholder until it lands.
+ * The lake's `?act=` actions (row 3), mounted in C's overlay slot: the imagery view inside C's
+ * action frame (its Back, its Esc), the hazard flow in the New report sheet's frame over the page
+ * (Review 2; `HazardSheetHost`), the bounty as the dialog its boards draw over the lake. The access
+ * problem is agent D's and keeps C's placeholder until it lands.
  */
 export function LakeAction({
   act,
@@ -44,10 +45,14 @@ export function LakeAction({
         />
       );
     case 'hazard':
+      // The New report sheet's frame (Review 2), not the sidebar pane: map left, questions right.
       return (
-        <ActionPane act={act} backTo={backTo} onBack={onBack}>
-          <HazardFlow waterBodyId={waterBodyId} {...sub} onClose={onBack} />
-        </ActionPane>
+        <HazardSheetHost
+          waterBodyId={waterBodyId}
+          {...sub}
+          reportOpen={new URLSearchParams(nav.search).has('post')}
+          onClose={onBack}
+        />
       );
     case 'imagery':
       return (
