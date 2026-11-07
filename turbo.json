@@ -24,6 +24,10 @@
     "check-types": {
       "dependsOn": ["^check-types"]
     },
+    // No `inputs`: a package's tests are hashed from its own files plus its dependencies', which
+    // is right for every package but one. `packages/guards` holds the tests that read the whole
+    // repo — `plans/`, the other apps' sources, `git ls-files` — none of which this hash can see,
+    // so it overrides this task to `"cache": false` in its own `turbo.json`. See D236.
     "test": {
       "outputs": ["coverage/**"]
     },

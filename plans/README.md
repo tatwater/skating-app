@@ -66,7 +66,7 @@ Inside a phase doc, workstreams are numbered and always carry the section sigil:
 three, `§3.2` its second item, headings `### §3.2 — The read path`. Prose can say "workstream 3"
 where a word reads better. The sigil is mandatory — with it, a bare `A4` or `B2` can only ever be a
 phase, and `D74` can only ever be a decision. A reference from outside the phase's own doc carries
-the token (`A06c §4.2`). `packages/core/src/planConventions.test.ts` enforces this over `plans/` and
+the token (`A06c §4.2`). `packages/guards/src/planConventions.test.ts` enforces this over `plans/` and
 `docs/` — a lettered workstream, a bare `E3`, an `A08/B4`, or a single-digit `### D2 —` heading in
 a phase doc fails the build.
 
@@ -122,8 +122,8 @@ git history of PRs #60, #62, #64 and #65.)
 | 02 | [Open questions](./02-open-questions.md) | What we're deliberately deferring (`Q#`), with current leanings. |
 | 03 | [Tech stack & options](./03-tech-stack-options.md) | What we run on, by layer, with its `D#`; what was considered and set aside; deferred tech; the cost posture. |
 | 04 | [Data sources & integrations](./04-integrations.md) | Every dataset and API by what it feeds — license, quota, archive, alternatives — plus the outbound integrations (Strava push, GPX, watch adapters). |
-| 05 | [Accounts & credentials](./05-accounts-and-credentials.md) | The register: every external account, the credential it yields, where it lives per environment; kept current by `credentialsRegister.test.ts`. |
-| 06 | [Data model](./06-data-model.md) | The map over `schema.ts`: every table by domain, relationships, the vocabulary's provenance, the modeling rules that bite; kept current by `dataModelRegister.test.ts`. |
+| 05 | [Accounts & credentials](./05-accounts-and-credentials.md) | The register: every external account, the credential it yields, where it lives per environment; kept current by `credentialsRegister.test.ts` in `packages/guards`. |
+| 06 | [Data model](./06-data-model.md) | The map over `schema.ts`: every table by domain, relationships, the vocabulary's provenance, the modeling rules that bite; kept current by `dataModelRegister.test.ts` in `packages/guards`. |
 | 07 | [Roadmap](./07-roadmap.md) | Every phase, its status, what it deferred, and what it ruled out. |
 | 08 | [Legal & feasibility checklist](./08-legal-feasibility-checklist.md) | Register of everything deferred behind a legal / ToS / consent / feasibility gate. |
 

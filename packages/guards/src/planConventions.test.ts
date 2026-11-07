@@ -17,6 +17,10 @@
  * Inline code and fenced blocks are stripped first: a doc may quote an old name in backticks
  * (`plans/README.md` is the record of the mapping and is exempt outright; the plan that ran the
  * pass, `features/phase-numbers.md`, was deleted when it shipped). Anchors (`#d2--…`) and paths (`A06c/lake-depth`) are excluded by the lookbehinds.
+ *
+ * Lives in `@skating/guards`, not `@skating/core`: it reads the repo off disk, which no Turbo
+ * input glob can describe, so it belongs to an uncached task that always runs (D236, see the
+ * package README). Moving it into a cached package makes its green meaningless.
  */
 import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';

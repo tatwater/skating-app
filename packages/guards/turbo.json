@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // NEVER give this task a cache. Every test in this package reads the repo off disk at runtime
+    // — `plans/`, `docs/`, `apps/*/src`, `packages/convex/convex`, `scripts/*/src`, every
+    // `.env.example`, and (in `planConventions`) `git ls-files` — none of which Turbo can see.
+    //
+    // Turbo hashes a package's own files plus its dependencies' files. `inputs` are
+    // package-relative, and while `$TURBO_ROOT$/…` can reach the repo root (Turbo ≥ 2.1), a glob
+    // list is a hand-maintained copy of what four tests happen to read today: it goes stale the
+    // moment one of them reads something new, and it cannot express `git ls-files` at all. That is
+    // the same class of bug as the one it would be papering over.
+    //
+    // So the guarantee here is structural, not maintained: an uncached task always runs. The task
+    // runs in ~0.33s, and `turboCache.test.ts` fails if this line is ever removed. See D236.
+    "test": {
+      "cache": false
+    }
+  }
+}

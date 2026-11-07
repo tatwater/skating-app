@@ -43,7 +43,7 @@ A change that erodes that principle won't be merged, however well-built.
 - **Phases have a doc and a roadmap entry.** Work is a *phase* (several workstreams, several PRs,
   its own decisions) or a *feat* (one doc, one-to-few PRs). Naming, workstream sigils (`§3.2`),
   and the words we use ("water body", US spellings) are in [`plans/README.md`](./plans/README.md)
-  and enforced by `planConventions.test.ts` and `roadmapShape.test.ts` in `packages/core`.
+  and enforced by `planConventions.test.ts` and `roadmapShape.test.ts` in `packages/guards`.
 - **Discuss big changes first.** For anything beyond a small fix, open an issue before a
   large PR so we can agree on direction.
 - **Be kind.** See the [Code of Conduct](./CODE_OF_CONDUCT.md).

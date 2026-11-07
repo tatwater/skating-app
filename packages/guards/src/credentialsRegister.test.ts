@@ -9,6 +9,10 @@
  * Names are what's checked, never values. A name that is read but deliberately unregistered does
  * not exist — register it as a knob, a secret, or a Convex-provided builtin; the register has a row
  * for each kind.
+ *
+ * Lives in `@skating/guards`, not `@skating/core`: it reads the repo off disk, which no Turbo
+ * input glob can describe, so it belongs to an uncached task that always runs (D236, see the
+ * package README). Moving it into a cached package makes its green meaningless.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';

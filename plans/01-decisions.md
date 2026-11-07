@@ -578,6 +578,9 @@ TS monorepo sharing logic/tokens across surfaces (D7). No custom build orchestra
 to hand-roll.
 **Consequences:** one root `turbo.json` defines the pipeline; CI (D40) runs Turbo
 tasks and reuses the cache; each package owns its own `package.json` scripts.
+*(Amended by D236, 2026-11-07: `packages/guards/turbo.json` overrides `test` to
+`"cache": false` — a test that reads the whole repo cannot be hashed, so it must not be
+cached. It joins `packages/convex/turbo.json`, which already overrode this task's outputs.)*
 
 ## D40 — Testing & CI: Vitest everywhere, layered strategy
 **Decided.** **Vitest** is the test runner across the whole monorepo, with as much
@@ -601,7 +604,8 @@ where bugs are most costly (spatial math, visibility, safety):
 - **End-to-end (added as flows stabilize):** **Playwright** for web; **Maestro** for
   the Expo app (lighter than Detox, great for the offline-capture → sync flow, D9/D30).
 **CI (GitHub Actions):** on every PR run **`pnpm lint`** (Biome, D46), **`pnpm
-check-types`** and **`pnpm test`** (both via Turbo, so they cache — D39), publish
+check-types`** and **`pnpm test`** (both via Turbo, so they cache — D39; the one
+exception is `@skating/guards#test`, uncached by D236), publish
 **coverage** (uploaded as an artifact now; Codecov later) with a ratcheting threshold
 on `packages/*` (start realistic, only ever raise it), and gate merges on green. Add an
 EAS build + `expo-doctor` check and a Convex deploy-preview later. Type-check counts
@@ -6971,3 +6975,52 @@ imagery archive. The wizard threw in development instead, which would have made 
 analytics key a blank page on a field app.
 
 **Related:** D3, D29, D41; the gate is L12; Q10.
+
+## D236 — A test that reads the repo lives in an uncached task, not in a cached package
+
+Four tests hold the plans docs to the code: `credentialsRegister` (every env var the backend, the
+pipelines and both clients read is a row in `05` § 2), `dataModelRegister` (`06`'s map covers
+`schema.ts`), `roadmapShape` (`07` matches its own template) and `planConventions` (the `§3.2`
+convention, and every markdown link in `plans/` and `docs/`). Each reads the repository off disk at
+runtime; all four lived in `packages/core`.
+
+Turbo hashes a package's own files plus its dependencies' files. `@skating/core` does not depend on
+`@skating/web`, so editing `apps/web/**` or `plans/**` could not invalidate `@skating/core#test`,
+and Turbo replayed the last result instead of re-running the guards. On PR #91 a local `pnpm test`
+reported *167 passed, Tasks: 15 successful* entirely from cache while CI, cold, failed
+`credentialsRegister` on the same commit. The local green was not a green. The cache is not even
+per-worktree: it lives in the main checkout's `.turbo/cache`, keyed off the git common dir, so one
+poisoned entry is replayed to every worktree on the machine.
+
+**The call, 2026-11-07:** the four guards move to a test-only `packages/guards` workspace whose
+`test` task declares `"cache": false`, so it always runs. They are repo-wide invariants, not unit
+tests of `@skating/core`, and the guarantee is now structural rather than maintained. Two rules keep
+it so, both held by `turboCache.test.ts` in the same uncached task — so it can never be served a
+stale pass of itself: the `cache: false` declaration stays, and no test in a *cached* package reads
+above its own package root. The second is a lint on the source, not a proof: it reads a relative
+climb in either spelling — one literal (`resolve(__dirname, '../../..')`, what all four guards use)
+or one argument per level (`join(dir, '..', '..', '..')`, what the repo's other filesystem-reading
+tests use) — and carries floors on the workspace and file lists so it cannot pass having examined
+nothing. A `process.cwd()` base or an absolute path still gets past it. It catches the honest
+mistake of adding the fifth guard beside the code it checks, not a determined one.
+
+**Why not the two alternatives.** `globalDependencies` is correct and one line, but measured here it
+discards ~189 s of cached work across 45 tasks on any `plans/` edit — in a repo whose plans docs
+change constantly, that is most of the cache, most days. `$TURBO_ROOT$/…` globs in a package-level
+`inputs` (Turbo ≥ 2.1, verified working on 2.11.5) scope it to `@skating/core#test`, but the union
+of what these tests read is most of the repo, so the cache preserved is nearly worthless (~16 s
+re-run on any docs edit), the glob list is a hand-maintained copy of what they happen to read today,
+and it cannot express `git ls-files` at all — the same class of bug, one level up. The uncached task
+runs in ~0.33 s, taking an otherwise fully cached `pnpm test` from ~0.36 s to ~0.68 s, and
+invalidates nothing — so it is both the honest answer and the faster one. Because that third of a
+second is paid on every run, `dataModelRegister` imports core's four vocabulary modules by path
+rather than through the `@skating/core` barrel, which costs 3.03 s against 0.33 s for this package;
+core's `exports` map is left alone rather than widened for a test's benefit.
+
+**The cost accepted:** `pnpm test` can no longer report `FULL TURBO`, because one task always runs.
+That is the point — the summary line now tells the truth about what was verified. D39's "one root
+`turbo.json` defines the pipeline" already had one package-level override
+(`packages/convex/turbo.json`, for codegen outputs); this adds the second, and the first whose
+purpose is to turn a cache *off*. The reason is in the file.
+
+**Related:** D39, D40, #91.

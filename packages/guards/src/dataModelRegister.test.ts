@@ -5,13 +5,30 @@
  * every key in the core vocabulary constants is mentioned there.
  *
  * It checks presence, not prose — a table is "in the map" when its name appears in a code span.
+ *
+ * Lives in `@skating/guards`, not `@skating/core`: it reads the repo off disk, which no Turbo
+ * input glob can describe, so it belongs to an uncached task that always runs (D236, see the
+ * package README). Moving it into a cached package makes its green meaningless.
+ *
+ * The vocabulary comes in from core's four source modules by path, not from the `@skating/core`
+ * barrel. The barrel re-exports ~160 modules and pulls `@turf/*` to deliver twenty string arrays,
+ * and because this task is never cached that transform is paid on *every* `pnpm test`: measured
+ * here, 3.03 s for the package with the barrel (72% of it transform) against 0.33 s with the four
+ * modules. In `packages/core` the barrel was free, since core's own suite had already transformed
+ * those modules; moving the file made it a new and permanent cost.
+ *
+ * Reaching across the package boundary is deliberate and narrow. This package is the one that is
+ * *about* the repo's layout — two lines below, it reads `packages/convex/convex/schema.ts` off
+ * disk by path — so a path into `packages/core/src` is the same kind of access, not a new
+ * liberty. `@skating/core` stays a declared dependency so the relationship is visible, and core's
+ * `exports` map is left alone rather than widened for a test's benefit.
  */
 
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { ACCESS_ALERT_REASONS, ACCESS_CONDITION_REASONS } from './accessAlert';
-import { STANDINGS } from './standing';
+import { ACCESS_ALERT_REASONS, ACCESS_CONDITION_REASONS } from '../../core/src/accessAlert';
+import { STANDINGS } from '../../core/src/standing';
 import {
   HAZARD_TYPES,
   ICE_TYPES,
@@ -29,8 +46,8 @@ import {
   THICKNESS_SCOPES,
   WATER_BODY_CLASSES,
   WHERE_EXTENTS,
-} from './types';
-import { WHERE_KINDS } from './where';
+} from '../../core/src/types';
+import { WHERE_KINDS } from '../../core/src/where';
 
 const REPO = resolve(__dirname, '../../..');
 const MAP = readFileSync(join(REPO, 'plans/06-data-model.md'), 'utf8');

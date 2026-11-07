@@ -7,7 +7,7 @@ came from, and the modeling rules that bite — so a reader can find the right t
 3,500 lines. It does not repeat fields; when a field matters, the schema comment is where it's
 explained.
 
-**Kept current by a test.** `packages/core/src/dataModelRegister.test.ts` fails the build if a
+**Kept current by a test.** `packages/guards/src/dataModelRegister.test.ts` fails the build if a
 `defineTable` in the schema has no row here, or if a vocabulary key in `packages/core/src/types.ts`
 isn't mentioned. Add a table → add its line.
 

@@ -10,7 +10,7 @@ per-phase caveat.
 
 <!--
 ENTRY TEMPLATE — copy this, keep the section names and order, omit a section when it's empty.
-`packages/core/src/roadmapShape.test.ts` checks the heading, the status line, and that every phase
+`packages/guards/src/roadmapShape.test.ts` checks the heading, the status line, and that every phase
 doc has an entry. Write the entry at scoping (⚪), flip it at build start (🟡), close it at merge (🟢);
 it's part of the phase's own PR.
 
