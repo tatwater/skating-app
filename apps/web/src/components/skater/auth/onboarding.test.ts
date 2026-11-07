@@ -22,6 +22,17 @@ describe('classifyUpsertError', () => {
     });
   });
 
+  it('says a structured refusal by its message, and the generic line when it has none', () => {
+    const message = 'You can change your username once every 30 days.';
+    expect(
+      classifyUpsertError(new ConvexError({ code: 'username_cooldown', message, unlocksAt: 1 })),
+    ).toEqual({ kind: 'message', message });
+    expect(classifyUpsertError(new ConvexError({ code: 'odd' }))).toEqual({
+      kind: 'message',
+      message: 'Could not finish setting up your profile',
+    });
+  });
+
   it('gives anything that is not a ConvexError the generic line, never its text', () => {
     expect(
       classifyUpsertError(new Error('[CONVEX M(profiles:upsertFromClerk)] Server Error')),

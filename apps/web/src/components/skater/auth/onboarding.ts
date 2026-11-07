@@ -16,7 +16,13 @@ const GENERIC = 'Could not finish setting up your profile';
  */
 export function classifyUpsertError(error: unknown): OnboardingRefusal {
   if (!(error instanceof ConvexError)) return { kind: 'message', message: GENERIC };
-  const data = String(error.data);
+  // A structured refusal (the rename cooldown) carries its words on `message`.
+  const raw: unknown = error.data;
+  if (typeof raw === 'object' && raw !== null) {
+    const message = (raw as { message?: unknown }).message;
+    return { kind: 'message', message: typeof message === 'string' ? message : GENERIC };
+  }
+  const data = String(raw);
   if (data === 'Username is already taken') return { kind: 'taken' };
   if (data.startsWith('Username must')) return { kind: 'badname' };
   return { kind: 'message', message: data };

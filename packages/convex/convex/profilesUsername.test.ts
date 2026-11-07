@@ -1,8 +1,13 @@
 import { RISK_ACK_VERSION } from '@skating/core';
+import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
-import { PROFILE_LAKE_SCAN_CAP } from './profiles';
+import {
+  PROFILE_LAKE_SCAN_CAP,
+  USERNAME_CHANGE_COOLDOWN_MS,
+  usernameCooldownMessage,
+} from './profiles';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -126,6 +131,124 @@ describe('profiles.changeUsername (B03 §11)', () => {
     const { id, as } = await onboard(t, 'clerk_ada', 'ada');
     await t.run((ctx) => ctx.db.patch(id, { status: 'banned' }));
     await expect(as.mutation(api.profiles.changeUsername, { username: 'ada2' })).rejects.toThrow();
+  });
+});
+
+describe('profiles.changeUsername — one rename per 30 days', () => {
+  const T0 = Date.UTC(2026, 10, 8, 15, 0);
+
+  async function renamedAt(t: ReturnType<typeof convexTest>) {
+    vi.useFakeTimers({ now: T0 });
+    const { id, as } = await onboard(t, 'clerk_ada', 'ada');
+    // The handle picked at onboarding starts no cooldown: the first rename goes through at once.
+    expect(await as.mutation(api.profiles.changeUsername, { username: 'ada2' })).toEqual({
+      username: 'ada2',
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.usernameChangedAt).toBe(T0);
+    return { id, as };
+  }
+
+  test('refuses a second rename a moment before the 30 days are up, saying when it unlocks', async () => {
+    const t = convexTest(schema, modules);
+    try {
+      const { as } = await renamedAt(t);
+      vi.setSystemTime(T0 + USERNAME_CHANGE_COOLDOWN_MS - 1);
+      const refusal = await as
+        .mutation(api.profiles.changeUsername, { username: 'ada3' })
+        .catch((e: unknown) => e);
+      expect(refusal).toBeInstanceOf(ConvexError);
+      expect(
+        (refusal as ConvexError<{ code: string; message: string; unlocksAt: number }>).data,
+      ).toEqual({
+        code: 'username_cooldown',
+        message:
+          'You can change your username once every 30 days. You can change it again on December 8, 2026.',
+        unlocksAt: T0 + USERNAME_CHANGE_COOLDOWN_MS,
+      });
+      expect((await as.query(api.profiles.current, {}))?.username).toBe('ada2');
+      // Re-saving the name you have is not a rename, and is never refused.
+      expect(await as.mutation(api.profiles.changeUsername, { username: 'ADA2' })).toEqual({
+        username: 'ada2',
+      });
+      // Asking whether a name is free is unaffected.
+      expect((await as.query(api.profiles.usernameAvailable, { username: 'ada3' })).available).toBe(
+        true,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('allows the next rename at exactly 30 days, and that one starts a new cooldown', async () => {
+    const t = convexTest(schema, modules);
+    try {
+      const { id, as } = await renamedAt(t);
+      const unlock = T0 + USERNAME_CHANGE_COOLDOWN_MS;
+      vi.setSystemTime(unlock);
+      expect(await as.mutation(api.profiles.changeUsername, { username: 'ada3' })).toEqual({
+        username: 'ada3',
+      });
+      expect((await t.run((ctx) => ctx.db.get(id)))?.usernameChangedAt).toBe(unlock);
+      vi.setSystemTime(unlock + 1);
+      await expect(as.mutation(api.profiles.changeUsername, { username: 'ada4' })).rejects.toThrow(
+        /once every 30 days/,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('names the unlock day in the skater’s own zone', async () => {
+    const t = convexTest(schema, modules);
+    try {
+      const { id, as } = await renamedAt(t);
+      // 01:30 UTC on the unlock instant is still the evening before in Los Angeles.
+      const lateUtc = Date.UTC(2026, 10, 9, 1, 30);
+      await t.run((ctx) =>
+        ctx.db.patch(id, {
+          usernameChangedAt: lateUtc - USERNAME_CHANGE_COOLDOWN_MS + 1_000,
+          timezone: 'America/Los_Angeles',
+        }),
+      );
+      vi.setSystemTime(lateUtc - USERNAME_CHANGE_COOLDOWN_MS + 2_000);
+      await expect(as.mutation(api.profiles.changeUsername, { username: 'ada3' })).rejects.toThrow(
+        /again on November 8, 2026\./,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('re-running onboarding with a new handle is a rename, under the same cooldown', async () => {
+    const t = convexTest(schema, modules);
+    try {
+      const { id, as } = await renamedAt(t);
+      const resync = (username: string) =>
+        as.mutation(api.profiles.upsertFromClerk, {
+          displayName: 'clerk_ada',
+          username,
+          dateOfBirth: ADULT_DOB,
+          riskAckVersion: RISK_ACK_VERSION,
+        });
+      vi.setSystemTime(T0 + 1_000);
+      // The same handle re-synced is not a rename.
+      await expect(resync('ada2')).resolves.toBe(id);
+      await expect(resync('ada3')).rejects.toThrow(/once every 30 days/);
+      expect((await t.run((ctx) => ctx.db.get(id)))?.username).toBe('ada2');
+      vi.setSystemTime(T0 + USERNAME_CHANGE_COOLDOWN_MS);
+      await expect(resync('ada3')).resolves.toBe(id);
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.username).toBe('ada3');
+      expect(row?.usernameChangedAt).toBe(T0 + USERNAME_CHANGE_COOLDOWN_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('the message names the day in the zone it is given', () => {
+    expect(usernameCooldownMessage(Date.UTC(2026, 11, 8, 3, 0), 'America/New_York')).toMatch(
+      /December 7, 2026\.$/,
+    );
   });
 });
 

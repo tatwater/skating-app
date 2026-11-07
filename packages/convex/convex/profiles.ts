@@ -54,6 +54,7 @@ import {
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
+import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { takeCappedResult } from './lib/scan';
@@ -202,9 +203,14 @@ export const upsertFromClerk = mutation({
       // Keep the *original* acceptance time when the version is unchanged (a re-onboarding,
       // e.g. after a canceled deletion); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion;
+      // A different handle on an existing profile is a rename, under the rename's cooldown — else
+      // re-running onboarding would be the way round it. The same handle re-synced is not one.
+      const renamed = username !== existing.username;
+      if (renamed) assertMayRename(existing, now);
       await ctx.db.patch(existing._id, {
         displayName,
         username,
+        ...(renamed ? { usernameChangedAt: now } : {}),
         dateOfBirth: args.dateOfBirth,
         profileVisibility: minor ? 'private' : existing.profileVisibility,
         ...(profileImageUrl !== undefined ? { profileImageUrl } : {}),
@@ -314,6 +320,11 @@ export const usernameAvailable = query({
  * `requireContributor`: a ghost's handle is reserved, not theirs to trade (D62), and `requireProfile`
  * under it keeps a banned or suspended account from renaming to slip a moderation action (D37) — the
  * same reason `upsertFromClerk` refuses an inactive account's identity edits.
+ *
+ * One rename per 30 days (`USERNAME_CHANGE_COOLDOWN_MS`), enforced here: a refusal is a `ConvexError`
+ * whose data is `{ code: 'username_cooldown', message, unlocksAt }`. Re-saving the current name is
+ * not a rename and is never refused. `usernameAvailable` doesn't know about the cooldown — it answers
+ * whether a name is free, not whether the caller may take it today.
  */
 export const changeUsername = mutation({
   args: { username: v.string() },
@@ -322,11 +333,57 @@ export const changeUsername = mutation({
     const verdict = await checkUsername(ctx, args.username, profile.clerkUserId);
     if (!verdict.ok) throw new ConvexError(USERNAME_MESSAGES[verdict.reason]);
     if (verdict.username !== profile.username) {
-      await ctx.db.patch(profile._id, { username: verdict.username });
+      const now = Date.now();
+      assertMayRename(profile, now);
+      await ctx.db.patch(profile._id, { username: verdict.username, usernameChangedAt: now });
     }
     return { username: verdict.username };
   },
 });
+
+/**
+ * How long a rename holds (founder call, 2026-11-08): long enough that a handle is something other
+ * skaters can learn and find again, and that renaming can't be a way to shed a reputation.
+ */
+export const USERNAME_CHANGE_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** When the caller may rename again, or `null` when they may now (never renamed: no cooldown). */
+export function usernameUnlocksAt(
+  profile: Pick<Doc<'profiles'>, 'usernameChangedAt'>,
+): number | null {
+  return profile.usernameChangedAt === undefined
+    ? null
+    : profile.usernameChangedAt + USERNAME_CHANGE_COOLDOWN_MS;
+}
+
+/**
+ * Throws the cooldown refusal — `{ code: 'username_cooldown', message, unlocksAt }` — when `profile`
+ * renamed itself less than 30 days before `now`. Every path that changes an existing profile's
+ * handle calls it (`changeUsername`, and `upsertFromClerk`'s re-sync), so neither is a way round.
+ */
+function assertMayRename(
+  profile: Pick<Doc<'profiles'>, 'usernameChangedAt' | 'timezone'>,
+  now: number,
+): void {
+  const unlocksAt = usernameUnlocksAt(profile);
+  if (unlocksAt === null || now >= unlocksAt) return;
+  throw new ConvexError({
+    code: 'username_cooldown',
+    message: usernameCooldownMessage(unlocksAt, profile.timezone ?? DIGEST_TIMEZONE),
+    unlocksAt,
+  });
+}
+
+/** The refusal, with the day it lifts in the skater's own zone (the digest's default without one). */
+export function usernameCooldownMessage(unlocksAt: number, timeZone: string): string {
+  const day = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(unlocksAt);
+  return `You can change your username once every 30 days. You can change it again on ${day}.`;
+}
 
 /**
  * Re-accept the *current* assumption-of-risk acknowledgment for an already-provisioned
