@@ -276,6 +276,173 @@ describe('InstrumentOverlay', () => {
     expect(container.querySelector('[data-slot="instrument-lockup"]')).toBeNull();
   });
 
+  describe('a pin a chip points at', () => {
+    const putInMode: ConsoleMode = { kind: 'putIn', onPickPin: vi.fn(), onPickShore: vi.fn() };
+
+    it('alone is bracketed and full strength, the rest step back; it lets go to the normal state', () => {
+      const { container, rerender } = render(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={null}
+          silhouette={null}
+          marks={MARKS}
+          highlightPinId="a"
+        />,
+      );
+      expect(mark(container, 'a')).toHaveAttribute('data-highlight');
+      expect(mark(container, 'a')).not.toHaveAttribute('data-dim');
+      expect(container.querySelector('[data-pin="a"]')).toHaveAttribute('data-pointed');
+      expect(container.querySelector('[data-pin="a"]')).toHaveStyle({ zIndex: '1' });
+      // The chosen lot too: one pin bracketed at a time. A dimmed hazard still draws (D3).
+      for (const id of ['b', 'h1', 'ph']) {
+        expect(mark(container, id)).toHaveAttribute('data-dim');
+        expect(mark(container, id)).not.toHaveAttribute('data-highlight');
+      }
+      expect(mark(container, 'h1')).toHaveClass('opacity-55');
+      // Named, with no mode open: the lots' chips sit outside any question.
+      expect(container.querySelector('[data-slot="instrument-lockup"]')).toHaveTextContent(
+        'PUT-INBoat launch',
+      );
+      rerender(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={null}
+          silhouette={null}
+          marks={MARKS}
+          highlightPinId={null}
+        />,
+      );
+      expect(mark(container, 'a')).not.toHaveAttribute('data-highlight');
+      expect(mark(container, 'a')).toHaveAttribute('data-dim');
+      expect(mark(container, 'b')).not.toHaveAttribute('data-dim');
+      expect(mark(container, 'h1')).not.toHaveAttribute('data-dim');
+      expect(container.querySelector('[data-pointed]')).toBeNull();
+      expect(container.querySelector('[data-slot="instrument-overlay"]')).toBeNull();
+    });
+
+    it('takes the put-in mode’s lockup from the chosen pin, and gives it back', () => {
+      const { container, rerender } = render(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={putInMode}
+          silhouette={SILHOUETTE}
+          marks={MARKS}
+          highlightPinId="a"
+        />,
+      );
+      const lockups = () => container.querySelectorAll('[data-slot="instrument-lockup"]');
+      expect(lockups()).toHaveLength(1);
+      expect(lockups()[0]).toHaveTextContent('PUT-INBoat launch');
+      expect(mark(container, 'a')).toHaveAttribute('data-highlight');
+      expect(mark(container, 'b')).not.toHaveAttribute('data-highlight');
+      expect(mark(container, 'b')).toHaveAttribute('data-dim');
+      rerender(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={putInMode}
+          silhouette={SILHOUETTE}
+          marks={MARKS}
+          highlightPinId="b"
+        />,
+      );
+      // Pointing at your own lot keeps its claim.
+      expect(lockups()[0]).toHaveTextContent('PARKED · YOURSTown lot');
+      rerender(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={putInMode}
+          silhouette={SILHOUETTE}
+          marks={MARKS}
+        />,
+      );
+      expect(lockups()[0]).toHaveTextContent('PARKED · YOURSTown lot');
+      expect(mark(container, 'b')).toHaveAttribute('data-highlight');
+      expect(mark(container, 'a')).not.toHaveAttribute('data-dim');
+    });
+
+    it('lights over the where mode’s quiet lake too', () => {
+      const { container } = render(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={whereMode(undefined)}
+          silhouette={SILHOUETTE}
+          marks={MARKS}
+          highlightPinId="b"
+        />,
+      );
+      expect(mark(container, 'b')).toHaveAttribute('data-highlight');
+      expect(mark(container, 'b')).not.toHaveAttribute('data-dim');
+      expect(mark(container, 'a')).toHaveAttribute('data-dim');
+      expect(container.querySelector('[data-slot="instrument-lockup"]')).toHaveTextContent(
+        'PARKED · YOURSTown lot',
+      );
+    });
+
+    it('names another lot plainly, and flips the name left at the frame’s right edge', () => {
+      const edge = {
+        id: 'e',
+        // (-72.42 + 73) * 1000 = 580 px of a 600 px frame.
+        coord: { lat: 43.8, lng: -72.42 },
+        name: 'Parking',
+        kind: 'parking' as const,
+      };
+      const { container } = render(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={null}
+          silhouette={null}
+          marks={{ ...MARKS, pins: [...PINS, edge] }}
+          highlightPinId="e"
+        />,
+      );
+      const lockup = container.querySelector('[data-slot="instrument-lockup"]') as Element;
+      expect(lockup).toHaveTextContent('PARKINGParking');
+      expect(lockup).toHaveAttribute('data-flip');
+      expect(lockup).toHaveAttribute('text-anchor', 'end');
+      expect(Number(lockup.getAttribute('x'))).toBeLessThan(580);
+    });
+
+    it('a chip naming nothing on this map — or a hazard’s id — dims nothing', () => {
+      const { container, rerender } = render(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={null}
+          silhouette={null}
+          marks={MARKS}
+          highlightPinId="gone"
+        />,
+      );
+      expect(mark(container, 'b')).not.toHaveAttribute('data-dim');
+      expect(container.querySelector('[data-pointed]')).toBeNull();
+      rerender(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={null}
+          silhouette={null}
+          marks={MARKS}
+          highlightPinId="h1"
+        />,
+      );
+      expect(mark(container, 'h1')).not.toHaveAttribute('data-highlight');
+      expect(mark(container, 'b')).not.toHaveAttribute('data-dim');
+    });
+
+    it('the shore point, set by hand, is bracketed with no name to draw', () => {
+      const { container } = render(
+        <InstrumentOverlay
+          map={overlayMap()}
+          mode={null}
+          silhouette={null}
+          marks={{ pins: PINS, hazards: [], photos: [], point: { lat: 43.8, lng: -72.69 } }}
+          highlightPinId="point"
+        />,
+      );
+      expect(mark(container, 'point')).toHaveAttribute('data-highlight');
+      expect(mark(container, 'a')).toHaveAttribute('data-dim');
+      expect(container.querySelector('[data-slot="instrument-lockup"]')).toBeNull();
+    });
+  });
+
   it('where: every mark steps back for the ring', () => {
     const { container } = render(
       <InstrumentOverlay

@@ -14,6 +14,7 @@ import {
   type InstrumentMarksInput,
   type InstrumentPin,
   instrumentMarks,
+  pointedPinId,
 } from './instrumentFeatures';
 import { instrumentRing } from './instrumentPick';
 import { mapProjection, type ProjectingMap } from './instrumentProjection';
@@ -107,6 +108,10 @@ export function useMapProjection(map: OverlayMap | null): Projection | null {
  * - **put-in**: every launch and lot at full strength, the chosen one bracketed and named.
  * - **draft**: the hazard being drawn — its footprint and its corners.
  *
+ * In any mode or none, a chip beside the map pointing at a pin (`highlightPinId`: a launch or lot
+ * chip hovered or focused) brackets that pin and names it, and every other mark recedes — never
+ * below half, so a receded hazard still reads as one (D3).
+ *
  * Nothing here is a verdict on the ice (D3): a lit sector is where the author looked.
  */
 export function InstrumentOverlay({
@@ -115,6 +120,7 @@ export function InstrumentOverlay({
   silhouette,
   marks,
   draft,
+  highlightPinId = null,
 }: {
   map: OverlayMap | null;
   mode: ConsoleMode | null;
@@ -122,6 +128,8 @@ export function InstrumentOverlay({
   /** The launches and lots (and the chosen one), the hazards, the placed photos, the hand-set point. */
   marks: InstrumentMarksInput;
   draft?: FeatureCollection | null;
+  /** The pin a chip beside the map is pointing at (`ConsoleMode`'s `highlightPinId`). */
+  highlightPinId?: string | null;
 }) {
   const projection = useMapProjection(map);
   const clipId = useId();
@@ -130,10 +138,20 @@ export function InstrumentOverlay({
   const where = mode?.kind === 'where' ? mode : null;
   const putIn = mode?.kind === 'putIn';
   const showDraft = draft !== undefined && draft !== null && draft.features.length > 0;
+  const all = instrumentMarks(marks);
+  const pointed = pointedPinId(all, highlightPinId);
+  // One name at a time: a pointed pin takes the lockup from the chosen one, so two never collide.
+  const named = pointed ?? (putIn ? marks.chosenPinId : undefined);
   return (
     <>
-      <InstrumentMarks projection={projection} marks={marks} mode={mode} />
-      {where !== null || putIn || showDraft ? (
+      <InstrumentMarks
+        projection={projection}
+        all={all}
+        pinChosen={marks.chosenPinId !== undefined}
+        mode={mode}
+        pointed={pointed}
+      />
+      {where !== null || named !== undefined || showDraft ? (
         <svg
           data-slot="instrument-overlay"
           aria-hidden
@@ -158,10 +176,11 @@ export function InstrumentOverlay({
             />
           ) : null}
           {where?.where?.point ? <PlacedPoint projection={projection} where={where.where} /> : null}
-          {putIn ? (
-            <ChosenLockup
+          {named !== undefined ? (
+            <PinLockup
               projection={projection}
               pins={marks.pins}
+              pinId={named}
               chosenPinId={marks.chosenPinId}
             />
           ) : null}
@@ -178,21 +197,25 @@ const HALF = MARK_BOX / 2;
  * The marks, as the region map draws them, each a box centered on its point; they take no pointer —
  * a click lands on the map, where `pickOnInstrument` snaps it to a launch. A chosen launch or lot is
  * the larger mark and the rest recede; in the put-in mode every launch is at full strength and the
- * other marks recede; in the where mode all of them do (the mock's quiet lake).
+ * other marks recede; in the where mode all of them do (the mock's quiet lake). A pin a chip is
+ * pointing at overrides all of that: it alone is bracketed and at full strength, drawn over the rest.
  */
 function InstrumentMarks({
   projection,
-  marks,
+  all,
+  pinChosen,
   mode,
+  pointed,
 }: {
   projection: Projection;
-  marks: InstrumentMarksInput;
+  all: readonly InstrumentMark[];
+  /** A launch or lot is chosen: the others recede behind it. */
+  pinChosen: boolean;
   mode: ConsoleMode | null;
+  pointed: string | null;
 }) {
-  const all = instrumentMarks(marks);
   const putIn = mode?.kind === 'putIn';
   const quiet = mode?.kind === 'where';
-  const pinChosen = marks.chosenPinId !== undefined;
   return (
     <div
       data-slot="instrument-marks"
@@ -203,16 +226,26 @@ function InstrumentMarks({
       {all.map((mark) => {
         const [x, y] = projection.toXY([mark.coord.lng, mark.coord.lat]);
         const pin = mark.kind === 'putIn' || mark.kind === 'parking' || mark.kind === 'point';
-        const dim = quiet || (putIn ? !pin : pin && pinChosen && !mark.chosen);
+        const isPointed = pointed !== null && pin && mark.id === pointed;
+        const dim =
+          pointed !== null
+            ? !isPointed
+            : quiet || (putIn ? !pin : pin && pinChosen && !mark.chosen);
+        const highlight = pointed !== null ? isPointed : putIn && mark.chosen;
         return (
           <span
             key={`${mark.kind}:${mark.id}`}
             data-pin={mark.id}
             data-chosen={mark.chosen ? '' : undefined}
+            data-pointed={isPointed ? '' : undefined}
             className="absolute top-0 left-0"
-            style={{ transform: `translate(${x - HALF}px, ${y - HALF}px)` }}
+            style={{
+              transform: `translate(${x - HALF}px, ${y - HALF}px)`,
+              // Over its neighbors: a launch beside a lot must not hide the one being checked.
+              ...(isPointed ? { zIndex: 1 } : {}),
+            }}
           >
-            <InstrumentMarkGlyph mark={mark} dim={dim} highlight={putIn && mark.chosen} />
+            <InstrumentMarkGlyph mark={mark} dim={dim} highlight={highlight} />
           </span>
         );
       })}
@@ -385,35 +418,54 @@ function PlacedPoint({ projection, where }: { projection: Projection; where: Whe
 }
 
 /**
- * Put-in mode: the chosen launch or lot carries the lockup (5.15). The others are named by the chips
- * beside the map — launches sit close enough that every name would collide.
+ * A pin's lockup (5.15): its kind in caps over its name. In the put-in mode the chosen launch or lot
+ * carries it; the others are named by the chips beside the map — launches sit close enough that
+ * every name would collide. A pin a chip is pointing at takes it instead, in any mode, so a lot
+ * named only "Parking" reads on the map as the one the chip means. It sits right of the mark, or
+ * left of it when the right would run off the frame.
  */
-function ChosenLockup({
+function PinLockup({
   projection,
   pins,
+  pinId,
   chosenPinId,
 }: {
   projection: Projection;
   pins: readonly InstrumentPin[];
+  pinId: string;
   chosenPinId: string | undefined;
 }) {
-  const pin = pins.find((p) => p.id === chosenPinId);
+  const pin = pins.find((p) => p.id === pinId);
   if (pin === undefined) return null;
   const [x, y] = projection.toXY([pin.coord.lng, pin.coord.lat]);
-  // Clear of the chosen mark's brackets (16 px out from its point).
-  const lx = x + HALF + 3;
+  const yours = pin.id === chosenPinId;
+  const kicker =
+    pin.kind === 'parking'
+      ? yours
+        ? 'PARKED · YOURS'
+        : 'PARKING'
+      : yours
+        ? 'PUT-IN · YOURS'
+        : 'PUT-IN';
+  // Clear of the mark's brackets (16 px out from its point). No layout to measure in an SVG text
+  // before it draws: the width is estimated from the glyph counts at these sizes.
+  const width = Math.max(kicker.length * 7.4, pin.name.length * 6.8);
+  const flip = x + HALF + 3 + width > projection.width;
+  const lx = flip ? x - HALF - 3 : x + HALF + 3;
   return (
     <text
       data-slot="instrument-lockup"
+      data-flip={flip ? '' : undefined}
       x={lx}
       y={y - 4}
+      textAnchor={flip ? 'end' : 'start'}
       fontFamily="var(--family-sans)"
       paintOrder="stroke"
       stroke="var(--bg)"
       strokeWidth={3}
     >
       <tspan fontSize={10} fontWeight={600} letterSpacing="0.12em" fill="var(--acc)">
-        {pin.kind === 'parking' ? 'PARKED · YOURS' : 'PUT-IN · YOURS'}
+        {kicker}
       </tspan>
       <tspan x={lx} dy={15} fontSize={12} fontWeight={600} fill="var(--fg)">
         {pin.name}

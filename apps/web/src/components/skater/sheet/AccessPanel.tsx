@@ -8,7 +8,9 @@ import {
   sectionSummary,
   selectedValues,
 } from '@skating/core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckboxRow } from '@/components/kit/checkbox';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { Input } from '@/components/ui/input';
 import { useConsoleMode } from './ConsoleMode';
 import { SheetChip } from './SheetChip';
@@ -28,6 +30,10 @@ const NAMED_PUT_INS = 4;
  * lacks gets proposed: every such point is a candidate for the moderator. The nearest launches are
  * chips beside it, so a keyboard answers the same question.
  *
+ * Every chip that names a pin — a launch, a lot, the shore spot — lights it on the instrument while
+ * it is hovered or focused (`PinChip`): the pin bracketed and named, the rest stepped back. Lots are
+ * often all just "Parking", and the map is the only place one reads as different from the next.
+ *
  * Then the conditions — a plank, a muddy launch, an icy lot — as chips against the chosen put-in or
  * lot, riding A06d's decaying, corroborated alerts with this Report as provenance (D197), and a
  * one-line note. Never blockers: the chips here say what to bring, not that the launch is closed.
@@ -41,6 +47,8 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
   const [asking, setAsking] = useState(false);
   const [placing, setPlacing] = useState(false);
   const { setMode, instrument } = useConsoleMode();
+  // A folded section's chips stay mounted (its effects are the sheet's), but point at nothing.
+  const pointable = instrument && !sheet.collapsed.access;
 
   const from = point ?? body?.frame?.origin;
   const nearest = useMemo(
@@ -123,8 +131,10 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
         <QuestionBlock title="Where did you get on?" onDone={() => setAsking(false)}>
           <div className="flex flex-wrap gap-1.5">
             {named.map((p) => (
-              <SheetChip
+              <PinChip
                 key={p.id}
+                pinId={p.id}
+                pointable={pointable}
                 compact
                 label={p.name}
                 {...(putInId === p.id ? { tier: 'solid' as const } : {})}
@@ -132,7 +142,9 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
               />
             ))}
             {instrument || elsewhereSet ? (
-              <SheetChip
+              <PinChip
+                pinId={elsewhereSet ? 'point' : null}
+                pointable={pointable}
                 compact
                 label={
                   elsewhereSet
@@ -173,8 +185,10 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
           <SubLabel>Where did you park?</SubLabel>
           <div className="flex flex-wrap gap-1.5">
             {body.parking.map((lot) => (
-              <SheetChip
+              <PinChip
                 key={lot.id}
+                pinId={lot.id}
+                pointable={pointable}
                 compact
                 label={lot.name}
                 {...(parkingAreaId === lot.id ? { tier: 'solid' as const } : {})}
@@ -241,22 +255,58 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
         )}
       </div>
 
-      <div className="flex flex-col gap-1">
-        <div className="flex">
-          <SheetChip
-            tip={SHOW_PUT_IN_EXPLAINER}
-            label={SHOW_PUT_IN_LABEL}
-            {...(sheet.scalars.showPutIn !== false ? { tier: 'solid' as const } : {})}
-            onClick={() =>
-              dispatch({
-                type: 'setScalar',
-                key: 'showPutIn',
-                value: sheet.scalars.showPutIn === false,
-              })
+      {/* A checkbox, not a chip: a filled chip reads as primary and an empty one as secondary, never
+        as on and off (founder, 2026-11-07). What it does is the tip on the whole row. */}
+      <Tooltip>
+        <TooltipTrigger render={<div data-slot="show-put-in" className="flex w-fit" />}>
+          <CheckboxRow
+            label={
+              <span className="w-fit border-0 border-b border-dotted border-fg3 pb-px leading-[1.1]">
+                {SHOW_PUT_IN_LABEL}
+              </span>
             }
+            checked={sheet.scalars.showPutIn !== false}
+            onCheckedChange={(checked) =>
+              dispatch({ type: 'setScalar', key: 'showPutIn', value: checked })
+            }
+            data-attr="sheet-show-put-in"
           />
-        </div>
-      </div>
+        </TooltipTrigger>
+        <TooltipContent>{SHOW_PUT_IN_EXPLAINER}</TooltipContent>
+      </Tooltip>
     </SheetPanel>
+  );
+}
+
+/**
+ * A chip naming a pin on the instrument (`pinId`, or `null` when it names none yet). While it is
+ * hovered or focused the instrument lights that pin; it lets go when the pointer or focus leaves,
+ * when it stops being `pointable` (the section folds, the window narrows to a phone, which has no
+ * instrument to light), and when it unmounts (its question closes) — and it only ever clears its
+ * own pin, never one a neighbor has since taken.
+ */
+function PinChip({
+  pinId,
+  pointable,
+  ...chip
+}: Omit<ComponentProps<typeof SheetChip>, 'onPoint'> & {
+  pinId: string | null;
+  pointable: boolean;
+}) {
+  const { setHighlightPinId } = useConsoleMode();
+  const release = useCallback(() => {
+    if (pinId !== null) setHighlightPinId((cur) => (cur === pinId ? null : cur));
+  }, [pinId, setHighlightPinId]);
+  useEffect(() => {
+    if (!pointable) release();
+    return release;
+  }, [pointable, release]);
+  return (
+    <SheetChip
+      {...chip}
+      {...(pointable && pinId !== null
+        ? { onPoint: (on: boolean) => (on ? setHighlightPinId(pinId) : release()) }
+        : {})}
+    />
   );
 }

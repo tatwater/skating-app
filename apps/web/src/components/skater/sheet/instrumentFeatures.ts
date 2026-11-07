@@ -92,6 +92,23 @@ export function instrumentMarks(input: InstrumentMarksInput): InstrumentMark[] {
   ];
 }
 
+/**
+ * The pin a chip is pointing at, when the instrument is drawing it: a launch, a lot, or the
+ * hand-set shore point. `null` for anything else — a pin this lake doesn't draw, a hazard's or a
+ * photo's id — so a chip naming nothing on the map never dims the map for nothing.
+ */
+export function pointedPinId(
+  marks: readonly InstrumentMark[],
+  id: string | null | undefined,
+): string | null {
+  if (id === null || id === undefined) return null;
+  return marks.some(
+    (m) => m.id === id && (m.kind === 'putIn' || m.kind === 'parking' || m.kind === 'point'),
+  )
+    ? id
+    : null;
+}
+
 /** What the instrument's key lists: the kinds its marks and its track are drawing. */
 export function instrumentKeyKinds(input: InstrumentInput): MapKeyKind[] {
   const kinds = new Set<MapKeyKind>();

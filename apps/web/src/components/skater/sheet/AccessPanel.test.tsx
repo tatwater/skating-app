@@ -1,11 +1,12 @@
 import {
   emptySheet,
+  SHOW_PUT_IN_EXPLAINER,
   SHOW_PUT_IN_LABEL,
   type SheetAction,
   type SheetReport,
   sheetReducer,
 } from '@skating/core';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { AccessPanel } from './AccessPanel';
@@ -37,18 +38,24 @@ function openPutIn() {
   fireEvent.click(screen.getByRole('button', { name: 'Choose on the lake' }));
 }
 
-/** The instrument's Done, which leaves the mode from outside the question; and the mode it holds. */
+/**
+ * The instrument's Done, which leaves the mode from outside the question; the mode it holds; and
+ * the pin a chip is pointing at, as the instrument reads it.
+ */
 function InstrumentDone() {
-  const { exit, mode } = useConsoleMode();
+  const { exit, mode, highlightPinId } = useConsoleMode();
   return (
     <>
       <button type="button" onClick={exit}>
         Instrument done
       </button>
       <output data-testid="mode">{mode?.kind ?? 'none'}</output>
+      <output data-testid="pointed">{highlightPinId ?? 'none'}</output>
     </>
   );
 }
+
+const pointed = () => screen.getByTestId('pointed').textContent;
 
 /** Drive the real reducer, so the panel is asserted against the rules and not against a spy. */
 function renderPanel(
@@ -207,12 +214,158 @@ describe('the conditions (§7.2 / D197)', () => {
 });
 
 describe('the put-in opt-out (Phase 04 #7)', () => {
-  it('reads as shown by default, and toggles off', () => {
+  it('is a checkbox, checked by default, that turns the put-in off and back on', () => {
     const { get } = renderPanel();
-    const toggle = screen.getByRole('button', { name: SHOW_PUT_IN_LABEL });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(toggle);
+    // Not a pressed chip: a filled chip reads as primary, never as on.
+    expect(screen.queryByRole('button', { name: SHOW_PUT_IN_LABEL })).not.toBeInTheDocument();
+    const box = screen.getByRole('checkbox', { name: SHOW_PUT_IN_LABEL });
+    expect(box).toHaveAttribute('aria-checked', 'true');
+    expect(get().sheet.scalars.showPutIn).toBeUndefined();
+    fireEvent.click(box);
     expect(get().sheet.scalars.showPutIn).toBe(false);
+    expect(box).toHaveAttribute('aria-checked', 'false');
+    // The label is part of the target.
+    fireEvent.click(screen.getByText(SHOW_PUT_IN_LABEL));
+    expect(get().sheet.scalars.showPutIn).toBe(true);
+    expect(box).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('says what it does as the row’s tip, to the keyboard too', async () => {
+    renderPanel();
+    act(() => screen.getByRole('checkbox', { name: SHOW_PUT_IN_LABEL }).focus());
+    expect(await screen.findByText(SHOW_PUT_IN_EXPLAINER)).toBeInTheDocument();
+  });
+});
+
+describe('a chip points at its pin on the instrument', () => {
+  // Mascoma's case: lots that are all just "Parking", which only the map tells apart.
+  const lots: SheetBody = {
+    ...body,
+    parking: [
+      { id: 'lot-1', coord: { lat: 43.9, lng: -72.16 }, name: 'Parking', kind: 'parking' },
+      { id: 'lot-2', coord: { lat: 43.91, lng: -72.16 }, name: 'Parking', kind: 'parking' },
+    ],
+  };
+  const lot = (i: number) =>
+    screen.getAllByRole('button', { name: 'Parking' })[i] as HTMLButtonElement;
+
+  it('a hovered lot lights its own pin, with no question open, and lets go on leaving', () => {
+    const { get } = renderPanel({ body: lots });
+    expect(pointed()).toBe('none');
+    fireEvent.pointerEnter(lot(1));
+    expect(pointed()).toBe('lot-2');
+    expect(screen.getByTestId('mode')).toHaveTextContent('none');
+    fireEvent.pointerLeave(lot(1));
+    fireEvent.pointerEnter(lot(0));
+    expect(pointed()).toBe('lot-1');
+    // Checked on the map, then chosen; a second click takes it back.
+    fireEvent.click(lot(0));
+    expect(get().sheet.scalars.parkingAreaId).toBe('lot-1');
+    fireEvent.click(lot(0));
+    expect(get().sheet.scalars.parkingAreaId).toBeUndefined();
+    fireEvent.pointerLeave(lot(0));
+    expect(pointed()).toBe('none');
+  });
+
+  it('a focused launch lights its pin inside put-in mode, and blurring lets go', () => {
+    renderPanel();
+    openPutIn();
+    expect(screen.getByTestId('mode')).toHaveTextContent('putIn');
+    const launch = screen.getByRole('button', { name: 'State launch' });
+    fireEvent.focus(launch);
+    expect(pointed()).toBe('put-1');
+    fireEvent.blur(launch);
+    expect(pointed()).toBe('none');
+  });
+
+  it('the launch chips still answer the question while they point', () => {
+    const { get } = renderPanel();
+    openPutIn();
+    const launch = screen.getByRole('button', { name: 'State launch' });
+    fireEvent.pointerEnter(launch);
+    fireEvent.click(launch);
+    expect(get().sheet.scalars.putInId).toBe('put-1');
+    expect(pointed()).toBe('put-1');
+  });
+
+  it('a chip that goes while pointed at lets go — the question closing under the pointer', () => {
+    renderPanel();
+    openPutIn();
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'State launch' }));
+    expect(pointed()).toBe('put-1');
+    // Closed from the instrument: the chip unmounts with no pointerleave.
+    fireEvent.click(screen.getByRole('button', { name: 'Instrument done' }));
+    expect(screen.queryByRole('button', { name: 'State launch' })).not.toBeInTheDocument();
+    expect(pointed()).toBe('none');
+  });
+
+  it('folding the section lets go, though its chips stay mounted', () => {
+    renderPanel({ body: lots });
+    fireEvent.pointerEnter(lot(0));
+    expect(pointed()).toBe('lot-1');
+    fireEvent.click(screen.getByRole('button', { name: /^Access/ }));
+    expect(pointed()).toBe('none');
+  });
+
+  it('a chip lets go only of its own pin, never one a neighbor has since taken', () => {
+    renderPanel({ body: lots });
+    fireEvent.focus(lot(0));
+    fireEvent.pointerEnter(lot(1));
+    expect(pointed()).toBe('lot-2');
+    fireEvent.blur(lot(0));
+    expect(pointed()).toBe('lot-2');
+  });
+
+  it('the shore spot, once set, points at its own mark', () => {
+    renderPanel({ point: LAUNCH });
+    fireEvent.click(screen.getByRole('button', { name: 'Somewhere else' }));
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Somewhere else · set' }));
+    expect(pointed()).toBe('point');
+  });
+
+  it('a phone has no instrument to light: pointing arms nothing', () => {
+    renderPanel({ instrument: false, body: lots });
+    fireEvent.pointerEnter(lot(1));
+    fireEvent.focus(lot(1));
+    expect(pointed()).toBe('none');
+  });
+});
+
+describe('the pointed pin goes with the instrument', () => {
+  function Probe() {
+    const { highlightPinId, setHighlightPinId } = useConsoleMode();
+    return (
+      <>
+        <button type="button" onClick={() => setHighlightPinId('lot-1')}>
+          Point
+        </button>
+        <output data-testid="pointed">{highlightPinId ?? 'none'}</output>
+      </>
+    );
+  }
+
+  it('is dropped when the window narrows to a phone, and doesn’t come back when it widens', () => {
+    const { rerender } = render(
+      <ConsoleModeProvider>
+        <Probe />
+      </ConsoleModeProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Point' }));
+    expect(pointed()).toBe('lot-1');
+    rerender(
+      <ConsoleModeProvider instrument={false}>
+        <Probe />
+      </ConsoleModeProvider>,
+    );
+    expect(pointed()).toBe('none');
+    // Setting it on a phone is a no-op.
+    fireEvent.click(screen.getByRole('button', { name: 'Point' }));
+    rerender(
+      <ConsoleModeProvider>
+        <Probe />
+      </ConsoleModeProvider>,
+    );
+    expect(pointed()).toBe('none');
   });
 });
 

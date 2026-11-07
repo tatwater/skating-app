@@ -1,5 +1,13 @@
 import type { Where } from '@skating/core';
-import { createContext, type ReactNode, use, useMemo, useState } from 'react';
+import {
+  createContext,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  use,
+  useMemo,
+  useState,
+} from 'react';
 
 /**
  * The console's **mode** (A10-6 / D206): the transient state in which the instrument — the lake in
@@ -52,6 +60,19 @@ interface ConsoleModeValue {
   setMode: (mode: ConsoleMode | null) => void;
   /** Leave the mode from outside the question — and close the question that opened it. */
   exit: () => void;
+  /**
+   * The pin a chip beside the map is pointing at — hovered or keyboard-focused (a lot under *Where
+   * did you park?*, a launch under *Where did you get on?*): the instrument brackets it, names it
+   * and steps every other mark back, so the author can see which "Parking" a chip is before
+   * clicking it. Transient, like the mode, but independent of it: the lot chips sit outside any
+   * question. Always `null` without an instrument.
+   */
+  highlightPinId: string | null;
+  /**
+   * Point at a pin, or stop. Takes an updater, so a chip that stops pointing clears only its own
+   * pin (`(cur) => (cur === id ? null : cur)`). A no-op without an instrument.
+   */
+  setHighlightPinId: Dispatch<SetStateAction<string | null>>;
 }
 
 const Ctx = createContext<ConsoleModeValue | null>(null);
@@ -65,8 +86,13 @@ export function ConsoleModeProvider({
   instrument?: boolean;
 }) {
   const [stored, setMode] = useState<ConsoleMode | null>(null);
+  const [pointed, setPointed] = useState<string | null>(null);
   // A mode armed on a wide window and left when it narrows to a phone goes with the instrument.
   const mode = instrument ? stored : null;
+  // So does a pointed pin — dropped, not just hidden, so it can't come back when the window widens
+  // with the chip that set it long since left.
+  if (!instrument && pointed !== null) setPointed(null);
+  const setHighlightPinId = useMemo(() => (instrument ? setPointed : () => {}), [instrument]);
   // A mode is left by a click — the question's Done, or the instrument's — never by Escape: Esc is
   // the sheet's, one per screen (B03 Review 3). Leaving from the instrument closes the question
   // that opened it too, so the block and the instrument always agree.
@@ -79,8 +105,10 @@ export function ConsoleModeProvider({
         mode?.onExit?.();
         setMode(null);
       },
+      highlightPinId: instrument ? pointed : null,
+      setHighlightPinId,
     }),
-    [mode, instrument],
+    [mode, instrument, pointed, setHighlightPinId],
   );
   return <Ctx value={value}>{children}</Ctx>;
 }
@@ -98,4 +126,6 @@ const NO_MODE: ConsoleModeValue = {
   instrument: true,
   setMode: () => {},
   exit: () => {},
+  highlightPinId: null,
+  setHighlightPinId: () => {},
 };

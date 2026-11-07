@@ -6,6 +6,7 @@ import {
   instrumentMarks,
   lakeBounds,
   lakeFeatures,
+  pointedPinId,
   trackFeatures,
 } from './instrumentFeatures';
 
@@ -88,6 +89,20 @@ describe('the instrument’s drawing', () => {
   it('draws a hand-set point only when no launch is chosen', () => {
     const marks = instrumentMarks({ pins: [], hazards: [], photos: [], point: FULL.point });
     expect(marks.map((m) => [m.kind, m.chosen])).toEqual([['point', true]]);
+  });
+
+  it('points only at a launch, a lot or the shore point it is drawing', () => {
+    const marks = instrumentMarks(FULL);
+    expect(pointedPinId(marks, 'p1')).toBe('p1');
+    expect(pointedPinId(marks, 'l1')).toBe('l1');
+    // A hazard or a photo is not a pin a chip names; nor is a pin this lake doesn't draw.
+    expect(pointedPinId(marks, 'h1')).toBeNull();
+    expect(pointedPinId(marks, 'ph')).toBeNull();
+    expect(pointedPinId(marks, 'elsewhere')).toBeNull();
+    expect(pointedPinId(marks, null)).toBeNull();
+    expect(pointedPinId(marks, undefined)).toBeNull();
+    const shore = instrumentMarks({ pins: [], hazards: [], photos: [], point: FULL.point });
+    expect(pointedPinId(shore, 'point')).toBe('point');
   });
 
   it('keys only the kinds it draws', () => {

@@ -49,7 +49,7 @@ export function InstrumentPane({
   /** Posting, or a sent Post: shown, not offered. */
   inert: boolean;
 }) {
-  const { mode, exit } = useConsoleMode();
+  const { mode, exit, highlightPinId } = useConsoleMode();
   const held = useInstrumentHeld();
   const [glMap, setGlMap] = useState<maplibregl.Map | null>(null);
   const sheet = report.sheet;
@@ -215,6 +215,7 @@ export function InstrumentPane({
               mode={mode}
               silhouette={body?.silhouette ?? null}
               marks={input}
+              highlightPinId={highlightPinId}
             />
           </InstrumentMap>
         ) : (

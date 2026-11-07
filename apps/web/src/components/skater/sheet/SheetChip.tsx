@@ -29,6 +29,7 @@ export function SheetChip({
   tip,
   trailing,
   emphasis = false,
+  onPoint,
 }: {
   label: string;
   /** `undefined` = an unselected, plain option (the row's own vocabulary, nobody suggested it). */
@@ -42,12 +43,25 @@ export function SheetChip({
   trailing?: ReactNode;
   /** The chip a where question is open for: ice corner brackets, so the question and its chip read as one. */
   emphasis?: boolean;
+  /**
+   * Pointing at the chip begins (`true`) and ends (`false`) — a hover, or the keyboard's focus, so a
+   * keyboard sees what a mouse sees. A chip that names a pin on the map lights it with this.
+   */
+  onPoint?: (pointing: boolean) => void;
 }) {
   const selected = tier === 'solid' || tier === 'extracted';
   const chip = (
     <button
       type="button"
       onClick={onClick}
+      {...(onPoint !== undefined
+        ? {
+            onPointerEnter: () => onPoint(true),
+            onPointerLeave: () => onPoint(false),
+            onFocus: () => onPoint(true),
+            onBlur: () => onPoint(false),
+          }
+        : {})}
       aria-pressed={selected}
       {...(title !== undefined ? { title } : {})}
       aria-label={
