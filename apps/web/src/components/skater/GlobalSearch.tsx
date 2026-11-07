@@ -11,6 +11,7 @@ import { type RecentPick, useSearchStore } from '@/stores/searchStore';
 
 import { useChromeKeys, useChromeOverlay } from './chrome';
 import { GlobalSearchView } from './GlobalSearchView';
+import { PhoneSearchView } from './phone/PhoneSearchView';
 import {
   buildRecentGroup,
   buildResultGroups,
@@ -154,7 +155,14 @@ export function resolvePicks(
   return out;
 }
 
-export function GlobalSearch({ container }: { container?: HTMLElement | null } = {}) {
+export function GlobalSearch({
+  container,
+  layout = 'bar',
+}: {
+  container?: HTMLElement | null;
+  /** `phone`: the phone's field and full-screen results (board 9.6), recorded as surface `phone`. */
+  layout?: 'bar' | 'phone';
+} = {}) {
   const router = useRouter();
   const { capture } = useAnalytics();
   const { open, onOpenChange } = useChromeOverlay('search');
@@ -221,10 +229,13 @@ export function GlobalSearch({ container }: { container?: HTMLElement | null } =
     router.history.push(row.href);
   };
 
+  const View = layout === 'phone' ? PhoneSearchView : GlobalSearchView;
   return (
-    <GlobalSearchView
+    <View
       open={open}
-      onOpenChange={(next) => (next ? openSearch('top_bar') : onOpenChange(false))}
+      onOpenChange={(next) =>
+        next ? openSearch(layout === 'phone' ? 'phone' : 'top_bar') : onOpenChange(false)
+      }
       query={text}
       onQueryChange={setText}
       groups={groups}

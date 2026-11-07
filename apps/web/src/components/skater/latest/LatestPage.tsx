@@ -254,6 +254,7 @@ export function LatestPage({ search }: { search: LatestSearch }) {
 
   return (
     <LatestFrame
+      filterCount={activeFilterCount(value)}
       filters={
         <FilterColumn
           filters={value}

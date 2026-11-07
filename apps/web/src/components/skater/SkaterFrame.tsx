@@ -37,7 +37,8 @@ export function SkaterFrame({
         {phoneChrome !== undefined && <div className="md:hidden">{phoneChrome}</div>}
       </div>
       {/* The overlay is the page area's sibling, not its child, so it stays put while the page scrolls. */}
-      <div className="relative min-h-0 min-w-0">
+      {/* Below `md` the phone's tab bar is docked over the window's foot; the page stops above it. */}
+      <div className={cn('relative min-h-0 min-w-0', phoneChrome !== undefined && 'max-md:mb-16')}>
         <main data-slot="skater-page" className="h-full overflow-y-auto">
           {children}
         </main>

@@ -13,11 +13,17 @@ vi.mock('./GlobalSearch', () => ({ useSearchOwnerBinding: vi.fn() }));
 vi.mock('./SkaterTopBar', () => ({ SkaterTopBar: () => <header>top bar</header> }));
 vi.mock('./OfflineBoundary', () => ({ OfflineOverPage: () => <div>offline plate</div> }));
 vi.mock('./NotFoundScreen', () => ({ NotFoundScreen: () => <p>not found</p> }));
+vi.mock('./phone/PhoneChrome', () => ({
+  PhoneChrome: ({ live }: { live: boolean }) => <nav>phone chrome{live ? ' live' : ''}</nav>,
+}));
+const phone = vi.hoisted(() => ({ value: false }));
+vi.mock('./phone/usePhoneLayout', () => ({ useIsPhone: () => phone.value }));
 
 import { NotFoundRoute, SkaterShell, useAppOpenSync } from './SkaterShell';
 
 beforeEach(() => {
   resetFakes();
+  phone.value = false;
   document.documentElement.removeAttribute('data-surface');
 });
 
@@ -36,6 +42,18 @@ describe('SkaterShell', () => {
     expect(screen.getByText('offline plate')).toBeInTheDocument();
     unmount();
     expect(document.documentElement).toHaveAttribute('data-surface', 'admin');
+  });
+
+  it('below md, mounts the phone chrome live and leaves the desktop bar out (row 9)', () => {
+    render(<SkaterShell>page</SkaterShell>);
+    expect(screen.getByText('phone chrome')).toBeInTheDocument();
+    expect(screen.getByText('top bar')).toBeInTheDocument();
+    phone.value = true;
+    render(<SkaterShell>page</SkaterShell>, {
+      container: document.body.appendChild(document.createElement('div')),
+    });
+    expect(screen.getByText('phone chrome live')).toBeInTheDocument();
+    expect(screen.getAllByText('top bar')).toHaveLength(1);
   });
 
   it('removes the attribute it added when there was none before', () => {

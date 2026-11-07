@@ -12,8 +12,8 @@ import { SkaterMap } from './SkaterMap';
  *
  * While a view shows the map, the view takes the fixed 27.5 rem sidebar column and the map the
  * rest. A view with no map takes the whole width; the hidden map steps out of the grid (still
- * mounted, still sized, so showing it again costs nothing). Below `md` the view always takes the
- * width and the map stands down; the phone's own frame (row 9) replaces this there.
+ * mounted, still sized, so showing it again costs nothing). Below `md` (row 9) the map fills the
+ * page area and the view lies over it: Explore shows the bare map, a lake its drawer.
  */
 export function MapFrame({ children }: { children: ReactNode }) {
   const shown = useSkaterMapStore((s) => effectiveMapSpec(s.specs).visible);
@@ -25,14 +25,22 @@ export function MapFrame({ children }: { children: ReactNode }) {
     >
       <div
         data-slot="map-frame-view"
-        className={cn('h-full min-h-0 min-w-0', !shown && 'md:col-span-2')}
+        className={cn(
+          'h-full min-h-0 min-w-0',
+          !shown && 'md:col-span-2',
+          // Phone (row 9): over the map, passing presses through where the view draws nothing.
+          shown &&
+            'max-md:pointer-events-none max-md:relative max-md:z-(--z-raised) max-md:*:pointer-events-auto',
+        )}
       >
         {children}
       </div>
       <div
         data-slot="map-frame-map"
         className={cn(
-          'relative h-full min-h-0 min-w-0 max-md:hidden',
+          'relative h-full min-h-0 min-w-0',
+          // Phone (row 9): the map fills the page area under the view; hidden when not shown.
+          shown ? 'max-md:absolute max-md:inset-0' : 'max-md:hidden',
           !shown && 'pointer-events-none absolute inset-0',
         )}
       >

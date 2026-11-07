@@ -33,7 +33,7 @@ describe('MapFrame', () => {
     expect(frame()).toHaveAttribute('data-map-shown');
     expect(view()).toHaveTextContent('sidebar');
     expect(view().className).not.toContain('col-span-2');
-    expect(mapColumn().className).not.toContain('absolute');
+    expect(mapColumn().className.split(' ')).not.toContain('absolute');
     expect(screen.getAllByTestId('skater-map')).toHaveLength(1);
   });
 

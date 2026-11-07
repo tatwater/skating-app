@@ -21,6 +21,7 @@ import { LakeAction } from '../actions/LakeAction';
 import { withNewReport } from '../chrome';
 import { lakeMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
+import { PhoneLakeDrawer } from '../phone/PhoneLakeDrawer';
 import { reportSheetLinkState } from '../sheet/sheetHostModel';
 import { AboutTab } from './AboutTab';
 import { AccessTab } from './AccessTab';
@@ -75,52 +76,62 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
 
   const contourCredit = useSkaterMapStore((s) => s.contourCredit);
 
-  if (result === undefined) return <LakeSidebarSkeleton />;
+  if (result === undefined) {
+    return (
+      <PhoneLakeDrawer label="Loading the lake">
+        <LakeSidebarSkeleton />
+      </PhoneLakeDrawer>
+    );
+  }
   if (result === null || !result.available) {
     return (
-      <LakeUnavailable
-        kind={result === null ? 'not-found' : 'unavailable'}
-        explore={nav.link('/')}
-      />
+      <PhoneLakeDrawer label="Lake unavailable">
+        <LakeUnavailable
+          kind={result === null ? 'not-found' : 'unavailable'}
+          explore={nav.link('/')}
+        />
+      </PhoneLakeDrawer>
     );
   }
   const lake = result.body;
   const lakeName = waterBodyDisplayName(lake.name);
 
   return (
-    <LakeSidebar
-      label={bay ? bay.name : lakeName}
-      header={
-        <>
-          <ConnectedHeader lake={lake} bay={bay} nav={nav} />
-          <AlertStrip waterBodyId={lake._id} />
-        </>
-      }
-      body={
-        <LakeTabs
-          tab={tab}
-          onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
-          contourCredit={contourCredit}
-          overlay={
-            act !== undefined ? (
-              <LakeAction
-                act={act}
-                waterBodyId={lake._id}
-                lakeName={lakeName}
-                {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
-                {...(search.band !== undefined ? { band: search.band } : {})}
-                {...(search.frame !== undefined ? { frame: search.frame } : {})}
-                backTo={bay ? bay.name : lakeName}
-                nav={nav}
-                onBack={closeAct}
-              />
-            ) : null
-          }
-        >
-          <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
-        </LakeTabs>
-      }
-    />
+    <PhoneLakeDrawer label={bay ? bay.name : lakeName} escapes={act === undefined}>
+      <LakeSidebar
+        label={bay ? bay.name : lakeName}
+        header={
+          <>
+            <ConnectedHeader lake={lake} bay={bay} nav={nav} />
+            <AlertStrip waterBodyId={lake._id} />
+          </>
+        }
+        body={
+          <LakeTabs
+            tab={tab}
+            onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
+            contourCredit={contourCredit}
+            overlay={
+              act !== undefined ? (
+                <LakeAction
+                  act={act}
+                  waterBodyId={lake._id}
+                  lakeName={lakeName}
+                  {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
+                  {...(search.band !== undefined ? { band: search.band } : {})}
+                  {...(search.frame !== undefined ? { frame: search.frame } : {})}
+                  backTo={bay ? bay.name : lakeName}
+                  nav={nav}
+                  onBack={closeAct}
+                />
+              ) : null
+            }
+          >
+            <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
+          </LakeTabs>
+        }
+      />
+    </PhoneLakeDrawer>
   );
 }
 

@@ -47,17 +47,17 @@ export function WhichLakeCards({
   return (
     <div
       data-slot="which-lake"
-      className="flex min-h-0 flex-1 flex-col gap-(--space-6) px-(--space-8) pt-(--space-6) pb-(--space-8)"
+      className="flex min-h-0 flex-1 flex-col gap-(--space-6) px-(--space-8) pt-(--space-6) pb-(--space-8) max-md:gap-(--space-3) max-md:px-(--space-4) max-md:pt-(--space-4_5) max-md:pb-(--space-3_5)"
     >
       <div className="flex flex-col gap-(--space-2_5)">
         <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
           {ordinal > 1 ? `Report ${ordinal}` : 'First'}
         </span>
-        <h2 className="m-0 text-disp-lg leading-none font-semibold tracking-kick text-fg uppercase">
+        <h2 className="m-0 text-disp-lg leading-none font-semibold tracking-kick text-fg uppercase max-md:text-disp">
           Which lake?
         </h2>
       </div>
-      <div className="grid h-2/3 min-h-0 grid-cols-2 gap-(--space-6)">
+      <div className="grid h-2/3 min-h-0 grid-cols-2 gap-(--space-6) max-md:h-auto max-md:grid-cols-1 max-md:gap-(--space-2_5)">
         <Card
           icon={faRoute}
           title="From a GPX file"

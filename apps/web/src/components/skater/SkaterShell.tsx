@@ -7,6 +7,8 @@ import { type ReactNode, useEffect } from 'react';
 import { useSearchOwnerBinding } from './GlobalSearch';
 import { NotFoundScreen } from './NotFoundScreen';
 import { OfflineOverPage } from './OfflineBoundary';
+import { PhoneChrome } from './phone/PhoneChrome';
+import { useIsPhone } from './phone/usePhoneLayout';
 import { SkaterFrame } from './SkaterFrame';
 import { SkaterTopBar } from './SkaterTopBar';
 import { useSkaterSurface } from './useSkaterSurface';
@@ -15,15 +17,20 @@ import { useSkaterSurface } from './useSkaterSurface';
  * The skater app's frame (B03 §1, §1.8): the top bar over the page, the skater surface on `<html>`,
  * the offline plate over the page when the connection drops, and the old shell's two side effects
  * on every app open — the device's time zone (the 8 pm digest's zone, A08 §3) and the Clerk mirrors
- * (email, avatar). Below `md` the page renders full-bleed for now; the phone chrome (agent L) slots
- * in at `SkaterFrame`'s `phoneChrome`.
+ * (email, avatar). Below `md` the phone chrome (row 9) takes `SkaterFrame`'s `phoneChrome` slot.
  */
 export function SkaterShell({ children }: { children: ReactNode }) {
   useSkaterSurface();
   useAppOpenSync();
   useSearchOwnerBinding();
+  // One bar's overlays at a time: the chrome store controls both bars' copies (row 9).
+  const phone = useIsPhone();
   return (
-    <SkaterFrame topBar={<SkaterTopBar />} overlay={<OfflineOverPage />}>
+    <SkaterFrame
+      topBar={phone ? null : <SkaterTopBar />}
+      phoneChrome={<PhoneChrome live={phone} />}
+      overlay={<OfflineOverPage />}
+    >
       {children}
     </SkaterFrame>
   );
