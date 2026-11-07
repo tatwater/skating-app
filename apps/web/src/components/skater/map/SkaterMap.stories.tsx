@@ -226,6 +226,44 @@ export const LakeChosen: Story = {
   },
 };
 
+/**
+ * Over a satellite picture the hazard marks stay on at full strength; the one the mouse rests on fades
+ * so the ice under it shows, and comes back on pointer-out (founder, 2026-11-08). The still has no
+ * picture under it — the fade is the point.
+ */
+export const HazardPeekOverImagery: Story = {
+  render: () => (
+    <SkaterPair>
+      {(mode) => (
+        <MapStill mode={mode} view={LAKE} water={[{ rings: MASCOMA_RINGS, selected: true }]}>
+          {(map) => (
+            <MapMarksLayer
+              map={map}
+              labels={[]}
+              putIns={[]}
+              hazards={[NARROWS]}
+              onOpenHazard={fn()}
+              imagery
+            />
+          )}
+        </MapStill>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.querySelector('section') as HTMLElement);
+    const hazard = await canvas.findByRole('button', { name: 'Hazard: Open water / lead' });
+    expect(hazard).not.toHaveAttribute('data-peek');
+    // Keyboard focus inspects the mark: no fade.
+    hazard.focus();
+    expect(hazard).not.toHaveAttribute('data-peek');
+    await userEvent.hover(hazard);
+    await waitFor(() => expect(hazard).toHaveAttribute('data-peek'));
+    await userEvent.unhover(hazard);
+    await waitFor(() => expect(hazard).not.toHaveAttribute('data-peek'));
+  },
+};
+
 /** 3.16 — the layers menu, opened on a press. */
 export const MapLayers: Story = {
   render: () => (

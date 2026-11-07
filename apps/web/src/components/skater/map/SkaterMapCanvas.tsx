@@ -544,6 +544,7 @@ export default function SkaterMapCanvas() {
             navigate({ to: '/hazard/$id', params: { id }, state: panelLinkState('map') })
           }
           reserved={reserved}
+          imagery={imageryOn}
         />
       )}
       {spec.mode && (

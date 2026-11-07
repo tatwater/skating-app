@@ -189,6 +189,45 @@ describe('MapMarksLayer', () => {
     expect(document.querySelector('[data-slot="map-hover-plate"]')).toBeNull();
   });
 
+  it('over imagery, fades the one hazard the mouse rests on, and only then', () => {
+    const { map } = fakeMap();
+    const props = {
+      map,
+      labels: [],
+      putIns: [],
+      hazards: [hazard({ id: 'a' }), hazard({ id: 'b', lng: 7, hazardType: 'pressure_ridge' })],
+      onOpenHazard: vi.fn(),
+    };
+    const { rerender } = render(<MapMarksLayer {...props} />);
+    const [a, b] = screen.getAllByRole('button') as [HTMLElement, HTMLElement];
+    const faded = () => screen.getAllByRole('button').filter((el) => el.hasAttribute('data-peek'));
+
+    // No picture up: a hover is only a hover, the mark stays at full strength.
+    fireEvent.pointerEnter(a, { pointerType: 'mouse' });
+    expect(faded()).toEqual([]);
+
+    // The picture comes up under a resting mouse: that mark fades, and eases while it does.
+    rerender(<MapMarksLayer {...props} imagery />);
+    expect(faded()).toEqual([a]);
+    expect(a.className).toContain('opacity-35');
+    expect(a.className).toContain('transition-opacity');
+    expect(b.className).not.toContain('opacity-35');
+
+    // Moving to the next mark hands the fade over — never two at once.
+    fireEvent.pointerEnter(b, { pointerType: 'mouse' });
+    fireEvent.pointerLeave(a, { pointerType: 'mouse' });
+    expect(faded()).toEqual([b]);
+
+    fireEvent.pointerLeave(b, { pointerType: 'mouse' });
+    expect(faded()).toEqual([]);
+
+    // Focus is inspecting the mark itself, and a tap opens it: neither fades it.
+    act(() => a.focus());
+    expect(faded()).toEqual([]);
+    fireEvent.pointerEnter(a, { pointerType: 'touch' });
+    expect(faded()).toEqual([]);
+  });
+
   it('stops following the camera when it unmounts', () => {
     const { map, handlers } = fakeMap();
     const { unmount } = render(

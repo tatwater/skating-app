@@ -754,6 +754,8 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   (3,000 credits/day). The flip is safe before the account exists: with no `GEOAPIFY_API_KEY` the action answers
   `off`, as it did with no provider. The ORS adapter is deleted rather than kept one line from use.
   `04-integrations.md` § Geocoding has the terms; `PRIVACY.md` the disclosure.
+- **Hazards over a satellite picture: on, with a peek (founder, 2026-11-08).** The marks stay locked on at
+  full strength over imagery; the one a mouse rests on fades to 35% so the ice under it shows, and comes back
+  on pointer-out. Keyboard focus and a touch never fade one — focus is inspecting the mark itself.
 - **Waiting on the founder:** Latest on a phone as a drawer or the center column; the "Weather at" default
-  (whole lake or the bay in view); whether hazards draw over a satellite picture; whether a reading's
-  coordinates are redacted on a public report.
+  (whole lake or the bay in view); whether a reading's coordinates are redacted on a public report.

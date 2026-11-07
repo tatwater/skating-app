@@ -678,6 +678,17 @@ describe('depth', () => {
     act(() => useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: false } }));
     expect(fillUnder().slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], ''], 0]);
   });
+
+  it('keeps the hazard marks on over the picture, and fades only the one under the mouse', async () => {
+    useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: true } });
+    await mount();
+    const mark = screen.getByRole('button', { name: /Hazard: Open water/ });
+    expect(mark).not.toHaveAttribute('data-peek');
+    fireEvent.pointerEnter(mark, { pointerType: 'mouse' });
+    expect(mark).toHaveAttribute('data-peek');
+    act(() => useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: false } }));
+    expect(mark).not.toHaveAttribute('data-peek');
+  });
 });
 
 describe('clicks', () => {
