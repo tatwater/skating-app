@@ -194,8 +194,9 @@ async function main(): Promise<void> {
     polygon: Polygon | MultiPolygon,
     bodyLines: BandLine[],
     bands: TracedBands['bands'],
+    survey?: Polygon | MultiPolygon,
   ) => {
-    o.check = checkBands({ lake: polygon, bands, lines: bodyLines });
+    o.check = checkBands({ lake: polygon, bands, lines: bodyLines, survey });
     o.failures = bandVerdict(o.check);
     if (o.failures.length > 0) {
       o.reason = `failed its check: ${o.failures.join('; ')}`;
@@ -257,7 +258,9 @@ async function main(): Promise<void> {
           WORK_DIR,
         );
         if (clipped.length === 0) b.reason = 'the clip to the bay left no band';
-        else accept(b, bay.polygon, bayLines, clipped);
+        // Judged against the part of the bay its parent's survey covers: a bay outline reaching past
+        // the parent's is water nobody measured, and it stays unfilled rather than failing the bay.
+        else accept(b, bay.polygon, bayLines, clipped, polygon);
       } catch (error) {
         b.reason = `bay clip threw: ${(error as Error).message.slice(0, 200)}`;
       }

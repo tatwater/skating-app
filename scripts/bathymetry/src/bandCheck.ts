@@ -132,6 +132,11 @@ export interface BandCheck {
   coveredOnce: number;
   /** …in no band. */
   uncovered: number;
+  /**
+   * …outside the surveyed area, where a bay reaches past its parent lake's outline. Not water the
+   * survey says anything about, so not water the bands owe a fill; excluded from coverage and area.
+   */
+  unsurveyed: number;
   /** …in more than one band. */
   overlapped: number;
   /** Lattice points off the lake. */
@@ -183,7 +188,8 @@ export function sampleVertices(
   const byDepth = new Map<number, Position[]>();
   for (const l of lines) {
     const list = byDepth.get(l.depthFt) ?? [];
-    list.push(...l.coordinates);
+    // A loop, not `push(...)`: one Massachusetts line has more vertices than a call has arguments.
+    for (const p of l.coordinates) list.push(p);
     byDepth.set(l.depthFt, list);
   }
   const out: { depthFt: number; p: Position }[] = [];
@@ -205,16 +211,20 @@ export function checkBands(input: {
   lake: Polygon | MultiPolygon;
   bands: readonly CheckedBand[];
   lines: readonly { depthFt: number; coordinates: Position[] }[];
+  /** For a bay: its parent lake, the only water its bands were traced over. */
+  survey?: Polygon | MultiPolygon;
   lattice?: number;
 }): BandCheck {
   const n = input.lattice ?? 64;
   const lake = new IndexedArea(input.lake);
+  const survey = input.survey ? new IndexedArea(input.survey) : undefined;
   const bands = input.bands.map((b) => ({ spec: b.spec, area: new IndexedArea(b.geometry) }));
   const box = lake.bounds();
 
   let inside = 0;
   let coveredOnce = 0;
   let uncovered = 0;
+  let unsurveyed = 0;
   let overlapped = 0;
   let outside = 0;
   let spilled = 0;
@@ -228,6 +238,7 @@ export function checkBands(input: {
       if (lake.contains(p)) {
         inside += 1;
         if (hits === 1) coveredOnce += 1;
+        else if (hits === 0 && survey && !survey.contains(p)) unsurveyed += 1;
         else if (hits === 0) uncovered += 1;
         else overlapped += 1;
       } else {
@@ -245,12 +256,16 @@ export function checkBands(input: {
     if (bands.some((b) => rangeHolds(b.spec, depthFt) && b.area.contains(p))) lineAgree += 1;
   }
 
-  const lakeArea = areaSquareMeters(input.lake);
+  // The surveyed share of the lake, estimated from the lattice: exactly the whole lake when there is
+  // no separate survey outline.
+  const surveyedShare = inside > 0 ? (inside - unsurveyed) / inside : 1;
+  const lakeArea = areaSquareMeters(input.lake) * surveyedShare;
   const bandArea = input.bands.reduce((sum, b) => sum + areaSquareMeters(b.geometry), 0);
   return {
     inside,
     coveredOnce,
     uncovered,
+    unsurveyed,
     overlapped,
     outside,
     spilled,
@@ -281,11 +296,12 @@ export const BAND_LIMITS = {
 export function bandVerdict(check: BandCheck, limits = BAND_LIMITS): string[] {
   const failures = [...check.ordering];
   const share = (k: number, of: number) => (of > 0 ? k / of : 0);
-  const coverage = share(check.coveredOnce, check.inside);
-  if (check.inside > 0 && coverage < limits.minCoverage) {
+  const surveyed = check.inside - check.unsurveyed;
+  const coverage = share(check.coveredOnce, surveyed);
+  if (surveyed > 0 && coverage < limits.minCoverage) {
     failures.push(`covers ${(coverage * 100).toFixed(1)}% of the lake exactly once`);
   }
-  const overlap = share(check.overlapped, check.inside);
+  const overlap = share(check.overlapped, surveyed);
   if (overlap > limits.maxOverlap)
     failures.push(`${(overlap * 100).toFixed(1)}% of the lake in two bands`);
   const spill = share(check.spilled, check.outside);

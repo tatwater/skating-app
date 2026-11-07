@@ -252,7 +252,8 @@ export async function traceBands(
     if (!spec) continue;
     const key = spec.minDepthFt;
     const entry = byBand.get(key) ?? { spec, polygons: [] };
-    entry.polygons.push(...polygons);
+    // A loop, not `push(...)`: a big lake's isobands run to more parts than a call has arguments.
+    for (const polygon of polygons) entry.polygons.push(polygon);
     byBand.set(key, entry);
   }
   let specksDropped = 0;

@@ -121,6 +121,19 @@ describe('checkBands on an island lake', () => {
     expect(failuresOf([noHole, ...rest]).join(' ')).toMatch(/band area/);
   });
 
+  it("excuses a bay's water that lies outside its parent's survey, and only that", () => {
+    // A bay outline reaching 0.002° east of the parent lake: the parent's bands cannot cover it.
+    const bay: Polygon = { type: 'Polygon', coordinates: [sq(LNG + 0.005, LAT, 0.007)] };
+    const clippedToBay = goodBands.map((b) => ({ ...b }));
+    const check = checkBands({ lake: bay, bands: clippedToBay, lines: [], survey: lake });
+    expect(check.unsurveyed).toBeGreaterThan(0);
+    expect(check.uncovered).toBe(0);
+    // Without the survey outline, the same bay reads as a band set with a hole in it.
+    const unexcused = checkBands({ lake: bay, bands: clippedToBay, lines: [] });
+    expect(unexcused.unsurveyed).toBe(0);
+    expect(unexcused.uncovered).toBe(check.unsurveyed);
+  });
+
   it('fails a missing band as a hole in the lake', () => {
     const failures = failuresOf([goodBands[0] as CheckedBand, goodBands[2] as CheckedBand]);
     expect(failures.join(' ')).toMatch(/exactly once/);
@@ -236,6 +249,7 @@ describe('bandVerdict', () => {
     inside: 1000,
     coveredOnce: 1000,
     uncovered: 0,
+    unsurveyed: 0,
     overlapped: 0,
     outside: 500,
     spilled: 0,
@@ -263,6 +277,13 @@ describe('bandVerdict', () => {
     expect(
       bandVerdict({ ...clean, lineVertices: BAND_LIMITS.minLineVertices - 1, lineAgree: 0 }),
     ).toEqual([]);
+  });
+
+  it('judges coverage over the surveyed water only', () => {
+    expect(bandVerdict({ ...clean, coveredOnce: 900, unsurveyed: 100 })).toEqual([]);
+    expect(bandVerdict({ ...clean, coveredOnce: 800, uncovered: 100, unsurveyed: 100 })[0]).toMatch(
+      /exactly once/,
+    );
   });
 
   it('does not divide by zero on a lake the lattice missed', () => {
