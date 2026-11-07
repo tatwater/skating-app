@@ -6,7 +6,7 @@ are [`docs/deployment-and-release.md`](../docs/deployment-and-release.md), the v
 [`03-tech-stack-options.md`](./03-tech-stack-options.md), and the data sources are
 [`04-integrations.md`](./04-integrations.md).
 
-**Kept current by a test.** `packages/core/src/credentialsRegister.test.ts` collects every
+**Kept current by a test.** `packages/guards/src/credentialsRegister.test.ts` collects every
 environment variable the backend, the pipelines and the two clients read, and fails the build if
 one is missing from § 2 below. Add a variable → add its row in the same PR.
 

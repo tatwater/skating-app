@@ -1,0 +1,17 @@
+{
+  "name": "@skating/guards",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Repo-wide invariants, held in an uncached task so they can never be served stale (D236)",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@skating/core": "workspace:*",
+    "@types/node": "^24.19.0",
+    "vitest": "^5.0.2"
+  }
+}

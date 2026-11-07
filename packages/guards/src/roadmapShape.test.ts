@@ -14,6 +14,10 @@
  * - the deferred register is present and is a table.
  *
  * It reads the repo rather than a fixture on purpose — the fixture would be the thing that drifts.
+ *
+ * Lives in `@skating/guards`, not `@skating/core`: it reads the repo off disk, which no Turbo
+ * input glob can describe, so it belongs to an uncached task that always runs (D236, see the
+ * package README). Moving it into a cached package makes its green meaningless.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

@@ -45,6 +45,12 @@ Read, in this order: `plans/README.md` (conventions), the phase doc, its `07-roa
   narrow; field names must be ASCII.
 - **Bound every corpus-wide read** — pass `marginMeters` to `listedBodiesNearCoord`; without it one
   ETL load read 105 GB and disabled the deployment.
+- **A test that reads the repo belongs in `packages/guards`** — Turbo hashes a package's own files
+  plus its dependencies', so a test that reads `plans/`, another app's `src`, or `git ls-files` is
+  invisible to the cache and gets replayed forever (it cost a red CI on #91: a local `Cached: 15
+  cached` green against a cold-cache CI red). `packages/guards`' task is uncached, so it always
+  runs; `turboCache.test.ts` catches the usual shapes of one landing in a cached package, but it's
+  a lint, not a proof — `process.cwd()` and absolute paths get past it (D236).
 - **Declare every direct dependency.** The linker is hoisted, so a phantom import works locally
   and CI won't catch it.
 - **Device testing** is Android via EAS `preview` builds (standalone, not the dev client), with env
