@@ -1,7 +1,8 @@
 import { RISK_ACK_VERSION } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
+import { PROFILE_LAKE_SCAN_CAP } from './profiles';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -125,5 +126,98 @@ describe('profiles.changeUsername (B03 §11)', () => {
     const { id, as } = await onboard(t, 'clerk_ada', 'ada');
     await t.run((ctx) => ctx.db.patch(id, { status: 'banned' }));
     await expect(as.mutation(api.profiles.changeUsername, { username: 'ada2' })).rejects.toThrow();
+  });
+});
+
+describe('profiles.getPublicProfile — distinct lakes (B03 §11)', () => {
+  test('counts the distinct lakes across visible reports, and says when it stopped short', async () => {
+    const t = convexTest(schema, modules);
+    const { id } = await onboard(t, 'clerk_ada', 'ada');
+    const bodies = await t.run(async (ctx) => {
+      const out = [];
+      for (const name of ['A', 'B', 'C']) {
+        out.push(
+          await ctx.db.insert('waterBodies', {
+            source: 'osm',
+            name,
+            searchText: name,
+            type: 'lakePond',
+            polygon: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [0, 0],
+                  [0, 1],
+                  [1, 1],
+                  [1, 0],
+                  [0, 0],
+                ],
+              ],
+            },
+            bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+            centroid: { lat: 0.5, lng: 0.5 },
+            dedupStatus: 'clean',
+            createdAt: Date.now(),
+          }),
+        );
+      }
+      return out;
+    });
+    const report = (waterBodyId: (typeof bodies)[number], extra: Record<string, unknown> = {}) =>
+      t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: Date.now(),
+          reportTime: Date.now(),
+          source: 'native',
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          hazardIdsCreated: [],
+          moderationStatus: 'visible',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          ...extra,
+        }),
+      );
+    const [a, b, c] = bodies as [
+      (typeof bodies)[number],
+      (typeof bodies)[number],
+      (typeof bodies)[number],
+    ];
+    await report(a);
+    await report(a);
+    await report(b);
+    await report(c, { moderationStatus: 'hidden' }); // not on their record
+    const profile = await t.query(api.profiles.getPublicProfile, { username: 'ada' });
+    expect(profile && !profile.private && profile.lakeCount).toBe(2);
+    expect(profile && !profile.private && profile.lakeCountCapped).toBeUndefined();
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < PROFILE_LAKE_SCAN_CAP; i++) {
+        await ctx.db.insert('reports', {
+          authorId: id,
+          waterBodyId: a,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: Date.now() + 1,
+          reportTime: Date.now(),
+          source: 'native',
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          hazardIdsCreated: [],
+          moderationStatus: 'visible',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const capped = await t.query(api.profiles.getPublicProfile, { username: 'ada' });
+    warn.mockRestore();
+    expect(capped && !capped.private && capped.lakeCountCapped).toBe(true);
+    expect(capped && !capped.private && capped.lakeCount).toBe(1);
   });
 });

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { stravaAuthorizeUrl } from './strava';
+import { stravaAthleteName, stravaAuthorizeUrl } from './strava';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -232,6 +232,46 @@ describe('the connect flow is bound to a user by a single-use nonce', () => {
     expect(connections[0]?.userId).toBe(user.id);
     expect(connections[0]?.externalUserId).toBe('999');
     expect(connections[0]?.accessToken).toBe('access-new');
+    expect(connections[0]?.externalDisplayName).toBeUndefined(); // the exchange carried no name
+  });
+
+  test('completeConnect keeps the athlete\'s own name for its owner\'s "Connected as" (B03 §11)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'access-new',
+          refresh_token: 'refresh-new',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 999, firstname: ' Ada ', lastname: 'Lovelace' },
+        },
+      },
+    ]);
+    await t.action(internal.strava.completeConnect, { code: 'abc', state });
+    expect(await user.as.query(api.strava.connectionStatus, {})).toMatchObject({
+      connected: true,
+      athleteName: 'Ada Lovelace',
+    });
+    // A refresh-style write with no name keeps the stored one.
+    await t.mutation(internal.strava.storeConnection, {
+      userId: user.id,
+      externalUserId: '999',
+      accessToken: 'a2',
+      refreshToken: 'r2',
+      tokenExpiresAt: Date.now() + 1,
+      scopes: ['read'],
+    });
+    expect((await user.as.query(api.strava.connectionStatus, {})).athleteName).toBe('Ada Lovelace');
+  });
+
+  test('stravaAthleteName joins what exists and is absent for nothing', () => {
+    expect(stravaAthleteName({ id: 1, firstname: 'Ada' })).toBe('Ada');
+    expect(stravaAthleteName({ id: 1, firstname: ' ', lastname: '' })).toBeUndefined();
+    expect(stravaAthleteName(undefined)).toBeUndefined();
   });
 
   /**
@@ -313,6 +353,7 @@ describe('connectionStatus / disconnect', () => {
     await seedConnection(t, user.id);
     const status = await user.as.query(api.strava.connectionStatus, {});
     expect(status.connected).toBe(true);
+    expect(status.athleteName).toBeNull(); // a connection made before the name was captured
     expect(JSON.stringify(status)).not.toContain('access-old');
     expect(JSON.stringify(status)).not.toContain('refresh-old');
   });

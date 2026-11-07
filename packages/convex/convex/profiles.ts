@@ -56,6 +56,7 @@ import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
+import { takeCappedResult } from './lib/scan';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
 
@@ -801,6 +802,34 @@ export const setNotificationPrefs = mutation({
  */
 const PROFILE_HISTORY_LIMIT = 50;
 
+/**
+ * How many of a person's reports the distinct-lakes count reads — newest skate first, off
+ * `by_author_skate_end_time`. A season of skating is a few dozen; past this the count is a floor.
+ */
+export const PROFILE_LAKE_SCAN_CAP = 500;
+
+/**
+ * The distinct lakes across a person's visible reports (B03 §11). Moderation-visible only — a
+ * hidden report is not on their record — and keyed by the report's body, which a merge repoints
+ * (D36), so one lake under two ids can't count twice. Bounded by `PROFILE_LAKE_SCAN_CAP`.
+ */
+async function distinctLakesOf(
+  ctx: QueryCtx,
+  authorId: Id<'profiles'>,
+): Promise<{ count: number; capped: boolean }> {
+  const { rows, truncated } = await takeCappedResult(
+    ctx.db
+      .query('reports')
+      .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', authorId))
+      .order('desc'),
+    PROFILE_LAKE_SCAN_CAP,
+    'profiles.getPublicProfile(lakeCount)',
+  );
+  const lakes = new Set<string>();
+  for (const r of rows) if (r.moderationStatus === 'visible') lakes.add(r.waterBodyId);
+  return { count: lakes.size, capped: truncated };
+}
+
 /** One entry in a public profile's report history — the report plus its lake name for the card. */
 
 /**
@@ -837,6 +866,13 @@ type PublicProfile =
       badges: string[]; // earned BadgeType families in stable order (decision 6)
       reportCount: number;
       commentCount: number;
+      /**
+       * Distinct lakes across their visible reports (B03 §11). Counted over their newest
+       * `PROFILE_LAKE_SCAN_CAP` reports; `lakeCountCapped` says the history ran past that, so the
+       * page says "40+ lakes" rather than a number it didn't read.
+       */
+      lakeCount: number;
+      lakeCountCapped?: true;
       /** The person's Posts, newest skate first, as the feed shows them (A10 / D186). */
       posts: PostCardData[];
     };
@@ -914,6 +950,7 @@ export const getPublicProfile = query({
     // to the visible window length so it never shows a spuriously low 0 before the backfill runs.
     const reportCount = target.reportCount ?? posts.reduce((n, p) => n + p.reports.length, 0);
     const commentCount = target.commentCount ?? 0;
+    const lakes = await distinctLakesOf(ctx, target._id);
 
     return {
       ...base,
@@ -926,6 +963,8 @@ export const getPublicProfile = query({
       badges: target.badges ?? [],
       reportCount,
       commentCount,
+      lakeCount: lakes.count,
+      ...(lakes.capped ? { lakeCountCapped: true as const } : {}),
       posts,
     };
   },

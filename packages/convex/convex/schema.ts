@@ -448,6 +448,13 @@ export default defineSchema({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),
     externalUserId: v.string(), // e.g. Strava athleteId
+    /**
+     * The account's own name at the provider, as the token exchange returned it (B03 §11) — "Connected
+     * as Ada Lovelace". Shown to its owner only (Strava's terms allow an athlete's data to its own
+     * athlete). From the `read` scope we already hold, never a wider one. Absent on connections made
+     * before it was captured, until the next connect.
+     */
+    externalDisplayName: v.optional(v.string()),
     accessToken: v.optional(v.string()), // SERVER-ONLY
     refreshToken: v.optional(v.string()), // SERVER-ONLY
     scopes: v.array(v.string()),
