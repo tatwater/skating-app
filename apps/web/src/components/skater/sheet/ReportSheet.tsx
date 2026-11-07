@@ -2,7 +2,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import {
-  addPostPhotos,
   assignCandidates,
   isMinor,
   type PostSheet,
@@ -57,7 +56,7 @@ import { useIsPhone } from '../phone/usePhoneLayout';
 import { ConsoleModeProvider } from './ConsoleMode';
 import { InstrumentPane } from './InstrumentPane';
 import { LakeNameSearch } from './LakeNameSearch';
-import { PhotoSorter } from './PhotoSorter';
+import { addSheetPhotos, PhotoSorter } from './PhotoSorter';
 import { ReportPanels } from './ReportPanels';
 import { StatusSquare } from './SheetPanel';
 import { SheetWords } from './SheetWords';
@@ -246,7 +245,7 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
     setPhotosBusy(true);
     try {
       const drafts = await Promise.all(picked.map(addSheetPhoto));
-      updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines)));
+      addSheetPhotos(drafts, outlines);
       capture('report_photos_added', { source: 'device', count: drafts.length });
     } catch {
       setMessage("Couldn't read one of those images — try a different file.");
@@ -667,8 +666,7 @@ function WhichLake({
           ? {
               googlePhotos: googlePhotos({
                 disabled: photosBusy,
-                onPhotos: (drafts) =>
-                  updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines))),
+                onPhotos: (drafts) => addSheetPhotos(drafts, outlines),
               }),
             }
           : {})}

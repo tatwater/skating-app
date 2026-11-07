@@ -1,7 +1,15 @@
-import { openPostSheet, reportEndMs, selectedValues } from '@skating/core';
+import {
+  addPostPhotos,
+  assignCandidates,
+  openPostSheet,
+  type PostSheet,
+  reportEndMs,
+  selectedValues,
+} from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  addPhotosByLakeAndDay,
   applyPhotoTabs,
   dayKey,
   type SortablePhoto,
@@ -229,5 +237,166 @@ describe('applyPhotoTabs', () => {
     });
     expect(out.post.reports).toHaveLength(2);
     expect(dayKey(reportEndMs(out.post.reports[1] as never) as number, NH)).toBe('2027-01-14');
+  });
+});
+
+describe('addPhotosByLakeAndDay (5.17.1)', () => {
+  let n = 0;
+  const mint = () => `add-${++n}`;
+  // Mascoma's outline, as the sheet's outlines hand it: a photo inside it is on the lake.
+  const POLY = {
+    type: 'Polygon' as const,
+    coordinates: [
+      [
+        [-72.2, 43.6],
+        [-72.1, 43.6],
+        [-72.1, 43.7],
+        [-72.2, 43.7],
+        [-72.2, 43.6],
+      ],
+    ],
+  };
+  const outlines = { mascoma: POLY };
+  const ON_LAKE = { lat: 43.65, lng: -72.15 };
+  const draft = (id: string, takenAtMs?: number, coord: typeof ON_LAKE | null = ON_LAKE) => ({
+    id,
+    fullUri: `${id}:full`,
+    thumbUri: `${id}:thumb`,
+    placeOnMap: false,
+    ...(takenAtMs !== undefined ? { takenAtMs } : {}),
+    ...(coord !== null ? { coord } : {}),
+  });
+  const opts = { timeZone: NH, now: SAT_10, mint, outlines };
+  const lakeSheet = (gpsWindow?: { endMs: number }) =>
+    openPostSheet(
+      'body',
+      { waterBodyId: 'mascoma', bodyName: 'Mascoma Lake', ...(gpsWindow ? { gpsWindow } : {}) },
+      SAT_10,
+      mint,
+    );
+  const layout = (post: PostSheet) =>
+    post.reports.map((r) => [
+      r.sheet.waterBodyId,
+      (() => {
+        const end = reportEndMs(r);
+        return end === undefined ? null : dayKey(end, NH);
+      })(),
+      r.photos.map((p) => p.id),
+    ]);
+
+  it('Greptile #98: a lake chosen, then photos from two days — one Report per day, not one', () => {
+    // The comment's sequence: the author picks Mascoma, then adds Thursday's and Saturday's photos.
+    // Before, every photo on the lake's box went straight onto that one Report by place.
+    const post = lakeSheet();
+    const photos = [draft('thu', THU_15), draft('sat1', SAT_10), draft('sat2', SAT_10 + 3600_000)];
+    expect(layout(addPostPhotos(post, photos, assignCandidates(post, outlines)))).toEqual([
+      ['mascoma', null, ['thu', 'sat1', 'sat2']],
+    ]);
+    const out = addPhotosByLakeAndDay(post, photos, opts);
+    expect(layout(out.post)).toEqual([
+      ['mascoma', '2027-01-14', ['thu']],
+      ['mascoma', '2027-01-16', ['sat1', 'sat2']],
+    ]);
+    expect(out.post.reports[1]?.bodyName).toBe('Mascoma Lake');
+    expect(out.post.photos).toEqual([]);
+    expect(out.post.dirty).toBe(true);
+    expect(sortNote(out.tabs)).toBe(
+      'Your 3 photos were taken on one lake over two days, so they start two reports, one per tab. A photo’s number is its tab.',
+    );
+  });
+
+  it('sends a photo off its Report’s day to that day, and keeps one on the day but outside the window', () => {
+    const post = lakeSheet({ endMs: SAT_10 });
+    // Five hours before the end is outside the window, but it is Saturday: still this Report.
+    const out = addPhotosByLakeAndDay(
+      post,
+      [draft('early', SAT_10 - 5 * 3600_000), draft('thu', THU_15)],
+      opts,
+    );
+    expect(layout(out.post)).toEqual([
+      ['mascoma', '2027-01-16', ['early']],
+      ['mascoma', '2027-01-14', ['thu']],
+    ]);
+  });
+
+  it('finds the Report already on that lake and day before opening another', () => {
+    const sat = lakeSheet({ endMs: SAT_10 });
+    const thu = openPostSheet(
+      'body',
+      { waterBodyId: 'mascoma', bodyName: 'Mascoma Lake', gpsWindow: { endMs: THU_15 } },
+      SAT_10,
+      mint,
+    ).reports[0];
+    const post = { ...sat, reports: [...sat.reports, thu as (typeof sat.reports)[number]] };
+    // Thursday morning: outside Thursday's window, so the place put it on the first Report on the lake.
+    const out = addPhotosByLakeAndDay(post, [draft('thuAm', THU_15 - 8 * 3600_000)], opts);
+    expect(layout(out.post)).toEqual([
+      ['mascoma', '2027-01-16', []],
+      ['mascoma', '2027-01-14', ['thuAm']],
+    ]);
+    expect(out.tabs).toHaveLength(1);
+  });
+
+  it('sorts a lake whose Report carries no name', () => {
+    const post = openPostSheet('body', { waterBodyId: 'mascoma' }, SAT_10, mint);
+    const out = addPhotosByLakeAndDay(post, [draft('thu', THU_15), draft('sat', SAT_10)], opts);
+    expect(out.tabs.map((t) => [t.name, t.day])).toEqual([
+      ['', '2027-01-14'],
+      ['', '2027-01-16'],
+    ]);
+  });
+
+  it('lands one visit’s photos as before, leaving the end to the author', () => {
+    const post = lakeSheet();
+    const photos = [draft('a', SAT_10), draft('b', SAT_10 + 3600_000), draft('u')];
+    const out = addPhotosByLakeAndDay(post, photos, opts);
+    expect(out.tabs).toEqual([]);
+    expect(out.post).toEqual(addPostPhotos(post, photos, assignCandidates(post, outlines)));
+    expect(reportEndMs(out.post.reports[0] as never)).toBeUndefined();
+  });
+
+  it('leaves what the time placed, the pool, and an edit alone', () => {
+    const post = lakeSheet({ endMs: SAT_10 });
+    // In the window: the time put it there. No place, no window: the pool.
+    const photos = [draft('timed', SAT_10 - 600_000), draft('lost', THU_15, null)];
+    const out = addPhotosByLakeAndDay(post, photos, opts);
+    expect(out.tabs).toEqual([]);
+    expect(layout(out.post)).toEqual([['mascoma', '2027-01-16', ['timed']]]);
+    expect(out.post.photos?.map((p) => p.id)).toEqual(['lost']);
+
+    const edit = { ...lakeSheet(), mode: { kind: 'edit' as const, reportId: 'r' } };
+    const edited = addPhotosByLakeAndDay(edit, [draft('thu', THU_15), draft('sat', SAT_10)], opts);
+    expect(edited.tabs).toEqual([]);
+    expect(edited.post.reports).toHaveLength(1);
+  });
+
+  it('never leaves a Report holding two days of the photos it was handed, nor drops one', () => {
+    const DAY = 24 * 3600_000;
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(fc.integer({ min: 0, max: 4 }), fc.integer({ min: 0, max: 8 })), {
+          minLength: 1,
+          maxLength: 12,
+        }),
+        fc.option(fc.integer({ min: 0, max: 4 }), { nil: undefined }),
+        (shots, endDay) => {
+          const post = lakeSheet(
+            endDay !== undefined ? { endMs: SAT_10 + endDay * DAY } : undefined,
+          );
+          const photos = shots.map(([d, h], i) => draft(`p${i}`, SAT_10 + d * DAY + h * 600_000));
+          const out = addPhotosByLakeAndDay(post, photos, opts);
+          const placed = out.post.reports.flatMap((r) => r.photos.map((p) => p.id));
+          expect([...placed, ...(out.post.photos ?? []).map((p) => p.id)].sort()).toEqual(
+            photos.map((p) => p.id).sort(),
+          );
+          for (const r of out.post.reports) {
+            const days = new Set(r.photos.map((p) => dayKey(p.takenAtMs as number, NH)));
+            expect(days.size).toBeLessThanOrEqual(1);
+            const end = reportEndMs(r);
+            if (end !== undefined && days.size === 1) expect([...days][0]).toBe(dayKey(end, NH));
+          }
+        },
+      ),
+    );
   });
 });

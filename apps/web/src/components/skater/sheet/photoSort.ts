@@ -9,11 +9,19 @@
  * no time joins its lake's first dated tab. A sort happens only when at least one photo names a
  * lake: with none, there is nothing to sort by, and the photos stay in the pool for the author.
  *
+ * Two doors lead here. Photos the day couldn't place reach the sort from the pool (`PhotoSorter`,
+ * after a lookup per place); photos only their **place** put on a Report — on its lake, but outside
+ * its window or on a Report with no window yet — are sorted as they are added
+ * (`addPhotosByLakeAndDay`), the Report's lake standing in for the lookup.
+ *
  * Nothing here is a statement about the ice (D3): a tab is where and when the photos were taken.
  */
 
 import {
+  addPostPhotos,
   assignCandidates,
+  assignPhoto,
+  type DraftPhoto,
   type LatLng,
   type Mint,
   movePhotoToReport,
@@ -266,4 +274,77 @@ export function applyPhotoTabs(
     firstReportId ??= target.id;
   }
   return { post: next, firstReportId };
+}
+
+/**
+ * Add photos to a Post being written (5.17.1, c-m8jjbe): the day's rules first (`addPostPhotos`),
+ * then a second look at the photos only their place put on a Report. The place says which lake, not
+ * which day: a photo from Thursday on the lake of Saturday's Report — or two days' photos on a
+ * Report with no end yet — would otherwise post as one visit on one day. Those photos are sorted
+ * into one tab per lake and day, each tab finding the Report already on that lake and day (or with
+ * no end yet), else a new one.
+ *
+ * A lake is sorted only when its photos disagree with the day — a photo off its Report's day, or a
+ * Report with no end holding more than one day — so the common case (one visit's photos, added
+ * after the lake) lands exactly as before, its end left for the author. Photos the time placed,
+ * undated photos and the pool are untouched, and only the photos being added are looked at: what
+ * the author placed earlier stays theirs. An edit has one Report and adds no other, so it is the
+ * plain add. Returns the tabs for the line that says what happened (`sortNote`).
+ */
+export function addPhotosByLakeAndDay(
+  post: PostSheet,
+  photos: readonly DraftPhoto[],
+  opts: { timeZone: string; now: number; mint: Mint; outlines: Outlines },
+): { post: PostSheet; tabs: PhotoTab[] } {
+  const candidates = assignCandidates(post, opts.outlines);
+  const added = addPostPhotos(post, photos, candidates);
+  if (post.mode.kind !== 'create') return { post: added, tabs: [] };
+
+  // The dated photos only a lake put on a Report, by that lake.
+  const byLake = new Map<
+    string,
+    { lake: SortLake; rows: { photo: DraftPhoto; report: SheetReport }[] }
+  >();
+  for (const photo of photos) {
+    if (photo.takenAtMs === undefined) continue;
+    const to = assignPhoto(photo, candidates);
+    if (to?.by !== 'location') continue;
+    const report = post.reports.find((r) => r.id === to.reportId) as SheetReport;
+    // A box is only known for a Report with a lake: `assignCandidates` keys it by the lake.
+    const waterBodyId = report.sheet.waterBodyId as string;
+    let group = byLake.get(waterBodyId);
+    if (!group) {
+      group = { lake: { waterBodyId, name: report.bodyName ?? '' }, rows: [] };
+      byLake.set(waterBodyId, group);
+    }
+    group.rows.push({ photo, report });
+  }
+
+  const routed: SortablePhoto[] = [];
+  const lakeOfPhoto = new Map<string, SortLake>();
+  for (const { lake, rows } of byLake.values()) {
+    const daysOn = new Map<string, Set<string>>();
+    for (const { photo, report } of rows) {
+      const days = daysOn.get(report.id) ?? new Set<string>();
+      days.add(dayKey(photo.takenAtMs as number, opts.timeZone));
+      daysOn.set(report.id, days);
+    }
+    const offDay = rows.some(({ photo, report }) => {
+      const end = reportEndMs(report);
+      if (end === undefined) return (daysOn.get(report.id) as Set<string>).size > 1;
+      return dayKey(photo.takenAtMs as number, opts.timeZone) !== dayKey(end, opts.timeZone);
+    });
+    if (!offDay) continue;
+    for (const { photo } of rows) {
+      routed.push(photo);
+      lakeOfPhoto.set(photo.id, lake);
+    }
+  }
+  if (routed.length === 0) return { post: added, tabs: [] };
+
+  const tabs = sortPhotosIntoTabs(routed, (p) => lakeOfPhoto.get(p.id) as SortLake, opts.timeZone);
+  // No blank Report is answered: these photos already have their lake, and a blank tab is the
+  // author's to fill.
+  const out = applyPhotoTabs(added, tabs, { ...opts, activeId: '' });
+  return { post: out.post, tabs };
 }

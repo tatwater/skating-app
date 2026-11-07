@@ -78,7 +78,7 @@ import { GooglePhotosSlot } from './GooglePhotos';
 import { GpxImport, ingestMessage, seedFromTrack } from './GpxImport';
 import { HazardSheetFrame } from './HazardSheetFrame';
 import { useInstrumentHeld } from './instrumentLease';
-import { PhotoSorter } from './PhotoSorter';
+import { addSheetPhotos, PhotoSorter } from './PhotoSorter';
 import { PhotoTileMenu } from './PhotoTileMenu';
 import { carryHazard, StackedHazard } from './StackedHazard';
 import { SheetContainerProvider } from './sheetSlots';
@@ -738,6 +738,44 @@ describe('PhotoSorter', () => {
     };
     render(<PhotoSorter post={noPlace} activeId="x" onActivate={vi.fn()} />);
     expect(h.convexQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so when photos added after the lake are from two days, and sorts them without a lookup', async () => {
+    setSheet(lakeSheet());
+    function Live() {
+      const current = useSheet();
+      return current ? <PhotoSorter post={current} activeId="x" onActivate={vi.fn()} /> : null;
+    }
+    render(<Live />);
+    const on = { lat: 43.61, lng: -72.12 };
+    const photo = (id: string, takenAtMs: number) => ({
+      id,
+      fullUri: id,
+      thumbUri: id,
+      placeOnMap: false,
+      coord: on,
+      takenAtMs,
+    });
+    act(() =>
+      addSheetPhotos([photo('then', NOW - 2 * 86_400_000), photo('now', NOW)], { mascoma: POLY }),
+    );
+    expect(
+      await screen.findByText(
+        'Your 2 photos were taken on one lake over two days, so they start two reports, one per tab. A photo’s number is its tab.',
+      ),
+    ).toBeInTheDocument();
+    let sheet: PostSheet | null = null;
+    render(<SheetProbe onSheet={(p) => (sheet = p)} />);
+    expect((sheet as PostSheet | null)?.reports.map((r) => r.photos.map((p) => p.id))).toEqual([
+      ['then'],
+      ['now'],
+    ]);
+    expect(h.convexQuery).not.toHaveBeenCalled();
+    // One visit's photos: no line.
+    act(() => setSheet(lakeSheet()));
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    act(() => addSheetPhotos([photo('one', NOW)], { mascoma: POLY }));
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });
 

@@ -9,8 +9,6 @@ import { faPlus } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
-  addPostPhotos,
-  assignCandidates,
   type DraftPhoto,
   POST_TITLE_MAX_CHARS,
   type PostSheet,
@@ -27,6 +25,7 @@ import { useBodyOutlines } from '@/lib/bodyOutlines';
 import { addSheetPhoto, releaseSheetPhoto, sheetPhotoPreview } from '@/lib/sheetPhotos';
 import { updateSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
+import { addSheetPhotos } from './PhotoSorter';
 import { useSheetSlots } from './sheetSlots';
 
 /**
@@ -158,7 +157,7 @@ function PhotoStrip({
           updateReport(p, activeReport.id, (r) => ({ ...r, photos: [...r.photos, ...drafts] })),
         );
       } else {
-        updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines)));
+        addSheetPhotos(drafts, outlines);
       }
       capture('report_photos_added', { source: 'device', count: drafts.length });
     } catch {
@@ -218,8 +217,7 @@ function PhotoStrip({
         {tiles.length === 0 && !editing && googlePhotos !== undefined
           ? googlePhotos({
               disabled: busy,
-              onPhotos: (drafts) =>
-                updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines))),
+              onPhotos: (drafts) => addSheetPhotos(drafts, outlines),
             })
           : null}
         <input

@@ -1,12 +1,18 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
-import { type LatLng, type PostSheet, unassignedPhotos } from '@skating/core';
+import { type DraftPhoto, type LatLng, type PostSheet, unassignedPhotos } from '@skating/core';
 import { useConvex } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
 import { useBodyOutlines } from '@/lib/bodyOutlines';
 import { updateSheet } from '@/lib/sheetStore';
-import { applyPhotoTabs, type SortLake, sortNote, sortPhotosIntoTabs } from './photoSort';
+import {
+  addPhotosByLakeAndDay,
+  applyPhotoTabs,
+  type SortLake,
+  sortNote,
+  sortPhotosIntoTabs,
+} from './photoSort';
 
 /** Photos a hundred meters apart are one lookup: the lake under them is the same. */
 export function coordKey(c: LatLng): string {
@@ -15,13 +21,36 @@ export function coordKey(c: LatLng): string {
 
 const mint = () => crypto.randomUUID();
 
+/** The mounted sorter's line, for a sort that happened as photos were added. */
+const noteListeners = new Set<(note: string) => void>();
+
+/**
+ * Photos added to the sheet being written, from any door (the cards, the strip, Google Photos):
+ * the day's rules, then one tab per lake and day for the ones only their place put on a Report
+ * (`addPhotosByLakeAndDay`) — and the line that says so, when that made more than one tab.
+ */
+export function addSheetPhotos(
+  drafts: readonly DraftPhoto[],
+  outlines: Parameters<typeof addPhotosByLakeAndDay>[2]['outlines'],
+): void {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let note: string | null = null;
+  updateSheet((p) => {
+    const out = addPhotosByLakeAndDay(p, drafts, { timeZone, now: Date.now(), mint, outlines });
+    note = sortNote(out.tabs);
+    return out.post;
+  });
+  if (note !== null) for (const listener of noteListeners) listener(note);
+}
+
 /**
  * The EXIF sort, connected (5.17.1): photos the day couldn't put on a Report land in the Post's
  * pool; the ones with a place are looked up against the corpus (`resolveBodyForCoord`, one bounded
  * read per spot), sorted into one tab per lake and day, and laid onto the Post — the blank Report
  * answered, a Report opened for each other lake and day. Each photo is sorted once, when it
  * arrives while the sheet is open: a tab the author removes doesn't come back, and a restored
- * draft's pool stays the author's. Then the line that says what happened.
+ * draft's pool stays the author's. Then the line that says what happened — also for photos sorted
+ * as they were added (`addSheetPhotos`), which never reach the pool.
  */
 export function PhotoSorter({
   post,
@@ -35,6 +64,12 @@ export function PhotoSorter({
   const convex = useConvex();
   const outlines = useBodyOutlines();
   const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    noteListeners.add(setNote);
+    return () => {
+      noteListeners.delete(setNote);
+    };
+  }, []);
   const creating = post.mode.kind === 'create';
   const pool = creating ? unassignedPhotos(post) : [];
   // What the pool already held when the sheet opened (a restored draft's `?` photos) is the
