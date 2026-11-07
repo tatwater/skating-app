@@ -1156,14 +1156,46 @@ export const refileToFootprintBody = internalMutation({
     const now = { was, wasName, now: matchId, nowName: byId.get(matchId)?.name ?? null };
     if (!apply) return { moved: false as const, reason: 'dry-run', ...now };
 
+    // **The shape is re-clipped against the lake it is moving to.** `clippedFootprint` and `bbox`
+    // are both derived from the body's polygon at create (`insertHazard`), so a refile that moved
+    // only the id would leave the pin wearing the old lake's shape. Two ways that goes wrong, and
+    // the repair's own case is the first: a pin filed under a distant body never overlapped it, so
+    // no clip was stored and the halo is the *whole* footprint — once it is on the real lake, that
+    // circle crosses the shore it should have been trimmed at. The other way is worse: a pin that
+    // was legitimately near the old lake's shore carries a polygon clipped to *that* shoreline, and
+    // every reader prefers a stored clip to the live footprint.
+    //
+    // So rebuild from the raw geometry, which never moved, and clip it against the destination.
+    // `clipFootprintToBody` answers null for "no clip needed" and `undefined` in a patch removes
+    // the field, so a stale clip is cleared rather than left behind. The bbox comes from the *same*
+    // polygon that gets stored, as it does at create — it is the index prefilter, the drawn halo
+    // and the measured distance, and those three may never disagree (D3).
+    const shape: HazardShape = {
+      geometryKind: hazard.geometryKind,
+      geometry: hazard.geometry as HazardShape['geometry'],
+      ...(hazard.radiusMeters !== undefined ? { radiusMeters: hazard.radiusMeters } : {}),
+      ...(hazard.bufferMeters !== undefined ? { bufferMeters: hazard.bufferMeters } : {}),
+    };
+    const clippedFootprint = clipFootprintToBody(
+      hazardFootprint(shape),
+      byId.get(matchId)?.polygon as Polygon | MultiPolygon,
+    );
+    const bbox = hazardBbox(shape, clippedFootprint);
+
     // **The bay stamp moves with the lake.** `subAreaId`/`subAreaName` were resolved at create
     // against the *old* body's bays (`insertHazard`), so carrying them over would have the card say
     // "Far Pond — North Bay" with North Bay a bay of Mascoma. Re-resolved the same way the write
-    // path resolves it, and cleared when the new lake has no bay under the pin — `undefined` in a
-    // patch removes the field, which is what "this pin is in no named bay" means.
-    const subArea = await resolveSubAreaForPoint(ctx, matchId, center);
+    // path resolves it — at the *new* bbox's center, since re-clipping may have moved it, and the
+    // create path measures the bay at the center of the bbox it stores — and cleared when the new
+    // lake has no bay under the pin.
+    const subArea = await resolveSubAreaForPoint(ctx, matchId, {
+      lat: (bbox.minLat + bbox.maxLat) / 2,
+      lng: (bbox.minLng + bbox.maxLng) / 2,
+    });
     await ctx.db.patch(hazardId, {
       waterBodyId: matchId,
+      bbox,
+      clippedFootprint: clippedFootprint ?? undefined,
       subAreaId: subArea?.subAreaId,
       subAreaName: subArea?.subAreaName,
     });

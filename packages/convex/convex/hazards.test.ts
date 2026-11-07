@@ -1,5 +1,6 @@
 import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
+import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
@@ -1789,10 +1790,12 @@ describe('hazards.refileToFootprintBody', () => {
     t: ReturnType<typeof convexTest>,
     filedUnder: Id<'waterBodies'>,
     at: { lat: number; lng: number },
+    extra: { clippedFootprint?: Polygon } = {},
   ) {
     const author = (await seedUser(t, 'author')).id;
     return t.run((ctx) =>
       ctx.db.insert('hazards', {
+        ...(extra.clippedFootprint ? { clippedFootprint: extra.clippedFootprint } : {}),
         waterBodyId: filedUnder,
         type: 'open_water' as const,
         geometryKind: 'point_radius' as const,
@@ -1828,6 +1831,67 @@ describe('hazards.refileToFootprintBody', () => {
     const out = await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
     expect(out).toMatchObject({ moved: true, reason: 'refiled', was: elsewhere, now: here });
     expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ waterBodyId: here });
+  });
+
+  test('the pin is re-clipped to the lake it lands on: the halo stops at the new shore', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    // 10 m inside Mascoma's east shore, so the 40 m footprint reaches ~30 m past it. Filed under a
+    // lake 150 km away, it never overlapped anything at create, so no clip was ever stored — the
+    // halo is the whole circle, and refiling the id alone would draw it straight over dry land.
+    const eastShore = -72.13 + 0.01;
+    const lngPerM = DEG_PER_M / Math.cos((43.61 * Math.PI) / 180);
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: eastShore - 10 * lngPerM });
+    const before = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(before?.clippedFootprint).toBeUndefined();
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+
+    const after = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(after?.waterBodyId).toBe(here);
+    // Clipped now, and the stored bbox — the index prefilter and the drawn halo are one shape —
+    // stops at the shore instead of running 30 m past it.
+    expect(after?.clippedFootprint).toBeDefined();
+    expect(after?.bbox.maxLng).toBeLessThanOrEqual(eastShore + 1e-9);
+  });
+
+  test('a clip from the old lake is cleared, not carried onto the new one', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    // The worse case: the pin was near Far Pond's shore once, so it carries a polygon clipped to
+    // *that* shoreline. Every reader prefers a stored clip to the live footprint, so carrying it
+    // over would draw a 150 km-away shoreline's shape on Mascoma.
+    const staleClip: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-73.871, 42.609],
+          [-73.869, 42.609],
+          [-73.869, 42.611],
+          [-73.871, 42.611],
+          [-73.871, 42.609],
+        ],
+      ],
+    };
+    // Well inside Mascoma, so the footprint needs no clip at all there.
+    const hazardId = await strayHazard(
+      t,
+      elsewhere,
+      { lat: 43.61, lng: -72.13 },
+      {
+        clippedFootprint: staleClip,
+      },
+    );
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+
+    const after = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(after?.waterBodyId).toBe(here);
+    expect(after?.clippedFootprint).toBeUndefined();
+    // And the bbox is the footprint's own, not the old lake's clip — 150 km of latitude apart.
+    expect(after?.bbox.minLat).toBeGreaterThan(43.6);
   });
 
   test('says nothing until asked: a dry run reports the move and writes nothing', async () => {
