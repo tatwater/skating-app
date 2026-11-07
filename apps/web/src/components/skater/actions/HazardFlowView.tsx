@@ -207,6 +207,7 @@ export function HazardFlowView(props: HazardFlowViewProps) {
       )}
 
       <div
+        data-slot="hazard-flow-foot"
         className={cn(
           'flex items-center justify-between gap-(--space-2_5) border-0 border-t border-solid border-line pt-(--space-3)',
           placing && 'opacity-50',

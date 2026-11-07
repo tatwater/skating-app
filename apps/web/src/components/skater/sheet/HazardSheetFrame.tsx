@@ -229,7 +229,7 @@ export function HazardSheetChrome({
           className={cn(
             'flex w-[29.25rem] shrink-0 flex-col overflow-y-auto px-(--space-6) pt-(--space-5_5)',
             // The flow's foot (Cancel, Post hazard) rests at the pane's foot, as the report's does.
-            '[&>[data-slot=hazard-flow]]:min-h-full [&>[data-slot=hazard-flow]>:last-child]:sticky [&>[data-slot=hazard-flow]>:last-child]:bottom-0 [&>[data-slot=hazard-flow]>:last-child]:mt-auto [&>[data-slot=hazard-flow]>:last-child]:bg-bg [&>[data-slot=hazard-flow]>:last-child]:pb-(--space-4)',
+            '[&>[data-slot=hazard-flow]]:min-h-full [&_[data-slot=hazard-flow-foot]]:sticky [&_[data-slot=hazard-flow-foot]]:bottom-0 [&_[data-slot=hazard-flow-foot]]:mt-auto [&_[data-slot=hazard-flow-foot]]:bg-bg [&_[data-slot=hazard-flow-foot]]:pb-(--space-4)',
           )}
         >
           {children}

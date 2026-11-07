@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EMPTY_HAZARD_DRAFT, type HazardDraft } from '@/stores/hazardDraftStore';
@@ -51,6 +51,17 @@ describe('the type picker (3.1)', () => {
     const post = screen.getByRole('button', { name: 'Post hazard' });
     fireEvent.click(post);
     expect(p.onPost).not.toHaveBeenCalled();
+  });
+
+  it('Cancel and Post sit in the named foot, the last thing in the flow', () => {
+    render(<HazardFlowView {...props()} />);
+    const flow = document.querySelector('[data-slot="hazard-flow"]');
+    const foot = document.querySelector('[data-slot="hazard-flow-foot"]');
+    expect(foot).not.toBeNull();
+    expect(flow?.lastElementChild).toBe(foot);
+    const inFoot = within(foot as HTMLElement);
+    expect(inFoot.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(inFoot.getByRole('button', { name: 'Post hazard' })).toBeInTheDocument();
   });
 
   it('the optional questions fold until opened', () => {
