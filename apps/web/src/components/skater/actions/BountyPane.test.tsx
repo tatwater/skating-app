@@ -90,11 +90,28 @@ describe('refused (3.11)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('a dropped connection reads as one', async () => {
+  it('a dropped connection reads as one, and the same ask can be sent again', async () => {
+    fakes.queries.set('subAreas:listForBody', undefined);
+    actions.create = vi.fn().mockRejectedValueOnce(new Error('offline'));
+    actions.create.mockResolvedValueOnce('b_retry');
+    const { onPosted } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Post bounty' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Check your connection/);
+    // Not a refusal: on a lake without bays there is no other part to pick, so retry must work.
+    const retry = screen.getByRole('button', { name: 'Post bounty' });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(onPosted).toHaveBeenCalledWith('b_retry'));
+    expect(actions.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('a different part clears a connection error too', async () => {
     actions.create = vi.fn().mockRejectedValue(new Error('offline'));
     mount();
     fireEvent.click(screen.getByRole('button', { name: 'Post bounty' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Check your connection/);
+    fireEvent.click(screen.getByRole('radio', { name: 'Mascoma North' }));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('at the limit, it says so before you press', () => {

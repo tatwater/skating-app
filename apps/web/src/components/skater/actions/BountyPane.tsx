@@ -24,7 +24,8 @@ import { INK_PRIMARY } from '../styles';
  * Post a bounty (boards 3.9–3.11) — "ask for fresh eyes", one confirm over the lake you're on. A
  * lake with bays asks which part; the reward and who's asked are the server's. Two refusals: the
  * skater's own open-bounty limit (known before they press, 3.11) and the server's reasons (a recent
- * report already covers it), shown as the server says them so the asker knows why.
+ * report already covers it), shown as the server says them so the asker knows why. A failed
+ * connection is not a refusal: it shows its line, and Post bounty stays pressable to try again.
  *
  * Copy asks for a report; it never suggests the ice is or isn't anything (D3).
  */
@@ -46,8 +47,10 @@ export interface BountyViewProps {
   /** `''` is the whole lake. */
   choice: string;
   limit: BountyLimit | null;
-  /** The server's refusal, verbatim. */
+  /** The server's refusal, verbatim: terminal for this ask, so Post bounty is disabled. */
   refusal: string | null;
+  /** A failed connection's line: shown like a refusal, but the ask can be sent again. */
+  error?: string | null;
   pending: boolean;
   container?: HTMLElement | null;
   /** Modal in the app; a side-by-side story confines each quad's dialog to its quad instead. */
@@ -76,6 +79,7 @@ export function BountyView({
   choice,
   limit,
   refusal,
+  error = null,
   pending,
   container,
   modal = true,
@@ -84,6 +88,7 @@ export function BountyView({
   onClose,
 }: BountyViewProps) {
   const refused = refusal ?? limitRefusal(limit);
+  const notice = refused ?? error;
   return (
     <Dialog open modal={modal} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -140,14 +145,14 @@ export function BountyView({
             <li>Only if the lake doesn’t already have a recent report.</li>
             <li>{limitLine(limit)}</li>
           </ul>
-          {refused !== null && (
+          {notice !== null && (
             <div
               role="alert"
               data-slot="bounty-refused"
               className="flex gap-(--space-2_5) border border-s-2 border-solid border-line2 border-s-fg1 bg-raise p-(--space-3) text-row text-fg"
             >
               <FontAwesomeIcon icon={faCircleInfo} aria-hidden="true" className="mt-0.5 text-fg1" />
-              <span className="[text-wrap:pretty]">{refused}</span>
+              <span className="[text-wrap:pretty]">{notice}</span>
             </div>
           )}
         </DialogBody>
@@ -195,11 +200,13 @@ export function BountyPane({
   const bays = (subAreas ?? []).filter((s) => !s.removed).map((s) => ({ id: s._id, name: s.name }));
   const [choice, setChoice] = useState(subAreaId ?? '');
   const [refusal, setRefusal] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const post = async () => {
     setPending(true);
     setRefusal(null);
+    setError(null);
     try {
       const id = await create({
         waterBodyId: bodyId,
@@ -207,12 +214,11 @@ export function BountyPane({
       });
       capture('bounty_posted', { scoped_to_sub_area: choice !== '' });
       onPosted(String(id));
-    } catch (error) {
-      setRefusal(
-        error instanceof ConvexError
-          ? String(error.data)
-          : 'Couldn’t post the bounty. Check your connection and try again.',
-      );
+    } catch (failure) {
+      // The server's refusal (a ConvexError) stands for this ask; anything else is the trip
+      // there failing, and the same ask may well go through on the next press.
+      if (failure instanceof ConvexError) setRefusal(String(failure.data));
+      else setError('Couldn’t post the bounty. Check your connection and try again.');
     } finally {
       setPending(false);
     }
@@ -225,11 +231,13 @@ export function BountyPane({
       choice={choice}
       limit={limit ?? null}
       refusal={refusal}
+      error={error}
       pending={pending}
       onChoose={(next) => {
         setChoice(next);
         // A refusal was about the part asked for; a different part is a different ask.
         setRefusal(null);
+        setError(null);
       }}
       onPost={() => void post()}
       onClose={onClose}
