@@ -10,19 +10,19 @@
  * reading came from.** The reading was not merely coarse; it described a spot that is not any of
  * the destinations.
  *
- * ## The rule (founder call, 2026-09-11)
+ * ## The rule (founder call, 2026-11-08 — reversing 2026-09-11)
  *
- * **A giant opens pre-selected on its most prominent bay, with a switcher.** The effective sub-area
- * is:
+ * **A lake opens on the whole lake, with a switcher.** The effective sub-area is:
  *
  * 1. the route's `?sub=` (`focusSubAreaId`) when it names a live bay of this body — a search hit or
  *    a switcher tap, both explicit;
- * 2. else the highest-`displayScore` bay — *implicitly*, and the caller must never write that
- *    default back to the URL, or opening a lake would be a navigation;
- * 3. else `null`: a body with no bays is its own place, and the panel reads its anchor.
+ * 2. else `null`: the whole lake, and the panel reads the lake's own anchor. A `?sub=` naming a bay
+ *    delisted since the link was made, or another lake's, lands here too.
  *
- * `displayScore` rather than area: it is A02's D49 curve over area *plus* curation, so a curated
- * Malletts Bay beats a larger, unloved reach — which is the point of having curated at all.
+ * The 2026-09-11 call pre-selected a giant's most prominent bay (highest `displayScore`) instead.
+ * The web tab was built to the whole-lake default, and the founder kept that (2026-11-08) so web
+ * and mobile open a lake on the same place: nothing is pre-chosen for the skater, and a bay is
+ * always one they asked for.
  *
  * ## Why this is one function in core
  *
@@ -34,32 +34,19 @@
 
 export interface WeatherSubAreaCandidate {
   _id: string;
-  name: string;
-  displayScore: number;
   removed?: boolean;
 }
 
 /**
- * The bay a body's weather should be about, or `null` for a body that is its own place.
- * Deterministic on ties (higher score, then name) so two renders cannot pick two bays.
+ * The bay a body's weather should be about, or `null` for the whole lake: the focused bay when it
+ * is a live one of these, and nothing implicit otherwise.
  */
 export function resolveWeatherSubArea<T extends WeatherSubAreaCandidate>(
   subAreas: readonly T[] | undefined,
   focusSubAreaId: string | undefined,
 ): T | null {
-  if (!subAreas || subAreas.length === 0) return null;
-  const live = subAreas.filter((s) => s.removed !== true);
-  if (live.length === 0) return null;
-  if (focusSubAreaId) {
-    const focused = live.find((s) => s._id === focusSubAreaId);
-    if (focused) return focused;
-  }
-  let best = live[0] as T;
-  for (const s of live) {
-    if (s.displayScore > best.displayScore) best = s;
-    else if (s.displayScore === best.displayScore && s.name.localeCompare(best.name) < 0) best = s;
-  }
-  return best;
+  if (!subAreas || !focusSubAreaId) return null;
+  return subAreas.find((s) => s._id === focusSubAreaId && s.removed !== true) ?? null;
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   type ForecastPlanDay,
   type ForecastPlanHour,
   type PanelDay,
+  resolveWeatherSubArea,
   subAreaWeatherPoint,
   type TemperatureLayer,
   windSectorOf,
@@ -54,12 +55,16 @@ export function showWeatherAt(places: readonly WeatherPlace[]): boolean {
   return places.length >= 2;
 }
 
-/** The place being read: the bay in view when it is one of the lake's, else the whole lake. */
+/**
+ * The place being read: the bay in view when it is one of the lake's, else the whole lake — core's
+ * `resolveWeatherSubArea`, the rule mobile resolves with too, so the two open a lake on one place.
+ */
 export function selectedPlace(
   places: readonly WeatherPlace[],
   subAreaId: string | undefined,
 ): WeatherPlace {
-  return places.find((p) => p.id !== null && p.id === subAreaId) ?? WHOLE_LAKE;
+  const bays = places.flatMap((p) => (p.id === null ? [] : [{ _id: p.id, place: p }]));
+  return resolveWeatherSubArea(bays, subAreaId)?.place ?? WHOLE_LAKE;
 }
 
 type LatLng = { lat: number; lng: number };

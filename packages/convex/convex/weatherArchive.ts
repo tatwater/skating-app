@@ -2241,8 +2241,8 @@ export const sampleCoverage = internalQuery({
     if (!body || body.removedAt) return null;
 
     // **A bay, when the client asked for one and it is really a live bay of this lake.** The client
-    // resolves *which* bay (`resolveWeatherSubArea` in core — the route's `?sub=` or the most
-    // prominent); this side only refuses an id that is delisted or belongs to another body
+    // resolves *which* bay (`resolveWeatherSubArea` in core — the route's `?sub=`, else none: the
+    // whole lake); this side only refuses an id that is delisted or belongs to another body
     // (`liveSubAreaOf`, shared with the forecast), and then answers for the lake rather than
     // erroring, because a stale deep link is not a fault a skater can act on. A bay is its own
     // place, so the "one sample for a large body" caveat does not apply to it — that caveat is
