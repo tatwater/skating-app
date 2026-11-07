@@ -159,17 +159,17 @@ export function LakeMap({
                 <path
                   d={seg.d}
                   fill="none"
-                  stroke={lit ? 'var(--primary)' : 'var(--border-strong)'}
+                  stroke={lit ? 'var(--acc)' : 'var(--line2)'}
                   strokeOpacity={lit ? 1 : 0.6}
                   strokeWidth={lit ? 3 : 1}
-                  style={lit ? { filter: 'drop-shadow(0 0 5px var(--ring))' } : undefined}
+                  style={lit ? { filter: 'drop-shadow(0 0 5px var(--acc-glow))' } : undefined}
                 />
                 <line
                   x1={seg.tick[0][0]}
                   y1={seg.tick[0][1]}
                   x2={seg.tick[1][0]}
                   y2={seg.tick[1][1]}
-                  stroke="var(--border-strong)"
+                  stroke="var(--line2)"
                   strokeWidth={1}
                 />
                 <text
@@ -177,29 +177,29 @@ export function LakeMap({
                   y={seg.label[1] + 3.5}
                   textAnchor="middle"
                   fontSize={9.5}
-                  fontFamily="ui-monospace, Menlo, monospace"
+                  fontFamily="var(--family-mono)"
                   fontWeight={lit ? 700 : 400}
-                  fill={lit ? 'var(--primary)' : 'var(--foreground-muted)'}
+                  fill={lit ? 'var(--acc)' : 'var(--fg2)'}
                 >
                   {seg.sector}
                 </text>
               </g>
             );
           })}
-          <circle cx={compass.cx} cy={compass.cy} r={3} fill="none" stroke="var(--border-strong)" />
+          <circle cx={compass.cx} cy={compass.cy} r={3} fill="none" stroke="var(--line2)" />
         </g>
       ) : null}
-      <path d={outline} fill="var(--surface-muted)" fillRule="evenodd" />
+      <path d={outline} fill="var(--panel)" fillRule="evenodd" />
       <g clipPath={`url(#${clipId})`}>
         {data.bayRing ? (
-          <path d={ringToPath(data.bayRing, p)} fill="var(--primary)" fillOpacity={0.12} />
+          <path d={ringToPath(data.bayRing, p)} fill="var(--acc)" fillOpacity={0.12} />
         ) : null}
-        {highlight ? <path d={highlight} fill="var(--primary)" fillOpacity={0.22} /> : null}
+        {highlight ? <path d={highlight} fill="var(--acc)" fillOpacity={0.22} /> : null}
         {sector === 'near_shore' ? (
           <path
             d={outline}
             fill="none"
-            stroke="var(--primary)"
+            stroke="var(--acc)"
             strokeOpacity={0.22}
             strokeWidth={NEAR_SHORE_STROKE_PX * 1.6}
           />
@@ -208,7 +208,7 @@ export function LakeMap({
           <path
             d={skate}
             fill="none"
-            stroke="var(--foreground)"
+            stroke="var(--fg)"
             strokeOpacity={0.85}
             strokeWidth={1.4}
             strokeDasharray="3 3"
@@ -217,19 +217,19 @@ export function LakeMap({
           />
         ) : null}
       </g>
-      <path d={outline} fill="none" stroke="var(--foreground)" strokeWidth={1.3} />
+      <path d={outline} fill="none" stroke="var(--fg)" strokeWidth={1.3} />
       {placed ? (
         <g>
           <circle
             cx={placed[0]}
             cy={placed[1]}
             r={placedR}
-            fill="var(--primary)"
+            fill="var(--acc)"
             fillOpacity={0.18}
-            stroke="var(--primary)"
+            stroke="var(--acc)"
             strokeWidth={1}
           />
-          <circle cx={placed[0]} cy={placed[1]} r={2.5} fill="var(--primary)" />
+          <circle cx={placed[0]} cy={placed[1]} r={2.5} fill="var(--acc)" />
         </g>
       ) : null}
       {hazards.map((h, i) => {
@@ -243,7 +243,7 @@ export function LakeMap({
                   y1={y - 3}
                   x2={x + 6}
                   y2={y + 3}
-                  stroke="var(--danger)"
+                  stroke="var(--bad)"
                   strokeWidth={1.6}
                 />
                 <line
@@ -251,7 +251,7 @@ export function LakeMap({
                   y1={y + 3}
                   x2={x + 6}
                   y2={y - 3}
-                  stroke="var(--danger)"
+                  stroke="var(--bad)"
                   strokeWidth={1.6}
                   strokeOpacity={0.5}
                 />
@@ -259,13 +259,13 @@ export function LakeMap({
             ) : (
               <path
                 d={`M ${x} ${y - 6} L ${x + 6} ${y + 5} L ${x - 6} ${y + 5} Z`}
-                fill="var(--background)"
-                stroke="var(--danger)"
+                fill="var(--bg)"
+                stroke="var(--bad)"
                 strokeWidth={1.4}
               />
             )}
             {i < LABELED_HAZARDS ? (
-              <text x={x + 10} y={y + 4} fontSize={9.5} fill="var(--foreground-muted)">
+              <text x={x + 10} y={y + 4} fontSize={9.5} fill="var(--fg2)">
                 {h.label}
               </text>
             ) : null}
@@ -281,19 +281,19 @@ export function LakeMap({
               y={y - 4}
               width={8}
               height={8}
-              fill="var(--background)"
-              stroke="var(--foreground)"
+              fill="var(--bg)"
+              stroke="var(--fg)"
               strokeWidth={1.2}
             />
-            <circle cx={x} cy={y} r={1.3} fill="var(--foreground)" />
+            <circle cx={x} cy={y} r={1.3} fill="var(--fg)" />
           </g>
         );
       })}
       {dots.map(({ pin, x, y }) => {
         const chosen = pin.id === chosenPinId;
         const lit = chosen || litPins;
-        const stroke = lit ? 'var(--primary)' : 'var(--foreground-muted)';
-        const fill = chosen ? 'var(--primary)' : 'var(--background)';
+        const stroke = lit ? 'var(--acc)' : 'var(--fg2)';
+        const fill = chosen ? 'var(--acc)' : 'var(--bg)';
         return (
           <g key={pin.id}>
             {pin.kind === 'parking' ? (
@@ -311,7 +311,7 @@ export function LakeMap({
                 fill={fill}
                 stroke={stroke}
                 strokeWidth={1.25}
-                style={lit ? { filter: 'drop-shadow(0 0 5px var(--ring))' } : undefined}
+                style={lit ? { filter: 'drop-shadow(0 0 5px var(--acc-glow))' } : undefined}
               />
             )}
             {pin.label ? (
@@ -319,7 +319,7 @@ export function LakeMap({
                 x={x + 9}
                 y={y + 4}
                 fontSize={10}
-                fill={chosen ? 'var(--foreground)' : 'var(--foreground-muted)'}
+                fill={chosen ? 'var(--fg)' : 'var(--fg2)'}
                 fontWeight={chosen ? 600 : 400}
               >
                 {pin.label}
@@ -340,7 +340,8 @@ export function LakeMap({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="block w-full cursor-crosshair rounded-[2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      data-attr="lake-map"
+      className="block w-full cursor-crosshair rounded-control border-0 bg-transparent p-0 outline-none focus-visible:shadow-focus"
     >
       {svg}
     </button>

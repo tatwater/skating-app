@@ -76,7 +76,7 @@ describe('WhereCards', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
     fireEvent.click(screen.getByRole('button', { name: 'East side' }));
-    expect(screen.getByRole('button', { name: '◆ East side' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'East side' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
