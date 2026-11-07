@@ -21,6 +21,7 @@ import { DataSection, type ExportRow } from './DataSection';
 import { type AddressSuggestion, type SuggestFn, useAddressSuggestions } from './geocoder';
 import { HomeSection, type HomeView, type LocateState } from './HomeSection';
 import { NotificationsSection, radiusPatch } from './NotificationsSection';
+import { ProfilePhoto } from './ProfilePhoto';
 import { ProfileSection } from './ProfileSection';
 import { ReportingSection } from './ReportingSection';
 import { SettingsFrame } from './SettingsFrame';
@@ -29,6 +30,7 @@ import { SupportSection, type SupportState, type SupportTopic } from './SupportS
 import type { SettingsSection } from './sections';
 import { useChangeEmail } from './useChangeEmail';
 import { useGuardedSignOut } from './useGuardedSignOut';
+import { useProfilePhoto } from './useProfilePhoto';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? 'web';
 
@@ -172,8 +174,10 @@ function Account({
 
 function YourProfile({ profile }: { profile: Profile }) {
   const update = useMutation(api.profiles.updateProfile);
+  const photo = useProfilePhoto();
   return (
     <ProfileSection
+      photo={<ProfilePhoto name={profile.displayName} {...photo} />}
       town={profile.homeTownLabel ?? ''}
       bio={profile.bio ?? ''}
       isPublic={profile.profileVisibility === 'public'}

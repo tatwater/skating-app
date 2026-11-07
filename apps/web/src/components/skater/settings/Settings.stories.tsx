@@ -14,6 +14,7 @@ import { DataSection } from './DataSection';
 import type { AddressLookup, AddressSuggestion } from './geocoder';
 import { HomeSection, type HomeSectionProps, travelDays } from './HomeSection';
 import { NotificationsSection } from './NotificationsSection';
+import { ProfilePhoto, type ProfilePhotoProps } from './ProfilePhoto';
 import { ProfileSection } from './ProfileSection';
 import { ReportingSection } from './ReportingSection';
 import { SettingsFrame } from './SettingsFrame';
@@ -216,27 +217,133 @@ export const SignOutUnsentDraft: Story = {
   },
 };
 
-/** 7.4: your profile — every field saves itself. */
+const BIO =
+  'Lunchtime skater out of Hanover. Mostly Mascoma and Crystal, the odd pond when the wind has been kind.';
+
+/** A stand-in photo (no real face): drawn inline, so the story never waits on the network. */
+const PHOTO = `data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="#7f97a8"/><circle cx="40" cy="31" r="14" fill="#d9e2e8"/><ellipse cx="40" cy="74" rx="26" ry="20" fill="#d9e2e8"/></svg>',
+)}`;
+
+function profileWithPhoto(photo: Partial<ProfilePhotoProps>, container: HTMLElement | null) {
+  return (
+    <ProfileSection
+      town="Hanover, NH"
+      bio={BIO}
+      isPublic
+      canGoPublic
+      onSaveTown={async () => {}}
+      onSaveBio={async () => {}}
+      onPublicChange={() => {}}
+      photo={
+        <ProfilePhoto
+          name={KATE.name}
+          imageUrl={undefined}
+          busy={null}
+          error={null}
+          offline={false}
+          onChange={() => {}}
+          onRemove={async () => true}
+          container={container}
+          {...photo}
+        />
+      }
+    />
+  );
+}
+
+/** 7.4: your profile — every field saves itself; no photo yet, so the initials and Change photo. */
 export const YourProfile: Story = {
   args: {} as never,
-  render: () => (
-    <Frame section="profile">
-      <ProfileSection
-        town="Hanover, NH"
-        bio="Lunchtime skater out of Hanover. Mostly Mascoma and Crystal, the odd pond when the wind has been kind."
-        isPublic
-        canGoPublic
-        onSaveTown={async () => {}}
-        onSaveBio={async () => {}}
-        onPublicChange={() => {}}
-      />
-    </Frame>
-  ),
+  render: () => <Frame section="profile">{profileWithPhoto({}, null)}</Frame>,
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       await expect(within(q).queryByRole('button', { name: /Save/ })).toBeNull();
       await expect(within(q).getByRole('switch', { name: 'Public profile' })).toBeChecked();
+      await expect(within(q).getByRole('img', { name: 'Your photo' })).toHaveTextContent('KD');
+      await expect(within(q).queryByRole('button', { name: 'Remove photo' })).toBeNull();
     }
+  },
+};
+
+const removePhoto = fn(async () => true);
+
+/**
+ * 7.4 with a photo: Change photo is the section's first stop after the list; Remove photo asks
+ * first, and Esc backs out with the photo kept and focus back on Remove photo.
+ */
+export const YourProfilePhoto: Story = {
+  args: {} as never,
+  render: () => (
+    <SkaterPair height="56rem">
+      {(_mode, container) => (
+        <SettingsFrame
+          section="profile"
+          person={{ ...PERSON, imageUrl: PHOTO }}
+          onNavigate={() => {}}
+          onSignOut={() => {}}
+        >
+          {profileWithPhoto({ imageUrl: PHOTO, onRemove: removePhoto }, container)}
+        </SettingsFrame>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    removePhoto.mockClear();
+    const quad = must(quads(canvasElement)[0]);
+    // The list's last row, then Tab: the first thing in the section is Change photo.
+    within(quad).getByRole('button', { name: 'Sign out' }).focus();
+    await userEvent.tab();
+    await expect(within(quad).getByRole('button', { name: 'Change photo' })).toHaveFocus();
+    await userEvent.tab();
+    const remove = within(quad).getByRole('button', { name: 'Remove photo' });
+    await expect(remove).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    const dialog = await waitFor(() =>
+      must(quad.querySelector<HTMLElement>('[role="alertdialog"]')),
+    );
+    await expect(dialog).toHaveTextContent('Remove your photo?');
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(quad.querySelector('[role="alertdialog"]')).toBeNull());
+    await waitFor(() => expect(remove).toHaveFocus());
+    await expect(removePhoto).not.toHaveBeenCalled();
+  },
+};
+
+/** 7.4's photo states: going up (dark), refused (light), and offline under each. */
+export const YourProfilePhotoStates: Story = {
+  args: {} as never,
+  render: () => (
+    <SkaterPair height="44rem">
+      {(mode, container) => (
+        <div className="flex flex-col gap-(--space-8) p-(--space-8)">
+          {profileWithPhoto(
+            mode === 'dark'
+              ? { imageUrl: PHOTO, busy: 'uploading' }
+              : { imageUrl: PHOTO, error: 'Your photo wasn’t saved. Try again in a moment.' },
+            container,
+          )}
+          <ProfilePhoto
+            name={KATE.name}
+            imageUrl={PHOTO}
+            busy={null}
+            error={null}
+            offline
+            onChange={() => {}}
+            onRemove={async () => true}
+            container={container}
+          />
+        </div>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    const [dark, light] = quads(canvasElement).map((q) => must(q));
+    const changes = within(must(dark)).getAllByRole('button', { name: 'Change photo' });
+    await expect(changes[0]).toHaveAttribute('aria-busy', 'true');
+    await expect(changes[1]).toBeDisabled();
+    await expect(within(must(light)).getByRole('alert')).toHaveTextContent('wasn’t saved');
+    await expect(within(must(light)).getByText(/You’re offline/)).toBeInTheDocument();
   },
 };
 
