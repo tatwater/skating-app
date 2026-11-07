@@ -105,8 +105,17 @@ export function ProfilePage({
 
   const resolved = shown
     .map((b) => {
-      const d = details[b._id] as Omit<BountyDetail, 'fulfilledAt'> | null | undefined;
-      return d ? { ...d, ...(b.fulfilledAt ? { fulfilledAt: b.fulfilledAt } : {}) } : null;
+      const d = details[b._id] as
+        | Omit<BountyDetail, 'fulfilledAt' | 'fulfilledBy'>
+        | null
+        | undefined;
+      return d
+        ? {
+            ...d,
+            ...(b.fulfilledAt ? { fulfilledAt: b.fulfilledAt } : {}),
+            ...(b.fulfilledBy ? { fulfilledBy: b.fulfilledBy.displayName } : {}),
+          }
+        : null;
     })
     .filter((d): d is BountyDetail => d !== null);
   const cards = bountyCards(resolved, now);

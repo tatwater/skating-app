@@ -256,7 +256,12 @@ describe('your own profile', () => {
     );
     fakes.queries.set('bounties:myBounties', [
       { _id: 'b1', createdAt: NOW - 60_000 },
-      { _id: 'b2', createdAt: NOW - 30 * 86_400_000, fulfilledAt: NOW - 20 * 86_400_000 },
+      {
+        _id: 'b2',
+        createdAt: NOW - 30 * 86_400_000,
+        fulfilledAt: NOW - 20 * 86_400_000,
+        fulfilledBy: { displayName: 'Pat Lacasse', username: 'pat' },
+      },
       { _id: 'b3', createdAt: NOW - 40 * 86_400_000 },
     ]);
     fakes.queries.set('bounties:getDetail', ({ bountyId }: { bountyId: string }) =>
@@ -296,7 +301,8 @@ describe('your own profile', () => {
     expect(screen.getByText('Your bounties')).toBeInTheDocument();
     expect(screen.getByText('1 open')).toBeInTheDocument();
     expect(screen.getByText('Smith Pond')).toBeInTheDocument();
-    expect(screen.getByText(/Answered by/)).toBeInTheDocument();
+    // The accepted report's author, from myBounties — not the first candidate (Ana).
+    expect(screen.getByText(/Answered by/)).toHaveTextContent('Pat Lacasse');
     fireEvent.click(screen.getByRole('button', { name: 'Review on the map' }));
     expect(navigate).toHaveBeenCalledWith('/bounty/b1');
     await act(async () =>
