@@ -10,7 +10,7 @@ import { addSheetPhoto, releaseSheetPhoto } from '@/lib/sheetPhotos';
 import { StatusSquare } from './SheetPanel';
 import type { GooglePhotosSlotProps } from './sheetSlots';
 
-type Phase = 'idle' | 'waiting' | 'adding';
+export type Phase = 'idle' | 'waiting' | 'adding';
 
 /** Failed looks in a row before the page gives the pick up, and the wait between them. */
 const STATUS_MISSES = 6;
@@ -178,17 +178,37 @@ export function GooglePhotosButton({
   const g = useGooglePhotos(onPhotos);
   if (!g.available) return null;
   return (
+    <GooglePhotosView
+      phase={g.phase}
+      error={g.error}
+      {...(disabled !== undefined ? { disabled } : {})}
+      onStart={() => void g.start()}
+      onCancel={g.cancel}
+    />
+  );
+}
+
+/** What the button draws, Convex-free: idle, waiting on Google's window, or bringing photos over. */
+export function GooglePhotosView({
+  phase,
+  error,
+  disabled,
+  onStart,
+  onCancel,
+}: {
+  phase: Phase;
+  error: string | null;
+  disabled?: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
+  return (
     <>
-      {g.phase === 'idle' ? (
+      {phase === 'idle' ? (
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button
-                size="sm"
-                data-attr="google-photos"
-                disabled={disabled}
-                onClick={() => void g.start()}
-              >
+              <Button size="sm" data-attr="google-photos" disabled={disabled} onClick={onStart}>
                 From Google Photos
               </Button>
             }
@@ -204,16 +224,16 @@ export function GooglePhotosButton({
         >
           <StatusSquare state="ice" />
           <span role="status" className="font-(family-name:--family-mono) text-mono-sm text-fg1">
-            {g.phase === 'waiting' ? 'Waiting for Google Photos…' : 'Bringing your photos over…'}
+            {phase === 'waiting' ? 'Waiting for Google Photos…' : 'Bringing your photos over…'}
           </span>
-          <Button size="sm" className="ml-auto" data-attr="google-photos-cancel" onClick={g.cancel}>
+          <Button size="sm" className="ml-auto" data-attr="google-photos-cancel" onClick={onCancel}>
             Cancel
           </Button>
         </div>
       )}
-      {g.error ? (
+      {error ? (
         <p role="alert" className="m-0 basis-full text-assist leading-body text-warn">
-          {g.error}
+          {error}
         </p>
       ) : null}
     </>

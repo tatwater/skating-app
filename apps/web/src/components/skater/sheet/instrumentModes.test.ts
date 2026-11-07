@@ -8,7 +8,7 @@ import { instrumentRing, PIN_SNAP_PX, pickOnInstrument, snapPin } from './instru
 import { mapProjection, type ProjectingMap } from './instrumentProjection';
 
 /** A flat fake map: 1,000 px per degree, the origin of x at 73°W and of y at 44°N. */
-export function fakeMap(width = 600, height = 400): ProjectingMap {
+function fakeMap(width = 600, height = 400): ProjectingMap {
   const container = { clientWidth: width, clientHeight: height } as HTMLElement;
   return {
     project: ([lng, lat]) => ({ x: (lng + 73) * 1000, y: (44 - lat) * 1000 }),
@@ -93,7 +93,7 @@ describe('pickOnInstrument', () => {
   it('places a point when the map has not loaded (no ring to read)', () => {
     const { mode, onChange } = where(undefined);
     pickOnInstrument(mode, ORIGIN, { ...ctx, projection: undefined });
-    expect((onChange.mock.calls[0]?.[0] as Where).point).toBeDefined();
+    expect(onChange.mock.calls[0]?.[0]).toHaveProperty('point');
   });
 
   it('has no ring without an origin', () => {

@@ -11,12 +11,60 @@ import type { ConsoleMode } from './ConsoleMode';
 import type { InstrumentPin } from './instrumentFeatures';
 import { instrumentRing } from './instrumentPick';
 import { mapProjection, type ProjectingMap } from './instrumentProjection';
-import { patchWhere } from './WherePicker';
+import { patchWhere, SECTOR_LABELS } from './WherePicker';
 
 /** What the overlay listens to on the map: the camera and the frame. */
 export interface OverlayMap extends ProjectingMap {
   on(type: 'move' | 'resize', listener: () => void): unknown;
   off(type: 'move' | 'resize', listener: () => void): unknown;
+  /** The camera, for the where mode's framing (absent on a map that can't move). */
+  getZoom?(): number;
+  jumpTo?(camera: { center: { lng: number; lat: number }; zoom: number }): unknown;
+}
+
+/** Room between the frame's edge and the lake in the where mode: the ring, its letters, a gap. */
+export const RING_ROOM_PX = 48;
+
+/**
+ * The camera that puts the lake inside the ring (5.13): centered on its origin, zoomed so its
+ * farthest shore sits `RING_ROOM_PX` inside the frame's shorter half — the board draws the lake
+ * smaller in the where mode for exactly this. `null` when there is nothing to frame.
+ */
+export function ringCamera(
+  projection: Projection,
+  silhouette: SilhouetteData,
+  zoom: number,
+): { center: { lng: number; lat: number }; zoom: number } | null {
+  const [ox, oy] = projection.toXY([silhouette.origin.lng, silhouette.origin.lat]);
+  let far = 0;
+  for (const ring of silhouette.rings) {
+    for (const pt of ring) {
+      const [x, y] = projection.toXY(pt);
+      far = Math.max(far, Math.hypot(x - ox, y - oy));
+    }
+  }
+  const target = Math.min(projection.width, projection.height) / 2 - RING_ROOM_PX;
+  if (!(far > 0) || !(target > 0)) return null;
+  return { center: silhouette.origin, zoom: zoom + Math.log2(target / far) };
+}
+
+/** While the where mode is open, the lake sits inside the ring; leaving, the camera comes back. */
+function useRingFraming(map: OverlayMap | null, silhouette: SilhouetteData | null, on: boolean) {
+  useEffect(() => {
+    if (!on || map === null || silhouette === null || !map.getZoom || !map.jumpTo) return;
+    const before = { center: map.getCenter(), zoom: map.getZoom() };
+    const camera = ringCamera(mapProjection(map), silhouette, before.zoom);
+    if (camera === null) return;
+    map.jumpTo(camera);
+    return () => {
+      // The map may already be gone (the sheet closing, a stacked sheet taking the slot).
+      try {
+        map.jumpTo?.(before);
+      } catch {
+        // Nothing to put back on a removed map.
+      }
+    };
+  }, [map, silhouette, on]);
 }
 
 /** The camera as a projection, rebuilt whenever the map moves or the pane resizes. */
@@ -70,6 +118,7 @@ export function InstrumentOverlay({
 }) {
   const projection = useMapProjection(map);
   const clipId = useId();
+  useRingFraming(map, silhouette, mode?.kind === 'where');
   if (projection === null) return null;
   const where = mode?.kind === 'where' ? mode : null;
   const showDraft = draft !== undefined && draft !== null && draft.features.length > 0;
@@ -136,7 +185,6 @@ function WhereLayer({
           <path data-slot="instrument-wash" d={wash} fill="var(--acc-wash-strong)" />
         </g>
       ) : null}
-      <path d={outline} fill="none" stroke="var(--acc)" strokeWidth={1.4} fillRule="evenodd" />
       {ring ? (
         <g data-slot="instrument-ring">
           {ring.segments.map((seg) => {
@@ -157,21 +205,21 @@ function WhereLayer({
                 <path
                   d={seg.d}
                   fill="none"
-                  stroke={lit ? 'var(--acc)' : 'var(--line2)'}
-                  strokeWidth={lit ? 6 : 4}
-                  style={lit ? { filter: 'drop-shadow(0 0 5px var(--acc-glow))' } : undefined}
+                  stroke={lit ? 'var(--acc)' : 'var(--acc-wash-strong)'}
+                  strokeWidth={RING_BAND_PX}
+                  style={lit ? { filter: 'drop-shadow(0 0 6px var(--acc-glow))' } : undefined}
                 />
                 <text
                   x={seg.label[0]}
                   y={seg.label[1] + 4}
                   textAnchor="middle"
-                  fontFamily="var(--family-sans)"
-                  fontSize={12}
-                  fontWeight={lit ? 600 : 500}
+                  fontFamily="var(--family-mono)"
+                  fontSize={11}
                   fill={lit ? 'var(--acc)' : 'var(--fg3)'}
                 >
                   {seg.sector}
                 </text>
+                {lit ? <SectorName ring={ring} sector={seg.sector} /> : null}
               </g>
             );
           })}
@@ -180,6 +228,45 @@ function WhereLayer({
     </g>
   );
 }
+
+/** The ring's band, px: a band the pointer can find, as the board draws it. */
+const RING_BAND_PX = 12;
+
+/** The lit sector's name inside the ring, by its arc ("South end"), as the board writes it. */
+function SectorName({
+  ring,
+  sector,
+}: {
+  ring: { cx: number; cy: number; r: number };
+  sector: NonNullable<Where['sector']>;
+}) {
+  const bearing = COMPASS_BEARINGS[sector as keyof typeof COMPASS_BEARINGS];
+  if (bearing === undefined) return null;
+  const rad = (bearing * Math.PI) / 180;
+  const r = ring.r - RING_BAND_PX - 10;
+  const x = ring.cx + r * Math.sin(rad);
+  const y = ring.cy - r * Math.cos(rad);
+  const anchor = Math.sin(rad) > 0.3 ? 'end' : Math.sin(rad) < -0.3 ? 'start' : 'middle';
+  return (
+    <text
+      data-slot="instrument-sector-name"
+      x={x}
+      y={y + (Math.cos(rad) < -0.3 ? 0 : Math.cos(rad) > 0.3 ? 10 : 4)}
+      textAnchor={anchor}
+      fontFamily="var(--family-sans)"
+      fontSize={13}
+      fontWeight={500}
+      fill="var(--acc)"
+      paintOrder="stroke"
+      stroke="var(--bg)"
+      strokeWidth={3}
+    >
+      {SECTOR_LABELS[sector]}
+    </text>
+  );
+}
+
+const COMPASS_BEARINGS = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
 
 function PlacedPoint({ projection, where }: { projection: Projection; where: Where }) {
   const point = where.point;
@@ -210,7 +297,7 @@ function PlacedPoint({ projection, where }: { projection: Projection; where: Whe
   );
 }
 
-/** Put-in mode: every launch lit and named; the chosen one solid. Lots are squares. */
+/** Put-in mode: every launch lit, the chosen one solid and named. Lots are squares. */
 function LitPins({
   projection,
   pins,
@@ -248,19 +335,25 @@ function LitPins({
                 style={{ filter: 'drop-shadow(0 0 5px var(--acc-glow))' }}
               />
             )}
-            <text
-              x={x + 12}
-              y={y + 4}
-              fontFamily="var(--family-sans)"
-              fontSize={12}
-              fontWeight={chosen ? 600 : 500}
-              fill={chosen ? 'var(--fg)' : 'var(--fg1)'}
-              paintOrder="stroke"
-              stroke="var(--bg)"
-              strokeWidth={3}
-            >
-              {pin.name}
-            </text>
+            {chosen ? (
+              // The chosen launch carries the lockup (5.15); the others are named by the chips
+              // beside the map — launches sit close enough that every name would collide.
+              <text
+                x={x + 12}
+                y={y - 4}
+                fontFamily="var(--family-sans)"
+                paintOrder="stroke"
+                stroke="var(--bg)"
+                strokeWidth={3}
+              >
+                <tspan fontSize={10} fontWeight={600} letterSpacing="0.12em" fill="var(--acc)">
+                  {pin.kind === 'parking' ? 'PARKED · YOURS' : 'PUT-IN · YOURS'}
+                </tspan>
+                <tspan x={x + 12} dy={15} fontSize={12} fontWeight={600} fill="var(--fg)">
+                  {pin.name}
+                </tspan>
+              </text>
+            ) : null}
           </g>
         );
       })}

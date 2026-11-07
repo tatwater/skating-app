@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConsoleMode } from './ConsoleMode';
 import { InstrumentMap } from './InstrumentMap';
 import InstrumentMapCanvas from './InstrumentMapCanvas';
-import { geometryPath, InstrumentOverlay, type OverlayMap } from './InstrumentOverlay';
+import { geometryPath, InstrumentOverlay, type OverlayMap, ringCamera } from './InstrumentOverlay';
 import { mapProjection } from './instrumentProjection';
 
 const h = vi.hoisted(() => ({ map: null as unknown, loaded: true }));
@@ -183,8 +183,10 @@ describe('InstrumentOverlay', () => {
       />,
     );
     const lit = container.querySelector('[data-slot="instrument-lit"]');
-    expect(lit).toHaveTextContent('Boat launch');
-    expect(lit).toHaveTextContent('Town lot');
+    expect(lit?.querySelectorAll('[data-pin]')).toHaveLength(2);
+    // Only the chosen one is named, as a lockup.
+    expect(lit).not.toHaveTextContent('Boat launch');
+    expect(lit).toHaveTextContent('PARKED · YOURSTown lot');
     expect(container.querySelector('[data-pin="b"]')).toHaveAttribute('data-chosen');
     expect(container.querySelector('[data-pin="b"] rect')).not.toBeNull();
   });
@@ -266,5 +268,47 @@ describe('InstrumentOverlay', () => {
       ),
     ).toMatch(/^M300\.0 200\.0 L310\.0 200\.0 L300\.0 200\.0 Z$/);
     expect(geometryPath({ type: 'Point', coordinates: [0, 0] }, projection)).toBeNull();
+  });
+});
+
+describe('the where mode frames the lake inside the ring', () => {
+  it('centers on the origin and zooms the farthest shore inside the ring, then puts the camera back', () => {
+    const jumpTo = vi.fn();
+    const map = { ...overlayMap(), getZoom: () => 12, jumpTo };
+    const { unmount } = render(
+      <InstrumentOverlay
+        map={map}
+        mode={{ kind: 'where', label: 'Glass', where: undefined, onChange: vi.fn() }}
+        silhouette={SILHOUETTE}
+        pins={[]}
+      />,
+    );
+    const camera = jumpTo.mock.calls[0]?.[0] as { center: unknown; zoom: number };
+    expect(camera.center).toEqual(SILHOUETTE.origin);
+    // The farthest corner sits ~70 px out; the ring's room is 200 − 48 px: zoom in a little.
+    expect(camera.zoom).toBeGreaterThan(12);
+    unmount();
+    expect(jumpTo).toHaveBeenLastCalledWith({ center: { lng: -72.7, lat: 43.8 }, zoom: 12 });
+  });
+
+  it('leaves a removed map alone, and frames nothing it can’t measure', () => {
+    const jumpTo = vi
+      .fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementation(() => {
+        throw new Error('removed');
+      });
+    const map = { ...overlayMap(), getZoom: () => 12, jumpTo };
+    const { unmount } = render(
+      <InstrumentOverlay
+        map={map}
+        mode={{ kind: 'where', label: 'Glass', where: undefined, onChange: vi.fn() }}
+        silhouette={SILHOUETTE}
+        pins={[]}
+      />,
+    );
+    expect(() => unmount()).not.toThrow();
+    const projection = mapProjection(overlayMap());
+    expect(ringCamera(projection, { ...SILHOUETTE, rings: [] }, 12)).toBeNull();
   });
 });

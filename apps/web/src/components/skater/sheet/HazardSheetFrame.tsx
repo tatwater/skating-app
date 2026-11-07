@@ -1,6 +1,6 @@
 import { isPassageMarker, type LatLng } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/kit/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/kit/dialog';
 import { Kbd } from '@/components/kit/kbd';
@@ -125,85 +125,116 @@ export function HazardSheetFrame({
         )}
       >
         <DialogTitle className="sr-only">Report a hazard</DialogTitle>
-        <div className="flex size-full min-h-0 flex-col">
-          <div
-            data-slot="hazard-sheet-top"
-            className="flex h-13 shrink-0 items-stretch border-0 border-b border-solid border-line pl-(--space-5_5)"
-          >
-            <span className="mr-(--space-5_5) self-center text-kick leading-none font-medium tracking-head text-fg2 uppercase">
-              Report a hazard
-            </span>
-            <div className="relative flex items-center border-0 border-r border-solid border-line bg-panel px-(--space-4_5) after:absolute after:right-0 after:-bottom-px after:left-0 after:h-0.5 after:bg-fg">
-              <span className="text-row font-semibold text-fg">{name}</span>
-            </div>
-            <div className="ml-auto flex items-center pr-(--space-3_5)">
-              <Button size="sm" data-attr="hazard-sheet-close" onClick={() => exitRef.current()}>
-                Close
-                <Kbd variant="dim" aria-hidden="true">
-                  Esc
-                </Kbd>
-              </Button>
-            </div>
-          </div>
-          <div className="flex min-h-0 flex-1">
-            <section
-              aria-label="The lake"
-              className="flex min-h-0 min-w-0 flex-1 flex-col border-0 border-r border-solid border-line"
-            >
-              <div className="flex h-14 shrink-0 items-center border-0 border-b border-solid border-line px-(--space-6)">
-                <h2 className="m-0 text-disp leading-none font-semibold tracking-kick text-fg uppercase">
-                  {name}
-                </h2>
-              </div>
-              <div className="relative min-h-0 flex-1">
-                {body?.polygon ? (
-                  <InstrumentMap
-                    input={input}
-                    onPick={onPick}
-                    onMap={setGlMap}
-                    label={`${name}: where the hazard is`}
-                    className={cn('absolute inset-0', mapState?.capturing && 'cursor-crosshair')}
+        <HazardSheetChrome
+          name={name}
+          onClose={() => exitRef.current()}
+          map={
+            body?.polygon ? (
+              <InstrumentMap
+                input={input}
+                onPick={onPick}
+                onMap={setGlMap}
+                label={`${name}: where the hazard is`}
+                className={cn('absolute inset-0', mapState?.capturing && 'cursor-crosshair')}
+              >
+                <InstrumentOverlay
+                  map={glMap}
+                  mode={null}
+                  silhouette={null}
+                  pins={[]}
+                  draft={mapState?.draft?.data ?? null}
+                />
+                {mapState?.mode ? (
+                  <MapModeBar
+                    mode={mapState.mode.mode}
+                    step={mapState.mode.step}
+                    onExit={mapState.onExitMode}
+                    exitLabel="Leave the hazard form"
                   >
-                    <InstrumentOverlay
-                      map={glMap}
-                      mode={null}
-                      silhouette={null}
-                      pins={[]}
-                      draft={mapState?.draft?.data ?? null}
-                    />
-                    {mapState?.mode ? (
-                      <MapModeBar
-                        mode={mapState.mode.mode}
-                        step={mapState.mode.step}
-                        onExit={mapState.onExitMode}
-                        exitLabel="Leave the hazard form"
-                      >
-                        {mapState.mode.line}
-                      </MapModeBar>
-                    ) : null}
-                  </InstrumentMap>
-                ) : (
-                  <p className="m-0 p-(--space-6) text-assist text-fg3">Drawing the lake…</p>
-                )}
-              </div>
-            </section>
-            <aside
-              aria-label="The hazard"
-              className="flex w-[29.25rem] shrink-0 flex-col overflow-y-auto px-(--space-6) pt-(--space-5_5) pb-(--space-6)"
-            >
-              <HazardFlow
-                waterBodyId={waterBodyId}
-                {...(subAreaId !== undefined ? { subAreaId } : {})}
-                stacked={stacked}
-                instrument={instrument}
-                container={frame}
-                onClose={onClose}
-                {...(onDone !== undefined ? { onDone } : {})}
-              />
-            </aside>
-          </div>
-        </div>
+                    {mapState.mode.line}
+                  </MapModeBar>
+                ) : null}
+              </InstrumentMap>
+            ) : (
+              <p className="m-0 p-(--space-6) text-assist text-fg3">Drawing the lake…</p>
+            )
+          }
+        >
+          <HazardFlow
+            waterBodyId={waterBodyId}
+            {...(subAreaId !== undefined ? { subAreaId } : {})}
+            stacked={stacked}
+            instrument={instrument}
+            container={frame}
+            onClose={onClose}
+            {...(onDone !== undefined ? { onDone } : {})}
+          />
+        </HazardSheetChrome>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The frame's drawing, Convex-free (stories, render-compare): the top bar — *Report a hazard*, the
+ * lake's tab, Close with its Esc — then the lake on the left under its name and the questions on
+ * the right, the report sheet's two panes at the report sheet's widths.
+ */
+export function HazardSheetChrome({
+  name,
+  onClose,
+  map,
+  children,
+}: {
+  name: string;
+  onClose: () => void;
+  map: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex size-full min-h-0 flex-col">
+      <div
+        data-slot="hazard-sheet-top"
+        className="flex h-13 shrink-0 items-stretch border-0 border-b border-solid border-line pl-(--space-5_5)"
+      >
+        <span className="mr-(--space-5_5) self-center text-kick leading-none font-medium tracking-head text-fg2 uppercase">
+          Report a hazard
+        </span>
+        <div className="relative flex items-center border-0 border-r border-solid border-line bg-panel px-(--space-4_5) after:absolute after:right-0 after:-bottom-px after:left-0 after:h-0.5 after:bg-fg">
+          <span className="text-row font-semibold text-fg">{name}</span>
+        </div>
+        <div className="ml-auto flex items-center pr-(--space-3_5)">
+          <Button size="sm" data-attr="hazard-sheet-close" onClick={onClose}>
+            Close
+            <Kbd variant="dim" aria-hidden="true">
+              Esc
+            </Kbd>
+          </Button>
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <section
+          aria-label="The lake"
+          className="flex min-h-0 min-w-0 flex-1 flex-col border-0 border-r border-solid border-line"
+        >
+          <div className="flex h-14 shrink-0 items-center border-0 border-b border-solid border-line px-(--space-6)">
+            <h2 className="m-0 text-disp leading-none font-semibold tracking-kick text-fg uppercase">
+              {name}
+            </h2>
+          </div>
+          <div className="relative min-h-0 flex-1">{map}</div>
+        </section>
+        <aside
+          aria-label="The hazard"
+          className={cn(
+            'flex w-[29.25rem] shrink-0 flex-col overflow-y-auto px-(--space-6) pt-(--space-5_5)',
+            // The flow's foot (Cancel, Post hazard) rests at the pane's foot, as the report's does.
+            '[&>[data-slot=hazard-flow]]:min-h-full [&>[data-slot=hazard-flow]>:last-child]:sticky [&>[data-slot=hazard-flow]>:last-child]:bottom-0 [&>[data-slot=hazard-flow]>:last-child]:mt-auto [&>[data-slot=hazard-flow]>:last-child]:bg-bg [&>[data-slot=hazard-flow]>:last-child]:pb-(--space-4)',
+          )}
+        >
+          {children}
+        </aside>
+      </div>
+    </div>
   );
 }

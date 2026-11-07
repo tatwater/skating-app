@@ -65,7 +65,6 @@ export function GpxImport({ reportId, onImported }: GpxImportSlotProps) {
   const convex = useConvex();
   const ingest = useMutation(api.gpsActivities.ingestTrack);
   const { capture } = useAnalytics();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +109,20 @@ export function GpxImport({ reportId, onImported }: GpxImportSlotProps) {
       : null;
   };
 
+  return <GpxImportView busy={busy} error={error} onFile={(file) => void run(file)} />;
+}
+
+/** The drop zone's controls, Convex-free: choose or drop a file; the refusal under them, verbatim. */
+export function GpxImportView({
+  busy,
+  error,
+  onFile,
+}: {
+  busy: boolean;
+  error: string | null;
+  onFile: (file: File | undefined) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <fieldset
       aria-label="Import a GPX file"
@@ -117,7 +130,7 @@ export function GpxImport({ reportId, onImported }: GpxImportSlotProps) {
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
-        void run(e.dataTransfer.files[0]);
+        onFile(e.dataTransfer.files[0]);
       }}
     >
       <Button
@@ -136,7 +149,7 @@ export function GpxImport({ reportId, onImported }: GpxImportSlotProps) {
         hidden
         aria-label="A GPX file"
         onChange={(e) => {
-          void run(e.target.files?.[0]);
+          onFile(e.target.files?.[0]);
           e.target.value = '';
         }}
       />

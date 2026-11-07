@@ -1,13 +1,17 @@
+import { api } from '@skating/convex/api';
 import { openPostSheet, type PostSheet, reportEndMs, selectedValues } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
 import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { setSheet, useSheet } from '@/lib/sheetStore';
+import { setSheet, updateSheet, useSheet } from '@/lib/sheetStore';
 import { installFakeStore, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
 import { useHazardDraftStore } from '@/stores/hazardDraftStore';
 import { convexReact, fakes, resetFakes } from '../testMocks';
+
+/** The fake action for a function — the same one the component's `useAction` gets. */
+const actionOf = convexReact.useAction;
 
 const h = vi.hoisted(() => ({
   flow: null as null | Record<string, unknown>,
@@ -518,7 +522,12 @@ describe('PhotoTileMenu', () => {
     expect(fakes.capture).toHaveBeenCalledWith('hazard_flow_started', { entry: 'report_sheet' });
     await screen.findByRole('dialog', { name: 'Report a hazard' });
     expect(h.flow).toMatchObject({ waterBodyId: 'mascoma', stacked: true });
-    act(() => (h.flow?.onDone as (r: unknown) => void)({ outcome: 'filed', hazardId: 'hz' }));
+    act(() =>
+      ((h.flow as Record<string, unknown>).onDone as (r: unknown) => void)({
+        outcome: 'filed',
+        hazardId: 'hz',
+      }),
+    );
     let sheet: PostSheet | null = null;
     render(<SheetProbe onSheet={(p) => (sheet = p)} />);
     expect((sheet as PostSheet | null)?.reports[0]?.photos).toEqual([]);
@@ -557,16 +566,14 @@ describe('Google Photos (slot)', () => {
     );
     const onPhotos = vi.fn();
     render(<GooglePhotosSlot disabled={false} onPhotos={onPhotos} />);
-    const { useAction } = await import('convex/react');
-    const { api } = await import('@skating/convex/api');
     let release: (v: unknown) => void = () => {};
-    (useAction(api.googlePhotos.status) as ReturnType<typeof vi.fn>).mockImplementation(
+    (actionOf(api.googlePhotos.status) as ReturnType<typeof vi.fn>).mockImplementation(
       () => new Promise((r) => (release = r)),
     );
-    (useAction(api.googlePhotos.list) as ReturnType<typeof vi.fn>).mockResolvedValue([
+    (actionOf(api.googlePhotos.list) as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: 'g1', filename: 'ice.jpg', takenAtMs: 5 },
     ]);
-    (useAction(api.googlePhotos.photo) as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (actionOf(api.googlePhotos.photo) as ReturnType<typeof vi.fn>).mockResolvedValue({
       bytes: new ArrayBuffer(4),
       mimeType: 'image/jpeg',
     });
@@ -608,8 +615,7 @@ describe('PhotoSorter', () => {
       },
       { id: 'c', fullUri: 'c', thumbUri: 'c', placeOnMap: false },
     ];
-    const post = { ...blank, photos };
-    setSheet(post);
+    setSheet(blank);
     h.convexQuery.mockImplementation(async (_ref: unknown, args: { coord: { lat: number } }) =>
       args.coord.lat > 43.6
         ? { waterBodyId: 'mascoma', name: 'Mascoma Lake' }
@@ -627,6 +633,8 @@ describe('PhotoSorter', () => {
       ) : null;
     }
     render(<Live />);
+    // Photos dropped once the sheet is open are the ones sorted.
+    act(() => updateSheet((p) => ({ ...p, photos })));
     expect(
       await screen.findByText(
         'Your 3 photos were taken on two lakes, so they start two reports, one per tab. A photo’s number is its tab.',
@@ -646,18 +654,23 @@ describe('PhotoSorter', () => {
 
   it('leaves photos with no place, and an edit, alone; a failed lookup sorts nothing', async () => {
     const blank = openPostSheet('page', {}, NOW, mint);
-    setSheet({
-      ...blank,
-      photos: [
-        { id: 'z', fullUri: 'z', thumbUri: 'z', placeOnMap: false, coord: { lat: 1, lng: 1 } },
-      ],
-    });
+    const z = {
+      id: 'z',
+      fullUri: 'z',
+      thumbUri: 'z',
+      placeOnMap: false,
+      coord: { lat: 1, lng: 1 },
+    };
+    // A restored draft's pool is the author's: not sorted on open.
+    setSheet({ ...blank, photos: [{ ...z, id: 'kept' }] });
     h.convexQuery.mockRejectedValue(new Error('offline'));
     function Live() {
       const current = useSheet();
       return current ? <PhotoSorter post={current} activeId="x" onActivate={vi.fn()} /> : null;
     }
     render(<Live />);
+    expect(h.convexQuery).not.toHaveBeenCalled();
+    act(() => updateSheet((p) => ({ ...p, photos: [...(p.photos ?? []), z] })));
     await waitFor(() => expect(h.convexQuery).toHaveBeenCalled());
     expect(screen.queryByRole('status')).toBeNull();
     const edit = { ...blank, mode: { kind: 'edit' as const, reportId: 'r' }, photos: [] };
@@ -673,11 +686,9 @@ describe('PhotoSorter', () => {
 
 describe('Google Photos (slot), the ways a pick ends', () => {
   async function actions() {
-    const { useAction } = await import('convex/react');
-    const { api } = await import('@skating/convex/api');
     return {
-      status: useAction(api.googlePhotos.status) as ReturnType<typeof vi.fn>,
-      close: useAction(api.googlePhotos.close) as ReturnType<typeof vi.fn>,
+      status: actionOf(api.googlePhotos.status) as ReturnType<typeof vi.fn>,
+      close: actionOf(api.googlePhotos.close) as ReturnType<typeof vi.fn>,
     };
   }
   beforeEach(() => {

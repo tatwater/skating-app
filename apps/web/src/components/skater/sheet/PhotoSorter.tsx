@@ -20,7 +20,8 @@ const mint = () => crypto.randomUUID();
  * pool; the ones with a place are looked up against the corpus (`resolveBodyForCoord`, one bounded
  * read per spot), sorted into one tab per lake and day, and laid onto the Post — the blank Report
  * answered, a Report opened for each other lake and day. Each photo is sorted once, when it
- * arrives: a tab the author removes doesn't come back. Then the line that says what happened.
+ * arrives while the sheet is open: a tab the author removes doesn't come back, and a restored
+ * draft's pool stays the author's. Then the line that says what happened.
  */
 export function PhotoSorter({
   post,
@@ -34,7 +35,12 @@ export function PhotoSorter({
   const convex = useConvex();
   const outlines = useBodyOutlines();
   const [note, setNote] = useState<string | null>(null);
-  const seen = useRef(new Set<string>());
+  const creating = post.mode.kind === 'create';
+  const pool = creating ? unassignedPhotos(post) : [];
+  // What the pool already held when the sheet opened (a restored draft's `?` photos) is the
+  // author's to place: only photos that arrive while the sheet is open are sorted.
+  const seen = useRef<Set<string> | null>(null);
+  if (seen.current === null) seen.current = new Set(pool.map((p) => p.id));
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -46,15 +52,14 @@ export function PhotoSorter({
   const latest = useRef({ activeId, outlines, onActivate });
   latest.current = { activeId, outlines, onActivate };
 
-  const creating = post.mode.kind === 'create';
-  const pool = creating ? unassignedPhotos(post) : [];
   const poolKey = pool.map((p) => p.id).join(',');
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the pool's ids; the photos ride `pool`.
   useEffect(() => {
-    const fresh = pool.filter((p) => !seen.current.has(p.id));
+    const known = seen.current ?? new Set<string>();
+    const fresh = pool.filter((p) => !known.has(p.id));
     if (fresh.length === 0) return;
-    for (const p of fresh) seen.current.add(p.id);
+    for (const p of fresh) known.add(p.id);
     if (!fresh.some((p) => p.coord !== undefined)) return;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     void (async () => {
@@ -103,6 +108,11 @@ export function PhotoSorter({
   }, [poolKey, convex]);
 
   if (note === null) return null;
+  return <PhotoSortNote note={note} onDismiss={() => setNote(null)} />;
+}
+
+/** The line over the sorted tabs (5.17.1), with its dismiss. */
+export function PhotoSortNote({ note, onDismiss }: { note: string; onDismiss: () => void }) {
   return (
     <div
       role="status"
@@ -114,7 +124,7 @@ export function PhotoSorter({
         type="button"
         aria-label="Dismiss"
         data-attr="photo-sort-dismiss"
-        onClick={() => setNote(null)}
+        onClick={onDismiss}
         className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-control border-0 bg-transparent text-fg2 outline-none hover:text-fg focus-visible:shadow-focus"
       >
         <FontAwesomeIcon icon={faXmark} />
