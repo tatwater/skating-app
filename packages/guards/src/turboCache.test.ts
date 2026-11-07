@@ -30,7 +30,7 @@
  * carry floors against the one way a lint fails worst: passing without having looked at anything.
  */
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
@@ -90,9 +90,15 @@ describe('the repo-wide guards cannot be served from cache', () => {
       .filter((p) => p !== '')
       .sort((a, b) => b.length - a.length);
 
+    // `existsSync`, because `git ls-files` reads the *index*: a test deleted or renamed in the
+    // working tree is still listed until the deletion is staged, and `readFileSync` below would
+    // throw ENOENT. That turned a routine `rm` followed by `pnpm test` into a failure of the
+    // guard rather than of anything real. Filtered here rather than inside the loop so the floor
+    // below counts the files that will actually be read.
     const tests = execSync('git ls-files', { cwd: REPO, encoding: 'utf8' })
       .split('\n')
-      .filter((f) => TEST_FILE.test(f));
+      .filter((f) => TEST_FILE.test(f))
+      .filter((f) => existsSync(resolve(REPO, f)));
 
     // Floors on both lists, because the failure this package exists to prevent is a green that
     // verified nothing: if `pnpm -r list` changes shape, or its paths stop matching `REPO` (a
