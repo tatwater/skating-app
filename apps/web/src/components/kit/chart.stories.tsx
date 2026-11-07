@@ -126,34 +126,10 @@ const q = (scope: ParentNode, sel: string) => must(scope.querySelector<SVGElemen
 const qa = (scope: ParentNode, sel: string) => [...scope.querySelectorAll<SVGElement>(sel)];
 const attr = (el: Element, name: string) => Number(el.getAttribute(name));
 
-/**
- * The chart has drawn (ResponsiveContainer measures first, then the series) *and* its marks have
- * settled. Recharts keys a bar by its interpolated geometry (`rectangle-<x>-<y>-<value>-<i>`, in
- * `Bar.js`), so every frame of the entrance unmounts the marks and mounts new ones: a node held
- * across an `await` mid-entrance is detached a frame later, where it measures zero and computes no
- * style at all. Settled is the same node two frames apart.
- */
+/** The chart has drawn (ResponsiveContainer measures first, then the series). */
 async function drawn(scope: HTMLElement, series: string) {
   await waitFor(() => expect(scope.querySelector(series)).not.toBeNull());
-  // The entrance runs for `duration.slow` and an attempt costs two frames; the room is for a
-  // loaded runner, not for marks that never settle.
-  await waitFor(
-    async () => {
-      const mark = scope.querySelector(series);
-      await twoFrames();
-      expect(scope.querySelector(series)).toBe(mark);
-    },
-    { timeout: 5_000 },
-  );
 }
-
-/** Two animation frames: long enough for a re-keyed mark to have been replaced. */
-const twoFrames = () =>
-  new Promise<void>((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
-    });
-  });
 
 /** Moves the pointer over the chart at a client x (mid-height of the plot), as a mouse would. */
 function hoverAt(scope: HTMLElement, clientX: number) {
@@ -322,15 +298,24 @@ export const Bars: Story = {
   render: () => <Spend />,
   play: async ({ canvasElement }) => {
     await drawn(canvasElement, '.recharts-bar-rectangle path');
-    const bars = qa(canvasElement, '.recharts-bar-rectangle path');
-    await expect(bars).toHaveLength(SPEND.length);
-    const bar = must(bars[4]);
-    await waitFor(() => expect(bar.getBoundingClientRect().height).toBeGreaterThan(0));
-    await expect(getComputedStyle(bar).fill).toEqual(
-      sameColor(computedColor(canvasElement, 'var(--fg)')),
-    );
+    await expect(qa(canvasElement, '.recharts-bar-rectangle path')).toHaveLength(SPEND.length);
+    // Recharts keys a bar by its interpolated geometry (`rectangle-<x>-<y>-<value>-<i>` in
+    // `Bar.js`), so every frame of the entrance unmounts the marks and mounts new ones — and a
+    // re-layout later (a container re-measure) does it again. A mark is therefore read on the
+    // attempt that uses it, and read whole before anything is awaited: a node held across an
+    // `await` is detached a frame on, where it measures zero and computes no style at all.
+    const lead = computedColor(canvasElement, 'var(--fg)');
+    await waitFor(async () => {
+      const mark = must(qa(canvasElement, '.recharts-bar-rectangle path')[4]);
+      const { height } = mark.getBoundingClientRect();
+      const fill = getComputedStyle(mark).fill;
+      await expect(height).toBeGreaterThan(0);
+      await expect(fill).toEqual(sameColor(lead));
+    });
     // The band's middle in the chart's own coordinates (hover swaps the bar's element for the
-    // active one, so read it first).
+    // active one, so read it first). A bar's x and width are final from its first frame — the
+    // entrance grows its height — so these hold whether or not it has settled.
+    const bar = must(qa(canvasElement, '.recharts-bar-rectangle path')[4]);
     const middle = attr(bar, 'x') + attr(bar, 'width') / 2;
     hoverAt(canvasElement, midX(bar));
     await waitFor(() =>

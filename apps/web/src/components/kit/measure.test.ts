@@ -80,6 +80,12 @@ describe('sameColor', () => {
     expect(sameColor(BAD).toAsymmetricMatcher()).toBe(`sameColor(${BAD})`);
   });
 
+  it('names itself when the actual value is a detached element', () => {
+    expect(() => expect('').toEqual(sameColor(BAD))).toThrow(
+      `No computed color to compare with sameColor(${BAD}): the element is not in the page.`,
+    );
+  });
+
   it('rejects an expected value it cannot read, up front', () => {
     // (An unresolved token is the usual slip: resolve it with `computedColor` first.)
     expect(() => sameColor('var(--bad)')).toThrow(/can't read/);

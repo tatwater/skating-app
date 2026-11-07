@@ -137,8 +137,16 @@ export function sameColor(expected: string): ColorMatcher {
   const label = `sameColor(${expected})`;
   return {
     $$typeof: Symbol.for('jest.asymmetricMatcher'),
-    asymmetricMatch: (actual) =>
-      typeof actual === 'string' && colorDistance(actual, expected) <= COLOR_TOLERANCE,
+    asymmetricMatch: (actual) => {
+      // A story failure prints the matcher's frame and nothing of the story, so an empty computed
+      // value — a detached element, not a color — names the comparison that hit it.
+      if (actual === '') {
+        throw new Error(
+          `No computed color to compare with ${label}: the element is not in the page.`,
+        );
+      }
+      return typeof actual === 'string' && colorDistance(actual, expected) <= COLOR_TOLERANCE;
+    },
     toString: () => label,
     toAsymmetricMatcher: () => label,
     // How chai's messages print it ("expected 'oklch(…)' to deeply equal sameColor(…)").
