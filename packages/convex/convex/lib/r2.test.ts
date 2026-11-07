@@ -148,11 +148,16 @@ describe('listing', () => {
 
 describe('reads and writes', () => {
   it('puts JSON with a trailing newline, signed', async () => {
-    const seen: { method?: string; url?: string; body?: string } = {};
+    const seen: { method?: string; url?: string; body?: string; length?: string | null } = {};
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: Request) => {
-        Object.assign(seen, { method: input.method, url: input.url, body: await input.text() });
+        Object.assign(seen, {
+          method: input.method,
+          url: input.url,
+          body: await input.text(),
+          length: input.headers.get('content-length'),
+        });
         return new Response('');
       }),
     );
@@ -161,6 +166,7 @@ describe('reads and writes', () => {
       method: 'PUT',
       url: 'https://acct.r2.cloudflarestorage.com/skating-imagery/index/latest.json',
       body: '{"season":"winter-2026-27"}\n',
+      length: '28',
     });
     vi.stubGlobal(
       'fetch',
