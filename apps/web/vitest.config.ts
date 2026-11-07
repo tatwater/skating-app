@@ -104,6 +104,10 @@ export default defineConfig({
             'pmtiles',
             'react-resizable-panels',
             'recharts',
+            // The hazard flow's drawing tools, also behind a lazy import: a cold cache optimized
+            // them mid-run and the reload broke nine story files.
+            'terra-draw',
+            'terra-draw-maplibre-gl-adapter',
             'zustand',
           ],
         },
