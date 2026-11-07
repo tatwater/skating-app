@@ -140,17 +140,19 @@ describe('isochrones.recompute', () => {
   });
 });
 
-describe('isochrones.getHomeForIsochrones', () => {
+describe('isochrones.getOriginForIsochrones', () => {
   test('returns the home coord, or null when unset', async () => {
     const t = convexTestWithGeo();
     const withHome = (await seedProfile(t, { lat: 44, lng: -72 })) as Id<'profiles'>;
     const withoutHome = (await seedProfile(t)) as Id<'profiles'>;
-    expect(await t.query(internal.isochrones.getHomeForIsochrones, { userId: withHome })).toEqual({
-      lat: 44,
-      lng: -72,
-    });
+    expect(await t.query(internal.isochrones.getOriginForIsochrones, { userId: withHome })).toEqual(
+      {
+        lat: 44,
+        lng: -72,
+      },
+    );
     expect(
-      await t.query(internal.isochrones.getHomeForIsochrones, { userId: withoutHome }),
+      await t.query(internal.isochrones.getOriginForIsochrones, { userId: withoutHome }),
     ).toBeNull();
   });
 });

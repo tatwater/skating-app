@@ -24,6 +24,7 @@ import {
   bountyFreshWindowHours,
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
+  driveOrigin,
   FRESH_REPORT_HOURS,
   haversineMeters,
   isActive,
@@ -1012,7 +1013,8 @@ export const listOpen = query({
     // The coord we sort by: an explicit client coord wins; otherwise the viewer's private home (D11) when
     // they asked to sort near home. Distances are only *returned* for a client-supplied `near` (above).
     const viewer = sortByHome && !near ? await getCurrentProfile(ctx) : null;
-    const sortCoord = near ?? viewer?.homeCoord;
+    // The travel base while it's in force, else home (B03 §11) — the same origin drive time uses.
+    const sortCoord = near ?? (viewer ? driveOrigin(viewer, now) : undefined);
     // Still-valid open bounties, soonest-expiring first, bounded read. `.gt('expiresAt', now)` drops any
     // past `expiresAt` the sweep hasn't flipped yet — a browse should never surface a dead bounty.
     const open = await ctx.db

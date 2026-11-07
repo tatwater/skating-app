@@ -130,3 +130,98 @@ export function bandWithinRadius(
 ): boolean {
   return band !== null && band <= radiusMinutes;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The travel base (B03 §11, board 7.19) — where drive time is measured from, for now
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A temporary stand-in for home while the skater is away (board 7.19): drive time is measured from
+ * here until `until` (epoch ms), then from home again with nothing to undo. PRIVATE like home (D11):
+ * it never leaves the server except to its owner.
+ */
+export interface TravelBase {
+  coord: LatLng;
+  until: number;
+}
+
+/**
+ * The longest a travel base may be set for. A trip, not a move: a base that outlived the trip by
+ * months would quietly re-center someone's feed and nearby alerts on a place they left. Moving is
+ * what `setHome` is for. Tunable.
+ */
+export const TRAVEL_BASE_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Is `until` an end a travel base may be set with at `now`? Strictly in the future (a base that has
+ * already ended is a no-op dressed up as a write) and no further out than `TRAVEL_BASE_MAX_MS`.
+ */
+export function isValidTravelBaseUntil(until: number, now: number): boolean {
+  return Number.isFinite(until) && until > now && until - now <= TRAVEL_BASE_MAX_MS;
+}
+
+/**
+ * Is the base in force at `now`? The window is half-open, `[set, until)`: at `until` itself the
+ * skater is home again. Absent ⇒ no.
+ */
+export function isTravelBaseActive(base: TravelBase | undefined, now: number): base is TravelBase {
+  return base !== undefined && now < base.until;
+}
+
+/** The profile fields drive time reads — the private home, the travel base, the cached bands. */
+export interface DriveTimeProfile {
+  homeCoord?: LatLng;
+  travelBase?: TravelBase;
+  cachedIsochrones?: { band30?: unknown; band60?: unknown };
+  /** Where the cached polygons were computed from; absent on bands computed before travel bases. */
+  cachedIsochronesOrigin?: LatLng;
+  outerRadiusMeters?: number;
+}
+
+/**
+ * Where drive time is measured from at `now`: **the travel base while it's in force, else home**.
+ * The one rule; every drive-time read goes through `viewerDriveTime` below, and the isochrone
+ * recompute computes its polygons from this same answer.
+ */
+export function driveOrigin(profile: DriveTimeProfile, now: number): LatLng | undefined {
+  return isTravelBaseActive(profile.travelBase, now) ? profile.travelBase.coord : profile.homeCoord;
+}
+
+function sameCoord(a: LatLng, b: LatLng | undefined): boolean {
+  return b !== undefined && a.lat === b.lat && a.lng === b.lng;
+}
+
+/**
+ * A viewer's drive-time inputs at `now`: the bands to classify with and the origin the 90-band
+ * radius is drawn from (`bandForCoord`'s `home` argument). `null` profile ⇒ no bands.
+ *
+ * **The polygons only answer for the origin they were drawn from.** The cache is recomputed when the
+ * base is set, cleared or runs out, but that is an ORS call landing a moment later — and in that gap
+ * the stored polygons describe the *other* place. So they are used only when their stamped origin
+ * matches today's; a mismatch keeps just the crow-flies 90 band, which is computed from the origin
+ * directly and is never wrong about where it is centered. Bands stamped before travel bases existed
+ * carry no origin and were drawn from home, so an absent stamp fits whenever no base is in force.
+ */
+export function viewerDriveTime(
+  profile: DriveTimeProfile | null | undefined,
+  now: number,
+): { bands: DriveTimeBands; origin: LatLng | undefined } {
+  if (!profile) return { bands: {}, origin: undefined };
+  const origin = driveOrigin(profile, now);
+  const polygonsFit =
+    profile.cachedIsochronesOrigin === undefined
+      ? !isTravelBaseActive(profile.travelBase, now)
+      : sameCoord(profile.cachedIsochronesOrigin, origin);
+  const bands: DriveTimeBands = {
+    ...(polygonsFit && profile.cachedIsochrones?.band30 !== undefined
+      ? { band30: profile.cachedIsochrones.band30 as DriveTimeBands['band30'] }
+      : {}),
+    ...(polygonsFit && profile.cachedIsochrones?.band60 !== undefined
+      ? { band60: profile.cachedIsochrones.band60 as DriveTimeBands['band60'] }
+      : {}),
+    ...(profile.outerRadiusMeters !== undefined
+      ? { outerRadiusMeters: profile.outerRadiusMeters }
+      : {}),
+  };
+  return { bands, origin };
+}

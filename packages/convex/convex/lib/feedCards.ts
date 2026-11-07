@@ -33,6 +33,7 @@ import {
   silhouetteRings,
   standingOf,
   surfaceTagKeys,
+  viewerDriveTime,
   visiblePostReports,
   type WeatherDiscoveryFilter,
 } from '@skating/core';
@@ -343,6 +344,7 @@ export interface FeedViewer {
   blocked: Set<string>;
   favorites: ViewerFavorites;
   bands: DriveTimeBands;
+  /** Where drive time is measured from: the travel base while it's in force, else home. */
   home: LatLng | undefined;
   filters: FeedFilters;
   now: number;
@@ -359,19 +361,17 @@ export async function loadFeedViewer(ctx: QueryCtx, rawFilters: unknown): Promis
     loadBlockedAuthorIds(ctx, viewerId),
     loadFavorites(ctx, viewerId),
   ]);
+  const now = Date.now();
+  // Measured from the travel base while it's in force, else home (B03 §11) — `viewerDriveTime` is
+  // the one place that rule lives.
+  const { bands, origin } = viewerDriveTime(viewer, now);
   return {
     blocked,
     favorites,
-    // Stored bands validate as the broad GeoJSON union, but ORS only ever writes Polygon/MultiPolygon;
-    // cast to the band shape `bandForCoord` consumes (same pattern as `adminAreas` polygon reads).
-    bands: {
-      band30: viewer?.cachedIsochrones?.band30,
-      band60: viewer?.cachedIsochrones?.band60,
-      outerRadiusMeters: viewer?.outerRadiusMeters,
-    } as DriveTimeBands,
-    home: viewer?.homeCoord,
+    bands,
+    home: origin,
     filters: sanitizeFeedFilters(rawFilters),
-    now: Date.now(),
+    now,
     caches: { bodyInfo: new Map(), authors: new Map(), bayRings: new Map(), viewer },
     weatherCaches: { bayCells: new Map(), digests: new Map() },
     bayCoords: new Map(),

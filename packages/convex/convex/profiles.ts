@@ -21,6 +21,7 @@ import {
   isValidCoord,
   isValidDisplayName,
   isValidTownLabel,
+  isValidTravelBaseUntil,
   isValidUsername,
   meetsMinimumAge,
   normalizeBio,
@@ -30,6 +31,7 @@ import {
   type PostCardData,
   PROFILE_VISIBILITIES,
   sanitizeFeedFilters,
+  TRAVEL_BASE_MAX_MS,
   type TrustClass,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -653,6 +655,66 @@ export const setHome = mutation({
     return profile._id;
   },
 });
+
+/**
+ * Measure drive time from somewhere else for a while (B03 §11, board 7.19): a cabin for the week, a
+ * trip north. Until `until`, every drive-time read — the feed's bands and filter, the lake's arrival
+ * band, the weather sweep's matches, the nearby-report alerts, "bounties near me" — reads the base
+ * instead of home (`viewerDriveTime` / `driveOrigin`, the one rule); after it, home again, with
+ * nothing for the skater to undo. PRIVATE exactly like `homeCoord` (D11): stored, never served.
+ *
+ * Schedules two recomputes: one now, so the polygons follow, and one at `until`, so they come home
+ * on their own. A re-set or a clear cancels the pending one rather than leave an ORS call queued
+ * for a base that no longer exists. `until` must be in the future and within `TRAVEL_BASE_MAX_MS`.
+ */
+export const setTravelBase = mutation({
+  args: { lat: v.number(), lng: v.number(), until: v.number() },
+  handler: async (ctx, { lat, lng, until }) => {
+    // `requireContributor`, as `setHome`: a ghost re-collecting a private location is the thing the
+    // deletion request promised to stop (D62 second amendment).
+    const profile = await requireContributor(ctx);
+    const coord = { lat, lng };
+    if (!isValidCoord(coord)) throw new ConvexError('Travel base coordinate is not valid');
+    if (!isValidTravelBaseUntil(until, Date.now())) {
+      throw new ConvexError(
+        `A travel base ends in the future, within ${TRAVEL_BASE_MAX_MS / 86_400_000} days`,
+      );
+    }
+    await cancelTravelBaseExpiry(ctx, profile);
+    const expiryJobId = await ctx.scheduler.runAt(until, internal.isochrones.recompute, {
+      userId: profile._id,
+    });
+    await ctx.db.patch(profile._id, { travelBase: { coord, until, expiryJobId } });
+    await ctx.scheduler.runAfter(0, internal.isochrones.recompute, { userId: profile._id });
+    return profile._id;
+  },
+});
+
+/**
+ * Go home early (B03 §11): drop the travel base and recompute from home now. A no-op without one.
+ * `requireProfile`, unlike the setter: ending a base only ever moves drive time back to the home the
+ * person already gave us, and a departing account should be able to stop being measured from a
+ * place it is no longer at.
+ */
+export const clearTravelBase = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const profile = await requireProfile(ctx);
+    if (profile.travelBase === undefined) return profile._id;
+    await cancelTravelBaseExpiry(ctx, profile);
+    await ctx.db.patch(profile._id, { travelBase: undefined });
+    await ctx.scheduler.runAfter(0, internal.isochrones.recompute, { userId: profile._id });
+    return profile._id;
+  },
+});
+
+/** Cancel the pending at-`until` recompute of the profile's current base, if one is still queued. */
+async function cancelTravelBaseExpiry(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<void> {
+  const jobId = profile.travelBase?.expiryJobId;
+  if (jobId === undefined) return;
+  const job = await ctx.db.system.get(jobId);
+  if (job?.state.kind === 'pending') await ctx.scheduler.cancel(jobId);
+}
 
 /**
  * Persist the server-sync copy of the feed filter row (decision #3/#6). Local storage is the working

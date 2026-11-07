@@ -148,6 +148,26 @@ export default defineSchema({
     ),
     outerRadiusMeters: v.optional(v.number()),
     cachedIsochronesAt: v.optional(v.number()),
+    /**
+     * Where the cached polygons were drawn from (B03 §11) — home, or the travel base below. Stamped
+     * by the recompute so a read can tell polygons for the other place apart (`viewerDriveTime`):
+     * setting, clearing or outliving a base leaves the old polygons stored until ORS answers. PRIVATE
+     * like `homeCoord`. Absent on bands computed before travel bases, which were drawn from home.
+     */
+    cachedIsochronesOrigin: v.optional(latLng),
+    /**
+     * A temporary stand-in for home (B03 §11, board 7.19): drive time is measured from `coord` until
+     * `until`, then from home again (`driveOrigin`). PRIVATE like `homeCoord` (D11) and scrubbed with
+     * it. `expiryJobId` is the scheduled recompute at `until`, kept so a re-set or a clear can cancel
+     * it rather than leave a stray ORS call queued. Optional ⇒ migration-free; not indexed.
+     */
+    travelBase: v.optional(
+      v.object({
+        coord: latLng,
+        until: v.number(),
+        expiryJobId: v.optional(v.id('_scheduled_functions')),
+      }),
+    ),
     // Server-sync copy of the newsfeed filter row (Phase 04, decision #3/#6); local storage is the
     // working copy, this is the durable/LWW copy. All fields optional (all-absent = show everything).
     feedFilterPrefs: v.optional(
