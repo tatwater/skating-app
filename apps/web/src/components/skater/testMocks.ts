@@ -1,4 +1,5 @@
 import { getFunctionName } from 'convex/server';
+import { useRef } from 'react';
 import { vi } from 'vitest';
 
 /**
@@ -19,6 +20,16 @@ export const fakes = {
   location: { pathname: '/', searchStr: '' },
   capture: vi.fn(),
   auth: { isLoaded: true, isSignedIn: true, userId: 'user_1' as string | null | undefined },
+  /**
+   * How many times a `useQueries` caller handed over a **new object for the same queries**.
+   *
+   * The real hook memoizes its subscription on that object's identity, so an unmemoized one
+   * re-subscribes on every render, sets state, and renders again — React stops it at "Too many
+   * re-renders" and the page becomes the crash screen. A mock that merely answers the queries
+   * cannot show that, which is how `/u/<your own handle>` shipped crashing with a green suite.
+   * Assert this is `0` wherever a component calls `useQueries`.
+   */
+  unstableQueries: 0,
 };
 
 export function resetFakes(): void {
@@ -32,6 +43,7 @@ export function resetFakes(): void {
   fakes.location = { pathname: '/', searchStr: '' };
   fakes.capture = vi.fn();
   fakes.auth = { isLoaded: true, isSignedIn: true, userId: 'user_1' };
+  fakes.unstableQueries = 0;
 }
 
 /**
@@ -49,8 +61,18 @@ function answer(ref: unknown, args: unknown): unknown {
 
 export const convexReact = {
   useQuery: (ref: unknown, args: unknown) => (args === 'skip' ? undefined : answer(ref, args)),
-  useQueries: (spec: Record<string, { query: unknown; args: unknown }>) =>
-    Object.fromEntries(Object.entries(spec).map(([k, q]) => [k, answer(q.query, q.args)])),
+  useQueries: (spec: Record<string, { query: unknown; args: unknown }>) => {
+    // The one property of the real hook a fake has to carry: it is keyed on the object's identity.
+    const last = useRef<{ spec: unknown; key: string } | null>(null);
+    const key = JSON.stringify(
+      Object.entries(spec).map(([k, q]) => [k, getFunctionName(q.query as never), q.args]),
+    );
+    if (last.current !== null && last.current.spec !== spec && last.current.key === key) {
+      fakes.unstableQueries += 1;
+    }
+    last.current = { spec, key };
+    return Object.fromEntries(Object.entries(spec).map(([k, q]) => [k, answer(q.query, q.args)]));
+  },
   useMutation: (ref: unknown) => {
     const name = getFunctionName(ref as never);
     let fn = fakes.mutations.get(name);
