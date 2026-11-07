@@ -45,10 +45,11 @@ import { SkeletonText } from './skeleton';
  *   into the gutters.
  * - **A row washes only if it's clickable** (`onRowClick`). A clickable row lights on hover or
  *   keyboard focus (one look), darkens a step while pressed, and is one tab stop for the whole
- *   table (↑↓ move, Home/End jump, ⏎ or Space press it). **Selected** is the lit plate register:
- *   the chosen wash, the bright ink and the 2 px select rule at its left edge. A non-clickable
- *   table never washes and never looks selected. **Dim** rows (a finished, hidden or inert item)
- *   step down to the faint ink.
+ *   table (↑↓ move, Home/End jump, ⏎ or Space press it). A control in a cell (a field, a button)
+ *   keeps its own presses and keys: they never press the row. **Selected** is the lit plate
+ *   register: the chosen wash, the bright ink and the 2 px select rule at its left edge. A
+ *   non-clickable table never washes and never looks selected. **Dim** rows (a finished, hidden or
+ *   inert item) step down to the faint ink.
  * - **Sort by clicking a heading.** A sortable heading is a button in its `th`: lit while sorted,
  *   with its arrow. The arrow has a fixed slot on the heading's open side (after a left-aligned
  *   heading, before a right-aligned one), reserved whether or not the column is sorted, so a
@@ -348,6 +349,18 @@ type DataTableProps<TFeatures extends TableFeatures, TData extends RowData> = Om
   stickyHeader?: boolean;
 };
 
+/** What a press in a cell belongs to rather than the row: a control of its own. */
+const CELL_CONTROL =
+  'a[href], button, input, select, textarea, label, summary, [contenteditable=""], [contenteditable="true"], [role="button"], [role="link"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"]';
+
+/** The event started on a control inside a cell (not on the row's own text). */
+function fromCellControl(event: { target: EventTarget; currentTarget: Element }): boolean {
+  const control = (event.target as Element).closest(CELL_CONTROL);
+  return (
+    control !== null && control !== event.currentTarget && event.currentTarget.contains(control)
+  );
+}
+
 function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   table,
   empty,
@@ -373,6 +386,9 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
     rows[0]?.id;
 
   const onRowKey = (event: KeyboardEvent<HTMLTableRowElement>, row: Row<TFeatures, TData>) => {
+    // The row's keys are the row's: a key from a control in a cell (a field, a button) is that
+    // control's, and so is one it already handled.
+    if (event.target !== event.currentTarget || event.defaultPrevented) return;
     const tr = event.currentTarget;
     const siblings = [
       ...(tr.parentElement?.querySelectorAll<HTMLElement>(':scope > [data-clickable]') ?? []),
@@ -434,7 +450,9 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
                   dim={isRowDim?.(row) ?? false}
                   {...(clickable && {
                     tabIndex: row.id === stop ? 0 : -1,
-                    onClick: () => onRowClick(row),
+                    onClick: (event: MouseEvent<HTMLTableRowElement>) => {
+                      if (!event.defaultPrevented && !fromCellControl(event)) onRowClick(row);
+                    },
                     onFocus: () => setFocused(row.id),
                     onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => onRowKey(event, row),
                   })}

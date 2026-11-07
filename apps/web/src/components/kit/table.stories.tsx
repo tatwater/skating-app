@@ -353,6 +353,54 @@ export const Clickable: Story = {
   },
 };
 
+const noteColumns = helper.columns([
+  helper.accessor('name', { header: 'Job', meta: { lead: true } }),
+  helper.display({
+    id: 'note',
+    header: 'Note',
+    cell: (c) => <input aria-label={`Note for ${c.row.original.name}`} defaultValue="" />,
+  }),
+]);
+
+/** A clickable table with a field in each row. */
+function JobsWithNotes({ onRowClick }: { onRowClick: () => void }) {
+  const table = useTable({
+    features,
+    columns: noteColumns,
+    data: JOBS,
+    getRowId: (row) => row.id,
+  });
+  return <DataTable table={table} empty="No jobs yet" onRowClick={onRowClick} />;
+}
+
+/**
+ * A control in a cell keeps its own presses and keys: a click into a row's field doesn't press the
+ * row, typing a space or pressing Enter there types and presses nothing, and the arrows, Home and
+ * End stay in the field — none of them is the row's. On the row itself, they are.
+ */
+export const ControlsInCells: Story = {
+  args: { onPick: fn() },
+  render: (args) => <JobsWithNotes onRowClick={args.onPick as () => void} />,
+  play: async ({ canvasElement, args }) => {
+    const field = within(canvasElement).getByRole('textbox', { name: 'Note for Season watch' });
+    await userEvent.click(field);
+    await userEvent.keyboard('Ice by the ramp{Enter}{Home}{End}{ArrowDown}{ArrowUp}');
+    await expect(field).toHaveValue('Ice by the ramp');
+    await expect(field).toHaveFocus();
+    await expect(args.onPick).not.toHaveBeenCalled();
+    // The row's own keys still work on the row.
+    const row = must(field.closest('tr'));
+    row.focus();
+    await userEvent.keyboard('{Enter}');
+    await expect(args.onPick).toHaveBeenCalledTimes(1);
+    await userEvent.click(must(row.cells[0]));
+    await expect(args.onPick).toHaveBeenCalledTimes(2);
+    await userEvent.keyboard('{ArrowDown}');
+    await expect(document.activeElement).toBe(row.nextElementSibling);
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};
+
 /** Loading: skeleton rows exactly the row height, under the real heads; the table is busy. */
 export const Loading: Story = {
   args: { loading: 4 },
