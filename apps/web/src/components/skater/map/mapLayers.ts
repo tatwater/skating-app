@@ -74,6 +74,7 @@ export const WATER_SELECTED_LAYER = 'water-selected';
 export const SUB_AREA_SCRIM_LAYER = 'sub-area-scrim';
 export const SUB_AREA_SELECTED_LAYER = 'sub-area-selected';
 export const HAZARD_FILL_LAYER = 'hazard-fill';
+export const PHOTO_PIN_COUNT_LAYER = 'photo-pin-count';
 
 /**
  * The GL layers behind each spec layer. Labels and favorites are DOM only, and the put-in marks are
@@ -360,16 +361,32 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
       filter: CONFIRMED_HAZARD_FILTER as never,
       paint: { 'line-color': hazardColor, 'line-width': 1.4 },
     },
+    // A report's placed photos, numbered as the card numbers them (`properties.n`): the pin wide
+    // enough to carry its digit, the digit in the ground color over the track's.
     {
       id: 'photo-pins',
       type: 'circle',
       source: SOURCES.photos,
       paint: {
-        'circle-radius': 5,
+        'circle-radius': 8,
         'circle-color': palette.track,
         'circle-stroke-color': palette.ground,
         'circle-stroke-width': 2,
       },
+    },
+    {
+      id: PHOTO_PIN_COUNT_LAYER,
+      type: 'symbol',
+      source: SOURCES.photos,
+      filter: ['has', 'n'],
+      layout: {
+        'text-field': ['to-string', ['get', 'n']],
+        'text-size': 10,
+        'text-font': ['Noto Sans Medium'],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: { 'text-color': palette.ground },
     },
     {
       id: 'hazard-draft-fill',

@@ -7,6 +7,7 @@ import {
   LAYER_GROUPS,
   MATCH_NONE,
   matchId,
+  PHOTO_PIN_COUNT_LAYER,
   skaterLayers,
   skaterSources,
   waterFillColor,
@@ -53,6 +54,18 @@ describe('the skater style', () => {
       expect(at(under)).toBeLessThan(at('hazard-fill'));
     }
     expect(at('water-fill')).toBe(0);
+  });
+
+  it('numbers each photo pin over its circle, from the overlay’s own count', () => {
+    const layers = skaterLayers(mapPalette('dark'), true);
+    const ids = layers.map((l) => l.id);
+    expect(ids.indexOf(PHOTO_PIN_COUNT_LAYER)).toBe(ids.indexOf('photo-pins') + 1);
+    const count = layers.find((l) => l.id === PHOTO_PIN_COUNT_LAYER) as {
+      source: string;
+      layout: Record<string, unknown>;
+    };
+    expect(count.source).toBe('photo-pins');
+    expect(count.layout['text-field']).toEqual(['to-string', ['get', 'n']]);
   });
 
   it('keeps the ids the imagery reveal and the contour helpers name', () => {
