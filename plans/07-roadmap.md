@@ -820,11 +820,16 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - ⚪ **The phone Latest's quick-filter chips and a sideways-scrolling Recommended** — not built in the phone pass → B03 §9
 - ⚪ **The weather sentence in the phone instrument strip** — not built in the phone pass → B03 §9
 - ⚪ **The "Weather from here" ring label** on the map's weather sample rings — not built → B03 §2
+- ⚪ **The phone placing mode** — a full-screen map for shore put-ins and photo placement at phone width; the founder set the direction (2026-11-07), and until it's built both actions say "on a wider screen" → B03 §9
 
 #### Owed
 - The Geoapify account and `GEOAPIFY_API_KEY` on dev — until both exist the typed address answers `off` and Settings offers "Use my current location"; the provider flip reaches dev at the next `convex dev --once`
 - The founder's device and browser pass of the new app (desktop browsers and the Pixel)
 - Before driving dev: `convex dev --once`, then `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`
+- The pool-reassign path can still place a pool photo by location regardless of its day when a lake outline loads late (noted in the PhotoSorter fix commit)
+- The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both
+- A check that the Clerk `convex` JWT template carries `picture` and `updated_at`
+- Mobile's hazards empty state still has the pre-D237 wording (web's was fixed in close-out)
 
 ## Deferred register
 

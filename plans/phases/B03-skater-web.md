@@ -1,9 +1,8 @@
 # Phase B03 — The skater web app
 
-> **Status:** scoped, 2026-11-07. Nothing built. The scoping pass below was written before any code and
-> revised the same day after the founder's review: PRs #90 (the kit) and #91 (PostHog) are merged to main,
-> so the build cuts from main (branch `phase-b03-skater-web`, worktree `../skating-b03-skater-web`). The
-> open founder questions are §6; the build model (one governor, 6–8 parallel agents) is §5. Mocks: Paper
+> **Status:** complete, 2026-11-07. PRs #95–#98 are merged to main. The build model held: one governor and
+> parallel agents in their own worktrees, cut from main on `phase-b03-skater-web`. What the build found is
+> §8; the deferred and owed rows live in the roadmap entry (`07-roadmap.md`, Phase B03). Mocks: Paper
 > *Gli · Web app · Review 3* (157 boards), rules in `skating-mockups/skater-web/README.md`.
 
 It covers the seven route pages of *Gli · Web app · Review 3* (157 boards,
