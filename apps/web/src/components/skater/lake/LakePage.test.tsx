@@ -182,10 +182,10 @@ describe('the header', () => {
     expect(header).toHaveTextContent('1,143ac');
   });
 
-  it('opens New report over the page, seeded with the lake', () => {
+  it('opens Add a report over the page, seeded with the lake', () => {
     answer();
     renderLake({ tab: 'about' });
-    const link = screen.getByRole('link', { name: 'New report' });
+    const link = screen.getByRole('link', { name: 'Add a report' });
     expect(link).toHaveAttribute('href', '/water/mascoma?tab=about&post=new&postBody=mascoma');
     fireEvent.click(link);
     expect(fakes.push).toHaveBeenCalledWith('/water/mascoma?tab=about&post=new&postBody=mascoma');
@@ -267,7 +267,7 @@ describe('the header', () => {
   it('closes every composer while an account deletion is pending', () => {
     answer({ 'profiles:current': { _id: 'me', role: 'member', deletionRequestedAt: now } });
     renderLake();
-    expect(screen.queryByRole('link', { name: 'New report' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add a report' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Report a hazard' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Post a bounty' })).toBeNull();
   });

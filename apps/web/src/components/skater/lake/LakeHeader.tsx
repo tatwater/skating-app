@@ -53,7 +53,8 @@ export interface LakeHeaderProps {
 /**
  * The lake sidebar's header (boards 1.2, 1.10, 1.13): the kicker, the name with its star (the star
  * rides the name, where it reads as the lake's own), the facts, and the actions — **one** primary,
- * *New report*, with *Report a hazard* and *Post a bounty* under it and Directions as an icon.
+ * *Add a report* (board 1.2's words; the top bar's own button says *New report*), with *Report a
+ * hazard* and *Post a bounty* under it and Directions as an icon.
  */
 export function LakeHeader({
   kicker,
@@ -143,7 +144,7 @@ export function LakeHeader({
             className={cn(buttonVariants({ variant: 'primary' }), INK_PRIMARY, 'w-full')}
           >
             <FontAwesomeIcon icon={faPlus} aria-hidden="true" className="h-[1.1em]" />
-            New report
+            Add a report
           </a>
         )}
         <div className="flex gap-(--space-2)">

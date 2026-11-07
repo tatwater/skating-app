@@ -323,7 +323,7 @@ export const LakeReports: Story = {
     const star = q.getByRole('button', { name: 'Add this lake to favorites' });
     star.focus();
     for (const name of [
-      'New report',
+      'Add a report',
       'Report a hazard',
       'Post a bounty',
       'Directions to parking',
@@ -343,7 +343,7 @@ export const LakeReports: Story = {
     const badge = must(quad.querySelector<HTMLElement>('[data-slot="badge"]'));
     await expect(getComputedStyle(badge).borderTopLeftRadius).toBe('0px');
     await expect(
-      getComputedStyle(q.getByRole('link', { name: 'New report' })).borderTopLeftRadius,
+      getComputedStyle(q.getByRole('link', { name: 'Add a report' })).borderTopLeftRadius,
     ).toBe('2px');
     // The last report has no rule under it.
     const rows = quad.querySelectorAll<HTMLElement>('[data-slot="report-row"]');
