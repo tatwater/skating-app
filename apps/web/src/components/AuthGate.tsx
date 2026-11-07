@@ -17,14 +17,12 @@ const GOOGLE_PHOTOS_CALLBACK = '/google-photos/callback';
 
 /**
  * The areas still drawn inside the old `AppShell` — the pages B03 hasn't migrated yet. Everything
- * else (`/`, `/water/…`, and a path no route matches) renders bare: the skater layout or the screen
- * brings its own chrome. Each entry retires as its page migrates (report/hazard/bounty went with
- * the panels): settings/u/about/notifications with G, feed with H, post with I. At close-out only
- * `/admin` stays.
+ * else (`/`, `/water/…`, the cards, profile, settings, about, and a path no route matches) renders
+ * bare: the skater layout or the screen brings its own chrome. Each entry retires as its page
+ * migrates: feed with H, post with I. At close-out only `/admin` stays.
  */
-const OLD_SHELL_EXACT = ['/feed', '/notifications', '/post', '/about'];
-const OLD_SHELL_TREES = ['/admin', '/settings'];
-const OLD_SHELL_CHILDREN = ['/u/'];
+const OLD_SHELL_EXACT = ['/feed', '/post'];
+const OLD_SHELL_TREES = ['/admin'];
 
 /**
  * Whether the router matched nothing: the root's `notFoundComponent` is about to render, and it
@@ -40,10 +38,7 @@ export function isNotFound(state: { matches: ReadonlyArray<{ _notFound?: boolean
 export function usesOldShell(pathname: string): boolean {
   return (
     OLD_SHELL_EXACT.includes(pathname) ||
-    OLD_SHELL_TREES.some((tree) => pathname === tree || pathname.startsWith(`${tree}/`)) ||
-    OLD_SHELL_CHILDREN.some(
-      (prefix) => pathname.startsWith(prefix) && pathname.length > prefix.length,
-    )
+    OLD_SHELL_TREES.some((tree) => pathname === tree || pathname.startsWith(`${tree}/`))
   );
 }
 

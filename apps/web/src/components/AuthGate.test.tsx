@@ -142,12 +142,7 @@ describe('usesOldShell', () => {
     '/admin',
     '/admin/water/review',
     '/feed',
-    '/settings',
-    '/settings/notifications',
-    '/u/skater',
-    '/notifications',
     '/post',
-    '/about',
   ])('keeps %s in the old shell', (path) => {
     expect(usesOldShell(path)).toBe(true);
   });
@@ -159,6 +154,11 @@ describe('usesOldShell', () => {
     '/administer',
     '/feedback',
     '/u/',
+    '/u/skater',
+    '/settings',
+    '/settings/notifications',
+    '/notifications',
+    '/about',
     '/report',
     '/report/r1',
     '/hazard/h1',
