@@ -34,6 +34,7 @@ import {
   type HazardShape,
   hazardBbox,
   hazardFootprint,
+  hazardPlaceLine,
   initialLifecycleState,
   isInSeason,
   isMinor,
@@ -41,6 +42,7 @@ import {
   isPassageMarker,
   isProvisional,
   isValidHazardShape,
+  nearestLandmarkWithin,
   promotionTargetFor,
   rankPromotionCandidates,
   resolveSeason,
@@ -64,6 +66,7 @@ import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
+import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -327,6 +330,13 @@ export interface HazardView extends Doc<'hazards'> {
    * warnings about the same ice. Only the single-hazard `get` resolves it.
    */
   promotedFeatureType?: string;
+  /**
+   * Where the pin is, in the lake's own words (B03 §11): its bay and the nearest named landmark
+   * within `HAZARD_LANDMARK_RADIUS_M` — "The Narrows, by Shaker Bridge" (`hazardPlaceLine`).
+   * Single-hazard path only, like `promotedFeatureType`: a body's landmarks are up to 1,500 rows, a
+   * read the map's live list must not pay per subscription. Absent when nothing derivable exists.
+   */
+  placeLine?: string;
   /**
    * Set only when this hazard shares a cluster with at least one other pin (D80). `confirmCount` on
    * this view is then the **pooled** number and these two say so, which is what lets the drawer print
@@ -796,6 +806,23 @@ export const get = query({
       const feature = await ctx.db.get(hazard.promotedToFeatureId);
       if (feature?.active) view.promotedFeatureType = feature.type;
     }
+
+    // The place line, from data that already exists — the bay stamp and the live landmarks. The
+    // footprint's box center stands for the pin: for a line or an area it is the middle of what was
+    // drawn, which is what "by" should be measured from.
+    const center = {
+      lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
+      lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
+    };
+    const landmark = nearestLandmarkWithin(
+      center,
+      await liveLandmarksForBody(ctx, hazard.waterBodyId),
+    );
+    const placeLine = hazardPlaceLine({
+      ...(hazard.subAreaName !== undefined ? { subAreaName: hazard.subAreaName } : {}),
+      ...(landmark ? { landmarkName: landmark.name } : {}),
+    });
+    if (placeLine !== undefined) view.placeLine = placeLine;
 
     // Resolve "reported by <name>", withheld when the viewer and the author have blocked each other
     // (D32) — the drawer just omits the line then, exactly as a blocked comment's author is withheld.

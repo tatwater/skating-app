@@ -283,3 +283,68 @@ describe('hazards.listInViewport (B03 §11)', () => {
     warn.mockRestore();
   });
 });
+
+describe('hazards.get — the place line (B03 §11)', () => {
+  async function seedLandmark(
+    t: T,
+    waterBodyId: Id<'waterBodies'>,
+    name: string,
+    point: { lat: number; lng: number },
+    extra: Partial<Doc<'bodyLandmarks'>> = {},
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('bodyLandmarks', {
+        waterBodyId,
+        name,
+        kind: 'bridge',
+        point,
+        source: 'osm',
+        externalIds: [],
+        aliases: [],
+        createdAt: T0,
+        updatedAt: T0,
+        ...extra,
+      }),
+    );
+  }
+
+  test("the bay and the nearest live landmark within the radius: 'The Narrows, by Shaker Bridge'", async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedAuthor(t);
+    const a = await seedBody(t, 44.0, -72.0);
+    await seedLandmark(t, a, 'Shaker Bridge', { lat: 44.001, lng: -72.0 }); // ~110 m
+    await seedLandmark(t, a, 'Farther Point', { lat: 44.003, lng: -72.0 }); // ~330 m
+    await seedLandmark(t, a, 'Gone Island', { lat: 44.0001, lng: -72.0 }, { removedAt: T0 });
+    const id = await seedHazard(
+      t,
+      a,
+      author,
+      { lat: 44.0, lng: -72.0 },
+      {
+        subAreaName: 'The Narrows',
+      },
+    );
+    expect((await t.query(api.hazards.get, { hazardId: id }))?.placeLine).toBe(
+      'The Narrows, by Shaker Bridge',
+    );
+  });
+
+  test('nothing derivable, nothing said; a landmark past the radius is not "by"', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedAuthor(t);
+    const a = await seedBody(t, 44.0, -72.0);
+    await seedLandmark(t, a, 'Far Bridge', { lat: 44.02, lng: -72.0 }); // ~2.2 km
+    const id = await seedHazard(t, a, author, { lat: 44.0, lng: -72.0 });
+    expect((await t.query(api.hazards.get, { hazardId: id }))?.placeLine).toBeUndefined();
+    const withBay = await seedHazard(
+      t,
+      a,
+      author,
+      { lat: 44.0, lng: -72.0 },
+      {
+        subAreaName: 'North Bay',
+      },
+    );
+    expect((await t.query(api.hazards.get, { hazardId: withBay }))?.placeLine).toBe('North Bay');
+  });
+});
