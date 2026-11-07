@@ -1,111 +1,22 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBullseyeArrow, faChevronRight, faImage } from '@fortawesome/sharp-light-svg-icons';
+import { faBullseyeArrow, faChevronRight } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import type { FeedCardData } from '@skating/core';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 
-import { Avatar } from '@/components/kit/avatar';
-import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { Section } from '@/components/kit/section-slug';
 import { Skeleton } from '@/components/kit/skeleton';
 import { cn } from '@/lib/utils';
 
+import { ReportCard } from '../cards/ReportCard';
 import { HazardList } from './HazardList';
-import {
-  openBountiesLine,
-  type ReportRowInput,
-  type ReportRowModel,
-  reportRowModel,
-} from './lakeModel';
+import { openBountiesLine } from './lakeModel';
 
 /** An in-app link handler: the id, and the click (a modified click opens a tab on its own). */
 export type OpenHandler = (id: string, event: ReactMouseEvent<HTMLAnchorElement>) => void;
-
-/**
- * One report on a lake's Reports tab (board 1.2) — a light row, not the full card (the report card
- * is its own composition, opened from here as an inset card): the person (a circle), when they
- * skated, where, their own claims as badges, their words, the ice types, and how many photos. The
- * whole row is the link to `/report/$id`.
- */
-export function ReportRow({
-  row,
-  author,
-  href,
-  onOpen,
-}: {
-  row: ReportRowModel;
-  author: { name: string; imageUrl?: string } | null;
-  href: string;
-  onOpen: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
-}) {
-  const name = author?.name ?? 'A skater';
-  return (
-    <a
-      href={href}
-      onClick={onOpen}
-      data-slot="report-row"
-      data-attr="lake-report"
-      className={cn(
-        'flex min-w-0 flex-col gap-(--space-2_5) rounded-control py-(--space-4) no-underline outline-none',
-        'border-0 border-b border-dotted border-line2 first:pt-(--space-1) last:border-b-0',
-        'transition-colors duration-(--duration-fast) ease-standard lit:bg-lift-03',
-        'focus-visible:shadow-focus',
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-(--space-2_5)">
-        <Avatar
-          name={name}
-          size="md"
-          {...(author?.imageUrl ? { src: author.imageUrl } : {})}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 truncate text-row font-medium text-fg">{name}</span>
-        <span className="ms-auto shrink-0 font-(family-name:--family-mono) text-assist whitespace-nowrap text-fg2">
-          {row.when}
-        </span>
-      </span>
-      {row.where && <span className="text-assist text-fg2">{row.where}</span>}
-      {row.badges.length > 0 && (
-        <span className="flex flex-wrap gap-(--space-1_5)">
-          {row.badges.map((b) =>
-            b.kind === 'quality' || b.tone === 'bad' ? (
-              // How it skated is the filled face; "Don't go" is the filled red (the boards' `.bdg.bad`).
-              <Badge key={b.label} variant="solid" tone={b.tone === 'bad' ? 'bad' : 'default'}>
-                {b.label}
-              </Badge>
-            ) : (
-              <Badge key={b.label} variant="outline">
-                {b.label}
-              </Badge>
-            ),
-          )}
-        </span>
-      )}
-      {row.notes && (
-        <span className="line-clamp-4 text-row leading-body text-fg1 [text-wrap:pretty]">
-          {row.notes}
-        </span>
-      )}
-      {(row.iceTypes.length > 0 || row.photoCount > 0) && (
-        <span className="flex flex-wrap items-center gap-(--space-1_5)">
-          {row.iceTypes.map((t) => (
-            <Badge key={t} variant="outline">
-              {t}
-            </Badge>
-          ))}
-          {row.photoCount > 0 && (
-            <span className="ms-auto flex items-center gap-(--space-1_5) text-assist text-fg3">
-              <FontAwesomeIcon icon={faImage} aria-hidden="true" className="h-[0.85em]" />
-              {row.photoCount} {row.photoCount === 1 ? 'photo' : 'photos'}
-            </span>
-          )}
-        </span>
-      )}
-    </a>
-  );
-}
 
 /** The bounties line at the tab's foot: "3 open bounties", outline — never points (Review 2). */
 export function BountiesLine({
@@ -138,22 +49,30 @@ export function BountiesLine({
 
 export interface ReportsListModel {
   status: 'loading' | 'ready';
-  rows: { row: ReportRowModel; author: { name: string; imageUrl?: string } | null }[];
+  /** The page as cards (`reports.listCardsByWaterBody`). */
+  cards: FeedCardData[];
   canLoadMore: boolean;
   loadingMore: boolean;
 }
 
-/** The Reports section: a count, the rows, "Load more", and the empty line. */
+/**
+ * The Reports section (board 1.2): a count, the rows, "Load more", and the empty line. Each row is
+ * the shared `ReportCard`, so a report reads the same here as on Latest and a profile — saying the
+ * bay rather than the lake, since the list is already this lake's.
+ */
 export function ReportsListView({
   model,
   onOpen,
   onLoadMore,
   emptyLine,
+  now = Date.now(),
 }: {
   model: ReportsListModel;
-  onOpen: OpenHandler;
+  onOpen: (reportId: string) => void;
   onLoadMore: () => void;
   emptyLine: string;
+  /** The clock the rows' ages read from, one per list. */
+  now?: number;
 }) {
   if (model.status === 'loading') {
     return (
@@ -163,18 +82,25 @@ export function ReportsListView({
     );
   }
   return (
-    <Section title="Reports" level={2} count={model.rows.length} className="ph-no-capture">
-      {model.rows.length === 0 ? (
+    <Section title="Reports" level={2} count={model.cards.length} className="ph-no-capture">
+      {model.cards.length === 0 ? (
         <p className="m-0 text-row text-fg2">{emptyLine}</p>
       ) : (
         <div className="flex flex-col">
-          {model.rows.map(({ row, author }) => (
-            <ReportRow
-              key={row.id}
-              row={row}
-              author={author}
-              href={`/report/${row.id}`}
-              onOpen={(event) => onOpen(row.id, event)}
+          {model.cards.map((card, i) => (
+            <ReportCard
+              key={card.reportId}
+              report={card}
+              now={now}
+              href={`/report/${card.reportId}`}
+              onOpen={() => onOpen(card.reportId)}
+              hideBody
+              {...(card.notesExcerpt !== undefined ? { excerpt: card.notesExcerpt } : {})}
+              {...(card.helpfulCount !== undefined ? { helpfulCount: card.helpfulCount } : {})}
+              {...(card.commentCount !== undefined ? { commentCount: card.commentCount } : {})}
+              helpfulCountCapped={card.helpfulCountCapped === true}
+              commentCountCapped={card.commentCountCapped === true}
+              last={i === model.cards.length - 1}
             />
           ))}
         </div>
@@ -205,35 +131,21 @@ export function ReportsTab({
 }: {
   waterBodyId: string;
   subAreaId?: string;
-  onOpen: { hazard: OpenHandler; report: OpenHandler };
+  onOpen: { hazard: OpenHandler; report: (reportId: string) => void };
   /** The lake's open bounties — the first one's card, until a list of them has a home. */
   onOpenBounties: OpenHandler;
 }) {
   const bodyId = waterBodyId as Id<'waterBodies'>;
   const bayId = subAreaId as Id<'waterBodySubAreas'> | undefined;
   const scope = { waterBodyId: bodyId, ...(bayId !== undefined ? { subAreaId: bayId } : {}) };
-  const { results, status, loadMore } = usePaginatedQuery(api.reports.listByWaterBody, scope, {
+  const { results, status, loadMore } = usePaginatedQuery(api.reports.listCardsByWaterBody, scope, {
     initialNumItems: REPORTS_PAGE_SIZE,
   });
-  const authorIds = [...new Set(results.map((r) => r.authorId))];
-  const authors = useQuery(
-    api.profiles.publicByIds,
-    authorIds.length > 0 ? { profileIds: authorIds } : 'skip',
-  );
   const bounties = useQuery(api.bounties.listForBody, scope);
 
-  const now = Date.now();
   const model: ReportsListModel = {
     status: status === 'LoadingFirstPage' ? 'loading' : 'ready',
-    rows: results.map((r) => {
-      const a = authors?.[r.authorId];
-      return {
-        row: reportRowModel(r as unknown as ReportRowInput, now),
-        author: a
-          ? { name: a.displayName, ...(a.profileImageUrl ? { imageUrl: a.profileImageUrl } : {}) }
-          : null,
-      };
-    }),
+    cards: results,
     canLoadMore: status === 'CanLoadMore' || status === 'LoadingMore',
     loadingMore: status === 'LoadingMore',
   };

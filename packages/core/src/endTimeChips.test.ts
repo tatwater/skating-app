@@ -8,8 +8,11 @@ import {
   floorToLocalHalfHour,
   floorToMinute,
   freshnessRefusal,
+  instantForClockAtOrBefore,
   openedInDaylight,
   precisionForChoice,
+  startTimeChips,
+  WHEN_CHIP_COUNT,
 } from './endTimeChips';
 import { SKATE_TIME_FUTURE_TOLERANCE_MS } from './report';
 import { sunTimes } from './solar';
@@ -198,5 +201,80 @@ describe('precisionForChoice', () => {
     expect(precisionForChoice(row, openedAt)).toBe('minute');
     expect(precisionForChoice(row, local(2026, 1, 10, 15, 30))).toBe('half_hour');
     expect(precisionForChoice(row, local(2026, 1, 8, 9, 0))).toBe('half_hour');
+  });
+});
+
+describe('startTimeChips', () => {
+  it('offers the last half hours strictly before the end, newest first', () => {
+    const end = local(2026, 1, 10, 16, 12);
+    expect(startTimeChips(end, TZ)).toEqual(
+      [0, 1, 2].map((i) => local(2026, 1, 10, 16, 0) - i * HALF_HOUR),
+    );
+  });
+
+  it('an end on a boundary steps back — the end itself is never a start', () => {
+    const end = local(2026, 1, 10, 16, 30);
+    expect(startTimeChips(end, TZ)).toEqual([1, 2, 3].map((i) => end - i * HALF_HOUR));
+  });
+
+  it('strictly before the end, decreasing, on local half hours (property, across DST)', () => {
+    const from = Date.UTC(2025, 11, 31);
+    const to = Date.UTC(2026, 11, 1);
+    fc.assert(
+      fc.property(fc.integer({ min: from, max: to }), (end) => {
+        const chips = startTimeChips(end, TZ);
+        expect(chips).toHaveLength(WHEN_CHIP_COUNT);
+        expect(chips[0]).toBeGreaterThan(end - 2 * HALF_HOUR);
+        for (const [i, ms] of chips.entries()) {
+          expect(ms).toBeLessThan(end);
+          expect(zonedMinuteOfDay(ms, TZ) % 30).toBe(0);
+          if (i > 0) expect(ms).toBe((chips[i - 1] as number) - HALF_HOUR);
+        }
+      }),
+      { numRuns: 500 },
+    );
+  });
+});
+
+describe('instantForClockAtOrBefore', () => {
+  it('a clock reading earlier in the day stays on the day; a later one is last night', () => {
+    const anchor = local(2026, 1, 10, 9, 25);
+    expect(instantForClockAtOrBefore(anchor, 8 * 60, TZ)).toBe(local(2026, 1, 10, 8, 0));
+    expect(instantForClockAtOrBefore(anchor, 9 * 60 + 25, TZ)).toBe(anchor);
+    expect(instantForClockAtOrBefore(anchor, 23 * 60, TZ)).toBe(local(2026, 1, 9, 23, 0));
+  });
+
+  it('never lands after the anchor, and within a day of it (property, across DST)', () => {
+    const from = Date.UTC(2025, 11, 31);
+    const to = Date.UTC(2026, 11, 1);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: from, max: to }),
+        fc.integer({ min: 0, max: 24 * 60 - 1 }),
+        (anchor, minuteOfDay) => {
+          const ms = instantForClockAtOrBefore(anchor, minuteOfDay, TZ);
+          expect(ms).toBeLessThanOrEqual(anchor);
+          // A day on the wall clock — 25 hours at the fall-back transition.
+          expect(anchor - ms).toBeLessThanOrEqual(25 * 60 * 60_000);
+        },
+      ),
+      { numRuns: 500 },
+    );
+  });
+
+  it('reads the wall clock exactly, away from DST transitions', () => {
+    const from = local(2026, 1, 1, 0, 0);
+    const to = local(2026, 1, 31, 0, 0);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: from, max: to }),
+        fc.integer({ min: 0, max: 24 * 60 - 1 }),
+        (anchor, minuteOfDay) => {
+          const ms = instantForClockAtOrBefore(anchor, minuteOfDay, TZ);
+          expect(zonedMinuteOfDay(ms, TZ)).toBe(minuteOfDay);
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 });

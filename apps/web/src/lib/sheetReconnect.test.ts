@@ -5,6 +5,7 @@ import { whenSheetPhotosSettled } from './sheetPhotos';
 import { useResendOnReconnect } from './sheetReconnect';
 import {
   bindSheetOwner,
+  getSheet,
   getSheetResend,
   resetSheetStoreForTests,
   type SheetSendOutcome,
@@ -78,7 +79,7 @@ describe('resending on reconnect', () => {
     go('offline');
     expect(send).not.toHaveBeenCalled();
     go('online');
-    await waitFor(() => expect(onResult).toHaveBeenCalledWith(POSTED));
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith({ ...POSTED, stillOpen: true }));
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]?.[0]).toEqual(post);
     expect(getSheetResend()).toBe('none');
@@ -120,5 +121,73 @@ describe('resending on reconnect', () => {
       expect(onResult).toHaveBeenCalledWith({ kind: 'refused', message: 'Still no connection.' }),
     );
     expect(getSheetResend()).toBe('waiting');
+  });
+
+  describe('an answer that comes back after the author moved on', () => {
+    function held() {
+      let answer: (outcome: SheetSendOutcome) => void = () => {};
+      const send = vi.fn(
+        () =>
+          new Promise<SheetSendOutcome>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      return { send, answer: (outcome: SheetSendOutcome) => answer(outcome) };
+    }
+
+    it('a landed resend for a sheet since replaced is not handed on — the new draft stays', async () => {
+      await pressPostOffline();
+      const { send, answer } = held();
+      const { go, onResult } = mount(send);
+      go('offline');
+      go('online');
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      const next = { ...openSheet(), title: 'The new one' };
+      setSheet(next);
+      await act(async () => answer(POSTED));
+      await whenSheetPhotosSettled();
+      expect(onResult).not.toHaveBeenCalled();
+      expect(getSheet()?.draftId).toBe(next.draftId);
+    });
+
+    it('a refused resend for a sheet since replaced is not handed on either', async () => {
+      const post = await pressPostOffline();
+      const { send, answer } = held();
+      const { go, onResult } = mount(send);
+      go('offline');
+      go('online');
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      setSheet(openSheet());
+      await act(async () =>
+        answer({ kind: 'refused', message: 'No connection.', draft: attemptAt(post) }),
+      );
+      expect(onResult).not.toHaveBeenCalled();
+    });
+
+    it('a resend that lands after the console unmounted reaches no one', async () => {
+      await pressPostOffline();
+      const { send, answer } = held();
+      const { go, onResult, unmount } = mount(send);
+      go('offline');
+      go('online');
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      unmount();
+      await act(async () => answer(POSTED));
+      expect(onResult).not.toHaveBeenCalled();
+      expect(getSheet()).toBeNull();
+    });
+
+    it('a refused resend for the sheet still open is handed on', async () => {
+      const post = await pressPostOffline();
+      const { send, answer } = held();
+      const { go, onResult } = mount(send);
+      go('offline');
+      go('online');
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      await act(async () =>
+        answer({ kind: 'refused', message: 'No connection.', draft: attemptAt(post) }),
+      );
+      expect(onResult).toHaveBeenCalledWith({ kind: 'refused', message: 'No connection.' });
+    });
   });
 });

@@ -17,3 +17,6 @@ dist
 
 # Storybook build output and its debug log
 storybook-static
+
+# Local depth archives tried in dev (served with HTTP Range — scripts/bathymetry/BANDS.md)
+public/dev-tiles/

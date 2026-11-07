@@ -20,7 +20,9 @@ const h = vi.hoisted(() => ({
   flag: false,
   lost: 0,
   notKept: false,
+  phone: false,
 }));
+vi.mock('../phone/usePhoneLayout', () => ({ useIsPhone: () => h.phone }));
 
 vi.mock('@/lib/sheetStore', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/sheetStore')>()),
@@ -87,6 +89,25 @@ function Connected() {
   return post === null ? null : <ReportSheet post={post} exits={exits} />;
 }
 
+/**
+ * An end time chosen by hand: the desk's When row no longer preselects the pinned minute
+ * (founder, 2026-11-07), so a Post that must go out whole says its end here.
+ */
+function withEnd(post: PostSheet): PostSheet {
+  return {
+    ...post,
+    reports: post.reports.map((r) => ({
+      ...r,
+      sheet: sheetReducer(r.sheet, {
+        type: 'select',
+        field: 'endTime',
+        key: 'chosen',
+        value: { ms: Date.now() - 60_000, precision: 'minute' },
+      }),
+    })),
+  };
+}
+
 function withLake(post: PostSheet, bodyName = 'Mascoma Lake'): PostSheet {
   return {
     ...post,
@@ -122,9 +143,26 @@ beforeEach(() => {
   h.flag = false;
   h.lost = 0;
   h.notKept = false;
+  h.phone = false;
   for (const f of Object.values(exits)) f.mockReset();
 });
 afterEach(() => setSheet(null));
+
+describe('on a phone (9.8, 9.9)', () => {
+  it('draws the instrument as its strip, the meter in the foot, and Change asks first', () => {
+    h.phone = true;
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    expect(screen.queryByRole('region', { name: 'The lake and the day' })).toHaveAttribute(
+      'data-slot',
+      'phone-instrument',
+    );
+    expect(document.querySelector('[data-slot="instrument"]')).toBeNull();
+    expect(document.querySelector('[data-slot="sheet-foot-meter"]')).toHaveTextContent(/of 10/);
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect(screen.getByRole('alertdialog', { name: 'Remove Mascoma Lake?' })).toBeInTheDocument();
+  });
+});
 
 describe('Which lake? (5.2)', () => {
   it('asks for the lake first, with the questions waiting behind it', () => {
@@ -246,10 +284,43 @@ describe('posting (5.23–5.27)', () => {
     expect(document.querySelectorAll('[data-cell="need"]').length).toBeGreaterThan(0);
   });
 
+  it('folds Ice and surface to the board’s row, the whole list under More (5.9)', () => {
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    const section = document.getElementById('section-ice') as HTMLElement;
+    // The fold's row: the chips before its More / Fewer control, by their names.
+    const chipNames = () => {
+      const fold = section.querySelector('[data-attr="sheet-ice-more"]') as HTMLElement;
+      return [
+        ...(fold.parentElement as HTMLElement).querySelectorAll('[data-attr="sheet-chip"]'),
+      ].map((c) => c.getAttribute('aria-label'));
+    };
+    expect(chipNames()).toEqual(['Glass', 'Smooth', 'Rough', 'Bumpy']);
+    expect(within(section).queryByRole('button', { name: 'Black ice' })).toBeNull();
+    // A chosen chip stays in the folded row wherever it sits in the list.
+    fireEvent.click(within(section).getByRole('button', { name: 'More' }));
+    expect(within(section).getByRole('button', { name: 'Fewer' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    fireEvent.click(within(section).getByRole('button', { name: 'Black ice' }));
+    fireEvent.click(within(section).getByRole('button', { name: 'Fewer' }));
+    expect(chipNames()).toEqual(['Black ice', 'Glass', 'Smooth', 'Rough', 'Bumpy']);
+  });
+
+  it('writes the story on the underline, as the board draws it (5.1)', () => {
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    expect(screen.getByRole('textbox', { name: 'How was it?' })).toHaveAttribute(
+      'data-variant',
+      'underline',
+    );
+  });
+
   it('fades everything while posting, the tab included, then hands over the posted report', async () => {
     let land: (v: unknown) => void = () => {};
     h.post.mockImplementation(() => new Promise((r) => (land = r)));
-    const post = withLake(openSheet());
+    const post = withEnd(withLake(openSheet()));
     // A minimum set, so the Post goes out.
     setSheet(post);
     render(<Connected />);
@@ -266,6 +337,23 @@ describe('posting (5.23–5.27)', () => {
     await act(async () => land({ kind: 'posted', postId: 'p1', reportId: 'rep-1' }));
     await waitFor(() => expect(exits.onDone).toHaveBeenCalledWith('rep-1'));
     expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
+  });
+
+  it('a Post that lands after another sheet opened counts, but hands nothing over', async () => {
+    let land: (v: unknown) => void = () => {};
+    h.post.mockImplementation(() => new Promise((r) => (land = r)));
+    setSheet(withEnd(withLake(openSheet())));
+    render(<Connected />);
+    fireEvent.click(screen.getByRole('button', { name: 'Good' }));
+    fireEvent.click(screen.getByRole('button', { name: /Experienced only/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Glass' })[0] as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(h.post).toHaveBeenCalledTimes(1));
+    // Another sheet is open by the time it lands (an account change, say).
+    act(() => setSheet(withLake(openSheet())));
+    await act(async () => land({ kind: 'posted', postId: 'p1', reportId: 'rep-1' }));
+    expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
+    expect(exits.onDone).not.toHaveBeenCalled();
   });
 
   it('a Post sent with no answer says it may be up, takes no change, and offers Try again', () => {
@@ -347,7 +435,7 @@ describe('the restore’s notices and the edit (5.28–5.30)', () => {
 
   it('saves an edit and hands over the report', async () => {
     h.save.mockResolvedValue('r1');
-    setSheet({ ...withLake(openSheet()), mode: { kind: 'edit', reportId: 'r1' } });
+    setSheet({ ...withEnd(withLake(openSheet())), mode: { kind: 'edit', reportId: 'r1' } });
     render(<Connected />);
     fireEvent.click(screen.getByRole('button', { name: 'Good' }));
     fireEvent.click(screen.getByRole('button', { name: 'Glass' }));
@@ -369,7 +457,7 @@ describe('the rest of the paths', () => {
   });
 
   it('a send the server refuses says why; pressing again counts as a retry', async () => {
-    const post = withLake(openSheet());
+    const post = withEnd(withLake(openSheet()));
     h.post.mockResolvedValue({
       kind: 'refused',
       message: 'The server said no.',
@@ -413,7 +501,7 @@ describe('the rest of the paths', () => {
 
   it('an edit the server refuses keeps the sheet and says why', async () => {
     h.save.mockRejectedValue(new Error('Not yours.'));
-    setSheet({ ...withLake(openSheet()), mode: { kind: 'edit', reportId: 'r1' } });
+    setSheet({ ...withEnd(withLake(openSheet())), mode: { kind: 'edit', reportId: 'r1' } });
     render(<Connected />);
     fireEvent.click(screen.getByRole('button', { name: 'Good' }));
     fireEvent.click(screen.getByRole('button', { name: 'Glass' }));

@@ -210,7 +210,7 @@ function SearchField({ refocus, loading }: { refocus: { current: boolean }; load
   );
 }
 
-function ResultRow({
+export function ResultRow({
   row,
   query,
   onPick,
@@ -314,7 +314,13 @@ function Outline({ rings, bbox }: NonNullable<SearchRow['silhouette']>) {
   );
 }
 
-function EmptyNote({ noResultsFor, loading }: { noResultsFor: string | null; loading: boolean }) {
+export function EmptyNote({
+  noResultsFor,
+  loading,
+}: {
+  noResultsFor: string | null;
+  loading: boolean;
+}) {
   if (loading) {
     return (
       <div role="status" className="grid h-12 place-items-center text-fg3">

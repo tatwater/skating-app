@@ -13,7 +13,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CONTOUR_MIN_ZOOM, CONTOUR_SOURCE_LAYER } from '@skating/core';
+import { BAND_SOURCE_LAYER, CONTOUR_MIN_ZOOM, CONTOUR_SOURCE_LAYER } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 
 const TILE_SH = readFileSync(join(import.meta.dirname, '..', 'tile.sh'), 'utf8');
@@ -58,5 +58,40 @@ describe('tile.sh', () => {
     // least data to spare, which under D82 is the one direction this layer must not fail in.
     expect(COMMANDS).toContain('--drop-densest-as-needed');
     expect(COMMANDS).not.toContain('--drop-fraction-as-needed');
+  });
+});
+
+/** The command that tiles the bands, from its `tippecanoe` to the input path. */
+const BANDS_COMMAND = (() => {
+  const start = COMMANDS.indexOf(`--layer=${BAND_SOURCE_LAYER}`);
+  if (start === -1) throw new Error('tile.sh no longer tiles the bands layer');
+  const from = COMMANDS.lastIndexOf('tippecanoe', start);
+  return COMMANDS.slice(from, COMMANDS.indexOf('"$BANDS"', start));
+})();
+
+describe('tile.sh — the bands layer (B03 §2)', () => {
+  it('tiles the bands into their own layer, under the name the clients read', () => {
+    expect(BANDS_COMMAND).toContain(`--layer=${BAND_SOURCE_LAYER}`);
+    // The lines keep theirs: the first `--layer` is still the contour layer.
+    expect(flag('layer')).toBe(CONTOUR_SOURCE_LAYER);
+  });
+
+  it('covers the same zooms as the lines, so a lake never has lines without its fill', () => {
+    expect(BANDS_COMMAND).toContain(`--minimum-zoom=${flag('minimum-zoom')}`);
+    expect(BANDS_COMMAND).toContain(`--maximum-zoom=${flag('maximum-zoom')}`);
+  });
+
+  it('never drops a band, since a missing band reads as a different depth', () => {
+    expect(BANDS_COMMAND).not.toMatch(/--drop-[a-z-]*as-needed/);
+    expect(BANDS_COMMAND).not.toMatch(/--coalesce-[a-z-]*as-needed/);
+    expect(BANDS_COMMAND).toContain('--no-tile-size-limit');
+  });
+
+  it('simplifies shared edges once, so no sliver opens between two bands', () => {
+    expect(BANDS_COMMAND).toContain('--detect-shared-borders');
+  });
+
+  it('joins the two layers without tile-join dropping an oversized tile', () => {
+    expect(COMMANDS).toMatch(/tile-join[\s\S]*-pk/);
   });
 });

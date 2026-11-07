@@ -23,27 +23,39 @@ export function useAutosave(
   const latest = useRef(initial);
   const saved = useRef(initial);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Saves sent and not yet answered. */
+  const inFlight = useRef(0);
   const saveRef = useRef(save);
   saveRef.current = save;
+
+  /**
+   * Is there nothing to send? Only when the value is the saved one *and* no older save is still
+   * out: typed back to the saved text while a save of the longer one is in flight, skipping would
+   * let that save land afterward and leave the server holding words the person took back.
+   */
+  const settled = useCallback(() => latest.current === saved.current && inFlight.current === 0, []);
 
   const run = useCallback(() => {
     timer.current = null;
     const sending = latest.current;
-    if (sending === saved.current) {
+    if (settled()) {
       setStatus('saved');
       return;
     }
     setStatus('saving');
+    inFlight.current += 1;
     saveRef.current(sending).then(
       () => {
+        inFlight.current -= 1;
         saved.current = sending;
         if (latest.current === sending) setStatus('saved');
       },
       () => {
+        inFlight.current -= 1;
         if (latest.current === sending) setStatus('failed');
       },
     );
-  }, []);
+  }, [settled]);
 
   const setValue = useCallback(
     (next: string) => {
@@ -68,9 +80,9 @@ export function useAutosave(
     () => () => {
       if (timer.current === null) return;
       clearTimeout(timer.current);
-      if (latest.current !== saved.current) void saveRef.current(latest.current).catch(() => {});
+      if (!settled()) void saveRef.current(latest.current).catch(() => {});
     },
-    [],
+    [settled],
   );
 
   return { value, setValue, status, flush };

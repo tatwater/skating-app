@@ -11,16 +11,16 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
-import { type MouseEvent as ReactMouseEvent, useEffect, useMemo } from 'react';
+import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo } from 'react';
 
 import { type FavoriteTargetType, useAnalytics } from '@/lib/analytics';
-import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { RequestButtons } from '../../RequestLake';
 import { LakeAction } from '../actions/LakeAction';
 import { withNewReport } from '../chrome';
 import { lakeMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
+import { PhoneLakeDrawer } from '../phone/PhoneLakeDrawer';
 import { reportSheetLinkState } from '../sheet/sheetHostModel';
 import { AboutTab } from './AboutTab';
 import { AccessTab } from './AccessTab';
@@ -34,6 +34,7 @@ import type { LakeSearch, LakeTab } from './lakeSearch';
 import { takeWaterBodyOpenSource } from './openSource';
 import { ReportsTab } from './ReportsTab';
 import { WeatherTab } from './WeatherTab';
+import { weatherSamplesOverlay } from './weather/weatherModel';
 
 /**
  * `/water/$id` — a lake chosen (boards 1.2–1.14). The sidebar beside the region map (the layout's): the header,
@@ -53,8 +54,12 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
   const bay = sub ? (subAreas?.find((s) => s._id === sub && !s.removed) ?? null) : null;
   const liveSub = bay?._id;
 
+  const samples = useMemo(
+    () => (tab === 'weather' && body ? weatherSamplesOverlay(body, subAreas, liveSub) : null),
+    [tab, body, subAreas, liveSub],
+  );
   useMapSpec(
-    useMemo(() => lakeMapSpec(id, liveSub), [id, liveSub]),
+    useMemo(() => lakeMapSpec(id, liveSub, samples), [id, liveSub, samples]),
     { onOpenImagery: () => nav.push(nav.with({ act: 'imagery' })) },
   );
 
@@ -73,20 +78,76 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
     nav.replace(nav.with({ act: null, band: null, frame: null, hazard: null }));
   useEscapeToClose(act !== undefined, closeAct);
 
-  const contourCredit = useSkaterMapStore((s) => s.contourCredit);
-
-  if (result === undefined) return <LakeSidebarSkeleton />;
+  if (result === undefined) {
+    return (
+      <PhoneLakeDrawer label="Loading the lake">
+        <LakeSidebarSkeleton />
+      </PhoneLakeDrawer>
+    );
+  }
   if (result === null || !result.available) {
     return (
-      <LakeUnavailable
-        kind={result === null ? 'not-found' : 'unavailable'}
-        explore={nav.link('/')}
-      />
+      <PhoneLakeDrawer label="Lake unavailable">
+        <LakeUnavailable
+          kind={result === null ? 'not-found' : 'unavailable'}
+          explore={nav.link('/')}
+        />
+      </PhoneLakeDrawer>
     );
   }
   const lake = result.body;
   const lakeName = waterBodyDisplayName(lake.name);
 
+  const action =
+    act !== undefined ? (
+      <LakeAction
+        act={act}
+        waterBodyId={lake._id}
+        lakeName={lakeName}
+        {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
+        {...(search.band !== undefined ? { band: search.band } : {})}
+        {...(search.frame !== undefined ? { frame: search.frame } : {})}
+        backTo={bay ? bay.name : lakeName}
+        nav={nav}
+        onBack={closeAct}
+      />
+    ) : null;
+  // Imagery floats over the map it paints (boards 3.14/3.15); every other action covers the tabs.
+  const floated = act === 'imagery';
+
+  return (
+    <PhoneLakeDrawer label={bay ? bay.name : lakeName} escapes={act === undefined}>
+      <LakeSidebarView
+        lake={lake}
+        bay={bay}
+        tab={tab}
+        nav={nav}
+        overlay={floated ? null : action}
+      />
+      {floated && action}
+    </PhoneLakeDrawer>
+  );
+}
+
+/**
+ * The lake's sidebar as drawn — header, alerts, tabs, the tab's body — with none of the page's side
+ * effects: no map spec, no analytics, no Esc. `LakePage` wraps it with those; `LakeBehind` draws it
+ * dimmed and inert under an inset card.
+ */
+export function LakeSidebarView({
+  lake,
+  bay,
+  tab,
+  nav,
+  overlay = null,
+}: {
+  lake: Doc<'waterBodies'>;
+  bay: Bay | null;
+  tab: LakeTab;
+  nav: PageNav;
+  overlay?: ReactNode;
+}) {
+  const lakeName = waterBodyDisplayName(lake.name);
   return (
     <LakeSidebar
       label={bay ? bay.name : lakeName}
@@ -100,22 +161,7 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
         <LakeTabs
           tab={tab}
           onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
-          contourCredit={contourCredit}
-          overlay={
-            act !== undefined ? (
-              <LakeAction
-                act={act}
-                waterBodyId={lake._id}
-                lakeName={lakeName}
-                {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
-                {...(search.band !== undefined ? { band: search.band } : {})}
-                {...(search.frame !== undefined ? { frame: search.frame } : {})}
-                backTo={bay ? bay.name : lakeName}
-                nav={nav}
-                onBack={closeAct}
-              />
-            ) : null
-          }
+          overlay={overlay}
         >
           <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
         </LakeTabs>
@@ -125,7 +171,7 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
 }
 
 /** A bay row, as `subAreas.listForBody` returns it. */
-type Bay = FunctionReturnType<typeof api.subAreas.listForBody>[number];
+export type Bay = FunctionReturnType<typeof api.subAreas.listForBody>[number];
 
 function TabBody({
   tab,
@@ -150,7 +196,7 @@ function TabBody({
         <ReportsTab
           waterBodyId={lake._id}
           {...(subAreaId !== undefined ? { subAreaId } : {})}
-          onOpen={{ hazard: open('hazard'), report: open('report') }}
+          onOpen={{ hazard: open('hazard'), report: (id) => nav.push(`/report/${id}`) }}
           onOpenBounties={open('bounty')}
         />
       );

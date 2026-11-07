@@ -86,13 +86,21 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** One of your bounties as `bounties.getDetail` (and `myBounties`' `fulfilledAt`) describe it. */
+/**
+ * One of your bounties as `bounties.getDetail` (and `myBounties`' `fulfilledAt` and `fulfilledBy`)
+ * describe it.
+ */
 export interface BountyDetail {
   _id: string;
   status: 'open' | 'fulfilled' | 'expired' | 'canceled';
   createdAt: number;
   expiresAt: number;
   fulfilledAt?: number;
+  /**
+   * The name of the skater whose report you accepted. Not `fulfillingReports[0]`: that list is every
+   * candidate, in the order they came in.
+   */
+  fulfilledBy?: string;
   waterBody: { name: string } | null;
   subArea: { name: string } | null;
   fulfillingReports: {
@@ -156,7 +164,9 @@ export function bountyCards(
     .filter((b) => b.status !== 'open')
     .map<PastBountyCard>((b) => {
       if (b.status === 'fulfilled') {
-        const by = b.fulfillingReports[0]?.authorName;
+        // Only the server's record of whose report was accepted credits a person; without it, the
+        // card says a report answered it rather than guess among the candidates.
+        const by = b.fulfilledBy;
         return {
           id: b._id,
           place: place(b),

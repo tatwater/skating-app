@@ -50,6 +50,9 @@ export interface ReportCardProps {
   /** The public counts for the row's foot, when the list carries them. */
   helpfulCount?: number;
   commentCount?: number;
+  /** The server stopped counting at its cap: the count is a floor, shown as "20+". */
+  helpfulCountCapped?: boolean;
+  commentCountCapped?: boolean;
   /** The row is the one open beside it (Latest's center column). */
   selected?: boolean;
   /** The last row of a list carries no rule under it. */
@@ -67,6 +70,8 @@ export function ReportCard({
   excerpt,
   helpfulCount,
   commentCount,
+  helpfulCountCapped = false,
+  commentCountCapped = false,
   selected = false,
   last = false,
 }: ReportCardProps) {
@@ -105,6 +110,8 @@ export function ReportCard({
           excerpt={excerpt}
           helpfulCount={helpfulCount}
           commentCount={commentCount}
+          helpfulCountCapped={helpfulCountCapped}
+          commentCountCapped={commentCountCapped}
         />
       ) : (
         <BlockBody card={card} report={report} showAuthor={showAuthor} hideBody={hideBody} />
@@ -151,6 +158,8 @@ function RowBody({
   excerpt,
   helpfulCount,
   commentCount,
+  helpfulCountCapped,
+  commentCountCapped,
 }: {
   card: FeedCardView;
   now: number;
@@ -159,6 +168,8 @@ function RowBody({
   excerpt: string | undefined;
   helpfulCount: number | undefined;
   commentCount: number | undefined;
+  helpfulCountCapped: boolean;
+  commentCountCapped: boolean;
 }) {
   const place = placeLine(card, hideBody);
   const where = [
@@ -196,7 +207,12 @@ function RowBody({
       )}
       <Chips values={card.chips.slice(0, MAX_CHIPS)} />
       <Thumbs urls={card.photoThumbUrls} className="h-12 w-16" />
-      <Counts helpful={helpfulCount} comments={commentCount} />
+      <Counts
+        helpful={helpfulCount}
+        comments={commentCount}
+        helpfulCapped={helpfulCountCapped}
+        commentsCapped={commentCountCapped}
+      />
     </>
   );
 }
@@ -303,13 +319,20 @@ export function Thumbs({ urls, className }: { urls: readonly string[]; className
   );
 }
 
-/** "6 helpful · 2 comments" — a public signal about the report, never about the ice. */
+/**
+ * "6 helpful · 2 comments" — a public signal about the report, never about the ice. A capped count
+ * is a floor ("20+ helpful"), never shown as if it were the whole tally.
+ */
 export function Counts({
   helpful,
   comments,
+  helpfulCapped = false,
+  commentsCapped = false,
 }: {
   helpful?: number | undefined;
   comments?: number | undefined;
+  helpfulCapped?: boolean;
+  commentsCapped?: boolean;
 }) {
   if (helpful === undefined && comments === undefined) return null;
   return (
@@ -320,13 +343,15 @@ export function Counts({
       {helpful !== undefined && (
         <span className="flex items-center gap-(--space-1_5)">
           <FontAwesomeIcon icon={faThumbsUp} aria-hidden="true" className="h-3" />
-          {helpful} helpful
+          {helpful}
+          {helpfulCapped ? '+' : ''} helpful
         </span>
       )}
       {comments !== undefined && (
         <span className="flex items-center gap-(--space-1_5)">
           <FontAwesomeIcon icon={faComment} aria-hidden="true" className="h-3" />
-          {comments} {comments === 1 ? 'comment' : 'comments'}
+          {comments}
+          {commentsCapped ? '+' : ''} {comments === 1 && !commentsCapped ? 'comment' : 'comments'}
         </span>
       )}
     </span>

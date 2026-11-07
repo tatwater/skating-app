@@ -107,6 +107,7 @@
   --size-list: 21.25rem;
   --size-inspector: 23.75rem;
   --size-sheet-sm: 27.5rem;
+  --size-sheet-md: 31.25rem;
   --size-drawer: 51.25rem;
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
@@ -311,6 +312,7 @@
   --size-list: 21.25rem;
   --size-inspector: 23.75rem;
   --size-sheet-sm: 27.5rem;
+  --size-sheet-md: 31.25rem;
   --size-drawer: 51.25rem;
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
@@ -741,6 +743,7 @@
   --size-list: 21.25rem;
   --size-inspector: 23.75rem;
   --size-sheet-sm: 27.5rem;
+  --size-sheet-md: 31.25rem;
   --size-drawer: 51.25rem;
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
@@ -860,6 +863,7 @@
   --size-list: 21.25rem;
   --size-inspector: 23.75rem;
   --size-sheet-sm: 27.5rem;
+  --size-sheet-md: 31.25rem;
   --size-drawer: 51.25rem;
   --size-sheet: 62.5rem;
   --gap-gutter: 1.25rem;
@@ -979,6 +983,7 @@
   --size-list: 21.25rem;
   --size-inspector: 23.75rem;
   --size-sheet-sm: 27.5rem;
+  --size-sheet-md: 31.25rem;
   --size-drawer: 51.25rem;
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;
@@ -1098,6 +1103,7 @@
   --size-list: 21.25rem;
   --size-inspector: 23.75rem;
   --size-sheet-sm: 27.5rem;
+  --size-sheet-md: 31.25rem;
   --size-drawer: 51.25rem;
   --size-sheet: 62.5rem;
   --gap-gutter: 1.75rem;

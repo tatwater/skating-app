@@ -4,22 +4,14 @@ import {
   type HazardFreshness,
   type HazardType,
   hazardTypeLabel,
-  humanizeEnum,
-  iceTypeKeys,
   isHazardVisibleByDefault,
   isMeasuredDepthSource,
   isPassageMarker,
   metersToFeet,
   metersToMiles,
   NO_KNOWN_HAZARDS,
-  OBSERVED_FROM_LABELS,
-  type ObservedFrom,
   relativeWhen,
   roundTo,
-  SKATE_QUALITY_LABELS,
-  type SkateQuality,
-  SUITABILITY_LABELS,
-  type Suitability,
   sqMetersToAcres,
   stalenessCaveat,
   UNREPORTED_HAZARDS_POSSIBLE,
@@ -277,36 +269,6 @@ export function hazardRowModel(h: HazardRowInput, now: number): HazardRowModel {
 
 // ── Reports ─────────────────────────────────────────────────────────────────────────────────
 
-/** A report as `reports.listByWaterBody` returns it (the fields the lake's row reads). */
-export interface ReportRowInput {
-  _id: string;
-  authorId: string;
-  skateEndTime: number;
-  subAreaName?: string;
-  subAreaNames?: string[];
-  observedFrom?: ObservedFrom;
-  suitability?: Suitability;
-  skateQuality?: SkateQuality;
-  iceTypes?: Parameters<typeof iceTypeKeys>[0];
-  notes?: string;
-  photoIds?: readonly string[];
-}
-
-export interface ReportRowModel {
-  id: string;
-  when: string;
-  /** "Mascoma North · From shore". Empty when the report says neither. */
-  where: string;
-  /**
-   * The author's claims, labeled: who it's for (an outline; "Don't go" in red), then how it skated
-   * (the filled face — the boards' `.bdg.solid`).
-   */
-  badges: { label: string; kind: 'suitability' | 'quality'; tone: 'default' | 'bad' }[];
-  notes: string | null;
-  iceTypes: string[];
-  photoCount: number;
-}
-
 const DAY_MS = 86_400_000;
 
 /**
@@ -326,34 +288,6 @@ export function reportWhen(ms: number, now: number, timeZone?: string): string {
     return `${day} · ${time}`;
   }
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...tz });
-}
-
-export function reportRowModel(r: ReportRowInput, now: number, timeZone?: string): ReportRowModel {
-  const bays = r.subAreaNames?.length ? r.subAreaNames : r.subAreaName ? [r.subAreaName] : [];
-  const where = [bays.join(', '), r.observedFrom ? OBSERVED_FROM_LABELS[r.observedFrom] : undefined]
-    .filter((p): p is string => typeof p === 'string' && p.length > 0)
-    .join(' · ');
-  const badges: ReportRowModel['badges'] = [];
-  if (r.suitability) {
-    badges.push({
-      label: SUITABILITY_LABELS[r.suitability],
-      kind: 'suitability',
-      tone: r.suitability === 'dont_go' ? 'bad' : 'default',
-    });
-  }
-  if (r.skateQuality) {
-    badges.push({ label: SKATE_QUALITY_LABELS[r.skateQuality], kind: 'quality', tone: 'default' });
-  }
-  const notes = r.notes?.trim();
-  return {
-    id: r._id,
-    when: reportWhen(r.skateEndTime, now, timeZone),
-    where,
-    badges,
-    notes: notes ? notes : null,
-    iceTypes: iceTypeKeys(r.iceTypes).map(humanizeEnum),
-    photoCount: r.photoIds?.length ?? 0,
-  };
 }
 
 // ── About ───────────────────────────────────────────────────────────────────────────────────
@@ -405,17 +339,4 @@ export function shapeRows(body: {
     rows.push({ term: 'Width', value: `${miles(body.shortAxisM)} at its widest` });
   }
   return rows;
-}
-
-/** The basemap's credit, at every sidebar's foot (Review 4: `.caveat.foot`). */
-export const BASEMAP_CREDIT = 'Basemap and water © OpenStreetMap contributors.';
-
-/**
- * The foot's lines: the contours' own credit while the map is drawing them (the tile is the
- * authority, read by the map into its store), then the basemap's, always.
- */
-export function attributionLines(contourCredit: string | null): string[] {
-  const credit = contourCredit?.trim();
-  if (!credit) return [BASEMAP_CREDIT];
-  return [credit.charAt(0).toUpperCase() + credit.slice(1), BASEMAP_CREDIT];
 }

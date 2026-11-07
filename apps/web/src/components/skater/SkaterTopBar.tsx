@@ -5,7 +5,7 @@ import { useAnalytics } from '@/lib/analytics';
 import { useChromeStore } from '@/stores/chromeStore';
 
 import { AvatarMenu } from './AvatarMenu';
-import { activeTopLevel, withNewReport } from './chrome';
+import { activeTopLevel, useNewReportHref } from './chrome';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationsMenu } from './NotificationsMenu';
 import { SkaterTopBarView } from './SkaterTopBarView';
@@ -21,6 +21,7 @@ export function SkaterTopBar() {
   const { capture } = useAnalytics();
   const location = useRouterState({ select: (s) => s.location });
   const { pathname, searchStr } = location;
+  const newReportHref = useNewReportHref();
 
   // A new page (not a new query on the same one) leaves no overlay hanging over it.
   const lastPath = useRef(pathname);
@@ -37,7 +38,7 @@ export function SkaterTopBar() {
       onNewReport={() => {
         // The door records itself, and says so in the state so the sheet's host doesn't count it again.
         capture('report_sheet_opened', { entry: 'top_bar' });
-        router.history.push(withNewReport(pathname, searchStr), reportSheetLinkState());
+        router.history.push(newReportHref(pathname, searchStr), reportSheetLinkState());
       }}
       search={<GlobalSearch />}
       notifications={<NotificationsMenu />}

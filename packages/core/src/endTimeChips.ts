@@ -27,7 +27,7 @@
 import { SKATE_TIME_FUTURE_TOLERANCE_MS } from './report';
 import type { SunTimes } from './solar';
 import type { SkateEndPrecision } from './types';
-import { zonedMinuteOfDay } from './zonedTime';
+import { zonedInstantOnDayOf, zonedMinuteOfDay } from './zonedTime';
 
 const MINUTE_MS = 60_000;
 const HALF_HOUR_MS = 30 * MINUTE_MS;
@@ -139,6 +139,46 @@ export function endTimeRow(input: EndTimeRowInput): EndTimeRow {
     pickerMaxMs,
     reason: sun === null ? 'no_sun' : daylight ? 'daylight' : 'after_dark',
   };
+}
+
+/**
+ * How many quick time chips a *When* row offers at once. The full ladder (`END_TIME_LADDER_STEPS`)
+ * wrapped onto a second line; a row the eye takes in whole is this many, with "Another time", the
+ * calendar and the ruler's drag covering everything else (founder, 2026-11-07).
+ */
+export const WHEN_CHIP_COUNT = 3;
+
+/**
+ * The *Started* row's quick picks: the last `count` local half-hour boundaries strictly before
+ * `endMs`, newest first — the end row's ladder, mirrored for the other caret. Same boundary rule
+ * as `endTimeRow`: the top chip is the floor of `endMs`, stepped once when `endMs` is itself a
+ * boundary, then whole half-hours back.
+ */
+export function startTimeChips(endMs: number, timeZone: string, count = WHEN_CHIP_COUNT): number[] {
+  let top = floorToLocalHalfHour(endMs, timeZone);
+  if (top >= endMs) top -= HALF_HOUR_MS;
+  const chips: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const ms = top - i * HALF_HOUR_MS;
+    if (ms <= 0) break;
+    chips.push(ms);
+  }
+  return chips;
+}
+
+/**
+ * The most recent instant at or before `anchorMs` whose clock in `timeZone` reads `minuteOfDay` —
+ * how a time-only input infers its date: "8:00" against an end this morning is this morning,
+ * "23:00" is last night. On a DST day the reading is resolved as `zonedInstant` resolves it
+ * (a skipped reading lands on the real clock's neighbor).
+ */
+export function instantForClockAtOrBefore(
+  anchorMs: number,
+  minuteOfDay: number,
+  timeZone: string,
+): number {
+  const sameDay = zonedInstantOnDayOf(anchorMs, minuteOfDay, timeZone);
+  return sameDay <= anchorMs ? sameDay : zonedInstantOnDayOf(anchorMs, minuteOfDay, timeZone, -1);
 }
 
 /** Why an end time is refused by the freshness window, or `null` when it is inside it. */

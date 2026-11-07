@@ -65,6 +65,8 @@ describe('choosing what you saw (3.1)', () => {
       mode: 'Tracing a line',
       line: 'Click along it, then Done',
       step: '0 points',
+      // The bar's exit closes the flow, so it says Close, as the sheet's button does.
+      exitLabel: 'Close',
     });
   });
 
@@ -112,7 +114,11 @@ describe('choosing what you saw (3.1)', () => {
 describe('placing (3.2–3.6): a sub-mode is left by a click', () => {
   it('a spot takes one click and the mode ends', () => {
     const d = chooseDrawKind(chooseType(base, 'pressure_ridge'), 'spot');
-    expect(mapModeFor(d)).toEqual({ mode: 'Placing a spot', line: 'Click where it is' });
+    expect(mapModeFor(d)).toEqual({
+      mode: 'Placing a spot',
+      line: 'Click where it is',
+      exitLabel: 'Close',
+    });
     const placed = applyMapClick(d, at(43.62, -72.14), POLY);
     expect(placed.placing).toBe(false);
     expect(whereLine(placed)).toBe('Placed on the map.');

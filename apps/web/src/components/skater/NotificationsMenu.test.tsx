@@ -12,6 +12,7 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
+import { resetWaterBodyOpenSource, takeWaterBodyOpenSource } from './lake/openSource';
 import { NotificationsMenu } from './NotificationsMenu';
 
 const now = Date.now();
@@ -94,6 +95,33 @@ describe('NotificationsMenu', () => {
     });
     expect(fakes.push).toHaveBeenCalledWith('/hazard/h1', { panelSource: 'notification' });
     expect(useChromeStore.getState().overlay).toBeNull();
+  });
+
+  it('a row that opens a lake arrives counted as a notification; one that does not labels none', async () => {
+    resetWaterBodyOpenSource();
+    const activity = {
+      id: 'n3',
+      createdAt: now - 60_000,
+      type: 'activity_detected',
+      activityId: 'a1',
+      body,
+      startTime: now - 2 * 60 * 60_000,
+    };
+    fakes.paginated = { results: [activity, unreadHazard], status: 'Exhausted', loadMore: vi.fn() };
+    fakes.mutations.set('notifications:markRead', vi.fn().mockResolvedValue([]));
+    act(() => useChromeStore.getState().setOverlay('notifications'));
+    render(<NotificationsMenu />);
+    await screen.findByText(/still there/);
+    const lakeRow = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="notification-row"][href]'),
+    ).find((row) => row.getAttribute('href')?.startsWith('/water/w1'));
+    expect(lakeRow).toBeDefined();
+    fireEvent.click(lakeRow as HTMLElement);
+    expect(takeWaterBodyOpenSource('/water/w1', { entryPath: null })).toBe('notification');
+
+    act(() => useChromeStore.getState().setOverlay('notifications'));
+    fireEvent.click(await screen.findByText(/still there/));
+    expect(takeWaterBodyOpenSource('/water/w1', { entryPath: null })).toBe('map');
   });
 
   it('loads more on request, and the gear goes to the notification settings', async () => {

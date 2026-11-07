@@ -56,6 +56,16 @@ describe('InsetCard', () => {
     expect(screen.getByText('behind')).toBeInTheDocument();
   });
 
+  it('paints its own opaque ground and fills a phone’s width, so the map never shows through', () => {
+    render(<Card />);
+    const column = document.querySelector('[data-slot="panel-column"]') as HTMLElement;
+    // `bg-bg` is the page ground, an opaque token in every theme; `max-w-full` takes a 390 px phone
+    // whole where the 27.5 rem column would overrun it.
+    expect(column.className.split(' ')).toEqual(
+      expect.arrayContaining(['bg-bg', 'max-w-full', 'h-full']),
+    );
+  });
+
   it('says only "Back" while the lake is unknown', async () => {
     render(<Card backTo={null} body={<PanelLoading />} />);
     expect(await screen.findByRole('button', { name: /^Back/ })).toHaveTextContent(/^Back/);

@@ -250,8 +250,14 @@ function ConnectedPhotos({
     drafts
       .uploadAll()
       .then(async (ids) => {
-        for (const photoId of ids) await attach({ targetType: 'put_in', putInId: id, photoId });
-        for (const photo of drafts.photos) drafts.removePhoto(photo.id);
+        // Each photo the launch now holds is handed over as its attach lands — never removed, which
+        // would delete the row and blobs the attachment points at. A failure part-way leaves only
+        // the unattached ones as drafts, reclaimable once `setCommitted(false)` runs below.
+        for (const photoId of ids) {
+          await attach({ targetType: 'put_in', putInId: id, photoId });
+          drafts.release([photoId]);
+        }
+        drafts.setCommitted(false);
       })
       .catch((err: unknown) => {
         drafts.setCommitted(false);

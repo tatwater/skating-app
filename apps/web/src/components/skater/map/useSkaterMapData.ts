@@ -3,12 +3,12 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   approachesToFeatureCollection,
   type BBox,
-  type DriveTimeBands,
   hasWeatherFilter,
   isRegionOffscreen,
   landmarkLabelFeatures,
   mapFilters,
   SUB_AREA_MIN_RENDER_ZOOM,
+  viewerDriveTime,
   weatherDimmedBodyIds,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
@@ -23,8 +23,10 @@ import {
   hazardMarksFrom,
   type LabelableBody,
   labelCountIds,
-  reportTimesByBody,
+  mergeHazards,
+  reportCountsByBody,
   withBayAngles,
+  withWalkLabels,
 } from './mapDerive';
 import { EMPTY_FEATURES } from './mapLayers';
 import type { MapSpec } from './mapSpec';
@@ -94,13 +96,12 @@ export function useSkaterMapData({
   const viewer = useQuery(api.profiles.current, weatherOn ? {} : 'skip');
   const weatherDimmed = useMemo(() => {
     if (!weatherOn || !bodies) return NO_IDS;
+    // The server's one rule (`viewerDriveTime`): the travel base while it's in force, else home,
+    // and polygons only for the origin they were drawn from — so the map dims what the feed shows.
+    const { bands, origin } = viewerDriveTime(viewer, Date.now());
     return weatherDimmedBodyIds(bodies, discovery, matchedCells, {
-      bands: {
-        band30: viewer?.cachedIsochrones?.band30,
-        band60: viewer?.cachedIsochrones?.band60,
-        outerRadiusMeters: viewer?.outerRadiusMeters,
-      } as DriveTimeBands,
-      home: viewer?.homeCoord,
+      bands,
+      home: origin,
       favorites: favoriteIds,
     });
   }, [weatherOn, bodies, discovery, matchedCells, viewer, favoriteIds]);
@@ -145,12 +146,24 @@ export function useSkaterMapData({
     visible && focusId && spec.layers.tracks ? { waterBodyId: focusId } : 'skip',
   );
 
-  const hazardFeatures = useMemo(
-    () => (focusId && hazards ? hazardsToFeatureCollection(hazards) : EMPTY_FEATURES),
-    [focusId, hazards],
+  // Every lake in view draws its hazards, not just the open one (D3): the viewport read, bounded by
+  // its scan cap and keyed on the same settled viewport as the lakes.
+  const viewportHazardsNow = useQuery(
+    api.hazards.listInViewport,
+    viewportArgs === 'skip' ? 'skip' : { viewport: viewportArgs.viewport },
   );
+  const viewportHazards = useRetained(viewportHazardsNow, viewportArgs === 'skip');
+  const focusBodyId = focusBody?._id;
+  const hazardFeatures = useMemo(() => {
+    const focusIds = new Set<string>([focusId, focusBodyId].filter((id) => id != null));
+    const rows = mergeHazards(focusId ? hazards : undefined, viewportHazards?.hazards, focusIds);
+    return rows.length > 0 ? hazardsToFeatureCollection(rows) : EMPTY_FEATURES;
+  }, [focusId, focusBodyId, hazards, viewportHazards]);
   const hazardMarks = useMemo(() => hazardMarksFrom(hazardFeatures), [hazardFeatures]);
-  const approachFeatures = useMemo(() => approachesToFeatureCollection(putIns ?? []), [putIns]);
+  const approachFeatures = useMemo(
+    () => withWalkLabels(approachesToFeatureCollection(putIns ?? [])),
+    [putIns],
+  );
   const putInMarks = useMemo<PutInMarkModel[]>(
     () =>
       (focusId ? (putIns ?? []) : []).map((p, i) => ({
@@ -205,23 +218,27 @@ export function useSkaterMapData({
         : ('skip' as const),
     [visible, countKey],
   );
-  const cards = useQuery(api.reports.recentCardsForBodies, countArgs);
+  // The slim, viewer-free count (D13): every viewer panning over the same lakes shares one answer.
+  const counts = useQuery(api.reports.recentCountsForBodies, countArgs);
   // Held with the ids it answered, so a re-keyed read keeps the counts it has without lending them
   // to bodies it never asked about.
   const answered = useRetained(
-    useMemo(() => (cards === undefined ? undefined : { key: countKey, cards }), [cards, countKey]),
+    useMemo(
+      () => (counts === undefined ? undefined : { key: countKey, counts }),
+      [counts, countKey],
+    ),
     countArgs === 'skip',
   );
-  const reportTimes = useMemo(
-    () => (answered ? reportTimesByBody(answered.cards, answered.key.split(',')) : undefined),
+  const reportCounts = useMemo(
+    () => (answered ? reportCountsByBody(answered.counts, answered.key.split(',')) : undefined),
     [answered],
   );
 
   const timeZone = viewer?.timezone ?? undefined;
   const labels = useMemo(
     () =>
-      labelsOn ? buildLakeLabels(labelBodies, { ...labelInputs, reportTimes, now, timeZone }) : [],
-    [labelsOn, labelBodies, labelInputs, reportTimes, now, timeZone],
+      labelsOn ? buildLakeLabels(labelBodies, { ...labelInputs, reportCounts, now, timeZone }) : [],
+    [labelsOn, labelBodies, labelInputs, reportCounts, now, timeZone],
   );
 
   return {

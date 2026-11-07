@@ -65,12 +65,21 @@ const CAMERA_KEY = 'gli-map-camera';
 /** Which of the two slots a spec fills: a flow (a hazard being placed) sits over its view. */
 export type MapSpecSlot = 'view' | 'flow';
 
+export interface PendingMapClick {
+  lng: number;
+  lat: number;
+  screen?: { x: number; y: number };
+}
+
 interface SkaterMapState {
   camera: MapCamera | null;
   layers: MapLayerToggles;
   hoveredBodyId: string | null;
-  /** A left-click on unlisted water, pending the request-a-lake flow. Never in the URL. */
-  pendingMapClick: { lng: number; lat: number } | null;
+  /**
+   * A left-click on unlisted water, pending the request-a-lake flow. Never in the URL. `screen` is
+   * where it landed in the viewport, projected at click time, so the request can open beside it.
+   */
+  pendingMapClick: PendingMapClick | null;
   /** True when the viewport has left the region — the dock shows "return to the region". */
   awayFromRegion: boolean;
   /**
@@ -85,7 +94,7 @@ interface SkaterMapState {
   setCamera: (camera: MapCamera) => void;
   toggleLayer: (layer: keyof MapLayerToggles) => void;
   setHoveredBodyId: (id: string | null) => void;
-  setPendingMapClick: (click: { lng: number; lat: number } | null) => void;
+  setPendingMapClick: (click: PendingMapClick | null) => void;
   setAwayFromRegion: (away: boolean) => void;
   setViewportLakes: (lakes: readonly ViewportLake[] | null) => void;
   setContourCredit: (credit: string | null) => void;

@@ -300,6 +300,16 @@ Uploads go to the **public** basemap bucket via the Phase 02b lane — browsers 
 exactly like the basemap. That is the opposite of `.raw/`, which is third-party source data and is
 mirrored privately.
 
+### 7b. Filled depth bands (B03 §2)
+
+```bash
+pnpm --filter @skating/bathymetry build-bands   # before tile.sh; -> .scratch/build/bands.geojsonl
+```
+
+Traces the band polygons between the lines `build-contours` drew, checks each lake, and `tile.sh`
+then tiles them as a second layer, `bathymetry_bands`, in the same archive. The layer contract,
+band edges, checks and the dev override are in [`BANDS.md`](./BANDS.md).
+
 ## 8. Provenance — regenerate the committed record
 
 ```bash

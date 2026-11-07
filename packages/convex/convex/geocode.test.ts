@@ -5,7 +5,7 @@ import {
   GEOCODE_MAX_CHARS,
   GEOCODE_MAX_SUGGESTIONS,
   type GeocoderAdapter,
-  orsGeocoder,
+  geoapifyGeocoder,
   suggestWith,
 } from './lib/geocoder';
 import schema from './schema';
@@ -14,29 +14,28 @@ const modules = import.meta.glob('./**/*.*s');
 
 const ADDRESS = '14 School Street, Hanover';
 
-/** Trimmed from a real ORS answer (2026-11-07), for a public address. */
-const PELIAS = {
-  type: 'FeatureCollection',
-  geocoding: { attribution: 'https://openrouteservice.org/terms-of-service/#attribution-geocode' },
-  features: [
+/** The shape of Geoapify's `format=json` answer, trimmed to the fields read, for public addresses. */
+const GEOAPIFY = {
+  results: [
     {
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [-72.28973, 43.702264] },
-      properties: {
-        label: '1 South Main Street, Hanover, NH, USA',
-        layer: 'address',
-        source: 'openstreetmap',
-      },
+      formatted: '1 South Main Street, Hanover, NH 03755, United States of America',
+      lat: 43.702264,
+      lon: -72.28973,
+      result_type: 'building',
+      country_code: 'us',
     },
     {
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [-79.17113, 42.536833] },
-      properties: { label: '121 Main Street, Silver Creek, NY, USA', layer: 'address' },
+      formatted: '121 Main Street, Silver Creek, NY 14136, United States of America',
+      lat: 42.536833,
+      lon: -79.17113,
+      result_type: 'building',
+      country_code: 'us',
     },
   ],
+  query: { text: '1 Main Street' },
 };
 
-function stubFetch(status: number, body: unknown = PELIAS) {
+function stubFetch(status: number, body: unknown = GEOAPIFY) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -45,7 +44,7 @@ function stubFetch(status: number, body: unknown = PELIAS) {
 const warn = vi.spyOn(console, 'warn');
 
 beforeEach(() => {
-  vi.stubEnv('ORS_API_KEY', 'test-key');
+  vi.stubEnv('GEOAPIFY_API_KEY', 'test-key');
   warn.mockClear();
 });
 afterEach(() => {
@@ -67,67 +66,97 @@ describe('geocode.suggest', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // The pin on the open founder call. When a provider is switched on, this is the test to change.
-  test('sends no address anywhere until a provider is switched on', async () => {
+  // Geoapify is switched on (founder, 2026-11-07), but no account exists until its key is set.
+  test('sends no address anywhere while the provider key is unset', async () => {
+    vi.stubEnv('GEOAPIFY_API_KEY', '');
+    const t = convexTest(schema, modules);
+    const fetchMock = stubFetch(200);
+    const skater = t.withIdentity({ subject: 'skater' });
+    for (const text of [ADDRESS, '']) {
+      expect(await skater.action(api.geocode.suggest, { text })).toEqual({
+        status: 'unavailable',
+        reason: 'off',
+        suggestions: [],
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expectAddressNotLogged();
+  });
+
+  test('asks Geoapify once its key is set', async () => {
     const t = convexTest(schema, modules);
     const fetchMock = stubFetch(200);
     const result = await t
       .withIdentity({ subject: 'skater' })
       .action(api.geocode.suggest, { text: ADDRESS });
-    expect(result).toEqual({ status: 'unavailable', reason: 'off', suggestions: [] });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'ok', attribution: geoapifyGeocoder.attribution });
+    expect(result.suggestions).toHaveLength(2);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(url.startsWith('https://api.geoapify.com/v1/geocode/autocomplete?')).toBe(true);
   });
 });
 
-describe('suggestWith the ORS adapter', () => {
+describe('suggestWith the Geoapify adapter', () => {
   test('returns label and coordinate, latitude and longitude the right way round', async () => {
     stubFetch(200);
-    expect(await suggestWith(orsGeocoder, ADDRESS)).toEqual({
+    expect(await suggestWith(geoapifyGeocoder, ADDRESS)).toEqual({
       status: 'ok',
-      attribution: '© openrouteservice by HeiGIT | Data from OpenStreetMap',
+      attribution: 'Powered by Geoapify | © OpenStreetMap contributors',
       suggestions: [
-        { label: '1 South Main Street, Hanover, NH, USA', lat: 43.702264, lng: -72.28973 },
-        { label: '121 Main Street, Silver Creek, NY, USA', lat: 42.536833, lng: -79.17113 },
+        {
+          label: '1 South Main Street, Hanover, NH 03755, United States of America',
+          lat: 43.702264,
+          lng: -72.28973,
+        },
+        {
+          label: '121 Main Street, Silver Creek, NY 14136, United States of America',
+          lat: 42.536833,
+          lng: -79.17113,
+        },
       ],
     });
   });
 
-  test('asks for US addresses, keeps the key in a header, and sends no home to focus on', async () => {
+  test('asks for US addresses as JSON and sends no home to bias toward', async () => {
     const fetchMock = stubFetch(200);
-    await suggestWith(orsGeocoder, `  ${ADDRESS}  `);
+    await suggestWith(geoapifyGeocoder, `  ${ADDRESS}  `);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const sent = new URL(url);
     expect(`${sent.origin}${sent.pathname}`).toBe(
-      'https://api.openrouteservice.org/geocode/autocomplete',
+      'https://api.geoapify.com/v1/geocode/autocomplete',
     );
     expect(sent.searchParams.get('text')).toBe(ADDRESS);
-    expect(sent.searchParams.get('boundary.country')).toBe('USA');
-    expect(sent.searchParams.get('size')).toBe(String(GEOCODE_MAX_SUGGESTIONS));
-    expect([...sent.searchParams.keys()].some((key) => key.startsWith('focus'))).toBe(false);
-    expect(url).not.toContain('test-key');
-    expect(init.headers).toEqual({ Authorization: 'test-key' });
+    expect(sent.searchParams.get('filter')).toBe('countrycode:us');
+    expect(sent.searchParams.get('format')).toBe('json');
+    expect(sent.searchParams.get('limit')).toBe(String(GEOCODE_MAX_SUGGESTIONS));
+    expect(sent.searchParams.get('apiKey')).toBe('test-key');
+    // Nothing that ranks or filters by a place: the only place we know is the skater's home (D11).
+    expect([...sent.searchParams.keys()].sort()).toEqual(
+      ['apiKey', 'filter', 'format', 'lang', 'limit', 'text'].sort(),
+    );
+    expect(init.headers).toEqual({});
   });
 
   test('too short a query costs no quota', async () => {
     const fetchMock = stubFetch(200);
-    const result = await suggestWith(orsGeocoder, ' 14 ');
+    const result = await suggestWith(geoapifyGeocoder, ' 14 ');
     expect(result).toMatchObject({ status: 'ok', suggestions: [] });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test('a very long query is cut before it is sent', async () => {
     const fetchMock = stubFetch(200);
-    await suggestWith(orsGeocoder, 'x'.repeat(GEOCODE_MAX_CHARS + 50));
+    await suggestWith(geoapifyGeocoder, 'x'.repeat(GEOCODE_MAX_CHARS + 50));
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(new URL(url).searchParams.get('text')).toHaveLength(GEOCODE_MAX_CHARS);
   });
 
   test('never hands back more than the bound', async () => {
-    const feature = PELIAS.features[0];
+    const result0 = GEOAPIFY.results[0];
     stubFetch(200, {
-      features: Array.from({ length: GEOCODE_MAX_SUGGESTIONS + 3 }, () => feature),
+      results: Array.from({ length: GEOCODE_MAX_SUGGESTIONS + 3 }, () => result0),
     });
-    const result = await suggestWith(orsGeocoder, ADDRESS);
+    const result = await suggestWith(geoapifyGeocoder, ADDRESS);
     expect(result.suggestions).toHaveLength(GEOCODE_MAX_SUGGESTIONS);
   });
 
@@ -140,7 +169,7 @@ describe('suggestWith the ORS adapter', () => {
     'a %i is reported as %s, with no suggestions and no address in the log',
     async (status, reason) => {
       stubFetch(status, { error: 'Quota exceeded' });
-      expect(await suggestWith(orsGeocoder, ADDRESS)).toEqual({
+      expect(await suggestWith(geoapifyGeocoder, ADDRESS)).toEqual({
         status: 'unavailable',
         reason,
         suggestions: [],
@@ -152,9 +181,9 @@ describe('suggestWith the ORS adapter', () => {
 
   test('a refusal after a good answer is a refusal: nothing is served from before', async () => {
     stubFetch(200);
-    expect((await suggestWith(orsGeocoder, ADDRESS)).status).toBe('ok');
+    expect((await suggestWith(geoapifyGeocoder, ADDRESS)).status).toBe('ok');
     stubFetch(403);
-    expect(await suggestWith(orsGeocoder, ADDRESS)).toEqual({
+    expect(await suggestWith(geoapifyGeocoder, ADDRESS)).toEqual({
       status: 'unavailable',
       reason: 'quota',
       suggestions: [],
@@ -168,7 +197,7 @@ describe('suggestWith the ORS adapter', () => {
         throw new Error(`fetch failed for ?text=${encodeURIComponent(ADDRESS)}`);
       }),
     );
-    expect(await suggestWith(orsGeocoder, ADDRESS)).toEqual({
+    expect(await suggestWith(geoapifyGeocoder, ADDRESS)).toEqual({
       status: 'unavailable',
       reason: 'error',
       suggestions: [],
@@ -181,40 +210,45 @@ describe('suggestWith the ORS adapter', () => {
       'fetch',
       vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 200 })),
     );
-    expect(await suggestWith(orsGeocoder, ADDRESS)).toMatchObject({ reason: 'error' });
+    expect(await suggestWith(geoapifyGeocoder, ADDRESS)).toMatchObject({ reason: 'error' });
   });
 
-  test('with no key it sends nothing and says so', async () => {
-    vi.stubEnv('ORS_API_KEY', '');
+  test('with no key it sends nothing and reads as off', async () => {
+    vi.stubEnv('GEOAPIFY_API_KEY', '');
     const fetchMock = stubFetch(200);
-    expect(await suggestWith(orsGeocoder, ADDRESS)).toMatchObject({ reason: 'error' });
+    expect(await suggestWith(geoapifyGeocoder, ADDRESS)).toEqual({
+      status: 'unavailable',
+      reason: 'off',
+      suggestions: [],
+    });
     expect(fetchMock).not.toHaveBeenCalled();
     expectAddressNotLogged();
   });
 
   test('the adapter drops anything it cannot trust, and survives a strange shape', () => {
-    const point = (coordinates: unknown, label: unknown = 'Somewhere') => ({
-      geometry: { coordinates },
-      properties: { label },
+    const result = (lon: unknown, lat: unknown, formatted: unknown = 'Somewhere') => ({
+      formatted,
+      lat,
+      lon,
     });
     expect(
-      orsGeocoder.parse({
-        features: [
-          point([200, 44]),
-          point([-72, 95]),
-          point(['-72', 44]),
-          point([-72]),
-          point('here'),
-          point([-72, 44], ''),
-          point([-72, 44], 7),
+      geoapifyGeocoder.parse({
+        results: [
+          result(200, 44),
+          result(-72, 95),
+          result('-72', 44),
+          result(-72, undefined),
+          result(Number.NaN, 44),
+          result(-72, 44, ''),
+          result(-72, 44, 7),
           null,
           {},
-          point([-72.5, 44.5]),
+          result(-72.5, 44.5),
         ],
       }),
     ).toEqual([{ label: 'Somewhere', lat: 44.5, lng: -72.5 }]);
-    for (const body of [null, 'text', {}, { features: 'none' }]) {
-      expect(orsGeocoder.parse(body)).toEqual([]);
+    for (const body of [null, 'text', {}, { results: 'none' }, { features: [] }]) {
+      expect(geoapifyGeocoder.parse(body)).toEqual([]);
     }
   });
 });

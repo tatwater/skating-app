@@ -47,14 +47,29 @@ describe('which surface opened a lake (D240)', () => {
   beforeEach(() => resetWaterBodyOpenSource());
 
   it('takes a fresh mark once', () => {
-    markWaterBodyOpenSource('list', 1_000);
+    markWaterBodyOpenSource('list', '/water/a', 1_000);
     expect(takeWaterBodyOpenSource('/water/a', { now: 2_000, entryPath: '/' })).toBe('list');
-    expect(takeWaterBodyOpenSource('/water/b', { now: 3_000, entryPath: '/' })).toBe('map');
+    expect(takeWaterBodyOpenSource('/water/a', { now: 2_500, entryPath: '/' })).toBe('map');
   });
 
   it('ignores a stale mark', () => {
-    markWaterBodyOpenSource('search', 1_000);
+    markWaterBodyOpenSource('search', '/water/a', 1_000);
     expect(takeWaterBodyOpenSource('/water/a', { now: 10_000, entryPath: '/' })).toBe('map');
+  });
+
+  it('counts a mark only at the path it names, ignoring the query', () => {
+    markWaterBodyOpenSource('search', '/water/a?sub=s1', 1_000);
+    expect(takeWaterBodyOpenSource('/water/a', { now: 1_500, entryPath: '/' })).toBe('search');
+  });
+
+  it('a mark for somewhere else is spent by the next lake arrival, not counted by it', () => {
+    // A skater picked in search, then a lake clicked on the map a moment later.
+    markWaterBodyOpenSource('search', '/u/mochs', 1_000);
+    expect(takeWaterBodyOpenSource('/water/a', { now: 1_500, entryPath: '/' })).toBe('map');
+    // A mark for another lake that never landed is spent the same way: the right door, once.
+    markWaterBodyOpenSource('notification', '/water/b', 2_000);
+    expect(takeWaterBodyOpenSource('/water/a', { now: 2_500, entryPath: '/' })).toBe('map');
+    expect(takeWaterBodyOpenSource('/water/b', { now: 2_600, entryPath: '/' })).toBe('map');
   });
 
   it('calls the document’s own entry a deep link, once', () => {

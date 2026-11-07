@@ -781,6 +781,7 @@ async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promi
     deletionRequestedAt: undefined,
     displayName: DELETED_DISPLAY_NAME,
     username: deletedUsername(profile._id),
+    usernameChangedAt: undefined,
     clerkUserId: deletedClerkUserId(profile._id),
     dateOfBirth: DELETED_DATE_OF_BIRTH,
     homeCoord: undefined,

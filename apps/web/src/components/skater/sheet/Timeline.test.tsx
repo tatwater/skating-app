@@ -107,6 +107,60 @@ describe('Timeline', () => {
     });
   });
 
+  describe('the ghost start caret — placing a start that does not exist yet', () => {
+    const model = timelineModel({ timeZone: TZ, nowMs: local(18, 40), endMs: local(16, 12), sun });
+    afterEach(() => vi.restoreAllMocks());
+    const rulerOf = () =>
+      vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({ left: 0, width: 1000 } as DOMRect);
+
+    it('waits an hour before the end, and dragging it places the start', () => {
+      rulerOf();
+      const onSetStart = vi.fn();
+      render(<Timeline model={model} onSetEnd={() => {}} onSetStart={onSetStart} />);
+      const ghost = screen.getByRole('button', { name: 'Place the start, drag to set' });
+      fireEvent.pointerDown(ghost, { clientX: 500, pointerId: 1 });
+      fireEvent.pointerMove(ghost, { clientX: 300, pointerId: 1 });
+      expect(screen.getByText('START …')).toBeInTheDocument();
+      fireEvent.pointerUp(ghost, { clientX: 300, pointerId: 1 });
+      expect(onSetStart).toHaveBeenCalledTimes(1);
+      const placed = onSetStart.mock.calls[0]?.[0] as number;
+      expect(placed).toBeLessThan(local(16, 12));
+      expect(placed % 60_000).toBe(0);
+    });
+
+    it('a press that does not move places nothing', () => {
+      rulerOf();
+      const onSetStart = vi.fn();
+      render(<Timeline model={model} onSetEnd={() => {}} onSetStart={onSetStart} />);
+      const ghost = screen.getByRole('button', { name: 'Place the start, drag to set' });
+      fireEvent.pointerDown(ghost, { clientX: 500, pointerId: 1 });
+      fireEvent.pointerUp(ghost, { clientX: 500, pointerId: 1 });
+      expect(onSetStart).not.toHaveBeenCalled();
+    });
+
+    it('absent once a start exists, without a setter, or without an end', () => {
+      const withStart = timelineModel({
+        timeZone: TZ,
+        nowMs: local(18, 40),
+        endMs: local(16, 12),
+        startMs: local(14, 5),
+        sun,
+      });
+      const { rerender } = render(
+        <Timeline model={withStart} onSetEnd={() => {}} onSetStart={() => {}} />,
+      );
+      const name = 'Place the start, drag to set';
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      rerender(<Timeline model={model} onSetEnd={() => {}} />);
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      const noEnd = timelineModel({ timeZone: TZ, nowMs: local(18, 40), sun });
+      rerender(<Timeline model={noEnd} onSetEnd={() => {}} onSetStart={() => {}} />);
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    });
+  });
+
   it('a ladder tick at or before the start is drawn but not offered', () => {
     const onSetEnd = vi.fn();
     const model = timelineModel({

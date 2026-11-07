@@ -98,3 +98,33 @@ export async function uploadToStorage(uploadUrl: string, blob: Blob): Promise<st
   const { storageId } = (await res.json()) as { storageId: string };
   return storageId;
 }
+
+/** A profile photo's longest edge: a few times the largest circle it's drawn in, on a dense screen. */
+const AVATAR_MAX_EDGE = 800;
+/** And its ceiling, well under Clerk's own upload limit. */
+const AVATAR_MAX_MB = 1;
+
+/**
+ * A picked profile photo, ready for Clerk: HEIC decoded to JPEG, then downscaled to an 800 px edge
+ * and re-encoded as a JPEG of at most ~1 MB, which strips every bit of metadata (EXIF GPS included)
+ * by construction. Unlike `processPhoto`, nothing is read from the original first — a profile
+ * photo has no use for where or when it was taken.
+ */
+export async function processAvatar(file: File): Promise<File> {
+  let source: File = file;
+  if (isHeic(file)) {
+    const heic2any = (await import('heic2any')).default;
+    const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+    const decoded = Array.isArray(out) ? (out[0] ?? file) : out;
+    source = new File([decoded], toJpegName(file.name), { type: 'image/jpeg' });
+  }
+  const imageCompression = (await import('browser-image-compression')).default;
+  const out = await imageCompression(source, {
+    maxWidthOrHeight: AVATAR_MAX_EDGE,
+    maxSizeMB: AVATAR_MAX_MB,
+    useWebWorker: true,
+    initialQuality: 0.85,
+    fileType: 'image/jpeg',
+  });
+  return new File([out], toJpegName(file.name), { type: 'image/jpeg' });
+}

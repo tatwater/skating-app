@@ -18,6 +18,7 @@ import {
 import { SwitchRow } from '@/components/kit/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { type MapLayerName, useAnalytics } from '@/lib/analytics';
+import type { LegendBand } from '@/lib/depthBands';
 import { cn } from '@/lib/utils';
 import { type MapLayerToggles, useSkaterMapStore } from '@/stores/skaterMapStore';
 import { DepthLegend } from './DepthLegend';
@@ -199,7 +200,9 @@ function MapLayersMenu({
         {EVERYWHERE_ROWS.map(row)}
         <p className="m-0 mt-1.5 border-t border-solid border-line px-4 pt-2.5 pb-2 text-assist leading-snug text-fg3">
           Basemap and water © OpenStreetMap contributors.
-          {contourCredit ? ` Contours: ${contourCredit}.` : ''}
+          {/* The tile's credit ends with its own period (`formatContourCredit`); ours closes the
+            line, so the shared store string never prints "..". */}
+          {contourCredit ? ` Contours: ${contourCredit.replace(/\.$/, '')}.` : ''}
         </p>
       </PopoverContent>
     </Popover>
@@ -218,6 +221,11 @@ export interface MapDockControlsProps {
   onOpenImagery?: () => void;
   /** Whether the depth legend has anything to explain: contours are on screen. */
   depthShown: boolean;
+  /**
+   * The open lake's filled bands, as its tiles bound them. Given, the legend shows those bands at
+   * their real depths; empty or absent, it shows the ramp the contour lines are colored by.
+   */
+  depthBands?: readonly LegendBand[];
   onReturnToRegion: () => void;
   lakeName: string | null;
   contourCredit: string | null;
@@ -233,6 +241,7 @@ function MapDockControls({
   locating = false,
   onOpenImagery,
   depthShown,
+  depthBands,
   onReturnToRegion,
   lakeName,
   contourCredit,
@@ -268,8 +277,8 @@ function MapDockControls({
         )}
       </div>
       {(imagery || legend) && (
-        <div className="absolute bottom-4 left-4 z-(--z-map-control) flex flex-col items-start gap-3">
-          {legend && <DepthLegend />}
+        <div className="absolute bottom-[calc(var(--space-4)+var(--map-foot,0px))] left-4 z-(--z-map-control) flex flex-col items-start gap-3">
+          {legend && <DepthLegend bands={depthBands} />}
           {imagery && (
             <Button
               variant="outline"
@@ -290,7 +299,7 @@ function MapDockControls({
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-none absolute inset-x-0 bottom-7 z-(--z-map-control) flex justify-center"
+        className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--space-7)+var(--map-foot,0px))] z-(--z-map-control) flex justify-center"
       >
         {away && (
           <Button

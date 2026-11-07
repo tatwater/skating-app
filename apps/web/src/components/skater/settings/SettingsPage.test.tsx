@@ -270,6 +270,20 @@ describe('your profile', () => {
     expect(update).toHaveBeenCalledWith({ profileVisibility: 'private' });
   });
 
+  it('draws the photo from Clerk’s user, first, inside the masked region', () => {
+    m.user = {
+      primaryEmailAddress: { emailAddress: 'kate@donovan.net' },
+      hasImage: true,
+      imageUrl: 'https://img.clerk.com/kate.jpg',
+      setProfileImage: vi.fn(),
+    };
+    page('profile');
+    const circle = screen.getByRole('img', { name: 'Your photo' });
+    expect(circle.closest('.ph-no-capture')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Change photo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove photo' })).toBeInTheDocument();
+  });
+
   it('keeps an under-18 profile private, with the switch held', () => {
     fakes.queries.set(
       'profiles:current',
@@ -305,7 +319,7 @@ describe('home and drive time', () => {
   it('types an address, picks a suggestion, and saves it', async () => {
     m.suggest.mockImplementation(async ({ text }: { text: string }) => ({
       status: 'ok',
-      attribution: '© openrouteservice by HeiGIT | Data from OpenStreetMap',
+      attribution: 'Powered by Geoapify | © OpenStreetMap contributors',
       suggestions: text
         ? [{ label: '14 School Street, Hanover, NH 03755, USA', lat: 43.701, lng: -72.289 }]
         : [],

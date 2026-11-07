@@ -1,12 +1,15 @@
 /**
- * What the instrument's map draws (5.1), as GeoJSON — pure, so the drawing is a unit test and the
- * canvas only hands these to MapLibre. One lake, its launches and lots (the chosen one lit), the live
- * hazards at their footprints' centers, the photos placed on the water, and the track when one is
- * linked. No other lake, no labels of other bodies: the instrument answers "this lake, this day".
+ * What the instrument's map draws (5.1) — pure, so the drawing is a unit test. One lake and the
+ * track when one is linked, as GeoJSON for MapLibre; its launches and lots (the chosen one lit), the
+ * live hazards at their footprints' centers and the photos placed on the water as the region map's
+ * own marks, drawn over the canvas. No other lake, no labels of other bodies: the instrument
+ * answers "this lake, this day".
  */
 
 import type { BBox, LatLng } from '@skating/core';
-import type { Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon } from 'geojson';
+import type { FeatureCollection, LineString, MultiPolygon, Polygon } from 'geojson';
+import type { MapKeyKind } from '../map/MapKey';
+import { HAZARD_KEY_KIND, type HazardTone } from '../map/mapDerive';
 
 export interface InstrumentPin {
   id: string;
@@ -19,6 +22,8 @@ export interface InstrumentHazard {
   id: string;
   bbox: BBox;
   passage: boolean;
+  /** Its latest verdict is "healing but unsafe" — the region map's healing tone. */
+  healing?: boolean;
 }
 
 export interface InstrumentInput {
@@ -35,12 +40,6 @@ export interface InstrumentInput {
 
 export const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const point = (coord: LatLng, properties: Record<string, unknown>): Feature<Point> => ({
-  type: 'Feature',
-  geometry: { type: 'Point', coordinates: [coord.lng, coord.lat] },
-  properties,
-});
-
 export function lakeFeatures(polygon: Polygon | MultiPolygon | null): FeatureCollection {
   if (polygon === null) return EMPTY;
   return {
@@ -49,24 +48,77 @@ export function lakeFeatures(polygon: Polygon | MultiPolygon | null): FeatureCol
   };
 }
 
-/** The marks: pins (chosen lit), hazards, photos, the hand-set point. Kind in `kind`. */
-export function markFeatures(input: InstrumentInput): FeatureCollection<Point> {
-  const features: Feature<Point>[] = [
-    ...input.pins.map((p) =>
-      point(p.coord, { id: p.id, kind: p.kind, chosen: p.id === input.chosenPinId }),
-    ),
-    ...input.hazards.map((h) =>
-      point(
-        { lat: (h.bbox.minLat + h.bbox.maxLat) / 2, lng: (h.bbox.minLng + h.bbox.maxLng) / 2 },
-        { id: h.id, kind: h.passage ? 'passage' : 'hazard', chosen: false },
-      ),
-    ),
-    ...input.photos.map((p) => point(p.coord, { id: p.id, kind: 'photo', chosen: false })),
+/** The marks' share of the input: what `InstrumentMarks` draws. */
+export type InstrumentMarksInput = Pick<
+  InstrumentInput,
+  'pins' | 'chosenPinId' | 'hazards' | 'photos' | 'point'
+>;
+
+/** One mark on the instrument: a launch or lot, a hazard, a placed photo, or the hand-set point. */
+export type InstrumentMark = { id: string; coord: LatLng; chosen: boolean } & (
+  | { kind: 'putIn' | 'parking' | 'photo' | 'point' }
+  | { kind: 'hazard'; tone: HazardTone }
+);
+
+function hazardTone(h: InstrumentHazard): HazardTone {
+  return h.passage ? 'passage' : h.healing ? 'healing' : 'danger';
+}
+
+/** The marks, bottom to top: pins (chosen lit), hazards, photos, the hand-set point. */
+export function instrumentMarks(input: InstrumentMarksInput): InstrumentMark[] {
+  return [
+    ...input.pins.map((p) => ({
+      id: p.id,
+      coord: p.coord,
+      kind: p.kind,
+      chosen: p.id === input.chosenPinId,
+    })),
+    ...input.hazards.map((h) => ({
+      id: h.id,
+      coord: { lat: (h.bbox.minLat + h.bbox.maxLat) / 2, lng: (h.bbox.minLng + h.bbox.maxLng) / 2 },
+      kind: 'hazard' as const,
+      tone: hazardTone(h),
+      chosen: false,
+    })),
+    ...input.photos.map((p) => ({
+      id: p.id,
+      coord: p.coord,
+      kind: 'photo' as const,
+      chosen: false,
+    })),
     ...(input.point !== undefined && input.chosenPinId === undefined
-      ? [point(input.point, { id: 'point', kind: 'point', chosen: true })]
+      ? [{ id: 'point', coord: input.point, kind: 'point' as const, chosen: true }]
       : []),
   ];
-  return { type: 'FeatureCollection', features };
+}
+
+/**
+ * The pin a chip is pointing at, when the instrument is drawing it: a launch, a lot, or the
+ * hand-set shore point. `null` for anything else — a pin this lake doesn't draw, a hazard's or a
+ * photo's id — so a chip naming nothing on the map never dims the map for nothing.
+ */
+export function pointedPinId(
+  marks: readonly InstrumentMark[],
+  id: string | null | undefined,
+): string | null {
+  if (id === null || id === undefined) return null;
+  return marks.some(
+    (m) => m.id === id && (m.kind === 'putIn' || m.kind === 'parking' || m.kind === 'point'),
+  )
+    ? id
+    : null;
+}
+
+/** What the instrument's key lists: the kinds its marks and its track are drawing. */
+export function instrumentKeyKinds(input: InstrumentInput): MapKeyKind[] {
+  const kinds = new Set<MapKeyKind>();
+  for (const mark of instrumentMarks(input)) {
+    if (mark.kind === 'hazard') kinds.add(HAZARD_KEY_KIND[mark.tone]);
+    else if (mark.kind === 'parking') kinds.add('lot');
+    else kinds.add(mark.kind === 'photo' ? 'photo' : 'putIn');
+  }
+  if ((input.track?.length ?? 0) >= 2) kinds.add('yourTrack');
+  return [...kinds];
 }
 
 export function trackFeatures(track: InstrumentInput['track']): FeatureCollection<LineString> {

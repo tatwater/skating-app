@@ -20,6 +20,7 @@ import {
   temperatureTickY,
   WHOLE_LAKE,
   weatherPlaces,
+  weatherSamplesOverlay,
 } from './weatherModel';
 
 const bayArb = fc.record({
@@ -58,6 +59,51 @@ describe('"Weather at" (c-9vdox9)', () => {
     expect(selectedPlace(places, 'a')).toEqual({ id: 'a', name: 'North' });
     expect(selectedPlace(places, 'zzz')).toBe(WHOLE_LAKE);
     expect(selectedPlace(places, undefined)).toBe(WHOLE_LAKE);
+  });
+});
+
+describe('the sample points on the map (board 1.7)', () => {
+  const lake = {
+    _id: 'mascoma',
+    centroid: { lat: 43.6, lng: -72.2 },
+    interiorPoint: { lat: 43.61, lng: -72.14 },
+  };
+  const bays = [
+    { _id: 'n', name: 'Mascoma North', centroid: { lat: 43.63, lng: -72.15 } },
+    { _id: 's', name: 'Mascoma South', centroid: { lat: 43.59, lng: -72.13 }, removed: false },
+    { _id: 'gone', name: 'Old Bay', centroid: { lat: 0, lng: 0 }, removed: true },
+  ];
+  const points = (overlay: ReturnType<typeof weatherSamplesOverlay>) =>
+    overlay?.data.features.map((f) => ({
+      name: f.properties?.name,
+      lit: f.properties?.lit,
+      at: (f.geometry as GeoJSON.Point).coordinates,
+    }));
+
+  it('rings the whole lake at its weather anchor and each live bay at its own point', () => {
+    expect(points(weatherSamplesOverlay(lake, bays, undefined))).toEqual([
+      { name: 'Whole lake', lit: true, at: [-72.14, 43.61] },
+      { name: 'Mascoma North', lit: false, at: [-72.15, 43.63] },
+      { name: 'Mascoma South', lit: false, at: [-72.13, 43.59] },
+    ]);
+  });
+
+  it('lights the bay being read, and keys the overlay on it', () => {
+    const lake0 = weatherSamplesOverlay(lake, bays, undefined);
+    const north = weatherSamplesOverlay(lake, bays, 'n');
+    expect(
+      points(north)
+        ?.filter((p) => p.lit)
+        .map((p) => p.name),
+    ).toEqual(['Mascoma North']);
+    expect(north?.key).not.toBe(lake0?.key);
+  });
+
+  it('draws nothing for a lake with one point, and leaves off a bay with no point', () => {
+    expect(weatherSamplesOverlay(lake, [], undefined)).toBeNull();
+    expect(weatherSamplesOverlay(lake, undefined, undefined)).toBeNull();
+    const partial = weatherSamplesOverlay(lake, [{ _id: 'x', name: 'X' } as never], undefined);
+    expect(points(partial)?.map((p) => p.name)).toEqual(['Whole lake']);
   });
 });
 

@@ -143,10 +143,14 @@ describe('MapMarksLayer', () => {
     );
     const put = screen.getByRole('img', { name: 'Put-in: Mascoma Lake Boat Launch' });
     expect(put.style.transform).toBe('translate(183px, 183px)');
+    // Each mark names its own id and kind, for what highlights it from elsewhere.
+    expect(put).toHaveAttribute('data-pin', 'p1');
+    expect(put.querySelector('svg')).toHaveAttribute('data-kind', 'put-in');
     expect(screen.getByRole('img', { name: 'Put-in' })).toBeInTheDocument();
     const h1 = screen.getByRole('button', { name: 'Hazard: Open water / lead, not yet confirmed' });
     const h2 = screen.getByRole('button', { name: /Hazard: Open water \/ lead$/ });
     expect(h2).toHaveAttribute('aria-current', 'true');
+    expect(h2).toHaveAttribute('data-pin', 'h2');
     // The other hazard recedes behind the chosen one, never below half.
     expect(h1.querySelector('svg')?.getAttribute('class')).toContain('opacity-55');
     fireEvent.click(h1);
@@ -187,6 +191,45 @@ describe('MapMarksLayer', () => {
     expect(screen.queryByText('Shakoma Beach')).toBeNull();
     fireEvent.pointerEnter(screen.getByRole('img', { name: 'Put-in' }));
     expect(document.querySelector('[data-slot="map-hover-plate"]')).toBeNull();
+  });
+
+  it('over imagery, fades the one hazard the mouse rests on, and only then', () => {
+    const { map } = fakeMap();
+    const props = {
+      map,
+      labels: [],
+      putIns: [],
+      hazards: [hazard({ id: 'a' }), hazard({ id: 'b', lng: 7, hazardType: 'pressure_ridge' })],
+      onOpenHazard: vi.fn(),
+    };
+    const { rerender } = render(<MapMarksLayer {...props} />);
+    const [a, b] = screen.getAllByRole('button') as [HTMLElement, HTMLElement];
+    const faded = () => screen.getAllByRole('button').filter((el) => el.hasAttribute('data-peek'));
+
+    // No picture up: a hover is only a hover, the mark stays at full strength.
+    fireEvent.pointerEnter(a, { pointerType: 'mouse' });
+    expect(faded()).toEqual([]);
+
+    // The picture comes up under a resting mouse: that mark fades, and eases while it does.
+    rerender(<MapMarksLayer {...props} imagery />);
+    expect(faded()).toEqual([a]);
+    expect(a.className).toContain('opacity-35');
+    expect(a.className).toContain('transition-opacity');
+    expect(b.className).not.toContain('opacity-35');
+
+    // Moving to the next mark hands the fade over — never two at once.
+    fireEvent.pointerEnter(b, { pointerType: 'mouse' });
+    fireEvent.pointerLeave(a, { pointerType: 'mouse' });
+    expect(faded()).toEqual([b]);
+
+    fireEvent.pointerLeave(b, { pointerType: 'mouse' });
+    expect(faded()).toEqual([]);
+
+    // Focus is inspecting the mark itself, and a tap opens it: neither fades it.
+    act(() => a.focus());
+    expect(faded()).toEqual([]);
+    fireEvent.pointerEnter(a, { pointerType: 'touch' });
+    expect(faded()).toEqual([]);
   });
 
   it('stops following the camera when it unmounts', () => {

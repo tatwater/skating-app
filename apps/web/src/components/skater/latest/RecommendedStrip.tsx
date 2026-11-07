@@ -23,10 +23,10 @@ export interface RecommendedBundle {
  * reports from the feed so nobody sees one twice. Renders nothing when nothing qualifies, which is
  * the common case.
  *
- * Each lake is one card that opens its newest recommended report in the center column. A lake with a
- * second recommended report lists it under the card as its own link: the page takes every
- * recommended report out of the feed, so a report the card counted but couldn't open would be
- * nowhere on the page.
+ * Each lake is one card that opens its newest recommended report in the drawer. A lake with a second
+ * recommended report lists it under the card as its own link: the page takes every recommended
+ * report out of the feed, so a report the card counted but couldn't open would be nowhere on the
+ * page.
  */
 export function RecommendedStrip({
   bundles,

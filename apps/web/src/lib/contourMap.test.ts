@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hexToRgb, hueDistance } from '@skating/design';
 import { describe, expect, it } from 'vitest';
-import { CONTOUR_BEFORE_LAYER_ID, CONTOUR_PALETTE } from './contourMap';
+import { CONTOUR_PALETTE, contourAttribution } from './contourMap';
 import { HAZARD_PALETTE } from './hazardMap';
 
 /**
@@ -56,22 +56,19 @@ describe('CONTOUR_PALETTE', () => {
   });
 });
 
-/**
- * The z-order, which is a string convention between two files and fails silently.
- *
- * D82 puts hazards above contours: contours are decoration, hazards are the product, and if the two
- * ever compete for legibility the contour is the one that loses. The map expresses that by inserting
- * the contour layer *before* a layer it added at init — so if that layer is ever renamed, MapLibre's
- * `addLayer` falls back to appending, the contours land on top of every hazard, and nothing anywhere
- * says so.
- */
-describe('the layer contours are inserted beneath', () => {
-  it('is a layer MapView actually adds', () => {
-    const mapView = readFileSync(
-      join(import.meta.dirname, '..', 'components', 'MapView.tsx'),
-      'utf8',
+describe('contourAttribution', () => {
+  it('is nothing while no contours are drawn', () => {
+    expect(contourAttribution(null)).toBeNull();
+    expect(contourAttribution('  ')).toBeNull();
+  });
+
+  it('stands alone in the map’s credits: trimmed, its first letter capitalized', () => {
+    expect(contourAttribution(' 5 ft contours, surveyed by NH GRANIT. ')).toBe(
+      '5 ft contours, surveyed by NH GRANIT.',
     );
-    expect(mapView).toContain(`id: '${CONTOUR_BEFORE_LAYER_ID}'`);
+    expect(contourAttribution('depth contours, interpolated by us from published soundings.')).toBe(
+      'Depth contours, interpolated by us from published soundings.',
+    );
   });
 });
 
@@ -92,10 +89,13 @@ describe('the layer contours are inserted beneath', () => {
  */
 describe('the event the contour read is wired to', () => {
   const mapView = () =>
-    readFileSync(join(import.meta.dirname, '..', 'components', 'MapView.tsx'), 'utf8');
+    readFileSync(
+      join(import.meta.dirname, '..', 'components', 'skater', 'map', 'SkaterMapCanvas.tsx'),
+      'utf8',
+    );
 
   it("subscribes to 'sourcedata'", () => {
-    expect(mapView()).toContain("map.on('sourcedata', onContourSourceData)");
+    expect(mapView()).toContain("map.on('sourcedata', onData)");
   });
 
   it("never goes back to 'idle', which does not arrive for a post-load source", () => {

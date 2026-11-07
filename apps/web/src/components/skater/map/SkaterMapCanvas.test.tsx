@@ -37,7 +37,9 @@ class FakeMap {
   canvas = document.createElement('canvas');
   container = document.createElement('div');
   rendered: unknown[] = [];
+  /** The contour source's line features; `bandFeatures` are its band layer's. */
   sourceFeatures: unknown[] = [];
+  bandFeatures: unknown[] = [];
   zoom = 8;
   dragPan = new FakeHandler();
   scrollZoom = new FakeHandler();
@@ -72,7 +74,10 @@ class FakeMap {
   fire(event: string, e?: unknown) {
     for (const h of this.handlers.get(event) ?? []) h(e);
   }
-  addControl() {}
+  controls: unknown[] = [];
+  addControl(control: unknown) {
+    this.controls.push(control);
+  }
   addSource(id: string, spec: { data?: unknown }) {
     this.sources.set(id, spec.data);
   }
@@ -109,8 +114,9 @@ class FakeMap {
   queryRenderedFeatures() {
     return this.rendered;
   }
-  querySourceFeatures() {
-    return this.sourceFeatures;
+  querySourceFeatures(id: string, options?: { sourceLayer?: string }) {
+    if (id !== 'bathymetry') return [];
+    return options?.sourceLayer === 'bathymetry_bands' ? this.bandFeatures : this.sourceFeatures;
   }
   getCanvas() {
     return this.canvas;
@@ -151,7 +157,10 @@ vi.mock('maplibre-gl', () => ({
     Map: FakeMap,
     addProtocol: vi.fn(),
     removeProtocol: vi.fn(),
-    AttributionControl: class {},
+    // `options` is where the folded credits control keeps the contours' credit.
+    AttributionControl: class {
+      options: Record<string, unknown> = {};
+    },
     NavigationControl: class {},
   },
 }));
@@ -211,6 +220,8 @@ const {
   LABEL_CLOCK_MS,
 } = await import('./SkaterMapCanvas');
 const { CONTOUR_LAYER_ID } = await import('@/lib/contourMap');
+const { FoldedAttributionControl } = await import('@/lib/mapAttribution');
+const { BANDS_LAYER_ID } = await import('@/lib/depthBands');
 
 // ── Data ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -270,9 +281,9 @@ function seed() {
   results.set('bodyFeatures:listForBody', []);
   results.set('gpsActivities:listTracksForBody', { tracks: [] });
   results.set('bounties:listOpen', [{ waterBodyId: 'crystal' }, { waterBodyId: 'crystal' }]);
-  results.set('reports:recentCardsForBodies', [
-    { waterBodyId: 'crystal', skateEndTime: Date.now() - 1000 },
-  ]);
+  results.set('reports:recentCountsForBodies', {
+    crystal: { count: 1, capped: false, newestSkateEndTime: Date.now() - 1000 },
+  });
 }
 
 function Harness({
@@ -291,6 +302,13 @@ function Harness({
 }
 
 const map = () => FakeMap.instances.at(-1) as FakeMap;
+/** What the map's folded credits (the ⓘ) carry beyond the sources' own. */
+const chipCredit = () =>
+  (
+    map().controls.find((c) => c instanceof FoldedAttributionControl) as InstanceType<
+      typeof FoldedAttributionControl
+    >
+  ).options.customAttribution;
 const visibility = (id: string) => map().layers.get(id)?.layout.visibility;
 
 async function mount(spec = lakeMapSpec('mascoma'), handlers = {}) {
@@ -466,16 +484,44 @@ describe('data into the map', () => {
     expect(useSkaterMapStore.getState().viewportLakes).toHaveLength(2);
   });
 
+  it('draws every lake’s hazards in view, the open lake’s from its own read, and never twice', async () => {
+    const viewportHazard = (id: string, waterBodyId: string, lng: number, lat: number) => ({
+      _id: id,
+      waterBodyId,
+      type: 'thin_ice',
+      geometryKind: 'polygon',
+      geometry: ring(lng, lat, 0.002),
+      freshness: 'fresh',
+      provisional: false,
+    });
+    // At the cap: every row it has still draws.
+    results.set('hazards:listInViewport', {
+      hazards: [
+        viewportHazard('h1', 'mascoma', -72.14, 43.61),
+        viewportHazard('h9', 'crystal', -72.09, 43.59),
+      ],
+      truncated: true,
+    });
+    await mount();
+    expect(queryArgs.get('hazards:listInViewport')).toEqual({ viewport: expect.any(Object) });
+    // Mascoma's from its own read (h1), Crystal's from the viewport (h9): two, not three.
+    expect((map().sources.get('hazards') as GeoJSON.FeatureCollection).features).toHaveLength(2);
+    // The region with no lake open: the viewport read alone.
+    await mount(exploreMapSpec());
+    expect((map().sources.get('hazards') as GeoJSON.FeatureCollection).features).toHaveLength(2);
+  });
+
   it('skips every read while the pane is hidden', async () => {
     await mount(defineMapSpec({ id: 'hidden', visible: false }));
     expect(queryArgs.get('waterBodies:listInViewport')).toBe('skip');
     expect(queryArgs.get('waterBodyFavorites:listForUser')).toBe('skip');
+    expect(queryArgs.get('hazards:listInViewport')).toBe('skip');
     expect(useSkaterMapStore.getState().viewportLakes).toBeNull();
   });
 
   it('reads report counts for the labeled bodies only, and draws their labels', async () => {
     await mount();
-    expect(queryArgs.get('reports:recentCardsForBodies')).toEqual({ waterBodyIds: ['crystal'] });
+    expect(queryArgs.get('reports:recentCountsForBodies')).toEqual({ waterBodyIds: ['crystal'] });
     expect(screen.getByText('Crystal Lake')).toBeInTheDocument();
     expect(screen.getByText('1 report · today')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: '2 open bounties' })).toBeInTheDocument();
@@ -488,9 +534,9 @@ describe('data into the map', () => {
   it('re-reads "today" against the clock, so a report from before midnight stops claiming it', async () => {
     const lateEvening = new Date(2026, 1, 16, 23, 30).getTime();
     vi.setSystemTime(lateEvening);
-    results.set('reports:recentCardsForBodies', [
-      { waterBodyId: 'crystal', skateEndTime: lateEvening - 30 * 60_000 },
-    ]);
+    results.set('reports:recentCountsForBodies', {
+      crystal: { count: 1, capped: false, newestSkateEndTime: lateEvening - 30 * 60_000 },
+    });
     await mount();
     expect(screen.getByText('1 report · today')).toBeInTheDocument();
     // The canvas outlives the day it mounted on: an hour later it is tomorrow.
@@ -571,10 +617,49 @@ describe('data into the map', () => {
     rect.mockRestore();
   });
 
-  it('hides the put-ins with their switch', async () => {
+  it('hides the put-ins with their switch, and their key with them', async () => {
     useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, putIns: false } });
     await mount();
     expect(screen.queryByRole('img', { name: /Put-in/ })).toBeNull();
+    expect(screen.getByRole('list', { name: 'Map key' })).not.toHaveTextContent('Put-in');
+  });
+
+  it('keys the marks it draws along its foot', async () => {
+    await mount();
+    const key = screen.getByRole('list', { name: 'Map key' });
+    expect(key).toHaveTextContent('Put-in');
+    expect(key).toHaveTextContent('Hazard');
+    expect(key).not.toHaveTextContent('Track');
+  });
+
+  it('keys a track a view draws over the lake', async () => {
+    const spec = lakeMapSpec('mascoma');
+    await mount({
+      ...spec,
+      overlays: {
+        ...spec.overlays,
+        track: {
+          key: 't1',
+          data: {
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [
+                    [-72.14, 43.61],
+                    [-72.13, 43.61],
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(screen.getByRole('list', { name: 'Map key' })).toHaveTextContent('Track');
   });
 
   it('shows the hover both ways', async () => {
@@ -628,15 +713,170 @@ describe('depth', () => {
     expect(screen.getByRole('img', { name: /Depth bands/ })).toBeInTheDocument();
   });
 
-  it('stands the contours down with the imagery on (D81)', async () => {
+  /** One credit surface: the contours' credit is the map chip's, only while their lines are drawn. */
+  it('hands the contours’ credit to the map chip while drawn, and takes it back after', async () => {
+    const line = (agency: string, lane = 'surveyed') => ({
+      properties: { bodyId: 'way/123', depthFt: 10, agency, lane, intervalFt: 5 },
+    });
+    const view = await mount();
+    expect(chipCredit()).toBeUndefined();
+    // Bands alone credit nobody.
+    map().bandFeatures = [band(0)];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toBeUndefined();
+    map().sourceFeatures = [line('NH GRANIT')];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toMatch(/^5 ft contours, surveyed by .*NH GRANIT/);
+    // Another provider's lines in view: the credit is replaced, not added to.
+    map().sourceFeatures = [line('VCGI / NOAA', 'interpolated')];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toMatch(/^5 ft contours, interpolated by us from published soundings\. /);
+    expect(chipCredit()).not.toMatch(/NH GRANIT|surveyed/);
+    // Depth off: no contours drawn, no credit.
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    expect(chipCredit()).toBeUndefined();
+    // Off the lake, the same.
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(chipCredit()).toBeTruthy();
+    view.rerender(<Harness spec={exploreMapSpec()} />);
+    expect(chipCredit()).toBeUndefined();
+  });
+
+  it('stands the contours and the band fills down with the imagery on (D81)', async () => {
     useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: true } });
     await mount();
-    expect(visibility(CONTOUR_LAYER_ID)).toBe('none');
-    expect(map().layers.get(CONTOUR_LAYER_ID)?.filter).toEqual([
-      '==',
-      ['literal', true],
-      ['literal', false],
+    map().bandFeatures = [band(0), band(2)];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    for (const id of [CONTOUR_LAYER_ID, BANDS_LAYER_ID]) {
+      expect(visibility(id)).toBe('none');
+      expect(map().layers.get(id)?.filter).toEqual(NO_LAKE);
+    }
+    expect(map().layers.get(BANDS_LAYER_ID)?.paint['fill-opacity']).toBe(0);
+  });
+
+  it('stands the lake’s water fill down under the picture, and brings it back after', async () => {
+    const fillUnder = () => {
+      const opacity = map().layers.get('water-fill')?.paint['fill-opacity'] as unknown[];
+      return opacity[1] as unknown[];
+    };
+    useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: true } });
+    await mount();
+    expect(fillUnder().slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], 'mascoma'], 0]);
+    act(() => useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: false } }));
+    expect(fillUnder().slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], ''], 0]);
+  });
+
+  it('keeps the hazard marks on over the picture, and fades only the one under the mouse', async () => {
+    useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: true } });
+    await mount();
+    const mark = screen.getByRole('button', { name: /Hazard: Open water/ });
+    expect(mark).not.toHaveAttribute('data-peek');
+    fireEvent.pointerEnter(mark, { pointerType: 'mouse' });
+    expect(mark).toHaveAttribute('data-peek');
+    act(() => useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: false } }));
+    expect(mark).not.toHaveAttribute('data-peek');
+  });
+});
+
+const NO_LAKE = ['==', ['literal', true], ['literal', false]];
+// Mascoma's shape (BANDS.md): contoured every 10 ft, so no band 1, and the deepest open-ended.
+const MASCOMA_BANDS: Record<number, { minDepthFt: number; maxDepthFt?: number }> = {
+  0: { minDepthFt: 0, maxDepthFt: 10 },
+  2: { minDepthFt: 10, maxDepthFt: 20 },
+  3: { minDepthFt: 20, maxDepthFt: 30 },
+  6: { minDepthFt: 70 },
+};
+const band = (bandIndex: number) => ({
+  properties: { bodyId: 'way/123', bandIndex, lane: 'surveyed', ...MASCOMA_BANDS[bandIndex] },
+});
+
+describe('depth bands (B03 §2)', () => {
+  const opacity = () => map().layers.get(BANDS_LAYER_ID)?.paint['fill-opacity'];
+
+  it('adds the band fills on the water, under the contour lines', async () => {
+    await mount();
+    const ids = [...map().layers.keys()];
+    expect(ids.indexOf(BANDS_LAYER_ID)).toBeGreaterThan(ids.indexOf('water-fill'));
+    expect(ids.indexOf(BANDS_LAYER_ID)).toBeLessThan(ids.indexOf(CONTOUR_LAYER_ID));
+    // The lines' archive, not a second one.
+    expect([...map().sources.keys()].filter((id) => id.startsWith('bathymetry'))).toEqual([
+      'bathymetry',
     ]);
+  });
+
+  it('filters the bands to the lake on the contours’ key and fades them in once readable', async () => {
+    await mount();
+    expect(visibility(BANDS_LAYER_ID)).toBe('visible');
+    expect(map().layers.get(BANDS_LAYER_ID)?.filter).toEqual(['==', ['get', 'bodyId'], 'way/123']);
+    expect(opacity()).toBe(0);
+    expect(screen.queryByRole('img', { name: /Depth bands/ })).not.toBeInTheDocument();
+    map().bandFeatures = [band(0), band(2), band(6), band(0)];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(opacity()).toBe(1);
+    // Bands alone are depth on screen: the shallow ground under them, and the legend.
+    expect(JSON.stringify(map().layers.get('water-fill')?.paint['fill-color'])).toContain(
+      'mascoma',
+    );
+    // The legend reads the lake's real band depths, once per band however many tiles it spans.
+    expect(
+      screen.getByRole('img', { name: 'Depth bands: 0–10 ft, 10–20 ft, 70+ ft' }),
+    ).toBeInTheDocument();
+    // Polygons carry no agency, so they credit nobody rather than inventing one.
+    expect(useSkaterMapStore.getState().contourCredit).toBeNull();
+  });
+
+  it('ignores other sources’ data', async () => {
+    await mount();
+    map().bandFeatures = [band(0)];
+    act(() => map().fire('sourcedata', { sourceId: 'water' }));
+    expect(opacity()).toBe(0);
+  });
+
+  it('credits the lines’ agency, never the bands’', async () => {
+    await mount();
+    map().bandFeatures = [band(2)];
+    map().sourceFeatures = [
+      { properties: { bodyId: 'way/123', depthFt: 10, agency: 'NH GRANIT', lane: 'surveyed' } },
+    ];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(useSkaterMapStore.getState().contourCredit).toContain('NH GRANIT');
+    expect(opacity()).toBe(1);
+  });
+
+  it('keeps today’s look for a lake without band polygons: the shallow fill under its lines', async () => {
+    await mount();
+    map().sourceFeatures = [{ properties: { bodyId: 'way/123', depthFt: 5 } }];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(opacity()).toBe(0);
+    expect(map().layers.get(CONTOUR_LAYER_ID)?.paint['line-opacity']).toBe(0.75);
+    expect(JSON.stringify(map().layers.get('water-fill')?.paint['fill-color'])).toContain(
+      'mascoma',
+    );
+  });
+
+  it('takes the bands away with the Depth switch, and brings them back', async () => {
+    await mount();
+    map().bandFeatures = [band(0), band(2)];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(opacity()).toBe(1);
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    expect(visibility(BANDS_LAYER_ID)).toBe('none');
+    expect(map().layers.get(BANDS_LAYER_ID)?.filter).toEqual(NO_LAKE);
+    expect(opacity()).toBe(0);
+    expect(JSON.stringify(map().layers.get('water-fill')?.paint['fill-color'])).not.toContain(
+      'mascoma',
+    );
+    expect(screen.queryByRole('img', { name: /Depth bands/ })).not.toBeInTheDocument();
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    expect(visibility(BANDS_LAYER_ID)).toBe('visible');
+    expect(opacity()).toBe(1);
+  });
+
+  it('draws no bands off a lake: the region map has none', async () => {
+    await mount(exploreMapSpec());
+    expect(map().layers.get(BANDS_LAYER_ID)?.filter).toEqual(NO_LAKE);
+    expect(opacity()).toBe(0);
   });
 });
 
@@ -664,19 +904,29 @@ describe('clicks', () => {
   it('asks for a lake on unlisted water, never in the URL', async () => {
     await mount(exploreMapSpec());
     click([{ source: 'protomaps', sourceLayer: 'water', layer: { id: 'water' } }]);
-    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({ lng: -72.2, lat: 43.7 });
+    // With where it landed on screen (the canvas point, in the viewport), for the dialog to open by.
+    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({
+      lng: -72.2,
+      lat: 43.7,
+      screen: { x: 1, y: 1 },
+    });
     expect(navigate).not.toHaveBeenCalled();
   });
 
   it('asks on a right-click too, where the view takes requests', async () => {
     const view = await mount(exploreMapSpec());
     const preventDefault = vi.fn();
-    act(() => map().fire('contextmenu', { preventDefault, lngLat: { lng: -72, lat: 43 } }));
+    const at = { preventDefault, point: { x: 5, y: 7 }, lngLat: { lng: -72, lat: 43 } };
+    act(() => map().fire('contextmenu', at));
     expect(preventDefault).toHaveBeenCalled();
-    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({ lng: -72, lat: 43 });
+    expect(useSkaterMapStore.getState().pendingMapClick).toEqual({
+      lng: -72,
+      lat: 43,
+      screen: { x: 5, y: 7 },
+    });
     useSkaterMapStore.getState().setPendingMapClick(null);
     view.rerender(<Harness spec={defineMapSpec({ id: 'latest' })} />);
-    act(() => map().fire('contextmenu', { preventDefault, lngLat: { lng: -72, lat: 43 } }));
+    act(() => map().fire('contextmenu', at));
     expect(useSkaterMapStore.getState().pendingMapClick).toBeNull();
   });
 
@@ -857,6 +1107,14 @@ describe('modes and handlers', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(onExitMode).toHaveBeenCalledTimes(2);
+  });
+
+  it('names the mode bar’s exit as the mode says', async () => {
+    await mount(
+      defineMapSpec({ id: 'place', mode: { mode: 'Placing a spot', exitLabel: 'Close' } }),
+    );
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Leave the mode' })).toBeNull();
   });
 
   it('shows the imagery entry when the view has a flow for it', async () => {

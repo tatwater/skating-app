@@ -143,7 +143,7 @@ describe('LatestPage', () => {
     expect(fakes.capture).toHaveBeenCalledWith('latest_filter_changed', { filter: 'snow_cover' });
   });
 
-  it('opens a report in the center column, from the feed, without resetting scroll', () => {
+  it('opens a report in the drawer, from the feed, without resetting scroll', () => {
     page();
     fireEvent.click(screen.getByRole('link', { name: /^Report on Mascoma South/ }));
     expect(fakes.capture).toHaveBeenCalledWith('latest_report_opened');
@@ -164,6 +164,10 @@ describe('LatestPage', () => {
     expect(m.hosts.at(-1)).toMatchObject({ reportId: 'rep1', host: { backTo: 'Latest' } });
     expect(document.querySelector('[data-slot="latest-feed-scroll"]')).toBe(scroller);
     expect(scroller).toHaveAttribute('inert');
+    // The report is the page's drawer, beside the columns rather than over the center one.
+    const opened = screen.getByRole('button', { name: 'Back to Latest' });
+    expect(opened.closest('[data-slot="panel-drawer-host"]')).not.toBeNull();
+    expect(opened.closest('main')).toBeNull();
     // The selected report is marked in the feed under the card.
     expect(document.querySelector('[aria-current="true"]')).not.toBeNull();
 
@@ -293,7 +297,7 @@ describe('LatestPage', () => {
     });
   });
 
-  it('opens a recommended report in the center column too', () => {
+  it('opens a recommended report in the drawer too', () => {
     fakes.queries.set('reports:recommended', [{ waterBodyId: 'wb1', cards: [REPORT] }]);
     page();
     fireEvent.click(screen.getByRole('link', { name: /^Recommended: Mascoma Lake/ }));
@@ -375,6 +379,20 @@ describe('LatestPage · text search (latest-text-search)', () => {
     fakes.paginated = { results: [], status: 'Exhausted', loadMore: vi.fn() };
     page({ q: 'zzz' });
     expect(screen.getByText(/No reports mention that/)).toBeInTheDocument();
+  });
+
+  it('keeps loading when a filtered search’s first page comes back empty with more to read', () => {
+    m.flags['latest-text-search'] = true;
+    m.filters = { qualityFloor: 'good' };
+    const loadMore = vi.fn();
+    fakes.paginated = { results: [], status: 'CanLoadMore', loadMore };
+    page({ q: 'narrows' });
+    expect(screen.queryByText(/No reports mention that/)).toBeNull();
+    expect(screen.getByText(/No matching reports on this page of the search/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(loadMore).toHaveBeenCalledWith(20);
+    const plate = document.querySelector('[data-slot="latest-empty"]') as HTMLElement;
+    expect(within(plate).getByRole('button', { name: 'Clear search' })).toBeInTheDocument();
   });
 
   it('puts debounced typing in the URL with replace', () => {

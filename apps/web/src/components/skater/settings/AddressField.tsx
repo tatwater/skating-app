@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLocationDot, faMagnifyingGlass } from '@fortawesome/sharp-light-svg-icons';
-import { type KeyboardEvent, useId, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useId, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -26,6 +26,44 @@ export function splitAddress(label: string): { street: string; rest: string | nu
     .replace(/(^|,\s*)(USA|United States)$/i, '')
     .trim();
   return { street: label.slice(0, at).trim(), rest: rest || null };
+}
+
+/**
+ * The credits a geocoder attribution may link, each to its canonical page. Only these names become
+ * links, and only to these URLs — a URL inside the attribution string itself is never followed, so
+ * whatever the provider sends stays plain text apart from the two names its terms ask us to credit.
+ */
+const CREDIT_LINKS: ReadonlyArray<readonly [name: string, href: string]> = [
+  ['Geoapify', 'https://www.geoapify.com/'],
+  ['OpenStreetMap contributors', 'https://www.openstreetmap.org/copyright'],
+];
+const CREDIT_PATTERN = new RegExp(CREDIT_LINKS.map(([name]) => name).join('|'), 'g');
+
+/**
+ * "Powered by Geoapify | © OpenStreetMap contributors" → the same text with each known credit a
+ * new-tab link to its canonical page; anything else is left as text.
+ */
+export function linkifyAttribution(text: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const match of text.matchAll(CREDIT_PATTERN)) {
+    const href = CREDIT_LINKS.find(([name]) => name === match[0])?.[1];
+    if (match.index > at) parts.push(text.slice(at, match.index));
+    parts.push(
+      <a
+        key={match.index}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-fg3 underline underline-offset-2 hover:text-fg1"
+      >
+        {match[0]}
+      </a>,
+    );
+    at = match.index + match[0].length;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+  return parts;
 }
 
 /**
@@ -192,7 +230,7 @@ export function AddressField({
             </span>
             {attribution && (
               <span data-slot="geocoder-attribution" className="ml-auto text-fg3">
-                {attribution}
+                {linkifyAttribution(attribution)}
               </span>
             )}
           </div>

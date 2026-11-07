@@ -2,8 +2,9 @@ import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useRouter } from '@tanstack/react-router';
-import { type RequestForQueries, useQueries, useQuery } from 'convex/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { bucketQueryLength, type SearchOpenSurface, useAnalytics } from '@/lib/analytics';
 import { useChromeStore } from '@/stores/chromeStore';
@@ -11,6 +12,8 @@ import { type RecentPick, useSearchStore } from '@/stores/searchStore';
 
 import { useChromeKeys, useChromeOverlay } from './chrome';
 import { GlobalSearchView } from './GlobalSearchView';
+import { markWaterBodyOpenSource } from './lake/openSource';
+import { PhoneSearchView } from './phone/PhoneSearchView';
 import {
   buildRecentGroup,
   buildResultGroups,
@@ -29,7 +32,7 @@ import {
 /**
  * Global search, wired (boards 3.17–3.20): the two server searches (`waterBodies.searchByName` with
  * its bays, `profiles.searchProfiles`), the recent-report lines (`reports.recentCardsForBodies`),
- * the owner-bound recents, `/` from any page, and the three search events — none of which ever
+ * the owner-bound recents (one `search.resolveRecents` read), `/` from any page, and the three search events — none of which ever
  * carries the query's text, only its length bucket.
  */
 
@@ -72,89 +75,77 @@ function useDebounced(value: string, ms: number): string {
   return debounced;
 }
 
-/** Each recent pick's query: a lake by id, a bay through its lake's list, a skater by username. */
-function recentQuerySpec(picks: readonly RecentPick[]) {
-  const spec: RequestForQueries = {};
+/** A pick as `search.resolveRecents` takes it: a bay by its own sub-area id. */
+type RecentArg = { kind: RecentPick['kind']; id: string };
+
+/**
+ * The picks to resolve, at most a plate's worth, with the arg each sends. A bay pick whose stored
+ * pair no longer parses is left out — it could only resolve to nothing.
+ */
+export function recentArgs(picks: readonly RecentPick[]): {
+  sent: RecentPick[];
+  args: RecentArg[];
+} {
+  const sent: RecentPick[] = [];
+  const args: RecentArg[] = [];
   for (const pick of picks.slice(0, MAX_SEARCH_ROWS)) {
-    if (pick.kind === 'water_body') {
-      spec[`water:${pick.id}`] = {
-        query: api.waterBodies.get,
-        args: { waterBodyId: pick.id as Id<'waterBodies'> },
-      };
-    } else if (pick.kind === 'sub_area') {
+    if (pick.kind === 'sub_area') {
       const bay = parseBayPickId(pick.id);
       if (!bay) continue;
-      spec[`water:${bay.waterBodyId}`] = {
-        query: api.waterBodies.get,
-        args: { waterBodyId: bay.waterBodyId as Id<'waterBodies'> },
-      };
-      spec[`bays:${bay.waterBodyId}`] = {
-        query: api.subAreas.listForBody,
-        args: { waterBodyId: bay.waterBodyId as Id<'waterBodies'> },
-      };
+      args.push({ kind: 'sub_area', id: bay.subAreaId });
     } else {
-      spec[`skater:${pick.id}`] = {
-        query: api.profiles.getPublicProfile,
-        args: { username: pick.id },
-      };
+      args.push({ kind: pick.kind, id: pick.id });
     }
+    sent.push(pick);
   }
-  return spec;
+  return { sent, args };
 }
 
-type BodyResult = { available: false } | { available: true; body: WaterBody } | null;
-type WaterBody = { name: string; type: string; states?: string[]; standing?: unknown };
-type BayList = { _id: string; name: string }[];
-type Profile = { username: string; displayName: string; profileImageUrl?: string } | null;
+type RecentRow = FunctionReturnType<typeof api.search.resolveRecents>[number];
 
-/** The answered queries, as the model's resolved picks. A failed or missing answer resolves nothing. */
+/**
+ * `resolveRecents`' rows, in the order sent, as the model's resolved picks. A `null` row (a removed
+ * lake, a deleted bay, a skater you can no longer see) resolves nothing, and its pick drops.
+ */
 export function resolvePicks(
-  picks: readonly RecentPick[],
-  results: Record<string, unknown>,
+  sent: readonly RecentPick[],
+  rows: readonly (RecentRow | null)[] | undefined,
 ): Map<string, ResolvedPick> {
   const out = new Map<string, ResolvedPick>();
-  const body = (id: string): WaterBody | null => {
-    const r = results[`water:${id}`] as BodyResult | Error | undefined;
-    if (!r || r instanceof Error || !r.available) return null;
-    return r.body;
-  };
-  for (const pick of picks) {
-    if (pick.kind === 'water_body') {
-      const b = body(pick.id);
-      if (b) {
-        out.set(pickKey(pick), {
-          kind: 'water_body',
-          name: b.name,
-          type: b.type,
-          states: b.states ?? [],
-        });
-      }
-    } else if (pick.kind === 'sub_area') {
-      const bay = parseBayPickId(pick.id);
-      const lake = bay ? body(bay.waterBodyId) : null;
-      const list = bay
-        ? (results[`bays:${bay.waterBodyId}`] as BayList | Error | undefined)
-        : undefined;
-      const row = Array.isArray(list) ? list.find((b) => b._id === bay?.subAreaId) : undefined;
-      if (lake && row) {
-        out.set(pickKey(pick), { kind: 'sub_area', name: row.name, parentName: lake.name });
-      }
+  sent.forEach((pick, i) => {
+    const row = rows?.[i];
+    if (!row || row.kind !== pick.kind) return;
+    if (row.kind === 'water_body') {
+      out.set(pickKey(pick), {
+        kind: 'water_body',
+        name: row.name,
+        type: row.type,
+        states: row.states,
+        ...(row.inactive ? { inactive: true } : {}),
+        ...(row.outline ? { outline: row.outline } : {}),
+      });
+    } else if (row.kind === 'sub_area') {
+      out.set(pickKey(pick), { kind: 'sub_area', name: row.name, parentName: row.parentName });
     } else {
-      const p = results[`skater:${pick.id}`] as Profile | Error | undefined;
-      if (p && !(p instanceof Error)) {
-        out.set(pickKey(pick), {
-          kind: 'skater',
-          displayName: p.displayName,
-          username: p.username,
-          ...(p.profileImageUrl ? { imageUrl: p.profileImageUrl } : {}),
-        });
-      }
+      out.set(pickKey(pick), {
+        kind: 'skater',
+        displayName: row.displayName,
+        username: row.username,
+        ...(row.profileImageUrl ? { imageUrl: row.profileImageUrl } : {}),
+      });
     }
-  }
+  });
   return out;
 }
 
-export function GlobalSearch({ container }: { container?: HTMLElement | null } = {}) {
+export function GlobalSearch({
+  container,
+  layout = 'bar',
+}: {
+  container?: HTMLElement | null;
+  /** `phone`: the phone's field and full-screen results (board 9.6), recorded as surface `phone`. */
+  layout?: 'bar' | 'phone';
+} = {}) {
   const router = useRouter();
   const { capture } = useAnalytics();
   const { open, onOpenChange } = useChromeOverlay('search');
@@ -178,7 +169,12 @@ export function GlobalSearch({ container }: { container?: HTMLElement | null } =
   const skaters = useQuery(api.profiles.searchProfiles, term ? { query: term } : 'skip');
 
   const showRecents = open && term === null;
-  const recentResults = useQueries(showRecents ? recentQuerySpec(recents) : {});
+  // One read for every recent pick (B03 §11), not one per pick.
+  const { sent, args: recentPicks } = useMemo(() => recentArgs(recents), [recents]);
+  const recentRows = useQuery(
+    api.search.resolveRecents,
+    showRecents && recentPicks.length > 0 ? { picks: recentPicks } : 'skip',
+  );
 
   const ids = term ? cardBodyIds(water ?? []) : showRecents ? recentBodyIds(recents) : [];
   const cards = useQuery(
@@ -189,7 +185,7 @@ export function GlobalSearch({ container }: { container?: HTMLElement | null } =
   const now = Date.now();
   const settled = term !== null && water !== undefined && skaters !== undefined;
   const fresh: SearchGroup[] | null = showRecents
-    ? buildRecentGroup(recents, resolvePicks(recents, recentResults), cards ?? [], now)
+    ? buildRecentGroup(sent, resolvePicks(sent, recentRows), cards ?? [], now)
     : settled
       ? buildResultGroups(water ?? [], skaters ?? [], cards ?? [], now)
       : null;
@@ -214,17 +210,22 @@ export function GlobalSearch({ container }: { container?: HTMLElement | null } =
     capture('search_result_opened', {
       result_kind: row.kind,
       rank: rankOf(groups, row.key),
-      query_length_bucket: bucketQueryLength(text.trim().length),
+      // A Recent pick is not a search: no query was asked, so no length is reported (D240).
+      query_length_bucket: showRecents ? 'recent' : bucketQueryLength(text.trim().length),
     });
     addRecent(row.pick);
     onOpenChange(false);
+    markWaterBodyOpenSource('search', row.href);
     router.history.push(row.href);
   };
 
+  const View = layout === 'phone' ? PhoneSearchView : GlobalSearchView;
   return (
-    <GlobalSearchView
+    <View
       open={open}
-      onOpenChange={(next) => (next ? openSearch('top_bar') : onOpenChange(false))}
+      onOpenChange={(next) =>
+        next ? openSearch(layout === 'phone' ? 'phone' : 'top_bar') : onOpenChange(false)
+      }
       query={text}
       onQueryChange={setText}
       groups={groups}

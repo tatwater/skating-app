@@ -134,6 +134,7 @@ const BOUNTIES = bountyCards(
       createdAt: NOW - 25 * DAY,
       expiresAt: NOW - 20 * DAY,
       fulfilledAt: new Date(2026, 11, 28).getTime(),
+      fulfilledBy: 'Ana Morales',
       waterBody: { name: 'Crystal Lake' },
       subArea: null,
       fulfillingReports: [{ _id: 'c2', authorName: 'Ana Morales', skateEndTime: 0 }],

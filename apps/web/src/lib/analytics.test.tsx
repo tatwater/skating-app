@@ -222,6 +222,8 @@ describe('the bucket helpers', () => {
 
   it('every bucket label is a value of its enum', () => {
     expect(ANALYTICS_ENUMS.query_length_bucket).toContain(bucketQueryLength(4));
+    // A Recent pick's own value: no query, so no length (D240), and no claim about the ice (D3).
+    expect(ANALYTICS_ENUMS.query_length_bucket).toContain('recent');
     expect(ANALYTICS_ENUMS.point_count_bucket).toContain(bucketPointCount(500));
     expect(ANALYTICS_ENUMS.unread_bucket).toContain(bucketUnreadCount(2));
   });

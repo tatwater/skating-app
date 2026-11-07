@@ -190,7 +190,11 @@ describe('a spot, posted (3.1 → 3.2 → 3.7)', () => {
     fakes.mutations.set('hazards:create', create);
     const { onClose } = mount();
     fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
-    expect(flowSpec()?.mode).toEqual({ mode: 'Placing a spot', line: 'Click where it is' });
+    expect(flowSpec()?.mode).toEqual({
+      mode: 'Placing a spot',
+      line: 'Click where it is',
+      exitLabel: 'Close',
+    });
     expect(flowSpec()?.interactions.click).toBe('capture');
     // Post sleeps until it's placed, and says why.
     expect(screen.getByRole('button', { name: 'Post hazard' })).toHaveAttribute(
@@ -324,6 +328,20 @@ describe('the nearby nudge (3.8)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'No, this is a different hazard' }));
     await waitFor(() => expect(create).toHaveBeenCalledOnce());
     expect(create.mock.calls[0]?.[0]).toMatchObject({ dismissedDuplicateOf: 'h_old' });
+  });
+
+  it('a change of type takes the nudge down and gives Post back', async () => {
+    await raise();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a different type' }));
+    expect(screen.queryByText(/There is already/)).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Open water / lead' }));
+    // The prompt was asked about a thin ice; the new type has not been asked anything yet.
+    expect(screen.queryByText(/There is already/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeEnabled();
+    expect(useHazardDraftStore.getState().draft).toMatchObject({
+      hazardType: 'open_water',
+      nearbyHazardId: null,
+    });
   });
 
   it('a failed confirm takes the nudge down and says so', async () => {
@@ -463,6 +481,65 @@ describe('leaving', () => {
     // The flow's spec goes with it, so the view's comes back.
     expect(flowSpec()).toBeNull();
   });
+
+  it('a Post still in flight when the flow closes still clears the filed draft', async () => {
+    let land: (id: string) => void = () => {};
+    const create = vi.fn(() => new Promise<string>((resolve) => (land = resolve)));
+    fakes.mutations.set('hazards:create', create);
+    const onDone = vi.fn();
+    const { onClose, unmount } = mount({ onDone });
+    fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
+    capture(43.63, -72.15);
+    fireEvent.click(screen.getByRole('button', { name: 'Post hazard' }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    act(() => activeMapHandlers().onExitMode?.());
+    expect(onClose).toHaveBeenCalledOnce();
+    unmount();
+    await act(async () => land('h_late'));
+    // Never restores to be filed twice; the host that carries the result still hears of it.
+    expect(useHazardDraftStore.getState().draft).toBeNull();
+    expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_late' }, { open: false });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('an old Post that lands after a new draft started clears only its own draft', async () => {
+    let land: (id: string) => void = () => {};
+    const create = vi.fn(() => new Promise<string>((resolve) => (land = resolve)));
+    fakes.mutations.set('hazards:create', create);
+    const onDone = vi.fn();
+    const first = mount({ onDone });
+    fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
+    capture(43.63, -72.15);
+    fireEvent.click(screen.getByRole('button', { name: 'Post hazard' }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    const filed = useHazardDraftStore.getState().draft?.draftId;
+    expect(filed).toEqual(expect.any(String));
+    // Close while it's in flight, reopen on the same lake, throw the old draft away, start another.
+    act(() => activeMapHandlers().onExitMode?.());
+    first.unmount();
+    const second = mount();
+    // The old draft comes back (same lake, same draft); Cancel throws it away.
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(useHazardDraftStore.getState().draft).toBeNull();
+    second.unmount();
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Pressure ridge' }));
+    const photo = new File(['x'], 'ridge.jpg', { type: 'image/jpeg' });
+    act(() => useHazardDraftStore.getState().setPhotoFiles([photo]));
+    const fresh = useHazardDraftStore.getState().draft?.draftId;
+    expect(fresh).toEqual(expect.any(String));
+    expect(fresh).not.toBe(filed);
+
+    // The old Post lands now.
+    await act(async () => land('h_old'));
+    expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_old' }, { open: false });
+    // The new draft and its photo are untouched.
+    expect(useHazardDraftStore.getState().draft).toMatchObject({
+      draftId: fresh,
+      hazardType: 'pressure_ridge',
+    });
+    expect(useHazardDraftStore.getState().photoFiles).toEqual([photo]);
+  });
 });
 
 describe('stacked inside the report sheet (5.10.1)', () => {
@@ -477,7 +554,8 @@ describe('stacked inside the report sheet (5.10.1)', () => {
       onDone,
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
-    expect(fakes.capture).toHaveBeenCalledWith('hazard_flow_started', { entry: 'report_sheet' });
+    // The report sheet's opener records the start; stacked, the flow doesn't record it again.
+    expect(fakes.capture).not.toHaveBeenCalledWith('hazard_flow_started', expect.anything());
     expect(useHazardDraftStore.getState().draft?.stackedInReport).toBe(true);
     expect(flowSpec()).toBeNull();
     const state = onMapState.mock.calls.at(-1)?.[0];
@@ -485,7 +563,10 @@ describe('stacked inside the report sheet (5.10.1)', () => {
     act(() => state.onCapture({ lat: 43.63, lng: -72.15 }));
     fireEvent.click(screen.getByRole('button', { name: 'Post hazard' }));
     await waitFor(() =>
-      expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_stacked' }),
+      expect(onDone).toHaveBeenCalledWith(
+        { outcome: 'filed', hazardId: 'h_stacked' },
+        { open: true },
+      ),
     );
     expect(onClose).not.toHaveBeenCalled();
     unmount();

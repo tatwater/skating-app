@@ -142,13 +142,16 @@ export function HazardPanel({ hazardId, action }: { hazardId: string; action?: '
     archived ? 'Retired' : null,
   ].filter((b): b is string => b !== null);
 
+  // Where the pin is in the lake's own words — its bay and the nearest named landmark ("The Narrows,
+  // by Shaker Bridge", `hazards.get`'s `placeLine`), else the bare bay stamp.
+  const place = hazard.placeLine ?? hazard.subAreaName;
   const data: HazardPanelData = {
     hazardId,
     type: hazard.type,
     title: hazardTypeLabel(hazard.type),
     bodyId: bodyId ?? hazard.waterBodyId,
     bodyName: lakeName,
-    ...(hazard.subAreaName !== undefined ? { subAreaName: hazard.subAreaName } : {}),
+    ...(place !== undefined ? { subAreaName: place } : {}),
     freshnessLabel: freshnessLabel(hazard.freshness),
     fresh: hazard.freshness === 'fresh',
     badges,

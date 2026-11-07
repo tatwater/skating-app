@@ -299,6 +299,41 @@ describe('the bounty lists honor the skate-time rule and name their place (B03 Â
     expect(await t.query(api.bounties.myBounties, {})).toEqual([]);
   });
 
+  test('myBounties credits the author whose report was accepted, not the first candidate', async () => {
+    const t = convexTest(schema, modules);
+    const req = await seedUser(t, 'req');
+    const alice = await seedUser(t, 'alice');
+    const bob = await seedUser(t, 'bob');
+    const { waterBodyId } = await seedBody(t);
+    // Alice answered first; the requester accepted Bob's later report.
+    const first = await seedReport(t, alice.id, waterBodyId, { skateEndTime: T0 - HOUR / 2 });
+    const accepted = await seedReport(t, bob.id, waterBodyId);
+    const bountyId = await seedBounty(t, req.id, waterBodyId, {
+      status: 'fulfilled',
+      createdAt: T0 - HOUR,
+      fulfillingReportIds: [first, accepted],
+    });
+    // What fulfillBountyOnHelpful writes when the requester's thumb fulfills it.
+    await t.run((ctx) =>
+      ctx.db.insert('pointEvents', {
+        userId: bob.id,
+        delta: 10,
+        reason: 'bounty_fulfilled',
+        refId: bountyId,
+        createdAt: T0,
+      }),
+    );
+    // An open bounty has no award to read, and a fulfilled one without its ledger row says nothing.
+    await seedBounty(t, req.id, waterBodyId, { createdAt: T0 - 2 * HOUR });
+    await seedBounty(t, req.id, waterBodyId, { status: 'fulfilled', createdAt: T0 - 3 * HOUR });
+    const rows = await req.as.query(api.bounties.myBounties, {});
+    expect(rows[0]?._id).toBe(bountyId);
+    expect(rows[0]?.answeredBy.map((a) => a.username).sort()).toEqual(['alice', 'bob']);
+    expect(rows[0]?.fulfilledBy?.username).toBe('bob');
+    expect(rows[1]).not.toHaveProperty('fulfilledBy');
+    expect(rows[2]).not.toHaveProperty('fulfilledBy');
+  });
+
   test('myBounties enriches the newest MY_BOUNTIES_CAP and says so past it', async () => {
     const t = convexTest(schema, modules);
     const req = await seedUser(t, 'req');

@@ -6,7 +6,7 @@ import { z } from 'zod';
  * default, so a stale or hand-edited link degrades to the plain feed instead of an error page.
  * The root params (`?post=`, `?postBody=`) are the skater layout's, not these.
  *
- * - `report` — the report open in the center column (4.5–4.7).
+ * - `report` — the report open in the drawer from the right (4.5–4.7).
  * - `q` — text search over reports (4.9), behind `latest-text-search`. Blank is no search.
  * - `skater` — one skater's reports, by username, behind `latest-skater-filter`.
  * - `view=map` — the region map in a Latest frame (4.4).

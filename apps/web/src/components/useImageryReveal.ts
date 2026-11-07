@@ -52,6 +52,7 @@ import {
 } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
+import { BANDS_LAYER_ID } from '../lib/depthBands';
 import { isTileResident, loadTile } from '../lib/imageryCache';
 import { composeImagery, compositeCanvasSize, imageryCorners } from '../lib/imageryCanvas';
 
@@ -518,7 +519,13 @@ export const IMAGERY_REPLACED_LAYERS: readonly ReplacedLayer[] = [
  * not disable the rule, it just stopped implementing it — the isobaths kept drawing over the
  * photograph and read as nested rings in every shallow bay.
  */
-export const IMAGERY_REPLACED_WHOLE_LAYERS = ['track-line', CONTOUR_LAYER_ID] as const;
+export const IMAGERY_REPLACED_WHOLE_LAYERS = [
+  'track-line',
+  CONTOUR_LAYER_ID,
+  // The band fills (B03 §2): filtered to the open lake on the contours' key, so wholesale for the
+  // same reason — and a filled depth ramp over a photograph would hide the photograph outright.
+  BANDS_LAYER_ID,
+] as const;
 
 /**
  * The loading skeleton's layer and its rhythm.

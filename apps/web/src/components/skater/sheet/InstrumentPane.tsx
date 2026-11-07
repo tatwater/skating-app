@@ -12,17 +12,23 @@ import {
   updateReport,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
+import type maplibregl from 'maplibre-gl';
 import { useCallback, useMemo, useState } from 'react';
 import { updateSheet } from '@/lib/sheetStore';
+import { useCoarsePointer } from '@/lib/useCoarsePointer';
 import { cn } from '@/lib/utils';
 import { useConsoleMode } from './ConsoleMode';
 import { InstrumentMap } from './InstrumentMap';
+import { InstrumentOverlay } from './InstrumentOverlay';
 import type { InstrumentInput } from './instrumentFeatures';
+import { useInstrumentHeld } from './instrumentLease';
+import { pickOnInstrument } from './instrumentPick';
+import { mapProjection } from './instrumentProjection';
+import { offeredEndChips } from './reportCalendar';
 import { Timeline } from './Timeline';
 import type { SheetBody } from './useSheetBody';
 import { useSkateWeather, useSkateWindowHours } from './useSkateWeather';
 import { WeatherBand } from './WeatherBand';
-import { whereClickOnWater } from './WhereCards';
 
 /**
  * The left pane (5.1): the lake on its own map, the day's ruler under it, the weather you had under
@@ -43,7 +49,9 @@ export function InstrumentPane({
   /** Posting, or a sent Post: shown, not offered. */
   inert: boolean;
 }) {
-  const { mode, exit } = useConsoleMode();
+  const { mode, exit, highlightPinId } = useConsoleMode();
+  const held = useInstrumentHeld();
+  const [glMap, setGlMap] = useState<maplibregl.Map | null>(null);
   const sheet = report.sheet;
   const timeZone = body?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [end] = selectedValues(sheet, 'endTime');
@@ -62,16 +70,19 @@ export function InstrumentPane({
   const windowHours = useSkateWindowHours(hours, endMs, startMs);
   const [now] = useState(() => Date.now());
   const sun = useMemo(() => body?.sunAt(endMs ?? now) ?? null, [body, endMs, now]);
-  // D192's ladder as the ruler's ticks — the When panel's chips are the same instants for a keyboard.
+  // D192's ladder as the ruler's ticks — the When panel's chips are the same instants for a
+  // keyboard, so the ticks are the same `offeredEndChips` cut (founder, 2026-11-07).
+  const mobile = useCoarsePointer();
   const ladder = useMemo(() => {
     if (gps) return [];
-    return endTimeRow({
+    const chips = endTimeRow({
       openedAtMs: sheet.openedAtMs,
       nowMs: now,
       timeZone,
       sun: body?.sunAt(sheet.openedAtMs) ?? null,
-    }).chips.map((c) => ({ ms: c.ms, pinned: c.pinned }));
-  }, [gps, sheet.openedAtMs, now, timeZone, body]);
+    }).chips;
+    return offeredEndChips(chips, mobile).map((c) => ({ ms: c.ms, pinned: c.pinned }));
+  }, [gps, sheet.openedAtMs, now, timeZone, body, mobile]);
   const model = useMemo(() => {
     const others = ordered.flatMap((r, i) => {
       const e = r.id === report.id ? undefined : reportEndMs(r);
@@ -118,6 +129,7 @@ export function InstrumentPane({
             id: h.id,
             bbox: h.bbox,
             passage: isPassageMarker(h.type),
+            ...(h.healing ? { healing: true } : {}),
           })),
       photos: report.photos.flatMap((p) =>
         p.placeOnMap && p.coord !== undefined ? [{ id: p.id, coord: p.coord }] : [],
@@ -128,13 +140,15 @@ export function InstrumentPane({
     [body, sheet.scalars, mode, report.photos, track],
   );
 
-  // A sub-mode's answer is a click on the water.
-  const onPick = (coord: LatLng) => {
-    if (mode?.kind === 'where')
-      mode.onChange(whereClickOnWater(mode.where, coord, body?.landmarks ?? []));
-    else if (mode?.kind === 'putIn') mode.onPickShore(coord);
-    else if (mode?.kind === 'place') mode.onPlace(coord);
-  };
+  // A sub-mode's answer is a click on the water (`pickOnInstrument`: the ring's sectors, a snap to
+  // a launch, a point).
+  const onPick = (coord: LatLng) =>
+    pickOnInstrument(mode, coord, {
+      ...(glMap !== null ? { projection: mapProjection(glMap) } : {}),
+      origin: body?.silhouette?.origin ?? null,
+      pins: input.pins,
+      landmarks: body?.landmarks ?? [],
+    });
 
   const name = report.bodyName ?? body?.name ?? 'This lake';
   const question =
@@ -190,14 +204,24 @@ export function InstrumentPane({
           <InstrumentMap
             input={input}
             onPick={onPick}
+            onMap={setGlMap}
+            suspended={held}
+            keyDim={mode !== null}
             label={`${name}, with your put-in and any photos you placed`}
             className="absolute inset-0"
-          />
+          >
+            <InstrumentOverlay
+              map={held ? null : glMap}
+              mode={mode}
+              silhouette={body?.silhouette ?? null}
+              marks={input}
+              highlightPinId={highlightPinId}
+            />
+          </InstrumentMap>
         ) : (
           <p className="m-0 pt-(--space-6) text-assist text-fg3">Drawing the lake…</p>
         )}
       </div>
-      <Legend dim={mode !== null} />
       <div className={cn('border-0 border-t border-solid border-line', mode && 'opacity-30')}>
         <Timeline
           model={model}
@@ -232,35 +256,5 @@ export function InstrumentPane({
         />
       </div>
     </section>
-  );
-}
-
-function Legend({ dim }: { dim: boolean }) {
-  const item = 'inline-flex items-center gap-(--space-1_5)';
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        'flex gap-(--space-4_5) px-(--space-6) pt-(--space-2) pb-(--space-3) text-kick leading-none font-medium tracking-head text-fg2 uppercase',
-        dim && 'opacity-30',
-      )}
-    >
-      <span className={item}>
-        <i className="size-2.5 rounded-full bg-acc" />
-        Put-in
-      </span>
-      <span className={item}>
-        <i className="h-0 w-4 border-0 border-t-2 border-dashed border-acc" />
-        Your track
-      </span>
-      <span className={item}>
-        <i className="size-2.5 bg-fg1" />
-        Photo
-      </span>
-      <span className={item}>
-        <i className="size-2.5 rounded-full bg-bad" />
-        Hazard
-      </span>
-    </div>
   );
 }

@@ -11,8 +11,12 @@ import {
   labelAnchor,
   labelCountIds,
   markObstacle,
-  reportTimesByBody,
+  mergeHazards,
+  reportCountsByBody,
+  skaterMapKeyKinds,
+  walkLabel,
   withBayAngles,
+  withWalkLabels,
 } from './mapDerive';
 
 const square = (lng: number, lat: number, d = 0.01): GeoJSON.Polygon => ({
@@ -38,7 +42,7 @@ const now = Date.UTC(2027, 0, 16, 16);
 const baseInputs = {
   favoriteIds: new Set<string>(),
   bountyCounts: new Map<string, number>(),
-  reportTimes: new Map<string, number[]>(),
+  reportCounts: new Map<string, { count: number; capped: boolean }>(),
   dimmedIds: new Set<string>(),
   focusId: null,
   showFavorites: true,
@@ -57,7 +61,7 @@ describe('labelAnchor', () => {
   });
 });
 
-describe('bountyCountsByBody / reportTimesByBody', () => {
+describe('bountyCountsByBody / reportCountsByBody', () => {
   it('counts each person’s ask as its own bounty', () => {
     const counts = bountyCountsByBody([
       { waterBodyId: 'a' },
@@ -71,22 +75,21 @@ describe('bountyCountsByBody / reportTimesByBody', () => {
     expect(bountyCountsByBody(undefined).size).toBe(0);
   });
 
-  it('groups report times by asked body, leaving out authors the viewer blocked', () => {
-    const times = reportTimesByBody(
-      [
-        { waterBodyId: 'a', skateEndTime: 1 },
-        { waterBodyId: 'a', skateEndTime: 2, blocked: true },
-        { waterBodyId: 'b', skateEndTime: 3 },
-        { waterBodyId: 'not-asked', skateEndTime: 4 },
-      ],
+  it('keys the counts by asked body, and counts every author — a block hides nothing (D13)', () => {
+    const counts = reportCountsByBody(
+      {
+        a: { count: 2, capped: false, newestSkateEndTime: 2 },
+        b: { count: 5, capped: true, newestSkateEndTime: 3 },
+        'not-asked': { count: 1, capped: false, newestSkateEndTime: 4 },
+      },
       ['a', 'b', 'c'],
     );
-    expect(times?.get('a')).toEqual([1]);
-    expect(times?.get('b')).toEqual([3]);
+    expect(counts?.get('a')).toEqual({ count: 2, capped: false, newestSkateEndTime: 2 });
+    expect(counts?.get('b')?.capped).toBe(true);
     // Asked and answered with nothing: a real "none". Never asked: no entry, so no claim.
-    expect(times?.get('c')).toEqual([]);
-    expect(times?.has('not-asked')).toBe(false);
-    expect(reportTimesByBody(undefined, ['a'])).toBeUndefined();
+    expect(counts?.get('c')).toEqual({ count: 0, capped: false });
+    expect(counts?.has('not-asked')).toBe(false);
+    expect(reportCountsByBody(undefined, ['a'])).toBeUndefined();
   });
 });
 
@@ -103,9 +106,9 @@ describe('buildLakeLabels', () => {
         ...baseInputs,
         favoriteIds: new Set(['mascoma']),
         bountyCounts: new Map([['crystal', 3]]),
-        reportTimes: new Map([
-          ['mascoma', [now - 1000]],
-          ['crystal', []],
+        reportCounts: new Map([
+          ['mascoma', { count: 1, capped: false, newestSkateEndTime: now - 1000 }],
+          ['crystal', { count: 0, capped: false }],
         ]),
         dimmedIds: new Set(['crystal']),
         timeZone: 'America/New_York',
@@ -137,12 +140,12 @@ describe('buildLakeLabels', () => {
   it('holds the slug back while the counts load, and for a body the read never asked about', () => {
     const loading = buildLakeLabels([body({ _id: 'a' })], {
       ...baseInputs,
-      reportTimes: undefined,
+      reportCounts: undefined,
     });
     expect(loading[0]?.slug).toBeNull();
     const unasked = buildLakeLabels([body({ _id: 'a' })], {
       ...baseInputs,
-      reportTimes: new Map(),
+      reportCounts: new Map(),
     });
     expect(unasked[0]?.slug).toBeNull();
   });
@@ -223,6 +226,22 @@ describe('hazardMarksFrom', () => {
 
   it('boxes a mark with its halo and brackets', () => {
     expect(markObstacle(100, 50)).toEqual({ left: 84, top: 34, right: 116, bottom: 66 });
+  });
+});
+
+describe('skaterMapKeyKinds', () => {
+  it('keys nothing on a map that draws nothing', () => {
+    expect(skaterMapKeyKinds({ putIns: false, hazards: [], tracks: false })).toEqual([]);
+  });
+
+  it('keys the put-ins, each hazard tone once, and a track', () => {
+    expect(
+      skaterMapKeyKinds({
+        putIns: true,
+        hazards: [{ tone: 'danger' }, { tone: 'passage' }, { tone: 'danger' }, { tone: 'healing' }],
+        tracks: true,
+      }),
+    ).toEqual(['putIn', 'hazard', 'passage', 'healing', 'track']);
   });
 });
 
@@ -309,5 +328,59 @@ describe('clicks', () => {
       'b',
     );
     expect(hitProperty([{ properties: null }], '_id')).toBeUndefined();
+  });
+});
+
+describe('mergeHazards', () => {
+  const h = (id: string, waterBodyId: string) => ({ id, waterBodyId });
+  const around = [h('a1', 'mascoma'), h('c1', 'crystal'), h('s1', 'survivor')];
+
+  it('draws every lake in view when no lake is open', () => {
+    expect(mergeHazards(undefined, around, new Set()).map((x) => x.id)).toEqual(['a1', 'c1', 's1']);
+  });
+
+  it('takes the open lake’s own read, and never draws its viewport rows twice', () => {
+    const own = [h('a1', 'mascoma'), h('a2', 'mascoma')];
+    const ids = mergeHazards(own, around, new Set(['mascoma'])).map((x) => x.id);
+    expect(ids).toEqual(['a1', 'a2', 'c1', 's1']);
+  });
+
+  it('lets the viewport rows stand in while the open lake’s read loads', () => {
+    expect(mergeHazards(undefined, around, new Set(['mascoma'])).map((x) => x.id)).toEqual([
+      'a1',
+      'c1',
+      's1',
+    ]);
+  });
+
+  it('names the open lake both ways — the id it was opened by and its survivor', () => {
+    const ids = mergeHazards([], around, new Set(['merged', 'survivor'])).map((x) => x.id);
+    expect(ids).toEqual(['a1', 'c1']);
+  });
+
+  it('draws the open lake alone before the viewport answers', () => {
+    expect(mergeHazards([h('a1', 'mascoma')], undefined, new Set(['mascoma']))).toHaveLength(1);
+  });
+});
+
+describe('walkLabel', () => {
+  it('says the walk in tenths of a mile, or feet under a tenth', () => {
+    expect(walkLabel(483)).toBe('0.3 mi on foot');
+    expect(walkLabel(1609.344)).toBe('1.0 mi on foot');
+    expect(walkLabel(100)).toBe('330 ft on foot');
+    expect(walkLabel(1)).toBe('10 ft on foot');
+    expect(walkLabel(undefined)).toBeUndefined();
+    expect(walkLabel(0)).toBeUndefined();
+  });
+
+  it('labels the walk lines that have a length, and leaves the rest as they were', () => {
+    const line = (meters?: number): GeoJSON.Feature => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [] },
+      properties: meters === undefined ? {} : { meters },
+    });
+    const out = withWalkLabels({ type: 'FeatureCollection', features: [line(483), line()] });
+    expect(out.features[0]?.properties?.walkLabel).toBe('0.3 mi on foot');
+    expect(out.features[1]?.properties).toEqual({});
   });
 });

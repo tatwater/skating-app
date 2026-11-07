@@ -12,18 +12,16 @@ import {
   type InstrumentInput,
   lakeBounds,
   lakeFeatures,
-  markFeatures,
   trackFeatures,
 } from './instrumentFeatures';
 
 export const INSTRUMENT_SOURCES = {
   lake: 'instrument-lake',
-  marks: 'instrument-marks',
   track: 'instrument-track',
 } as const;
 
-/** Room around the lake, px: the legend runs along the foot. */
-const FIT_PADDING = { top: 24, right: 24, bottom: 36, left: 24 };
+/** Room around the lake, px: the key runs along the foot (30 px of it). */
+const FIT_PADDING = { top: 24, right: 24, bottom: 54, left: 24 };
 
 /**
  * The instrument's map (B03 §1.8): **a second, short-lived MapLibre instance**, created when the
@@ -33,14 +31,19 @@ const FIT_PADDING = { top: 24, right: 24, bottom: 36, left: 24 };
  * credits), framed on the one lake.
  *
  * A click on the map comes back as a coordinate (`onPick`) — where the sheet's sub-modes (where,
- * put-in, placing a photo) take their answer; their richer drawing is the second half's.
+ * put-in, placing a photo) take their answer; their richer drawing is the second half's. The GL
+ * draws the lake and the track; the marks are the region map's DOM marks, over it
+ * (`InstrumentOverlay`), so the two maps speak one mark language.
  */
 export default function InstrumentMapCanvas({
   input,
   onPick,
+  onMap,
 }: {
   input: InstrumentInput;
   onPick?: (coord: LatLng) => void;
+  /** The live map once it has loaded, and `null` when it goes — for what draws over it (K). */
+  onMap?: (map: maplibregl.Map | null) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'light' ? MAP_FLAVORS.light : MAP_FLAVORS.dark;
@@ -49,6 +52,8 @@ export default function InstrumentMapCanvas({
   // The latest pick handler, without re-binding the map's click on every render.
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const onMapRef = useRef(onMap);
+  onMapRef.current = onMap;
 
   const { containerRef, mapRef, loaded } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
@@ -61,7 +66,6 @@ export default function InstrumentMapCanvas({
     onLoad: (map) => {
       map.addSource(INSTRUMENT_SOURCES.lake, { type: 'geojson', data: EMPTY });
       map.addSource(INSTRUMENT_SOURCES.track, { type: 'geojson', data: EMPTY });
-      map.addSource(INSTRUMENT_SOURCES.marks, { type: 'geojson', data: EMPTY });
       map.addLayer({
         id: 'instrument-lake-fill',
         type: 'fill',
@@ -80,36 +84,6 @@ export default function InstrumentMapCanvas({
         source: INSTRUMENT_SOURCES.track,
         paint: { 'line-color': palette.track, 'line-width': 2, 'line-dasharray': [2, 2] },
       });
-      map.addLayer({
-        id: 'instrument-marks',
-        type: 'circle',
-        source: INSTRUMENT_SOURCES.marks,
-        paint: {
-          'circle-radius': ['case', ['get', 'chosen'], 7, 5],
-          'circle-color': [
-            'match',
-            ['get', 'kind'],
-            'hazard',
-            palette.hazard.danger,
-            'passage',
-            palette.hazard.passage,
-            'photo',
-            palette.hovered,
-            'parking',
-            palette.ground,
-            palette.track,
-          ],
-          'circle-stroke-color': [
-            'match',
-            ['get', 'kind'],
-            'parking',
-            palette.track,
-            palette.ground,
-          ],
-          'circle-stroke-width': 1.5,
-          'circle-opacity': ['case', ['get', 'chosen'], 1, 0.75],
-        },
-      });
       map.on('click', (e: maplibregl.MapMouseEvent) =>
         onPickRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }),
       );
@@ -117,7 +91,6 @@ export default function InstrumentMapCanvas({
   });
 
   const lake = useMemo(() => lakeFeatures(input.polygon), [input.polygon]);
-  const marks = useMemo(() => markFeatures(input), [input]);
   const track = useMemo(() => trackFeatures(input.track), [input.track]);
   const boundsKey = JSON.stringify(bounds);
 
@@ -127,9 +100,13 @@ export default function InstrumentMapCanvas({
     const set = (id: string, data: unknown) =>
       (map.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(data as never);
     set(INSTRUMENT_SOURCES.lake, lake);
-    set(INSTRUMENT_SOURCES.marks, marks);
     set(INSTRUMENT_SOURCES.track, track);
-  }, [loaded, mapRef, lake, marks, track]);
+  }, [loaded, mapRef, lake, track]);
+
+  useEffect(() => {
+    onMapRef.current?.(loaded ? mapRef.current : null);
+    return () => onMapRef.current?.(null);
+  }, [loaded, mapRef]);
 
   // A lake picked after the map loaded: frame it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: bounds compare by their serialized key.

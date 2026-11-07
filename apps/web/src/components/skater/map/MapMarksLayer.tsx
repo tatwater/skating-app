@@ -2,6 +2,7 @@ import { HAZARD_TYPE_LABELS, type HazardType } from '@skating/core';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { MapHoverPlate } from '@/components/kit/map-controls';
 import { layoutLakeLabels, type Rect } from '@/lib/lakeLabelLayout';
+import { cn } from '@/lib/utils';
 import { LakeLabel } from './LakeLabel';
 import { HazardMark, MARK_BOX, PutInMark } from './MapMarks';
 import { type HazardMarkModel, type LakeLabelModel, markObstacle } from './mapDerive';
@@ -13,6 +14,11 @@ import { type HazardMarkModel, type LakeLabelModel, markObstacle } from './mapDe
  *
  * Marks are placed first, and every hazard mark is an obstacle for the labels: a label that would
  * cover one gives way (D3). Labels then lay out in priority order (`layoutLakeLabels`).
+ *
+ * Over a satellite picture the hazard marks stay on and at full strength (founder, 2026-11-07), and
+ * the one a mouse rests on fades so the ice under it shows — a peek the skater asked for by pointing
+ * at that very mark, gone on pointer-out. Keyboard focus never fades one (focus is inspecting the mark
+ * itself), nor does a touch (a tap opens it).
  */
 
 /** What this layer needs of a map: projection, size and camera events. Faked in tests. */
@@ -39,9 +45,14 @@ export interface MapMarksLayerProps {
   onOpenHazard: (hazardId: string) => void;
   /** Screen boxes no label may cover beyond the marks (the dock), in map px. */
   reserved?: () => readonly Rect[];
+  /** A satellite picture is up: the hazard mark under the mouse fades to show the ice beneath. */
+  imagery?: boolean;
 }
 
 const HALF = MARK_BOX / 2;
+
+/** The hovered hazard over imagery: faint enough to see the ice through, still there. */
+const PEEK = 'opacity-35';
 
 function hazardName(type: string): string {
   return HAZARD_TYPE_LABELS[type as HazardType] ?? 'Hazard';
@@ -55,6 +66,7 @@ export function MapMarksLayer({
   selectedHazardId = null,
   onOpenHazard,
   reserved,
+  imagery = false,
 }: MapMarksLayerProps) {
   const labelNodes = useRef(new Map<string, HTMLDivElement>());
   const lockupNodes = useRef(new Map<string, HTMLDivElement>());
@@ -63,6 +75,8 @@ export function MapMarksLayer({
   const [hover, setHover] = useState<{ x: number; y: number; title: string; body: string } | null>(
     null,
   );
+  // One id, so never more than one mark faded; kept while imagery is off and simply not drawn then.
+  const [peekId, setPeekId] = useState<string | null>(null);
 
   const measure = useCallback(() => {
     for (const [id, node] of lockupNodes.current) widths.current.set(id, node.offsetWidth);
@@ -162,6 +176,7 @@ export function MapMarksLayer({
           role="img"
           aria-label={m.name ? `Put-in: ${m.name}` : 'Put-in'}
           data-slot="put-in"
+          data-pin={m.id}
           className="pointer-events-auto absolute top-0 left-0"
           onPointerEnter={(e) => {
             if (!m.name) return;
@@ -181,16 +196,27 @@ export function MapMarksLayer({
       ))}
       {hazards.map((h) => {
         const selected = h.id === selectedHazardId;
+        const peeking = imagery && peekId === h.id;
         return (
           <button
             key={h.id}
             ref={ref(markNodes.current, `h:${h.id}`)}
             type="button"
             data-slot="hazard"
+            data-pin={h.id}
             aria-label={`Hazard: ${hazardName(h.hazardType)}${h.provisional ? ', not yet confirmed' : ''}`}
             aria-current={selected ? 'true' : undefined}
+            data-peek={peeking ? '' : undefined}
             onClick={() => onOpenHazard(h.id)}
-            className="pointer-events-auto absolute top-0 left-0 cursor-pointer rounded-control outline-none focus-visible:shadow-focus"
+            onPointerEnter={(e) => {
+              if (e.pointerType !== 'touch') setPeekId(h.id);
+            }}
+            onPointerLeave={() => setPeekId((current) => (current === h.id ? null : current))}
+            className={cn(
+              'pointer-events-auto absolute top-0 left-0 cursor-pointer rounded-control outline-none focus-visible:shadow-focus',
+              'transition-opacity duration-(--duration-base) ease-standard',
+              peeking && PEEK,
+            )}
           >
             <HazardMark
               tone={h.tone}

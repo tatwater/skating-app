@@ -107,6 +107,7 @@
   --spacing-list: var(--size-list);
   --spacing-inspector: var(--size-inspector);
   --spacing-sheet-sm: var(--size-sheet-sm);
+  --spacing-sheet-md: var(--size-sheet-md);
   --spacing-drawer: var(--size-drawer);
   --spacing-sheet: var(--size-sheet);
   --spacing-gutter: var(--gap-gutter);

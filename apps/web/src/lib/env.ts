@@ -41,7 +41,9 @@ export const env = {
   // to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never mounts, which is
   // the correct behavior rather than a degraded one: contours are decoration under D82, so an
   // unconfigured deployment simply shows a flat lake exactly as it does for the majority of bodies
-  // that no agency ever surveyed. Public.
+  // that no agency ever surveyed. The same archive carries the filled depth bands on a second layer
+  // (B03 §2, `lib/depthBands.ts`). A local build is tried by serving it from something that honors
+  // HTTP Range — not this app's dev server, whose Nitro static handler ignores Range (BANDS.md). Public.
   bathymetryPmtilesUrl: import.meta.env.VITE_BATHYMETRY_PMTILES_URL ?? '',
   // The freeze-up archive (A06e, D148) — a *base URL*, not a file, because unlike the three above this
   // is a directory of thousands of `.pmtiles` frames plus the JSON index that lists them. The client

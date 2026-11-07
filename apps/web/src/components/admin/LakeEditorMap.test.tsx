@@ -49,10 +49,6 @@ class FakeMap {
   fitBounds = vi.fn();
   flyTo = vi.fn();
   resize() {}
-  /** `useMapCanvas` reaches in to collapse the attribution ⓘ at mount — see its own test. */
-  getContainer() {
-    return document.createElement('div');
-  }
   touchZoomRotate = { disableRotation: () => {} };
   keyboard = { disableRotation: () => {} };
   getCenter() {
@@ -73,6 +69,8 @@ vi.mock('maplibre-gl', () => ({
     removeProtocol: vi.fn(),
     AttributionControl: class {
       name = 'attribution';
+      // The real control builds `options` in its constructor; setExtraAttribution writes into it.
+      options: Record<string, unknown> = {};
     },
     NavigationControl: class {
       name = 'navigation';

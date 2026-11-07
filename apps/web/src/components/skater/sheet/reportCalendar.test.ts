@@ -1,4 +1,10 @@
-import { endTimeRow, FRESHNESS_WINDOW_MS, freshnessRefusal, zonedParts } from '@skating/core';
+import {
+  endTimeRow,
+  FRESHNESS_WINDOW_MS,
+  freshnessRefusal,
+  WHEN_CHIP_COUNT,
+  zonedParts,
+} from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +15,7 @@ import {
   dayStartOf,
   endOnDay,
   ladderOnDay,
+  offeredEndChips,
 } from './reportCalendar';
 
 const ZONES = [
@@ -18,6 +25,7 @@ const ZONES = [
   'Asia/Kolkata',
   'Australia/Lord_Howe',
   'Pacific/Chatham',
+  'America/Phoenix',
 ];
 const HOUR = 3600_000;
 // Saturday 16 January 2027, 11:52 AM in New Hampshire — the boards' "today".
@@ -58,28 +66,63 @@ describe('calendarDays — the boards', () => {
   });
 });
 
+/** The calendar's invariants at one `now`: whole local days, Sunday first, today in row two. */
+function expectWholeDays(now: number, zone: string) {
+  const days = calendarDays(now, zone);
+  expect(days).toHaveLength(14);
+  for (let i = 0; i < 14; i++) {
+    const day = days[i] as { startMs: number; endMs: number };
+    if (i < 13) expect(day.endMs).toBe(days[i + 1]?.startMs);
+    const p = zonedParts(day.startMs, zone);
+    expect(new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay()).toBe(i % 7);
+    expect(p.hour * 60 + p.minute).toBe(0);
+    // A local day is 23, 24, or 25 hours (or 23.5/24.5 at Lord Howe) — never two days.
+    expect(day.endMs - day.startMs).toBeGreaterThanOrEqual(23 * HOUR);
+    expect(day.endMs - day.startMs).toBeLessThanOrEqual(25 * HOUR);
+  }
+  const today = days.findIndex((d) => d.today);
+  expect(today).toBeGreaterThanOrEqual(7);
+  expect(now).toBeGreaterThanOrEqual((days[today] as { startMs: number }).startMs);
+  expect(now).toBeLessThan((days[today] as { endMs: number }).endMs);
+  for (const day of days) {
+    expect(day.live).toBe(day.startMs <= now && day.endMs - 1 >= now - FRESHNESS_WINDOW_MS);
+  }
+}
+
+describe('calendarDays — across a DST change', () => {
+  // Each `now` sits in the hour where stepping back by 24-hour blocks reads the wrong date: just
+  // after midnight the week after spring-forward, just before midnight the week after fall-back.
+  const cases: [string, number, string][] = [
+    ['New York, 00:30 the day after spring-forward', Date.UTC(2026, 2, 9, 4, 30), NH],
+    ['New York, 00:10 the Saturday after spring-forward', Date.UTC(2026, 2, 14, 4, 10), NH],
+    ['New York, 23:30 the day after fall-back', Date.UTC(2026, 10, 3, 4, 30), NH],
+    ['New York, 23:59 the Saturday after fall-back', Date.UTC(2026, 10, 8, 4, 59), NH],
+    ['New York, 01:30 the second time on fall-back night', Date.UTC(2026, 10, 1, 6, 30), NH],
+    ['Phoenix, no DST, the same instants', Date.UTC(2026, 2, 9, 7, 30), 'America/Phoenix'],
+    ['Phoenix, 23:30 after fall-back elsewhere', Date.UTC(2026, 10, 3, 6, 30), 'America/Phoenix'],
+    ['Kolkata, a half-hour offset', Date.UTC(2026, 2, 8, 18, 45), 'Asia/Kolkata'],
+    [
+      'Lord Howe, a half-hour DST, after it ends',
+      Date.UTC(2026, 3, 5, 13, 20),
+      'Australia/Lord_Howe',
+    ],
+    [
+      'Chatham, a 45-minute offset, after DST starts',
+      Date.UTC(2026, 8, 27, 11, 30),
+      'Pacific/Chatham',
+    ],
+  ];
+  for (const [name, now, zone] of cases) {
+    it(name, () => expectWholeDays(now, zone));
+  }
+});
+
 describe('calendarDays — the server rule, at every now (D199)', () => {
   const nowArb = fc.integer({ min: Date.UTC(2025, 0, 1), max: Date.UTC(2029, 0, 1) });
   const zoneArb = fc.constantFrom(...ZONES);
 
   it('tiles fourteen whole local days, Sunday to Saturday, with today in the second row', () => {
-    fc.assert(
-      fc.property(nowArb, zoneArb, (now, zone) => {
-        const days = calendarDays(now, zone);
-        expect(days).toHaveLength(14);
-        for (let i = 0; i < 13; i++) {
-          expect((days[i] as { endMs: number }).endMs).toBe(days[i + 1]?.startMs);
-        }
-        const first = days[0] as { startMs: number };
-        const p = zonedParts(first.startMs, zone);
-        expect(new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay()).toBe(0);
-        expect(p.hour * 60 + p.minute).toBe(0);
-        const today = days.findIndex((d) => d.today);
-        expect(today).toBeGreaterThanOrEqual(7);
-        expect(now).toBeGreaterThanOrEqual((days[today] as { startMs: number }).startMs);
-        expect(now).toBeLessThan((days[today] as { endMs: number }).endMs);
-      }),
-    );
+    fc.assert(fc.property(nowArb, zoneArb, (now, zone) => expectWholeDays(now, zone)));
   });
 
   it('draws a day live exactly when some end time on it passes the server predicate', () => {
@@ -128,6 +171,17 @@ describe('moving the end time to another day', () => {
     expect(clampToWindow(BOARD_NOW + HOUR, BOARD_NOW)).toBe(BOARD_NOW);
   });
 
+  it('clamps on the minute grain when now carries seconds — a clamped end stays off them', () => {
+    const now = BOARD_NOW + 31_000; // 11:52:31 — the window's raw edges would carry the :31
+    // Below the window: up to the next whole minute inside it, so it still posts.
+    const early = clampToWindow(BOARD_NOW - 8 * 24 * HOUR, now);
+    expect(early).toBe(now - FRESHNESS_WINDOW_MS + 29_000);
+    expect(early % 60_000).toBe(0);
+    expect(freshnessRefusal(early, now)).toBeNull();
+    // In the future: down to now's whole minute, never past it.
+    expect(clampToWindow(now + HOUR, now)).toBe(BOARD_NOW);
+  });
+
   it('moves the ladder with it, dropping what falls out of the window', () => {
     const row = endTimeRow({ openedAtMs: BOARD_NOW, nowMs: BOARD_NOW, timeZone: NH, sun: null });
     const today = dayStartOf(BOARD_NOW, NH);
@@ -157,6 +211,50 @@ describe('moving the end time to another day', () => {
             expect(chip.ms).toBeLessThanOrEqual(now);
             expect(freshnessRefusal(chip.ms, now)).toBeNull();
           }
+        },
+      ),
+    );
+  });
+});
+
+describe('offeredEndChips — the row the web draws (founder, 2026-11-07)', () => {
+  const row = endTimeRow({ openedAtMs: BOARD_NOW, nowMs: BOARD_NOW, timeZone: NH, sun: null });
+
+  it('under a finger: the pinned minute, then half hours, capped at the count', () => {
+    const offered = offeredEndChips(row.chips, true);
+    expect(offered).toHaveLength(WHEN_CHIP_COUNT);
+    expect(offered[0]?.pinned).toBe(true);
+    expect(offered.slice(1).every((c) => !c.pinned)).toBe(true);
+  });
+
+  it('on a desk: no "now" — the pinned minute is not when anyone got off', () => {
+    const offered = offeredEndChips(row.chips, false);
+    expect(offered).toHaveLength(WHEN_CHIP_COUNT);
+    expect(offered.every((c) => !c.pinned)).toBe(true);
+    expect(offered.map((c) => c.ms)).toEqual(
+      row.chips
+        .filter((c) => !c.pinned)
+        .slice(0, WHEN_CHIP_COUNT)
+        .map((c) => c.ms),
+    );
+  });
+
+  it('never offers more than the count, from whatever the ladder holds (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2025, 0, 1), max: Date.UTC(2029, 0, 1) }),
+        fc.constantFrom(...ZONES),
+        fc.boolean(),
+        (now, zone, coarse) => {
+          const chips = endTimeRow({
+            openedAtMs: now,
+            nowMs: now,
+            timeZone: zone,
+            sun: null,
+          }).chips;
+          const offered = offeredEndChips(chips, coarse);
+          expect(offered.length).toBeLessThanOrEqual(WHEN_CHIP_COUNT);
+          if (!coarse) expect(offered.every((c) => !c.pinned)).toBe(true);
         },
       ),
     );

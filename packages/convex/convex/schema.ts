@@ -131,6 +131,12 @@ export default defineSchema({
     clerkUserId: v.string(), // ties this profile to its Clerk auth user (identity.subject)
     displayName: v.string(),
     username: v.string(), // unique, for search (searchable by name, D13)
+    /**
+     * When the skater last renamed themselves (`changeUsername`, B03 §11) — the start of the 30-day
+     * cooldown. Absent until the first rename: the handle picked at onboarding never starts one. Not
+     * indexed, and must not be without a lower bound (an index on an optional field is not sparse).
+     */
+    usernameChangedAt: v.optional(v.number()),
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
     bio: v.optional(v.string()), // optional PUBLIC blurb, shown only on a public profile (D13)

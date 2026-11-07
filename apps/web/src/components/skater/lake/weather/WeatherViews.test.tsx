@@ -66,6 +66,18 @@ describe('PastWeatherChart', () => {
     ).toBeTruthy();
   });
 
+  it('gives each chart its own gradient, so two on a page each paint in their own theme', () => {
+    const { container } = render(
+      <>
+        <PastWeatherChart days={timelineDays()} />
+        <PastWeatherChart days={timelineDays()} />
+      </>,
+    );
+    const ids = [...container.querySelectorAll('linearGradient')].map((g) => g.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
   it('draws nothing for no days, and no slider when everything fits', () => {
     const { container, unmount } = render(<PastWeatherChart days={[]} />);
     expect(container.innerHTML).toBe('');

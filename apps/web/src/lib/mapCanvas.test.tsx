@@ -25,7 +25,6 @@ class FakeMap {
   fitted: unknown[] = [];
   resizes = 0;
   rotationDisabled: string[] = [];
-  container: HTMLElement | null = null;
   touchZoomRotate = { disableRotation: () => this.rotationDisabled.push('touch') };
   keyboard = { disableRotation: () => this.rotationDisabled.push('keyboard') };
 
@@ -47,20 +46,6 @@ class FakeMap {
   }
   resize() {
     this.resizes++;
-  }
-  /**
-   * The map's own element, carrying an attribution control in MapLibre's mounted-expanded state —
-   * `maplibregl-compact-show` present — so the collapse in `useMapCanvas` has something real to act
-   * on rather than silently no-op'ing through an optional chain.
-   */
-  getContainer() {
-    if (!this.container) {
-      this.container = document.createElement('div');
-      const attrib = document.createElement('details');
-      attrib.className = 'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show';
-      this.container.append(attrib);
-    }
-    return this.container;
   }
   getCenter() {
     return { lng: -73, lat: 44.5 };
@@ -92,7 +77,10 @@ vi.mock('maplibre-gl', () => ({
     Map: FakeMap,
     addProtocol: (...args: unknown[]) => addProtocol(...args),
     removeProtocol: (...args: unknown[]) => removeProtocol(...args),
-    AttributionControl: class {},
+    // `options` is the one part of MapLibre's control the shell's extra credit is written to.
+    AttributionControl: class {
+      options: Record<string, unknown> = {};
+    },
     NavigationControl: class {},
   },
 }));
@@ -100,6 +88,7 @@ vi.mock('pmtiles', () => ({ Protocol: class {} }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
 const { useMapCanvas } = await import('./mapCanvas');
+const { FoldedAttributionControl } = await import('./mapAttribution');
 
 const BOUNDS: [[number, number], [number, number]] = [
   [-73.5, 44],
@@ -110,10 +99,21 @@ const BOUNDS: [[number, number], [number, number]] = [
  * A host that rebuilds every array-literal option on each render — which is what a real caller does.
  * `LakeEditorMap` derives its center from the body's bbox inline, so this is not a contrived case.
  */
-function Host({ tick, onLoad }: { tick: number; onLoad?: (map: unknown) => void }) {
+function Host({
+  tick,
+  onLoad,
+  flavor = 'white',
+  extraAttribution,
+}: {
+  tick: number;
+  onLoad?: (map: unknown) => void;
+  flavor?: 'white' | 'dark';
+  extraAttribution?: string | null;
+}) {
   const { containerRef } = useMapCanvas({
     pmtilesUrl: 'pmtiles://x',
-    flavor: 'white',
+    flavor,
+    extraAttribution,
     maxBounds: [
       [-73.5, 44],
       [-72.5, 45],
@@ -190,19 +190,45 @@ describe('useMapCanvas', () => {
   });
 
   /**
-   * ⚠ MapLibre mounts a `compact: true` attribution control **expanded**, and only minimizes it on
-   * the first `drag` — so a map that is read rather than dragged wears every active source's credit
-   * across its bottom edge all session. The credits themselves are untouched (they are a license
-   * obligation, and they stay one click behind the ⓘ); it is the rest state being wrong that this
-   * pins, because nothing about it is visible from the control's public API.
+   * The credits are the folded control, never MapLibre's default one: `attributionControl: false`
+   * keeps the default (uncompacted, expanded) one off, and `FoldedAttributionControl` is what goes
+   * on instead. How it folds is pinned against the real MapLibre control in `mapAttribution.test`.
    */
-  it('opens with the attribution credits collapsed behind the ⓘ', () => {
+  it('credits the map with the folded attribution control, not the default one', () => {
     render(<Host tick={0} />);
-    const attrib = FakeMap.instances[0]?.getContainer().querySelector('.maplibregl-ctrl-attrib');
-    expect(attrib?.classList.contains('maplibregl-compact-show')).toBe(false);
-    // Still compact, so MapLibre's own `resize` handler cannot re-open it: `_updateCompact` only
-    // re-adds the show class to a container that has lost the `maplibregl-compact` one.
-    expect(attrib?.classList.contains('maplibregl-compact')).toBe(true);
+    const map = FakeMap.instances[0];
+    expect(map?.options.attributionControl).toBe(false);
+    expect(map?.controls.filter((c) => c instanceof FoldedAttributionControl)).toHaveLength(1);
+  });
+
+  /**
+   * A credit no source declares (the skater map's contours') goes into the folded control's own
+   * slot, follows the caller in place — a changed credit is not a reason to rebuild the map — and a
+   * map re-created for a theme switch starts from the current one. How the control shows it is
+   * pinned against the real MapLibre control in `mapAttribution.test`.
+   */
+  it('hands the folded control the caller’s extra credit and keeps it current, in place', () => {
+    const credit = () => {
+      const control = FakeMap.instances
+        .at(-1)
+        ?.controls.find((c) => c instanceof FoldedAttributionControl) as InstanceType<
+        typeof FoldedAttributionControl
+      >;
+      return control.options.customAttribution;
+    };
+    const { rerender } = render(<Host tick={0} />);
+    expect(credit()).toBeUndefined();
+    rerender(<Host tick={0} extraAttribution="5 ft contours, surveyed by NH GRANIT." />);
+    expect(credit()).toBe('5 ft contours, surveyed by NH GRANIT.');
+    expect(FakeMap.instances).toHaveLength(1);
+    rerender(
+      <Host tick={0} flavor="dark" extraAttribution="5 ft contours, surveyed by NH GRANIT." />,
+    );
+    expect(FakeMap.instances).toHaveLength(2);
+    expect(credit()).toBe('5 ft contours, surveyed by NH GRANIT.');
+    rerender(<Host tick={0} flavor="dark" extraAttribution={null} />);
+    expect(credit()).toBeUndefined();
+    expect(FakeMap.instances).toHaveLength(2);
   });
 
   /**

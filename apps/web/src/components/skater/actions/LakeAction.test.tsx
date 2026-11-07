@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PageNav } from '../lake/lakeNav';
@@ -7,10 +7,10 @@ const seen = vi.hoisted(() => ({
   props: {} as Record<string, { onPosted?: unknown; onSearch?: unknown } & Record<string, unknown>>,
 }));
 
-vi.mock('./HazardFlow', () => ({
-  HazardFlow: (p: Record<string, unknown>) => {
+vi.mock('./HazardSheetHost', () => ({
+  HazardSheetHost: (p: Record<string, unknown>) => {
     seen.props.hazard = p;
-    return <p>hazard flow</p>;
+    return <p>hazard sheet</p>;
   },
 }));
 vi.mock('./ImageryPane', () => ({
@@ -26,6 +26,7 @@ vi.mock('./BountyPane', () => ({
   },
 }));
 
+import { MapFloatContext } from '../map/MapFloat';
 import { LakeAction } from './LakeAction';
 
 /** The prop a mocked pane was last rendered with. */
@@ -49,19 +50,23 @@ function nav(): PageNav {
 const base = { waterBodyId: 'mascoma', lakeName: 'Mascoma Lake', backTo: 'Mascoma Lake' };
 
 describe('the lake’s actions, routed', () => {
-  it('the hazard flow sits in the action frame, framed on the bay', () => {
+  it('the hazard flow opens in the report sheet’s frame, framed on the bay', () => {
     const onBack = vi.fn();
     render(<LakeAction act="hazard" {...base} subAreaId="north" nav={nav()} onBack={onBack} />);
-    expect(screen.getByRole('region', { name: 'Report a hazard' })).toHaveTextContent(
-      'hazard flow',
-    );
+    expect(screen.getByText('hazard sheet')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Report a hazard' })).toBeNull();
     expect(seen.props.hazard).toMatchObject({
       waterBodyId: 'mascoma',
       subAreaId: 'north',
+      reportOpen: false,
       onClose: onBack,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Mascoma Lake' }));
-    expect(onBack).toHaveBeenCalled();
+  });
+
+  it('the hazard sheet steps aside while a report sheet is open over the page', () => {
+    const n = { ...nav(), search: '?act=hazard&post=new' };
+    render(<LakeAction act="hazard" {...base} nav={n} onBack={vi.fn()} />);
+    expect(seen.props.hazard).toMatchObject({ reportOpen: true });
   });
 
   it('the bounty is its own dialog, and a posted one opens its card', () => {
@@ -74,15 +79,29 @@ describe('the lake’s actions, routed', () => {
 
   it('imagery carries the URL’s band and day, and writes edits back with replace', () => {
     const n = nav();
+    const onBack = vi.fn();
+    const slot = document.createElement('div');
+    document.body.append(slot);
     render(
-      <LakeAction act="imagery" {...base} band="vh" frame="2026-12-22" nav={n} onBack={vi.fn()} />,
+      <MapFloatContext.Provider value={slot}>
+        <LakeAction act="imagery" {...base} band="vh" frame="2026-12-22" nav={n} onBack={onBack} />
+      </MapFloatContext.Provider>,
     );
+    // Floated over the map, not over the tabs: its plate, in the map's float slot.
+    expect(slot.querySelector('[data-slot="imagery-plate"]')).not.toBeNull();
+    expect(seen.props.imagery).toMatchObject({ onClose: onBack });
     expect(seen.props.imagery).toMatchObject({ band: 'vh', frame: '2026-12-22' });
     (propOf('imagery', 'onSearch') as (e: object) => void)({
       frame: '2026-12-28',
       band: undefined,
     });
     expect(n.replace).toHaveBeenCalledWith('/water/mascoma?frame=2026-12-28');
+    slot.remove();
+  });
+
+  it('imagery floats nowhere outside a map frame', () => {
+    render(<LakeAction act="imagery" {...base} nav={nav()} onBack={vi.fn()} />);
+    expect(document.querySelector('[data-slot="imagery-plate"]')).toBeNull();
   });
 
   it('the access problem keeps its placeholder until it lands', () => {

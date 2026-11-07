@@ -8,10 +8,10 @@ import { useEffect, useRef, useState } from 'react';
  * - **Three characters or nothing** — below that a query matches half of New England and spends
  *   quota saying so (the server's own floor; asking below it is a wasted round trip).
  * - **A quota refusal stops the session.** Once the provider says `quota`, nothing calls it again
- *   until the page reloads: hammering a limit risks the shared account the drive-time bands
- *   depend on. "Use my current location" stays.
- * - **`off` is learned once** — no provider is switched on yet — and the field gives way to the
- *   fallback for the rest of the session. The first ask is an empty text, which the server answers
+ *   until the page reloads: hammering a limit risks the account, which every skater shares.
+ *   "Use my current location" stays.
+ * - **`off` is learned once** — the provider's key isn't set on the deployment — and the field
+ *   gives way to the fallback for the rest of the session. The first ask is an empty text, which the server answers
  *   without calling any provider.
  */
 

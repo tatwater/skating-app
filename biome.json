@@ -12,7 +12,8 @@
       "!**/_generated",
       "!**/routeTree.gen.ts",
       "!**/assets/regionMask.ts",
-      "!**/fixtures/outlines.json"
+      "!**/fixtures/outlines.json",
+      "!**/fixtures/depthBands.stub.json"
     ]
   },
   "formatter": {

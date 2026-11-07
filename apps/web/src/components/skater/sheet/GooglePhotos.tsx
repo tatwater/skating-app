@@ -2,10 +2,15 @@ import { api } from '@skating/convex/api';
 import type { DraftPhoto } from '@skating/core';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/kit/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
+import { useAnalytics } from '@/lib/analytics';
 import { nextPickStep } from '@/lib/googlePhotosPoll';
 import { addSheetPhoto, releaseSheetPhoto } from '@/lib/sheetPhotos';
+import { StatusSquare } from './SheetPanel';
+import type { GooglePhotosSlotProps } from './sheetSlots';
 
-type Phase = 'idle' | 'waiting' | 'adding';
+export type Phase = 'idle' | 'waiting' | 'adding';
 
 /** Failed looks in a row before the page gives the pick up, and the wait between them. */
 const STATUS_MISSES = 6;
@@ -158,7 +163,11 @@ export function useGooglePhotos(onPhotos: (photos: DraftPhoto[]) => void) {
   return { available, phase, error, start, cancel };
 }
 
-/** The pool's *From Google Photos* line: the button, or the wait with its *Cancel*. */
+/**
+ * *From Google Photos* (5.21), re-skinned: the button in the photo strip; once pressed, a line of
+ * its own — the ice square, *Waiting for Google Photos…*, and *Cancel* at its end. What it would
+ * have explained in a helper line is the button's tooltip.
+ */
 export function GooglePhotosButton({
   onPhotos,
   disabled,
@@ -169,36 +178,78 @@ export function GooglePhotosButton({
   const g = useGooglePhotos(onPhotos);
   if (!g.available) return null;
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
-      {g.phase === 'idle' ? (
-        <button
-          type="button"
-          onClick={() => void g.start()}
-          disabled={disabled}
-          className="rounded-[2px] border border-border px-2 py-1 text-foreground hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-        >
-          From Google Photos
-        </button>
+    <GooglePhotosView
+      phase={g.phase}
+      error={g.error}
+      {...(disabled !== undefined ? { disabled } : {})}
+      onStart={() => void g.start()}
+      onCancel={g.cancel}
+    />
+  );
+}
+
+/** What the button draws, Convex-free: idle, waiting on Google's window, or bringing photos over. */
+export function GooglePhotosView({
+  phase,
+  error,
+  disabled,
+  onStart,
+  onCancel,
+}: {
+  phase: Phase;
+  error: string | null;
+  disabled?: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      {phase === 'idle' ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button size="sm" data-attr="google-photos" disabled={disabled} onClick={onStart}>
+                From Google Photos
+              </Button>
+            }
+          />
+          <TooltipContent>
+            Pick photos in Google’s own window; only the ones you pick come here.
+          </TooltipContent>
+        </Tooltip>
       ) : (
-        <>
-          <span className="text-foreground-muted" role="status">
-            {g.phase === 'waiting' ? 'Waiting for Google Photos…' : 'Bringing your photos over…'}
+        <div
+          data-slot="google-photos-waiting"
+          className="flex basis-full items-center gap-(--space-2_5) border border-solid border-line p-(--space-2_5)"
+        >
+          <StatusSquare state="ice" />
+          <span role="status" className="font-(family-name:--family-mono) text-mono-sm text-fg1">
+            {phase === 'waiting' ? 'Waiting for Google Photos…' : 'Bringing your photos over…'}
           </span>
-          <button
-            type="button"
-            onClick={g.cancel}
-            className="text-foreground-muted underline hover:text-foreground"
-          >
+          <Button size="sm" className="ml-auto" data-attr="google-photos-cancel" onClick={onCancel}>
             Cancel
-          </button>
-        </>
+          </Button>
+        </div>
       )}
-      {g.error ? <span className="text-danger">{g.error}</span> : null}
-      {g.phase === 'idle' && !g.error ? (
-        <span className="text-foreground-muted">
-          You pick in Google's window; only those photos come here. Needs a connection.
-        </span>
+      {error ? (
+        <p role="alert" className="m-0 basis-full text-assist leading-body text-warn">
+          {error}
+        </p>
       ) : null}
-    </div>
+    </>
+  );
+}
+
+/** The `googlePhotos` slot: the button, and the count of what it brought, by source (D240). */
+export function GooglePhotosSlot({ disabled, onPhotos }: GooglePhotosSlotProps) {
+  const { capture } = useAnalytics();
+  return (
+    <GooglePhotosButton
+      disabled={disabled}
+      onPhotos={(drafts) => {
+        onPhotos(drafts);
+        capture('report_photos_added', { source: 'google_photos', count: drafts.length });
+      }}
+    />
   );
 }

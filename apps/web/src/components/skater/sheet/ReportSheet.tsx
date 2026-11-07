@@ -2,7 +2,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import {
-  addPostPhotos,
   assignCandidates,
   isMinor,
   type PostSheet,
@@ -52,9 +51,12 @@ import {
 } from '@/lib/sheetStore';
 import { useConnection } from '@/lib/useConnection';
 import { cn } from '@/lib/utils';
+import { PhoneInstrumentStrip } from '../phone/PhoneInstrumentStrip';
+import { useIsPhone } from '../phone/usePhoneLayout';
 import { ConsoleModeProvider } from './ConsoleMode';
 import { InstrumentPane } from './InstrumentPane';
 import { LakeNameSearch } from './LakeNameSearch';
+import { addSheetPhotos, PhotoSorter } from './PhotoSorter';
 import { ReportPanels } from './ReportPanels';
 import { StatusSquare } from './SheetPanel';
 import { SheetWords } from './SheetWords';
@@ -98,8 +100,10 @@ const SENT_COPY =
  * (`postSheet`, `flushPost`, `sendSheet`) — the same sheet the phone draws; this is the composition.
  */
 export function ReportSheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
+  // Phone (row 9): the instrument is a summary strip, which takes no mode.
+  const phone = useIsPhone();
   return (
-    <ConsoleModeProvider>
+    <ConsoleModeProvider instrument={!phone}>
       <Sheet post={post} exits={exits} />
     </ConsoleModeProvider>
   );
@@ -117,6 +121,8 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
   const { status } = useConnection();
   const online = status !== 'offline';
   const outlines = useBodyOutlines();
+  // Phone (row 9): one column, the instrument as its summary strip — no second map instance.
+  const phone = useIsPhone();
 
   const [activeId, setActiveId] = useState(post.reports[0]?.id ?? '');
   const [refusals, setRefusals] = useState<ReportRefusal[]>([]);
@@ -179,7 +185,8 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
         return;
       }
       capture('report_posted', { report_count: post.reports.length });
-      exits.onDone(result.reportId);
+      // A Post that landed after the author moved on to another sheet leaves that one alone.
+      if (result.stillOpen) exits.onDone(result.reportId);
     },
     [capture, exits, post.reports.length],
   );
@@ -238,7 +245,7 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
     setPhotosBusy(true);
     try {
       const drafts = await Promise.all(picked.map(addSheetPhoto));
-      updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines)));
+      addSheetPhotos(drafts, outlines);
       capture('report_photos_added', { source: 'device', count: drafts.length });
     } catch {
       setMessage("Couldn't read one of those images — try a different file.");
@@ -277,13 +284,21 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
           keep reading reports in the meantime.
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 max-md:flex-col max-md:overflow-y-auto">
           {waitingForLake ? (
             <WhichLake
               ordinal={ordinal}
               reportId={active.id}
               photosBusy={photosBusy}
               onPhotos={(files) => void addPhotosFromCards(files)}
+            />
+          ) : phone ? (
+            <PhoneInstrumentStrip
+              key={active.id}
+              report={active}
+              body={body}
+              inert={posting || sent}
+              {...(!editing && ordered.length === 1 ? { onChange: () => setRemoving(active) } : {})}
             />
           ) : (
             <InstrumentPane
@@ -294,9 +309,13 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
               inert={posting || sent}
             />
           )}
-          <aside aria-label="Your report" className="flex w-[29.25rem] shrink-0 flex-col min-h-0">
-            <div className="flex min-h-0 flex-1 flex-col gap-(--space-5_5) overflow-y-auto px-(--space-6) pt-(--space-5)">
+          <aside
+            aria-label="Your report"
+            className="flex w-[29.25rem] shrink-0 flex-col min-h-0 max-md:min-h-fit max-md:w-full max-md:flex-1"
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-(--space-5_5) overflow-y-auto px-(--space-6) pt-(--space-5) max-md:overflow-visible max-md:px-(--space-4)">
               <Notices sent={sent} photosLost={photosLost} photosNotKept={photosNotKept} />
+              <PhotoSorter post={post} activeId={active.id} onActivate={setActiveId} />
               <div
                 inert={posting || sent}
                 className={cn('flex flex-col gap-(--space-5_5)', (posting || sent) && 'opacity-50')}
@@ -320,6 +339,18 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
               <div className="h-9 shrink-0" />
             </div>
             <SheetFoot
+              {...(phone
+                ? {
+                    meter: (
+                      <span className="flex items-center gap-(--space-2_5)">
+                        <SectionMeter answered={sectionsFilled(active.sheet)} needed={0} />
+                        <span className="font-(family-name:--family-mono) text-mono-sm text-fg2">
+                          {sectionsFilled(active.sheet)} of 10
+                        </span>
+                      </span>
+                    ),
+                  }
+                : {})}
               editing={editing}
               sent={sent}
               posting={posting}
@@ -444,16 +475,22 @@ function SheetTop({
   return (
     <div
       data-slot="sheet-top"
-      className="flex h-13 shrink-0 items-stretch border-0 border-b border-solid border-line pl-(--space-5_5)"
+      className="flex h-13 shrink-0 items-stretch border-0 border-b border-solid border-line pl-(--space-5_5) max-md:grid max-md:h-auto max-md:grid-cols-[minmax(0,1fr)_auto] max-md:pl-(--space-4)"
     >
-      <span className="mr-(--space-5_5) self-center text-kick leading-none font-medium tracking-head text-fg2 uppercase">
+      <span className="mr-(--space-5_5) self-center text-kick leading-none font-medium tracking-head text-fg2 uppercase max-md:col-start-1 max-md:row-start-1">
         {editing ? 'Editing a post' : 'New report'}
       </span>
       <div
         role="tablist"
         aria-label="The lakes in this post"
         inert={inert}
-        className={cn('flex items-stretch', inert && 'opacity-50')}
+        className={cn(
+          'flex items-stretch',
+          // Phone: the lakes' tabs take a row of their own (one lake is named in the strip below).
+          'max-md:col-start-1 max-md:row-start-2 max-md:-ml-(--space-4) max-md:h-12 max-md:overflow-x-auto max-md:border-0 max-md:border-t max-md:border-solid max-md:border-line',
+          !many && 'max-md:hidden',
+          inert && 'opacity-50',
+        )}
       >
         {ordered.map((report, i) => (
           <ReportTab
@@ -470,11 +507,17 @@ function SheetTop({
         ))}
       </div>
       {!editing && anotherReport !== undefined ? (
-        <div inert={inert} className={cn('flex items-stretch', inert && 'opacity-50')}>
+        <div
+          inert={inert}
+          className={cn(
+            'flex items-stretch max-md:col-start-2 max-md:row-start-2 max-md:h-12',
+            inert && 'opacity-50',
+          )}
+        >
           {anotherReport({ activeReportId: activeId, onAdded: onSelect })}
         </div>
       ) : null}
-      <div className="ml-auto flex items-center gap-(--space-4) pr-(--space-3_5)">
+      <div className="ml-auto flex items-center gap-(--space-4) pr-(--space-3_5) max-md:col-start-2 max-md:row-start-1 max-md:h-13 max-md:gap-(--space-3)">
         <span
           data-slot="sheet-saved"
           className={cn(
@@ -489,7 +532,7 @@ function SheetTop({
         </span>
         <Button size="sm" data-attr="sheet-close" onClick={onClose}>
           Close
-          <Kbd variant="dim" aria-hidden="true">
+          <Kbd variant="dim" aria-hidden="true" className="max-md:hidden">
             Esc
           </Kbd>
         </Button>
@@ -623,8 +666,7 @@ function WhichLake({
           ? {
               googlePhotos: googlePhotos({
                 disabled: photosBusy,
-                onPhotos: (drafts) =>
-                  updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines))),
+                onPhotos: (drafts) => addSheetPhotos(drafts, outlines),
               }),
             }
           : {})}
@@ -713,6 +755,7 @@ function Notice({
 }
 
 function SheetFoot({
+  meter,
   editing,
   sent,
   posting,
@@ -721,6 +764,8 @@ function SheetFoot({
   onCancel,
   onPost,
 }: {
+  /** Phone (row 9): the ten cells and "N of 10", where the desktop draws them on the lake's tab. */
+  meter?: ReactNode;
   editing: boolean;
   sent: boolean;
   posting: boolean;
@@ -744,8 +789,9 @@ function SheetFoot({
   return (
     <div
       data-slot="sheet-foot"
-      className="flex shrink-0 items-center gap-(--space-3) border-0 border-t border-solid border-line px-(--space-6) py-(--space-3_5)"
+      className="flex shrink-0 items-center gap-(--space-3) border-0 border-t border-solid border-line px-(--space-6) py-(--space-3_5) max-md:sticky max-md:bottom-0 max-md:bg-bg max-md:px-(--space-4) max-md:pb-(--space-5_5)"
     >
+      {meter !== undefined && <span data-slot="sheet-foot-meter">{meter}</span>}
       <Button data-attr="sheet-cancel" disabled={posting} onClick={onCancel}>
         Cancel
       </Button>

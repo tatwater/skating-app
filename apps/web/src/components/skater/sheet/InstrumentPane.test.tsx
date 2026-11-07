@@ -1,6 +1,7 @@
 import type { SheetReport } from '@skating/core';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSheet, useSheet } from '@/lib/sheetStore';
 import { installFakeStore, openSheet, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
@@ -23,21 +24,35 @@ vi.mock('./InstrumentMap', () => ({
     label,
     onPick,
     input,
+    keyDim,
+    children,
   }: {
     label: string;
     onPick: (c: { lat: number; lng: number }) => void;
-    input: { hazards: unknown[]; track?: unknown[]; photos: unknown[] };
+    input: { hazards: { healing?: boolean }[]; track?: unknown[]; photos: unknown[] };
+    keyDim?: boolean;
+    children?: ReactNode;
   }) => {
     h.pick = onPick;
     return (
       <section
         aria-label={label}
+        data-key-dim={keyDim ? '' : undefined}
+        data-healing={input.hazards.filter((x) => x.healing).length}
         data-hazards={input.hazards.length}
         data-track={input.track?.length ?? 0}
         data-photos={input.photos.length}
-      />
+      >
+        {children}
+      </section>
     );
   },
+}));
+// The overlay itself is `instrumentWiring.test.tsx`'s; here, only what the pane hands it.
+vi.mock('./InstrumentOverlay', () => ({
+  InstrumentOverlay: ({ highlightPinId }: { highlightPinId?: string | null }) => (
+    <output data-testid="overlay-pointed">{highlightPinId ?? 'none'}</output>
+  ),
 }));
 
 const POLY = {
@@ -68,6 +83,7 @@ const body: SheetBody = {
       shape: { geometryKind: 'point', geometry: { type: 'Point', coordinates: [-72.15, 43.65] } },
       bbox: { minLat: 43.65, maxLat: 43.65, minLng: -72.15, maxLng: -72.15 },
       label: 'open water',
+      healing: true,
     } as unknown as SheetBody['hazards'][number],
   ],
   recentCards: [],
@@ -79,9 +95,11 @@ let mode: { set: (m: ConsoleMode | null) => void; current: ConsoleMode | null } 
   set: () => {},
   current: null,
 };
+let point: (id: string | null) => void = () => {};
 function ModeHandle() {
-  const { mode: m, setMode } = useConsoleMode();
+  const { mode: m, setMode, setHighlightPinId } = useConsoleMode();
   mode = { set: setMode, current: m };
+  point = setHighlightPinId;
   return null;
 }
 
@@ -119,14 +137,15 @@ beforeEach(() => {
 });
 
 describe('InstrumentPane (5.1)', () => {
-  it('names the lake and draws it with its hazards', () => {
+  it('names the lake and draws it with its hazards, the key at full strength', () => {
     renderPane();
     // The Report's own name for its lake leads; the body's is the fallback.
     expect(screen.getByRole('heading', { name: 'Morey' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /Morey, with your put-in/ })).toHaveAttribute(
-      'data-hazards',
-      '1',
-    );
+    const map = screen.getByRole('region', { name: /Morey, with your put-in/ });
+    expect(map).toHaveAttribute('data-hazards', '1');
+    // A healing hazard keeps its tone on the way to the marks.
+    expect(map).toHaveAttribute('data-healing', '1');
+    expect(map).not.toHaveAttribute('data-key-dim');
   });
 
   it('waits for the outline', () => {
@@ -166,10 +185,10 @@ describe('InstrumentPane (5.1)', () => {
       mode.set({ kind: 'where', label: 'Snow covered', where: undefined, onChange, onExit }),
     );
     expect(screen.getByText('Where is the snow covered?')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /with your put-in/ })).toHaveAttribute(
-      'data-hazards',
-      '0',
-    );
+    const map = screen.getByRole('region', { name: /with your put-in/ });
+    expect(map).toHaveAttribute('data-hazards', '0');
+    // The key steps back with the rest of the pane.
+    expect(map).toHaveAttribute('data-key-dim');
     act(() => h.pick?.({ lat: 43.65, lng: -72.15 }));
     expect(onChange).toHaveBeenCalledTimes(1);
     // A sub-mode is left by a click, never Esc.
@@ -178,6 +197,18 @@ describe('InstrumentPane (5.1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(onExit).toHaveBeenCalled();
     expect(mode.current).toBeNull();
+  });
+
+  it('hands the overlay the pin a chip is pointing at, mode or no mode', () => {
+    renderPane();
+    const pointed = () => screen.getByTestId('overlay-pointed');
+    expect(pointed()).toHaveTextContent('none');
+    act(() => point('p1'));
+    expect(pointed()).toHaveTextContent('p1');
+    act(() => mode.set({ kind: 'putIn', onPickPin: vi.fn(), onPickShore: vi.fn() }));
+    expect(pointed()).toHaveTextContent('p1');
+    act(() => point(null));
+    expect(pointed()).toHaveTextContent('none');
   });
 
   it('asks where you got on, and where a photo was taken', () => {

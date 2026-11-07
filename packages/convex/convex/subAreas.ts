@@ -2030,8 +2030,9 @@ export const listForBody = query({
         bbox: row.bbox,
         centroid: row.centroid,
         surfaceAreaSqM: row.surfaceAreaSqM,
-        // The weather panel's default bay on a giant (A06h open question 5, `resolveWeatherSubArea`):
-        // the most prominent place, which is this D49 curve over area plus curation, not raw area.
+        // The D49 curve over area plus curation, not raw area. It once picked the weather panel's
+        // default bay on a giant; since 2026-11-07 a lake opens on the whole lake
+        // (`resolveWeatherSubArea`), so it no longer chooses a place for the skater.
         displayScore: row.displayScore,
         minVisibleZoom: row.minVisibleZoom,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),

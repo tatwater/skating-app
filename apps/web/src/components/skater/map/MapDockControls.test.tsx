@@ -24,7 +24,8 @@ function dock(over: Partial<Props> = {}) {
     depthShown: true,
     onReturnToRegion: vi.fn(),
     lakeName: 'Mascoma Lake',
-    contourCredit: 'NH GRANIT',
+    // The store's shape: `formatContourCredit` always closes with its own period.
+    contourCredit: '5 ft contours, surveyed by NH GRANIT.',
     ...over,
   };
   render(<MapDockControls {...props} />);
@@ -145,13 +146,13 @@ describe('the layers menu (board 3.16)', () => {
     expect(screen.getByText('Basemap and water © OpenStreetMap contributors.')).toBeInTheDocument();
   });
 
-  it('adds the contour credit when contours are drawn', async () => {
+  it('adds the contour credit when contours are drawn, with one period, not two', async () => {
     const user = userEvent.setup();
     dock();
     await user.click(screen.getByRole('button', { name: 'Map layers' }));
     expect(
       await screen.findByText(
-        'Basemap and water © OpenStreetMap contributors. Contours: NH GRANIT.',
+        'Basemap and water © OpenStreetMap contributors. Contours: 5 ft contours, surveyed by NH GRANIT.',
       ),
     ).toBeInTheDocument();
   });

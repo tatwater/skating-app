@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CARD_PAT } from '../panels/panelFixtures';
 import { polyfillAnimate } from '../panels/panelTestMocks';
+import { MID_QUERY } from '../phone/usePhoneLayout';
 import { FeedColumn, type FeedColumnProps } from './FeedColumn';
 import { FilterColumn } from './FilterColumn';
 import { LatestFrame } from './LatestFrame';
@@ -349,6 +350,12 @@ describe('FeedColumn', () => {
     ],
     ['search-empty', /No reports mention that/, 'Clear search', 'onClearSearch'],
     [
+      'search-on-page',
+      /No matching reports on this page of the search/,
+      'Clear search',
+      'onClearSearch',
+    ],
+    [
       'no-weather-data',
       /No weather data yet this season/,
       'Turn off the weather filter',
@@ -381,12 +388,15 @@ describe('FeedColumn', () => {
     expect(props[handler]).toHaveBeenCalled();
   });
 
-  it('offers Load more in the empty states that can look further back', () => {
-    const props = feedProps({ state: 'nothing-on-page', canLoadMore: true });
-    render(<FeedColumn {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
-    expect(props.onLoadMore).toHaveBeenCalled();
-  });
+  it.each(['nothing-on-page', 'search-on-page'] as const)(
+    '%s offers Load more, since it can look further back',
+    (state) => {
+      const props = feedProps({ state, canLoadMore: true });
+      render(<FeedColumn {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+      expect(props.onLoadMore).toHaveBeenCalled();
+    },
+  );
 
   it('fills an empty season with recent cold weather (4.10), or says there is none (4.18)', () => {
     const props = feedProps({ state: 'no-reports', recentCold: [MATCH] });
@@ -630,6 +640,52 @@ describe('LatestFrame', () => {
     );
     expect(document.querySelector('[data-slot="latest-feed-scroll"]')).toBe(scroller);
     expect(scroller).toHaveAttribute('inert');
-    expect(document.querySelector('[data-slot="panel-column"]')).toHaveTextContent('the card');
+    // The drawer hangs off the page's host, beside the columns — never one of the flex row's items.
+    const host = document.querySelector('[data-slot="panel-drawer-host"]') as HTMLElement;
+    expect(host).toHaveTextContent('the card');
+    expect(document.querySelector('[data-slot="skater-page"]')).not.toHaveTextContent('the card');
+  });
+
+  it('keeps Recommended visible where the right column steps out: atop the feed, md to xl (D50)', () => {
+    const original = window.matchMedia;
+    const mid = { matches: false };
+    window.matchMedia = ((query: string) => ({
+      matches: query === MID_QUERY && mid.matches,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const frame = () => (
+        <LatestFrame
+          filters={<p>f</p>}
+          feed={<p>the feed</p>}
+          recommended={<p>the strip</p>}
+          aside={<p>wanted</p>}
+        />
+      );
+      // At xl (and on a phone, where the bar opens it), the strip heads the right column.
+      const { unmount } = render(frame());
+      const right = screen.getByRole('complementary', { name: 'Recommended and wanted' });
+      expect(within(right).getByText('the strip')).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('main', { name: 'Latest' })).queryByText('the strip'),
+      ).toBeNull();
+      unmount();
+
+      // Between md and xl the right column is display:none, so the one copy moves to the feed's top.
+      mid.matches = true;
+      render(frame());
+      const feed = screen.getByRole('main', { name: 'Latest' });
+      expect(within(feed).getByText('the strip')).toBeInTheDocument();
+      expect(screen.getAllByText('the strip')).toHaveLength(1);
+      expect(
+        within(screen.getByRole('complementary', { name: 'Recommended and wanted' })).getByText(
+          'wanted',
+        ),
+      ).toBeInTheDocument();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });

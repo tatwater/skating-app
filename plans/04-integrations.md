@@ -192,10 +192,10 @@ radius because hosted ORS caps the isochrone. Quotas are per endpoint (~2,000 di
 out-of-quota is a 403), so an ETL can't starve the app. Self-hosting is a backlog item
 (`backlog/self-hosted-ors.md`).
 
-### Geocoding — wanted, not yet chosen
+### Geocoding — Geoapify, for the typed home address
 
-Nothing geocodes today: home is set from device geolocation, report location from the map or the
-GPS path. The **location anchor** ([`backlog/location-anchor.md`](./backlog/location-anchor.md),
+One thing geocodes: a typed home address in Settings (B03 §11, board 7.18), through Geoapify; home
+can still be set from device geolocation, and report location comes from the map or the GPS path. The **location anchor** ([`backlog/location-anchor.md`](./backlog/location-anchor.md),
 Q17) — search from home, from an address you'll be at, or from here — is the first feature that
 needs an address → coordinate step, and the volume is tiny: once per anchor a skater sets, never per
 view.
@@ -205,24 +205,28 @@ view.
 | **Photon** (komoot's public instance) | OSM-backed, typo-tolerant, no key | public instance asks for fair use, no hard published quota; self-hostable if it ever matters |
 | **Nominatim** (OSM public) | OSM-backed, no key | usage policy: ≤ 1 req/s, identifying User-Agent, **no autocomplete** against the public instance — fine for "geocode this address once" |
 | **MapTiler / Stadia** geocoding | hosted, keyed | a key in the client; the same vendors we declined for tiles |
-| **Geoapify** autocomplete | hosted, keyed; **a new free account**, no card | 3,000 credits/day, 5 req/s, one credit per geocode; commercial use allowed on the free plan ("with some limitations" in production, per its terms); OSM attribution always and "Powered by Geoapify" on the free plan; its terms read 2026-11-07 forbid neither storing a result nor sending an address, and say nothing explicit about either |
+| **Geoapify** autocomplete — **chosen** for the typed home address (founder, 2026-11-07) | hosted, keyed; **its own free account**, no card; `GEOAPIFY_API_KEY` on Convex, called only from the `geocode.suggest` action | **Free plan: 3,000 credits/day, 5 req/s, one credit per autocomplete request**; the limits are "soft" (no throttling promised either way; repeated overage may suspend the account or bill it). Commercial use, production included, allowed on the free plan. Attribution: OSM always, and "Powered by Geoapify" on the free plan — shown as "Powered by Geoapify \| © OpenStreetMap contributors" under the suggestions (its pricing page suggests a follow-link to geoapify.com; ours is text). Its terms (read 2026-11-07) forbid neither storing a result nor sending an address and say nothing explicit about either; splitting traffic across accounts to stay on a lower plan is prohibited. Feeds the Settings address field only: suggestions as the skater types (debounced, three characters or more, at most five, US only, no bias toward any place), the chosen coordinate saved through `profiles.setHome`, the text never stored or logged |
 | **Mapbox / Google** | hosted, keyed | metered and proprietary; Google's terms also restrict displaying results on a non-Google map |
 | **OpenRouteService** `/geocode/autocomplete` (Pelias) | the account we already have, no new credential | **100/min, 1,000/day** in its own pool (HeiGIT's plan policy, read 2026-11-07; live `x-ratelimit-limit: 100`), free for everyone; 403 when the day is out, 429 for the minute. Type-ahead is its purpose; no clause restricts storing a result. Sources: OSM (ODbL), OpenAddresses, GeoNames, Who's On First; "© openrouteservice by HeiGIT \| Data from OpenStreetMap" owed where results show. **Its terms prohibit "Transmit personal data (apart from the data required by the HeiGIT account management)"**, and repeat limit-breaking risks the account |
 
-**Leaning:** a Pelias/Photon-class OSM geocoder, keyed, called from a Convex action (never the
-client), result cached on the anchor; **ORS's `/geocode`** is the zero-new-vendor option and is
-probably where to start. Autocomplete-as-you-type is a different product (and a different quota) from
+**For the anchor:** a Pelias/Photon-class OSM geocoder, keyed, called from a Convex action (never
+the client), result cached on the anchor; the Geoapify account the home address uses is the obvious
+start, its quota shared with the address field. Autocomplete-as-you-type is a different product (and a different quota) from
 geocode-on-submit; the anchor needs the latter. *Considered and out:* Google Places (terms +
 metering).
 
-**The typed home address (B03 §11, board 7.18) — the provider is a founder call, open.** It needs
+**The typed home address (B03 §11, board 7.18) — Geoapify (founder, 2026-11-07).** It needs
 autocomplete and a stored coordinate, which rules out public Nominatim (no autocomplete) and Google
 and Mapbox (permanent storage restricted). Photon has no quota or availability promise and no address
-data beyond OSM's. The candidates are ORS and Geoapify above, and the choice turns on HeiGIT's
-personal-data clause: a home address is personal data on its plain reading, even sent from our server
-with no name on it, and the account at stake also feeds the drive-time bands, which already send a
-home coordinate. `geocode.suggest` is built behind one adapter in `lib/geocoder.ts` and stays **off**
-until the call is made. The server never logs the text and never answers from a cache.
+data beyond OSM's. That left ORS and Geoapify, and the choice turned on HeiGIT's personal-data clause:
+a home address is personal data on its plain reading, even sent from our server with no name on it,
+and the account at stake also feeds the drive-time bands. Geoapify is a new vendor, but its terms carry
+no such clause and its account risks nothing else. `geocode.suggest` runs behind one adapter in
+`lib/geocoder.ts`; with no `GEOAPIFY_API_KEY` on the deployment it answers `off` and the field offers
+"Use my current location" instead. A 403 or 429 is `quota` (the client stops asking for the session),
+anything else `error`. The server never logs the text and never answers from a cache. *Alternatives if
+Geoapify's terms or quota stop fitting:* ORS (the clause above), or a self-hosted Photon/Pelias — no
+third party at all, at the cost of running one.
 
 ### Community references (D70/D71)
 
@@ -262,9 +266,11 @@ reasoning: [`research/native-track-capture-and-strava-push.md`](./research/nativ
 ### GPX import
 
 A skater who already records with a watch or another app picks the file and files the report from
-it. Unbuilt, pitched in the vision; scoped in
-[`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md). It's clean under L7 because the
-*file* is the skater's own export, not a platform's API.
+it. Live since A10-7 (`TrackImport` on both surfaces, through `gpsActivities.ingestTrack`); stored as
+`provider: 'native'` until B03 gave it its own `gpx` label (with a backfill for the old rows) and the
+web sheet's GPX door. It ships **fully trusted** — a temporary D24 exception, to be reverted to
+seed-and-author-only once Garmin or another native import path lands (D239). It's clean under L7
+because the *file* is the skater's own export, not a platform's API.
 
 ### Watch and health-platform adapters — deferred behind partner applications
 

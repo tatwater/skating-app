@@ -58,6 +58,25 @@ describe('ReportCard', () => {
     expect(card).toHaveClass('border-b-0');
   });
 
+  it('shows a capped count as a floor, never as the whole tally', () => {
+    render(
+      <ReportCard
+        report={CARD_PAT}
+        now={now}
+        href="/report/r1"
+        onOpen={vi.fn()}
+        helpfulCount={20}
+        commentCount={20}
+        helpfulCountCapped
+        commentCountCapped
+      />,
+    );
+    const counts = screen.getByRole('link').querySelector('[data-slot="report-counts"]');
+    expect(counts).toHaveTextContent('20+ helpful');
+    expect(counts).toHaveTextContent('20+ comments');
+    expect(counts).not.toHaveTextContent(/20 helpful|20 comments/);
+  });
+
   it('says the bay, not the lake, on the lake’s own tab — and nothing when there’s no bay', () => {
     const { rerender } = render(
       <ReportCard report={CARD_PAT} now={now} href="/report/r1" onOpen={vi.fn()} hideBody />,

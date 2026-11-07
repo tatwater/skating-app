@@ -151,6 +151,11 @@ describe('setLayersHiddenForBodies', () => {
     expect(IMAGERY_REPLACED_LAYERS.map((layer) => layer.id)).not.toContain('bathymetry-contours');
     expect(IMAGERY_REPLACED_WHOLE_LAYERS).toContain('bathymetry-contours');
   });
+
+  it('takes the band fills off with the contours, wholesale (B03 §2)', () => {
+    expect(IMAGERY_REPLACED_LAYERS.map((layer) => layer.id)).not.toContain('bathymetry-bands-fill');
+    expect(IMAGERY_REPLACED_WHOLE_LAYERS).toContain('bathymetry-bands-fill');
+  });
 });
 
 describe('IMAGERY_MIN_ZOOM', () => {

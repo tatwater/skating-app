@@ -6,12 +6,12 @@ import { Text, XStack, YStack } from 'tamagui';
  * twin of web's `WeatherPlacePicker`, as chips like the season filter beside it.
  *
  * Nothing on the ~99% of bodies with no named bays. On a body with bays it is the scope line and
- * the switcher in one: *"Weather at"* followed by a chip per bay, the selected one filled.
+ * the switcher in one: *"Weather at"* followed by *Whole lake* and a chip per bay, the selected one
+ * filled. A lake opens on *Whole lake* (founder call, 2026-11-07, the same default as web).
  *
- * ⚠ Picking a bay is a **navigation**: it writes the route's `sub` param, the one a search hit
- * sets, so the camera frames the bay, the report feed seeds to it and the panel reads its cell —
- * one selection concept across the sheet (founder call, 2026-09-11). The default bay is never
- * written back; `resolveWeatherSubArea` picks it implicitly so opening a lake is not a navigation.
+ * ⚠ Picking a place is a **navigation**: a bay writes the route's `sub` param, the one a search
+ * hit sets, so the camera frames the bay, the report feed seeds to it and the panel reads its cell —
+ * one selection concept across the sheet (founder call, 2026-09-11); *Whole lake* drops it.
  */
 export function WeatherPlacePicker({
   waterBodyId,
@@ -21,11 +21,12 @@ export function WeatherPlacePicker({
   waterBodyId: string;
   /** Live bays only, in display order. */
   bays: readonly { _id: string; name: string }[];
-  /** The bay the panel is currently about — explicit or implicit. */
+  /** The bay the panel is currently about, or `null` for the whole lake. */
   selectedId: string | null;
 }) {
   const router = useRouter();
-  if (bays.length === 0 || selectedId === null) return null;
+  if (bays.length === 0) return null;
+  const places = [{ _id: null, name: 'Whole lake' }, ...bays];
   return (
     <YStack gap="$1">
       <Text color="$foregroundMuted" fontSize={13}>
@@ -39,18 +40,23 @@ export function WeatherPlacePicker({
         accessibilityRole="radiogroup"
         accessibilityLabel="Which part of the lake the weather is for"
       >
-        {bays.map((bay) => {
-          const selected = bay._id === selectedId;
+        {places.map((place) => {
+          const selected = place._id === selectedId;
           return (
             <Text
-              key={bay._id}
+              key={place._id ?? 'whole-lake'}
               accessibilityRole="radio"
-              accessibilityLabel={`Show weather at ${bay.name}`}
+              accessibilityLabel={
+                place._id === null
+                  ? 'Show weather for the whole lake'
+                  : `Show weather at ${place.name}`
+              }
               accessibilityState={{ checked: selected, selected }}
               onPress={() =>
                 router.navigate({
                   pathname: '/water/[id]',
-                  params: { id: waterBodyId, sub: bay._id },
+                  params:
+                    place._id === null ? { id: waterBodyId } : { id: waterBodyId, sub: place._id },
                 })
               }
               paddingHorizontal="$2"
@@ -61,7 +67,7 @@ export function WeatherPlacePicker({
               color={selected ? '$primary' : '$foregroundMuted'}
               fontSize={13}
             >
-              {bay.name}
+              {place.name}
             </Text>
           );
         })}

@@ -5,7 +5,7 @@ import { ADMIT_KNOWN_WATER_MARGIN_M, MAX_REQUEST_NOTE_LENGTH } from '@skating/co
 import { useRouter } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/kit/button';
 import {
@@ -43,8 +43,30 @@ export function formatCoord({ lat, lng }: Coord): string {
   return `${Math.abs(lat).toFixed(4)}° ${ns}, ${Math.abs(lng).toFixed(4)}° ${ew}`;
 }
 
+/**
+ * Where a dialog of `size` sits beside a viewport point: to its right and a little above, flipped
+ * left when the right has no room, and clamped `margin` inside the viewport either way.
+ */
+export function pinNear(
+  point: { x: number; y: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  margin = 16,
+  gap = 16,
+): { left: number; top: number } {
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
+  const right = point.x + gap;
+  const left = right + size.width <= viewport.width - margin ? right : point.x - gap - size.width;
+  return {
+    left: clamp(left, margin, viewport.width - size.width - margin),
+    top: clamp(point.y - size.height / 3, margin, viewport.height - size.height - margin),
+  };
+}
+
 export interface RequestLakeViewProps {
   coord: Coord;
+  /** Where the click landed in the viewport: the dialog opens beside it, else centered. */
+  anchor?: { x: number; y: number };
   note: string;
   error: string | null;
   pending: boolean;
@@ -63,16 +85,37 @@ export function RequestLakeView({
   pending,
   container,
   modal = true,
+  anchor,
   onNoteChange,
   onSend,
   onClose,
 }: RequestLakeViewProps) {
   const noteId = useId();
+  // Pinned beside the click once the popup can be measured — before paint, so it never jumps.
+  // The dialog mounts its popup a beat after it opens, so the popup is held as state, not a ref.
+  const [popup, setPopup] = useState<HTMLDivElement | null>(null);
+  const [pin, setPin] = useState<{ left: number; top: number } | null>(null);
+  const ax = anchor?.x;
+  const ay = anchor?.y;
+  useLayoutEffect(() => {
+    if (ax === undefined || ay === undefined || popup === null) return;
+    setPin(
+      pinNear(
+        { x: ax, y: ay },
+        { width: popup.offsetWidth, height: popup.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+      ),
+    );
+  }, [ax, ay, popup]);
   return (
     <Dialog open modal={modal} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
+        ref={setPopup}
         data-slot="request-lake"
         className="w-[min(25rem,calc(100vw-2rem))]"
+        {...(pin !== null && container === undefined
+          ? { style: { left: pin.left, top: pin.top, translate: 'none', transform: 'none' } }
+          : {})}
         {...(container !== undefined ? { container } : {})}
       >
         <DialogHeader className="relative pe-(--space-12)">
@@ -159,10 +202,12 @@ function messageOf(error: unknown): string {
 /** The form for one pending click. Keyed by the click, so a new click starts a fresh note. */
 function RequestForCoord({
   coord,
+  anchor,
   onOpenLake,
   onClose,
 }: {
   coord: Coord;
+  anchor?: { x: number; y: number };
   onOpenLake: (waterBodyId: string) => void;
   onClose: () => void;
 }) {
@@ -210,6 +255,7 @@ function RequestForCoord({
   return (
     <RequestLakeView
       coord={coord}
+      {...(anchor !== undefined ? { anchor } : {})}
       note={note}
       error={error}
       pending={pending}
@@ -232,7 +278,8 @@ export function RequestLakeHost({ onOpenLake }: { onOpenLake: (waterBodyId: stri
   return (
     <RequestForCoord
       key={`${pending.lat},${pending.lng}`}
-      coord={pending}
+      coord={{ lat: pending.lat, lng: pending.lng }}
+      {...(pending.screen !== undefined ? { anchor: pending.screen } : {})}
       onOpenLake={(id) => {
         clear();
         onOpenLake(id);

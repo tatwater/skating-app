@@ -12,10 +12,10 @@ import {
   type WhereExtent,
 } from '@skating/core';
 import { useState } from 'react';
-import { Input } from '@/components/ui/input';
+import { Input } from '@/components/kit/input';
 import { LakeMap } from './LakeMap';
 import { SheetChip } from './SheetChip';
-import { SheetHint } from './SheetPanel';
+import { SheetHint, SubLabel } from './SheetPanel';
 import type { SheetBody } from './useSheetBody';
 
 /** The whole lake is spelled by absence (D193); the row offers the qualifiers, most to least. */
@@ -111,8 +111,12 @@ export function WherePicker({
   const unnamedTap = where?.point !== undefined && where.point.landmarkId === undefined;
 
   return (
-    <fieldset aria-label="Where on the lake" className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-1.5">
+    <fieldset
+      aria-label="Where on the lake"
+      className="m-0 flex min-w-0 flex-col gap-(--space-2) border-0 p-0"
+    >
+      <SubLabel>How much of it</SubLabel>
+      <div className="flex flex-wrap gap-(--space-1_5)">
         {EXTENTS.map((extent) => (
           <SheetChip
             key={extent}
@@ -123,35 +127,46 @@ export function WherePicker({
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      {(body?.bays ?? []).length > 0 ? (
+        <>
+          <SubLabel>Which bay</SubLabel>
+          <div className="flex flex-wrap gap-(--space-1_5)">
+            {(body?.bays ?? []).map((bay) => (
+              <SheetChip
+                key={bay.id}
+                compact
+                label={bay.name}
+                {...(where?.subAreaId === bay.id ? { tier: 'solid' as const } : {})}
+                onClick={() =>
+                  set({
+                    subAreaId: where?.subAreaId === bay.id ? undefined : bay.id,
+                    // Head and mouth are the bay's words; they go when the bay does.
+                    sector:
+                      where?.subAreaId === bay.id &&
+                      (where.sector === 'head' || where.sector === 'mouth')
+                        ? undefined
+                        : where?.sector,
+                  })
+                }
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+      <SubLabel>Which part</SubLabel>
+      <div className="flex flex-wrap gap-(--space-1_5)">
         {sectors.map((sector) => (
           <SheetChip
             key={sector}
             compact
-            label={`${where?.sector === sector ? '◆ ' : ''}${SECTOR_LABELS[sector]}`}
+            label={SECTOR_LABELS[sector]}
             {...(where?.sector === sector ? { tier: 'solid' as const } : {})}
             onClick={() => set({ sector: where?.sector === sector ? undefined : sector })}
           />
         ))}
-        {(body?.bays ?? []).map((bay) => (
-          <SheetChip
-            key={bay.id}
-            compact
-            label={bay.name}
-            {...(where?.subAreaId === bay.id ? { tier: 'solid' as const } : {})}
-            onClick={() =>
-              set({
-                subAreaId: where?.subAreaId === bay.id ? undefined : bay.id,
-                // Head and mouth are the bay's words; they go when the bay does.
-                sector:
-                  where?.subAreaId === bay.id &&
-                  (where.sector === 'head' || where.sector === 'mouth')
-                    ? undefined
-                    : where?.sector,
-              })
-            }
-          />
-        ))}
+      </div>
+      <SubLabel>Landmarks</SubLabel>
+      <div className="flex flex-wrap gap-(--space-1_5)">
         {[
           ...landmarkChips,
           ...found.filter((f) => !landmarkChips.some((c) => c._id === f._id)),
@@ -187,13 +202,13 @@ export function WherePicker({
         <Input
           autoFocus
           aria-label="Find a place on the lake"
-          placeholder="Find a place — an island, a point, a beach"
+          placeholder="Find a landmark — an island, a point, a beach"
           value={finding}
           onChange={(e) => setFinding(e.target.value)}
         />
       ) : null}
       {where?.point?.landmarkId !== undefined ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-(--space-1_5)">
           {/* A tap near a landmark takes its name; the skater may mean some other spot by it. */}
           <SheetChip
             compact
@@ -206,7 +221,7 @@ export function WherePicker({
         </div>
       ) : null}
       {unnamedTap ? (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-(--space-1)">
           <Input
             aria-label="Name this spot"
             placeholder="Name this spot (optional) — e.g. Bird Poop Rock"
@@ -233,7 +248,7 @@ export function WherePicker({
         </div>
       ) : null}
       {!instrument && body?.silhouette && (isPlacing || where?.sector || where?.point) ? (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-(--space-1_5)">
           <LakeMap
             data={body.silhouette}
             {...(where?.sector !== undefined ? { sector: where.sector } : {})}
@@ -263,7 +278,7 @@ export function WherePicker({
         </div>
       ) : null}
       {words ? (
-        <p className="text-foreground text-xs">
+        <p className="m-0 text-assist leading-body text-fg1">
           {words[0]?.toUpperCase()}
           {words.slice(1)}
         </p>

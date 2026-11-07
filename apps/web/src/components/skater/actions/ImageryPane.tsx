@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -11,12 +13,13 @@ import {
 import { useQuery } from 'convex/react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
-
+import { Button } from '@/components/kit/button';
 import { Note } from '@/components/kit/note';
 import { Skeleton } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
 import { useAnalytics } from '@/lib/analytics';
 import { env } from '@/lib/env';
+import { cn } from '@/lib/utils';
 import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { useFreezeUpFrame } from '../../useFreezeUpFrame';
@@ -71,9 +74,11 @@ export interface ImageryViewProps {
   state: ImageryState;
   onBand: (band: ImageryUrlBand) => void;
   onSelect: (index: number) => void;
+  /** The plate's own exit, "Turn off imagery" — floated over the map, it has no Back of its own. */
+  onClose?: () => void;
 }
 
-export function ImageryView({ band, season, state, onBand, onSelect }: ImageryViewProps) {
+export function ImageryView({ band, season, state, onBand, onSelect, onClose }: ImageryViewProps) {
   let body: ReactNode;
   switch (state.kind) {
     case 'unconfigured':
@@ -112,9 +117,21 @@ export function ImageryView({ band, season, state, onBand, onSelect }: ImageryVi
           Freeze-up timeline
         </h3>
         {season !== null && (
-          <span className="ms-auto font-(family-name:--family-mono) text-mono-sm text-fg2">
+          <span className="ms-auto shrink-0 whitespace-nowrap font-(family-name:--family-mono) text-mono-sm text-fg2">
             {formatSeasonLabel(season)}
           </span>
+        )}
+        {onClose && (
+          <Button
+            variant="bare"
+            size="icon-sm"
+            aria-label="Turn off imagery"
+            data-attr="imagery-close"
+            className={cn('-me-(--space-1_5) self-center', season === null && 'ms-auto')}
+            onClick={onClose}
+          >
+            <FontAwesomeIcon icon={faXmark} aria-hidden="true" />
+          </Button>
         )}
       </div>
       {body}
@@ -186,12 +203,15 @@ export function ImageryPane({
   band = 'tc',
   frame,
   onSearch,
+  onClose,
 }: {
   waterBodyId: string;
   subAreaId?: string;
   band?: ImageryUrlBand;
   frame?: string;
   onSearch: (edit: { band?: ImageryUrlBand | null; frame?: string | null }) => void;
+  /** Floated over the map: the plate's own close. */
+  onClose?: () => void;
 }) {
   const { capture } = useAnalytics();
   const result = useQuery(api.waterBodies.get, { waterBodyId: waterBodyId as Id<'waterBodies'> });
@@ -280,6 +300,7 @@ export function ImageryPane({
         const day = stops ? dayOf(stops[index]?.frame.capturedAt ?? '') : null;
         if (day) onSearch({ frame: day });
       }}
+      {...(onClose ? { onClose } : {})}
     />
   );
 }

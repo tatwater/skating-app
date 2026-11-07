@@ -9,7 +9,7 @@ import { useChromeStore } from '../stores/chromeStore';
  */
 export const Route = createFileRoute('/notifications')({ component: NotificationsRedirect });
 
-export function NotificationsRedirect() {
+function NotificationsRedirect() {
   const router = useRouter();
   useEffect(() => {
     useChromeStore.getState().setOverlay('notifications');

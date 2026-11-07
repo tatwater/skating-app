@@ -9,6 +9,7 @@ const photos = vi.hoisted(() => ({
   uploadAll: vi.fn(),
   setCommitted: vi.fn(),
   removePhoto: vi.fn(),
+  release: vi.fn(),
   error: null as string | null,
 }));
 
@@ -35,6 +36,7 @@ vi.mock('../../usePhotoDrafts', async () => {
         setPlaceOnMap: () => {},
         uploadAll: photos.uploadAll,
         setCommitted: photos.setCommitted,
+        release: photos.release,
       };
     },
   };
@@ -61,6 +63,7 @@ beforeEach(() => {
   photos.uploadAll = vi.fn().mockResolvedValue(['photo1']);
   photos.setCommitted = vi.fn();
   photos.removePhoto = vi.fn();
+  photos.release = vi.fn();
   fakes.queries.set('accessPoints:accessForBody', MASCOMA_ACCESS);
   fakes.queries.set('accessPoints:listPhotos', []);
   fakes.queries.set('profiles:current', { role: 'user' });
@@ -296,7 +299,30 @@ describe('AccessTab', () => {
       }),
     );
     expect(photos.setCommitted).toHaveBeenCalledWith(true);
-    expect(photos.removePhoto).toHaveBeenCalledWith('d0');
+    // The attached photo is handed to the launch, never removed: removing deletes its row and
+    // blobs, leaving the attachment pointing at nothing.
+    await waitFor(() => expect(photos.release).toHaveBeenCalledWith(['photo1']));
+    expect(photos.removePhoto).not.toHaveBeenCalled();
+    expect(photos.setCommitted).toHaveBeenLastCalledWith(false);
+  });
+
+  it('hands over only the photos that attached when an attach fails part-way', async () => {
+    photos.uploadAll = vi.fn().mockResolvedValue(['photo1', 'photo2']);
+    const attach = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('Could not attach'));
+    fakes.mutations.set('accessPoints:attachPhoto', attach);
+    tab();
+    const launch = card('Mascoma Lake Boat Launch');
+    fireEvent.change(within(launch).getByLabelText('Add photos of Mascoma Lake Boat Launch'), {
+      target: { files: [new File(['x'], 'a.jpg'), new File(['y'], 'b.jpg')] },
+    });
+    expect(await within(launch).findByText('Could not attach')).toBeTruthy();
+    expect(photos.release.mock.calls).toEqual([[['photo1']]]);
+    expect(photos.removePhoto).not.toHaveBeenCalled();
+    // The unattached one is a draft again, which the sweep may reclaim.
+    expect(photos.setCommitted).toHaveBeenLastCalledWith(false);
   });
 
   it('says why an upload failed, and frees the drafts for the sweep', async () => {

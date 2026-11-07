@@ -188,15 +188,109 @@
   border-color: var(--color-primary);
 }
 
-/* The map's own attribution credit, pinned to 12px.
+/* The map's credits (`FoldedAttributionControl`, `lib/mapAttribution.ts`), on the theme.
 
-   MapLibre sizes it by inheritance from a `font` shorthand on `.maplibregl-map`, which the map now
-   being the whole page makes fragile — it inherits whatever the layout around it happens to set. The
-   credit has to be legible and has to stay put, but it is the least important text on the screen, so
-   it gets an explicit floor rather than a size that drifts with its container. Outside `@layer base`
-   so it beats maplibre's own stylesheet regardless of import order. */
-.maplibregl-ctrl-attrib,
-.maplibregl-ctrl-attrib a {
+   MapLibre draws them as a white pill with black text and a black ⓘ, whatever the theme — a light
+   blot on the dark map. Here they take the map's own chrome instead, the same tokens as the dock's
+   buttons (`bg-map-plate text-fg1`, a `line2` edge), so they follow `data-surface` × `data-mode`
+   with nothing in TypeScript knowing about it:
+
+   - **Folded**, only the ⓘ shows: a pressable, so it takes the surface's control corner (2 px on
+     the skater surface, square on the console), and lights to `raise` / `fg` like a kit button.
+   - **Open**, the credits sit on a plate — a container, so square — with the ⓘ inside it at the
+     end, lit while the plate is open.
+   - **Links** (none of today's credits has one, but a source may) are `fg` against the text's
+     `fg1`, underlined in `line2` so they read as links without ice, which on a map marks a mode.
+
+   The text is pinned to 12px: MapLibre sizes it by inheritance from a `font` shorthand on
+   `.maplibregl-map`, which the map being the whole page makes fragile. It is the least important
+   text on the screen, so it gets an explicit floor rather than a size that drifts with its
+   container.
+
+   Every selector is under `.maplibregl-map` so it outranks maplibre's own stylesheet (whose compact
+   rules are two classes deep) regardless of which loads first; outside `@layer base` for the same
+   reason. The glyph is MapLibre's own ⓘ path, as a mask so it can take `currentColor`. */
+.maplibregl-map .maplibregl-ctrl-attrib,
+.maplibregl-map .maplibregl-ctrl-attrib a {
+  font-family: var(--family-sans);
   font-size: 12px;
   line-height: 16px;
+}
+/* The plate's edge is a border, not an inset ring: the ⓘ sits in the plate's padding, and its
+   opaque face would paint over a ring there. */
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  background-color: var(--map-plate);
+  color: var(--fg1);
+  border: 1px solid var(--line2);
+  border-radius: var(--corner-container);
+}
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  background-color: transparent;
+  border-color: transparent;
+}
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact-show,
+.maplibregl-map .maplibregl-ctrl-bottom-left > .maplibregl-ctrl-attrib.maplibregl-compact-show,
+.maplibregl-map .maplibregl-ctrl-top-left > .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  background-color: var(--map-plate);
+  border-color: var(--line2);
+  border-radius: var(--corner-container);
+}
+.maplibregl-map .maplibregl-ctrl-attrib a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--line2);
+  text-underline-offset: 2px;
+}
+.maplibregl-map .maplibregl-ctrl-attrib a:hover {
+  text-decoration-color: currentColor;
+}
+.maplibregl-map .maplibregl-ctrl-attrib a:focus-visible {
+  outline: none;
+  box-shadow: var(--box-shadow-focus);
+}
+.maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button {
+  background-color: var(--map-plate);
+  background-image: none;
+  color: var(--fg1);
+  border-radius: var(--corner-control);
+  box-shadow: inset 0 0 0 1px var(--line2);
+}
+.maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  mask:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill-rule='evenodd' viewBox='0 0 20 20'%3E%3Cpath d='M4 10a6 6 0 1 0 12 0 6 6 0 1 0-12 0m5-3a1 1 0 1 0 2 0 1 1 0 1 0-2 0m0 3a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0'/%3E%3C/svg%3E")
+    center / 24px 24px no-repeat;
+}
+.maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button:hover,
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  background-color: var(--raise);
+  color: var(--fg);
+}
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  box-shadow: none;
+}
+.maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button:focus:not(:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--line2);
+}
+.maplibregl-map
+  .maplibregl-ctrl-attrib.maplibregl-compact-show
+  .maplibregl-ctrl-attrib-button:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+.maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button:focus-visible {
+  box-shadow: var(--box-shadow-focus);
+}
+/* The credits rise clear of the map's key while one runs along the foot (`MAP_FOOT_ROOM`). */
+.maplibregl-map .maplibregl-ctrl-bottom-left,
+.maplibregl-map .maplibregl-ctrl-bottom-right {
+  bottom: var(--map-foot, 0px);
+}
+@media (forced-colors: active) {
+  .maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button::before {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
 }

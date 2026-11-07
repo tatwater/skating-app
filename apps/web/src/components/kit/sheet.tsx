@@ -12,8 +12,9 @@ import { Kbd } from './kbd';
  * sheet over the cost ledger is the reference.
  *
  * - **Docked to an edge, full height**, on the void ground with a `line2` edge and the sheet shadow.
- *   Its width is fixed per sheet (`sm`, `default`, `drawer` — the size tokens), never sized to its
- *   content, so it holds its size while what fills it loads.
+ *   Its width is fixed per sheet (`sm`, `md`, `default`, `drawer` — the size tokens), never sized to
+ *   its content, so it holds its size while what fills it loads. `md` is the skater app's page
+ *   drawer (Latest's open report, boards 4.5–4.7); the rest are the console's.
  * - **Over `main` only.** Pass `container` (the main region, positioned) and the scrim and sheet sit
  *   inside it, so the rail and the status bar stay lit. Without one it covers the viewport.
  * - **The scrim token, no blur. No ×**: the head carries Close with its Esc key.
@@ -38,7 +39,12 @@ function SheetClose(props: SheetPrimitive.Close.Props) {
 const MOTION =
   'duration-(--duration-slow) ease-enter data-ending-style:ease-exit data-ending-style:duration-(--duration-base)';
 
-const WIDTH = { sm: 'w-sheet-sm', default: 'w-sheet', drawer: 'w-drawer' } as const;
+const WIDTH = {
+  sm: 'w-sheet-sm',
+  md: 'w-sheet-md',
+  default: 'w-sheet',
+  drawer: 'w-drawer',
+} as const;
 
 type SheetContentProps = SheetPrimitive.Popup.Props &
   Pick<SheetPrimitive.Portal.Props, 'container'> & {

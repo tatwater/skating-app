@@ -9,25 +9,14 @@
  */
 
 import { namedFlavor } from '@protomaps/basemaps';
-import type { HazardPalette } from '@skating/core';
+import { DEPTH_BAND_EDGES_FT, type HazardPalette } from '@skating/core';
 import { nativeThemes } from '@skating/design/native';
 import type { CSSProperties } from 'react';
 import { HAZARD_PALETTE } from '@/lib/hazardMap';
 import { type MapFlavor, WATER_PALETTE } from '@/lib/waterMap';
 
-/** The seven depth bands' lower edges, ft — the founder's ramp (mock `chrome.js` `EDGES`). */
-export const DEPTH_BAND_EDGES_FT = [0, 5, 10, 20, 30, 45, 70] as const;
 /** Every contour on a multiple of this is an index line: a touch heavier, a touch brighter. */
 export const DEPTH_INDEX_INTERVAL_FT = 25;
-
-/** The band a depth falls in: the last edge at or under it. Negative or unknown depth is band 0. */
-export function depthBandIndex(depthFt: number): number {
-  let band = 0;
-  DEPTH_BAND_EDGES_FT.forEach((edge, i) => {
-    if (depthFt >= edge) band = i;
-  });
-  return band;
-}
 
 export interface DepthRamp {
   fills: readonly string[];
@@ -112,6 +101,20 @@ export function contourColorByBand(ramp: DepthRamp): unknown[] {
     ...DEPTH_BAND_EDGES_FT.slice(1).flatMap((edge, i) => [edge, colors[i + 1]]),
   ];
   return ['case', isIndexLine(depth), step(ramp.indexes), step(ramp.lines)];
+}
+
+/**
+ * A band polygon's fill: its band's token fill, keyed on the tile's `bandIndex`. A `step`, so an
+ * index past the ramp clamps to the deepest band and a missing one reads as the shallowest — never
+ * as no color at all.
+ */
+export function bandFillColor(ramp: DepthRamp): unknown[] {
+  return [
+    'step',
+    ['to-number', ['get', 'bandIndex'], 0],
+    ramp.fills[0],
+    ...ramp.fills.slice(1).flatMap((color, i) => [i + 1, color]),
+  ];
 }
 
 /** Index lines are 1.2 px, the rest 0.8 (mock `bathy`). */

@@ -33,7 +33,10 @@ export function ExplorePage({ search }: { search: ExploreSearch }) {
           }
         />
       ) : (
-        <InViewList />
+        // On a phone, nothing chosen is the bare map (board 9.1): the labels carry what the list did.
+        <div className="contents max-md:hidden">
+          <InViewList />
+        </div>
       )}
     </>
   );

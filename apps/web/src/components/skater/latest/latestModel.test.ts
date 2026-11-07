@@ -77,6 +77,11 @@ describe('latestFeedState', () => {
     [{ status: 'LoadingFirstPage' }, 'loading'],
     [{ rowCount: 2 }, 'feed'],
     [{ searching: true, filters: weather }, 'search-empty'],
+    [
+      { searching: true, status: 'CanLoadMore', filters: { qualityFloor: 'good' } },
+      'search-on-page',
+    ],
+    [{ searching: true, status: 'LoadingMore' }, 'search-on-page'],
     [{ filters: weather, weatherAvailable: false }, 'no-weather-data'],
     [{ filters: weather, weatherAvailable: undefined }, 'no-lake-match'],
     [{ filters: weather, status: 'CanLoadMore' }, 'no-lake-match'],

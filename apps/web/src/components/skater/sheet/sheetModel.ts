@@ -5,6 +5,7 @@
  */
 
 import {
+  type DraftPhoto,
   type MinimumSetTerm,
   type Mint,
   openReport,
@@ -100,7 +101,18 @@ export function meterLabel(answered: number): string {
   return `${answered} of ${SHEET_SECTION_COUNT} questions answered`;
 }
 
-/** A lake picked for a Report (Which lake?): through the reducer, so another lake's ghosts go. */
+/**
+ * A Report's photos with no placement: a pin is only ever vouched for by the lake it was made on
+ * (D42), so when the lake goes or changes the pins go with it and the author places again.
+ */
+function unplaced(photos: readonly DraftPhoto[]): DraftPhoto[] {
+  return photos.map((ph) => (ph.placeOnMap ? { ...ph, placeOnMap: false } : ph));
+}
+
+/**
+ * A lake picked for a Report (Which lake?): through the reducer, so another lake's ghosts go — and a
+ * different lake un-places the Report's photos, so a pin made on the last one never posts on this one.
+ */
 export function setReportBody(
   post: PostSheet,
   reportId: string,
@@ -111,20 +123,27 @@ export function setReportBody(
     bodyName: picked.name,
     sheet: sheetReducer(r.sheet, { type: 'setBody', waterBodyId: picked.waterBodyId }),
     coord: undefined,
+    photos: r.sheet.waterBodyId === picked.waterBodyId ? r.photos : unplaced(r.photos),
   }));
 }
 
 /**
  * Remove a lake (5.4.1): its answers go with it; the Post's words and photos stay. With other lakes
- * the Report goes; as the only one it starts over on *Which lake?*, keeping its photos.
+ * the Report goes and its photos wait in the Post's pool, un-placed, for the day (or the author) to
+ * put them on another; as the only one it starts over on *Which lake?*, keeping its photos, un-placed.
  */
 export function removeLake(post: PostSheet, reportId: string, now: number, mint: Mint): PostSheet {
-  if (post.reports.length > 1) return removeReport(post, reportId);
   const report = post.reports.find((r) => r.id === reportId);
   if (report === undefined) return post;
+  if (post.reports.length > 1) {
+    const without = removeReport(post, reportId);
+    if (report.photos.length === 0) return without;
+    return { ...without, photos: [...(post.photos ?? []), ...unplaced(report.photos)] };
+  }
   const showPutIn = report.sheet.scalars.showPutIn;
   const fresh = openReport({ ...(showPutIn !== undefined ? { showPutIn } : {}) }, now, mint);
-  return { ...post, reports: [{ ...fresh, photos: report.photos }], dirty: true };
+  // The photos stay, but not their pins: the fresh Report has no lake for them to be on.
+  return { ...post, reports: [{ ...fresh, photos: unplaced(report.photos) }], dirty: true };
 }
 
 /** The status line at the sheet's top right (5.1, 5.25–5.27). */

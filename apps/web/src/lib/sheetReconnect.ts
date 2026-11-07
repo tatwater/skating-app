@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { resendSheet, type SheetSender, type SheetSendResult } from './sheetStore';
+import { getSheet, resendSheet, type SheetSender, type SheetSendResult } from './sheetStore';
 import { useConnection } from './useConnection';
 
 /**
@@ -11,6 +11,13 @@ import { useConnection } from './useConnection';
  * on mount, and a server that keeps failing transiently while online does not become a loop. Mount
  * it where the sheet is on screen, so a resend that lands is one the author sees land. Must render
  * under the Convex provider.
+ *
+ * A result is handed on only while it is still about what is on screen: if the host had unmounted
+ * by the time the answer came back (the author left the console), or the sheet that went is no
+ * longer the open one (closed, replaced, another account's), the answer is dropped — the store has
+ * already settled that sheet, and acting on it would clear or navigate away from whatever the author
+ * has open now. "By the time the answer came back" is read before the store takes it: a Post that
+ * lands closes the sheet, and the host unmounting for that reason must not swallow its own answer.
  */
 export function useResendOnReconnect(
   send: SheetSender,
@@ -22,12 +29,31 @@ export function useResendOnReconnect(
   const latest = useRef({ send, onResult });
   latest.current = { send, onResult };
 
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     const was = previous.current;
     previous.current = status;
     if (status !== 'online' || was === 'online') return;
-    void resendSheet((post, attempt) => latest.current.send(post, attempt)).then((result) => {
-      if (result.kind !== 'skipped') latest.current.onResult(result);
+    let sent: string | null = null;
+    let liveAtAnswer = false;
+    void resendSheet(async (post, attempt) => {
+      sent = post.draftId;
+      try {
+        return await latest.current.send(post, attempt);
+      } finally {
+        liveAtAnswer = mounted.current;
+      }
+    }).then((result) => {
+      if (result.kind === 'skipped' || !liveAtAnswer) return;
+      const stillOpen = result.kind === 'posted' ? result.stillOpen : getSheet()?.draftId === sent;
+      if (stillOpen) latest.current.onResult(result);
     });
   }, [status]);
 }

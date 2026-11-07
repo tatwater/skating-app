@@ -4,8 +4,9 @@ import { type ReactNode, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from '../../kit/button';
+import { resolvePx } from '../../kit/measure';
 import { must } from '../../kit/storyKit';
-import { InsetCard } from '../panels/InsetCard';
+import { PanelDrawer } from '../panels/PanelDrawer';
 import { BOARD_NOW, CARD_PAT, POST_ANA, REPORT_PAT } from '../panels/panelFixtures';
 import { ReportPanelView } from '../panels/ReportPanelView';
 import { StoryRouter } from '../panels/storyRouter';
@@ -196,19 +197,21 @@ function Page({
           />
         }
         feed={<FeedColumn {...props} />}
+        recommended={
+          state === 'no-reports' || state === 'loading' ? null : (
+            <RecommendedStrip
+              bundles={[
+                { waterBodyId: 'crystal', cards: [CRYSTAL, { ...CRYSTAL, reportId: 'c2' }] },
+              ]}
+              now={NOW}
+              reportHref={(id) => `/latest?report=${id}`}
+              onOpenReport={noop}
+            />
+          )
+        }
         aside={
           state === 'no-reports' || state === 'loading' ? null : (
-            <>
-              <RecommendedStrip
-                bundles={[
-                  { waterBodyId: 'crystal', cards: [CRYSTAL, { ...CRYSTAL, reportId: 'c2' }] },
-                ]}
-                now={NOW}
-                reportHref={(id) => `/latest?report=${id}`}
-                onOpenReport={noop}
-              />
-              <WantedColumn places={wanted ? WANTED : []} now={NOW} onOpenBounty={noop} />
-            </>
+            <WantedColumn places={wanted ? WANTED : []} now={NOW} onOpenBounty={noop} />
           )
         }
         report={report}
@@ -272,8 +275,9 @@ export const WeatherFilter: Story = {
 };
 
 /**
- * 4.5–4.7: a report open over the center column. Keyboard: Enter on a feed card opens it, Esc closes
- * it, and the feed is where it was — its scroll survives, and focus comes back to the card.
+ * 4.5–4.7: a report open as a drawer from the right, over a scrim on the whole page. Keyboard: Enter
+ * on a feed card opens it, Esc closes it, and the feed is where it was — its scroll survives, its
+ * columns never move, and focus comes back to the card.
  */
 function ReportHarness() {
   const [open, setOpen] = useState(false);
@@ -285,14 +289,14 @@ function ReportHarness() {
       }}
       report={
         open ? (
-          <InsetCard
+          <PanelDrawer
             backTo="Latest"
             label="Report"
             returnKey={`report:${CARD_PAT.reportId}`}
             onClose={() => setOpen(false)}
           >
             <ReportPanelView data={REPORT_PAT} />
-          </InsetCard>
+          </PanelDrawer>
         ) : undefined
       }
     />
@@ -311,14 +315,35 @@ export const ReportOpen: Story = {
     const scrolled = scroller.scrollTop;
     await expect(scrolled).toBeGreaterThan(0);
     const card = q.getByRole('link', { name: /^Report on Mascoma South/ });
+    const feedLeft = scroller.getBoundingClientRect().left;
     card.focus();
     await userEvent.keyboard('{Enter}');
-    const inset = await q.findByRole('dialog');
-    // The card mounts transparent and fades in; wait for it rather than read its first frame.
-    await waitFor(() =>
-      expect(within(inset).getByRole('button', { name: /Back to Latest/ })).toBeVisible(),
-    );
+    const drawer = await q.findByRole('dialog');
+    await expect(drawer).toHaveAttribute('data-slot', 'panel-drawer');
+    // It slides in; wait for it to land rather than read a frame mid-flight.
+    await waitFor(() => expect(getComputedStyle(drawer).translate).toBe('none'));
+    await expect(within(drawer).getByRole('button', { name: /Back to Latest/ })).toBeVisible();
+    // The board's drawer: 500 wide, docked to the page's right edge, the scrim over the whole page.
+    const host = must(root.querySelector<HTMLElement>('[data-slot="panel-drawer-host"]'));
+    const page = host.getBoundingClientRect();
+    const box = drawer.getBoundingClientRect();
+    await expect(Math.abs(box.width - resolvePx(drawer, 'var(--size-sheet-md)'))).toBeLessThan(1);
+    await expect(Math.abs(box.right - page.right)).toBeLessThan(1);
+    await expect(Math.abs(box.height - page.height)).toBeLessThan(1);
+    const scrim = must(host.querySelector<HTMLElement>('[data-slot="sheet-scrim"]'));
+    const dim = scrim.getBoundingClientRect();
+    await expect([dim.left, dim.top, dim.width, dim.height]).toEqual([
+      page.left,
+      page.top,
+      page.width,
+      page.height,
+    ]);
+    // The feed stays put under it: mounted, inert, and not shifted by the drawer.
     await expect(scroller).toHaveAttribute('inert');
+    await expect(scroller.getBoundingClientRect().left).toBe(feedLeft);
+    await expect(drawer.querySelector('[data-slot="panel-drawer-body"]')).toHaveClass(
+      'ph-no-capture',
+    );
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(q.queryByRole('dialog')).toBeNull());
     await expect(scroller.scrollTop).toBe(scrolled);

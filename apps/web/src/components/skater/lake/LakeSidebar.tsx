@@ -4,12 +4,11 @@ import { ScrollArea } from '@/components/kit/scroll-area';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/kit/tabs';
 import { cn } from '@/lib/utils';
 
-import { attributionLines } from './lakeModel';
 import { LAKE_TAB_LABELS, LAKE_TABS, type LakeTab } from './lakeSearch';
 
 /**
- * The sidebar column: a header that stays, the body that scrolls, and the attribution at the foot
- * of the body (Review 4: `.caveat.foot`). `label` names the region for a screen reader. It fills the
+ * The sidebar column: a header that stays and the body that scrolls. `label` names the region for a
+ * screen reader. It fills the
  * skater layout's 27.5 rem view column, beside the region map (`MapFrame`); below `md` it takes
  * the width.
  */
@@ -44,19 +43,13 @@ export function LakeSidebar({
 }
 
 /**
- * The scrolling body: the gutter on both sides, the sections a gap apart, and the attribution
- * resting at the foot — pushed there when the content is short, after it when it's long.
+ * The scrolling body: the gutter on both sides, the sections a gap apart.
+ *
+ * **No credits here.** The founder, seeing the basemap's twice: *"Let's only show the one in the
+ * chip over the map, NOT in the sidebar."* Every credit rides in the map's folded ⓘ — the sources'
+ * own, and the contours', which the canvas hands it while they're drawn.
  */
-export function SidebarBody({
-  children,
-  contourCredit = null,
-  className,
-}: {
-  children: ReactNode;
-  /** The contours' credit line while depth is drawn (the map store's `contourCredit`). */
-  contourCredit?: string | null;
-  className?: string;
-}) {
+export function SidebarBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <ScrollArea
       className="min-h-0 flex-1"
@@ -71,25 +64,8 @@ export function SidebarBody({
         )}
       >
         {children}
-        <SidebarFoot contourCredit={contourCredit} />
       </div>
     </ScrollArea>
-  );
-}
-
-/** The sources, at the foot: the contours' credit while depth is drawn, then the basemap's. */
-export function SidebarFoot({ contourCredit = null }: { contourCredit?: string | null }) {
-  return (
-    <footer
-      data-slot="lake-sidebar-foot"
-      className="mt-auto flex flex-col gap-(--space-1) pt-(--space-2_5) text-assist text-fg3"
-    >
-      {attributionLines(contourCredit).map((line) => (
-        <p key={line} className="m-0 [text-wrap:pretty]">
-          {line}
-        </p>
-      ))}
-    </footer>
   );
 }
 
@@ -102,13 +78,11 @@ export function LakeTabs({
   tab,
   onTabChange,
   overlay = null,
-  contourCredit = null,
   children,
 }: {
   tab: LakeTab;
   onTabChange: (tab: LakeTab) => void;
   overlay?: ReactNode;
-  contourCredit?: string | null;
   children: ReactNode;
 }) {
   const covered = overlay !== null;
@@ -118,16 +92,21 @@ export function LakeTabs({
       onValueChange={(next) => onTabChange(next as LakeTab)}
       className="min-h-0 flex-1 gap-0"
     >
-      <div className="border-0 border-b border-solid border-line px-gutter py-(--space-3)">
+      <div className="border-0 border-b border-solid border-line px-gutter py-(--space-3) max-md:px-(--space-5)">
         <TabsList aria-label="Lake sections" className="w-full">
           {LAKE_TABS.map((t) => (
-            <TabsTab key={t} value={t} data-attr={`lake-tab-${t}`} className="flex-1">
+            <TabsTab
+              key={t}
+              value={t}
+              data-attr={`lake-tab-${t}`}
+              className="flex-1 max-md:px-(--space-1_5)"
+            >
               {LAKE_TAB_LABELS[t]}
             </TabsTab>
           ))}
         </TabsList>
       </div>
-      <SidebarBody contourCredit={contourCredit}>
+      <SidebarBody>
         {overlay}
         <TabsPanel
           value={tab}

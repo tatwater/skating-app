@@ -1,4 +1,5 @@
 import { BIO_MAX_LENGTH, TOWN_LABEL_MAX_LENGTH } from '@skating/core';
+import type { ReactNode } from 'react';
 
 import { Field, FieldDescription, FieldLabel, Input, InputGroup } from '../../kit/input';
 import { Textarea } from '../../kit/textarea';
@@ -14,13 +15,16 @@ export interface ProfileSectionProps {
   onSaveTown: (town: string) => Promise<unknown>;
   onSaveBio: (bio: string) => Promise<unknown>;
   onPublicChange: (isPublic: boolean) => void;
+  /** The profile photo control (`ProfilePhoto`), drawn first, inside the masked region. */
+  photo?: ReactNode;
 }
 
 const STATUS_WORD = { typing: 'Typing', saving: 'Saving', saved: 'Saved', failed: 'Not saved' };
 
 /**
  * Your profile (7.4): what other skaters see. Every field saves itself as you go — the town and bio
- * when you pause, the switch when you flip it — so there is no Save button to forget.
+ * when you pause, the switch when you flip it — so there is no Save button to forget. The photo
+ * saves the moment it's picked.
  */
 export function ProfileSection({
   town,
@@ -30,6 +34,7 @@ export function ProfileSection({
   onSaveTown,
   onSaveBio,
   onPublicChange,
+  photo,
 }: ProfileSectionProps) {
   const townField = useAutosave(town, onSaveTown);
   const bioField = useAutosave(bio, onSaveBio);
@@ -39,6 +44,7 @@ export function ProfileSection({
         What other skaters see on your profile. Your reports are public either way.
       </PaneHead>
       <Block className="ph-no-capture gap-(--space-5)">
+        {photo}
         <Field>
           <FieldLabel>Town</FieldLabel>
           <InputGroup status={townField.status}>

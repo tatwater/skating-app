@@ -3,10 +3,12 @@ import type { WaterBodyOpenSource } from '@/lib/analytics';
 /**
  * Which surface opened a lake, for `water_body_opened` (D240).
  *
- * A navigator that knows why it is going to `/water/$id` says so just before it goes — the In view
- * list says `list`, and search, the bell, the map and Latest are asked to do the same — and the lake
- * page takes the mark once, on arrival. A mark is good for a few seconds only, so one left behind
- * by a navigation that never landed can't label a later, unrelated open.
+ * A navigator that knows why it is going to `/water/$id` says so, and where, just before it goes —
+ * the In view list (`list`), search (`search`), the bell (`notification`) and Latest (`latest`) —
+ * and the lake page takes the mark on arrival. A mark is single-use and short-lived: it names the
+ * path it is for, counts only an arrival at that path within a few seconds, and is spent by the
+ * next arrival whatever it says. So a mark left by a navigation that went somewhere else (a skater
+ * picked in search, a hazard opened from the bell) or never landed can't label a later open.
  *
  * With no mark: the document's own entry (a typed URL, a bookmark, an email or a push link — no
  * in-app source at all) is `deep_link`; any other unmarked arrival is the map, the one navigator
@@ -15,13 +17,29 @@ import type { WaterBodyOpenSource } from '@/lib/analytics';
 
 const MARK_TTL_MS = 3_000;
 
-let pending: { source: WaterBodyOpenSource; at: number } | null = null;
+let pending: { source: WaterBodyOpenSource; path: string; at: number } | null = null;
 /** Whether this document has already counted its entry. Exported for tests through `reset`. */
 let entryCounted = false;
 
-/** Called by a navigator just before it opens a lake. */
-export function markWaterBodyOpenSource(source: WaterBodyOpenSource, now = Date.now()): void {
-  pending = { source, at: now };
+/** The pathname of an in-app href (`/water/w1?sub=s1` → `/water/w1`). */
+function pathOf(href: string): string {
+  try {
+    return new URL(href, 'https://gli.invalid').pathname;
+  } catch {
+    return href;
+  }
+}
+
+/**
+ * Called by a navigator just before it goes to `to`. Safe to call for any destination: a mark for a
+ * path that isn't a lake is never counted, and the next lake arrival spends it.
+ */
+export function markWaterBodyOpenSource(
+  source: WaterBodyOpenSource,
+  to: string,
+  now = Date.now(),
+): void {
+  pending = { source, path: pathOf(to), at: now };
 }
 
 /** The pathname this document was loaded at, from the navigation timing entry. */
@@ -53,7 +71,7 @@ export function takeWaterBodyOpenSource(
   pending = null;
   const isEntry = !entryCounted && entryPath !== null && entryPath === pathname;
   entryCounted = true;
-  if (mark !== null && now - mark.at <= MARK_TTL_MS) return mark.source;
+  if (mark !== null && mark.path === pathname && now - mark.at <= MARK_TTL_MS) return mark.source;
   return isEntry ? 'deep_link' : 'map';
 }
 

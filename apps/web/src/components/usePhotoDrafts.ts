@@ -72,6 +72,13 @@ export interface PhotoDrafts {
    * `false` if the create then fails, so the uploads are reclaimable again.
    */
   setCommitted: (committed: boolean) => void;
+  /**
+   * Hand uploaded photos to the record they now belong to: drop their drafts (and previews) without
+   * reclaiming anything. `removePhoto` is the wrong tool once an attach has landed — it deletes the
+   * row and both blobs, leaving the record pointing at nothing. Drafts not named here stay, and stay
+   * reclaimable.
+   */
+  release: (photoIds: readonly Id<'photos'>[]) => void;
 }
 
 export function usePhotoDrafts(): PhotoDrafts {
@@ -216,6 +223,17 @@ export function usePhotoDrafts(): PhotoDrafts {
 
   const clearError = useCallback(() => setError(null), []);
 
+  const release = useCallback((photoIds: readonly Id<'photos'>[]) => {
+    const handed = new Set<string>(photoIds);
+    setPhotos((prev) =>
+      prev.filter((p) => {
+        if (p.uploadedId === undefined || !handed.has(p.uploadedId)) return true;
+        URL.revokeObjectURL(p.previewUrl);
+        return false;
+      }),
+    );
+  }, []);
+
   const setCommitted = useCallback((committed: boolean) => {
     committedRef.current = committed;
   }, []);
@@ -234,5 +252,6 @@ export function usePhotoDrafts(): PhotoDrafts {
     setPlaceOnMap,
     uploadAll,
     setCommitted,
+    release,
   };
 }

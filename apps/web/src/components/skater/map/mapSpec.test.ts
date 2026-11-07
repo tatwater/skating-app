@@ -75,7 +75,12 @@ const specArb: fc.Arbitrary<MapSpec> = fc.record({
   layers: record(SPEC_LAYERS),
   interactions: interactionsArb,
   fit: fitArb,
-  overlays: fc.record({ track: overlayArb, photos: overlayArb, draft: overlayArb }),
+  overlays: fc.record({
+    track: overlayArb,
+    photos: overlayArb,
+    draft: overlayArb,
+    samples: overlayArb,
+  }),
   mode: fc.option(fc.record({ mode: id, line: id, step: id }, { requiredKeys: ['mode'] }), {
     nil: null,
   }),
@@ -205,7 +210,7 @@ describe('defineMapSpec', () => {
       },
       interactions: { pan: true, zoom: true, select: true, requestLake: false, click: 'navigate' },
       fit: null,
-      overlays: { track: null, photos: null, draft: null },
+      overlays: { track: null, photos: null, draft: null, samples: null },
       mode: null,
       dock: { zoom: false, layers: false, locate: false, imagery: false, legend: false },
     });

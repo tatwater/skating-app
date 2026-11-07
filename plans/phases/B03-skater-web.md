@@ -101,6 +101,11 @@ These are the facts that shape the build. The calls the founder still has to mak
     banded contour lines with a shallowest-band fill on the focused lake — real bands wait on polygons from
     the pipeline and a re-tile (the roadmap's *Filled depth bands* deferred row); board 3.16's Depth switch
     is the newer founder call, so D81 is amended to make depth a viewer toggle while hazards stay locked on.
+    **Real bands are built** (2026-11-07): the pipeline traces band polygons into the contour archive's
+    second layer, `bathymetry_bands` (`scripts/bathymetry/BANDS.md`), and a web fill layer draws them on the
+    water, under the contour lines, off the same source and filter (`bodyId` is the lines' key). The
+    shallow-band ground stays under it, so a lake without bands draws exactly the look above. Region zoom
+    draws no bands, as it drew no contours: depth belongs to the open lake. Only the upload is left (§8).
 13. **Dev Clerk disagrees with the boards twice** (the §8 build, 2026-11-07). The instance requires a
     password at sign-up, so the email → code sign-up stops at `missing_requirements` until the founder turns
     that requirement off in the dashboard; the flow shows an honest failure state, pinned by a test. And
@@ -203,7 +208,7 @@ layers, imagery, return to the region).
 
 | Path | Search params | What renders |
 |---|---|---|
-| `/latest` (`/feed` redirects) | `report?: reportId` (4.5–4.7: the report opens in the center column) · `q?: string` (debounced 300 ms; 4.9, behind the text-search gap) · `skater?: username` (4.8, behind the author-filter gap) · `view?: 'map'` (4.4) | Filters on the left · feed in the center · Recommended and *Wanted near you* on the right |
+| `/latest` (`/feed` redirects) | `report?: reportId` (4.5–4.7: the report opens as a drawer from the right, over a scrim on the page — founder, 2026-11-07) · `q?: string` (debounced 300 ms; 4.9, behind the text-search gap) · `skater?: username` (4.8, behind the author-filter gap) · `view?: 'map'` (4.4) | Filters on the left · feed in the center · Recommended and *Wanted near you* on the right |
 
 Filters (drive time, posted, quality, ice type, thickness, weather match) depend on Q3. My recommendation is that
 they stay in the persisted D166 store and out of the URL, with the URL carrying only the transient view state
@@ -413,7 +418,9 @@ Toasts use the kit's `toastManager`, so no store. Online/offline is a `useConnec
   - Hazard: `hazards.get`, `hazardConfirmations.listForHazard`/`confirm`, `photos.getHazardUrls`
   - Bounty: `bounties.getDetail`, `cancel`, `answeredByMyReport`
 - **Actions:**
-  - Hazard: `hazards.create`, `hazards.listBundleCandidates` (3.8), `photos.generateUploadUrl`/`create`
+  - Hazard: `hazards.create`, `hazards.listForBody` with core's `findDuplicateCandidate` (3.8's "is this the
+    one already here?" — corrected at close-out: `hazards.listBundleCandidates` returns only the author's own
+    unattached pins, the sheet's D55 bundle list, not anyone's nearby hazard), `photos.generateUploadUrl`/`create`
   - Bounty: `bounties.create` (action), `bounties.myBountyLimit` (3.11)
   - Imagery: the archive comes from `env.imageryArchiveUrl` plus the satellite fields on `waterBodies.get`;
     `imageryLive.activity` is admin-only, so not used
@@ -499,7 +506,7 @@ super-property (§1.0).
    | Area | Events (props) |
    |---|---|
    | Navigation | `water_body_opened` (`source`: map, list, search, notification, latest, deep_link) · `water_body_tab_viewed` (`tab`) · `report_viewed` / `hazard_viewed` / `bounty_viewed` (`source`) |
-   | Search | `search_opened` (`surface`: top_bar, phone, hotkey) · `search_result_opened` (`result_kind`: water_body, sub_area, skater; `rank` 1–6; `query_length_bucket`) · `search_no_results` (`query_length_bucket`) |
+   | Search | `search_opened` (`surface`: top_bar, phone, hotkey) · `search_result_opened` (`result_kind`: water_body, sub_area, skater; `rank` 1–6; `query_length_bucket`: 1-2, 3-5, 6-11, 12+, or `recent` for a pick from Recent with no query) · `search_no_results` (`query_length_bucket`, never `recent`) |
    | Latest | `latest_filter_changed` (`filter`: drive_time, posted, quality, ice_type, thickness, weather_match, snow_cover) · `latest_report_opened` · `wanted_bounty_opened` |
    | Report flow | `report_sheet_opened` (`entry`: top_bar, water_body, notification, phone_tab, edit, recorded_skate, deep_link) · `report_sheet_refused` (`missing_count`) · `report_sheet_abandoned` (`sections_answered`; fired on `pagehide` plus next-open reconciliation — `beforeunload` is unreliable) · `report_draft_restored` · `report_post_retried` (`offline`) · `report_photos_added` (`source`: device, google_photos; `count`) · `gpx_import_started` / `gpx_import_completed` (`point_count_bucket`) — `report_posted` / `report_updated` exist already |
    | Hazards | `hazard_flow_started` (`entry`: water_body, report_sheet) · `hazard_verdict_submitted` (`verdict`: still_there, crossed_here, healing, fully_healed, never_was, didnt_look) — these are the author's own claims, as labeled in the UI; `hazard_reported` / `existing_hazard_confirmed` exist |
@@ -712,3 +719,65 @@ decision, so the route grammar took D242 instead — gaps never close, tokens ne
 - **D242:** the skater route grammar and URL state. Old paths are kept; tabs, actions and New report are
   search params (`?post=`, `?tab=`, `?act=`), validated on the skater layout route, never `__root` (§1.0);
   `/feed` → `/latest`; no coordinates or camera in any URL; filters stay the saved D166 preference (Q3).
+
+## 8. What the build found
+
+Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
+
+- **GPX was already live.** A10-7's `TrackImport` had ingested GPX on both surfaces since that phase, stored as
+  `provider: 'native'`; D239 labels an existing behavior (`gpx`, plus `gpsActivities:backfillGpxProvider` for
+  the old rows) rather than enabling a new one. §0 item 4 has the scoping note's correction.
+- **3.8 needed a different query.** `hazards.listBundleCandidates` is the author's own unattached pins (the
+  sheet's D55 bundle list); the "one already here?" step reads `hazards.listForBody` through core's
+  `findDuplicateCandidate`. §3's data list is corrected in place.
+- **The bounty-fill rule was missing.** Before §11, any new report on a body attached to every open bounty
+  there, whenever it was skated — a Monday write-up of a Saturday skate could fill a Sunday bounty.
+  `reportAnswersBounty` now compares the skate's end with the bounty's opening, at attach and again at
+  fulfill and on every read.
+- **A DST bug in core's `zonedInstantOnDayOf`.** Found by the sheet calendar's property test: it stepped
+  `dayDelta × 24 h` of elapsed time, so near a clock change "two days back" landed on the wrong date (and so
+  did extraction's "yesterday at h:mm"). Now calendar arithmetic on the local date, with core tests of its own.
+- **Board 4.8 draws no feed filter.** The author filter on `posts.listFeed` is built behind a flag and off.
+- **Clerk's instance settings matter to the custom flow.** Sign-up can finish only if the instance doesn't
+  require a password (else the code verifies and stops at `missing_requirements`, shown as a dead end); the
+  instance's enabled social providers have no button in the email-code flow. Both are dashboard settings to
+  confirm before launch.
+- **The gpx-dedup review finding was moot.** It needed an inbound Strava track, and none can exist: Strava is
+  push-only by its API terms (`strava.ts`), so every stored track came from our recorder or a file. Only the
+  legacy-`native` GPX row needed the fix (`198de63d`).
+- **`sightings[].note` escaped the purge.** Added by D210 after `reportRedaction` was written, a departed
+  skater's sighting prose survived the D62 purge until §11; it clears like every other note now.
+- **The close-out's own finds.** The report sheet's empty hazard hint read as an all-clear ("No open hazards
+  on this lake right now"); it now shows core's `NO_KNOWN_HAZARDS`. Mobile's sheet still carries the old
+  string (`apps/mobile/src/components/sheet/HazardsSection.tsx`). The weather chart's fixed gradient id
+  painted a second chart in the first one's theme, and the floated imagery plate covered the map's zoom and
+  layer buttons on a phone.
+- **The geocoder is Geoapify (founder, 2026-11-07).** Agent S built `geocode.suggest` behind an adapter and
+  left it off, since ORS — the zero-new-vendor option — has a terms clause against transmitting personal data,
+  and a typed home address is personal data even with no name on it; the same account also feeds the drive-time
+  bands. The founder picked a new vendor with clean terms over that risk: Geoapify, on its own free account
+  (3,000 credits/day). The flip is safe before the account exists: with no `GEOAPIFY_API_KEY` the action answers
+  `off`, as it did with no provider. The ORS adapter is deleted rather than kept one line from use.
+  `04-integrations.md` § Geocoding has the terms; `PRIVACY.md` the disclosure.
+- **Hazards over a satellite picture: on, with a peek (founder, 2026-11-07).** The marks stay locked on at
+  full strength over imagery; the one a mouse rests on fades to 35% so the ice under it shows, and comes back
+  on pointer-out. Keyboard focus and a touch never fade one — focus is inspecting the mark itself.
+- **Latest's report is a drawer (founder, 2026-11-07).** The build had opened `?report=` over the center column;
+  the boards (4.5–4.7) draw a 500 px drawer from the right over a scrim on the whole page under the top bar, and
+  the founder picked the boards. It is the kit Sheet with a new `md` width (the `sheet-md` size token, 500);
+  `PanelDrawer` shares the inset card's mechanics (`useCardMechanics`) — deep-link Esc drops the param with
+  `replace`, a feed-opened one steps back, focus returns to the row, and the feed keeps its scroll under the
+  scrim. On a phone the same drawer takes the full width.
+- **Filled depth bands: built in two halves, joined on the pipeline's contract.** The map layer was written
+  ahead of the pipeline and guessed a third archive with a `bands` layer; `BANDS.md` put the bands in the
+  contour archive as `bathymetry_bands`, so the layer was reconciled to it and the extra env var dropped.
+  Edges land only on contours a lake really has (founder, accepted): Mascoma, contoured every 10 ft, has no
+  band 1, so color comes from `bandIndex` and the legend over an open lake prints each band's real
+  `minDepthFt`–`maxDepthFt` ("0–10 ft", "70+ ft"), never the ramp's edges. Unmeasured coves on fitted lakes
+  ship unclipped (founder); every band carries `lane` for a provenance treatment nothing draws yet. Bands
+  exist z9–14; the layer keeps the contours' z11 floor. The ramp's edges and band math have one home,
+  `@skating/core`'s `contourLayer.ts`. A local archive can't be tried through the web dev server — its
+  Nitro static handler answers a Range request with the whole file, which pmtiles rejects — so BANDS.md
+  now says to serve it with `serve --cors`. What remains is the upload (the roadmap row).
+- **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
+  coordinates are redacted on a public report.

@@ -11,6 +11,7 @@ import {
   type PeerSuggestions,
   peerLine,
   peerSuggestions,
+  type ReportSheetState,
   type SheetAction,
   type SheetFieldKey,
   type SheetReport,
@@ -290,6 +291,34 @@ function emphasisIn(field: string, cardId: string | null): string | null {
 
 // ── Ice and surface, with where (D193) ───────────────────────────────────────────────────────────
 
+/** The surfaces the folded row always offers (board 5.9): the four skaters report most. */
+const FEATURED_SURFACES: readonly SurfaceTag[] = ['glass', 'smooth', 'bumpy', 'rough'];
+
+/** A chip on the sheet in any tier — chosen, read from the writing, or offered by a peer. */
+function inPlay(sheet: ReportSheetState, field: 'iceTypes' | 'surfaceTags', key: string): boolean {
+  return (sheet.fields[field] as { chips: readonly { key: string }[] }).chips.some(
+    (c) => c.key === key,
+  );
+}
+
+/** The fold's own control: "More" opens the whole vocabulary, "Fewer" folds it back. */
+function FoldChip({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      data-attr="sheet-ice-more"
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-7.5 cursor-pointer items-center self-start rounded-control border border-dashed border-line2 bg-transparent px-(--space-2_5) text-row text-fg2 outline-none',
+        'transition-colors duration-(--duration-fast) ease-standard hover:bg-lift-08 focus-visible:shadow-focus',
+      )}
+    >
+      {open ? 'Fewer' : 'More'}
+    </button>
+  );
+}
+
 function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps) {
   const sheet = report.sheet;
   // The where question: open or not, and which card is up. Never opened by a chip click alone — a
@@ -312,6 +341,34 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
   const whereMark = (field: 'iceTypes' | 'surfaceTags') => (key: string) => (
     <WhereMark text={whereMarkText(sheet, field, key)} />
   );
+  // Folded by default (board 5.9); the whole vocabulary is under More. The model never changes.
+  const [more, setMore] = useState(false);
+  const iceRow = {
+    sheet,
+    field: 'iceTypes' as const,
+    label: humanizeEnum,
+    trailing: whereMark('iceTypes'),
+    emphasisKey: emphasisIn('iceTypes', activeKey),
+    onSelect: (t: IceType) =>
+      dispatch({ type: 'select', field: 'iceTypes', key: t, value: { type: t } }),
+    onDeselect: (key: string) => {
+      deselectEveryPlace(sheet, 'iceTypes', key, dispatch);
+      if (emphasisIn('iceTypes', activeCard) === key) setActiveCard(null);
+    },
+  };
+  const surfaceRow = {
+    sheet,
+    field: 'surfaceTags' as const,
+    label: humanizeEnum,
+    trailing: whereMark('surfaceTags'),
+    emphasisKey: emphasisIn('surfaceTags', activeKey),
+    onSelect: (t: SurfaceTag) =>
+      dispatch({ type: 'select', field: 'surfaceTags', key: t, value: { type: t } }),
+    onDeselect: (key: string) => {
+      deselectEveryPlace(sheet, 'surfaceTags', key, dispatch);
+      if (emphasisIn('surfaceTags', activeCard) === key) setActiveCard(null);
+    },
+  };
 
   return (
     <SheetPanel
@@ -329,38 +386,35 @@ function IceAndSurface({ report, body, dispatch, gaps, timeZone }: SectionProps)
       gap={gaps.has('iceAndSurface')}
     >
       {iceLine ? <SheetHint>{iceLine}</SheetHint> : null}
-      <ChipRow<'iceTypes', IceType>
-        sheet={sheet}
-        field="iceTypes"
-        options={ICE_TYPES}
-        label={humanizeEnum}
-        trailing={whereMark('iceTypes')}
-        emphasisKey={emphasisIn('iceTypes', activeKey)}
-        onSelect={(t) =>
-          dispatch({ type: 'select', field: 'iceTypes', key: t, value: { type: t } })
-        }
-        onDeselect={(key) => {
-          deselectEveryPlace(sheet, 'iceTypes', key, dispatch);
-          if (emphasisIn('iceTypes', activeCard) === key) setActiveCard(null);
-        }}
-      />
-      <SubLabel>Surface</SubLabel>
-      {surfaceLine ? <SheetHint>{surfaceLine}</SheetHint> : null}
-      <ChipRow<'surfaceTags', SurfaceTag>
-        sheet={sheet}
-        field="surfaceTags"
-        options={SURFACE_TAGS}
-        label={humanizeEnum}
-        trailing={whereMark('surfaceTags')}
-        emphasisKey={emphasisIn('surfaceTags', activeKey)}
-        onSelect={(t) =>
-          dispatch({ type: 'select', field: 'surfaceTags', key: t, value: { type: t } })
-        }
-        onDeselect={(key) => {
-          deselectEveryPlace(sheet, 'surfaceTags', key, dispatch);
-          if (emphasisIn('surfaceTags', activeCard) === key) setActiveCard(null);
-        }}
-      />
+      {more ? (
+        <>
+          <ChipRow<'iceTypes', IceType> {...iceRow} options={ICE_TYPES} />
+          <SubLabel>Surface</SubLabel>
+          {surfaceLine ? <SheetHint>{surfaceLine}</SheetHint> : null}
+          <ChipRow<'surfaceTags', SurfaceTag> {...surfaceRow} options={SURFACE_TAGS} />
+          <FoldChip open onClick={() => setMore(false)} />
+        </>
+      ) : (
+        <>
+          {surfaceLine ? <SheetHint>{surfaceLine}</SheetHint> : null}
+          {/* Board 5.9: one row — what's chosen (or offered), the four surfaces most reported, More. */}
+          <div className="flex flex-wrap gap-(--space-1_5)">
+            <ChipRow<'iceTypes', IceType>
+              {...iceRow}
+              options={ICE_TYPES.filter((t) => inPlay(sheet, 'iceTypes', t))}
+              bare
+            />
+            <ChipRow<'surfaceTags', SurfaceTag>
+              {...surfaceRow}
+              options={SURFACE_TAGS.filter(
+                (t) => FEATURED_SURFACES.includes(t) || inPlay(sheet, 'surfaceTags', t),
+              )}
+              bare
+            />
+            <FoldChip open={false} onClick={() => setMore(true)} />
+          </div>
+        </>
+      )}
       {cards.length > 0 && !asking ? (
         <div className="flex flex-wrap items-center gap-2">
           <SubLabel>Where?</SubLabel>

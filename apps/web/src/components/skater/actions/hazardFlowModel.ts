@@ -78,7 +78,7 @@ export function drawKindsFor(type: HazardType | null): HazardDrawKind[] {
 
 /** A fresh flow on a lake. */
 export function startDraft(waterBodyId: string, stackedInReport: boolean): HazardDraft {
-  return { ...EMPTY_HAZARD_DRAFT, waterBodyId, stackedInReport };
+  return { ...EMPTY_HAZARD_DRAFT, draftId: crypto.randomUUID(), waterBodyId, stackedInReport };
 }
 
 /** The storable shape, or `null` while the draft can't post yet — core's one definition. */
@@ -370,6 +370,13 @@ export function postBlocker(draft: HazardDraft): string | null {
  * the drawing stands. `null` when the map isn't listening.
  */
 export function mapModeFor(draft: HazardDraft): MapMode | null {
+  const mode = placingMode(draft);
+  // The bar's exit closes the whole flow (one Esc per screen), so it says what the sheet's own
+  // button says: Close.
+  return mode === null ? null : { ...mode, exitLabel: 'Close' };
+}
+
+function placingMode(draft: HazardDraft): MapMode | null {
   if (!draft.placing || draft.shape === null || draft.hazardType === null) return null;
   const n = draftPlacementCount(draft.shape);
   switch (draft.drawKind) {

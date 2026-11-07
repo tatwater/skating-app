@@ -1193,7 +1193,10 @@ export const MY_BOUNTIES_CAP = 100;
  * The caller's own bounties across all statuses, newest first (the "my bounties" surface). Each row
  * is the bounty itself plus what the list draws (B03 §11): the lake and bay names, the answering
  * count under the skate-time rule, and who answered — the authors of the answering reports, up to
- * `LIST_ANSWER_VERIFY_CAP` people. Enriched for the newest `MY_BOUNTIES_CAP`; the requester's own
+ * `LIST_ANSWER_VERIFY_CAP` people. A fulfilled bounty also carries `fulfilledBy`: the author whose
+ * report the requester accepted. `answeredBy` can't say that — it's every candidate — and the bounty
+ * row doesn't record the report, but the `bounty_fulfilled` point event does (its `refId` is the
+ * bounty, its `userId` the author). Enriched for the newest `MY_BOUNTIES_CAP`; the requester's own
  * open-bounty limit keeps a season well under it.
  */
 export const myBounties = query({
@@ -1229,12 +1232,22 @@ export const myBounties = query({
         seen.add(r.authorId);
         answeredBy.push(publicAuthor(await ctx.db.get(r.authorId), now));
       }
+      // One bounty's point events: a handful at most, read off the `by_ref` index.
+      const award =
+        b.status === 'fulfilled'
+          ? await ctx.db
+              .query('pointEvents')
+              .withIndex('by_ref', (q) => q.eq('refId', b._id))
+              .filter((q) => q.eq(q.field('reason'), 'bounty_fulfilled'))
+              .first()
+          : null;
       rows.push({
         ...b,
         ...(body ? { waterBodyName: body.name } : {}),
         ...(subArea ? { subAreaName: subArea.name } : {}),
         fulfillingCount: count,
         answeredBy,
+        ...(award ? { fulfilledBy: publicAuthor(await ctx.db.get(award.userId), now) } : {}),
       });
     }
     return rows;

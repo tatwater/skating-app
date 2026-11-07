@@ -1,11 +1,14 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faLocationCrosshairs, faLocationDot, faXmark } from '@fortawesome/sharp-light-svg-icons';
+import {
+  faEllipsis,
+  faLocationCrosshairs,
+  faLocationDot,
+  faXmark,
+} from '@fortawesome/sharp-light-svg-icons';
 import { faPlus } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
-  addPostPhotos,
-  assignCandidates,
   type DraftPhoto,
   POST_TITLE_MAX_CHARS,
   type PostSheet,
@@ -22,6 +25,7 @@ import { useBodyOutlines } from '@/lib/bodyOutlines';
 import { addSheetPhoto, releaseSheetPhoto, sheetPhotoPreview } from '@/lib/sheetPhotos';
 import { updateSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
+import { addSheetPhotos } from './PhotoSorter';
 import { useSheetSlots } from './sheetSlots';
 
 /**
@@ -29,7 +33,8 @@ import { useSheetSlots } from './sheetSlots';
  * every photo of the day as a strip of tiles, the lake's number in the corner when the Post has
  * several, a pin when the photo is placed on the water and a hollow one when it is not, and the
  * add tile. A tile's menu (which lake, place it, this is a hazard, leave it out) is the second
- * half's (`photoTileMenu`); its corner mark is the trigger.
+ * half's (`photoTileMenu`); its corner mark is the trigger — and a new photo that needs no number
+ * (an assigned one in a one-lake Post) still gets a quiet ⋯ mark, so its menu is never out of reach.
  *
  * `ph-no-capture` (D240) on the whole block: the words and photos are the author's.
  */
@@ -58,7 +63,9 @@ export function SheetWords({
         onChange={(e) => updateSheet((p) => ({ ...p, title: e.target.value, dirty: true }))}
         className="text-[1.0625rem] font-semibold"
       />
+      {/* Board 5.1: the story is the page's writing, so it sits on the underline, as the title does. */}
       <Textarea
+        variant="underline"
         aria-label="How was it?"
         data-attr="sheet-story"
         rows={3}
@@ -150,7 +157,7 @@ function PhotoStrip({
           updateReport(p, activeReport.id, (r) => ({ ...r, photos: [...r.photos, ...drafts] })),
         );
       } else {
-        updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines)));
+        addSheetPhotos(drafts, outlines);
       }
       capture('report_photos_added', { source: 'device', count: drafts.length });
     } catch {
@@ -189,10 +196,11 @@ function PhotoStrip({
             many={many}
             editing={editing}
             onRemove={() => remove(tile)}
-            menu={(trigger) =>
+            menu={
               photoTileMenu !== undefined && !tile.kept
-                ? photoTileMenu({ photo: tile.photo, reportId: tile.reportId, trigger })
-                : trigger
+                ? (trigger) =>
+                    photoTileMenu({ photo: tile.photo, reportId: tile.reportId, trigger })
+                : null
             }
           />
         ))}
@@ -209,8 +217,7 @@ function PhotoStrip({
         {tiles.length === 0 && !editing && googlePhotos !== undefined
           ? googlePhotos({
               disabled: busy,
-              onPhotos: (drafts) =>
-                updateSheet((p) => addPostPhotos(p, drafts, assignCandidates(p, outlines))),
+              onPhotos: (drafts) => addSheetPhotos(drafts, outlines),
             })
           : null}
         <input
@@ -242,11 +249,14 @@ function PhotoTile({
   many: boolean;
   editing: boolean;
   onRemove: () => void;
-  menu: (trigger: ReactNode) => ReactNode;
+  /** The tile's menu around its corner mark; `null` when the tile has none (a kept photo). */
+  menu: ((trigger: ReactNode) => ReactNode) | null;
 }) {
   const unassigned = tile.reportId === null && tile.photo.attachTo === undefined;
   const placed = tile.photo.placeOnMap;
   const mark = unassigned ? '?' : many && tile.n !== null ? String(tile.n) : null;
+  const markClass =
+    'absolute top-1 left-1 h-3.5 min-w-3.5 px-0.5 text-center font-(family-name:--family-mono) text-[0.5625rem] leading-3.5';
   return (
     <div
       data-slot="photo-tile"
@@ -264,18 +274,25 @@ function PhotoTile({
         </span>
       )}
       {mark !== null
-        ? menu(
+        ? (menu ?? ((t: ReactNode) => t))(
             <span
               data-slot="photo-tile-mark"
               className={cn(
-                'absolute top-1 left-1 h-3.5 min-w-3.5 px-0.5 text-center font-(family-name:--family-mono) text-[0.5625rem] leading-3.5',
+                markClass,
                 unassigned ? 'border border-dashed border-warn text-warn' : 'bg-fg1 text-bg',
               )}
             >
               {mark}
             </span>,
           )
-        : null}
+        : menu !== null
+          ? // No number to show, but the menu still has to be reachable: a quiet mark opens it.
+            menu(
+              <span data-slot="photo-tile-mark" className={cn(markClass, 'bg-bg/80 text-fg1')}>
+                <FontAwesomeIcon icon={faEllipsis} />
+              </span>,
+            )
+          : null}
       {tile.kept ? null : (
         <span
           role="img"

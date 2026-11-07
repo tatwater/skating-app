@@ -29,6 +29,7 @@ export function SheetChip({
   tip,
   trailing,
   emphasis = false,
+  onPoint,
 }: {
   label: string;
   /** `undefined` = an unselected, plain option (the row's own vocabulary, nobody suggested it). */
@@ -42,12 +43,25 @@ export function SheetChip({
   trailing?: ReactNode;
   /** The chip a where question is open for: ice corner brackets, so the question and its chip read as one. */
   emphasis?: boolean;
+  /**
+   * Pointing at the chip begins (`true`) and ends (`false`) — a hover, or the keyboard's focus, so a
+   * keyboard sees what a mouse sees. A chip that names a pin on the map lights it with this.
+   */
+  onPoint?: (pointing: boolean) => void;
 }) {
   const selected = tier === 'solid' || tier === 'extracted';
   const chip = (
     <button
       type="button"
       onClick={onClick}
+      {...(onPoint !== undefined
+        ? {
+            onPointerEnter: () => onPoint(true),
+            onPointerLeave: () => onPoint(false),
+            onFocus: () => onPoint(true),
+            onBlur: () => onPoint(false),
+          }
+        : {})}
       aria-pressed={selected}
       {...(title !== undefined ? { title } : {})}
       aria-label={
@@ -109,6 +123,7 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   children,
   trailing,
   emphasisKey,
+  bare = false,
 }: {
   sheet: ReportSheetState;
   field: K;
@@ -122,27 +137,29 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   trailing?: (key: string) => ReactNode;
   /** The chip a where question is open for. */
   emphasisKey?: string | null;
+  /** The chips alone, no row around them — for a caller that sets two fields in one row. */
+  bare?: boolean;
 }) {
   const chips = (sheet.fields[field] as ChipField<unknown>).chips;
+  const items = options.map((option) => {
+    const chip = chips.find((c) => c.key === option);
+    const tier = chip?.tier;
+    const selected = tier === 'solid' || tier === 'extracted';
+    return (
+      <SheetChip
+        key={option}
+        label={label(option)}
+        {...(tier !== undefined ? { tier } : {})}
+        emphasis={emphasisKey === option}
+        {...(selected && trailing ? { trailing: trailing(option) } : {})}
+        onClick={() => (selected ? onDeselect(option) : onSelect(option))}
+      />
+    );
+  });
+  if (bare) return <>{items}</>;
   return (
     <div className="flex flex-col gap-(--space-2)">
-      <div className="flex flex-wrap gap-(--space-1_5)">
-        {options.map((option) => {
-          const chip = chips.find((c) => c.key === option);
-          const tier = chip?.tier;
-          const selected = tier === 'solid' || tier === 'extracted';
-          return (
-            <SheetChip
-              key={option}
-              label={label(option)}
-              {...(tier !== undefined ? { tier } : {})}
-              emphasis={emphasisKey === option}
-              {...(selected && trailing ? { trailing: trailing(option) } : {})}
-              onClick={() => (selected ? onDeselect(option) : onSelect(option))}
-            />
-          );
-        })}
-      </div>
+      <div className="flex flex-wrap gap-(--space-1_5)">{items}</div>
       {children}
     </div>
   );

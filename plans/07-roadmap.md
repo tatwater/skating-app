@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B03 — The skater web app
-🟡 **In progress** 2026-11-07 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
+🟢 **Complete** 2026-11-07 · PRs #95–#98 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
@@ -813,7 +813,18 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
 - ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5
 - ⚪ **The slow-pan region video** behind the sign-in screens — static per-theme PNGs ship; a React video library later
-- ⚪ **Filled depth bands** — the bathymetry archive holds contour lines, which MapLibre cannot fill between; the skater map ships banded contour lines with a shallowest-band fill on the focused lake. Real filled bands need the bathymetry pipeline to emit polygons and a re-tile → B03 §2
+- ⚪ **Filled depth bands: the upload** — the pipeline half (`build-bands`, `scripts/bathymetry/BANDS.md`: layer `bathymetry_bands` in the same archive as the lines) and the web render half (a fill layer under the lines, legend at each band's real depths) are built; what remains is the upload — `scripts/bathymetry/tile.sh --upload dev/bathymetry-<date>.pmtiles`, a new key every upload, then point both apps' bathymetry env vars (`VITE_BATHYMETRY_PMTILES_URL`, `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` + the EAS environment) at it. Founder's data calls, recorded: band edges land only on contours a lake really has (accepted — Mascoma has no 5–10 ft band); unmeasured coves on fitted lakes ship unclipped, with the `lane` provenance flag on every band for a later treatment → B03 §2
+- ⚪ **A where drawn as an area** (board 5.13.1) — needs a `Where` geometry shape on both surfaces first → B03 §5
+- ⚪ **A cover photo on a Post** — no model field holds one → B03 §4
+- ⚪ **Towns on search hits** — naming each hit's town is a boundary read per keystroke; hits name the lake's type and state instead → B03 §1
+- ⚪ **The phone Latest's quick-filter chips and a sideways-scrolling Recommended** — not built in the phone pass → B03 §9
+- ⚪ **The weather sentence in the phone instrument strip** — not built in the phone pass → B03 §9
+- ⚪ **The "Weather from here" ring label** on the map's weather sample rings — not built → B03 §2
+
+#### Owed
+- The Geoapify account and `GEOAPIFY_API_KEY` on dev — until both exist the typed address answers `off` and Settings offers "Use my current location"; the provider flip reaches dev at the next `convex dev --once`
+- The founder's device and browser pass of the new app (desktop browsers and the Pixel)
+- Before driving dev: `convex dev --once`, then `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`
 
 ## Deferred register
 
@@ -931,7 +942,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | **The design pass** — FUI on both apps via Figma → SVG; the a11y floor (dynamic type, a screen-reader pass); the *Explore* rename if it's real (both apps still say *Map*); Skia re-entry if the pass asks for effects RN can't draw; the Q17 anchor UX | ⚪ | the founder's design time | `00` § Look and feel, `03` § Considered (Skia) |
 | **Sub-areas by chord** (D201) — the tool shipped 2026-09-21 (PR #76): two shoreline points, a side, a sagitta; the polygon derived on the server, the mouth stored beside it; the queue is a sixth request kind, `name_bay`, on the lake editor and `/admin/water/requests`. **Owed: the moderator session** — the 16 destination bays are filed by `pnpm --filter @skating/seed-destinations seed-bay-requests <bays.json> --requester=<profileId> --apply` after merge (the dev rows were removed with the smoke test; the seed is not held to the ten-open-bay-asks budget a skater has), then drawn: Northwest, Button, Dog Cove, Wolfeboro, Keeler, Maquam, Dillenbeck, Carry, Stevenson, St. Albans, Holcomb, City, Silver, Fishers, Huddle, Herrick | ⚪ | a moderator session on dev | D201, [`backlog/corpus-catalog-gaps.md`](./backlog/corpus-catalog-gaps.md) § 1 |
 | **Labels, contours and markers on zoom, without a selection** — today a lake's detail layers draw only once it is focused; zooming to a lake and seeing none of it is odd. One idea: when the camera settles at the zoom a tap would frame, with the lake mostly in view, select it in the URL and open the drawer at its lowest detent (founder, 2026-09-29: might feel smooth, might feel weird) | ⚪ | design | D202 (landmark labels are selected-body only, for now) |
-| **Location anchor (Q17) + a hosted geocoder** — Here / Home / Somewhere; Explore recenters, Latest re-weights, drive-time bands recompute per anchor (the D18 cache, one more entry); Home settable from an address | ⚪ | the design pass (where it lives; session vs setting; notifications stay on Home); the geocoder choice — leaning ORS `/geocode` from a Convex action | [`backlog/location-anchor.md`](./backlog/location-anchor.md), `04` § Geocoding |
+| **Location anchor (Q17) + a hosted geocoder** — Here / Home / Somewhere; Explore recenters, Latest re-weights, drive-time bands recompute per anchor (the D18 cache, one more entry); Home settable from an address | ⚪ | the design pass (where it lives; session vs setting; notifications stay on Home); the geocoder — Geoapify, as the typed home address uses (B03 §11) | [`backlog/location-anchor.md`](./backlog/location-anchor.md), `04` § Geocoding |
 | **`aboutBody` → a body's page, "holes" in the sheet, a where by distance along a track** — the A10-9 review's three design rows (D211; founder 2026-09-29) | ⚪ | the replay (facts); design (holes); A10-4 (track distance) | A10 § Deferred |
 | **Outbound email-group bridge** — a skater's report posted to their regional list(s), opt-in per group, under their name; not legal-gated (L5 *Not gated*) | ⚪ | design: which lists per region and their posting rules, a sender the lists accept; `packages/email` templates; after A10's Posts | [`backlog/email-group-bridge.md`](./backlog/email-group-bridge.md), Q8 |
 | **React Email in every sender** — `packages/email` exists with one template and no caller; `dataExport.ts` / `operatorAlerts.ts` / `notificationDelivery.ts` still hand-build HTML; the `react-dom/server`-in-an-`internalAction` question is untried | ⚪ | the next mail design pass; the runtime check is one `convex dev --once` | [`features/react-email.md`](./features/react-email.md), D38 |

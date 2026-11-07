@@ -2,7 +2,7 @@ import { pointFromTap, type SheetLandmark, type Where } from '@skating/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useConsoleMode } from './ConsoleMode';
-import { QuestionBlock } from './SheetPanel';
+import { QuestionBlock, SheetHint } from './SheetPanel';
 import type { SheetBody } from './useSheetBody';
 import { POINT_RADIUS_M, patchWhere, WherePicker } from './WherePicker';
 
@@ -44,7 +44,7 @@ export function WhereCards({
   activeId: string | null;
   onActivate: (id: string) => void;
 }) {
-  const { setMode } = useConsoleMode();
+  const { setMode, instrument } = useConsoleMode();
   const [placing, setPlacing] = useState(false);
   const active = useMemo(
     () => cards.find((c) => c.id === activeId) ?? cards[0] ?? null,
@@ -65,6 +65,8 @@ export function WhereCards({
   const handlers = useRef({ onChange: active?.onChange, onClose });
   handlers.current = { onChange: active?.onChange, onClose };
   useEffect(() => {
+    // No instrument (a phone): the picker draws its own lake below and takes the tap there.
+    if (!instrument) return;
     if (!open || activeCardId === undefined || activeLabel === undefined) {
       setMode(null);
       return;
@@ -80,7 +82,7 @@ export function WhereCards({
       onExit: () => handlers.current.onClose(),
     });
     return () => setMode(null);
-  }, [open, activeCardId, activeWhere, activeLabel, setMode]);
+  }, [open, activeCardId, activeWhere, activeLabel, instrument, setMode]);
 
   if (!open || !active) return null;
   const next = () => {
@@ -96,14 +98,15 @@ export function WhereCards({
       extra={
         <>
           {cards.length > 1 ? (
-            <span className="font-mono text-[10px] text-foreground-muted">
-              {index + 1} OF {cards.length}
+            <span className="font-(family-name:--family-mono) text-mono-sm text-fg2">
+              {index + 1} of {cards.length}
             </span>
           ) : null}
           <button
             type="button"
+            data-attr="where-skip"
             onClick={next}
-            className="h-[22px] px-2 font-semibold text-[11px] text-foreground-muted uppercase tracking-[0.08em] hover:text-foreground"
+            className="h-btn-xs cursor-pointer rounded-control border border-solid border-line2 bg-transparent px-(--space-2_5) text-kick font-semibold tracking-head text-fg1 uppercase outline-none hover:text-fg focus-visible:shadow-focus"
           >
             Skip
           </button>
@@ -114,7 +117,7 @@ export function WhereCards({
         <div
           role="tablist"
           aria-label="The chips with a where to answer"
-          className="flex gap-1 border-border border-b"
+          className="flex gap-(--space-1) border-0 border-b border-solid border-line"
         >
           {cards.map((card) => {
             const on = card.id === active.id;
@@ -124,17 +127,18 @@ export function WhereCards({
                 type="button"
                 role="tab"
                 aria-selected={on}
+                data-attr="where-card-tab"
                 onClick={() => onActivate(card.id)}
                 className={cn(
-                  '-mb-px border-b-2 px-2.5 pt-1 pb-1.5 text-xs',
+                  '-mb-px cursor-pointer border-0 border-b-2 border-solid bg-transparent px-(--space-2_5) pt-(--space-1) pb-(--space-1_5) text-assist outline-none focus-visible:shadow-focus',
                   on
-                    ? 'border-primary font-semibold text-foreground'
-                    : 'border-transparent text-foreground-muted hover:text-foreground',
+                    ? 'border-fg font-semibold text-fg'
+                    : 'border-transparent text-fg2 hover:text-fg',
                 )}
               >
                 {card.label}
                 {card.where === undefined ? (
-                  <span className="ml-1 text-warning">
+                  <span className="ml-(--space-1) text-warn">
                     <span aria-hidden>·</span>
                     <span className="sr-only">no answer yet</span>
                   </span>
@@ -149,14 +153,9 @@ export function WhereCards({
         {...(active.where !== undefined ? { where: active.where } : {})}
         body={body}
         onChange={active.onChange}
-        instrument
-        placing={placing}
-        onPlacing={setPlacing}
+        {...(instrument ? { instrument: true, placing, onPlacing: setPlacing } : {})}
       />
-      <p className="text-[11px] text-foreground-muted">
-        The ring on the lake is the same list, for the pointer.
-        {placing ? ' Click the water where you mean.' : ''}
-      </p>
+      {instrument && placing ? <SheetHint>Click the water where you mean.</SheetHint> : null}
       {active.onAnotherPlace && active.where !== undefined ? (
         <button
           type="button"
@@ -164,7 +163,8 @@ export function WhereCards({
             const id = active.onAnotherPlace?.();
             if (id) onActivate(id);
           }}
-          className="self-start font-semibold text-[11px] text-foreground-muted uppercase tracking-[0.08em] hover:text-foreground"
+          data-attr="where-another-place"
+          className="h-btn-xs cursor-pointer self-start rounded-control border border-dashed border-line2 bg-transparent px-(--space-2_5) text-kick font-semibold tracking-head text-fg2 uppercase outline-none hover:text-fg focus-visible:shadow-focus"
         >
           + Another place
         </button>

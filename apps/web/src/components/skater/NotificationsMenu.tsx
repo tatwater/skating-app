@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { bucketUnreadCount, useAnalytics } from '@/lib/analytics';
 
 import { useChromeOverlay } from './chrome';
+import { markWaterBodyOpenSource } from './lake/openSource';
 import { NotificationsMenuView } from './NotificationsMenuView';
 import { notificationRows } from './notificationRows';
 import { panelLinkState } from './panels/panelNavigation';
@@ -76,6 +77,7 @@ export function NotificationsMenu({ container }: { container?: HTMLElement | nul
         if (row.href === null) return;
         if (row.kind !== null) capture('notification_opened', { kind: row.kind });
         onOpenChange(false);
+        markWaterBodyOpenSource('notification', row.href);
         // A row that opens a card says it came from the bell; any other page ignores the state.
         router.history.push(row.href, panelLinkState('notification'));
       }}

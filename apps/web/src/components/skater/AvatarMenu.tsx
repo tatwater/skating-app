@@ -36,10 +36,12 @@ export function useThemeChoice(): {
 }
 
 /**
- * The avatar's menu, wired (board 3.24). Sign out asks first when an unsent draft would go with it
- * (board 7.15), the same guard Settings uses; "Open the draft" reopens the sheet over this page.
+ * Everything the account menu does, whichever skin draws it — the desktop avatar menu (board 3.24)
+ * or the phone's sheet (board 9.5): the person, the role, the theme, the avatar overlay, and Sign
+ * out through the draft guard (board 7.15), whose "Open the draft" reopens the sheet over this page.
+ * Spread `menu` on the view and `signOutDialog` on `SignOutDialog`.
  */
-export function AvatarMenu({ container }: { container?: HTMLElement | null } = {}) {
+export function useAccountMenu() {
   const router = useRouter();
   const location = useRouterState({ select: (s) => s.location });
   const profile = useQuery(api.profiles.current, {});
@@ -47,34 +49,46 @@ export function AvatarMenu({ container }: { container?: HTMLElement | null } = {
   const { theme, onThemeChange } = useThemeChoice();
   const guard = useGuardedSignOut();
   const { open, onOpenChange } = useChromeOverlay('avatar');
+  return {
+    menu: {
+      open,
+      onOpenChange,
+      person: {
+        name: profile?.displayName ?? '',
+        username: profile?.username ?? '',
+        ...(profile?.profileImageUrl ? { imageUrl: profile.profileImageUrl } : {}),
+      },
+      isModerator,
+      theme,
+      onThemeChange,
+    },
+    navigate: (href: string) => router.history.push(href),
+    requestSignOut: guard.request,
+    signOutDialog: {
+      ...guard.dialog,
+      onOpenDraft: (draft: { post: string }) => {
+        guard.dialog.onOpenChange(false);
+        const params = new URLSearchParams(location.searchStr);
+        params.set('post', draft.post);
+        router.history.push(`${location.pathname}?${params.toString()}`);
+      },
+    },
+  };
+}
 
+/** The avatar's menu, wired (board 3.24): the desktop skin of `useAccountMenu`. */
+export function AvatarMenu({ container }: { container?: HTMLElement | null } = {}) {
+  const account = useAccountMenu();
+  const scoped = container !== undefined ? { container } : {};
   return (
     <>
       <AvatarMenuView
-        open={open}
-        onOpenChange={onOpenChange}
-        person={{
-          name: profile?.displayName ?? '',
-          username: profile?.username ?? '',
-          ...(profile?.profileImageUrl ? { imageUrl: profile.profileImageUrl } : {}),
-        }}
-        isModerator={isModerator}
-        theme={theme}
-        onThemeChange={onThemeChange}
-        onNavigate={(href) => router.history.push(href)}
-        onSignOut={guard.request}
-        {...(container !== undefined ? { container } : {})}
+        {...account.menu}
+        onNavigate={account.navigate}
+        onSignOut={account.requestSignOut}
+        {...scoped}
       />
-      <SignOutDialog
-        {...guard.dialog}
-        onOpenDraft={(draft) => {
-          guard.dialog.onOpenChange(false);
-          const params = new URLSearchParams(location.searchStr);
-          params.set('post', draft.post);
-          router.history.push(`${location.pathname}?${params.toString()}`);
-        }}
-        {...(container !== undefined ? { container } : {})}
-      />
+      <SignOutDialog {...account.signOutDialog} {...scoped} />
     </>
   );
 }

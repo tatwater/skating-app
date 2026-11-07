@@ -34,7 +34,10 @@ your reports"). The app is not directed at children under 16.
 - **Your home location** — a single coordinate you set, used **only** to compute your
   drive-time filter. It is **private**: it is never shown to other users and is not part
   of any report. You may optionally show a **town label** (not an address) on your
-  profile.
+  profile. If you set it by **typing an address**, what you type is sent from our server to
+  Geoapify, our geocoding provider, to suggest matching addresses — with nothing that says who
+  you are. Only the coordinate of the suggestion you pick is stored; the text you typed is never
+  stored or logged by us.
 - **Reports you create** — the water body, the time you skated, ice/surface
   observations, optional thickness readings, optional weather snapshot, notes, and photos.
   **All reports are public** — they're shared with the community by design.
@@ -146,7 +149,8 @@ profile your individual reports are still public and show your name — a privat
 ## Sharing with third parties (processors)
 We use these services to run the app; they process data on our behalf:
 Convex (database & file storage), Clerk (authentication), Cloudflare (map tiles and the
-satellite-imagery archive), OpenRouteService (drive-time and walking routes), Open-Meteo and
+satellite-imagery archive), OpenRouteService (drive-time and walking routes), Geoapify (address
+suggestions when you type a home address), Open-Meteo and
 the US National Weather Service (weather), Sentry (crash/error), PostHog (website product
 analytics), Resend (email notifications
 and operator email), Expo and Apple/Google (app distribution & push), Google Photos — only when you pick from

@@ -193,7 +193,7 @@ describe('resending', () => {
     failedOffline();
     const photo = await pickPhotoThenFail();
     const result = await resendSheet(landed);
-    expect(result).toEqual(POSTED);
+    expect(result).toEqual({ ...POSTED, stillOpen: true });
     expect(getSheetResend()).toBe('none');
     expect(window.localStorage.getItem(KEY)).toBeNull();
     expect(sheetPhotoPreview(photo)).toBeNull();
@@ -243,7 +243,7 @@ describe('resending', () => {
 
   it('sendSheet is *Post* itself: it needs no earlier failure, and refuses an edit', async () => {
     setSheet(openSheet());
-    await expect(sendSheet(landed)).resolves.toEqual(POSTED);
+    await expect(sendSheet(landed)).resolves.toEqual({ ...POSTED, stillOpen: true });
     setSheet(
       postSheetForEdit(
         { reportId: 'r', waterBodyId: 'wb1', skateEndTime: Date.now(), photoIds: [] },
@@ -286,7 +286,7 @@ describe('one send at a time', () => {
     await expect(sendSheet(send)).resolves.toEqual({ kind: 'skipped' });
     expect(send).toHaveBeenCalledTimes(1);
     answer(POSTED);
-    await expect(first).resolves.toEqual(POSTED);
+    await expect(first).resolves.toEqual({ ...POSTED, stillOpen: true });
   });
 
   it('takes no change while it is out — it would close with the sheet', async () => {
@@ -323,7 +323,7 @@ describe('one send at a time', () => {
     const next = openSheet();
     setSheet(next);
     answer(POSTED);
-    await expect(flight).resolves.toEqual(POSTED);
+    await expect(flight).resolves.toEqual({ ...POSTED, stillOpen: false });
     expect(readStoredSheet(Date.now())?.sheet.draftId).toBe(next.draftId);
   });
 
@@ -345,7 +345,7 @@ describe('one send at a time', () => {
     const flight = resendSheet(send);
     bindSheetOwner('user_b');
     answer(POSTED);
-    await expect(flight).resolves.toEqual(POSTED);
+    await expect(flight).resolves.toEqual({ ...POSTED, stillOpen: false });
     await whenSheetPhotosSettled();
     expect(window.localStorage.getItem(KEY)).toBeNull();
     expect(fake.rows.size).toBe(0);

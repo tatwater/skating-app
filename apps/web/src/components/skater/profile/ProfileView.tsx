@@ -46,6 +46,8 @@ export type ProfileModel =
       commentCount: number;
       /** How many lakes they reported on — when the server sends it. */
       lakeCount?: number;
+      /** The count stopped at the server's scan cap: it reads "40+", never a number it didn't read. */
+      lakeCountCapped?: boolean;
       badges: string[];
       posts: PostCardData[];
     };
@@ -145,6 +147,7 @@ export function ProfileView({
               reports={model.reportCount}
               comments={model.commentCount}
               lakes={model.lakeCount}
+              lakesCapped={model.lakeCountCapped === true}
             />
             {model.badges.length > 0 && (
               <ul
@@ -256,15 +259,20 @@ function Stats({
   reports,
   comments,
   lakes,
+  lakesCapped = false,
 }: {
   reports: number;
   comments: number;
   lakes: number | undefined;
+  lakesCapped?: boolean;
 }) {
-  const cells: [string, number][] = [
-    ['Reports', reports],
-    ['Comments', comments],
-    ...(lakes !== undefined ? ([['Lakes', lakes]] as [string, number][]) : []),
+  const count = (n: number) => n.toLocaleString('en-US');
+  const cells: [string, string][] = [
+    ['Reports', count(reports)],
+    ['Comments', count(comments)],
+    ...(lakes !== undefined
+      ? ([['Lakes', `${count(lakes)}${lakesCapped ? '+' : ''}`]] as [string, string][])
+      : []),
   ];
   return (
     <dl className="m-0 flex border border-line border-solid">
@@ -277,7 +285,7 @@ function Stats({
             {label}
           </dt>
           <dd className="m-0 font-(family-name:--family-mono) font-medium text-fg text-stat leading-none">
-            {value.toLocaleString('en-US')}
+            {value}
           </dd>
         </div>
       ))}

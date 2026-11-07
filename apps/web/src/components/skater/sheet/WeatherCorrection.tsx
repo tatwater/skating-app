@@ -11,8 +11,8 @@ import {
   SKY_LABELS,
 } from '@skating/core';
 import { useId, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/kit/button';
+import { Input } from '@/components/kit/input';
 import { SheetChip } from './SheetChip';
 
 /**
@@ -65,11 +65,14 @@ export function WeatherCorrection({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-[2px] border border-border bg-background p-2.5">
-      <div className="flex gap-2">
+    <div
+      data-slot="weather-correction"
+      className="flex flex-col gap-(--space-2_5) border border-solid border-line2 bg-panel p-(--space-3)"
+    >
+      <div className="flex gap-(--space-2)">
         <label
           htmlFor={`${id}-tempF`}
-          className="flex flex-1 flex-col gap-1 text-foreground-muted text-xs"
+          className="flex flex-1 flex-col gap-(--space-1) text-kick leading-none font-medium tracking-head text-fg3 uppercase"
         >
           Air °F
           <Input
@@ -84,7 +87,7 @@ export function WeatherCorrection({
         </label>
         <label
           htmlFor={`${id}-windMph`}
-          className="flex flex-1 flex-col gap-1 text-foreground-muted text-xs"
+          className="flex flex-1 flex-col gap-(--space-1) text-kick leading-none font-medium tracking-head text-fg3 uppercase"
         >
           Wind mph
           <Input
@@ -99,7 +102,7 @@ export function WeatherCorrection({
         </label>
         <label
           htmlFor={`${id}-windDir`}
-          className="flex flex-1 flex-col gap-1 text-foreground-muted text-xs"
+          className="flex flex-1 flex-col gap-(--space-1) text-kick leading-none font-medium tracking-head text-fg3 uppercase"
         >
           From
           <Input
@@ -113,7 +116,7 @@ export function WeatherCorrection({
           />
         </label>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-(--space-1_5)">
         {SKY_CONDITIONS.map((s) => (
           <SheetChip
             key={s}
@@ -128,7 +131,7 @@ export function WeatherCorrection({
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-(--space-1_5)">
         {PRECIP_TYPES.map((p) => (
           <SheetChip
             key={p}
@@ -142,10 +145,10 @@ export function WeatherCorrection({
             }}
           />
         ))}
+        <Button size="sm" className="ml-auto" data-attr="weather-correct-done" onClick={onDone}>
+          Done
+        </Button>
       </div>
-      <Button size="sm" variant="outline" className="self-start" onClick={onDone}>
-        Done
-      </Button>
     </div>
   );
 }

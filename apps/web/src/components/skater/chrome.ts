@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { useCallback, useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect } from 'react';
 
 import { focusOwnsPrintableKeys } from '@/lib/keys';
 import { type ChromeOverlay, useChromeStore } from '@/stores/chromeStore';
@@ -36,12 +36,13 @@ export function useChromeOverlay(kind: ChromeOverlay): {
  * A modal surface the top bar must not open search over: a dialog, an alert dialog, or a sheet
  * (the New report sheet is a dialog). The bell's own plate is a dialog too, but it's chrome — `/`
  * from inside it moves to search, as the one-overlay rule says. An inset card (a report, hazard or
- * bounty) is a non-modal dialog that *is* the page's column, so it doesn't block either.
+ * bounty) is a non-modal dialog that *is* the page's column, so it doesn't block either — nor does
+ * the phone's lake drawer (row 9), the same column in a sheet over the map.
  */
 export function blockingModalOpen(root: ParentNode = document): boolean {
   return (
     root.querySelector(
-      '[role="dialog"]:not([data-slot="popover-content"]):not([data-slot="inset-card"]),[role="alertdialog"],[data-slot="sheet-content"]',
+      '[role="dialog"]:not([data-slot="popover-content"]):not([data-slot="inset-card"]):not([data-slot="phone-lake-drawer"]),[role="alertdialog"],[data-slot="sheet-content"]',
     ) !== null
   );
 }
@@ -109,6 +110,25 @@ export function activeTopLevel(pathname: string): 'explore' | 'latest' | null {
   if (path === '/' || /^\/(water|report|hazard|bounty)\/[^/]+$/.test(path)) return 'explore';
   if (path === '/latest' || path === '/feed') return 'latest';
   return null;
+}
+
+/**
+ * Does the page under the shell mount the report sheet's host? The skater layout does; `/about` and
+ * the signed-in 404 wear the shell outside it, where a `?post=` would be read by nothing.
+ */
+export const SheetHostContext = createContext(true);
+
+/**
+ * Where New report goes: over this page when the sheet's host is under it (`withNewReport`), else
+ * over Explore — never a `?post=new` on a page that can't open it.
+ */
+export function useNewReportHref(): (pathname: string, search: string) => string {
+  const hosted = useContext(SheetHostContext);
+  return useCallback(
+    (pathname: string, search: string) =>
+      hosted ? withNewReport(pathname, search) : withNewReport('/', ''),
+    [hosted],
+  );
 }
 
 /**

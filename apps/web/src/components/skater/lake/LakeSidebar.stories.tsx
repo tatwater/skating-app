@@ -1,3 +1,4 @@
+import type { FeedCardData } from '@skating/core';
 import {
   type LngLat,
   NO_KNOWN_HAZARDS,
@@ -11,6 +12,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { Section } from '../../kit/section-slug';
 import { must } from '../../kit/storyKit';
 import { MASCOMA_RINGS, NEARBY_RINGS, type Ring } from '../map/mapStoryData';
+import { CARD_KATE_BLOCKED, CARD_PAT, CARD_SARAH } from '../panels/panelFixtures';
 import { type Mode, SkaterPair } from '../storySupport';
 import { IceHistoryView, LinksView, PublicAccessView, TermList } from './AboutTab';
 import { ActionPane } from './ActionPane';
@@ -21,7 +23,7 @@ import { LakeHeader, type LakeHeaderProps } from './LakeHeader';
 import type { LakeRowModel } from './LakeRow';
 import { LakeSidebar, LakeTabs } from './LakeSidebar';
 import { LakeSidebarSkeleton, LakeUnavailable, StandingNoticeView } from './LakeStates';
-import type { HazardRowInput, ReportRowModel } from './lakeModel';
+import type { HazardRowInput } from './lakeModel';
 import { useEscapeToClose } from './lakeNav';
 import type { LakeTab } from './lakeSearch';
 import { AccessRulingCardView, ModeratorToolsView } from './ModeratorCard';
@@ -138,57 +140,26 @@ const NARROWS: HazardRowInput = {
   confirmCount: 2,
 };
 
-const report = (over: Partial<ReportRowModel> & Pick<ReportRowModel, 'id'>): ReportRowModel => ({
-  when: 'Today · 11:40 AM',
-  where: '',
-  badges: [],
-  notes: null,
-  iceTypes: [],
-  photoCount: 0,
-  ...over,
-});
-
-const REPORTS = [
+/** The three reports the boards draw, as the Reports tab reads them: cards. */
+const REPORTS: FeedCardData[] = [
   {
-    author: { name: 'Pat Lacasse' },
-    row: report({
-      id: 'pat',
-      where: 'Mascoma South · On the ice',
-      badges: [
-        { label: 'Experienced only', kind: 'suitability', tone: 'default' },
-        { label: 'Good', kind: 'quality', tone: 'default' },
-      ],
-      notes:
-        'Black ice from the launch to the islands, a skim of new snow past them. Drilled 5″ off the beach and 4″ near the islands.',
-      iceTypes: ['Black ice', 'Snow covered'],
-      photoCount: 3,
-    }),
+    ...CARD_PAT,
+    reportId: 'pat',
+    notesExcerpt:
+      'Black ice from the launch to the islands, a skim of new snow past them. Drilled 5″ off the beach and 4″ near the islands.',
   },
   {
-    author: { name: 'Sarah Berman' },
-    row: report({
-      id: 'sarah',
-      when: 'Thu · 3:15 PM',
-      where: 'Mascoma North · From shore',
-      badges: [{ label: "Don't go", kind: 'suitability', tone: 'bad' }],
-      notes: 'Open lead running from the bridge into the north basin. Didn’t go out.',
-    }),
+    ...CARD_SARAH,
+    reportId: 'sarah',
+    notesExcerpt: 'Open lead running from the bridge into the north basin. Didn’t go out.',
   },
   {
-    author: { name: 'Kate Donovan' },
-    row: report({
-      id: 'kate',
-      when: 'Wed · 9:05 AM',
-      where: 'Mascoma South · On the ice',
-      badges: [
-        { label: 'Not for beginners', kind: 'suitability', tone: 'default' },
-        { label: 'Fair', kind: 'quality', tone: 'default' },
-      ],
-      notes: 'Bumpy refrozen slush near the beach, better out past the point.',
-      iceTypes: ['Snow ice'],
-    }),
+    ...CARD_KATE_BLOCKED,
+    reportId: 'kate',
+    blocked: false,
+    notesExcerpt: 'Bumpy refrozen slush near the beach, better out past the point.',
   },
-] as const;
+];
 
 /** The lake page's sidebar, from its views, beside a stand-in for the map. */
 function LakeFrame({
@@ -217,12 +188,7 @@ function LakeFrame({
           </>
         }
         body={
-          <LakeTabs
-            tab={tab}
-            onTabChange={() => {}}
-            overlay={overlay}
-            contourCredit="5 ft contours, surveyed by NH GRANIT."
-          >
+          <LakeTabs tab={tab} onTabChange={() => {}} overlay={overlay}>
             {children}
           </LakeTabs>
         }
@@ -252,11 +218,11 @@ function ReportsBody({
       <ReportsListView
         model={{
           status: 'ready',
-          rows: empty ? [] : [...REPORTS],
+          cards: empty ? [] : REPORTS,
           canLoadMore: false,
           loadingMore: false,
         }}
-        onOpen={(_, e) => e.preventDefault()}
+        onOpen={() => {}}
         onLoadMore={() => {}}
         emptyLine="No reports yet this season — be the first."
       />
@@ -346,14 +312,13 @@ export const LakeReports: Story = {
       getComputedStyle(q.getByRole('link', { name: 'Add a report' })).borderTopLeftRadius,
     ).toBe('2px');
     // The last report has no rule under it.
-    const rows = quad.querySelectorAll<HTMLElement>('[data-slot="report-row"]');
+    const rows = quad.querySelectorAll<HTMLElement>('[data-slot="report-card"]');
     await expect(getComputedStyle(rows[rows.length - 1] as HTMLElement).borderBottomWidth).toBe(
       '0px',
     );
-    // The attribution rests at the foot.
-    await expect(
-      q.getByText('Basemap and water © OpenStreetMap contributors.'),
-    ).toBeInTheDocument();
+    // No credits in the sidebar: every one, the contours' too, is the map chip's.
+    await expect(quad.querySelector('[data-slot="lake-sidebar-foot"]')).toBeNull();
+    await expect(quad.textContent).not.toMatch(/OpenStreetMap|contours, surveyed/);
   },
 };
 

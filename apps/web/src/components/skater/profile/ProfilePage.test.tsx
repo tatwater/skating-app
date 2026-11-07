@@ -70,6 +70,7 @@ function publicProfile(over: Record<string, unknown> = {}) {
     badges: ['trusted_reporter'],
     reportCount: 64,
     commentCount: 112,
+    lakeCount: 9,
     posts: [POST],
     ...over,
   };
@@ -117,6 +118,7 @@ describe('someone else’s profile', () => {
     expect(screen.getByText('Enfield, NH')).toBeInTheDocument();
     expect(screen.getByText('64')).toBeInTheDocument();
     expect(screen.getByText('112')).toBeInTheDocument();
+    expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('Trusted Reporter')).toBeInTheDocument();
     const post = screen.getByText('Bumpy by the beach, better past the point').closest('article');
     expect(post).toHaveClass('ph-no-capture');
@@ -128,6 +130,15 @@ describe('someone else’s profile', () => {
     // Not yours: no bounties, no moderator tools for a member.
     expect(screen.queryByText('Your bounties')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Moderator tools' })).toBeNull();
+  });
+
+  it('says a lake count that ran past the scan cap is a floor', () => {
+    fakes.queries.set(
+      'profiles:getPublicProfile',
+      publicProfile({ lakeCount: 500, lakeCountCapped: true }),
+    );
+    page();
+    expect(screen.getByText('500+')).toBeInTheDocument();
   });
 
   it('blocks through the dialog — the reports stay, it says', async () => {
@@ -245,7 +256,12 @@ describe('your own profile', () => {
     );
     fakes.queries.set('bounties:myBounties', [
       { _id: 'b1', createdAt: NOW - 60_000 },
-      { _id: 'b2', createdAt: NOW - 30 * 86_400_000, fulfilledAt: NOW - 20 * 86_400_000 },
+      {
+        _id: 'b2',
+        createdAt: NOW - 30 * 86_400_000,
+        fulfilledAt: NOW - 20 * 86_400_000,
+        fulfilledBy: { displayName: 'Pat Lacasse', username: 'pat' },
+      },
       { _id: 'b3', createdAt: NOW - 40 * 86_400_000 },
     ]);
     fakes.queries.set('bounties:getDetail', ({ bountyId }: { bountyId: string }) =>
@@ -285,7 +301,8 @@ describe('your own profile', () => {
     expect(screen.getByText('Your bounties')).toBeInTheDocument();
     expect(screen.getByText('1 open')).toBeInTheDocument();
     expect(screen.getByText('Smith Pond')).toBeInTheDocument();
-    expect(screen.getByText(/Answered by/)).toBeInTheDocument();
+    // The accepted report's author, from myBounties — not the first candidate (Ana).
+    expect(screen.getByText(/Answered by/)).toHaveTextContent('Pat Lacasse');
     fireEvent.click(screen.getByRole('button', { name: 'Review on the map' }));
     expect(navigate).toHaveBeenCalledWith('/bounty/b1');
     await act(async () =>

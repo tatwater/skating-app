@@ -4,8 +4,21 @@
  * and no React, so every rule here has a test.
  */
 
-import { isActiveRow, type PartialStandingInput, representativePoint } from '@skating/core';
-import { LABEL_DOT_RADIUS, labelPriority, labelSlug, MAX_LAKE_LABELS } from '@/lib/lakeLabelLayout';
+import {
+  isActiveRow,
+  metersToFeet,
+  metersToMiles,
+  type PartialStandingInput,
+  representativePoint,
+} from '@skating/core';
+import {
+  LABEL_DOT_RADIUS,
+  labelPriority,
+  labelSlug,
+  MAX_LAKE_LABELS,
+  type RecentCount,
+} from '@/lib/lakeLabelLayout';
+import type { MapKeyKind } from './MapKey';
 
 export interface LatLngLike {
   lat: number;
@@ -40,21 +53,58 @@ export function bountyCountsByBody(
 }
 
 /**
- * Each asked body's recent report end times, from `reports.recentCardsForBodies`. Every asked id gets
- * an entry, so a missing one means "not read yet" and its label holds its slug back rather than
- * claiming "No recent reports" before it knows. Blocked authors don't count.
+ * Each asked body's recent-report count, from `reports.recentCountsForBodies`. Every asked id gets an
+ * entry, so a missing one means "not read yet" and its label holds its slug back rather than claiming
+ * "No recent reports" before it knows. Viewer-free by design: a block never hides a report, so it
+ * never changes a count (D13).
  */
-export function reportTimesByBody(
-  cards: readonly { waterBodyId: string; skateEndTime: number; blocked?: boolean }[] | undefined,
+export function reportCountsByBody(
+  counts: Readonly<Record<string, RecentCount>> | undefined,
   askedIds: readonly string[],
-): ReadonlyMap<string, number[]> | undefined {
-  if (cards === undefined) return undefined;
-  const times = new Map<string, number[]>(askedIds.map((id) => [id, []]));
-  for (const card of cards) {
-    if (card.blocked) continue;
-    times.get(card.waterBodyId)?.push(card.skateEndTime);
-  }
-  return times;
+): ReadonlyMap<string, RecentCount> | undefined {
+  if (counts === undefined) return undefined;
+  return new Map(askedIds.map((id) => [id, counts[id] ?? { count: 0, capped: false }]));
+}
+
+/**
+ * The hazards the map draws: the open lake's from its own read, every other lake's from the
+ * viewport read, so the region is never silently hazard-free (D3). While the open lake's read is
+ * loading, its viewport rows stand in, so a lake never blinks to empty. `focusIds` names the open
+ * lake both ways (the id it was opened by and its survivor's), so one hazard is never drawn twice.
+ * A capped viewport read (`truncated`) still draws every row it has — and nothing reads the map's
+ * hazard-free stretches as clear ice.
+ */
+export function mergeHazards<H extends { waterBodyId: string }>(
+  focused: readonly H[] | undefined,
+  inViewport: readonly H[] | undefined,
+  focusIds: ReadonlySet<string>,
+): H[] {
+  const around = inViewport ?? [];
+  const isFocus = (h: H) => focusIds.has(h.waterBodyId);
+  const own = focusIds.size === 0 ? [] : (focused ?? around.filter(isFocus));
+  return [...own, ...around.filter((h) => !isFocus(h))];
+}
+
+/**
+ * The walk's label, "0.3 mi on foot" (board 1.5): tenths of a mile, or feet under a tenth (US units).
+ * `undefined` for a walk with no length to state.
+ */
+export function walkLabel(meters: number | undefined): string | undefined {
+  if (meters === undefined || !Number.isFinite(meters) || meters <= 0) return undefined;
+  const miles = metersToMiles(meters);
+  if (miles >= 0.1) return `${(Math.round(miles * 10) / 10).toFixed(1)} mi on foot`;
+  return `${Math.max(10, Math.round(metersToFeet(meters) / 10) * 10)} ft on foot`;
+}
+
+/** The walk lines with their labels, for the approach source's symbol layer. */
+export function withWalkLabels(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
+  return {
+    ...fc,
+    features: fc.features.map((f) => {
+      const label = walkLabel(f.properties?.meters as number | undefined);
+      return label ? { ...f, properties: { ...f.properties, walkLabel: label } } : f;
+    }),
+  };
 }
 
 export interface LakeLabelModel {
@@ -74,8 +124,8 @@ export interface LakeLabelModel {
 export interface LabelInputs {
   favoriteIds: ReadonlySet<string>;
   bountyCounts: ReadonlyMap<string, number>;
-  /** Recent report times per body; a body with no entry hasn't been read yet. */
-  reportTimes: ReadonlyMap<string, number[]> | undefined;
+  /** Recent-report counts per body; a body with no entry hasn't been read yet. */
+  reportCounts: ReadonlyMap<string, RecentCount> | undefined;
   dimmedIds: ReadonlySet<string>;
   /** The focused lake: it *is* the view, so it carries no label (mock `mascomaOverlay`). */
   focusId: string | null;
@@ -97,7 +147,7 @@ export function buildLakeLabels(
   const {
     favoriteIds,
     bountyCounts,
-    reportTimes,
+    reportCounts,
     dimmedIds,
     focusId,
     showFavorites,
@@ -110,12 +160,12 @@ export function buildLakeLabels(
       const inactive = !isActiveRow(body);
       const favorite = showFavorites && favoriteIds.has(body._id);
       const openBounties = bountyCounts.get(body._id) ?? 0;
-      const times = reportTimes?.get(body._id);
+      const recent = reportCounts?.get(body._id);
       return {
         id: body._id,
         name: body.name,
         anchor: labelAnchor(body),
-        slug: labelSlug({ inactive, skateEndTimes: times, now, timeZone }),
+        slug: labelSlug({ inactive, recent, now, timeZone }),
         favorite,
         openBounties,
         inactive,
@@ -123,7 +173,7 @@ export function buildLakeLabels(
         priority: labelPriority({
           favorite,
           openBounties,
-          recentReports: times?.length ?? 0,
+          recentReports: recent?.count ?? 0,
           inactive,
           surfaceAreaSqM: body.surfaceAreaSqM,
         }),
@@ -136,9 +186,9 @@ export function buildLakeLabels(
 /** Which bodies' report counts to read: the labeled set before counts arrive, sorted so the key is stable. */
 export function labelCountIds(
   bodies: readonly LabelableBody[],
-  inputs: Omit<LabelInputs, 'reportTimes' | 'now'>,
+  inputs: Omit<LabelInputs, 'reportCounts' | 'now'>,
 ): string[] {
-  return buildLakeLabels(bodies, { ...inputs, reportTimes: undefined, now: 0 })
+  return buildLakeLabels(bodies, { ...inputs, reportCounts: undefined, now: 0 })
     .map((label) => label.id)
     .sort();
 }
@@ -195,6 +245,26 @@ export function markObstacle(x: number, y: number, half = HAZARD_MARK_EXTENT) {
 
 /** The dot's radius, re-exported for the label component so the two can't disagree. */
 export { LABEL_DOT_RADIUS };
+
+/** A hazard's key entry by its tone. */
+export const HAZARD_KEY_KIND: Readonly<Record<HazardTone, MapKeyKind>> = {
+  danger: 'hazard',
+  healing: 'healing',
+  passage: 'passage',
+};
+
+/** What the region map's key lists: only the kinds it is drawing right now. */
+export function skaterMapKeyKinds(shown: {
+  putIns: boolean;
+  hazards: readonly Pick<HazardMarkModel, 'tone'>[];
+  tracks: boolean;
+}): MapKeyKind[] {
+  const kinds = new Set<MapKeyKind>();
+  if (shown.putIns) kinds.add('putIn');
+  for (const h of shown.hazards) kinds.add(HAZARD_KEY_KIND[h.tone]);
+  if (shown.tracks) kinds.add('track');
+  return [...kinds];
+}
 
 // ── Bays ──────────────────────────────────────────────────────────────────────────────────────
 

@@ -16,6 +16,7 @@ vi.mock('@/lib/analytics', async (load) => ({
 
 import {
   formatCoord,
+  pinNear,
   RequestLakeHost,
   RequestLakePane,
   SkaterRequestLakeHost,
@@ -139,5 +140,39 @@ describe('the pieces', () => {
   it('the deep-linked pane says how to start', () => {
     render(<RequestLakePane />);
     expect(screen.getByText(/Click water we don’t list on the map/)).toBeInTheDocument();
+  });
+});
+
+describe('the dialog opens by the click', () => {
+  const size = { width: 400, height: 300 };
+  const viewport = { width: 1280, height: 800 };
+
+  it('sits to the right of the point and a little above it', () => {
+    expect(pinNear({ x: 600, y: 400 }, size, viewport)).toEqual({ left: 616, top: 300 });
+  });
+
+  it('flips left when the right has no room, and clamps inside the viewport', () => {
+    expect(pinNear({ x: 1100, y: 400 }, size, viewport).left).toBe(684);
+    expect(pinNear({ x: 600, y: 790 }, size, viewport).top).toBe(484);
+    expect(pinNear({ x: 600, y: 10 }, size, viewport).top).toBe(16);
+    expect(pinNear({ x: 10, y: 400 }, size, { width: 300, height: 800 }).left).toBe(16);
+  });
+
+  it('pins the popup beside the pending click’s screen point', () => {
+    mount();
+    act(() =>
+      useSkaterMapStore.getState().setPendingMapClick({ ...CLICK, screen: { x: 200, y: 300 } }),
+    );
+    const popup = document.querySelector<HTMLElement>('[data-slot="request-lake"]');
+    // jsdom lays nothing out: a zero-sized popup sits the gap right of the point.
+    expect(popup?.style.left).toBe('216px');
+    expect(popup?.style.top).toBe('300px');
+    expect(popup?.style.translate).toBe('none');
+  });
+
+  it('stays centered without one', () => {
+    mount();
+    act(() => useSkaterMapStore.getState().setPendingMapClick(CLICK));
+    expect(document.querySelector<HTMLElement>('[data-slot="request-lake"]')?.style.left).toBe('');
   });
 });

@@ -98,12 +98,15 @@ export type SheetSender = (
 
 /**
  * What came of `sendSheet`. `posted`: the sheet is closed and forgotten, the caller says so and goes
- * where it likes. `refused`: the sheet stands, its attempt updated; a permanent refusal stops waiting
- * (the words are on `attempt.errorMessage` too, for a sheet that was not on screen). `skipped`:
- * nothing was sent — nothing to send, or a send already in flight.
+ * where it likes — but only when `stillOpen`: a sheet that was no longer the open one when its Post
+ * landed (the author closed it and opened another) is already forgotten here, and the caller must
+ * not clear or navigate away from what is open now. `refused`: the sheet stands, its attempt
+ * updated; a permanent refusal stops waiting (the words are on `attempt.errorMessage` too, for a
+ * sheet that was not on screen). `skipped`: nothing was sent — nothing to send, or a send already
+ * in flight.
  */
 export type SheetSendResult =
-  | { kind: 'posted'; postId: string; reportId: string }
+  | { kind: 'posted'; postId: string; reportId: string; stillOpen: boolean }
   | { kind: 'refused'; message: string }
   | { kind: 'skipped' };
 
@@ -567,7 +570,7 @@ export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
       if (readRecord()?.sheet.draftId === post.draftId) clearStoredSheet();
       emit();
     }
-    return { kind: 'posted', postId: outcome.postId, reportId: outcome.reportId };
+    return { kind: 'posted', postId: outcome.postId, reportId: outcome.reportId, stillOpen };
   }
   if (stillOpen) setSheetAttempt(outcome.draft);
   else emit();
@@ -595,6 +598,11 @@ const getServerResend = (): SheetResendState => 'none';
 /** Subscribe to where the open sheet stands on resending. */
 export function useSheetResend(): SheetResendState {
   return useSyncExternalStore(subscribe, getSheetResend, getServerResend);
+}
+
+/** The open sheet, read outside React. */
+export function getSheet(): PostSheet | null {
+  return current;
 }
 
 /** The open sheet's last failed attempt, read outside React. */

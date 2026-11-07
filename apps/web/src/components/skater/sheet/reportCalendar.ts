@@ -15,10 +15,24 @@ import {
   type EndTimeChip,
   FRESHNESS_WINDOW_MS,
   freshnessRefusal,
+  WHEN_CHIP_COUNT,
   zonedInstantOnDayOf,
   zonedMinuteOfDay,
   zonedParts,
 } from '@skating/core';
+
+/**
+ * The End chips as the web offers them (founder, 2026-11-07): the pinned "9:25 AM · now" minute
+ * only under a finger — nobody brings their laptop to the lake, so on a desk "now" is not when
+ * anyone got off — and at most `WHEN_CHIP_COUNT`, so the row never wraps. One list for the chip
+ * row and the ruler's tappable ticks, so the two never disagree about what the ladder is.
+ */
+export function offeredEndChips(
+  chips: readonly EndTimeChip[],
+  coarsePointer: boolean,
+): EndTimeChip[] {
+  return chips.filter((c) => coarsePointer || !c.pinned).slice(0, WHEN_CHIP_COUNT);
+}
 
 export interface CalendarDay {
   /** The day's first instant (local midnight) and the first instant of the next day. */
@@ -94,9 +108,19 @@ function dayDelta(fromMs: number, toMs: number, timeZone: string): number {
   );
 }
 
-/** Clamp an instant into the window an end time can post with (D199). */
+const MINUTE_MS = 60_000;
+
+/**
+ * Clamp an instant into the window an end time can post with (D199), on the row's minute grain:
+ * the window's raw edges carry `now`'s seconds, and an end that kept them would sit exactly on
+ * the freshness edge — "too_old" by the time the Post lands. The old edge rounds up (still
+ * inside), the new edge down (never in the future), so a clamped end is a whole minute that
+ * still posts.
+ */
 export function clampToWindow(ms: number, nowMs: number): number {
-  return Math.min(Math.max(ms, nowMs - FRESHNESS_WINDOW_MS), nowMs);
+  const oldEdge = Math.ceil((nowMs - FRESHNESS_WINDOW_MS) / MINUTE_MS) * MINUTE_MS;
+  const newEdge = Math.floor(nowMs / MINUTE_MS) * MINUTE_MS;
+  return Math.min(Math.max(ms, oldEdge), newEdge);
 }
 
 /**

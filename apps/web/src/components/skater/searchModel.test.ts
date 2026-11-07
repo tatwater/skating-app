@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  acresLabel,
   bayPickId,
   buildRecentGroup,
   buildResultGroups,
@@ -162,6 +163,21 @@ describe('rows', () => {
       'https://x/y.png',
     );
   });
+
+  it('says how much a skater has reported, when the counter is there', () => {
+    expect(rowFromSkater({ ...skater(3), reportCount: 14 }).sub).toBe('@skater3 · 14 reports');
+    expect(rowFromSkater({ ...skater(4), reportCount: 1 }).sub).toBe('@skater4 · 1 report');
+    expect(rowFromSkater({ ...skater(5), reportCount: 1212 }).sub).toBe('@skater5 · 1,212 reports');
+  });
+
+  it('says how big a lake is, in acres', () => {
+    const big = rowFromWaterHit({ ...lake('w2'), surfaceAreaSqM: 1143 * 4046.8564224 }, [], NOW);
+    expect(big.sub).toMatch(/ · 1,143 acres$/);
+    expect(acresLabel(100)).toBe('1 acre');
+    expect(acresLabel(undefined)).toBeUndefined();
+    expect(acresLabel(0)).toBeUndefined();
+    expect(acresLabel(Number.NaN)).toBeUndefined();
+  });
 });
 
 describe('buildResultGroups', () => {
@@ -238,6 +254,18 @@ describe('buildRecentGroup', () => {
     expect(group?.items[0]?.meta).toBe('1 report today');
     expect(group?.items[1]).toMatchObject({ sub: 'In Mascoma Lake', meta: '1 report today' });
     expect(group?.items[2]).toMatchObject({ sub: '@pl', imageUrl: 'https://x/p.png' });
+  });
+
+  it('draws a recent lake with the outline its read brought, when no report did', () => {
+    const outline = { rings: [[[0, 0]]], bbox: [0, 0, 1, 1] } as never;
+    const withOutline = new Map<string, ResolvedPick>([
+      [
+        'water_body:w1',
+        { kind: 'water_body', name: 'Mascoma Lake', type: 'lake', states: [], outline },
+      ],
+    ]);
+    const [group] = buildRecentGroup([{ kind: 'water_body', id: 'w1' }], withOutline, [], NOW);
+    expect(group?.items[0]?.silhouette).toBe(outline);
   });
 
   it('is no group at all with nothing to show', () => {

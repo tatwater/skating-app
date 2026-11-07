@@ -94,8 +94,13 @@ describe('bountyCards', () => {
       createdAt: NOW - 20 * DAY,
       expiresAt: NOW - 18 * DAY,
       fulfilledAt: new Date(2026, 11, 28).getTime(),
+      fulfilledBy: 'Pat Lacasse',
       waterBody: { name: 'Crystal Lake' },
-      fulfillingReports: [{ _id: 'r3', authorName: 'Ana Morales', skateEndTime: 0 }],
+      // Ana came in first; the requester accepted Pat's report.
+      fulfillingReports: [
+        { _id: 'r3', authorName: 'Ana Morales', skateEndTime: 0 },
+        { _id: 'r4', authorName: 'Pat Lacasse', skateEndTime: 0 },
+      ],
     },
     {
       ...base,
@@ -103,6 +108,8 @@ describe('bountyCards', () => {
       status: 'fulfilled',
       createdAt: NOW - 40 * DAY,
       expiresAt: NOW - 38 * DAY,
+      // Candidates, but no record of whose report was accepted: nobody is credited.
+      fulfillingReports: [{ _id: 'r5', authorName: 'Ana Morales', skateEndTime: 0 }],
     },
     {
       ...base,
@@ -141,7 +148,7 @@ describe('bountyCards', () => {
         id: 'b-done',
         place: 'Crystal Lake',
         status: 'Fulfilled · Dec 28',
-        answeredBy: 'Ana Morales',
+        answeredBy: 'Pat Lacasse',
       },
       {
         id: 'b-gone',

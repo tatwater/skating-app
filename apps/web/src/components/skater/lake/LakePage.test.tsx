@@ -19,6 +19,9 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
+import { MapFloatContext } from '../map/MapFloat';
+import { useBountyLakeId, useHazardLakeId, useReportLakeId } from '../panels/panelLake';
+import { LakeBehind } from './LakeBehind';
 import { LakePage } from './LakePage';
 import { lakeSearchSchema } from './lakeSearch';
 import { resetWaterBodyOpenSource } from './openSource';
@@ -53,6 +56,7 @@ const MASCOMA = {
 const NORTH = {
   _id: 'bay1',
   name: 'Mascoma North',
+  centroid: { lat: 43.64, lng: -72.15 },
   surfaceAreaSqM: 296 * ACRE,
   maxDepthM: 36 * FT,
   maxDepthSource: 'state_agency',
@@ -70,12 +74,18 @@ const HAZARD = {
 };
 
 const REPORT = {
-  _id: 'r1',
-  authorId: 'p1',
+  reportId: 'r1',
+  waterBodyId: 'mascoma',
+  bodyName: 'Mascoma Lake',
   skateEndTime: now - 60 * 60_000,
+  iceTypes: [],
+  surfaceTags: [],
   suitability: 'experienced_only',
   skateQuality: 'good',
-  notes: 'Black ice from the launch to the islands.',
+  notesExcerpt: 'Black ice from the launch to the islands.',
+  photoThumbUrls: [],
+  author: { displayName: 'Pat Lacasse', username: 'placasse' },
+  blocked: false,
 };
 
 function lake(over: Record<string, unknown> = {}) {
@@ -387,17 +397,18 @@ describe('the Reports tab', () => {
   });
 
   it('holds the frames while the lists load', () => {
-    answer({ 'hazards:listForBody': undefined, 'profiles:publicByIds': undefined });
+    answer({ 'hazards:listForBody': undefined });
     fakes.paginated = { results: [], status: 'LoadingFirstPage', loadMore: vi.fn() };
     renderLake();
     const busy = screen.getAllByRole('region', { busy: true });
     expect(busy.map((r) => r.getAttribute('aria-labelledby')).length).toBe(2);
   });
 
-  it('names an author it can’t resolve plainly, and an empty bay plainly', () => {
-    answer({ 'profiles:publicByIds': {} });
+  it('reads the reports as cards', () => {
+    answer();
     renderLake();
-    expect(screen.getByText('A skater')).toBeInTheDocument();
+    expect(fakes.paginatedArgs.at(-1)).toEqual({ waterBodyId: 'mascoma' });
+    expect(document.querySelector('[data-slot="report-card"]')).toHaveTextContent('Pat Lacasse');
   });
 });
 
@@ -422,9 +433,16 @@ describe('the tabs', () => {
     answer();
     const { unmount } = renderLake({ tab: 'weather' });
     expect(screen.getByRole('heading', { name: 'What’s coming' })).toBeInTheDocument();
+    // The map rings the lake's sample points on this tab, and only this one (board 1.7).
+    const rings = useSkaterMapStore.getState().specs.view?.overlays.samples;
+    expect(rings?.data.features.map((f) => f.properties?.name)).toEqual([
+      'Whole lake',
+      'Mascoma North',
+    ]);
     unmount();
     renderLake({ tab: 'access' });
     expect(screen.getByRole('heading', { name: 'Put-ins' })).toBeInTheDocument();
+    expect(useSkaterMapStore.getState().specs.view?.overlays.samples).toBeNull();
   });
 });
 
@@ -558,9 +576,8 @@ describe('About (1.9, 1.14)', () => {
 describe('actions over the sidebar (row 3)', () => {
   it('opens as an inset over the tab, and Esc leaves by dropping the param', () => {
     answer();
-    renderLake({ act: 'hazard', tab: 'about' });
-    const pane = screen.getByRole('region', { name: 'Report a hazard' });
-    expect(within(pane).getByRole('button', { name: 'Back to Mascoma Lake' })).toHaveFocus();
+    renderLake({ act: 'access-problem', tab: 'about' });
+    expect(screen.getByRole('button', { name: 'Back to Mascoma Lake' })).toHaveFocus();
     expect(document.querySelector('[data-slot="lake-tab-panel"]')).toHaveAttribute('inert');
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
@@ -568,11 +585,29 @@ describe('actions over the sidebar (row 3)', () => {
     expect(nav.replace).toHaveBeenCalledWith('/water/mascoma?tab=about');
   });
 
-  it('leaves the imagery action with its band and frame, by the Back button', () => {
+  it('floats the imagery over the map, leaving the tabs live; its close and Esc both leave', () => {
     answer();
-    renderLake({ act: 'imagery', band: 'vh', frame: '2027-01-12' });
-    fireEvent.click(screen.getByRole('button', { name: 'Back to Mascoma Lake' }));
-    expect(nav.replace).toHaveBeenCalledWith('/water/mascoma');
+    const slot = document.createElement('div');
+    document.body.append(slot);
+    const search = { act: 'imagery', band: 'vh', frame: '2027-01-12' } as const;
+    fakes.location = {
+      pathname: '/water/mascoma',
+      searchStr: '?act=imagery&band=vh&frame=2027-01-12',
+    };
+    render(
+      <MapFloatContext.Provider value={slot}>
+        <LakePage id="mascoma" search={lakeSearchSchema.parse(search)} />
+      </MapFloatContext.Provider>,
+    );
+    const plate = within(slot).getByRole('region', { name: 'Latest imagery' });
+    expect(document.querySelector('[data-slot="lake-tab-panel"]')).not.toHaveAttribute('inert');
+    fireEvent.click(within(plate).getByRole('button', { name: 'Turn off imagery' }));
+    expect(nav.replace).toHaveBeenLastCalledWith('/water/mascoma');
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    });
+    expect(nav.replace).toHaveBeenCalledTimes(2);
+    slot.remove();
   });
 
   it('opens the imagery action from the map’s dock', () => {
@@ -590,11 +625,53 @@ describe('actions over the sidebar (row 3)', () => {
     expect(spec?.fit).toEqual({ kind: 'body', bodyId: 'mascoma' });
   });
 
-  it('credits the contours at the foot while the map draws them', () => {
+  it('carries no credits, even while the map draws contours: they are all the map chip’s', () => {
     answer();
     useSkaterMapStore.setState({ contourCredit: '5 ft contours, surveyed by NH GRANIT.' });
     renderLake();
-    expect(screen.getByText('5 ft contours, surveyed by NH GRANIT.')).toBeInTheDocument();
-    expect(screen.getByText('Basemap and water © OpenStreetMap contributors.')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="lake-sidebar-foot"]')).toBeNull();
+    expect(screen.queryByText(/NH GRANIT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/OpenStreetMap/)).not.toBeInTheDocument();
+  });
+});
+
+describe('the lake behind a card', () => {
+  it('is bare ground until the card’s lake is known', () => {
+    answer();
+    fakes.location = { pathname: '/report/r1', searchStr: '' };
+    const { container } = render(<LakeBehind waterBodyId={undefined} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('draws the sidebar inert, with none of the page’s side effects', () => {
+    answer();
+    fakes.location = { pathname: '/report/r1', searchStr: '' };
+    render(<LakeBehind waterBodyId="mascoma" />);
+    const behind = document.querySelector('[data-slot="lake-behind"]');
+    expect(behind).toHaveAttribute('inert');
+    expect(behind).toHaveAttribute('aria-hidden', 'true');
+    expect(behind?.querySelector('[data-slot="lake-sidebar"]')).toHaveTextContent('Mascoma Lake');
+    expect(fakes.capture).not.toHaveBeenCalled();
+    expect(useSkaterMapStore.getState().specs.view).toBeNull();
+  });
+
+  it('draws nothing for a lake that is gone', () => {
+    answer({ 'waterBodies:get': { available: false } });
+    fakes.location = { pathname: '/report/r1', searchStr: '' };
+    const { container } = render(<LakeBehind waterBodyId="mascoma" />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('reads each card’s lake from the card’s own first read', () => {
+    fakes.queries.set('reports:get', { waterBodyId: 'mascoma' });
+    fakes.queries.set('hazards:get', { waterBodyId: 'sunapee' });
+    fakes.queries.set('bounties:getDetail', { waterBody: { _id: 'newfound' } });
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useReportLakeId('r1'), useHazardLakeId('h1'), useBountyLakeId('b1'));
+      return null;
+    }
+    render(<Probe />);
+    expect(seen.slice(-3)).toEqual(['mascoma', 'sunapee', 'newfound']);
   });
 });

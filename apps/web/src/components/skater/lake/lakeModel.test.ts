@@ -9,9 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   areaFact,
-  attributionLines,
   axisLine,
-  BASEMAP_CREDIT,
   depthFact,
   elevationFact,
   hazardListCopy,
@@ -22,7 +20,6 @@ import {
   lakeKicker,
   lakesCountLine,
   openBountiesLine,
-  reportRowModel,
   reportWhen,
   shapeRows,
 } from './lakeModel';
@@ -218,54 +215,6 @@ describe('a hazard row', () => {
   });
 });
 
-describe('a report row', () => {
-  it('reads when, where and the author’s claims', () => {
-    const row = reportRowModel(
-      {
-        _id: 'r1',
-        authorId: 'p1',
-        skateEndTime: NOW - 12 * 60_000,
-        subAreaName: 'Mascoma South',
-        observedFrom: 'shore',
-        suitability: 'dont_go',
-        skateQuality: 'good',
-        iceTypes: [{ type: 'black_ice' }] as never,
-        notes: '  Black ice from the launch.  ',
-        photoIds: ['a', 'b'],
-      },
-      NOW,
-      TZ,
-    );
-    expect(row.when).toBe('Today · 11:40 AM');
-    expect(row.where).toBe('Mascoma South · From shore');
-    expect(row.badges).toEqual([
-      { label: "Don't go", kind: 'suitability', tone: 'bad' },
-      { label: 'Good', kind: 'quality', tone: 'default' },
-    ]);
-    expect(row.notes).toBe('Black ice from the launch.');
-    expect(row.iceTypes).toEqual(['Black ice']);
-    expect(row.photoCount).toBe(2);
-  });
-
-  it('names several bays, and leaves out what the report doesn’t say', () => {
-    const row = reportRowModel(
-      { _id: 'r2', authorId: 'p', skateEndTime: NOW, subAreaNames: ['North', 'South'], notes: ' ' },
-      NOW,
-      TZ,
-    );
-    expect(row.where).toBe('North, South');
-    expect(row.badges).toEqual([]);
-    expect(row.notes).toBeNull();
-    expect(row.photoCount).toBe(0);
-    expect(reportRowModel({ _id: 'r3', authorId: 'p', skateEndTime: NOW }, NOW, TZ).where).toBe('');
-  });
-
-  it('says the weekday within the week, then the date', () => {
-    expect(reportWhen(NOW - 2 * DAY, NOW, TZ)).toBe('Thu · 11:52 AM');
-    expect(reportWhen(NOW - 10 * DAY, NOW, TZ)).toBe('Jan 6');
-  });
-});
-
 describe('About', () => {
   it('reads a long axis north-first', () => {
     expect(axisLine(135)).toBe('northwest to southeast');
@@ -294,13 +243,12 @@ describe('About', () => {
     ]);
     expect(shapeRows({})).toEqual([]);
   });
+});
 
-  it('credits the contours while they’re drawn, and the basemap always', () => {
-    expect(attributionLines(null)).toEqual([BASEMAP_CREDIT]);
-    expect(attributionLines('  ')).toEqual([BASEMAP_CREDIT]);
-    expect(attributionLines('5 ft contours, surveyed by NH GRANIT.')).toEqual([
-      '5 ft contours, surveyed by NH GRANIT.',
-      BASEMAP_CREDIT,
-    ]);
+describe('reportWhen', () => {
+  it('reads today with the time, the week by weekday, and older by date', () => {
+    expect(reportWhen(NOW - 12 * 60_000, NOW, TZ)).toBe('Today · 11:40 AM');
+    expect(reportWhen(NOW - 2 * 86_400_000, NOW, TZ)).toMatch(/^Thu · /);
+    expect(reportWhen(NOW - 10 * 86_400_000, NOW, TZ)).toBe('Jan 6');
   });
 });

@@ -5,6 +5,7 @@ import {
   hazardTypeLabel,
   isPassageMarker,
   type LatLng,
+  NO_KNOWN_HAZARDS,
   optOutsFromSavedRefs,
   PASSED_VERDICTS,
   type PassedHazard,
@@ -209,7 +210,9 @@ export function HazardsPanel({
           })}
         </div>
       ) : body && body.hazards.length === 0 ? (
-        <SheetHint>No open hazards on this lake right now.</SheetHint>
+        // An empty list is where silence would read as an all-clear (D3): the shared sentence says
+        // what it means — nobody has reported one — and what it doesn't.
+        <SheetHint>{NO_KNOWN_HAZARDS}</SheetHint>
       ) : null}
     </SheetPanel>
   );

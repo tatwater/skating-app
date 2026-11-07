@@ -43,6 +43,7 @@ import { useMapSpec } from '../map/useMapSpec';
 import { Comments } from './CommentThread';
 import { FlagDialog } from './FlagDialog';
 import { InsetCard, PanelLoading, PanelUnavailable } from './InsetCard';
+import { PanelDrawer } from './PanelDrawer';
 import { panelTriggerKey, useClosePanel, usePanelViewed } from './panelNavigation';
 import { clockLabel, dayLabel } from './panelTime';
 import { RatingsRow, writeError } from './RatingsRow';
@@ -57,9 +58,9 @@ export const PANEL_LOADING_SPEC = defineMapSpec({
 });
 
 /**
- * A page that hosts the card somewhere other than over its lake — Latest's center column (boards
- * 4.5–4.7). The head goes back to the host, Esc and the head call the host's close, and the card
- * declares no map: the host owns whether the region map shows.
+ * A page that hosts the card somewhere other than over its lake — Latest, as a drawer from the right
+ * (`PanelDrawer`, boards 4.5–4.7). The head goes back to the host, Esc and the head call the host's
+ * close, and the card declares no map: the host owns whether the region map shows.
  */
 export interface ReportPanelHost {
   /** What the head goes back to: "Latest". */
@@ -121,6 +122,8 @@ export function ReportPanel({ reportId, host }: { reportId: string; host?: Repor
   const lakeName = body?.available ? body.body.name : null;
   const backTo = host?.backTo ?? lakeName;
 
+  // Hosted, it's the page's drawer; over its lake, the inset card. Same contract, same mechanics.
+  const Card = hosted ? PanelDrawer : InsetCard;
   const common = {
     onClose: close,
     returnKey: panelTriggerKey('report', reportId),
@@ -129,18 +132,18 @@ export function ReportPanel({ reportId, host }: { reportId: string; host?: Repor
 
   if (report === undefined) {
     return (
-      <InsetCard {...common} backTo={host?.backTo ?? null}>
+      <Card {...common} backTo={host?.backTo ?? null}>
         <PanelLoading />
-      </InsetCard>
+      </Card>
     );
   }
   if (report === null) {
     return (
-      <InsetCard {...common} backTo={host?.backTo ?? 'Explore'}>
+      <Card {...common} backTo={host?.backTo ?? 'Explore'}>
         <PanelUnavailable title="Report not available">
           This report may have been removed, or it isn’t visible to you.
         </PanelUnavailable>
-      </InsetCard>
+      </Card>
     );
   }
 
@@ -236,14 +239,14 @@ export function ReportPanel({ reportId, host }: { reportId: string; host?: Repor
     );
 
   return (
-    <InsetCard {...common} backTo={backTo} foot={foot}>
+    <Card {...common} backTo={backTo} foot={foot}>
       <ReportPanelView
         data={data}
         weather={weather}
         comments={<Comments reportId={reportId} now={now} />}
       />
       {me && !isOwn ? <ModeratorTools reportId={reportId} postId={report.postId ?? null} /> : null}
-    </InsetCard>
+    </Card>
   );
 }
 
