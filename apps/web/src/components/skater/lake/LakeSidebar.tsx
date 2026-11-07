@@ -118,10 +118,15 @@ export function LakeTabs({
       onValueChange={(next) => onTabChange(next as LakeTab)}
       className="min-h-0 flex-1 gap-0"
     >
-      <div className="border-0 border-b border-solid border-line px-gutter py-(--space-3)">
+      <div className="border-0 border-b border-solid border-line px-gutter py-(--space-3) max-md:px-(--space-5)">
         <TabsList aria-label="Lake sections" className="w-full">
           {LAKE_TABS.map((t) => (
-            <TabsTab key={t} value={t} data-attr={`lake-tab-${t}`} className="flex-1">
+            <TabsTab
+              key={t}
+              value={t}
+              data-attr={`lake-tab-${t}`}
+              className="flex-1 max-md:px-(--space-1_5)"
+            >
               {LAKE_TAB_LABELS[t]}
             </TabsTab>
           ))}

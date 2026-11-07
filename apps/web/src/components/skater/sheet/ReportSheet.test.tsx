@@ -20,7 +20,9 @@ const h = vi.hoisted(() => ({
   flag: false,
   lost: 0,
   notKept: false,
+  phone: false,
 }));
+vi.mock('../phone/usePhoneLayout', () => ({ useIsPhone: () => h.phone }));
 
 vi.mock('@/lib/sheetStore', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/sheetStore')>()),
@@ -122,9 +124,26 @@ beforeEach(() => {
   h.flag = false;
   h.lost = 0;
   h.notKept = false;
+  h.phone = false;
   for (const f of Object.values(exits)) f.mockReset();
 });
 afterEach(() => setSheet(null));
+
+describe('on a phone (9.8, 9.9)', () => {
+  it('draws the instrument as its strip, the meter in the foot, and Change asks first', () => {
+    h.phone = true;
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    expect(screen.queryByRole('region', { name: 'The lake and the day' })).toHaveAttribute(
+      'data-slot',
+      'phone-instrument',
+    );
+    expect(document.querySelector('[data-slot="instrument"]')).toBeNull();
+    expect(document.querySelector('[data-slot="sheet-foot-meter"]')).toHaveTextContent(/of 10/);
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect(screen.getByRole('alertdialog', { name: 'Remove Mascoma Lake?' })).toBeInTheDocument();
+  });
+});
 
 describe('Which lake? (5.2)', () => {
   it('asks for the lake first, with the questions waiting behind it', () => {

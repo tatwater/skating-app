@@ -109,6 +109,8 @@ describe('blockingModalOpen', () => {
     expect(blockingModalOpen(root)).toBe(false);
     root.innerHTML = '<div role="dialog" data-slot="inset-card"></div>';
     expect(blockingModalOpen(root)).toBe(false);
+    root.innerHTML = '<div role="dialog" data-slot="phone-lake-drawer"></div>';
+    expect(blockingModalOpen(root)).toBe(false);
     root.innerHTML = '<div role="dialog" data-slot="inset-card"></div><div role="dialog"></div>';
     expect(blockingModalOpen(root)).toBe(true);
     root.innerHTML = '<div role="alertdialog"></div>';

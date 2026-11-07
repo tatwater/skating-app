@@ -73,7 +73,7 @@ export function LakeHeader({
     <header
       data-slot="lake-header"
       data-inactive={inactive ? '' : undefined}
-      className="flex flex-col gap-(--space-3_5) border-0 border-b border-solid border-line px-gutter pt-(--space-5_5) pb-(--space-5)"
+      className="flex flex-col gap-(--space-3_5) border-0 border-b border-solid border-line px-gutter pt-(--space-5_5) pb-(--space-5) max-md:px-(--space-5) max-md:pt-(--space-1) max-md:pb-(--space-4)"
     >
       <div className="flex min-w-0 flex-col">
         <span className="text-kick font-medium tracking-kick text-fg3 uppercase">{kicker}</span>
@@ -117,7 +117,7 @@ export function LakeHeader({
           {facts.map((fact) => (
             <div
               key={fact.kicker}
-              className="flex flex-col gap-(--space-1_5) border-0 border-r border-solid border-line pr-(--space-4) mr-(--space-4) last:mr-0 last:border-r-0 last:pr-0"
+              className="flex flex-col gap-(--space-1_5) border-0 border-r border-solid border-line pr-(--space-4) mr-(--space-4) last:mr-0 last:border-r-0 last:pr-0 max-md:mr-(--space-3) max-md:pr-(--space-3)"
             >
               <dt className="text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase">
                 {fact.kicker}
@@ -160,7 +160,8 @@ export function LakeHeader({
                 aria-hidden="true"
                 className="h-[1.1em]"
               />
-              Report a hazard
+              {/* Phone (board 9.2): the short labels. */}
+              <span className="max-md:hidden">Report a</span> hazard
             </a>
           )}
           {postBounty && (
@@ -171,7 +172,7 @@ export function LakeHeader({
               className={cn(buttonVariants({ size: 'sm' }), 'min-w-0 flex-1 basis-0')}
             >
               <FontAwesomeIcon icon={faBullseyeArrow} aria-hidden="true" className="h-[1.1em]" />
-              Post a bounty
+              <span className="max-md:hidden">Post a</span> bounty
             </a>
           )}
           {directions && (

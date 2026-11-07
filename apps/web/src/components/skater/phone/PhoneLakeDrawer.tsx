@@ -37,9 +37,9 @@ export function PhoneLakeDrawer({
   const phone = useIsPhone();
   if (!phone) return <>{children}</>;
   return (
-    <LakeDrawer label={label} escapes={escapes}>
+    <PhoneLakeSheet label={label} escapes={escapes}>
       {children}
-    </LakeDrawer>
+    </PhoneLakeSheet>
   );
 }
 
@@ -56,7 +56,13 @@ export function snapName(point: unknown): PhoneDrawerSnap {
 /** Close reasons that don't close a lake: the map is live beside it, and Esc steps the ladder. */
 const KEEP_OPEN = new Set<string>(['escape-key', 'outside-press', 'focus-out']);
 
-function LakeDrawer({
+/** Whether the drawer's open-change closes the lake: a swipe down past half does; little else. */
+export function closesLake(open: boolean, reason: string): boolean {
+  return !open && !KEEP_OPEN.has(reason);
+}
+
+/** The drawer itself, at any width (stories draw it on a desktop canvas too). */
+export function PhoneLakeSheet({
   label,
   escapes,
   children,
@@ -110,7 +116,7 @@ function LakeDrawer({
           onOpenChange={(next, details) => {
             // The drawer stays open (it's controlled): Esc is the ladder's above, and a press on
             // the map or focus leaving for it is the map's. Only a swipe down closes the lake.
-            if (!next && !KEEP_OPEN.has(details.reason)) close.current();
+            if (closesLake(next, details.reason)) close.current();
           }}
         >
           <DrawerContent

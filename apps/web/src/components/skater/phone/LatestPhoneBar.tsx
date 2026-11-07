@@ -34,7 +34,7 @@ export function LatestPhoneBar({
   return (
     <div data-slot="latest-phone-bar" className={cn('shrink-0 md:hidden', className)}>
       <ToggleGroup
-        aria-label="Latest"
+        aria-label="Latest columns"
         value={pane}
         onValueChange={(next) => setPane(next as LatestPhonePane)}
         className="w-full"
