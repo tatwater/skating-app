@@ -18,7 +18,6 @@ import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { RequestButtons } from '../../RequestLake';
 import { LakeAction } from '../actions/LakeAction';
-import { RequestLakeHost } from '../actions/RequestLakePane';
 import { withNewReport } from '../chrome';
 import { lakeMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
@@ -88,42 +87,39 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
   const lakeName = waterBodyDisplayName(lake.name);
 
   return (
-    <>
-      <RequestLakeHost onOpenLake={(next) => nav.push(`/water/${next}`)} />
-      <LakeSidebar
-        label={bay ? bay.name : lakeName}
-        header={
-          <>
-            <ConnectedHeader lake={lake} bay={bay} nav={nav} />
-            <AlertStrip waterBodyId={lake._id} />
-          </>
-        }
-        body={
-          <LakeTabs
-            tab={tab}
-            onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
-            contourCredit={contourCredit}
-            overlay={
-              act !== undefined ? (
-                <LakeAction
-                  act={act}
-                  waterBodyId={lake._id}
-                  lakeName={lakeName}
-                  {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
-                  {...(search.band !== undefined ? { band: search.band } : {})}
-                  {...(search.frame !== undefined ? { frame: search.frame } : {})}
-                  backTo={bay ? bay.name : lakeName}
-                  nav={nav}
-                  onBack={closeAct}
-                />
-              ) : null
-            }
-          >
-            <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
-          </LakeTabs>
-        }
-      />
-    </>
+    <LakeSidebar
+      label={bay ? bay.name : lakeName}
+      header={
+        <>
+          <ConnectedHeader lake={lake} bay={bay} nav={nav} />
+          <AlertStrip waterBodyId={lake._id} />
+        </>
+      }
+      body={
+        <LakeTabs
+          tab={tab}
+          onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
+          contourCredit={contourCredit}
+          overlay={
+            act !== undefined ? (
+              <LakeAction
+                act={act}
+                waterBodyId={lake._id}
+                lakeName={lakeName}
+                {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
+                {...(search.band !== undefined ? { band: search.band } : {})}
+                {...(search.frame !== undefined ? { frame: search.frame } : {})}
+                backTo={bay ? bay.name : lakeName}
+                nav={nav}
+                onBack={closeAct}
+              />
+            ) : null
+          }
+        >
+          <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
+        </LakeTabs>
+      }
+    />
   );
 }
 

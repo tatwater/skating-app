@@ -23,6 +23,12 @@ const draw = vi.hoisted(() => ({
   fail: false,
 }));
 
+const auth = vi.hoisted(() => ({
+  isLoaded: true,
+  isSignedIn: true as boolean,
+  userId: 'me' as string | null,
+}));
+vi.mock('@clerk/tanstack-react-start', () => ({ useAuth: () => auth }));
 vi.mock('convex/react', () => convexReact);
 vi.mock('@/lib/analytics', async (load) => ({
   ...(await load<typeof import('@/lib/analytics')>()),
@@ -40,7 +46,15 @@ vi.mock('../../photoPipeline', () => ({
   uploadToStorage: vi.fn(async () => 'storage_1'),
 }));
 
+import { useHazardDraftOwnerBinding } from '@/lib/hazardDraftOwner';
+
 import { HazardFlow } from './HazardFlow';
+
+/** The skater layout's binding, which the flow waits on. */
+function Binding() {
+  useHazardDraftOwnerBinding();
+  return null;
+}
 
 // A square lake around Mascoma's middle, outline in lng/lat.
 const RING = [
@@ -61,11 +75,18 @@ beforeEach(() => {
   resetFakes();
   localStorage.clear();
   useHazardDraftStore.setState(
-    { ...initialDraftStore, owner: null, draft: null, restored: false, photoFiles: [] },
+    {
+      ...initialDraftStore,
+      owner: null,
+      bound: false,
+      draft: null,
+      restored: false,
+      photoFiles: [],
+    },
     true,
   );
   useSkaterMapStore.setState({ specs: { view: null, flow: null } });
-  fakes.queries.set('profiles:current', { _id: 'me' });
+  Object.assign(auth, { isLoaded: true, isSignedIn: true, userId: 'me' });
   fakes.queries.set('waterBodies:get', LAKE);
   fakes.queries.set('hazards:listForBody', []);
   draw.onChange = null;
@@ -81,7 +102,12 @@ const flowSpec = () => useSkaterMapStore.getState().specs.flow;
 
 function mount(props: Partial<Parameters<typeof HazardFlow>[0]> = {}) {
   const onClose = vi.fn();
-  const utils = render(<HazardFlow waterBodyId="mascoma" onClose={onClose} {...props} />);
+  const utils = render(
+    <>
+      <Binding />
+      <HazardFlow waterBodyId="mascoma" onClose={onClose} {...props} />
+    </>,
+  );
   return { ...utils, onClose };
 }
 
@@ -105,7 +131,7 @@ describe('opening', () => {
   });
 
   it('waits for the account before opening', () => {
-    fakes.queries.delete('profiles:current');
+    Object.assign(auth, { isLoaded: false, isSignedIn: false, userId: null });
     mount();
     expect(screen.queryByRole('heading', { name: 'What did you see?' })).toBeNull();
     expect(flowSpec()?.id).toBe('hazard-flow');

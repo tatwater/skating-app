@@ -16,10 +16,19 @@ const DRAFT: HazardDraft = {
 
 beforeEach(() => {
   localStorage.clear();
-  useHazardDraftStore.setState({ ...initial, owner: null, draft: null, photoFiles: [] }, true);
+  useHazardDraftStore.setState(
+    { ...initial, owner: null, bound: false, draft: null, photoFiles: [] },
+    true,
+  );
 });
 
 describe('owner binding', () => {
+  it('is unbound until the first bind, and a sign-out bind still counts', () => {
+    expect(useHazardDraftStore.getState().bound).toBe(false);
+    useHazardDraftStore.getState().bindOwner(null);
+    expect(useHazardDraftStore.getState()).toMatchObject({ owner: null, bound: true });
+  });
+
   it('restores the bound owner draft', () => {
     localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a', draft: DRAFT }));
     useHazardDraftStore.getState().bindOwner('user_a');

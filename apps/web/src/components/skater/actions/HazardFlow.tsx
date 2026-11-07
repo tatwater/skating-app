@@ -94,7 +94,7 @@ export function HazardFlow({
 }: HazardFlowProps) {
   const { capture } = useAnalytics();
   const store = useHazardDraftStore();
-  const { draft, owner, restored, photoFiles } = store;
+  const { draft, bound, restored, photoFiles } = store;
   const bodyId = waterBodyId as Id<'waterBodies'>;
   const body = useQuery(api.waterBodies.get, { waterBodyId: bodyId });
   const polygon = body?.available ? polygonOf(body.body.polygon) : null;
@@ -109,17 +109,10 @@ export function HazardFlow({
   const [nudge, setNudge] = useState<NudgeView | null>(null);
   const photos = usePhotoPreviews(photoFiles);
 
-  // The draft belongs to the signed-in account (a shared browser never restores someone else's):
-  // the profile's id, once it's known — `null` signed out, so nothing persists.
-  const profile = useQuery(api.profiles.current, {});
-  const userId = profile === undefined ? undefined : (profile?._id ?? null);
-  useEffect(() => {
-    if (userId !== undefined) useHazardDraftStore.getState().bindOwner(userId);
-  }, [userId]);
-
-  // Open the flow once the owner is known: this lake's draft comes back; anything else starts over.
+  // The draft belongs to the signed-in Clerk user (a shared browser never restores someone else's).
+  // The skater layout binds it app-wide (`useHazardDraftOwnerBinding`); the flow only waits for it.
+  // Open the flow once it's bound: this lake's draft comes back; anything else starts over.
   const opened = useRef(false);
-  const bound = userId !== undefined && owner === userId;
   useEffect(() => {
     if (!bound || opened.current) return;
     opened.current = true;

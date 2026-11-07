@@ -103,6 +103,11 @@ interface PersistedHazardDraft {
 interface HazardDraftState {
   /** The Clerk userId the draft belongs to; `null` until bound (page load, signed out). */
   owner: string | null;
+  /**
+   * True once the skater layout has bound an owner (`useHazardDraftOwnerBinding`), signed out
+   * included. The flow opens only after it, so it never opens — or restores — on a guess.
+   */
+  bound: boolean;
   /** `null` means no draft exists. */
   draft: HazardDraft | null;
   /**
@@ -144,10 +149,12 @@ export function readPersistedDraft(
 
 export const useHazardDraftStore = create<HazardDraftState>()((set, get) => ({
   owner: null,
+  bound: false,
   draft: null,
   restored: false,
   photoFiles: [],
   bindOwner: (owner) => {
+    if (!get().bound) set({ bound: true });
     if (owner === get().owner) return;
     const restored = readPersistedDraft(localStore(), owner);
     if (restored === null && owner !== null) {

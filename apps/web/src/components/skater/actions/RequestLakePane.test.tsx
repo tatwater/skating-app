@@ -6,13 +6,20 @@ import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { convexReact, fakes, resetFakes } from '../testMocks';
 
+const router = vi.hoisted(() => ({ history: { push: vi.fn() } }));
+vi.mock('@tanstack/react-router', () => ({ useRouter: () => router }));
 vi.mock('convex/react', () => convexReact);
 vi.mock('@/lib/analytics', async (load) => ({
   ...(await load<typeof import('@/lib/analytics')>()),
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
-import { formatCoord, RequestLakeHost, RequestLakePane } from './RequestLakePane';
+import {
+  formatCoord,
+  RequestLakeHost,
+  RequestLakePane,
+  SkaterRequestLakeHost,
+} from './RequestLakePane';
 
 const CLICK = { lng: -72.0859, lat: 43.6317 };
 
@@ -110,6 +117,17 @@ describe('a click on water we don’t list (3.13)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(useSkaterMapStore.getState().pendingMapClick).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('the layout’s one host', () => {
+  it('a lake under the click opens its page', () => {
+    router.history.push.mockClear();
+    fakes.queries.set('waterBodies:resolveBodyForCoord', { waterBodyId: 'george', name: 'George' });
+    render(<SkaterRequestLakeHost />);
+    act(() => useSkaterMapStore.getState().setPendingMapClick(CLICK));
+    expect(router.history.push).toHaveBeenCalledWith('/water/george');
+    expect(useSkaterMapStore.getState().pendingMapClick).toBeNull();
   });
 });
 

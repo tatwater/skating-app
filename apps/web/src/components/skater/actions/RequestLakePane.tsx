@@ -2,9 +2,10 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import { ADMIT_KNOWN_WATER_MARGIN_M, MAX_REQUEST_NOTE_LENGTH } from '@skating/core';
+import { useRouter } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { Button } from '@/components/kit/button';
 import {
@@ -220,8 +221,9 @@ function RequestForCoord({
 }
 
 /**
- * Watches the map's pending click and opens the request for it. Mounted wherever the map takes
- * requests (Explore, a lake). Closing clears the click, so the next one opens fresh.
+ * Watches the map's pending click and opens the request for it. Mounted once, in the skater layout
+ * (`SkaterRequestLakeHost`): the map spec decides where a click can become a request (Explore, a
+ * lake), so the host needn't. Closing clears the click, so the next one opens fresh.
  */
 export function RequestLakeHost({ onOpenLake }: { onOpenLake: (waterBodyId: string) => void }) {
   const pending = useSkaterMapStore((s) => s.pendingMapClick);
@@ -238,6 +240,16 @@ export function RequestLakeHost({ onOpenLake }: { onOpenLake: (waterBodyId: stri
       onClose={clear}
     />
   );
+}
+
+/** The layout's one host: a body under the click opens that body's page. */
+export function SkaterRequestLakeHost() {
+  const router = useRouter();
+  const openLake = useCallback(
+    (waterBodyId: string) => router.history.push(`/water/${waterBodyId}`),
+    [router],
+  );
+  return <RequestLakeHost onOpenLake={openLake} />;
 }
 
 /**
