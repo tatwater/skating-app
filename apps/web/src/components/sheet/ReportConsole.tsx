@@ -45,6 +45,7 @@ import {
 import { useNavigate } from '@tanstack/react-router';
 import { useConvex, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAnalytics } from '../../lib/analytics';
 import { useBodyOutlines } from '../../lib/bodyOutlines';
 import { setHazardPrefill } from '../../lib/hazardPrefill';
 import { postSheetOnWeb, saveSheetEditOnWeb } from '../../lib/sheetActions';
@@ -121,6 +122,7 @@ export function ReportConsole() {
 }
 
 function Console({ post }: { post: PostSheet }) {
+  const analytics = useAnalytics();
   const convex = useConvex();
   const navigate = useNavigate();
   const leaving = useIsLeaving();
@@ -233,6 +235,7 @@ function Console({ post }: { post: PostSheet }) {
     try {
       if (editing) {
         const reportId = await saveSheetEditOnWeb(convex, post);
+        analytics.capture('report_updated');
         done({ reportId });
         return;
       }
@@ -242,6 +245,8 @@ function Console({ post }: { post: PostSheet }) {
         setMessage(outcome.message);
         return;
       }
+      // After the refusal branch, so a sheet the server turned down is not counted as posted.
+      analytics.capture('report_posted', { report_count: post.reports.length });
       done({ reportId: outcome.reportId });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));

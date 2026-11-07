@@ -126,8 +126,12 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `VITE_CONVEX_URL` | |
 | `VITE_PMTILES_URL` · `VITE_WORLD_PMTILES_URL` · `VITE_BATHYMETRY_PMTILES_URL` · `VITE_IMAGERY_ARCHIVE_URL` | same values as mobile's |
 | `VITE_SENTRY_DSN` | public |
+| `VITE_POSTHOG_KEY` | public project token (write-only). Unset ⇒ analytics inert — no init, no network (D235) |
+| `VITE_POSTHOG_HOST` | optional override; blank ⇒ `https://us.i.posthog.com`. Only point it at a reverse proxy that strips `Cookie` — same-origin ingestion sends Clerk's session to PostHog (D235) |
 | `VITE_APP_VERSION` | optional; unset → `web` in the support form |
 | `SENTRY_ORG` · `SENTRY_PROJECT` · `SENTRY_AUTH_TOKEN` | build-time; token **secret**; without it the plugin skips upload and builds still succeed |
+| `VERCEL_ENV` | Vercel's own, already present — `vite.config.ts` reads it at build time and injects it as `VITE_DEPLOY_ENV`, which tags every analytics event (D235) |
+| `VITE_DEPLOY_ENV` | not set by hand: build-injected from `VERCEL_ENV`. Set it in local `.env` only to simulate a preview build |
 
 ### 2d. GitHub Actions secrets
 

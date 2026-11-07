@@ -56,8 +56,8 @@ what's provisioned) are [`05-accounts-and-credentials.md`](./05-accounts-and-cre
 | Web map | `maplibre-gl` + `pmtiles` + `@protomaps/basemaps` style · **terra-draw** for hazard/outline drawing | D6, D67 | terra-draw has no React Native adapter, so mobile draws by tap-to-place |
 | Web charts | **Recharts** (operator analytics), validated against the `dataviz` kit | 07-2 | |
 | Web hosting | **Vercel**, Git integration on `main`, preview per PR | D27 | the one deployable that ships on merge |
-| Errors | **Sentry** on both apps (native crash + web) | D29 | on from day one — "is it crashing in the cold?" |
-| Analytics | in-house operator analytics on Convex (`metricSnapshots`, rollups, never a corpus scan) | 07-2 | PostHog is still "later" — see *Deferred* |
+| Errors | **Sentry** on both apps (native crash + web), and errors are Sentry's *alone* — PostHog captures none (D235) | D29, D235 | on from day one — "is it crashing in the cold?"; one error, one processor, one redaction pass |
+| Analytics | in-house operator analytics on Convex (`metricSnapshots`, rollups, never a corpus scan) · **PostHog** for product analytics + flags on web (D235) | 07-2, D29, D235 | the Convex rollups answer the operator; PostHog answers funnels and retention — and nothing else: no errors, no logs |
 
 ### Maps & routing services
 
@@ -123,7 +123,7 @@ at the register row.
 
 | Item | Status | Trigger |
 | --- | --- | --- |
-| **PostHog** (product analytics, flags, session replay) | not wired; the in-house Convex analytics cover the operator's questions | usage insight past the alpha; session replay is legal-gated (L12) → [`backlog/posthog.md`](./backlog/posthog.md) · register: *PostHog* |
+| **PostHog session replay** | the rest of PostHog landed on web in D235 (events, identity, flags harness); replay alone is still off, disabled at init | L12: the `isMinor` gate, input/location masking, and a `PRIVACY.md` revision → [`backlog/posthog.md`](./backlog/posthog.md) · register: *PostHog session replay* |
 | **Web Push** (VAPID) | not built — no service worker; web is inbox + email | a real ask → [`backlog/web-push.md`](./backlog/web-push.md) · register: *Web push* |
 | **End-to-end tests** — Playwright (web), Maestro (Expo) | not set up; the emulator's GPX playback is manual QA | flows stabilizing after the alpha → [`backlog/e2e-tests.md`](./backlog/e2e-tests.md) · register: *End-to-end tests* |
 | **Self-hosted OpenRouteService** | hosted ORS caps isochrones at 60 min (the 90-min band is a radius) | a cost/ops call, ~$15–50/mo → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md) · register: *Self-hosted ORS* |

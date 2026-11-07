@@ -17,6 +17,7 @@ import { RiskAckConsent } from '../components/RiskAckConsent';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { useAnalytics } from '../lib/analytics';
 import { RISK_ACK_VERSION } from '../lib/riskAck';
 
 /**
@@ -31,6 +32,7 @@ import { RISK_ACK_VERSION } from '../lib/riskAck';
 export const Route = createFileRoute('/onboarding')({ component: OnboardingPage });
 
 function OnboardingPage() {
+  const analytics = useAnalytics();
   const upsertFromClerk = useMutation(api.profiles.upsertFromClerk);
 
   const [displayName, setDisplayName] = useState('');
@@ -64,6 +66,7 @@ function OnboardingPage() {
         riskAckVersion: RISK_ACK_VERSION,
         // The acceptance time is stamped server-side (trust boundary, D37) — not sent.
       });
+      analytics.capture('onboarding_completed');
       // Success: no navigation — the AuthGate reacts to the now-provisioned profile.
     } catch (err) {
       // ConvexErrors carry a user-safe message in `.data` (e.g. "Username is already taken");

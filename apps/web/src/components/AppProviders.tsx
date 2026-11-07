@@ -6,6 +6,8 @@ import { useTheme } from 'next-themes';
 import { type ReactNode, useState } from 'react';
 import { CLERK_APPEARANCE } from '../lib/clerkAppearance';
 import { env } from '../lib/env';
+import { AnalyticsProvider } from './Analytics';
+import { PostHogIdentity } from './PostHogIdentity';
 import { ThemeProvider } from './theme-provider';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -24,12 +26,20 @@ import { Card, CardContent } from './ui/card';
  * The whole tree is wrapped in `Sentry.ErrorBoundary` (D29) — the web analog of mobile's
  * `Sentry.wrap(RootLayout)`: it reports render-time crashes and shows a recoverable fallback
  * instead of a blank page (a passthrough during SSR, where React error boundaries don't run).
+ *
+ * `AnalyticsProvider` (D235) is the other half of D29's observability pair, and sits **outside**
+ * Clerk because the SDK has to be initialized before `PostHogIdentity` — which is inside Clerk,
+ * where the user id lives — can hand it one. It is also under the error boundary rather than over
+ * it, so a crash in analytics setup lands in the fallback like any other and never takes the app
+ * with it.
  */
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <Sentry.ErrorBoundary fallback={CrashFallback}>
       <ThemeProvider>
-        <AuthedProviders>{children}</AuthedProviders>
+        <AnalyticsProvider>
+          <AuthedProviders>{children}</AuthedProviders>
+        </AnalyticsProvider>
       </ThemeProvider>
     </Sentry.ErrorBoundary>
   );
@@ -52,7 +62,7 @@ function AuthedProviders({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider appearance={appearance}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        {children}
+        <PostHogIdentity>{children}</PostHogIdentity>
       </ConvexProviderWithClerk>
     </ClerkProvider>
   );

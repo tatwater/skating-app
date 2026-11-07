@@ -22,6 +22,24 @@ Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
   (`instrument.server.ts` + `wrapFetchWithSentry` in `server.ts` + global request/function
   middleware in `start.ts`), plus a root `Sentry.ErrorBoundary`. The `sentryTanstackStart` Vite
   plugin uploads source maps when a build token is set. Session Replay is intentionally off (D29).
+- **PostHog** product analytics + feature flags (D29/D235), web only — **not** errors, which are
+  Sentry's alone: PostHog's exception capture would never pass through `redactSentryEvent`, so one
+  error would reach two processors with two privacy postures (D235). `lib/analytics.ts` is the
+  typed event contract — ten events, countable properties only, no content and no ids;
+  `components/PostHogIdentity.tsx` binds Clerk's `userId` (and nothing else) and resets on
+  sign-out and account switch; `lib/posthogOptions.ts` holds the config, including the
+  `disable_session_recording` lock that L12 still gates, and a `before_send` that drops query
+  strings so Clerk's dev handoff token never rides along. Ingestion is direct and cross-origin on
+  purpose — a same-origin proxy would send Clerk's session cookie to PostHog (D235). Autocapture is
+  on, with `PersonName` / `Avatar` carrying `ph-no-capture` so element text holds places but never
+  people. **Absent is not off in this SDK** — several options read `undefined` as "ask the
+  project's remote config" — so everything we rely on is stated: no replay (L12), no performance
+  capture (Sentry owns latency), no exception capture (Sentry owns errors), and no surveys, product
+  tours, conversations, web experiments, heatmaps or copy capture, none of which should be able to
+  render UI or collect more because of a dashboard toggle. Every event carries an `environment`
+  property from Vercel's `VERCEL_ENV`, so one project holds production, preview and local
+  traffic. `lib/featureFlags.ts` is the flags harness and is deliberately empty — D235 says why. No
+  `VITE_POSTHOG_KEY` ⇒ no init, no network, every capture a no-op.
 - **Vitest** (+ Testing Library / jsdom) for logic, components, and the token-parity guard.
 
 ## Navigation (D28/D47)

@@ -9,6 +9,7 @@ import { expiryLabel } from './BountyList';
 import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useIsLeaving } from './LeavingNotice';
+import { PersonName } from './PersonName';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
@@ -92,10 +93,10 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
                 params={{ username: detail.requester.username }}
                 className="text-foreground underline-offset-4 hover:underline"
               >
-                {detail.requester.displayName}
+                <PersonName>{detail.requester.displayName}</PersonName>
               </Link>
             ) : (
-              <span className="text-foreground">{detail.requester.displayName}</span>
+              <PersonName className="text-foreground">{detail.requester.displayName}</PersonName>
             )}
             <span className="text-foreground-muted"> wants fresh eyes here</span>
           </div>

@@ -30,6 +30,36 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
     ]
   : [];
 
+/**
+ * Which deployment this bundle is for, stamped onto every analytics event (D235).
+ *
+ * `VERCEL_ENV` is Vercel's own build-time variable — `production`, `preview` or `development` —
+ * and it is copied to a `VITE_` name here because only prefixed names are inlined into the client.
+ * `import.meta.env.MODE` cannot stand in: a preview build is a *production-mode* build, so MODE
+ * reads `production` for both and the two would be indistinguishable in PostHog.
+ *
+ * **Assigned into `process.env` rather than passed through `define`.** Vite resolves the
+ * prefixed entries on `import.meta.env` with its own env loader, and that loader reads those names
+ * out of `process.env` — so writing it here, at config module scope, goes through the path Vite
+ * already owns instead of racing it with a `define` for the same expression.
+ *
+ * (Written without the `env.`-dot-NAME spelling on purpose: `credentialsRegister.test.ts` scans
+ * this file for env reads, and prose matching that shape registers as a variable named `VITE_`.) Confirmed in the built client
+ * bundle: `deployEnvironment:\`preview\`` with `VERCEL_ENV=preview`.
+ *
+ * If you go to re-verify this, note that setting `VERCEL_ENV` flips Nitro to its Vercel preset,
+ * which writes `.vercel/output` instead of `.output` — so the old `.output` sits there stale and
+ * looks like proof that nothing changed.
+ *
+ * Guarded on `VERCEL_ENV` being present rather than assigned unconditionally, because Vite's env
+ * loader applies `process.env` *over* the `.env` files — so an unconditional write here would beat
+ * a developer's own `VITE_DEPLOY_ENV=preview` in `.env` and make the override `.env.example`
+ * documents impossible. Vercel's value stays authoritative where there is one; everywhere else the
+ * local value survives, and with neither, `lib/env.ts` falls back to `development` — the honest
+ * answer for every build that is not Vercel's.
+ */
+if (process.env.VERCEL_ENV) process.env.VITE_DEPLOY_ENV = process.env.VERCEL_ENV;
+
 export default defineConfig({
   server: { port: 3000 },
   // `@` → `src` mirrors the tsconfig path so shadcn/ui's generated `@/…` imports resolve at

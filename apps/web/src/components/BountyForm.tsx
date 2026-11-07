@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
+import { useAnalytics } from '../lib/analytics';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 
@@ -24,6 +25,7 @@ export function BountyForm({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const analytics = useAnalytics();
   const create = useAction(api.bounties.create);
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
@@ -45,6 +47,7 @@ export function BountyForm({
         waterBodyId,
         ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
       });
+      analytics.capture('bounty_posted', { scoped_to_sub_area: subAreaId !== '' });
       onOpenChange(false);
       navigate({ to: '/bounty/$id', params: { id } });
     } catch (err) {

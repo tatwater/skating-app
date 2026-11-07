@@ -6803,3 +6803,171 @@ layout, and box-to-box spacing ships that noise to the eye. Measuring what is se
 in the kit exactly once, and every composition inherits it.
 
 **Related:** D223, D232, D233.
+
+## D235 — PostHog wired: a named event contract, no PII, no replay, direct ingestion
+**Decided** 2026-11-07 (PR #91). D29 settled *that* PostHog arrives and left *how* open; the
+analytics half is now wired on web. Several calls shaped it, and most of them narrow what the
+vendor's own setup wizard produced.
+
+**The line against Sentry: Sentry owns everything about an error, PostHog owns counts.** D29 wrote
+this ("Sentry owns native crash quality; PostHog owns product analytics") and the wizard crossed it
+by enabling `capture_exceptions`, which survived the first pass of this PR before a comparison of
+the two products turned it up (founder, 2026-11-07).
+
+The duplication was the lesser problem. PostHog's exception capture is an independent
+`window.onerror` / `unhandledrejection` hook that shares nothing with Sentry's pipeline, so it
+never passes through `sentryPrivacyHooks.beforeSend` → `redactSentryEvent` — the thing that strips
+coordinates, a home location, a date of birth, a bio and connected-account credentials out of an
+error. One uncaught error would therefore have reached two processors under two different privacy
+postures, with the weaker one invisible from the Sentry side. So PostHog captures no exceptions and
+`PRIVACY.md` says errors go only to the monitor.
+
+**`capture_exceptions: false`, not an absent option** — the first attempt at this simply deleted
+the line, on the reasoning that absent and `false` behave alike. They do not: the SDK reads
+`undefined` as *"ask the project's remote config"*, so deleting it handed the decision to a
+dashboard toggle and enforced nothing. This is the general shape of the integration's defaults and
+the thing to remember about it — **absent is not off.**
+
+What that gave up — correlating a crash with the funnel the person was in — is available in the
+other direction for free, and better: `posthog-js` ships `sentryIntegration()`, a Sentry event
+processor that tags Sentry events with a link to the PostHog person. Not wired here, because it
+would put a Clerk `userId` on Sentry events and nothing calls `Sentry.setUser` today, so Sentry
+currently holds no user identifier at all. If it is ever wired: Sentry runs event processors
+*before* `beforeSend`, so the integration's `sendExceptionsToPostHog` default of `true` would hand
+PostHog `$sentry_exception` and `$sentry_tags` un-redacted — worse than what was removed. It has
+to be `false`.
+
+**Everything the dashboard could otherwise decide is stated in code.** Following the rule above
+through the config turned up a family of options that default to remote configuration or to *on*,
+several of which render PostHog-authored UI inside the app: `disable_surveys`,
+`disable_product_tours` and `disable_conversations` are all `false` by default, with the dashboard
+choosing whether anything shows; `disable_web_experiments` mutates the DOM from the dashboard and
+defaults off only "while we're in BETA", by the SDK's own note. On this app that is a D3 problem
+before it is a taste problem: copy nobody here wrote, rendered over a map of ice conditions, cannot
+be held to "peer observation, never a guarantee", and it would arrive with no diff and no release.
+All four are switched off, as is `capture_heatmaps` (pointer coordinates, dashboard-deferred).
+Autocapture stays on per the founder's call, with clipboard capture refused inside it — what
+someone lifted off a report is content, not shape — though that one is intent rather than a proven
+lock, since the SDK merges remote autocapture settings and the merge order there was not verified
+the way the other two were. None of these is a feature this app uses, so the cost is nothing and
+the class of silent remote change is largely gone. Tests assert each one.
+
+The same line settles the rest of the overlap. **Logs:** Sentry's are GA with trace context, so
+neither PostHog's browser logs nor an OTLP exporter belongs here (both were dropped — see below).
+**Web vitals and network timing:** Sentry's browser tracing already measures them at
+`tracesSampleRate: 1.0`, so `capture_performance: false` is **pinned** rather than left unset —
+its default is `undefined`, meaning "ask the project settings", which would have let a dashboard
+toggle start a duplicate measurement with no diff and no review. The same shape as the replay
+lock, and the second of the two options here that defer to remote config if left alone.
+**Session replay:** both products have it, both are off, and L12 now has to pick *which* rather
+than assume PostHog — Sentry already has the redaction pipeline D29 demands of replay.
+**Pageviews** overlap harmlessly and stay: Sentry's navigation spans measure latency, PostHog's
+pageviews count funnels, and deduplicating them would cost one of the two questions. One known
+asymmetry, pre-existing and not introduced here: Sentry's DOM breadcrumb serializer puts
+`aria-label`, `type`, `name`, `title` and `alt` values in the breadcrumb *message*, which
+`beforeBreadcrumb` does not redact (it walks `.data`), so `Avatar`'s `alt={displayName}` can ride
+into Sentry attached to an error even though `ph-no-capture` keeps it out of PostHog. It does not
+serialize `textContent`, so the name *text* renders are unaffected.
+
+**One PostHog project, with every event stamped `environment`.** Production, preview and local
+traffic share a project — one set of flags, one set of dashboards — and `before_send` tags each
+event with the deployment it came from so a preview click never sits in a funnel beside a real
+skater's. The value comes from Vercel's own `VERCEL_ENV`, inlined by `vite.config.ts` as
+`VITE_DEPLOY_ENV`; `import.meta.env.MODE` cannot stand in, because a preview build is a
+production-*mode* build and the two would be indistinguishable. Stamped in `before_send` rather
+than with `register()` because that path runs on every event — autocapture and pageviews included,
+neither of which passes through the typed `capture` wrapper.
+
+**Ingestion goes straight to `us.i.posthog.com`, and the reverse proxy was reversed.** A
+same-origin proxy was the first choice — a tracker blocker drops a meaningful and *unmeasurable*
+share of requests to a recognized analytics domain, and a biased sample is worse than a small one.
+It was given up on review, for a reason worth recording because it applies to any future proxy
+here: `posthog-js` sets no `credentials` option, so `fetch` defaults to `same-origin` and the
+browser attaches this app's cookies — Clerk's `__session` among them, its path being `/` — to
+every ingestion request, and a Vercel rewrite forwards request headers to the destination. That
+hands a session credential to a third-party processor on every event, which is the thing
+`sentryOptions.ts` already refuses in as many words ("No cookies and no headers, in either
+direction. Both carry the Clerk session token"). A proxy needs a hop that strips `Cookie` first,
+and that hop costs a billed function invocation per event; at alpha volume, blocker loss is the
+cheaper problem. A second strike against the original form: Nitro's Vercel preset writes its own
+`.vercel/output/config.json`, which can supersede `vercel.json` rewrites, and the failure mode is
+silent — the SSR catch-all answers 200 with the app shell, the SDK reports no error, and every
+event vanishes with nothing in any log. `VITE_POSTHOG_HOST` still overrides the host, so adding a
+cookie-stripping proxy later needs no code change.
+
+**Session replay is off at init, not off by configuration.** `disable_session_recording: true`
+rather than trusting the project's dashboard toggle: a remote switch cannot start a recorder the
+client never armed, so enabling replay is a code change that goes through review. That is the
+right amount of friction for the one feature here that can capture a 17-year-old's screen. L12
+stays ⛔ — replay still owes the `isMinor` gate, masking, and a `PRIVACY.md` revision, exactly as
+D29 wrote it. `posthogOptions.test.ts` fails if the line is ever flipped.
+
+**Identity is the Clerk `userId` and nothing else.** No email, no name, no person properties. The
+population includes 16- and 17-year-olds (D41), this is a location app, and the minor-data posture
+is one of the things still waiting on Q10. `/admin` already resolves a user id to a person, so
+every analysis that wants a name can have one without PostHog holding it — and account deletion
+has nothing to reach into PostHog for. The bridge also **resets** on sign-out and before an
+account switch; without those a shared device attributes one person's session to another, and a
+switch aliases two accounts into one.
+
+**Events are a typed contract, never content.** Ten events in `apps/web/src/lib/analytics.ts`, each
+with its property type. An event name is a schema read by charts that the call site cannot see: a
+typo does not fail, it starts a second empty series beside the one the dashboard reads. Properties
+are countable shape only — hazard type, photo count, whether a comment was a reply — never report
+text, a note, a lake name, a coordinate, or any id. And never a condition of the ice: these record
+what a person *did*, which is the only thing D3 permits an analytics event to claim.
+
+**Autocapture stays on** (founder call), so questions nobody instrumented for are still answerable.
+It is the one place this integration trades data minimization for optionality, and it is reversible
+in one line if alpha volume turns out to matter. Two consequences of it are handled rather than
+accepted:
+
+- **URLs are scrubbed of their query strings.** `$current_url` and `$referrer` ride on every
+  automatic event, and in development Clerk appends a `__clerk_db_jwt` handoff parameter — a
+  credential. A `before_send` drops the query string and fragment from those and from the
+  `$set_once` first-touch copies. Path segments stay, **ids included** (founder call): which lakes
+  and reports draw traffic is worth being able to ask, and a path is not a credential. This is the
+  analytics half of `sentryOptions.ts`'s `urlQueryParams: false`.
+- **People's names are masked, places are not.** Autocapture collects the on-screen text *and the
+  attributes* of what was clicked, so a display name inside a clickable feed card would reach
+  PostHog — other skaters' names, 16- and 17-year-olds' included (D41). A `PersonName` component
+  and `Avatar` carry PostHog's `ph-no-capture`, whose text collector skips a masked subtree when
+  gathering an *ancestor's* text too. One component rather than a class at a dozen call sites:
+  the class version holds exactly until the next component renders a name, at which point the
+  published commitment in `PRIVACY.md` quietly becomes false with nothing failing. Lake and town
+  names are **not** masked — they are places, and the notice discloses them.
+
+  **Owed, and it is the predicted case arriving one PR later:** B01's kit avatar
+  (`components/kit/avatar.tsx`, merged in #90) takes a person's `name` and puts it in
+  `aria-label` on the root. Autocapture collects element attributes, and Sentry's DOM breadcrumb
+  serializer lists `aria-label` among the five it copies into a breadcrumb message — so both
+  processors would receive full names once that kit renders to a real screen. Nothing leaks today:
+  the kit is Storybook-only, used by `top-bar-parts` and `rail-item` and no route. It needs
+  `ph-no-capture` on that root before the admin console ships, and the same question asked of any
+  kit component that grows a name.
+
+**Flags land as a harness with nothing in it.** `backlog/posthog.md` expected flags to replace
+`PROFILE_REVEAL_ALL` and `RECURRENCE_ADVISORIES_PUBLIC`; neither survived contact with the code.
+`RECURRENCE_ADVISORIES_PUBLIC` is read only inside Convex, where `isPubliclyVisible()` stamps
+`publiclyVisible` onto the row at write time — deliberately, because a client-side filter is
+"admin-only if you don't open the network tab" — so a browser flag cannot reach it, Convex queries
+cannot make network calls at all, and flipping anything would need a backfill to be visible.
+`PROFILE_REVEAL_ALL` is client-side but its real protection is `profileRevealEnabled()` forcing it
+off against the production deployment; a remote value is strictly weaker than a compile-time guard,
+and mobile reads the same constant, so flagging the web half would leave one rule with two answers.
+Both stay constants. A flag belongs in the harness when it is genuinely client-side, genuinely
+wants flipping without a redeploy, and guards nothing a skater's safety rests on.
+
+**Dropped from the wizard's output:** PostHog browser *Logs* (one lifecycle line per page load that
+a pageview already covers, billed separately from events) and an OpenTelemetry OTLP log exporter
+over the SSR fetch handler — four undeclared packages to emit two records per request that Sentry
+already wraps and Vercel already logs, buffered through a `BatchLogRecordProcessor` that a frozen
+serverless function silently discards. Server-side PostHog, if it is ever wanted, is `posthog-node`
+in one dependency and brings server-evaluated flags with it.
+
+**Unconfigured means absent.** No token ⇒ no provider, no init, no network, every `capture` a
+no-op and every flag its fallback — the posture `lib/env.ts` already takes for the basemap and the
+imagery archive. The wizard threw in development instead, which would have made a missing
+analytics key a blank page on a field app.
+
+**Related:** D3, D29, D41; the gate is L12; Q10.

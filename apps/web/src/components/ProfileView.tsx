@@ -6,6 +6,7 @@ import {
 } from '@skating/core';
 import type { ReactNode } from 'react';
 import { Avatar } from './Avatar';
+import { PersonName } from './PersonName';
 import { TrustAvatar, TrustClassChip } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
@@ -119,10 +120,14 @@ export function ProfileView({
             />
             <div className="flex flex-1 flex-col gap-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="font-semibold text-foreground text-xl">{data.displayName}</h1>
+                <h1 className="font-semibold text-foreground text-xl">
+                  <PersonName>{data.displayName}</PersonName>
+                </h1>
                 <TrustClassChip trustClass={data.trustClass ?? null} />
               </div>
-              <p className="text-foreground-muted text-sm">@{data.username}</p>
+              <p className="text-foreground-muted text-sm">
+                <PersonName>@{data.username}</PersonName>
+              </p>
               {!data.isPrivate && data.homeTownLabel ? (
                 <p className="text-foreground-muted text-sm">{data.homeTownLabel}</p>
               ) : null}

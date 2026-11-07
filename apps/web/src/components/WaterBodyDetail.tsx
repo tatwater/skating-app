@@ -44,6 +44,7 @@ import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { PastWeatherPanel } from './PastWeatherPanel';
+import { PersonName } from './PersonName';
 import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
@@ -603,7 +604,7 @@ function ReportFeed({
                 </div>
               ) : null}
               <span className="text-foreground-muted text-xs">
-                by {authors?.[report.authorId]?.displayName ?? '…'}
+                by <PersonName>{authors?.[report.authorId]?.displayName ?? '…'}</PersonName>
               </span>
             </CardContent>
           </Card>

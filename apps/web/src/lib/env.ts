@@ -9,6 +9,23 @@
 
 const CONVEX_URL_PLACEHOLDER = 'https://placeholder.convex.cloud';
 
+/**
+ * Where the browser sends PostHog traffic: PostHog's US ingestion host, **cross-origin on purpose**
+ * (D235).
+ *
+ * A same-origin reverse proxy would beat tracker blockers, and that was the first choice here. It
+ * was reversed for a reason worth leaving written down: `posthog-js` sets no `credentials` option,
+ * so `fetch` defaults to `same-origin` and the browser attaches this app's cookies — Clerk's
+ * `__session` among them, since its path is `/` — to every ingestion request, and a Vercel rewrite
+ * forwards request headers to the destination. That hands a session credential to a third-party
+ * processor on every event, which is exactly what `sentryOptions.ts` refuses in as many words. A
+ * proxy needs a hop that strips `Cookie` before it is safe, and that hop costs a billed function
+ * invocation per event; at alpha volume, blocker loss is the cheaper problem.
+ *
+ * `VITE_POSTHOG_HOST` overrides it, so adding that proxy later needs no code change here.
+ */
+const POSTHOG_API_HOST = 'https://us.i.posthog.com';
+
 export const env = {
   convexUrl: import.meta.env.VITE_CONVEX_URL ?? CONVEX_URL_PLACEHOLDER,
   sentryDsn: import.meta.env.VITE_SENTRY_DSN ?? '',
@@ -35,12 +52,30 @@ export const env = {
   // none of this, so an unconfigured deployment shows the aerial and simply offers no timeline.
   // Public.
   imageryArchiveUrl: import.meta.env.VITE_IMAGERY_ARCHIVE_URL ?? '',
+  // Product analytics (D29's "later" half, wired in D235). The project token is public by design —
+  // it can only *write* events — which is why it rides the client bundle like the rest of this list.
+  // Absent, analytics stay inert: no init, no network, every `capture` a no-op. That is the same
+  // posture as the basemap and the imagery archive above, and it is why there is no throw here.
+  posthogKey: import.meta.env.VITE_POSTHOG_KEY ?? '',
+  // `||`, not `??`: the var is documented in `.env.example` as a blank-by-default override, and a
+  // blank line sets it to `''` rather than leaving it undefined. With `??` that empty string would
+  // win and silently point ingestion at the page's own root.
+  posthogHost: import.meta.env.VITE_POSTHOG_HOST || POSTHOG_API_HOST,
+  // Which deployment this bundle is, stamped onto every analytics event so one PostHog project can
+  // hold all three without a preview click landing in a funnel beside a real skater's (D235).
+  // `vite.config.ts` injects it from Vercel's own `VERCEL_ENV`; `import.meta.env.MODE` cannot
+  // stand in, because a preview build is a production-*mode* build and the two would be
+  // indistinguishable. Settable in `.env` only to simulate one.
+  deployEnvironment: import.meta.env.VITE_DEPLOY_ENV || 'development',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
 export const isConfigured = {
   convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
   sentry: env.sentryDsn.length > 0,
+  // Keyed on the token alone, not on the host: the host has a working default (the same-origin
+  // proxy), so a deployment that sets the token and nothing else is correctly configured.
+  posthog: env.posthogKey.length > 0,
   // No `bathymetry` entry: the contour layer needs the URL itself, not a boolean about it, so
   // `MapView` reads `env.bathymetryPmtilesUrl` and a second way to ask the same question would only
   // be a second thing to keep in step.

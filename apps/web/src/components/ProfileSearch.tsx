@@ -4,6 +4,7 @@ import { api } from '@skating/convex/api';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
+import { PersonName } from './PersonName';
 import { Avatar } from './ProfileView';
 import {
   Combobox,
@@ -71,9 +72,9 @@ export function ProfileSearchBox({
           {(hit: ProfileHit) => (
             <ComboboxItem key={hit.userId} value={hit}>
               <Avatar displayName={hit.displayName} imageUrl={hit.profileImageUrl} size={20} />
-              <span className="flex-1 truncate">{hit.displayName}</span>
+              <PersonName className="flex-1 truncate">{hit.displayName}</PersonName>
               <span className="text-muted-foreground text-xs">
-                {hit.homeTownLabel ?? `@${hit.username}`}
+                {hit.homeTownLabel ?? <PersonName>@{hit.username}</PersonName>}
               </span>
             </ComboboxItem>
           )}

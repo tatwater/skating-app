@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
+import { PersonName } from './PersonName';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 
@@ -49,7 +50,9 @@ export function BountyList({
               size={24}
             />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-foreground">Requested by {b.requester.displayName}</p>
+              <p className="truncate text-foreground">
+                Requested by <PersonName>{b.requester.displayName}</PersonName>
+              </p>
               <p className="text-foreground-muted text-xs">
                 {b.fulfillingCount > 0
                   ? `${b.fulfillingCount} candidate report${b.fulfillingCount === 1 ? '' : 's'} · `
