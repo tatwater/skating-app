@@ -467,6 +467,26 @@ describe('leaving', () => {
     // The flow's spec goes with it, so the view's comes back.
     expect(flowSpec()).toBeNull();
   });
+
+  it('a Post still in flight when the flow closes still clears the filed draft', async () => {
+    let land: (id: string) => void = () => {};
+    const create = vi.fn(() => new Promise<string>((resolve) => (land = resolve)));
+    fakes.mutations.set('hazards:create', create);
+    const onDone = vi.fn();
+    const { onClose, unmount } = mount({ onDone });
+    fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
+    capture(43.63, -72.15);
+    fireEvent.click(screen.getByRole('button', { name: 'Post hazard' }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    act(() => activeMapHandlers().onExitMode?.());
+    expect(onClose).toHaveBeenCalledOnce();
+    unmount();
+    await act(async () => land('h_late'));
+    // Never restores to be filed twice; the host that carries the result still hears of it.
+    expect(useHazardDraftStore.getState().draft).toBeNull();
+    expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_late' });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });
 
 describe('stacked inside the report sheet (5.10.1)', () => {

@@ -141,9 +141,17 @@ export function HazardFlow({
     onClose();
   };
   const finish = (result: HazardFlowResult) => {
-    if (left.current) return;
+    // The draft goes however the skater left: a Post still in flight when they pressed Close lands
+    // here after `leave`, and a draft that restored after its hazard was filed would file it twice.
+    const state = useHazardDraftStore.getState();
+    if (state.draft?.waterBodyId === waterBodyId) state.clearDraft();
+    if (left.current) {
+      // Already gone, so nothing navigates — but a host that carries the result on (the report
+      // sheet's `hazardIds`) still hears of it.
+      onDone?.(result);
+      return;
+    }
     left.current = true;
-    useHazardDraftStore.getState().clearDraft();
     (onDone ?? (() => onClose()))(result);
   };
 
