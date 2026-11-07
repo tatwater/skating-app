@@ -48,8 +48,12 @@ export function SignInFlow({ otherLink }: { otherLink: ReactElement }) {
     };
   }, [signIn]);
 
-  // Read once: the flow mounts client-only, behind `AuthGate`'s loading state.
-  const [ticket] = useState(() => ticketFromSearch(window.location.search));
+  // Read once. Not client-only: Clerk's SSR state answers a signed-out request `isLoaded`, so
+  // `AuthGate` renders this page on the server, where there is no `window` and no ticket to read.
+  // (A ticket load then hydrates over a mismatch; that is the headless test path alone.)
+  const [ticket] = useState(() =>
+    typeof window === 'undefined' ? null : ticketFromSearch(window.location.search),
+  );
   const [ticketFailure, setTicketFailure] = useState<AuthFailure | null>(null);
   const [ticketPending, setTicketPending] = useState(ticket !== null);
   // Tokens are single-use, and StrictMode runs an effect twice.

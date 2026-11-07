@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignInFlow } from './SignInFlow';
 import { SignUpFlow } from './SignUpFlow';
@@ -200,6 +201,19 @@ describe('SignInFlow', () => {
       render(<SignInFlow otherLink={link} />);
       expect(m.signIn.ticket).not.toHaveBeenCalled();
       expect(emailBox()).toBeInTheDocument();
+    });
+
+    // Clerk's SSR state says a signed-out request is loaded, so `AuthGate` renders `/sign-in` on the
+    // server: the ticket read must not reach for a `window` that isn't there.
+    it('renders on the server, with no window, as the email form', () => {
+      vi.stubGlobal('window', undefined);
+      try {
+        const html = renderToString(<SignInFlow otherLink={link} />);
+        expect(html).toContain('Email address');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      expect(m.signIn.ticket).not.toHaveBeenCalled();
     });
   });
 
