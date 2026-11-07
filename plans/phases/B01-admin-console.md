@@ -804,6 +804,225 @@ around:
    removed photos leave storage after 30 days (D222). Recommendation: photos purge after 30 days;
    everything else stays soft forever.
 
+## §12 — The build model
+
+*Ported 2026-11-07 from B03, which built the skater web app with one governor and parallel agents
+(`plans/phases/B03-skater-web.md` on main: §5 the model, §7 the mechanics, §8 what the build
+found), with the corrections the founder made after it.* §8 above says what to build; this says how.
+Where B03's doc and this one disagree, this one is B01's rule.
+
+### §12.1 — The model
+
+- **One governor thread (Fable): decisions, briefs, reports, the founder.** It reads plans and
+  reports, briefs delegates, makes the integration and fork calls, and talks to the founder. It
+  **never implements**. B03's governor built the wave-0 foundations itself and the founder corrected
+  it mid-phase: every hands-on task goes to an Opus-high delegate, *including* what a plan assigns to
+  "the governor" — foundations commits, seam mounts, cherry-picks, suite runs, lint, doc and register
+  edits. Two budgets at once: the governor's context has to last the phase, and Fable tokens cost
+  more than Opus tokens for work Opus does as well.
+- **Builders are Opus 5.5 at high effort, each in its own worktree cut from the phase branch**,
+  owning a disjoint file territory (§12.3). An agent starts the moment its "needs" are integrated,
+  not in lockstep waves, so the machine stays busy instead of draining between them; 6–8 at once is
+  B03's proven ceiling.
+- **One writer per push target at a time.** The phase branch has one integrator; a PR branch has
+  one pusher. B03's near-miss was a second writer reaching for a PR ref already under review; after
+  it, a frozen ref is named in every brief that could touch it.
+- **Integration is a cherry-pick by an executor delegate**, one builder's commits onto the phase
+  branch at a time, with the full gate after each (§12.6). Every commit carries a trailer naming
+  the model that did the work (`Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, or Fable's
+  on a Fable delegate's commit); cherry-pick keeps it, so the phase branch's history says who built
+  what.
+- **Convex dev is a singleton.** One agent owns `packages/convex` and `packages/core` per slice;
+  everyone else proves functions with `convex-test`. Nobody but the deploy executor the governor
+  names runs `convex dev --once` (§12.6).
+
+### §12.2 — PR strategy: sequential, each closed on its own branch
+
+B03 shipped as four stacked PRs (#95–#98) and fixed every Greptile finding at the stack's tip. The
+founder accepted that once and ruled it out as a pattern: each PR's 5/5 and its resolved threads
+are part of the quality record, and Greptile's re-reviews on a moving branch find *new* issues — a
+fix landed on a later PR silences them for the lower one and leaves its threads open.
+
+- **Sequential PRs, not a stack.** PR *n* merges before PR *n+1* opens, and PR *n+1*'s base is
+  main. Builders keep working on the phase branch while a PR is in review; the PR branch is a cut of
+  the phase branch at the slice boundary.
+- **Each PR closes at Greptile 5/5 with every comment resolved on its own branch.** A finding is
+  fixed on the branch it was raised on, pushed, and re-reviewed there until clean. Fixes never land
+  on a later PR. Fix and explain in the commit; never reply to the bot; trust only comments on the
+  latest SHA.
+- **After each squash-merge, the phase branch moves onto main** with
+  `git rebase --onto main <the PR branch's last tip> <phase branch>`, so only the commits past the
+  boundary replay, and the review fixes arrive from main. Merging main into the phase branch
+  conflicts everywhere; don't.
+- **If a stack is unavoidable** (the founder's call, with the reason in the PR): merge bottom-up;
+  retarget a child to main *before* its base merges (#90 once landed on an orphaned branch); after
+  each squash, `rebase --onto main <old base tip>` for the child; fixes still go on the PR that got
+  the comment, and the children absorb them by restacking.
+- **Size:** under ~5,000 lines and ~100 files, or the reason stated in the PR — Greptile is metered.
+  B03's first PR ran far past it, and its stated reason (half a shell reviews worse than a long PR)
+  is the only kind that counts.
+
+### §12.3 — Territory law
+
+- **Every brief names its agent's territory explicitly** — directories and named files — and the
+  agent edits nothing outside it.
+- **Shared seams are governor-decided and executor-applied:** `routes/__root.tsx`, the route tree
+  and its generated file, the admin layout route and `components/admin/AdminLayout.tsx`,
+  `AppProviders`, `AuthGate` (its old-shell predicate), `lib/theme.ts` (its init script),
+  `lib/posthogOptions.ts`, `package.json` and the lockfile, `vitest.config.ts` and the test setup
+  files, `kit/`, `packages/design`, `packages/convex/convex/schema.ts`, and everything under
+  `plans/`. The governor installs every dependency up front; agents never run `pnpm install`
+  (concurrent installs in one checkout race the lockfile — the kit build's lesson).
+- **Two agents that must create the same file get a canonical seam snippet**, written by the
+  governor into both briefs verbatim — path, exports, signature. The first to integrate lands it;
+  the second's copy is dropped at the cherry-pick. (B03: `RegionBackdrop` was the sign-in agent's
+  file, and the shell agent imported it by the agreed `{ className? }` signature.)
+- **A needed cross-territory change is a *seam request* in the final report** — the file, the
+  change, why — never an edit. The governor decides; an executor applies it at integration.
+- **Kit promotions are the governor's.** Agents propose *kit candidates*; the governor decides at
+  integration and an executor moves the piece into `kit/` with its four-up stories and tests, so two
+  agents never add the same kit piece.
+
+### §12.4 — Brief invariants
+
+Verbatim in every brief, with the placeholders filled:
+
+```
+- Never display an env file or a variable's value — not `cat`, `echo`, `env`, `printenv`, nor a
+  `grep -v` that keeps values; a transcript is forever, and one such dump rotated five secrets. To
+  learn which variables exist: `grep -o '^[A-Z_][A-Z0-9_]*=' <file>`. To load them:
+  `set -a; source <file> >/dev/null 2>&1; set +a`.
+- Never bare `git stash` / `git stash pop`: the stash stack is shared by every worktree and session,
+  and a pop can land someone else's work. Set work aside with a WIP commit. Commit with explicit
+  paths, never `git add -A` or `git add .`.
+- `pnpm`, never `npx` (the root devEngines blocks npm, and the error doesn't say so). Never
+  `pnpm install`; the governor installs up front.
+- D3: no copy, score, decay curve or classification may say or imply that ice is safe, skateable,
+  or "good to go", or predict it. Decay is confidence, not safety; a stale hazard never reads as
+  "all clear".
+- D40: tests land with the feature — Vitest for logic, `fast-check` for safety-sensitive math,
+  `convex-test` for functions. US spellings in all new text.
+- Territory: you own <paths>. Edit nothing else. A change you need outside it is a seam request in
+  your report, never an edit.
+- Targeted tests only: `pnpm --filter <package> exec vitest run [--project unit|storybook] <files>`.
+  The full suite, the Storybook build, `convex dev` and every deploy are the governor's.
+- No pushes, no deploys. Work in <worktree> on <branch>.
+- Before you report: render your boards beside the mock HTML and fix or name every difference;
+  mutation-check the invariants your tests guard (§12.5 of the phase doc).
+- Report, compactly: what landed (one line per commit); seam requests; kit candidates; server asks;
+  branch + HEAD.
+```
+
+### §12.5 — Quality mechanics that caught real bugs
+
+- **Render-compare against the mock HTML before handoff.** Each agent renders its boards beside
+  the source HTML in `skating-mockups/admin-variants/` (the board's file and query from the round's
+  manifest — `review9/`–`review14/boards.tsv`), at the board's size, in both modes, and fixes each
+  difference or names it in the report. B03's agents caught about a dozen real defects this way,
+  none of which a test would have.
+- **`fast-check` on anything safety-adjacent.** B03's sheet-calendar property test found a DST bug
+  in core's `zonedInstantOnDayOf` that had been wrong on mobile too. B01's candidates: the
+  rollup's season bucketing (§8), hazard staleness and the season bar on the Hazards tab, the live
+  mark's *Not live* threshold (three times the expected interval), every relative age ("4 d ago"),
+  and undo's "a later write means no undo" (§11).
+- **Mutation-check your own invariants.** After writing the test that guards an invariant, break
+  the code it guards — flip the comparison, drop the clause — and watch the test fail. A test that
+  stays green under the mutation guards nothing. The report says which mutations were run.
+- **The story-flake class.** Every CI-only red in B03 was a read landing mid-flight on a
+  frame-starved runner: green locally, red on CI. Its six shapes:
+  1. *A node held across an `await`* — Recharts remounts its bars every entrance frame, and a
+     detached node computes every property to `''`.
+  2. *A transitioning value compared as a string* — a `box-shadow` read at 99.97% of its transition
+     is `0.999749px`, not `1px`.
+  3. *Focus arriving after the state marker* — Base UI drops `data-open` the instant a close starts,
+     but focus returns to the trigger only when the animation ends; a popover's opening focus lands
+     a beat after the plate appears.
+  4. *A fade read mid-fade* — a tooltip found while still transparent fails `toBeVisible`; a color
+     read during a fade is the blend.
+  5. *`img.complete` as a proxy* — Chromium loads a lazy, hidden image from memory cache if an
+     earlier story fetched it, so the value depends on file order.
+  6. *A debounce outrunning `findBy`* — in the jsdom project, a 200 ms debounce on a starved runner
+     outran the old 1 s budget.
+
+  The standing fixes: `waitFor` the thing itself (the focus, the attribute), never elapsed frames;
+  `await Promise.all(el.getAnimations().map((a) => a.finished))` before measuring; a fresh query and
+  one synchronous read, numbers compared with a tolerance; fake timers stepped past a debounce;
+  assert the attributes that keep an image off the network, not its load state. Both web setup
+  files (`apps/web/src/test/setup.ts`, `storybook.setup.ts`) set `asyncUtilTimeout: 5_000`, so a
+  1 s budget is the default nowhere. `kit/measure.ts`'s color probes resolve before a `waitFor`,
+  never inside one (they loop forever).
+
+### §12.6 — The cadence
+
+- **Builders report compactly** in §12.4's format; the governor reads reports, not diffs.
+- **The governor integrates serially**: one builder at a time, cherry-picked by an executor, then
+  the gate — `pnpm check-types`, lint, the full web suite (both Vitest projects), and the touched
+  packages' suites. A repo-wide guard runs uncached in `packages/guards` once the branch is on main
+  (D236); until then the plan-conventions tests live in `packages/core`, and turbo needs `--force`
+  after anything under `plans/`.
+- **Before each PR opens: `/code-review xhigh --fix` with an explicit range** (`main...<PR branch>`;
+  the default reads the working tree), then the types, the suites and lint again. The goal is one
+  round from open to merge.
+- **Deploys are governor-gated singletons.** Convex dev is one stream — one worktree's push drops
+  another's indexes — so the governor names one executor, which runs `convex dev --once` from the
+  phase branch's integrated tip only (codegen first: `convex/_generated` is committed). **Deploy
+  before the founder drives dev**, and run the owed backfills and seeds with it: B03's one real
+  incident was the founder driving dev before the deploy. Never prod.
+- **Founder check-ins are forks only** (a trade-off, a scope question, a surprise in the data).
+  The roadmap entry flips 🟡 with the first PR and 🟢 with the last; what the build finds goes in
+  this doc, in a section after this one.
+
+### §12.7 — B01 specifics
+
+- **The first slice is Overview and the Body console, with People if it runs fast.** Overview is
+  1.1–1.4 (Home, Home in go-mode, Not Live, Metrics); Bodies is the list (5.1–5.3) and the Body
+  console's 17-board row (5.4.1–5.4.9, *Gli · Admin console · Review 5*, manifest
+  `review14/boards.tsv`), **default views first** — task modes and the map modes wait (founder,
+  Review 12); People is 8.1–8.6 (`review10/boards.tsv`). In §8's terms: the client half of
+  workstream §1 (the shell, the palette, keyboard routing, the undo toast and History, Overview),
+  workstream §3, and workstream §7. Metrics' tiles that need records nothing keeps yet (a per-day
+  sign-in record, a support queue-depth rollup — the admin-variants README, *Review 3½*) are a
+  server ask, not a blocker for Home.
+- **The branch comes first.** This branch forked from main at `d55318c9`, before #89 and #90; its
+  design and kit commits reached main squashed in those PRs and have moved since (B03 changed 72 kit
+  files). The build runs on a phase branch cut from today's main, carrying only B01's own commits
+  (the docs, the capability map, the audit writer and undo, the Overview counts, D227),
+  cherry-picked rather than rebased — a rebase would replay the kit commits against their own
+  squashes. D216–D227 are not on main yet; they arrive with B01's first PR. **Never run
+  `convex dev --once` from this branch:** dev carries B03's server code, and a push from here would
+  roll it back.
+- **The console mounts at `/admin`** in the same app (founder, 2026-11-07), on its own layout route,
+  never under `_skater` (whose validated `?post=` would open the report sheet over the console —
+  B03 §1.0).
+- **The B01 shell replaces the old admin pages progressively, the way B03's did.** On main,
+  `AuthGate`'s `OLD_SHELL_TREES = ['/admin']` wraps every admin path in the old `AppShell`, and
+  `routes/admin.tsx` binds `AdminLayout` (the old gate and sidebar) over the whole tree. Each
+  integration that lands a mode **narrows the predicate** to the old pages still standing; an old
+  route becomes a redirect only when its replacement lands, so the console works at every merge,
+  and the old components are deleted at the close, not before.
+- **`data-surface="admin"` on `<html>`, per route.** `lib/theme.ts`'s `THEME_INIT_SCRIPT` removes
+  `data-surface` under `/admin` today (the old pages don't read the tokens; absent keeps their look).
+  The B01 shell takes the attribute over: the init script sets `admin` for the paths the new shell
+  owns and keeps removing it for the old pages, and the shell re-states it after hydration, as
+  `SkaterShell` does. One predicate decides the shell, the surface attribute and the old-shell
+  wrap, with one test over all three, since the init script is a string constant that can't import
+  it. The `.dark` class sync (D241) stays until the last old admin page retires. PostHog already
+  stamps `surface: 'admin'` on every `/admin` route id (`surfaceForRouteId`, D240).
+- **The kit review's first batch** is the skater compositions the console wants, each proposed by
+  B03 and promoted only at integration:
+  - `InsetCard` (`components/skater/panels/`, with the `useCardMechanics` it shares with
+    `PanelDrawer`) — the landmark editor, *Drop a Landmark* and *Link a Lot* are inset cards
+    (Review 14).
+  - `ReportCard` (`components/skater/cards/`) — the Body console's reports, then Inbox and Reports.
+  - `CodeInput` (`components/skater/auth/`) — if the console has a use for it.
+  - `INK_PRIMARY` (`components/skater/styles.ts`) — the primary ink, if the console's is the same.
+  - The grouped-autocomplete search (`GlobalSearch`, `GlobalSearchView`) — its internals shared with
+    the kit's `CommandPalette`, both on Base UI Autocomplete.
+  - `SkaterPair` — three copies on main (`skater/storySupport.tsx`, `skater/auth/storyFrame.tsx`,
+    `skater/map/mapStill.tsx`), to become one surface-parameterized story helper.
+  - `useIsPhone` (`components/skater/phone/usePhoneLayout.ts`) — surface-neutral, so it belongs in
+    `src/lib`.
+
 ## Ruled out
 
 - **A second app or a separate deployment for admin** — D37 stands; the Convex function is the
