@@ -6819,8 +6819,14 @@ The duplication was the lesser problem. PostHog's exception capture is an indepe
 never passes through `sentryPrivacyHooks.beforeSend` → `redactSentryEvent` — the thing that strips
 coordinates, a home location, a date of birth, a bio and connected-account credentials out of an
 error. One uncaught error would therefore have reached two processors under two different privacy
-postures, with the weaker one invisible from the Sentry side. So PostHog captures no exceptions,
-a test asserts the option stays absent, and `PRIVACY.md` says errors go only to the monitor.
+postures, with the weaker one invisible from the Sentry side. So PostHog captures no exceptions and
+`PRIVACY.md` says errors go only to the monitor.
+
+**`capture_exceptions: false`, not an absent option** — the first attempt at this simply deleted
+the line, on the reasoning that absent and `false` behave alike. They do not: the SDK reads
+`undefined` as *"ask the project's remote config"*, so deleting it handed the decision to a
+dashboard toggle and enforced nothing. This is the general shape of the integration's defaults and
+the thing to remember about it — **absent is not off.**
 
 What that gave up — correlating a crash with the funnel the person was in — is available in the
 other direction for free, and better: `posthog-js` ships `sentryIntegration()`, a Sentry event
@@ -6830,6 +6836,21 @@ currently holds no user identifier at all. If it is ever wired: Sentry runs even
 *before* `beforeSend`, so the integration's `sendExceptionsToPostHog` default of `true` would hand
 PostHog `$sentry_exception` and `$sentry_tags` un-redacted — worse than what was removed. It has
 to be `false`.
+
+**Everything the dashboard could otherwise decide is stated in code.** Following the rule above
+through the config turned up a family of options that default to remote configuration or to *on*,
+several of which render PostHog-authored UI inside the app: `disable_surveys`,
+`disable_product_tours` and `disable_conversations` are all `false` by default, with the dashboard
+choosing whether anything shows; `disable_web_experiments` mutates the DOM from the dashboard and
+defaults off only "while we're in BETA", by the SDK's own note. On this app that is a D3 problem
+before it is a taste problem: copy nobody here wrote, rendered over a map of ice conditions, cannot
+be held to "peer observation, never a guarantee", and it would arrive with no diff and no release.
+All four are switched off, as is `capture_heatmaps` (pointer coordinates, dashboard-deferred).
+Autocapture stays on per the founder's call, with clipboard capture refused inside it — what
+someone lifted off a report is content, not shape — though that one is intent rather than a proven
+lock, since the SDK merges remote autocapture settings and the merge order there was not verified
+the way the other two were. None of these is a feature this app uses, so the cost is nothing and
+the class of silent remote change is largely gone. Tests assert each one.
 
 The same line settles the rest of the overlap. **Logs:** Sentry's are GA with trace context, so
 neither PostHog's browser logs nor an OTLP exporter belongs here (both were dropped — see below).

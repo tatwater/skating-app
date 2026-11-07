@@ -64,12 +64,46 @@ describe('posthogOptions', () => {
    * `redactSentryEvent`, so it would send an exception message carrying a coordinate or a home
    * location verbatim while Sentry's copy of the same error arrived redacted.
    *
-   * Asserted as *absent* rather than `false`, because `capture_exceptions: false` and no key at
-   * all behave identically and a reader should not have to wonder which was meant. If this fails,
-   * the fix is to take the option back out, not to update the test.
+   * Asserted present **and** `false`. An earlier version of this test asserted the key was
+   * *absent*, on the reasoning that absent and `false` behave alike — which is true of an ordinary
+   * option and false of this one: the SDK reads `undefined` as "ask the project's remote config",
+   * so absence hands the decision to a dashboard toggle. Absence is the bug here, not the fix.
    */
-  it('does not capture exceptions — Sentry owns errors, with the redaction to match', () => {
-    expect(Object.hasOwn(posthogOptions, 'capture_exceptions')).toBe(false);
+  it('pins exception capture off — Sentry owns errors, with the redaction to match', () => {
+    expect(Object.hasOwn(posthogOptions, 'capture_exceptions')).toBe(true);
+    expect(posthogOptions.capture_exceptions).toBe(false);
+  });
+
+  /**
+   * Surveys, product tours and conversations each render PostHog-authored UI inside the app and
+   * are *enabled* by SDK default, with the dashboard deciding whether anything shows. Copy nobody
+   * here wrote, over a map of ice conditions, is a D3 problem arriving with no diff and no review.
+   * Web experiments mutate the DOM from the dashboard; they default off, but the SDK says that
+   * default is temporary, so it is stated rather than inherited.
+   */
+  it.each([
+    'disable_surveys',
+    'disable_product_tours',
+    'disable_conversations',
+    'disable_web_experiments',
+  ] as const)('switches off %s, so no remote change can render UI in the app', (key) => {
+    expect(Object.hasOwn(posthogOptions, key)).toBe(true);
+    expect(posthogOptions[key]).toBe(true);
+  });
+
+  /** Pointer coordinates defer to remote config when unset, and tell us little on a map. */
+  it('pins heatmap capture off', () => {
+    expect(Object.hasOwn(posthogOptions, 'capture_heatmaps')).toBe(true);
+    expect(posthogOptions.capture_heatmaps).toBe(false);
+  });
+
+  /**
+   * Autocapture stays on — the object configures it rather than disabling it — and says no to
+   * clipboard capture, since what someone lifted off a report is content rather than shape.
+   */
+  it('keeps autocapture on while refusing clipboard capture', () => {
+    expect(posthogOptions.autocapture).not.toBe(false);
+    expect(posthogOptions.autocapture).toMatchObject({ capture_copied_text: false });
   });
 
   /** `identified_only` person profiles ride on this; losing it would create a person per visitor. */

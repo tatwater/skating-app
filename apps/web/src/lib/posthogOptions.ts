@@ -105,29 +105,72 @@ export const posthogOptions = {
   capture_performance: false,
 
   /**
-   * **`capture_exceptions` is deliberately absent. Do not add it.**
+   * **No exception capture — Sentry owns errors (D29/D235). `false`, never absent.**
    *
-   * Sentry owns errors — D29 says so in as many words, and PostHog's own exception capture would
-   * be a second copy of every uncaught error with none of the protection the first copy gets.
-   * That is the part worth stating, because the duplication is the lesser problem:
+   * Absent is not off. The SDK reads `capture_exceptions: undefined` as *"ask the project's remote
+   * config"* — `isUndefined(config.capture_exceptions) ? remote : config.capture_exceptions` — so
+   * leaving the option out hands the decision to a dashboard toggle. `false` is the only value
+   * that actually settles it, and `stopExceptionAutocapture()` sets exactly that.
    *
-   * PostHog's capture is an independent `window.onerror` / `unhandledrejection` hook. It shares
-   * nothing with Sentry's pipeline, so it never passes through `sentryPrivacyHooks.beforeSend` →
-   * `redactSentryEvent` in `@skating/core`, which is what strips coordinates, a home location, a
-   * date of birth, a bio and connected-account credentials out of an error before it leaves the
-   * browser. `before_send` above only rewrites URL properties, so an exception *message* carrying
-   * a coordinate would go to PostHog verbatim while Sentry's copy of the same error arrived
-   * redacted — one error, two processors, two different privacy postures, and the weaker one
-   * invisible from the Sentry side.
+   * Why it has to be settled: PostHog's capture is an independent `window.onerror` /
+   * `unhandledrejection` hook. It shares nothing with Sentry's pipeline, so it never passes
+   * through `sentryPrivacyHooks.beforeSend` → `redactSentryEvent` in `@skating/core`, which is
+   * what strips coordinates, a home location, a date of birth, a bio and connected-account
+   * credentials out of an error before it leaves the browser. `before_send` above only rewrites
+   * URL properties, so an exception *message* carrying a coordinate would reach PostHog verbatim
+   * while Sentry's copy of the same error arrived redacted — one error, two processors, two
+   * privacy postures, and the weaker one invisible from the Sentry side.
    *
-   * The correlation this gave up ("which funnel step was the person on when it broke") is
+   * The correlation this gives up ("which funnel step was the person on when it broke") is
    * available the other way round and for free: `posthog-js` ships `sentryIntegration()`, a Sentry
    * event processor that tags Sentry events with a link to the PostHog person. If that is ever
    * wired, note that Sentry runs event processors *before* `beforeSend`, so its
    * `sendExceptionsToPostHog` default of `true` would hand PostHog `$sentry_exception` and
-   * `$sentry_tags` un-redacted — strictly worse than what this comment removed. It has to be
-   * `false`.
+   * `$sentry_tags` un-redacted — strictly worse than what this option refuses.
    */
+  capture_exceptions: false,
+
+  /**
+   * **Features that would put someone else's UI on a safety surface, all switched off.**
+   *
+   * Surveys, product tours and conversations each render PostHog-authored content inside the app,
+   * and each is *enabled* by SDK default (`disable_*: false`) with the dashboard deciding whether
+   * anything actually shows. On this app that is a D3 problem before it is a taste problem: copy
+   * that nobody here wrote, appearing over a map of ice conditions, cannot be held to "peer
+   * observation, never a guarantee" — and it would arrive with no diff, no review and no release.
+   *
+   * Web experiments are worse in kind, because they mutate the DOM from the dashboard. They
+   * default off today, but the SDK's own note says that default is temporary ("currently disabled
+   * while we're in BETA"), so inheriting it is borrowing a value the vendor has said it will
+   * change. Stated here, it cannot move under us.
+   *
+   * None of these is a feature this app uses, so turning them off costs nothing and removes a
+   * whole class of remote change.
+   */
+  disable_surveys: true,
+  disable_product_tours: true,
+  disable_conversations: true,
+  disable_web_experiments: true,
+
+  /**
+   * Heatmaps off, for the `capture_performance` reason: `capture_heatmaps` defaults to `undefined`,
+   * so it defers to the dashboard, and it collects pointer coordinates — which on a map-heavy app
+   * tell you almost nothing anyway.
+   */
+  capture_heatmaps: false,
+
+  /**
+   * Autocapture **stays on** (founder call) — an object here configures it, it does not disable
+   * it. The one sub-setting stated is clipboard capture: what someone lifted off a report or a
+   * hazard note is content, not shape, and the SDK reads this flag out of the *remote* autocapture
+   * config when it is not set locally.
+   *
+   * Honest limit: this is a statement of intent rather than a proven lock. The SDK merges remote
+   * autocapture settings over the local ones, and unlike `capture_exceptions` and
+   * `capture_performance` the merge order here was not verified. If clipboard events ever show up
+   * in PostHog despite this, that is the reason, and `before_send` is the place to drop them.
+   */
+  autocapture: { capture_copied_text: false },
 
   /**
    * Opts into PostHog's 2025-05-24 defaults, whose two material effects here are
