@@ -39,7 +39,8 @@ const KEY = 'skating.reportSheet.v2';
 let fake: ReturnType<typeof installFakeStore>;
 let urls: Set<string>;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await whenSheetPhotosSettled();
   urls = stubObjectUrls();
   fake = installFakeStore();
   bindSheetOwner('user_a');

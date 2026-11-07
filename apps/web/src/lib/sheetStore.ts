@@ -27,10 +27,20 @@
  * **It also holds the last failed attempt**, stored beside the sheet: the checkpoints a retry
  * resumes from, and — once the create has gone out (`postCreateSent`) — the lock that keeps the
  * sheet from taking a change the server's idempotent create would silently drop.
+ *
+ * **And a failed attempt resends itself when the connection returns** (B03 §5, Review 3): a report
+ * is a local draft from its first keystroke. The attempt says whether a retry could work
+ * (`isFlushable`: a transient failure, not a parked refusal); `resendArmed` says the author still
+ * wants what they pressed *Post* on. Any change they make afterward disarms it, as does a restore
+ * that lost one of its photos — a half-made edit, or a Post silently missing a photo, must not go
+ * out on its own because a network came back. A *sent* Post stays armed through both: it cannot
+ * change, it may already be live, and only a retry finds out. `resendSheet` is what `useConnection`
+ * calls; the store runs the send, one at a time, and takes no change while one is in flight.
  */
 
 import {
   type DraftPhoto,
+  isFlushable,
   type PostDraft,
   type PostSheet,
   postCreateSent,
@@ -62,7 +72,37 @@ const STORED_MAX_AGE_MS = 7 * 24 * 3600_000;
 export interface StoredSheet {
   sheet: PostSheet;
   attempt: PostDraft | null;
+  /** Pass this to `setSheet` with the sheet, so a reload keeps a resend the author is owed. */
+  resendArmed: boolean;
 }
+
+/**
+ * Where the open sheet stands on resending: `waiting` — it failed in a way a retry could fix, and
+ * goes out when `resendSheet` is next called; `sending` — on its way, the sheet takes no change.
+ */
+export type SheetResendState = 'none' | 'waiting' | 'sending';
+
+/** What a send function answers — `postSheetOnWeb`'s outcome, without the store importing Convex. */
+export type SheetSendOutcome =
+  | { kind: 'posted'; postId: string; reportId: string }
+  | { kind: 'refused'; message: string; draft: PostDraft };
+
+/** Runs the send: the sheet as it stands, and the attempt to resume from. */
+export type SheetSender = (
+  post: PostSheet,
+  previous: PostDraft | null,
+) => Promise<SheetSendOutcome>;
+
+/**
+ * What came of `sendSheet`. `posted`: the sheet is closed and forgotten, the caller says so and goes
+ * where it likes. `refused`: the sheet stands, its attempt updated; a permanent refusal stops waiting
+ * (the words are on `attempt.errorMessage` too, for a sheet that was not on screen). `skipped`:
+ * nothing was sent — nothing to send, or a send already in flight.
+ */
+export type SheetSendResult =
+  | { kind: 'posted'; postId: string; reportId: string }
+  | { kind: 'refused'; message: string }
+  | { kind: 'skipped' };
 
 /** What `restoreStoredSheet` finds: the sheet with its photos back, and how many could not come. */
 export interface RestoredSheet extends StoredSheet {
@@ -79,9 +119,12 @@ interface StoredPhotos {
   pool?: DraftPhoto[];
 }
 
-interface StoredRecord extends StoredSheet {
+interface StoredRecord {
   owner: string;
+  sheet: PostSheet;
+  attempt: PostDraft | null;
   photos?: StoredPhotos;
+  resendArmed?: boolean;
 }
 
 let current: PostSheet | null = null;
@@ -105,6 +148,10 @@ let blobsRefused = false;
 /** The claim last handed to the blob store, so a keystroke does not reconcile an unchanged set. */
 let lastClaim: string | null = null;
 let swept = false;
+/** The author pressed *Post*, it failed in a way a retry could fix, and they have changed nothing. */
+let resendArmed = false;
+/** The send on its way, and which draft it is for: only that draft's sheet is locked by it. */
+let sending: { draftId: string } | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -213,6 +260,7 @@ function persist(): void {
     sheet: serializable(current),
     attempt,
     ...(photos !== undefined ? { photos } : {}),
+    ...(resendArmed ? { resendArmed } : {}),
   };
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
@@ -254,6 +302,11 @@ function isExpired(record: StoredRecord, now: number): boolean {
   return now - record.sheet.openedAtMs > STORED_MAX_AGE_MS;
 }
 
+/** A stored resend, given how many photos this read could not bring back. */
+function staysArmed(record: StoredRecord, attempt: PostDraft | null, photosLost: number): boolean {
+  return record.resendArmed === true && (photosLost === 0 || postCreateSent(attempt));
+}
+
 /**
  * The record's sheet and attempt, as this build reads them. A sheet an earlier build stored carries
  * that build's fields (D210 renamed one); every reader indexes this build's, so the record is
@@ -262,9 +315,11 @@ function isExpired(record: StoredRecord, now: number): boolean {
 function wordsOf(record: StoredRecord): StoredSheet | null {
   try {
     const stored = record.attempt;
+    const attempt = stored?.id === record.sheet.draftId ? revivePostDraft(stored) : null;
     return {
       sheet: revivePostSheet(record.sheet),
-      attempt: stored?.id === record.sheet.draftId ? revivePostDraft(stored) : null,
+      attempt,
+      resendArmed: staysArmed(record, attempt, claimOf(record).photoIds.length),
     };
   } catch {
     return null;
@@ -304,6 +359,7 @@ export function bindSheetOwner(next: string | null): void {
   cancelRestore();
   current = null;
   attempt = null;
+  resendArmed = false;
   persistedAt = null;
   lostPhotos = null;
   recordRefused = false;
@@ -342,6 +398,7 @@ async function runRestore(now: number): Promise<RestoredSheet | null> {
     return null;
   }
   const claim = claimOf(record);
+  // No photos to read, none to lose: the words' own answer on the resend stands.
   if (claim.photoIds.length === 0) return { ...words, photosLost: 0 };
 
   const token = ++restoreToken;
@@ -367,7 +424,12 @@ async function runRestore(now: number): Promise<RestoredSheet | null> {
   lostPhotos = photosLost > 0 ? { draftId: sheet.draftId, count: photosLost } : null;
   restoring = false;
   emit();
-  return { ...words, sheet, photosLost };
+  return {
+    ...words,
+    sheet,
+    photosLost,
+    resendArmed: staysArmed(record, words.attempt, photosLost),
+  };
 }
 
 /**
@@ -402,6 +464,7 @@ export function forgetSheet(): void {
   cancelRestore();
   current = null;
   attempt = null;
+  resendArmed = false;
   persistedAt = null;
   lostPhotos = null;
   recordRefused = false;
@@ -414,11 +477,17 @@ export function forgetSheet(): void {
 
 /**
  * Replace the open sheet (or close it). The attempt goes with it: a new sheet starts with none, a
- * restored one brings the one it was stored with.
+ * restored one brings the one it was stored with — and, if it passes `armed` from the restore, the
+ * resend it was owed. Off by default: nothing goes out on its own unless a caller asked for that.
  */
-export function setSheet(next: PostSheet | null, nextAttempt: PostDraft | null = null): void {
+export function setSheet(
+  next: PostSheet | null,
+  nextAttempt: PostDraft | null = null,
+  armed = false,
+): void {
   current = next;
   attempt = next === null ? null : nextAttempt;
+  resendArmed = armed && canResend(current, attempt);
   // A restore this door turned down brought back photos no sheet is using.
   releaseRestoredPhotosExcept(next === null ? [] : photoIdsOf(next));
   persist();
@@ -428,13 +497,17 @@ export function setSheet(next: PostSheet | null, nextAttempt: PostDraft | null =
 /**
  * Advance the open sheet through a pure update. A no-op when nothing is open — and when the open
  * Post has been sent (`postCreateSent`): the retry resends what went, so a change here would be
- * shown to the author and then silently dropped by the server's idempotent create.
+ * shown to the author and then silently dropped by the server's idempotent create. Likewise while a
+ * send is on its way: what lands is what went, and a closing sheet would take the change with it.
+ *
+ * A change this takes disarms a resend: the author is writing again, and *Post* is theirs to press.
  */
 export function updateSheet(update: (post: PostSheet) => PostSheet): void {
-  if (current === null || postCreateSent(attempt)) return;
+  if (current === null || postCreateSent(attempt) || sending?.draftId === current.draftId) return;
   const next = update(current);
   if (next === current) return;
   current = next;
+  resendArmed = false;
   persist();
   emit();
 }
@@ -443,8 +516,74 @@ export function updateSheet(update: (post: PostSheet) => PostSheet): void {
 export function setSheetAttempt(next: PostDraft | null): void {
   if (current === null) return;
   attempt = next;
+  resendArmed = canResend(current, attempt);
   persist();
   emit();
+}
+
+/** Could a retry of this attempt work? A parked refusal cannot, and an edit is never resent. */
+function canResend(post: PostSheet | null, failed: PostDraft | null): boolean {
+  return post?.mode.kind === 'create' && failed !== null && isFlushable(failed);
+}
+
+/**
+ * Send the open sheet, one send at a time, recording what came of it. A create sheet only: an edit
+ * has no attempt to resume (`saveSheetEditOnWeb`). Never rejects — a send that throws is a refusal,
+ * and the attempt it would have replaced stands. A sheet or account that changed while it was out is
+ * left alone: the answer was about the sheet that went.
+ */
+export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
+  if (current === null || current.mode.kind === 'edit' || sending !== null) {
+    return { kind: 'skipped' };
+  }
+  const post = current;
+  sending = { draftId: post.draftId };
+  emit();
+  let outcome: SheetSendOutcome;
+  try {
+    outcome = await send(post, attempt);
+  } catch (error) {
+    sending = null;
+    emit();
+    return { kind: 'refused', message: error instanceof Error ? error.message : String(error) };
+  }
+  sending = null;
+  const stillOpen = current?.draftId === post.draftId;
+  if (outcome.kind === 'posted') {
+    if (stillOpen) {
+      releaseAllSheetPhotos();
+      setSheet(null);
+    } else {
+      emit();
+    }
+    return { kind: 'posted', postId: outcome.postId, reportId: outcome.reportId };
+  }
+  if (stillOpen) setSheetAttempt(outcome.draft);
+  else emit();
+  return { kind: 'refused', message: outcome.message };
+}
+
+/**
+ * The connection is back: send the sheet if it is waiting, and do nothing if not. Call this on the
+ * way **into** online, and once after a restore — not from an effect on the resend state, or a
+ * server that keeps failing transiently while online becomes a loop.
+ */
+export function resendSheet(send: SheetSender): Promise<SheetSendResult> {
+  return getSheetResend() === 'waiting' ? sendSheet(send) : Promise.resolve({ kind: 'skipped' });
+}
+
+/** Where the open sheet stands on resending, read outside React. */
+export function getSheetResend(): SheetResendState {
+  if (current === null) return 'none';
+  if (sending?.draftId === current.draftId) return 'sending';
+  return resendArmed ? 'waiting' : 'none';
+}
+
+const getServerResend = (): SheetResendState => 'none';
+
+/** Subscribe to where the open sheet stands on resending. */
+export function useSheetResend(): SheetResendState {
+  return useSyncExternalStore(subscribe, getSheetResend, getServerResend);
 }
 
 /** The open sheet's last failed attempt, read outside React. */
@@ -510,6 +649,8 @@ export function resetSheetStoreForTests(): void {
   cancelRestore();
   current = null;
   attempt = null;
+  resendArmed = false;
+  sending = null;
   owner = null;
   persistedAt = null;
   lostPhotos = null;

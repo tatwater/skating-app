@@ -230,12 +230,13 @@ export async function whenSheetPhotosSettled(): Promise<void> {
   } while (seen !== tail);
 }
 
-/** Test seam: run against this store, with nothing held and nothing queued. */
+/**
+ * Test seam: run against this store, with nothing held. What was queued stays queued — a reload
+ * can catch a reconcile on its way out, so a test should meet that too. A test wanting a clean start
+ * awaits `whenSheetPhotosSettled` first.
+ */
 export function setSheetPhotoDbForTests(next: SheetPhotoDb): void {
   db = next;
   held.clear();
   restored.clear();
-  wanted = null;
-  syncQueued = false;
-  tail = Promise.resolve();
 }

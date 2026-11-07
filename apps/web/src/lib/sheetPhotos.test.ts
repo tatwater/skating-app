@@ -32,7 +32,8 @@ function row(photoId: string, patch: Partial<SheetPhotoRow> = {}): SheetPhotoRow
 let urls: Set<string>;
 let fake: ReturnType<typeof installFakeStore>;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await whenSheetPhotosSettled();
   urls = stubObjectUrls();
   fake = installFakeStore();
 });
