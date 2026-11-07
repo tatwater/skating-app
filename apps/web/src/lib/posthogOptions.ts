@@ -87,11 +87,29 @@ export const posthogOptions = {
   disable_session_recording: true,
 
   /**
-   * Uncaught browser exceptions go to PostHog as well as Sentry (D29 keeps both: Sentry owns error
-   * quality and grouping, PostHog correlates a crash with the funnel the person was in). Sentry
-   * remains the thing that pages us; this is context, not a second alerting path.
+   * **`capture_exceptions` is deliberately absent. Do not add it.**
+   *
+   * Sentry owns errors — D29 says so in as many words, and PostHog's own exception capture would
+   * be a second copy of every uncaught error with none of the protection the first copy gets.
+   * That is the part worth stating, because the duplication is the lesser problem:
+   *
+   * PostHog's capture is an independent `window.onerror` / `unhandledrejection` hook. It shares
+   * nothing with Sentry's pipeline, so it never passes through `sentryPrivacyHooks.beforeSend` →
+   * `redactSentryEvent` in `@skating/core`, which is what strips coordinates, a home location, a
+   * date of birth, a bio and connected-account credentials out of an error before it leaves the
+   * browser. `before_send` above only rewrites URL properties, so an exception *message* carrying
+   * a coordinate would go to PostHog verbatim while Sentry's copy of the same error arrived
+   * redacted — one error, two processors, two different privacy postures, and the weaker one
+   * invisible from the Sentry side.
+   *
+   * The correlation this gave up ("which funnel step was the person on when it broke") is
+   * available the other way round and for free: `posthog-js` ships `sentryIntegration()`, a Sentry
+   * event processor that tags Sentry events with a link to the PostHog person. If that is ever
+   * wired, note that Sentry runs event processors *before* `beforeSend`, so its
+   * `sendExceptionsToPostHog` default of `true` would hand PostHog `$sentry_exception` and
+   * `$sentry_tags` un-redacted — strictly worse than what this comment removed. It has to be
+   * `false`.
    */
-  capture_exceptions: true,
 
   /**
    * Opts into PostHog's 2025-05-24 defaults, whose two material effects here are

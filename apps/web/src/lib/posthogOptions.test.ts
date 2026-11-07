@@ -58,9 +58,18 @@ describe('posthogOptions', () => {
     expect(posthogOptions.capture_pageview).toBe('history_change');
   });
 
-  /** D29 keeps both error paths; PostHog's is for funnel context, Sentry's is what pages us. */
-  it('captures uncaught exceptions alongside Sentry', () => {
-    expect(posthogOptions.capture_exceptions).toBe(true);
+  /**
+   * **The error-ownership guard.** Sentry owns errors (D29), and PostHog's exception capture is not
+   * merely a duplicate: it is an independent `window.onerror` hook that never passes through
+   * `redactSentryEvent`, so it would send an exception message carrying a coordinate or a home
+   * location verbatim while Sentry's copy of the same error arrived redacted.
+   *
+   * Asserted as *absent* rather than `false`, because `capture_exceptions: false` and no key at
+   * all behave identically and a reader should not have to wonder which was meant. If this fails,
+   * the fix is to take the option back out, not to update the test.
+   */
+  it('does not capture exceptions — Sentry owns errors, with the redaction to match', () => {
+    expect(Object.hasOwn(posthogOptions, 'capture_exceptions')).toBe(false);
   });
 
   /** `identified_only` person profiles ride on this; losing it would create a person per visitor. */

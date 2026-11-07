@@ -22,7 +22,9 @@ Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
   (`instrument.server.ts` + `wrapFetchWithSentry` in `server.ts` + global request/function
   middleware in `start.ts`), plus a root `Sentry.ErrorBoundary`. The `sentryTanstackStart` Vite
   plugin uploads source maps when a build token is set. Session Replay is intentionally off (D29).
-- **PostHog** product analytics + feature flags (D29/D235), web only. `lib/analytics.ts` is the
+- **PostHog** product analytics + feature flags (D29/D235), web only — **not** errors, which are
+  Sentry's alone: PostHog's exception capture would never pass through `redactSentryEvent`, so one
+  error would reach two processors with two privacy postures (D235). `lib/analytics.ts` is the
   typed event contract — ten events, countable properties only, no content and no ids;
   `components/PostHogIdentity.tsx` binds Clerk's `userId` (and nothing else) and resets on
   sign-out and account switch; `lib/posthogOptions.ts` holds the config, including the

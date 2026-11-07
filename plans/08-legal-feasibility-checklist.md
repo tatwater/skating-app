@@ -159,6 +159,12 @@ on is a reviewed code change. `posthogOptions.test.ts` fails if that line is fli
 Identity carries the Clerk `userId` only — no email, no name, no person properties — so what
 PostHog holds today is counts and a pseudonym, not PII. That is deliberate while the minor-data
 posture waits on Q10, and it is also what keeps this row's exposure limited to replay.
+**Which product, if replay ever happens, is now an open question rather than an assumption.** D29
+named PostHog because PostHog was the one being added; Sentry has replay too, and Sentry already
+owns the redaction pipeline this row demands (`redactSentryEvent` strips coordinates, home
+location, date of birth, bio and credentials). Picking the one that already has the machinery is
+worth weighing against adding it twice. Either way replay is enabled in exactly one of them.
+- [ ] Pick the product (PostHog or Sentry) — D29's naming predates PostHog's wiring.
 - [ ] Input masking on (coordinates, PII); minor exclusion verified; `PRIVACY.md` updated — before
       enabling in prod.
 

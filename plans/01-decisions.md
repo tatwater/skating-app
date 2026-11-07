@@ -6809,6 +6809,35 @@ in the kit exactly once, and every composition inherits it.
 analytics half is now wired on web. Several calls shaped it, and most of them narrow what the
 vendor's own setup wizard produced.
 
+**The line against Sentry: Sentry owns everything about an error, PostHog owns counts.** D29 wrote
+this ("Sentry owns native crash quality; PostHog owns product analytics") and the wizard crossed it
+by enabling `capture_exceptions`, which survived the first pass of this PR before a comparison of
+the two products turned it up (founder, 2026-11-07).
+
+The duplication was the lesser problem. PostHog's exception capture is an independent
+`window.onerror` / `unhandledrejection` hook that shares nothing with Sentry's pipeline, so it
+never passes through `sentryPrivacyHooks.beforeSend` → `redactSentryEvent` — the thing that strips
+coordinates, a home location, a date of birth, a bio and connected-account credentials out of an
+error. One uncaught error would therefore have reached two processors under two different privacy
+postures, with the weaker one invisible from the Sentry side. So PostHog captures no exceptions,
+a test asserts the option stays absent, and `PRIVACY.md` says errors go only to the monitor.
+
+What that gave up — correlating a crash with the funnel the person was in — is available in the
+other direction for free, and better: `posthog-js` ships `sentryIntegration()`, a Sentry event
+processor that tags Sentry events with a link to the PostHog person. Not wired here, because it
+would put a Clerk `userId` on Sentry events and nothing calls `Sentry.setUser` today, so Sentry
+currently holds no user identifier at all. If it is ever wired: Sentry runs event processors
+*before* `beforeSend`, so the integration's `sendExceptionsToPostHog` default of `true` would hand
+PostHog `$sentry_exception` and `$sentry_tags` un-redacted — worse than what was removed. It has
+to be `false`.
+
+The same line settles the rest of the overlap. **Logs:** Sentry's are GA with trace context, so
+neither PostHog's browser logs nor an OTLP exporter belongs here (both were dropped — see below).
+**Session replay:** both products have it, both are off, and L12 now has to pick *which* rather
+than assume PostHog — Sentry already has the redaction pipeline D29 demands of replay.
+**Pageviews** overlap harmlessly: Sentry's navigation spans measure latency, PostHog's pageviews
+count funnels, and deduplicating them would cost one of the two questions.
+
 **Ingestion goes straight to `us.i.posthog.com`, and the reverse proxy was reversed.** A
 same-origin proxy was the first choice — a tracker blocker drops a meaningful and *unmeasurable*
 share of requests to a recognized analytics domain, and a biased sample is worse than a small one.
@@ -6892,4 +6921,4 @@ no-op and every flag its fallback — the posture `lib/env.ts` already takes for
 imagery archive. The wizard threw in development instead, which would have made a missing
 analytics key a blank page on a field app.
 
-**Related:** D3, D29, D41, D235's gate is L12; Q10.
+**Related:** D3, D29, D41; the gate is L12; Q10.

@@ -56,8 +56,8 @@ what's provisioned) are [`05-accounts-and-credentials.md`](./05-accounts-and-cre
 | Web map | `maplibre-gl` + `pmtiles` + `@protomaps/basemaps` style · **terra-draw** for hazard/outline drawing | D6, D67 | terra-draw has no React Native adapter, so mobile draws by tap-to-place |
 | Web charts | **Recharts** (operator analytics), validated against the `dataviz` kit | 07-2 | |
 | Web hosting | **Vercel**, Git integration on `main`, preview per PR | D27 | the one deployable that ships on merge |
-| Errors | **Sentry** on both apps (native crash + web) | D29 | on from day one — "is it crashing in the cold?" |
-| Analytics | in-house operator analytics on Convex (`metricSnapshots`, rollups, never a corpus scan) · **PostHog** for product analytics + flags on web (D235) | 07-2, D29, D235 | the Convex rollups answer the operator; PostHog answers funnels and retention |
+| Errors | **Sentry** on both apps (native crash + web), and errors are Sentry's *alone* — PostHog captures none (D235) | D29, D235 | on from day one — "is it crashing in the cold?"; one error, one processor, one redaction pass |
+| Analytics | in-house operator analytics on Convex (`metricSnapshots`, rollups, never a corpus scan) · **PostHog** for product analytics + flags on web (D235) | 07-2, D29, D235 | the Convex rollups answer the operator; PostHog answers funnels and retention — and nothing else: no errors, no logs |
 
 ### Maps & routing services
 

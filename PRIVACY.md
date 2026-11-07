@@ -105,8 +105,9 @@ your reports"). The app is not directed at children under 16.
   are deliberately excluded** from that, yours and everyone else's, as are profile
   pictures; and web addresses have anything after the `?` removed before they are
   sent. Once you're signed in all of this is tied to an account identifier, not to
-  your name or email, and signing out stops the link. Uncaught errors are also sent
-  here for context.
+  your name or email, and signing out stops the link. Crashes and errors are **not**
+  sent to the analytics tool — they go only to the monitoring service described
+  above, where the removals listed there apply.
   **Session replay — recording what you see and do on screen — is switched off**, and
   it is off in the app's own code rather than only in a setting. If it is ever turned
   on, this notice will be updated first; **it will never record users under 18**, and

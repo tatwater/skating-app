@@ -16,7 +16,10 @@ things that currently ship dark behind constants.
   nothing that reads as a claim about the ice (D3).
 - **Identity** — the Clerk `userId` and nothing else; resets on sign-out and before an account
   switch (`components/PostHogIdentity.tsx`).
-- **Exception capture** alongside Sentry, which still owns error quality and alerting.
+- **No exception capture.** Sentry owns errors (D29). PostHog's own capture is an independent
+  `window.onerror` hook that never passes through `redactSentryEvent`, so it would have sent
+  messages Sentry redacts — a duplicate *and* a weaker one. `posthogOptions.ts` records the
+  reasoning and a test keeps the option out.
 - **Autocapture + SPA pageviews**, so questions nobody instrumented for stay answerable.
 - **Query strings scrubbed** from the URLs PostHog attaches itself, and **people's names masked**
   (`PersonName`, `Avatar`) so autocapture's element text holds places but not persons.
