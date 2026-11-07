@@ -13,8 +13,8 @@ import {
   thicknessBandOfKey,
 } from '@skating/core';
 import { useState } from 'react';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';

@@ -47,9 +47,9 @@ import {
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { updateSheet } from '../../lib/sheetStore';
-import { cn } from '../../lib/utils';
-import { Textarea } from '../ui/textarea';
+import { updateSheet } from '@/lib/sheetStore';
+import { cn } from '@/lib/utils';
+import { Textarea } from '@/components/ui/textarea';
 import { AccessPanel } from './AccessPanel';
 import { EndTimePanel } from './EndTimePanel';
 import { HazardsPanel } from './HazardsPanel';

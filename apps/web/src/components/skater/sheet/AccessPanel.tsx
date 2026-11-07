@@ -9,7 +9,7 @@ import {
   selectedValues,
 } from '@skating/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Input } from '../ui/input';
+import { Input } from '@/components/ui/input';
 import { useConsoleMode } from './ConsoleMode';
 import { SheetChip } from './SheetChip';
 import { QuestionBlock, SheetHint, SheetPanel, SubLabel } from './SheetPanel';

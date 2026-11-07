@@ -18,8 +18,8 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useCallback, useMemo } from 'react';
-import { HazardBundlePrompt } from '../HazardBundlePrompt';
-import { buttonVariants } from '../ui/button';
+import { HazardBundlePrompt } from '@/components/HazardBundlePrompt';
+import { buttonVariants } from '@/components/ui/button';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';

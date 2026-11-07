@@ -7,8 +7,8 @@ import {
   selectedValues,
 } from '@skating/core';
 import { useEffect, useMemo, useState } from 'react';
-import { datetimeLocalToMs, toDatetimeLocal } from '../../lib/reportForm';
-import { Input } from '../ui/input';
+import { datetimeLocalToMs, toDatetimeLocal } from '@/lib/reportForm';
+import { Input } from '@/components/ui/input';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';

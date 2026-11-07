@@ -12,7 +12,7 @@ import {
   type WhereExtent,
 } from '@skating/core';
 import { useState } from 'react';
-import { Input } from '../ui/input';
+import { Input } from '@/components/ui/input';
 import { LakeMap } from './LakeMap';
 import { SheetChip } from './SheetChip';
 import { SheetHint } from './SheetPanel';

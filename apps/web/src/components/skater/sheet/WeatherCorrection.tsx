@@ -11,8 +11,8 @@ import {
   SKY_LABELS,
 } from '@skating/core';
 import { useId, useState } from 'react';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { SheetChip } from './SheetChip';
 
 /**

@@ -1,6 +1,6 @@
 import { pointFromTap, type SheetLandmark, type Where } from '@skating/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 import { useConsoleMode } from './ConsoleMode';
 import { QuestionBlock } from './SheetPanel';
 import type { SheetBody } from './useSheetBody';

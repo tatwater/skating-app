@@ -2,8 +2,8 @@ import { api } from '@skating/convex/api';
 import type { DraftPhoto } from '@skating/core';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { nextPickStep } from '../../lib/googlePhotosPoll';
-import { addSheetPhoto, releaseSheetPhoto } from '../../lib/sheetPhotos';
+import { nextPickStep } from '@/lib/googlePhotosPoll';
+import { addSheetPhoto, releaseSheetPhoto } from '@/lib/sheetPhotos';
 
 type Phase = 'idle' | 'waiting' | 'adding';
 

@@ -5,7 +5,7 @@ import {
   timelineMsAt,
 } from '@skating/core';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 /**
  * The timeline (A10-6 / D206): core's `timelineModel` drawn as a ruler. Hour ticks with their

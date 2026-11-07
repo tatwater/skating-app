@@ -16,7 +16,7 @@ import {
 import { useQuery } from 'convex/react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { useEffect, useMemo } from 'react';
-import { recordBodyOutline } from '../../lib/bodyOutlines';
+import { recordBodyOutline } from '@/lib/bodyOutlines';
 
 /** A known launch or lot, as the picker and the map want it. */
 export interface SheetAccessPoint {
