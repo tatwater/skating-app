@@ -1,8 +1,14 @@
-import { seasonOf, seasonStartMs } from '@skating/core';
+import {
+  FUTURE_REPORT_MESSAGE,
+  STALE_REPORT_MESSAGE,
+  seasonOf,
+  seasonStartMs,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { MAX_TRACK_POINTS, trackRefusal } from './gpsActivities';
 import schema from './schema';
 
 /**
@@ -255,6 +261,311 @@ describe('gpsActivities.ingestTrack', () => {
     const t = harness();
     await seedBody(t);
     await expect(t.mutation(api.gpsActivities.ingestTrack, ingestArgs())).rejects.toThrow();
+  });
+});
+
+describe('a track is validated the same whatever brought it in (B03 §11)', () => {
+  const line = (coordinates: number[][]) => ({ type: 'LineString' as const, coordinates });
+
+  test.each([
+    [
+      'a position past the poles',
+      line([
+        [-72, 95],
+        [-72, 44],
+      ]),
+      'invalid point',
+    ],
+    [
+      'a position past the antimeridian',
+      line([
+        [-190, 44],
+        [-72, 44],
+      ]),
+      'invalid point',
+    ],
+    ['a position with no latitude', line([[-72], [-72, 44]]), 'invalid point'],
+    [
+      'a position with extra values',
+      line([
+        [-72, 44, 100, 7],
+        [-72, 44],
+      ]),
+      'invalid point',
+    ],
+    [
+      'a NaN coordinate',
+      line([
+        [Number.NaN, 44],
+        [-72, 44],
+      ]),
+      'invalid point',
+    ],
+    [
+      'a NaN elevation',
+      line([
+        [-72, 44, Number.NaN],
+        [-72, 44],
+      ]),
+      'invalid point',
+    ],
+    ['one point', line([[-72, 44]]), 'too few points'],
+    ['a polygon', { type: 'Polygon' as const, coordinates: [] }, 'LineString'],
+  ])('%s is refused', (_label, path, message) => {
+    expect(trackRefusal({ path, startTime: 1, endTime: 2 })).toContain(message);
+  });
+
+  test('a track at the array limit passes and one past it is refused in words', () => {
+    const points = (n: number) => line(Array.from({ length: n }, () => [-72, 44]));
+    const times = { startTime: 1, endTime: 2 };
+    expect(trackRefusal({ path: points(MAX_TRACK_POINTS), ...times })).toBeNull();
+    expect(trackRefusal({ path: points(MAX_TRACK_POINTS + 1), ...times })).toContain('too many');
+  });
+
+  test('times have to be real and in order, and an elevation is allowed', () => {
+    const path = line([
+      [-72, 44, 210],
+      [-72.1, 44.1, 212],
+    ]);
+    expect(trackRefusal({ path, startTime: 1, endTime: 2 })).toBeNull();
+    expect(trackRefusal({ path, startTime: 2, endTime: 1 })).toContain('ends before');
+    expect(trackRefusal({ path, startTime: Number.NaN, endTime: 2 })).toContain('invalid time');
+    expect(trackRefusal({ path, startTime: 1, endTime: Infinity })).toContain('invalid time');
+    expect(trackRefusal({ path, startTime: 1, endTime: 2, elapsedSeconds: -1 })).toContain(
+      'moving time',
+    );
+    expect(trackRefusal({ path, startTime: 1, endTime: 2, elapsedSeconds: 1 })).toBeNull();
+  });
+
+  test('ingest applies them to a recording and a file alike', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bad = {
+      ...ingestArgs(),
+      path: line([
+        [-72, 95],
+        [-72, 44],
+      ]),
+    };
+    await expect(user.as.mutation(api.gpsActivities.ingestTrack, bad)).rejects.toThrow(
+      'invalid point',
+    );
+    await expect(
+      user.as.mutation(api.gpsActivities.ingestTrack, { ...bad, provider: 'gpx' }),
+    ).rejects.toThrow('invalid point');
+  });
+});
+
+describe('an imported GPX (D239, fully trusted for now)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const gpxArgs = (overrides: Record<string, unknown> = {}) => ({
+    ...ingestArgs(),
+    idempotencyKey: 'file-1',
+    provider: 'gpx' as const,
+    ...overrides,
+  });
+
+  test('lands labeled gpx, resolved to its lake and pending like a recording', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    const id = await user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs());
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+      provider: 'gpx',
+      providerActivityId: 'file-1',
+      waterBodyId: bodyId,
+      promptState: 'pending',
+    });
+  });
+
+  test('its path is drawn on the public report, as a recording is', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const waterBodyId = await seedBody(t);
+    const activityId = await user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs());
+    const reportId = await user.as.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId,
+      activityId,
+      skateEndTime: Date.now() - 60_000,
+    });
+    const view = await t.query(api.gpsActivities.getForReport, { reportId });
+    expect(view?.activityId).toBe(activityId);
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId });
+    expect(tracks.map((track) => track.activityId)).toEqual([activityId]);
+  });
+
+  test('a phone that predates the argument is still read as an import, by its key', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedBody(t);
+    const { provider: _absent, ...oldPhone } = gpxArgs({ idempotencyKey: 'gpx:r1:1:2:3' });
+    const id = await user.as.mutation(api.gpsActivities.ingestTrack, oldPhone);
+    expect((await t.run((ctx) => ctx.db.get(id)))?.provider).toBe('gpx');
+  });
+
+  test('a recording stays native, and the two providers keep separate key spaces', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedBody(t);
+    const recorded = await user.as.mutation(
+      api.gpsActivities.ingestTrack,
+      ingestArgs({ idempotencyKey: 'shared' }),
+    );
+    const imported = await user.as.mutation(
+      api.gpsActivities.ingestTrack,
+      gpxArgs({ idempotencyKey: 'shared' }),
+    );
+    expect(imported).not.toBe(recorded);
+    expect((await t.run((ctx) => ctx.db.get(recorded)))?.provider).toBe('native');
+  });
+
+  test('a re-import of one file returns the original row; another skater with that key is refused', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const other = await seedUser(t, 'other');
+    await seedBody(t);
+    const first = await user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs());
+    expect(await user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs())).toBe(first);
+    await expect(other.as.mutation(api.gpsActivities.ingestTrack, gpxArgs())).rejects.toThrow(
+      'Idempotency key conflict',
+    );
+  });
+
+  describe('the D199 window', () => {
+    const endingDaysAgo = (days: number) => ({
+      startTime: Date.now() - days * DAY - 3_600_000,
+      endTime: Date.now() - days * DAY,
+    });
+
+    test('a file inside the seven days lands; one older is refused in the words a report gets', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'skater');
+      await seedBody(t);
+      const fresh = await user.as.mutation(
+        api.gpsActivities.ingestTrack,
+        gpxArgs(endingDaysAgo(6.9)),
+      );
+      expect(fresh).toBeTruthy();
+      await expect(
+        user.as.mutation(
+          api.gpsActivities.ingestTrack,
+          gpxArgs({ idempotencyKey: 'old', ...endingDaysAgo(7.1) }),
+        ),
+      ).rejects.toThrow(STALE_REPORT_MESSAGE);
+    });
+
+    test('a file ending in the future is refused', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'skater');
+      await seedBody(t);
+      await expect(
+        user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs(endingDaysAgo(-1))),
+      ).rejects.toThrow(FUTURE_REPORT_MESSAGE);
+    });
+
+    test('a refused file writes nothing, so an old lake is not woken and nobody is prompted', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'skater');
+      await seedBody(t);
+      await expect(
+        user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs(endingDaysAgo(30))),
+      ).rejects.toThrow();
+      expect(await t.run((ctx) => ctx.db.query('gpsActivities').collect())).toEqual([]);
+    });
+
+    test('a recording flushed late is still kept: the window binds its report, not the record', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'skater');
+      await seedBody(t);
+      const id = await user.as.mutation(
+        api.gpsActivities.ingestTrack,
+        ingestArgs(endingDaysAgo(30)),
+      );
+      expect((await t.run((ctx) => ctx.db.get(id)))?.provider).toBe('native');
+    });
+
+    test('a file imported in time cannot be attached once it has aged out', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'skater');
+      const waterBodyId = await seedBody(t);
+      const activityId = await user.as.mutation(
+        api.gpsActivities.ingestTrack,
+        gpxArgs(endingDaysAgo(6)),
+      );
+      vi.setSystemTime(Date.now() + 2 * DAY);
+      await expect(
+        user.as.mutation(api.reports.create, {
+          ...OBSERVED,
+          waterBodyId,
+          activityId,
+          skateEndTime: Date.now() - 60_000,
+        }),
+      ).rejects.toThrow(STALE_REPORT_MESSAGE);
+    });
+  });
+
+  test('the dedup keeps the recording when a file repeats the same skate', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedBody(t);
+    const imported = await user.as.mutation(api.gpsActivities.ingestTrack, gpxArgs());
+    const recorded = await user.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * 60 * 60 * 1000,
+    });
+    const loser = await t.run((ctx) => ctx.db.get(imported));
+    expect(loser?.supersededByActivityId).toBe(recorded);
+  });
+
+  test('the backfill relabels file imports stored as native, and nothing else', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedBody(t);
+    const [legacy, recording] = await t.run(async (ctx) => {
+      const row = {
+        userId: user.id,
+        provider: 'native' as const,
+        sportType: 'IceSkate',
+        startTime: T0,
+        promptState: 'pending' as const,
+        detectedAt: T0,
+      };
+      return [
+        await ctx.db.insert('gpsActivities', { ...row, providerActivityId: 'gpx:r1:1:2:3' }),
+        await ctx.db.insert('gpsActivities', { ...row, providerActivityId: 'session-1' }),
+      ];
+    });
+    expect(await t.mutation(internal.gpsActivities.backfillGpxProvider, {})).toEqual({
+      relabeled: 1,
+    });
+    expect((await t.run((ctx) => ctx.db.get(legacy)))?.provider).toBe('gpx');
+    expect((await t.run((ctx) => ctx.db.get(recording)))?.provider).toBe('native');
+    expect(await t.mutation(internal.gpsActivities.backfillGpxProvider, {})).toEqual({
+      relabeled: 0,
+    });
+  });
+
+  test('the backfill takes another pass when a batch comes back full', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 201; i++) {
+        await ctx.db.insert('gpsActivities', {
+          userId: user.id,
+          provider: 'native',
+          providerActivityId: `gpx:r${i}:1:2:3`,
+          sportType: 'IceSkate',
+          startTime: T0,
+          promptState: 'pending',
+          detectedAt: T0,
+        });
+      }
+    });
+    await t.mutation(internal.gpsActivities.backfillGpxProvider, {});
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+    const rows = await t.run((ctx) => ctx.db.query('gpsActivities').collect());
+    expect(rows.every((row) => row.provider === 'gpx')).toBe(true);
   });
 });
 
