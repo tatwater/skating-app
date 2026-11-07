@@ -123,23 +123,47 @@ export function selectedStopFor(
   return nearestLandableStop(stops, stops.length - 1, -1);
 }
 
-/** The next usable pass in a direction from `current`; `current` itself at either end. */
+/**
+ * The stop a day stands for — its latest usable pass, the one `selectedStopFor` lands on for that
+ * day. `null` when the day has nothing usable.
+ */
+function dayStop(stops: readonly TimelineStop[], day: string | null): number | null {
+  let found: number | null = null;
+  for (const [i, stop] of stops.entries()) {
+    if (stop.landable && dayOf(stop.frame.capturedAt) === day) found = i;
+  }
+  return found;
+}
+
+/**
+ * The next usable **day** in a direction from `current`, as the stop that day stands for; `current`
+ * itself at either end. Steps by day, not by pass: the URL keeps only the day (`?frame=`), so a
+ * second pass on the same day would land back on the day's latest and Left would never leave it.
+ */
 export function stepUsable(
   stops: readonly TimelineStop[],
   current: number,
   direction: 1 | -1,
 ): number {
+  const here = dayOf(stops[current]?.frame.capturedAt ?? '');
   for (let i = current + direction; i >= 0 && i < stops.length; i += direction) {
-    if (stops[i]?.landable) return i;
+    const stop = stops[i];
+    if (!stop?.landable) continue;
+    const day = dayOf(stop.frame.capturedAt);
+    // `i` is usable and on `day`, so the day has a stop.
+    if (day !== here) return dayStop(stops, day) as number;
   }
   return current;
 }
 
-/** The first and last usable passes (Home / End). */
+/** The first and last usable days (Home / End), as the stop each day stands for. */
 export function edgeUsable(stops: readonly TimelineStop[], edge: 'first' | 'last'): number | null {
-  return edge === 'first'
-    ? nearestLandableStop(stops, 0, 1)
-    : nearestLandableStop(stops, stops.length - 1, -1);
+  const at =
+    edge === 'first'
+      ? nearestLandableStop(stops, 0, 1)
+      : nearestLandableStop(stops, stops.length - 1, -1);
+  if (at === null) return null;
+  return dayStop(stops, dayOf(stops[at]?.frame.capturedAt ?? '')) as number;
 }
 
 /** A tick's tooltip: the date, and for a hidden day why it can't be shown. */

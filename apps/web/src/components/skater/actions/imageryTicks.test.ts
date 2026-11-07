@@ -105,6 +105,64 @@ describe('selection and stepping', () => {
     expect(edgeUsable(stops, 'last')).toBe(4);
   });
 
+  it('steps by day when two usable passes share one — Left leaves the day (the URL keeps only it)', () => {
+    // Nov 16 (two usable), Nov 17 hidden, Nov 18 (two usable, the second at 18:00).
+    const sameDay = [
+      stop(0, true),
+      stop(0.1, true),
+      stop(1, false),
+      stop(2, true),
+      stop(2.1, true),
+    ];
+    expect(stepUsable(sameDay, 4, -1)).toBe(1);
+    expect(stepUsable(sameDay, 3, -1)).toBe(1);
+    expect(stepUsable(sameDay, 1, 1)).toBe(4);
+    expect(stepUsable(sameDay, 0, 1)).toBe(4);
+    expect(stepUsable(sameDay, 1, -1)).toBe(1);
+    expect(stepUsable(sameDay, 4, 1)).toBe(4);
+    expect(edgeUsable(sameDay, 'first')).toBe(1);
+    expect(edgeUsable(sameDay, 'last')).toBe(4);
+    expect(edgeUsable([stop(0, false)], 'first')).toBeNull();
+  });
+
+  it('arrows walk every usable day in order, through the URL, and Home/End reach the ends', () => {
+    const DAY_STR = (s: TimelineStop) => dayOf(s.frame.capturedAt) as string;
+    fc.assert(
+      fc.property(
+        // Per day: how many passes, and which are usable. Passes keep time order, as the timeline does.
+        fc.array(fc.array(fc.boolean(), { minLength: 0, maxLength: 3 }), { maxLength: 12 }),
+        (days) => {
+          const stops = days.flatMap((passes, d) =>
+            passes.map((landable, k) => stop(d + k * 0.1, landable)),
+          );
+          const usableDays = [...new Set(stops.filter((s) => s.landable).map(DAY_STR))];
+          // What the pane does: the stop the URL's day selects, then the day it writes back.
+          const visit = (from: number | null, direction: 1 | -1) => {
+            const seen: string[] = [];
+            let at = from;
+            for (let n = 0; at !== null && n <= stops.length; n++) {
+              const day = DAY_STR(stops[at] as TimelineStop);
+              seen.push(day);
+              const next = stepUsable(stops, at, direction);
+              if (next === at) break;
+              at = selectedStopFor(stops, DAY_STR(stops[next] as TimelineStop));
+              expect(at).toBe(next);
+            }
+            return seen;
+          };
+          const last = edgeUsable(stops, 'last');
+          const first = edgeUsable(stops, 'first');
+          expect(last).toBe(selectedStopFor(stops, undefined));
+          expect(visit(last, -1)).toEqual([...usableDays].reverse());
+          expect(visit(first, 1)).toEqual(usableDays);
+          if (first !== null) {
+            expect(selectedStopFor(stops, DAY_STR(stops[first] as TimelineStop))).toBe(first);
+          }
+        },
+      ),
+    );
+  });
+
   it('a tick’s tip says the date, and why a hidden day can’t be shown', () => {
     expect(tickTip(stops[1] as TimelineStop)).toBe('Nov 17');
     expect(tickTip(stops[0] as TimelineStop)).toBe(
