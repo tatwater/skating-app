@@ -1,7 +1,7 @@
 import type { FeedCardData, FeedFilters } from '@skating/core';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
+import { CARD_PAT } from '../panels/panelFixtures';
 import { polyfillAnimate } from '../panels/panelTestMocks';
 import { FeedColumn, type FeedColumnProps } from './FeedColumn';
 import { FilterColumn } from './FilterColumn';
@@ -128,6 +128,21 @@ describe('FilterColumn', () => {
     const { onChange } = renderColumn({ noSnow: true });
     fireEvent.click(screen.getByRole('checkbox', { name: 'No snow cover' }));
     expect(onChange).toHaveBeenLastCalledWith({});
+  });
+
+  it('turns no snow cover on, and reports-only off', () => {
+    const { onChange } = renderColumn({
+      weather: { thresholdF: 20, minNights: 3 },
+      onlyReports: true,
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'No snow cover' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      weather: { thresholdF: 20, minNights: 3 },
+      onlyReports: true,
+      noSnow: true,
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Only show reports' }));
+    expect(onChange).toHaveBeenLastCalledWith({ weather: { thresholdF: 20, minNights: 3 } });
   });
 
   it('turns the weather filter on at three nights', async () => {
@@ -436,7 +451,13 @@ describe('RecommendedStrip', () => {
     render(
       <RecommendedStrip
         bundles={[
-          { waterBodyId: 'wb1', cards: [REPORT, { ...REPORT, reportId: 'rep2' }] },
+          {
+            waterBodyId: 'wb1',
+            cards: [
+              { ...REPORT, silhouette: CARD_PAT.silhouette },
+              { ...REPORT, reportId: 'rep2' },
+            ],
+          },
           { waterBodyId: 'wb9', cards: [] },
         ]}
         now={NOW}
@@ -502,7 +523,10 @@ describe('WantedColumn', () => {
     render(
       <WantedColumn
         places={[
-          place,
+          {
+            ...place,
+            firstAsker: { displayName: 'Rob Tremblay', profileImageUrl: 'https://img/rt.jpg' },
+          },
           {
             ...place,
             key: 'k2',

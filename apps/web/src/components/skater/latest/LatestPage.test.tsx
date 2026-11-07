@@ -294,6 +294,38 @@ describe('LatestPage', () => {
   });
 });
 
+describe('LatestPage · the empty states’ ways out', () => {
+  beforeEach(() => {
+    fakes.paginated = { results: [], status: 'Exhausted', loadMore: vi.fn() };
+  });
+
+  it('clears every filter when nothing this season matches them', () => {
+    m.filters = { noSnow: true };
+    page();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+    expect(setFilters).toHaveBeenCalledWith({});
+  });
+
+  it('clears an empty search', () => {
+    m.flags['latest-text-search'] = true;
+    page({ q: 'zzz' });
+    const plate = document.querySelector('[data-slot="latest-empty"]') as HTMLElement;
+    fireEvent.click(within(plate).getByRole('button', { name: 'Clear search' }));
+    expect(lastNavigation({ q: 'zzz' })).toMatchObject({ search: { q: undefined }, replace: true });
+  });
+
+  it('shows everyone again when one skater’s reports can’t be shown', () => {
+    m.flags['latest-skater-filter'] = true;
+    fakes.queries.set('posts:listFeed', { page: [], isDone: true, skaterUnavailable: true });
+    page({ skater: 'private' });
+    fireEvent.click(screen.getByRole('button', { name: 'Show everyone’s reports' }));
+    expect(lastNavigation({ skater: 'private' })).toMatchObject({
+      search: { skater: undefined },
+      replace: true,
+    });
+  });
+});
+
 describe('LatestPage · text search (latest-text-search)', () => {
   it('ignores ?q= while the flag is off', () => {
     page({ q: 'narrows' });

@@ -44,10 +44,18 @@ export const MATCH: BodyResultData = {
   eventMs: NOW - HOUR,
   eventDayMs: NOW - HOUR,
   asOfDayMs: NOW - 24 * HOUR,
-  chain: { nights: 5, thresholdF: 20, noSnowSince: true },
+  chain: {
+    thresholdF: 20,
+    nights: 5,
+    startDayMs: NOW - 5 * 24 * HOUR,
+    coldNightMask: 0b11111,
+    openEnded: true,
+    snowSinceStartCm: 0,
+    snowUnknownDays: 0,
+  },
   place: { kind: 'body' },
   otherBayNames: [],
   oneSampleForALargeBody: false,
   accessKind: 'hike_in',
   isFavorite: false,
-} as unknown as BodyResultData;
+} as BodyResultData;

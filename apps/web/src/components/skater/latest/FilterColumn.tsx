@@ -138,7 +138,7 @@ export function FilterColumn({
                 )
               }
             >
-              <SelectTrigger id={id} variant="boxed" data-attr="latest-filter-drive-time">
+              <SelectTrigger id={id} data-attr="latest-filter-drive-time">
                 <SelectValue>
                   {driveLabel(
                     filters.radiusMinutes !== undefined ? String(filters.radiusMinutes) : ANY,
@@ -360,7 +360,7 @@ function WeatherFields({
         );
       }}
     >
-      <SelectTrigger id={`${id}-t`} variant="boxed" data-attr="latest-filter-weather">
+      <SelectTrigger id={`${id}-t`} data-attr="latest-filter-weather">
         <SelectValue>{weatherLabel(on !== undefined ? String(on.thresholdF) : ANY)}</SelectValue>
       </SelectTrigger>
       <SelectContent>
@@ -421,7 +421,7 @@ function WeatherFields({
             onChange(patchFilters(filters, 'weather', { ...on, minNights: Number(value) }));
           }}
         >
-          <SelectTrigger id={`${id}-n`} variant="boxed" data-attr="latest-filter-weather-nights">
+          <SelectTrigger id={`${id}-n`} data-attr="latest-filter-weather-nights">
             <SelectValue>{nightsLabel(on.minNights)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
