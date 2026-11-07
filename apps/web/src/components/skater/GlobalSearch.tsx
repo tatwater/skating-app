@@ -12,6 +12,7 @@ import { type RecentPick, useSearchStore } from '@/stores/searchStore';
 
 import { useChromeKeys, useChromeOverlay } from './chrome';
 import { GlobalSearchView } from './GlobalSearchView';
+import { markWaterBodyOpenSource } from './lake/openSource';
 import { PhoneSearchView } from './phone/PhoneSearchView';
 import {
   buildRecentGroup,
@@ -214,6 +215,7 @@ export function GlobalSearch({
     });
     addRecent(row.pick);
     onOpenChange(false);
+    markWaterBodyOpenSource('search', row.href);
     router.history.push(row.href);
   };
 

@@ -185,7 +185,7 @@ export function InViewList() {
       onOpen={(row, event) => {
         if (!isPlainLeftClick(event)) return;
         event.preventDefault();
-        markWaterBodyOpenSource('list');
+        markWaterBodyOpenSource('list', row.href);
         setHovered(null);
         router.history.push(row.href);
       }}

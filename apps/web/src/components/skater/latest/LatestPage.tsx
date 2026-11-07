@@ -196,7 +196,7 @@ export function LatestPage({ search }: { search: LatestSearch }) {
 
   const openLake = useCallback(
     (waterBodyId: string, sub: string | null) => {
-      markWaterBodyOpenSource('latest');
+      markWaterBodyOpenSource('latest', `/water/${encodeURIComponent(waterBodyId)}`);
       void navigate({
         to: '/water/$id',
         params: { id: waterBodyId },

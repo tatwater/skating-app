@@ -21,6 +21,7 @@ import {
   useOpenSearch,
   useSearchOwnerBinding,
 } from './GlobalSearch';
+import { resetWaterBodyOpenSource, takeWaterBodyOpenSource } from './lake/openSource';
 
 const HOUR = 3_600_000;
 const lake = {
@@ -124,6 +125,26 @@ describe('GlobalSearch', () => {
     expect(useSearchStore.getState().recents[0]).toEqual({ kind: 'skater', id: 'mochs' });
     expect(fakes.push).toHaveBeenCalledWith('/u/mochs');
     expect(useChromeStore.getState().overlay).toBeNull();
+  });
+
+  it('a lake picked from search arrives counted as a search, and a skater pick labels no lake', async () => {
+    resetWaterBodyOpenSource();
+    fakes.queries.set('waterBodies:searchByName', [lake]);
+    fakes.queries.set('profiles:searchProfiles', [person]);
+    fakes.queries.set('reports:recentCardsForBodies', []);
+    act(() => useChromeStore.getState().setOverlay('search'));
+    const { unmount } = render(<GlobalSearch />);
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'ma' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Mascoma Lake/ }));
+    expect(fakes.push).toHaveBeenLastCalledWith('/water/w1');
+    expect(takeWaterBodyOpenSource('/water/w1', { entryPath: null })).toBe('search');
+    unmount();
+
+    act(() => useChromeStore.getState().setOverlay('search'));
+    render(<GlobalSearch />);
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'ma' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Matt Ochs/ }));
+    expect(takeWaterBodyOpenSource('/water/w1', { entryPath: null })).toBe('map');
   });
 
   it('says so when nothing matches, once per query, and never sends the text', async () => {
