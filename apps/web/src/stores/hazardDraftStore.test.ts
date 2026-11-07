@@ -99,3 +99,36 @@ describe('readPersistedDraft', () => {
     expect(readPersistedDraft(localStorage, 'user_a')).toBeNull();
   });
 });
+
+describe('restore rules (agent J)', () => {
+  it('a restored draft is never mid-placement, never mid-nudge, and says it was restored', () => {
+    localStorage.setItem(
+      'gli-hazard-draft',
+      JSON.stringify({
+        owner: 'user_a',
+        draft: { ...DRAFT, placing: true, nearbyHazardId: 'h1', step: 'confirm', photoCount: 2 },
+      }),
+    );
+    useHazardDraftStore.getState().bindOwner('user_a');
+    const state = useHazardDraftStore.getState();
+    expect(state.restored).toBe(true);
+    expect(state.draft).toMatchObject({
+      placing: false,
+      nearbyHazardId: null,
+      step: 'details',
+      photoCount: 2,
+    });
+  });
+
+  it('a mangled stored draft restores nothing', () => {
+    localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a', draft: 'nope' }));
+    expect(readPersistedDraft(localStorage, 'user_a')).toBeNull();
+  });
+
+  it('clearing ends the restored state too', () => {
+    localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a', draft: DRAFT }));
+    useHazardDraftStore.getState().bindOwner('user_a');
+    useHazardDraftStore.getState().clearDraft();
+    expect(useHazardDraftStore.getState().restored).toBe(false);
+  });
+});
