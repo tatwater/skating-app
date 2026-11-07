@@ -42,7 +42,14 @@ export function tokenMergeTheme(
   return theme;
 }
 
-const twMerge = extendTailwindMerge({ extend: { theme: tokenMergeTheme() } });
+const twMerge = extendTailwindMerge({
+  extend: {
+    theme: tokenMergeTheme(),
+    // kit.css's own utilities: each its own group, so `text-trim` never
+    // collides with the `text-*` color/size groups and get dropped.
+    classGroups: { 'text-trim': ['text-trim'] },
+  },
+});
 
 /** Merge conditional class lists, de-duplicating conflicting Tailwind utilities (shadcn). */
 export function cn(...inputs: ClassValue[]): string {

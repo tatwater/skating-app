@@ -42,3 +42,10 @@ describe('tokenMergeTheme', () => {
     expect(Object.values(theme).flat()).toHaveLength(2);
   });
 });
+
+it('keeps text-trim next to a text color or size class (kit.css utility, not a color)', () => {
+  expect(cn('text-trim', 'text-fg1')).toBe('text-trim text-fg1');
+  expect(cn('text-fg1', 'text-trim')).toBe('text-fg1 text-trim');
+  expect(cn('text-trim', 'text-kick')).toBe('text-trim text-kick');
+  expect(cn('text-trim', 'text-trim')).toBe('text-trim');
+});
