@@ -1,7 +1,7 @@
 import { RISK_ACK_VERSION } from '@skating/core';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   auth: { isLoaded: true, isSignedIn: false } as { isLoaded: boolean; isSignedIn: boolean },
@@ -28,10 +28,20 @@ vi.mock('./AppShell', () => ({
   AppShell: ({ children }: { children: ReactNode }) => <div data-testid="shell">{children}</div>,
 }));
 vi.mock('./skater/OfflineBoundary', () => ({ FirstLoadSplash: () => <p>splash</p> }));
+vi.mock('./skater/BootScreen', () => ({
+  BootScreen: ({ pathname }: { pathname: string }) => <p>{`boot ${pathname}`}</p>,
+}));
 
+import { BOOT_COOKIE, bootCookieString, readBootZoneFromCookie } from '../lib/boot';
 import { AuthGate, usesOldShell } from './AuthGate';
 
 const PROVISIONED = { riskAckVersion: RISK_ACK_VERSION, displayName: 'Skater' };
+
+/** jsdom keeps one document per file, and the gate writes a session cookie into it. */
+function clearBootCookie() {
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+  document.cookie = `${BOOT_COOKIE}=; path=/; max-age=0`;
+}
 
 beforeEach(() => {
   mocks.auth = { isLoaded: true, isSignedIn: false };
@@ -39,7 +49,10 @@ beforeEach(() => {
   mocks.pathname = '/';
   mocks.notFound = false;
   mocks.push = vi.fn();
+  clearBootCookie();
 });
+
+afterEach(clearBootCookie);
 
 describe('AuthGate', () => {
   it('holds on the first-load splash while auth loads', () => {
@@ -146,6 +159,105 @@ describe('AuthGate', () => {
       expect(screen.queryByTestId('shell')).not.toBeInTheDocument();
       expect(mocks.push).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * The hold is the splash only on a cold start; a browser session that has already reached the app
+ * gets the page's shape instead, because a full-screen hold on every document load reads as a
+ * restart. `lib/boot.ts` carries the knowledge across the load.
+ */
+describe('the hold while auth resolves', () => {
+  it('is the splash on a cold start — nothing is known about where this lands', () => {
+    mocks.auth = { isLoaded: false, isSignedIn: false };
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('splash')).toBeInTheDocument();
+  });
+
+  it('is the page’s shape once this session has reached the app, pathname and all', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+    document.cookie = bootCookieString('app');
+    mocks.auth = { isLoaded: false, isSignedIn: false };
+    mocks.pathname = '/water/abc';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('boot /water/abc')).toBeInTheDocument();
+    expect(screen.queryByText('splash')).not.toBeInTheDocument();
+    expect(screen.queryByText('page')).not.toBeInTheDocument();
+  });
+
+  it('holds on the shape mid-redirect too, not only while Clerk loads', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+    document.cookie = bootCookieString('app');
+    mocks.auth = { isLoaded: true, isSignedIn: true };
+    mocks.profile = PROVISIONED;
+    mocks.pathname = '/sign-in'; // provisioned: the gate is sending them home
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('boot /sign-in')).toBeInTheDocument();
+    expect(mocks.push).toHaveBeenCalledWith('/');
+  });
+
+  it.each(['auth', 'onboarding', 'reack'] as const)(
+    'stays the splash when the last zone was %s — only the app has a shape to draw',
+    (zone) => {
+      // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+      document.cookie = bootCookieString(zone);
+      mocks.auth = { isLoaded: false, isSignedIn: false };
+      render(<AuthGate>page</AuthGate>);
+      expect(screen.getByText('splash')).toBeInTheDocument();
+    },
+  );
+
+  it('stays the splash under the console, which holds its own way', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+    document.cookie = bootCookieString('app');
+    mocks.auth = { isLoaded: false, isSignedIn: false };
+    mocks.pathname = '/admin/water/review';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('splash')).toBeInTheDocument();
+  });
+
+  it('is never drawn over the Google Photos callback, which renders bare in every state', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+    document.cookie = bootCookieString('app');
+    mocks.auth = { isLoaded: false, isSignedIn: false };
+    mocks.pathname = '/google-photos/callback';
+    render(<AuthGate>callback</AuthGate>);
+    expect(screen.getByText('callback')).toBeInTheDocument();
+  });
+});
+
+describe('the boot cookie the gate writes', () => {
+  it('records the app once a provisioned skater is through', () => {
+    mocks.auth = { isLoaded: true, isSignedIn: true };
+    mocks.profile = PROVISIONED;
+    render(<AuthGate>page</AuthGate>);
+    expect(readBootZoneFromCookie(document.cookie)).toBe('app');
+  });
+
+  it.each([
+    ['signed out', { isLoaded: true, isSignedIn: false }, undefined, 'auth'],
+    ['with no profile row', { isLoaded: true, isSignedIn: true }, null, 'onboarding'],
+  ])('records %s', (_, auth, profile, zone) => {
+    mocks.auth = auth;
+    mocks.profile = profile;
+    mocks.pathname = '/sign-in';
+    render(<AuthGate>page</AuthGate>);
+    expect(readBootZoneFromCookie(document.cookie)).toBe(zone);
+  });
+
+  it('writes nothing while the answer is still loading', () => {
+    mocks.auth = { isLoaded: false, isSignedIn: false };
+    render(<AuthGate>page</AuthGate>);
+    expect(readBootZoneFromCookie(document.cookie)).toBeNull();
+  });
+
+  it('overwrites a stale app, so signing out stops drawing the skater shell', () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
+    document.cookie = bootCookieString('app');
+    mocks.auth = { isLoaded: true, isSignedIn: false };
+    mocks.pathname = '/sign-in';
+    render(<AuthGate>page</AuthGate>);
+    expect(readBootZoneFromCookie(document.cookie)).toBe('auth');
   });
 });
 

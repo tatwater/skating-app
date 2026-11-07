@@ -3,10 +3,12 @@ import { api } from '@skating/convex/api';
 import { resolveAuthRoute } from '@skating/core';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { authZoneTarget } from '../lib/authZone';
+import { type BootZone, bootCookieString, readBootZone } from '../lib/boot';
 import { useSheetOwnerBinding } from '../lib/sheetOwner';
 import { AppShell } from './AppShell';
+import { BootScreen } from './skater/BootScreen';
 import { FirstLoadSplash } from './skater/OfflineBoundary';
 
 /**
@@ -46,10 +48,20 @@ export function usesOldShell(pathname: string): boolean {
  * path-based — redirects the user into the right zone when they're in the wrong one. In the
  * signed-in-and-provisioned (`app`) state only the admin console (`usesOldShell`) is
  * wrapped in the old `AppShell`; the skater pages, the 404 and the auth/onboarding/re-ack pages
- * render bare. We hold on the first-load splash while loading or mid-redirect so we
- * never flash the wrong surface; it turns into the offline screen if the socket never opens.
+ * render bare. We hold while loading or mid-redirect so we never flash the wrong surface; the
+ * hold turns into the offline screen if the socket never opens.
+ *
+ * **What the hold looks like depends on whether this is a cold start** (`lib/boot.ts`). The first
+ * load of a browser session gets the splash (8.10), which is what a cold start is. Every load
+ * after it gets `BootScreen` — the shell with the page's skeletons — because the boot cookie
+ * already says which zone this session resolved to, so the shape is known before a single query
+ * answers. The full-screen hold on *every* document load is the thing being fixed: it wipes the
+ * app away and puts it back, which reads as a restart rather than as a page loading.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
+  // Read once, at the first render on each side: the server reads the request's cookie and the
+  // browser reads `document.cookie`, so the first client render matches the server's exactly.
+  const [booted] = useState<BootZone | null>(readBootZone);
   const { isLoaded, isSignedIn } = useAuth();
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
   const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
@@ -69,8 +81,24 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (target && target !== pathname) router.history.push(target);
   }, [target, pathname, router]);
 
+  // Remember the zone this session settled in, for the *next* document load's hold. Written on
+  // every settled answer, not only the first, so signing out doesn't leave a cookie that would
+  // draw the skater shell at a signed-out visitor.
+  useEffect(() => {
+    if (route === 'loading') return;
+    // biome-ignore lint/suspicious/noDocumentCookie: the Cookie Store API is missing from Firefox, and this cookie must be readable by the server on the next request
+    document.cookie = bootCookieString(route);
+  }, [route]);
+
   if (bare) return <>{children}</>;
-  if (route === 'loading' || target) return <FirstLoadSplash />;
+  if (route === 'loading' || target) {
+    // Only the skater shell has a boot shape; the console keeps its own hold (`AdminLayout`).
+    return booted === 'app' && !usesOldShell(pathname) ? (
+      <BootScreen pathname={pathname} />
+    ) : (
+      <FirstLoadSplash />
+    );
+  }
   if (route === 'app' && usesOldShell(pathname) && !notFound) {
     return <AppShell>{children}</AppShell>;
   }
