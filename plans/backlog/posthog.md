@@ -81,8 +81,14 @@ things that currently ship dark behind constants.
   filter is a cohort rule and will *not* do this job: preview traffic comes from real signed-in
   people. Also worth knowing, the pinned landing dashboard is the generic "Your starter dashboard",
   not the wizard's, and reads empty.
-- **Nothing has been ingested yet** (`ingested_event: false` as of 2026-11-07) — expected, since
-  the code is not on `main` and the preview deployment sits behind Vercel's access protection. The
-  first page load after merge is the real delivery test.
+- **Delivery is unverified, and that is not the same as expected.** As of 2026-11-07, just after
+  #91 merged, the project had never ingested an event (`ingested_event: false`). At that moment
+  nothing had exercised the client: the preview deployment sits behind Vercel's access protection,
+  and production had not yet served a page load.
+
+  That is a dated observation, so do not read it as a standing explanation. **Once production has
+  served a page, an empty project means delivery is broken**, and the first thing to check is that
+  `VITE_POSTHOG_KEY` is set for the Production environment and not only Preview — the app is built
+  to stay silent without it rather than fail, so a missing key looks exactly like no traffic.
 - **Cost:** free tier is 1M events/month. Autocapture is the unpredictable half — worth a look at
   real volume once the alpha has traffic, since it is one line to turn off.
