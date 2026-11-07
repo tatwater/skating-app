@@ -3,7 +3,14 @@ import { useRef, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Badge } from './badge';
-import { colorsIn, computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import {
+  colorsIn,
+  computedColor,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+  sameShadow,
+} from './measure';
 import { MiddleList, type MiddleListItem, type MiddleListProps } from './middle-list';
 import { KICKER, must } from './storyKit';
 
@@ -303,7 +310,9 @@ export const Washes: Story = {
     await expect(getComputedStyle(ridge).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     await waitFor(() => expect(getComputedStyle(crack).backgroundColor).toEqual(sameColor(lift08)));
     const rule = resolvePx(box, 'var(--stroke-note)');
-    await expect(getComputedStyle(crack).boxShadow).toContain(`${rule}px 0px 0px 0px`);
+    await expect(getComputedStyle(crack).boxShadow).toEqual(
+      sameShadow({ lengths: [rule, 0, 0, 0], inset: true }),
+    );
     await expect(colorsIn(getComputedStyle(crack).boxShadow)).toContainEqual(sameColor(fg));
     const title = (el: HTMLElement) =>
       must(el.querySelector<HTMLElement>('[data-slot="middle-list-title"]'));

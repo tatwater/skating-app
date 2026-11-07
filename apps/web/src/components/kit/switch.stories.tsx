@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, focusRing, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { Switch, SwitchRow } from './switch';
 
@@ -157,7 +157,7 @@ export const FocusLights: Story = {
       const rest = getComputedStyle(track).borderTopColor;
       const lit = computedColor(el, 'var(--fg2)');
       el.focus();
-      await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/3px/));
+      await waitFor(() => expect(getComputedStyle(el).boxShadow).toEqual(focusRing()));
       await waitFor(() => expect(getComputedStyle(track).borderTopColor).toEqual(sameColor(lit)));
       await expect(lit).not.toEqual(sameColor(rest));
     }

@@ -11,6 +11,7 @@ import {
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
+  sameShadow,
 } from './measure';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
@@ -288,8 +289,7 @@ export const Junction: Story = {
     await expect(box.height).toBeCloseTo(px('1.75rem'), 1);
     // The inset bar: 2 px of the bright ink on the left edge.
     const shadow = getComputedStyle(health).boxShadow;
-    await expect(shadow).toMatch(/inset/);
-    await expect(shadow).toMatch(/2px 0px 0px 0px/);
+    await expect(shadow).toEqual(sameShadow({ lengths: [2, 0, 0, 0], inset: true }));
     await expect(colorsIn(shadow)).toContainEqual(sameColor(computedColor(nav, 'var(--fg)')));
 
     const label = part(health, 'lane-label').getBoundingClientRect();

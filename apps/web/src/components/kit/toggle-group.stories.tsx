@@ -5,6 +5,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import {
   computedColor,
   contrastBetween,
+  focusRing,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
@@ -242,7 +243,7 @@ export const FocusLights: Story = {
     const clear = option(canvasElement, 'Clear');
     const lit = computedColor(clear, 'var(--fg1)');
     clear.focus();
-    await waitFor(() => expect(getComputedStyle(clear).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(clear).boxShadow).toEqual(focusRing()));
     await waitFor(() => expect(getComputedStyle(clear).color).toEqual(sameColor(lit)));
   },
 };

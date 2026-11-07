@@ -4,7 +4,14 @@ import { expect, userEvent, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import {
+  computedColor,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+  sameShadow,
+  transitionsDone,
+} from './measure';
 import {
   createKeyRegistry,
   type KeyHint,
@@ -250,6 +257,8 @@ export const Lamps: Story = {
   play: async ({ canvasElement }) => {
     const led = (state: string) =>
       part(must(canvasElement.querySelector(`[data-state="${state}"]`)), 'status-led');
+    // The breathing never finishes: waiting out the lamp's transitions skips it rather than hang.
+    await transitionsDone(led('live'));
     const live = getComputedStyle(led('live'));
     await expect(live.backgroundColor).toEqual(
       sameColor(computedColor(canvasElement, 'var(--fg)')),
@@ -257,7 +266,14 @@ export const Lamps: Story = {
     await expect(live.animationName).toBe(reduced() ? 'none' : 'kit-led');
     // The pulse is the lamp token: 2400 ms (zero under reduced motion).
     await expect(live.animationDuration).toBe(reduced() ? '0s' : '2.4s');
-    await expect(live.boxShadow).toMatch(/8px/);
+    // The halo: a ring and a glow. It breathes on an infinite animation — no end state to wait
+    // for — so each length is held to the span every phase stays in (2→3 px ring, 8→3 px glow);
+    // held still under reduced motion, it is exact.
+    await expect(live.boxShadow).toEqual(
+      reduced()
+        ? sameShadow([0, 0, 0, 2], [0, 0, 8, 0])
+        : sameShadow([0, 0, 0, [2, 3]], [0, 0, [3, 8], 0]),
+    );
     const idle = getComputedStyle(led('idle'));
     await expect(idle.animationName).toBe('none');
     await expect(idle.backgroundColor).toEqual(

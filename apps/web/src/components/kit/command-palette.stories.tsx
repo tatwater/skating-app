@@ -12,7 +12,7 @@ import {
   type CommandPaletteProps,
 } from './command-palette';
 import { Kbd, KbdGroup } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor, sameShadow } from './measure';
 import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
@@ -194,7 +194,12 @@ export const Default: Story = {
     // Always open: the list is there from the first frame, the first row selected.
     await waitFor(() => expect(within(pal).getByRole('listbox')).toBeVisible());
     await waitFor(() => expect(highlightedRow(pal)).toBe(rows(pal)[0]));
-    await expect(getComputedStyle(must(highlightedRow(pal))).boxShadow).toMatch(/inset/);
+    const note = resolvePx(pal, 'var(--stroke-note)');
+    await waitFor(() =>
+      expect(getComputedStyle(must(highlightedRow(pal))).boxShadow).toEqual(
+        sameShadow({ lengths: [note, 0, 0, 0], inset: true }),
+      ),
+    );
     // Groups take a kicker.
     const labels = [...pal.querySelectorAll('[data-slot="command-palette-group-label"]')];
     await expect(labels.map((l) => l.textContent)).toEqual(['Modes', 'Bodies', 'People', 'Runs']);
@@ -426,8 +431,9 @@ export const Junctions: Story = {
     await near(kicker.left - box.left - edge, gutter);
     const first = must(rows(pal)[0]).getBoundingClientRect();
     await near(first.top - kicker.bottom, resolvePx(pal, 'var(--space-1_5)'));
-    await expect(getComputedStyle(must(highlightedRow(pal))).boxShadow).toContain(
-      `${resolvePx(pal, 'var(--stroke-note)')}px 0px 0px 0px`,
+    const bar = resolvePx(pal, 'var(--stroke-note)');
+    await expect(getComputedStyle(must(highlightedRow(pal))).boxShadow).toEqual(
+      sameShadow({ lengths: [bar, 0, 0, 0], inset: true }),
     );
     // Wider than a dialog, and inside the gutter of a narrow frame.
     await expect(box.width).toBeGreaterThan(resolvePx(pal, 'var(--size-sheet-sm)'));

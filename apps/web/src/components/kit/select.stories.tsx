@@ -9,6 +9,7 @@ import {
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
+  sameShadow,
 } from './measure';
 import {
   Select,
@@ -196,7 +197,11 @@ export const Underline: Story = {
     await waitFor(() => expect(popup()).not.toBeNull());
     const river = option('River');
     await expect(river).toHaveAttribute('data-selected');
-    await expect(getComputedStyle(river).boxShadow).toMatch(/inset/);
+    await waitFor(() =>
+      expect(getComputedStyle(river).boxShadow).toEqual(
+        sameShadow({ lengths: [2, 0, 0, 0], inset: true }),
+      ),
+    );
     await expect(getComputedStyle(option('Town')).boxShadow).toBe('none');
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(popup()).toBeNull());
@@ -210,7 +215,7 @@ export const Boxed: Story = {
     const trigger = within(canvasElement).getByRole('combobox', { name: 'Imagery source' });
     const style = getComputedStyle(trigger);
     await expect(style.textTransform).toBe('uppercase');
-    await expect(style.boxShadow).toMatch(/inset/);
+    await expect(style.boxShadow).toEqual(sameShadow({ lengths: [0, 0, 0, 1], inset: true }));
     await expect(style.borderRadius).toBe(
       getComputedStyle(document.documentElement).getPropertyValue('--corner-control').trim(),
     );

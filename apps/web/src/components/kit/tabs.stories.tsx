@@ -4,6 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import {
   computedColor,
   contrastBetween,
+  focusRing,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
@@ -170,7 +171,7 @@ export const FocusLights: Story = {
     const metrics = within(canvasElement).getByRole('tab', { name: 'Metrics' });
     const lit = computedColor(metrics, 'var(--fg1)');
     metrics.focus();
-    await waitFor(() => expect(getComputedStyle(metrics).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(metrics).boxShadow).toEqual(focusRing()));
     await waitFor(() => expect(getComputedStyle(metrics).color).toEqual(sameColor(lit)));
   },
 };

@@ -12,7 +12,7 @@ import {
 import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor, sameShadow } from './measure';
 import { ScrollArea } from './scroll-area';
 import { KICKER, must } from './storyKit';
 import { DataTable, type DataTableProps, type TableColumnMeta } from './table';
@@ -303,8 +303,7 @@ export const Clickable: Story = {
     await expect(getComputedStyle(chosen).backgroundColor).toEqual(sameColor(lift08));
     await expect(getComputedStyle(chosen).color).toEqual(sameColor(fg));
     const rule = getComputedStyle(must(chosen.cells[0])).boxShadow;
-    await expect(rule).toContain('inset');
-    await expect(rule).toContain('2px 0px 0px 0px');
+    await expect(rule).toEqual(sameShadow({ lengths: [2, 0, 0, 0], inset: true }));
     await expect(getComputedStyle(must(chosen.cells[1])).boxShadow).toBe('none');
 
     // One tab stop for the table: the chosen row, until focus moves.

@@ -3,7 +3,14 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contentRect, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import {
+  computedColor,
+  contentRect,
+  focusRing,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { Plate } from './plate';
 import { Value } from './stat-tile';
 import { KICKER, must } from './storyKit';
@@ -232,7 +239,7 @@ export const Interactive: Story = {
       );
     });
     await expect(tickColor(plate)).toEqual(sameColor(lit));
-    await waitFor(() => expect(getComputedStyle(plate).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(plate).boxShadow).toEqual(focusRing()));
 
     // Enter and Space press it.
     onOpen.mockClear();

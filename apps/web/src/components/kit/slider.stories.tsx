@@ -5,6 +5,7 @@ import {
   colorsIn,
   computedColor,
   contrastBetween,
+  focusRing,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
@@ -91,7 +92,7 @@ export const FocusRing: Story = {
     const thumb = must(canvasElement.querySelector<HTMLElement>('[data-slot="slider-thumb"]'));
     await userEvent.tab();
     await expect(input(canvasElement)).toHaveFocus();
-    await waitFor(() => expect(getComputedStyle(thumb).boxShadow).toMatch(/0px 0px 0px 4px/));
+    await waitFor(() => expect(getComputedStyle(thumb).boxShadow).toEqual(focusRing()));
   },
 };
 

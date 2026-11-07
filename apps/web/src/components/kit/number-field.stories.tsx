@@ -4,7 +4,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Field, FieldError, FieldLabel } from './input';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor, sameShadow } from './measure';
 import { NumberField } from './number-field';
 import { KICKER, must, PSEUDO_STATES, StateMatrix, settled, underPointer } from './storyKit';
 
@@ -72,7 +72,9 @@ export const Focused: Story = {
     await waitFor(() =>
       expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bright)),
     );
-    await waitFor(() => expect(getComputedStyle(group).boxShadow).toMatch(/0px 1px 0px 0px/));
+    await waitFor(() =>
+      expect(getComputedStyle(group).boxShadow).toEqual(sameShadow([0, 1, 0, 0])),
+    );
     const focused = group.getBoundingClientRect();
     await expect([focused.height, focused.top]).toEqual([rest.height, rest.top]);
     el.blur();
@@ -163,7 +165,9 @@ export const Invalid: Story = {
     const bad = computedColor(group, 'var(--bad)');
     await expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bad));
     el.focus();
-    await waitFor(() => expect(getComputedStyle(group).boxShadow).toMatch(/0px 1px 0px 0px/));
+    await waitFor(() =>
+      expect(getComputedStyle(group).boxShadow).toEqual(sameShadow([0, 1, 0, 0])),
+    );
     await expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bad));
     el.blur();
   },

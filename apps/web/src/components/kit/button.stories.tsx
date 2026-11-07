@@ -9,6 +9,7 @@ import { Button } from './button';
 import {
   computedColor,
   contentRect,
+  focusRing,
   horizontalGaps,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
@@ -275,7 +276,7 @@ export const FocusLights: Story = {
     // `tab()` hangs under the Vitest browser runner, so focus is moved directly.)
     promote.focus();
     await expect(dots(promote)).toBe('1');
-    await waitFor(() => expect(getComputedStyle(promote).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(promote).boxShadow).toEqual(focusRing()));
 
     remove.focus();
     await expect(dots(remove)).toBe('1');

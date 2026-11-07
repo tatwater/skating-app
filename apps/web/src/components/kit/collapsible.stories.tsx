@@ -8,7 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from './collapsible';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, focusRing, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const meta = {
@@ -118,7 +118,8 @@ export const OpenThenClose: Story = {
     await userEvent.click(archived);
     await expect(archived).toHaveAttribute('aria-expanded', 'false');
     await waitFor(() => expect(panelOf(canvasElement)).toBeNull());
-    await expect(getComputedStyle(chevronOf(archived)).rotate).toBe('none');
+    // The chevron turns on its own transition: wait for its end, not the panel's.
+    await waitFor(() => expect(getComputedStyle(chevronOf(archived)).rotate).toBe('none'));
     await expect(
       Math.abs(known.getBoundingClientRect().top - archived.getBoundingClientRect().bottom),
     ).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
@@ -145,7 +146,7 @@ export const Keyboard: Story = {
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(args.onOpenChange).toHaveBeenLastCalledWith(false, expect.anything());
     // Keyboard focus rings the row and lights the name, as hover does.
-    await waitFor(() => expect(getComputedStyle(trigger).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(trigger).boxShadow).toEqual(focusRing()));
     const lit = computedColor(trigger, 'var(--fg1)');
     await waitFor(() => expect(getComputedStyle(trigger).color).toEqual(sameColor(lit)));
   },

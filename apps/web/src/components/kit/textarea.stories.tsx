@@ -8,6 +8,7 @@ import {
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
+  shadowsIn,
 } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { Textarea } from './textarea';
@@ -67,7 +68,9 @@ export const Focused: Story = {
     const style = getComputedStyle(el);
     await expect(style.borderTopColor).not.toEqual(sameColor(bright));
     // No ring: every shadow layer is transparent.
-    await expect(style.boxShadow.replaceAll(/rgba\(0, 0, 0, 0\)( 0px){4},? ?/g, '')).toBe('');
+    for (const layer of shadowsIn(style.boxShadow)) {
+      await expect(layer.color).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    }
     await expect(style.outlineStyle).toBe('none');
     const focused = el.getBoundingClientRect();
     await expect([focused.width, focused.height, focused.top]).toEqual([

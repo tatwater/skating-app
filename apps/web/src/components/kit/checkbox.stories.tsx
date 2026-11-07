@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Checkbox, CheckboxGroup, CheckboxRow } from './checkbox';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, focusRing, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const meta = {
@@ -177,7 +177,7 @@ export const FocusLights: Story = {
     const lit = computedColor(el, 'var(--fg)');
     await expect(getComputedStyle(el).borderTopColor).not.toEqual(sameColor(lit));
     el.focus();
-    await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(el).boxShadow).toEqual(focusRing()));
     await waitFor(() => expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(lit)));
   },
 };

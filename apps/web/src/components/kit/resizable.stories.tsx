@@ -4,7 +4,7 @@ import { type GroupProps, type Layout, useGroupRef, usePanelRef } from 'react-re
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
-import { computedColor, resolvePx, sameColor } from './measure';
+import { computedColor, resolvePx, sameColor, sameShadow } from './measure';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizable';
 import { ScrollArea } from './scroll-area';
 import { KICKER, must } from './storyKit';
@@ -158,7 +158,11 @@ export const Keyboard: Story = {
     await waitFor(() =>
       expect(getComputedStyle(must(edge)).backgroundColor).toEqual(sameColor(bright)),
     );
-    await waitFor(() => expect(getComputedStyle(must(edge)).boxShadow).toMatch(/1px 0px 0px 0px/));
+    await waitFor(() =>
+      expect(getComputedStyle(must(edge)).boxShadow).toEqual(
+        sameShadow([1, 0, 0, 0], [-1, 0, 0, 0]),
+      ),
+    );
     const before = width(queue);
     await userEvent.keyboard('{ArrowRight}');
     await waitFor(() => expect(width(queue)).toBeGreaterThan(before));
@@ -381,7 +385,11 @@ export const Vertical: Story = {
     must(edge).focus();
     await userEvent.keyboard('{ArrowUp}');
     await waitFor(() => expect(log.getBoundingClientRect().height).toBeGreaterThan(140));
-    await waitFor(() => expect(getComputedStyle(must(edge)).boxShadow).toMatch(/0px 1px 0px 0px/));
+    await waitFor(() =>
+      expect(getComputedStyle(must(edge)).boxShadow).toEqual(
+        sameShadow([0, 1, 0, 0], [0, -1, 0, 0]),
+      ),
+    );
     must(edge).blur();
   },
 };

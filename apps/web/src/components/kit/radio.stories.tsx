@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Badge, Tag } from './badge';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import { computedColor, focusRing, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Radio, RadioGroup, RadioRow } from './radio';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
@@ -184,7 +184,7 @@ export const FocusLights: Story = {
     const dot = must(el.querySelector('[data-slot="radio-dot"]'));
     const lit = computedColor(el, 'var(--fg2)');
     el.focus();
-    await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/3px/));
+    await waitFor(() => expect(getComputedStyle(el).boxShadow).toEqual(focusRing()));
     await waitFor(() => expect(getComputedStyle(dot).borderTopColor).toEqual(sameColor(lit)));
   },
 };

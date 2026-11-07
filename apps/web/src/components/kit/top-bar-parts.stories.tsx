@@ -1,7 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
+import {
+  computedColor,
+  focusRing,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+  sameShadow,
+  transitionsDone,
+} from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import {
   type Colleague,
@@ -161,7 +169,7 @@ export const TapeKeyboard: Story = {
         ),
       ).toBe(true),
     );
-    await expect(getComputedStyle(today).boxShadow).toMatch(/3px/);
+    await waitFor(() => expect(getComputedStyle(today).boxShadow).toEqual(focusRing()));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(popup()).toBeNull());
     today.blur();
@@ -273,7 +281,9 @@ export const SearchFocus: Story = {
     await waitFor(() =>
       expect(getComputedStyle(search).borderBottomColor).toEqual(sameColor(bright)),
     );
-    await expect(getComputedStyle(search).boxShadow).toMatch(/0px 1px 0px 0px/);
+    // The color can match a frame before the transition ends; the doubled rule is read at its end.
+    await transitionsDone(search);
+    await expect(getComputedStyle(search).boxShadow).toEqual(sameShadow([0, 1, 0, 0]));
     search.blur();
   },
 };

@@ -11,6 +11,8 @@ import {
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
+  sameShadow,
+  transitionsDone,
 } from './measure';
 import { must, settled, underPointer } from './storyKit';
 
@@ -86,13 +88,22 @@ export const Default: Story = {
       resolvePx(root, 'var(--size-btn)'),
       1,
     );
-    // Focus brightens the rule and doubles it, as the standard input does.
-    await userEvent.click(input);
+    // Focus brightens the rule and doubles it, as the standard input does. Read at the end of the
+    // transition, exactly: a color matches within its tolerance a frame before the end, and the
+    // doubled rule's length would still be short of it there.
     const bright = computedColor(root, 'var(--fg)');
-    await waitFor(() =>
-      expect(getComputedStyle(root).borderBottomColor).toEqual(sameColor(bright)),
-    );
-    await expect(getComputedStyle(root).boxShadow).toMatch(/0px 1px 0px 0px/);
+    await userEvent.click(input);
+    await transitionsDone(root);
+    await expect(getComputedStyle(root).borderBottomColor).toEqual(sameColor(bright));
+    await expect(getComputedStyle(root).boxShadow).toEqual(sameShadow([0, 1, 0, 0]));
+    // A transition reversed mid-way (blur, then focus again at once) is cancelled, not finished:
+    // the wait follows its replacement to the end, which is the focused state again.
+    input.blur();
+    const settling = transitionsDone(root);
+    input.focus();
+    await settling;
+    await expect(getComputedStyle(root).borderBottomColor).toEqual(sameColor(bright));
+    await expect(getComputedStyle(root).boxShadow).toEqual(sameShadow([0, 1, 0, 0]));
     input.blur();
   },
 };
@@ -197,7 +208,11 @@ export const Backspace: Story = {
     await userEvent.keyboard('{ArrowLeft}');
     const chip = must(chips(canvasElement)[0]);
     await waitFor(() => expect(chip).toHaveFocus());
-    await expect(getComputedStyle(chip).boxShadow).toMatch(/inset/);
+    await waitFor(() =>
+      expect(getComputedStyle(chip).boxShadow).toEqual(
+        sameShadow({ lengths: [0, 0, 0, 1], inset: true }),
+      ),
+    );
     await userEvent.keyboard('{Backspace}');
     await waitFor(() => expect(chips(canvasElement)).toHaveLength(0));
     // Empty: the placeholder returns.

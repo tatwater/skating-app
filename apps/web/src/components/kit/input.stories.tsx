@@ -22,6 +22,7 @@ import {
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
+  sameShadow,
 } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix, settled, underPointer } from './storyKit';
 
@@ -70,7 +71,7 @@ export const Focused: Story = {
     const bright = computedColor(el, 'var(--fg)');
     el.focus();
     await waitFor(() => expect(getComputedStyle(el).borderBottomColor).toEqual(sameColor(bright)));
-    await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/0px 1px 0px 0px/));
+    await waitFor(() => expect(getComputedStyle(el).boxShadow).toEqual(sameShadow([0, 1, 0, 0])));
     // Nothing moved.
     const focused = el.getBoundingClientRect();
     await expect([focused.height, focused.top]).toEqual([rest.height, rest.top]);
@@ -115,7 +116,7 @@ export const Invalid: Story = {
     await expect(el).toHaveAccessibleDescription("That isn't a link");
     // Focus keeps it red: the error outranks the focus look.
     el.focus();
-    await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/0px 1px 0px 0px/));
+    await waitFor(() => expect(getComputedStyle(el).boxShadow).toEqual(sameShadow([0, 1, 0, 0])));
     await expect(getComputedStyle(el).borderBottomColor).toEqual(
       sameColor(computedColor(el, 'var(--bad)')),
     );

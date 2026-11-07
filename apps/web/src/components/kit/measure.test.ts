@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { COLOR_TOLERANCE, colorDistance, colorsIn, sameColor } from './measure';
+import {
+  COLOR_TOLERANCE,
+  colorDistance,
+  colorsIn,
+  sameColor,
+  sameShadow,
+  shadowsIn,
+} from './measure';
 
 // The token `--bad` (#ff4a55), as Chromium computes it at rest and mid-transition.
 const BAD = 'oklch(0.6713 0.2164 22.08)';
@@ -117,5 +124,73 @@ describe('colorsIn', () => {
       'rgba(0, 0, 0, 0.5)',
     ]);
     expect(colorsIn('none')).toEqual([]);
+  });
+});
+
+describe('shadowsIn', () => {
+  it('reads each layer of a computed shadow, inset and all, its lengths as numbers', () => {
+    expect(
+      shadowsIn('oklch(0.1 0 0) 0px 0px 0px 3px, inset rgba(0, 0, 0, 0.5) 2px 0px 0px 0px'),
+    ).toEqual([
+      { color: 'oklch(0.1 0 0)', inset: false, x: 0, y: 0, blur: 0, spread: 3 },
+      { color: 'rgba(0, 0, 0, 0.5)', inset: true, x: 2, y: 0, blur: 0, spread: 0 },
+    ]);
+    // Chromium's trailing `inset`, and a mid-transition length.
+    expect(shadowsIn('oklab(0.9 0 0) 0px 0.999749px 0px 0px inset')).toEqual([
+      { color: 'oklab(0.9 0 0)', inset: true, x: 0, y: 0.999749, blur: 0, spread: 0 },
+    ]);
+    expect(shadowsIn('rgb(0, 0, 0) -1px 0px')).toMatchObject([{ x: -1, blur: 0, spread: 0 }]);
+    expect(shadowsIn('none')).toEqual([]);
+  });
+
+  it('throws on what it cannot read, and names an empty value', () => {
+    expect(() => shadowsIn('')).toThrow(/empty string/);
+    expect(() => shadowsIn('0px 1px')).toThrow(/Not a computed shadow layer: "0px 1px"/);
+    expect(() => shadowsIn('rgb(0, 0, 0) 1px')).toThrow(/Not a computed shadow layer/);
+  });
+});
+
+describe('sameShadow', () => {
+  const FOCUS = 'oklch(0.1 0 0) 0px 0px 0px 3px, oklch(0.9 0 0) 0px 0px 0px 4px';
+
+  it('compares lengths as numbers: the last frames of a transition match, a near miss does not', () => {
+    expect('oklab(0.9 0 0) 0px 0.999749px 0px 0px').toEqual(sameShadow([0, 1, 0, 0]));
+    expect('oklab(0.9 0 0) 0px 0.98px 0px 0px').not.toEqual(sameShadow([0, 1, 0, 0]));
+    // `/3px/` would have matched 13 px.
+    expect('oklch(0.1 0 0) 0px 0px 0px 13px').not.toEqual(sameShadow([0, 0, 0, 3]));
+  });
+
+  it('wants a distinct layer per spec, in any order, and outer unless asked for inset', () => {
+    expect(FOCUS).toEqual(sameShadow([0, 0, 0, 4], [0, 0, 0, 3]));
+    expect('oklch(0.1 0 0) 0px 0px 0px 3px').not.toEqual(sameShadow([0, 0, 0, 3], [0, 0, 0, 3]));
+    const bar = 'inset oklch(0.9 0 0) 2px 0px 0px 0px';
+    expect(bar).not.toEqual(sameShadow([2, 0, 0, 0]));
+    expect(bar).toEqual(sameShadow({ lengths: [2, 0, 0, 0], inset: true }));
+    expect(bar).toEqual(
+      sameShadow({ lengths: [2, 0, 0, 0], inset: true, color: 'oklch(0.9 0 0)' }),
+    );
+    expect(bar).not.toEqual(
+      sameShadow({ lengths: [2, 0, 0, 0], inset: true, color: 'oklch(0.1 0 0)' }),
+    );
+    expect('none').not.toEqual(sameShadow([0, 0, 0, 3]));
+    expect(42).not.toEqual(sameShadow([0, 0, 0, 3]));
+  });
+
+  it('takes a range for a length that never settles (an infinite animation)', () => {
+    const lamp = sameShadow([0, 0, 0, [2, 3]], [0, 0, [3, 8], 0]);
+    expect('rgb(1, 1, 1) 0px 0px 0px 2.4px, rgb(2, 2, 2) 0px 0px 5.1px 0px').toEqual(lamp);
+    expect('rgb(1, 1, 1) 0px 0px 0px 2px, rgb(2, 2, 2) 0px 0px 7.99817px 0px').toEqual(lamp);
+    expect('rgb(1, 1, 1) 0px 0px 0px 4px, rgb(2, 2, 2) 0px 0px 5px 0px').not.toEqual(lamp);
+  });
+
+  it('prints as itself, and fails loudly by name on an empty or unreadable actual', () => {
+    const m = sameShadow([0, 1, 0, 0], { lengths: [2, 0, 0, [1, 2]], inset: true });
+    expect(String(m)).toBe('sameShadow(0px 1px 0px 0px, inset 2px 0px 0px 1–2px)');
+    expect(m.toAsymmetricMatcher()).toBe(String(m));
+    expect(() => expect('').toEqual(m)).toThrow(
+      `No computed shadow to compare with ${String(m)}: the element is not in the page.`,
+    );
+    expect(() => expect('0px 1px').toEqual(m)).toThrow(/can't read the actual value/);
+    expect(() => sameShadow({ lengths: [0, 0, 0, 1], color: 'var(--fg)' })).toThrow(/can't read/);
   });
 });

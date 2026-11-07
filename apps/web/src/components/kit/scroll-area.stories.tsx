@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor } from 'storybook/test';
 
-import { computedColor, resolvePx, sameColor } from './measure';
+import { computedColor, resolvePx, sameColor, sameShadow } from './measure';
 import { ScrollArea } from './scroll-area';
 import { KICKER, must } from './storyKit';
 
@@ -186,7 +186,11 @@ export const Keyboard: Story = {
     await userEvent.tab();
     await expect(viewport).toHaveFocus();
     await waitFor(() => expect(getComputedStyle(bar).opacity).toBe('1'));
-    await expect(getComputedStyle(viewport).boxShadow).toMatch(/inset/);
+    await waitFor(() =>
+      expect(getComputedStyle(viewport).boxShadow).toEqual(
+        sameShadow({ lengths: [0, 0, 0, 1], inset: true }),
+      ),
+    );
     viewport.blur();
   },
 };

@@ -21,6 +21,7 @@ import {
   JUNCTION_TOLERANCE_PX,
   resolvePx,
   sameColor,
+  sameShadow,
 } from './measure';
 import { RailItem, RailViewer } from './rail-item';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
@@ -226,7 +227,11 @@ export const FocusLights: Story = {
     const lit = computedColor(overview, 'var(--fg1)');
     await waitFor(() => expect(getComputedStyle(overview).color).toEqual(sameColor(lit)));
     // An inset ring: it never spills over the neighbors.
-    await expect(getComputedStyle(overview).boxShadow).toMatch(/inset/);
+    await waitFor(() =>
+      expect(getComputedStyle(overview).boxShadow).toEqual(
+        sameShadow({ lengths: [0, 0, 0, 1], inset: true }),
+      ),
+    );
   },
 };
 
@@ -289,7 +294,7 @@ export const JunctionAdmin: Story = {
     await expect(parseFloat(bar.height)).toBeCloseTo(px('1.5rem'), 1);
     await expect(bar.left).toBe('0px');
     await expect(bar.backgroundColor).toEqual(sameColor(computedColor(inbox, 'var(--fg)')));
-    await expect(bar.boxShadow).toMatch(/8px/);
+    await expect(bar.boxShadow).toEqual(sameShadow([0, 0, 8, 0]));
     // A resting item draws no bar.
     await expect(
       getComputedStyle(canvas.getByRole('link', { name: 'Reports' }), '::before').content,
