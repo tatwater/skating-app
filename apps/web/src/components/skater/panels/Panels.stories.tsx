@@ -44,6 +44,14 @@ const quads = (root: HTMLElement) => [
 ];
 const cardOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-slot="inset-card"]');
 
+/** The card once it's past its starting style: it mounts transparent, then fades in. */
+const shownCard = (root: ParentNode) =>
+  waitFor(() => {
+    const card = must(cardOf(root));
+    expect(card).toBeVisible();
+    return card;
+  });
+
 function Frame({
   backTo,
   label,
@@ -99,7 +107,7 @@ export const Hazard: Story = {
   ),
   play: async ({ canvasElement }) => {
     for (const quad of quads(canvasElement)) {
-      const card = await waitFor(() => must(cardOf(quad)));
+      const card = await shownCard(quad);
       await expect(getComputedStyle(card).borderRadius).toBe('0px');
       await expect(within(card).getByRole('heading', { name: 'Open water / lead' })).toBeVisible();
       const verdicts = within(card).getByRole('group', { name: 'Seen this recently?' });
@@ -140,7 +148,7 @@ export const FullyHealedConfirm: Story = {
   ),
   play: async ({ canvasElement }) => {
     for (const quad of quads(canvasElement)) {
-      const card = await waitFor(() => must(cardOf(quad)));
+      const card = await shownCard(quad);
       await userEvent.click(within(card).getByRole('button', { name: /^Fully healed/ }));
       const confirm = await waitFor(() =>
         must(card.querySelector<HTMLElement>('[data-slot="healed-confirm"]')),
@@ -232,7 +240,7 @@ export const Report: Story = {
   ),
   play: async ({ canvasElement }) => {
     for (const quad of quads(canvasElement)) {
-      const card = await waitFor(() => must(cardOf(quad)));
+      const card = await shownCard(quad);
       await expect(within(card).getByRole('heading', { name: 'Mascoma South' })).toBeVisible();
       await expect(
         within(card).getByText('3', { selector: '[data-slot="section-slug"] *' }),
@@ -286,7 +294,7 @@ export const Bounty: Story = {
   ),
   play: async ({ canvasElement }) => {
     for (const quad of quads(canvasElement)) {
-      const card = await waitFor(() => must(cardOf(quad)));
+      const card = await shownCard(quad);
       await expect(within(card).getByText('3 want a report')).toBeVisible();
       await expect(within(card).queryByText(/points|pts/i)).toBeNull();
       await expect(
@@ -326,7 +334,7 @@ export const BountyYours: Story = {
   ),
   play: async ({ canvasElement }) => {
     for (const quad of quads(canvasElement)) {
-      const card = await waitFor(() => must(cardOf(quad)));
+      const card = await shownCard(quad);
       await expect(within(card).getByText('You want a report')).toBeVisible();
       await expect(
         within(card).getByText('A helpful thumb from you fulfills the bounty.'),

@@ -211,7 +211,9 @@ export const LeaveWithoutPosting: Story = {
     leaveKept.mockClear();
     leaveLeft.mockClear();
     const body = within(canvasElement.ownerDocument.body);
-    await expect(await body.findByText('Leave without posting?')).toBeVisible();
+    // The dialog mounts at its starting style (transparent), then fades in: wait for it to arrive.
+    const title = await body.findByText('Leave without posting?');
+    await waitFor(() => expect(title).toBeVisible());
     await expect(body.getByText('What you wrote here will be gone.')).toBeVisible();
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(leaveKept).toHaveBeenCalled());

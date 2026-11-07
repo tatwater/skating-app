@@ -5,6 +5,7 @@ import { getFunctionName } from 'convex/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSheet, setSheetAttempt, useSheet } from '@/lib/sheetStore';
 import { installFakeStore, openSheet, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
+import { NAME_SEARCH_DEBOUNCE_MS } from './LakeNameSearch';
 import { ReportSheet } from './ReportSheet';
 import { SheetSlotsProvider } from './sheetSlots';
 
@@ -152,11 +153,18 @@ describe('Which lake? (5.2)', () => {
     ]);
     setSheet(blank());
     render(<Connected />);
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a lake by name' }), {
-      target: { value: 'masc' },
-    });
-    const result = await screen.findByRole('button', { name: /Mascoma Lake/ });
-    fireEvent.click(result);
+    // The search debounces; on a loaded runner the real 200 ms plus a render outran findBy's
+    // 1 s, so the clock steps past the debounce and the rows are there to read synchronously.
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Find a lake by name' }), {
+        target: { value: 'masc' },
+      });
+      act(() => vi.advanceTimersByTime(NAME_SEARCH_DEBOUNCE_MS));
+    } finally {
+      vi.useRealTimers();
+    }
+    fireEvent.click(screen.getByRole('button', { name: /Mascoma Lake/ }));
     expect(await screen.findByRole('heading', { name: 'Mascoma Lake' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Which lake?' })).not.toBeInTheDocument();
   });

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor } from 'storybook/test';
+import { expect } from 'storybook/test';
 import { RegionBackdrop, RegionCredit } from './RegionBackdrop';
 
 const meta = {
@@ -25,7 +25,17 @@ async function coversFromTheBottom(img: HTMLImageElement) {
   const style = getComputedStyle(img);
   await expect(style.objectFit).toBe('cover');
   await expect(style.objectPosition).toBe('50% 100%');
-  await waitFor(() => expect(img.complete && img.naturalWidth > 0).toBe(true));
+  // A cold fetch and decode on a starved runner can outlast a 1 s poll: wait on the picture's own
+  // load event instead (the test's timeout still bounds it), then check it decoded.
+  if (!img.complete) {
+    await new Promise<void>((resolve, reject) => {
+      img.addEventListener('load', () => resolve(), { once: true });
+      img.addEventListener('error', () => reject(new Error(`${img.src} did not load`)), {
+        once: true,
+      });
+    });
+  }
+  await expect(img.naturalWidth).toBeGreaterThan(0);
 }
 
 /**

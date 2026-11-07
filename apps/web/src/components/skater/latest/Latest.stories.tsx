@@ -314,7 +314,10 @@ export const ReportOpen: Story = {
     card.focus();
     await userEvent.keyboard('{Enter}');
     const inset = await q.findByRole('dialog');
-    await expect(within(inset).getByRole('button', { name: /Back to Latest/ })).toBeVisible();
+    // The card mounts transparent and fades in; wait for it rather than read its first frame.
+    await waitFor(() =>
+      expect(within(inset).getByRole('button', { name: /Back to Latest/ })).toBeVisible(),
+    );
     await expect(scroller).toHaveAttribute('inert');
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(q.queryByRole('dialog')).toBeNull());

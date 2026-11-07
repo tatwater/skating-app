@@ -437,7 +437,9 @@ export const RequestALake: Story = {
   render: () => pair((_mode, c) => <RequestStory container={c} />),
   play: async ({ canvasElement }) => {
     const q = within(darkQuad(canvasElement));
-    await expect(await q.findByText('43.6317° N, 72.0859° W')).toBeVisible();
+    // The dialog mounts transparent and fades in; wait for it rather than read its first frame.
+    const coords = await q.findByText('43.6317° N, 72.0859° W');
+    await waitFor(() => expect(coords).toBeVisible());
     const note = q.getByLabelText('Your note to the moderators');
     // Both quads open a dialog; let each settle its own opening focus before typing into one.
     await waitFor(() =>

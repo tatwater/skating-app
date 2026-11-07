@@ -193,6 +193,9 @@ export const SignOutUnsentDraft: Story = {
     await expect(within(dialog).getByText(/started today at 11:52 AM/)).toBeInTheDocument();
     await expect(out).toHaveAttribute('aria-pressed', 'true');
     await expect(signedOut).not.toHaveBeenCalled();
+    // The dialog puts its opening focus inside a beat after it mounts; let it land, so it can't
+    // take focus back from the draft below.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
     // The tab order: the draft, Cancel, then the red Sign out.
     const openDraft = within(dialog).getByRole('button', { name: 'Open the draft' });
     openDraft.focus();

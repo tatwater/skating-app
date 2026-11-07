@@ -31,6 +31,14 @@ type Story = StoryObj<typeof meta>;
 
 const cardOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-slot="inset-card"]');
 
+/** The card once it's past its starting style: it mounts transparent, then fades in. */
+const shownCard = (root: ParentNode) =>
+  waitFor(() => {
+    const card = must(cardOf(root));
+    expect(card).toBeVisible();
+    return card;
+  });
+
 /** 2.8: the card loading — its head and a few blocks, the sizes of what comes. */
 export const Loading: Story = {
   args: {} as never,
@@ -49,7 +57,7 @@ export const Loading: Story = {
     for (const quad of canvasElement.querySelectorAll<HTMLElement>(
       '[data-skater-pair] > section',
     )) {
-      const card = await waitFor(() => must(cardOf(quad)));
+      const card = await shownCard(quad);
       // Cards are square; only what you press is rounded.
       await expect(getComputedStyle(card).borderRadius).toBe('0px');
       // 12 px in from the column's edges.
@@ -86,7 +94,7 @@ export const Unavailable: Story = {
     </SkaterPair>
   ),
   play: async ({ canvasElement }) => {
-    const card = await waitFor(() => must(cardOf(canvasElement)));
+    const card = await shownCard(canvasElement);
     await expect(within(card).getByRole('heading', { name: 'Hazard not found' })).toBeVisible();
   },
 };
@@ -158,7 +166,7 @@ export const Keyboard: Story = {
     await expect(row).toHaveFocus();
     await userEvent.keyboard('{Enter}');
     // In by hand: focus lands in the card.
-    const card = await waitFor(() => must(cardOf(document)));
+    const card = await shownCard(document);
     await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
     await expect(card).toHaveAttribute('role', 'dialog');
     // Tab walks the card: the head first.

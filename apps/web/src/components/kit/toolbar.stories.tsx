@@ -364,7 +364,8 @@ export const Overflow: Story = {
     );
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(within(document.body).queryByRole('menu')).toBeNull());
-    await expect(more).toHaveFocus();
+    // The menu leaves the tree as the close starts; focus comes home only once the exit has run.
+    await waitFor(() => expect(more).toHaveFocus());
     // Room again: everything comes back, "More" goes.
     room.style.width = '60rem';
     await waitFor(() => expect(group).not.toHaveAttribute('data-folded'));

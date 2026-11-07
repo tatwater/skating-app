@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Input, InputGroup, InputGroupIcon, InputGroupKbd } from '@/components/kit/input';
 import { cn } from '@/lib/utils';
 
-const DEBOUNCE_MS = 200;
+export const NAME_SEARCH_DEBOUNCE_MS = 200;
 const MAX_ROWS = 6;
 
 /** A lake the search found — a body, or a bay standing for its body. */
@@ -28,7 +28,7 @@ export function LakeNameSearch({ onPick }: { onPick: (picked: PickedLake) => voi
   const listId = useId();
 
   useEffect(() => {
-    const t = setTimeout(() => setTerm(text.trim()), DEBOUNCE_MS);
+    const t = setTimeout(() => setTerm(text.trim()), NAME_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [text]);
   useEffect(() => {

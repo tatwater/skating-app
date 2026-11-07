@@ -264,6 +264,9 @@ export const RowActions: Story = {
     const pal = await waitFor(() => must(popup()));
     const field = within(pal).getByRole('combobox');
     await waitFor(() => expect(highlightedRow(pal)).toBe(rows(pal)[0]));
+    // Opening focus lands in the field a beat after the plate mounts; ⇥ before it would start
+    // from the trigger.
+    await waitFor(() => expect(field).toHaveFocus());
     const litAction = () =>
       pal.querySelector<HTMLElement>('[data-slot="command-palette-action"][data-lit]');
 
@@ -311,6 +314,8 @@ export const PointerChoice: Story = {
     await openWith(canvasElement, /Go to/);
     const pal = await waitFor(() => must(popup()));
     await waitFor(() => expect(highlightedRow(pal)).toBe(rows(pal)[0]));
+    // ⇥ only once the opening focus is in the field, or it starts from the trigger.
+    await waitFor(() => expect(within(pal).getByRole('combobox')).toHaveFocus());
     await userEvent.tab();
     const action = await waitFor(() =>
       must(within(pal).getByText('Set curated boost').closest<HTMLElement>('[data-slot]')),
