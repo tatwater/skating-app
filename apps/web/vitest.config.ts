@@ -29,7 +29,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
-      include: ['src/lib/**/*.ts', 'src/components/kit/**/*.{ts,tsx}'],
+      include: [
+        'src/lib/**/*.ts',
+        'src/components/kit/**/*.{ts,tsx}',
+        'src/components/skater/**/*.{ts,tsx}',
+      ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.stories.tsx'],
     },
     projects: [
@@ -93,6 +97,7 @@ export default defineConfig({
             '@tanstack/react-virtual',
             'react-resizable-panels',
             'recharts',
+            'zustand',
           ],
         },
         test: {
