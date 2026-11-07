@@ -97,8 +97,9 @@ function answer(over: Record<string, unknown> = {}) {
           approachKind: 'drive_up',
         },
       ],
-      parking: [{ id: 'lot1', coord: { lat: 43.631, lng: -72.151 } }],
+      parking: [{ id: 'lot1', coord: { lat: 43.631, lng: -72.151 }, amenities: [] }],
       blockedIds: [],
+      alerts: [],
     },
     'putIns:listForBody': [],
     'weatherAlerts:listForBody': [],
@@ -212,7 +213,7 @@ describe('the header', () => {
 
   it('falls back to a derived put-in, and offers nothing without a way in', () => {
     answer({
-      'accessPoints:accessForBody': { putIns: [], parking: [], blockedIds: [] },
+      'accessPoints:accessForBody': { putIns: [], parking: [], blockedIds: [], alerts: [] },
       'putIns:listForBody': [{ coord: { lat: 43.6, lng: -72.1 }, source: 'derived' }],
     });
     const { unmount } = renderLake();

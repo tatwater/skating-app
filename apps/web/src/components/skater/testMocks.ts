@@ -34,6 +34,12 @@ export function resetFakes(): void {
   fakes.auth = { isLoaded: true, isSignedIn: true, userId: 'user_1' };
 }
 
+/**
+ * One stable fake per action name, for the whole file: a component that calls `useAction` on every
+ * render gets the same function back, so an effect keyed on it doesn't refire.
+ */
+const actions = new Map<string, ReturnType<typeof vi.fn>>();
+
 function answer(ref: unknown, args: unknown): unknown {
   const name = getFunctionName(ref as never);
   fakes.calls.push({ name, args });
@@ -51,6 +57,15 @@ export const convexReact = {
     if (!fn) {
       fn = vi.fn().mockResolvedValue(null);
       fakes.mutations.set(name, fn);
+    }
+    return fn;
+  },
+  useAction: (ref: unknown) => {
+    const name = getFunctionName(ref as never);
+    let fn = actions.get(name);
+    if (!fn) {
+      fn = vi.fn().mockResolvedValue(null);
+      actions.set(name, fn);
     }
     return fn;
   },
