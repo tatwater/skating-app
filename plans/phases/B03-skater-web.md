@@ -413,7 +413,9 @@ Toasts use the kit's `toastManager`, so no store. Online/offline is a `useConnec
   - Hazard: `hazards.get`, `hazardConfirmations.listForHazard`/`confirm`, `photos.getHazardUrls`
   - Bounty: `bounties.getDetail`, `cancel`, `answeredByMyReport`
 - **Actions:**
-  - Hazard: `hazards.create`, `hazards.listBundleCandidates` (3.8), `photos.generateUploadUrl`/`create`
+  - Hazard: `hazards.create`, `hazards.listForBody` with core's `findDuplicateCandidate` (3.8's "is this the
+    one already here?" — corrected at close-out: `hazards.listBundleCandidates` returns only the author's own
+    unattached pins, the sheet's D55 bundle list, not anyone's nearby hazard), `photos.generateUploadUrl`/`create`
   - Bounty: `bounties.create` (action), `bounties.myBountyLimit` (3.11)
   - Imagery: the archive comes from `env.imageryArchiveUrl` plus the satellite fields on `waterBodies.get`;
     `imageryLive.activity` is admin-only, so not used
@@ -712,3 +714,39 @@ decision, so the route grammar took D242 instead — gaps never close, tokens ne
 - **D242:** the skater route grammar and URL state. Old paths are kept; tabs, actions and New report are
   search params (`?post=`, `?tab=`, `?act=`), validated on the skater layout route, never `__root` (§1.0);
   `/feed` → `/latest`; no coordinates or camera in any URL; filters stay the saved D166 preference (Q3).
+
+## 8. What the build found
+
+Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
+
+- **GPX was already live.** A10-7's `TrackImport` had ingested GPX on both surfaces since that phase, stored as
+  `provider: 'native'`; D239 labels an existing behavior (`gpx`, plus `gpsActivities:backfillGpxProvider` for
+  the old rows) rather than enabling a new one. §0 item 4 has the scoping note's correction.
+- **3.8 needed a different query.** `hazards.listBundleCandidates` is the author's own unattached pins (the
+  sheet's D55 bundle list); the "one already here?" step reads `hazards.listForBody` through core's
+  `findDuplicateCandidate`. §3's data list is corrected in place.
+- **The bounty-fill rule was missing.** Before §11, any new report on a body attached to every open bounty
+  there, whenever it was skated — a Monday write-up of a Saturday skate could fill a Sunday bounty.
+  `reportAnswersBounty` now compares the skate's end with the bounty's opening, at attach and again at
+  fulfill and on every read.
+- **A DST bug in core's `zonedInstantOnDayOf`.** Found by the sheet calendar's property test: it stepped
+  `dayDelta × 24 h` of elapsed time, so near a clock change "two days back" landed on the wrong date (and so
+  did extraction's "yesterday at h:mm"). Now calendar arithmetic on the local date, with core tests of its own.
+- **Board 4.8 draws no feed filter.** The author filter on `posts.listFeed` is built behind a flag and off.
+- **Clerk's instance settings matter to the custom flow.** Sign-up can finish only if the instance doesn't
+  require a password (else the code verifies and stops at `missing_requirements`, shown as a dead end); the
+  instance's enabled social providers have no button in the email-code flow. Both are dashboard settings to
+  confirm before launch.
+- **The gpx-dedup review finding was moot.** It needed an inbound Strava track, and none can exist: Strava is
+  push-only by its API terms (`strava.ts`), so every stored track came from our recorder or a file. Only the
+  legacy-`native` GPX row needed the fix (`198de63d`).
+- **`sightings[].note` escaped the purge.** Added by D210 after `reportRedaction` was written, a departed
+  skater's sighting prose survived the D62 purge until §11; it clears like every other note now.
+- **The close-out's own finds.** The report sheet's empty hazard hint read as an all-clear ("No open hazards
+  on this lake right now"); it now shows core's `NO_KNOWN_HAZARDS`. Mobile's sheet still carries the old
+  string (`apps/mobile/src/components/sheet/HazardsSection.tsx`). The weather chart's fixed gradient id
+  painted a second chart in the first one's theme, and the floated imagery plate covered the map's zoom and
+  layer buttons on a phone.
+- **Waiting on the founder:** Latest on a phone as a drawer or the center column; the "Weather at" default
+  (whole lake or the bay in view); whether hazards draw over a satellite picture; whether a reading's
+  coordinates are redacted on a public report.

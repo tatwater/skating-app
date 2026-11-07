@@ -262,9 +262,11 @@ reasoning: [`research/native-track-capture-and-strava-push.md`](./research/nativ
 ### GPX import
 
 A skater who already records with a watch or another app picks the file and files the report from
-it. Unbuilt, pitched in the vision; scoped in
-[`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md). It's clean under L7 because the
-*file* is the skater's own export, not a platform's API.
+it. Live since A10-7 (`TrackImport` on both surfaces, through `gpsActivities.ingestTrack`); stored as
+`provider: 'native'` until B03 gave it its own `gpx` label (with a backfill for the old rows) and the
+web sheet's GPX door. It ships **fully trusted** — a temporary D24 exception, to be reverted to
+seed-and-author-only once Garmin or another native import path lands (D239). It's clean under L7
+because the *file* is the skater's own export, not a platform's API.
 
 ### Watch and health-platform adapters — deferred behind partner applications
 
