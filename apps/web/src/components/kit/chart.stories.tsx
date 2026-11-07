@@ -126,10 +126,34 @@ const q = (scope: ParentNode, sel: string) => must(scope.querySelector<SVGElemen
 const qa = (scope: ParentNode, sel: string) => [...scope.querySelectorAll<SVGElement>(sel)];
 const attr = (el: Element, name: string) => Number(el.getAttribute(name));
 
-/** The chart has drawn (ResponsiveContainer measures first, then the series). */
+/**
+ * The chart has drawn (ResponsiveContainer measures first, then the series) *and* its marks have
+ * settled. Recharts keys a bar by its interpolated geometry (`rectangle-<x>-<y>-<value>-<i>`, in
+ * `Bar.js`), so every frame of the entrance unmounts the marks and mounts new ones: a node held
+ * across an `await` mid-entrance is detached a frame later, where it measures zero and computes no
+ * style at all. Settled is the same node two frames apart.
+ */
 async function drawn(scope: HTMLElement, series: string) {
   await waitFor(() => expect(scope.querySelector(series)).not.toBeNull());
+  // The entrance runs for `duration.slow` and an attempt costs two frames; the room is for a
+  // loaded runner, not for marks that never settle.
+  await waitFor(
+    async () => {
+      const mark = scope.querySelector(series);
+      await twoFrames();
+      expect(scope.querySelector(series)).toBe(mark);
+    },
+    { timeout: 5_000 },
+  );
 }
+
+/** Two animation frames: long enough for a re-keyed mark to have been replaced. */
+const twoFrames = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
 
 /** Moves the pointer over the chart at a client x (mid-height of the plot), as a mouse would. */
 function hoverAt(scope: HTMLElement, clientX: number) {

@@ -58,6 +58,10 @@ describe('colorDistance', () => {
   ])('throws on %s instead of comparing wrong', (_, form) => {
     expect(() => colorDistance(form, BAD)).toThrow();
   });
+
+  it('names a detached element, which computes no style at all', () => {
+    expect(() => colorDistance('', BAD)).toThrow(/not in the page/);
+  });
 });
 
 describe('sameColor', () => {

@@ -166,6 +166,9 @@ function channel(token: string | undefined, percentOf: number): number {
  * loudly instead of comparing wrong.
  */
 function toOklab(css: string): Oklab {
+  // Chromium computes every property to the empty string on an element that has left the page, so
+  // say that rather than report an unreadable color: the measurement held a node too long.
+  if (css === '') throw new Error('No computed color: the element is not in the page.');
   const m = /^\s*([a-z-]+)\(([^()]*)\)\s*$/i.exec(css);
   if (m === null) throw new Error(`Not a computed color: ${css}`);
   const fn = (m[1] as string).toLowerCase();
