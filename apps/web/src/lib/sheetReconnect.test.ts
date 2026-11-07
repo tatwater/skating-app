@@ -78,7 +78,7 @@ describe('resending on reconnect', () => {
     go('offline');
     expect(send).not.toHaveBeenCalled();
     go('online');
-    await waitFor(() => expect(onResult).toHaveBeenCalledWith(POSTED));
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith({ ...POSTED, stillOpen: true }));
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]?.[0]).toEqual(post);
     expect(getSheetResend()).toBe('none');

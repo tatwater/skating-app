@@ -186,7 +186,8 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
         return;
       }
       capture('report_posted', { report_count: post.reports.length });
-      exits.onDone(result.reportId);
+      // A Post that landed after the author moved on to another sheet leaves that one alone.
+      if (result.stillOpen) exits.onDone(result.reportId);
     },
     [capture, exits, post.reports.length],
   );

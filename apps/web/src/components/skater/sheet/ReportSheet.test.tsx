@@ -320,6 +320,23 @@ describe('posting (5.23–5.27)', () => {
     expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
   });
 
+  it('a Post that lands after another sheet opened counts, but hands nothing over', async () => {
+    let land: (v: unknown) => void = () => {};
+    h.post.mockImplementation(() => new Promise((r) => (land = r)));
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    fireEvent.click(screen.getByRole('button', { name: 'Good' }));
+    fireEvent.click(screen.getByRole('button', { name: /Experienced only/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Glass' })[0] as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(h.post).toHaveBeenCalledTimes(1));
+    // Another sheet is open by the time it lands (an account change, say).
+    act(() => setSheet(withLake(openSheet())));
+    await act(async () => land({ kind: 'posted', postId: 'p1', reportId: 'rep-1' }));
+    expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
+    expect(exits.onDone).not.toHaveBeenCalled();
+  });
+
   it('a Post sent with no answer says it may be up, takes no change, and offers Try again', () => {
     const post = withLake(openSheet());
     setSheet(post);

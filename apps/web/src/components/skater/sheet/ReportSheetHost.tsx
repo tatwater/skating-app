@@ -199,7 +199,10 @@ function Host({ door, navState }: { door: SheetDoor; navState: unknown }) {
           );
           if (result.kind === 'posted') {
             capture('report_posted', { report_count: restored.sheet.reports.length });
-            done(result.reportId);
+            // Only while it is still this opening's sheet: an author who closed it and started
+            // another report while the resend was out keeps that work (the store has already
+            // forgotten the posted one).
+            if (result.stillOpen && answered.current === key) done(result.reportId);
           }
         }
         return;

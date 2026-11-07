@@ -345,6 +345,67 @@ describe('the restore', () => {
     expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
   });
 
+  /** A restore owed a resend, whose resend is held until the test lands it. */
+  function restoreOwedResend() {
+    const kept = { ...freshSheet('b1'), title: 'As pressed', dirty: true };
+    setSheet(kept);
+    setSheetAttempt({
+      kind: 'post',
+      id: kept.draftId,
+      idempotencyKey: kept.idempotencyKey,
+      status: 'pending',
+      reports: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    reloadPage('user_1');
+    const held: { land: (v: unknown) => void } = { land: () => {} };
+    h.postSheetOnWeb.mockImplementation(() => new Promise((r) => (held.land = r)));
+    return held;
+  }
+
+  it('a resend that lands after another sheet opened leaves that sheet alone', async () => {
+    const held = restoreOwedResend();
+    const router = renderAt('/?post=new');
+    await waitFor(() => expect(h.postSheetOnWeb).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(search(router).post).toBeUndefined());
+    // Another sheet is open by the time the old resend lands (an account change, say).
+    const other = { ...freshSheet('b2'), title: 'New work', dirty: true };
+    act(() => setSheet(other));
+    await act(() => router.navigate({ to: '/', search: { post: 'new' } } as never));
+    await waitFor(() =>
+      expect(screen.getByTestId('sheet')).toHaveAttribute('data-draft', other.draftId),
+    );
+
+    await act(async () => held.land({ kind: 'posted', postId: 'p1', reportId: 'rep-7' }));
+    expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
+    expect(router.state.location.pathname).toBe('/');
+    expect(screen.getByTestId('sheet')).toHaveAttribute('data-draft', other.draftId);
+    let open: PostSheet | null = null;
+    function Probe() {
+      open = useSheet();
+      return null;
+    }
+    render(<Probe />);
+    expect(open).toMatchObject({ draftId: other.draftId, title: 'New work' });
+  });
+
+  it('a resend that lands after the author closed its sheet does not pull them to the report', async () => {
+    const held = restoreOwedResend();
+    const router = renderAt('/?post=new');
+    await waitFor(() => expect(h.postSheetOnWeb).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(search(router).post).toBeUndefined());
+    await act(() => router.navigate({ to: '/latest' } as never));
+
+    await act(async () => held.land({ kind: 'posted', postId: 'p1', reportId: 'rep-7' }));
+    expect(h.capture).toHaveBeenCalledWith('report_posted', { report_count: 1 });
+    expect(router.state.location.pathname).toBe('/latest');
+    // Posted is posted: the store forgot it, so it never comes back as a draft.
+    expect(window.localStorage.getItem('skating.reportSheet.v2')).toBeNull();
+  });
+
   it('opens fresh when the stored draft answers another door', async () => {
     setSheet({ ...freshSheet('other'), dirty: false });
     reloadPage('user_1');
