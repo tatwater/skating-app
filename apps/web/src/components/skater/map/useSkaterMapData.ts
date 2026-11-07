@@ -3,12 +3,12 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   approachesToFeatureCollection,
   type BBox,
-  type DriveTimeBands,
   hasWeatherFilter,
   isRegionOffscreen,
   landmarkLabelFeatures,
   mapFilters,
   SUB_AREA_MIN_RENDER_ZOOM,
+  viewerDriveTime,
   weatherDimmedBodyIds,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
@@ -96,13 +96,12 @@ export function useSkaterMapData({
   const viewer = useQuery(api.profiles.current, weatherOn ? {} : 'skip');
   const weatherDimmed = useMemo(() => {
     if (!weatherOn || !bodies) return NO_IDS;
+    // The server's one rule (`viewerDriveTime`): the travel base while it's in force, else home,
+    // and polygons only for the origin they were drawn from — so the map dims what the feed shows.
+    const { bands, origin } = viewerDriveTime(viewer, Date.now());
     return weatherDimmedBodyIds(bodies, discovery, matchedCells, {
-      bands: {
-        band30: viewer?.cachedIsochrones?.band30,
-        band60: viewer?.cachedIsochrones?.band60,
-        outerRadiusMeters: viewer?.outerRadiusMeters,
-      } as DriveTimeBands,
-      home: viewer?.homeCoord,
+      bands,
+      home: origin,
       favorites: favoriteIds,
     });
   }, [weatherOn, bodies, discovery, matchedCells, viewer, favoriteIds]);
