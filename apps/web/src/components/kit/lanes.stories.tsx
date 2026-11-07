@@ -188,8 +188,22 @@ export const Keyboard: Story = {
     await expect(row(nav, /Corpus/)).toHaveFocus(); // and neither moved the cursor
     await userEvent.keyboard('rolloverg'); // a run under way: g is type-ahead…
     await expect(seen).toEqual(['g', '?']); // …so it no longer reaches the page
+    await expect(row(nav, 'Rollovers')).toHaveFocus();
+
+    // A letter pressed again quickly is a run of one letter, not a search for "rr": it cycles
+    // through the lanes starting with it, wrapping — the middle list's rule.
+    await new Promise((r) => setTimeout(r, 600));
+    await userEvent.keyboard('r');
+    await expect(row(nav, /Retention/)).toHaveFocus();
+    await userEvent.keyboard('r');
+    await expect(row(nav, 'Rollovers')).toHaveFocus();
+    await userEvent.keyboard('r');
+    await expect(row(nav, /Retention/)).toHaveFocus();
+    // G mid-run is still a letter, never go-mode.
+    await userEvent.keyboard('g');
+    await expect(seen).toEqual(['g', '?']);
     document.removeEventListener('keydown', see);
-    row(nav, document.activeElement?.textContent ?? /Corpus/).blur();
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };
 

@@ -23,9 +23,10 @@ import { cn } from '@/lib/utils';
  * - **On** (the selected lane): the bright ink on the lit plate, with the 2 px bar inset on its left
  *   edge. **Dim**: a lane with nothing in it, in the quiet ink — still a lane you can open.
  * - **Keyboard**: one tab stop (the selected lane); ↑ ↓ move between lanes across groups, Home and
- *   End jump to the ends, and typing jumps to the next lane that starts with what you typed. Enter
- *   (or a click) picks the lane. Keys it handles are marked handled (`preventDefault`), so the
- *   page's hotkeys leave them alone — typing in the lanes never fires an action.
+ *   End jump to the ends, and typing jumps to the next lane that starts with what you typed (a
+ *   letter pressed again cycles through the lanes starting with it). Enter (or a click) picks the
+ *   lane. Keys it handles are marked handled (`preventDefault`), so the page's hotkeys leave them
+ *   alone — typing in the lanes never fires an action.
  * - **No tooltips** — this is navigation; a lane that needs explaining is renamed.
  * - **Routing is the caller's**: `link(lane)` returns the router's link element for a lane and the
  *   row renders as it; without it, each row is a button. Either way, `onSelect` hears the pick.
@@ -128,9 +129,14 @@ function Lanes({
     event.preventDefault();
     const text = running ? typed.current.text + event.key : event.key;
     typed.current = { text, at: now };
-    const query = text.toLocaleLowerCase();
-    // One letter looks past the current lane (so pressing it again cycles); more keep it.
-    const from = text.length === 1 ? at + 1 : at;
+    const lower = text.toLocaleLowerCase();
+    // A run of one letter ("rrr") is that letter pressed again, not a search for "rrr": it cycles
+    // through the lanes starting with it — the middle list's rule. A mixed run is a prefix search.
+    const repeat = lower.length > 1 && [...lower].every((c) => c === lower[0]);
+    const query = repeat ? lower.charAt(0) : lower;
+    // One letter (or a run of it) looks past the current lane, so pressing it again cycles; a
+    // longer search keeps the current lane while it still matches.
+    const from = query.length === 1 ? at + 1 : at;
     const order = [...all.slice(from), ...all.slice(0, from)];
     const hit = order.find((l) => l.label.toLocaleLowerCase().startsWith(query));
     if (hit !== undefined) focusLane(hit.id);
