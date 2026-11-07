@@ -52,6 +52,7 @@ export default defineConfig({
         optimizeDeps: {
           include: [
             '@base-ui/react/alert-dialog',
+            '@base-ui/react/avatar',
             '@base-ui/react/button',
             '@base-ui/react/checkbox',
             '@base-ui/react/checkbox-group',
@@ -60,6 +61,7 @@ export default defineConfig({
             '@base-ui/react/input',
             '@base-ui/react/menu',
             '@base-ui/react/merge-props',
+            '@base-ui/react/meter',
             '@base-ui/react/popover',
             '@base-ui/react/radio',
             '@base-ui/react/radio-group',
@@ -67,6 +69,7 @@ export default defineConfig({
             '@base-ui/react/slider',
             '@base-ui/react/switch',
             '@base-ui/react/tabs',
+            '@base-ui/react/toast',
             '@base-ui/react/toggle',
             '@base-ui/react/toggle-group',
             '@base-ui/react/tooltip',
