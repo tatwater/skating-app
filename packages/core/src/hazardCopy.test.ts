@@ -65,7 +65,7 @@ describe('coverage', () => {
 
 /**
  * The core D3 guard. Descriptive copy — the sentences *we* write about the state of a hazard — must
- * never contain a reassurance. (Verdict button labels are excluded on purpose: "Fully healed & safe" is
+ * never contain a reassurance. (Verdict button labels are excluded on purpose: "Fully healed" is
  * the *skater's* assertion that they are making, not ours about the ice.)
  */
 describe('never asserts safety (D3)', () => {
@@ -183,7 +183,7 @@ describe('ridge_crossing relabeling (research §4)', () => {
 });
 
 describe('the destructive verdict names its consequence', () => {
-  // "Fully healed & safe" is the only verdict that retires a pin for everyone, so its help text has to
+  // "Fully healed" is the only verdict that retires a pin for everyone, so its help text has to
   // make that cost visible before the tap, not after.
   it('tells the skater that two of these retire the marker', () => {
     expect(verdictHelp('fully_healed', 'open_water')).toMatch(/two|retire/i);

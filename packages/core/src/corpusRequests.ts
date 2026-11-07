@@ -1,5 +1,5 @@
 /**
- * Corpus requests (A07b PR 2) — **the skater says "this is skateable", and the catalog answers.**
+ * Corpus requests (A07b PR 2) — **the skater says "people skate here", and the catalog answers.**
  *
  * D91 put a floor under the corpus and deleted 102,000 bodies on one sentence: *"if I get user
  * feedback that someone's pond isn't there, then we can relax the rule and re-run the import."* That
@@ -164,7 +164,7 @@ export function requestKindLabel(kind: RequestKind): string {
     case 'activate':
       return 'Ask for this lake back';
     case 'admit':
-      return 'This is skateable';
+      return 'People skate here';
     case 'restore':
       return 'Ask to restore this lake';
     case 'contest_access':
@@ -198,7 +198,7 @@ export function requestPrompt(kind: RequestKind): RequestPrompt {
       };
     case 'admit':
       return {
-        title: 'This is skateable',
+        title: 'People skate here',
         description:
           'We don’t have water here. Say what it is and how you reach it; a moderator will look it up in the catalog and add it with its real outline.',
         placeholder: 'A pond behind the school; the trail from the parking lot reaches the shore.',

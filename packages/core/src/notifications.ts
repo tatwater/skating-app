@@ -426,7 +426,7 @@ export function describeNotification(
         title: view.body
           ? `Someone’s looking for a report on ${view.body.name}`
           : 'Someone’s looking for a report on a lake you know',
-        detail: 'You reported there recently — is it still skateable?',
+        detail: 'You reported there recently — want to take another look?',
         target: contentTarget('bounty', view.target),
       };
     case 'bounty_answered': {
