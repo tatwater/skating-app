@@ -295,6 +295,21 @@ describe('the leave guard (5.31)', () => {
     await waitFor(() => expect(search(router).post).toBeUndefined());
     expect(screen.queryByTestId('sheet')).not.toBeInTheDocument();
   });
+
+  // The blocker still holds the touched sheet from the last render when these navigate.
+  it('a saved edit goes to its report without asking', async () => {
+    const router = await editOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/report/rep-9'));
+    expect(screen.queryByText('Leave without posting?')).not.toBeInTheDocument();
+  });
+
+  it('a discarded edit leaves without asking a second time', async () => {
+    const router = await editOpen();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(search(router).post).toBeUndefined());
+    expect(screen.queryByText('Leave without posting?')).not.toBeInTheDocument();
+  });
 });
 
 describe('the restore', () => {

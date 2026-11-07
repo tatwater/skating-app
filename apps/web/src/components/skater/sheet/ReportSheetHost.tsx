@@ -81,13 +81,24 @@ function Host({ door, navState }: { door: SheetDoor; navState: unknown }) {
   if (firstDoor.current === null) firstDoor.current = key;
 
   // ── Closing ───────────────────────────────────────────────────────────────────────────────────
-  const close = useCallback(() => {
-    void navigate({
-      to: '.',
-      search: (prev: Record<string, unknown>) => closedSearch(prev),
-      replace: true,
-    } as never);
-  }, [navigate]);
+  /**
+   * Remove the sheet's params. `settled`: the author already answered the leave question (Cancel's
+   * own dialog) or the sheet just went out — so the blocker is skipped. It has to be: the blocker
+   * runs synchronously inside this navigation, holding the `shouldBlockFn` of the last commit,
+   * whose sheet is still the touched one `setSheet(null)` just cleared — and would ask again.
+   */
+  const leaveTo = useCallback(
+    (settled: boolean) => {
+      void navigate({
+        to: '.',
+        search: (prev: Record<string, unknown>) => closedSearch(prev),
+        replace: true,
+        ...(settled ? { ignoreBlocker: true } : {}),
+      } as never);
+    },
+    [navigate],
+  );
+  const close = useCallback(() => leaveTo(false), [leaveTo]);
 
   const discard = useCallback(() => {
     const current = sheet;
@@ -104,15 +115,16 @@ function Host({ door, navState }: { door: SheetDoor; navState: unknown }) {
     releaseAllSheetPhotos();
     setSheet(null);
     clearStoredSheet();
-    close();
-  }, [attempt, capture, close, sheet]);
+    leaveTo(true);
+  }, [attempt, capture, leaveTo, sheet]);
 
   const done = useCallback(
     (reportId: string) => {
       writeAbandonMarker(null);
       setSheet(null);
       clearStoredSheet();
-      void navigate({ to: '/report/$id', params: { id: reportId } });
+      // Posted or saved: nothing is left to lose, whatever the last render's blocker still holds.
+      void navigate({ to: '/report/$id', params: { id: reportId }, ignoreBlocker: true });
     },
     [navigate],
   );
