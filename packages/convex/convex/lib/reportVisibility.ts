@@ -116,6 +116,6 @@ export async function redactPutIn(
   if (report.showPutIn !== false || canSeePutIn(viewer, report)) return report;
   const body = loadedBody !== undefined ? loadedBody : await ctx.db.get(report.waterBodyId);
   if (body === null) return report;
-  // Only the launch: a thickness reading's `coord` stays, by founder call (D58 amendment, 2026-11-08).
+  // Only the launch: a thickness reading's `coord` stays, by founder call (D58 amendment, 2026-11-07).
   return { ...report, point: defaultSampleAnchor(body) };
 }

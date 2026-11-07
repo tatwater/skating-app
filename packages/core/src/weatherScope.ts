@@ -10,7 +10,7 @@
  * reading came from.** The reading was not merely coarse; it described a spot that is not any of
  * the destinations.
  *
- * ## The rule (founder call, 2026-11-08 — reversing 2026-09-11)
+ * ## The rule (founder call, 2026-11-07 — reversing 2026-09-11)
  *
  * **A lake opens on the whole lake, with a switcher.** The effective sub-area is:
  *
@@ -20,7 +20,7 @@
  *    delisted since the link was made, or another lake's, lands here too.
  *
  * The 2026-09-11 call pre-selected a giant's most prominent bay (highest `displayScore`) instead.
- * The web tab was built to the whole-lake default, and the founder kept that (2026-11-08) so web
+ * The web tab was built to the whole-lake default, and the founder kept that (2026-11-07) so web
  * and mobile open a lake on the same place: nothing is pre-chosen for the skater, and a bay is
  * always one they asked for.
  *

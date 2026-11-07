@@ -15,7 +15,7 @@ import { type HazardMarkModel, type LakeLabelModel, markObstacle } from './mapDe
  * Marks are placed first, and every hazard mark is an obstacle for the labels: a label that would
  * cover one gives way (D3). Labels then lay out in priority order (`layoutLakeLabels`).
  *
- * Over a satellite picture the hazard marks stay on and at full strength (founder, 2026-11-08), and
+ * Over a satellite picture the hazard marks stay on and at full strength (founder, 2026-11-07), and
  * the one a mouse rests on fades so the ice under it shows — a peek the skater asked for by pointing
  * at that very mark, gone on pointer-out. Keyboard focus never fades one (focus is inspecting the mark
  * itself), nor does a touch (a tap opens it).

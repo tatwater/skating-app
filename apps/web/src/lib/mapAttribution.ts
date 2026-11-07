@@ -3,7 +3,7 @@
  *
  * **Compact: the credits live behind an ⓘ rather than across the map** (A06e §1.4, founder ask:
  * *"can we keep all attribution strings in the sidebar/drawer, instead of over the map itself?"*;
- * again 2026-11-08: *collapsed by default*).
+ * again 2026-11-07: *collapsed by default*).
  *
  * MapLibre's own compact mode *is* that affordance, and using it beats hand-rolling one for a reason
  * that outlives any phase: the control unions the `attribution` of every **active source**, so the

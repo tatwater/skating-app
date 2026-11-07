@@ -7,7 +7,7 @@ import { Text, XStack, YStack } from 'tamagui';
  *
  * Nothing on the ~99% of bodies with no named bays. On a body with bays it is the scope line and
  * the switcher in one: *"Weather at"* followed by *Whole lake* and a chip per bay, the selected one
- * filled. A lake opens on *Whole lake* (founder call, 2026-11-08, the same default as web).
+ * filled. A lake opens on *Whole lake* (founder call, 2026-11-07, the same default as web).
  *
  * ⚠ Picking a place is a **navigation**: a bay writes the route's `sub` param, the one a search
  * hit sets, so the camera frames the bay, the report feed seeds to it and the panel reads its cell —

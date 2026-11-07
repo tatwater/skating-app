@@ -208,7 +208,7 @@ layers, imagery, return to the region).
 
 | Path | Search params | What renders |
 |---|---|---|
-| `/latest` (`/feed` redirects) | `report?: reportId` (4.5–4.7: the report opens as a drawer from the right, over a scrim on the page — founder, 2026-11-08) · `q?: string` (debounced 300 ms; 4.9, behind the text-search gap) · `skater?: username` (4.8, behind the author-filter gap) · `view?: 'map'` (4.4) | Filters on the left · feed in the center · Recommended and *Wanted near you* on the right |
+| `/latest` (`/feed` redirects) | `report?: reportId` (4.5–4.7: the report opens as a drawer from the right, over a scrim on the page — founder, 2026-11-07) · `q?: string` (debounced 300 ms; 4.9, behind the text-search gap) · `skater?: username` (4.8, behind the author-filter gap) · `view?: 'map'` (4.4) | Filters on the left · feed in the center · Recommended and *Wanted near you* on the right |
 
 Filters (drive time, posted, quality, ice type, thickness, weather match) depend on Q3. My recommendation is that
 they stay in the persisted D166 store and out of the URL, with the URL carrying only the transient view state
@@ -752,17 +752,17 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   string (`apps/mobile/src/components/sheet/HazardsSection.tsx`). The weather chart's fixed gradient id
   painted a second chart in the first one's theme, and the floated imagery plate covered the map's zoom and
   layer buttons on a phone.
-- **The geocoder is Geoapify (founder, 2026-11-08).** Agent S built `geocode.suggest` behind an adapter and
+- **The geocoder is Geoapify (founder, 2026-11-07).** Agent S built `geocode.suggest` behind an adapter and
   left it off, since ORS — the zero-new-vendor option — has a terms clause against transmitting personal data,
   and a typed home address is personal data even with no name on it; the same account also feeds the drive-time
   bands. The founder picked a new vendor with clean terms over that risk: Geoapify, on its own free account
   (3,000 credits/day). The flip is safe before the account exists: with no `GEOAPIFY_API_KEY` the action answers
   `off`, as it did with no provider. The ORS adapter is deleted rather than kept one line from use.
   `04-integrations.md` § Geocoding has the terms; `PRIVACY.md` the disclosure.
-- **Hazards over a satellite picture: on, with a peek (founder, 2026-11-08).** The marks stay locked on at
+- **Hazards over a satellite picture: on, with a peek (founder, 2026-11-07).** The marks stay locked on at
   full strength over imagery; the one a mouse rests on fades to 35% so the ice under it shows, and comes back
   on pointer-out. Keyboard focus and a touch never fade one — focus is inspecting the mark itself.
-- **Latest's report is a drawer (founder, 2026-11-08).** The build had opened `?report=` over the center column;
+- **Latest's report is a drawer (founder, 2026-11-07).** The build had opened `?report=` over the center column;
   the boards (4.5–4.7) draw a 500 px drawer from the right over a scrim on the whole page under the top bar, and
   the founder picked the boards. It is the kit Sheet with a new `md` width (the `sheet-md` size token, 500);
   `PanelDrawer` shares the inset card's mechanics (`useCardMechanics`) — deep-link Esc drops the param with

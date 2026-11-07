@@ -342,7 +342,7 @@ export const changeUsername = mutation({
 });
 
 /**
- * How long a rename holds (founder call, 2026-11-08): long enough that a handle is something other
+ * How long a rename holds (founder call, 2026-11-07): long enough that a handle is something other
  * skaters can learn and find again, and that renaming can't be a way to shed a reputation.
  */
 export const USERNAME_CHANGE_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;

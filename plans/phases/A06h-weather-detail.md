@@ -58,7 +58,7 @@
 >    effective bay is the route's `?sub=` if present, else the top bay — *implicitly*, never writing
 >    the URL on open. The switcher and the spread's named extremes both set **route-level focus**
 >    (`focusSubAreaId`), so camera, report-feed filter and weather follow one selection concept
->    rather than a third one. **Reversed 2026-11-08 (founder, B03):** a lake opens on the *whole
+>    rather than a third one. **Reversed 2026-11-07 (founder, B03):** a lake opens on the *whole
 >    lake* on web and mobile alike; a bay is read only when the route names one
 >    (`resolveWeatherSubArea`). The switcher and the route-level focus stand.
 > 9. **Spread lines only in H** — named extremes for lows and snow-since over the 7-day headline

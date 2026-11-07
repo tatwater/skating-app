@@ -13,7 +13,7 @@ import {
 } from './lib/geocoder';
 
 /**
- * Which provider is on: **Geoapify** (founder, 2026-11-08; `04-integrations.md` § Geocoding has the
+ * Which provider is on: **Geoapify** (founder, 2026-11-07; `04-integrations.md` § Geocoding has the
  * terms and the quota). It is off in effect until `GEOAPIFY_API_KEY` is set on the deployment: the
  * adapter answers `off` without it, and no address leaves the server.
  */

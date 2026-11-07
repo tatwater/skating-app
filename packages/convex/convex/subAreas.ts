@@ -2031,7 +2031,7 @@ export const listForBody = query({
         centroid: row.centroid,
         surfaceAreaSqM: row.surfaceAreaSqM,
         // The D49 curve over area plus curation, not raw area. It once picked the weather panel's
-        // default bay on a giant; since 2026-11-08 a lake opens on the whole lake
+        // default bay on a giant; since 2026-11-07 a lake opens on the whole lake
         // (`resolveWeatherSubArea`), so it no longer chooses a place for the skater.
         displayScore: row.displayScore,
         minVisibleZoom: row.minVisibleZoom,

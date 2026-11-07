@@ -66,7 +66,7 @@ describe('geocode.suggest', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // Geoapify is switched on (founder, 2026-11-08), but no account exists until its key is set.
+  // Geoapify is switched on (founder, 2026-11-07), but no account exists until its key is set.
   test('sends no address anywhere while the provider key is unset', async () => {
     vi.stubEnv('GEOAPIFY_API_KEY', '');
     const t = convexTest(schema, modules);

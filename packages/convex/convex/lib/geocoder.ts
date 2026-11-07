@@ -57,7 +57,7 @@ export interface GeocoderAdapter {
 /**
  * Geoapify's address autocomplete: a free account of its own (3,000 credits a day, one per request,
  * 5 a second), so a skater's typed home touches neither HeiGIT's personal-data clause nor the account
- * the drive-time bands depend on (founder, 2026-11-08). US results only; no `bias`, though it would
+ * the drive-time bands depend on (founder, 2026-11-07). US results only; no `bias`, though it would
  * rank better: the only point to bias toward is the skater's home, and it never leaves the server
  * (D11). Its key travels in the query string — the only way Geoapify takes one — which is one more
  * reason the URL is never printed.

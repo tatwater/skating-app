@@ -236,7 +236,7 @@ export const LakeChosen: Story = {
 
 /**
  * Over a satellite picture the hazard marks stay on at full strength; the one the mouse rests on fades
- * so the ice under it shows, and comes back on pointer-out (founder, 2026-11-08). The still has no
+ * so the ice under it shows, and comes back on pointer-out (founder, 2026-11-07). The still has no
  * picture under it — the fade is the point.
  */
 export const HazardPeekOverImagery: Story = {

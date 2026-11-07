@@ -87,7 +87,7 @@ export function WaterBodyDetail({
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
   // The bay the weather panel is about: the route's bay, else the whole lake (founder call,
-  // 2026-11-08 — the same default as web). `undefined` while the bays are still loading, so the panel holds rather than fetching
+  // 2026-11-07 — the same default as web). `undefined` while the bays are still loading, so the panel holds rather than fetching
   // the lake's cell and then the bay's. Never written back to the route — see `WeatherPlacePicker`.
   const liveBays = (subAreas ?? []).filter((s) => !s.removed);
   // The report feed's bay filter, held here because the feed unmounts with its tab (see

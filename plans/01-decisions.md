@@ -1319,7 +1319,7 @@ at alpha scale. **Deferred:** the crowd-intelligence *derivations* over the aggr
 clearest-side, path-cluster hazard deduction L9/Q11) — legal now (our data) but need volume + a
 calibration/privacy pass before they render.
 
-**Amended 2026-11-08 (founder call, B03) — a thickness reading keeps its coordinate when the put-in
+**Amended 2026-11-07 (founder call, B03) — a thickness reading keeps its coordinate when the put-in
 is withheld.** The put-in opt-out (`showPutIn === false`) withholds the report's launch point from
 other skaters (`redactPutIn` serves the body's anchor in its place) and clips the track's ends; it
 does **not** redact the `coord` on an ice-thickness reading. A B03 security pass flagged that as a
