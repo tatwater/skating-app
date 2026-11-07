@@ -330,6 +330,20 @@ describe('the nearby nudge (3.8)', () => {
     expect(create.mock.calls[0]?.[0]).toMatchObject({ dismissedDuplicateOf: 'h_old' });
   });
 
+  it('a change of type takes the nudge down and gives Post back', async () => {
+    await raise();
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a different type' }));
+    expect(screen.queryByText(/There is already/)).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Open water / lead' }));
+    // The prompt was asked about a thin ice; the new type has not been asked anything yet.
+    expect(screen.queryByText(/There is already/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeEnabled();
+    expect(useHazardDraftStore.getState().draft).toMatchObject({
+      hazardType: 'open_water',
+      nearbyHazardId: null,
+    });
+  });
+
   it('a failed confirm takes the nudge down and says so', async () => {
     fakes.mutations.set('hazardConfirmations:confirm', vi.fn().mockRejectedValue(new Error('x')));
     await raise();

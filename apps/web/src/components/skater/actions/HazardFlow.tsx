@@ -309,7 +309,9 @@ export function HazardFlow({
         draft={draft}
         photos={photos}
         lostPhotos={lostPhotos}
-        nudge={nudge}
+        // The nudge was asked about the draft's `nearbyHazardId`; whatever clears that (a new type,
+        // no type) takes the prompt down with it, so a stale one never holds Post.
+        nudge={draft.nearbyHazardId !== null ? nudge : null}
         error={error}
         submitting={submitting}
         {...(container !== undefined ? { container } : {})}
