@@ -128,13 +128,13 @@ describe('the layers menu (board 3.16)', () => {
     expect(capture).not.toHaveBeenCalled();
   });
 
-  it('counts a switch only under a name the taxonomy has', async () => {
+  it('counts every switch under its taxonomy name', async () => {
     const user = userEvent.setup();
     dock();
     await user.click(screen.getByRole('button', { name: 'Map layers' }));
     await user.click(await screen.findByRole('switch', { name: /Tracks/ }));
     expect(useSkaterMapStore.getState().layers.tracks).toBe(true);
-    expect(capture).not.toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith('map_layer_toggled', { layer: 'tracks', on: true });
   });
 
   it('names the open lake, or speaks of one in general, and credits the contours from the tile', async () => {

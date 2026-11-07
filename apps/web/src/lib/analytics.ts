@@ -181,7 +181,8 @@ export const ANALYTICS_ENUMS = {
   hazard_flow_entry: ['water_body', 'report_sheet'],
   // The author's own claims, as labeled in the UI.
   hazard_verdict: ['still_there', 'crossed_here', 'healing', 'fully_healed', 'didnt_look'],
-  map_layer_name: ['depth', 'hazards', 'put_ins', 'imagery', 'labels'],
+  // The dock's switches. Hazards are locked on, so nothing toggles them; imagery has its own event.
+  map_layer_name: ['depth', 'places', 'put_ins', 'tracks', 'favorites', 'labels'],
   imagery_band: ['tc', 'vh'],
   directions_target: ['put_in', 'parking'],
   unread_bucket: ['0', '1-3', '4-9', '10+'],

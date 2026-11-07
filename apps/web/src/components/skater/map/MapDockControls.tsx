@@ -73,10 +73,13 @@ interface LayerRowSpec {
   line?: string;
 }
 
-/** The analytics name per switch. A switch the taxonomy has no name for yet isn't counted. */
-const LAYER_EVENT_NAME: Partial<Record<LayerRowSpec['layer'], MapLayerName>> = {
+/** The analytics name per switch. */
+const LAYER_EVENT_NAME: Record<LayerRowSpec['layer'], MapLayerName> = {
   depth: 'depth',
+  places: 'places',
   putIns: 'put_ins',
+  tracks: 'tracks',
+  favorites: 'favorites',
   labels: 'labels',
 };
 
@@ -142,8 +145,7 @@ function MapLayersMenu({
       checked={layers[layer]}
       onCheckedChange={(on) => {
         toggleLayer(layer);
-        const name = LAYER_EVENT_NAME[layer];
-        if (name) capture('map_layer_toggled', { layer: name, on });
+        capture('map_layer_toggled', { layer: LAYER_EVENT_NAME[layer], on });
       }}
       label={<RowText title={title} line={line} />}
     />
