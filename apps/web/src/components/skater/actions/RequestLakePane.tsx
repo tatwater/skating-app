@@ -46,6 +46,8 @@ export interface RequestLakeViewProps {
   error: string | null;
   pending: boolean;
   container?: HTMLElement | null;
+  /** Modal in the app; a side-by-side story confines each quad's dialog to its quad instead. */
+  modal?: boolean;
   onNoteChange: (note: string) => void;
   onSend: () => void;
   onClose: () => void;
@@ -57,13 +59,14 @@ export function RequestLakeView({
   error,
   pending,
   container,
+  modal = true,
   onNoteChange,
   onSend,
   onClose,
 }: RequestLakeViewProps) {
   const noteId = useId();
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open modal={modal} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         data-slot="request-lake"
         className="w-[min(25rem,calc(100vw-2rem))]"

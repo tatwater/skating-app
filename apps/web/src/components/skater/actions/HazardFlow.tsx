@@ -244,9 +244,10 @@ export function HazardFlow({
     if (candidate) {
       apply((d) => ({ ...d, nearbyHazardId: candidate.hazard.id, step: 'confirm' }));
       setNudge({
+        // Core's sentence says "a" before every label; "an open water / lead" is the English.
         text: duplicateNudge(candidate.hazard.type, {
           reportedAgo: relativeWhen(candidate.hazard.firstReportedAt, Date.now()),
-        }),
+        }).replace(/already a (?=[aeiou])/i, 'already an '),
       });
       return;
     }

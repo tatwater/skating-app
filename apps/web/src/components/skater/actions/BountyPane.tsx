@@ -50,6 +50,8 @@ export interface BountyViewProps {
   refusal: string | null;
   pending: boolean;
   container?: HTMLElement | null;
+  /** Modal in the app; a side-by-side story confines each quad's dialog to its quad instead. */
+  modal?: boolean;
   onChoose: (choice: string) => void;
   onPost: () => void;
   onClose: () => void;
@@ -76,13 +78,14 @@ export function BountyView({
   refusal,
   pending,
   container,
+  modal = true,
   onChoose,
   onPost,
   onClose,
 }: BountyViewProps) {
   const refused = refusal ?? limitRefusal(limit);
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open modal={modal} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         data-slot="bounty-pane"
         className="w-[min(30rem,calc(100vw-2rem))]"

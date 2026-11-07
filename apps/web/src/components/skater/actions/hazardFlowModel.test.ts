@@ -188,7 +188,13 @@ describe('placing (3.2–3.6): a sub-mode is left by a click', () => {
     expect(narrowed.shore?.halfWidthMeters).toBeLessThan(SHORE_BAND_DEFAULT_HALF_WIDTH_M);
     // No outline at all is its own refusal.
     const none = deriveShore(
-      { ...d, shore: { ...(d.shore as never), taps: [LAKE[1], LAKE[4]] } },
+      {
+        ...d,
+        shore: {
+          ...(d.shore as NonNullable<HazardDraft['shore']>),
+          taps: [LAKE[1] as LatLng, LAKE[4] as LatLng],
+        },
+      },
       null,
     );
     expect(none.shore?.refusal).toBe('no_boundary');

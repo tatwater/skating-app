@@ -112,7 +112,7 @@ describe('selection and stepping', () => {
     );
     const clipped = stop(2, false, {
       blockedBy: 'coverage',
-      stats: { waterBodyId: 'm', coveragePct: 0.15 },
+      stats: { waterBodyId: 'm', coveragePct: 0.15 } as TimelineStop['stats'],
     });
     expect(tickTip(clipped)).toBe(
       'Nov 18 · Too little of the lake to show: only 15% of the lake in this pass',
