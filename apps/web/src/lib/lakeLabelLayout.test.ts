@@ -148,11 +148,11 @@ describe('layoutLakeLabels', () => {
     fc.assert(
       fc.property(candidatesArb, (candidates) => {
         const placed = [...layoutLakeLabels(candidates, MAP).values()];
-        for (let i = 0; i < placed.length; i++) {
-          for (let j = i + 1; j < placed.length; j++) {
-            expect(rectsOverlap(placed[i]!.box, placed[j]!.box, LABEL_GAP)).toBe(false);
+        placed.forEach((a, i) => {
+          for (const b of placed.slice(i + 1)) {
+            expect(rectsOverlap(a.box, b.box, LABEL_GAP)).toBe(false);
           }
-        }
+        });
       }),
     );
   });
@@ -187,7 +187,7 @@ describe('layoutLakeLabels', () => {
             const blocked =
               obstacles.some((o) => rectsOverlap(p.box, o, LABEL_GAP)) ||
               [...placed.entries()].some(([otherId, other]) => {
-                const o = candidates.find((x) => x.id === otherId)!;
+                const o = candidates.find((x) => x.id === otherId) as LabelCandidate;
                 const ahead = o.priority > c.priority || (o.priority === c.priority && o.id < c.id);
                 return ahead && rectsOverlap(p.box, other.box, LABEL_GAP);
               });

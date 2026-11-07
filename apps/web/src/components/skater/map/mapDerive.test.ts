@@ -137,10 +137,10 @@ describe('buildLakeLabels', () => {
         );
         const labels = buildLakeLabels(bodies, { ...baseInputs, limit });
         expect(labels.length).toBe(Math.min(n, limit));
-        for (let i = 1; i < labels.length; i++) {
-          const [a, b] = [labels[i - 1]!, labels[i]!];
+        labels.slice(1).forEach((b, i) => {
+          const a = labels[i] as (typeof labels)[number];
           expect(a.priority > b.priority || (a.priority === b.priority && a.id < b.id)).toBe(true);
-        }
+        });
       }),
     );
   });
@@ -199,9 +199,8 @@ describe('hazardMarksFrom', () => {
       ['h2', 'healing', false, ''],
       ['h3', 'passage', false, ''],
     ]);
-    const [first] = marks;
-    expect(first!.lng).toBeGreaterThanOrEqual(-72);
-    expect(first!.lng).toBeLessThanOrEqual(-71.99);
+    expect(marks[0]?.lng).toBeGreaterThanOrEqual(-72);
+    expect(marks[0]?.lng).toBeLessThanOrEqual(-71.99);
   });
 
   it('boxes a mark with its halo and brackets', () => {
