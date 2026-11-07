@@ -35,7 +35,13 @@ import {
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import {
   canReceiveNotifications,
   getCurrentProfile,
@@ -145,9 +151,7 @@ export const upsertFromClerk = mutation({
     // instant feedback, but the trust boundary can't trust it. We store the canonical
     // forms so `username` uniqueness is genuinely case-insensitive (06-data-model.md).
     const username = normalizeUsername(args.username);
-    if (!isValidUsername(username)) {
-      throw new ConvexError('Username must be 3–30 characters: letters, numbers, or underscores');
-    }
+    if (!isValidUsername(username)) throw new ConvexError(USERNAME_MESSAGES.invalid);
     const displayName = normalizeDisplayName(args.displayName);
     if (!isValidDisplayName(displayName)) {
       throw new ConvexError('Display name is required');
@@ -181,16 +185,11 @@ export const upsertFromClerk = mutation({
       return existing._id;
     }
 
-    // `username` is unique (06-data-model.md). Convex has no unique constraint, so
-    // check the index and reject a name already held by a *different* profile. (Only
-    // reached for new or active profiles — i.e. only when we're about to write it.)
-    const usernameOwner = await ctx.db
-      .query('profiles')
-      .withIndex('by_username', (q) => q.eq('username', username))
-      .first();
-    if (usernameOwner && usernameOwner.clerkUserId !== identity.subject) {
-      throw new ConvexError('Username is already taken');
-    }
+    // `username` is unique (06-data-model.md) — `checkUsername` is the one rule, shared with the
+    // availability query and the rename. (Only reached for new or active profiles — i.e. only when
+    // we're about to write it.)
+    const verdict = await checkUsername(ctx, username, identity.subject);
+    if (!verdict.ok) throw new ConvexError(USERNAME_MESSAGES[verdict.reason]);
 
     if (existing) {
       // Force a minor's profile private; never silently *widen* an adult's existing choice. So on
@@ -234,6 +233,95 @@ export const upsertFromClerk = mutation({
       status: 'active',
       createdAt: now,
     });
+  },
+});
+
+/** What a refused username is told, one string per reason — shared by every path that sets one. */
+const USERNAME_MESSAGES = {
+  invalid: 'Username must be 3–30 characters: letters, numbers, or underscores',
+  taken: 'Username is already taken',
+} as const;
+
+type UsernameVerdict =
+  | { ok: true; username: string }
+  | { ok: false; username: string; reason: keyof typeof USERNAME_MESSAGES };
+
+/**
+ * May `holderClerkId` have this username? **The one rule** (B03 §11): onboarding, the availability
+ * query and the rename all ask it, so a name the settings field calls free is a name the save takes.
+ *
+ * The canonical form first (D37 — the client's normalization is a courtesy), then the shape, then
+ * the index: a name is taken when a *different* account holds it. That includes a ghost (D62): the
+ * handle is reserved through the deletion window so canceling can give it back, and a tombstone's
+ * synthetic sentinel never collides with a valid handle. Your own current name is yours, not taken.
+ */
+async function checkUsername(
+  ctx: QueryCtx,
+  raw: string,
+  holderClerkId: string,
+): Promise<UsernameVerdict> {
+  const username = normalizeUsername(raw);
+  if (!isValidUsername(username)) return { ok: false, username, reason: 'invalid' };
+  const owner = await ctx.db
+    .query('profiles')
+    .withIndex('by_username', (q) => q.eq('username', username))
+    .first();
+  if (owner && owner.clerkUserId !== holderClerkId) return { ok: false, username, reason: 'taken' };
+  return { ok: true, username };
+}
+
+/**
+ * Is this username free, and allowed (B03 §11, settings 7.x and onboarding)? Answers for the caller:
+ * signed in, with or without a profile yet — onboarding asks before the row exists. `username` is
+ * the canonical form the save would store, so the field can show what "Ada_K " becomes. A refusal
+ * says which rule refused it; `current` marks the caller's own handle (free to them, nothing to save).
+ */
+export const usernameAvailable = query({
+  args: { username: v.string() },
+  handler: async (
+    ctx,
+    { username },
+  ): Promise<{
+    username: string;
+    available: boolean;
+    reason?: keyof typeof USERNAME_MESSAGES;
+    current?: true;
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError('Not authenticated');
+    const verdict = await checkUsername(ctx, username, identity.subject);
+    if (!verdict.ok) {
+      return { username: verdict.username, available: false, reason: verdict.reason };
+    }
+    const viewer = await getCurrentProfile(ctx);
+    return {
+      username: verdict.username,
+      available: true,
+      ...(viewer?.username === verdict.username ? { current: true as const } : {}),
+    };
+  },
+});
+
+/**
+ * Change the caller's username (B03 §11). The handle lives on our row alone — Clerk mirrors only the
+ * email and the avatar (`MirrorClaims`), and nothing denormalizes a username (every surface reads it
+ * at render through `publicAuthor`) — so a rename is one patch with no mirror to fight and no copies
+ * to chase. Old `/u/<name>` links stop resolving; that is what renaming means.
+ *
+ * `requireContributor`: a ghost's handle is reserved, not theirs to trade (D62), and `requireProfile`
+ * under it keeps a banned or suspended account from renaming to slip a moderation action (D37) — the
+ * same reason `upsertFromClerk` refuses an inactive account's identity edits.
+ */
+export const changeUsername = mutation({
+  args: { username: v.string() },
+  handler: async (ctx, args) => {
+    const profile = await requireContributor(ctx);
+    const verdict = await checkUsername(ctx, args.username, profile.clerkUserId);
+    if (!verdict.ok) throw new ConvexError(USERNAME_MESSAGES[verdict.reason]);
+    if (verdict.username !== profile.username) {
+      await ctx.db.patch(profile._id, { username: verdict.username });
+    }
+    return { username: verdict.username };
   },
 });
 
