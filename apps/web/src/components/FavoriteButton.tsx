@@ -32,11 +32,17 @@ export function FavoriteButton({
   const toggle = useMutation(api.waterBodyFavorites.toggle);
   const isFav = favorited === true;
 
-  // Awaits the toggle before recording, so a mutation that fails records nothing. `isFav` is this
-  // render's value — the state the star was in when it was pressed — which is what names the event.
+  // Awaits the toggle before recording, so a mutation that fails records nothing — and names the
+  // event from the mutation's **own** post-state rather than from `isFav`.
+  //
+  // `isFav` is this render's value, and the button is only disabled while the query is undefined
+  // (first load). Two taps before the reactive query catches up therefore both read the same stale
+  // `isFav` and would record two `water_body_favorited`s for a favorite-then-unfavorite — inflating
+  // exactly the saved-place demand figure this event exists to measure. The server's return value
+  // is never stale.
   const onToggle = async () => {
-    await toggle(target);
-    analytics.capture(isFav ? 'water_body_unfavorited' : 'water_body_favorited', {
+    const { favorited: nowFavorited } = await toggle(target);
+    analytics.capture(nowFavorited ? 'water_body_favorited' : 'water_body_unfavorited', {
       target_type: subAreaId === undefined ? 'water_body' : 'sub_area',
     });
   };
@@ -48,7 +54,14 @@ export function FavoriteButton({
       size={showLabel ? 'sm' : 'icon'}
       aria-pressed={isFav}
       aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
-      onClick={() => void onToggle()}
+      onClick={() => {
+        // A refused toggle is swallowed on purpose. `void toggle(target)` here previously left the
+        // rejection unhandled, which both Sentry and PostHog's exception capture report as an app
+        // error — and the common refusal is the expected one (`Water body not found` for a body
+        // taken down since this view loaded), not a bug. The star needs no rollback either: the
+        // reactive `isFavorite` query is the source of truth, so it simply stays where it was.
+        void onToggle().catch(() => {});
+      }}
       disabled={favorited === undefined}
     >
       <FontAwesomeIcon

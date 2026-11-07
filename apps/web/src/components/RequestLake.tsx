@@ -72,6 +72,7 @@ export function RequestButtons({
     waterBodyId: body._id as Id<'waterBodies'>,
   });
   const create = useMutation(api.corpusRequests.create);
+  const analytics = useAnalytics();
   const [asking, setAsking] = useState<RequestKind | null>(null);
 
   if (kinds.length === 0) return null;
@@ -97,6 +98,8 @@ export function RequestButtons({
               ...(note ? { note } : {}),
               ...(name ? { name } : {}),
             });
+            // The kind only — never the note, which is free text a skater wrote to a moderator.
+            analytics.capture('water_body_request_submitted', { request_kind: asking });
           }}
         />
       ) : null}
@@ -166,7 +169,6 @@ function RequestDialog({
   onClose: () => void;
   onSubmit: (note: string, name?: string) => Promise<void>;
 }) {
-  const analytics = useAnalytics();
   const [note, setNote] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -208,8 +210,6 @@ function RequestDialog({
               setError(null);
               try {
                 await onSubmit(note.trim(), prompt.name ? name.trim() : undefined);
-                // The kind only — never the note, which is free text a skater wrote to a moderator.
-                analytics.capture('water_body_request_submitted', { request_kind: kind });
                 onClose();
               } catch (err) {
                 setError(messageOf(err));
@@ -247,6 +247,7 @@ export function AdmitPrompt({
     bufferMeters: ADMIT_KNOWN_WATER_MARGIN_M,
   });
   const create = useMutation(api.corpusRequests.create);
+  const analytics = useAnalytics();
 
   // A body under the click is what the click was about: hand off to its drawer.
   useEffect(() => {
@@ -264,6 +265,7 @@ export function AdmitPrompt({
       onSubmit={async (note) => {
         try {
           await create({ kind: 'admit', coord, ...(note ? { note } : {}) });
+          analytics.capture('water_body_request_submitted', { request_kind: 'admit' });
         } catch (err) {
           const known = knownWaterOf(err);
           if (known) {
