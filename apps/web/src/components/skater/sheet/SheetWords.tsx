@@ -58,7 +58,9 @@ export function SheetWords({
         onChange={(e) => updateSheet((p) => ({ ...p, title: e.target.value, dirty: true }))}
         className="text-[1.0625rem] font-semibold"
       />
+      {/* Board 5.1: the story is the page's writing, so it sits on the underline, as the title does. */}
       <Textarea
+        variant="underline"
         aria-label="How was it?"
         data-attr="sheet-story"
         rows={3}

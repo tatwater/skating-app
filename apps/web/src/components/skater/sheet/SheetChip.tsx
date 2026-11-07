@@ -109,6 +109,7 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   children,
   trailing,
   emphasisKey,
+  bare = false,
 }: {
   sheet: ReportSheetState;
   field: K;
@@ -122,27 +123,29 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   trailing?: (key: string) => ReactNode;
   /** The chip a where question is open for. */
   emphasisKey?: string | null;
+  /** The chips alone, no row around them — for a caller that sets two fields in one row. */
+  bare?: boolean;
 }) {
   const chips = (sheet.fields[field] as ChipField<unknown>).chips;
+  const items = options.map((option) => {
+    const chip = chips.find((c) => c.key === option);
+    const tier = chip?.tier;
+    const selected = tier === 'solid' || tier === 'extracted';
+    return (
+      <SheetChip
+        key={option}
+        label={label(option)}
+        {...(tier !== undefined ? { tier } : {})}
+        emphasis={emphasisKey === option}
+        {...(selected && trailing ? { trailing: trailing(option) } : {})}
+        onClick={() => (selected ? onDeselect(option) : onSelect(option))}
+      />
+    );
+  });
+  if (bare) return <>{items}</>;
   return (
     <div className="flex flex-col gap-(--space-2)">
-      <div className="flex flex-wrap gap-(--space-1_5)">
-        {options.map((option) => {
-          const chip = chips.find((c) => c.key === option);
-          const tier = chip?.tier;
-          const selected = tier === 'solid' || tier === 'extracted';
-          return (
-            <SheetChip
-              key={option}
-              label={label(option)}
-              {...(tier !== undefined ? { tier } : {})}
-              emphasis={emphasisKey === option}
-              {...(selected && trailing ? { trailing: trailing(option) } : {})}
-              onClick={() => (selected ? onDeselect(option) : onSelect(option))}
-            />
-          );
-        })}
-      </div>
+      <div className="flex flex-wrap gap-(--space-1_5)">{items}</div>
       {children}
     </div>
   );

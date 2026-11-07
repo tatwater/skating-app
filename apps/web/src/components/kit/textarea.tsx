@@ -20,21 +20,36 @@ import { cn } from '@/lib/utils';
  *   sideways.
  * - Inside a kit `Field` it is the field's control: `FieldLabel`, `FieldDescription` and
  *   `FieldError` wire to it, and native validity (`required`, `maxLength`) flows through.
+ * - **`variant="underline"`** is the standard input's register for writing that *is* the page —
+ *   the report sheet's story: text over one `line2` rule, no inset, focus turning the rule to the
+ *   bright ink and doubling it (a shadow, so nothing moves), exactly as `Input` does.
  */
 type TextareaProps = Omit<FieldPrimitive.Control.Props, 'render'> &
-  Pick<ComponentProps<'textarea'>, 'rows' | 'cols' | 'wrap'>;
+  Pick<ComponentProps<'textarea'>, 'rows' | 'cols' | 'wrap'> & {
+    variant?: 'box' | 'underline';
+  };
 
-function Textarea({ className, rows, cols, wrap, ...props }: TextareaProps) {
+function Textarea({ className, rows, cols, wrap, variant = 'box', ...props }: TextareaProps) {
+  const underline = variant === 'underline';
   return (
     <FieldPrimitive.Control
       data-slot="textarea"
+      data-variant={variant}
       render={<textarea rows={rows} cols={cols} wrap={wrap} />}
       className={cn(
-        'block min-h-[4rem] w-full resize-y rounded-none border border-solid border-line2 bg-bg',
-        'px-(--space-2_5) py-(--space-2) font-(family-name:--family-sans) text-row leading-body font-regular text-fg',
+        'block w-full resize-y rounded-none border-solid font-(family-name:--family-sans) text-row leading-body font-regular text-fg',
         'shadow-none outline-none placeholder:text-fg3',
-        'transition-[border-color] duration-(--duration-fast) ease-standard',
-        '[@media(hover:hover)]:hover:border-fg3 focus:border-fg2 focus:hover:border-fg2',
+        underline
+          ? [
+              'min-h-[3rem] border-0 border-b border-line2 bg-transparent px-0 py-(--space-1_5)',
+              'transition-[border-color,box-shadow] duration-(--duration-fast) ease-standard',
+              '[@media(hover:hover)]:hover:not-focus:border-fg3 focus:border-fg focus:shadow-[0_1px_0_0_var(--fg)]',
+            ]
+          : [
+              'min-h-[4rem] border border-line2 bg-bg px-(--space-2_5) py-(--space-2)',
+              'transition-[border-color] duration-(--duration-fast) ease-standard',
+              '[@media(hover:hover)]:hover:border-fg3 focus:border-fg2 focus:hover:border-fg2',
+            ],
         'data-invalid:border-bad data-invalid:hover:border-bad',
         'aria-invalid:border-bad aria-invalid:hover:border-bad',
         'data-disabled:cursor-default data-disabled:border-line data-disabled:hover:border-line',

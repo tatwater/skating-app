@@ -265,6 +265,39 @@ describe('posting (5.23–5.27)', () => {
     expect(document.querySelectorAll('[data-cell="need"]').length).toBeGreaterThan(0);
   });
 
+  it('folds Ice and surface to the board’s row, the whole list under More (5.9)', () => {
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    const section = document.getElementById('section-ice') as HTMLElement;
+    // The fold's row: the chips before its More / Fewer control, by their names.
+    const chipNames = () => {
+      const fold = section.querySelector('[data-attr="sheet-ice-more"]') as HTMLElement;
+      return [
+        ...(fold.parentElement as HTMLElement).querySelectorAll('[data-attr="sheet-chip"]'),
+      ].map((c) => c.getAttribute('aria-label'));
+    };
+    expect(chipNames()).toEqual(['Glass', 'Smooth', 'Rough', 'Bumpy']);
+    expect(within(section).queryByRole('button', { name: 'Black ice' })).toBeNull();
+    // A chosen chip stays in the folded row wherever it sits in the list.
+    fireEvent.click(within(section).getByRole('button', { name: 'More' }));
+    expect(within(section).getByRole('button', { name: 'Fewer' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    fireEvent.click(within(section).getByRole('button', { name: 'Black ice' }));
+    fireEvent.click(within(section).getByRole('button', { name: 'Fewer' }));
+    expect(chipNames()).toEqual(['Black ice', 'Glass', 'Smooth', 'Rough', 'Bumpy']);
+  });
+
+  it('writes the story on the underline, as the board draws it (5.1)', () => {
+    setSheet(withLake(openSheet()));
+    render(<Connected />);
+    expect(screen.getByRole('textbox', { name: 'How was it?' })).toHaveAttribute(
+      'data-variant',
+      'underline',
+    );
+  });
+
   it('fades everything while posting, the tab included, then hands over the posted report', async () => {
     let land: (v: unknown) => void = () => {};
     h.post.mockImplementation(() => new Promise((r) => (land = r)));
