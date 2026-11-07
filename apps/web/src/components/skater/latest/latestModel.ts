@@ -113,8 +113,7 @@ export const RECENT_COLD: WeatherDiscoveryFilter = { thresholdF: 20, minNights: 
 
 /**
  * Which `latest_filter_changed` value each saved filter key reports (D240: which control, never
- * the value). `noSnow` has no taxonomy value yet — counting it as something else would mislabel
- * it, so it isn't counted (a seam request for `snow_cover`).
+ * the value).
  */
 const FILTER_EVENT: Readonly<Record<keyof FeedFilters, LatestFilter | null>> = {
   radiusMinutes: 'drive_time',
@@ -125,7 +124,7 @@ const FILTER_EVENT: Readonly<Record<keyof FeedFilters, LatestFilter | null>> = {
   thicknessFloorCm: 'thickness',
   weather: 'weather_match',
   onlyReports: 'weather_match',
-  noSnow: null,
+  noSnow: 'snow_cover',
 };
 
 /** The controls a change touched, once each, in the taxonomy's order. */
@@ -144,6 +143,7 @@ export function changedFilters(prev: FeedFilters, next: FeedFilters): LatestFilt
     'ice_type',
     'thickness',
     'weather_match',
+    'snow_cover',
   ];
   return order.filter((event) => hit.has(event));
 }

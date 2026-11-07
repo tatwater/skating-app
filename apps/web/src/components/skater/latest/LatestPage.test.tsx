@@ -136,6 +136,13 @@ describe('LatestPage', () => {
     expect(setFilters).toHaveBeenLastCalledWith({});
   });
 
+  it('counts the no-snow-cover box as snow_cover', () => {
+    page();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'No snow cover' }));
+    expect(setFilters).toHaveBeenCalledWith({ noSnow: true });
+    expect(fakes.capture).toHaveBeenCalledWith('latest_filter_changed', { filter: 'snow_cover' });
+  });
+
   it('opens a report in the center column, from the feed, without resetting scroll', () => {
     page();
     fireEvent.click(screen.getByRole('link', { name: /^Report on Mascoma South/ }));

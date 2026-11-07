@@ -99,9 +99,18 @@ describe('changedFilters', () => {
     ).toEqual(['drive_time', 'ice_type', 'weather_match']);
   });
 
-  it('counts nothing for an unchanged row or the snow box (no taxonomy value yet)', () => {
+  it('counts nothing for an unchanged row', () => {
     expect(changedFilters({ qualityFloor: 'good' }, { qualityFloor: 'good' })).toEqual([]);
-    expect(changedFilters({}, { noSnow: true })).toEqual([]);
+    expect(changedFilters({ noSnow: true }, { noSnow: true })).toEqual([]);
+  });
+
+  it('counts the snow box as snow_cover, on and off, after the other controls', () => {
+    expect(changedFilters({}, { noSnow: true })).toEqual(['snow_cover']);
+    expect(changedFilters({ noSnow: true }, {})).toEqual(['snow_cover']);
+    expect(changedFilters({ noSnow: true }, { qualityFloor: 'good' })).toEqual([
+      'quality',
+      'snow_cover',
+    ]);
   });
 
   it('reports every control a clear-all turns off', () => {

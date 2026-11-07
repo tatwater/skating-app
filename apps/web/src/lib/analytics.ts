@@ -167,7 +167,15 @@ export const ANALYTICS_ENUMS = {
   search_open_surface: ['top_bar', 'phone', 'hotkey'],
   search_result_kind: ['water_body', 'sub_area', 'skater'],
   query_length_bucket: ['1-2', '3-5', '6-11', '12+'],
-  latest_filter: ['drive_time', 'posted', 'quality', 'ice_type', 'thickness', 'weather_match'],
+  latest_filter: [
+    'drive_time',
+    'posted',
+    'quality',
+    'ice_type',
+    'thickness',
+    'weather_match',
+    'snow_cover',
+  ],
   report_sheet_entry: [
     'top_bar',
     'water_body',
