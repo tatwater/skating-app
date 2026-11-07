@@ -25,7 +25,7 @@ import { AccessTab } from './AccessTab';
 import { ActionPane } from './ActionPane';
 import { AlertStrip } from './AlertStrip';
 import { type FavoriteState, LakeHeader, type LakeHeaderProps } from './LakeHeader';
-import { ExploreFrame, LakeSidebar, LakeTabs } from './LakeSidebar';
+import { LakeSidebar, LakeTabs } from './LakeSidebar';
 import { LakeSidebarSkeleton, LakeUnavailable, StandingNoticeView } from './LakeStates';
 import { areaFact, depthFact, elevationFact, lakeFacts, lakeKicker } from './lakeModel';
 import { type PageNav, useEscapeToClose, usePageNav } from './lakeNav';
@@ -35,7 +35,7 @@ import { ReportsTab } from './ReportsTab';
 import { WeatherTab } from './WeatherTab';
 
 /**
- * `/water/$id` — a lake chosen (boards 1.2–1.14). The sidebar beside the region map: the header,
+ * `/water/$id` — a lake chosen (boards 1.2–1.14). The sidebar beside the region map (the layout's): the header,
  * the NWS alerts above the tabs, the four tabs, and the attribution at the foot; `?sub=` reframes it
  * as a bay (1.10), `?act=` opens an action over it (row 3). It declares the lake's map spec, so the
  * map frames the lake and draws its depth, hazards, put-ins and places.
@@ -74,16 +74,12 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
 
   const contourCredit = useSkaterMapStore((s) => s.contourCredit);
 
-  if (result === undefined) return <ExploreFrame sidebar={<LakeSidebarSkeleton />} />;
+  if (result === undefined) return <LakeSidebarSkeleton />;
   if (result === null || !result.available) {
     return (
-      <ExploreFrame
-        sidebar={
-          <LakeUnavailable
-            kind={result === null ? 'not-found' : 'unavailable'}
-            explore={nav.link('/')}
-          />
-        }
+      <LakeUnavailable
+        kind={result === null ? 'not-found' : 'unavailable'}
+        explore={nav.link('/')}
       />
     );
   }
@@ -91,33 +87,27 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
   const lakeName = waterBodyDisplayName(lake.name);
 
   return (
-    <ExploreFrame
-      sidebar={
-        <LakeSidebar
-          label={bay ? bay.name : lakeName}
-          header={
-            <>
-              <ConnectedHeader lake={lake} bay={bay} nav={nav} />
-              <AlertStrip waterBodyId={lake._id} />
-            </>
+    <LakeSidebar
+      label={bay ? bay.name : lakeName}
+      header={
+        <>
+          <ConnectedHeader lake={lake} bay={bay} nav={nav} />
+          <AlertStrip waterBodyId={lake._id} />
+        </>
+      }
+      body={
+        <LakeTabs
+          tab={tab}
+          onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
+          contourCredit={contourCredit}
+          overlay={
+            act !== undefined ? (
+              <ActionPane act={act} backTo={bay ? bay.name : lakeName} onBack={closeAct} />
+            ) : null
           }
-          body={
-            <LakeTabs
-              tab={tab}
-              onTabChange={(next) =>
-                nav.replace(nav.with({ tab: next === 'reports' ? null : next }))
-              }
-              contourCredit={contourCredit}
-              overlay={
-                act !== undefined ? (
-                  <ActionPane act={act} backTo={bay ? bay.name : lakeName} onBack={closeAct} />
-                ) : null
-              }
-            >
-              <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
-            </LakeTabs>
-          }
-        />
+        >
+          <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
+        </LakeTabs>
       }
     />
   );

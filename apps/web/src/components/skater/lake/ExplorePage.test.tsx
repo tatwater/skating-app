@@ -13,7 +13,6 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>
     select({ location: fakes.location }),
 }));
-vi.mock('../map/SkaterMap', () => ({ SkaterMap: () => <div data-testid="skater-map" /> }));
 
 import { ExplorePage } from './ExplorePage';
 import { buildInViewModel } from './InViewList';

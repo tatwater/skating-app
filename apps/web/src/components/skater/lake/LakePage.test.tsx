@@ -18,7 +18,6 @@ vi.mock('@/lib/analytics', async (load) => ({
   ...(await load<typeof import('@/lib/analytics')>()),
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
-vi.mock('../map/SkaterMap', () => ({ SkaterMap: () => <div data-testid="skater-map" /> }));
 
 import { LakePage } from './LakePage';
 import { lakeSearchSchema } from './lakeSearch';
@@ -146,14 +145,14 @@ beforeEach(() => {
 afterEach(() => useSkaterMapStore.setState({ specs: { view: null, flow: null } }));
 
 describe('the lake page’s states', () => {
-  it('loads with the 2.8 skeleton, beside the map', () => {
+  it('loads with the 2.8 skeleton — the sidebar only; the map is the layout’s', () => {
     answer({ 'waterBodies:get': undefined });
     renderLake();
     expect(screen.getByRole('complementary', { name: 'Loading the lake' })).toHaveAttribute(
       'aria-busy',
       'true',
     );
-    expect(screen.getByTestId('skater-map')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="skater-map"]')).toBeNull();
   });
 
   it('says a broken link is a broken link, and offers the way back', () => {
