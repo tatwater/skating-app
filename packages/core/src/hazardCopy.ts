@@ -329,7 +329,27 @@ export function duplicateNudge(
   { reportedAgo, reporterName }: { reportedAgo: string; reporterName?: string },
 ): string {
   const who = reporterName ? ` by ${reporterName}` : '';
-  return `There is already a ${hazardTypeLabel(type).toLowerCase()} marked here — reported ${reportedAgo}${who}.`;
+  return `There ${thereIsA(type)} marked here — reported ${reportedAgo}${who}.`;
+}
+
+/** The labels that name a plural thing — they take no article and "are", not "is a". */
+const PLURAL_HAZARD_TYPES: ReadonlySet<HazardType> = new Set<HazardType>(['air_pockets']);
+
+/**
+ * "a" or "an" by the sound of the word that follows. The hazard vocabulary is closed and every label
+ * that opens on a vowel letter opens on a vowel sound (open, overflow, ice, air), so the letter is the
+ * rule; `hazardCopy.test.ts` pins the article for every type, so a new label that breaks it (a
+ * "unit…", an "hour…") fails there rather than reaching a skater.
+ */
+export function indefiniteArticle(word: string): 'a' | 'an' {
+  return /^[aeiou]/i.test(word.trim()) ? 'an' : 'a';
+}
+
+/** "is already an open water / lead" · "are already air pockets" — the nudge's verb and noun. */
+function thereIsA(type: HazardType): string {
+  const label = hazardTypeLabel(type).toLowerCase();
+  if (PLURAL_HAZARD_TYPES.has(type)) return `are already ${label}`;
+  return `is already ${indefiniteArticle(label)} ${label}`;
 }
 
 /**

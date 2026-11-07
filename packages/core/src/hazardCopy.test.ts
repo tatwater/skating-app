@@ -12,6 +12,7 @@ import {
   freshnessLabel,
   hazardTypeLabel,
   healingNote,
+  indefiniteArticle,
   NO_ALERT_IS_NOT_ALL_CLEAR,
   NO_KNOWN_HAZARDS,
   relativeWhen,
@@ -23,7 +24,7 @@ import {
 } from './hazardCopy';
 import type { HazardFreshness } from './hazardDecay';
 import { HAZARD_VERDICTS, type HazardVerdict } from './hazardLifecycle';
-import { HAZARD_TYPES } from './types';
+import { HAZARD_TYPES, type HazardType } from './types';
 
 const FRESHNESSES: HazardFreshness[] = ['fresh', 'aging', 'stale'];
 /**
@@ -380,6 +381,43 @@ describe('duplicateNudge', () => {
       // And it never falls back to a raw enum key in front of a skater.
       expect(line, type).not.toMatch(/_/);
     }
+  });
+});
+
+describe('the nudge’s articles', () => {
+  // Every type, spelled out: a new label whose first letter misleads (a "unit…") fails here.
+  const EXPECTED: Record<HazardType, string> = {
+    open_water: 'There is already an open water / lead marked here',
+    thin_ice: 'There is already a thin ice marked here',
+    overflow_slush: 'There is already an overflow / slush marked here',
+    drain_hole: 'There is already a drain hole marked here',
+    wind_hole: 'There is already a wind hole marked here',
+    slush_hole: 'There is already a slush / mush hole marked here',
+    thawed_rotten: 'There is already a thawed / rotten ice marked here',
+    ridge_crossing: 'There is already a ridge crossing marked here',
+    wet_crack: 'There is already a wet / working crack marked here',
+    drilled_hole: 'There is already a drilled hole marked here',
+    shell_area: 'There is already a shell ice marked here',
+    air_pockets: 'There are already air pockets marked here',
+    pressure_ridge: 'There is already a pressure ridge marked here',
+    ice_heave: 'There is already an ice heave / buckling marked here',
+    spring_current: 'There is already a spring / inlet-outlet current marked here',
+    gas_hole: 'There is already a gas hole marked here',
+    reef_hole: 'There is already a reef hole marked here',
+  };
+
+  it('says "an" before a vowel sound, "a" before the rest, and no article for a plural', () => {
+    for (const type of HAZARD_TYPES) {
+      expect(duplicateNudge(type, { reportedAgo: 'yesterday' }), type).toBe(
+        `${EXPECTED[type]} — reported yesterday.`,
+      );
+    }
+  });
+
+  it('picks the article from the next word’s first letter', () => {
+    expect(indefiniteArticle('open water')).toBe('an');
+    expect(indefiniteArticle('  Ice heave')).toBe('an');
+    expect(indefiniteArticle('pressure ridge')).toBe('a');
   });
 });
 
