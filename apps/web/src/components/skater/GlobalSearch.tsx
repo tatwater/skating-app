@@ -209,7 +209,8 @@ export function GlobalSearch({
     capture('search_result_opened', {
       result_kind: row.kind,
       rank: rankOf(groups, row.key),
-      query_length_bucket: bucketQueryLength(text.trim().length),
+      // A Recent pick is not a search: no query was asked, so no length is reported (D240).
+      query_length_bucket: showRecents ? 'recent' : bucketQueryLength(text.trim().length),
     });
     addRecent(row.pick);
     onOpenChange(false);

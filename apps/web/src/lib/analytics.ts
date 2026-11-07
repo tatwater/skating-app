@@ -76,14 +76,17 @@ export interface AnalyticsEventProperties {
 
   /** Global search was opened. */
   search_opened: { surface: SearchOpenSurface };
-  /** A search result was picked: its kind, its rank in the list, and the query's size — never its text. */
+  /**
+   * A search result was picked: its kind, its rank in the list, and the query's size — never its
+   * text. A pick from Recent, with no query, says `recent` rather than a length bucket.
+   */
   search_result_opened: {
     result_kind: SearchResultKind;
     rank: number;
     query_length_bucket: QueryLengthBucket;
   };
-  /** A query came back empty. */
-  search_no_results: { query_length_bucket: QueryLengthBucket };
+  /** A query came back empty. Always a real query, so never `recent`. */
+  search_no_results: { query_length_bucket: Exclude<QueryLengthBucket, 'recent'> };
 
   /** A Latest filter changed, by which control — never to what value. */
   latest_filter_changed: { filter: LatestFilter };
@@ -166,7 +169,8 @@ export const ANALYTICS_ENUMS = {
   ],
   search_open_surface: ['top_bar', 'phone', 'hotkey'],
   search_result_kind: ['water_body', 'sub_area', 'skater'],
-  query_length_bucket: ['1-2', '3-5', '6-11', '12+'],
+  // `recent`: a pick from the Recent group, made with no query at all — not a search of any length.
+  query_length_bucket: ['1-2', '3-5', '6-11', '12+', 'recent'],
   latest_filter: [
     'drive_time',
     'posted',
@@ -226,7 +230,7 @@ export type UnreadBucket = (typeof ANALYTICS_ENUMS.unread_bucket)[number];
 export type SignInMethod = (typeof ANALYTICS_ENUMS.sign_in_method)[number];
 
 /** A query's size without its text: the bucket is countable shape, the characters are content. */
-export function bucketQueryLength(length: number): QueryLengthBucket {
+export function bucketQueryLength(length: number): Exclude<QueryLengthBucket, 'recent'> {
   if (length <= 2) return '1-2';
   if (length <= 5) return '3-5';
   if (length <= 11) return '6-11';

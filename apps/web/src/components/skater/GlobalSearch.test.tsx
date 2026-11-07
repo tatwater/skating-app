@@ -207,6 +207,12 @@ describe('GlobalSearch', () => {
     expect(fakes.calls.some((c) => c.name === 'waterBodies:get')).toBe(false);
     fireEvent.click(screen.getByText('Mascoma North'));
     expect(fakes.push).toHaveBeenCalledWith('/water/w1?sub=s1');
+    // A Recent pick is not a search: it reports no query length.
+    expect(fakes.capture).toHaveBeenLastCalledWith('search_result_opened', {
+      result_kind: 'sub_area',
+      rank: 2,
+      query_length_bucket: 'recent',
+    });
   });
 
   it('prompts for a name when there are no recents yet', async () => {
