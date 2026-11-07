@@ -2,13 +2,17 @@ import {
   BAND_EDGE_DEEP_COLD_F,
   BAND_EDGE_FREEZING_F,
   BAND_EDGE_THAW_F,
+  bodyWeatherAnchor,
   COMPASS_LABELS,
   type ForecastPlanDay,
   type ForecastPlanHour,
   type PanelDay,
+  subAreaWeatherPoint,
   type TemperatureLayer,
   windSectorOf,
 } from '@skating/core';
+
+import type { MapOverlay } from '../../map/mapSpec';
 
 /**
  * The Weather tab's pure rules — what the tab shows, never how the weather is computed. Every
@@ -56,6 +60,51 @@ export function selectedPlace(
   subAreaId: string | undefined,
 ): WeatherPlace {
   return places.find((p) => p.id !== null && p.id === subAreaId) ?? WHOLE_LAKE;
+}
+
+type LatLng = { lat: number; lng: number };
+
+/**
+ * The lake's weather sample points as a map overlay (board 1.7): the whole lake's at its weather
+ * anchor and each live bay's at its own point — the same points the server reads (`bodyWeatherAnchor`,
+ * `subAreaWeatherPoint`) — the one being read `lit`. Only when "Weather at" is offered: a lake with
+ * one point has nothing to explain.
+ */
+export function weatherSamplesOverlay(
+  lake: { _id: string; interiorPoint?: LatLng; representativePoint?: LatLng; centroid: LatLng },
+  bays:
+    | readonly {
+        _id: string;
+        name: string;
+        removed?: boolean;
+        representativePoint?: LatLng;
+        centroid: LatLng;
+      }[]
+    | undefined,
+  subAreaId: string | undefined,
+): MapOverlay | null {
+  const places = weatherPlaces(bays);
+  if (!showWeatherAt(places)) return null;
+  const lit = selectedPlace(places, subAreaId).id;
+  const byId = new Map((bays ?? []).map((b) => [b._id, b]));
+  const features = places.flatMap((place): GeoJSON.Feature[] => {
+    const bay = place.id === null ? null : byId.get(place.id);
+    // A row without a point (a partial read) is left off rather than drawn at the map's origin.
+    const point: LatLng | undefined =
+      place.id === null ? bodyWeatherAnchor(lake) : bay ? subAreaWeatherPoint(bay) : undefined;
+    if (point === undefined) return [];
+    return [
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [point.lng, point.lat] },
+        properties: { name: place.name, lit: place.id === lit },
+      },
+    ];
+  });
+  return {
+    key: `samples:${lake._id}:${places.map((p) => p.id ?? 'lake').join(',')}:${lit ?? 'lake'}`,
+    data: { type: 'FeatureCollection', features },
+  };
 }
 
 /** The select's tooltip — why "Weather at" is there at all (the board's words). */

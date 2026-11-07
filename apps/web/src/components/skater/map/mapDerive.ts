@@ -4,7 +4,13 @@
  * and no React, so every rule here has a test.
  */
 
-import { isActiveRow, type PartialStandingInput, representativePoint } from '@skating/core';
+import {
+  isActiveRow,
+  metersToFeet,
+  metersToMiles,
+  type PartialStandingInput,
+  representativePoint,
+} from '@skating/core';
 import {
   LABEL_DOT_RADIUS,
   labelPriority,
@@ -76,6 +82,28 @@ export function mergeHazards<H extends { waterBodyId: string }>(
   const isFocus = (h: H) => focusIds.has(h.waterBodyId);
   const own = focusIds.size === 0 ? [] : (focused ?? around.filter(isFocus));
   return [...own, ...around.filter((h) => !isFocus(h))];
+}
+
+/**
+ * The walk's label, "0.3 mi on foot" (board 1.5): tenths of a mile, or feet under a tenth (US units).
+ * `undefined` for a walk with no length to state.
+ */
+export function walkLabel(meters: number | undefined): string | undefined {
+  if (meters === undefined || !Number.isFinite(meters) || meters <= 0) return undefined;
+  const miles = metersToMiles(meters);
+  if (miles >= 0.1) return `${(Math.round(miles * 10) / 10).toFixed(1)} mi on foot`;
+  return `${Math.max(10, Math.round(metersToFeet(meters) / 10) * 10)} ft on foot`;
+}
+
+/** The walk lines with their labels, for the approach source's symbol layer. */
+export function withWalkLabels(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
+  return {
+    ...fc,
+    features: fc.features.map((f) => {
+      const label = walkLabel(f.properties?.meters as number | undefined);
+      return label ? { ...f, properties: { ...f.properties, walkLabel: label } } : f;
+    }),
+  };
 }
 
 export interface LakeLabelModel {

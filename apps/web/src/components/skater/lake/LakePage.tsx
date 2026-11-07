@@ -35,6 +35,7 @@ import type { LakeSearch, LakeTab } from './lakeSearch';
 import { takeWaterBodyOpenSource } from './openSource';
 import { ReportsTab } from './ReportsTab';
 import { WeatherTab } from './WeatherTab';
+import { weatherSamplesOverlay } from './weather/weatherModel';
 
 /**
  * `/water/$id` — a lake chosen (boards 1.2–1.14). The sidebar beside the region map (the layout's): the header,
@@ -54,8 +55,12 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
   const bay = sub ? (subAreas?.find((s) => s._id === sub && !s.removed) ?? null) : null;
   const liveSub = bay?._id;
 
+  const samples = useMemo(
+    () => (tab === 'weather' && body ? weatherSamplesOverlay(body, subAreas, liveSub) : null),
+    [tab, body, subAreas, liveSub],
+  );
   useMapSpec(
-    useMemo(() => lakeMapSpec(id, liveSub), [id, liveSub]),
+    useMemo(() => lakeMapSpec(id, liveSub, samples), [id, liveSub, samples]),
     { onOpenImagery: () => nav.push(nav.with({ act: 'imagery' })) },
   );
 

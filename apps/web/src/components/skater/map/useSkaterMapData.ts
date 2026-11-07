@@ -26,6 +26,7 @@ import {
   mergeHazards,
   reportCountsByBody,
   withBayAngles,
+  withWalkLabels,
 } from './mapDerive';
 import { EMPTY_FEATURES } from './mapLayers';
 import type { MapSpec } from './mapSpec';
@@ -160,7 +161,10 @@ export function useSkaterMapData({
     return rows.length > 0 ? hazardsToFeatureCollection(rows) : EMPTY_FEATURES;
   }, [focusId, focusBodyId, hazards, viewportHazards]);
   const hazardMarks = useMemo(() => hazardMarksFrom(hazardFeatures), [hazardFeatures]);
-  const approachFeatures = useMemo(() => approachesToFeatureCollection(putIns ?? []), [putIns]);
+  const approachFeatures = useMemo(
+    () => withWalkLabels(approachesToFeatureCollection(putIns ?? [])),
+    [putIns],
+  );
   const putInMarks = useMemo<PutInMarkModel[]>(
     () =>
       (focusId ? (putIns ?? []) : []).map((p, i) => ({

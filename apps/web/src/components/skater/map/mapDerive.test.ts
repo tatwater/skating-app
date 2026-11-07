@@ -13,7 +13,9 @@ import {
   markObstacle,
   mergeHazards,
   reportCountsByBody,
+  walkLabel,
   withBayAngles,
+  withWalkLabels,
 } from './mapDerive';
 
 const square = (lng: number, lat: number, d = 0.01): GeoJSON.Polygon => ({
@@ -341,5 +343,27 @@ describe('mergeHazards', () => {
 
   it('draws the open lake alone before the viewport answers', () => {
     expect(mergeHazards([h('a1', 'mascoma')], undefined, new Set(['mascoma']))).toHaveLength(1);
+  });
+});
+
+describe('walkLabel', () => {
+  it('says the walk in tenths of a mile, or feet under a tenth', () => {
+    expect(walkLabel(483)).toBe('0.3 mi on foot');
+    expect(walkLabel(1609.344)).toBe('1.0 mi on foot');
+    expect(walkLabel(100)).toBe('330 ft on foot');
+    expect(walkLabel(1)).toBe('10 ft on foot');
+    expect(walkLabel(undefined)).toBeUndefined();
+    expect(walkLabel(0)).toBeUndefined();
+  });
+
+  it('labels the walk lines that have a length, and leaves the rest as they were', () => {
+    const line = (meters?: number): GeoJSON.Feature => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [] },
+      properties: meters === undefined ? {} : { meters },
+    });
+    const out = withWalkLabels({ type: 'FeatureCollection', features: [line(483), line()] });
+    expect(out.features[0]?.properties?.walkLabel).toBe('0.3 mi on foot');
+    expect(out.features[1]?.properties).toEqual({});
   });
 });

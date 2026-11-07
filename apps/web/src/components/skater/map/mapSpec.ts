@@ -86,8 +86,10 @@ export interface MapOverlay {
  * - `track`: one report's own path, over the lake's aggregate (a line).
  * - `photos`: a report's photo pins (points).
  * - `draft`: the hazard being authored — `hazardDraftToFeatureCollection`'s shape.
+ * - `samples`: the lake's weather sample points on its Weather tab (board 1.7) — points with a
+ *   `name` and `lit` (the one being read).
  */
-export const MAP_OVERLAYS = ['track', 'photos', 'draft'] as const;
+export const MAP_OVERLAYS = ['track', 'photos', 'draft', 'samples'] as const;
 export type MapOverlayName = (typeof MAP_OVERLAYS)[number];
 export type MapOverlays = Readonly<Record<MapOverlayName, MapOverlay | null>>;
 
@@ -132,7 +134,7 @@ const NO_LAYERS: SpecLayers = {
   favorites: false,
 };
 
-const NO_OVERLAYS: MapOverlays = { track: null, photos: null, draft: null };
+const NO_OVERLAYS: MapOverlays = { track: null, photos: null, draft: null, samples: null };
 
 const DEFAULT_INTERACTIONS: MapInteractions = {
   pan: true,
@@ -196,12 +198,20 @@ export function exploreMapSpec(): MapSpec {
   });
 }
 
-/** `/water/$id`: one lake, framed — depth, hazards, put-ins, places (board 1.2). */
-export function lakeMapSpec(bodyId: string, subAreaId?: string): MapSpec {
+/**
+ * `/water/$id`: one lake, framed — depth, hazards, put-ins, places (board 1.2). The Weather tab adds
+ * its sample points (`samples`, board 1.7).
+ */
+export function lakeMapSpec(
+  bodyId: string,
+  subAreaId?: string,
+  samples: MapOverlay | null = null,
+): MapSpec {
   return defineMapSpec({
     id: 'lake',
     focus: subAreaId === undefined ? { bodyId } : { bodyId, subAreaId },
     layers: ALL_LAYERS,
+    overlays: { samples },
     interactions: { requestLake: true },
     fit: { kind: 'body', bodyId },
     dock: { zoom: true, layers: true, imagery: true, legend: true },

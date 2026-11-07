@@ -59,6 +59,7 @@ export const SOURCES = {
   track: 'overlay-track',
   photos: 'photo-pins',
   draft: 'hazard-draft',
+  samples: 'weather-samples',
 } as const;
 
 /** A view's overlays, by the source each one feeds. */
@@ -66,6 +67,7 @@ export const OVERLAY_SOURCES: Record<MapOverlayName, string> = {
   track: SOURCES.track,
   photos: SOURCES.photos,
   draft: SOURCES.draft,
+  samples: SOURCES.samples,
 };
 
 export const WATER_FILL_LAYER = 'water-fill';
@@ -75,6 +77,8 @@ export const SUB_AREA_SCRIM_LAYER = 'sub-area-scrim';
 export const SUB_AREA_SELECTED_LAYER = 'sub-area-selected';
 export const HAZARD_FILL_LAYER = 'hazard-fill';
 export const PHOTO_PIN_COUNT_LAYER = 'photo-pin-count';
+export const WALK_LABEL_LAYER = 'approach-label';
+export const SAMPLE_RING_LAYER = 'weather-sample-ring';
 
 /**
  * The GL layers behind each spec layer. Labels and favorites are DOM only, and the put-in marks are
@@ -83,7 +87,7 @@ export const PHOTO_PIN_COUNT_LAYER = 'photo-pin-count';
 export const LAYER_GROUPS: Record<SpecLayer, readonly string[]> = {
   depth: [CONTOUR_LAYER_ID],
   places: ['sub-area-outline', 'sub-area-label', 'landmark-label'],
-  putIns: [APPROACH_LAYER_ID],
+  putIns: [APPROACH_LAYER_ID, WALK_LABEL_LAYER],
   tracks: ['track-line'],
   labels: [],
   favorites: [],
@@ -142,6 +146,7 @@ export function skaterSources(contourArchiveUrl: string): Record<string, SourceS
     [SOURCES.track]: geojson(),
     [SOURCES.photos]: geojson(),
     [SOURCES.draft]: geojson(),
+    [SOURCES.samples]: geojson(),
   };
 }
 
@@ -297,6 +302,26 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: approachLinePaint(palette.hazard.healing) as never,
     },
+    // The walk's length beside it, "0.3 mi on foot" (board 1.5), in the line's own color.
+    {
+      id: WALK_LABEL_LAYER,
+      type: 'symbol',
+      source: SOURCES.approach,
+      filter: ['has', 'walkLabel'],
+      layout: {
+        'symbol-placement': 'line-center',
+        'text-field': ['get', 'walkLabel'],
+        'text-size': 12,
+        'text-font': ['Noto Sans Medium'],
+        'text-offset': [0, -1],
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': palette.hazard.healing,
+        'text-halo-color': palette.places.halo,
+        'text-halo-width': 2,
+      },
+    },
     {
       id: 'track-line',
       type: 'line',
@@ -387,6 +412,56 @@ export function skaterLayers(palette: MapPalette, withContours: boolean): LayerS
         'text-ignore-placement': true,
       },
       paint: { 'text-color': palette.ground },
+    },
+    // The Weather tab's sample points (board 1.7): a ring on a ground halo, the one being read lit
+    // with a center dot, each named in the bay-name register.
+    {
+      id: 'weather-sample-halo',
+      type: 'circle',
+      source: SOURCES.samples,
+      paint: { 'circle-radius': 7, 'circle-color': palette.ground },
+    },
+    {
+      id: SAMPLE_RING_LAYER,
+      type: 'circle',
+      source: SOURCES.samples,
+      paint: {
+        'circle-radius': 5,
+        'circle-opacity': 0,
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': [
+          'case',
+          ['==', ['get', 'lit'], true],
+          palette.selected,
+          palette.places.label,
+        ] as never,
+      },
+    },
+    {
+      id: 'weather-sample-dot',
+      type: 'circle',
+      source: SOURCES.samples,
+      filter: ['==', ['get', 'lit'], true],
+      paint: { 'circle-radius': 2, 'circle-color': palette.selected },
+    },
+    {
+      id: 'weather-sample-label',
+      type: 'symbol',
+      source: SOURCES.samples,
+      layout: {
+        'text-field': ['upcase', ['get', 'name']],
+        'text-size': 10,
+        'text-font': ['Noto Sans Medium'],
+        'text-letter-spacing': 0.2,
+        'text-anchor': 'left',
+        'text-offset': [1.2, 0],
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': palette.places.label,
+        'text-halo-color': palette.places.halo,
+        'text-halo-width': 1.5,
+      },
     },
     {
       id: 'hazard-draft-fill',

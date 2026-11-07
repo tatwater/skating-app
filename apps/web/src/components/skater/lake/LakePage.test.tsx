@@ -55,6 +55,7 @@ const MASCOMA = {
 const NORTH = {
   _id: 'bay1',
   name: 'Mascoma North',
+  centroid: { lat: 43.64, lng: -72.15 },
   surfaceAreaSqM: 296 * ACRE,
   maxDepthM: 36 * FT,
   maxDepthSource: 'state_agency',
@@ -431,9 +432,16 @@ describe('the tabs', () => {
     answer();
     const { unmount } = renderLake({ tab: 'weather' });
     expect(screen.getByRole('heading', { name: 'What’s coming' })).toBeInTheDocument();
+    // The map rings the lake's sample points on this tab, and only this one (board 1.7).
+    const rings = useSkaterMapStore.getState().specs.view?.overlays.samples;
+    expect(rings?.data.features.map((f) => f.properties?.name)).toEqual([
+      'Whole lake',
+      'Mascoma North',
+    ]);
     unmount();
     renderLake({ tab: 'access' });
     expect(screen.getByRole('heading', { name: 'Put-ins' })).toBeInTheDocument();
+    expect(useSkaterMapStore.getState().specs.view?.overlays.samples).toBeNull();
   });
 });
 
