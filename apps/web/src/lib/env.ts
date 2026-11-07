@@ -41,14 +41,10 @@ export const env = {
   // to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never mounts, which is
   // the correct behavior rather than a degraded one: contours are decoration under D82, so an
   // unconfigured deployment simply shows a flat lake exactly as it does for the majority of bodies
-  // that no agency ever surveyed. Public.
+  // that no agency ever surveyed. The same archive carries the filled depth bands on a second layer
+  // (B03 §2, `lib/depthBands.ts`). A local build is tried by serving it from something that honors
+  // HTTP Range — not this app's dev server, whose Nitro static handler ignores Range (BANDS.md). Public.
   bathymetryPmtilesUrl: import.meta.env.VITE_BATHYMETRY_PMTILES_URL ?? '',
-  // Filled depth bands (B03 §2): a THIRD `.pmtiles` archive, the band polygons the pipeline builds
-  // beside the contours (`lib/depthBands.ts` has the contract). Blank ⇒ the fill layer never mounts
-  // and a lake keeps the shallowest band's fill under its contour lines; an archive that 404s draws
-  // that same look, silently. Takes a root-relative path too, for a file in `apps/web/public/`
-  // (`/dev-tiles/bands.pmtiles`), which is how a local build of the archive is tried in dev. Public.
-  bathymetryBandsPmtilesUrl: import.meta.env.VITE_BATHYMETRY_BANDS_PMTILES_URL ?? '',
   // The freeze-up archive (A06e, D148) — a *base URL*, not a file, because unlike the three above this
   // is a directory of thousands of `.pmtiles` frames plus the JSON index that lists them. The client
   // composes addresses from it with `archiveUrl` and keys the artifacts carry, so dev and prod can

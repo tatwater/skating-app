@@ -18,6 +18,7 @@ import {
 import { SwitchRow } from '@/components/kit/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { type MapLayerName, useAnalytics } from '@/lib/analytics';
+import type { LegendBand } from '@/lib/depthBands';
 import { cn } from '@/lib/utils';
 import { type MapLayerToggles, useSkaterMapStore } from '@/stores/skaterMapStore';
 import { DepthLegend } from './DepthLegend';
@@ -218,6 +219,11 @@ export interface MapDockControlsProps {
   onOpenImagery?: () => void;
   /** Whether the depth legend has anything to explain: contours are on screen. */
   depthShown: boolean;
+  /**
+   * The open lake's filled bands, as its tiles bound them. Given, the legend shows those bands at
+   * their real depths; empty or absent, it shows the ramp the contour lines are colored by.
+   */
+  depthBands?: readonly LegendBand[];
   onReturnToRegion: () => void;
   lakeName: string | null;
   contourCredit: string | null;
@@ -233,6 +239,7 @@ function MapDockControls({
   locating = false,
   onOpenImagery,
   depthShown,
+  depthBands,
   onReturnToRegion,
   lakeName,
   contourCredit,
@@ -269,7 +276,7 @@ function MapDockControls({
       </div>
       {(imagery || legend) && (
         <div className="absolute bottom-4 left-4 z-(--z-map-control) flex flex-col items-start gap-3">
-          {legend && <DepthLegend />}
+          {legend && <DepthLegend bands={depthBands} />}
           {imagery && (
             <Button
               variant="outline"

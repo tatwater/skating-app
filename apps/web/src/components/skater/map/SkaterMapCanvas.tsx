@@ -11,6 +11,7 @@ import {
   CONTOUR_OPACITY,
   CONTOUR_SOURCE_ID,
   CONTOUR_SOURCE_LAYER,
+  type ContourFeatureProperties,
   contourBodyKey,
   contourCredit,
   contourFilter,
@@ -19,10 +20,11 @@ import {
 import {
   BANDS_LAYER_ID,
   BANDS_OPACITY,
-  BANDS_SOURCE_ID,
   BANDS_SOURCE_LAYER,
   type BandFeatureProperties,
-  isBandsSourceError,
+  type LegendBand,
+  lakeBands,
+  sameBands,
 } from '@/lib/depthBands';
 import { env } from '@/lib/env';
 import type { Rect } from '@/lib/lakeLabelLayout';
@@ -84,20 +86,19 @@ export const CAMERA_WRITE_DELAY_MS = 300;
 /** How often the labels' "today" is re-read against the clock. */
 export const LABEL_CLOCK_MS = 60_000;
 /**
- * The two depth layers the canvas scopes to the open lake and fades in, bottom to top. Either may be
- * absent — each comes from its own archive — and the other still draws.
+ * The two depth layers the canvas scopes to the open lake and fades in, bottom to top: two layers of
+ * the one contour archive. A lake can have lines and no bands (an older archive, a lake the band
+ * pipeline dropped), and its lines still draw.
  */
 const DEPTH_LAYERS = [
   {
     layer: BANDS_LAYER_ID,
-    source: BANDS_SOURCE_ID,
     sourceLayer: BANDS_SOURCE_LAYER,
     opacityProperty: 'fill-opacity',
     opacity: BANDS_OPACITY,
   },
   {
     layer: CONTOUR_LAYER_ID,
-    source: CONTOUR_SOURCE_ID,
     sourceLayer: CONTOUR_SOURCE_LAYER,
     opacityProperty: 'line-opacity',
     opacity: CONTOUR_OPACITY,
@@ -137,7 +138,6 @@ export default function SkaterMapCanvas() {
   const flavor = resolvedTheme === 'light' ? MAP_FLAVORS.light : MAP_FLAVORS.dark;
   const palette = useMemo(() => mapPalette(flavor), [flavor]);
   const contourArchive = env.bathymetryPmtilesUrl;
-  const bandsArchive = env.bathymetryBandsPmtilesUrl;
 
   const [query, setQuery] = useState<ViewportQuery | null>(null);
   // The labels' clock. This canvas lives for the whole session, so a `now` taken once at mount would
@@ -168,19 +168,13 @@ export default function SkaterMapCanvas() {
       if (store.awayFromRegion !== away) store.setAwayFromRegion(away);
     },
     onLoad: (map) => {
-      addSkaterLayers(map, palette, contourArchive, bandsArchive);
+      addSkaterLayers(map, palette, contourArchive);
       bindHandlers(map);
     },
   });
 
   // ── Handlers, bound once per instance; they read the spec at event time ───────────────────
   function bindHandlers(map: maplibregl.Map) {
-    // MapLibre prints an `error` event only while nothing listens for it, so listening means
-    // printing the rest ourselves. The band archive's failures are dropped: a lake without band
-    // polygons is drawn as it was before bands existed, and that is not a fault (B03 §2).
-    map.on('error', (e) => {
-      if (!isBandsSourceError(e)) console.error(e.error);
-    });
     // A click's canvas point, in the viewport: where a dialog about it can open.
     const screenOf = (point: { x: number; y: number }) => {
       const box = map.getContainer().getBoundingClientRect();
@@ -457,11 +451,11 @@ export default function SkaterMapCanvas() {
 
   // ── Depth: the focused lake's band fills and contours, and the credit the tiles carry ─────
   const [contoursDrawn, setContoursDrawn] = useState(false);
-  const [bandsDrawn, setBandsDrawn] = useState(false);
+  // The open lake's bands as the tiles bound them — the legend reads their real depths.
+  const [bands, setBands] = useState<readonly LegendBand[]>([]);
   const contourKey =
     focusBody && spec.focus ? contourBodyKey(focusBody.externalId, focusBody._id) : null;
-  const depthOn =
-    spec.layers.depth && contourKey !== null && (contourArchive !== '' || bandsArchive !== '');
+  const depthOn = spec.layers.depth && contourKey !== null && contourArchive !== '';
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
@@ -474,37 +468,39 @@ export default function SkaterMapCanvas() {
       map.setPaintProperty(l.layer, l.opacityProperty, 0);
     }
     setContoursDrawn(false);
-    setBandsDrawn(false);
+    setBands([]);
     useSkaterMapStore.getState().setContourCredit(null);
     if (!depthOn) return;
     const read = () => {
       const found = layers.map((l) => ({
         l,
         props: map
-          .querySourceFeatures(l.source, { sourceLayer: l.sourceLayer, filter })
-          .map((f) => f.properties as Partial<BandFeatureProperties>),
+          .querySourceFeatures(CONTOUR_SOURCE_ID, { sourceLayer: l.sourceLayer, filter })
+          .map((f) => f.properties),
       }));
       for (const { l, props } of found) {
         if (props.length === 0) continue;
         // Fade in once any of this lake's features are readable (A06b: popping in reads as a bug).
         map.setPaintProperty(l.layer, l.opacityProperty, l.opacity);
-        (l.layer === BANDS_LAYER_ID ? setBandsDrawn : setContoursDrawn)(true);
+        if (l.layer === BANDS_LAYER_ID) {
+          const next = lakeBands(props as Partial<BandFeatureProperties>[]);
+          setBands((prev) => (sameBands(prev, next) ? prev : next));
+        } else {
+          setContoursDrawn(true);
+        }
       }
-      // The credit is the contour tile's, as before; band polygons speak for a lake only where it
-      // has no lines, and only if the pipeline stamped them with an agency.
-      const lines = found.find((f) => f.l.layer === CONTOUR_LAYER_ID)?.props ?? [];
-      const bands = found.find((f) => f.l.layer === BANDS_LAYER_ID)?.props ?? [];
-      const props = lines.length > 0 ? lines : bands;
-      if (props.length === 0) return;
-      const credit = formatContourCredit(contourCredit(props)) || null;
+      // The credit is the lines', as before: bands carry provenance (`lane`), not an agency.
+      const lines = (found.find((f) => f.l.layer === CONTOUR_LAYER_ID)?.props ??
+        []) as Partial<ContourFeatureProperties>[];
+      if (lines.length === 0) return;
+      const credit = formatContourCredit(contourCredit(lines)) || null;
       if (useSkaterMapStore.getState().contourCredit !== credit) {
         useSkaterMapStore.getState().setContourCredit(credit);
       }
     };
-    // `sourcedata` for these sources, not `idle`, which never fires after a late source (A06b).
-    const ids = new Set<string>(layers.map((l) => l.source));
+    // `sourcedata` for this source, not `idle`, which never fires after a late source (A06b).
     const onData = (e: maplibregl.MapSourceDataEvent) => {
-      if (ids.has(e.sourceId)) read();
+      if (e.sourceId === CONTOUR_SOURCE_ID) read();
     };
     map.on('sourcedata', onData);
     read();
@@ -517,7 +513,7 @@ export default function SkaterMapCanvas() {
   // on, or — for a lake with contour lines and no polygons — what makes the rings read as depth.
   // While a satellite picture is up, the lake it's painted over drops its fill altogether — the same
   // stand-down depth makes under imagery (D81) — so the water color never covers the picture.
-  const depthDrawn = (contoursDrawn || bandsDrawn) && spec.layers.depth;
+  const depthDrawn = (contoursDrawn || bands.length > 0) && spec.layers.depth;
   const imageryOn = toggles.imagery;
   useEffect(() => {
     const map = mapRef.current;
@@ -625,6 +621,7 @@ export default function SkaterMapCanvas() {
           locating={locating}
           onOpenImagery={handlers.onOpenImagery}
           depthShown={depthDrawn}
+          depthBands={bands}
           onReturnToRegion={() =>
             mapRef.current?.flyTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, duration: 900 })
           }

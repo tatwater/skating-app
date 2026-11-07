@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   BAND_SOURCE_LAYER,
@@ -326,5 +327,14 @@ describe('depth bands', () => {
     for (let a = -5; a < 100; a += 0.5) {
       expect(depthBandIndex(a)).toBeLessThanOrEqual(depthBandIndex(a + 0.5));
     }
+    fc.assert(
+      fc.property(
+        fc.double({ min: -50, max: 500, noNaN: true }),
+        fc.double({ min: -50, max: 500, noNaN: true }),
+        (a, b) => {
+          if (a <= b) expect(depthBandIndex(a)).toBeLessThanOrEqual(depthBandIndex(b));
+        },
+      ),
+    );
   });
 });

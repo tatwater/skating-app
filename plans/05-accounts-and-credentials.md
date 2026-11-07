@@ -127,7 +127,6 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `CLERK_PUBLISHABLE_KEY` · `CLERK_SECRET_KEY` | server-side (no `VITE_` prefix); secret key **secret** |
 | `VITE_CONVEX_URL` | |
 | `VITE_PMTILES_URL` · `VITE_WORLD_PMTILES_URL` · `VITE_BATHYMETRY_PMTILES_URL` · `VITE_IMAGERY_ARCHIVE_URL` | same values as mobile's |
-| `VITE_BATHYMETRY_BANDS_PMTILES_URL` | public; the band-polygon archive (B03 §2). Web only for now. Blank ⇒ no fill layer; a root-relative path (`/dev-tiles/…`) serves a local file from `apps/web/public/` in dev |
 | `VITE_SENTRY_DSN` | public |
 | `VITE_POSTHOG_KEY` | public project token (write-only). Unset ⇒ analytics inert — no init, no network (D235) |
 | `VITE_POSTHOG_HOST` | optional override; blank ⇒ `https://us.i.posthog.com`. Only point it at a reverse proxy that strips `Cookie` — same-origin ingestion sends Clerk's session to PostHog (D235) |

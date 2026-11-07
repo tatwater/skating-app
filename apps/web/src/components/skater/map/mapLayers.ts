@@ -31,14 +31,7 @@ import {
   contourFilter,
   contourSourceSpec,
 } from '@/lib/contourMap';
-import {
-  BANDS_FADE_MS,
-  BANDS_LAYER_ID,
-  BANDS_SOURCE_ID,
-  BANDS_SOURCE_LAYER,
-  bandsFilter,
-  bandsSourceSpec,
-} from '@/lib/depthBands';
+import { BANDS_FADE_MS, BANDS_LAYER_ID, BANDS_SOURCE_LAYER, bandsFilter } from '@/lib/depthBands';
 import {
   CONFIRMED_HAZARD_FILTER,
   hazardColorExpression,
@@ -150,13 +143,10 @@ export function waterFillOpacity(
 }
 
 /**
- * The sources the map is created with. Each depth archive only when the deployment has one: the
- * contour lines and the band polygons are separate archives, and either can be absent.
+ * The sources the map is created with. The depth archive only when the deployment has one; it holds
+ * the contour lines and the band polygons both, on two layers of one source.
  */
-export function skaterSources(
-  contourArchiveUrl: string,
-  bandsArchiveUrl = '',
-): Record<string, SourceSpecification> {
+export function skaterSources(contourArchiveUrl: string): Record<string, SourceSpecification> {
   const geojson = (attribution?: string): SourceSpecification => ({
     type: 'geojson',
     data: EMPTY_FEATURES,
@@ -165,7 +155,6 @@ export function skaterSources(
   return {
     [SOURCES.water]: geojson(OSM_ATTRIBUTION),
     ...(contourArchiveUrl ? { [CONTOUR_SOURCE_ID]: contourSourceSpec(contourArchiveUrl) } : {}),
-    ...(bandsArchiveUrl ? { [BANDS_SOURCE_ID]: bandsSourceSpec(bandsArchiveUrl) } : {}),
     [SOURCES.subAreas]: geojson(),
     [SOURCES.landmarks]: geojson(),
     [SOURCES.approach]: geojson(),
@@ -185,11 +174,7 @@ export function skaterSources(
  * then the lake's names, the walk, the tracks, and the hazard footprints over all of them, with the
  * hazard being drawn last.
  */
-export function skaterLayers(
-  palette: MapPalette,
-  withContours: boolean,
-  withBands = false,
-): LayerSpecification[] {
+export function skaterLayers(palette: MapPalette, withContours: boolean): LayerSpecification[] {
   const hazardColor = hazardColorExpression(palette.hazard) as never;
   const layers: LayerSpecification[] = [
     {
@@ -203,13 +188,15 @@ export function skaterLayers(
     },
   ];
   // The band fills (B03 §2): on the water, under the contour lines (which are real data, and whose
-  // index lines are the ones a reader counts), and under the imagery wash. Hidden and filtered to no
-  // lake until a lake opens; the canvas fades them in once the open lake's polygons are readable.
-  if (withBands) {
+  // index lines are the ones a reader counts), and under the imagery wash. The same archive as the
+  // lines, on its own source-layer; an archive without that layer just draws no fill. Hidden and
+  // filtered to no lake until a lake opens; the canvas fades them in once the open lake's polygons
+  // are readable. Bands exist from z9, but they floor at the contours' z11 so the two arrive together.
+  if (withContours) {
     layers.push({
       id: BANDS_LAYER_ID,
       type: 'fill',
-      source: BANDS_SOURCE_ID,
+      source: CONTOUR_SOURCE_ID,
       'source-layer': BANDS_SOURCE_LAYER,
       minzoom: CONTOUR_MIN_ZOOM,
       filter: bandsFilter(null) as never,
@@ -554,16 +541,9 @@ export interface LayerHost {
 }
 
 /** Adds every source and layer, in order. Called once per map instance, inside `load`. */
-export function addSkaterLayers(
-  map: LayerHost,
-  palette: MapPalette,
-  contourArchiveUrl: string,
-  bandsArchiveUrl = '',
-) {
-  for (const [id, spec] of Object.entries(skaterSources(contourArchiveUrl, bandsArchiveUrl))) {
+export function addSkaterLayers(map: LayerHost, palette: MapPalette, contourArchiveUrl: string) {
+  for (const [id, spec] of Object.entries(skaterSources(contourArchiveUrl))) {
     map.addSource(id, spec);
   }
-  for (const layer of skaterLayers(palette, contourArchiveUrl !== '', bandsArchiveUrl !== '')) {
-    map.addLayer(layer);
-  }
+  for (const layer of skaterLayers(palette, contourArchiveUrl !== '')) map.addLayer(layer);
 }

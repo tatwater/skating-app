@@ -9,25 +9,14 @@
  */
 
 import { namedFlavor } from '@protomaps/basemaps';
-import type { HazardPalette } from '@skating/core';
+import { DEPTH_BAND_EDGES_FT, type HazardPalette } from '@skating/core';
 import { nativeThemes } from '@skating/design/native';
 import type { CSSProperties } from 'react';
 import { HAZARD_PALETTE } from '@/lib/hazardMap';
 import { type MapFlavor, WATER_PALETTE } from '@/lib/waterMap';
 
-/** The seven depth bands' lower edges, ft — the founder's ramp (mock `chrome.js` `EDGES`). */
-export const DEPTH_BAND_EDGES_FT = [0, 5, 10, 20, 30, 45, 70] as const;
 /** Every contour on a multiple of this is an index line: a touch heavier, a touch brighter. */
 export const DEPTH_INDEX_INTERVAL_FT = 25;
-
-/** The band a depth falls in: the last edge at or under it. Negative or unknown depth is band 0. */
-export function depthBandIndex(depthFt: number): number {
-  let band = 0;
-  DEPTH_BAND_EDGES_FT.forEach((edge, i) => {
-    if (depthFt >= edge) band = i;
-  });
-  return band;
-}
 
 export interface DepthRamp {
   fills: readonly string[];

@@ -3,6 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
+import { type BandFeatureProperties, lakeBands } from '@/lib/depthBands';
 import { FoldedAttributionControl } from '@/lib/mapAttribution';
 import { OSM_ATTRIBUTION } from '@/lib/waterMap';
 import { DEFAULT_MAP_LAYERS, useSkaterMapStore } from '@/stores/skaterMapStore';
@@ -273,15 +274,20 @@ export const HazardPeekOverImagery: Story = {
 
 /**
  * The stub band archive's Mascoma (the shape `BANDS.md` promises: `bodyId`, `bandIndex`,
- * `minDepthFt`, `maxDepthFt`): four nested bands inset from the real dev outline. The insets are
- * invented, so this shows how filled bands read, not where Mascoma is deep.
+ * `minDepthFt`, `maxDepthFt`, `lane`): four nested bands inset from the real dev outline, on the real
+ * lake's 10 ft contours — so no band 1, and the deepest open-ended. The insets are invented, so this
+ * shows how filled bands read, not where Mascoma is deep.
  */
-const MASCOMA_BANDS = stillBands(bandsStub as GeoJSON.FeatureCollection, 'stub-mascoma');
+const BANDS_FC = bandsStub as GeoJSON.FeatureCollection;
+const MASCOMA_BANDS = stillBands(BANDS_FC, 'stub-mascoma');
+const MASCOMA_LEGEND = lakeBands(
+  BANDS_FC.features.map((f) => f.properties as Partial<BandFeatureProperties>),
+);
 
 /**
  * 1.2 with filled depth bands (B03 §2): the band polygons in the seven-band fills on the shallow
- * ground, each edge in its band's line, the hazard over all of it, and the legend reading the same
- * ramp. Drawn from the stub archive, so it renders without the pipeline's tiles.
+ * ground, each edge in its band's line, the hazard over all of it, and the legend reading the lake's
+ * real band depths. Drawn from the stub archive, so it renders without the pipeline's tiles.
  */
 export const Bands: Story = {
   render: () => (
@@ -307,6 +313,7 @@ export const Bands: Story = {
                 controls={dockFor(['zoom', 'layers', 'imagery', 'legend'])}
                 onOpenImagery={fn()}
                 depthShown
+                depthBands={MASCOMA_LEGEND}
               />
             </>
           )}
@@ -320,17 +327,20 @@ export const Bands: Story = {
     for (const [i, section] of sections.entries()) {
       const palette = mapPalette(i === 0 ? 'dark' : 'white');
       const bands = [...section.querySelectorAll<SVGPathElement>('path[data-band]')];
-      // Every stub band, shallow first so the deeper one draws over it, in its own token fill.
-      expect(bands.map((b) => b.dataset.band)).toEqual(['0', '1', '2', '3']);
-      bands.forEach((b, n) => {
-        expect(b.getAttribute('fill')).toBe(palette.depth.fills[n]);
-      });
+      // Every stub band, shallow first so the deeper one draws over it, in its own token fill —
+      // keyed on `bandIndex`, so the missing band 1 leaves no gap in the colors.
+      expect(bands.map((b) => b.dataset.band)).toEqual(['0', '2', '3', '4']);
+      for (const b of bands) {
+        expect(b.getAttribute('fill')).toBe(palette.depth.fills[Number(b.dataset.band)]);
+      }
       // The lake under them is the shallowest band, not plain water.
       const ground = section.querySelector('svg path:not([data-band])');
       expect(ground?.getAttribute('fill')).toBe(palette.depth.fills[0]);
       expect(ground?.getAttribute('fill-opacity')).toBe('1');
       const canvas = within(section);
-      expect(canvas.getByRole('img', { name: /Depth bands/ })).toBeVisible();
+      expect(
+        canvas.getByRole('img', { name: 'Depth bands: 0–10 ft, 10–20 ft, 20–30 ft, 30+ ft' }),
+      ).toBeVisible();
       // The hazard still draws over the depth: the marks layer sits above the still's SVG.
       expect(
         await canvas.findByRole('button', { name: 'Hazard: Open water / lead' }),

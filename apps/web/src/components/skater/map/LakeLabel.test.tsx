@@ -101,4 +101,42 @@ describe('DepthLegend', () => {
     // Data, never a verdict (D3).
     expect(container.textContent).not.toMatch(/safe|thick|good/i);
   });
+
+  it('shows an open lake’s own bands at their real depths, colored by index, not position', () => {
+    // Mascoma, contoured every 10 ft (BANDS.md): no band 1, a 30–50 band, the deepest open-ended.
+    const mascoma = [
+      { bandIndex: 0, minDepthFt: 0, maxDepthFt: 10 },
+      { bandIndex: 2, minDepthFt: 10, maxDepthFt: 20 },
+      { bandIndex: 3, minDepthFt: 20, maxDepthFt: 30 },
+      { bandIndex: 4, minDepthFt: 30, maxDepthFt: 50 },
+      { bandIndex: 5, minDepthFt: 50, maxDepthFt: 70 },
+      { bandIndex: 6, minDepthFt: 70 },
+    ];
+    const { container } = render(<DepthLegend bands={mascoma} />);
+    expect(
+      screen.getByRole('img', {
+        name: 'Depth bands: 0–10 ft, 10–20 ft, 20–30 ft, 30–50 ft, 50–70 ft, 70+ ft',
+      }),
+    ).toBeInTheDocument();
+    const swatches = [...container.querySelectorAll('b')];
+    expect(swatches.map((b) => b.dataset.band)).toEqual(['0', '2', '3', '4', '5', '6']);
+    expect(swatches[1]?.className).toContain('bg-depth-2');
+    expect(swatches.map((b) => b.title)).toEqual([
+      '0–10 ft',
+      '10–20 ft',
+      '20–30 ft',
+      '30–50 ft',
+      '50–70 ft',
+      '70+ ft',
+    ]);
+    // The figures are the real floors — 50, never the ramp's 45.
+    expect(container.textContent).toContain('01020305070+ft');
+    expect(container.textContent).not.toContain('45');
+  });
+
+  it('clamps an index past the ramp to the deepest swatch', () => {
+    const { container } = render(<DepthLegend bands={[{ bandIndex: 9, minDepthFt: 120 }]} />);
+    expect(container.querySelector('b')?.className).toContain('bg-depth-6');
+    expect(screen.getByRole('img', { name: 'Depth bands: 120+ ft' })).toBeInTheDocument();
+  });
 });

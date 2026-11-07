@@ -1,8 +1,8 @@
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
-import fc from 'fast-check';
+import { DEPTH_BAND_EDGES_FT } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import { CONTOUR_LAYER_ID, CONTOUR_SOURCE_ID } from '@/lib/contourMap';
-import { BANDS_LAYER_ID, BANDS_SOURCE_ID, BANDS_SOURCE_LAYER } from '@/lib/depthBands';
+import { BANDS_LAYER_ID, BANDS_SOURCE_LAYER } from '@/lib/depthBands';
 import {
   addSkaterLayers,
   LAYER_GROUPS,
@@ -18,8 +18,6 @@ import {
   bandFillColor,
   contourColorByBand,
   contourWidthByBand,
-  DEPTH_BAND_EDGES_FT,
-  depthBandIndex,
   mapGround,
   mapMarkVars,
   mapPalette,
@@ -27,7 +25,6 @@ import {
 import { SPEC_LAYERS } from './mapSpec';
 
 const ARCHIVE = 'https://example.test/bathymetry.pmtiles';
-const BANDS = 'https://example.test/bathymetry-bands.pmtiles';
 
 describe('the skater style', () => {
   for (const flavor of ['dark', 'white'] as const) {
@@ -36,8 +33,8 @@ describe('the skater style', () => {
       const errors = validateStyleMin({
         version: 8,
         glyphs: 'https://example.test/{fontstack}/{range}.pbf',
-        sources: skaterSources(ARCHIVE, BANDS),
-        layers: skaterLayers(palette, true, true),
+        sources: skaterSources(ARCHIVE),
+        layers: skaterLayers(palette, true),
       } as never);
       expect(errors).toEqual([]);
     });
@@ -50,22 +47,16 @@ describe('the skater style', () => {
     );
   });
 
-  it('leaves the band fills out without a band archive, and each archive stands alone', () => {
-    expect(skaterSources(ARCHIVE)).not.toHaveProperty(BANDS_SOURCE_ID);
-    expect(skaterLayers(mapPalette('dark'), true).map((l) => l.id)).not.toContain(BANDS_LAYER_ID);
-    expect(skaterSources('', BANDS)).toEqual(
-      expect.objectContaining({
-        [BANDS_SOURCE_ID]: { type: 'vector', url: `pmtiles://${BANDS}` },
-      }),
+  it('draws the band fills from the contour archive, on its second layer, or not at all', () => {
+    // One archive, two layers (BANDS.md): no extra source, and no archive means neither layer.
+    expect(Object.keys(skaterSources(ARCHIVE)).filter((id) => id.startsWith('bathymetry'))).toEqual(
+      [CONTOUR_SOURCE_ID],
     );
-    expect(skaterSources('', BANDS)).not.toHaveProperty(CONTOUR_SOURCE_ID);
-    const bandsOnly = skaterLayers(mapPalette('white'), false, true).map((l) => l.id);
-    expect(bandsOnly).toContain(BANDS_LAYER_ID);
-    expect(bandsOnly).not.toContain(CONTOUR_LAYER_ID);
+    expect(skaterLayers(mapPalette('white'), false).map((l) => l.id)).not.toContain(BANDS_LAYER_ID);
   });
 
   it('lays the band fills on the water, under the imagery wash and the contour lines', () => {
-    const ids = skaterLayers(mapPalette('dark'), true, true).map((l) => l.id);
+    const ids = skaterLayers(mapPalette('dark'), true).map((l) => l.id);
     expect(ids.slice(0, 4)).toEqual([
       'water-fill',
       BANDS_LAYER_ID,
@@ -75,9 +66,7 @@ describe('the skater style', () => {
   });
 
   it('starts the band fills hidden, scoped to no lake, and sorted deeper-over-shallower', () => {
-    const layer = skaterLayers(mapPalette('dark'), true, true).find(
-      (l) => l.id === BANDS_LAYER_ID,
-    ) as {
+    const layer = skaterLayers(mapPalette('dark'), true).find((l) => l.id === BANDS_LAYER_ID) as {
       source: string;
       'source-layer': string;
       minzoom: number;
@@ -85,7 +74,7 @@ describe('the skater style', () => {
       layout: Record<string, unknown>;
       paint: Record<string, unknown>;
     };
-    expect(layer.source).toBe(BANDS_SOURCE_ID);
+    expect(layer.source).toBe(CONTOUR_SOURCE_ID);
     expect(layer['source-layer']).toBe(BANDS_SOURCE_LAYER);
     expect(layer.minzoom).toBe(11);
     expect(layer.filter).toEqual(['==', ['literal', true], ['literal', false]]);
@@ -97,7 +86,7 @@ describe('the skater style', () => {
   });
 
   it('draws the hazard footprints over the depth, the names and the tracks (D82)', () => {
-    const ids = skaterLayers(mapPalette('dark'), true, true).map((l) => l.id);
+    const ids = skaterLayers(mapPalette('dark'), true).map((l) => l.id);
     const at = (id: string) => ids.indexOf(id);
     for (const under of [
       BANDS_LAYER_ID,
@@ -140,7 +129,7 @@ describe('the skater style', () => {
   });
 
   it('maps every spec layer to layers that exist, and nothing to the hazards', () => {
-    const ids = new Set(skaterLayers(mapPalette('dark'), true, true).map((l) => l.id));
+    const ids = new Set(skaterLayers(mapPalette('dark'), true).map((l) => l.id));
     for (const layer of SPEC_LAYERS)
       for (const id of LAYER_GROUPS[layer]) expect(ids.has(id)).toBe(true);
     const grouped = Object.values(LAYER_GROUPS).flat();
@@ -160,10 +149,10 @@ describe('the skater style', () => {
     const firstLayer = calls.findIndex((c) => c.startsWith('layer:'));
     expect(calls.slice(firstLayer).every((c) => c.startsWith('layer:'))).toBe(true);
     expect(calls).toContain('source:water');
-    expect(calls).not.toContain(`source:${BANDS_SOURCE_ID}`);
+    expect(calls).not.toContain(`layer:${BANDS_LAYER_ID}`);
   });
 
-  it('adds the band source and layer when the deployment has a band archive', () => {
+  it('adds the band layer with the contours when the deployment has an archive', () => {
     const calls: string[] = [];
     addSkaterLayers(
       {
@@ -171,12 +160,14 @@ describe('the skater style', () => {
         addLayer: (layer) => calls.push(`layer:${layer.id}`),
       },
       mapPalette('dark'),
-      '',
-      BANDS,
+      ARCHIVE,
     );
-    expect(calls).toContain(`source:${BANDS_SOURCE_ID}`);
-    expect(calls).toContain(`layer:${BANDS_LAYER_ID}`);
-    expect(calls).not.toContain(`layer:${CONTOUR_LAYER_ID}`);
+    expect(calls.filter((c) => c.startsWith('source:bathymetry'))).toEqual([
+      `source:${CONTOUR_SOURCE_ID}`,
+    ]);
+    expect(calls.indexOf(`layer:${BANDS_LAYER_ID}`)).toBeLessThan(
+      calls.indexOf(`layer:${CONTOUR_LAYER_ID}`),
+    );
   });
 });
 
@@ -240,24 +231,6 @@ describe('mapPalette', () => {
 });
 
 describe('depth bands', () => {
-  it('puts a depth in the band of the last edge at or under it', () => {
-    expect(DEPTH_BAND_EDGES_FT).toEqual([0, 5, 10, 20, 30, 45, 70]);
-    expect(depthBandIndex(-3)).toBe(0);
-    expect(depthBandIndex(4.9)).toBe(0);
-    expect(depthBandIndex(5)).toBe(1);
-    expect(depthBandIndex(79)).toBe(6);
-    fc.assert(
-      fc.property(
-        fc.double({ min: 0, max: 500, noNaN: true }),
-        fc.double({ min: 0, max: 500, noNaN: true }),
-        (a, b) => {
-          // Deeper never reads as a shallower band.
-          if (a <= b) expect(depthBandIndex(a)).toBeLessThanOrEqual(depthBandIndex(b));
-        },
-      ),
-    );
-  });
-
   it('steps the contour color by band, with index lines on multiples of 25 ft', () => {
     const p = mapPalette('dark');
     const expr = contourColorByBand(p.depth) as unknown[];
