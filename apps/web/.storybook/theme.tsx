@@ -1,4 +1,4 @@
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import tokensCss from '@skating/design/tokens.css?raw';
 import type { Decorator } from '@storybook/react-vite';
 import type { ReactNode } from 'react';

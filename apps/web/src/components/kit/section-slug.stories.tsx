@@ -1,4 +1,4 @@
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 

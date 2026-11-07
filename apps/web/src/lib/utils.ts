@@ -1,4 +1,4 @@
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import { type ClassValue, clsx } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';
 

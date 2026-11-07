@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMinus, faPlus } from '@fortawesome/sharp-regular-svg-icons';
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import type { ComponentProps, CSSProperties, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';

@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCopy, faEllipsis, faTrash } from '@fortawesome/sharp-regular-svg-icons';
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type ComponentProps, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';

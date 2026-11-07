@@ -1,4 +1,4 @@
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import { type ComponentProps, type CSSProperties, useEffect, useRef } from 'react';
 
 import { useReducedMotion } from '@/lib/useReducedMotion';

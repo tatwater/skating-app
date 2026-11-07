@@ -1,5 +1,5 @@
 import { Meter as MeterPrimitive } from '@base-ui/react/meter';
-import { tokens } from '@skating/design';
+import * as tokens from '@skating/design/tokens';
 import { type ComponentProps, type ReactNode, useEffect, useState } from 'react';
 
 import { useReducedMotion } from '@/lib/useReducedMotion';
