@@ -1927,6 +1927,57 @@ describe('hazards.refileToFootprintBody', () => {
     expect(await t.run((ctx) => ctx.db.get(folded))).toMatchObject({ waterBodyId: here });
   });
 
+  test('a folded-in pin separated after the repair comes back whole, on the new lake', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const lngPerM = DEG_PER_M / Math.cos((43.61 * Math.PI) / 180);
+    // The folded pin sits 10 m inside Mascoma's east shore, so its own 40 m footprint needs a clip
+    // there — and it carries one from Far Pond's shoreline, 150 km away. Hidden while merged, so
+    // nothing reads it; `unmergeHazard` is what makes it a visible pin again.
+    const eastShore = -72.13 + 0.01;
+    const survivor = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const staleClip: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-73.871, 42.609],
+          [-73.869, 42.609],
+          [-73.869, 42.611],
+          [-73.871, 42.611],
+          [-73.871, 42.609],
+        ],
+      ],
+    };
+    const folded = await strayHazard(
+      t,
+      elsewhere,
+      { lat: 43.61, lng: eastShore - 10 * lngPerM },
+      { mergedIntoHazardId: survivor, clippedFootprint: staleClip, who: 'other' },
+    );
+
+    await t.mutation(internal.hazards.refileToFootprintBody, {
+      hazardId: survivor,
+      apply: true,
+    });
+    // A moderator separates it afterwards. `unmergeHazard` refreshes only the survivor, so whatever
+    // the repair left on this row is what a skater now sees.
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    await mod.as.mutation(api.hazards.unmerge, {
+      hazardId: folded,
+      reason: 'These are two separate leads.',
+    });
+
+    const back = await t.run((ctx) => ctx.db.get(folded));
+    expect(back?.mergedIntoHazardId).toBeUndefined();
+    expect(back?.waterBodyId).toBe(here);
+    // Its own shape, clipped to Mascoma — not Far Pond's polygon, and not an untrimmed circle
+    // reaching 30 m past the shore it is now beside.
+    expect(back?.clippedFootprint).toBeDefined();
+    expect(back?.bbox.minLat).toBeGreaterThan(43.6);
+    expect(back?.bbox.maxLng).toBeLessThanOrEqual(eastShore + 1e-9);
+  });
+
   test('says nothing until asked: a dry run reports the move and writes nothing', async () => {
     const t = harness();
     const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });

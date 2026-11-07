@@ -1179,33 +1179,40 @@ export const refileToFootprintBody = internalMutation({
     // survivor's own circle and drop every other reporter's warned ice off the map and out of the
     // proximity check, which is a hazard's warning area shrinking with nobody saying so (D3).
     //
-    // The pins folded into it move too. They are hidden from every list, but `unmergeHazard`
-    // recomputes on `loser.waterBodyId` and restores them as standalone pins — left behind, each
-    // would come back filed under the lake this repair just corrected.
+    // **The bay stamp moves with the lake too.** `subAreaId`/`subAreaName` were resolved at create
+    // against the *old* body's bays (`insertHazard`), so carrying them over would have the card say
+    // "Far Pond — North Bay" with North Bay a bay of Mascoma. Re-resolved the same way the write
+    // path resolves it — at the center of the bbox the re-clip just stored, because that is where
+    // the create path measures it — and cleared when the new lake has no bay under the pin:
+    // `undefined` in a patch removes the field, which is what "in no named bay" means.
+    //
+    // **Every row that moves gets all of it**, which is why this is a helper rather than three
+    // patches on the survivor. The pins folded into this one are hidden from every list, so it is
+    // tempting to move only their id — but `unmergeHazard` restores one as a standalone, visible
+    // pin and refreshes only the *survivor*. A folded pin left half-moved would come back carrying
+    // the old lake's clip and the old lake's bay: the same disagreement between a pin and its lake
+    // that this repair exists to end, waiting for a moderator to trigger it.
+    const refile = async (row: Doc<'hazards'>) => {
+      await ctx.db.patch(row._id, { waterBodyId: matchId });
+      const moved = await ctx.db.get(row._id);
+      if (moved) await refreshMergedFootprint(ctx, moved);
+      const reclipped = (await ctx.db.get(row._id)) ?? row;
+      const subArea = await resolveSubAreaForPoint(ctx, matchId, {
+        lat: (reclipped.bbox.minLat + reclipped.bbox.maxLat) / 2,
+        lng: (reclipped.bbox.minLng + reclipped.bbox.maxLng) / 2,
+      });
+      await ctx.db.patch(row._id, {
+        subAreaId: subArea?.subAreaId,
+        subAreaName: subArea?.subAreaName,
+      });
+    };
+
     const chain = await ctx.db
       .query('hazards')
       .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', hazardId))
       .collect();
-    await ctx.db.patch(hazardId, { waterBodyId: matchId });
-    for (const folded of chain) await ctx.db.patch(folded._id, { waterBodyId: matchId });
-    const moved = await ctx.db.get(hazardId);
-    if (moved) await refreshMergedFootprint(ctx, moved);
-
-    // **The bay stamp moves with the lake.** `subAreaId`/`subAreaName` were resolved at create
-    // against the *old* body's bays (`insertHazard`), so carrying them over would have the card say
-    // "Far Pond — North Bay" with North Bay a bay of Mascoma. Re-resolved the same way the write
-    // path resolves it — at the center of the bbox that re-clip just stored, because that is where
-    // the create path measures it — and cleared when the new lake has no bay under the pin:
-    // `undefined` in a patch removes the field, which is what "in no named bay" means.
-    const reclipped = (await ctx.db.get(hazardId)) ?? hazard;
-    const subArea = await resolveSubAreaForPoint(ctx, matchId, {
-      lat: (reclipped.bbox.minLat + reclipped.bbox.maxLat) / 2,
-      lng: (reclipped.bbox.minLng + reclipped.bbox.maxLng) / 2,
-    });
-    await ctx.db.patch(hazardId, {
-      subAreaId: subArea?.subAreaId,
-      subAreaName: subArea?.subAreaName,
-    });
+    await refile(hazard);
+    for (const folded of chain) await refile(folded);
     // Both ends: the lake losing the pin stops counting it, the lake gaining it starts.
     await recomputeBodySummary(ctx, was);
     await recomputeBodySummary(ctx, matchId);
