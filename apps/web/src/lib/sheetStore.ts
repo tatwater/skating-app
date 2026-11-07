@@ -554,6 +554,9 @@ export async function sendSheet(send: SheetSender): Promise<SheetSendResult> {
       releaseAllSheetPhotos();
       setSheet(null);
     } else {
+      // Not on screen any more (an account change, say), but it is live now: its stored copy must
+      // not come back to the author as a draft of something already posted.
+      if (readRecord()?.sheet.draftId === post.draftId) clearStoredSheet();
       emit();
     }
     return { kind: 'posted', postId: outcome.postId, reportId: outcome.reportId };

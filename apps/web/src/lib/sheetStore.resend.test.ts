@@ -311,6 +311,21 @@ describe('one send at a time', () => {
     expect(getSheetResend()).toBe('none');
   });
 
+  it('a Post that lands after its author’s account changed does not come back as a draft', async () => {
+    failedOffline();
+    await pickPhotoThenFail();
+    const { send, answer } = heldSend();
+    const flight = resendSheet(send);
+    bindSheetOwner('user_b');
+    answer(POSTED);
+    await expect(flight).resolves.toEqual(POSTED);
+    await whenSheetPhotosSettled();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    expect(fake.rows.size).toBe(0);
+    bindSheetOwner('user_a');
+    await expect(restoreStoredSheet(Date.now())).resolves.toBeNull();
+  });
+
   it('a sign-out mid-send stays signed out', async () => {
     failedOffline();
     const { send, answer } = heldSend();
