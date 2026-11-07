@@ -125,6 +125,32 @@ describe('THEME_INIT_SCRIPT', () => {
     expect(el.classList.contains('dark')).toBe(false);
   });
 
+  describe('the surface', () => {
+    const at = (path: string) => {
+      const before = window.location.pathname;
+      window.history.replaceState(null, '', path);
+      try {
+        return run('', false);
+      } finally {
+        window.history.replaceState(null, '', before);
+      }
+    };
+
+    it('states the skater surface on a skater path', () => {
+      document.documentElement.removeAttribute('data-surface');
+      expect(at('/lakes/abc').getAttribute('data-surface')).toBe('skater');
+    });
+
+    it.each(['/admin', '/admin/inbox'])('leaves the attribute absent under %s', (path) => {
+      document.documentElement.setAttribute('data-surface', 'skater');
+      expect(at(path).hasAttribute('data-surface')).toBe(false);
+    });
+
+    it('treats a path that only starts with "admin" as a skater path', () => {
+      expect(at('/administer').getAttribute('data-surface')).toBe('skater');
+    });
+  });
+
   it('names the same cookie the runtime reads', () => {
     expect(THEME_INIT_SCRIPT).toContain(THEME_COOKIE);
   });

@@ -69,6 +69,10 @@ export function applyThemePreference(
  * user-controlled can reach the markup, and the cookie value is only ever compared against the
  * two literals. Wrapped in try/catch because a theme must never be the thing that crashes the
  * page (cookies can be disabled; `matchMedia` is absent in some embedders).
+ *
+ * It also states the surface: `data-surface="skater"` everywhere but under `/admin`, where the
+ * attribute is removed — the old admin pages don't read the tokens yet, and absent keeps their
+ * look. The skater shell re-states it after hydration.
  */
 export const THEME_INIT_SCRIPT = `(function () {
   try {
@@ -80,5 +84,8 @@ export const THEME_INIT_SCRIPT = `(function () {
       ? match[1] === 'dark'
       : window.matchMedia('(prefers-color-scheme: dark)').matches;
     root.classList.toggle('dark', dark);
+    var path = location.pathname;
+    if (path === '/admin' || path.indexOf('/admin/') === 0) root.removeAttribute('data-surface');
+    else root.setAttribute('data-surface', 'skater');
   } catch (e) {}
 })();`;
