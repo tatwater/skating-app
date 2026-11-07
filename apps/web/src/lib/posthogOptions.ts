@@ -60,6 +60,19 @@ export const posthogOptions = {
     // autocapture and pageviews included — with no init-order question to get wrong.
     event.properties.environment = env.deployEnvironment;
 
+    // **No location derived from the IP, stated in code rather than trusted to the project.**
+    //
+    // PostHog's GeoIP transformation enriches events server-side with `$geoip_country_name`,
+    // `$geoip_city_name` and — on an app whose notice promises coordinates are never sent —
+    // `$geoip_latitude` / `$geoip_longitude`. It is on by default for a new cloud project, and
+    // `anonymize_ips` does *not* stop it: PostHog's own docs say transformations still read the IP
+    // before it is discarded. It has been disabled in the project, but that is a dashboard toggle,
+    // and this integration's whole posture is that anything we rely on is pinned here instead —
+    // the same rule as `capture_exceptions` and `capture_performance` above. The transformation
+    // checks this property and returns early, so with it set the promise holds even if someone
+    // switches the transformation back on.
+    event.properties.$geoip_disable = true;
+
     for (const key of URL_PROPERTIES) {
       if (key in event.properties) event.properties[key] = stripUrlQuery(event.properties[key]);
     }

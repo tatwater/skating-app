@@ -6970,4 +6970,57 @@ no-op and every flag its fallback — the posture `lib/env.ts` already takes for
 imagery archive. The wizard threw in development instead, which would have made a missing
 analytics key a blank page on a field app.
 
+**The project settings were brought into line with the code** on 2026-11-07, after an audit of the
+live project (717021, US cloud) found three of them disagreeing with it. Web vitals and performance
+capture were on, exception autocapture and surveys were `null` — the "absent is not off" state
+again, this time in the dashboard rather than the SDK. All four now say `false` out loud. Product
+tours, web experiments and `person_profiles` have no project-level field at all; the SDK pins them
+and nothing in the project contradicts them.
+
+Three more came out of that audit as founder calls rather than alignment:
+- **Console log capture off.** `capture_console_log_opt_in` was `true`. Logs do not belong in
+  PostHog at all here — Sentry's are GA with trace context — and the dashboard should not advertise
+  collecting console output on a project whose code refuses it.
+- **No location derived from the IP, which took two switches rather than one.**
+  `anonymize_ips: true` was the obvious one and is set. It is *not sufficient*, and the gap is the
+  kind worth writing down: PostHog's own documentation says that with client IP data discarded,
+  "transformations like GeoIP enrichment and bot detection can still use the IP before it is
+  discarded". A **GeoIP ingestion transformation** — enabled as a cloud default at project
+  creation, chosen by nobody — therefore went on writing `$geoip_country_name`,
+  `$geoip_city_name`, `$geoip_latitude` and `$geoip_longitude`. Latitude and longitude, on an app
+  whose notice promises coordinates are never sent, to a population including 16- and
+  17-year-olds. City-centroid rather than device, but a reader of that sentence would not draw the
+  distinction, and should not have to. So the transformation is disabled too, and the accepted cost
+  lands there: no country or city breakdowns in PostHog (Web Analytics' country, city and region
+  tiles read `$geoip_*` and will stay empty). Geography stays answerable from the app's own
+  reports, which know which lake someone skated.
+
+  **And then pinned in code, because disabling it is a dashboard toggle.** `before_send` sets
+  `$geoip_disable: true` on every event; the transformation checks that property and returns early,
+  so the promise holds even if someone switches it back on. Same rule as `capture_exceptions` and
+  `capture_performance` — anything this integration relies on is stated here, not inherited from
+  the project. Worth knowing for anyone who re-reads the transformation: it carried a hardcoded
+  private-IP fallback (`127.0.0.1` and `192.168.*` resolved to a Linköping test address), so on
+  local traffic it was writing confidently wrong coordinates rather than none.
+
+  Related and currently inert: `cookieless_server_hash_mode` is off, and when on it derives a
+  session identifier from a salted hash of IP and user agent — so turning cookieless tracking on
+  later is not the pure privacy win it sounds like.
+- **PostHog's AI data-processing consent revoked.** Nothing on the project uses those features
+  (AI observability was deliberately not configured), so the consent should exist because it was
+  chosen rather than by default over minors' behavioral data. Two corrections to the first telling
+  of this: it is a **US-cloud organization default**, not something the setup wizard set; and it is
+  an **organization-level** setting that merely mirrors into the project payload, so no project
+  write can reach it — `project-settings-update` silently drops the key. It is a UI toggle at
+  *Settings → Organization → General → AI service providers*, and it stays owed until clicked.
+
+Left standing and noted rather than changed: the replay retention period and recorder script the
+wizard provisioned (inert while replay is off, and L12's business the day it clears), and the
+wizard's starter dashboard, which is built on autocapture and will read empty. Two onboarding flags
+also read as done without anything behind them — PostHog's own **Logs** product
+(`has_completed_onboarding_for.logs`, `logs_settings: null`) and **LLM analytics**. Nothing sends
+to either, because the SDK carries no logs config at all; but `capture_console_log_opt_in` governs
+only the replay-coupled console capture, so "Sentry owns logs" is not something that one field
+alone establishes.
+
 **Related:** D3, D29, D41; the gate is L12; Q10.

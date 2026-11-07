@@ -195,7 +195,12 @@ describe('before_send', () => {
     const out = send({ hazard_type: 'pressure_ridge', photo_count: 2 });
 
     expect(out).toMatchObject({ hazard_type: 'pressure_ridge', photo_count: 2 });
-    expect(Object.keys(out ?? {}).sort()).toEqual(['environment', 'hazard_type', 'photo_count']);
+    expect(Object.keys(out ?? {}).sort()).toEqual([
+      '$geoip_disable',
+      'environment',
+      'hazard_type',
+      'photo_count',
+    ]);
   });
 
   it('passes a dropped event and a property-less event through without throwing', () => {
@@ -221,6 +226,16 @@ describe('the environment stamp', () => {
   /** Under test there is no Vercel and no `.env`, which is what `development` is the answer for. */
   it('falls back to development when nothing injected a deployment', () => {
     expect(env.deployEnvironment).toBe('development');
+  });
+
+  /**
+   * The project's GeoIP transformation is disabled, but that is a dashboard toggle and this
+   * integration pins what it relies on. The transformation honours this property by returning
+   * early, so the promise that coordinates are never sent survives someone re-enabling it.
+   */
+  it('refuses IP-derived geolocation on every event', () => {
+    expect(send({})?.$geoip_disable).toBe(true);
+    expect(send({ $current_url: 'https://gli.app/feed' })?.$geoip_disable).toBe(true);
   });
 
   it('stamps autocapture and pageviews too, not only the hand-written events', () => {

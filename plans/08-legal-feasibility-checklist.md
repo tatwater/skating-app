@@ -165,6 +165,9 @@ owns the redaction pipeline this row demands (`redactSentryEvent` strips coordin
 location, date of birth, bio and credentials). Picking the one that already has the machinery is
 worth weighing against adding it twice. Either way replay is enabled in exactly one of them.
 - [ ] Pick the product (PostHog or Sentry) — D29's naming predates PostHog's wiring.
+- [ ] Clear the replay scaffolding the setup wizard left in the PostHog project: a 30-day
+      `session_recording_retention_period` and a provisioned `recorder_script`. Both are inert
+      while recording is off at init, and both become this row's business the day it is not.
 - [ ] Input masking on (coordinates, PII); minor exclusion verified; `PRIVACY.md` updated — before
       enabling in prod.
 

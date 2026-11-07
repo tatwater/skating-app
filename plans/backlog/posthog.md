@@ -74,5 +74,15 @@ things that currently ship dark behind constants.
   `.vercel/output/config.json`, which can supersede it, and the failure is silent — the SSR
   catch-all answers 200 and every event disappears with nothing in any log.) `VITE_POSTHOG_HOST`
   is the switch when that exists, so no code has to change.
+- **The wizard's dashboard needs an `environment` filter, and one more insight.** "Analytics basics
+  (wizard)" (2316668) holds five insights covering nine of the ten events — `report_updated` is the
+  one nothing queries. None filters on `environment`, so once production traffic arrives each needs
+  `environment = production` or preview clicks land in the same funnels. The project's test-account
+  filter is a cohort rule and will *not* do this job: preview traffic comes from real signed-in
+  people. Also worth knowing, the pinned landing dashboard is the generic "Your starter dashboard",
+  not the wizard's, and reads empty.
+- **Nothing has been ingested yet** (`ingested_event: false` as of 2026-11-07) — expected, since
+  the code is not on `main` and the preview deployment sits behind Vercel's access protection. The
+  first page load after merge is the real delivery test.
 - **Cost:** free tier is 1M events/month. Autocapture is the unpredictable half — worth a look at
   real volume once the alpha has traffic, since it is one line to turn off.
