@@ -4,11 +4,14 @@ import {
   type ReactNode,
   type RefObject,
   use,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 
+import { isTextEntry, KeyBindingError, modKey } from '@/lib/keys';
 import { useReducedMotion } from '@/lib/useReducedMotion';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +38,13 @@ import { Kbd } from './kbd';
  * - **Motion** rides the motion tokens: a toast slides up and fades in, and leaves the way it came
  *   (or the way it was swiped — left or down). Under reduced motion every move collapses to a fade,
  *   and the time bar ticks once a second instead of gliding.
+ * - **The action's key works** while its toast is shown: the cap it wears (`kbd`, "⌘Z") is bound
+ *   for as long as the toast is on screen — not while it waits behind the limit or is leaving —
+ *   and released when it closes or is replaced. A newer toast claiming the same key wins. A key
+ *   with ⌘ (or Ctrl, ⌥) acts from anywhere but a text field, where the field's own key (its undo)
+ *   wins; a plain key (⏎, Esc) acts only when nothing has focus, since every control, list and
+ *   dialog uses those. A key some handler already took (`defaultPrevented`) is left alone. Like
+ *   every binding in the console, never J, K or a number key.
  * - **Safety (binding):** toast copy reports what an operator did ("Rate updated", "Photo hidden").
  *   It never says or implies that ice is safe, skateable or clear.
  */
@@ -50,11 +60,108 @@ type ToastAction = {
   label: string;
   /** Runs when it is pressed; the toast closes after. */
   onAction: () => void;
-  /** The key that does the same thing, shown as a cap inside the button ("⌘Z"). */
+  /**
+   * The key that does the same thing, shown as a cap inside the button ("⌘Z", "⇧⏎", "Esc") and
+   * bound while the toast is shown. ⌘ is the platform's command key (Ctrl off a Mac).
+   */
   kbd?: string;
 };
 
 type ToastData = { action?: ToastAction };
+
+// ── The action's key ─────────────────────────────────────────────────────────────────────────
+
+/** A toast action's key, read from the cap it wears. */
+type ToastKey = {
+  /** `KeyboardEvent.key` for a named key ("Enter"), or the character ("Z", "?"). */
+  key: string;
+  /** ⌘: the platform's command key (Meta on a Mac, Control elsewhere). */
+  mod: boolean;
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+};
+
+/** Named keys as their caps read (the status bar's caps, and the spelled-out forms). */
+const NAMED_CAPS: Partial<Record<string, string>> = {
+  '⏎': 'Enter',
+  Enter: 'Enter',
+  Esc: 'Escape',
+  Escape: 'Escape',
+  Del: 'Delete',
+  Delete: 'Delete',
+  '⌫': 'Backspace',
+  Backspace: 'Backspace',
+};
+
+const MODIFIER_CAPS: readonly [string | RegExp, keyof Omit<ToastKey, 'key'>][] = [
+  ['⌘', 'mod'],
+  ['⇧', 'shift'],
+  ['⌥', 'alt'],
+  ['⌃', 'ctrl'],
+  [/^Ctrl\b/, 'ctrl'],
+];
+
+/**
+ * Reads a cap ("⌘Z", "⇧⏎", "Ctrl Z", "Esc") as the key it names. A cap the kit can't bind — or one
+ * the console's rules refuse (J, K, a number key) — throws at render, so a toast never wears a key
+ * that does nothing.
+ */
+function parseToastKey(cap: string): ToastKey {
+  const parsed: ToastKey = { key: '', mod: false, ctrl: false, shift: false, alt: false };
+  let rest = cap.trim();
+  for (let found = true; found; ) {
+    found = false;
+    for (const [mark, flag] of MODIFIER_CAPS) {
+      const m =
+        typeof mark === 'string' ? (rest.startsWith(mark) ? mark : null) : mark.exec(rest)?.[0];
+      if (m == null) continue;
+      parsed[flag] = true;
+      rest = rest.slice(m.length).trimStart();
+      found = true;
+    }
+  }
+  const key = NAMED_CAPS[rest] ?? ([...rest].length === 1 ? rest.toUpperCase() : undefined);
+  if (key === undefined) {
+    throw new KeyBindingError(`"${cap}" is not a key a toast can bind.`);
+  }
+  if (key === 'J' || key === 'K' || /^[0-9]$/.test(key)) {
+    throw new KeyBindingError(`"${cap}" is refused: J, K and number keys are never bound.`);
+  }
+  return { ...parsed, key };
+}
+
+/** Whether `event` is the key, with exactly its modifiers (⌘ read as `mod`'s key). */
+function toastKeyMatches(
+  k: ToastKey,
+  event: Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
+  mod: 'Meta' | 'Control',
+): boolean {
+  const meta = k.mod && mod === 'Meta';
+  const ctrl = k.ctrl || (k.mod && mod === 'Control');
+  if (event.metaKey !== meta || event.ctrlKey !== ctrl || event.altKey !== k.alt) return false;
+  // A letter by its place on the keyboard (⌥ and ⇧ change the character, not the code).
+  if (/^[A-Z]$/.test(k.key)) return event.shiftKey === k.shift && event.code === `Key${k.key}`;
+  // Punctuation carries its own shift ("?" is ⇧/).
+  if ([...k.key].length === 1) return event.key === k.key;
+  return event.shiftKey === k.shift && event.key === k.key;
+}
+
+/** Whether the focused element keeps this key for itself (see the doc above). */
+function focusOwnsToastKey(k: ToastKey): boolean {
+  const el = document.activeElement;
+  if (isTextEntry(el)) return true;
+  if (k.mod || k.ctrl || k.alt) return false;
+  return el !== null && el !== document.body;
+}
+
+/** A shown toast's claim on its action's key. */
+type KeyClaim = { key: ToastKey; run: () => void };
+
+/** Claims (or, with `null`, releases) a toast's key in its Toaster. */
+// The default only serves a toast drawn outside a Toaster — a misuse, not a case worth a test.
+/* v8 ignore next */
+const ClaimKeyContext = createContext<(id: string, claim: KeyClaim | null) => void>(() => {});
 
 type ToastOptions = {
   /** What happened, in the row step ("Photo hidden · Mascoma Lake"). */
@@ -121,29 +228,57 @@ function Toaster({
   container,
   children,
 }: ToasterProps) {
+  // The shown toasts' keys, in the order they were claimed: the newest claim on a key wins.
+  const claims = useRef(new Map<string, KeyClaim & { order: number }>());
+  const order = useRef(0);
+  const claimKey = useCallback((id: string, claim: KeyClaim | null) => {
+    if (claim === null) claims.current.delete(id);
+    else claims.current.set(id, { ...claim, order: ++order.current });
+  }, []);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing) return;
+      const mod = modKey();
+      let hit: (KeyClaim & { order: number }) | undefined;
+      for (const claim of claims.current.values()) {
+        if (
+          toastKeyMatches(claim.key, event, mod) &&
+          (hit === undefined || claim.order > hit.order)
+        )
+          hit = claim;
+      }
+      if (hit === undefined || focusOwnsToastKey(hit.key)) return;
+      event.preventDefault();
+      hit.run();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
   return (
     <ToastPrimitive.Provider toastManager={manager} limit={limit} timeout={timeout}>
-      {children}
-      <ToastPrimitive.Portal container={container}>
-        <ToastPrimitive.Viewport
-          data-slot="toast-viewport"
-          data-placement={placement}
-          className={cn(
-            'z-(--z-toast) outline-none',
-            contained ? 'absolute inset-x-0 bottom-0' : 'fixed',
-            !contained &&
-              placement === 'rail' && [
-                'bottom-[calc(var(--size-status)+var(--gap-heading))] left-[calc(var(--size-rail)+var(--gap-bar-x))]',
-                'w-[min(var(--size-sheet-sm),calc(100vw-var(--size-rail)-2*var(--gap-bar-x)))]',
-              ],
-            !contained &&
-              placement === 'edge' &&
-              'bottom-gutter left-gutter w-[min(var(--size-sheet-sm),calc(100vw-2*var(--gap-gutter)))]',
-          )}
-        >
-          <ToastList timeout={timeout} />
-        </ToastPrimitive.Viewport>
-      </ToastPrimitive.Portal>
+      <ClaimKeyContext.Provider value={claimKey}>
+        {children}
+        <ToastPrimitive.Portal container={container}>
+          <ToastPrimitive.Viewport
+            data-slot="toast-viewport"
+            data-placement={placement}
+            className={cn(
+              'z-(--z-toast) outline-none',
+              contained ? 'absolute inset-x-0 bottom-0' : 'fixed',
+              !contained &&
+                placement === 'rail' && [
+                  'bottom-[calc(var(--size-status)+var(--gap-heading))] left-[calc(var(--size-rail)+var(--gap-bar-x))]',
+                  'w-[min(var(--size-sheet-sm),calc(100vw-var(--size-rail)-2*var(--gap-bar-x)))]',
+                ],
+              !contained &&
+                placement === 'edge' &&
+                'bottom-gutter left-gutter w-[min(var(--size-sheet-sm),calc(100vw-2*var(--gap-gutter)))]',
+            )}
+          >
+            <ToastList timeout={timeout} />
+          </ToastPrimitive.Viewport>
+        </ToastPrimitive.Portal>
+      </ClaimKeyContext.Provider>
     </ToastPrimitive.Provider>
   );
 }
@@ -190,6 +325,26 @@ function KitToast({ toast: t, defaultTimeout }: { toast: ToastObject; defaultTim
   const timed = timeout > 0 && t.type !== 'loading';
   // The time bar's animation, which the countdown reads.
   const time = useRef<Animation | null>(null);
+
+  // The action's key, bound while this toast is shown: not behind the limit, not leaving.
+  const kbd = action?.kbd;
+  const key = useMemo(() => (kbd === undefined ? null : parseToastKey(kbd)), [kbd]);
+  const shown = !t.limited && t.transitionStatus !== 'ending';
+  const claimKey = use(ClaimKeyContext);
+  // The press, kept current without re-claiming: the manager's handle is new every render, and a
+  // re-claim would reorder the claims (the newest claim wins, so order must mean "shown last").
+  const pressNow = () => {
+    action?.onAction();
+    manager.close(t.id);
+  };
+  const press = useRef(pressNow);
+  press.current = pressNow;
+  useEffect(() => {
+    if (key === null || !shown) return;
+    claimKey(t.id, { key, run: () => press.current() });
+    return () => claimKey(t.id, null);
+  }, [key, shown, claimKey, t.id]);
+
   return (
     <ToastPrimitive.Root
       toast={t}
@@ -348,13 +503,16 @@ function Countdown({ time, duration }: TimeProps) {
 
 export {
   createToastManager,
+  parseToastKey,
   type ToastAction,
   Toaster,
   type ToasterProps,
+  type ToastKey,
   type ToastManager,
   type ToastOptions,
   type ToastTone,
   toast,
+  toastKeyMatches,
   toastManager,
   UNDO_WINDOW_MS,
 };

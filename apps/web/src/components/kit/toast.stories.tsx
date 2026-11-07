@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type ReactNode, useEffect, useState } from 'react';
 import { expect, fn, spyOn, userEvent, waitFor, within } from 'storybook/test';
 
+import { modKey } from '@/lib/keys';
+
 import { Button } from './button';
 import {
   computedColor,
@@ -146,6 +148,127 @@ export const WithUndo: Story = {
     await expect(within(undo).getByText('⌘Z')).toBeInTheDocument();
     await userEvent.click(undo);
     await expect(onUndo).toHaveBeenCalledOnce();
+    await waitFor(() => expect(toastIn(canvasElement)).toBeNull());
+  },
+};
+
+const undoA = fn();
+const undoB = fn();
+
+/** ⌘Z (Ctrl Z off a Mac), as the platform's command key spells it for userEvent. */
+const pressUndoKey = () => userEvent.keyboard(`{${modKey()}>}z{/${modKey()}}`);
+
+/** Two actions to toast, each with its Undo on ⌘Z, and a field to type in. */
+function UndoKeys() {
+  return (
+    // Two on screen at once, so both claim ⌘Z.
+    <Frame limit={2}>
+      {(manager) => (
+        <div className="flex items-center gap-(--space-2)">
+          <Button
+            onClick={() =>
+              toast(
+                { title: 'Photo hidden', action: { label: 'Undo', kbd: '⌘Z', onAction: undoA } },
+                manager,
+              )
+            }
+          >
+            Hide photo
+          </Button>
+          <Button
+            onClick={() =>
+              toast(
+                {
+                  title: 'Report dismissed',
+                  action: { label: 'Undo', kbd: '⌘Z', onAction: undoB },
+                },
+                manager,
+              )
+            }
+          >
+            Dismiss report
+          </Button>
+          <input aria-label="Reason" defaultValue="" />
+        </div>
+      )}
+    </Frame>
+  );
+}
+
+/**
+ * The cap is a real key: ⌘Z runs the toast's Undo and closes it, and the binding goes with the
+ * toast — pressed again, it does nothing. In a text field ⌘Z is the field's own undo. Two toasts
+ * on screen claiming the key: the newer wins, and the older's claim stands once it's gone.
+ */
+export const UndoByKey: Story = {
+  render: () => <UndoKeys />,
+  beforeEach: () => {
+    undoA.mockClear();
+    undoB.mockClear();
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Hide photo' }));
+    await waitFor(() => must(toastIn(canvasElement)));
+    await pressUndoKey();
+    await expect(undoA).toHaveBeenCalledOnce();
+    await waitFor(() => expect(toastIn(canvasElement)).toBeNull());
+    // The binding died with the toast.
+    await pressUndoKey();
+    await expect(undoA).toHaveBeenCalledOnce();
+
+    // In a text field, ⌘Z is the field's: the toast stays, its Undo unrun.
+    await userEvent.click(canvas.getByRole('button', { name: 'Hide photo' }));
+    await waitFor(() => must(toastIn(canvasElement)));
+    await userEvent.click(canvas.getByRole('textbox', { name: 'Reason' }));
+    await pressUndoKey();
+    await expect(undoA).toHaveBeenCalledOnce();
+    await expect(toastIn(canvasElement)).not.toBeNull();
+
+    // Both on screen, both claiming ⌘Z: the newer takes it — the report, not the photo behind
+    // it. Then the photo's claim is the one left.
+    await userEvent.click(canvas.getByRole('button', { name: 'Dismiss report' }));
+    await waitFor(() => expect(toastsIn(canvasElement)).toHaveLength(2));
+    await pressUndoKey();
+    await expect(undoB).toHaveBeenCalledOnce();
+    await expect(undoA).toHaveBeenCalledOnce();
+    await waitFor(() => expect(toastsIn(canvasElement)).toHaveLength(1));
+    await expect(toastIn(canvasElement)).toHaveTextContent('Photo hidden');
+    await pressUndoKey();
+    await expect(undoA).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(toastIn(canvasElement)).toBeNull());
+  },
+};
+
+const retry = fn();
+
+/** A plain key (⏎) acts only while nothing has focus: every control uses ⏎ for itself. */
+export const PlainKey: Story = {
+  render: () => (
+    <Frame
+      seed={[
+        {
+          title: 'Not hidden · the connection dropped',
+          tone: 'bad',
+          action: { label: 'Retry', kbd: '⏎', onAction: retry },
+          timeout: 0,
+        },
+      ]}
+    >
+      {() => <Button className="self-start">Elsewhere</Button>}
+    </Frame>
+  ),
+  beforeEach: () => retry.mockClear(),
+  play: async ({ canvasElement }) => {
+    await waitFor(() => must(toastIn(canvasElement)));
+    // On a focused button, ⏎ is the button's.
+    within(canvasElement).getByRole('button', { name: 'Elsewhere' }).focus();
+    await userEvent.keyboard('{Enter}');
+    await expect(retry).not.toHaveBeenCalled();
+    // With nothing focused, ⏎ is the toast's Retry.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{Enter}');
+    await expect(retry).toHaveBeenCalledOnce();
     await waitFor(() => expect(toastIn(canvasElement)).toBeNull());
   },
 };
