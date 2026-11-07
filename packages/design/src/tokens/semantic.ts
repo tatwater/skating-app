@@ -180,6 +180,16 @@ export const colorSpecs = {
   'plate-solid': overlay(onKey('panel'), 0.96, 'keep', 'plate-solid'), // action bar, tooltip, toast
   'map-plate': overlay(PLATE_ON_IMAGERY, 0.72, 'keep', 'map-plate'), // controls over the map or a photo
   'map-foot': overlay(onKey('bg'), 0.85, 'keep', 'map-foot'), // the map's foot strip
+
+  // The map's water. Every listed body is one water color, and that color is ice (the skater
+  // mocks' rule: ice is water, geography, selection): a wash of the accent over the basemap's own
+  // ground, with its shore in the same ice at rest, so the map speaks the app's hue and not a
+  // second blue. A body that isn't listed as active is gray, not ice: an ink lift and an ink
+  // hairline, no chroma at all. `keep`, not `match`: these sit on the basemap, not the field.
+  'map-water': overlay(onKey('acc'), 0.24, 'keep'), // the one water fill
+  'map-shore': overlay(onKey('acc'), 0.6, 'keep'), // a listed body's shore at rest
+  'map-water-inactive': overlay(INK_PURE, 0.08, 'keep'), // an inactive body's fill
+  'map-shore-inactive': overlay(INK_PURE, 0.35, 'keep'), // its shore
   scrim: overlay(BLACK, 0.66, 'keep', 'scrim'), // behind a sheet, a drawer, an inset card
   'scrim-deep': overlay(BLACK, 0.76, 'keep', 'scrim-deep'), // behind a viewer modal
   shade: overlay(BLACK, 0.6, 'keep', 'shadow'), // the color of a box shadow
@@ -216,7 +226,9 @@ export type DesignedMap = Readonly<Partial<Record<ColorKey, DesignedColor>>>;
  *
  * Skater light keys left out derive as before, against the designed white field: `fg-disabled`,
  * the tints, strong washes, glows and `warn-line`, `bad-dim`, the lifts, `plate-solid`,
- * `map-plate`, `map-foot` and `scrim-deep`. The mocks give no light value for them.
+ * `map-plate`, `map-foot`, `scrim-deep` and the inactive water. The mocks give no light value for
+ * them. The map's water and shore are designed here (2026-11-07, the map re-skin), not in the mocks,
+ * which drew the water in a pre-token blue.
  */
 export const designedColors: Readonly<
   Record<Surface, Readonly<Partial<Record<Mode, DesignedMap>>>>
@@ -248,6 +260,10 @@ export const designedColors: Readonly<
       'acc-mark': { key: 'acc', alpha: 0.22 }, // rgba(10,125,156,.22)
       plate: { key: 'bg', alpha: 0.92 }, // rgba(255,255,255,.92)
       scrim: { key: 'fg', alpha: 0.32 }, // rgba(10,10,10,.32): a lighter dim, still dark
+      // The light ice is a dark teal, so the water takes less of it to read as the same wash, and
+      // the shore a touch more to hold a 1 px line in glare (D34).
+      'map-water': { key: 'acc', alpha: 0.2 },
+      'map-shore': { key: 'acc', alpha: 0.7 },
       // Shadows soften on white: the tooltip's .12, the sheets' .18 (skater.css, rep.css, act.css).
       shade: { primitive: 'black', alpha: 0.12 },
       'shade-strong': { primitive: 'black', alpha: 0.18 },
