@@ -18,6 +18,7 @@ import {
   MAX_LAKE_LABELS,
   type RecentCount,
 } from '@/lib/lakeLabelLayout';
+import type { MapKeyKind } from './MapKey';
 
 export interface LatLngLike {
   lat: number;
@@ -244,6 +245,26 @@ export function markObstacle(x: number, y: number, half = HAZARD_MARK_EXTENT) {
 
 /** The dot's radius, re-exported for the label component so the two can't disagree. */
 export { LABEL_DOT_RADIUS };
+
+/** A hazard's key entry by its tone. */
+export const HAZARD_KEY_KIND: Readonly<Record<HazardTone, MapKeyKind>> = {
+  danger: 'hazard',
+  healing: 'healing',
+  passage: 'passage',
+};
+
+/** What the region map's key lists: only the kinds it is drawing right now. */
+export function skaterMapKeyKinds(shown: {
+  putIns: boolean;
+  hazards: readonly Pick<HazardMarkModel, 'tone'>[];
+  tracks: boolean;
+}): MapKeyKind[] {
+  const kinds = new Set<MapKeyKind>();
+  if (shown.putIns) kinds.add('putIn');
+  for (const h of shown.hazards) kinds.add(HAZARD_KEY_KIND[h.tone]);
+  if (shown.tracks) kinds.add('track');
+  return [...kinds];
+}
 
 // ── Bays ──────────────────────────────────────────────────────────────────────────────────────
 

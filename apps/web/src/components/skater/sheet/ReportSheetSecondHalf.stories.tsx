@@ -9,7 +9,7 @@ import {
 } from '@skating/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { Polygon } from 'geojson';
-import { useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { setSheet } from '@/lib/sheetStore';
 import { must } from '../../kit/storyKit';
@@ -135,15 +135,20 @@ function Instrument({ chosenPinId }: { chosenPinId?: string }) {
     <div
       data-slot="story-instrument"
       className="relative shrink-0 overflow-hidden bg-bg"
-      style={{ width: W, height: H }}
+      // The marks' halo, in the pane's ground as the instrument's pane sets it.
+      style={{ width: W, height: H, '--map-ground': 'var(--bg)' } as CSSProperties}
     >
       <LakeGround map={map} />
       <InstrumentOverlay
         map={map}
         mode={mode}
         silhouette={SILHOUETTE}
-        pins={PINS}
-        {...(chosenPinId !== undefined ? { chosenPinId } : {})}
+        marks={{
+          pins: PINS,
+          hazards: [],
+          photos: [],
+          ...(chosenPinId !== undefined ? { chosenPinId } : {}),
+        }}
       />
     </div>
   );
@@ -246,8 +251,13 @@ export const PutInMode: Story = {
   ),
   play: async ({ canvasElement }) => {
     const quad = must(canvasElement.querySelector<HTMLElement>('[data-mode="light"]'));
-    await waitFor(() => expect(quad.querySelector('[data-slot="instrument-lit"]')).not.toBeNull());
+    await waitFor(() =>
+      expect(quad.querySelector('[data-slot="instrument-marks"][data-lit]')).not.toBeNull(),
+    );
     await expect(quad.querySelector('[data-pin="p1"]')).toHaveAttribute('data-chosen');
+    await expect(quad.querySelector('[data-pin="p1"] [data-slot="put-in-mark"]')).toHaveAttribute(
+      'data-highlight',
+    );
     await expect(quad.textContent).toContain('PUT-IN · YOURS');
   },
 };

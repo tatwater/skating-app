@@ -7,8 +7,14 @@ import {
 } from '@skating/core';
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
 import { useEffect, useId, useState } from 'react';
+import { HazardMark, LotMark, MARK_BOX, PhotoMark, PutInMark } from '../map/MapMarks';
 import type { ConsoleMode } from './ConsoleMode';
-import type { InstrumentPin } from './instrumentFeatures';
+import {
+  type InstrumentMark,
+  type InstrumentMarksInput,
+  type InstrumentPin,
+  instrumentMarks,
+} from './instrumentFeatures';
 import { instrumentRing } from './instrumentPick';
 import { mapProjection, type ProjectingMap } from './instrumentProjection';
 import { patchWhere, SECTOR_LABELS } from './WherePicker';
@@ -88,15 +94,17 @@ export function useMapProjection(map: OverlayMap | null): Projection | null {
 }
 
 /**
- * What the instrument draws over its map in a sub-mode (B03 §5, boards 5.13–5.15, and the hazard
- * draft of 5.10.1 / 3.2–3.6) — an SVG laid on the MapLibre canvas, in screen pixels from core's
- * silhouette helpers, so the ring, the wash and the shore read exactly as the old lake did:
+ * What the instrument draws over its map: its marks, always — the region map's own square marks
+ * (`MapMarks`), placed on the camera's projection — and in a sub-mode (B03 §5, boards 5.13–5.15,
+ * and the hazard draft of 5.10.1 / 3.2–3.6) an SVG laid on the MapLibre canvas, in screen pixels
+ * from core's silhouette helpers, so the ring, the wash and the shore read exactly as the old lake
+ * did:
  *
  * - **where**: the compass ring around the lake's origin, the chip's sector lit (several chips may
  *   light several); the sector washed on the water; the point the author placed, with its radius.
  *   The arcs take a click (the chips beside are the keyboard's way); the water passes through to
  *   the map, where a click is a point.
- * - **put-in**: every launch and lot lit, each named, the chosen one solid.
+ * - **put-in**: every launch and lot at full strength, the chosen one bracketed and named.
  * - **draft**: the hazard being drawn — its footprint and its corners.
  *
  * Nothing here is a verdict on the ice (D3): a lit sector is where the author looked.
@@ -105,15 +113,14 @@ export function InstrumentOverlay({
   map,
   mode,
   silhouette,
-  pins,
-  chosenPinId,
+  marks,
   draft,
 }: {
   map: OverlayMap | null;
   mode: ConsoleMode | null;
   silhouette: SilhouetteData | null;
-  pins: readonly InstrumentPin[];
-  chosenPinId?: string;
+  /** The launches and lots (and the chosen one), the hazards, the placed photos, the hand-set point. */
+  marks: InstrumentMarksInput;
   draft?: FeatureCollection | null;
 }) {
   const projection = useMapProjection(map);
@@ -121,39 +128,119 @@ export function InstrumentOverlay({
   useRingFraming(map, silhouette, mode?.kind === 'where');
   if (projection === null) return null;
   const where = mode?.kind === 'where' ? mode : null;
+  const putIn = mode?.kind === 'putIn';
   const showDraft = draft !== undefined && draft !== null && draft.features.length > 0;
-  if (where === null && mode?.kind !== 'putIn' && !showDraft) return null;
   return (
-    <svg
-      data-slot="instrument-overlay"
-      aria-hidden
-      width={projection.width}
-      height={projection.height}
-      viewBox={`0 0 ${projection.width} ${projection.height}`}
-      className="pointer-events-none absolute inset-0 z-(--z-plate) size-full overflow-visible"
-    >
-      {where && silhouette ? (
-        <WhereLayer
-          projection={projection}
-          silhouette={silhouette}
-          where={where.where}
-          clipId={clipId}
-          onSector={(sector) =>
-            where.onChange(
-              patchWhere(where.where, {
-                sector: where.where?.sector === sector ? undefined : sector,
-              }),
-            )
-          }
-        />
+    <>
+      <InstrumentMarks projection={projection} marks={marks} mode={mode} />
+      {where !== null || putIn || showDraft ? (
+        <svg
+          data-slot="instrument-overlay"
+          aria-hidden
+          width={projection.width}
+          height={projection.height}
+          viewBox={`0 0 ${projection.width} ${projection.height}`}
+          className="pointer-events-none absolute inset-0 z-(--z-plate) size-full overflow-visible"
+        >
+          {where && silhouette ? (
+            <WhereLayer
+              projection={projection}
+              silhouette={silhouette}
+              where={where.where}
+              clipId={clipId}
+              onSector={(sector) =>
+                where.onChange(
+                  patchWhere(where.where, {
+                    sector: where.where?.sector === sector ? undefined : sector,
+                  }),
+                )
+              }
+            />
+          ) : null}
+          {where?.where?.point ? <PlacedPoint projection={projection} where={where.where} /> : null}
+          {putIn ? (
+            <ChosenLockup
+              projection={projection}
+              pins={marks.pins}
+              chosenPinId={marks.chosenPinId}
+            />
+          ) : null}
+          {showDraft ? <Draft projection={projection} draft={draft} /> : null}
+        </svg>
       ) : null}
-      {where?.where?.point ? <PlacedPoint projection={projection} where={where.where} /> : null}
-      {mode?.kind === 'putIn' ? (
-        <LitPins projection={projection} pins={pins} chosenPinId={chosenPinId} />
-      ) : null}
-      {showDraft ? <Draft projection={projection} draft={draft} /> : null}
-    </svg>
+    </>
   );
+}
+
+const HALF = MARK_BOX / 2;
+
+/**
+ * The marks, as the region map draws them, each a box centered on its point; they take no pointer —
+ * a click lands on the map, where `pickOnInstrument` snaps it to a launch. A chosen launch or lot is
+ * the larger mark and the rest recede; in the put-in mode every launch is at full strength and the
+ * other marks recede; in the where mode all of them do (the mock's quiet lake).
+ */
+function InstrumentMarks({
+  projection,
+  marks,
+  mode,
+}: {
+  projection: Projection;
+  marks: InstrumentMarksInput;
+  mode: ConsoleMode | null;
+}) {
+  const all = instrumentMarks(marks);
+  const putIn = mode?.kind === 'putIn';
+  const quiet = mode?.kind === 'where';
+  const pinChosen = marks.chosenPinId !== undefined;
+  return (
+    <div
+      data-slot="instrument-marks"
+      data-lit={putIn ? '' : undefined}
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-(--z-raised) overflow-hidden"
+    >
+      {all.map((mark) => {
+        const [x, y] = projection.toXY([mark.coord.lng, mark.coord.lat]);
+        const pin = mark.kind === 'putIn' || mark.kind === 'parking' || mark.kind === 'point';
+        const dim = quiet || (putIn ? !pin : pin && pinChosen && !mark.chosen);
+        return (
+          <span
+            key={`${mark.kind}:${mark.id}`}
+            data-pin={mark.id}
+            data-chosen={mark.chosen ? '' : undefined}
+            className="absolute top-0 left-0"
+            style={{ transform: `translate(${x - HALF}px, ${y - HALF}px)` }}
+          >
+            <InstrumentMarkGlyph mark={mark} dim={dim} highlight={putIn && mark.chosen} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function InstrumentMarkGlyph({
+  mark,
+  dim,
+  highlight,
+}: {
+  mark: InstrumentMark;
+  dim: boolean;
+  highlight: boolean;
+}) {
+  const state = { dim, highlight };
+  switch (mark.kind) {
+    case 'hazard':
+      return <HazardMark tone={mark.tone} {...state} />;
+    case 'parking':
+      return <LotMark big={mark.chosen} {...state} />;
+    case 'photo':
+      return <PhotoMark {...state} />;
+    default:
+      // A launch, or the shore point the author set for somewhere else.
+      return <PutInMark big={mark.chosen} {...state} />;
+  }
 }
 
 function WhereLayer({
@@ -297,8 +384,11 @@ function PlacedPoint({ projection, where }: { projection: Projection; where: Whe
   );
 }
 
-/** Put-in mode: every launch lit, the chosen one solid and named. Lots are squares. */
-function LitPins({
+/**
+ * Put-in mode: the chosen launch or lot carries the lockup (5.15). The others are named by the chips
+ * beside the map — launches sit close enough that every name would collide.
+ */
+function ChosenLockup({
   projection,
   pins,
   chosenPinId,
@@ -307,57 +397,28 @@ function LitPins({
   pins: readonly InstrumentPin[];
   chosenPinId: string | undefined;
 }) {
+  const pin = pins.find((p) => p.id === chosenPinId);
+  if (pin === undefined) return null;
+  const [x, y] = projection.toXY([pin.coord.lng, pin.coord.lat]);
+  // Clear of the chosen mark's brackets (16 px out from its point).
+  const lx = x + HALF + 3;
   return (
-    <g data-slot="instrument-lit">
-      {pins.map((pin) => {
-        const [x, y] = projection.toXY([pin.coord.lng, pin.coord.lat]);
-        const chosen = pin.id === chosenPinId;
-        return (
-          <g key={pin.id} data-pin={pin.id} data-chosen={chosen ? '' : undefined}>
-            {pin.kind === 'parking' ? (
-              <rect
-                x={x - 6}
-                y={y - 6}
-                width={12}
-                height={12}
-                fill={chosen ? 'var(--acc)' : 'var(--bg)'}
-                stroke="var(--acc)"
-                strokeWidth={1.5}
-              />
-            ) : (
-              <circle
-                cx={x}
-                cy={y}
-                r={7}
-                fill={chosen ? 'var(--acc)' : 'var(--bg)'}
-                stroke="var(--acc)"
-                strokeWidth={1.5}
-                style={{ filter: 'drop-shadow(0 0 5px var(--acc-glow))' }}
-              />
-            )}
-            {chosen ? (
-              // The chosen launch carries the lockup (5.15); the others are named by the chips
-              // beside the map — launches sit close enough that every name would collide.
-              <text
-                x={x + 12}
-                y={y - 4}
-                fontFamily="var(--family-sans)"
-                paintOrder="stroke"
-                stroke="var(--bg)"
-                strokeWidth={3}
-              >
-                <tspan fontSize={10} fontWeight={600} letterSpacing="0.12em" fill="var(--acc)">
-                  {pin.kind === 'parking' ? 'PARKED · YOURS' : 'PUT-IN · YOURS'}
-                </tspan>
-                <tspan x={x + 12} dy={15} fontSize={12} fontWeight={600} fill="var(--fg)">
-                  {pin.name}
-                </tspan>
-              </text>
-            ) : null}
-          </g>
-        );
-      })}
-    </g>
+    <text
+      data-slot="instrument-lockup"
+      x={lx}
+      y={y - 4}
+      fontFamily="var(--family-sans)"
+      paintOrder="stroke"
+      stroke="var(--bg)"
+      strokeWidth={3}
+    >
+      <tspan fontSize={10} fontWeight={600} letterSpacing="0.12em" fill="var(--acc)">
+        {pin.kind === 'parking' ? 'PARKED · YOURS' : 'PUT-IN · YOURS'}
+      </tspan>
+      <tspan x={lx} dy={15} fontSize={12} fontWeight={600} fill="var(--fg)">
+        {pin.name}
+      </tspan>
+    </text>
   );
 }
 

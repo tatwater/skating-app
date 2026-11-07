@@ -40,8 +40,9 @@ import {
 import { effectiveMapSpec, useSkaterMapStore } from '@/stores/skaterMapStore';
 import { panelLinkState } from '../panels/panelNavigation';
 import { MapDockControls } from './MapDockControls';
+import { MapKey } from './MapKey';
 import { MapMarksLayer } from './MapMarksLayer';
-import { hitProperty, isUnlistedWater, type RenderedHit } from './mapDerive';
+import { hitProperty, isUnlistedWater, type RenderedHit, skaterMapKeyKinds } from './mapDerive';
 import {
   addSkaterLayers,
   HAZARD_FILL_LAYER,
@@ -581,6 +582,17 @@ export default function SkaterMapCanvas() {
     [containerRef],
   );
 
+  // The key names what is drawn: the put-ins under their switch, the hazards by tone, a track.
+  const putInsShown = spec.layers.putIns && data.putInMarks.length > 0;
+  const tracksShown =
+    (spec.layers.tracks && data.trackFeatures.features.length > 0) ||
+    (spec.overlays.track?.data.features.length ?? 0) > 0;
+  const keyKinds = useMemo(
+    () =>
+      skaterMapKeyKinds({ putIns: putInsShown, hazards: data.hazardMarks, tracks: tracksShown }),
+    [putInsShown, data.hazardMarks, tracksShown],
+  );
+
   const map = mapRef.current;
   const handlers = activeMapHandlers();
   return (
@@ -600,6 +612,7 @@ export default function SkaterMapCanvas() {
           imagery={imageryOn}
         />
       )}
+      {map && loaded && spec.visible && <MapKey kinds={keyKinds} />}
       {spec.mode && (
         <MapModeBar
           mode={spec.mode.mode}

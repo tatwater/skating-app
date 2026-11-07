@@ -603,10 +603,49 @@ describe('data into the map', () => {
     rect.mockRestore();
   });
 
-  it('hides the put-ins with their switch', async () => {
+  it('hides the put-ins with their switch, and their key with them', async () => {
     useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, putIns: false } });
     await mount();
     expect(screen.queryByRole('img', { name: /Put-in/ })).toBeNull();
+    expect(screen.getByRole('list', { name: 'Map key' })).not.toHaveTextContent('Put-in');
+  });
+
+  it('keys the marks it draws along its foot', async () => {
+    await mount();
+    const key = screen.getByRole('list', { name: 'Map key' });
+    expect(key).toHaveTextContent('Put-in');
+    expect(key).toHaveTextContent('Hazard');
+    expect(key).not.toHaveTextContent('Track');
+  });
+
+  it('keys a track a view draws over the lake', async () => {
+    const spec = lakeMapSpec('mascoma');
+    await mount({
+      ...spec,
+      overlays: {
+        ...spec.overlays,
+        track: {
+          key: 't1',
+          data: {
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [
+                    [-72.14, 43.61],
+                    [-72.13, 43.61],
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(screen.getByRole('list', { name: 'Map key' })).toHaveTextContent('Track');
   });
 
   it('shows the hover both ways', async () => {

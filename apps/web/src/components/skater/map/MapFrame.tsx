@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { effectiveMapSpec, useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { MapFloatContext } from './MapFloat';
+import { MAP_FOOT_ROOM } from './MapKey';
 import { SkaterMap } from './SkaterMap';
 
 /**
@@ -17,7 +18,8 @@ import { SkaterMap } from './SkaterMap';
  * page area and the view lies over it: Explore shows the bare map, a lake its drawer.
  *
  * Over the map sits its float slot (`MapFloat`): a layer that passes presses through, which a view
- * can float a plate into — the imagery timeline (boards 3.14/3.15).
+ * can float a plate into — the imagery timeline (boards 3.14/3.15). The map's key runs along its
+ * foot; while it does, what sits on the bottom edge rises clear of it (`MAP_FOOT_ROOM`).
  */
 export function MapFrame({ children }: { children: ReactNode }) {
   const shown = useSkaterMapStore((s) => effectiveMapSpec(s.specs).visible);
@@ -45,6 +47,7 @@ export function MapFrame({ children }: { children: ReactNode }) {
           data-slot="map-frame-map"
           className={cn(
             'relative h-full min-h-0 min-w-0',
+            MAP_FOOT_ROOM,
             // Phone (row 9): the map fills the page area under the view; hidden when not shown.
             shown ? 'max-md:absolute max-md:inset-0' : 'max-md:hidden',
             !shown && 'pointer-events-none absolute inset-0',

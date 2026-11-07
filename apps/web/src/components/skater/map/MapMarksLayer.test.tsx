@@ -143,10 +143,14 @@ describe('MapMarksLayer', () => {
     );
     const put = screen.getByRole('img', { name: 'Put-in: Mascoma Lake Boat Launch' });
     expect(put.style.transform).toBe('translate(183px, 183px)');
+    // Each mark names its own id and kind, for what highlights it from elsewhere.
+    expect(put).toHaveAttribute('data-pin', 'p1');
+    expect(put.querySelector('svg')).toHaveAttribute('data-kind', 'put-in');
     expect(screen.getByRole('img', { name: 'Put-in' })).toBeInTheDocument();
     const h1 = screen.getByRole('button', { name: 'Hazard: Open water / lead, not yet confirmed' });
     const h2 = screen.getByRole('button', { name: /Hazard: Open water \/ lead$/ });
     expect(h2).toHaveAttribute('aria-current', 'true');
+    expect(h2).toHaveAttribute('data-pin', 'h2');
     // The other hazard recedes behind the chosen one, never below half.
     expect(h1.querySelector('svg')?.getAttribute('class')).toContain('opacity-55');
     fireEvent.click(h1);

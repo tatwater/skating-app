@@ -57,6 +57,7 @@ function answerAll() {
       bufferMeters: 5,
       clippedFootprint: { type: 'Polygon', coordinates: [] },
       bbox: [0, 0, 0, 0],
+      healingState: 'healing_unsafe',
     },
     { _id: 'h3', status: 'resolved', type: 'thin_ice', geometryKind: 'point', bbox: [0, 0, 0, 0] },
   ]);
@@ -99,6 +100,9 @@ describe('useSheetBody', () => {
       shape: { radiusMeters: 30 },
     });
     expect(body.hazards[1]).toMatchObject({ label: 'pressure ridge', shape: { bufferMeters: 5 } });
+    // The healing tone rides on the hazard the map draws in it; only that one carries it.
+    expect(body.hazards[1]?.healing).toBe(true);
+    expect(body.hazards[0]).not.toHaveProperty('healing');
     expect(body.hazards[1]?.clippedFootprint).toBeDefined();
     expect(body.recentCards).toEqual([{ reportId: 'r1' }]);
     expect(body.sunAt(Date.UTC(2027, 0, 16, 17))).not.toBeNull();

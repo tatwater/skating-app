@@ -283,6 +283,11 @@
 .maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button:focus-visible {
   box-shadow: var(--box-shadow-focus);
 }
+/* The credits rise clear of the map's key while one runs along the foot (`MAP_FOOT_ROOM`). */
+.maplibregl-map .maplibregl-ctrl-bottom-left,
+.maplibregl-map .maplibregl-ctrl-bottom-right {
+  bottom: var(--map-foot, 0px);
+}
 @media (forced-colors: active) {
   .maplibregl-map .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button::before {
     forced-color-adjust: none;

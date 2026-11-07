@@ -275,7 +275,7 @@ function MapDockControls({
         )}
       </div>
       {(imagery || legend) && (
-        <div className="absolute bottom-4 left-4 z-(--z-map-control) flex flex-col items-start gap-3">
+        <div className="absolute bottom-[calc(var(--space-4)+var(--map-foot,0px))] left-4 z-(--z-map-control) flex flex-col items-start gap-3">
           {legend && <DepthLegend bands={depthBands} />}
           {imagery && (
             <Button
@@ -297,7 +297,7 @@ function MapDockControls({
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-none absolute inset-x-0 bottom-7 z-(--z-map-control) flex justify-center"
+        className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--space-7)+var(--map-foot,0px))] z-(--z-map-control) flex justify-center"
       >
         {away && (
           <Button

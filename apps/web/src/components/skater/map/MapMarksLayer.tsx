@@ -176,6 +176,7 @@ export function MapMarksLayer({
           role="img"
           aria-label={m.name ? `Put-in: ${m.name}` : 'Put-in'}
           data-slot="put-in"
+          data-pin={m.id}
           className="pointer-events-auto absolute top-0 left-0"
           onPointerEnter={(e) => {
             if (!m.name) return;
@@ -202,6 +203,7 @@ export function MapMarksLayer({
             ref={ref(markNodes.current, `h:${h.id}`)}
             type="button"
             data-slot="hazard"
+            data-pin={h.id}
             aria-label={`Hazard: ${hazardName(h.hazardType)}${h.provisional ? ', not yet confirmed' : ''}`}
             aria-current={selected ? 'true' : undefined}
             data-peek={peeking ? '' : undefined}

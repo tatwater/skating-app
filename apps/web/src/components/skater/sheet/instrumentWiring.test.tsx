@@ -50,6 +50,8 @@ function overlayMap(): OverlayMap & { move: (dx: number) => void } {
   };
 }
 
+const NO_MARKS = { pins: [], hazards: [], photos: [] };
+
 // A square lake around the frame's middle (300, 200 px).
 const SILHOUETTE: SilhouetteData = {
   rings: [
@@ -122,11 +124,13 @@ describe('InstrumentOverlay', () => {
         map={null}
         mode={whereMode(undefined)}
         silhouette={SILHOUETTE}
-        pins={[]}
+        marks={NO_MARKS}
       />,
     );
     expect(container.querySelector('svg')).toBeNull();
-    rerender(<InstrumentOverlay map={overlayMap()} mode={null} silhouette={null} pins={[]} />);
+    rerender(
+      <InstrumentOverlay map={overlayMap()} mode={null} silhouette={null} marks={NO_MARKS} />,
+    );
     expect(container.querySelector('svg')).toBeNull();
   });
 
@@ -137,7 +141,7 @@ describe('InstrumentOverlay', () => {
         map={overlayMap()}
         mode={whereMode({ sector: 'N' }, onChange)}
         silhouette={SILHOUETTE}
-        pins={[]}
+        marks={NO_MARKS}
       />,
     );
     const ring = container.querySelector('[data-slot="instrument-ring"]');
@@ -159,7 +163,7 @@ describe('InstrumentOverlay', () => {
           point: { coord: { lat: 43.8, lng: -72.7 }, radiusMeters: 75, name: 'Wood Island' },
         })}
         silhouette={SILHOUETTE}
-        pins={[]}
+        marks={NO_MARKS}
       />,
     );
     expect(container.querySelector('[data-slot="instrument-point"]')).toHaveTextContent(
@@ -168,27 +172,121 @@ describe('InstrumentOverlay', () => {
     expect(container.querySelector('[data-slot="instrument-wash"]')).toBeNull();
   });
 
-  it('put-in: every launch lit and named, the chosen one marked', () => {
+  const PINS = [
+    { id: 'a', coord: { lat: 43.8, lng: -72.7 }, name: 'Boat launch', kind: 'putIn' as const },
+    { id: 'b', coord: { lat: 43.81, lng: -72.7 }, name: 'Town lot', kind: 'parking' as const },
+  ];
+  const MARKS = {
+    pins: PINS,
+    chosenPinId: 'b',
+    hazards: [
+      {
+        id: 'h1',
+        bbox: { minLat: 43.79, maxLat: 43.79, minLng: -72.71, maxLng: -72.71 },
+        passage: false,
+        healing: true,
+      },
+    ],
+    photos: [{ id: 'ph', coord: { lat: 43.78, lng: -72.69 } }],
+  };
+  const mark = (container: HTMLElement, id: string) =>
+    container.querySelector(`[data-pin="${id}"] svg`) as SVGElement;
+
+  it('draws the region map’s square marks, the chosen lot larger and the other launch receded', () => {
+    const map = overlayMap();
+    const { container } = render(
+      <InstrumentOverlay map={map} mode={null} silhouette={null} marks={MARKS} />,
+    );
+    const layer = container.querySelector('[data-slot="instrument-marks"]') as HTMLElement;
+    expect(layer).toHaveClass('pointer-events-none');
+    expect(layer).not.toHaveAttribute('data-lit');
+    expect(mark(container, 'a')).toHaveAttribute('data-kind', 'put-in');
+    expect(mark(container, 'a')).toHaveAttribute('data-dim');
+    expect(mark(container, 'b')).toHaveAttribute('data-kind', 'lot');
+    expect(mark(container, 'b')).not.toHaveAttribute('data-dim');
+    // The chosen lot is the 16 px face; nothing is bracketed outside the put-in mode.
+    expect(mark(container, 'b').querySelectorAll('rect')[1]).toHaveAttribute('width', '16');
+    expect(mark(container, 'b')).not.toHaveAttribute('data-highlight');
+    expect(mark(container, 'h1')).toHaveAttribute('data-tone', 'healing');
+    expect(mark(container, 'ph')).toHaveAttribute('data-kind', 'photo');
+    // Centered on the point: (-72.7 + 73) * 1000 = 300, less half the 34 px box.
+    const a = container.querySelector('[data-pin="a"]') as HTMLElement;
+    const at = () => (a.style.transform.match(/-?[\d.]+/g) ?? []).map((n) => Math.round(Number(n)));
+    expect(at()).toEqual([283, 183]);
+    act(() => map.move(10));
+    expect(at()).toEqual([293, 183]);
+    // No overlay drawing without a mode or a draft.
+    expect(container.querySelector('[data-slot="instrument-overlay"]')).toBeNull();
+  });
+
+  it('draws a hand-set point as the chosen put-in when no launch is chosen', () => {
+    const { container } = render(
+      <InstrumentOverlay
+        map={overlayMap()}
+        mode={null}
+        silhouette={null}
+        marks={{ ...NO_MARKS, point: { lat: 43.8, lng: -72.7 } }}
+      />,
+    );
+    expect(mark(container, 'point')).toHaveAttribute('data-kind', 'put-in');
+    expect(container.querySelector('[data-pin="point"]')).toHaveAttribute('data-chosen');
+  });
+
+  it('put-in: every launch at full strength, the chosen one bracketed and named', () => {
     const mode: ConsoleMode = { kind: 'putIn', onPickPin: vi.fn(), onPickShore: vi.fn() };
     const { container } = render(
+      <InstrumentOverlay map={overlayMap()} mode={mode} silhouette={SILHOUETTE} marks={MARKS} />,
+    );
+    const lit = container.querySelector('[data-slot="instrument-marks"][data-lit]');
+    expect(lit?.querySelectorAll('[data-pin]')).toHaveLength(4);
+    expect(mark(container, 'a')).not.toHaveAttribute('data-dim');
+    expect(mark(container, 'b')).toHaveAttribute('data-highlight');
+    expect(container.querySelector('[data-slot="lot-mark-brackets"]')).not.toBeNull();
+    // What isn't a launch steps back.
+    expect(mark(container, 'h1')).toHaveAttribute('data-dim');
+    expect(mark(container, 'ph')).toHaveAttribute('data-dim');
+    // Only the chosen one is named, as a lockup.
+    const lockup = container.querySelector('[data-slot="instrument-lockup"]');
+    expect(lockup).toHaveTextContent('PARKED · YOURSTown lot');
+    expect(container).not.toHaveTextContent('Boat launch');
+    expect(container.querySelector('[data-pin="b"]')).toHaveAttribute('data-chosen');
+  });
+
+  it('put-in: a launch named in the lockup, and none until one is chosen', () => {
+    const mode: ConsoleMode = { kind: 'putIn', onPickPin: vi.fn(), onPickShore: vi.fn() };
+    const { container, rerender } = render(
       <InstrumentOverlay
         map={overlayMap()}
         mode={mode}
         silhouette={SILHOUETTE}
-        chosenPinId="b"
-        pins={[
-          { id: 'a', coord: { lat: 43.8, lng: -72.7 }, name: 'Boat launch', kind: 'putIn' },
-          { id: 'b', coord: { lat: 43.81, lng: -72.7 }, name: 'Town lot', kind: 'parking' },
-        ]}
+        marks={{ ...MARKS, chosenPinId: 'a' }}
       />,
     );
-    const lit = container.querySelector('[data-slot="instrument-lit"]');
-    expect(lit?.querySelectorAll('[data-pin]')).toHaveLength(2);
-    // Only the chosen one is named, as a lockup.
-    expect(lit).not.toHaveTextContent('Boat launch');
-    expect(lit).toHaveTextContent('PARKED · YOURSTown lot');
-    expect(container.querySelector('[data-pin="b"]')).toHaveAttribute('data-chosen');
-    expect(container.querySelector('[data-pin="b"] rect')).not.toBeNull();
+    expect(container.querySelector('[data-slot="instrument-lockup"]')).toHaveTextContent(
+      'PUT-IN · YOURSBoat launch',
+    );
+    rerender(
+      <InstrumentOverlay
+        map={overlayMap()}
+        mode={mode}
+        silhouette={SILHOUETTE}
+        marks={{ ...NO_MARKS, pins: PINS }}
+      />,
+    );
+    expect(container.querySelector('[data-slot="instrument-lockup"]')).toBeNull();
+  });
+
+  it('where: every mark steps back for the ring', () => {
+    const { container } = render(
+      <InstrumentOverlay
+        map={overlayMap()}
+        mode={whereMode(undefined)}
+        silhouette={SILHOUETTE}
+        marks={MARKS}
+      />,
+    );
+    for (const id of ['a', 'b', 'h1', 'ph'])
+      expect(mark(container, id)).toHaveAttribute('data-dim');
   });
 
   it('draft: a footprint, a line and its corners, and it follows the camera', () => {
@@ -237,7 +335,7 @@ describe('InstrumentOverlay', () => {
       ],
     };
     const { container } = render(
-      <InstrumentOverlay map={map} mode={null} silhouette={null} pins={[]} draft={draft} />,
+      <InstrumentOverlay map={map} mode={null} silhouette={null} marks={NO_MARKS} draft={draft} />,
     );
     const g = container.querySelector('[data-slot="instrument-draft"]') as Element;
     expect(g.querySelectorAll('path')).toHaveLength(2);
@@ -280,7 +378,7 @@ describe('the where mode frames the lake inside the ring', () => {
         map={map}
         mode={{ kind: 'where', label: 'Glass', where: undefined, onChange: vi.fn() }}
         silhouette={SILHOUETTE}
-        pins={[]}
+        marks={NO_MARKS}
       />,
     );
     const camera = jumpTo.mock.calls[0]?.[0] as { center: unknown; zoom: number };
@@ -304,7 +402,7 @@ describe('the where mode frames the lake inside the ring', () => {
         map={map}
         mode={{ kind: 'where', label: 'Glass', where: undefined, onChange: vi.fn() }}
         silhouette={SILHOUETTE}
-        pins={[]}
+        marks={NO_MARKS}
       />,
     );
     expect(() => unmount()).not.toThrow();

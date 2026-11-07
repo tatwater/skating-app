@@ -23,15 +23,19 @@ vi.mock('./InstrumentMap', () => ({
     label,
     onPick,
     input,
+    keyDim,
   }: {
     label: string;
     onPick: (c: { lat: number; lng: number }) => void;
-    input: { hazards: unknown[]; track?: unknown[]; photos: unknown[] };
+    input: { hazards: { healing?: boolean }[]; track?: unknown[]; photos: unknown[] };
+    keyDim?: boolean;
   }) => {
     h.pick = onPick;
     return (
       <section
         aria-label={label}
+        data-key-dim={keyDim ? '' : undefined}
+        data-healing={input.hazards.filter((x) => x.healing).length}
         data-hazards={input.hazards.length}
         data-track={input.track?.length ?? 0}
         data-photos={input.photos.length}
@@ -68,6 +72,7 @@ const body: SheetBody = {
       shape: { geometryKind: 'point', geometry: { type: 'Point', coordinates: [-72.15, 43.65] } },
       bbox: { minLat: 43.65, maxLat: 43.65, minLng: -72.15, maxLng: -72.15 },
       label: 'open water',
+      healing: true,
     } as unknown as SheetBody['hazards'][number],
   ],
   recentCards: [],
@@ -119,14 +124,15 @@ beforeEach(() => {
 });
 
 describe('InstrumentPane (5.1)', () => {
-  it('names the lake and draws it with its hazards', () => {
+  it('names the lake and draws it with its hazards, the key at full strength', () => {
     renderPane();
     // The Report's own name for its lake leads; the body's is the fallback.
     expect(screen.getByRole('heading', { name: 'Morey' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /Morey, with your put-in/ })).toHaveAttribute(
-      'data-hazards',
-      '1',
-    );
+    const map = screen.getByRole('region', { name: /Morey, with your put-in/ });
+    expect(map).toHaveAttribute('data-hazards', '1');
+    // A healing hazard keeps its tone on the way to the marks.
+    expect(map).toHaveAttribute('data-healing', '1');
+    expect(map).not.toHaveAttribute('data-key-dim');
   });
 
   it('waits for the outline', () => {
@@ -166,10 +172,10 @@ describe('InstrumentPane (5.1)', () => {
       mode.set({ kind: 'where', label: 'Snow covered', where: undefined, onChange, onExit }),
     );
     expect(screen.getByText('Where is the snow covered?')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /with your put-in/ })).toHaveAttribute(
-      'data-hazards',
-      '0',
-    );
+    const map = screen.getByRole('region', { name: /with your put-in/ });
+    expect(map).toHaveAttribute('data-hazards', '0');
+    // The key steps back with the rest of the pane.
+    expect(map).toHaveAttribute('data-key-dim');
     act(() => h.pick?.({ lat: 43.65, lng: -72.15 }));
     expect(onChange).toHaveBeenCalledTimes(1);
     // A sub-mode is left by a click, never Esc.

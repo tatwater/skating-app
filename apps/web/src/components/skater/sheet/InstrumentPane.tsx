@@ -129,6 +129,7 @@ export function InstrumentPane({
             id: h.id,
             bbox: h.bbox,
             passage: isPassageMarker(h.type),
+            ...(h.healing ? { healing: true } : {}),
           })),
       photos: report.photos.flatMap((p) =>
         p.placeOnMap && p.coord !== undefined ? [{ id: p.id, coord: p.coord }] : [],
@@ -205,6 +206,7 @@ export function InstrumentPane({
             onPick={onPick}
             onMap={setGlMap}
             suspended={held}
+            keyDim={mode !== null}
             label={`${name}, with your put-in and any photos you placed`}
             className="absolute inset-0"
           >
@@ -212,15 +214,13 @@ export function InstrumentPane({
               map={held ? null : glMap}
               mode={mode}
               silhouette={body?.silhouette ?? null}
-              pins={input.pins}
-              {...(input.chosenPinId !== undefined ? { chosenPinId: input.chosenPinId } : {})}
+              marks={input}
             />
           </InstrumentMap>
         ) : (
           <p className="m-0 pt-(--space-6) text-assist text-fg3">Drawing the lake…</p>
         )}
       </div>
-      <Legend dim={mode !== null} />
       <div className={cn('border-0 border-t border-solid border-line', mode && 'opacity-30')}>
         <Timeline
           model={model}
@@ -255,35 +255,5 @@ export function InstrumentPane({
         />
       </div>
     </section>
-  );
-}
-
-function Legend({ dim }: { dim: boolean }) {
-  const item = 'inline-flex items-center gap-(--space-1_5)';
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        'flex gap-(--space-4_5) px-(--space-6) pt-(--space-2) pb-(--space-3) text-kick leading-none font-medium tracking-head text-fg2 uppercase',
-        dim && 'opacity-30',
-      )}
-    >
-      <span className={item}>
-        <i className="size-2.5 rounded-full bg-acc" />
-        Put-in
-      </span>
-      <span className={item}>
-        <i className="h-0 w-4 border-0 border-t-2 border-dashed border-acc" />
-        Your track
-      </span>
-      <span className={item}>
-        <i className="size-2.5 bg-fg1" />
-        Photo
-      </span>
-      <span className={item}>
-        <i className="size-2.5 rounded-full bg-bad" />
-        Hazard
-      </span>
-    </div>
   );
 }

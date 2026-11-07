@@ -95,6 +95,7 @@ export function HazardSheetFrame({
         id: h.id,
         bbox: h.bbox,
         passage: isPassageMarker(h.type),
+        ...(h.healing ? { healing: true } : {}),
       })),
       photos: [],
     }),
@@ -145,7 +146,7 @@ export function HazardSheetFrame({
                   map={glMap}
                   mode={null}
                   silhouette={null}
-                  pins={[]}
+                  marks={input}
                   draft={mapState?.draft?.data ?? null}
                 />
                 {mapState?.mode ? (

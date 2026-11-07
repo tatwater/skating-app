@@ -61,7 +61,7 @@ beforeEach(() => {
 });
 
 describe('the instrument’s map', () => {
-  it('frames the one lake and draws it, its marks and its track', async () => {
+  it('frames the one lake and draws it and its track (the marks are DOM, over it)', async () => {
     render(<InstrumentMapCanvas input={input} />);
     expect(h.options?.fitBounds).toEqual([
       [-72.2, 43.6],
@@ -71,7 +71,6 @@ describe('the instrument’s map', () => {
       'instrument-lake-fill',
       'instrument-lake-line',
       'instrument-track',
-      'instrument-marks',
     ]);
     await waitFor(() =>
       expect(

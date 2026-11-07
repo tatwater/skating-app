@@ -13,6 +13,7 @@ import {
   markObstacle,
   mergeHazards,
   reportCountsByBody,
+  skaterMapKeyKinds,
   walkLabel,
   withBayAngles,
   withWalkLabels,
@@ -225,6 +226,22 @@ describe('hazardMarksFrom', () => {
 
   it('boxes a mark with its halo and brackets', () => {
     expect(markObstacle(100, 50)).toEqual({ left: 84, top: 34, right: 116, bottom: 66 });
+  });
+});
+
+describe('skaterMapKeyKinds', () => {
+  it('keys nothing on a map that draws nothing', () => {
+    expect(skaterMapKeyKinds({ putIns: false, hazards: [], tracks: false })).toEqual([]);
+  });
+
+  it('keys the put-ins, each hazard tone once, and a track', () => {
+    expect(
+      skaterMapKeyKinds({
+        putIns: true,
+        hazards: [{ tone: 'danger' }, { tone: 'passage' }, { tone: 'danger' }, { tone: 'healing' }],
+        tracks: true,
+      }),
+    ).toEqual(['putIn', 'hazard', 'passage', 'healing', 'track']);
   });
 });
 

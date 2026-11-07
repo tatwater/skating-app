@@ -30,6 +30,8 @@ export interface SheetAccessPoint {
 export interface SheetHazard extends PassableHazard {
   createdByUserId?: string;
   label: string;
+  /** Its latest verdict is "healing but unsafe" (D52): the map's healing tone. */
+  healing?: boolean;
 }
 
 export interface SheetBody {
@@ -114,6 +116,7 @@ export function useSheetBody(waterBodyId: string | undefined): SheetBody | null 
           : {}),
         bbox: h.bbox,
         ...(h.createdByUserId !== undefined ? { createdByUserId: h.createdByUserId } : {}),
+        ...(h.healingState === 'healing_unsafe' ? { healing: true } : {}),
         label: h.type.replace(/_/g, ' '),
       }));
     return {
