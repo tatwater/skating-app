@@ -19,9 +19,10 @@ const GOOGLE_PHOTOS_CALLBACK = '/google-photos/callback';
  * The areas still drawn inside the old `AppShell` — the pages B03 hasn't migrated yet. Everything
  * else (`/`, `/water/…`, the cards, profile, settings, about, and a path no route matches) renders
  * bare: the skater layout or the screen brings its own chrome. Each entry retires as its page
- * migrates: feed with H, post with I. At close-out only `/admin` stays.
+ * migrates: feed with H (`/post` retired with I — it is only a redirect into `?post=` now). At
+ * close-out only `/admin` stays.
  */
-const OLD_SHELL_EXACT = ['/feed', '/post'];
+const OLD_SHELL_EXACT = ['/feed'];
 const OLD_SHELL_TREES = ['/admin'];
 
 /**
