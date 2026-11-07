@@ -1,5 +1,5 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowUpRightFromSquare, faShieldHalved } from '@fortawesome/sharp-light-svg-icons';
+import { faArrowUpRightFromSquare, faBan, faCheck } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Doc, Id } from '@skating/convex/dataModel';
 import {
@@ -95,12 +95,17 @@ export function PublicAccessView({
             access?.verdict === 'none' ? 'border-warn-line bg-warn-wash' : 'border-line bg-raise',
           )}
         >
+          {/* The glyph states the verdict and nothing more. A shield stood here for both, and a
+              shield reads as locked — the wrong word for the ordinary case, which is that the lake
+              is open to anyone. This is about the *land*, not the ice: a check says you may be
+              here, never that the ice is safe (D3), which is why it sits inside this section
+              beside its own sentence and nowhere near the hazards. */}
           <FontAwesomeIcon
-            icon={faShieldHalved}
+            icon={access?.verdict === 'none' ? faBan : faCheck}
             aria-hidden="true"
             className={cn(
-              'mt-[0.15em] h-[1rem]',
-              access?.verdict === 'none' ? 'text-warn' : 'text-fg2',
+              'mt-[0.15em]',
+              access?.verdict === 'none' ? 'h-[1rem] text-warn' : 'h-[1.125rem] text-fg2',
             )}
           />
           <span className="flex flex-col gap-(--space-1)">
