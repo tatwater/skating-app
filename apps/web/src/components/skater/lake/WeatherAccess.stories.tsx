@@ -162,11 +162,11 @@ export const Weather: Story = {
     await waitFor(() => expect(select).toHaveFocus());
     await userEvent.tab();
     await expect(q.getByRole('button', { name: 'Last 10 days' })).toHaveFocus();
-    await expect(
-      await within(document.body).findByText(
-        'The 10 full days before today. Today is still in progress and is not counted.',
-      ),
-    ).toBeVisible();
+    // The tip mounts at its starting style (transparent), then fades in: wait for it to arrive.
+    const tip = await within(document.body).findByText(
+      'The 10 full days before today. Today is still in progress and is not counted.',
+    );
+    await waitFor(() => expect(tip).toBeVisible());
     const slider = q.getByRole('slider', { name: 'Scroll the weather chart through time' });
     slider.focus();
     await userEvent.keyboard('{ArrowLeft}');
