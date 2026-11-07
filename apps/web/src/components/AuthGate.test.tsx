@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   auth: { isLoaded: true, isSignedIn: false } as { isLoaded: boolean; isSignedIn: boolean },
   profile: undefined as unknown,
   pathname: '/',
+  notFound: false,
   push: vi.fn(),
 }));
 
@@ -17,7 +18,10 @@ vi.mock('convex/react', () => ({
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ history: { push: mocks.push } }),
   useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>
-    select({ location: { pathname: mocks.pathname } }),
+    select({
+      location: { pathname: mocks.pathname },
+      matches: [{ _notFound: mocks.notFound }],
+    }),
 }));
 vi.mock('../lib/sheetOwner', () => ({ useSheetOwnerBinding: vi.fn() }));
 vi.mock('./AppShell', () => ({
@@ -33,6 +37,7 @@ beforeEach(() => {
   mocks.auth = { isLoaded: true, isSignedIn: false };
   mocks.profile = undefined;
   mocks.pathname = '/';
+  mocks.notFound = false;
   mocks.push = vi.fn();
 });
 
@@ -76,6 +81,16 @@ describe('AuthGate', () => {
       expect(mocks.push).not.toHaveBeenCalled();
     },
   );
+
+  it('leaves a 404 under an old-shell prefix to the 404’s own shell — one header, not two', () => {
+    mocks.auth = { isLoaded: true, isSignedIn: true };
+    mocks.profile = PROVISIONED;
+    mocks.pathname = '/admin/nope';
+    mocks.notFound = true;
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+    expect(screen.queryByTestId('shell')).not.toBeInTheDocument();
+  });
 
   it('renders an auth page bare for a signed-out visitor', () => {
     mocks.pathname = '/sign-in';

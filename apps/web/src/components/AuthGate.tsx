@@ -26,6 +26,16 @@ const OLD_SHELL_EXACT = ['/feed', '/notifications', '/post', '/about'];
 const OLD_SHELL_TREES = ['/admin', '/settings'];
 const OLD_SHELL_CHILDREN = ['/u/', '/report/', '/hazard/', '/bounty/'];
 
+/**
+ * Whether the router matched nothing: the root's `notFoundComponent` is about to render, and it
+ * brings its own shell (`NotFoundRoute`). Read off the matches' `_notFound` mark — typed on
+ * `RouteMatch`, and the only signal the router keeps; `AuthGate.notFound.test.tsx` pins it against
+ * the real router so an upgrade that renames it fails there, not in production.
+ */
+export function isNotFound(state: { matches: ReadonlyArray<{ _notFound?: boolean }> }): boolean {
+  return state.matches.some((m) => m._notFound === true);
+}
+
 /** Whether `pathname` is one of the pages that still sits in the old `AppShell`. */
 export function usesOldShell(pathname: string): boolean {
   return (
@@ -56,6 +66,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // A 404 under an old-shell prefix (`/admin/nope`, `/u/a/b`) is still the 404: one shell, its own.
+  const notFound = useRouterState({ select: isNotFound });
   const bare = pathname === GOOGLE_PHOTOS_CALLBACK;
   const target = bare ? null : authZoneTarget(route, pathname);
 
@@ -67,6 +79,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (bare) return <>{children}</>;
   if (route === 'loading' || target) return <FirstLoadSplash />;
-  if (route === 'app' && usesOldShell(pathname)) return <AppShell>{children}</AppShell>;
+  if (route === 'app' && usesOldShell(pathname) && !notFound) {
+    return <AppShell>{children}</AppShell>;
+  }
   return <>{children}</>;
 }

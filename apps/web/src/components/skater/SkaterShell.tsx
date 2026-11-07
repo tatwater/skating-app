@@ -56,7 +56,9 @@ export function useAppOpenSync(): void {
 
 /**
  * The root route's `notFoundComponent`: signed in, the 404 sits under the top bar (8.14); signed
- * out the auth gate has already sent the visitor to sign in, so the bare screen is a fallback.
+ * out the auth gate has already sent the visitor to sign in, so the bare screen is a fallback. The
+ * router renders it at the root, outside every layout, and the auth gate leaves a not-found match
+ * bare (`isNotFound`) — so this shell is the only one, and its app-open effects run once.
  */
 export function NotFoundRoute() {
   const { isSignedIn } = useAuth();

@@ -75,4 +75,13 @@ describe('NotFoundRoute', () => {
     expect(screen.getByText('not found')).toBeInTheDocument();
     expect(screen.queryByText('top bar')).toBeNull();
   });
+
+  it('signed in, is one shell: one top bar, and the app-open sync once', () => {
+    fakes.queries.set('profiles:current', { _id: 'p1', timezone: 'America/Chicago' });
+    render(<NotFoundRoute />);
+    expect(screen.getAllByText('top bar')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-slot="skater-shell"]')).toHaveLength(1);
+    expect(fakes.mutations.get('profiles:syncFromClerk')).toHaveBeenCalledTimes(1);
+    expect(fakes.mutations.get('profiles:setTimezone')).toHaveBeenCalledTimes(1);
+  });
 });
