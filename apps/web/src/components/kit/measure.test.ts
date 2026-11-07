@@ -61,6 +61,12 @@ describe('colorDistance', () => {
 
   it('names a detached element, which computes no style at all', () => {
     expect(() => colorDistance('', BAD)).toThrow(/not in the page/);
+    // Whitespace is no color either, and the message shows what it was handed.
+    expect(() => colorDistance(' ', BAD)).toThrow(/empty string \(" "\)/);
+  });
+
+  it('quotes an unreadable value, so it never prints as nothing', () => {
+    expect(() => colorDistance('red', BAD)).toThrow('Not a computed color: "red"');
   });
 });
 
@@ -90,6 +96,17 @@ describe('sameColor', () => {
     // (An unresolved token is the usual slip: resolve it with `computedColor` first.)
     expect(() => sameColor('var(--bad)')).toThrow(/can't read/);
     expect(() => sameColor('#ff4a55')).toThrow(/Not a computed color/);
+  });
+
+  it('names itself on any other unreadable actual — never a quiet mismatch', () => {
+    // Whitespace, or a form it doesn't read: the comparison is named, then what it was handed.
+    const named = new RegExp(
+      `sameColor\\(${BAD.replace(/[()]/g, '\\$&')}\\) can't read the actual value`,
+    );
+    expect(() => expect(' ').toEqual(sameColor(BAD))).toThrow(named);
+    expect(() => expect(' ').toEqual(sameColor(BAD))).toThrow(/empty string.*wait for the value/);
+    expect(() => expect('red').toEqual(sameColor(BAD))).toThrow(/Not a computed color: "red"/);
+    expect(() => sameColor('  ')).toThrow(/empty string/);
   });
 });
 

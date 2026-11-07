@@ -126,10 +126,70 @@ const q = (scope: ParentNode, sel: string) => must(scope.querySelector<SVGElemen
 const qa = (scope: ParentNode, sel: string) => [...scope.querySelectorAll<SVGElement>(sel)];
 const attr = (el: Element, name: string) => Number(el.getAttribute(name));
 
+/** The hover hairline. */
+const CURSOR = '[data-slot="chart-cursor"]';
+/** A bar's mark. */
+const BAR = '.recharts-bar-rectangle path';
+
+/**
+ * A Recharts node's computed paint, once it has one. Recharts redraws while it animates and can swap
+ * a node for a new one, and a detached (or not yet styled) node computes an empty string — so the
+ * node is found afresh on every poll and its value waited for, never compared empty. Only
+ * `getComputedStyle` runs inside the wait (no measuring probe).
+ */
+function paint(
+  find: () => Element | null | undefined,
+  prop: 'fill' | 'stroke',
+  what: string,
+): Promise<string> {
+  return waitFor(() => {
+    const el = find();
+    const value = el?.isConnected ? getComputedStyle(el)[prop] : '';
+    if (value === '') {
+      throw new Error(`${what} has no computed ${prop} yet (not drawn, or detached by a redraw)`);
+    }
+    return value;
+  });
+}
+
+/** `paint` over several nodes: every one found, connected and painted, in order. */
+function paints(find: () => Element[], prop: 'fill' | 'stroke', what: string): Promise<string[]> {
+  return waitFor(() => {
+    const els = find();
+    if (els.length === 0) throw new Error(`${what}: none drawn yet`);
+    return els.map((el, i) => {
+      const value = el.isConnected ? getComputedStyle(el)[prop] : '';
+      if (value === '') {
+        throw new Error(`${what} #${i} has no computed ${prop} yet (not drawn, or detached)`);
+      }
+      return value;
+    });
+  });
+}
+
 /** The chart has drawn (ResponsiveContainer measures first, then the series). */
 async function drawn(scope: HTMLElement, series: string) {
   await waitFor(() => expect(scope.querySelector(series)).not.toBeNull());
 }
+
+/**
+ * Asserts from fresh nodes: `check` queries what it reads and reads it whole, in one synchronous
+ * pass, retried until it holds. Recharts keys a mark by its interpolated geometry
+ * (`rectangle-<x>-<y>-<value>-<i>` in `Bar.js`), so an entrance, a hover or a re-measure unmounts
+ * marks and mounts new ones; a node held across an `await` is detached a frame on, where it
+ * measures zero and computes no style. So no story holds one: a swapped node is simply found again
+ * on the next attempt, and the check passes only on the final state. No measuring probe inside —
+ * resolve tokens before.
+ */
+const steady = (check: () => void) => waitFor(check, { timeout: 5_000 });
+
+/** Two animation frames: long enough for a growing mark to have moved on. */
+const twoFrames = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
 
 /** Moves the pointer over the chart at a client x (mid-height of the plot), as a mouse would. */
 function hoverAt(scope: HTMLElement, clientX: number) {
@@ -157,14 +217,19 @@ const midX = (el: Element) => {
 
 /** The plate is the kit tooltip's: square, the plate ground, a `line2` edge; title, ~6 px, lines. */
 async function expectPlate(scope: HTMLElement) {
-  const plate = scope.querySelector<HTMLElement>('[data-slot="chart-tooltip"]');
-  const p = must(plate);
-  const s = getComputedStyle(p);
-  await expect(s.borderTopLeftRadius).toBe('0px');
-  await expect(s.backgroundColor).toEqual(sameColor(computedColor(p, 'var(--plate-solid)')));
-  await expect(s.borderTopColor).toEqual(sameColor(computedColor(p, 'var(--line2)')));
-  await expect(s.boxShadow).not.toBe('none');
-  return p;
+  const PLATE = '[data-slot="chart-tooltip"]';
+  await waitFor(() => expect(scope.querySelector(PLATE)).not.toBeNull());
+  const at = must(scope.querySelector<HTMLElement>(PLATE));
+  const ground = computedColor(at, 'var(--plate-solid)');
+  const edge = computedColor(at, 'var(--line2)');
+  await steady(() => {
+    const s = getComputedStyle(must(scope.querySelector<HTMLElement>(PLATE)));
+    expect(s.borderTopLeftRadius).toBe('0px');
+    expect(s.backgroundColor).toEqual(sameColor(ground));
+    expect(s.borderTopColor).toEqual(sameColor(edge));
+    expect(s.boxShadow).not.toBe('none');
+  });
+  return must(scope.querySelector<HTMLElement>(PLATE));
 }
 
 /**
@@ -185,11 +250,14 @@ async function expectGridlines(scope: HTMLElement) {
     await expect(attr(l, 'y1')).toBeLessThanOrEqual(top);
     await expect(attr(l, 'y2')).toBeGreaterThanOrEqual(bottom);
   }
-  for (const l of [...horizontal, ...vertical]) {
-    const s = getComputedStyle(l);
-    await expect(s.strokeDasharray).toBe('none');
-    await expect(s.stroke).toEqual(sameColor(line));
+  const lines = () => [
+    ...qa(scope, '.recharts-cartesian-grid-horizontal line'),
+    ...qa(scope, '.recharts-cartesian-grid-vertical line'),
+  ];
+  for (const stroke of await paints(lines, 'stroke', 'the gridlines')) {
+    await expect(stroke).toEqual(sameColor(line));
   }
+  for (const l of lines()) await expect(getComputedStyle(l).strokeDasharray).toBe('none');
   return { horizontal, vertical };
 }
 
@@ -211,25 +279,23 @@ export const SeasonTraceStory: Story = {
     // Hover at an x-axis tick: the hairline, the active dot and the tick share one x.
     const ticks = qa(canvasElement, '.recharts-xAxis .recharts-cartesian-axis-tick-line');
     await expect(ticks.length).toBeGreaterThan(1);
-    const tick = must(ticks[1]);
-    const x = midX(tick);
+    const x = midX(must(ticks[1]));
     hoverAt(canvasElement, x);
-    await waitFor(() =>
-      expect(canvasElement.querySelector('[data-slot="chart-cursor"]')).not.toBeNull(),
-    );
-    const cursor = q(canvasElement, '[data-slot="chart-cursor"]');
-    await expect(cursor.tagName.toLowerCase()).toBe('line');
-    await expect(Math.abs(midX(cursor) - x)).toBeLessThanOrEqual(0.5);
-    const dots = qa(canvasElement, '.recharts-active-dot circle');
-    await expect(dots).toHaveLength(2);
-    for (const dot of dots) await expect(Math.abs(midX(dot) - x)).toBeLessThanOrEqual(0.5);
     // The hairline runs the plot's full height (the gridlines' span).
-    const grid = qa(canvasElement, '.recharts-cartesian-grid-horizontal line').map((l) =>
-      attr(l, 'y1'),
-    );
-    await expect(attr(cursor, 'y1')).toBeLessThanOrEqual(Math.min(...grid));
-    await expect(attr(cursor, 'y2')).toBeGreaterThanOrEqual(Math.max(...grid));
-    await expect(getComputedStyle(cursor).strokeWidth).toBe('1px');
+    await steady(() => {
+      const cursor = q(canvasElement, CURSOR);
+      expect(cursor.tagName.toLowerCase()).toBe('line');
+      expect(Math.abs(midX(cursor) - x)).toBeLessThanOrEqual(0.5);
+      const dots = qa(canvasElement, '.recharts-active-dot circle');
+      expect(dots).toHaveLength(2);
+      for (const dot of dots) expect(Math.abs(midX(dot) - x)).toBeLessThanOrEqual(0.5);
+      const grid = qa(canvasElement, '.recharts-cartesian-grid-horizontal line').map((l) =>
+        attr(l, 'y1'),
+      );
+      expect(attr(cursor, 'y1')).toBeLessThanOrEqual(Math.min(...grid));
+      expect(attr(cursor, 'y2')).toBeGreaterThanOrEqual(Math.max(...grid));
+      expect(getComputedStyle(cursor).strokeWidth).toBe('1px');
+    });
 
     const plate = await expectPlate(canvasElement);
     await expect(plate).toHaveTextContent('Night of 5 Oct');
@@ -243,7 +309,7 @@ export const SeasonTraceStory: Story = {
     await expect(getComputedStyle(value).fontFamily).toMatch(/Martian Mono/);
 
     await leave(canvasElement);
-    await expect(canvasElement.querySelector('[data-slot="chart-cursor"]')).toBeNull();
+    await expect(canvasElement.querySelector(CURSOR)).toBeNull();
   },
 };
 
@@ -258,30 +324,33 @@ export const NothingClips: Story = {
     await drawn(canvasElement, '.recharts-area-curve');
     const box = q(canvasElement, '[data-slot="chart"]').getBoundingClientRect();
     const curve = q(canvasElement, '.recharts-area-curve').getBoundingClientRect();
-    const svg = q(canvasElement, '.recharts-surface');
-    await expect(getComputedStyle(svg).overflow).toBe('visible');
+    await expect(getComputedStyle(q(canvasElement, '.recharts-surface')).overflow).toBe('visible');
     await expect(curve.top).toBeGreaterThanOrEqual(box.top);
     // Hover the maximum (the first day, 41 °F, the domain's top).
     const ticks = qa(canvasElement, '.recharts-xAxis .recharts-cartesian-axis-tick-line');
     hoverAt(canvasElement, midX(must(ticks[0])));
-    await waitFor(() =>
-      expect(canvasElement.querySelector('.recharts-active-dot circle')).not.toBeNull(),
-    );
-    const dot = q(canvasElement, '.recharts-active-dot circle');
-    const grid = qa(canvasElement, '.recharts-cartesian-grid-horizontal line').map((l) =>
-      attr(l, 'y1'),
-    );
     // The dot's center is on the plot's top edge, and its whole disc is inside the chart's box.
-    await expect(attr(dot, 'cy')).toBeCloseTo(Math.min(...grid), 0);
-    const disc = dot.getBoundingClientRect();
-    await expect(disc.top).toBeGreaterThanOrEqual(box.top);
-    await expect(disc.left).toBeGreaterThanOrEqual(box.left);
+    await steady(() => {
+      const dot = q(canvasElement, '.recharts-active-dot circle');
+      const grid = qa(canvasElement, '.recharts-cartesian-grid-horizontal line').map((l) =>
+        attr(l, 'y1'),
+      );
+      expect(attr(dot, 'cy')).toBeCloseTo(Math.min(...grid), 0);
+      const disc = dot.getBoundingClientRect();
+      expect(disc.top).toBeGreaterThanOrEqual(box.top);
+      expect(disc.left).toBeGreaterThanOrEqual(box.left);
+    });
     const plate = await expectPlate(canvasElement);
     await expect(plate).toHaveTextContent('Surface water41 °F');
     // Water wears the ice accent — the one place it may.
-    await expect(getComputedStyle(q(canvasElement, '.recharts-area-curve')).stroke).toEqual(
-      sameColor(computedColor(canvasElement, 'var(--acc)')),
-    );
+    const acc = computedColor(canvasElement, 'var(--acc)');
+    await expect(
+      await paint(
+        () => canvasElement.querySelector('.recharts-area-curve'),
+        'stroke',
+        'the area curve',
+      ),
+    ).toEqual(sameColor(acc));
     // Vertical gridlines run top to bottom too.
     const { vertical } = await expectGridlines(canvasElement);
     await expect(vertical.length).toBeGreaterThan(1);
@@ -297,43 +366,37 @@ export const Bars: Story = {
   args: { config: DOLLARS, children: null },
   render: () => <Spend />,
   play: async ({ canvasElement }) => {
-    await drawn(canvasElement, '.recharts-bar-rectangle path');
-    await expect(qa(canvasElement, '.recharts-bar-rectangle path')).toHaveLength(SPEND.length);
-    // Recharts keys a bar by its interpolated geometry (`rectangle-<x>-<y>-<value>-<i>` in
-    // `Bar.js`), so every frame of the entrance unmounts the marks and mounts new ones — and a
-    // re-layout later (a container re-measure) does it again. A mark is therefore read on the
-    // attempt that uses it, and read whole before anything is awaited: a node held across an
-    // `await` is detached a frame on, where it measures zero and computes no style at all.
-    const lead = computedColor(canvasElement, 'var(--fg)');
-    await waitFor(async () => {
-      const mark = must(qa(canvasElement, '.recharts-bar-rectangle path')[4]);
-      const { height } = mark.getBoundingClientRect();
-      const fill = getComputedStyle(mark).fill;
-      await expect(height).toBeGreaterThan(0);
-      await expect(fill).toEqual(sameColor(lead));
-    });
-    // The band's middle in the chart's own coordinates (hover swaps the bar's element for the
-    // active one, so read it first). A bar's x and width are final from its first frame — the
-    // entrance grows its height — so these hold whether or not it has settled.
-    const bar = must(qa(canvasElement, '.recharts-bar-rectangle path')[4]);
+    await drawn(canvasElement, BAR);
+    await expect(qa(canvasElement, BAR)).toHaveLength(SPEND.length);
+    const fifth = () => qa(canvasElement, BAR)[4];
+    await steady(() => expect(must(fifth()).getBoundingClientRect().height).toBeGreaterThan(0));
+    const fg = computedColor(canvasElement, 'var(--fg)');
+    await expect(await paint(fifth, 'fill', 'bar 5')).toEqual(sameColor(fg));
+    // The band's middle in the chart's own coordinates, and where to hover — read together from
+    // one fresh node, just before the hover (which swaps the bar's element for the active one).
+    const bar = must(fifth());
     const middle = attr(bar, 'x') + attr(bar, 'width') / 2;
     hoverAt(canvasElement, midX(bar));
-    await waitFor(() =>
-      expect(canvasElement.querySelector('[data-slot="chart-cursor"]')).not.toBeNull(),
-    );
-    const cursor = q(canvasElement, '[data-slot="chart-cursor"]');
-    await expect(cursor.tagName.toLowerCase()).toBe('line');
-    await expect(Math.abs(attr(cursor, 'x1') - middle)).toBeLessThanOrEqual(0.5);
-    await expect(attr(cursor, 'x2')).toBe(attr(cursor, 'x1'));
-    await expect(canvasElement.querySelector('.recharts-tooltip-cursor')).toBe(cursor);
+    // The hover mounts the cursor and re-renders the active bar: read them fresh, until final.
+    await steady(() => {
+      const cursor = q(canvasElement, CURSOR);
+      expect(cursor.tagName.toLowerCase()).toBe('line');
+      expect(Math.abs(attr(cursor, 'x1') - middle)).toBeLessThanOrEqual(0.5);
+      expect(attr(cursor, 'x2')).toBe(attr(cursor, 'x1'));
+      expect(canvasElement.querySelector('.recharts-tooltip-cursor')).toBe(cursor);
+    });
     const plate = await expectPlate(canvasElement);
     await expect(plate).toHaveTextContent('Oct');
     await expect(plate).toHaveTextContent('Spend$31.60');
     // The reference rule: the rule gray, dashed.
-    const rule = q(canvasElement, '.recharts-reference-line line');
-    await expect(getComputedStyle(rule).stroke).toEqual(
-      sameColor(computedColor(canvasElement, 'var(--line2)')),
-    );
+    const line2 = computedColor(canvasElement, 'var(--line2)');
+    await expect(
+      await paint(
+        () => canvasElement.querySelector('.recharts-reference-line line'),
+        'stroke',
+        'the reference rule',
+      ),
+    ).toEqual(sameColor(line2));
     await leave(canvasElement);
   },
 };
@@ -345,33 +408,43 @@ export const Axes: Story = {
   play: async ({ canvasElement }) => {
     await drawn(canvasElement, '.recharts-line-curve');
     const fg3 = computedColor(canvasElement, 'var(--fg3)');
-    const x = q(canvasElement, '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value');
-    const y = q(canvasElement, '.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value');
-    const xs = getComputedStyle(x);
-    const ys = getComputedStyle(y);
-    await expect(xs.textTransform).toBe('uppercase');
-    await expect(parseFloat(xs.fontSize)).toBeCloseTo(
-      resolvePx(canvasElement, 'var(--type-kick)'),
-      1,
-    );
-    await expect(xs.fill).toEqual(sameColor(fg3));
-    await expect(ys.fontFamily).toMatch(/Martian Mono/);
-    await expect(ys.fill).toEqual(sameColor(fg3));
+    const X_TICK = '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value';
+    const Y_TICK = '.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value';
+    const kick = resolvePx(canvasElement, 'var(--type-kick)');
+    await steady(() => {
+      const xs = getComputedStyle(q(canvasElement, X_TICK));
+      expect(xs.textTransform).toBe('uppercase');
+      expect(parseFloat(xs.fontSize)).toBeCloseTo(kick, 1);
+      expect(getComputedStyle(q(canvasElement, Y_TICK)).fontFamily).toMatch(/Martian Mono/);
+    });
+    await expect(
+      await paint(() => canvasElement.querySelector(X_TICK), 'fill', 'an x label'),
+    ).toEqual(sameColor(fg3));
+    await expect(
+      await paint(() => canvasElement.querySelector(Y_TICK), 'fill', 'a y tick'),
+    ).toEqual(sameColor(fg3));
     await expect(canvasElement.querySelector('.recharts-cartesian-axis-line')).toBeNull();
     // The event rule's label is a kicker.
     // (Recharts draws labels in a layer of their own, over the marks.)
-    const labels = qa(canvasElement, '.recharts-label');
-    const label = must(labels.find((l) => l.textContent === 'Watch opened'));
-    await expect(getComputedStyle(label).textTransform).toBe('uppercase');
-    await expect(getComputedStyle(label).fill).toEqual(sameColor(fg3));
-    const warn = must(labels.find((l) => l.textContent === '20 °F'));
-    await expect(getComputedStyle(warn).fill).toEqual(
-      sameColor(computedColor(canvasElement, 'var(--warn)')),
+    const labelled = (text: string) => () =>
+      qa(canvasElement, '.recharts-label').find((l) => l.textContent === text);
+    await steady(() =>
+      expect(getComputedStyle(must(labelled('Watch opened')())).textTransform).toBe('uppercase'),
+    );
+    await expect(await paint(labelled('Watch opened'), 'fill', 'the event label')).toEqual(
+      sameColor(fg3),
+    );
+    const warn = computedColor(canvasElement, 'var(--warn)');
+    await expect(await paint(labelled('20 °F'), 'fill', 'the 20 °F label')).toEqual(
+      sameColor(warn),
     );
     // The warning rule wears the warning tone, its label too.
-    const lines = qa(canvasElement, '.recharts-reference-line line');
-    const strokes = lines.map((l) => getComputedStyle(l).stroke);
-    await expect(strokes).toContainEqual(sameColor(computedColor(canvasElement, 'var(--warn)')));
+    const strokes = await paints(
+      () => qa(canvasElement, '.recharts-reference-line line'),
+      'stroke',
+      'the reference rules',
+    );
+    await expect(strokes).toContainEqual(sameColor(warn));
   },
 };
 
@@ -415,13 +488,14 @@ export const ReducedMotion: Story = {
       // A solid line has no dash at all; the dotted one has only its own pattern.
       await expect(dash === null || dash === '1.5 3').toBe(true);
     }
-    const bars = qa(canvasElement, '.recharts-bar-rectangle path');
-    await expect(bars).toHaveLength(SPEND.length);
-    const tallest = must(bars[4]).getBoundingClientRect().height;
+    await expect(qa(canvasElement, BAR)).toHaveLength(SPEND.length);
+    // Read at once, not retried until steady: waiting would sit out a growth this story catches.
+    const tallest = must(qa(canvasElement, BAR)[4]).getBoundingClientRect().height;
     await expect(tallest).toBeGreaterThan(0);
-    // The heights are final on the first frame: nothing grows afterwards.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await expect(must(bars[4]).getBoundingClientRect().height).toBe(tallest);
+    // The heights are final on the first frame: nothing grows afterwards. (A fresh query: a node
+    // held across the frames could have been re-keyed away, and a detached one measures zero.)
+    await twoFrames();
+    await expect(must(qa(canvasElement, BAR)[4]).getBoundingClientRect().height).toBe(tallest);
   },
 };
 
@@ -448,10 +522,10 @@ export const FourUp: Story = {
       const surface = quad.dataset.surface as keyof typeof kick;
       const x = q(quad, '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value');
       await expect(parseFloat(getComputedStyle(x).fontSize)).toBe(kick[surface]);
-      const now = qa(quad, '.recharts-line-curve').at(-1) as SVGElement;
-      await expect(getComputedStyle(now).stroke).toEqual(
-        sameColor(computedColor(quad, 'var(--fg)')),
-      );
+      const fg = computedColor(quad, 'var(--fg)');
+      await expect(
+        await paint(() => qa(quad, '.recharts-line-curve').at(-1), 'stroke', "this winter's line"),
+      ).toEqual(sameColor(fg));
     }
   },
 };

@@ -145,7 +145,14 @@ export function sameColor(expected: string): ColorMatcher {
           `No computed color to compare with ${label}: the element is not in the page.`,
         );
       }
-      return typeof actual === 'string' && colorDistance(actual, expected) <= COLOR_TOLERANCE;
+      if (typeof actual !== 'string') return false;
+      try {
+        return colorDistance(actual, expected) <= COLOR_TOLERANCE;
+      } catch (error) {
+        // Any other unreadable value names the comparison too: a bare parser error sends the
+        // reader to the logs.
+        throw new Error(`${label} can't read the actual value: ${(error as Error).message}`);
+      }
     },
     toString: () => label,
     toAsymmetricMatcher: () => label,
@@ -174,11 +181,16 @@ function channel(token: string | undefined, percentOf: number): number {
  * loudly instead of comparing wrong.
  */
 function toOklab(css: string): Oklab {
-  // Chromium computes every property to the empty string on an element that has left the page, so
-  // say that rather than report an unreadable color: the measurement held a node too long.
-  if (css === '') throw new Error('No computed color: the element is not in the page.');
+  // Chromium computes every property to the empty string on an element that has left the page
+  // (or isn't painted yet), so say that rather than report an unreadable color: the measurement
+  // held a node too long, or read it too soon.
+  if (css.trim() === '') {
+    throw new Error(
+      `No computed color: an empty string (${JSON.stringify(css)}) — the element is not in the page (detached by a redraw) or not painted yet; wait for the value before comparing`,
+    );
+  }
   const m = /^\s*([a-z-]+)\(([^()]*)\)\s*$/i.exec(css);
-  if (m === null) throw new Error(`Not a computed color: ${css}`);
+  if (m === null) throw new Error(`Not a computed color: ${JSON.stringify(css)}`);
   const fn = (m[1] as string).toLowerCase();
   const [main, slash] = (m[2] as string).split('/');
   const parts = (main as string).split(/[\s,]+/).filter(Boolean);
