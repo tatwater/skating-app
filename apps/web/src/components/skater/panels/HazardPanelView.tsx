@@ -39,6 +39,7 @@ export interface HazardPanelData {
   /** "Mascoma North · Mascoma Lake", with the lake a link. */
   bodyId: string;
   bodyName: string | null;
+  /** The place before the lake: the bay, or the place line ("The Narrows, by Shaker Bridge"). */
   subAreaName?: string;
   /** "Recently reported", "Not confirmed recently" — the observation's age, never the ice's state. */
   freshnessLabel: string;

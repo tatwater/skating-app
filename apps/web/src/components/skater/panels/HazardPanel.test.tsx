@@ -269,6 +269,12 @@ describe('HazardPanelView', () => {
     expect(screen.getByRole('img', { name: 'Thin ice, photo 1' })).toBeInTheDocument();
   });
 
+  it('says where the pin is by its landmark when the server names one', async () => {
+    seed({ placeLine: 'Mascoma North, by Shaker Bridge' });
+    renderPanel();
+    expect(await screen.findByText(/Mascoma North, by Shaker Bridge/)).toBeInTheDocument();
+  });
+
   it('draws without a lake name or reporter', async () => {
     render(inCard(<HazardPanelView data={{ ...HAZARD_LEAD, bodyName: null, reporter: null }} />));
     await screen.findByRole('dialog');
