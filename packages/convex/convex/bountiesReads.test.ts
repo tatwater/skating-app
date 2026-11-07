@@ -2,7 +2,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { LIST_ANSWER_VERIFY_CAP, WANTERS_SHOWN_CAP } from './bounties';
+import { LIST_ANSWER_VERIFY_CAP, MY_BOUNTIES_CAP, WANTERS_SHOWN_CAP } from './bounties';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -297,5 +297,31 @@ describe('the bounty lists honor the skate-time rule and name their place (B03 Â
     expect(rows[0]?.answeredBy.map((a) => a.username)).toEqual(['author']);
     expect(rows[1]?.answeredBy).toEqual([]);
     expect(await t.query(api.bounties.myBounties, {})).toEqual([]);
+  });
+
+  test('myBounties enriches the newest MY_BOUNTIES_CAP and says so past it', async () => {
+    const t = convexTest(schema, modules);
+    const req = await seedUser(t, 'req');
+    const { waterBodyId } = await seedBody(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= MY_BOUNTIES_CAP; i++) {
+        await ctx.db.insert('bounties', {
+          requesterId: req.id,
+          waterBodyId,
+          windowHours: 24,
+          status: 'expired',
+          rewardPoints: 10,
+          fulfillingReportIds: [],
+          createdAt: T0 - i,
+          expiresAt: T0,
+        });
+      }
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rows = await req.as.query(api.bounties.myBounties, {});
+    expect(rows).toHaveLength(MY_BOUNTIES_CAP);
+    expect(rows[0]?.createdAt).toBe(T0);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
