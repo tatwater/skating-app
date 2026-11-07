@@ -6,12 +6,14 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { FoldedAttributionControl } from '@/lib/mapAttribution';
 import { OSM_ATTRIBUTION } from '@/lib/waterMap';
 import { DEFAULT_MAP_LAYERS, useSkaterMapStore } from '@/stores/skaterMapStore';
+import bandsStub from './fixtures/depthBands.stub.json';
 import { LakeLabel } from './LakeLabel';
 import { MapDockControls } from './MapDockControls';
 import { MapMarksLayer } from './MapMarksLayer';
 import type { HazardMarkModel, LakeLabelModel } from './mapDerive';
+import { mapPalette } from './mapPalette';
 import { DOCK_CONTROLS, type DockControls } from './mapSpec';
-import { MapStill, SkaterPair, type StillView } from './mapStill';
+import { MapStill, SkaterPair, type StillView, stillBands } from './mapStill';
 import { MASCOMA_INTERIOR, MASCOMA_PUT_INS, MASCOMA_RINGS, NEARBY_RINGS } from './mapStoryData';
 
 /**
@@ -266,6 +268,74 @@ export const HazardPeekOverImagery: Story = {
     await waitFor(() => expect(hazard).toHaveAttribute('data-peek'));
     await userEvent.unhover(hazard);
     await waitFor(() => expect(hazard).not.toHaveAttribute('data-peek'));
+  },
+};
+
+/**
+ * The stub band archive's Mascoma (the shape `BANDS.md` promises: `bodyId`, `bandIndex`,
+ * `minDepthFt`, `maxDepthFt`): four nested bands inset from the real dev outline. The insets are
+ * invented, so this shows how filled bands read, not where Mascoma is deep.
+ */
+const MASCOMA_BANDS = stillBands(bandsStub as GeoJSON.FeatureCollection, 'stub-mascoma');
+
+/**
+ * 1.2 with filled depth bands (B03 §2): the band polygons in the seven-band fills on the shallow
+ * ground, each edge in its band's line, the hazard over all of it, and the legend reading the same
+ * ramp. Drawn from the stub archive, so it renders without the pipeline's tiles.
+ */
+export const Bands: Story = {
+  render: () => (
+    <SkaterPair>
+      {(mode) => (
+        <MapStill
+          mode={mode}
+          view={LAKE}
+          water={[{ rings: MASCOMA_RINGS, selected: true, depthGround: true }]}
+          bands={MASCOMA_BANDS}
+        >
+          {(map) => (
+            <>
+              <MapMarksLayer
+                map={map}
+                labels={[]}
+                putIns={MASCOMA_PUT_INS.map((p, i) => ({ id: String(i), ...p }))}
+                hazards={[NARROWS]}
+                onOpenHazard={fn()}
+              />
+              <MapDockControls
+                {...dockProps}
+                controls={dockFor(['zoom', 'layers', 'imagery', 'legend'])}
+                onOpenImagery={fn()}
+                depthShown
+              />
+            </>
+          )}
+        </MapStill>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    const sections = [...canvasElement.querySelectorAll('section')];
+    expect(sections).toHaveLength(2);
+    for (const [i, section] of sections.entries()) {
+      const palette = mapPalette(i === 0 ? 'dark' : 'white');
+      const bands = [...section.querySelectorAll<SVGPathElement>('path[data-band]')];
+      // Every stub band, shallow first so the deeper one draws over it, in its own token fill.
+      expect(bands.map((b) => b.dataset.band)).toEqual(['0', '1', '2', '3']);
+      bands.forEach((b, n) => {
+        expect(b.getAttribute('fill')).toBe(palette.depth.fills[n]);
+      });
+      // The lake under them is the shallowest band, not plain water.
+      const ground = section.querySelector('svg path:not([data-band])');
+      expect(ground?.getAttribute('fill')).toBe(palette.depth.fills[0]);
+      expect(ground?.getAttribute('fill-opacity')).toBe('1');
+      const canvas = within(section);
+      expect(canvas.getByRole('img', { name: /Depth bands/ })).toBeVisible();
+      // The hazard still draws over the depth: the marks layer sits above the still's SVG.
+      expect(
+        await canvas.findByRole('button', { name: 'Hazard: Open water / lead' }),
+      ).toBeVisible();
+    }
   },
 };
 

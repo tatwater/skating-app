@@ -79,6 +79,34 @@ export interface StillWater {
   rings: readonly Ring[];
   inactive?: boolean;
   selected?: boolean;
+  /** Depth is drawn on this lake: it takes the shallowest band's fill, as the canvas grounds it. */
+  depthGround?: boolean;
+}
+
+/** One band polygon, as the band layer draws it: its band's token fill, its edge in its line. */
+export interface StillBand {
+  bandIndex: number;
+  rings: readonly Ring[];
+}
+
+/**
+ * The band polygons of one lake out of a band collection, as the canvas's layer picks and paints
+ * them: filtered on the contours' `bodyId`, deeper over shallower. Polygons and multipolygons both
+ * flatten to one even-odd path, so an annulus keeps its hole.
+ */
+export function stillBands(fc: GeoJSON.FeatureCollection, bodyId: string): StillBand[] {
+  return fc.features
+    .filter((f) => f.properties?.bodyId === bodyId)
+    .map((f) => {
+      const g = f.geometry;
+      const polygons =
+        g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+      return {
+        bandIndex: Number(f.properties?.bandIndex ?? 0),
+        rings: polygons.flat() as unknown as Ring[],
+      };
+    })
+    .sort((a, b) => a.bandIndex - b.bandIndex);
 }
 
 /**
@@ -89,11 +117,13 @@ export function MapStill({
   mode,
   view,
   water,
+  bands = [],
   children,
 }: {
   mode: Mode;
   view: StillView;
   water: readonly StillWater[];
+  bands?: readonly StillBand[];
   children: (map: ProjectingMap) => ReactNode;
 }) {
   const flavor = mode === 'dark' ? 'dark' : 'white';
@@ -148,8 +178,22 @@ export function MapStill({
             key={i}
             d={path(body.rings)}
             fillRule="evenodd"
-            fill={body.inactive ? palette.inactive.fill : palette.water.fill}
-            fillOpacity={body.inactive ? 0.18 : body.selected ? 0 : palette.water.fillOpacity}
+            fill={
+              body.inactive
+                ? palette.inactive.fill
+                : body.depthGround
+                  ? palette.depth.fills[0]
+                  : palette.water.fill
+            }
+            fillOpacity={
+              body.depthGround
+                ? 1
+                : body.inactive
+                  ? 0.18
+                  : body.selected
+                    ? 0
+                    : palette.water.fillOpacity
+            }
             stroke={
               body.selected
                 ? palette.selected
@@ -158,6 +202,17 @@ export function MapStill({
                   : palette.water.outline
             }
             strokeWidth={body.selected ? 1.6 : 1}
+          />
+        ))}
+        {bands.map((band) => (
+          <path
+            key={band.bandIndex}
+            data-band={band.bandIndex}
+            d={path(band.rings)}
+            fillRule="evenodd"
+            fill={palette.depth.fills[band.bandIndex] ?? palette.depth.fills.at(-1)}
+            stroke={palette.depth.lines[band.bandIndex] ?? palette.depth.lines.at(-1)}
+            strokeWidth={0.8}
           />
         ))}
       </svg>
