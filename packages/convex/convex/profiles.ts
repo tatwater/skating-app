@@ -964,6 +964,9 @@ export const searchProfiles = query({
           displayName: p.displayName,
           ...(p.profileImageUrl !== undefined ? { profileImageUrl: p.profileImageUrl } : {}),
           ...(p.homeTownLabel !== undefined ? { homeTownLabel: p.homeTownLabel } : {}),
+          // The denormalized lifetime count (B03 §11, "@ada · 212 reports"); public profiles only,
+          // since only those are searchable. Absent on a row that predates the counter.
+          ...(p.reportCount !== undefined ? { reportCount: p.reportCount } : {}),
         }))
     );
   },

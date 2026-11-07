@@ -116,6 +116,7 @@ import type * as recurrence from "../recurrence.js";
 import type * as regionStats from "../regionStats.js";
 import type * as reports from "../reports.js";
 import type * as reputation from "../reputation.js";
+import type * as search from "../search.js";
 import type * as seasonWatch from "../seasonWatch.js";
 import type * as standing from "../standing.js";
 import type * as storageHygiene from "../storageHygiene.js";
@@ -244,6 +245,7 @@ declare const fullApi: ApiFromModules<{
   regionStats: typeof regionStats;
   reports: typeof reports;
   reputation: typeof reputation;
+  search: typeof search;
   seasonWatch: typeof seasonWatch;
   standing: typeof standing;
   storageHygiene: typeof storageHygiene;
