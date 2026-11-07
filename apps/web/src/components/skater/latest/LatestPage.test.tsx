@@ -377,6 +377,20 @@ describe('LatestPage · text search (latest-text-search)', () => {
     expect(screen.getByText(/No reports mention that/)).toBeInTheDocument();
   });
 
+  it('keeps loading when a filtered search’s first page comes back empty with more to read', () => {
+    m.flags['latest-text-search'] = true;
+    m.filters = { qualityFloor: 'good' };
+    const loadMore = vi.fn();
+    fakes.paginated = { results: [], status: 'CanLoadMore', loadMore };
+    page({ q: 'narrows' });
+    expect(screen.queryByText(/No reports mention that/)).toBeNull();
+    expect(screen.getByText(/No matching reports on this page of the search/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(loadMore).toHaveBeenCalledWith(20);
+    const plate = document.querySelector('[data-slot="latest-empty"]') as HTMLElement;
+    expect(within(plate).getByRole('button', { name: 'Clear search' })).toBeInTheDocument();
+  });
+
   it('puts debounced typing in the URL with replace', () => {
     vi.useFakeTimers();
     m.flags['latest-text-search'] = true;

@@ -350,6 +350,12 @@ describe('FeedColumn', () => {
     ],
     ['search-empty', /No reports mention that/, 'Clear search', 'onClearSearch'],
     [
+      'search-on-page',
+      /No matching reports on this page of the search/,
+      'Clear search',
+      'onClearSearch',
+    ],
+    [
       'no-weather-data',
       /No weather data yet this season/,
       'Turn off the weather filter',
@@ -382,12 +388,15 @@ describe('FeedColumn', () => {
     expect(props[handler]).toHaveBeenCalled();
   });
 
-  it('offers Load more in the empty states that can look further back', () => {
-    const props = feedProps({ state: 'nothing-on-page', canLoadMore: true });
-    render(<FeedColumn {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
-    expect(props.onLoadMore).toHaveBeenCalled();
-  });
+  it.each(['nothing-on-page', 'search-on-page'] as const)(
+    '%s offers Load more, since it can look further back',
+    (state) => {
+      const props = feedProps({ state, canLoadMore: true });
+      render(<FeedColumn {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+      expect(props.onLoadMore).toHaveBeenCalled();
+    },
+  );
 
   it('fills an empty season with recent cold weather (4.10), or says there is none (4.18)', () => {
     const props = feedProps({ state: 'no-reports', recentCold: [MATCH] });

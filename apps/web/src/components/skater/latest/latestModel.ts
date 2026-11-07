@@ -60,7 +60,10 @@ export type PageStatus = 'LoadingFirstPage' | 'CanLoadMore' | 'LoadingMore' | 'E
  *
  * - `skater-unavailable` — the skater filter named someone whose reports can't be shown (private,
  *   gone, blocked, or a bad link): the server's `skaterUnavailable`, never guessed at.
- * - `search-empty` — a search found nothing (4.9's own empty).
+ * - `search-empty` — a search found nothing, every page read (4.9's own empty).
+ * - `search-on-page` — a filtered search emptied this page, but there are older pages to look in:
+ *   the server filters each page of text matches after choosing it, so the newest twenty can all
+ *   miss a filter while older matches pass (`nothing-on-page`'s rule, for the search).
  * - `no-weather-data` (4.13) — a weather filter, but no digest this season: it can't match anything.
  * - `no-lake-match` (4.12) — a weather filter matched no lake and this page had no report.
  * - `nothing-on-page` (4.11) — the filters emptied this page, but there are older pages to look in.
@@ -73,6 +76,7 @@ export type FeedState =
   | 'feed'
   | 'skater-unavailable'
   | 'search-empty'
+  | 'search-on-page'
   | 'no-weather-data'
   | 'no-lake-match'
   | 'nothing-on-page'
@@ -94,7 +98,7 @@ export function latestFeedState(input: FeedStateInput): FeedState {
   if (input.skaterUnavailable) return 'skater-unavailable';
   if (input.status === 'LoadingFirstPage') return 'loading';
   if (input.rowCount > 0) return 'feed';
-  if (input.searching) return 'search-empty';
+  if (input.searching) return input.status === 'Exhausted' ? 'search-empty' : 'search-on-page';
   if (hasWeatherFilter(input.filters)) {
     return input.weatherAvailable === false ? 'no-weather-data' : 'no-lake-match';
   }

@@ -228,6 +228,20 @@ function FeedEmpty({
           }
         />
       );
+    case 'search-on-page':
+      return (
+        <EmptyPlate
+          line="No matching reports on this page of the search. Load more to keep looking further back."
+          actions={
+            <>
+              {loadMore}
+              <Button data-attr="latest-search-clear-empty" onClick={onClearSearch}>
+                Clear search
+              </Button>
+            </>
+          }
+        />
+      );
     case 'no-weather-data':
       return (
         <EmptyPlate
