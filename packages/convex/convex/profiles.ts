@@ -46,7 +46,7 @@ import {
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
-import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
@@ -706,24 +706,22 @@ export const getPublicProfile = query({
       .query('profiles')
       .withIndex('by_username', (q) => q.eq('username', normalizeUsername(username)))
       .unique();
-    if (!target || target.status === 'deleted') return null;
+    if (!target) return null;
 
     const viewer = await getCurrentProfile(ctx);
     const viewerId = viewer?._id ?? '';
     const isSelf = viewerId !== '' && viewerId === target._id;
-    // A ghost (D62 amendment) is unreachable to everyone but themselves — not "empty", *not found*.
-    // Their reports stay on the ice record under `Deleted skater`; the person behind them stops
-    // existing the moment they ask to leave. The row is still here, and so is the handle, which is
-    // why this is a read gate rather than a scrub: canceling has to be able to give the name back.
-    if (isLeaving(target) && !isSelf) return null;
+    // Deleted, or blocked in either direction: not found. So is a ghost (D62 amendment), to everyone
+    // but themselves — not "empty", *not found*. Their reports stay on the ice record under `Deleted
+    // skater`; the person behind them stops existing the moment they ask to leave. The row is still
+    // here, and so is the handle, which is why this is a read gate rather than a scrub: canceling has
+    // to be able to give the name back.
+    const access = await profileAccess(ctx, target, viewer);
+    if (access === 'hidden') return null;
     // The raw trust number is admin-only (D50). Gate it server-side on the *viewer's* role so it never
     // leaves the deployment for an ordinary viewer — the client-side chrome that hides it is only
     // defense-in-depth. Own profile does not unlock it; a member never sees their own raw score.
     const viewerIsMod = viewer?.role === 'moderator' || viewer?.role === 'admin';
-    if (!isSelf && viewerId !== '') {
-      const blocked = await loadBlockedAuthorIds(ctx, viewerId);
-      if (blocked.has(target._id)) return null; // bidirectional hide → not found
-    }
 
     const base = {
       userId: target._id,
@@ -735,9 +733,7 @@ export const getPublicProfile = query({
     };
 
     // Private profiles are name + avatar only, and not browsable — unless it's your own profile.
-    if (target.profileVisibility === 'private' && !isSelf) {
-      return { ...base, private: true };
-    }
+    if (access === 'private') return { ...base, private: true };
 
     // The person's **Posts**, newest skate-end time first — **bounded** (D13). We `.take()` a small
     // window off the sort-key index rather than `.collect()`ing everything, and hydrate members only

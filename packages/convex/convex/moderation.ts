@@ -22,7 +22,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
-import { refreshPostLatestSkateEnd } from './lib/postSync';
+import { refreshPostLatestSkateEnd, refreshPostSearchText } from './lib/postSync';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { literals } from './lib/validators';
 
@@ -71,6 +71,7 @@ async function applyReportStatus(
   await mirrorReportSubAreas(ctx, { ...report, moderationStatus: status });
   if (report.postId !== undefined) {
     await refreshPostLatestSkateEnd(ctx, report.postId);
+    await refreshPostSearchText(ctx, report.postId);
     await derivePostVisibility(ctx, report.postId, report._id, status, audit);
   }
 }

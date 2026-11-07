@@ -1,11 +1,11 @@
 /**
- * The two denormalized Post fields and the one writer each has (A10 / D186).
+ * The three denormalized Post fields and the one writer each has (A10 / D186, B03 §11).
  *
- * `posts.latestSkateEndTime` is the D28 sort key — `max(skateEndTime)` over the members — and
- * `posts.photoIds` is the album — the ordered union of the members' lists (`postPhotoIds`). Both
- * are derived from the Reports, so every writer that changes a member's end time or photo list
- * calls the matching sync in the same transaction (`reports.update`, `posts.create`, moderation,
- * the purge). Lives under `lib/` rather than in `posts.ts` because `reports.ts` needs it and
+ * `posts.latestSkateEndTime` is the D28 sort key — `max(skateEndTime)` over the members —
+ * `posts.photoIds` is the album — the ordered union of the members' lists (`postPhotoIds`) — and
+ * `posts.searchText` is what a search of Latest reads. All three are derived from the Reports, so
+ * every writer that changes a member's end time, photo list, words or verdict calls the matching
+ * sync in the same transaction (`reports.update`, `posts.create`, moderation, the purge). Lives under `lib/` rather than in `posts.ts` because `reports.ts` needs it and
  * `posts.ts` needs `reports.ts` — the write path is one direction, the helpers sit below both.
  */
 
@@ -66,4 +66,44 @@ export async function syncPostPhotos(
   const same =
     next.length === post.photoIds.length && next.every((id, i) => id === post.photoIds[i]);
   if (!same) await ctx.db.patch(postId, { photoIds: next });
+}
+
+/**
+ * What a search of Latest can find in one Post: its title and prose, and the words typed on its
+ * **visible** members — the report's notes, each thickness reading's note, each ice and surface
+ * chip's note. A hidden member is out because a match on its words would hand back a Post whose card
+ * doesn't show them, which says what the hidden Report said. Lake and bay names are out on purpose:
+ * the top bar's search finds places, and a rename would have to re-stamp every Post on the lake.
+ */
+export function postSearchText(
+  post: Pick<Doc<'posts'>, 'title' | 'body'>,
+  members: readonly Doc<'reports'>[],
+): string | undefined {
+  const words: (string | undefined)[] = [post.title, post.body];
+  for (const member of members) {
+    if (member.moderationStatus !== 'visible') continue;
+    words.push(member.notes);
+    for (const reading of member.iceThickness?.readings ?? []) words.push(reading.note);
+    for (const chip of member.iceTypes) words.push(chip.note);
+    for (const chip of member.surfaceTags) words.push(chip.note);
+  }
+  const text = words.filter((word) => word !== undefined && word !== '').join('\n');
+  return text === '' ? undefined : text;
+}
+
+/**
+ * Keep `posts.searchText` current, after the words or a member's verdict have been written (a read in
+ * this transaction sees them). A Post whose words did not change writes nothing. Reads the members, a
+ * handful (`POST_MAX_REPORTS`).
+ */
+export async function refreshPostSearchText(ctx: MutationCtx, postId: Id<'posts'>): Promise<void> {
+  const post = await ctx.db.get(postId);
+  if (!post) return;
+  const members: Doc<'reports'>[] = [];
+  for (const id of post.reportIds) {
+    const member = await ctx.db.get(id);
+    if (member) members.push(member);
+  }
+  const searchText = postSearchText(post, members);
+  if (searchText !== post.searchText) await ctx.db.patch(postId, { searchText });
 }

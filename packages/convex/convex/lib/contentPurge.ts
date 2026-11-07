@@ -71,6 +71,7 @@ import { DEPARTED_CONTENT_MAX_AGE_MS } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './photoOrphans';
+import { refreshPostSearchText } from './postSync';
 
 /** Rows of any one kind touched per pass. Small: every caller re-runs until `more` is false. */
 export const REDACT_PAGE = 100;
@@ -261,6 +262,8 @@ export async function redactAgedContent(
     for (const post of page.page) {
       if (post.title === undefined && post.body === undefined) continue;
       await ctx.db.patch(post._id, { title: undefined, body: undefined });
+      // The search field is a copy of those words, and a copy a departed skater could still be found by.
+      await refreshPostSearchText(ctx, post._id);
       result.redacted.posts++;
     }
     return nextCursor(page);
@@ -317,6 +320,7 @@ export async function redactAgedContent(
       const patch = reportRedaction(report);
       if (patch === null) continue; // already clean — an idempotent re-run, or a report with no prose
       await ctx.db.patch(report._id, patch);
+      if (report.postId !== undefined) await refreshPostSearchText(ctx, report.postId);
       result.redacted.reports++;
     }
     return nextCursor(page);
