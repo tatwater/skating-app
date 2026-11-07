@@ -342,7 +342,7 @@ describe('posting (5.23–5.27)', () => {
   it('a Post that lands after another sheet opened counts, but hands nothing over', async () => {
     let land: (v: unknown) => void = () => {};
     h.post.mockImplementation(() => new Promise((r) => (land = r)));
-    setSheet(withLake(openSheet()));
+    setSheet(withEnd(withLake(openSheet())));
     render(<Connected />);
     fireEvent.click(screen.getByRole('button', { name: 'Good' }));
     fireEvent.click(screen.getByRole('button', { name: /Experienced only/ }));
