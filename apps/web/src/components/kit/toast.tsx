@@ -9,11 +9,11 @@ import {
   useState,
 } from 'react';
 
+import { useReducedMotion } from '@/lib/useReducedMotion';
 import { cn } from '@/lib/utils';
 
 import { Button } from './button';
 import { Kbd } from './kbd';
-import { useReducedMotion } from './skeleton';
 
 /**
  * The kit's Toast: Base UI's Toast, drawn as the states sheet's toast — the console's receipt for

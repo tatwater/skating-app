@@ -1,12 +1,7 @@
 import { tokens } from '@skating/design';
-import {
-  type ComponentProps,
-  type CSSProperties,
-  useEffect,
-  useRef,
-  useSyncExternalStore,
-} from 'react';
+import { type ComponentProps, type CSSProperties, useEffect, useRef } from 'react';
 
+import { useReducedMotion } from '@/lib/useReducedMotion';
 import { cn } from '@/lib/utils';
 
 /**
@@ -24,25 +19,6 @@ import { cn } from '@/lib/utils';
  * - **Never announced.** Skeletons are `aria-hidden`; the region that's loading carries
  *   `aria-busy` and its own label, so a reader hears "loading" once, not a list of empty boxes.
  */
-
-const REDUCE = '(prefers-reduced-motion: reduce)';
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  const query = window.matchMedia(REDUCE);
-  query.addEventListener('change', onChange);
-  return () => query.removeEventListener('change', onChange);
-}
-
-/** Whether the reader asked for less motion — live, so a settings change applies at once. */
-function useReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeReducedMotion,
-    () => window.matchMedia(REDUCE).matches,
-    // Server render: assume the quieter page.
-    /* v8 ignore next */
-    () => true,
-  );
-}
 
 /**
  * The shimmer: a band of the wash sweeping left to right on the lamp's timing. Started at the
@@ -208,5 +184,4 @@ export {
   type SkeletonStatProps,
   SkeletonText,
   type SkeletonTextProps,
-  useReducedMotion,
 };

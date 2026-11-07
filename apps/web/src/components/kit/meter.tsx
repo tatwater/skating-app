@@ -2,9 +2,8 @@ import { Meter as MeterPrimitive } from '@base-ui/react/meter';
 import { tokens } from '@skating/design';
 import { type ComponentProps, type ReactNode, useEffect, useState } from 'react';
 
+import { useReducedMotion } from '@/lib/useReducedMotion';
 import { cn } from '@/lib/utils';
-
-import { useReducedMotion } from './skeleton';
 
 /**
  * The kit's Meter: Base UI's Meter (shadcn doesn't wrap it), drawn as the boards' quota bar — a
