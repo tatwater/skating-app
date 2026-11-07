@@ -34,14 +34,14 @@ import { PANEL_LOADING_SPEC } from './ReportPanel';
 import { WeatherSince } from './WeatherSince';
 
 /**
- * The verdict as the analytics taxonomy names it (D240) — the author's own claim, as labeled. "Never
- * was" has no name in the taxonomy yet, so it isn't counted (a seam request, not a guess).
+ * The verdict as the analytics taxonomy names it (D240) — the author's own claim, as labeled:
+ * "Healing — still unsafe" is `healing`, "Nothing here — never was" is `never_was`.
  */
-export const VERDICT_EVENT: Readonly<Record<HazardVerdict, VerdictEvent | null>> = {
+export const VERDICT_EVENT: Readonly<Record<HazardVerdict, VerdictEvent>> = {
   still_there: 'still_there',
   healing_unsafe: 'healing',
   fully_healed: 'fully_healed',
-  never_existed: null,
+  never_existed: 'never_was',
 };
 
 /**
@@ -177,8 +177,7 @@ export function HazardPanel({ hazardId, action }: { hazardId: string; action?: '
     setConfirmError(null);
     try {
       await confirm({ hazardId: hid, verdict, via: 'app_open_nearby' });
-      const counted = VERDICT_EVENT[verdict];
-      if (counted !== null) analytics.capture('hazard_verdict_submitted', { verdict: counted });
+      analytics.capture('hazard_verdict_submitted', { verdict: VERDICT_EVENT[verdict] });
     } catch (err) {
       // Web has no offline queue: a vote that didn't land must say so, or the skater walks away
       // believing they warned the next person.

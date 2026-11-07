@@ -83,12 +83,12 @@ const renderPanel = (action?: 'confirm') =>
   );
 
 describe('the verdict taxonomy', () => {
-  it('counts each verdict by a name the taxonomy has, or not at all', () => {
+  it('counts each verdict by a name the taxonomy has', () => {
     for (const verdict of VERDICTS) {
-      const counted = VERDICT_EVENT[verdict];
-      if (counted !== null) expect(ANALYTICS_ENUMS.hazard_verdict).toContain(counted);
+      expect(ANALYTICS_ENUMS.hazard_verdict).toContain(VERDICT_EVENT[verdict]);
     }
-    expect(VERDICT_EVENT.never_existed).toBeNull();
+    expect(VERDICT_EVENT.never_existed).toBe('never_was');
+    expect(VERDICT_EVENT.healing_unsafe).toBe('healing');
   });
 
   it('words the second confirmation as what a person saw', () => {
@@ -170,7 +170,7 @@ describe('HazardPanel', () => {
     );
   });
 
-  it('doesn’t count “never was”, and says when a verdict didn’t land', async () => {
+  it('counts “never was” only once it lands, and says when a verdict didn’t land', async () => {
     seed();
     fakes.mutations.set(
       'hazardConfirmations:confirm',
@@ -179,9 +179,12 @@ describe('HazardPanel', () => {
     renderPanel();
     await userEvent.click(await screen.findByRole('button', { name: /Nothing here — never was/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Too far away');
+    expect(fakes.capture).not.toHaveBeenCalledWith('hazard_verdict_submitted', expect.anything());
     await userEvent.click(screen.getByRole('button', { name: /Nothing here — never was/ }));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
-    expect(fakes.capture).not.toHaveBeenCalledWith('hazard_verdict_submitted', expect.anything());
+    expect(fakes.capture).toHaveBeenCalledWith('hazard_verdict_submitted', {
+      verdict: 'never_was',
+    });
   });
 
   it('opens on the verdicts for ?action=confirm, and never pre-arms Fully healed', async () => {
