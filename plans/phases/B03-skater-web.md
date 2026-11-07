@@ -747,6 +747,13 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   string (`apps/mobile/src/components/sheet/HazardsSection.tsx`). The weather chart's fixed gradient id
   painted a second chart in the first one's theme, and the floated imagery plate covered the map's zoom and
   layer buttons on a phone.
+- **The geocoder is Geoapify (founder, 2026-11-08).** Agent S built `geocode.suggest` behind an adapter and
+  left it off, since ORS — the zero-new-vendor option — has a terms clause against transmitting personal data,
+  and a typed home address is personal data even with no name on it; the same account also feeds the drive-time
+  bands. The founder picked a new vendor with clean terms over that risk: Geoapify, on its own free account
+  (3,000 credits/day). The flip is safe before the account exists: with no `GEOAPIFY_API_KEY` the action answers
+  `off`, as it did with no provider. The ORS adapter is deleted rather than kept one line from use.
+  `04-integrations.md` § Geocoding has the terms; `PRIVACY.md` the disclosure.
 - **Waiting on the founder:** Latest on a phone as a drawer or the center column; the "Weather at" default
   (whole lake or the bay in view); whether hazards draw over a satellite picture; whether a reading's
   coordinates are redacted on a public report.
