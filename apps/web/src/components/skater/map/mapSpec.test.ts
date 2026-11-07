@@ -17,7 +17,9 @@ import {
   panelMapSpec,
   resolveMapSpec,
   SPEC_LAYERS,
+  STRAY_HAZARD_ZOOM,
   sameMapSpec,
+  strayHazardFit,
 } from './mapSpec';
 
 // ── Arbitraries ───────────────────────────────────────────────────────────────────────────────
@@ -254,6 +256,58 @@ describe('the views’ specs', () => {
   it('latest: labels, no request-a-lake', () => {
     expect(latestMapSpec().interactions.requestLake).toBe(false);
     expect(latestMapSpec().layers.labels).toBe(true);
+  });
+});
+
+/**
+ * The guard for a hazard whose row disagrees with itself. Dev has one: a pin drawn on Mascoma
+ * (43.61, −72.13) filed under an unnamed body near Albany (42.61, −73.87), so opening it from the
+ * lake flew the map across two states and left the pin the skater clicked behind.
+ */
+describe('strayHazardFit', () => {
+  const MASCOMA = { minLat: 43.595, minLng: -72.15, maxLat: 43.63, maxLng: -72.1 };
+  const ON_MASCOMA = { minLat: 43.608, minLng: -72.131, maxLat: 43.612, maxLng: -72.126 };
+  const NEAR_ALBANY = { minLat: 42.609, minLng: -73.871, maxLat: 42.611, maxLng: -73.869 };
+
+  it('is undefined when the pin sits on the lake it is filed under — the camera does not move', () => {
+    expect(strayHazardFit('h', ON_MASCOMA, MASCOMA)).toBeUndefined();
+  });
+
+  it('frames the pin when its box does not touch the lake’s', () => {
+    const fit = strayHazardFit('h', ON_MASCOMA, NEAR_ALBANY);
+    expect(fit).toEqual({
+      kind: 'point',
+      key: 'hazard:h',
+      lng: (ON_MASCOMA.minLng + ON_MASCOMA.maxLng) / 2,
+      lat: (ON_MASCOMA.minLat + ON_MASCOMA.maxLat) / 2,
+      zoom: STRAY_HAZARD_ZOOM,
+    });
+  });
+
+  it('is keyed on the hazard, so it runs once rather than on every render', () => {
+    const a = strayHazardFit('h1', ON_MASCOMA, NEAR_ALBANY);
+    const b = strayHazardFit('h2', ON_MASCOMA, NEAR_ALBANY);
+    expect(fitKey(a as MapFit)).toBe('point:hazard:h1');
+    expect(fitKey(b as MapFit)).not.toBe(fitKey(a as MapFit));
+  });
+
+  it('decides nothing while either box is still loading', () => {
+    expect(strayHazardFit('h', undefined, MASCOMA)).toBeUndefined();
+    expect(strayHazardFit('h', ON_MASCOMA, undefined)).toBeUndefined();
+    expect(strayHazardFit('h', null, null)).toBeUndefined();
+  });
+
+  it('a touching box counts as on the lake: only a real disagreement frames the pin', () => {
+    const edge = { minLat: 43.63, minLng: -72.1, maxLat: 43.64, maxLng: -72.09 };
+    expect(strayHazardFit('h', edge, MASCOMA)).toBeUndefined();
+  });
+
+  it('the panel takes the fit when given one, and the lake’s when not', () => {
+    const fit = strayHazardFit('h', ON_MASCOMA, NEAR_ALBANY) as MapFit;
+    expect(panelMapSpec('b', { hazardId: 'h', fit }).fit).toEqual(fit);
+    expect(panelMapSpec('b', { hazardId: 'h' }).fit).toEqual({ kind: 'body', bodyId: 'b' });
+    // The focus still names the lake it is filed under: the card says which lake, even a wrong one.
+    expect(panelMapSpec('b', { hazardId: 'h', fit }).focus).toEqual({ bodyId: 'b', hazardId: 'h' });
   });
 });
 
