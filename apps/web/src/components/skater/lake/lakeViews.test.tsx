@@ -6,6 +6,7 @@ import { convexReact } from '../testMocks';
 
 vi.mock('convex/react', () => convexReact);
 
+import { BOARD_NOW, CARD_PAT, CARD_SARAH } from '../panels/panelFixtures';
 import { IceHistoryView, iceHistoryLines, LinksView } from './AboutTab';
 import { ActionPane } from './ActionPane';
 import { AlertStripView } from './AlertStrip';
@@ -14,7 +15,7 @@ import { LakeRow } from './LakeRow';
 import { StandingNoticeView } from './LakeStates';
 import { ONLY_OLDER_MARKERS } from './lakeModel';
 import { AccessRulingCardView } from './ModeratorCard';
-import { ReportRow } from './ReportsTab';
+import { ReportsListView } from './ReportsTab';
 
 const now = Date.now();
 const DAY = 86_400_000;
@@ -97,25 +98,32 @@ describe('Known hazards', () => {
 });
 
 describe('the rows', () => {
-  it('draws a report’s ice types and photos', () => {
+  it('draws each report as the shared card, the bay and not the lake, no rule under the last', () => {
+    const onOpen = vi.fn();
     render(
-      <ReportRow
-        row={{
-          id: 'r',
-          when: 'Today · 9:05 AM',
-          where: '',
-          badges: [],
-          notes: null,
-          iceTypes: ['Black ice'],
-          photoCount: 1,
+      <ReportsListView
+        model={{
+          status: 'ready',
+          cards: [
+            { ...CARD_PAT, notesExcerpt: 'Black ice to the islands.', helpfulCount: 2 },
+            CARD_SARAH,
+          ],
+          canLoadMore: false,
+          loadingMore: false,
         }}
-        author={{ name: 'Kate Donovan', imageUrl: 'https://img.test/k.png' }}
-        href="/report/r"
-        onOpen={() => {}}
+        onOpen={onOpen}
+        onLoadMore={() => {}}
+        emptyLine="None."
+        now={BOARD_NOW}
       />,
     );
-    expect(screen.getByText('Black ice')).toBeInTheDocument();
-    expect(screen.getByText('1 photo')).toBeInTheDocument();
+    const cards = document.querySelectorAll('[data-slot="report-card"]');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveTextContent('Black ice to the islands.');
+    expect(cards[0]).toHaveTextContent('Mascoma South');
+    expect(cards[0]).toHaveAttribute('href', '/report/r1');
+    fireEvent.click(cards[1] as Element);
+    expect(onOpen).toHaveBeenCalledWith('r2');
   });
 
   it('holds a lake row’s place when it has no outline', () => {

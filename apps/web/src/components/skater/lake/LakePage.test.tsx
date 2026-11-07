@@ -72,12 +72,18 @@ const HAZARD = {
 };
 
 const REPORT = {
-  _id: 'r1',
-  authorId: 'p1',
+  reportId: 'r1',
+  waterBodyId: 'mascoma',
+  bodyName: 'Mascoma Lake',
   skateEndTime: now - 60 * 60_000,
+  iceTypes: [],
+  surfaceTags: [],
   suitability: 'experienced_only',
   skateQuality: 'good',
-  notes: 'Black ice from the launch to the islands.',
+  notesExcerpt: 'Black ice from the launch to the islands.',
+  photoThumbUrls: [],
+  author: { displayName: 'Pat Lacasse', username: 'placasse' },
+  blocked: false,
 };
 
 function lake(over: Record<string, unknown> = {}) {
@@ -389,17 +395,18 @@ describe('the Reports tab', () => {
   });
 
   it('holds the frames while the lists load', () => {
-    answer({ 'hazards:listForBody': undefined, 'profiles:publicByIds': undefined });
+    answer({ 'hazards:listForBody': undefined });
     fakes.paginated = { results: [], status: 'LoadingFirstPage', loadMore: vi.fn() };
     renderLake();
     const busy = screen.getAllByRole('region', { busy: true });
     expect(busy.map((r) => r.getAttribute('aria-labelledby')).length).toBe(2);
   });
 
-  it('names an author it can’t resolve plainly, and an empty bay plainly', () => {
-    answer({ 'profiles:publicByIds': {} });
+  it('reads the reports as cards', () => {
+    answer();
     renderLake();
-    expect(screen.getByText('A skater')).toBeInTheDocument();
+    expect(fakes.paginatedArgs.at(-1)).toEqual({ waterBodyId: 'mascoma' });
+    expect(document.querySelector('[data-slot="report-card"]')).toHaveTextContent('Pat Lacasse');
   });
 });
 

@@ -194,7 +194,7 @@ function TabBody({
         <ReportsTab
           waterBodyId={lake._id}
           {...(subAreaId !== undefined ? { subAreaId } : {})}
-          onOpen={{ hazard: open('hazard'), report: open('report') }}
+          onOpen={{ hazard: open('hazard'), report: (id) => nav.push(`/report/${id}`) }}
           onOpenBounties={open('bounty')}
         />
       );
