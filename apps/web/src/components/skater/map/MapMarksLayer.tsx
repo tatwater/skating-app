@@ -58,6 +58,17 @@ function hazardName(type: string): string {
   return HAZARD_TYPE_LABELS[type as HazardType] ?? 'Hazard';
 }
 
+/**
+ * The hazard plate's line — what the mark's own `aria-label` says, so pointing at a pin and hearing
+ * about it give the same answer. Never softened: an unconfirmed hazard is still a hazard, and the
+ * plate says only that nobody has confirmed it, never that it is probably fine (D3).
+ */
+function hazardPlateBody(h: HazardMarkModel): string {
+  return h.provisional
+    ? `${hazardName(h.hazardType)} · Not yet confirmed`
+    : hazardName(h.hazardType);
+}
+
 export function MapMarksLayer({
   map,
   labels,
@@ -77,6 +88,17 @@ export function MapMarksLayer({
   );
   // One id, so never more than one mark faded; kept while imagery is off and simply not drawn then.
   const [peekId, setPeekId] = useState<string | null>(null);
+
+  /**
+   * Every mark answers a hover, not just the named ones. A pin you can point at and get nothing
+   * from reads as broken rather than as nameless — and the hazard marks, which are the pins that
+   * most need a word before you commit to a click, had no plate at all.
+   */
+  const showPlate = (event: { currentTarget: Element }, title: string, body: string) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const host = map.getContainer().getBoundingClientRect();
+    setHover({ x: rect.left - host.left + HALF, y: rect.top - host.top + HALF, title, body });
+  };
 
   const measure = useCallback(() => {
     for (const [id, node] of lockupNodes.current) widths.current.set(id, node.offsetWidth);
@@ -178,17 +200,12 @@ export function MapMarksLayer({
           data-slot="put-in"
           data-pin={m.id}
           className="pointer-events-auto absolute top-0 left-0"
-          onPointerEnter={(e) => {
-            if (!m.name) return;
-            const rect = e.currentTarget.getBoundingClientRect();
-            const host = map.getContainer().getBoundingClientRect();
-            setHover({
-              x: rect.left - host.left + HALF,
-              y: rect.top - host.top + HALF,
-              title: 'Put-in',
-              body: m.name,
-            });
-          }}
+          // `name` is already core's resolver's answer (`resolvePutInName`), so it is OSM's name or
+          // the deterministic compass label; it is only missing when the lake has no interior point
+          // to take a bearing from, and then the plate says the one true thing left.
+          // No focus pair: a put-in mark is a `span`, not a control — the hazard marks are the
+          // buttons, and they carry one.
+          onPointerEnter={(e) => showPlate(e, 'Put-in', m.name ?? 'Unnamed')}
           onPointerLeave={() => setHover(null)}
         >
           <PutInMark />
@@ -210,8 +227,14 @@ export function MapMarksLayer({
             onClick={() => onOpenHazard(h.id)}
             onPointerEnter={(e) => {
               if (e.pointerType !== 'touch') setPeekId(h.id);
+              showPlate(e, 'Hazard', hazardPlateBody(h));
             }}
-            onPointerLeave={() => setPeekId((current) => (current === h.id ? null : current))}
+            onPointerLeave={() => {
+              setPeekId((current) => (current === h.id ? null : current));
+              setHover(null);
+            }}
+            onFocus={(e) => showPlate(e, 'Hazard', hazardPlateBody(h))}
+            onBlur={() => setHover(null)}
             className={cn(
               'pointer-events-auto absolute top-0 left-0 cursor-pointer rounded-control outline-none focus-visible:shadow-focus',
               'transition-opacity duration-(--duration-base) ease-standard',
