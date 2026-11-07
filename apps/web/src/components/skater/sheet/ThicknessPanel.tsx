@@ -1,5 +1,7 @@
 import {
   cmToInches,
+  describeWhere,
+  formatThicknessReading,
   inchesToCm,
   roundTo,
   sectionSummary,
@@ -11,14 +13,16 @@ import {
   type ThicknessReadingInput,
   type ThicknessScope,
   thicknessBandOfKey,
+  type Where,
 } from '@skating/core';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useConsoleMode } from './ConsoleMode';
 import { SheetChip } from './SheetChip';
-import { SheetPanel, SubLabel } from './SheetPanel';
+import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
-import { WherePicker } from './WherePicker';
+import { WhereCards } from './WhereCards';
 
 const SCOPE_LABELS: Record<ThicknessScope, string> = {
   everywhere_tested: 'Everywhere I tested',
@@ -47,6 +51,73 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
     return `reading:${n}`;
   };
   const adding = addingKey === null ? null : (precise.find((c) => c.key === addingKey) ?? null);
+  // A where chosen on the fresh editor before its first digit: there is no chip to hold it yet.
+  const [pendingWhere, setPendingWhere] = useState<Where | undefined>(undefined);
+  const freshReading: ThicknessReadingInput = adding?.value ?? {
+    method: 'measured',
+    ...(pendingWhere !== undefined ? { where: pendingWhere } : {}),
+  };
+  const setWhere = (key: string, where: Where | undefined) =>
+    dispatch({
+      type: 'setWhere',
+      field: 'thickness',
+      key,
+      ...(where !== undefined ? { where } : {}),
+    });
+
+  // One where question open at a time, for a reading still on the sheet: a reading that goes takes
+  // its question, and with it the console's mode — and forgets it, so a later reading minted under
+  // the same key does not open on its own.
+  const { instrument } = useConsoleMode();
+  const openKey =
+    whereFor !== null && (whereFor === addingKey || precise.some((c) => c.key === whereFor))
+      ? whereFor
+      : null;
+  if (whereFor !== null && openKey === null) setWhereFor(null);
+  const bayNames = Object.fromEntries((body?.bays ?? []).map((b) => [b.id, b.name]));
+  /**
+   * A reading's place: where the author measured (never a recommendation, D3). Closed, a chip that
+   * names it; open, the same where card the ice and the sightings use, so the instrument takes the
+   * click — a sector on the ring, a point on the water — for this reading alone.
+   */
+  const placeOf = (
+    key: string,
+    reading: ThicknessReadingInput,
+    onChange: (where: Where | undefined) => void,
+  ) =>
+    openKey === key ? (
+      <>
+        <WhereCards
+          cards={[
+            {
+              id: `thickness:${key}`,
+              label: readingLabel(reading),
+              question: 'Where did you measure?',
+              where: reading.where,
+              onChange,
+            },
+          ]}
+          body={body}
+          open
+          onClose={() => setWhereFor(null)}
+          activeId={`thickness:${key}`}
+          onActivate={() => {}}
+        />
+        {instrument || body?.silhouette ? null : (
+          <SheetHint>A point on the lake is placed on the map, on a wider screen.</SheetHint>
+        )}
+      </>
+    ) : (
+      <div className="flex flex-wrap items-center gap-2">
+        <SubLabel>Where did you measure?</SubLabel>
+        <SheetChip
+          compact
+          label={placeLabel(reading.where, bayNames, instrument)}
+          {...(reading.where ? { tier: 'solid' as const } : {})}
+          onClick={() => setWhereFor(key)}
+        />
+      </div>
+    );
 
   return (
     <SheetPanel
@@ -114,28 +185,7 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
               }
               onRemove={() => dispatch({ type: 'deselect', field: 'thickness', key: chip.key })}
             />
-            <div className="flex gap-2">
-              <SheetChip
-                compact
-                label={r.where ? 'Where: set' : 'Where?'}
-                {...(r.where ? { tier: 'solid' as const } : {})}
-                onClick={() => setWhereFor(whereFor === chip.key ? null : chip.key)}
-              />
-            </div>
-            {whereFor === chip.key ? (
-              <WherePicker
-                {...(r.where !== undefined ? { where: r.where } : {})}
-                body={body}
-                onChange={(where) =>
-                  dispatch({
-                    type: 'setWhere',
-                    field: 'thickness',
-                    key: chip.key,
-                    ...(where !== undefined ? { where } : {}),
-                  })
-                }
-              />
-            ) : null}
+            {placeOf(chip.key, r, (where) => setWhere(chip.key, where))}
           </div>
         );
       })}
@@ -144,41 +194,23 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
         <div className="flex flex-col gap-2 rounded-[2px] border border-border bg-background p-2.5">
           <ReadingEditor
             key={addingKey}
-            // The stored chip once there is one, so a `where` set beside it rides the next keystroke.
-            reading={adding?.value ?? { method: 'measured' }}
+            // The stored chip once there is one, so a `where` set beside it rides the next keystroke;
+            // before the first digit, the where waits here and rides the first one.
+            reading={freshReading}
             onChange={(next) =>
               dispatch({ type: 'select', field: 'thickness', key: addingKey, value: next })
             }
             onRemove={() => {
               if (adding) dispatch({ type: 'deselect', field: 'thickness', key: addingKey });
+              setPendingWhere(undefined);
               setAddingKey(null);
             }}
             fresh
           />
-          {adding ? (
-            <div className="flex gap-2">
-              <SheetChip
-                compact
-                label={adding.value.where ? 'Where: set' : 'Where?'}
-                {...(adding.value.where ? { tier: 'solid' as const } : {})}
-                onClick={() => setWhereFor(whereFor === addingKey ? null : addingKey)}
-              />
-            </div>
-          ) : null}
-          {adding && whereFor === addingKey ? (
-            <WherePicker
-              {...(adding.value.where !== undefined ? { where: adding.value.where } : {})}
-              body={body}
-              onChange={(where) =>
-                dispatch({
-                  type: 'setWhere',
-                  field: 'thickness',
-                  key: addingKey,
-                  ...(where !== undefined ? { where } : {}),
-                })
-              }
-            />
-          ) : null}
+          {placeOf(addingKey, freshReading, (where) => {
+            if (adding) setWhere(addingKey, where);
+            else setPendingWhere(where);
+          })}
         </div>
       ) : null}
       <Button
@@ -188,12 +220,41 @@ export function ThicknessPanel({ report, body, dispatch, gaps, timeZone }: Secti
         // A second measurement: the one being typed settles into the list as its chip and a fresh
         // editor opens under the next key. With nothing typed yet, `nextKey()` is the key already
         // open, and the click is a no-op.
-        onClick={() => setAddingKey(nextKey())}
+        onClick={() => {
+          const key = nextKey();
+          if (key === addingKey) return;
+          setPendingWhere(undefined);
+          setAddingKey(key);
+        }}
       >
         + A measurement
       </Button>
     </SheetPanel>
   );
+}
+
+/**
+ * A reading named by its figure, for the where question's banner — "Where is the 4.5″ measurement?"
+ * — so two readings' questions are told apart. The method and the skater's word stay off it.
+ */
+export function readingLabel(reading: ThicknessReadingInput): string {
+  const { supportable: _word, ...figure } = reading;
+  const text = formatThicknessReading(figure);
+  if (text === null) return 'New measurement';
+  const method = ` (${THICKNESS_METHOD_LABELS[reading.method]})`;
+  return `${text.endsWith(method) ? text.slice(0, -method.length) : text} measurement`;
+}
+
+/** The closed chip: what was picked, in words, or the way to pick it. */
+function placeLabel(
+  where: Where | undefined,
+  bayNames: Readonly<Record<string, string>>,
+  instrument: boolean,
+): string {
+  if (where === undefined) return instrument ? 'Choose on the lake' : 'Choose a place';
+  const words = describeWhere(where, bayNames);
+  if (words) return `${words[0]?.toUpperCase()}${words.slice(1)}`;
+  return where.point ? 'A point on the lake' : 'Somewhere on the lake';
 }
 
 type Mode = 'single' | 'range' | 'poke';
