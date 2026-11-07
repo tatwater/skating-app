@@ -3,8 +3,8 @@ import { faStar as faStarOutline } from '@fortawesome/sharp-light-svg-icons';
 import { faStar as faStarSolid } from '@fortawesome/sharp-solid-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { usePostHog } from '@posthog/react';
 import { useMutation, useQuery } from 'convex/react';
+import { useAnalytics } from '../lib/analytics';
 import { Button } from './ui/button';
 
 /**
@@ -26,15 +26,17 @@ export function FavoriteButton({
   subAreaId?: Id<'waterBodySubAreas'>;
   showLabel?: boolean;
 }) {
+  const analytics = useAnalytics();
   const target = { waterBodyId, ...(subAreaId !== undefined ? { subAreaId } : {}) };
   const favorited = useQuery(api.waterBodyFavorites.isFavorite, target);
   const toggle = useMutation(api.waterBodyFavorites.toggle);
-  const posthog = usePostHog();
   const isFav = favorited === true;
 
+  // Awaits the toggle before recording, so a mutation that fails records nothing. `isFav` is this
+  // render's value — the state the star was in when it was pressed — which is what names the event.
   const onToggle = async () => {
     await toggle(target);
-    posthog.capture(isFav ? 'water_body_unfavorited' : 'water_body_favorited', {
+    analytics.capture(isFav ? 'water_body_unfavorited' : 'water_body_favorited', {
       target_type: subAreaId === undefined ? 'water_body' : 'sub_area',
     });
   };

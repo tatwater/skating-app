@@ -9,10 +9,10 @@ import {
   REDACTED_COMMENT_NOTICE,
   type TrustClass,
 } from '@skating/core';
-import { usePostHog } from '@posthog/react';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 import { useRole } from '@/lib/useRole';
+import { useAnalytics } from '../lib/analytics';
 import { ModeratorActions } from './ModeratorActions';
 import { FlagDialog } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
@@ -274,7 +274,7 @@ export function CommentThread({
  * hide the box). Flag + moderator controls are injected per comment via `renderActions`.
  */
 export function Comments({ reportId }: { reportId: string }) {
-  const posthog = usePostHog();
+  const analytics = useAnalytics();
   const rid = reportId as Id<'reports'>;
   const nodes = useQuery(api.comments.listByReport, { reportId: rid });
   const me = useQuery(api.profiles.current, {});
@@ -304,7 +304,9 @@ export function Comments({ reportId }: { reportId: string }) {
             body,
             ...(parentId ? { parentCommentId: parentId as Id<'comments'> } : {}),
           });
-          posthog.capture('comment_created', { is_reply: parentId !== undefined });
+          // `Boolean(parentId)`, not `parentId !== undefined`, so the event's idea of a reply is
+          // exactly the condition that decided whether a parent was sent above.
+          analytics.capture('comment_created', { is_reply: Boolean(parentId) });
         }}
         onEdit={async (commentId, body) => {
           await edit({ commentId: commentId as Id<'comments'>, body });

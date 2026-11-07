@@ -30,11 +30,11 @@ import {
   switchDraftKind,
   undoDraftPlacement,
 } from '@skating/core';
-import { usePostHog } from '@posthog/react';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAnalytics } from '../lib/analytics';
 import { takeHazardPrefill } from '../lib/hazardPrefill';
 import { sheetPhotoBlob, sheetPhotoPreview } from '../lib/sheetPhotos';
 import { useSheet } from '../lib/sheetStore';
@@ -499,7 +499,7 @@ export function HazardForm({
    */
   onClose: () => void;
 }) {
-  const posthog = usePostHog();
+  const analytics = useAnalytics();
   const createHazard = useMutation(api.hazards.create);
   const confirmHazard = useMutation(api.hazardConfirmations.confirm);
   /**
@@ -839,7 +839,8 @@ export function HazardForm({
         // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
         ...(dismissed ? { dismissedDuplicateOf: dismissed as Id<'hazards'> } : {}),
       });
-      posthog.capture('hazard_reported', {
+      // The type, the primitive and how many photos — never the description, never the geometry.
+      analytics.capture('hazard_reported', {
         hazard_type: type,
         geometry_kind: shape.geometryKind,
         photo_count: photoIds.length,
@@ -872,7 +873,7 @@ export function HazardForm({
         verdict: 'still_there',
         via: 'duplicate_nudge',
       });
-      posthog.capture('existing_hazard_confirmed', { confirmation_source: 'duplicate_nudge' });
+      analytics.capture('existing_hazard_confirmed', { confirmation_source: 'duplicate_nudge' });
       clearDraft();
       onClose();
     } catch (e) {
