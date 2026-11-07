@@ -41,7 +41,7 @@ describe('/feed', () => {
     expect(feedRedirectSearch({ report: 'r1', qualityFloor: 'good' })).toEqual({ report: 'r1' });
     expect(feedRedirectSearch({ report: '' })).toEqual({});
     expect(feedRedirectSearch({ report: 4 })).toEqual({});
-    const before = FeedRoute.options.beforeLoad as (ctx: { search: unknown }) => void;
+    const before = FeedRoute.options.beforeLoad as unknown as (ctx: { search: unknown }) => void;
     let thrown: unknown;
     try {
       before({ search: { report: 'r1' } });
