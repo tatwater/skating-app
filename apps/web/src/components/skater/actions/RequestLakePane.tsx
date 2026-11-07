@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import { ADMIT_KNOWN_WATER_MARGIN_M, MAX_REQUEST_NOTE_LENGTH } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
@@ -72,11 +74,21 @@ export function RequestLakeView({
         className="w-[min(25rem,calc(100vw-2rem))]"
         {...(container !== undefined ? { container } : {})}
       >
-        <DialogHeader>
+        <DialogHeader className="relative pe-(--space-12)">
+          <Button
+            variant="bare"
+            size="icon-sm"
+            aria-label="Close"
+            data-attr="dialog-close"
+            className="absolute top-(--space-3) right-(--space-3)"
+            onClick={onClose}
+          >
+            <FontAwesomeIcon icon={faXmark} aria-hidden="true" />
+          </Button>
           <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
             Water we don’t list
           </span>
-          <DialogTitle className="text-disp tracking-disp">Ask us to add it</DialogTitle>
+          <DialogTitle className="text-h tracking-head">Ask us to add it</DialogTitle>
         </DialogHeader>
         <DialogBody>
           <p className="m-0 text-row text-fg1 [text-wrap:pretty]">

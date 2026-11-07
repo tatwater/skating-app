@@ -3,6 +3,7 @@ import {
   faArrowRotateLeft,
   faCamera,
   faCheck,
+  faChevronDown,
   faMinus,
   faPlus,
   faXmark,
@@ -143,12 +144,13 @@ export function HazardFlowView(props: HazardFlowViewProps) {
         {draft.hazardType ? (
           <div
             data-slot="hazard-chosen"
-            className="flex items-center gap-(--space-2) rounded-control border border-solid border-fg1 px-(--space-3) py-(--space-2_5) text-row text-fg"
+            className="flex items-center gap-(--space-2) rounded-control bg-fg py-(--space-1_5) ps-(--space-3) pe-(--space-1_5) text-row font-medium text-bg"
           >
             <span className="min-w-0 flex-1">{HAZARD_TYPE_LABELS[draft.hazardType]}</span>
             <Button
               variant="bare"
-              size="icon-xs"
+              size="icon-sm"
+              className="bg-bg text-fg"
               aria-label="Pick a different type"
               data-attr="hazard-clear-type"
               onClick={props.onClearType}
@@ -206,7 +208,7 @@ export function HazardFlowView(props: HazardFlowViewProps) {
 
       <div
         className={cn(
-          'flex items-center justify-end gap-(--space-2_5) border-0 border-t border-solid border-line pt-(--space-3)',
+          'flex items-center justify-between gap-(--space-2_5) border-0 border-t border-solid border-line pt-(--space-3)',
           placing && 'opacity-50',
         )}
       >
@@ -219,7 +221,7 @@ export function HazardFlowView(props: HazardFlowViewProps) {
               render={
                 <Button
                   variant="primary"
-                  className={INK_PRIMARY}
+                  className={cn(INK_PRIMARY, 'opacity-40')}
                   data-attr="hazard-post"
                   aria-disabled="true"
                   onClick={(e) => e.preventDefault()}
@@ -310,9 +312,7 @@ function Optional({
   const [opened, setOpened] = useState(false);
   const shown = open || opened;
   const aside = (
-    <span className="ms-auto text-assist font-regular tracking-normal text-fg3 normal-case">
-      Optional
-    </span>
+    <span className="text-assist font-regular tracking-normal text-fg3 normal-case">Optional</span>
   );
   if (shown) {
     return (
@@ -336,6 +336,7 @@ function Optional({
       <span aria-hidden="true" className="size-2 border border-solid border-fg2" />
       {title}
       {aside}
+      <FontAwesomeIcon icon={faChevronDown} aria-hidden="true" className="ms-auto h-2.5 text-fg3" />
     </button>
   );
 }
@@ -352,7 +353,7 @@ function TypePicker({ onChoose }: { onChoose: (type: HazardType) => void }) {
             data-attr={`hazard-type-${type}`}
             className={cn(
               PRESSABLE,
-              'min-h-14 px-(--space-2_5) py-(--space-2) text-row font-medium',
+              'flex min-h-14 items-end px-(--space-3) py-(--space-2_5) text-row font-medium',
             )}
             onClick={() => onChoose(type)}
           >
@@ -360,23 +361,24 @@ function TypePicker({ onChoose }: { onChoose: (type: HazardType) => void }) {
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap gap-(--space-1_5)">
+      <div className="grid grid-cols-2 gap-(--space-1_5)">
         {OTHER_TYPES.map((type) => (
           <button
             key={type}
             type="button"
             data-attr={`hazard-type-${type}`}
-            className={cn(PRESSABLE, 'px-(--space-2_5) py-(--space-1_5) text-assist')}
+            className={cn(PRESSABLE, 'px-(--space-3) py-(--space-2) text-row')}
             onClick={() => onChoose(type)}
           >
             {HAZARD_TYPE_LABELS[type]}
           </button>
         ))}
       </div>
-      <p className="m-0 mt-(--space-1) text-kick leading-none font-medium tracking-head text-fg3 uppercase">
+      <p className="m-0 mt-(--space-2) flex items-center gap-(--space-3) text-kick leading-none font-medium tracking-head text-fg3 uppercase">
         Getting across
+        <span aria-hidden="true" className="h-px flex-1 bg-line" />
       </p>
-      <div className="flex flex-wrap gap-(--space-1_5)">
+      <div className="flex flex-col gap-(--space-1_5)">
         {PASSAGE_TYPES.map((type) => (
           <button
             key={type}
@@ -384,7 +386,7 @@ function TypePicker({ onChoose }: { onChoose: (type: HazardType) => void }) {
             data-attr={`hazard-type-${type}`}
             className={cn(
               PRESSABLE,
-              'flex flex-col gap-(--space-1) px-(--space-2_5) py-(--space-1_5) text-assist',
+              'flex flex-col gap-(--space-1) px-(--space-3) py-(--space-2) text-row',
             )}
             onClick={() => onChoose(type)}
           >
@@ -448,50 +450,56 @@ function WhereBody({
           );
         })}
       </fieldset>
-      <p data-slot="hazard-where" aria-live="polite" className="m-0 text-assist text-fg2">
-        {whereLine(draft)}
-      </p>
-      <div className="flex flex-wrap gap-(--space-1_5)">
-        {draft.placing && draft.drawKind === 'line' && (
-          <Button size="sm" data-attr="hazard-undo" disabled={n === 0} onClick={onUndo}>
-            <FontAwesomeIcon icon={faArrowRotateLeft} aria-hidden="true" />
-            Undo point
-          </Button>
-        )}
-        {draft.placing && (draft.drawKind === 'line' || draft.drawKind === 'area') && (
-          <Button
-            size="sm"
-            variant="primary"
-            className={INK_PRIMARY}
-            data-attr="hazard-done"
-            onClick={onStopPlacing}
-          >
-            Done
-          </Button>
-        )}
-        {draft.drawKind === 'shore' && draft.shore && draft.shore.taps.length === 2 && (
-          <Tooltip>
-            <TooltipTrigger
-              render={<Button size="sm" data-attr="hazard-shore-flip" onClick={onFlipShore} />}
+      <div className="flex flex-wrap items-start gap-(--space-2_5) gap-x-(--space-3)">
+        <p
+          data-slot="hazard-where"
+          aria-live="polite"
+          className="m-0 min-w-[12rem] flex-1 text-row text-fg2 [text-wrap:pretty]"
+        >
+          {whereLine(draft)}
+        </p>
+        <div className="flex flex-wrap gap-(--space-1_5)">
+          {draft.placing && draft.drawKind === 'line' && (
+            <Button size="sm" data-attr="hazard-undo" disabled={n === 0} onClick={onUndo}>
+              <FontAwesomeIcon icon={faArrowRotateLeft} aria-hidden="true" />
+              Undo point
+            </Button>
+          )}
+          {draft.placing && (draft.drawKind === 'line' || draft.drawKind === 'area') && (
+            <Button
+              size="sm"
+              variant="primary"
+              className={INK_PRIMARY}
+              data-attr="hazard-done"
+              onClick={onStopPlacing}
             >
-              {shoreToggleLabel(draft.shore)}
-            </TooltipTrigger>
-            <TooltipContent {...tip}>
-              {draft.shore.theOtherWay
-                ? 'Takes the shorter stretch of shore between your two clicks'
-                : 'Takes the longer way round the lake between your two clicks'}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {replace !== null && (
-          <Button
-            size="sm"
-            data-attr="hazard-replace"
-            onClick={() => draft.drawKind && onChooseDrawKind(draft.drawKind)}
-          >
-            {replace}
-          </Button>
-        )}
+              Done
+            </Button>
+          )}
+          {draft.drawKind === 'shore' && draft.shore && draft.shore.taps.length === 2 && (
+            <Tooltip>
+              <TooltipTrigger
+                render={<Button size="sm" data-attr="hazard-shore-flip" onClick={onFlipShore} />}
+              >
+                {shoreToggleLabel(draft.shore)}
+              </TooltipTrigger>
+              <TooltipContent {...tip}>
+                {draft.shore.theOtherWay
+                  ? 'Takes the shorter stretch of shore between your two clicks'
+                  : 'Takes the longer way round the lake between your two clicks'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {replace !== null && (
+            <Button
+              size="sm"
+              data-attr="hazard-replace"
+              onClick={() => draft.drawKind && onChooseDrawKind(draft.drawKind)}
+            >
+              {replace}
+            </Button>
+          )}
+        </div>
       </div>
       {draft.shore?.refusal && (
         <Note tone="warn" role="alert">
@@ -517,7 +525,7 @@ function DrawChip({
       className={cn(
         PRESSABLE,
         'px-(--space-2_5) py-(--space-1_5) text-assist',
-        on && 'border-fg1 bg-fg1 text-bg hover:bg-fg1 hover:text-bg',
+        on && 'border-fg bg-fg text-bg hover:bg-fg hover:text-bg',
         className,
       )}
       {...props}

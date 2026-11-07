@@ -1,5 +1,5 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBullseyeArrow, faCircleInfo } from '@fortawesome/sharp-light-svg-icons';
+import { faBullseyeArrow, faCircleInfo, faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useAction, useQuery } from 'convex/react';
@@ -91,11 +91,21 @@ export function BountyView({
         className="w-[min(30rem,calc(100vw-2rem))]"
         {...(container !== undefined ? { container } : {})}
       >
-        <DialogHeader>
+        <DialogHeader className="relative pe-(--space-12)">
+          <Button
+            variant="bare"
+            size="icon-sm"
+            aria-label="Close"
+            data-attr="dialog-close"
+            className="absolute top-(--space-3) right-(--space-3)"
+            onClick={onClose}
+          >
+            <FontAwesomeIcon icon={faXmark} aria-hidden="true" />
+          </Button>
           <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
             Ask for fresh eyes
           </span>
-          <DialogTitle className="text-disp tracking-disp">Post a bounty on {lakeName}</DialogTitle>
+          <DialogTitle className="text-h tracking-head">Post a bounty on {lakeName}</DialogTitle>
         </DialogHeader>
         <DialogBody>
           <p className="m-0 text-row text-fg1 [text-wrap:pretty]">
@@ -107,6 +117,7 @@ export function BountyView({
                 Which part?
               </legend>
               <RadioGroup
+                className="border border-solid border-line2 px-(--space-3)"
                 aria-label="Which part?"
                 value={choice}
                 onValueChange={(value) => onChoose(String(value))}

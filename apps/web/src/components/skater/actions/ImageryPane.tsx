@@ -125,7 +125,13 @@ export function ImageryView({ band, season, state, onBand, onSelect }: ImageryVi
         className="w-full"
       >
         {(['tc', 'vh'] as const).map((b) => (
-          <ToggleGroupItem key={b} value={b} data-attr={`imagery-band-${b}`} className="flex-1">
+          <ToggleGroupItem
+            key={b}
+            value={b}
+            data-attr={`imagery-band-${b}`}
+            // The board's sentence-case band names: they're instrument names, not commands.
+            className="min-w-0 flex-1 px-(--space-2) text-assist font-regular tracking-normal normal-case"
+          >
             {BAND_LABELS[b]}
           </ToggleGroupItem>
         ))}

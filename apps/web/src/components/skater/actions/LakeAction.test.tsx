@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PageNav } from '../lake/lakeNav';
 
-const seen = vi.hoisted(() => ({ props: {} as Record<string, Record<string, unknown>> }));
+const seen = vi.hoisted(() => ({
+  props: {} as Record<string, { onPosted?: unknown; onSearch?: unknown } & Record<string, unknown>>,
+}));
 
 vi.mock('./HazardFlow', () => ({
   HazardFlow: (p: Record<string, unknown>) => {
@@ -25,6 +27,13 @@ vi.mock('./BountyPane', () => ({
 }));
 
 import { LakeAction } from './LakeAction';
+
+/** The prop a mocked pane was last rendered with. */
+function propOf(pane: string, name: string): unknown {
+  const props = seen.props[pane];
+  if (!props) throw new Error(`${pane} never rendered`);
+  return props[name];
+}
 
 function nav(): PageNav {
   return {
@@ -59,7 +68,7 @@ describe('the lake’s actions, routed', () => {
     const n = nav();
     render(<LakeAction act="bounty" {...base} nav={n} onBack={vi.fn()} />);
     expect(screen.queryByRole('region')).toBeNull();
-    (seen.props.bounty!.onPosted as (id: string) => void)('b1');
+    (propOf('bounty', 'onPosted') as (id: string) => void)('b1');
     expect(n.push).toHaveBeenCalledWith('/bounty/b1');
   });
 
@@ -69,7 +78,10 @@ describe('the lake’s actions, routed', () => {
       <LakeAction act="imagery" {...base} band="vh" frame="2026-12-22" nav={n} onBack={vi.fn()} />,
     );
     expect(seen.props.imagery).toMatchObject({ band: 'vh', frame: '2026-12-22' });
-    (seen.props.imagery!.onSearch as (e: object) => void)({ frame: '2026-12-28', band: undefined });
+    (propOf('imagery', 'onSearch') as (e: object) => void)({
+      frame: '2026-12-28',
+      band: undefined,
+    });
     expect(n.replace).toHaveBeenCalledWith('/water/mascoma?frame=2026-12-28');
   });
 
