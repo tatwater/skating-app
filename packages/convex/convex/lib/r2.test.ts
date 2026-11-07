@@ -148,11 +148,16 @@ describe('listing', () => {
 
 describe('reads and writes', () => {
   it('puts JSON with a trailing newline, signed', async () => {
-    const seen: { method?: string; url?: string; body?: string } = {};
+    const seen: { method?: string; url?: string; body?: string; length?: string | null } = {};
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: Request) => {
-        Object.assign(seen, { method: input.method, url: input.url, body: await input.text() });
+        Object.assign(seen, {
+          method: input.method,
+          url: input.url,
+          body: await input.text(),
+          length: input.headers.get('content-length'),
+        });
         return new Response('');
       }),
     );
@@ -161,12 +166,32 @@ describe('reads and writes', () => {
       method: 'PUT',
       url: 'https://acct.r2.cloudflarestorage.com/skating-imagery/index/latest.json',
       body: '{"season":"winter-2026-27"}\n',
+      length: '28',
     });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 500, statusText: 'No' })),
     );
     await expect(putJson(config(), 'k', {})).rejects.toThrow(/R2 put k: 500/);
+  });
+
+  it('states the byte length, not the character count, for multi-byte JSON', async () => {
+    const seen: { body?: string; length?: string | null } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request) => {
+        Object.assign(seen, {
+          body: await input.text(),
+          length: input.headers.get('content-length'),
+        });
+        return new Response('');
+      }),
+    );
+    await putJson(config(), 'index/latest.json', { body: 'Lac Mégantic ❄' });
+    // 26 characters, 29 bytes (é is two, ❄ three) — a `.length` Content-Length would say 26.
+    const expected = '{"body":"Lac Mégantic ❄"}\n';
+    expect(expected.length).toBe(26);
+    expect(seen).toEqual({ body: expected, length: '29' });
   });
 
   it('reads public JSON, a 404 as null, and anything else as an error', async () => {

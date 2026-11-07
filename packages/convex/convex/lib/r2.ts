@@ -113,12 +113,15 @@ export async function listObjects(config: R2Config, prefix: string): Promise<Lis
 
 /** Write one JSON object, as `rclone copyto` would — no cache headers of our own. */
 export async function putJson(config: R2Config, key: string, body: unknown): Promise<void> {
+  // R2 refuses a PUT without a Content-Length (`411 Length Required`), and Convex's fetch sends a
+  // string body chunked without one — so send bytes and state the length ourselves.
+  const bytes = new TextEncoder().encode(`${JSON.stringify(body)}\n`);
   const res = await config.client.fetch(`${config.endpoint}/${config.bucket}/${key}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Content-Length': String(bytes.byteLength) },
     // An 8 MB season index is seconds of upload; a minute is a stall, not a slow link.
     signal: AbortSignal.timeout(2 * TIMEOUT_MS),
-    body: `${JSON.stringify(body)}\n`,
+    body: bytes,
   });
   if (!res.ok) throw new Error(`R2 put ${key}: ${res.status} ${res.statusText}`);
 }
