@@ -115,6 +115,17 @@ describe('putInCards', () => {
     );
   });
 
+  it('reads a partial answer (no alerts, a lot with no amenities) without falling over', () => {
+    const partial = {
+      putIns: [{ id: 'p', coord: { lat: 1, lng: 2 }, source: 'official', parkingAreaId: 'l' }],
+      parking: [{ id: 'l', coord: { lat: 1, lng: 2 }, source: 'osm' }],
+      blockedIds: [],
+    } as unknown as AccessData;
+    const [card] = putInCards(partial, 'web', ACCESS_NOW);
+    expect(card?.alerts).toEqual([]);
+    expect(card?.here).toBe('Parking lot');
+  });
+
   it('falls back to a name when a stored row has none', () => {
     const nameless = {
       ...MASCOMA_ACCESS,

@@ -89,7 +89,7 @@ export function reasonLabel(reason: string): string {
 
 /** What's at a lot, in one line: "Toilets · Boat ramp · About 12 cars · Fee". */
 export function lotLine(lot: AccessLot): string {
-  const parts = lot.amenities.map((a) => AMENITY_LABELS[a] ?? a);
+  const parts = (lot.amenities ?? []).map((a) => AMENITY_LABELS[a] ?? a);
   if (typeof lot.capacity === 'number' && lot.capacity > 0)
     parts.push(`About ${lot.capacity} cars`);
   if (lot.fee === true) parts.push('Fee');
@@ -148,7 +148,8 @@ export function putInCards(
     // Never null: one put-in in, one target out.
     const target = chooseAccessTarget([p], access.parking, blocked) as AccessTarget;
     const lot = target.parking as AccessLot | undefined;
-    const alerts = access.alerts.filter(
+    // `?? []` as the shipped access section had it: a caller may hand over a partial answer.
+    const alerts = (access.alerts ?? []).filter(
       (a) =>
         a.putInId === p.id ||
         (p.parkingAreaId !== undefined && a.parkingAreaId === p.parkingAreaId),
