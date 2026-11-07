@@ -28,14 +28,20 @@ async function coversFromTheBottom(img: HTMLImageElement) {
   await waitFor(() => expect(img.complete && img.naturalWidth > 0).toBe(true));
 }
 
-/** Dark: the dark picture shows, and the light one is never fetched. */
+/**
+ * Dark: the dark picture shows, and the light one is never fetched — it is `display: none` and
+ * `loading="lazy"`, which is what keeps it off the network. The test asserts that pair rather than
+ * `complete === false`: Chromium decodes a lazy image at once when its URL is already in the
+ * process's memory cache, so `complete` flipped to `true` whenever a light-mode story over this
+ * backdrop ran earlier in the same browser (a cache hit, not a fetch — and red on CI's file order).
+ */
 export const Dark: Story = {
   globals: { surface: 'skater', mode: 'dark' },
   play: async ({ canvasElement }) => {
     await expect(getComputedStyle(picture(canvasElement, 'dark')).display).toBe('block');
     await expect(getComputedStyle(picture(canvasElement, 'light')).display).toBe('none');
+    await expect(picture(canvasElement, 'light').loading).toBe('lazy');
     await coversFromTheBottom(picture(canvasElement, 'dark'));
-    await expect(picture(canvasElement, 'light').complete).toBe(false);
   },
 };
 
@@ -45,6 +51,7 @@ export const Light: Story = {
   play: async ({ canvasElement }) => {
     await expect(getComputedStyle(picture(canvasElement, 'light')).display).toBe('block');
     await expect(getComputedStyle(picture(canvasElement, 'dark')).display).toBe('none');
+    await expect(picture(canvasElement, 'dark').loading).toBe('lazy');
     await coversFromTheBottom(picture(canvasElement, 'light'));
   },
 };
