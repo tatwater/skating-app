@@ -326,21 +326,46 @@ export default function SkaterMapCanvas() {
 
   // On first open of a view with no framing of its own and no camera this session, frame on the
   // skater's own water when the device says they're in the region (D12/D20). Never stored.
+  //
+  // The answer can take up to eight seconds. If the camera moved meanwhile — a pan, a zoom, a lake
+  // opened and framed — or the view in force now frames itself, the answer is stale and is dropped:
+  // it must never pull the skater back from where they've since gone.
   const geolocated = useRef(false);
   useEffect(() => {
     if (!loaded || geolocated.current) return;
     geolocated.current = true;
     if (useSkaterMapStore.getState().camera || spec.fit !== null || !spec.visible) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    const map = mapRef.current;
+    if (!map) return;
+    let moved = false;
+    const onMove = () => {
+      moved = true;
+    };
+    map.on('movestart', onMove);
+    const stillWanted = () => {
+      map.off('movestart', onMove);
+      const now = specRef.current;
+      return (
+        !moved &&
+        now.fit === null &&
+        now.visible &&
+        !useSkaterMapStore.getState().camera &&
+        mapRef.current === map
+      );
+    };
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (!stillWanted()) return;
         const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        if (frame) mapRef.current?.jumpTo(frame);
+        if (frame) map.jumpTo(frame);
       },
-      () => {},
+      () => {
+        map.off('movestart', onMove);
+      },
       { timeout: 8000, maximumAge: 60_000 },
     );
-  }, [loaded, spec.fit, spec.visible, mapRef]);
+  }, [loaded, spec.fit, spec.visible, mapRef, specRef]);
 
   // ── Data → sources ───────────────────────────────────────────────────────────────────────────
   const setSource = (id: string, fc: GeoJSON.FeatureCollection) => {

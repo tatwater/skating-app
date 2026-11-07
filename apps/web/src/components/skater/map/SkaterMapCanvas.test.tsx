@@ -755,6 +755,55 @@ describe('location', () => {
     expect(map().jumpTo).toHaveBeenCalledWith(expect.objectContaining({ center: [-72.1, 43.6] }));
   });
 
+  /** A device that answers when the test says so — eight seconds late, at worst. */
+  const lateGeo = () => {
+    let answer: (pos: GeolocationPosition) => void = () => undefined;
+    geo((ok) => {
+      answer = ok;
+    });
+    return (pos: GeolocationPosition) => act(() => answer(pos));
+  };
+
+  it('frames on a late answer when nothing moved meanwhile', async () => {
+    const answer = lateGeo();
+    await mount(exploreMapSpec());
+    answer(at(43.6, -72.1));
+    expect(map().jumpTo).toHaveBeenCalledWith(expect.objectContaining({ center: [-72.1, 43.6] }));
+  });
+
+  it('drops a late answer once the skater has moved the map', async () => {
+    const answer = lateGeo();
+    await mount(exploreMapSpec());
+    act(() => map().fire('movestart'));
+    answer(at(43.6, -72.1));
+    expect(map().jumpTo).not.toHaveBeenCalled();
+    // And it stops listening: the listener goes with the answer.
+    expect(map().handlers.get('movestart') ?? []).toHaveLength(0);
+  });
+
+  it('drops a late answer once a view that frames itself has opened', async () => {
+    const answer = lateGeo();
+    const view = await mount(exploreMapSpec());
+    view.rerender(<Harness spec={lakeMapSpec('mascoma')} />);
+    answer(at(43.6, -72.1));
+    expect(map().jumpTo).not.toHaveBeenCalled();
+  });
+
+  it('drops a late answer once a camera has been kept this session', async () => {
+    const answer = lateGeo();
+    await mount(exploreMapSpec());
+    act(() => useSkaterMapStore.setState({ camera: { center: [-72, 43], zoom: 9 } }));
+    answer(at(43.6, -72.1));
+    expect(map().jumpTo).not.toHaveBeenCalled();
+  });
+
+  it('stops listening when the device can’t say', async () => {
+    geo((_ok, err) => err({} as GeolocationPositionError));
+    await mount(exploreMapSpec());
+    expect(map().handlers.get('movestart') ?? []).toHaveLength(0);
+    expect(map().jumpTo).not.toHaveBeenCalled();
+  });
+
   it('doesn’t ask on a view that frames itself', async () => {
     const ask = vi.fn();
     geo(ask);
