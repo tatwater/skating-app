@@ -277,7 +277,7 @@ export const seasonsForBody = query({
 });
 
 /** Offline read-cache bounds (decision #8): the freshest few reports per body, within a recent window. */
-const OFFLINE_CACHE_MAX_PER_BODY = 5;
+export const OFFLINE_CACHE_MAX_PER_BODY = 5;
 const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000; // 72h
 
 /**
@@ -285,6 +285,11 @@ const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000; // 72h
  * data the mobile offline read-cache stores so an **opened lake** and the viewer's **favorites** read
  * back on the ice with no signal. Per body: the freshest ≤5 visible reports within the last 72h
  * (whichever bound is smaller), enriched identically to the feed via `toFeedCard`. Empty ids → empty.
+ *
+ * **A blocked author's report is here, flagged, never dropped (D3, D13).** A block de-emphasizes at
+ * render time; it never hides a safety observation, and it never changes a count. Anything that
+ * counts these cards counts the flagged ones too — the same answer search gives. A surface that only
+ * needs the count reads `recentCountsForBodies` instead.
  */
 export const recentCardsForBodies = query({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
@@ -318,6 +323,56 @@ export const recentCardsForBodies = query({
       }
     }
     return cards;
+  },
+});
+
+/** The most bodies one `recentCountsForBodies` call may ask about — a map pan labels about 24. */
+export const RECENT_COUNTS_MAX_BODIES = 100;
+
+/**
+ * How many recent reports each body has (B03 §11) — the map's lake labels ("3 reports · today") and
+ * anything else that needs the number and not the cards. Same window and per-body cap as
+ * `recentCardsForBodies` (72h or the season, whichever is later; at most 5), so the two can't
+ * disagree; `capped` says there were more than the cap. `newestSkateEndTime` is what "today" is
+ * judged from.
+ *
+ * **Viewer-free, so blocks can't enter into it (D13).** A block never hides a report, so it never
+ * changes a count; and with no viewer read, every viewer's subscription to the same ids shares one
+ * cached answer — the map re-asks this on every pan. Every asked id gets an entry, so a missing one
+ * on the client means "not read yet", never "none".
+ */
+export const recentCountsForBodies = query({
+  args: { waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (
+    ctx,
+    { waterBodyIds },
+  ): Promise<Record<string, { count: number; capped: boolean; newestSkateEndTime?: number }>> => {
+    const ids = [...new Set(waterBodyIds)];
+    if (ids.length > RECENT_COUNTS_MAX_BODIES) {
+      throw new ConvexError(`At most ${RECENT_COUNTS_MAX_BODIES} water bodies per call`);
+    }
+    const now = Date.now();
+    const cutoff = Math.max(now - OFFLINE_CACHE_WINDOW_MS, seasonStartMs(seasonOf(now)));
+    const out: Record<string, { count: number; capped: boolean; newestSkateEndTime?: number }> = {};
+    for (const waterBodyId of ids) {
+      const recent = await ctx.db
+        .query('reports')
+        .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+          q
+            .eq('waterBodyId', waterBodyId)
+            .eq('moderationStatus', 'visible')
+            .gte('skateEndTime', cutoff),
+        )
+        .order('desc')
+        .take(OFFLINE_CACHE_MAX_PER_BODY + 1);
+      const newest = recent[0];
+      out[waterBodyId] = {
+        count: Math.min(recent.length, OFFLINE_CACHE_MAX_PER_BODY),
+        capped: recent.length > OFFLINE_CACHE_MAX_PER_BODY,
+        ...(newest ? { newestSkateEndTime: newest.skateEndTime } : {}),
+      };
+    }
+    return out;
   },
 });
 
