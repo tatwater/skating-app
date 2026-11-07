@@ -176,8 +176,15 @@ export function labelPriority(standing: LabelStanding): number {
   return tier + Math.log10(Math.max(1, standing.surfaceAreaSqM ?? 1));
 }
 
-/** The cap `reports.recentCardsForBodies` reads per body, so a label can say "5+" honestly. */
-export const RECENT_CARDS_PER_BODY = 5;
+/**
+ * One body's answer from `reports.recentCountsForBodies`: the count up to the read's per-body cap,
+ * whether there were more (so a label can say "5+" honestly), and the newest end time.
+ */
+export interface RecentCount {
+  count: number;
+  capped: boolean;
+  newestSkateEndTime?: number;
+}
 
 /** A local calendar day, as a comparable string. */
 function dayKey(at: number, timeZone?: string): string {
@@ -199,19 +206,18 @@ function dayKey(at: number, timeZone?: string): string {
  */
 export function labelSlug(input: {
   inactive: boolean;
-  /** The body's recent report end times, or `undefined` while they load. */
-  skateEndTimes: readonly number[] | undefined;
+  /** The body's recent-report count (`reports.recentCountsForBodies`), or `undefined` while it loads. */
+  recent: RecentCount | undefined;
   now: number;
   timeZone?: string;
 }): string | null {
-  const { inactive, skateEndTimes, now, timeZone } = input;
+  const { inactive, recent, now, timeZone } = input;
   if (inactive) return 'Inactive';
-  if (skateEndTimes === undefined) return null;
-  if (skateEndTimes.length === 0) return 'No recent reports';
-  const count = skateEndTimes.length;
-  const noun = count === 1 ? 'report' : 'reports';
-  const shown = count >= RECENT_CARDS_PER_BODY ? `${RECENT_CARDS_PER_BODY}+` : String(count);
-  const newest = Math.max(...skateEndTimes);
+  if (recent === undefined) return null;
+  const newest = recent.newestSkateEndTime;
+  if (recent.count === 0 || newest === undefined) return 'No recent reports';
+  const noun = recent.count === 1 && !recent.capped ? 'report' : 'reports';
+  const shown = recent.capped ? `${recent.count}+` : String(recent.count);
   const when =
     dayKey(newest, timeZone) === dayKey(now, timeZone)
       ? 'today'

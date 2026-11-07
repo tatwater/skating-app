@@ -277,50 +277,44 @@ describe('labelSlug', () => {
   const tz = 'America/New_York';
   // Saturday 16 January 2027, 11:52 AM in Enfield — the mocks' "today".
   const now = Date.UTC(2027, 0, 16, 16, 52);
+  const recent = (count: number, newest?: number, capped = false) => ({
+    count,
+    capped,
+    ...(newest !== undefined ? { newestSkateEndTime: newest } : {}),
+  });
 
   it('says how many and when, never what the ice is (D3)', () => {
+    expect(labelSlug({ inactive: false, recent: recent(3, now - 3600e3), now, timeZone: tz })).toBe(
+      '3 reports · today',
+    );
+    // Tuesday 12 January.
     expect(
       labelSlug({
         inactive: false,
-        skateEndTimes: [now - 3600e3, now - 7200e3, now - 9000e3],
+        recent: recent(1, Date.UTC(2027, 0, 12, 18)),
         now,
         timeZone: tz,
       }),
-    ).toBe('3 reports · today');
-    // Tuesday 12 January.
-    expect(
-      labelSlug({ inactive: false, skateEndTimes: [Date.UTC(2027, 0, 12, 18)], now, timeZone: tz }),
     ).toBe('1 report · Tuesday');
   });
 
-  it('reads the newest report’s day', () => {
-    expect(
-      labelSlug({
-        inactive: false,
-        skateEndTimes: [Date.UTC(2027, 0, 14, 18), now - 60e3],
-        now,
-        timeZone: tz,
-      }),
-    ).toBe('2 reports · today');
-  });
-
-  it('says "5+" at the read’s per-body cap, so a busy lake isn’t undercounted', () => {
-    expect(
-      labelSlug({ inactive: false, skateEndTimes: Array(5).fill(now), now, timeZone: tz }),
-    ).toBe('5+ reports · today');
+  it('says "5+" when the read was capped, so a busy lake isn’t undercounted', () => {
+    expect(labelSlug({ inactive: false, recent: recent(5, now, true), now, timeZone: tz })).toBe(
+      '5+ reports · today',
+    );
+    // At the cap but not over it: exactly five.
+    expect(labelSlug({ inactive: false, recent: recent(5, now), now, timeZone: tz })).toBe(
+      '5 reports · today',
+    );
   });
 
   it('says nothing while the counts load, and "No recent reports" (not "yet") when there are none', () => {
-    expect(labelSlug({ inactive: false, skateEndTimes: undefined, now })).toBeNull();
-    expect(labelSlug({ inactive: false, skateEndTimes: [], now })).toBe('No recent reports');
+    expect(labelSlug({ inactive: false, recent: undefined, now })).toBeNull();
+    expect(labelSlug({ inactive: false, recent: recent(0), now })).toBe('No recent reports');
   });
 
   it('marks an inactive body, whatever its reports', () => {
-    expect(labelSlug({ inactive: true, skateEndTimes: [now], now })).toBe('Inactive');
-  });
-
-  it('uses the browser’s zone when none is given', () => {
-    expect(labelSlug({ inactive: false, skateEndTimes: [now], now })).toBe('1 report · today');
+    expect(labelSlug({ inactive: true, recent: recent(2, now), now })).toBe('Inactive');
   });
 });
 

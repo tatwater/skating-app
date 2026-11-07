@@ -270,9 +270,9 @@ function seed() {
   results.set('bodyFeatures:listForBody', []);
   results.set('gpsActivities:listTracksForBody', { tracks: [] });
   results.set('bounties:listOpen', [{ waterBodyId: 'crystal' }, { waterBodyId: 'crystal' }]);
-  results.set('reports:recentCardsForBodies', [
-    { waterBodyId: 'crystal', skateEndTime: Date.now() - 1000 },
-  ]);
+  results.set('reports:recentCountsForBodies', {
+    crystal: { count: 1, capped: false, newestSkateEndTime: Date.now() - 1000 },
+  });
 }
 
 function Harness({
@@ -503,7 +503,7 @@ describe('data into the map', () => {
 
   it('reads report counts for the labeled bodies only, and draws their labels', async () => {
     await mount();
-    expect(queryArgs.get('reports:recentCardsForBodies')).toEqual({ waterBodyIds: ['crystal'] });
+    expect(queryArgs.get('reports:recentCountsForBodies')).toEqual({ waterBodyIds: ['crystal'] });
     expect(screen.getByText('Crystal Lake')).toBeInTheDocument();
     expect(screen.getByText('1 report · today')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: '2 open bounties' })).toBeInTheDocument();
@@ -516,9 +516,9 @@ describe('data into the map', () => {
   it('re-reads "today" against the clock, so a report from before midnight stops claiming it', async () => {
     const lateEvening = new Date(2026, 1, 16, 23, 30).getTime();
     vi.setSystemTime(lateEvening);
-    results.set('reports:recentCardsForBodies', [
-      { waterBodyId: 'crystal', skateEndTime: lateEvening - 30 * 60_000 },
-    ]);
+    results.set('reports:recentCountsForBodies', {
+      crystal: { count: 1, capped: false, newestSkateEndTime: lateEvening - 30 * 60_000 },
+    });
     await mount();
     expect(screen.getByText('1 report · today')).toBeInTheDocument();
     // The canvas outlives the day it mounted on: an hour later it is tomorrow.

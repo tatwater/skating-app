@@ -24,7 +24,7 @@ import {
   type LabelableBody,
   labelCountIds,
   mergeHazards,
-  reportTimesByBody,
+  reportCountsByBody,
   withBayAngles,
 } from './mapDerive';
 import { EMPTY_FEATURES } from './mapLayers';
@@ -215,23 +215,27 @@ export function useSkaterMapData({
         : ('skip' as const),
     [visible, countKey],
   );
-  const cards = useQuery(api.reports.recentCardsForBodies, countArgs);
+  // The slim, viewer-free count (D13): every viewer panning over the same lakes shares one answer.
+  const counts = useQuery(api.reports.recentCountsForBodies, countArgs);
   // Held with the ids it answered, so a re-keyed read keeps the counts it has without lending them
   // to bodies it never asked about.
   const answered = useRetained(
-    useMemo(() => (cards === undefined ? undefined : { key: countKey, cards }), [cards, countKey]),
+    useMemo(
+      () => (counts === undefined ? undefined : { key: countKey, counts }),
+      [counts, countKey],
+    ),
     countArgs === 'skip',
   );
-  const reportTimes = useMemo(
-    () => (answered ? reportTimesByBody(answered.cards, answered.key.split(',')) : undefined),
+  const reportCounts = useMemo(
+    () => (answered ? reportCountsByBody(answered.counts, answered.key.split(',')) : undefined),
     [answered],
   );
 
   const timeZone = viewer?.timezone ?? undefined;
   const labels = useMemo(
     () =>
-      labelsOn ? buildLakeLabels(labelBodies, { ...labelInputs, reportTimes, now, timeZone }) : [],
-    [labelsOn, labelBodies, labelInputs, reportTimes, now, timeZone],
+      labelsOn ? buildLakeLabels(labelBodies, { ...labelInputs, reportCounts, now, timeZone }) : [],
+    [labelsOn, labelBodies, labelInputs, reportCounts, now, timeZone],
   );
 
   return {

@@ -5,7 +5,13 @@
  */
 
 import { isActiveRow, type PartialStandingInput, representativePoint } from '@skating/core';
-import { LABEL_DOT_RADIUS, labelPriority, labelSlug, MAX_LAKE_LABELS } from '@/lib/lakeLabelLayout';
+import {
+  LABEL_DOT_RADIUS,
+  labelPriority,
+  labelSlug,
+  MAX_LAKE_LABELS,
+  type RecentCount,
+} from '@/lib/lakeLabelLayout';
 
 export interface LatLngLike {
   lat: number;
@@ -40,21 +46,17 @@ export function bountyCountsByBody(
 }
 
 /**
- * Each asked body's recent report end times, from `reports.recentCardsForBodies`. Every asked id gets
- * an entry, so a missing one means "not read yet" and its label holds its slug back rather than
- * claiming "No recent reports" before it knows. Blocked authors don't count.
+ * Each asked body's recent-report count, from `reports.recentCountsForBodies`. Every asked id gets an
+ * entry, so a missing one means "not read yet" and its label holds its slug back rather than claiming
+ * "No recent reports" before it knows. Viewer-free by design: a block never hides a report, so it
+ * never changes a count (D13).
  */
-export function reportTimesByBody(
-  cards: readonly { waterBodyId: string; skateEndTime: number; blocked?: boolean }[] | undefined,
+export function reportCountsByBody(
+  counts: Readonly<Record<string, RecentCount>> | undefined,
   askedIds: readonly string[],
-): ReadonlyMap<string, number[]> | undefined {
-  if (cards === undefined) return undefined;
-  const times = new Map<string, number[]>(askedIds.map((id) => [id, []]));
-  for (const card of cards) {
-    if (card.blocked) continue;
-    times.get(card.waterBodyId)?.push(card.skateEndTime);
-  }
-  return times;
+): ReadonlyMap<string, RecentCount> | undefined {
+  if (counts === undefined) return undefined;
+  return new Map(askedIds.map((id) => [id, counts[id] ?? { count: 0, capped: false }]));
 }
 
 /**
@@ -93,8 +95,8 @@ export interface LakeLabelModel {
 export interface LabelInputs {
   favoriteIds: ReadonlySet<string>;
   bountyCounts: ReadonlyMap<string, number>;
-  /** Recent report times per body; a body with no entry hasn't been read yet. */
-  reportTimes: ReadonlyMap<string, number[]> | undefined;
+  /** Recent-report counts per body; a body with no entry hasn't been read yet. */
+  reportCounts: ReadonlyMap<string, RecentCount> | undefined;
   dimmedIds: ReadonlySet<string>;
   /** The focused lake: it *is* the view, so it carries no label (mock `mascomaOverlay`). */
   focusId: string | null;
@@ -116,7 +118,7 @@ export function buildLakeLabels(
   const {
     favoriteIds,
     bountyCounts,
-    reportTimes,
+    reportCounts,
     dimmedIds,
     focusId,
     showFavorites,
@@ -129,12 +131,12 @@ export function buildLakeLabels(
       const inactive = !isActiveRow(body);
       const favorite = showFavorites && favoriteIds.has(body._id);
       const openBounties = bountyCounts.get(body._id) ?? 0;
-      const times = reportTimes?.get(body._id);
+      const recent = reportCounts?.get(body._id);
       return {
         id: body._id,
         name: body.name,
         anchor: labelAnchor(body),
-        slug: labelSlug({ inactive, skateEndTimes: times, now, timeZone }),
+        slug: labelSlug({ inactive, recent, now, timeZone }),
         favorite,
         openBounties,
         inactive,
@@ -142,7 +144,7 @@ export function buildLakeLabels(
         priority: labelPriority({
           favorite,
           openBounties,
-          recentReports: times?.length ?? 0,
+          recentReports: recent?.count ?? 0,
           inactive,
           surfaceAreaSqM: body.surfaceAreaSqM,
         }),
@@ -155,9 +157,9 @@ export function buildLakeLabels(
 /** Which bodies' report counts to read: the labeled set before counts arrive, sorted so the key is stable. */
 export function labelCountIds(
   bodies: readonly LabelableBody[],
-  inputs: Omit<LabelInputs, 'reportTimes' | 'now'>,
+  inputs: Omit<LabelInputs, 'reportCounts' | 'now'>,
 ): string[] {
-  return buildLakeLabels(bodies, { ...inputs, reportTimes: undefined, now: 0 })
+  return buildLakeLabels(bodies, { ...inputs, reportCounts: undefined, now: 0 })
     .map((label) => label.id)
     .sort();
 }

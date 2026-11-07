@@ -12,7 +12,7 @@ import {
   labelCountIds,
   markObstacle,
   mergeHazards,
-  reportTimesByBody,
+  reportCountsByBody,
   withBayAngles,
 } from './mapDerive';
 
@@ -39,7 +39,7 @@ const now = Date.UTC(2027, 0, 16, 16);
 const baseInputs = {
   favoriteIds: new Set<string>(),
   bountyCounts: new Map<string, number>(),
-  reportTimes: new Map<string, number[]>(),
+  reportCounts: new Map<string, { count: number; capped: boolean }>(),
   dimmedIds: new Set<string>(),
   focusId: null,
   showFavorites: true,
@@ -58,7 +58,7 @@ describe('labelAnchor', () => {
   });
 });
 
-describe('bountyCountsByBody / reportTimesByBody', () => {
+describe('bountyCountsByBody / reportCountsByBody', () => {
   it('counts each person’s ask as its own bounty', () => {
     const counts = bountyCountsByBody([
       { waterBodyId: 'a' },
@@ -72,22 +72,21 @@ describe('bountyCountsByBody / reportTimesByBody', () => {
     expect(bountyCountsByBody(undefined).size).toBe(0);
   });
 
-  it('groups report times by asked body, leaving out authors the viewer blocked', () => {
-    const times = reportTimesByBody(
-      [
-        { waterBodyId: 'a', skateEndTime: 1 },
-        { waterBodyId: 'a', skateEndTime: 2, blocked: true },
-        { waterBodyId: 'b', skateEndTime: 3 },
-        { waterBodyId: 'not-asked', skateEndTime: 4 },
-      ],
+  it('keys the counts by asked body, and counts every author — a block hides nothing (D13)', () => {
+    const counts = reportCountsByBody(
+      {
+        a: { count: 2, capped: false, newestSkateEndTime: 2 },
+        b: { count: 5, capped: true, newestSkateEndTime: 3 },
+        'not-asked': { count: 1, capped: false, newestSkateEndTime: 4 },
+      },
       ['a', 'b', 'c'],
     );
-    expect(times?.get('a')).toEqual([1]);
-    expect(times?.get('b')).toEqual([3]);
+    expect(counts?.get('a')).toEqual({ count: 2, capped: false, newestSkateEndTime: 2 });
+    expect(counts?.get('b')?.capped).toBe(true);
     // Asked and answered with nothing: a real "none". Never asked: no entry, so no claim.
-    expect(times?.get('c')).toEqual([]);
-    expect(times?.has('not-asked')).toBe(false);
-    expect(reportTimesByBody(undefined, ['a'])).toBeUndefined();
+    expect(counts?.get('c')).toEqual({ count: 0, capped: false });
+    expect(counts?.has('not-asked')).toBe(false);
+    expect(reportCountsByBody(undefined, ['a'])).toBeUndefined();
   });
 });
 
@@ -104,9 +103,9 @@ describe('buildLakeLabels', () => {
         ...baseInputs,
         favoriteIds: new Set(['mascoma']),
         bountyCounts: new Map([['crystal', 3]]),
-        reportTimes: new Map([
-          ['mascoma', [now - 1000]],
-          ['crystal', []],
+        reportCounts: new Map([
+          ['mascoma', { count: 1, capped: false, newestSkateEndTime: now - 1000 }],
+          ['crystal', { count: 0, capped: false }],
         ]),
         dimmedIds: new Set(['crystal']),
         timeZone: 'America/New_York',
@@ -138,12 +137,12 @@ describe('buildLakeLabels', () => {
   it('holds the slug back while the counts load, and for a body the read never asked about', () => {
     const loading = buildLakeLabels([body({ _id: 'a' })], {
       ...baseInputs,
-      reportTimes: undefined,
+      reportCounts: undefined,
     });
     expect(loading[0]?.slug).toBeNull();
     const unasked = buildLakeLabels([body({ _id: 'a' })], {
       ...baseInputs,
-      reportTimes: new Map(),
+      reportCounts: new Map(),
     });
     expect(unasked[0]?.slug).toBeNull();
   });
