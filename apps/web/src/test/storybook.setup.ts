@@ -1,3 +1,4 @@
+import { configure } from 'storybook/test';
 import { beforeEach } from 'vitest';
 import { commands, userEvent } from 'vitest/browser';
 
@@ -9,6 +10,14 @@ declare module 'vitest/browser' {
     parkPointer: () => Promise<void>;
   }
 }
+
+/**
+ * A play function's `findBy*` and `waitFor` wait 5 s, not Testing Library's 1 s: the CI runner is
+ * frame-starved, and a fade, an opening focus or a cold image has outrun 1 s there while settling
+ * in a frame or two locally. Only a wait that would pass gets longer; one that never passes still
+ * fails, inside the 20 s test cap (`vitest.config.ts`).
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 /**
  * Story tests (the `storybook` project) start with the real pointer off the page. See

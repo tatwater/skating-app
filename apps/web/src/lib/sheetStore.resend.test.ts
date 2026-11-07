@@ -145,6 +145,33 @@ describe('a change disarms it', () => {
     expect(getSheetResend()).toBe('waiting');
   });
 
+  it('a quiet change — the sheet’s own doing — keeps it armed, and rides along', async () => {
+    failedOffline();
+    updateSheet((p) => ({ ...p, body: 'peer suggestion' }), { quiet: true });
+    expect(getSheetResend()).toBe('waiting');
+    expect(readStoredSheet(Date.now())?.resendArmed).toBe(true);
+    await resendSheet(landed);
+    expect((landed.mock.calls[0] as unknown[])[0]).toMatchObject({
+      title: 'As pressed',
+      body: 'peer suggestion',
+    });
+  });
+
+  it('an author edit after a quiet one still disarms it', () => {
+    failedOffline();
+    updateSheet((p) => ({ ...p, body: 'peer suggestion' }), { quiet: true });
+    updateSheet((p) => ({ ...p, title: 'Half-wri', dirty: true }));
+    expect(getSheetResend()).toBe('none');
+    updateSheet((p) => ({ ...p, body: 'another offer' }), { quiet: true });
+    expect(getSheetResend()).toBe('none');
+  });
+
+  it('a quiet: false update is an author edit, the default', () => {
+    failedOffline();
+    updateSheet((p) => ({ ...p, title: 'Typed' }), { quiet: false });
+    expect(getSheetResend()).toBe('none');
+  });
+
   it('a sent Post takes no change, so nothing can disarm it', () => {
     const post = openSheet();
     setSheet(post);

@@ -38,7 +38,7 @@ import {
 import { Button } from '../../kit/button';
 import { ModeratorActions } from '../../ModeratorActions';
 import { RevisionHistory } from '../../RevisionHistory';
-import { defineMapSpec, panelMapSpec } from '../map/mapSpec';
+import { defineMapSpec, HIDDEN_MAP_SPEC, panelMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
 import { Comments } from './CommentThread';
 import { FlagDialog } from './FlagDialog';
@@ -57,12 +57,24 @@ export const PANEL_LOADING_SPEC = defineMapSpec({
 });
 
 /**
+ * A page that hosts the card somewhere other than over its lake — Latest's center column (boards
+ * 4.5–4.7). The head goes back to the host, Esc and the head call the host's close, and the card
+ * declares no map: the host owns whether the region map shows.
+ */
+export interface ReportPanelHost {
+  /** What the head goes back to: "Latest". */
+  backTo: string;
+  /** Esc and the head. The host navigates (the card is still a URL: `?report=`). */
+  onClose: () => void;
+}
+
+/**
  * `/report/$id` (boards 2.4/2.5): the report as an inset card over its lake. Reads the report
  * (visibility-checked server-side), its post's words, its author, its photos and its path; frames
  * the lake on the map with the path and the photo pins (`panelMapSpec`); and wires the thumbs, the
  * flag, the comments, and the author's own edit and delete.
  */
-export function ReportPanel({ reportId }: { reportId: string }) {
+export function ReportPanel({ reportId, host }: { reportId: string; host?: ReportPanelHost }) {
   const rid = reportId as Id<'reports'>;
   const now = useMemo(() => Date.now(), []);
   const report = useQuery(api.reports.get, { reportId: rid });
@@ -90,19 +102,24 @@ export function ReportPanel({ reportId }: { reportId: string }) {
   // Convex hands back the same object until the data changes, so these hold still between renders.
   const track$ = useMemo(() => trackOverlay(reportId, track), [reportId, track]);
   const photos$ = useMemo(() => photosOverlay(reportId, photos), [reportId, photos]);
+  const hosted = host !== undefined;
   const spec = useMemo(
     () =>
-      bodyId === undefined
-        ? PANEL_LOADING_SPEC
-        : panelMapSpec(bodyId, { track: track$, photos: photos$ }),
-    [bodyId, track$, photos$],
+      hosted
+        ? HIDDEN_MAP_SPEC
+        : bodyId === undefined
+          ? PANEL_LOADING_SPEC
+          : panelMapSpec(bodyId, { track: track$, photos: photos$ }),
+    [hosted, bodyId, track$, photos$],
   );
   useMapSpec(spec);
 
   usePanelViewed('report_viewed', reportId);
   const lake = useMemo(() => (bodyId === undefined ? null : { bodyId }), [bodyId]);
-  const close = useClosePanel(lake);
+  const lakeClose = useClosePanel(lake);
+  const close = host?.onClose ?? lakeClose;
   const lakeName = body?.available ? body.body.name : null;
+  const backTo = host?.backTo ?? lakeName;
 
   const common = {
     onClose: close,
@@ -112,14 +129,14 @@ export function ReportPanel({ reportId }: { reportId: string }) {
 
   if (report === undefined) {
     return (
-      <InsetCard {...common} backTo={null}>
+      <InsetCard {...common} backTo={host?.backTo ?? null}>
         <PanelLoading />
       </InsetCard>
     );
   }
   if (report === null) {
     return (
-      <InsetCard {...common} backTo="Explore">
+      <InsetCard {...common} backTo={host?.backTo ?? 'Explore'}>
         <PanelUnavailable title="Report not available">
           This report may have been removed, or it isn’t visible to you.
         </PanelUnavailable>
@@ -219,7 +236,7 @@ export function ReportPanel({ reportId }: { reportId: string }) {
     );
 
   return (
-    <InsetCard {...common} backTo={lakeName} foot={foot}>
+    <InsetCard {...common} backTo={backTo} foot={foot}>
       <ReportPanelView
         data={data}
         weather={weather}

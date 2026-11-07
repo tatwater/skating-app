@@ -95,6 +95,13 @@ export default defineConfig({
             '@tanstack/react-hotkeys',
             '@tanstack/react-table',
             '@tanstack/react-virtual',
+            // Reached only through the report sheet's stories, and only by dynamic import (the photo
+            // pipeline's lazy codecs, the instrument map's lazy canvas): a deps cache built before
+            // the sheet existed discovers them mid-run.
+            'browser-image-compression',
+            'exifr',
+            'heic2any',
+            'pmtiles',
             'react-resizable-panels',
             'recharts',
             'zustand',

@@ -37,6 +37,7 @@ import {
 import type { ConvexReactClient } from 'convex/react';
 import { uploadToStorage } from '../components/photoPipeline';
 import { sheetPhotoBlob } from './sheetPhotos';
+import { getSheetResend, setSheetAttempt } from './sheetStore';
 
 export type WebPostOutcome =
   | { kind: 'posted'; postId: string; reportId: string }
@@ -188,9 +189,14 @@ function webEffects(convex: ConvexReactClient) {
         idempotencyKey: input.idempotencyKey,
       });
     },
-    // No queue to persist to. `flushPost` returns the checkpointed draft in its result either
-    // way, and that is what a retry resumes from, so there is nothing for this to write.
-    persist: async () => {},
+    // Each checkpoint goes onto the open sheet's attempt record, so a tab closed mid-send keeps
+    // the `creating` mark (and every uploaded photo id) across the close: the restore then resends
+    // what went rather than a rebuilt draft the idempotent create would answer with the old Post.
+    // Only while the store's one flight is this sheet's (`sending`): a direct call, or a sheet the
+    // author has since left, writes nothing onto whatever is open now.
+    persist: async (draft: PostDraft) => {
+      if (getSheetResend() === 'sending') setSheetAttempt(draft);
+    },
   };
 }
 

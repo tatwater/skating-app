@@ -30,7 +30,10 @@ export interface MapLayerToggles {
   tracks: boolean;
   labels: boolean;
   favorites: boolean;
-  /** The imagery overlay: its own control, not a row in the menu. Agent J's flow drives it. */
+  /**
+   * The imagery overlay: its own control, not a row in the menu. Agent J's flow drives it. A session
+   * mood, not a preference — never persisted, so every visit starts on the plain map.
+   */
   imagery: boolean;
 }
 
@@ -45,6 +48,18 @@ export const DEFAULT_MAP_LAYERS: MapLayerToggles = {
 };
 
 const LAYERS_KEY = 'gli-map-layers';
+
+/** Layers that live for the session only: never written, ignored if an old write is found. */
+const SESSION_ONLY_LAYERS: ReadonlySet<keyof MapLayerToggles> = new Set(['imagery']);
+
+/** The layers as stored: every switch but the session-only ones. */
+function persistedLayers(layers: MapLayerToggles): Partial<MapLayerToggles> {
+  const out: Partial<MapLayerToggles> = {};
+  for (const key of Object.keys(layers) as (keyof MapLayerToggles)[]) {
+    if (!SESSION_ONLY_LAYERS.has(key)) out[key] = layers[key];
+  }
+  return out;
+}
 const CAMERA_KEY = 'gli-map-camera';
 
 /** Which of the two slots a spec fills: a flow (a hazard being placed) sits over its view. */
@@ -78,11 +93,15 @@ interface SkaterMapState {
   declareMapSpec: (slot: MapSpecSlot, spec: MapSpec | null) => void;
 }
 
-/** Exported for tests. Keeps booleans only: a stale or hand-edited value can't reach the map. */
+/**
+ * Exported for tests. Keeps booleans only: a stale or hand-edited value can't reach the map. A
+ * session-only layer (imagery) always restores to its default, whatever an older build wrote.
+ */
 export function readPersistedLayers(storage: Storage | undefined): MapLayerToggles {
   const stored = readJson<Record<string, unknown>>(storage, LAYERS_KEY) ?? {};
   const layers = { ...DEFAULT_MAP_LAYERS };
   for (const key of Object.keys(DEFAULT_MAP_LAYERS) as (keyof MapLayerToggles)[]) {
+    if (SESSION_ONLY_LAYERS.has(key)) continue;
     const value = stored[key];
     if (typeof value === 'boolean') layers[key] = value;
   }
@@ -117,7 +136,7 @@ export const useSkaterMapStore = create<SkaterMapState>()((set, get) => ({
   toggleLayer: (layer) => {
     const layers = { ...get().layers, [layer]: !get().layers[layer] };
     set({ layers });
-    writeJson(localStore(), LAYERS_KEY, layers);
+    writeJson(localStore(), LAYERS_KEY, persistedLayers(layers));
   },
   setHoveredBodyId: (hoveredBodyId) => set({ hoveredBodyId }),
   setPendingMapClick: (pendingMapClick) => set({ pendingMapClick }),

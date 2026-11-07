@@ -56,12 +56,24 @@ describe('AuthGate', () => {
     expect(mocks.push).toHaveBeenCalledWith('/sign-in');
   });
 
-  it("keeps a provisioned skater's not-yet-migrated page in the old shell", () => {
+  it('keeps the admin console in the old shell', () => {
+    mocks.auth = { isLoaded: true, isSignedIn: true };
+    mocks.profile = PROVISIONED;
+    mocks.pathname = '/admin/water/review';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByTestId('shell')).toHaveTextContent('page');
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('renders an old /feed deep link bare, leaving the hop to /latest to its route', () => {
+    // `routes/feed.tsx`'s `beforeLoad` redirects to `/latest` (pinned in `-latest.routes.test.tsx`);
+    // the gate neither wraps it in the old shell nor redirects it itself.
     mocks.auth = { isLoaded: true, isSignedIn: true };
     mocks.profile = PROVISIONED;
     mocks.pathname = '/feed';
     render(<AuthGate>page</AuthGate>);
-    expect(screen.getByTestId('shell')).toHaveTextContent('page');
+    expect(screen.getByText('page')).toBeInTheDocument();
+    expect(screen.queryByTestId('shell')).not.toBeInTheDocument();
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
@@ -138,18 +150,17 @@ describe('AuthGate', () => {
 });
 
 describe('usesOldShell', () => {
-  it.each(['/admin', '/admin/water/review', '/feed', '/post'])(
-    'keeps %s in the old shell',
-    (path) => {
-      expect(usesOldShell(path)).toBe(true);
-    },
-  );
+  it.each(['/admin', '/admin/water/review'])('keeps %s in the old shell', (path) => {
+    expect(usesOldShell(path)).toBe(true);
+  });
 
   it.each([
     '/',
     '/water/abc',
     '/lakes',
     '/administer',
+    '/feed',
+    '/latest',
     '/feedback',
     '/u/',
     '/u/skater',
@@ -157,6 +168,7 @@ describe('usesOldShell', () => {
     '/settings/notifications',
     '/notifications',
     '/about',
+    '/post',
     '/report',
     '/report/r1',
     '/hazard/h1',

@@ -17,12 +17,13 @@ import { type FavoriteTargetType, useAnalytics } from '@/lib/analytics';
 import { useSkaterMapStore } from '@/stores/skaterMapStore';
 
 import { RequestButtons } from '../../RequestLake';
+import { LakeAction } from '../actions/LakeAction';
 import { withNewReport } from '../chrome';
 import { lakeMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
+import { reportSheetLinkState } from '../sheet/sheetHostModel';
 import { AboutTab } from './AboutTab';
 import { AccessTab } from './AccessTab';
-import { ActionPane } from './ActionPane';
 import { AlertStrip } from './AlertStrip';
 import { type FavoriteState, LakeHeader, type LakeHeaderProps } from './LakeHeader';
 import { LakeSidebar, LakeTabs } from './LakeSidebar';
@@ -102,7 +103,17 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
           contourCredit={contourCredit}
           overlay={
             act !== undefined ? (
-              <ActionPane act={act} backTo={bay ? bay.name : lakeName} onBack={closeAct} />
+              <LakeAction
+                act={act}
+                waterBodyId={lake._id}
+                lakeName={lakeName}
+                {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
+                {...(search.band !== undefined ? { band: search.band } : {})}
+                {...(search.frame !== undefined ? { frame: search.frame } : {})}
+                backTo={bay ? bay.name : lakeName}
+                nav={nav}
+                onBack={closeAct}
+              />
             ) : null
           }
         >
@@ -255,7 +266,11 @@ function ConnectedHeader({
     ),
     newReport: leaving
       ? null
-      : nav.link(newReportHref, () => capture('report_sheet_opened', { entry: 'water_body' })),
+      : nav.link(
+          newReportHref,
+          () => capture('report_sheet_opened', { entry: 'water_body' }),
+          reportSheetLinkState(),
+        ),
     reportHazard: leaving ? null : nav.link(nav.with({ act: 'hazard' })),
     postBounty: leaving || !active ? null : nav.link(nav.with({ act: 'bounty' })),
     directions: coord

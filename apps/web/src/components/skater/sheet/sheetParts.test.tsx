@@ -1,0 +1,379 @@
+import {
+  emptySheet,
+  endTimeRow,
+  openPostSheet,
+  type PostSheet,
+  type SheetReport,
+  selectedValues,
+  sheetReducer,
+} from '@skating/core';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { getFunctionName } from 'convex/server';
+import { useState } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setSheet, useSheet } from '@/lib/sheetStore';
+import { installFakeStore, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
+import { DayCalendar } from './DayCalendar';
+import { EndTimePanel } from './EndTimePanel';
+import { LakeNameSearch } from './LakeNameSearch';
+import { dayStartOf } from './reportCalendar';
+import { SheetWords } from './SheetWords';
+import { ReportHazardButton, SheetSlotsProvider } from './sheetSlots';
+import { WhichLakeCards } from './WhichLakeCards';
+
+vi.mock('@/components/photoPipeline', () => import('@/lib/sheetPhotoPipeline.fake'));
+
+const h = vi.hoisted(() => ({ capture: vi.fn(), queries: new Map<string, unknown>() }));
+vi.mock('@/lib/analytics', () => ({ useAnalytics: () => ({ capture: h.capture }) }));
+vi.mock('convex/react', () => ({
+  useQuery: (ref: unknown, args: unknown) =>
+    args === 'skip' ? undefined : h.queries.get(getFunctionName(ref as never)),
+}));
+
+const NH = 'America/New_York';
+const NOW = Date.UTC(2027, 0, 16, 16, 52);
+let seq = 0;
+const mint = () => `s-${++seq}`;
+
+beforeEach(() => {
+  window.localStorage.clear();
+  stubObjectUrls();
+  installFakeStore();
+  reloadPage('user_1');
+  h.capture.mockReset();
+  h.queries.clear();
+});
+
+describe('DayCalendar (5.6/5.7)', () => {
+  function Harness({ onPick }: { onPick: (ms: number) => void }) {
+    const [day, setDay] = useState(dayStartOf(NOW, NH));
+    return (
+      <DayCalendar
+        dayStartMs={day}
+        nowMs={NOW}
+        timeZone={NH}
+        onPick={(d) => {
+          setDay(d.startMs);
+          onPick(d.startMs);
+        }}
+      />
+    );
+  }
+
+  it('opens two rows with only the last 7 days live, and picks one', async () => {
+    const picked = vi.fn();
+    render(<Harness onPick={picked} />);
+    const chip = screen.getByRole('button', { name: /Today · Sat, Jan 16/ });
+    fireEvent.click(chip);
+    const days = within(
+      await screen.findByRole('group', { name: 'Which day was it?' }),
+    ).getAllByRole('button');
+    expect(days).toHaveLength(14);
+    expect(days.filter((d) => !(d as HTMLButtonElement).disabled)).toHaveLength(8);
+    expect(screen.getByText('January 2027')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Thursday, January 14' }));
+    expect(picked).toHaveBeenCalledWith(dayStartOf(Date.UTC(2027, 0, 14, 15), NH));
+    expect(await screen.findByRole('button', { name: /^Thu, Jan 14/ })).toBeInTheDocument();
+  });
+
+  it('refuses a day outside the window', async () => {
+    render(<Harness onPick={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Today/ }));
+    expect(await screen.findByRole('button', { name: 'Friday, January 8' })).toBeDisabled();
+  });
+
+  it('agrees with the ladder the server rule allows', () => {
+    const row = endTimeRow({ openedAtMs: NOW, nowMs: NOW, timeZone: NH, sun: null });
+    expect(row.pickerMinMs).toBe(NOW - 7 * 24 * 3600_000);
+  });
+});
+
+describe('SheetWords — the words and photos', () => {
+  function Connected({ editing = false }: { editing?: boolean }) {
+    const post = useSheet();
+    if (post === null) return null;
+    const first = post.reports[0];
+    if (first === undefined) return null;
+    return <SheetWords post={post} ordered={post.reports} editing={editing} activeReport={first} />;
+  }
+
+  it('writes the title and the story into the Post, and keeps them out of analytics', () => {
+    setSheet(openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint));
+    render(<Connected />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Morey, first ice' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'How was it?' }), {
+      target: { value: 'Glass.' },
+    });
+    let post: PostSheet | null = null;
+    function Probe() {
+      post = useSheet();
+      return null;
+    }
+    render(<Probe />);
+    expect(post).toMatchObject({ title: 'Morey, first ice', body: 'Glass.', dirty: true });
+    expect(document.querySelector('[data-slot="sheet-words"]')).toHaveClass('ph-no-capture');
+  });
+
+  it('adds photos from the device and counts them', async () => {
+    setSheet(openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint));
+    render(<Connected />);
+    const input = screen.getByLabelText('Photos to add') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { files: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] },
+      });
+    });
+    await waitFor(() =>
+      expect(h.capture).toHaveBeenCalledWith('report_photos_added', { source: 'device', count: 1 }),
+    );
+    expect(document.querySelectorAll('[data-slot="photo-tile"]')).toHaveLength(1);
+  });
+
+  it('removes a kept photo from an edit, by its own button', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    h.queries.set('photos:getUrls', [{ photoId: 'kept-1', thumbUrl: 'https://t/1.jpg' }]);
+    setSheet({
+      ...post,
+      mode: { kind: 'edit', reportId: first.id },
+      reports: [{ ...first, keptPhotoIds: ['kept-1'] }],
+    });
+    render(<Connected editing />);
+    expect(document.querySelectorAll('[data-slot="photo-tile"]')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove this photo' }));
+    expect(document.querySelectorAll('[data-slot="photo-tile"]')).toHaveLength(0);
+  });
+
+  it('hands a tile’s mark to the photo menu when the second half mounts one', async () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    setSheet({
+      ...post,
+      photos: [{ id: 'pool-1', fullUri: 'f', thumbUri: 't', placeOnMap: false }],
+    });
+    const menu = vi.fn(({ trigger }: { trigger: React.ReactNode }) => (
+      <span data-testid="menu">{trigger}</span>
+    ));
+    render(
+      <SheetSlotsProvider value={{ photoTileMenu: menu }}>
+        <Connected />
+      </SheetSlotsProvider>,
+    );
+    expect(within(screen.getByTestId('menu')).getByText('?')).toBeInTheDocument();
+    expect(menu.mock.calls[0]?.[0]).toMatchObject({ reportId: null });
+  });
+});
+
+describe('LakeNameSearch — the keyboard path', () => {
+  it('/ focuses it; arrows move; Enter picks; a bay picks its lake', async () => {
+    const user = userEvent.setup();
+    h.queries.set('waterBodies:searchByName', [
+      {
+        kind: 'body',
+        _id: 'b1',
+        waterBodyId: 'b1',
+        name: 'Mascoma Lake',
+        type: 'lake',
+        states: ['NH'],
+      },
+      {
+        kind: 'subArea',
+        _id: 's1',
+        waterBodyId: 'b1',
+        name: 'Mascoma North',
+        parentName: 'Mascoma Lake',
+        type: 'bay',
+        states: ['NH'],
+      },
+    ]);
+    const onPick = vi.fn();
+    render(<LakeNameSearch onPick={onPick} />);
+    await user.keyboard('/');
+    const box = screen.getByRole('searchbox', { name: 'Find a lake by name' });
+    expect(box).toHaveFocus();
+    await user.type(box, 'masc');
+    await screen.findByRole('button', { name: /Mascoma North/ });
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}{ArrowDown}{Enter}');
+    expect(onPick).toHaveBeenCalledWith({ waterBodyId: 'b1', name: 'Mascoma Lake' });
+  });
+
+  it('says when nothing matches', async () => {
+    h.queries.set('waterBodies:searchByName', []);
+    render(<LakeNameSearch onPick={vi.fn()} />);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
+    expect(await screen.findByText(/No lake by that name/)).toBeInTheDocument();
+  });
+
+  it('leaves / alone while the author is typing elsewhere', async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <textarea aria-label="Story" />
+        <LakeNameSearch onPick={vi.fn()} />
+      </>,
+    );
+    await user.click(screen.getByRole('textbox', { name: 'Story' }));
+    await user.keyboard('/');
+    expect(screen.getByRole('textbox', { name: 'Story' })).toHaveValue('/');
+  });
+});
+
+describe('ReportHazardButton — the stacked hazard’s mount point (5.10)', () => {
+  it('is inert until the flow is mounted', () => {
+    render(<ReportHazardButton waterBodyId="b1" reportId="r1" />);
+    expect(screen.getByRole('button', { name: /Report a new hazard/ })).toBeDisabled();
+  });
+
+  it('opens the mounted flow over the report and records where it started', () => {
+    const stackedHazard = vi.fn(({ onClose }: { onClose: () => void }) => (
+      <button type="button" onClick={onClose}>
+        Stacked
+      </button>
+    ));
+    render(
+      <SheetSlotsProvider value={{ stackedHazard }}>
+        <ReportHazardButton waterBodyId="b1" reportId="r1" />
+      </SheetSlotsProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Report a new hazard/ }));
+    expect(h.capture).toHaveBeenCalledWith('hazard_flow_started', { entry: 'report_sheet' });
+    expect(stackedHazard.mock.calls[0]?.[0]).toMatchObject({ waterBodyId: 'b1', reportId: 'r1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Stacked' }));
+    expect(screen.queryByRole('button', { name: 'Stacked' })).not.toBeInTheDocument();
+  });
+});
+
+describe('EndTimePanel — the day and the ladder (5.6/5.7)', () => {
+  function Panel({ sunset }: { sunset?: number }) {
+    const [report, setReport] = useState<SheetReport>(() => ({
+      id: 'r1',
+      idempotencyKey: 'k1',
+      sheet: { ...emptySheet(Date.now(), 'b1'), collapsed: { ...emptySheet(0).collapsed } },
+      photos: [],
+      keptPhotoIds: [],
+      bundleCandidateIds: [],
+      unbundledHazardIds: [],
+    }));
+    latest = report;
+    return (
+      <EndTimePanel
+        report={report}
+        body={
+          sunset === undefined
+            ? null
+            : ({ sunAt: () => ({ sunriseMs: sunset - 9 * 3600_000, sunsetMs: sunset }) } as never)
+        }
+        dispatch={(action) => setReport((r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }))}
+        setReport={(u) => setReport(u)}
+        gaps={new Set()}
+        editing={false}
+        timeZone={NH}
+      />
+    );
+  }
+  let latest: SheetReport | undefined;
+
+  it('preselects the minute in daylight, and moves the end to the day picked', async () => {
+    render(<Panel />);
+    const [end] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    expect(end?.precision).toBe('minute');
+    fireEvent.click(screen.getByRole('button', { name: /^Today/ }));
+    const days = within(
+      await screen.findByRole('group', { name: 'Which day was it?' }),
+    ).getAllByRole('button');
+    const yesterday = days.filter((d) => !(d as HTMLButtonElement).disabled).at(-2) as HTMLElement;
+    fireEvent.click(yesterday);
+    const [moved] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    expect(moved?.ms).toBeLessThan(end?.ms ?? 0);
+    expect(moved?.precision).toBe('half_hour');
+    // The ladder moved with it: none of its chips says "now".
+    expect(screen.queryByRole('button', { name: /· now/ })).not.toBeInTheDocument();
+  });
+
+  it('after dark, asks which day and when, and preselects nothing', () => {
+    render(<Panel sunset={Date.now() - 3 * 3600_000} />);
+    expect(screen.getByText(/It's after dark/)).toBeInTheDocument();
+    expect(selectedValues((latest as SheetReport).sheet, 'endTime')).toEqual([]);
+  });
+});
+
+describe('WhichLakeCards — the photo drop', () => {
+  it('takes dropped photos, and a dragged-over zone says so', () => {
+    const onPhotos = vi.fn();
+    render(
+      <WhichLakeCards
+        ordinal={1}
+        gpxEnabled={false}
+        photosBusy={false}
+        onPhotos={onPhotos}
+        search={null}
+      />,
+    );
+    const zone = document.querySelector('[data-mount="photos"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    expect(zone).toHaveAttribute('data-dragging');
+    fireEvent.dragLeave(zone);
+    expect(zone).not.toHaveAttribute('data-dragging');
+    const file = new File(['x'], 'a.jpg', { type: 'image/jpeg' });
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+    expect(onPhotos).toHaveBeenCalledWith([file]);
+    fireEvent.click(screen.getByRole('button', { name: /Photos/ }));
+  });
+});
+
+describe('SheetWords — the rest of the strip', () => {
+  function Connected({ editing = false }: { editing?: boolean }) {
+    const post = useSheet();
+    const first = post?.reports[0];
+    if (post === null || first === undefined) return null;
+    return <SheetWords post={post} ordered={post.reports} editing={editing} activeReport={first} />;
+  }
+
+  it('in an edit, adds new photos to the Report and removes one again', async () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    setSheet({ ...post, mode: { kind: 'edit', reportId: first.id } });
+    render(<Connected editing />);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Photos to add'), {
+        target: { files: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] },
+      });
+    });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="photo-tile"]')).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove this photo' }));
+    expect(document.querySelectorAll('[data-slot="photo-tile"]')).toHaveLength(0);
+  });
+
+  it('offers Google Photos on an empty strip when it is mounted', () => {
+    setSheet(openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint));
+    const googlePhotos = vi.fn(({ onPhotos }: { onPhotos: (d: never[]) => void }) => (
+      <button type="button" onClick={() => onPhotos([])}>
+        From Google Photos
+      </button>
+    ));
+    render(
+      <SheetSlotsProvider value={{ googlePhotos }}>
+        <Connected />
+      </SheetSlotsProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'From Google Photos' }));
+    expect(googlePhotos).toHaveBeenCalled();
+  });
+
+  it('ignores a pick with no images in it', async () => {
+    setSheet(openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint));
+    render(<Connected />);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Photos to add'), {
+        target: { files: [new File(['x'], 'a.txt', { type: 'text/plain' })] },
+      });
+    });
+    expect(h.capture).not.toHaveBeenCalled();
+  });
+});

@@ -192,7 +192,8 @@ export const Keyboard: Story = {
     await waitFor(() => expect(popup()).not.toBeNull());
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(popup()).toBeNull());
-    await expect(trigger).toHaveFocus();
+    // `data-open` drops as the close starts; focus comes home only once the exit has run.
+    await waitFor(() => expect(trigger).toHaveFocus());
   },
 };
 

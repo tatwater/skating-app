@@ -16,10 +16,19 @@ const DRAFT: HazardDraft = {
 
 beforeEach(() => {
   localStorage.clear();
-  useHazardDraftStore.setState({ ...initial, owner: null, draft: null, photoFiles: [] }, true);
+  useHazardDraftStore.setState(
+    { ...initial, owner: null, bound: false, draft: null, photoFiles: [] },
+    true,
+  );
 });
 
 describe('owner binding', () => {
+  it('is unbound until the first bind, and a sign-out bind still counts', () => {
+    expect(useHazardDraftStore.getState().bound).toBe(false);
+    useHazardDraftStore.getState().bindOwner(null);
+    expect(useHazardDraftStore.getState()).toMatchObject({ owner: null, bound: true });
+  });
+
   it('restores the bound owner draft', () => {
     localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a', draft: DRAFT }));
     useHazardDraftStore.getState().bindOwner('user_a');
@@ -54,7 +63,7 @@ describe('draft lifecycle', () => {
     useHazardDraftStore.getState().bindOwner('user_a');
     useHazardDraftStore.getState().setDraft(DRAFT);
     useHazardDraftStore.getState().setPhotoFiles([new File(['x'], 'ice.jpg')]);
-    expect(readPersistedDraft(localStorage, 'user_a')).toEqual(DRAFT);
+    expect(readPersistedDraft(localStorage, 'user_a')).toEqual({ ...DRAFT, photoCount: 1 });
     const raw = localStorage.getItem('gli-hazard-draft') ?? '';
     expect(raw).not.toContain('ice.jpg');
   });
@@ -62,9 +71,9 @@ describe('draft lifecycle', () => {
   it('updateDraft merges into the open draft and re-persists', () => {
     useHazardDraftStore.getState().bindOwner('user_a');
     useHazardDraftStore.getState().setDraft(DRAFT);
-    useHazardDraftStore.getState().updateDraft({ sizeMeters: 12 });
-    expect(useHazardDraftStore.getState().draft?.sizeMeters).toBe(12);
-    expect(readPersistedDraft(localStorage, 'user_a')?.sizeMeters).toBe(12);
+    useHazardDraftStore.getState().updateDraft({ note: 'twelve' });
+    expect(useHazardDraftStore.getState().draft?.note).toBe('twelve');
+    expect(readPersistedDraft(localStorage, 'user_a')?.note).toBe('twelve');
   });
 
   it('updateDraft with no open draft is a no-op', () => {
@@ -97,5 +106,38 @@ describe('readPersistedDraft', () => {
   it('is null for a mangled record', () => {
     localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a' }));
     expect(readPersistedDraft(localStorage, 'user_a')).toBeNull();
+  });
+});
+
+describe('restore rules (agent J)', () => {
+  it('a restored draft is never mid-placement, never mid-nudge, and says it was restored', () => {
+    localStorage.setItem(
+      'gli-hazard-draft',
+      JSON.stringify({
+        owner: 'user_a',
+        draft: { ...DRAFT, placing: true, nearbyHazardId: 'h1', step: 'confirm', photoCount: 2 },
+      }),
+    );
+    useHazardDraftStore.getState().bindOwner('user_a');
+    const state = useHazardDraftStore.getState();
+    expect(state.restored).toBe(true);
+    expect(state.draft).toMatchObject({
+      placing: false,
+      nearbyHazardId: null,
+      step: 'details',
+      photoCount: 2,
+    });
+  });
+
+  it('a mangled stored draft restores nothing', () => {
+    localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a', draft: 'nope' }));
+    expect(readPersistedDraft(localStorage, 'user_a')).toBeNull();
+  });
+
+  it('clearing ends the restored state too', () => {
+    localStorage.setItem('gli-hazard-draft', JSON.stringify({ owner: 'user_a', draft: DRAFT }));
+    useHazardDraftStore.getState().bindOwner('user_a');
+    useHazardDraftStore.getState().clearDraft();
+    expect(useHazardDraftStore.getState().restored).toBe(false);
   });
 });

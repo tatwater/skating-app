@@ -37,7 +37,9 @@ describe('SkaterTopBar', () => {
     render(<SkaterTopBar />);
     fireEvent.click(screen.getByRole('button', { name: 'New report' }));
     expect(fakes.capture).toHaveBeenCalledWith('report_sheet_opened', { entry: 'top_bar' });
-    expect(fakes.push).toHaveBeenCalledWith('/water/w1?tab=weather&post=new');
+    expect(fakes.push).toHaveBeenCalledWith('/water/w1?tab=weather&post=new', {
+      reportSheetEntryRecorded: true,
+    });
   });
 
   it('closes the open overlay on a new page, not on the first render', () => {
