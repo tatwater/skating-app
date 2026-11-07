@@ -1,5 +1,6 @@
 import { usePostHog } from '@posthog/react';
-import type { HazardGeometryKind, HazardType, RequestKind } from '@skating/core';
+import type { HazardGeometryKind, HazardType, NotificationType, RequestKind } from '@skating/core';
+import type { ThemePreference } from '@skating/design';
 import { useMemo } from 'react';
 import { isConfigured } from './env';
 
@@ -58,10 +59,176 @@ export interface AnalyticsEventProperties {
   water_body_unfavorited: { target_type: FavoriteTargetType };
   /** A catalog or standing request was submitted, by kind. */
   water_body_request_submitted: { request_kind: RequestKind };
+
+  // ── The B03 skater-web taxonomy (D240), same rules: countable shape only; no text, name, id
+  // ── or coordinate; nothing about the ice. Names are object_verb, past tense.
+
+  /** A lake's page was opened, by which surface led there. */
+  water_body_opened: { source: WaterBodyOpenSource };
+  /** One of the lake sidebar's four tabs was brought up. */
+  water_body_tab_viewed: { tab: WaterBodyTab };
+  /** A report inset card was opened. */
+  report_viewed: { source: PanelViewSource };
+  /** A hazard inset card was opened. */
+  hazard_viewed: { source: PanelViewSource };
+  /** A bounty inset card was opened. */
+  bounty_viewed: { source: PanelViewSource };
+
+  /** Global search was opened. */
+  search_opened: { surface: SearchOpenSurface };
+  /** A search result was picked: its kind, its rank in the list, and the query's size — never its text. */
+  search_result_opened: {
+    result_kind: SearchResultKind;
+    rank: number;
+    query_length_bucket: QueryLengthBucket;
+  };
+  /** A query came back empty. */
+  search_no_results: { query_length_bucket: QueryLengthBucket };
+
+  /** A Latest filter changed, by which control — never to what value. */
+  latest_filter_changed: { filter: LatestFilter };
+  /** A report was opened out of the Latest feed. */
+  latest_report_opened: undefined;
+  /** A bounty was opened out of "Wanted near you". */
+  wanted_bounty_opened: undefined;
+
+  /** The report sheet opened, by which door. */
+  report_sheet_opened: { entry: ReportSheetEntry };
+  /** Posting was refused for missing minimum-set answers — how many, never which. */
+  report_sheet_refused: { missing_count: number };
+  /**
+   * The sheet was left with writing in it. Fired on `pagehide` plus next-open reconciliation —
+   * `beforeunload` is unreliable, so the count may arrive on the *next* visit.
+   */
+  report_sheet_abandoned: { sections_answered: number };
+  /** A stored draft was restored into the sheet. */
+  report_draft_restored: undefined;
+  /** A failed post was retried from the attempt record. */
+  report_post_retried: { offline: boolean };
+  /** Photos joined the report, by source. */
+  report_photos_added: { source: ReportPhotoSource; count: number };
+  /** A GPX import began. */
+  gpx_import_started: undefined;
+  /** A GPX import parsed and attached. */
+  gpx_import_completed: { point_count_bucket: PointCountBucket };
+
+  /** The hazard flow began, from the lake page or stacked inside the report sheet. */
+  hazard_flow_started: { entry: HazardFlowEntry };
+  /**
+   * A verdict on an existing hazard was submitted. The values are the author's own claims, as
+   * labeled in the UI (D3: a record of what a person said they saw, never what the ice is).
+   */
+  hazard_verdict_submitted: { verdict: HazardVerdict };
+
+  /** A map layer was toggled. */
+  map_layer_toggled: { layer: MapLayerName; on: boolean };
+  /** The imagery view opened, by band. */
+  imagery_opened: { band: ImageryBand };
+  /** The dock's "return to the region" was used. */
+  return_to_region_used: undefined;
+  /** Directions opened toward a put-in or a parking spot. */
+  directions_opened: { target: DirectionsTarget };
+
+  /** The bell opened, with how big the unread pile was. */
+  notifications_opened: { unread_bucket: UnreadBucket };
+  /** A notification row was followed, by its type. */
+  notification_opened: { kind: NotificationType };
+  /** The theme picker changed the preference. */
+  theme_changed: { mode: ThemePreference };
+  /** "Connect with Strava" was pressed (the OAuth leaves the app here). */
+  strava_connect_started: undefined;
+  /** The sign-in flow sent a code. */
+  sign_in_code_sent: { method: SignInMethod };
+  /** The sign-in flow completed. */
+  sign_in_completed: { method: SignInMethod };
 }
 
 /** Whether a favorite was placed on a whole body or one of its sub-areas. */
 export type FavoriteTargetType = 'water_body' | 'sub_area';
+
+/**
+ * The enum-valued properties of the B03 taxonomy, as const tuples so a test can walk every value
+ * (D3: no value may read as a statement about the ice). The property types below derive from
+ * these — one source for the type, the test, and any UI that switches over them.
+ */
+export const ANALYTICS_ENUMS = {
+  water_body_opened_source: ['map', 'list', 'search', 'notification', 'latest', 'deep_link'],
+  water_body_tab: ['reports', 'weather', 'access', 'about'],
+  panel_view_source: [
+    'map',
+    'list',
+    'search',
+    'notification',
+    'latest',
+    'deep_link',
+    'water_body',
+    'profile',
+  ],
+  search_open_surface: ['top_bar', 'phone', 'hotkey'],
+  search_result_kind: ['water_body', 'sub_area', 'skater'],
+  query_length_bucket: ['1-2', '3-5', '6-11', '12+'],
+  latest_filter: ['drive_time', 'posted', 'quality', 'ice_type', 'thickness', 'weather_match'],
+  report_sheet_entry: [
+    'top_bar',
+    'water_body',
+    'notification',
+    'phone_tab',
+    'edit',
+    'recorded_skate',
+  ],
+  report_photo_source: ['device', 'google_photos'],
+  point_count_bucket: ['1-99', '100-999', '1000-9999', '10000+'],
+  hazard_flow_entry: ['water_body', 'report_sheet'],
+  // The author's own claims, as labeled in the UI.
+  hazard_verdict: ['still_there', 'crossed_here', 'healing', 'fully_healed', 'didnt_look'],
+  map_layer_name: ['depth', 'hazards', 'put_ins', 'imagery', 'labels'],
+  imagery_band: ['tc', 'vh'],
+  directions_target: ['put_in', 'parking'],
+  unread_bucket: ['0', '1-3', '4-9', '10+'],
+  sign_in_method: ['email_code'],
+} as const;
+
+export type WaterBodyOpenSource = (typeof ANALYTICS_ENUMS.water_body_opened_source)[number];
+export type WaterBodyTab = (typeof ANALYTICS_ENUMS.water_body_tab)[number];
+export type PanelViewSource = (typeof ANALYTICS_ENUMS.panel_view_source)[number];
+export type SearchOpenSurface = (typeof ANALYTICS_ENUMS.search_open_surface)[number];
+export type SearchResultKind = (typeof ANALYTICS_ENUMS.search_result_kind)[number];
+export type QueryLengthBucket = (typeof ANALYTICS_ENUMS.query_length_bucket)[number];
+export type LatestFilter = (typeof ANALYTICS_ENUMS.latest_filter)[number];
+export type ReportSheetEntry = (typeof ANALYTICS_ENUMS.report_sheet_entry)[number];
+export type ReportPhotoSource = (typeof ANALYTICS_ENUMS.report_photo_source)[number];
+export type PointCountBucket = (typeof ANALYTICS_ENUMS.point_count_bucket)[number];
+export type HazardFlowEntry = (typeof ANALYTICS_ENUMS.hazard_flow_entry)[number];
+export type HazardVerdict = (typeof ANALYTICS_ENUMS.hazard_verdict)[number];
+export type MapLayerName = (typeof ANALYTICS_ENUMS.map_layer_name)[number];
+export type ImageryBand = (typeof ANALYTICS_ENUMS.imagery_band)[number];
+export type DirectionsTarget = (typeof ANALYTICS_ENUMS.directions_target)[number];
+export type UnreadBucket = (typeof ANALYTICS_ENUMS.unread_bucket)[number];
+export type SignInMethod = (typeof ANALYTICS_ENUMS.sign_in_method)[number];
+
+/** A query's size without its text: the bucket is countable shape, the characters are content. */
+export function bucketQueryLength(length: number): QueryLengthBucket {
+  if (length <= 2) return '1-2';
+  if (length <= 5) return '3-5';
+  if (length <= 11) return '6-11';
+  return '12+';
+}
+
+/** A GPX track's size without its path. */
+export function bucketPointCount(count: number): PointCountBucket {
+  if (count <= 99) return '1-99';
+  if (count <= 999) return '100-999';
+  if (count <= 9999) return '1000-9999';
+  return '10000+';
+}
+
+/** The unread pile's size without its contents. */
+export function bucketUnreadCount(count: number): UnreadBucket {
+  if (count <= 0) return '0';
+  if (count <= 3) return '1-3';
+  if (count <= 9) return '4-9';
+  return '10+';
+}
 
 /** Every event name the app may send. Exported so the test can assert the set has not drifted. */
 export type AnalyticsEventName = keyof AnalyticsEventProperties;

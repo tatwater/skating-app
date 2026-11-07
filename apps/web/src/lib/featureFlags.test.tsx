@@ -39,10 +39,10 @@ describe('useFeatureFlag', () => {
   it('returns the flag value once PostHog has one', () => {
     mocks.isFeatureEnabled.mockReturnValue(true);
 
-    const { result } = renderHook(() => useFeatureFlag('some_flag', false));
+    const { result } = renderHook(() => useFeatureFlag('gpx-import', false));
 
     expect(result.current).toBe(true);
-    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith('some_flag');
+    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith('gpx-import');
   });
 
   /**
@@ -53,13 +53,15 @@ describe('useFeatureFlag', () => {
   it('falls back when the flag is unknown to PostHog', () => {
     mocks.isFeatureEnabled.mockReturnValue(undefined);
 
-    expect(renderHook(() => useFeatureFlag('missing', true)).result.current).toBe(true);
-    expect(renderHook(() => useFeatureFlag('missing', false)).result.current).toBe(false);
+    expect(renderHook(() => useFeatureFlag('latest-text-search', true)).result.current).toBe(true);
+    expect(renderHook(() => useFeatureFlag('latest-text-search', false)).result.current).toBe(
+      false,
+    );
   });
 
   it('re-reads the flag when PostHog reports flags have loaded', () => {
     mocks.isFeatureEnabled.mockReturnValue(undefined);
-    const { result } = renderHook(() => useFeatureFlag('late_flag', false));
+    const { result } = renderHook(() => useFeatureFlag('latest-skater-filter', false));
     expect(result.current).toBe(false);
 
     mocks.isFeatureEnabled.mockReturnValue(true);
@@ -72,7 +74,7 @@ describe('useFeatureFlag', () => {
 
   it('unsubscribes on unmount so a flag update cannot set state on a dead component', () => {
     mocks.isFeatureEnabled.mockReturnValue(false);
-    const { unmount } = renderHook(() => useFeatureFlag('some_flag', false));
+    const { unmount } = renderHook(() => useFeatureFlag('gpx-import', false));
     expect(mocks.listeners).toHaveLength(1);
 
     unmount();
@@ -87,7 +89,7 @@ describe('useFeatureFlag', () => {
   it('returns the fallback and never touches PostHog when unconfigured', () => {
     mocks.configured.posthog = false;
 
-    const { result } = renderHook(() => useFeatureFlag('some_flag', true));
+    const { result } = renderHook(() => useFeatureFlag('gpx-import', true));
 
     expect(result.current).toBe(true);
     expect(mocks.isFeatureEnabled).not.toHaveBeenCalled();
@@ -102,7 +104,7 @@ describe('useFeatureFlag', () => {
   it('follows a changed fallback while unconfigured', () => {
     mocks.configured.posthog = false;
     const { result, rerender } = renderHook(
-      ({ fallback }: { fallback: boolean }) => useFeatureFlag('some_flag', fallback),
+      ({ fallback }: { fallback: boolean }) => useFeatureFlag('gpx-import', fallback),
       { initialProps: { fallback: false } },
     );
     expect(result.current).toBe(false);
@@ -115,12 +117,16 @@ describe('useFeatureFlag', () => {
 
 describe('FEATURE_FLAGS', () => {
   /**
-   * Deliberately empty — the harness ships without converting either constant
-   * `backlog/posthog.md` nominated, for the reasons recorded in `featureFlags.ts` and D235.
-   * This asserts the *claim*, so that adding a flag forces whoever adds it to come back here and
-   * say so, rather than the registry quietly drifting out of step with the doc above it.
+   * The registry asserts the *claim*, so adding or dropping a flag forces whoever does it to come
+   * back here and say so (the harness shipped empty under D235; B03 registered the first three
+   * under D240 — each guards a convenience behind new server scope, never the shell and never
+   * anything a skater's safety rests on, per D3).
    */
-  it('registers no flags yet', () => {
-    expect(FEATURE_FLAGS).toEqual([]);
+  it('registers exactly the B03 keys', () => {
+    expect(FEATURE_FLAGS).toEqual(['latest-text-search', 'latest-skater-filter', 'gpx-import']);
+  });
+
+  it('names flags in kebab-case, matching the PostHog dashboard keys', () => {
+    for (const key of FEATURE_FLAGS) expect(key).toMatch(/^[a-z][a-z0-9-]*$/);
   });
 });

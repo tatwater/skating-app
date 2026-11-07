@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { AppProviders } from '../components/AppProviders';
 import { AuthGate } from '../components/AuthGate';
+import { RouteAnalytics } from '../components/RouteAnalytics';
 import '../lib/fontawesome';
 import appCss from '../styles/app.css?url';
 
@@ -31,6 +32,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body>
         <AppProviders>
+          <RouteAnalytics />
           <AuthGate>{children}</AuthGate>
         </AppProviders>
         <Scripts />

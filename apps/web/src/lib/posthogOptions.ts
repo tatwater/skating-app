@@ -32,13 +32,67 @@ export function stripUrlQuery(value: unknown): unknown {
   return cut === -1 ? value : value.slice(0, cut);
 }
 
+/**
+ * Masks the one path segment that names a person: `/u/<handle>` → `/u/:username` (D240).
+ *
+ * Path segments are otherwise kept, ids included (the founder call above) — lakes and reports are
+ * places and documents, but a profile path is a person, and which person someone looked at is not
+ * a question analytics needs to answer. Applied to every URL-valued property, `$pathname`
+ * included. Exported for the test.
+ */
+export function maskProfilePath(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  return value.replace(/\/u\/[^/?#]+/, '/u/:username');
+}
+
 /** The URL-valued properties PostHog attaches on its own, including the `$set_once` initials. */
 const URL_PROPERTIES = [
   '$current_url',
   '$referrer',
+  '$pathname',
   '$initial_current_url',
   '$initial_referrer',
+  '$initial_pathname',
 ] as const;
+
+/** Strip the query (credentials can ride in it), then mask the person-naming segment. */
+function cleanUrlProperty(value: unknown): unknown {
+  return maskProfilePath(stripUrlQuery(value));
+}
+
+/**
+ * The `$pageview` dedupe's memory (D240): the last pageview's URL, stripped but **not** masked —
+ * `/u/alice` → `/u/bob` must count as a navigation even though both mask to `/u/:username`.
+ * Module state rather than anything stored: a hard reload starting fresh is correct, since the
+ * reload's pageview is real. Exported reset for tests.
+ */
+let lastPageviewUrl: string | null = null;
+
+export function resetPageviewDedupe(): void {
+  lastPageviewUrl = null;
+}
+
+/**
+ * Where `before_send` learns which route a pageview URL matches (D240). The router owns the
+ * answer, and this module can't import the router (it configures PostHog before any router
+ * exists), so `RouteAnalytics` injects a resolver at mount. Why `before_send` needs it at all:
+ * the SDK's history hook fires on `pushState`, *before* the router finishes resolving, so the
+ * `route_id` super-property registered on `onResolved` would stamp every pageview with the
+ * *previous* route. Events captured by the app's own code (clicks, the typed taxonomy) happen
+ * after resolution and the super-property is right for them.
+ */
+export type RouteIdResolver = (url: string) => string | null;
+
+let routeIdResolver: RouteIdResolver | null = null;
+
+export function setRouteIdResolver(resolver: RouteIdResolver | null): void {
+  routeIdResolver = resolver;
+}
+
+/** One home for "which surface is this route" (§1.0): the console lives under `/admin`. */
+export function surfaceForRouteId(routeId: string): 'admin' | 'skater' {
+  return routeId === '/admin' || routeId.startsWith('/admin/') ? 'admin' : 'skater';
+}
 
 export const posthogOptions = {
   /**
@@ -53,6 +107,27 @@ export const posthogOptions = {
    */
   before_send: (event: CaptureResult | null): CaptureResult | null => {
     if (!event?.properties) return event;
+
+    if (event.event === '$pageview') {
+      // One pageview per *page* (D240): `history_change` fires on every search-param change, so a
+      // debounced `?q=`, a tab switch or `?post=` would each spam pageviews and wreck the funnels.
+      // Those interactions carry their own typed events instead. Compared on the stripped,
+      // unmasked URL: a path change (another lake, another person) is always a real navigation.
+      const url = stripUrlQuery(event.properties.$current_url);
+      if (typeof url === 'string') {
+        if (url === lastPageviewUrl) return null;
+        lastPageviewUrl = url;
+      }
+      // Stamp the *resolved* route onto the pageview — the registered super-property lags one
+      // navigation behind on pageviews (see `setRouteIdResolver`).
+      if (routeIdResolver && typeof event.properties.$current_url === 'string') {
+        const routeId = routeIdResolver(event.properties.$current_url);
+        if (routeId !== null) {
+          event.properties.route_id = routeId;
+          event.properties.surface = surfaceForRouteId(routeId);
+        }
+      }
+    }
 
     // Every event says which deployment it came from, so one project can hold production,
     // preview and local traffic without a preview click sitting in a funnel beside a real
@@ -74,13 +149,13 @@ export const posthogOptions = {
     event.properties.$geoip_disable = true;
 
     for (const key of URL_PROPERTIES) {
-      if (key in event.properties) event.properties[key] = stripUrlQuery(event.properties[key]);
+      if (key in event.properties) event.properties[key] = cleanUrlProperty(event.properties[key]);
     }
     const setOnce = event.properties.$set_once;
     if (setOnce && typeof setOnce === 'object') {
       const once = setOnce as Record<string, unknown>;
       for (const key of URL_PROPERTIES) {
-        if (key in once) once[key] = stripUrlQuery(once[key]);
+        if (key in once) once[key] = cleanUrlProperty(once[key]);
       }
     }
     return event;

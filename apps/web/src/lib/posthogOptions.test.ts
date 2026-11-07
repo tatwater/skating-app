@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { env } from './env';
-import { posthogOptions, stripUrlQuery } from './posthogOptions';
+import {
+  maskProfilePath,
+  posthogOptions,
+  resetPageviewDedupe,
+  setRouteIdResolver,
+  stripUrlQuery,
+  surfaceForRouteId,
+} from './posthogOptions';
 
 /**
  * Deliberately **unmocked** `./env`. An earlier version of this file stubbed the host and then
@@ -172,7 +179,20 @@ describe('before_send', () => {
       }),
     ).toMatchObject({
       $current_url: 'https://gli.app/feed',
-      $referrer: 'https://gli.app/u/teagan',
+      // Query stripped *and* the person-naming segment masked (D240).
+      $referrer: 'https://gli.app/u/:username',
+    });
+  });
+
+  it('masks the profile segment in $pathname while keeping lake and report ids (D240)', () => {
+    expect(
+      send({
+        $pathname: '/u/teagan',
+        $current_url: 'https://gli.app/water/body123?tab=weather',
+      }),
+    ).toMatchObject({
+      $pathname: '/u/:username',
+      $current_url: 'https://gli.app/water/body123',
     });
   });
 
@@ -207,6 +227,115 @@ describe('before_send', () => {
     expect(posthogOptions.before_send(null)).toBeNull();
     // biome-ignore lint/suspicious/noExplicitAny: a CaptureResult stub, not a real capture
     expect(() => posthogOptions.before_send({} as any)).not.toThrow();
+  });
+});
+
+describe('maskProfilePath', () => {
+  it('masks the handle wherever the segment sits', () => {
+    expect(maskProfilePath('/u/teagan')).toBe('/u/:username');
+    expect(maskProfilePath('https://gli.app/u/teagan')).toBe('https://gli.app/u/:username');
+  });
+
+  it('leaves every other path alone, ids included (the founder call)', () => {
+    expect(maskProfilePath('/water/body123')).toBe('/water/body123');
+    expect(maskProfilePath('/report/r_1')).toBe('/report/r_1');
+    expect(maskProfilePath('https://gli.app/latest')).toBe('https://gli.app/latest');
+  });
+
+  it('passes non-strings through', () => {
+    expect(maskProfilePath(undefined)).toBeUndefined();
+    expect(maskProfilePath(7)).toBe(7);
+  });
+});
+
+/**
+ * `history_change` fires a pageview on every search-param navigation, so a debounced `?q=`, a tab
+ * switch or `?post=` would each spam pageviews and wreck the funnels (D240). One pageview per
+ * page: the dedupe compares the stripped URL, so a param-only change drops and a path change
+ * never does.
+ */
+describe('the $pageview dedupe', () => {
+  const pageview = (url: string) =>
+    // biome-ignore lint/suspicious/noExplicitAny: a CaptureResult stub, not a real capture
+    posthogOptions.before_send({ event: '$pageview', properties: { $current_url: url } } as any);
+
+  it('drops a search-param-only navigation and keeps a path change', () => {
+    resetPageviewDedupe();
+    expect(pageview('https://gli.app/water/a?tab=reports')).not.toBeNull();
+    expect(pageview('https://gli.app/water/a?tab=weather')).toBeNull();
+    expect(pageview('https://gli.app/water/a?tab=about')).toBeNull();
+    expect(pageview('https://gli.app/water/b?tab=reports')).not.toBeNull();
+    // Coming back is a navigation again.
+    expect(pageview('https://gli.app/water/a')).not.toBeNull();
+  });
+
+  it('counts one person’s profile to another as a navigation despite both masking alike', () => {
+    resetPageviewDedupe();
+    expect(pageview('https://gli.app/u/alice')).not.toBeNull();
+    expect(pageview('https://gli.app/u/bob')).not.toBeNull();
+  });
+
+  it('never dedupes the other event kinds', () => {
+    resetPageviewDedupe();
+    const send = (url: string) =>
+      posthogOptions.before_send({
+        event: '$autocapture',
+        properties: { $current_url: url },
+        // biome-ignore lint/suspicious/noExplicitAny: a CaptureResult stub, not a real capture
+      } as any);
+    expect(send('https://gli.app/latest')).not.toBeNull();
+    expect(send('https://gli.app/latest')).not.toBeNull();
+  });
+});
+
+/**
+ * Pageviews are stamped with the route the URL *resolves to*, asked of the router through the
+ * injected resolver — the registered super-property lags one navigation behind on pageviews
+ * because the SDK's history hook runs before the router finishes (D240).
+ */
+describe('the route stamp on pageviews', () => {
+  const pageview = (url: string) =>
+    // biome-ignore lint/suspicious/noExplicitAny: a CaptureResult stub, not a real capture
+    posthogOptions.before_send({ event: '$pageview', properties: { $current_url: url } } as any);
+
+  it('stamps route_id and surface when a resolver is installed', () => {
+    resetPageviewDedupe();
+    setRouteIdResolver((url) => (url.includes('/admin') ? '/admin/users' : '/_skater/latest'));
+    try {
+      const skater = pageview('https://gli.app/latest');
+      expect(skater?.properties).toMatchObject({
+        route_id: '/_skater/latest',
+        surface: 'skater',
+      });
+      const admin = pageview('https://gli.app/admin/users');
+      expect(admin?.properties).toMatchObject({ route_id: '/admin/users', surface: 'admin' });
+    } finally {
+      setRouteIdResolver(null);
+    }
+  });
+
+  it('sends the pageview unstamped when no resolver is installed or it has no answer', () => {
+    resetPageviewDedupe();
+    expect(pageview('https://gli.app/latest')?.properties?.route_id).toBeUndefined();
+    setRouteIdResolver(() => null);
+    try {
+      resetPageviewDedupe();
+      expect(pageview('https://gli.app/latest')?.properties?.route_id).toBeUndefined();
+    } finally {
+      setRouteIdResolver(null);
+    }
+  });
+});
+
+describe('surfaceForRouteId', () => {
+  it('puts the console under /admin and everything else with the skaters (§1.0)', () => {
+    expect(surfaceForRouteId('/admin')).toBe('admin');
+    expect(surfaceForRouteId('/admin/users/$id')).toBe('admin');
+    expect(surfaceForRouteId('/_skater/latest')).toBe('skater');
+    expect(surfaceForRouteId('/_map/water/$id')).toBe('skater');
+    expect(surfaceForRouteId('/sign-in')).toBe('skater');
+    // A route merely *naming* admin is not the console.
+    expect(surfaceForRouteId('/administrivia')).toBe('skater');
   });
 });
 

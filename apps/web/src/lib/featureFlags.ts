@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { isConfigured } from './env';
 
 /**
- * The feature-flag harness (D235) — plumbing, with nothing plumbed into it yet, on purpose.
+ * The feature-flag harness (D235), carrying its first registered keys since B03 (D240).
  *
- * ## Why this is empty
+ * ## Why it started empty
  *
  * `backlog/posthog.md` said flags would replace the two things that currently ship dark behind
  * constants. Neither survived being looked at, and both reasons are worth keeping written down
@@ -34,8 +34,19 @@ import { isConfigured } from './env';
  * with {@link useFeatureFlag} and an explicit fallback. The fallback is the value the app uses
  * before flags load and whenever PostHog is unreachable or unconfigured, so it must be the *safe*
  * side of the switch, never the exciting one.
+ *
+ * ## The B03 keys (D240)
+ *
+ * The first real registrations: the Latest features that wait on new server scope, and GPX
+ * import. Each is genuinely client-side, wants flipping without a redeploy while its server half
+ * settles, and guards a convenience, never anything a skater's safety rests on (D3). A flag
+ * renders its fallback first and updates on load, so none of these may ever guard the shell
+ * layout or anything above the fold.
  */
-export const FEATURE_FLAGS: readonly string[] = [];
+export const FEATURE_FLAGS = ['latest-text-search', 'latest-skater-filter', 'gpx-import'] as const;
+
+/** A registered flag key — the only strings {@link useFeatureFlag} accepts (D240). */
+export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number];
 
 /**
  * Read a PostHog feature flag, with an explicit fallback for every state where there is no answer.
@@ -50,7 +61,7 @@ export const FEATURE_FLAGS: readonly string[] = [];
  * immediately — which logs an SDK error per mount in exactly the keyless case this wrapper exists
  * to make quiet.
  */
-export function useFeatureFlag(flag: string, fallback: boolean): boolean {
+export function useFeatureFlag(flag: FeatureFlagKey, fallback: boolean): boolean {
   const posthog = usePostHog();
   const [enabled, setEnabled] = useState(fallback);
 
