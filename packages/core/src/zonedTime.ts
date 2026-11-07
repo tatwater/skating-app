@@ -12,8 +12,6 @@
  * ours to define, while a posted closing time is a wall clock at a specific lake.
  */
 
-const DAY_MS = 86_400_000;
-
 export interface ZonedParts {
   year: number;
   month: number; // 1-12
@@ -99,13 +97,27 @@ export function isKnownTimeZone(timeZone: string): boolean {
   }
 }
 
-/** The instant `minuteOfDay` reads on the local calendar day containing `atMs`, offset by `dayDelta`. */
+/**
+ * The instant `minuteOfDay` reads on the local calendar day containing `atMs`, offset by `dayDelta`
+ * calendar days.
+ *
+ * The offset is calendar arithmetic on the local date, never `dayDelta × 24 h` of elapsed time: a
+ * DST shift between the two makes a local day 23 or 25 hours long, so stepping by elapsed time from
+ * 00:30 on the Monday after spring-forward lands at 23:30 two days back — the wrong date.
+ */
 export function zonedInstantOnDayOf(
   atMs: number,
   minuteOfDay: number,
   timeZone: string,
   dayDelta = 0,
 ): number {
-  const p = zonedParts(atMs + dayDelta * DAY_MS, timeZone);
-  return zonedInstant(p.year, p.month, p.day, minuteOfDay, timeZone);
+  const p = zonedParts(atMs, timeZone);
+  const date = new Date(Date.UTC(p.year, p.month - 1, p.day + dayDelta));
+  return zonedInstant(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate(),
+    minuteOfDay,
+    timeZone,
+  );
 }
