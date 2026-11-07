@@ -7122,6 +7122,11 @@ time and draws for its author alone) once Garmin or another native import path l
 row in B03's roadmap entry holds that obligation; the provider check in `gpsActivities` cites this
 number so the revert has one place to land.
 
+**Build finding (2026-11-07):** the exception was already de facto live — A10-7's `TrackImport` had
+been ingesting GPX as `provider: 'native'` on both surfaces since it shipped. This decision therefore
+*labels* an existing behavior rather than enabling a new one, and the `gpx` label (plus
+`backfillGpxProvider` for the old rows) is what makes the revert findable at all.
+
 **Related:** D24 (and its 2026-11-06 amendment), L8; B03 §6 Q5.
 
 ## D240 — The skater analytics posture on top of D235 (B03)

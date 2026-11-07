@@ -339,6 +339,11 @@ describe('the grace window', () => {
               { type: 'black_ice', where: { sector: 'N' }, note: 'past my cousin’s dock' },
             ],
             surfaceTags: [{ type: 'glass', note: 'like a mirror' }],
+            // The fourth nested-note seam (D210), missed until B03's agent S flagged it: a
+            // sighting's note is the author's prose too, and it rides the same purge clock.
+            // A located sighting needs its vantage stated (D210's rule).
+            observedFrom: 'on_ice',
+            sightings: [{ type: 'open', where: { sector: 'S' }, note: 'off my dock at home' }],
           },
         ],
       }),
@@ -356,6 +361,7 @@ describe('the grace window', () => {
     const report = await t.run((ctx) => ctx.db.get(reportIds[0] as Id<'reports'>));
     expect(report?.iceTypes).toEqual([{ type: 'black_ice', where: { sector: 'N' } }]);
     expect(report?.surfaceTags).toEqual([{ type: 'glass' }]);
+    expect(report?.sightings).toEqual([{ type: 'open', where: { sector: 'S' } }]);
   });
 
   test('a member redacted on its own clock leaves the search field, and the fresher member stays (B03 §11)', async () => {

@@ -51,10 +51,13 @@ These are the facts that shape the build. The calls the founder still has to mak
    time at seven days before now, and the same predicate covers the picker, the queue flush, an imported track
    and `posts.create`. The "14 days" was only in the mock. Nothing to build; the calendar just draws two rows
    with the last 7 days live.
-4. **GPX import has no server path.** `gpsActivities.ingestTrack` is hard-wired to `provider: 'native'`. D24 says
-   a *trusted* extent comes only from real device GPS, and a GPX file can be drawn by hand. **Answered (founder,
-   2026-11-07): fully trusted for now** — a temporary D24 exception, to be reverted later (Q5, D239). The server
-   work (a `gpx` provider) is agent S's.
+4. **GPX import had no *labeled* server path — but it was already live.** The build (agent S, 2026-11-07)
+   found A10-7's `TrackImport` ingesting GPX files on both surfaces, stored as `provider: 'native'` — so
+   D239's trust level had been de facto live since A10-7, unlabeled. What S added: the `gpx` provider label
+   (so the D239 revert can find those rows, plus a backfill for the old ones), shared validation for both
+   providers (bounds, point cap, timestamps — native's checks were thinner than this doc assumed), and the
+   D199 7-day rule enforced at ingest, which it previously wasn't. **Answered (founder, 2026-11-07): fully
+   trusted for now** — a temporary D24 exception, to be reverted later (Q5, D239).
 5. **Feed filters live in two homes today.** D166 keeps one persisted filter store (`lib/feedFiltersStore.ts`:
    localStorage plus `profiles.feedFilterPrefs`), which **the map also reads** (weather and drive time dim
    non-matching bodies). The research doc's §4 puts "filters" in the URL. Applied to Latest, that would cut the
