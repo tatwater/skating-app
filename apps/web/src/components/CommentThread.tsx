@@ -14,6 +14,7 @@ import { type ReactNode, useState } from 'react';
 import { useRole } from '@/lib/useRole';
 import { useAnalytics } from '../lib/analytics';
 import { ModeratorActions } from './ModeratorActions';
+import { PersonName } from './PersonName';
 import { FlagDialog } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Button } from './ui/button';
@@ -132,9 +133,9 @@ function CommentNode({
           />
           <div className="flex flex-1 flex-col gap-1">
             <div className="flex items-baseline gap-2">
-              <span className="font-medium text-foreground text-sm">
+              <PersonName className="font-medium text-foreground text-sm">
                 {node.comment.author?.displayName ?? 'Unknown'}
-              </span>
+              </PersonName>
               <span className="text-foreground-muted text-xs">
                 {formatSkateTime(node.comment.createdAt)}
                 {node.comment.editedAt ? ' · edited' : ''}

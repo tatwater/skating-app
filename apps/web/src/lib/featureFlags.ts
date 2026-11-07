@@ -55,7 +55,13 @@ export function useFeatureFlag(flag: string, fallback: boolean): boolean {
   const [enabled, setEnabled] = useState(fallback);
 
   useEffect(() => {
-    if (!isConfigured.posthog) return;
+    if (!isConfigured.posthog) {
+      // Keep following the caller's fallback rather than freezing on whatever it was at mount:
+      // the fallback is the safe side of the switch, and a caller that recomputes which side that
+      // is must not be ignored just because there is no PostHog to ask.
+      setEnabled(fallback);
+      return;
+    }
 
     const read = () => setEnabled(posthog.isFeatureEnabled(flag) ?? fallback);
     read();

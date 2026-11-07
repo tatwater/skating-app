@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   configured: { posthog: true },
   identify: vi.fn(),
   reset: vi.fn(),
+  /** What PostHog itself says about its persisted distinct id, which outlives any one mount. */
+  isIdentified: vi.fn(() => false),
   auth: { isLoaded: true, isSignedIn: false, userId: null as string | null },
 }));
 
@@ -15,7 +17,11 @@ vi.mock('../lib/env', () => ({
 }));
 
 vi.mock('@posthog/react', () => ({
-  usePostHog: () => ({ identify: mocks.identify, reset: mocks.reset }),
+  usePostHog: () => ({
+    identify: mocks.identify,
+    reset: mocks.reset,
+    _isIdentified: mocks.isIdentified,
+  }),
 }));
 
 vi.mock('@clerk/tanstack-react-start', () => ({
@@ -34,6 +40,8 @@ beforeEach(() => {
   mocks.configured.posthog = true;
   mocks.identify.mockClear();
   mocks.reset.mockClear();
+  mocks.isIdentified.mockClear();
+  mocks.isIdentified.mockReturnValue(false);
   signedOut();
 });
 
@@ -89,6 +97,22 @@ describe('PostHogIdentity', () => {
     render(<PostHogIdentity>app</PostHogIdentity>);
 
     expect(mocks.reset).not.toHaveBeenCalled();
+    expect(mocks.identify).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The shared-device case that a per-mount ref alone cannot see: the sign-out did not happen in
+   * this page's lifetime. A Clerk session that expired between visits, or one revoked from another
+   * device, loads signed out with the ref at `null` while PostHog's persisted distinct id is still
+   * the account that left — so everything the next person does before signing in would be filed
+   * under that account. PostHog's own view of its identity is the only thing that knows.
+   */
+  it('resets a persisted identity on a fresh load that finds no session', () => {
+    mocks.isIdentified.mockReturnValue(true);
+
+    render(<PostHogIdentity>app</PostHogIdentity>);
+
+    expect(mocks.reset).toHaveBeenCalledTimes(1);
     expect(mocks.identify).not.toHaveBeenCalled();
   });
 

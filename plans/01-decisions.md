@@ -6804,18 +6804,27 @@ in the kit exactly once, and every composition inherits it.
 
 **Related:** D223, D232, D233.
 
-## D235 — PostHog wired: a named event contract, no PII, no replay, first-party ingestion
+## D235 — PostHog wired: a named event contract, no PII, no replay, direct ingestion
 **Decided** 2026-11-07 (PR #91). D29 settled *that* PostHog arrives and left *how* open; the
-analytics half is now wired on web. Five calls shaped it, and four of them narrow what the
+analytics half is now wired on web. Several calls shaped it, and most of them narrow what the
 vendor's own setup wizard produced.
 
-**Ingestion is first-party.** The browser posts to a same-origin path (`/rink`), rewritten to
-`us.i.posthog.com` in `apps/web/vercel.json`; `api_host` is that path and `ui_host` stays
-`https://us.posthog.com` so SDK-generated links still point at a web UI. A tracker blocker drops a
-meaningful and *unmeasurable* share of requests to a recognized analytics domain, and a biased
-sample is worse than a small one. `VITE_POSTHOG_HOST` overrides it, so falling back to direct
-ingestion is an env-var change rather than a code change. The path is deliberately not
-`/analytics` or `/ingest` — PostHog's own guide notes those names are already on blocklists.
+**Ingestion goes straight to `us.i.posthog.com`, and the reverse proxy was reversed.** A
+same-origin proxy was the first choice — a tracker blocker drops a meaningful and *unmeasurable*
+share of requests to a recognized analytics domain, and a biased sample is worse than a small one.
+It was given up on review, for a reason worth recording because it applies to any future proxy
+here: `posthog-js` sets no `credentials` option, so `fetch` defaults to `same-origin` and the
+browser attaches this app's cookies — Clerk's `__session` among them, its path being `/` — to
+every ingestion request, and a Vercel rewrite forwards request headers to the destination. That
+hands a session credential to a third-party processor on every event, which is the thing
+`sentryOptions.ts` already refuses in as many words ("No cookies and no headers, in either
+direction. Both carry the Clerk session token"). A proxy needs a hop that strips `Cookie` first,
+and that hop costs a billed function invocation per event; at alpha volume, blocker loss is the
+cheaper problem. A second strike against the original form: Nitro's Vercel preset writes its own
+`.vercel/output/config.json`, which can supersede `vercel.json` rewrites, and the failure mode is
+silent — the SSR catch-all answers 200 with the app shell, the SDK reports no error, and every
+event vanishes with nothing in any log. `VITE_POSTHOG_HOST` still overrides the host, so adding a
+cookie-stripping proxy later needs no code change.
 
 **Session replay is off at init, not off by configuration.** `disable_session_recording: true`
 rather than trusting the project's dashboard toggle: a remote switch cannot start a recorder the
@@ -6841,7 +6850,23 @@ what a person *did*, which is the only thing D3 permits an analytics event to cl
 
 **Autocapture stays on** (founder call), so questions nobody instrumented for are still answerable.
 It is the one place this integration trades data minimization for optionality, and it is reversible
-in one line if alpha volume or the element text it collects turns out to matter.
+in one line if alpha volume turns out to matter. Two consequences of it are handled rather than
+accepted:
+
+- **URLs are scrubbed of their query strings.** `$current_url` and `$referrer` ride on every
+  automatic event, and in development Clerk appends a `__clerk_db_jwt` handoff parameter — a
+  credential. A `before_send` drops the query string and fragment from those and from the
+  `$set_once` first-touch copies. Path segments stay, **ids included** (founder call): which lakes
+  and reports draw traffic is worth being able to ask, and a path is not a credential. This is the
+  analytics half of `sentryOptions.ts`'s `urlQueryParams: false`.
+- **People's names are masked, places are not.** Autocapture collects the on-screen text *and the
+  attributes* of what was clicked, so a display name inside a clickable feed card would reach
+  PostHog — other skaters' names, 16- and 17-year-olds' included (D41). A `PersonName` component
+  and `Avatar` carry PostHog's `ph-no-capture`, whose text collector skips a masked subtree when
+  gathering an *ancestor's* text too. One component rather than a class at a dozen call sites:
+  the class version holds exactly until the next component renders a name, at which point the
+  published commitment in `PRIVACY.md` quietly becomes false with nothing failing. Lake and town
+  names are **not** masked — they are places, and the notice discloses them.
 
 **Flags land as a harness with nothing in it.** `backlog/posthog.md` expected flags to replace
 `PROFILE_REVEAL_ALL` and `RECURRENCE_ADVISORIES_PUBLIC`; neither survived contact with the code.

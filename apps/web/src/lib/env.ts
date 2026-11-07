@@ -10,24 +10,21 @@
 const CONVEX_URL_PLACEHOLDER = 'https://placeholder.convex.cloud';
 
 /**
- * Where the browser sends PostHog traffic by default: a **same-origin path**, not PostHog's own
- * domain (D235). `apps/web/vercel.json` rewrites it to `us.i.posthog.com`, so ingestion is
- * first-party and a tracker blocker — which a meaningful share of this audience runs — sees a
- * request to our own host rather than one it recognizes. Overridable with `VITE_POSTHOG_HOST` so
- * falling back to direct ingestion is an env-var change and not a code change, which is the
- * escape hatch if the rewrite ever stops being applied.
+ * Where the browser sends PostHog traffic: PostHog's US ingestion host, **cross-origin on purpose**
+ * (D235).
  *
- * The path is deliberately **not** `/analytics` or `/ingest`: PostHog's own proxy guide notes
- * those names are the ones blocklists already carry.
+ * A same-origin reverse proxy would beat tracker blockers, and that was the first choice here. It
+ * was reversed for a reason worth leaving written down: `posthog-js` sets no `credentials` option,
+ * so `fetch` defaults to `same-origin` and the browser attaches this app's cookies — Clerk's
+ * `__session` among them, since its path is `/` — to every ingestion request, and a Vercel rewrite
+ * forwards request headers to the destination. That hands a session credential to a third-party
+ * processor on every event, which is exactly what `sentryOptions.ts` refuses in as many words. A
+ * proxy needs a hop that strips `Cookie` before it is safe, and that hop costs a billed function
+ * invocation per event; at alpha volume, blocker loss is the cheaper problem.
+ *
+ * `VITE_POSTHOG_HOST` overrides it, so adding that proxy later needs no code change here.
  */
-const POSTHOG_PROXY_PATH = '/rink';
-
-/**
- * PostHog's app domain, kept separate from the ingestion host. Without it the SDK builds its
- * "view this in PostHog" links (the toolbar, session links) against the proxy path, which is not
- * a web UI and 404s. It is never a request destination — only a link target.
- */
-const POSTHOG_UI_HOST = 'https://us.posthog.com';
+const POSTHOG_API_HOST = 'https://us.i.posthog.com';
 
 export const env = {
   convexUrl: import.meta.env.VITE_CONVEX_URL ?? CONVEX_URL_PLACEHOLDER,
@@ -60,11 +57,10 @@ export const env = {
   // Absent, analytics stay inert: no init, no network, every `capture` a no-op. That is the same
   // posture as the basemap and the imagery archive above, and it is why there is no throw here.
   posthogKey: import.meta.env.VITE_POSTHOG_KEY ?? '',
-  // `||`, not `??`, for these two: both are documented in `.env.example` as blank-by-default
-  // overrides, and a blank line sets them to `''` rather than leaving them undefined. With `??`
-  // that empty string would win and silently point ingestion at the page's own root.
-  posthogHost: import.meta.env.VITE_POSTHOG_HOST || POSTHOG_PROXY_PATH,
-  posthogUiHost: import.meta.env.VITE_POSTHOG_UI_HOST || POSTHOG_UI_HOST,
+  // `||`, not `??`: the var is documented in `.env.example` as a blank-by-default override, and a
+  // blank line sets it to `''` rather than leaving it undefined. With `??` that empty string would
+  // win and silently point ingestion at the page's own root.
+  posthogHost: import.meta.env.VITE_POSTHOG_HOST || POSTHOG_API_HOST,
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */

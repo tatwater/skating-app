@@ -71,6 +71,21 @@ describe('useAnalytics', () => {
     expect(mocks.capture).not.toHaveBeenCalled();
   });
 
+  /**
+   * Every call site but one sits inside the `try` that reports a write back to the skater, so an
+   * SDK that throws would turn a hazard that *did* file into "Could not save that hazard" — and
+   * the honest response to that message is to file the pin again. A lost count is cheaper than a
+   * duplicate hazard on the map, so the wrapper is where the throw stops.
+   */
+  it('swallows a throwing capture rather than failing the action it measures', () => {
+    mocks.capture.mockImplementationOnce(() => {
+      throw new Error('posthog exploded');
+    });
+    const { result } = renderHook(() => useAnalytics());
+
+    expect(() => result.current.capture('report_updated')).not.toThrow();
+  });
+
   it('keeps one stable capture function across re-renders', () => {
     const { result, rerender } = renderHook(() => useAnalytics());
     const first = result.current;

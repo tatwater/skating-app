@@ -1,6 +1,7 @@
 import { buildPostCardView, type PostCardData } from '@skating/core';
 import { useState } from 'react';
 import { FeedCard } from './FeedCard';
+import { PersonName } from './PersonName';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Button } from './ui/button';
@@ -47,9 +48,9 @@ export function PostCard({
             trustClass={view.author.trustClass}
             size={20}
           />
-          <span className={`min-w-0 truncate ${view.blocked ? '' : 'text-foreground'}`}>
+          <PersonName className={`min-w-0 truncate ${view.blocked ? '' : 'text-foreground'}`}>
             {view.author.displayName}
-          </span>
+          </PersonName>
           {view.blocked ? <BlockedChip /> : null}
           <span className="ml-auto shrink-0 text-xs">
             {view.relativeTime}

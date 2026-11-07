@@ -10,6 +10,7 @@ import logoWhite from '../assets/gli-white-duotone.svg';
 import { isAppSurfaceRoute, isMapRoute } from '../lib/mapSelection';
 import { useSignOut } from '../lib/sheetOwner';
 import { LakeSearch } from './LakeSearch';
+import { PersonName } from './PersonName';
 import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
 
@@ -138,7 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               params={{ username: profile.username }}
               className="text-foreground-muted hover:text-foreground"
             >
-              @{profile.username}
+              <PersonName>@{profile.username}</PersonName>
             </Link>
           ) : null}
           <Link to="/settings" className="text-foreground-muted hover:text-foreground">

@@ -26,10 +26,12 @@ Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
   typed event contract — ten events, countable properties only, no content and no ids;
   `components/PostHogIdentity.tsx` binds Clerk's `userId` (and nothing else) and resets on
   sign-out and account switch; `lib/posthogOptions.ts` holds the config, including the
-  `disable_session_recording` lock that L12 still gates. Ingestion goes to a same-origin `/rink`
-  path rewritten in `vercel.json`, so blockers see a first-party request. `lib/featureFlags.ts` is
-  the flags harness and is deliberately empty — D235 says why. No `VITE_POSTHOG_KEY` ⇒ no init, no
-  network, every capture a no-op.
+  `disable_session_recording` lock that L12 still gates, and a `before_send` that drops query
+  strings so Clerk's dev handoff token never rides along. Ingestion is direct and cross-origin on
+  purpose — a same-origin proxy would send Clerk's session cookie to PostHog (D235). Autocapture is
+  on, with `PersonName` / `Avatar` carrying `ph-no-capture` so element text holds places but never
+  people. `lib/featureFlags.ts` is the flags harness and is deliberately empty — D235 says why. No
+  `VITE_POSTHOG_KEY` ⇒ no init, no network, every capture a no-op.
 - **Vitest** (+ Testing Library / jsdom) for logic, components, and the token-parity guard.
 
 ## Navigation (D28/D47)

@@ -93,6 +93,24 @@ describe('useFeatureFlag', () => {
     expect(mocks.isFeatureEnabled).not.toHaveBeenCalled();
     expect(mocks.onFeatureFlags).not.toHaveBeenCalled();
   });
+
+  /**
+   * The fallback is the safe side of the switch, and a caller may recompute which side that is.
+   * With no PostHog to ask, the initial `useState` value is the only thing that would ever have
+   * been returned — so a changed fallback has to be picked up explicitly.
+   */
+  it('follows a changed fallback while unconfigured', () => {
+    mocks.configured.posthog = false;
+    const { result, rerender } = renderHook(
+      ({ fallback }: { fallback: boolean }) => useFeatureFlag('some_flag', fallback),
+      { initialProps: { fallback: false } },
+    );
+    expect(result.current).toBe(false);
+
+    rerender({ fallback: true });
+
+    expect(result.current).toBe(true);
+  });
 });
 
 describe('FEATURE_FLAGS', () => {

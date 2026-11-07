@@ -2,6 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
 import { BodySilhouette } from './BodySilhouette';
+import { PersonName } from './PersonName';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
@@ -99,9 +100,9 @@ export function FeedCard({
           />
           <span className="min-w-0 truncate">
             by{' '}
-            <span className={card.blocked ? 'text-foreground-muted' : 'text-foreground'}>
+            <PersonName className={card.blocked ? 'text-foreground-muted' : 'text-foreground'}>
               {card.author.displayName}
-            </span>
+            </PersonName>
             {card.durationLabel ? ` · skated ${card.durationLabel}` : null}
           </span>
           {card.blocked ? <BlockedChip /> : null}

@@ -18,8 +18,8 @@ things that currently ship dark behind constants.
   switch (`components/PostHogIdentity.tsx`).
 - **Exception capture** alongside Sentry, which still owns error quality and alerting.
 - **Autocapture + SPA pageviews**, so questions nobody instrumented for stay answerable.
-- **First-party ingestion** — a same-origin `/rink` path rewritten in `apps/web/vercel.json`, so a
-  tracker blocker sees our host rather than a recognized analytics domain.
+- **Query strings scrubbed** from the URLs PostHog attaches itself, and **people's names masked**
+  (`PersonName`, `Avatar`) so autocapture's element text holds places but not persons.
 - **A flags harness** — `lib/featureFlags.ts`, with **no flags registered**.
 
 ## What is still open
@@ -51,5 +51,16 @@ things that currently ship dark behind constants.
   redeploy, and guards nothing a skater's safety rests on (D3) — the last of which is why neither
   of the above qualified. Server-evaluated flags would need `posthog-node` in a Convex action; that
   is a phase, not a follow-up.
+- **A reverse proxy for ingestion, if blocker loss turns out to matter.** Events go straight to
+  `us.i.posthog.com` today. A same-origin proxy would beat tracker blockers, and it was the first
+  choice here until review found that `posthog-js` sets no `credentials` option: `fetch` defaults
+  to `same-origin`, so the browser would attach Clerk's `__session` cookie to every ingestion
+  request and a Vercel rewrite forwards request headers on. **Precondition: a hop that strips
+  `Cookie` before forwarding** — which means a Nitro route rule or an equivalent, not a
+  `vercel.json` rewrite, and a billed function invocation per event. (A `vercel.json` rewrite is
+  also the wrong mechanism on its own terms: Nitro's Vercel preset writes its own
+  `.vercel/output/config.json`, which can supersede it, and the failure is silent — the SSR
+  catch-all answers 200 and every event disappears with nothing in any log.) `VITE_POSTHOG_HOST`
+  is the switch when that exists, so no code has to change.
 - **Cost:** free tier is 1M events/month. Autocapture is the unpredictable half — worth a look at
   real volume once the alpha has traffic, since it is one line to turn off.

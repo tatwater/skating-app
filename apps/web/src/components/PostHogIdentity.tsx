@@ -47,7 +47,13 @@ export function PostHogIdentity({ children }: { children: ReactNode }) {
     if (!isConfigured.posthog || !isLoaded) return;
 
     if (!isSignedIn || !userId) {
-      if (identified.current !== null) {
+      // The ref only knows about *this* mount, so ask PostHog too. A page load that finds the
+      // Clerk session gone — expired, or revoked from another device — starts with the ref null
+      // while PostHog's persisted distinct id is still the account that left. Without the second
+      // half of this condition that is the shared-device case this bridge exists to prevent: the
+      // next person's signed-out pageviews and clicks land on the previous account's id. An
+      // anonymous visitor is not identified, so their pre-sign-up id still survives untouched.
+      if (identified.current !== null || posthog._isIdentified()) {
         posthog.reset();
         identified.current = null;
       }

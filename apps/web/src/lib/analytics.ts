@@ -96,7 +96,15 @@ export function useAnalytics(): Analytics {
     () => ({
       capture: (name, ...args) => {
         if (!isConfigured.posthog) return;
-        posthog.capture(name, args[0]);
+        try {
+          posthog.capture(name, args[0]);
+        } catch {
+          // Analytics never fails the thing it is measuring. Every call site but one sits inside
+          // the `try` that reports a write back to the skater, so a throw from the SDK would turn
+          // a hazard that *did* file into "Could not save that hazard" — and the honest response
+          // to that message is to file the pin again, which is a duplicate hazard on the map.
+          // A lost count is the cheapest possible outcome here, so swallow it.
+        }
       },
     }),
     [posthog],

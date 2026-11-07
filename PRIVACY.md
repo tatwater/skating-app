@@ -101,9 +101,12 @@ your reports"). The app is not directed at children under 16.
   comment or note text, coordinates, or your email or name. Alongside those, the
   analytics tool automatically records the buttons and links you click and the page
   addresses you visit, which includes the **on-screen label** of what you clicked —
-  so the name of a lake can appear there when you click on one. Once you're signed
-  in all of this is tied to an account identifier, not to your name or email, and
-  signing out stops the link. Uncaught errors are also sent here for context.
+  so the name of a lake or a town can appear there. **People's names and @handles
+  are deliberately excluded** from that, yours and everyone else's, as are profile
+  pictures; and web addresses have anything after the `?` removed before they are
+  sent. Once you're signed in all of this is tied to an account identifier, not to
+  your name or email, and signing out stops the link. Uncaught errors are also sent
+  here for context.
   **Session replay — recording what you see and do on screen — is switched off**, and
   it is off in the app's own code rather than only in a setting. If it is ever turned
   on, this notice will be updated first; **it will never record users under 18**, and

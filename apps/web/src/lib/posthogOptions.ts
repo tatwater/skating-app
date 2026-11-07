@@ -1,27 +1,70 @@
-import type { PostHogConfig } from 'posthog-js';
+import type { CaptureResult, PostHogConfig } from 'posthog-js';
 import { env } from './env';
 
 /**
  * PostHog browser options (D29 / D235) — the analytics half of observability, the way
  * `sentryOptions.ts` is the error half.
  *
- * One exported object rather than an options literal inlined in `__root.tsx`, for the reason
- * given there: the privacy-relevant switches are the ones nobody notices have drifted until
- * private data is already collected, so they live somewhere a test can read them. The companion
- * test asserts the two that matter most ({@link posthogOptions.disable_session_recording} and the
- * proxy host) and will fail if either is ever quietly flipped.
+ * One exported object rather than an options literal inlined in the provider, for the reason
+ * `sentryOptions.ts` gives: the privacy-relevant switches are the ones nobody notices have
+ * drifted until private data is already collected, so they live somewhere a test can read them.
+ * The companion test guards the ones that matter — the session-replay lock above all — and fails
+ * if any is quietly flipped.
  */
+
+/**
+ * Strips the query string and fragment from a URL, keeping scheme, host and path.
+ *
+ * `$current_url` and `$referrer` ride on every automatic event — pageviews, autocaptured clicks,
+ * exceptions — and a query string on this app can carry Clerk's `__clerk_db_jwt` handoff parameter
+ * in development, which is a credential. `sentryOptions.ts` refuses the same category with
+ * `urlQueryParams: false`; this is the analytics half of that rule.
+ *
+ * Path segments are deliberately **kept**, including the ids in them (founder call): which lakes
+ * and reports draw traffic is a question worth being able to ask, and the paths are not
+ * credentials. Exported for the test.
+ */
+export function stripUrlQuery(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  // Not `new URL()`: `$pathname` and `$referrer` are not always absolute, and a parse failure
+  // must not drop the property. Cutting at the first `?` or `#` is correct for both shapes.
+  const cut = value.search(/[?#]/);
+  return cut === -1 ? value : value.slice(0, cut);
+}
+
+/** The URL-valued properties PostHog attaches on its own, including the `$set_once` initials. */
+const URL_PROPERTIES = [
+  '$current_url',
+  '$referrer',
+  '$initial_current_url',
+  '$initial_referrer',
+] as const;
+
 export const posthogOptions = {
   /**
-   * Same-origin by default (`/rink`, rewritten in `vercel.json`) — see `env.posthogHost`.
+   * PostHog's US ingestion host, cross-origin on purpose — see `env.ts` for why the same-origin
+   * proxy was reversed (it would send Clerk's session cookie to PostHog on every event).
    */
   api_host: env.posthogHost,
 
   /**
-   * Where PostHog's *own* UI lives, so links the SDK generates point at the app and not at the
-   * proxy path. Separate from `api_host` precisely because the proxy makes them differ.
+   * Drops query strings from the URLs PostHog attaches by itself. The ten hand-written events
+   * carry no URL at all, so this is the only path by which one arrives.
    */
-  ui_host: env.posthogUiHost,
+  before_send: (event: CaptureResult | null): CaptureResult | null => {
+    if (!event?.properties) return event;
+    for (const key of URL_PROPERTIES) {
+      if (key in event.properties) event.properties[key] = stripUrlQuery(event.properties[key]);
+    }
+    const setOnce = event.properties.$set_once;
+    if (setOnce && typeof setOnce === 'object') {
+      const once = setOnce as Record<string, unknown>;
+      for (const key of URL_PROPERTIES) {
+        if (key in once) once[key] = stripUrlQuery(once[key]);
+      }
+    }
+    return event;
+  },
 
   /**
    * **Session replay is off, and this line is the one L12 turns on.**
