@@ -16,7 +16,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from './popover';
-import { KICKER, must } from './storyKit';
+import { closeWithEscape, KICKER, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
   title: 'Kit/Popover',
@@ -46,15 +46,17 @@ const FACETS: ReadonlyArray<[string, readonly string[]]> = [
 ];
 
 type FilterMenuProps = {
+  /** Only a four-up quad controls it (`useQuadOpen`); every other story leaves it to the trigger. */
   open?: boolean;
+  onOpenChange?: (open: boolean, details: { reason: string; event?: Event }) => void;
   modal?: boolean;
   container?: HTMLElement | null;
 };
 
 /** The Filter menu: a head with the count applied, a row of options per facet, keys in the foot. */
-function FilterMenu({ open, modal, container }: FilterMenuProps) {
+function FilterMenu({ open, onOpenChange, modal, container }: FilterMenuProps) {
   return (
-    <Popover open={open} modal={modal}>
+    <Popover open={open} onOpenChange={onOpenChange} modal={modal}>
       <PopoverTrigger render={<Button />}>Filter</PopoverTrigger>
       <PopoverContent container={container} className="w-[22rem]">
         <PopoverHeader note="2 applied">
@@ -109,7 +111,8 @@ export const FilterMenuStory: Story = {
     await waitFor(() => expect(plate.contains(document.activeElement)).toBe(true));
     for (let i = 0; i < 9; i++) {
       await userEvent.tab();
-      await expect(plate.contains(document.activeElement)).toBe(true);
+      // The trap's focus guard hands focus back a beat after Tab leaves the last item.
+      await waitFor(() => expect(plate.contains(document.activeElement)).toBe(true));
     }
     // The screen-reader close is out of the Tab order.
     const srClose = within(plate).getByRole('button', { name: 'Close' });
@@ -132,13 +135,17 @@ export const FilterMenuStory: Story = {
 
 /** It fades on `duration-fast` (zero under reduced motion); nothing scales. */
 export const Motion: Story = {
-  render: () => <FilterMenu open />,
-  play: async () => {
+  render: () => <FilterMenu />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Filter');
     const plate = await waitFor(() => must(popup()));
+    // Base UI holds transitions off for the frame a popup mounts in; read them once it has faded in.
+    await waitFor(() => expect(getComputedStyle(plate).opacity).toBe('1'));
     const style = getComputedStyle(plate);
     await expect(style.transitionProperty).toBe('opacity');
     await expect(style.transitionDuration).toBe(motion(120));
     await expect(style.scale).toBe('none');
+    await closeWithEscape(popup);
   },
 };
 
@@ -147,7 +154,7 @@ const MONTHS = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', '
 /** The ledger's month grid: the season's months, the ones still to come inert. */
 function MonthGrid() {
   return (
-    <Popover open>
+    <Popover>
       <PopoverTrigger render={<Button className="w-[16rem] justify-between" />}>
         October 2026
       </PopoverTrigger>
@@ -181,8 +188,8 @@ export const JunctionOpen: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
+    const trigger = await openWith(canvasElement, 'October 2026');
     const plate = await waitFor(() => must(popup()));
-    const trigger = within(canvasElement).getByRole('button', { name: 'October 2026' });
     await waitFor(() => expect(getComputedStyle(plate).opacity).toBe('1'));
     const t = trigger.getBoundingClientRect();
     const p = plate.getBoundingClientRect();
@@ -193,13 +200,15 @@ export const JunctionOpen: Story = {
     const first = must(part(plate, 'popover-body').firstElementChild).getBoundingClientRect();
     await near(first.left - p.left - edge, resolvePx(plate, 'var(--space-2_5)'));
     await near(first.top - p.top - edge, resolvePx(plate, 'var(--space-2_5)'));
+    await closeWithEscape(popup);
   },
 };
 
 /** The head's title one `space-3_5` in from the edge, the note at the right; the foot ruled above. */
 export const HeadAndFoot: Story = {
-  render: () => <FilterMenu open />,
-  play: async () => {
+  render: () => <FilterMenu />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Filter');
     const plate = await waitFor(() => must(popup()));
     const p = plate.getBoundingClientRect();
     const edge = resolvePx(plate, 'var(--stroke-hair)');
@@ -210,13 +219,14 @@ export const HeadAndFoot: Story = {
     const foot = part(plate, 'popover-footer');
     await expect(getComputedStyle(foot).borderTopColor).toBe(computedColor(foot, 'var(--line)'));
     await near(foot.getBoundingClientRect().bottom, p.bottom - edge);
+    await closeWithEscape(popup);
   },
 };
 
 /** Too long for the viewport: the plate stops at the available height and its body scrolls. */
 export const LongList: Story = {
   render: () => (
-    <Popover open>
+    <Popover>
       <PopoverTrigger render={<Button />}>Bodies</PopoverTrigger>
       <PopoverContent className="w-[20rem]">
         <PopoverHeader>
@@ -230,13 +240,15 @@ export const LongList: Story = {
       </PopoverContent>
     </Popover>
   ),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Bodies');
     const plate = await waitFor(() => must(popup()));
     const body = part(plate, 'popover-body');
     await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
     await expect(plate.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       document.documentElement.clientHeight,
     );
+    await closeWithEscape(popup);
   },
 };
 
@@ -273,9 +285,10 @@ export const WithDescription: Story = {
 
 function QuadMenu(): ReactNode {
   const [frame, setFrame] = useState<HTMLElement | null>(null);
+  const quad = useQuadOpen(frame);
   return (
     <div ref={setFrame} className="relative pb-[16rem]">
-      {frame !== null && <FilterMenu open modal={false} container={frame} />}
+      {frame !== null && <FilterMenu {...quad} modal={false} container={frame} />}
     </div>
   );
 }
@@ -283,6 +296,7 @@ function QuadMenu(): ReactNode {
 /**
  * Open in all four maps, each portaled into its quad (non-modal here: four focus traps at once
  * would fight). The console's kicker is the smaller step, and each plate takes its quad's ground.
+ * Each quad's Filter opens its own.
  */
 export const FourUp: Story = {
   render: () => <QuadMenu />,
@@ -292,6 +306,7 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     const seen: Array<{ surface?: string; type: number; ground: string }> = [];
+    for (const q of quads) await userEvent.click(within(q).getByRole('button', { name: 'Filter' }));
     for (const q of quads) {
       const plate = await waitFor(() => must(popup(q)));
       seen.push({

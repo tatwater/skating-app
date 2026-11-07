@@ -4,7 +4,7 @@ import { expect, fn, spyOn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
-import { must } from './storyKit';
+import { must, openWith } from './storyKit';
 import {
   createToastManager,
   Toaster,
@@ -193,7 +193,8 @@ export const Insets: Story = {
  */
 export const DockedAtTheRail: Story = {
   render: () => <DockedToaster placement="rail" />,
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Save the bay');
     const dock = await waitFor(() =>
       must(document.querySelector<HTMLElement>('[data-placement="rail"]')),
     );
@@ -221,10 +222,12 @@ export const DockedAtTheRail: Story = {
 /** The dock on skater (no rail, no status bar): the gutter in from the bottom-left corner. */
 export const DockedAtTheEdge: Story = {
   render: () => <DockedToaster placement="edge" />,
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Save the bay');
     const dock = await waitFor(() =>
       must(document.querySelector<HTMLElement>('[data-placement="edge"]')),
     );
+    await waitFor(() => expect(toastIn(dock)).not.toBeNull());
     const box = dock.getBoundingClientRect();
     const gutter = resolvePx(dock, 'var(--gap-gutter)');
     await expect(box.left).toBeCloseTo(gutter, 1);
@@ -232,12 +235,24 @@ export const DockedAtTheEdge: Story = {
   },
 };
 
+/**
+ * The page's own dock, fixed over the viewport like the app's, so it shows only on a press (never
+ * on mount, where it would sit over the page), and leaves on its own time.
+ */
 function DockedToaster({ placement }: { placement: 'rail' | 'edge' }) {
   const [manager] = useState(createToastManager);
-  useEffect(() => {
-    toast({ title: 'Bay saved · Shaker cove', description: 'Mascoma Lake', timeout: 0 }, manager);
-  }, [manager]);
-  return <Toaster manager={manager} placement={placement} />;
+  return (
+    <>
+      <Button
+        onClick={() =>
+          toast({ title: 'Bay saved · Shaker cove', description: 'Mascoma Lake' }, manager)
+        }
+      >
+        Save the bay
+      </Button>
+      <Toaster manager={manager} placement={placement} />
+    </>
+  );
 }
 
 /** Without an action it dismisses on its own: the time bar runs, no countdown. */

@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
-import { KICKER, must } from './storyKit';
+import { closeWithEscape, KICKER, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
   title: 'Kit/DropdownMenu',
@@ -51,15 +51,25 @@ const highlighted = (name: string) =>
 /** The log's copy menu: icons in their slot, keys in theirs, a kicker over each group. */
 function CopyMenu({
   open,
+  onOpenChange,
+  modal,
   container,
   onOpenChangeComplete,
 }: {
+  /** Only a four-up quad controls it (`useQuadOpen`); every other story leaves it to the trigger. */
   open?: boolean;
+  onOpenChange?: (open: boolean, details: { reason: string; event?: Event }) => void;
+  modal?: boolean;
   container?: HTMLElement | null;
   onOpenChangeComplete?: (open: boolean) => void;
 }) {
   return (
-    <DropdownMenu open={open} onOpenChangeComplete={onOpenChangeComplete}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={onOpenChange}
+      modal={modal}
+      onOpenChangeComplete={onOpenChangeComplete}
+    >
       <DropdownMenuTrigger render={<Button size="sm" />}>
         Copy log
         <DropdownMenuCaret />
@@ -95,9 +105,9 @@ function CopyMenu({
 }
 
 /** A rare, destructive page action, alone in a ⋯ menu beside the page's buttons. */
-function PageMenu({ open, onRemove }: { open?: boolean; onRemove?: () => void }) {
+function PageMenu({ onRemove }: { onRemove?: () => void }) {
   return (
-    <DropdownMenu open={open}>
+    <DropdownMenu>
       <DropdownMenuTrigger
         render={<Button variant="bare" size="icon-sm" aria-label="More actions" />}
       >
@@ -203,22 +213,24 @@ export const Danger: Story = {
 
 /** A disabled item keeps its place, dimmed; choosing it does nothing and the menu stays. */
 export const DisabledItem: Story = {
-  render: () => <CopyMenu open />,
+  render: () => <CopyMenu />,
   beforeEach: () => chose.mockClear(),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Copy log');
     const all = await waitFor(() => item('Copy all logs'));
     await expect(all).toHaveAttribute('aria-disabled', 'true');
     await expect(getComputedStyle(all).color).toBe(computedColor(all, 'var(--fg-disabled)'));
     await userEvent.click(all, { pointerEventsCheck: 0 });
     await expect(chose).not.toHaveBeenCalled();
     await expect(popup()).not.toBeNull();
+    await closeWithEscape(popup);
   },
 };
 
 /** Nothing to act on yet: one note row an item tall, so the plate never collapses. */
 export const Empty: Story = {
   render: () => (
-    <DropdownMenu open>
+    <DropdownMenu>
       <DropdownMenuTrigger render={<Button size="sm" />}>
         Copy log
         <DropdownMenuCaret />
@@ -228,7 +240,8 @@ export const Empty: Story = {
       </DropdownMenuContent>
     </DropdownMenu>
   ),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Copy log');
     const plate = await waitFor(() => must(popup()));
     const note = must(plate.querySelector<HTMLElement>('[data-slot="dropdown-menu-note"]'));
     await expect(note.getBoundingClientRect().height).toBeCloseTo(
@@ -236,13 +249,15 @@ export const Empty: Story = {
       1,
     );
     await expect(getComputedStyle(note).color).toBe(computedColor(note, 'var(--fg3)'));
+    await closeWithEscape(popup);
   },
 };
 
 /** Open as a board draws it; every live word and kicker passes AA on the plate. */
 export const Open: Story = {
-  render: () => <CopyMenu open />,
-  play: async () => {
+  render: () => <CopyMenu />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Copy log');
     const plate = await waitFor(() => must(popup()));
     const ground = ['var(--bg)', 'var(--plate-solid)'];
     for (const el of plate.querySelectorAll<HTMLElement>(
@@ -251,19 +266,24 @@ export const Open: Story = {
       const ratio = contrastBetween(el, ground, [...ground, getComputedStyle(el).color]);
       await expect(ratio).toBeGreaterThanOrEqual(4.5);
     }
+    await closeWithEscape(popup);
   },
 };
 
 function QuadMenu(): ReactNode {
   const [container, setContainer] = useState<HTMLElement | null>(null);
+  const quad = useQuadOpen(container);
   return (
     <div ref={setContainer} className="relative pb-[15rem]">
-      {container !== null && <CopyMenu open container={container} />}
+      {container !== null && <CopyMenu {...quad} modal={false} container={container} />}
     </div>
   );
 }
 
-/** Open in all four maps — each menu portaled into its own quad, so it takes that quad's theme. */
+/**
+ * Open in all four maps — each quad's Copy log opens its own menu, portaled into the quad, so it
+ * takes that quad's theme. Non-modal here, so all four stand open at once.
+ */
 export const FourUp: Story = {
   render: () => <QuadMenu />,
   parameters: { fourUp: true },
@@ -272,6 +292,9 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     const plates = new Set<string>();
+    for (const q of quads) {
+      await userEvent.click(within(q).getByRole('button', { name: 'Copy log' }));
+    }
     for (const q of quads) {
       const plate = await waitFor(() => must(popup(q)));
       plates.add(getComputedStyle(plate).backgroundColor);
@@ -292,13 +315,14 @@ export const FourUp: Story = {
 function MenuJunction() {
   return (
     <div className="m-(--space-8)">
-      <CopyMenu open />
+      <CopyMenu />
       <p className={`${KICKER} mt-[14rem]`}>Labels and keys in fixed columns</p>
     </div>
   );
 }
 
-async function playMenuJunction() {
+async function playMenuJunction({ canvasElement }: { canvasElement: HTMLElement }) {
+  await openWith(canvasElement, 'Copy log');
   const plate = await waitFor(() => must(popup()));
   const td = resolvePx(plate, 'var(--size-td)');
   const items = [...plate.querySelectorAll<HTMLElement>('[data-slot="dropdown-menu-item"]')];
@@ -331,6 +355,7 @@ async function playMenuJunction() {
   await expect(Math.abs(range.getBoundingClientRect().left - icon.left)).toBeLessThanOrEqual(1);
   // The key caps are the surface's key height, so they never make a row taller.
   await expect(must(caps[0]).height).toBeCloseTo(resolvePx(plate, 'var(--size-key)'), 1);
+  await closeWithEscape(popup);
 }
 
 export const JunctionColumnsAdmin: Story = {

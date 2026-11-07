@@ -17,10 +17,10 @@ import {
   AlertDialogTrigger,
 } from './alert-dialog';
 import { Button } from './button';
-import { Dialog } from './dialog';
+import { Dialog, DialogTrigger } from './dialog';
 import { Field, FieldLabel, Input } from './input';
 import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
-import { must } from './storyKit';
+import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
   title: 'Kit/AlertDialog',
@@ -48,9 +48,7 @@ type ReasonDialogProps = {
   verb: string;
   destructive?: boolean;
   defaultReason?: string;
-  defaultOpen?: boolean;
   armFor?: number;
-  modal?: boolean;
   container?: HTMLElement | null;
   /** Extra fields over the reason, and whether they're complete. */
   extra?: (ready: (ok: boolean) => void) => ReactNode;
@@ -65,13 +63,12 @@ function ReasonDialog({
   verb,
   destructive,
   defaultReason = '',
-  defaultOpen,
   armFor,
   container,
   extra,
   error,
 }: ReasonDialogProps) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
+  const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(defaultReason);
   const [extraReady, setExtraReady] = useState(extra === undefined);
   return (
@@ -202,9 +199,10 @@ export const Dismiss: Story = {
  * foot says how to finish; the second press acts.
  */
 export const DestructiveTwoPress: Story = {
-  render: () => <ReasonDialog {...REMOVE} defaultOpen />,
+  render: () => <ReasonDialog {...REMOVE} />,
   beforeEach: () => confirmed.mockClear(),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Remove');
     const dialog = await waitFor(() => must(popup()));
     const remove = action(dialog);
     await expect(remove).toBeEnabled();
@@ -228,9 +226,10 @@ export const DestructiveTwoPress: Story = {
 
 /** The armed window lapses on its own, and clearing the reason disarms at once. */
 export const ArmLapses: Story = {
-  render: () => <ReasonDialog {...REMOVE} defaultOpen armFor={300} />,
+  render: () => <ReasonDialog {...REMOVE} armFor={300} />,
   beforeEach: () => confirmed.mockClear(),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Remove');
     const dialog = await waitFor(() => must(popup()));
     const remove = action(dialog);
     await userEvent.click(remove);
@@ -244,6 +243,7 @@ export const ArmLapses: Story = {
     await expect(remove).not.toHaveAttribute('data-armed');
     await expect(remove).toBeDisabled();
     await expect(confirmed).not.toHaveBeenCalled();
+    await closeWithEscape(popup);
   },
 };
 
@@ -256,7 +256,6 @@ export const TypedConfirmation: Story = {
       description="Winter 2026–27 is re-detected from tonight with settings v4. The old record is kept as superseded and the staff emails don't resend."
       verb="Reset the watch"
       defaultReason="Thresholds tuned with Matt; v3 opened the watch a week early."
-      defaultOpen
       extra={(ready) => (
         <Field>
           <FieldLabel>Type reset to confirm</FieldLabel>
@@ -266,13 +265,15 @@ export const TypedConfirmation: Story = {
     />
   ),
   beforeEach: () => confirmed.mockClear(),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Reset');
     const dialog = await waitFor(() => must(popup()));
     const word = within(dialog).getByRole('textbox', { name: 'Type reset to confirm' });
     await userEvent.type(word, 'rese');
     await expect(action(dialog)).toBeDisabled();
     await userEvent.type(word, 't');
     await expect(action(dialog)).toBeEnabled();
+    await closeWithEscape(popup);
   },
 };
 
@@ -285,7 +286,6 @@ export const ServerRefused: Story = {
       description="Landowner request."
       verb="Try again"
       defaultReason="Owner asked by email, 12 Oct."
-      defaultOpen
       error={
         <AlertDialogError>
           Sarah set Mascoma Lake dormant at 14:41, after you opened this. Look at her note, then try
@@ -294,7 +294,8 @@ export const ServerRefused: Story = {
       }
     />
   ),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Take off the map');
     const dialog = await waitFor(() => must(popup()));
     const error = within(dialog).getByRole('alert');
     await expect(error).toHaveTextContent(/^Not saved\. Sarah set/);
@@ -303,6 +304,7 @@ export const ServerRefused: Story = {
     await expect(parseFloat(style.borderLeftWidth)).toBe(resolvePx(error, 'var(--stroke-note)'));
     await expect(style.borderTopWidth).toBe('0px');
     await expect(within(dialog).getByRole('textbox')).toHaveValue('Owner asked by email, 12 Oct.');
+    await closeWithEscape(popup);
   },
 };
 
@@ -311,8 +313,9 @@ export const ServerRefused: Story = {
  * words; the reason's kicker `space-2` over its box. The scrim is the token, no blur.
  */
 export const JunctionOpen: Story = {
-  render: () => <ReasonDialog {...HIDE} defaultOpen />,
-  play: async () => {
+  render: () => <ReasonDialog {...HIDE} />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Hide');
     const dialog = await waitFor(() => must(popup()));
     await waitFor(() => expect(getComputedStyle(dialog).opacity).toBe('1'));
     const near = (a: number, b: number) =>
@@ -335,6 +338,7 @@ export const JunctionOpen: Story = {
     const dim = must(scrim());
     await expect(getComputedStyle(dim).backgroundColor).toBe(computedColor(dim, 'var(--scrim)'));
     await expect(getComputedStyle(dim).backdropFilter).toBe('none');
+    await closeWithEscape(popup);
   },
 };
 
@@ -345,10 +349,12 @@ export const JunctionOpen: Story = {
  */
 function QuadReason(): ReactNode {
   const [frame, setFrame] = useState<HTMLElement | null>(null);
+  const quad = useQuadOpen(frame);
   return (
     <div ref={setFrame} className="relative h-[26rem]">
       {frame !== null && (
-        <Dialog open modal={false}>
+        <Dialog {...quad} modal={false}>
+          <DialogTrigger render={<Button variant="danger" />}>{REMOVE.trigger}</DialogTrigger>
           <AlertDialogContent container={frame}>
             <AlertDialogHeader>
               <AlertDialogTitle>{REMOVE.title}</AlertDialogTitle>
@@ -368,7 +374,10 @@ function QuadReason(): ReactNode {
   );
 }
 
-/** Open in all four maps: the console's is denser, and the armed red is each map's own. */
+/**
+ * Open in all four maps (each quad's Remove opens its own): the console's is denser, and the armed
+ * red is each map's own.
+ */
 export const FourUp: Story = {
   render: () => <QuadReason />,
   parameters: { fourUp: true },
@@ -376,6 +385,7 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     const sizes: Record<string, number[]> = { admin: [], skater: [] };
+    for (const q of quads) await userEvent.click(within(q).getByRole('button', { name: 'Remove' }));
     for (const q of quads) {
       const dialog = await waitFor(() => must(popup(q)));
       sizes[must(q.dataset.surface)]?.push(

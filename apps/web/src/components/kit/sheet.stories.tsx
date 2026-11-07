@@ -16,7 +16,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from './sheet';
-import { must } from './storyKit';
+import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
   title: 'Kit/Sheet',
@@ -99,8 +99,9 @@ function ChangeRate({ container }: { container: HTMLElement | null }) {
 
 type RatesSheetProps = {
   container: HTMLElement | null;
-  defaultOpen?: boolean;
+  /** Only a four-up quad controls it (`useQuadOpen`); every other story leaves it to the trigger. */
   open?: boolean;
+  onOpenChange?: (open: boolean, details: { reason: string; event?: Event }) => void;
   modal?: boolean;
   loading?: boolean;
   repeat?: number;
@@ -110,15 +111,15 @@ type RatesSheetProps = {
 /** The reference: Rates, a sheet over the cost ledger. */
 function RatesSheet({
   container,
-  defaultOpen,
   open,
+  onOpenChange,
   modal,
   loading,
   repeat,
   foot,
 }: RatesSheetProps) {
   return (
-    <Sheet defaultOpen={defaultOpen} open={open} modal={modal}>
+    <Sheet open={open} onOpenChange={onOpenChange} modal={modal}>
       <SheetTrigger render={<Button />}>Rates</SheetTrigger>
       <SheetContent container={container}>
         <SheetHeader>
@@ -217,8 +218,9 @@ export const RatesOverLedger: Story = {
  * Esc closes only the top sheet.
  */
 export const Stacked: Story = {
-  render: () => <Shell>{(main) => <RatesSheet container={main} defaultOpen />}</Shell>,
-  play: async () => {
+  render: () => <Shell>{(main) => <RatesSheet container={main} />}</Shell>,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Rates');
     const rates = await waitFor(() => must(sheet()));
     await userEvent.click(within(rates).getByRole('button', { name: 'Change rate' }));
     await waitFor(() => expect(sheets()).toHaveLength(2));
@@ -239,13 +241,15 @@ export const Stacked: Story = {
     await waitFor(() => expect(sheets()).toHaveLength(1));
     await expect(rates).not.toHaveAttribute('data-nested-dialog-open');
     await waitFor(() => expect(getComputedStyle(rates, '::after').opacity).toBe('0'));
+    await closeWithEscape(sheet);
   },
 };
 
 /** It slides in from its edge on `duration-slow` (zero under reduced motion); the scrim fades. */
 export const Motion: Story = {
-  render: () => <Shell>{(main) => <RatesSheet container={main} open />}</Shell>,
-  play: async () => {
+  render: () => <Shell>{(main) => <RatesSheet container={main} />}</Shell>,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Rates');
     const panel = await waitFor(() => must(sheet()));
     const style = getComputedStyle(panel);
     await expect(style.transitionProperty).toBe('translate');
@@ -254,6 +258,7 @@ export const Motion: Story = {
     await expect(dim.transitionProperty).toBe('opacity');
     await expect(dim.transitionDuration).toBe(motion(320));
     await waitFor(() => expect(getComputedStyle(panel).translate).toBe('none'));
+    await closeWithEscape(sheet);
   },
 };
 
@@ -262,8 +267,9 @@ export const Motion: Story = {
  * sub-line sits `space-2_5` after it; the foot pads by the gutter and `space-3`.
  */
 export const JunctionOpen: Story = {
-  render: () => <Shell>{(main) => <RatesSheet container={main} open />}</Shell>,
-  play: async () => {
+  render: () => <Shell>{(main) => <RatesSheet container={main} />}</Shell>,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Rates');
     const panel = await waitFor(() => must(sheet()));
     await waitFor(() => expect(getComputedStyle(panel).translate).toBe('none'));
     const box = panel.getBoundingClientRect();
@@ -283,13 +289,15 @@ export const JunctionOpen: Story = {
     await near(note.left - box.left - edge, gutter);
     await expect(getComputedStyle(foot).backgroundColor).toBe(computedColor(foot, 'var(--bg)'));
     await near(parseFloat(getComputedStyle(foot).paddingTop), resolvePx(panel, 'var(--space-3)'));
+    await closeWithEscape(sheet);
   },
 };
 
 /** Long content scrolls inside the body; the head and the foot stay in view. */
 export const LongContent: Story = {
-  render: () => <Shell>{(main) => <RatesSheet container={main} open repeat={12} />}</Shell>,
-  play: async () => {
+  render: () => <Shell>{(main) => <RatesSheet container={main} repeat={12} />}</Shell>,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Rates');
     const panel = await waitFor(() => must(sheet()));
     const body = part(panel, 'sheet-body');
     await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
@@ -298,6 +306,7 @@ export const LongContent: Story = {
       part(panel, 'sheet-footer').getBoundingClientRect().bottom,
       panel.getBoundingClientRect().bottom,
     );
+    await closeWithEscape(sheet);
   },
 };
 
@@ -306,7 +315,6 @@ function LoadingToggle({ main }: { main: HTMLElement }) {
   return (
     <RatesSheet
       container={main}
-      open
       loading={loading}
       foot={<Button onClick={() => setLoading((l) => !l)}>{loading ? 'Loaded' : 'Loading'}</Button>}
     />
@@ -316,7 +324,8 @@ function LoadingToggle({ main }: { main: HTMLElement }) {
 /** Loading keeps the sheet's size: its width is fixed, and the rows hold their place unseen. */
 export const Loading: Story = {
   render: () => <Shell>{(main) => <LoadingToggle main={main} />}</Shell>,
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Rates');
     const panel = await waitFor(() => must(sheet()));
     await waitFor(() => expect(getComputedStyle(panel).translate).toBe('none'));
     await expect(within(panel).getByRole('status')).toHaveTextContent('Loading');
@@ -325,13 +334,15 @@ export const Loading: Story = {
     await userEvent.click(within(panel).getByRole('button', { name: 'Loaded' }));
     await waitFor(() => expect(within(panel).queryByRole('status')).toBeNull());
     await expect([rectOf(panel), body.scrollHeight]).toEqual(before);
+    await closeWithEscape(sheet);
   },
 };
 
 /** A phone's sheet docks to the bottom edge, full width, and slides up. */
 export const Bottom: Story = {
   render: () => (
-    <Sheet open>
+    <Sheet>
+      <SheetTrigger render={<Button />}>Layers</SheetTrigger>
       <SheetContent side="bottom">
         <SheetHeader>
           <SheetTitle>Layers</SheetTitle>
@@ -342,7 +353,8 @@ export const Bottom: Story = {
       </SheetContent>
     </Sheet>
   ),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Layers');
     const panel = await waitFor(() => must(sheet()));
     await waitFor(() => expect(getComputedStyle(panel).translate).toBe('none'));
     const box = panel.getBoundingClientRect();
@@ -351,19 +363,24 @@ export const Bottom: Story = {
     await near(box.bottom, clientHeight);
     await expect(getComputedStyle(panel).borderTopColor).toBe(computedColor(panel, 'var(--line2)'));
     await expect(panel.dataset.side).toBe('bottom');
+    await closeWithEscape(sheet);
   },
 };
 
 function QuadSheet(): ReactNode {
   const [frame, setFrame] = useState<HTMLElement | null>(null);
+  const quad = useQuadOpen(frame);
   return (
     <div ref={setFrame} className="relative h-[22rem] overflow-hidden">
-      {frame !== null && <RatesSheet container={frame} open modal={false} />}
+      {frame !== null && <RatesSheet {...quad} container={frame} modal={false} />}
     </div>
   );
 }
 
-/** Open in all four maps: the console's head is shorter and its gutter tighter. */
+/**
+ * Open in all four maps (each quad's Rates opens its own, confined to the quad): the console's
+ * head is shorter and its gutter tighter.
+ */
 export const FourUp: Story = {
   render: () => <QuadSheet />,
   parameters: { fourUp: true },
@@ -371,6 +388,7 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     const by: Record<string, Array<{ head: number; pad: number }>> = { admin: [], skater: [] };
+    for (const q of quads) await userEvent.click(within(q).getByRole('button', { name: 'Rates' }));
     for (const q of quads) {
       const panel = await waitFor(() => must(sheet(q)));
       const head = part(panel, 'sheet-header');

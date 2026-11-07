@@ -2,7 +2,54 @@
  * What every kit story shares: the kicker class a board labels itself with, a state-matrix table,
  * and the small DOM helpers a `play` function leans on. Story-only; nothing in the app imports it.
  */
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
+
+/**
+ * Overlay stories open on a press, never on mount (the kit introduction's rule): a story shows the
+ * trigger, its `play` presses it to check the open state, and closes it again before it ends, so
+ * the page stays browsable. `openWith` is the press; `closeWithEscape` is the way out.
+ */
+export async function openWith(
+  canvasElement: HTMLElement,
+  name: string | RegExp,
+  role: 'button' | 'combobox' = 'button',
+): Promise<HTMLElement> {
+  const trigger = within(canvasElement).getByRole(role, { name });
+  await userEvent.click(trigger);
+  return trigger;
+}
+
+/** Presses Esc and waits until `isOpen` reports the overlay gone. */
+export async function closeWithEscape(isOpen: () => Element | null): Promise<void> {
+  await userEvent.keyboard('{Escape}');
+  await waitFor(() => expect(isOpen()).toBeNull());
+}
+
+/** What an overlay root's `onOpenChange` hands over, as far as a quad needs it. */
+type OpenChangeDetails = { reason: string; event?: Event | undefined };
+
+/**
+ * A four-up quad's overlay state, for a quad that renders its own trigger. Pressing (or focusing)
+ * something in another quad doesn't close this one, so all four can stand open side by side to be
+ * compared; Esc, the overlay's own close, and a press anywhere else still do. Pair it with a
+ * non-modal root: four focus traps at once would fight.
+ */
+export function useQuadOpen(frame: HTMLElement | null) {
+  const [open, setOpen] = useState(false);
+  const onOpenChange = (next: boolean, details: OpenChangeDetails) => {
+    // Whatever the reason (a press, focus leaving, a select's cancelled open), a close that lands
+    // in another quad is ignored. Esc is never ignored.
+    if (!next && details.reason !== 'escape-key') {
+      const event = details.event;
+      const to = event instanceof FocusEvent ? event.relatedTarget : event?.target;
+      const other = to instanceof Element ? to.closest('[data-theme-scope]') : null;
+      if (other != null && other !== frame?.closest('[data-theme-scope]')) return;
+    }
+    setOpen(next);
+  };
+  return { open, onOpenChange };
+}
 
 /** The kicker a board's row and column labels wear. */
 export const KICKER = 'text-kick leading-none font-semibold tracking-kick text-fg3 uppercase';

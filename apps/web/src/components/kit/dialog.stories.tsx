@@ -16,7 +16,7 @@ import {
 } from './dialog';
 import { Kbd } from './kbd';
 import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
-import { must } from './storyKit';
+import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
   title: 'Kit/Dialog',
@@ -67,7 +67,9 @@ function KeyRows({ repeat = 1 }: { repeat?: number }) {
 }
 
 type KeysDialogProps = {
+  /** Only a four-up quad controls it (`useQuadOpen`); every other story leaves it to the trigger. */
   open?: boolean;
+  onOpenChange?: (open: boolean, details: { reason: string; event?: Event }) => void;
   modal?: boolean;
   container?: HTMLElement | null;
   loading?: boolean;
@@ -76,9 +78,17 @@ type KeysDialogProps = {
 };
 
 /** The `?` key sheet as a dialog: a title, the words, the rows, one way out. */
-function KeysDialog({ open, modal, container, loading, repeat, foot }: KeysDialogProps) {
+function KeysDialog({
+  open,
+  onOpenChange,
+  modal,
+  container,
+  loading,
+  repeat,
+  foot,
+}: KeysDialogProps) {
   return (
-    <Dialog open={open} modal={modal}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={modal}>
       <DialogTrigger render={<Button />}>Keys</DialogTrigger>
       <DialogContent container={container}>
         <DialogHeader>
@@ -154,8 +164,9 @@ export const Default: Story = {
  * Nothing scales or zooms.
  */
 export const Motion: Story = {
-  render: () => <KeysDialog open />,
-  play: async () => {
+  render: () => <KeysDialog />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Keys');
     const dialog = await waitFor(() => must(popup()));
     for (const el of [dialog, must(scrim())]) {
       const style = getComputedStyle(el);
@@ -166,6 +177,7 @@ export const Motion: Story = {
     // Settled: fully opaque once the opening transition is done.
     await waitFor(() => expect(getComputedStyle(dialog).opacity).toBe('1'));
     await expect(dialog.dataset.startingStyle).toBeUndefined();
+    await closeWithEscape(popup);
   },
 };
 
@@ -175,8 +187,9 @@ export const Motion: Story = {
  * words pass AA on the panel.
  */
 export const JunctionOpen: Story = {
-  render: () => <KeysDialog open />,
-  play: async () => {
+  render: () => <KeysDialog />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Keys');
     const dialog = await waitFor(() => must(popup()));
     await waitFor(() => expect(getComputedStyle(dialog).opacity).toBe('1'));
     const box = dialog.getBoundingClientRect();
@@ -211,13 +224,15 @@ export const JunctionOpen: Story = {
     await expect(contrastBetween(dialog, panel, [...panel, 'var(--fg2)'])).toBeGreaterThanOrEqual(
       4.5,
     );
+    await closeWithEscape(popup);
   },
 };
 
 /** Long content scrolls inside the body; the dialog stays within the gutter, head and foot in view. */
 export const LongContent: Story = {
-  render: () => <KeysDialog open repeat={20} />,
-  play: async () => {
+  render: () => <KeysDialog repeat={20} />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Keys');
     const dialog = await waitFor(() => must(popup()));
     const body = part(dialog, 'dialog-body');
     await expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
@@ -231,6 +246,7 @@ export const LongContent: Story = {
     await expect(foot.bottom).toBeLessThanOrEqual(box.bottom);
     body.scrollTop = body.scrollHeight;
     await expect(body.scrollTop).toBeGreaterThan(0);
+    await closeWithEscape(popup);
   },
 };
 
@@ -238,7 +254,6 @@ function LoadingToggle() {
   const [loading, setLoading] = useState(true);
   return (
     <KeysDialog
-      open
       loading={loading}
       foot={<Button onClick={() => setLoading((l) => !l)}>{loading ? 'Loaded' : 'Loading'}</Button>}
     />
@@ -248,7 +263,8 @@ function LoadingToggle() {
 /** Loading reserves the dialog's final size: the rows keep their place, unseen, under a spinner. */
 export const Loading: Story = {
   render: () => <LoadingToggle />,
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Keys');
     const dialog = await waitFor(() => must(popup()));
     const body = part(dialog, 'dialog-body');
     await expect(body.querySelector('[aria-busy="true"]')).not.toBeNull();
@@ -260,13 +276,15 @@ export const Loading: Story = {
     const after = dialog.getBoundingClientRect();
     await expect([after.width, after.height]).toEqual([before.width, before.height]);
     await expect(getComputedStyle(part(dialog, 'overlay-reserve')).visibility).toBe('visible');
+    await closeWithEscape(popup);
   },
 };
 
 /** The viewer: a photo or a map opened large — inset `space-8` from every edge, the deep scrim. */
 export const Viewer: Story = {
   render: () => (
-    <Dialog open>
+    <Dialog>
+      <DialogTrigger render={<Button />}>Open the photo</DialogTrigger>
       <DialogContent size="viewer">
         <DialogHeader>
           <DialogTitle>Photo</DialogTitle>
@@ -281,7 +299,8 @@ export const Viewer: Story = {
       </DialogContent>
     </Dialog>
   ),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Open the photo');
     const dialog = await waitFor(() => must(popup()));
     await expect(dialog.dataset.size).toBe('viewer');
     const inset = resolvePx(dialog, 'var(--space-8)');
@@ -297,6 +316,7 @@ export const Viewer: Story = {
     await expect(getComputedStyle(dim).backgroundColor).toBe(
       computedColor(dim, 'var(--scrim-deep)'),
     );
+    await closeWithEscape(popup);
   },
 };
 
@@ -311,7 +331,7 @@ function ScopedDialog() {
         className="relative flex-1 bg-bg p-gutter text-row text-fg2"
       >
         The inspector
-        {frame !== null && <KeysDialog open modal={false} container={frame} />}
+        {frame !== null && <KeysDialog modal={false} container={frame} />}
       </div>
     </div>
   );
@@ -319,11 +339,12 @@ function ScopedDialog() {
 
 /**
  * Scoped to a container (the inspector, for an inset card): the scrim and the dialog sit inside it
- * and leave the rest of the page lit.
+ * and leave the rest of the page lit. Non-modal and confined, so the check leaves it open.
  */
 export const Scoped: Story = {
   render: () => <ScopedDialog />,
   play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Keys');
     const dialog = await waitFor(() => must(popup(canvasElement)));
     const frame = within(canvasElement).getByTestId('inspector');
     const dim = must(scrim(canvasElement)).getBoundingClientRect();
@@ -344,16 +365,18 @@ export const Scoped: Story = {
 
 function QuadDialog(): ReactNode {
   const [frame, setFrame] = useState<HTMLElement | null>(null);
+  const quad = useQuadOpen(frame);
   return (
     <div ref={setFrame} className="relative h-[24rem]">
-      {frame !== null && <KeysDialog open modal={false} container={frame} />}
+      {frame !== null && <KeysDialog {...quad} modal={false} container={frame} />}
     </div>
   );
 }
 
 /**
  * Open in all four maps, each in its own quad: the console's is denser (smaller title, tighter
- * gutter) and each takes its quad's ground.
+ * gutter) and each takes its quad's ground. Each quad's Keys opens its own, non-modal and confined
+ * to the quad, so all four can stand open at once.
  */
 export const FourUp: Story = {
   render: () => <QuadDialog />,
@@ -361,6 +384,7 @@ export const FourUp: Story = {
   play: async ({ canvasElement }) => {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
+    for (const q of quads) await userEvent.click(within(q).getByRole('button', { name: 'Keys' }));
     const measure = async (q: HTMLElement) => {
       const dialog = await waitFor(() => must(popup(q)));
       const title = part(dialog, 'dialog-title');

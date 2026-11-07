@@ -31,9 +31,9 @@ const PROMOTE_TIP = 'Lists the body for skaters and moves it to the Active lane.
 const popup = (root: ParentNode = document) =>
   root.querySelector<HTMLElement>('[data-slot="tooltip-content"]');
 
-function ActionTip({ open, container }: { open?: boolean; container?: HTMLElement | null }) {
+function ActionTip({ container }: { container?: HTMLElement | null }) {
   return (
-    <Tooltip open={open}>
+    <Tooltip>
       <TooltipTrigger render={<Button aria-keyshortcuts="P" />}>Promote</TooltipTrigger>
       <TooltipContent title="Promote" container={container}>
         {PROMOTE_TIP}
@@ -70,8 +70,11 @@ export const OnAButton: Story = {
 export const OpensOnFocus: Story = {
   render: () => <ActionTip />,
   play: async ({ canvasElement }) => {
-    within(canvasElement).getByRole('button', { name: 'Promote' }).focus();
+    const trigger = within(canvasElement).getByRole('button', { name: 'Promote' });
+    trigger.focus();
     await waitFor(() => expect(popup()).not.toBeNull());
+    trigger.blur();
+    await waitFor(() => expect(popup()).toBeNull());
   },
 };
 
@@ -139,6 +142,8 @@ export const TextTrigger: Story = {
     await userEvent.hover(trigger);
     const tip = await waitFor(() => must(popup()));
     await expect(tip.querySelector('[data-slot="tooltip-title"]')).toBeNull();
+    await userEvent.unhover(trigger);
+    await waitFor(() => expect(popup()).toBeNull());
   },
 };
 
@@ -164,8 +169,11 @@ export const SharedDelay: Story = {
     const canvas = within(canvasElement);
     await userEvent.hover(canvas.getByRole('button', { name: 'Promote' }));
     await waitFor(() => expect(popup()).toHaveTextContent(/^Promote/), { timeout: 2000 });
-    await userEvent.hover(canvas.getByRole('button', { name: 'Suppress' }));
+    const suppress = canvas.getByRole('button', { name: 'Suppress' });
+    await userEvent.hover(suppress);
     await waitFor(() => expect(popup()).toHaveTextContent(/^Suppress/));
+    await userEvent.unhover(suppress);
+    await waitFor(() => expect(popup()).toBeNull());
   },
 };
 
@@ -211,14 +219,15 @@ export const NeverInNavigation: Story = {
 // ── Board, junctions and four-up ──────────────────────────────────────────────────────────────
 
 /**
- * The tip as a board draws it, open: the title sits `space-1_5` over the words, the plate 8 px
- * off the trigger, and the words pass AA on the plate.
+ * The tip as a board draws it, open (hover Promote): the title sits `space-1_5` over the words,
+ * the plate 8 px off the trigger, and the words pass AA on the plate.
  */
 export const JunctionOpen: Story = {
-  render: () => <ActionTip open />,
+  render: () => <ActionTip />,
   play: async ({ canvasElement }) => {
-    const tip = await waitFor(() => must(popup()));
     const trigger = within(canvasElement).getByRole('button', { name: 'Promote' });
+    await userEvent.hover(trigger);
+    const tip = await waitFor(() => must(popup()));
     const title = must(tip.querySelector('[data-slot="tooltip-title"]')).getBoundingClientRect();
     const body = must(tip.querySelector<HTMLElement>('[data-slot="tooltip-body"]'));
     const gap = resolvePx(tip, 'var(--space-1_5)');
@@ -235,6 +244,8 @@ export const JunctionOpen: Story = {
     await expect(tip.dataset.side).toBe('top');
     const plate = ['var(--bg)', 'var(--plate-solid)'];
     await expect(contrastBetween(tip, plate, [...plate, 'var(--fg2)'])).toBeGreaterThanOrEqual(4.5);
+    await userEvent.unhover(trigger);
+    await waitFor(() => expect(popup()).toBeNull());
   },
 };
 
@@ -242,12 +253,15 @@ function QuadTip(): ReactNode {
   const [container, setContainer] = useState<HTMLElement | null>(null);
   return (
     <div ref={setContainer} className="relative pt-[10rem]">
-      {container !== null && <ActionTip open container={container} />}
+      {container !== null && <ActionTip container={container} />}
     </div>
   );
 }
 
-/** Open in all four maps — each tip portaled into its own quad, so it takes that quad's theme. */
+/**
+ * In all four maps — hover a quad's Promote and its tip is portaled into that quad, so it takes the
+ * quad's theme. The check hovers each in turn.
+ */
 export const FourUp: Story = {
   render: () => <QuadTip />,
   parameters: { fourUp: true },
@@ -257,8 +271,12 @@ export const FourUp: Story = {
     await expect(quads).toHaveLength(4);
     const grounds = new Set<string>();
     for (const q of quads) {
+      const trigger = within(q).getByRole('button', { name: 'Promote' });
+      await userEvent.hover(trigger);
       const tip = await waitFor(() => must(popup(q)));
       grounds.add(getComputedStyle(tip).backgroundColor);
+      await userEvent.unhover(trigger);
+      await waitFor(() => expect(popup(q)).toBeNull());
     }
     // Dark and light plates differ.
     await expect(grounds.size).toBeGreaterThan(1);

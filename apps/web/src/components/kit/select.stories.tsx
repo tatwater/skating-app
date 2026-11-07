@@ -15,7 +15,15 @@ import {
   type SelectTriggerProps,
   SelectValue,
 } from './select';
-import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
+import {
+  closeWithEscape,
+  KICKER,
+  must,
+  openWith,
+  PSEUDO_STATES,
+  StateMatrix,
+  useQuadOpen,
+} from './storyKit';
 
 const meta = {
   title: 'Kit/Select',
@@ -49,12 +57,17 @@ function KindSelect({
   onValueChange,
   defaultValue,
   open,
+  onOpenChange,
+  modal,
   container,
   onOpenChangeComplete,
 }: {
   onValueChange?: (value: string | null) => void;
   defaultValue?: string;
+  /** Only a four-up quad controls it (`useQuadOpen`); every other story leaves it to the trigger. */
   open?: boolean;
+  onOpenChange?: (open: boolean, details: { reason: string; event?: Event }) => void;
+  modal?: boolean;
   container?: HTMLElement | null;
   onOpenChangeComplete?: (open: boolean) => void;
 }) {
@@ -64,6 +77,8 @@ function KindSelect({
       defaultValue={defaultValue ?? null}
       onValueChange={onValueChange}
       open={open}
+      onOpenChange={onOpenChange}
+      modal={modal}
       onOpenChangeComplete={onOpenChangeComplete}
     >
       <SelectTrigger aria-label="Kind">
@@ -233,14 +248,16 @@ export const Keyboard: Story = {
 
 /** A disabled option keeps its place, dimmed; pressing it changes nothing. */
 export const DisabledOption: Story = {
-  render: () => <KindSelect open onValueChange={changed} />,
+  render: () => <KindSelect onValueChange={changed} />,
   beforeEach: () => changed.mockClear(),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Kind', 'combobox');
     const dam = await waitFor(() => option('Dam'));
     await expect(dam).toHaveAttribute('aria-disabled', 'true');
     await expect(getComputedStyle(dam).color).toBe(computedColor(dam, 'var(--fg-disabled)'));
     await userEvent.click(dam, { pointerEventsCheck: 0 });
     await expect(changed).not.toHaveBeenCalled();
+    await closeWithEscape(popup);
   },
 };
 
@@ -304,7 +321,7 @@ export const Invalid: Story = {
 /** Nothing to choose yet: one note row an option tall, so the plate never collapses. */
 export const Empty: Story = {
   render: () => (
-    <Select open>
+    <Select>
       <SelectTrigger variant="boxed" aria-label="Provider">
         <SelectValue placeholder="Provider" />
       </SelectTrigger>
@@ -313,7 +330,8 @@ export const Empty: Story = {
       </SelectContent>
     </Select>
   ),
-  play: async () => {
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Provider', 'combobox');
     const plate = await waitFor(() => must(popup()));
     const note = must(plate.querySelector<HTMLElement>('[data-slot="select-note"]'));
     await expect(note.getBoundingClientRect().height).toBeCloseTo(
@@ -321,6 +339,7 @@ export const Empty: Story = {
       1,
     );
     await expect(getComputedStyle(note).color).toBe(computedColor(note, 'var(--fg3)'));
+    await closeWithEscape(popup);
   },
 };
 
@@ -374,8 +393,9 @@ export const States: Story = {
 
 /** The list open as a board draws it: a kicker, the chosen option's bar, a dimmed option. */
 export const Open: Story = {
-  render: () => <KindSelect open defaultValue="river" />,
-  play: async () => {
+  render: () => <KindSelect defaultValue="river" />,
+  play: async ({ canvasElement }) => {
+    await openWith(canvasElement, 'Kind', 'combobox');
     const plate = await waitFor(() => must(popup()));
     // Every live option, the chosen one and the kicker pass AA on the plate.
     const ground = ['var(--bg)', 'var(--plate-solid)'];
@@ -385,19 +405,26 @@ export const Open: Story = {
       const ratio = contrastBetween(el, ground, [...ground, getComputedStyle(el).color]);
       await expect(ratio).toBeGreaterThanOrEqual(4.5);
     }
+    await closeWithEscape(popup);
   },
 };
 
 function QuadSelect(): ReactNode {
   const [container, setContainer] = useState<HTMLElement | null>(null);
+  const quad = useQuadOpen(container);
   return (
     <div ref={setContainer} className="relative w-[14rem] pb-[15rem]">
-      {container !== null && <KindSelect open defaultValue="river" container={container} />}
+      {container !== null && (
+        <KindSelect {...quad} modal={false} defaultValue="river" container={container} />
+      )}
     </div>
   );
 }
 
-/** Open in all four maps — each list portaled into its own quad, so it takes that quad's theme. */
+/**
+ * Open in all four maps — each quad's Kind opens its own list, portaled into the quad, so it takes
+ * that quad's theme. Non-modal here, so all four stand open at once.
+ */
 export const FourUp: Story = {
   render: () => <QuadSelect />,
   parameters: { fourUp: true },
@@ -406,6 +433,7 @@ export const FourUp: Story = {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     const plates = new Set<string>();
+    for (const q of quads) await userEvent.click(within(q).getByRole('combobox', { name: 'Kind' }));
     for (const q of quads) {
       const plate = await waitFor(() => must(popup(q)));
       plates.add(getComputedStyle(plate).backgroundColor);
@@ -430,7 +458,7 @@ function OpenJunction() {
     // Clear of the frame's edge, so the plate isn't nudged by collision padding.
     <div className="m-(--space-8) flex flex-col gap-heading">
       <SourceSelect />
-      <KindSelect open defaultValue="river" />
+      <KindSelect defaultValue="river" />
       <p className={KICKER}>Triggers a button tall; rows a table row tall</p>
     </div>
   );
@@ -444,6 +472,7 @@ async function playOpenJunction({ canvasElement }: { canvasElement: HTMLElement 
   await expect(must(boxed).getBoundingClientRect().height).toBeCloseTo(btn, 1);
   const t = must(underline).getBoundingClientRect();
   await expect(t.height).toBeCloseTo(btn, 1);
+  await userEvent.click(must(underline));
   const plate = await waitFor(() => must(popup()));
   await waitFor(() =>
     expect(Math.abs(plate.getBoundingClientRect().top - t.bottom - 4)).toBeLessThanOrEqual(1),
@@ -467,6 +496,7 @@ async function playOpenJunction({ canvasElement }: { canvasElement: HTMLElement 
   // The kicker starts where the words do.
   const kicker = must(plate.querySelector('[data-slot="select-group-label"]'));
   await expect(Math.abs(textLeft(kicker) - word)).toBeLessThanOrEqual(1);
+  await closeWithEscape(popup);
 }
 
 export const JunctionOpenAdmin: Story = {

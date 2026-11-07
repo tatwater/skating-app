@@ -33,6 +33,10 @@ side.
 - **Motion is quick and quiet.** Hover, focus and press fade on the motion tokens (80, 120, 200,
   320 ms) with no bounce; with reduced motion on, every duration is zero. A loading state keeps
   its final size, so nothing jumps as content arrives.
+- **Overlay stories open on a press, never on mount.** A dialog, sheet, popover, menu, select,
+  tooltip or docked toast story shows its trigger; its check presses it, measures, and closes it
+  again, so every page stays browsable and Esc always closes what you open. Only a non-modal
+  overlay confined to its own frame (a four-up quad, a scoped dialog) is left open.
 
 ## Optical spacing
 
