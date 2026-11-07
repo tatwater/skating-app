@@ -25,7 +25,6 @@ class FakeMap {
   fitted: unknown[] = [];
   resizes = 0;
   rotationDisabled: string[] = [];
-  container: HTMLElement | null = null;
   touchZoomRotate = { disableRotation: () => this.rotationDisabled.push('touch') };
   keyboard = { disableRotation: () => this.rotationDisabled.push('keyboard') };
 
@@ -47,20 +46,6 @@ class FakeMap {
   }
   resize() {
     this.resizes++;
-  }
-  /**
-   * The map's own element, carrying an attribution control in MapLibre's mounted-expanded state —
-   * `maplibregl-compact-show` present — so the collapse in `useMapCanvas` has something real to act
-   * on rather than silently no-op'ing through an optional chain.
-   */
-  getContainer() {
-    if (!this.container) {
-      this.container = document.createElement('div');
-      const attrib = document.createElement('details');
-      attrib.className = 'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show';
-      this.container.append(attrib);
-    }
-    return this.container;
   }
   getCenter() {
     return { lng: -73, lat: 44.5 };
@@ -100,6 +85,7 @@ vi.mock('pmtiles', () => ({ Protocol: class {} }));
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
 const { useMapCanvas } = await import('./mapCanvas');
+const { FoldedAttributionControl } = await import('./mapAttribution');
 
 const BOUNDS: [[number, number], [number, number]] = [
   [-73.5, 44],
@@ -190,19 +176,15 @@ describe('useMapCanvas', () => {
   });
 
   /**
-   * ⚠ MapLibre mounts a `compact: true` attribution control **expanded**, and only minimizes it on
-   * the first `drag` — so a map that is read rather than dragged wears every active source's credit
-   * across its bottom edge all session. The credits themselves are untouched (they are a license
-   * obligation, and they stay one click behind the ⓘ); it is the rest state being wrong that this
-   * pins, because nothing about it is visible from the control's public API.
+   * The credits are the folded control, never MapLibre's default one: `attributionControl: false`
+   * keeps the default (uncompacted, expanded) one off, and `FoldedAttributionControl` is what goes
+   * on instead. How it folds is pinned against the real MapLibre control in `mapAttribution.test`.
    */
-  it('opens with the attribution credits collapsed behind the ⓘ', () => {
+  it('credits the map with the folded attribution control, not the default one', () => {
     render(<Host tick={0} />);
-    const attrib = FakeMap.instances[0]?.getContainer().querySelector('.maplibregl-ctrl-attrib');
-    expect(attrib?.classList.contains('maplibregl-compact-show')).toBe(false);
-    // Still compact, so MapLibre's own `resize` handler cannot re-open it: `_updateCompact` only
-    // re-adds the show class to a container that has lost the `maplibregl-compact` one.
-    expect(attrib?.classList.contains('maplibregl-compact')).toBe(true);
+    const map = FakeMap.instances[0];
+    expect(map?.options.attributionControl).toBe(false);
+    expect(map?.controls.filter((c) => c instanceof FoldedAttributionControl)).toHaveLength(1);
   });
 
   /**

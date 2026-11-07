@@ -1,5 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import type maplibregl from 'maplibre-gl';
+import { useEffect, useRef } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
+import { FoldedAttributionControl } from '@/lib/mapAttribution';
+import { OSM_ATTRIBUTION } from '@/lib/waterMap';
 import { DEFAULT_MAP_LAYERS, useSkaterMapStore } from '@/stores/skaterMapStore';
 import { LakeLabel } from './LakeLabel';
 import { MapDockControls } from './MapDockControls';
@@ -364,5 +369,134 @@ export const Labels: Story = {
     expect(lockup.right).toBeCloseTo(anchor.left - 18, 0);
     // Review 4: the dot has no border.
     expect(halfmile.querySelector('circle')?.getAttribute('stroke')).toBeNull();
+  },
+};
+
+/**
+ * The smallest map MapLibre's attribution control will run against: events, a style whose sources
+ * carry credits, the UI-string lookup, a container to measure. The control itself is the real one.
+ */
+function creditsMap(credits: readonly string[]) {
+  const handlers = new Map<string, Set<(e: unknown) => void>>();
+  const tileManagers: Record<string, unknown> = {};
+  const stub = {
+    style: { stylesheet: {}, tileManagers },
+    on: (event: string, fn: (e: unknown) => void) => {
+      handlers.set(event, (handlers.get(event) ?? new Set()).add(fn));
+      return stub;
+    },
+    off: (event: string, fn: (e: unknown) => void) => {
+      handlers.get(event)?.delete(fn);
+      return stub;
+    },
+    getCanvasContainer: () => document.createElement('div'),
+    _getUIString: () => 'Toggle attribution',
+    /** The sources load after the control mounts, as they do on the real map. */
+    load: () => {
+      credits.forEach((attribution, i) => {
+        tileManagers[`s${i}`] = { used: true, getSource: () => ({ attribution }) };
+      });
+      for (const fn of handlers.get('sourcedata') ?? []) fn({ sourceDataType: 'metadata' });
+    },
+  };
+  return stub;
+}
+
+/** The real folded control, docked bottom right over a still, as `useMapCanvas` mounts it. */
+function MapCredits({ credits, open }: { credits: readonly string[]; open: boolean }) {
+  const corner = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = corner.current;
+    if (!el) return;
+    const map = creditsMap(credits);
+    const control = new FoldedAttributionControl();
+    el.append(control.onAdd(map as unknown as maplibregl.Map));
+    map.load();
+    if (open) el.querySelector('summary')?.click();
+    return () => control.onRemove();
+  }, [credits, open]);
+  return (
+    // MapLibre's stylesheet pins `.maplibregl-map` to `position: relative`, so it fills a
+    // positioned wrapper rather than being positioned itself.
+    <div className="pointer-events-none absolute inset-0">
+      <div className="maplibregl-map h-full w-full">
+        <div ref={corner} className="maplibregl-ctrl-bottom-right" />
+      </div>
+    </div>
+  );
+}
+
+const CREDITS = [OSM_ATTRIBUTION, 'Copernicus Sentinel data 2025–2026'] as const;
+const CREDITS_VIEW: StillView = {
+  bounds: [-72.19, 43.6, -72.12, 43.64],
+  width: 480,
+  height: 200,
+};
+
+/**
+ * The map's credits, folded (how every map opens) and open, in both modes: the ⓘ takes the dock's
+ * plate, line and control corner; the open credits sit on a square plate in the theme's text.
+ */
+export const Credits: Story = {
+  render: () => (
+    <SkaterPair>
+      {(mode) => (
+        <div className="flex flex-wrap gap-3">
+          {[false, true].map((open) => (
+            <div key={String(open)} data-credits={open ? 'open' : 'folded'}>
+              <MapStill mode={mode} view={CREDITS_VIEW} water={[{ rings: MASCOMA_RINGS }]}>
+                {() => <MapCredits credits={CREDITS} open={open} />}
+              </MapStill>
+            </div>
+          ))}
+        </div>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    const [dark, light] = [...canvasElement.querySelectorAll<HTMLElement>('section')];
+    const part = (section: HTMLElement | undefined, state: string) =>
+      section?.querySelector(`[data-credits="${state}"] .maplibregl-ctrl-attrib`) as HTMLElement;
+    const button = (attrib: HTMLElement) =>
+      attrib.querySelector('.maplibregl-ctrl-attrib-button') as HTMLElement;
+    const inner = (attrib: HTMLElement) =>
+      attrib.querySelector('.maplibregl-ctrl-attrib-inner') as HTMLElement;
+
+    const folded = part(dark, 'folded');
+    const open = part(dark, 'open');
+    await waitFor(() => expect(inner(open)).toBeVisible());
+    // Folded: the ⓘ alone, the credits one press behind it — and the credit wording exact.
+    expect(inner(folded)).not.toBeVisible();
+    expect(inner(folded).textContent).toBe(CREDITS.join(' | '));
+    expect(inner(open).textContent).toBe(CREDITS.join(' | '));
+    // The ⓘ is a pressable (the control corner); the open credits are a plate (square).
+    expect(getComputedStyle(button(folded)).borderTopLeftRadius).toBe('2px');
+    expect(getComputedStyle(open).borderTopLeftRadius).toBe('0px');
+    // On the theme, not MapLibre's white: the two modes draw the ⓘ and the plate differently,
+    // and neither in white.
+    const lightFolded = part(light, 'folded');
+    const lightOpen = part(light, 'open');
+    for (const [d, l] of [
+      [button(folded), button(lightFolded)],
+      [open, lightOpen],
+    ] as const) {
+      expect(getComputedStyle(d).backgroundColor).not.toBe('rgb(255, 255, 255)');
+      expect(getComputedStyle(d).backgroundColor).not.toBe(getComputedStyle(l).backgroundColor);
+    }
+    expect(getComputedStyle(open).color).not.toBe(getComputedStyle(lightOpen).color);
+    // A labeled disclosure on a native `<summary>`: focusable with no tabindex, so Tab reaches it,
+    // and Enter/Space activate it as a click — the browser's own behavior, which a synthetic key
+    // can't trigger here, so the press below is the click those keys become.
+    const toggle = button(folded);
+    expect(toggle.tagName).toBe('SUMMARY');
+    expect(toggle).toHaveAccessibleName('Toggle attribution');
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    await userEvent.click(toggle);
+    await waitFor(() => expect(inner(folded)).toBeVisible());
+    expect(folded).toHaveAttribute('open');
+    await userEvent.click(toggle);
+    await waitFor(() => expect(inner(folded)).not.toBeVisible());
+    expect(folded).not.toHaveAttribute('open');
   },
 };

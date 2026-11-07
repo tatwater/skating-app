@@ -49,10 +49,6 @@ class FakeMap {
   fitBounds = vi.fn();
   flyTo = vi.fn();
   resize() {}
-  /** `useMapCanvas` reaches in to collapse the attribution ⓘ at mount — see its own test. */
-  getContainer() {
-    return document.createElement('div');
-  }
   touchZoomRotate = { disableRotation: () => {} };
   keyboard = { disableRotation: () => {} };
   getCenter() {
