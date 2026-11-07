@@ -54,8 +54,8 @@ export function useCardEscape(active: boolean, handler: () => void): void {
 
 /**
  * The lake sidebar's position (27.5 rem, the boards' 440 px): what the card sits over. `behind` is
- * whatever the card dims — the lake's sidebar once it can be rendered under a card (a seam with the
- * Explore sidebar's frame); until then the column is bare ground.
+ * whatever the card dims — the lake's sidebar (`LakeBehind`), once the card's lake is known;
+ * until then the column is bare ground.
  */
 export function PanelColumn({
   behind,

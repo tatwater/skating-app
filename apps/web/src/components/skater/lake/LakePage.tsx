@@ -11,7 +11,7 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
-import { type MouseEvent as ReactMouseEvent, useEffect, useMemo } from 'react';
+import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo } from 'react';
 
 import { type FavoriteTargetType, useAnalytics } from '@/lib/analytics';
 import { useSkaterMapStore } from '@/stores/skaterMapStore';
@@ -98,45 +98,78 @@ export function LakePage({ id, search }: { id: string; search: LakeSearch }) {
 
   return (
     <PhoneLakeDrawer label={bay ? bay.name : lakeName} escapes={act === undefined}>
-      <LakeSidebar
-        label={bay ? bay.name : lakeName}
-        header={
-          <>
-            <ConnectedHeader lake={lake} bay={bay} nav={nav} />
-            <AlertStrip waterBodyId={lake._id} />
-          </>
-        }
-        body={
-          <LakeTabs
-            tab={tab}
-            onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
-            contourCredit={contourCredit}
-            overlay={
-              act !== undefined ? (
-                <LakeAction
-                  act={act}
-                  waterBodyId={lake._id}
-                  lakeName={lakeName}
-                  {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
-                  {...(search.band !== undefined ? { band: search.band } : {})}
-                  {...(search.frame !== undefined ? { frame: search.frame } : {})}
-                  backTo={bay ? bay.name : lakeName}
-                  nav={nav}
-                  onBack={closeAct}
-                />
-              ) : null
-            }
-          >
-            <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
-          </LakeTabs>
+      <LakeSidebarView
+        lake={lake}
+        bay={bay}
+        tab={tab}
+        nav={nav}
+        contourCredit={contourCredit}
+        overlay={
+          act !== undefined ? (
+            <LakeAction
+              act={act}
+              waterBodyId={lake._id}
+              lakeName={lakeName}
+              {...(liveSub !== undefined ? { subAreaId: liveSub } : {})}
+              {...(search.band !== undefined ? { band: search.band } : {})}
+              {...(search.frame !== undefined ? { frame: search.frame } : {})}
+              backTo={bay ? bay.name : lakeName}
+              nav={nav}
+              onBack={closeAct}
+            />
+          ) : null
         }
       />
     </PhoneLakeDrawer>
   );
 }
 
+/**
+ * The lake's sidebar as drawn — header, alerts, tabs, the tab's body — with none of the page's side
+ * effects: no map spec, no analytics, no Esc. `LakePage` wraps it with those; `LakeBehind` draws it
+ * dimmed and inert under an inset card.
+ */
+export function LakeSidebarView({
+  lake,
+  bay,
+  tab,
+  nav,
+  contourCredit,
+  overlay = null,
+}: {
+  lake: Doc<'waterBodies'>;
+  bay: Bay | null;
+  tab: LakeTab;
+  nav: PageNav;
+  contourCredit: string | null;
+  overlay?: ReactNode;
+}) {
+  const lakeName = waterBodyDisplayName(lake.name);
+  return (
+    <LakeSidebar
+      label={bay ? bay.name : lakeName}
+      header={
+        <>
+          <ConnectedHeader lake={lake} bay={bay} nav={nav} />
+          <AlertStrip waterBodyId={lake._id} />
+        </>
+      }
+      body={
+        <LakeTabs
+          tab={tab}
+          onTabChange={(next) => nav.replace(nav.with({ tab: next === 'reports' ? null : next }))}
+          contourCredit={contourCredit}
+          overlay={overlay}
+        >
+          <TabBody tab={tab} lake={lake} bay={bay} nav={nav} />
+        </LakeTabs>
+      }
+    />
+  );
+}
+
 /** A bay row, as `subAreas.listForBody` returns it. */
-type Bay = FunctionReturnType<typeof api.subAreas.listForBody>[number];
+export type Bay = FunctionReturnType<typeof api.subAreas.listForBody>[number];
 
 function TabBody({
   tab,

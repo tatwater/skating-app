@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { LakeBehind } from '../components/skater/lake/LakeBehind';
 import { PanelColumn } from '../components/skater/panels/InsetCard';
 import { PanelCrash } from '../components/skater/panels/PanelCrash';
+import { useReportLakeId } from '../components/skater/panels/panelLake';
 import { ReportPanel } from '../components/skater/panels/ReportPanel';
 
 /**
@@ -16,7 +18,7 @@ export const Route = createFileRoute('/_skater/report/$id')({
 function ReportRoute() {
   const { id } = Route.useParams();
   return (
-    <PanelColumn>
+    <PanelColumn behind={<LakeBehind waterBodyId={useReportLakeId(id)} />}>
       <ReportPanel key={id} reportId={id} />
     </PanelColumn>
   );

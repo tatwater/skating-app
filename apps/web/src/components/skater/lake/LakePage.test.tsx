@@ -19,6 +19,8 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
+import { useBountyLakeId, useHazardLakeId, useReportLakeId } from '../panels/panelLake';
+import { LakeBehind } from './LakeBehind';
 import { LakePage } from './LakePage';
 import { lakeSearchSchema } from './lakeSearch';
 import { resetWaterBodyOpenSource } from './openSource';
@@ -597,5 +599,46 @@ describe('actions over the sidebar (row 3)', () => {
     renderLake();
     expect(screen.getByText('5 ft contours, surveyed by NH GRANIT.')).toBeInTheDocument();
     expect(screen.getByText('Basemap and water © OpenStreetMap contributors.')).toBeInTheDocument();
+  });
+});
+
+describe('the lake behind a card', () => {
+  it('is bare ground until the card’s lake is known', () => {
+    answer();
+    fakes.location = { pathname: '/report/r1', searchStr: '' };
+    const { container } = render(<LakeBehind waterBodyId={undefined} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('draws the sidebar inert, with none of the page’s side effects', () => {
+    answer();
+    fakes.location = { pathname: '/report/r1', searchStr: '' };
+    render(<LakeBehind waterBodyId="mascoma" />);
+    const behind = document.querySelector('[data-slot="lake-behind"]');
+    expect(behind).toHaveAttribute('inert');
+    expect(behind).toHaveAttribute('aria-hidden', 'true');
+    expect(behind?.querySelector('[data-slot="lake-sidebar"]')).toHaveTextContent('Mascoma Lake');
+    expect(fakes.capture).not.toHaveBeenCalled();
+    expect(useSkaterMapStore.getState().specs.view).toBeNull();
+  });
+
+  it('draws nothing for a lake that is gone', () => {
+    answer({ 'waterBodies:get': { available: false } });
+    fakes.location = { pathname: '/report/r1', searchStr: '' };
+    const { container } = render(<LakeBehind waterBodyId="mascoma" />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('reads each card’s lake from the card’s own first read', () => {
+    fakes.queries.set('reports:get', { waterBodyId: 'mascoma' });
+    fakes.queries.set('hazards:get', { waterBodyId: 'sunapee' });
+    fakes.queries.set('bounties:getDetail', { waterBody: { _id: 'newfound' } });
+    const seen: unknown[] = [];
+    function Probe() {
+      seen.push(useReportLakeId('r1'), useHazardLakeId('h1'), useBountyLakeId('b1'));
+      return null;
+    }
+    render(<Probe />);
+    expect(seen.slice(-3)).toEqual(['mascoma', 'sunapee', 'newfound']);
   });
 });
