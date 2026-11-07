@@ -156,8 +156,7 @@ function MatrixChart({
     const cell = focusedCell.current;
     if (cell === null || cell.isConnected) return;
     focusedCell.current = null;
-    const now = document.activeElement;
-    if (now === null || now === document.body) cellIn(root.current, active)?.focus();
+    if (document.activeElement === document.body) cellIn(root.current, active)?.focus();
   });
 
   // The plate sits over the hot cell, centered on it.
