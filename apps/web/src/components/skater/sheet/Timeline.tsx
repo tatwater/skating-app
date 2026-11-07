@@ -18,8 +18,9 @@ import { cn } from '@/lib/utils';
  * back through `onSetStart` / `onSetEnd` on release — the WHEN section's fields are the keyboard's
  * way to the same values (founder call 2026-09-23: all three set from either). A click that does
  * not move commits nothing: the caret's own minute is where a drag starts from, so a press on the
- * label is not an edit. A tap on a ladder tick chooses that half-hour as the end. Nothing here is
- * a safety claim (D3).
+ * label is not an edit. A tap on a ladder tick chooses that half-hour as the end. With an end but
+ * no start yet, a dimmed START? caret waits an hour before the end — dragging it places the start,
+ * the same gesture that moves it (founder, 2026-11-07). Nothing here is a safety claim (D3).
  */
 export function Timeline({
   model,
@@ -166,6 +167,35 @@ export function Timeline({
           style={{ left: `calc(${pct(p.fraction)} - 3px)` }}
         />
       ))}
+      {/* No start yet: a dimmed caret an hour before the end — dragging it places the start. */}
+      {startMark === undefined && endMark !== undefined && onSetStart !== undefined
+        ? (() => {
+            const bounds = timelineCaretBounds(model, 'start');
+            const restMs = Math.min(bounds.max, Math.max(bounds.min, endMark.ms - 3_600_000));
+            const ms = drag?.kind === 'start' ? drag.ms : restMs;
+            return (
+              <button
+                type="button"
+                aria-label="Place the start, drag to set"
+                onPointerDown={begin('start', restMs)}
+                onPointerMove={move}
+                onPointerUp={end}
+                onPointerCancel={() => setDrag(null)}
+                className="-translate-x-1/2 absolute top-3 flex h-10 w-6 cursor-ew-resize flex-col items-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                style={{ left: pct(timelineFraction(model, ms)) }}
+              >
+                <span className="whitespace-nowrap font-semibold text-[10px] text-foreground-muted">
+                  {drag?.kind === 'start' ? 'START …' : 'START?'}
+                </span>
+                <span
+                  aria-hidden
+                  className="mt-0.5 size-0 border-x-[5px] border-x-transparent border-t-[7px] border-t-primary/40"
+                />
+                <span className="h-4 w-px bg-primary/40" />
+              </button>
+            );
+          })()
+        : null}
       {/* Marks */}
       {marks.map((m) => {
         if (m.kind === 'sunrise' || m.kind === 'sunset') {

@@ -15,6 +15,7 @@ import { useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
 import { useCallback, useMemo, useState } from 'react';
 import { updateSheet } from '@/lib/sheetStore';
+import { useCoarsePointer } from '@/lib/useCoarsePointer';
 import { cn } from '@/lib/utils';
 import { useConsoleMode } from './ConsoleMode';
 import { InstrumentMap } from './InstrumentMap';
@@ -23,6 +24,7 @@ import type { InstrumentInput } from './instrumentFeatures';
 import { useInstrumentHeld } from './instrumentLease';
 import { pickOnInstrument } from './instrumentPick';
 import { mapProjection } from './instrumentProjection';
+import { offeredEndChips } from './reportCalendar';
 import { Timeline } from './Timeline';
 import type { SheetBody } from './useSheetBody';
 import { useSkateWeather, useSkateWindowHours } from './useSkateWeather';
@@ -68,16 +70,19 @@ export function InstrumentPane({
   const windowHours = useSkateWindowHours(hours, endMs, startMs);
   const [now] = useState(() => Date.now());
   const sun = useMemo(() => body?.sunAt(endMs ?? now) ?? null, [body, endMs, now]);
-  // D192's ladder as the ruler's ticks — the When panel's chips are the same instants for a keyboard.
+  // D192's ladder as the ruler's ticks — the When panel's chips are the same instants for a
+  // keyboard, so the ticks are the same `offeredEndChips` cut (founder, 2026-11-07).
+  const mobile = useCoarsePointer();
   const ladder = useMemo(() => {
     if (gps) return [];
-    return endTimeRow({
+    const chips = endTimeRow({
       openedAtMs: sheet.openedAtMs,
       nowMs: now,
       timeZone,
       sun: body?.sunAt(sheet.openedAtMs) ?? null,
-    }).chips.map((c) => ({ ms: c.ms, pinned: c.pinned }));
-  }, [gps, sheet.openedAtMs, now, timeZone, body]);
+    }).chips;
+    return offeredEndChips(chips, mobile).map((c) => ({ ms: c.ms, pinned: c.pinned }));
+  }, [gps, sheet.openedAtMs, now, timeZone, body, mobile]);
   const model = useMemo(() => {
     const others = ordered.flatMap((r, i) => {
       const e = r.id === report.id ? undefined : reportEndMs(r);

@@ -1,4 +1,10 @@
-import { endTimeRow, FRESHNESS_WINDOW_MS, freshnessRefusal, zonedParts } from '@skating/core';
+import {
+  endTimeRow,
+  FRESHNESS_WINDOW_MS,
+  freshnessRefusal,
+  WHEN_CHIP_COUNT,
+  zonedParts,
+} from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +15,7 @@ import {
   dayStartOf,
   endOnDay,
   ladderOnDay,
+  offeredEndChips,
 } from './reportCalendar';
 
 const ZONES = [
@@ -193,6 +200,50 @@ describe('moving the end time to another day', () => {
             expect(chip.ms).toBeLessThanOrEqual(now);
             expect(freshnessRefusal(chip.ms, now)).toBeNull();
           }
+        },
+      ),
+    );
+  });
+});
+
+describe('offeredEndChips — the row the web draws (founder, 2026-11-07)', () => {
+  const row = endTimeRow({ openedAtMs: BOARD_NOW, nowMs: BOARD_NOW, timeZone: NH, sun: null });
+
+  it('under a finger: the pinned minute, then half hours, capped at the count', () => {
+    const offered = offeredEndChips(row.chips, true);
+    expect(offered).toHaveLength(WHEN_CHIP_COUNT);
+    expect(offered[0]?.pinned).toBe(true);
+    expect(offered.slice(1).every((c) => !c.pinned)).toBe(true);
+  });
+
+  it('on a desk: no "now" — the pinned minute is not when anyone got off', () => {
+    const offered = offeredEndChips(row.chips, false);
+    expect(offered).toHaveLength(WHEN_CHIP_COUNT);
+    expect(offered.every((c) => !c.pinned)).toBe(true);
+    expect(offered.map((c) => c.ms)).toEqual(
+      row.chips
+        .filter((c) => !c.pinned)
+        .slice(0, WHEN_CHIP_COUNT)
+        .map((c) => c.ms),
+    );
+  });
+
+  it('never offers more than the count, from whatever the ladder holds (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2025, 0, 1), max: Date.UTC(2029, 0, 1) }),
+        fc.constantFrom(...ZONES),
+        fc.boolean(),
+        (now, zone, coarse) => {
+          const chips = endTimeRow({
+            openedAtMs: now,
+            nowMs: now,
+            timeZone: zone,
+            sun: null,
+          }).chips;
+          const offered = offeredEndChips(chips, coarse);
+          expect(offered.length).toBeLessThanOrEqual(WHEN_CHIP_COUNT);
+          if (!coarse) expect(offered.every((c) => !c.pinned)).toBe(true);
         },
       ),
     );

@@ -6,12 +6,13 @@ import {
   type SheetReport,
   selectedValues,
   sheetReducer,
+  startTimeChips,
 } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getFunctionName } from 'convex/server';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSheet, useSheet } from '@/lib/sheetStore';
 import { installFakeStore, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
 import { DayCalendar } from './DayCalendar';
@@ -305,6 +306,9 @@ describe('EndTimePanel — the day and the ladder (5.6/5.7)', () => {
       unbundledHazardIds: [],
     }));
     latest = report;
+    const dispatch = (action: Parameters<typeof sheetReducer>[1]) =>
+      setReport((r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }));
+    panelDispatch = dispatch;
     return (
       <EndTimePanel
         report={report}
@@ -313,7 +317,7 @@ describe('EndTimePanel — the day and the ladder (5.6/5.7)', () => {
             ? null
             : ({ sunAt: () => ({ sunriseMs: sunset - 9 * 3600_000, sunsetMs: sunset }) } as never)
         }
-        dispatch={(action) => setReport((r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }))}
+        dispatch={dispatch}
         setReport={(u) => setReport(u)}
         gaps={new Set()}
         editing={false}
@@ -322,11 +326,38 @@ describe('EndTimePanel — the day and the ladder (5.6/5.7)', () => {
     );
   }
   let latest: SheetReport | undefined;
+  let panelDispatch: ((action: Parameters<typeof sheetReducer>[1]) => void) | undefined;
 
-  it('preselects the minute in daylight, and moves the end to the day picked', async () => {
+  /** The founder's phone: the primary pointer is a finger, so "now" is on offer. */
+  function coarsePointer() {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: query === '(pointer: coarse)',
+          media: query,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+        }) as unknown as MediaQueryList,
+    );
+  }
+  // Only the clock is faked (never the timers — the async utils need those real): a typed
+  // "6:15 AM" must sit in the past whatever hour the suite runs at.
+  beforeEach(() => vi.useFakeTimers({ toFake: ['Date'], now: NOW }));
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('under a finger, preselects the minute in daylight, and moves the end to the day picked', async () => {
+    coarsePointer();
     render(<Panel />);
     const [end] = selectedValues((latest as SheetReport).sheet, 'endTime');
     expect(end?.precision).toBe('minute');
+    expect(screen.getByRole('button', { name: /· now/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Today/ }));
     const days = within(
       await screen.findByRole('group', { name: 'Which day was it?' }),
@@ -336,14 +367,124 @@ describe('EndTimePanel — the day and the ladder (5.6/5.7)', () => {
     const [moved] = selectedValues((latest as SheetReport).sheet, 'endTime');
     expect(moved?.ms).toBeLessThan(end?.ms ?? 0);
     expect(moved?.precision).toBe('half_hour');
-    // The ladder moved with it: none of its chips says "now".
+    // The ladder moved with the day: the same clocks, none of them "now", the moved end chosen.
     expect(screen.queryByRole('button', { name: /· now/ })).not.toBeInTheDocument();
+    const chosenChip = screen
+      .getAllByRole('button')
+      .find((b) => b.getAttribute('aria-pressed') === 'true');
+    expect(chosenChip).toHaveTextContent(/\d{1,2}:\d{2} [AP]M/);
+  });
+
+  it('on a desk, offers no "now" and preselects nothing — a few half hours and Another time', () => {
+    render(<Panel />);
+    expect(selectedValues((latest as SheetReport).sheet, 'endTime')).toEqual([]);
+    expect(screen.queryByRole('button', { name: /· now/ })).not.toBeInTheDocument();
+    // One short row: three half hours and the picker. Nothing to wrap.
+    const timeChips = screen
+      .getAllByRole('button')
+      .filter((b) => /^\d{1,2}:\d{2} [AP]M$/.test(b.textContent ?? ''));
+    expect(timeChips).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Another time' })).toBeInTheDocument();
+  });
+
+  it('on a desk, picking a day seeds the end from the ladder, never the sheet-open minute', async () => {
+    render(<Panel />);
+    fireEvent.click(screen.getByRole('button', { name: /^Today/ }));
+    const days = within(
+      await screen.findByRole('group', { name: 'Which day was it?' }),
+    ).getAllByRole('button');
+    const yesterday = days.filter((d) => !(d as HTMLButtonElement).disabled).at(-2) as HTMLElement;
+    fireEvent.click(yesterday);
+    const [moved] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    expect(moved?.precision).toBe('half_hour');
+    // A half-hour clock, so the moved end sits ON the moved ladder — the row keeps its chips
+    // instead of collapsing to a value no desk was offered.
+    expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
+    const chosenChip = screen
+      .getAllByRole('button')
+      .find((b) => b.getAttribute('aria-pressed') === 'true');
+    expect(chosenChip).toHaveTextContent(/^\d{1,2}:(00|30) [AP]M$/);
+  });
+
+  it('an end set off the chips collapses the row to the value, and Reset brings the chips back', () => {
+    coarsePointer();
+    render(<Panel />);
+    // The ruler's drag lands on a half minute no chip offers.
+    act(() => {
+      panelDispatch?.({
+        type: 'select',
+        field: 'endTime',
+        key: 'chosen',
+        value: { ms: Date.now() - 47 * 60_000 + 30_000, precision: 'minute' },
+      });
+    });
+    expect(screen.queryByRole('button', { name: /· now/ })).not.toBeInTheDocument();
+    // The end row's ladder and picker are gone; the one "Another time" left is the start row's.
+    expect(screen.getAllByRole('button', { name: 'Another time' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    // Back to the default: the chips return and the pinned minute is selected again.
+    const [end] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    expect(end?.precision).toBe('minute');
+    expect(screen.getByRole('button', { name: /· now/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Another time' })).toHaveLength(2);
+  });
+
+  it('Another time is a time-only input on the chosen day', () => {
+    coarsePointer();
+    render(<Panel />);
+    // Two rows offer "Another time"; the end row's comes first.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Another time' })[0] as HTMLElement);
+    const input = screen.getByLabelText('The minute you got off the ice');
+    expect(input).toHaveAttribute('type', 'time');
+    fireEvent.change(input, { target: { value: '06:15' } });
+    const [end] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    expect(end).toBeDefined();
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: NH,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: false,
+    }).format(end?.ms);
+    expect(parts).toBe('06:15');
   });
 
   it('after dark, asks which day and when, and preselects nothing', () => {
+    coarsePointer();
     render(<Panel sunset={Date.now() - 3 * 3600_000} />);
     expect(screen.getByText(/It's after dark/)).toBeInTheDocument();
     expect(selectedValues((latest as SheetReport).sheet, 'endTime')).toEqual([]);
+  });
+
+  it('offers the half hours before the end as start chips, and one sets the start', () => {
+    coarsePointer();
+    render(<Panel />);
+    const [end] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    const expected = startTimeChips(end?.ms as number, NH);
+    const clock = new Intl.DateTimeFormat('en-US', {
+      timeZone: NH,
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    // The deepest chip's clock is the start row's alone — the end ladder stops a chip earlier.
+    const deepest = expected[2] as number;
+    fireEvent.click(screen.getByRole('button', { name: clock.format(deepest) }));
+    expect((latest as SheetReport).sheet.scalars.skateStartTime).toBe(deepest);
+    // How long reads back from it.
+    expect(screen.getByRole('button', { name: /\d h \d{2}/ })).toBeInTheDocument();
+  });
+
+  it('a typed start is time-only, its date inferred: a later clock reading is last night', () => {
+    coarsePointer();
+    render(<Panel />);
+    const [end] = selectedValues((latest as SheetReport).sheet, 'endTime');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Another time' })[1] as HTMLElement);
+    const input = screen.getByLabelText('The minute you got on the ice');
+    expect(input).toHaveAttribute('type', 'time');
+    fireEvent.change(input, { target: { value: '23:30' } });
+    const start = (latest as SheetReport).sheet.scalars.skateStartTime;
+    expect(start).toBeDefined();
+    expect(start as number).toBeLessThan(end?.ms as number);
+    expect((end?.ms as number) - (start as number)).toBeLessThan(25 * 3600_000);
   });
 });
 

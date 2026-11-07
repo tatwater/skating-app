@@ -33,6 +33,10 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 
+# Local map-tile scratch the dev server serves straight from public/ — real archives live on the
+# CDN (keys per upload), and a 40 MB pmtiles must never ride into the repo or a deploy
+/apps/web/public/dev-tiles/
+
 # OS / editor
 .DS_Store
 .idea/

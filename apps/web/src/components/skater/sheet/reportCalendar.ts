@@ -15,10 +15,24 @@ import {
   type EndTimeChip,
   FRESHNESS_WINDOW_MS,
   freshnessRefusal,
+  WHEN_CHIP_COUNT,
   zonedInstantOnDayOf,
   zonedMinuteOfDay,
   zonedParts,
 } from '@skating/core';
+
+/**
+ * The End chips as the web offers them (founder, 2026-11-07): the pinned "9:25 AM · now" minute
+ * only under a finger — nobody brings their laptop to the lake, so on a desk "now" is not when
+ * anyone got off — and at most `WHEN_CHIP_COUNT`, so the row never wraps. One list for the chip
+ * row and the ruler's tappable ticks, so the two never disagree about what the ladder is.
+ */
+export function offeredEndChips(
+  chips: readonly EndTimeChip[],
+  coarsePointer: boolean,
+): EndTimeChip[] {
+  return chips.filter((c) => coarsePointer || !c.pinned).slice(0, WHEN_CHIP_COUNT);
+}
 
 export interface CalendarDay {
   /** The day's first instant (local midnight) and the first instant of the next day. */

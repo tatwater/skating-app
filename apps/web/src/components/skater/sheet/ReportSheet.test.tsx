@@ -89,6 +89,25 @@ function Connected() {
   return post === null ? null : <ReportSheet post={post} exits={exits} />;
 }
 
+/**
+ * An end time chosen by hand: the desk's When row no longer preselects the pinned minute
+ * (founder, 2026-11-07), so a Post that must go out whole says its end here.
+ */
+function withEnd(post: PostSheet): PostSheet {
+  return {
+    ...post,
+    reports: post.reports.map((r) => ({
+      ...r,
+      sheet: sheetReducer(r.sheet, {
+        type: 'select',
+        field: 'endTime',
+        key: 'chosen',
+        value: { ms: Date.now() - 60_000, precision: 'minute' },
+      }),
+    })),
+  };
+}
+
 function withLake(post: PostSheet, bodyName = 'Mascoma Lake'): PostSheet {
   return {
     ...post,
@@ -301,7 +320,7 @@ describe('posting (5.23–5.27)', () => {
   it('fades everything while posting, the tab included, then hands over the posted report', async () => {
     let land: (v: unknown) => void = () => {};
     h.post.mockImplementation(() => new Promise((r) => (land = r)));
-    const post = withLake(openSheet());
+    const post = withEnd(withLake(openSheet()));
     // A minimum set, so the Post goes out.
     setSheet(post);
     render(<Connected />);
@@ -416,7 +435,7 @@ describe('the restore’s notices and the edit (5.28–5.30)', () => {
 
   it('saves an edit and hands over the report', async () => {
     h.save.mockResolvedValue('r1');
-    setSheet({ ...withLake(openSheet()), mode: { kind: 'edit', reportId: 'r1' } });
+    setSheet({ ...withEnd(withLake(openSheet())), mode: { kind: 'edit', reportId: 'r1' } });
     render(<Connected />);
     fireEvent.click(screen.getByRole('button', { name: 'Good' }));
     fireEvent.click(screen.getByRole('button', { name: 'Glass' }));
@@ -438,7 +457,7 @@ describe('the rest of the paths', () => {
   });
 
   it('a send the server refuses says why; pressing again counts as a retry', async () => {
-    const post = withLake(openSheet());
+    const post = withEnd(withLake(openSheet()));
     h.post.mockResolvedValue({
       kind: 'refused',
       message: 'The server said no.',
@@ -482,7 +501,7 @@ describe('the rest of the paths', () => {
 
   it('an edit the server refuses keeps the sheet and says why', async () => {
     h.save.mockRejectedValue(new Error('Not yours.'));
-    setSheet({ ...withLake(openSheet()), mode: { kind: 'edit', reportId: 'r1' } });
+    setSheet({ ...withEnd(withLake(openSheet())), mode: { kind: 'edit', reportId: 'r1' } });
     render(<Connected />);
     fireEvent.click(screen.getByRole('button', { name: 'Good' }));
     fireEvent.click(screen.getByRole('button', { name: 'Glass' }));
