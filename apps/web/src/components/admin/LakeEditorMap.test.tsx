@@ -69,6 +69,8 @@ vi.mock('maplibre-gl', () => ({
     removeProtocol: vi.fn(),
     AttributionControl: class {
       name = 'attribution';
+      // The real control builds `options` in its constructor; setExtraAttribution writes into it.
+      options: Record<string, unknown> = {};
     },
     NavigationControl: class {
       name = 'navigation';
