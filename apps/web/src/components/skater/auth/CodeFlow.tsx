@@ -217,6 +217,9 @@ export function CodeFlow({
               spellCheck={false}
               placeholder={copy.placeholder}
               value={email}
+              // Held while the code is on its way: an address changed now would be the one the code
+              // screen names, while the code went to the one sent.
+              disabled={busy === 'send'}
               onValueChange={(next) => {
                 setEmail(next);
                 setFailure(null);
@@ -230,7 +233,7 @@ export function CodeFlow({
           <Button
             type="submit"
             variant="primary"
-            disabled={!isPlausibleEmail(email)}
+            disabled={!isPlausibleEmail(email) || busy === 'send'}
             loading={busy === 'send'}
             className="h-[2.625rem] w-full"
           >

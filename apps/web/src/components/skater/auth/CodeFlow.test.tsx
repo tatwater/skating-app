@@ -70,6 +70,37 @@ describe('CodeFlow, the email step', () => {
     expect(await screen.findByText('Check your email')).toBeInTheDocument();
   });
 
+  it('holds the address while its code is on the way, so the code screen names the inbox sent to', async () => {
+    const user = userEvent.setup();
+    let release: (o: AuthOutcome) => void = () => undefined;
+    const c = client({ sendCode: vi.fn(() => new Promise<AuthOutcome>((r) => (release = r))) });
+    renderFlow(c);
+    await user.type(emailBox(), `${EMAIL}{Enter}`);
+    expect(emailBox()).toBeDisabled();
+    // The button stays focusable while it loads (Base UI), so it says so with aria-disabled.
+    expect(screen.getByRole('button', { name: 'Email me a code' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await user.type(emailBox(), 'other@example.com');
+    expect(emailBox()).toHaveValue(EMAIL);
+    await act(async () => release(ok));
+    expect(await screen.findByText('Check your email')).toBeInTheDocument();
+    expect(c.sendCode).toHaveBeenCalledWith(EMAIL);
+    expect(screen.getByText(EMAIL)).toBeInTheDocument();
+  });
+
+  it('gives the address back, focused, when the send fails', async () => {
+    const user = userEvent.setup();
+    let release: (o: AuthOutcome) => void = () => undefined;
+    renderFlow(client({ sendCode: vi.fn(() => new Promise<AuthOutcome>((r) => (release = r))) }));
+    await user.type(emailBox(), `${EMAIL}{Enter}`);
+    expect(emailBox()).toBeDisabled();
+    await act(async () => release({ ok: false, failure: 'unknown_email' }));
+    expect(emailBox()).toBeEnabled();
+    await waitFor(() => expect(emailBox()).toHaveFocus());
+  });
+
   it('says an unknown address under the field and keeps focus there', async () => {
     const user = userEvent.setup();
     renderFlow(
