@@ -781,3 +781,40 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   now says to serve it with `serve --cors`. What remains is the upload (the roadmap row).
 - **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
   coordinates are redacted on a public report.
+
+### 8.1 After the merge: the restack dropped ten fixes (#100)
+
+The founder's two hands-on passes on 2026-11-07 produced fifteen fix commits on the local
+`phase-b03-skater-web` branch, *after* #98's tip. The stack was then restacked onto
+`phase-b03-skater-web-4`: that branch took the When-section rework and the report-flow batch and left the
+other ten behind, on a branch the notes had by then marked STALE. #95–#98 merged without them, so the dev
+deployment ran the pre-test build. #100 replays them onto main.
+
+- **The one that showed: Explore drew no map.** `maplibre-gl.css` declares `.maplibregl-map { position:
+  relative }` and rides the lazy canvas chunk, so it loads *after* the app's sheet — one class against one
+  class, later wins. A container asking for `absolute inset-0` returns to normal flow with its insets
+  ignored, measures zero tall, and MapLibre sizes its canvas from `height || 300`: a 300 px strip at the
+  top of an 840×744 pane. The map still loads, still fires `load`, still reports a viewport, so the sidebar
+  list populates normally and nothing errors. Both B03 canvases carried it; the console's two did not.
+  All four now take one exported `MAP_CONTAINER_CLASS`, and `MapContainer.stories.tsx` measures it in a
+  browser with MapLibre's stylesheet loaded — jsdom has neither a cascade nor layout, so no unit test can
+  see this. Flip the constant back and it fails at height 0.
+- **Three of the ten needed a real merge**, because main had moved under them: `MapMarksLayer` had gained a
+  hazard-pin *peek* (the fade under imagery) where the lost commit added the *hover plate* — both are kept;
+  `LakeSidebar`'s story still asserted the credits at the sidebar foot after main moved them to the map
+  chip; and `EndTimePanel`'s extra `Math.min(ms, floorToMinute(now))` was redundant once `clampToWindow`
+  absorbed the minute floor.
+- **Reviewing recovered commits is not reviewing merged ones.** These were written against a tree that no
+  longer exists, so they were reviewed again as a batch against the main they now land on — ten further
+  findings, each fixed with a test. Two were real: the returning-load hold (`BootScreen`) never escalated
+  to the offline screen the way `FirstLoadSplash` did, so a load with no socket held on skeletons forever;
+  and `refileToFootprintBody` moved `waterBodyId` while leaving `subAreaId`/`subAreaName` stamped from the
+  lake the pin had just left, so a card could read "Mascoma — Far Bay".
+- **The map palette redesign is held back as one unit** (the roadmap's deferred row). Its second half
+  conflicts in nine places with the filled depth bands that landed in #98, and three founder calls are
+  open. Its first half is tokens-only, so shipping it alone would add four unused keys to
+  `packages/design` — a package the kit thread owns.
+- **The lesson for the next restack:** a branch that is about to be abandoned should be diffed against its
+  replacement by *content*, not by commit count. `git cherry` is useless once a branch has been
+  squash-merged (every patch-id differs), which is what hid this; what found it was grepping main for each
+  fix's own marker — `MAP_CONTAINER_CLASS`, `--size-sidebar`, `gli-boot`, `orderAccessPutIns`.

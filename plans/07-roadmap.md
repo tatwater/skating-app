@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B03 — The skater web app
-🟢 **Complete** 2026-11-07 · PRs #95–#98 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
+🟢 **Complete** 2026-11-07 · PRs #95–#98, #100 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
@@ -809,6 +809,14 @@ route-level boundaries. Built by one governor and parallel agents in their own w
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
 
 #### Deferred
+- ⚪ **The map palette redesign** — the water and shore were Phase 01's `#3a6ea5` in *both* modes, neither a
+  token; the rewrite (`cab6cf4e` + `bdbedc3f`, on the stale `phase-b03-skater-web`) resolves every GL color
+  but `mapGround` from a skater token and fades the shore 0.55 at z7 → 1 at z11. It is held back from #100
+  as one unit: its second half conflicts in nine places with the filled depth bands that landed in #98, and
+  three founder calls are open — the depth ramp is still the slate h≈245 while everything else is ice h≈215
+  (so a chosen lake goes slate beside a teal neighbor), light's Protomaps `white` earth merges the map into
+  the white sidebar, and light water alpha `.20` may want tuning over Protomaps' `#dcdcdc`. Renders in
+  `skating-b03-skater-web/.claude/map-palette/` → B03 §2
 - ❓ **Session replay** — off at launch (the D235 test keeps it so); waits on the L12 legal pass → the plan's §4.2 posture
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
 - ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5
