@@ -8,6 +8,7 @@ import { bucketUnreadCount, useAnalytics } from '@/lib/analytics';
 import { useChromeOverlay } from './chrome';
 import { NotificationsMenuView } from './NotificationsMenuView';
 import { notificationRows } from './notificationRows';
+import { panelLinkState } from './panels/panelNavigation';
 
 /**
  * The bell, wired (boards 3.21–3.23; replaces the old `/notifications` page). The unread count is
@@ -75,7 +76,8 @@ export function NotificationsMenu({ container }: { container?: HTMLElement | nul
         if (row.href === null) return;
         if (row.kind !== null) capture('notification_opened', { kind: row.kind });
         onOpenChange(false);
-        router.history.push(row.href);
+        // A row that opens a card says it came from the bell; any other page ignores the state.
+        router.history.push(row.href, panelLinkState('notification'));
       }}
       onNavigate={(href) => router.history.push(href)}
       {...(container !== undefined ? { container } : {})}

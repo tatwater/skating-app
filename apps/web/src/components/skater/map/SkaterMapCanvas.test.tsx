@@ -516,7 +516,11 @@ describe('data into the map', () => {
     await mount();
     expect(screen.getByRole('img', { name: 'Put-in: Boat launch' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Hazard: Open water/ }));
-    expect(navigate).toHaveBeenCalledWith({ to: '/hazard/$id', params: { id: 'h1' } });
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/hazard/$id',
+      params: { id: 'h1' },
+      state: { panelSource: 'map' },
+    });
   });
 
   it('draws the lake’s tracks once the viewer turns them on, faded by the server’s freshness', async () => {
@@ -648,7 +652,11 @@ describe('clicks', () => {
       { layer: { id: 'hazard-fill' }, properties: { hazardId: 'h1' } },
       { layer: { id: 'water-fill' }, source: 'water', properties: { _id: 'mascoma' } },
     ]);
-    expect(navigate).toHaveBeenLastCalledWith({ to: '/hazard/$id', params: { id: 'h1' } });
+    expect(navigate).toHaveBeenLastCalledWith({
+      to: '/hazard/$id',
+      params: { id: 'h1' },
+      state: { panelSource: 'map' },
+    });
     click([{ layer: { id: 'water-fill' }, source: 'water', properties: { _id: 'crystal' } }]);
     expect(navigate).toHaveBeenLastCalledWith({ to: '/water/$id', params: { id: 'crystal' } });
   });
