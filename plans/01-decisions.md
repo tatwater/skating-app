@@ -6720,3 +6720,86 @@ Dev had no chord bays when this landed (all 128 were drawn or seeded), so nothin
 under the old rule.
 
 **Related:** D5, D201, A02 Decision 10, A09.
+
+*(D216–D231 are minted in other trees and arrive when they merge.)*
+
+## D232 — Colors are authored once, in OKLCH; every consumer's format is generated (B01)
+
+**2026-11-06, founder.** "I don't want to use hex, I want to use OKLCH … We should translate our
+colors to that format before we begin." And, from the same read: keep Paper in sync; this work
+rides in B01, not its own phase.
+
+- **`@skating/design` is the single birthplace of every design value**, seeded from the audited
+  token set (`skating-mockups/admin-variants/THEME.md` + `tokens.json`, 2026-10-30). Primitives are
+  authored in OKLCH; no raw color is written anywhere else.
+- **Two axes, four maps.** Semantic tokens (one key set: `bg`, `panel`, `fg`, `fg1`–`fg3`, `acc`,
+  washes, `scrim`, …) resolve by `data-surface="admin|skater"` × `data-mode="dark|light"` on the
+  root. Density — type scale, row and control heights, spacing — rides the *surface* axis as
+  tokens; it is never a separate theme or a user toggle.
+- **Generated, never hand-converted:** CSS custom properties in `oklch()` for the web (supported in
+  every current engine); TS theme objects for mobile with colors emitted as hex/rgba at build time,
+  because React Native's color parser takes only hex, `rgb()`, `hsl()` and `hwb()` — no `oklch()`;
+  the Tailwind theme wiring; and a **one-way push to Paper**, so the mocks follow code and can
+  never drift silently. Code is canon.
+- **Contrast is tested per map** (D34's `themes.test.ts` grows to four), computed from the OKLCH
+  source so a ramp edit fails the suite before it ships.
+
+**Why:** one place a color is born makes a re-theme a data change; OKLCH's perceptual lightness
+keeps ramps, washes and the derived light themes honest in a way hex interpolation never was; and
+generating the mobile and Paper forms makes "mobile moves to the new register" (the §1 fork,
+2026-10-30) free instead of a parallel maintenance burden.
+
+**Related:** D7, D34, D223.
+
+## D233 — Relative units by default; pixels only where optics demand them (B01)
+
+**2026-11-06, founder.** "Only text sizes and graphical elements like borders … in explicit pixel
+sizes — everything else should be in ems and rems, so users can scale font size on-device and the
+whole app's spacing and layouts will scale accordingly."
+
+- **rem** for type sizes, spacing, gaps, control and row heights, layout widths and breakpoints —
+  everything that should grow when the user raises their font size. The root font size is **never
+  set**; the user agent owns it. The mocks' px values convert at the 16 px base
+  (`--text-row: 13px` → `0.8125rem`).
+- **em** for letter-spacing (already the mocks' habit) and for any inset that should track its own
+  element's type size. **Unitless line-height** always — a ratio, never a length, so it inherits
+  correctly.
+- **px** only where scaling would be wrong: borders and hairlines, focus rings, radii, shadows,
+  the map's strokes and other fixed-stroke graphics, and the 1–3 px optical nudges. These are
+  drawing, not reading.
+- Token names say which they are; the generator refuses a length in the wrong unit class.
+
+**Why:** on-device font scaling is the accessibility path that actually gets used, and it only
+works if the whole layout breathes with the text; a 1 px rule that fattens to 2 px at 200 % is the
+tell of a px-everywhere codebase.
+
+**Related:** D223, D232.
+
+## D234 — Spacing is optical: a gap token measures content to content, never box to box (B01)
+
+**2026-11-06, founder.** "Our standard gaps … enforced based on what things *look like*
+statically, not based on the actual space their containers/touch-zones/etc occupy. … The visual
+difference of pacing & aligning *content*, not *containers* is huge."
+
+- **A spacing token states the visual distance between rendered content.** If the standard gap
+  below a section chip is `1rem`, it is `1rem` chip-to-text whether the content is bare text or a
+  padded clickable row — in the latter case the layout gap shrinks by the row's padding.
+- **Two sanctioned mechanisms**, chosen per component, both keeping the arithmetic out of call
+  sites: **bleed** — an interactive container carries negative margin equal to its own padding
+  (exposed as one token pair, so `margin: calc(-1 * var(--hit-pad))` lives in the kit, once); or
+  **expanded hit targets** — the layout box *is* the visual box and a positioned pseudo-element
+  grows the touch area. Hand-tuned per-instance gap corrections are a smell; a component that
+  needs one is a kit bug.
+- **Text trims to its letterforms** where it abuts a measured gap: `text-box-trim` /
+  `text-box-edge` cut the half-leading above cap height and below the baseline (Baseline newly
+  available 2026-08: Chrome 133, Safari 18.2, Firefox 154; the degradation is a slightly looser
+  gap, never a broken one).
+- **Storybook is the instrument.** Spacing stories render the standard junctions (chip → text,
+  chip → row, row → row, pane edge → content) and screenshot comparison measures content edge to
+  content edge, so a padding change that silently widens a visual gap fails review.
+
+**Why:** containers lie — padding, line-height and hit areas all pour invisible space into a
+layout, and box-to-box spacing ships that noise to the eye. Measuring what is seen is more work
+in the kit exactly once, and every composition inherits it.
+
+**Related:** D223, D232, D233.
