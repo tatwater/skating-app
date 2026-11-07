@@ -47,6 +47,25 @@ describe('useAutosave', () => {
     expect(result.current.status).toBe('saved');
   });
 
+  it('typed back to the saved value while a save is out sends it again, so the last word wins', async () => {
+    const resolvers: Array<() => void> = [];
+    const save = vi.fn(() => new Promise<void>((r) => resolvers.push(r)));
+    const { result } = renderHook(() => useAutosave('A', save));
+    act(() => result.current.setValue('AB'));
+    act(() => result.current.flush());
+    expect(save).toHaveBeenLastCalledWith('AB');
+    act(() => result.current.setValue('A'));
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DELAY_MS);
+    });
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith('A');
+    await act(async () => {
+      for (const r of resolvers) r();
+    });
+    expect(result.current.status).toBe('saved');
+  });
+
   it('a blur saves now; a stale save never marks a newer value saved', async () => {
     let resolve: () => void = () => {};
     const save = vi.fn(() => new Promise<void>((r) => (resolve = r)));
