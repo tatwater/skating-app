@@ -341,15 +341,12 @@ export function shapeRows(body: {
   return rows;
 }
 
-/** The basemap's credit, at every sidebar's foot (Review 4: `.caveat.foot`). */
-export const BASEMAP_CREDIT = 'Basemap and water © OpenStreetMap contributors.';
-
 /**
- * The foot's lines: the contours' own credit while the map is drawing them (the tile is the
- * authority, read by the map into its store), then the basemap's, always.
+ * The contours' credit as the sidebar's foot shows it — trimmed, its first letter capitalized — or
+ * `null` when no contours are drawn. The tile is the authority, read by the map into its store.
  */
-export function attributionLines(contourCredit: string | null): string[] {
+export function contourCreditLine(contourCredit: string | null): string | null {
   const credit = contourCredit?.trim();
-  if (!credit) return [BASEMAP_CREDIT];
-  return [credit.charAt(0).toUpperCase() + credit.slice(1), BASEMAP_CREDIT];
+  if (!credit) return null;
+  return credit.charAt(0).toUpperCase() + credit.slice(1);
 }

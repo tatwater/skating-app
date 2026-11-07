@@ -4,12 +4,12 @@ import { ScrollArea } from '@/components/kit/scroll-area';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/kit/tabs';
 import { cn } from '@/lib/utils';
 
-import { attributionLines } from './lakeModel';
+import { contourCreditLine } from './lakeModel';
 import { LAKE_TAB_LABELS, LAKE_TABS, type LakeTab } from './lakeSearch';
 
 /**
- * The sidebar column: a header that stays, the body that scrolls, and the attribution at the foot
- * of the body (Review 4: `.caveat.foot`). `label` names the region for a screen reader. It fills the
+ * The sidebar column: a header that stays and the body that scrolls. `label` names the region for a
+ * screen reader. It fills the
  * skater layout's 27.5 rem view column, beside the region map (`MapFrame`); below `md` it takes
  * the width.
  */
@@ -44,8 +44,9 @@ export function LakeSidebar({
 }
 
 /**
- * The scrolling body: the gutter on both sides, the sections a gap apart, and the attribution
- * resting at the foot — pushed there when the content is short, after it when it's long.
+ * The scrolling body: the gutter on both sides, the sections a gap apart, and — only while contours
+ * are drawn — their credit resting at the foot, pushed there when the content is short, after it
+ * when it's long.
  */
 export function SidebarBody({
   children,
@@ -77,18 +78,23 @@ export function SidebarBody({
   );
 }
 
-/** The sources, at the foot: the contours' credit while depth is drawn, then the basemap's. */
+/**
+ * The contours' credit, at the foot, while depth is drawn — and nothing otherwise.
+ *
+ * **The basemap's credit is not here.** The founder, seeing it twice: *"Let's only show the one in
+ * the chip over the map, NOT in the sidebar."* The chip carries it on its own — the basemap and water
+ * sources declare `© OpenStreetMap contributors` as their MapLibre `attribution`, and the folded ⓘ
+ * unions every active source's. The contour source declares none (its credit depends on whose lines
+ * are drawn, which only the tile knows), so the chip can't carry that one yet, and the layers
+ * popover alone is a credit behind a tap. Until the canvas hands the chip the contour credit, this
+ * line stays.
+ */
 export function SidebarFoot({ contourCredit = null }: { contourCredit?: string | null }) {
+  const line = contourCreditLine(contourCredit);
+  if (line === null) return null;
   return (
-    <footer
-      data-slot="lake-sidebar-foot"
-      className="mt-auto flex flex-col gap-(--space-1) pt-(--space-2_5) text-assist text-fg3"
-    >
-      {attributionLines(contourCredit).map((line) => (
-        <p key={line} className="m-0 [text-wrap:pretty]">
-          {line}
-        </p>
-      ))}
+    <footer data-slot="lake-sidebar-foot" className="mt-auto pt-(--space-2_5) text-assist text-fg3">
+      <p className="m-0 [text-wrap:pretty]">{line}</p>
     </footer>
   );
 }

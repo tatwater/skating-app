@@ -625,12 +625,20 @@ describe('actions over the sidebar (row 3)', () => {
     expect(spec?.fit).toEqual({ kind: 'body', bodyId: 'mascoma' });
   });
 
-  it('credits the contours at the foot while the map draws them', () => {
+  it('credits the contours at the foot while the map draws them, and leaves the basemap to the chip', () => {
     answer();
     useSkaterMapStore.setState({ contourCredit: '5 ft contours, surveyed by NH GRANIT.' });
     renderLake();
-    expect(screen.getByText('5 ft contours, surveyed by NH GRANIT.')).toBeInTheDocument();
-    expect(screen.getByText('Basemap and water © OpenStreetMap contributors.')).toBeInTheDocument();
+    const foot = document.querySelector('[data-slot="lake-sidebar-foot"]');
+    expect(foot).toHaveTextContent('5 ft contours, surveyed by NH GRANIT.');
+    expect(screen.queryByText(/OpenStreetMap/)).not.toBeInTheDocument();
+  });
+
+  it('has no foot at all while no contours are drawn', () => {
+    answer();
+    renderLake();
+    expect(document.querySelector('[data-slot="lake-sidebar-foot"]')).toBeNull();
+    expect(screen.queryByText(/OpenStreetMap/)).not.toBeInTheDocument();
   });
 });
 
