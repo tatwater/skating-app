@@ -147,6 +147,13 @@ The archive this was built into, before any upload:
 ```
 
 A `pmtiles://` source range-reads the file, so it must be served by something that honors HTTP
-`Range` (Python's `http.server` does not). The simplest is the web app's own dev server: copy the file
-into a gitignored static directory the app serves (e.g. `apps/web/public/dev-tiles/`) and set
-`VITE_BATHYMETRY_PMTILES_URL=http://localhost:<port>/dev-tiles/bathymetry.pmtiles` in `apps/web/.env`.
+`Range` — and neither Python's `http.server` nor the web app's own dev server does (its Nitro static
+handler answers a range request with the whole file, which pmtiles rejects). `serve` does, with CORS:
+
+```bash
+cp .scratch/build/bathymetry.pmtiles ../../apps/web/public/dev-tiles/   # gitignored
+pnpm dlx serve@14.2.4 --cors -l 8787 ../../apps/web/public/dev-tiles
+```
+
+then set `VITE_BATHYMETRY_PMTILES_URL=http://localhost:8787/bathymetry.pmtiles` in `apps/web/.env`
+and restart the web dev server.

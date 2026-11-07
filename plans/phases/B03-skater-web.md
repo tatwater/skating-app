@@ -101,12 +101,11 @@ These are the facts that shape the build. The calls the founder still has to mak
     banded contour lines with a shallowest-band fill on the focused lake — real bands wait on polygons from
     the pipeline and a re-tile (the roadmap's *Filled depth bands* deferred row); board 3.16's Depth switch
     is the newer founder call, so D81 is amended to make depth a viewer toggle while hazards stay locked on.
-    **The client half of real bands is built** (2026-11-07): a fill layer reads band polygons from a third
-    archive (`VITE_BATHYMETRY_BANDS_PMTILES_URL`; contract in `apps/web/src/lib/depthBands.ts`, layer
-    `bands`, `bodyId` on the contours' key, `bandIndex` on the seven-band ramp) and sits on the water, under
-    the contour lines. The shallow-band ground stays under it, so a lake the archive doesn't cover — or an
-    archive that 404s, whose errors the map drops — draws exactly the look above. Region zoom draws no
-    bands, as it drew no contours: depth belongs to the open lake.
+    **Real bands are built** (2026-11-07): the pipeline traces band polygons into the contour archive's
+    second layer, `bathymetry_bands` (`scripts/bathymetry/BANDS.md`), and a web fill layer draws them on the
+    water, under the contour lines, off the same source and filter (`bodyId` is the lines' key). The
+    shallow-band ground stays under it, so a lake without bands draws exactly the look above. Region zoom
+    draws no bands, as it drew no contours: depth belongs to the open lake. Only the upload is left (§8).
 13. **Dev Clerk disagrees with the boards twice** (the §8 build, 2026-11-07). The instance requires a
     password at sign-up, so the email → code sign-up stops at `missing_requirements` until the founder turns
     that requirement off in the dashboard; the flow shows an honest failure state, pinned by a test. And
@@ -769,5 +768,16 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   `PanelDrawer` shares the inset card's mechanics (`useCardMechanics`) — deep-link Esc drops the param with
   `replace`, a feed-opened one steps back, focus returns to the row, and the feed keeps its scroll under the
   scrim. On a phone the same drawer takes the full width.
+- **Filled depth bands: built in two halves, joined on the pipeline's contract.** The map layer was written
+  ahead of the pipeline and guessed a third archive with a `bands` layer; `BANDS.md` put the bands in the
+  contour archive as `bathymetry_bands`, so the layer was reconciled to it and the extra env var dropped.
+  Edges land only on contours a lake really has (founder, accepted): Mascoma, contoured every 10 ft, has no
+  band 1, so color comes from `bandIndex` and the legend over an open lake prints each band's real
+  `minDepthFt`–`maxDepthFt` ("0–10 ft", "70+ ft"), never the ramp's edges. Unmeasured coves on fitted lakes
+  ship unclipped (founder); every band carries `lane` for a provenance treatment nothing draws yet. Bands
+  exist z9–14; the layer keeps the contours' z11 floor. The ramp's edges and band math have one home,
+  `@skating/core`'s `contourLayer.ts`. A local archive can't be tried through the web dev server — its
+  Nitro static handler answers a Range request with the whole file, which pmtiles rejects — so BANDS.md
+  now says to serve it with `serve --cors`. What remains is the upload (the roadmap row).
 - **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
   coordinates are redacted on a public report.
