@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AddressField, splitAddress } from './AddressField';
+import { AddressField, linkifyAttribution, splitAddress } from './AddressField';
 import type { AddressLookup } from './geocoder';
 
 const ATTR = 'Powered by Geoapify | © OpenStreetMap contributors';
@@ -42,6 +42,22 @@ describe('splitAddress', () => {
   });
 });
 
+describe('linkifyAttribution', () => {
+  it('links only the known credits, never a URL from the string', () => {
+    const parts = linkifyAttribution('See https://evil.example | Powered by Geoapify');
+    expect(parts[0]).toBe('See https://evil.example | Powered by ');
+    expect(parts).toHaveLength(2);
+    render(<p>{parts}</p>);
+    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
+      'https://www.geoapify.com/',
+    ]);
+  });
+
+  it('leaves an attribution with no known credit as plain text', () => {
+    expect(linkifyAttribution('© Someone Else')).toEqual(['© Someone Else']);
+  });
+});
+
 describe('AddressField', () => {
   it('lists the suggestions with the typed part bold and the attribution under them', () => {
     const { input } = field();
@@ -50,7 +66,16 @@ describe('AddressField', () => {
     expect(options).toHaveLength(3);
     expect(options[0]).toHaveAttribute('aria-selected', 'true');
     expect(options[0]?.querySelector('b')?.textContent).toBe('14 School');
-    expect(screen.getByText(ATTR)).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="geocoder-attribution"]')).toHaveTextContent(ATTR);
+    const links = screen.getAllByRole('link');
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['Geoapify', 'https://www.geoapify.com/'],
+      ['OpenStreetMap contributors', 'https://www.openstreetmap.org/copyright'],
+    ]);
+    for (const a of links) {
+      expect(a).toHaveAttribute('target', '_blank');
+      expect(a).toHaveAttribute('rel', 'noreferrer');
+    }
     expect(input.closest('.ph-no-capture')).not.toBeNull();
   });
 
@@ -126,7 +151,7 @@ describe('AddressField', () => {
     // No match on the street: nothing bolded.
     expect(screen.getAllByRole('option')[0]?.querySelector('b')).toBeNull();
     // A loading list carries no attribution of its own until it lands.
-    expect(screen.queryByText(ATTR)).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="geocoder-attribution"]')).toHaveTextContent(ATTR);
   });
 
   it('says so when suggestions fail, and draws no list', () => {

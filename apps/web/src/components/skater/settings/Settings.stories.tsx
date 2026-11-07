@@ -457,7 +457,13 @@ export const ChangeHome: Story = {
     const input = within(canvasElement).getByRole('combobox');
     await waitFor(() => expect(input).toHaveFocus());
     const list = within(canvasElement).getByRole('listbox');
-    await expect(within(canvasElement).getByText(ATTR)).toBeInTheDocument();
+    await expect(
+      canvasElement.querySelector('[data-slot="geocoder-attribution"]'),
+    ).toHaveTextContent(ATTR);
+    await expect(within(canvasElement).getByRole('link', { name: 'Geoapify' })).toHaveAttribute(
+      'href',
+      'https://www.geoapify.com/',
+    );
     await expect(within(list).getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
     await userEvent.keyboard('{ArrowDown}{ArrowDown}');
     await expect(within(list).getAllByRole('option')[2]).toHaveAttribute('aria-selected', 'true');
