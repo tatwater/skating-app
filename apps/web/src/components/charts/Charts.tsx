@@ -1,4 +1,4 @@
-import { useTheme } from 'next-themes';
+import { useTheme } from '../theme-provider';
 import type { ReactNode } from 'react';
 import {
   Bar,

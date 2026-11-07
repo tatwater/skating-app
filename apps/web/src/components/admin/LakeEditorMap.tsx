@@ -8,7 +8,7 @@ import {
 } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useTheme } from 'next-themes';
+import { useTheme } from '../theme-provider';
 import { useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';
 import { useMapCanvas } from '../../lib/mapCanvas';

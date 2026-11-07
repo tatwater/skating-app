@@ -8,7 +8,8 @@ import appCss from '../styles/app.css?url';
 /**
  * Root document + providers. `shellComponent` owns the full HTML shell; the providers and
  * the `AuthGate` (D26/D45) wrap the routed content (`children`). `suppressHydrationWarning`
- * on <html> is required because next-themes sets the theme class before hydration (D34).
+ * on <html> is required because the theme init script sets `data-mode` and the theme class
+ * before hydration (D34/D241).
  */
 export const Route = createRootRoute({
   head: () => ({

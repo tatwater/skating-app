@@ -47,7 +47,7 @@ const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4';
 
 /**
  * Protomaps basemap flavor per app theme (D6/D34): `white` is the crisp, snowy light basemap — the
- * "wintery-but-functional" look — and `dark` is the evening map. Mapped from `next-themes`'
+ * "wintery-but-functional" look — and `dark` is the evening map. Mapped from the theme provider's
  * resolved theme in `MapView`. (Other Protomaps flavors: `light`, `grayscale`, `black`.)
  */
 export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;

@@ -5,7 +5,7 @@ import {
   type SeasonWatchSettings,
   validateSeasonWatchSettings,
 } from '@skating/core';
-import { useTheme } from 'next-themes';
+import { useTheme } from '../theme-provider';
 import { type ReactNode, useState } from 'react';
 import {
   CartesianGrid,

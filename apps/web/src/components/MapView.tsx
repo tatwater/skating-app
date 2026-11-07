@@ -39,7 +39,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import { useFeedFilters } from '../lib/feedFiltersStore';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useTheme } from 'next-themes';
+import { useTheme } from './theme-provider';
 import {
   useCallback,
   useEffect,
