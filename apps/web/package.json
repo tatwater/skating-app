@@ -51,7 +51,9 @@
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
     "terra-draw": "^1.35.0",
-    "terra-draw-maplibre-gl-adapter": "^1.4.1"
+    "terra-draw-maplibre-gl-adapter": "^1.4.1",
+    "zod": "^4.6.5",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@storybook/addon-docs": "^10.6.6",
