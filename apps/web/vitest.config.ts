@@ -51,12 +51,15 @@ export default defineConfig({
         // cache, that is every CI run. Add a kit primitive's entry here when the kit adopts it.
         optimizeDeps: {
           include: [
+            '@base-ui/react/alert-dialog',
             '@base-ui/react/button',
             '@base-ui/react/checkbox',
             '@base-ui/react/checkbox-group',
+            '@base-ui/react/dialog',
             '@base-ui/react/field',
             '@base-ui/react/input',
             '@base-ui/react/merge-props',
+            '@base-ui/react/popover',
             '@base-ui/react/radio',
             '@base-ui/react/radio-group',
             '@base-ui/react/switch',
