@@ -138,14 +138,12 @@ describe('AuthGate', () => {
 });
 
 describe('usesOldShell', () => {
-  it.each([
-    '/admin',
-    '/admin/water/review',
-    '/feed',
-    '/post',
-  ])('keeps %s in the old shell', (path) => {
-    expect(usesOldShell(path)).toBe(true);
-  });
+  it.each(['/admin', '/admin/water/review', '/feed', '/post'])(
+    'keeps %s in the old shell',
+    (path) => {
+      expect(usesOldShell(path)).toBe(true);
+    },
+  );
 
   it.each([
     '/',
