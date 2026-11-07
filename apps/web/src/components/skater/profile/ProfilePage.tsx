@@ -96,6 +96,8 @@ export function ProfilePage({
           head,
           reportCount: profile.reportCount,
           commentCount: profile.commentCount,
+          lakeCount: profile.lakeCount,
+          ...(profile.lakeCountCapped ? { lakeCountCapped: true } : {}),
           badges: profile.badges,
           posts: profile.posts,
         };

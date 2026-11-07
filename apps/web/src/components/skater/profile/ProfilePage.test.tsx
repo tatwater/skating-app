@@ -70,6 +70,7 @@ function publicProfile(over: Record<string, unknown> = {}) {
     badges: ['trusted_reporter'],
     reportCount: 64,
     commentCount: 112,
+    lakeCount: 9,
     posts: [POST],
     ...over,
   };
@@ -117,6 +118,7 @@ describe('someone else’s profile', () => {
     expect(screen.getByText('Enfield, NH')).toBeInTheDocument();
     expect(screen.getByText('64')).toBeInTheDocument();
     expect(screen.getByText('112')).toBeInTheDocument();
+    expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('Trusted Reporter')).toBeInTheDocument();
     const post = screen.getByText('Bumpy by the beach, better past the point').closest('article');
     expect(post).toHaveClass('ph-no-capture');
@@ -128,6 +130,15 @@ describe('someone else’s profile', () => {
     // Not yours: no bounties, no moderator tools for a member.
     expect(screen.queryByText('Your bounties')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Moderator tools' })).toBeNull();
+  });
+
+  it('says a lake count that ran past the scan cap is a floor', () => {
+    fakes.queries.set(
+      'profiles:getPublicProfile',
+      publicProfile({ lakeCount: 500, lakeCountCapped: true }),
+    );
+    page();
+    expect(screen.getByText('500+')).toBeInTheDocument();
   });
 
   it('blocks through the dialog — the reports stay, it says', async () => {
