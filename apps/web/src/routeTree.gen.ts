@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as MapRouteImport } from './routes/_map'
 import { Route as SkaterRouteImport } from './routes/_skater'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -18,10 +17,10 @@ import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PostRouteImport } from './routes/post'
 import { Route as ReackRouteImport } from './routes/reack'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SkaterIndexRouteImport } from './routes/_skater.index'
+import { Route as SkaterSettingsRouteImport } from './routes/_skater.settings'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
@@ -32,10 +31,12 @@ import { Route as AdminSeasonsRouteImport } from './routes/admin.seasons'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
 import { Route as GooglePhotosCallbackRouteImport } from './routes/google-photos.callback'
-import { Route as UUsernameRouteImport } from './routes/u.$username'
-import { Route as MapBountyIdRouteImport } from './routes/_map.bounty.$id'
-import { Route as MapHazardIdRouteImport } from './routes/_map.hazard.$id'
-import { Route as MapReportIdRouteImport } from './routes/_map.report.$id'
+import { Route as SkaterBountyIdRouteImport } from './routes/_skater.bounty.$id'
+import { Route as SkaterHazardIdRouteImport } from './routes/_skater.hazard.$id'
+import { Route as SkaterReportIdRouteImport } from './routes/_skater.report.$id'
+import { Route as SkaterSettingsIndexRouteImport } from './routes/_skater.settings.index'
+import { Route as SkaterSettingsSectionRouteImport } from './routes/_skater.settings.$section'
+import { Route as SkaterUUsernameRouteImport } from './routes/_skater.u.$username'
 import { Route as SkaterWaterIdRouteImport } from './routes/_skater.water.$id'
 import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
 import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
@@ -46,10 +47,6 @@ import { Route as AdminWaterRequestsRouteImport } from './routes/admin.water.req
 import { Route as AdminWaterReviewRouteImport } from './routes/admin.water.review'
 import { Route as AdminWaterStandingRouteImport } from './routes/admin.water.standing'
 
-const MapRoute = MapRouteImport.update({
-  id: '/_map',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SkaterRoute = SkaterRouteImport.update({
   id: '/_skater',
   getParentRoute: () => rootRouteImport,
@@ -89,11 +86,6 @@ const ReackRoute = ReackRouteImport.update({
   path: '/reack',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
@@ -107,6 +99,11 @@ const SignUpRoute = SignUpRouteImport.update({
 const SkaterIndexRoute = SkaterIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => SkaterRoute,
+} as any)
+const SkaterSettingsRoute = SkaterSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => SkaterRoute,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -159,25 +156,35 @@ const GooglePhotosCallbackRoute = GooglePhotosCallbackRouteImport.update({
   path: '/google-photos/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UUsernameRoute = UUsernameRouteImport.update({
-  id: '/u/$username',
-  path: '/u/$username',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MapBountyIdRoute = MapBountyIdRouteImport.update({
+const SkaterBountyIdRoute = SkaterBountyIdRouteImport.update({
   id: '/bounty/$id',
   path: '/bounty/$id',
-  getParentRoute: () => MapRoute,
+  getParentRoute: () => SkaterRoute,
 } as any)
-const MapHazardIdRoute = MapHazardIdRouteImport.update({
+const SkaterHazardIdRoute = SkaterHazardIdRouteImport.update({
   id: '/hazard/$id',
   path: '/hazard/$id',
-  getParentRoute: () => MapRoute,
+  getParentRoute: () => SkaterRoute,
 } as any)
-const MapReportIdRoute = MapReportIdRouteImport.update({
+const SkaterReportIdRoute = SkaterReportIdRouteImport.update({
   id: '/report/$id',
   path: '/report/$id',
-  getParentRoute: () => MapRoute,
+  getParentRoute: () => SkaterRoute,
+} as any)
+const SkaterSettingsIndexRoute = SkaterSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SkaterSettingsRoute,
+} as any)
+const SkaterSettingsSectionRoute = SkaterSettingsSectionRouteImport.update({
+  id: '/$section',
+  path: '/$section',
+  getParentRoute: () => SkaterSettingsRoute,
+} as any)
+const SkaterUUsernameRoute = SkaterUUsernameRouteImport.update({
+  id: '/u/$username',
+  path: '/u/$username',
+  getParentRoute: () => SkaterRoute,
 } as any)
 const SkaterWaterIdRoute = SkaterWaterIdRouteImport.update({
   id: '/water/$id',
@@ -234,9 +241,9 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/post': typeof PostRoute
   '/reack': typeof ReackRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/settings': typeof SkaterSettingsRouteWithChildren
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
@@ -246,11 +253,12 @@ export interface FileRoutesByFullPath {
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
-  '/u/$username': typeof UUsernameRoute
   '/admin/': typeof AdminIndexRoute
-  '/bounty/$id': typeof MapBountyIdRoute
-  '/hazard/$id': typeof MapHazardIdRoute
-  '/report/$id': typeof MapReportIdRoute
+  '/bounty/$id': typeof SkaterBountyIdRoute
+  '/hazard/$id': typeof SkaterHazardIdRoute
+  '/report/$id': typeof SkaterReportIdRoute
+  '/settings/$section': typeof SkaterSettingsSectionRoute
+  '/u/$username': typeof SkaterUUsernameRoute
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
@@ -258,18 +266,17 @@ export interface FileRoutesByFullPath {
   '/admin/water/requests': typeof AdminWaterRequestsRoute
   '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/water/standing': typeof AdminWaterStandingRoute
+  '/settings/': typeof SkaterSettingsIndexRoute
   '/admin/users/': typeof AdminUsersIndexRoute
   '/admin/water/': typeof AdminWaterIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof SkaterIndexRoute
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/post': typeof PostRoute
   '/reack': typeof ReackRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
@@ -281,11 +288,13 @@ export interface FileRoutesByTo {
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
-  '/u/$username': typeof UUsernameRoute
+  '/': typeof SkaterIndexRoute
   '/admin': typeof AdminIndexRoute
-  '/bounty/$id': typeof MapBountyIdRoute
-  '/hazard/$id': typeof MapHazardIdRoute
-  '/report/$id': typeof MapReportIdRoute
+  '/bounty/$id': typeof SkaterBountyIdRoute
+  '/hazard/$id': typeof SkaterHazardIdRoute
+  '/report/$id': typeof SkaterReportIdRoute
+  '/settings/$section': typeof SkaterSettingsSectionRoute
+  '/u/$username': typeof SkaterUUsernameRoute
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
@@ -293,12 +302,12 @@ export interface FileRoutesByTo {
   '/admin/water/requests': typeof AdminWaterRequestsRoute
   '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/water/standing': typeof AdminWaterStandingRoute
+  '/settings': typeof SkaterSettingsIndexRoute
   '/admin/users': typeof AdminUsersIndexRoute
   '/admin/water': typeof AdminWaterIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_map': typeof MapRouteWithChildren
   '/_skater': typeof SkaterRouteWithChildren
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
@@ -307,9 +316,9 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/post': typeof PostRoute
   '/reack': typeof ReackRoute
-  '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/_skater/settings': typeof SkaterSettingsRouteWithChildren
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
@@ -319,12 +328,13 @@ export interface FileRoutesById {
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
-  '/u/$username': typeof UUsernameRoute
   '/_skater/': typeof SkaterIndexRoute
   '/admin/': typeof AdminIndexRoute
-  '/_map/bounty/$id': typeof MapBountyIdRoute
-  '/_map/hazard/$id': typeof MapHazardIdRoute
-  '/_map/report/$id': typeof MapReportIdRoute
+  '/_skater/bounty/$id': typeof SkaterBountyIdRoute
+  '/_skater/hazard/$id': typeof SkaterHazardIdRoute
+  '/_skater/report/$id': typeof SkaterReportIdRoute
+  '/_skater/settings/$section': typeof SkaterSettingsSectionRoute
+  '/_skater/u/$username': typeof SkaterUUsernameRoute
   '/_skater/water/$id': typeof SkaterWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
@@ -332,6 +342,7 @@ export interface FileRoutesById {
   '/admin/water/requests': typeof AdminWaterRequestsRoute
   '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/water/standing': typeof AdminWaterStandingRoute
+  '/_skater/settings/': typeof SkaterSettingsIndexRoute
   '/admin/users/': typeof AdminUsersIndexRoute
   '/admin/water/': typeof AdminWaterIndexRoute
 }
@@ -346,9 +357,9 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/post'
     | '/reack'
-    | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/settings'
     | '/admin/features'
     | '/admin/flags'
     | '/admin/ice-calibration'
@@ -358,11 +369,12 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/tuning'
     | '/google-photos/callback'
-    | '/u/$username'
     | '/admin/'
     | '/bounty/$id'
     | '/hazard/$id'
     | '/report/$id'
+    | '/settings/$section'
+    | '/u/$username'
     | '/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
@@ -370,18 +382,17 @@ export interface FileRouteTypes {
     | '/admin/water/requests'
     | '/admin/water/review'
     | '/admin/water/standing'
+    | '/settings/'
     | '/admin/users/'
     | '/admin/water/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/about'
     | '/feed'
     | '/notifications'
     | '/onboarding'
     | '/post'
     | '/reack'
-    | '/settings'
     | '/sign-in'
     | '/sign-up'
     | '/admin/features'
@@ -393,11 +404,13 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/tuning'
     | '/google-photos/callback'
-    | '/u/$username'
+    | '/'
     | '/admin'
     | '/bounty/$id'
     | '/hazard/$id'
     | '/report/$id'
+    | '/settings/$section'
+    | '/u/$username'
     | '/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
@@ -405,11 +418,11 @@ export interface FileRouteTypes {
     | '/admin/water/requests'
     | '/admin/water/review'
     | '/admin/water/standing'
+    | '/settings'
     | '/admin/users'
     | '/admin/water'
   id:
     | '__root__'
-    | '/_map'
     | '/_skater'
     | '/about'
     | '/admin'
@@ -418,9 +431,9 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/post'
     | '/reack'
-    | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/_skater/settings'
     | '/admin/features'
     | '/admin/flags'
     | '/admin/ice-calibration'
@@ -430,12 +443,13 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/tuning'
     | '/google-photos/callback'
-    | '/u/$username'
     | '/_skater/'
     | '/admin/'
-    | '/_map/bounty/$id'
-    | '/_map/hazard/$id'
-    | '/_map/report/$id'
+    | '/_skater/bounty/$id'
+    | '/_skater/hazard/$id'
+    | '/_skater/report/$id'
+    | '/_skater/settings/$section'
+    | '/_skater/u/$username'
     | '/_skater/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
@@ -443,12 +457,12 @@ export interface FileRouteTypes {
     | '/admin/water/requests'
     | '/admin/water/review'
     | '/admin/water/standing'
+    | '/_skater/settings/'
     | '/admin/users/'
     | '/admin/water/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  MapRoute: typeof MapRouteWithChildren
   SkaterRoute: typeof SkaterRouteWithChildren
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRouteWithChildren
@@ -457,22 +471,13 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PostRoute: typeof PostRoute
   ReackRoute: typeof ReackRoute
-  SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   GooglePhotosCallbackRoute: typeof GooglePhotosCallbackRoute
-  UUsernameRoute: typeof UUsernameRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_map': {
-      id: '/_map'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof MapRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_skater': {
       id: '/_skater'
       path: ''
@@ -529,13 +534,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sign-in': {
       id: '/sign-in'
       path: '/sign-in'
@@ -555,6 +553,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof SkaterIndexRouteImport
+      parentRoute: typeof SkaterRoute
+    }
+    '/_skater/settings': {
+      id: '/_skater/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SkaterSettingsRouteImport
       parentRoute: typeof SkaterRoute
     }
     '/admin/': {
@@ -627,33 +632,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GooglePhotosCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/u/$username': {
-      id: '/u/$username'
-      path: '/u/$username'
-      fullPath: '/u/$username'
-      preLoaderRoute: typeof UUsernameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_map/bounty/$id': {
-      id: '/_map/bounty/$id'
+    '/_skater/bounty/$id': {
+      id: '/_skater/bounty/$id'
       path: '/bounty/$id'
       fullPath: '/bounty/$id'
-      preLoaderRoute: typeof MapBountyIdRouteImport
-      parentRoute: typeof MapRoute
+      preLoaderRoute: typeof SkaterBountyIdRouteImport
+      parentRoute: typeof SkaterRoute
     }
-    '/_map/hazard/$id': {
-      id: '/_map/hazard/$id'
+    '/_skater/hazard/$id': {
+      id: '/_skater/hazard/$id'
       path: '/hazard/$id'
       fullPath: '/hazard/$id'
-      preLoaderRoute: typeof MapHazardIdRouteImport
-      parentRoute: typeof MapRoute
+      preLoaderRoute: typeof SkaterHazardIdRouteImport
+      parentRoute: typeof SkaterRoute
     }
-    '/_map/report/$id': {
-      id: '/_map/report/$id'
+    '/_skater/report/$id': {
+      id: '/_skater/report/$id'
       path: '/report/$id'
       fullPath: '/report/$id'
-      preLoaderRoute: typeof MapReportIdRouteImport
-      parentRoute: typeof MapRoute
+      preLoaderRoute: typeof SkaterReportIdRouteImport
+      parentRoute: typeof SkaterRoute
+    }
+    '/_skater/settings/': {
+      id: '/_skater/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SkaterSettingsIndexRouteImport
+      parentRoute: typeof SkaterSettingsRoute
+    }
+    '/_skater/settings/$section': {
+      id: '/_skater/settings/$section'
+      path: '/$section'
+      fullPath: '/settings/$section'
+      preLoaderRoute: typeof SkaterSettingsSectionRouteImport
+      parentRoute: typeof SkaterSettingsRoute
+    }
+    '/_skater/u/$username': {
+      id: '/_skater/u/$username'
+      path: '/u/$username'
+      fullPath: '/u/$username'
+      preLoaderRoute: typeof SkaterUUsernameRouteImport
+      parentRoute: typeof SkaterRoute
     }
     '/_skater/water/$id': {
       id: '/_skater/water/$id'
@@ -721,27 +740,37 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface MapRouteChildren {
-  MapBountyIdRoute: typeof MapBountyIdRoute
-  MapHazardIdRoute: typeof MapHazardIdRoute
-  MapReportIdRoute: typeof MapReportIdRoute
+interface SkaterSettingsRouteChildren {
+  SkaterSettingsSectionRoute: typeof SkaterSettingsSectionRoute
+  SkaterSettingsIndexRoute: typeof SkaterSettingsIndexRoute
 }
 
-const MapRouteChildren: MapRouteChildren = {
-  MapBountyIdRoute: MapBountyIdRoute,
-  MapHazardIdRoute: MapHazardIdRoute,
-  MapReportIdRoute: MapReportIdRoute,
+const SkaterSettingsRouteChildren: SkaterSettingsRouteChildren = {
+  SkaterSettingsSectionRoute: SkaterSettingsSectionRoute,
+  SkaterSettingsIndexRoute: SkaterSettingsIndexRoute,
 }
 
-const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
+const SkaterSettingsRouteWithChildren = SkaterSettingsRoute._addFileChildren(
+  SkaterSettingsRouteChildren,
+)
 
 interface SkaterRouteChildren {
+  SkaterSettingsRoute: typeof SkaterSettingsRouteWithChildren
   SkaterIndexRoute: typeof SkaterIndexRoute
+  SkaterBountyIdRoute: typeof SkaterBountyIdRoute
+  SkaterHazardIdRoute: typeof SkaterHazardIdRoute
+  SkaterReportIdRoute: typeof SkaterReportIdRoute
+  SkaterUUsernameRoute: typeof SkaterUUsernameRoute
   SkaterWaterIdRoute: typeof SkaterWaterIdRoute
 }
 
 const SkaterRouteChildren: SkaterRouteChildren = {
+  SkaterSettingsRoute: SkaterSettingsRouteWithChildren,
   SkaterIndexRoute: SkaterIndexRoute,
+  SkaterBountyIdRoute: SkaterBountyIdRoute,
+  SkaterHazardIdRoute: SkaterHazardIdRoute,
+  SkaterReportIdRoute: SkaterReportIdRoute,
+  SkaterUUsernameRoute: SkaterUUsernameRoute,
   SkaterWaterIdRoute: SkaterWaterIdRoute,
 }
 
@@ -791,7 +820,6 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  MapRoute: MapRouteWithChildren,
   SkaterRoute: SkaterRouteWithChildren,
   AboutRoute: AboutRoute,
   AdminRoute: AdminRouteWithChildren,
@@ -800,11 +828,9 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PostRoute: PostRoute,
   ReackRoute: ReackRoute,
-  SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   GooglePhotosCallbackRoute: GooglePhotosCallbackRoute,
-  UUsernameRoute: UUsernameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

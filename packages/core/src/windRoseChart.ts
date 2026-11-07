@@ -430,7 +430,7 @@ export function windExposureSummary(input: WindExposureSummaryInput): WindExposu
     // alert that says "⚠ open water ~45 s ahead", meaning unfrozen water you are about to skate into.
     // Reusing the phrase for fetch made the same two words mean "this lake is not frozen" on one
     // surface and "the wind had a long run" on another, on pages about frozen lakes. The timeline's
-    // scrub readout says "3.2 km across the lake" for the same measurement.
+    // scrub readout says "2 mi across the lake" for the same measurement.
     sentences.push(
       `It is most exposed on ${input.spokenDirection(mostExposed.label)} shore, where ` +
         `${input.formatMiles(mostExposed.fetchM)} miles of lake line up with the wind.`,

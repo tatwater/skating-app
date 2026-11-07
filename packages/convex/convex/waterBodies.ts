@@ -5290,6 +5290,7 @@ export const searchByName = query({
         centroid: body.centroid,
         bbox: body.bbox,
         states: body.states ?? [],
+        ...(body.surfaceAreaSqM !== undefined ? { surfaceAreaSqM: body.surfaceAreaSqM } : {}),
         ...(standing.standing !== 'active' ? { inactive: true } : {}),
       });
       if (results.length >= bodyRoom) break;
@@ -5354,6 +5355,13 @@ type SearchHit = {
    *  frame you on 200 km of Lake Champlain, which is the whole reason the bay is nameable. */
   bbox: Doc<'waterBodies'>['bbox'];
   states: string[];
+  /**
+   * The row's own water area, m² (B03 §11: "Reservoir · NH · 1,143 acres") — the bay's for a bay
+   * hit. Absent on a body whose area was never measured. There is no town here: a body row carries
+   * its states but no town, and resolving one per hit per keystroke is a boundary-polygon read the
+   * search box shouldn't pay for.
+   */
+  surfaceAreaSqM?: number;
 };
 
 /**
@@ -5388,6 +5396,7 @@ async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise
       centroid: subArea.centroid,
       bbox: subArea.bbox,
       states: parent.states ?? [],
+      surfaceAreaSqM: subArea.surfaceAreaSqM,
     });
     if (hits.length >= max) break;
   }

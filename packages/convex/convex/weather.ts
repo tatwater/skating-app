@@ -18,7 +18,6 @@
 
 import {
   bandForCoord,
-  type DriveTimeBands,
   FORECAST_PLAN_DAYS,
   type ForecastHour,
   type ForecastPayload,
@@ -29,6 +28,7 @@ import {
   summarizeWeatherSince,
   toForecastHour,
   utcOffsetSecondsAt,
+  viewerDriveTime,
   type WeatherCell,
   type WeatherSinceSummary,
 } from '@skating/core';
@@ -692,12 +692,9 @@ export const resolveForecastPlace = internalQuery({
     // The same point the cell was keyed from, so the band and the forecast are about one place.
     const point: LatLng = subArea ? subAreaWeatherPoint(subArea) : defaultSampleAnchor(body);
     const viewer = await getCurrentProfile(ctx);
-    const bands = {
-      band30: viewer?.cachedIsochrones?.band30,
-      band60: viewer?.cachedIsochrones?.band60,
-      outerRadiusMeters: viewer?.outerRadiusMeters,
-    } as DriveTimeBands;
-    return { cell, arrivalBandMinutes: bandForCoord(point, bands, viewer?.homeCoord) };
+    // From the travel base while it's in force, else home (B03 §11).
+    const { bands, origin } = viewerDriveTime(viewer, Date.now());
+    return { cell, arrivalBandMinutes: bandForCoord(point, bands, origin) };
   },
 });
 

@@ -88,6 +88,8 @@ export async function storeActivityConnection(
     refreshToken: string;
     tokenExpiresAt: number;
     scopes: string[];
+    /** The provider-side name to show its owner; absent ⇒ any stored one is kept. */
+    externalDisplayName?: string;
   },
 ): Promise<ConnectionWriteResult> {
   if (!(await canConnectAccount(ctx, args.userId))) return { stored: false };
@@ -107,6 +109,9 @@ export async function storeActivityConnection(
     refreshToken: args.refreshToken,
     tokenExpiresAt: args.tokenExpiresAt,
     scopes: args.scopes,
+    ...(args.externalDisplayName !== undefined
+      ? { externalDisplayName: args.externalDisplayName }
+      : {}),
     connectedAt: existing?.connectedAt ?? Date.now(),
   };
   if (existing) await ctx.db.patch(existing._id, fields);

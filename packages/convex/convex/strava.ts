@@ -183,6 +183,7 @@ export const storeConnection = internalMutation({
     refreshToken: v.string(),
     tokenExpiresAt: v.number(),
     scopes: v.array(v.string()),
+    externalDisplayName: v.optional(v.string()),
   },
   handler: (ctx, args) => storeActivityConnection(ctx, { ...args, provider: 'strava' }),
 });
@@ -192,7 +193,20 @@ interface StravaTokenResponse {
   access_token: string;
   refresh_token: string;
   expires_at: number; // epoch SECONDS
-  athlete?: { id: number };
+  /**
+   * The summary athlete the authorization-code exchange returns under the `read` scope we already
+   * request (a refresh returns none). `firstname`/`lastname` are its display name.
+   */
+  athlete?: { id: number; firstname?: string; lastname?: string };
+}
+
+/** "Ada Lovelace" from the exchange's summary athlete, or `undefined` when it carried no name. */
+export function stravaAthleteName(athlete: StravaTokenResponse['athlete']): string | undefined {
+  const name = [athlete?.firstname, athlete?.lastname]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
+  return name.length > 0 ? name.slice(0, 120) : undefined;
 }
 
 /** Exchange an authorization code (or a refresh token) for a token pair. */
@@ -237,9 +251,11 @@ export const completeConnect = internalAction({
       return { ok: false, redirectTo: claim.redirectTo };
     }
 
+    const athleteName = stravaAthleteName(tokens.athlete);
     const { stored } = await ctx.runMutation(internal.strava.storeConnection, {
       userId: claim.userId,
       externalUserId: String(tokens.athlete?.id ?? ''),
+      ...(athleteName !== undefined ? { externalDisplayName: athleteName } : {}),
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       tokenExpiresAt: tokens.expires_at * 1000,
@@ -265,9 +281,9 @@ export const getConnection = internalQuery({
 });
 
 /**
- * Public: is this user connected to Strava? Deliberately returns **only** a boolean and the connect
- * time — the tokens on that row are server-only, and a query that returned the row wholesale would
- * hand a user's access token to their own client for no reason.
+ * Public: is this user connected to Strava? Deliberately returns **only** a boolean, the connect
+ * time and the account's own name — the tokens on that row are server-only, and a query that
+ * returned the row wholesale would hand a user's access token to their own client for no reason.
  */
 export const connectionStatus = query({
   args: {},
@@ -282,6 +298,9 @@ export const connectionStatus = query({
       configured: stravaConfigured(),
       connected: strava !== undefined,
       connectedAt: strava?.connectedAt ?? null,
+      // The owner's own Strava name (B03 §11), for "Connected as …"; `null` until a connect that
+      // captured it.
+      athleteName: strava?.externalDisplayName ?? null,
     };
   },
 });

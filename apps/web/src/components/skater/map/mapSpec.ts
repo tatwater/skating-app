@@ -210,16 +210,28 @@ export function lakeMapSpec(bodyId: string, subAreaId?: string): MapSpec {
 
 /**
  * `/report|hazard|bounty/$id`: an inset card over its lake's sidebar (rows 2). Same map as the lake,
- * and the fit has the lake's own key, so opening a card from the lake doesn't move the camera.
+ * and the fit has the lake's own key, so opening a card from the lake doesn't move the camera. A
+ * card about a bay (a bay's bounty) passes `subAreaId`, which selects the bay and scrims the rest of
+ * the lake exactly as the lake's `?sub=` does — still under the lake's fit key, so the camera fits
+ * once per lake.
  */
 export function panelMapSpec(
   bodyId: string,
-  options: { hazardId?: string; track?: MapOverlay | null; photos?: MapOverlay | null } = {},
+  options: {
+    subAreaId?: string;
+    hazardId?: string;
+    track?: MapOverlay | null;
+    photos?: MapOverlay | null;
+  } = {},
 ): MapSpec {
-  const { hazardId, track = null, photos = null } = options;
+  const { subAreaId, hazardId, track = null, photos = null } = options;
   return defineMapSpec({
     id: 'panel',
-    focus: hazardId === undefined ? { bodyId } : { bodyId, hazardId },
+    focus: {
+      bodyId,
+      ...(subAreaId !== undefined ? { subAreaId } : {}),
+      ...(hazardId !== undefined ? { hazardId } : {}),
+    },
     layers: ALL_LAYERS,
     fit: { kind: 'body', bodyId },
     overlays: { track, photos },

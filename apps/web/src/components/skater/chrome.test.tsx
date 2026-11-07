@@ -102,11 +102,15 @@ describe('useChromeKeys', () => {
 });
 
 describe('blockingModalOpen', () => {
-  it('counts dialogs, alert dialogs and sheets, but not the bell’s plate', () => {
+  it('counts dialogs, alert dialogs and sheets, but not the bell’s plate or an inset card', () => {
     const root = document.createElement('div');
     expect(blockingModalOpen(root)).toBe(false);
     root.innerHTML = '<div role="dialog" data-slot="popover-content"></div>';
     expect(blockingModalOpen(root)).toBe(false);
+    root.innerHTML = '<div role="dialog" data-slot="inset-card"></div>';
+    expect(blockingModalOpen(root)).toBe(false);
+    root.innerHTML = '<div role="dialog" data-slot="inset-card"></div><div role="dialog"></div>';
+    expect(blockingModalOpen(root)).toBe(true);
     root.innerHTML = '<div role="alertdialog"></div>';
     expect(blockingModalOpen(root)).toBe(true);
     root.innerHTML = '<div data-slot="sheet-content"></div>';

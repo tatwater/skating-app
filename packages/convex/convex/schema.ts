@@ -148,6 +148,26 @@ export default defineSchema({
     ),
     outerRadiusMeters: v.optional(v.number()),
     cachedIsochronesAt: v.optional(v.number()),
+    /**
+     * Where the cached polygons were drawn from (B03 §11) — home, or the travel base below. Stamped
+     * by the recompute so a read can tell polygons for the other place apart (`viewerDriveTime`):
+     * setting, clearing or outliving a base leaves the old polygons stored until ORS answers. PRIVATE
+     * like `homeCoord`. Absent on bands computed before travel bases, which were drawn from home.
+     */
+    cachedIsochronesOrigin: v.optional(latLng),
+    /**
+     * A temporary stand-in for home (B03 §11, board 7.19): drive time is measured from `coord` until
+     * `until`, then from home again (`driveOrigin`). PRIVATE like `homeCoord` (D11) and scrubbed with
+     * it. `expiryJobId` is the scheduled recompute at `until`, kept so a re-set or a clear can cancel
+     * it rather than leave a stray ORS call queued. Optional ⇒ migration-free; not indexed.
+     */
+    travelBase: v.optional(
+      v.object({
+        coord: latLng,
+        until: v.number(),
+        expiryJobId: v.optional(v.id('_scheduled_functions')),
+      }),
+    ),
     // Server-sync copy of the newsfeed filter row (Phase 04, decision #3/#6); local storage is the
     // working copy, this is the durable/LWW copy. All fields optional (all-absent = show everything).
     feedFilterPrefs: v.optional(
@@ -428,6 +448,13 @@ export default defineSchema({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),
     externalUserId: v.string(), // e.g. Strava athleteId
+    /**
+     * The account's own name at the provider, as the token exchange returned it (B03 §11) — "Connected
+     * as Ada Lovelace". Shown to its owner only (Strava's terms allow an athlete's data to its own
+     * athlete). From the `read` scope we already hold, never a wider one. Absent on connections made
+     * before it was captured, until the next connect.
+     */
+    externalDisplayName: v.optional(v.string()),
     accessToken: v.optional(v.string()), // SERVER-ONLY
     refreshToken: v.optional(v.string()), // SERVER-ONLY
     scopes: v.array(v.string()),
@@ -2656,6 +2683,9 @@ export default defineSchema({
     // instead. (Greptile, PR #35 — the same shape as A01's `listInViewport` and `listPromotionCandidates`
     // before it: the bound has to be in the index, not after it.)
     .index('by_water_body_first_reported', ['waterBodyId', 'firstReportedAt'])
+    // The region map's hazard marks (B03 §11, `listInViewport`): this season's live pins, one range.
+    // Every field is required, so nothing sorts as `undefined` ahead of the range.
+    .index('by_status_moderation_first_reported', ['status', 'moderationStatus', 'firstReportedAt'])
     .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 09a offline)
     // The merge chain (A05c / D80): every pin folded into one survivor, which is what the union
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every

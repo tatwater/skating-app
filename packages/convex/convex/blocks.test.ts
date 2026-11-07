@@ -99,6 +99,11 @@ describe('blocks.myBlocks', () => {
     const list = await a.as.query(api.blocks.myBlocks, {});
     expect(list.map((r) => r.userId)).toEqual([c.id, b.id]); // newest first
     expect(list[0]).toMatchObject({ username: 'c', displayName: 'c' });
+    // When each was blocked (B03 §11), from the block row itself.
+    const rows = await t.run((ctx) => ctx.db.query('blocks').collect());
+    expect(list.map((r) => r.blockedAt)).toEqual(
+      [c.id, b.id].map((id) => rows.find((row) => row.blockedId === id)?.createdAt),
+    );
   });
 });
 

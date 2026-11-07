@@ -79,6 +79,8 @@ export const myBlocks = query({
       username: string;
       displayName: string;
       profileImageUrl?: string;
+      /** When the caller blocked them (B03 §11) — the settings list says "Blocked Jan 5". */
+      blockedAt: number;
     }[] = [];
     for (const row of rows) {
       const target = await ctx.db.get(row.blockedId);
@@ -90,6 +92,7 @@ export const myBlocks = query({
         ...(target.profileImageUrl !== undefined
           ? { profileImageUrl: target.profileImageUrl }
           : {}),
+        blockedAt: row.createdAt,
       });
     }
     return result;

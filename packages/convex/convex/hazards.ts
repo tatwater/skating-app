@@ -17,6 +17,7 @@
 
 import {
   BUNDLE_LOOKBACK_MS,
+  bboxIntersects,
   bundleWindow,
   type ConsensusVote,
   clipFootprintToBody,
@@ -33,6 +34,7 @@ import {
   type HazardShape,
   hazardBbox,
   hazardFootprint,
+  hazardPlaceLine,
   initialLifecycleState,
   isInSeason,
   isMinor,
@@ -40,11 +42,14 @@ import {
   isPassageMarker,
   isProvisional,
   isValidHazardShape,
+  nearestLandmarkWithin,
   promotionTargetFor,
   rankPromotionCandidates,
   resolveSeason,
   type Season,
+  seasonEndMs,
   seasonOf,
+  seasonStartMs,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -61,11 +66,13 @@ import { resolveSurvivor } from './lib/bodies';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
+import { liveLandmarksForBody } from './lib/landmarkRows';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { takeCappedResult } from './lib/scan';
 import { activateOnEvidence } from './lib/standing';
-import { geoJson, literals } from './lib/validators';
+import { bbox, geoJson, literals } from './lib/validators';
 import { resolveSubAreaForPoint } from './subAreas';
 
 /**
@@ -324,6 +331,13 @@ export interface HazardView extends Doc<'hazards'> {
    */
   promotedFeatureType?: string;
   /**
+   * Where the pin is, in the lake's own words (B03 §11): its bay and the nearest named landmark
+   * within `HAZARD_LANDMARK_RADIUS_M` — "The Narrows, by Shaker Bridge" (`hazardPlaceLine`).
+   * Single-hazard path only, like `promotedFeatureType`: a body's landmarks are up to 1,500 rows, a
+   * read the map's live list must not pay per subscription. Absent when nothing derivable exists.
+   */
+  placeLine?: string;
+  /**
    * Set only when this hazard shares a cluster with at least one other pin (D80). `confirmCount` on
    * this view is then the **pooled** number and these two say so, which is what lets the drawer print
    * "3 skaters have marked this, across 2 pins" instead of a count that silently disagrees with the
@@ -503,8 +517,9 @@ export async function poolConsensus(
  * older" toggle. Dropping them here would make "nobody has confirmed this lately" indistinguishable
  * from "this is gone" at the API boundary, which is the exact confusion D3 forbids.
  *
- * Scoped per body by design (Phase 09a call 6) — there is no cross-viewport hazard query, so this can
- * never grow into a read-cap problem the way `listInViewport` did.
+ * Scoped per body by design (Phase 09a call 6), so this can never grow into a read-cap problem the
+ * way the water-body `listInViewport` did. The region map's cross-lake read is `listInViewport`
+ * below (B03 §11), bounded by season and cap instead, and rendered by this query's own rule.
  */
 export const listForBody = query({
   args: {
@@ -566,26 +581,106 @@ export const listForBody = query({
       .filter((h) => h.moderationStatus === 'visible')
       .filter((h) => isInSeason(h.firstReportedAt, target))
       .filter((h) => subAreaId === undefined || h.subAreaId === subAreaId);
-    // Tombstones are pooled but not rendered: the survivor carries the warning, with the union of the
-    // chain's footprints, so drawing the loser too would put a second outline over the same ice.
-    const rendered = inScope.filter((h) => h.mergedIntoHazardId === undefined);
-    // Pooled *before* the expiry drop and after the season filter, so a cluster is what one winter's
-    // skaters actually reported on this lake — a pin from last February is not corroboration for one
-    // drawn this January, and the season axis is what says so.
-    const pooled = await poolConsensus(ctx, inScope);
-    const visibleIds = new Set(rendered.map((h) => h._id as string));
-    return (
-      rendered
-        .map((h) => toView(h, now, pooled.get(h._id), visibleIds))
-        // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
-        // never disappears, because assuming a danger is still there is the recoverable mistake. A
-        // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
-        // days walks a skater onto ice no one has checked, and the recoverable mistake is the longer
-        // walk. Dropped here rather than in the client so the map, the list and the on-ice proximity
-        // evaluator — which all read this one query — cannot disagree about it.
-        .filter((h) => !h.expired)
-        .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+    return renderInScope(ctx, inScope, now);
+  },
+});
+
+/**
+ * One body's in-scope hazards (active, moderation-visible, one season, merge tombstones included) as
+ * the map draws them: pooled, viewed, expired crossings dropped, freshest first. **The one render
+ * rule** behind `listForBody` and `listInViewport`, so a pin can't read one way on the lake and
+ * another on the region map.
+ */
+async function renderInScope(
+  ctx: QueryCtx,
+  inScope: readonly Doc<'hazards'>[],
+  now: number,
+): Promise<HazardView[]> {
+  // Tombstones are pooled but not rendered: the survivor carries the warning, with the union of the
+  // chain's footprints, so drawing the loser too would put a second outline over the same ice.
+  const rendered = inScope.filter((h) => h.mergedIntoHazardId === undefined);
+  // Pooled *before* the expiry drop and after the season filter, so a cluster is what one winter's
+  // skaters actually reported on this lake — a pin from last February is not corroboration for one
+  // drawn this January, and the season axis is what says so.
+  const pooled = await poolConsensus(ctx, inScope);
+  const visibleIds = new Set(rendered.map((h) => h._id as string));
+  return (
+    rendered
+      .map((h) => toView(h, now, pooled.get(h._id), visibleIds))
+      // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
+      // never disappears, because assuming a danger is still there is the recoverable mistake. A
+      // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
+      // days walks a skater onto ice no one has checked, and the recoverable mistake is the longer
+      // walk. Dropped here rather than in the client so the map, the list and the on-ice proximity
+      // evaluator — which all read this one rule — cannot disagree about it.
+      .filter((h) => !h.expired)
+      .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+  );
+}
+
+/**
+ * Hazards read per region-map viewport (B03 §11). This season's active, moderation-visible pins
+ * across the whole region — the read is the season, not the viewport, so this is what bounds it. A
+ * pilot winter is a few hundred; past the cap the answer says `truncated` rather than reading as
+ * the whole truth (D5), and the newest-first order means what drops is the longest-unreported.
+ */
+export const HAZARD_VIEWPORT_SCAN_CAP = 500;
+
+/**
+ * Hazards whose footprint touches a viewport (B03 §11) — the region map's hazard marks. Until this,
+ * only the opened lake's hazards loaded, so a region map could look hazard-free while the ice in
+ * view had pins on it: the exact reading D3 forbids.
+ *
+ * **Bounded by season, not by geometry.** Hazards carry no cell index; instead the read is one range
+ * on `by_status_moderation_first_reported` — active, visible, first reported this season (D63's
+ * axis for a hazard) — capped at `HAZARD_VIEWPORT_SCAN_CAP`, newest first, then narrowed to the
+ * viewport by the stored footprint `bbox`. That is complete regardless of zoom: a pin on a pond too
+ * small to draw at this zoom is still a pin in view. If a season ever outgrows the cap, the fix is a
+ * cell index like `waterBodyCells`, and `truncated` says when that day comes.
+ *
+ * **Rendered by the lake's rule.** Each body with a pin in view is clustered over *all* its in-scope
+ * pins — the cluster doesn't stop at the viewport edge — through `renderInScope`, the same path
+ * `listForBody` takes: stale pins come back annotated, never dropped; only expired crossings leave.
+ */
+export const listInViewport = query({
+  args: {
+    viewport: bbox,
+    /** Which season's hazards (D63) — absent ⇒ this one. See `listForBody`. */
+    season: v.optional(v.number()),
+  },
+  handler: async (ctx, { viewport, season }) => {
+    const now = Date.now();
+    const target: Season = resolveSeason(season, seasonOf(now));
+    const { rows, truncated } = await takeCappedResult(
+      ctx.db
+        .query('hazards')
+        .withIndex('by_status_moderation_first_reported', (q) =>
+          q
+            .eq('status', 'active')
+            .eq('moderationStatus', 'visible')
+            .gte('firstReportedAt', seasonStartMs(target))
+            .lt('firstReportedAt', seasonEndMs(target)),
+        )
+        .order('desc'),
+      HAZARD_VIEWPORT_SCAN_CAP,
+      'hazards.listInViewport',
     );
+    const byBody = new Map<string, Doc<'hazards'>[]>();
+    for (const h of rows) {
+      const group = byBody.get(h.waterBodyId);
+      if (group) group.push(h);
+      else byBody.set(h.waterBodyId, [h]);
+    }
+    const hazards: HazardView[] = [];
+    for (const group of byBody.values()) {
+      const inView = (h: Doc<'hazards'>) =>
+        h.mergedIntoHazardId === undefined && bboxIntersects(h.bbox, viewport);
+      if (!group.some(inView)) continue;
+      const views = await renderInScope(ctx, group, now);
+      hazards.push(...views.filter(inView));
+    }
+    hazards.sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt);
+    return { hazards, truncated };
   },
 });
 
@@ -711,6 +806,23 @@ export const get = query({
       const feature = await ctx.db.get(hazard.promotedToFeatureId);
       if (feature?.active) view.promotedFeatureType = feature.type;
     }
+
+    // The place line, from data that already exists — the bay stamp and the live landmarks. The
+    // footprint's box center stands for the pin: for a line or an area it is the middle of what was
+    // drawn, which is what "by" should be measured from.
+    const center = {
+      lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
+      lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
+    };
+    const landmark = nearestLandmarkWithin(
+      center,
+      await liveLandmarksForBody(ctx, hazard.waterBodyId),
+    );
+    const placeLine = hazardPlaceLine({
+      ...(hazard.subAreaName !== undefined ? { subAreaName: hazard.subAreaName } : {}),
+      ...(landmark ? { landmarkName: landmark.name } : {}),
+    });
+    if (placeLine !== undefined) view.placeLine = placeLine;
 
     // Resolve "reported by <name>", withheld when the viewer and the author have blocked each other
     // (D32) — the drawer just omits the line then, exactly as a blocked comment's author is withheld.

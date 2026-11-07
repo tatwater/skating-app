@@ -29,6 +29,7 @@ import {
   MAP_FLAVORS,
 } from '@/lib/waterMap';
 import { effectiveMapSpec, useSkaterMapStore } from '@/stores/skaterMapStore';
+import { panelLinkState } from '../panels/panelNavigation';
 import { MapDockControls } from './MapDockControls';
 import { MapMarksLayer } from './MapMarksLayer';
 import { hitProperty, isUnlistedWater, type RenderedHit } from './mapDerive';
@@ -167,7 +168,11 @@ export default function SkaterMapCanvas() {
           activeMapHandlers().onCapture?.(coord);
           break;
         case 'hazard':
-          navigate({ to: '/hazard/$id', params: { id: action.hazardId } });
+          navigate({
+            to: '/hazard/$id',
+            params: { id: action.hazardId },
+            state: panelLinkState('map'),
+          });
           break;
         case 'body':
           navigate({ to: '/water/$id', params: { id: action.bodyId } });
@@ -522,7 +527,9 @@ export default function SkaterMapCanvas() {
           putIns={spec.layers.putIns ? data.putInMarks : []}
           hazards={data.hazardMarks}
           selectedHazardId={spec.focus?.hazardId ?? null}
-          onOpenHazard={(id) => navigate({ to: '/hazard/$id', params: { id } })}
+          onOpenHazard={(id) =>
+            navigate({ to: '/hazard/$id', params: { id }, state: panelLinkState('map') })
+          }
           reserved={reserved}
         />
       )}

@@ -17,7 +17,7 @@ import { getSheetAttempt, readStoredSheet, setSheet, useSheet } from '../lib/she
  * Report, nothing for a blank Post. A reload restores what was being written (§10.3) when it still
  * answers the same door.
  *
- * Not `/report` — that path is the published Report's page (`_map.report.$id`), and a console
+ * Not `/report` — that path is the published Report's page (`_skater.report.$id`), and a console
  * living one segment above it would read as the same thing. A Post is what is being written here
  * (D186); `/post` says so.
  */

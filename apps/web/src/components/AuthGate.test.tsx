@@ -138,22 +138,12 @@ describe('AuthGate', () => {
 });
 
 describe('usesOldShell', () => {
-  it.each([
-    '/admin',
-    '/admin/water/review',
-    '/feed',
-    '/settings',
-    '/settings/notifications',
-    '/u/skater',
-    '/notifications',
-    '/post',
-    '/report/r1',
-    '/hazard/h1',
-    '/bounty/b1',
-    '/about',
-  ])('keeps %s in the old shell', (path) => {
-    expect(usesOldShell(path)).toBe(true);
-  });
+  it.each(['/admin', '/admin/water/review', '/feed', '/post'])(
+    'keeps %s in the old shell',
+    (path) => {
+      expect(usesOldShell(path)).toBe(true);
+    },
+  );
 
   it.each([
     '/',
@@ -162,7 +152,15 @@ describe('usesOldShell', () => {
     '/administer',
     '/feedback',
     '/u/',
+    '/u/skater',
+    '/settings',
+    '/settings/notifications',
+    '/notifications',
+    '/about',
     '/report',
+    '/report/r1',
+    '/hazard/h1',
+    '/bounty/b1',
     '/about/team',
   ])('renders %s bare', (path) => {
     expect(usesOldShell(path)).toBe(false);

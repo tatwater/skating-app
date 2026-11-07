@@ -143,6 +143,20 @@ describe('diffMapSpec / applyMapSpecOps', () => {
     });
   });
 
+  it('frames a bay inside its lake under the lake’s own fit key', () => {
+    const bay = panelMapSpec('m', { subAreaId: 's' });
+    expect(bay.focus).toEqual({ bodyId: 'm', subAreaId: 's' });
+    expect(panelMapSpec('m').focus).toEqual({ bodyId: 'm' });
+    expect(panelMapSpec('m', { hazardId: 'h' }).focus).toEqual({ bodyId: 'm', hazardId: 'h' });
+    // From the bay's own lake page the card changes nothing; from the bare lake, only the focus.
+    expect(diffMapSpec(lakeMapSpec('m', 's'), bay).some((op) => op.kind === 'focus')).toBe(false);
+    expect(diffMapSpec(lakeMapSpec('m'), bay)).toContainEqual({
+      kind: 'focus',
+      focus: { bodyId: 'm', subAreaId: 's' },
+    });
+    expect(diffMapSpec(lakeMapSpec('m'), bay).some((op) => op.kind === 'fit')).toBe(false);
+  });
+
   it('compares overlays by key, not by identity', () => {
     const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
     const a = panelMapSpec('m', { track: { key: 'r1', data } });

@@ -54,7 +54,15 @@
 // module tolerates is the band edges, which cannot be imported because `@skating/design` is not a
 // dependency of core (see `BAND_EDGE_FREEZING_F`).
 import { MIN_FETCH_CLAUSE_M } from './lakeCaption';
-import { cmToInches, cToF, formatTemperatureF, kphToMph, mmToInches, roundTo } from './units';
+import {
+  cmToInches,
+  cToF,
+  formatDistanceMiles,
+  formatTemperatureF,
+  kphToMph,
+  mmToInches,
+  roundTo,
+} from './units';
 import {
   dayMsToLocalDate,
   isCompleteDay,
@@ -1433,7 +1441,10 @@ export function timelineReadoutParts(
     // Gated where the lake's geometry supports the claim: `fetchAlong` returns null below
     // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus.
     const acrossM = fetchAlong(fetchProfileM, hour.windDirectionDeg);
-    if (acrossM !== null) parts.push(`${roundTo(acrossM / 1000, 1)} km across the lake`);
+    //
+    // Miles, like every other distance a skater reads (the D185 units sweep) — converted, not
+    // relabeled: 4,000 m reads "2.5 mi", never "4 mi".
+    if (acrossM !== null) parts.push(`${formatDistanceMiles(acrossM)} across the lake`);
   }
 
   if (typeof hour.snowDepthM === 'number' && hour.snowDepthM > 0) {

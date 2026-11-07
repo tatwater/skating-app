@@ -40,6 +40,7 @@ import {
   matchWeatherFilter,
   sanitizeFeedFilters,
   spansMultipleSampleCells,
+  viewerDriveTime,
   WEATHER_TIER_SPECS,
   type WeatherDiscoveryFilter,
   type WeatherMatch,
@@ -137,12 +138,8 @@ function viewerBands(viewer: Doc<'profiles'> | null): {
   home: { lat: number; lng: number } | undefined;
   box: Box | null;
 } {
-  const bands = {
-    band30: viewer?.cachedIsochrones?.band30,
-    band60: viewer?.cachedIsochrones?.band60,
-    outerRadiusMeters: viewer?.outerRadiusMeters,
-  } as DriveTimeBands;
-  const home = viewer?.homeCoord;
+  // From the travel base while it's in force, else home (B03 §11) — `home` below is that origin.
+  const { bands, origin: home } = viewerDriveTime(viewer, Date.now());
   // The outer band is a crow-flies radius from home, so its box is the largest of the three and
   // bounds all of them. Without a home there is no band, and the box is null: nothing passes.
   if (!home || bands.outerRadiusMeters === undefined) return { bands, home, box: null };

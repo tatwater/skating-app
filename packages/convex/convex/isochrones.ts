@@ -12,6 +12,7 @@
  */
 
 import {
+  driveOrigin,
   ORS_BAND_RANGES_SEC,
   type OrsIsochroneResponse,
   outerBandRadiusMeters,
@@ -20,28 +21,39 @@ import {
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
-import { geoJson } from './lib/validators';
+import { geoJson, latLng } from './lib/validators';
 
 const ORS_ISOCHRONE_URL = 'https://api.openrouteservice.org/v2/isochrones/driving-car';
 /** The 90-min band has no ORS polygon (60-min cap), so it's a uniform crow-flies radius (decision #2). */
 const OUTER_BAND_MINUTES = 90;
 
-/** Read a profile's private home coord for the isochrone action (internal — never client-exposed). */
-export const getHomeForIsochrones = internalQuery({
+/**
+ * The origin a profile's bands should be drawn from right now — **the travel base while it's in
+ * force, else home** (`driveOrigin`, B03 §11) — or `null` when there is neither. Internal: the
+ * coordinate never reaches a client.
+ */
+export const getOriginForIsochrones = internalQuery({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
     const profile = await ctx.db.get(userId);
-    return profile?.homeCoord ?? null;
+    return (profile && driveOrigin(profile, Date.now())) ?? null;
   },
 });
 
 /**
- * Store the freshly computed bands on the profile (internal). Clearing (`homeCoord` removed) passes
- * all-undefined, which drops the cached geometry so every lake reads band `null` again.
+ * Store the freshly computed bands on the profile (internal), stamped with the `origin` they were
+ * drawn from. Clearing (no origin) passes all-undefined, which drops the cached geometry so every
+ * lake reads band `null` again.
+ *
+ * **A late answer for a place the skater has left is dropped.** The recompute reads the origin, then
+ * waits on ORS; if the base was set, cleared or ran out meanwhile, the polygons it brings back are
+ * for the old place, and the later recompute (the one that change scheduled) is the one that should
+ * land. Comparing against the origin *now* makes the two orders of arrival end in the same state.
  */
 export const storeBands = internalMutation({
   args: {
     userId: v.id('profiles'),
+    origin: v.optional(latLng),
     band30: v.optional(geoJson),
     band60: v.optional(geoJson),
     outerRadiusMeters: v.optional(v.number()),
@@ -50,6 +62,12 @@ export const storeBands = internalMutation({
   handler: async (ctx, args) => {
     const profile = await ctx.db.get(args.userId);
     if (!profile) return;
+    const current = driveOrigin(profile, Date.now());
+    const sameOrigin =
+      current === undefined || args.origin === undefined
+        ? current === args.origin
+        : current.lat === args.origin.lat && current.lng === args.origin.lng;
+    if (!sameOrigin) return;
     const cachedIsochrones =
       args.band30 !== undefined || args.band60 !== undefined
         ? {
@@ -59,14 +77,15 @@ export const storeBands = internalMutation({
         : undefined;
     await ctx.db.patch(args.userId, {
       cachedIsochrones,
+      cachedIsochronesOrigin: args.origin,
       outerRadiusMeters: args.outerRadiusMeters,
       cachedIsochronesAt: args.computedAt,
     });
   },
 });
 
-/** Call ORS for the 30/60-min isochrones around `home`; returns the parsed bands, or `{}` on failure. */
-async function fetchOrsBands(home: {
+/** Call ORS for the 30/60-min isochrones around `origin`; returns the parsed bands, or `{}` on failure. */
+async function fetchOrsBands(origin: {
   lat: number;
   lng: number;
 }): Promise<{ band30?: unknown; band60?: unknown }> {
@@ -80,7 +99,7 @@ async function fetchOrsBands(home: {
       method: 'POST',
       headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        locations: [[home.lng, home.lat]],
+        locations: [[origin.lng, origin.lat]],
         range: [ORS_BAND_RANGES_SEC.band30, ORS_BAND_RANGES_SEC.band60],
         range_type: 'time',
       }),
@@ -97,22 +116,25 @@ async function fetchOrsBands(home: {
 }
 
 /**
- * Recompute + cache a user's drive-time bands (decision #2). Reads home; if unset, clears the cache.
- * Otherwise computes the local crow-flies `outerRadiusMeters` (always) and best-effort ORS 30/60
- * polygons (skipped on any failure — the outer radius still gives a usable 90 band).
+ * Recompute + cache a user's drive-time bands (decision #2). Reads the origin (home, or the travel
+ * base while it's in force); if neither, clears the cache. Otherwise computes the local crow-flies
+ * `outerRadiusMeters` (always) and best-effort ORS 30/60 polygons (skipped on any failure — the outer
+ * radius still gives a usable 90 band). Scheduled by `setHome`, `setTravelBase`/`clearTravelBase`,
+ * and once at a base's `until`, so the bands come home on their own.
  */
 export const recompute = internalAction({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    const home = await ctx.runQuery(internal.isochrones.getHomeForIsochrones, { userId });
+    const origin = await ctx.runQuery(internal.isochrones.getOriginForIsochrones, { userId });
     const computedAt = Date.now();
-    if (!home) {
+    if (!origin) {
       await ctx.runMutation(internal.isochrones.storeBands, { userId, computedAt });
       return;
     }
-    const bands = await fetchOrsBands(home);
+    const bands = await fetchOrsBands(origin);
     await ctx.runMutation(internal.isochrones.storeBands, {
       userId,
+      origin,
       ...(bands.band30 !== undefined ? { band30: bands.band30 as never } : {}),
       ...(bands.band60 !== undefined ? { band60: bands.band60 as never } : {}),
       outerRadiusMeters: outerBandRadiusMeters(OUTER_BAND_MINUTES),

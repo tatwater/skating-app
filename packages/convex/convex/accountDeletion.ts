@@ -173,7 +173,10 @@ export const requestDeletion = mutation({
       homeCoord: undefined,
       cachedIsochrones: undefined,
       cachedIsochronesAt: undefined,
+      cachedIsochronesOrigin: undefined,
       outerRadiusMeters: undefined,
+      // The travel base is a private location exactly like home (B03 §11).
+      travelBase: undefined,
       // Private by default on the way out: belt to the read gates' braces, and the honest setting for
       // a profile with nothing on it.
       profileVisibility: 'private',
@@ -789,6 +792,8 @@ async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promi
     cachedIsochrones: undefined,
     outerRadiusMeters: undefined,
     cachedIsochronesAt: undefined,
+    cachedIsochronesOrigin: undefined,
+    travelBase: undefined,
     feedFilterPrefs: undefined,
     riskAckVersion: undefined,
     riskAckAt: undefined,

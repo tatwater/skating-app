@@ -179,8 +179,16 @@ export const ANALYTICS_ENUMS = {
   report_photo_source: ['device', 'google_photos'],
   point_count_bucket: ['1-99', '100-999', '1000-9999', '10000+'],
   hazard_flow_entry: ['water_body', 'report_sheet'],
-  // The author's own claims, as labeled in the UI.
-  hazard_verdict: ['still_there', 'crossed_here', 'healing', 'fully_healed', 'didnt_look'],
+  // The author's own claims, as labeled in the UI. `never_was` is "Nothing here — never was": a pin
+  // in the wrong place, not ice that changed.
+  hazard_verdict: [
+    'still_there',
+    'crossed_here',
+    'healing',
+    'fully_healed',
+    'never_was',
+    'didnt_look',
+  ],
   // The dock's switches. Hazards are locked on, so nothing toggles them; imagery has its own event.
   map_layer_name: ['depth', 'places', 'put_ins', 'tracks', 'favorites', 'labels'],
   imagery_band: ['tc', 'vh'],

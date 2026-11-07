@@ -36,12 +36,12 @@
 import {
   bandForCoord,
   bandWithinRadius,
-  type DriveTimeBands,
   isActive,
   isDriveTimeBand,
   memberSubAreaIds,
   nextZonedHourMs,
   standingOf,
+  viewerDriveTime,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
@@ -260,12 +260,10 @@ export const fanOutNearbyNotifications = internalMutation({
     let enqueued = 0;
     for (const p of page.page) {
       if (p._id === report.authorId || !canReceiveNotifications(p)) continue;
-      const bands: DriveTimeBands = {
-        band30: p.cachedIsochrones?.band30 as DriveTimeBands['band30'],
-        band60: p.cachedIsochrones?.band60 as DriveTimeBands['band60'],
-        outerRadiusMeters: p.outerRadiusMeters,
-      };
-      const band = bandForCoord(centroid, bands, p.homeCoord);
+      // From the travel base while it's in force, else home (B03 §11): someone away for the week
+      // hears about the ice where they are.
+      const { bands, origin } = viewerDriveTime(p, now);
+      const band = bandForCoord(centroid, bands, origin);
 
       if (
         p.notificationPrefs.nearbyReportDigest &&

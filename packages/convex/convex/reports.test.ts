@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { syncReportSubAreas } from './lib/reportSubAreas';
+import { RECENT_COUNTS_MAX_BODIES } from './reports';
 import schema from './schema';
 
 /**
@@ -2327,6 +2328,93 @@ describe('reports counters + offline read-cache', () => {
   test('recentCardsForBodies is empty for no ids', async () => {
     const t = convexTestWithGeo();
     expect(await t.query(api.reports.recentCardsForBodies, { waterBodyIds: [] })).toEqual([]);
+  });
+
+  test("a blocked author's report is carried, flagged, and counted — one rule for every count (D13)", async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asAuthor = await seedUser(t, 'clerk_author');
+    const asViewer = await seedUser(t, 'clerk_viewer');
+    await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: id,
+      skateEndTime: Date.now(),
+    });
+    const [viewerId, authorId] = await t.run(async (ctx) => {
+      const byClerk = (c: string) =>
+        ctx.db
+          .query('profiles')
+          .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', c))
+          .unique();
+      return [(await byClerk('clerk_viewer'))?._id, (await byClerk('clerk_author'))?._id];
+    });
+    if (!viewerId || !authorId) throw new Error('seed');
+    await t.run((ctx) =>
+      ctx.db.insert('blocks', { blockerId: viewerId, blockedId: authorId, createdAt: Date.now() }),
+    );
+    const cards = await asViewer.query(api.reports.recentCardsForBodies, { waterBodyIds: [id] });
+    expect(cards.map((c) => c.blocked)).toEqual([true]);
+    const counts = await asViewer.query(api.reports.recentCountsForBodies, { waterBodyIds: [id] });
+    expect(counts[id]?.count).toBe(1);
+  });
+
+  test('recentCountsForBodies: count and cap per body over the same window as the cards', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const { id: quiet } = await seedBody(t, 'osm/2');
+    const asAuthor = await seedUser(t, 'clerk_author');
+    const now = Date.now();
+    for (let i = 0; i < 6; i++) {
+      await asAuthor.mutation(api.reports.create, {
+        ...OBSERVED,
+        waterBodyId: id,
+        skateEndTime: now - i * 1000,
+      });
+    }
+    await asAuthor.mutation(api.reports.create, {
+      ...OBSERVED,
+      waterBodyId: quiet,
+      skateEndTime: now - 100 * 60 * 60 * 1000, // outside the window
+    });
+    const counts = await t.query(api.reports.recentCountsForBodies, {
+      waterBodyIds: [id, quiet, id],
+    });
+    expect(counts).toEqual({
+      [id]: { count: 5, capped: true, newestSkateEndTime: now },
+      [quiet]: { count: 0, capped: false },
+    });
+  });
+
+  test('recentCountsForBodies refuses an unbounded ask', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const many = Array.from({ length: RECENT_COUNTS_MAX_BODIES + 1 }, () => id);
+    // Duplicates collapse, so the same id many times is one body.
+    expect(
+      Object.keys(await t.query(api.reports.recentCountsForBodies, { waterBodyIds: many })),
+    ).toHaveLength(1);
+    const ids = await t.run(async (ctx) => {
+      const out = [];
+      for (let i = 0; i <= RECENT_COUNTS_MAX_BODIES; i++) {
+        out.push(
+          await ctx.db.insert('waterBodies', {
+            source: 'osm',
+            name: `P${i}`,
+            searchText: `P${i}`,
+            type: 'lakePond',
+            polygon: POLYGON,
+            bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+            centroid: { lat: 0.5, lng: 0.5 },
+            dedupStatus: 'clean',
+            createdAt: NOW,
+          }),
+        );
+      }
+      return out;
+    });
+    await expect(t.query(api.reports.recentCountsForBodies, { waterBodyIds: ids })).rejects.toThrow(
+      /At most/,
+    );
   });
 });
 

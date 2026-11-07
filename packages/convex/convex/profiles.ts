@@ -21,6 +21,7 @@ import {
   isValidCoord,
   isValidDisplayName,
   isValidTownLabel,
+  isValidTravelBaseUntil,
   isValidUsername,
   meetsMinimumAge,
   normalizeBio,
@@ -30,12 +31,19 @@ import {
   type PostCardData,
   PROFILE_VISIBILITIES,
   sanitizeFeedFilters,
+  TRAVEL_BASE_MAX_MS,
   type TrustClass,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import {
   canReceiveNotifications,
   getCurrentProfile,
@@ -48,6 +56,7 @@ import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
+import { takeCappedResult } from './lib/scan';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
 
@@ -145,9 +154,7 @@ export const upsertFromClerk = mutation({
     // instant feedback, but the trust boundary can't trust it. We store the canonical
     // forms so `username` uniqueness is genuinely case-insensitive (06-data-model.md).
     const username = normalizeUsername(args.username);
-    if (!isValidUsername(username)) {
-      throw new ConvexError('Username must be 3–30 characters: letters, numbers, or underscores');
-    }
+    if (!isValidUsername(username)) throw new ConvexError(USERNAME_MESSAGES.invalid);
     const displayName = normalizeDisplayName(args.displayName);
     if (!isValidDisplayName(displayName)) {
       throw new ConvexError('Display name is required');
@@ -181,16 +188,11 @@ export const upsertFromClerk = mutation({
       return existing._id;
     }
 
-    // `username` is unique (06-data-model.md). Convex has no unique constraint, so
-    // check the index and reject a name already held by a *different* profile. (Only
-    // reached for new or active profiles — i.e. only when we're about to write it.)
-    const usernameOwner = await ctx.db
-      .query('profiles')
-      .withIndex('by_username', (q) => q.eq('username', username))
-      .first();
-    if (usernameOwner && usernameOwner.clerkUserId !== identity.subject) {
-      throw new ConvexError('Username is already taken');
-    }
+    // `username` is unique (06-data-model.md) — `checkUsername` is the one rule, shared with the
+    // availability query and the rename. (Only reached for new or active profiles — i.e. only when
+    // we're about to write it.)
+    const verdict = await checkUsername(ctx, username, identity.subject);
+    if (!verdict.ok) throw new ConvexError(USERNAME_MESSAGES[verdict.reason]);
 
     if (existing) {
       // Force a minor's profile private; never silently *widen* an adult's existing choice. So on
@@ -234,6 +236,95 @@ export const upsertFromClerk = mutation({
       status: 'active',
       createdAt: now,
     });
+  },
+});
+
+/** What a refused username is told, one string per reason — shared by every path that sets one. */
+const USERNAME_MESSAGES = {
+  invalid: 'Username must be 3–30 characters: letters, numbers, or underscores',
+  taken: 'Username is already taken',
+} as const;
+
+type UsernameVerdict =
+  | { ok: true; username: string }
+  | { ok: false; username: string; reason: keyof typeof USERNAME_MESSAGES };
+
+/**
+ * May `holderClerkId` have this username? **The one rule** (B03 §11): onboarding, the availability
+ * query and the rename all ask it, so a name the settings field calls free is a name the save takes.
+ *
+ * The canonical form first (D37 — the client's normalization is a courtesy), then the shape, then
+ * the index: a name is taken when a *different* account holds it. That includes a ghost (D62): the
+ * handle is reserved through the deletion window so canceling can give it back, and a tombstone's
+ * synthetic sentinel never collides with a valid handle. Your own current name is yours, not taken.
+ */
+async function checkUsername(
+  ctx: QueryCtx,
+  raw: string,
+  holderClerkId: string,
+): Promise<UsernameVerdict> {
+  const username = normalizeUsername(raw);
+  if (!isValidUsername(username)) return { ok: false, username, reason: 'invalid' };
+  const owner = await ctx.db
+    .query('profiles')
+    .withIndex('by_username', (q) => q.eq('username', username))
+    .first();
+  if (owner && owner.clerkUserId !== holderClerkId) return { ok: false, username, reason: 'taken' };
+  return { ok: true, username };
+}
+
+/**
+ * Is this username free, and allowed (B03 §11, settings 7.x and onboarding)? Answers for the caller:
+ * signed in, with or without a profile yet — onboarding asks before the row exists. `username` is
+ * the canonical form the save would store, so the field can show what "Ada_K " becomes. A refusal
+ * says which rule refused it; `current` marks the caller's own handle (free to them, nothing to save).
+ */
+export const usernameAvailable = query({
+  args: { username: v.string() },
+  handler: async (
+    ctx,
+    { username },
+  ): Promise<{
+    username: string;
+    available: boolean;
+    reason?: keyof typeof USERNAME_MESSAGES;
+    current?: true;
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError('Not authenticated');
+    const verdict = await checkUsername(ctx, username, identity.subject);
+    if (!verdict.ok) {
+      return { username: verdict.username, available: false, reason: verdict.reason };
+    }
+    const viewer = await getCurrentProfile(ctx);
+    return {
+      username: verdict.username,
+      available: true,
+      ...(viewer?.username === verdict.username ? { current: true as const } : {}),
+    };
+  },
+});
+
+/**
+ * Change the caller's username (B03 §11). The handle lives on our row alone — Clerk mirrors only the
+ * email and the avatar (`MirrorClaims`), and nothing denormalizes a username (every surface reads it
+ * at render through `publicAuthor`) — so a rename is one patch with no mirror to fight and no copies
+ * to chase. Old `/u/<name>` links stop resolving; that is what renaming means.
+ *
+ * `requireContributor`: a ghost's handle is reserved, not theirs to trade (D62), and `requireProfile`
+ * under it keeps a banned or suspended account from renaming to slip a moderation action (D37) — the
+ * same reason `upsertFromClerk` refuses an inactive account's identity edits.
+ */
+export const changeUsername = mutation({
+  args: { username: v.string() },
+  handler: async (ctx, args) => {
+    const profile = await requireContributor(ctx);
+    const verdict = await checkUsername(ctx, args.username, profile.clerkUserId);
+    if (!verdict.ok) throw new ConvexError(USERNAME_MESSAGES[verdict.reason]);
+    if (verdict.username !== profile.username) {
+      await ctx.db.patch(profile._id, { username: verdict.username });
+    }
+    return { username: verdict.username };
   },
 });
 
@@ -567,6 +658,66 @@ export const setHome = mutation({
 });
 
 /**
+ * Measure drive time from somewhere else for a while (B03 §11, board 7.19): a cabin for the week, a
+ * trip north. Until `until`, every drive-time read — the feed's bands and filter, the lake's arrival
+ * band, the weather sweep's matches, the nearby-report alerts, "bounties near me" — reads the base
+ * instead of home (`viewerDriveTime` / `driveOrigin`, the one rule); after it, home again, with
+ * nothing for the skater to undo. PRIVATE exactly like `homeCoord` (D11): stored, never served.
+ *
+ * Schedules two recomputes: one now, so the polygons follow, and one at `until`, so they come home
+ * on their own. A re-set or a clear cancels the pending one rather than leave an ORS call queued
+ * for a base that no longer exists. `until` must be in the future and within `TRAVEL_BASE_MAX_MS`.
+ */
+export const setTravelBase = mutation({
+  args: { lat: v.number(), lng: v.number(), until: v.number() },
+  handler: async (ctx, { lat, lng, until }) => {
+    // `requireContributor`, as `setHome`: a ghost re-collecting a private location is the thing the
+    // deletion request promised to stop (D62 second amendment).
+    const profile = await requireContributor(ctx);
+    const coord = { lat, lng };
+    if (!isValidCoord(coord)) throw new ConvexError('Travel base coordinate is not valid');
+    if (!isValidTravelBaseUntil(until, Date.now())) {
+      throw new ConvexError(
+        `A travel base ends in the future, within ${TRAVEL_BASE_MAX_MS / 86_400_000} days`,
+      );
+    }
+    await cancelTravelBaseExpiry(ctx, profile);
+    const expiryJobId = await ctx.scheduler.runAt(until, internal.isochrones.recompute, {
+      userId: profile._id,
+    });
+    await ctx.db.patch(profile._id, { travelBase: { coord, until, expiryJobId } });
+    await ctx.scheduler.runAfter(0, internal.isochrones.recompute, { userId: profile._id });
+    return profile._id;
+  },
+});
+
+/**
+ * Go home early (B03 §11): drop the travel base and recompute from home now. A no-op without one.
+ * `requireProfile`, unlike the setter: ending a base only ever moves drive time back to the home the
+ * person already gave us, and a departing account should be able to stop being measured from a
+ * place it is no longer at.
+ */
+export const clearTravelBase = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const profile = await requireProfile(ctx);
+    if (profile.travelBase === undefined) return profile._id;
+    await cancelTravelBaseExpiry(ctx, profile);
+    await ctx.db.patch(profile._id, { travelBase: undefined });
+    await ctx.scheduler.runAfter(0, internal.isochrones.recompute, { userId: profile._id });
+    return profile._id;
+  },
+});
+
+/** Cancel the pending at-`until` recompute of the profile's current base, if one is still queued. */
+async function cancelTravelBaseExpiry(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<void> {
+  const jobId = profile.travelBase?.expiryJobId;
+  if (jobId === undefined) return;
+  const job = await ctx.db.system.get(jobId);
+  if (job?.state.kind === 'pending') await ctx.scheduler.cancel(jobId);
+}
+
+/**
  * Persist the server-sync copy of the feed filter row (decision #3/#6). Local storage is the working
  * copy; this is the durable/LWW copy reconciled on connect. The blob is untrusted (D37), so it's run
  * through `@skating/core` `sanitizeFeedFilters` — invalid/out-of-domain fields are dropped — before it's
@@ -651,6 +802,34 @@ export const setNotificationPrefs = mutation({
  */
 const PROFILE_HISTORY_LIMIT = 50;
 
+/**
+ * How many of a person's reports the distinct-lakes count reads — newest skate first, off
+ * `by_author_skate_end_time`. A season of skating is a few dozen; past this the count is a floor.
+ */
+export const PROFILE_LAKE_SCAN_CAP = 500;
+
+/**
+ * The distinct lakes across a person's visible reports (B03 §11). Moderation-visible only — a
+ * hidden report is not on their record — and keyed by the report's body, which a merge repoints
+ * (D36), so one lake under two ids can't count twice. Bounded by `PROFILE_LAKE_SCAN_CAP`.
+ */
+async function distinctLakesOf(
+  ctx: QueryCtx,
+  authorId: Id<'profiles'>,
+): Promise<{ count: number; capped: boolean }> {
+  const { rows, truncated } = await takeCappedResult(
+    ctx.db
+      .query('reports')
+      .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', authorId))
+      .order('desc'),
+    PROFILE_LAKE_SCAN_CAP,
+    'profiles.getPublicProfile(lakeCount)',
+  );
+  const lakes = new Set<string>();
+  for (const r of rows) if (r.moderationStatus === 'visible') lakes.add(r.waterBodyId);
+  return { count: lakes.size, capped: truncated };
+}
+
 /** One entry in a public profile's report history — the report plus its lake name for the card. */
 
 /**
@@ -687,6 +866,13 @@ type PublicProfile =
       badges: string[]; // earned BadgeType families in stable order (decision 6)
       reportCount: number;
       commentCount: number;
+      /**
+       * Distinct lakes across their visible reports (B03 §11). Counted over their newest
+       * `PROFILE_LAKE_SCAN_CAP` reports; `lakeCountCapped` says the history ran past that, so the
+       * page says "40+ lakes" rather than a number it didn't read.
+       */
+      lakeCount: number;
+      lakeCountCapped?: true;
       /** The person's Posts, newest skate first, as the feed shows them (A10 / D186). */
       posts: PostCardData[];
     };
@@ -764,6 +950,7 @@ export const getPublicProfile = query({
     // to the visible window length so it never shows a spuriously low 0 before the backfill runs.
     const reportCount = target.reportCount ?? posts.reduce((n, p) => n + p.reports.length, 0);
     const commentCount = target.commentCount ?? 0;
+    const lakes = await distinctLakesOf(ctx, target._id);
 
     return {
       ...base,
@@ -776,6 +963,8 @@ export const getPublicProfile = query({
       badges: target.badges ?? [],
       reportCount,
       commentCount,
+      lakeCount: lakes.count,
+      ...(lakes.capped ? { lakeCountCapped: true as const } : {}),
       posts,
     };
   },
@@ -814,6 +1003,9 @@ export const searchProfiles = query({
           displayName: p.displayName,
           ...(p.profileImageUrl !== undefined ? { profileImageUrl: p.profileImageUrl } : {}),
           ...(p.homeTownLabel !== undefined ? { homeTownLabel: p.homeTownLabel } : {}),
+          // The denormalized lifetime count (B03 §11, "@ada · 212 reports"); public profiles only,
+          // since only those are searchable. Absent on a row that predates the counter.
+          ...(p.reportCount !== undefined ? { reportCount: p.reportCount } : {}),
         }))
     );
   },

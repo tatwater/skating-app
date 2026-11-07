@@ -625,3 +625,51 @@ export const CORPUS_NAME_DISMISS_LABELS: Record<CorpusNameDismissReason, string>
   too_vague: 'Too vague to place',
   other: 'Other',
 };
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A hazard's place line (B03 §11) — "The Narrows, by Shaker Bridge"
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How far a named landmark may be from a hazard and still be what the hazard is "by". Past this a
+ * name stops orienting anyone — "by the island" half a mile off sends a skater looking in the wrong
+ * place — so the line says nothing rather than something loose. Tunable.
+ */
+export const HAZARD_LANDMARK_RADIUS_M = 500;
+
+/** The nearest of `landmarks` to `point` within `radiusM`, or `undefined`; ties keep the first. */
+export function nearestLandmarkWithin<L extends { point: LatLng }>(
+  point: LatLng,
+  landmarks: readonly L[],
+  radiusM: number = HAZARD_LANDMARK_RADIUS_M,
+): L | undefined {
+  let best: L | undefined;
+  let bestM = Number.POSITIVE_INFINITY;
+  for (const l of landmarks) {
+    const m = haversineMeters(point, l.point);
+    if (m <= radiusM && m < bestM) {
+      best = l;
+      bestM = m;
+    }
+  }
+  return best;
+}
+
+/**
+ * Where a hazard is, in the lake's own words, from data that already exists: its bay's name and the
+ * nearest named landmark — `"The Narrows, by Shaker Bridge"`, `"The Narrows"`, `"By Shaker Bridge"`.
+ * A landmark that *is* the bay by name is said once. `undefined` when neither exists: no line beats
+ * an invented one. A place, never a verdict about the ice there (D3).
+ */
+export function hazardPlaceLine(parts: {
+  subAreaName?: string;
+  landmarkName?: string;
+}): string | undefined {
+  const bay = parts.subAreaName?.trim() || undefined;
+  let landmark = parts.landmarkName?.trim() || undefined;
+  if (bay && landmark && bay.toLowerCase() === landmark.toLowerCase()) landmark = undefined;
+  if (bay && landmark) return `${bay}, by ${landmark}`;
+  if (bay) return bay;
+  if (landmark) return `By ${landmark}`;
+  return undefined;
+}

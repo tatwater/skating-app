@@ -92,7 +92,7 @@ describe('NotificationsMenu', () => {
     expect(fakes.capture).toHaveBeenCalledWith('notification_opened', {
       kind: 'hazard_confirmation',
     });
-    expect(fakes.push).toHaveBeenCalledWith('/hazard/h1');
+    expect(fakes.push).toHaveBeenCalledWith('/hazard/h1', { panelSource: 'notification' });
     expect(useChromeStore.getState().overlay).toBeNull();
   });
 

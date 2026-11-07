@@ -24,9 +24,12 @@ import {
   bountyFreshWindowHours,
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
+  driveOrigin,
+  type FeedAuthor,
   FRESH_REPORT_HOURS,
   haversineMeters,
   isActive,
+  isLeaving,
   isMinor,
   MAX_OPEN_BOUNTIES_PER_DAY,
   memberSubAreaIds,
@@ -51,6 +54,7 @@ import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
+import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -719,6 +723,38 @@ export function reportAnswersBounty(
 }
 
 /**
+ * How many attached reports a LIST row verifies against the rule (B03 §11). A list shows a count
+ * per bounty, and a bounty's attachments are a handful; verifying each one is a report read, so the
+ * list views read at most this many per bounty (`listOpen` holds up to 200 bounties). Past it, an
+ * attachment is counted on the rule it already passed when it attached (`attachReportToOpenBounties`
+ * checks it), which is only wrong for a report re-dated or hidden after attaching *and* beyond the
+ * fifth — the detail view (`getDetail`) re-checks every one regardless.
+ */
+export const LIST_ANSWER_VERIFY_CAP = 5;
+
+/**
+ * The attached reports that answer `bounty` — visible, and skated after it opened
+ * (`reportAnswersBounty`) — as a list row counts them: the first `verifyCap` attachments read and
+ * checked, the rest trusted to the check they passed at attach time. One rule for the count on every
+ * list, the same rule the detail enforces in full.
+ */
+async function answeringReports(
+  ctx: QueryCtx,
+  bounty: Doc<'bounties'>,
+  verifyCap = LIST_ANSWER_VERIFY_CAP,
+): Promise<{ count: number; verified: Doc<'reports'>[] }> {
+  const verified: Doc<'reports'>[] = [];
+  for (const reportId of bounty.fulfillingReportIds.slice(0, verifyCap)) {
+    const report = await ctx.db.get(reportId);
+    if (report?.moderationStatus === 'visible' && reportAnswersBounty(report, bounty)) {
+      verified.push(report);
+    }
+  }
+  const trusted = Math.max(0, bounty.fulfillingReportIds.length - verifyCap);
+  return { count: verified.length + trusted, verified };
+}
+
+/**
  * Auto-attach (decision 10) — invoked from `reports.create` for each new **visible** report. Appends the
  * report to every open bounty on its body's `fulfillingReportIds` when the skate could answer it
  * (`reportAnswersBounty`; past that the bar is deliberately simple: any visible report on the body).
@@ -870,13 +906,19 @@ export const getDetail = query({
       if (report?.moderationStatus !== 'visible') continue;
       // A candidate the requester can't fulfill with is not offered to them.
       if (!reportAnswersBounty(report, bounty)) continue;
-      const author = await ctx.db.get(report.authorId);
+      const author = publicAuthor(await ctx.db.get(report.authorId), now);
       fulfillingReports.push({
         _id: report._id,
         skateEndTime: report.skateEndTime,
+        // The duration's other end, and the author's own claims (board 2.6: "Don't go · From
+        // shore") — who it's for and how they saw it, never ours (D3). Absent means unstated.
+        ...(report.skateStartTime !== undefined ? { skateStartTime: report.skateStartTime } : {}),
         ...(report.skateQuality !== undefined ? { skateQuality: report.skateQuality } : {}),
-        authorName: publicAuthor(author, now).displayName,
-        authorTrustClass: publicAuthor(author, now).trustClass ?? null,
+        ...(report.suitability !== undefined ? { suitability: report.suitability } : {}),
+        ...(report.observedFrom !== undefined ? { observedFrom: report.observedFrom } : {}),
+        author,
+        authorName: author.displayName,
+        authorTrustClass: author.trustClass ?? null,
         isOwn: viewer?._id === report.authorId,
       });
     }
@@ -894,11 +936,59 @@ export const getDetail = query({
       waterBody: body && isListed(body) ? { _id: body._id, name: body.name } : null,
       subArea: subArea ? { _id: subArea._id, name: subArea.name } : null,
       requester: { userId: bounty.requesterId, ...publicAuthor(requester, now) },
+      ...(await wantersFor(ctx, bounty, viewer, now)),
       isRequester: !!viewer && viewer._id === bounty.requesterId,
       fulfillingReports,
     };
   },
 });
+
+/** Open bounties read on one body when gathering who else wants the same ice. */
+const WANTERS_SCAN_CAP = 50;
+/** People drawn in a bounty's "who wants this" row; `wantersCount` carries the rest. */
+export const WANTERS_SHOWN_CAP = 12;
+
+/**
+ * Everyone asking for the same ice as this bounty (board 2.6) — each person's ask is its own bounty
+ * row, so "3 skaters want this" is the distinct requesters of the **open** bounties on the same body
+ * and the same target (the same bay, or lake-wide), this bounty's requester first.
+ *
+ * `wantersCount` is people, all of them (within the scan cap). The drawn list is people you can see:
+ * a block hides a *person* both ways (D32) and a departing account is gone from discovery (D62), so
+ * those are counted but not shown — a count is not a profile, and the ask still stands.
+ */
+async function wantersFor(
+  ctx: QueryCtx,
+  bounty: Doc<'bounties'>,
+  viewer: Doc<'profiles'> | null,
+  now: number,
+): Promise<{ wanters: (FeedAuthor & { userId: string })[]; wantersCount: number }> {
+  const open = await takeCapped(
+    ctx.db
+      .query('bounties')
+      .withIndex('by_water_body_status', (q) =>
+        q.eq('waterBodyId', bounty.waterBodyId).eq('status', 'open'),
+      )
+      .order('desc'),
+    WANTERS_SCAN_CAP,
+    'bounties.getDetail(wanters)',
+  );
+  const ids: Id<'profiles'>[] = [bounty.requesterId];
+  for (const b of open) {
+    if (b.subAreaId !== bounty.subAreaId || ids.includes(b.requesterId)) continue;
+    ids.push(b.requesterId);
+  }
+  const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '');
+  const wanters: (FeedAuthor & { userId: string })[] = [];
+  for (const id of ids) {
+    if (wanters.length >= WANTERS_SHOWN_CAP) break;
+    if (blocked.has(id)) continue;
+    const profile = await ctx.db.get(id);
+    if (!profile || profile.status === 'deleted' || isLeaving(profile)) continue;
+    wanters.push({ userId: id, ...publicAuthor(profile, now) });
+  }
+  return { wanters, wantersCount: ids.length };
+}
 
 /** Bounties read per status by `answeredByMyReport` — "at least N" tolerates a truncated tail. */
 const ANSWERED_SCAN_CAP = 100;
@@ -953,6 +1043,7 @@ export const listForBody = query({
   args: { waterBodyId: v.id('waterBodies'), subAreaId: v.optional(v.id('waterBodySubAreas')) },
   handler: async (ctx, { waterBodyId, subAreaId }) => {
     const now = Date.now();
+    const body = await resolveSurvivor(ctx, waterBodyId);
     const open = (
       await ctx.db
         .query('bounties')
@@ -970,10 +1061,13 @@ export const listForBody = query({
         const subArea = b.subAreaId ? await ctx.db.get(b.subAreaId) : null;
         return {
           _id: b._id,
+          ...(body ? { waterBodyName: body.name } : {}),
+          ...(b.subAreaId !== undefined ? { subAreaId: b.subAreaId } : {}),
           ...(subArea ? { subAreaName: subArea.name } : {}),
           requester: publicAuthor(requester, now),
           rewardPoints: b.rewardPoints,
-          fulfillingCount: b.fulfillingReportIds.length,
+          // The skate-time rule the detail enforces (B03 §11), bounded per row.
+          fulfillingCount: (await answeringReports(ctx, b)).count,
           createdAt: b.createdAt,
           expiresAt: b.expiresAt,
         };
@@ -1012,7 +1106,8 @@ export const listOpen = query({
     // The coord we sort by: an explicit client coord wins; otherwise the viewer's private home (D11) when
     // they asked to sort near home. Distances are only *returned* for a client-supplied `near` (above).
     const viewer = sortByHome && !near ? await getCurrentProfile(ctx) : null;
-    const sortCoord = near ?? viewer?.homeCoord;
+    // The travel base while it's in force, else home (B03 §11) — the same origin drive time uses.
+    const sortCoord = near ?? (viewer ? driveOrigin(viewer, now) : undefined);
     // Still-valid open bounties, soonest-expiring first, bounded read. `.gt('expiresAt', now)` drops any
     // past `expiresAt` the sweep hasn't flipped yet — a browse should never surface a dead bounty.
     const open = await ctx.db
@@ -1039,11 +1134,14 @@ export const listOpen = query({
         _id: b._id,
         waterBodyId: body._id,
         waterBodyName: body.name,
+        ...(b.subAreaId !== undefined ? { subAreaId: b.subAreaId } : {}),
         ...(subArea ? { subAreaName: subArea.name } : {}),
         centroid: body.centroid,
         requester: publicAuthor(requester, now),
         rewardPoints: b.rewardPoints,
-        fulfillingCount: b.fulfillingReportIds.length,
+        // The skate-time rule the detail enforces (B03 §11), bounded per row: at most
+        // `LIST_ANSWER_VERIFY_CAP` report reads each, so ≤ 1,000 across the 200-row scan.
+        fulfillingCount: (await answeringReports(ctx, b)).count,
         createdAt: b.createdAt,
         expiresAt: b.expiresAt,
         ...(near ? { distanceMeters: haversineMeters(near, body.centroid) } : {}),
@@ -1088,16 +1186,57 @@ export const myBountyLimit = query({
   },
 });
 
-/** The caller's own bounties across all statuses, newest first (the "my bounties" surface). */
+/** The most of the caller's own bounties `myBounties` enriches — newest first; a season is far less. */
+export const MY_BOUNTIES_CAP = 100;
+
+/**
+ * The caller's own bounties across all statuses, newest first (the "my bounties" surface). Each row
+ * is the bounty itself plus what the list draws (B03 §11): the lake and bay names, the answering
+ * count under the skate-time rule, and who answered — the authors of the answering reports, up to
+ * `LIST_ANSWER_VERIFY_CAP` people. Enriched for the newest `MY_BOUNTIES_CAP`; the requester's own
+ * open-bounty limit keeps a season well under it.
+ */
 export const myBounties = query({
   args: {},
   handler: async (ctx) => {
     const viewer = await getCurrentProfile(ctx);
     if (!viewer) return [];
+    const now = Date.now();
     const mine = await ctx.db
       .query('bounties')
       .withIndex('by_requester_status', (q) => q.eq('requesterId', viewer._id))
       .collect();
-    return mine.sort((a, b) => b.createdAt - a.createdAt);
+    mine.sort((a, b) => b.createdAt - a.createdAt);
+    if (mine.length > MY_BOUNTIES_CAP) {
+      console.warn(
+        `bounties.myBounties: ${mine.length} bounties, enriching the newest ${MY_BOUNTIES_CAP}.`,
+      );
+    }
+    const bodies = new Map<string, Doc<'waterBodies'> | null>();
+    const rows = [];
+    for (const b of mine.slice(0, MY_BOUNTIES_CAP)) {
+      let body = bodies.get(b.waterBodyId);
+      if (body === undefined) {
+        body = await resolveSurvivor(ctx, b.waterBodyId);
+        bodies.set(b.waterBodyId, body);
+      }
+      const subArea = b.subAreaId ? await ctx.db.get(b.subAreaId) : null;
+      const { count, verified } = await answeringReports(ctx, b);
+      const answeredBy: FeedAuthor[] = [];
+      const seen = new Set<string>();
+      for (const r of verified) {
+        if (seen.has(r.authorId)) continue;
+        seen.add(r.authorId);
+        answeredBy.push(publicAuthor(await ctx.db.get(r.authorId), now));
+      }
+      rows.push({
+        ...b,
+        ...(body ? { waterBodyName: body.name } : {}),
+        ...(subArea ? { subAreaName: subArea.name } : {}),
+        fulfillingCount: count,
+        answeredBy,
+      });
+    }
+    return rows;
   },
 });
