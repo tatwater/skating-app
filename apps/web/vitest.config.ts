@@ -52,11 +52,13 @@ export default defineConfig({
         optimizeDeps: {
           include: [
             '@base-ui/react/alert-dialog',
+            '@base-ui/react/autocomplete',
             '@base-ui/react/avatar',
             '@base-ui/react/button',
             '@base-ui/react/checkbox',
             '@base-ui/react/checkbox-group',
             '@base-ui/react/collapsible',
+            '@base-ui/react/combobox',
             '@base-ui/react/dialog',
             '@base-ui/react/field',
             '@base-ui/react/input',
