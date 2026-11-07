@@ -1,5 +1,5 @@
-import { type PostSheet, postSheetForEdit } from '@skating/core';
-import { renderHook, waitFor } from '@testing-library/react';
+import { type PostDraft, type PostSheet, postSheetForEdit } from '@skating/core';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSheetPhotoDb } from './sheetPhotoDb';
 import {
@@ -18,6 +18,9 @@ import {
   restoreStoredSheet,
   setSheet,
   updateSheet,
+  usePersistedAt,
+  useSheet,
+  useSheetAttempt,
   useSheetPhotosLost,
   useSheetPhotosNotKept,
   useSheetRestoring,
@@ -360,6 +363,33 @@ describe('every failure degrades to the words', () => {
     dismissSheetPhotosLost();
     rerender();
     expect(result.current).toBe(0);
+  });
+});
+
+describe('the hooks the sheet reads', () => {
+  it('follow the open sheet, its attempt, and when it last reached storage', () => {
+    const sheet = renderHook(() => useSheet());
+    const attempt = renderHook(() => useSheetAttempt());
+    const persisted = renderHook(() => usePersistedAt());
+    expect(sheet.result.current).toBeNull();
+    expect(persisted.result.current).toBeNull();
+
+    const post = openSheet();
+    const failed: PostDraft = {
+      kind: 'post',
+      id: post.draftId,
+      idempotencyKey: post.idempotencyKey,
+      status: 'pending',
+      reports: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    act(() => {
+      setSheet(post, failed);
+    });
+    expect(sheet.result.current).toBe(post);
+    expect(attempt.result.current).toBe(failed);
+    expect(persisted.result.current).not.toBeNull();
   });
 });
 

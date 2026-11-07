@@ -5,10 +5,8 @@
  */
 
 export async function processPhoto(file: File) {
-  return {
-    full: file,
-    thumb: new File(['thumb'], `thumb-${file.name}`, { type: 'image/jpeg' }),
-    coord: { lat: 44.5, lng: -73.2 },
-    takenAtMs: 1_000,
-  };
+  const thumb = new File(['thumb'], `thumb-${file.name}`, { type: 'image/jpeg' });
+  // A file named `bare…` stands for one with no EXIF: nothing read, and nothing to carry.
+  if (file.name.startsWith('bare')) return { full: file, thumb };
+  return { full: file, thumb, coord: { lat: 44.5, lng: -73.2 }, takenAtMs: 1_000 };
 }

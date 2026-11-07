@@ -53,6 +53,12 @@ describe('the blobs a tab holds', () => {
     expect(sheetPhotoBlob(draft.thumbUri)?.name).toBe('thumb-photo.jpg');
   });
 
+  it('carries no coordinate or time for a photo whose original had none', async () => {
+    const draft = await addSheetPhoto(pickedFile('bare.jpg'));
+    expect(draft).not.toHaveProperty('coord');
+    expect(draft).not.toHaveProperty('takenAtMs');
+  });
+
   it('answers nothing for a photo it does not hold', () => {
     expect(sheetPhotoPreview('nope')).toBeNull();
     expect(sheetPhotoBlob('nope:full')).toBeNull();
