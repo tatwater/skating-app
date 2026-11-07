@@ -240,7 +240,7 @@ export const YourProfile: Story = {
   },
 };
 
-const ATTR = '© openrouteservice by HeiGIT | Data from OpenStreetMap';
+const ATTR = 'Powered by Geoapify | © OpenStreetMap contributors';
 const SUGGESTIONS: AddressSuggestion[] = [
   { label: '14 School Street, Hanover, NH 03755, USA', lat: 43.7, lng: -72.29 },
   { label: '14 School Street, Lebanon, NH 03766, USA', lat: 43.64, lng: -72.25 },

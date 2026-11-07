@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AddressField, splitAddress } from './AddressField';
 import type { AddressLookup } from './geocoder';
 
-const ATTR = '© openrouteservice by HeiGIT | Data from OpenStreetMap';
+const ATTR = 'Powered by Geoapify | © OpenStreetMap contributors';
 const LIST: AddressLookup = {
   state: 'ok',
   attribution: ATTR,

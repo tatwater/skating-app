@@ -5,17 +5,20 @@
 
 import { ConvexError, v } from 'convex/values';
 import { action } from './_generated/server';
-import { type GeocodeResult, type GeocoderAdapter, suggestWith } from './lib/geocoder';
+import {
+  type GeocodeResult,
+  type GeocoderAdapter,
+  geoapifyGeocoder,
+  suggestWith,
+} from './lib/geocoder';
 
 /**
- * Which provider is on: **none yet.** Switching one on is a founder call, because every candidate
- * has a cost a skater's home address would pay (`04-integrations.md` § Geocoding): HeiGIT's terms
- * prohibit transmitting personal data, on the account the drive-time bands depend on. Until it's made,
- * no address leaves the server, and the client offers "Use my current location". To switch on, return
- * `orsGeocoder` from `./lib/geocoder` here and update the test that pins this.
+ * Which provider is on: **Geoapify** (founder, 2026-11-08; `04-integrations.md` § Geocoding has the
+ * terms and the quota). It is off in effect until `GEOAPIFY_API_KEY` is set on the deployment: the
+ * adapter answers `off` without it, and no address leaves the server.
  */
-function activeGeocoder(): GeocoderAdapter | null {
-  return null;
+function activeGeocoder(): GeocoderAdapter {
+  return geoapifyGeocoder;
 }
 
 export const suggest = action({
@@ -23,8 +26,6 @@ export const suggest = action({
   handler: async (ctx, { text }): Promise<GeocodeResult> => {
     // Signed-in only: the quota is a shared pool, and this is the one thing standing in front of it.
     if (!(await ctx.auth.getUserIdentity())) throw new ConvexError('Not signed in');
-    const adapter = activeGeocoder();
-    if (adapter === null) return { status: 'unavailable', reason: 'off', suggestions: [] };
-    return suggestWith(adapter, text);
+    return suggestWith(activeGeocoder(), text);
   },
 });

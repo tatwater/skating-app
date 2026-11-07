@@ -9,7 +9,7 @@ import {
   useAddressSuggestions,
 } from './geocoder';
 
-const ATTR = '© openrouteservice by HeiGIT | Data from OpenStreetMap';
+const ATTR = 'Powered by Geoapify | © OpenStreetMap contributors';
 const ok = (labels: string[] = []): SuggestResult => ({
   status: 'ok',
   attribution: ATTR,

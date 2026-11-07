@@ -305,7 +305,7 @@ describe('home and drive time', () => {
   it('types an address, picks a suggestion, and saves it', async () => {
     m.suggest.mockImplementation(async ({ text }: { text: string }) => ({
       status: 'ok',
-      attribution: '© openrouteservice by HeiGIT | Data from OpenStreetMap',
+      attribution: 'Powered by Geoapify | © OpenStreetMap contributors',
       suggestions: text
         ? [{ label: '14 School Street, Hanover, NH 03755, USA', lat: 43.701, lng: -72.289 }]
         : [],
