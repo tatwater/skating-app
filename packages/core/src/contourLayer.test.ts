@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BAND_SOURCE_LAYER,
   CONTOUR_MIN_ZOOM,
+  CONTOUR_SOURCE_LAYER,
   CONTOUR_SOURCE_TERMS,
   type ContourFeatureProperties,
   contourBodyKey,
@@ -9,6 +11,8 @@ import {
   contourFilter,
   contourSourceSpec,
   contourWidthExpression,
+  DEPTH_BAND_EDGES_FT,
+  depthBandIndex,
   formatContourCredit,
   maxContourDepthFt,
 } from './contourLayer';
@@ -294,6 +298,33 @@ describe('formatContourCredit', () => {
     // Serv*ice*s" is the credit rendering correctly rather than a claim about ice.
     for (const line of lines) {
       expect(line, line).not.toMatch(/\b(ice|safe|danger|thin|thick|shallow|deep|risk)\b/i);
+    }
+  });
+});
+
+describe('depth bands', () => {
+  it('keeps the bands in their own layer of the contour archive', () => {
+    expect(BAND_SOURCE_LAYER).not.toBe(CONTOUR_SOURCE_LAYER);
+  });
+
+  it('pins the seven edges, ascending from the shore', () => {
+    expect(DEPTH_BAND_EDGES_FT).toEqual([0, 5, 10, 20, 30, 45, 70]);
+  });
+
+  it('bands a depth by the last edge at or below it', () => {
+    expect(depthBandIndex(-3)).toBe(0);
+    expect(depthBandIndex(0)).toBe(0);
+    expect(depthBandIndex(4.9)).toBe(0);
+    expect(depthBandIndex(5)).toBe(1);
+    expect(depthBandIndex(44.99)).toBe(4);
+    expect(depthBandIndex(45)).toBe(5);
+    expect(depthBandIndex(70)).toBe(6);
+    expect(depthBandIndex(400)).toBe(6);
+  });
+
+  it('never bands a deeper depth shallower', () => {
+    for (let a = -5; a < 100; a += 0.5) {
+      expect(depthBandIndex(a)).toBeLessThanOrEqual(depthBandIndex(a + 0.5));
     }
   });
 });

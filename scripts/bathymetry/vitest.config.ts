@@ -40,6 +40,11 @@ export default defineConfig({
         // `corpusIndex.test.ts` and are the whole of the logic.
         'src/contour.ts',
         'src/build.ts',
+        // The band chain's GMT/GDAL glue and its CLI, the same shape as the two above. The decisions
+        // are in `bands.ts` and `bandCheck.ts`; `bandChain.test.ts` runs the glue end to end wherever
+        // GMT and GDAL are installed, and is skipped where they are not.
+        'src/bandChain.ts',
+        'src/buildBands.ts',
         'src/fetch.ts',
         'src/probe.ts',
         'src/verify.ts',

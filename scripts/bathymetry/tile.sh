@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# Tile the built contour set into a `.pmtiles` overlay and (optionally) upload it (A06b).
+# Tile the built contour set — and, when built, the filled depth bands — into one `.pmtiles` overlay
+# and (optionally) upload it (A06b; bands B03 §2, see BANDS.md).
 #
 #   scripts/bathymetry/tile.sh                      # tile only
 #   scripts/bathymetry/tile.sh --upload dev/bathymetry-20260801.pmtiles
 #
 # Input is `.scratch/build/contours.geojsonl`, written by `pnpm --filter @skating/bathymetry
-# build-contours`. Output is `.scratch/build/bathymetry.pmtiles`.
+# build-contours`, plus `.scratch/build/bands.geojsonl` from `build-bands` when it exists. Output is
+# `.scratch/build/bathymetry.pmtiles`: layer `bathymetry` (lines) and, with bands, `bathymetry_bands`.
 #
 # ## The tiling parameters, and why each one is what it is
 #
@@ -29,19 +31,34 @@
 #   the grid the surfaces were solved on is 25–145 m, so nothing below a cell was ever meaningful.
 # * `--layer=bathymetry` — the client adds this source on drawer-open and filters it by `bodyId`.
 #
+# ## The bands layer, and why its flags differ from the lines'
+#
+# * `--layer=bathymetry_bands` — a second layer in the SAME archive, so a client that already mounts
+#   the contour source adds a fill against a second `source-layer` and needs no second URL.
+# * `--detect-shared-borders` — adjacent bands share an edge, and simplifying each polygon on its own
+#   moves that edge two different ways, opening slivers of nothing between bands at low zoom.
+# * **Nothing is dropped**: no `--drop-*-as-needed`, and `--no-tile-size-limit`. A dropped line is a
+#   missing ring; a dropped band is a hole in the lake that reads as a different depth. The bands are
+#   one feature per band per lake, so the tiles stay small without it (sizes measured in BANDS.md).
+# * `tile-join -pk` merges the two, again without its own size-limit dropping.
+#
 # Prereqs: tippecanoe + pmtiles (brew install tippecanoe pmtiles).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IN="$HERE/.scratch/build/contours.geojsonl"
+BANDS="$HERE/.scratch/build/bands.geojsonl"
 MBTILES="$HERE/.scratch/build/bathymetry.mbtiles"
+LINES_MBTILES="$HERE/.scratch/build/bathymetry.lines.mbtiles"
+BANDS_MBTILES="$HERE/.scratch/build/bathymetry.bands.mbtiles"
 OUT="$HERE/.scratch/build/bathymetry.pmtiles"
 command -v tippecanoe >/dev/null || { echo "tippecanoe not found — brew install tippecanoe" >&2; exit 1; }
+command -v tile-join >/dev/null || { echo "tile-join not found — brew install tippecanoe" >&2; exit 1; }
 command -v pmtiles >/dev/null || { echo "pmtiles not found — brew install pmtiles" >&2; exit 1; }
 [ -f "$IN" ] || { echo "no $IN — run: pnpm --filter @skating/bathymetry build-contours" >&2; exit 1; }
 echo "[bathymetry] tiling $(wc -l < "$IN" | tr -d ' ') contour lines…"
-rm -f "$MBTILES" "$OUT"
+rm -f "$MBTILES" "$LINES_MBTILES" "$BANDS_MBTILES" "$OUT"
 tippecanoe \
-  --output="$MBTILES" \
+  --output="$LINES_MBTILES" \
   --layer=bathymetry \
   --name="Skating bathymetry (A06b)" \
   --attribution="State agency bathymetry — see the lake drawer for the surveying agency" \
@@ -52,6 +69,30 @@ tippecanoe \
   --preserve-input-order \
   --quiet \
   "$IN"
+if [ -s "$BANDS" ]; then
+  echo "[bathymetry] tiling $(wc -l < "$BANDS" | tr -d ' ') depth-band polygons…"
+  tippecanoe \
+    --output="$BANDS_MBTILES" \
+    --layer=bathymetry_bands \
+    --minimum-zoom=9 \
+    --maximum-zoom=14 \
+    --detect-shared-borders \
+    --no-tile-size-limit \
+    --no-tiny-polygon-reduction \
+    --quiet \
+    "$BANDS"
+  tile-join \
+    --output="$MBTILES" \
+    --name="Skating bathymetry (A06b, bands B03)" \
+    --attribution="State agency bathymetry — see the lake drawer for the surveying agency" \
+    -pk \
+    --quiet \
+    "$LINES_MBTILES" "$BANDS_MBTILES"
+  rm -f "$LINES_MBTILES" "$BANDS_MBTILES"
+else
+  echo "[bathymetry] no $BANDS — lines only (run build-bands for the filled bands)"
+  mv "$LINES_MBTILES" "$MBTILES"
+fi
 pmtiles convert "$MBTILES" "$OUT"
 rm -f "$MBTILES"
 echo "[bathymetry] wrote $OUT ($(du -h "$OUT" | cut -f1))"

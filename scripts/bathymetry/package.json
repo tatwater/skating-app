@@ -17,6 +17,7 @@
     "samples": "tsx src/samples.ts",
     "join": "tsx src/join.ts",
     "build-contours": "tsx src/build.ts",
+    "build-bands": "tsx --max-old-space-size=12288 src/buildBands.ts",
     "tile": "./tile.sh",
     "coverage": "tsx src/coverage.ts",
     "export-soundings": "tsx src/exportSoundings.ts",

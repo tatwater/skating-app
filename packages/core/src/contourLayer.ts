@@ -39,6 +39,51 @@ export const CONTOUR_LAYER_ID = 'bathymetry-contours';
 export const CONTOUR_SOURCE_LAYER = 'bathymetry';
 
 /**
+ * The filled depth-band `layer` inside the same PMTiles archive — set by `tile.sh` (B03 §2).
+ *
+ * One archive, two layers: the isobath lines stay on `bathymetry`, and the band polygons built from
+ * them sit beside them here, so a client that already mounts the contour source only adds a fill
+ * layer against a second `source-layer` and needs no second URL.
+ */
+export const BAND_SOURCE_LAYER = 'bathymetry_bands';
+
+/**
+ * The seven depth bands' lower edges, in feet (the founder's ramp, B03 board 3.16).
+ *
+ * Band `i` covers `[edge[i], edge[i + 1])`; the last band is open-ended. The ETL stamps `bandIndex`
+ * from these and the client colors by them, so they live here once.
+ *
+ * **A band edge is drawn only where a surveyed or drawn contour exists.** A lake's band boundary sits
+ * on the shallowest contour at or below each edge, never on a line we invented, so a lake contoured
+ * every 10 ft has no 5–10 ft band: its shore band runs to the 10 ft line and says so in `maxDepthFt`.
+ */
+export const DEPTH_BAND_EDGES_FT = [0, 5, 10, 20, 30, 45, 70] as const;
+
+/** Which of the seven bands a depth falls in. Shallower than 0 clamps to the first. */
+export function depthBandIndex(depthFt: number): number {
+  let index = 0;
+  for (const [i, edge] of DEPTH_BAND_EDGES_FT.entries()) {
+    if (depthFt >= edge) index = i;
+  }
+  return index;
+}
+
+/**
+ * One filled band, as a client reads it back off the tile.
+ *
+ * `minDepthFt`/`maxDepthFt` are the contour depths that actually bound this band on this lake, which
+ * can be wider than the ramp's edges (see `DEPTH_BAND_EDGES_FT`). `maxDepthFt` is absent on the
+ * deepest band, which nothing measured bounds from below.
+ */
+export interface BandFeatureProperties {
+  bodyId: string;
+  bandIndex: number;
+  minDepthFt: number;
+  maxDepthFt?: number;
+  lane: 'surveyed' | 'interpolated';
+}
+
+/**
  * The layer the contours are inserted *beneath*.
  *
  * D82's z-order in one constant: hazards are the product and contours are decoration, so the
