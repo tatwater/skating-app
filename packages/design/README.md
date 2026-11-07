@@ -8,8 +8,12 @@ into its own idiom. Consumed as raw TypeScript source (no build step), like
 
 ## The token system (`tokens`, D232–D234)
 
-The new register's single source of truth, exported as the `tokens` namespace beside the older
-`themes` below (which web, mobile and email still read until the kit's re-skin moves them over).
+The new register's single source of truth, beside the older `themes` below (which web, mobile and
+email still read until the kit's re-skin moves them over). It is its own entry point,
+`import * as tokens from '@skating/design/tokens'`, not part of the package root: its modules load
+culori and solve all four maps' colors as they evaluate, so the root stays free of that cost for
+every existing importer (`src/rootImports.test.ts` enforces it). Code that needs only the values
+reads the generated files instead (`@skating/design/native`, `tokens.css`).
 
 - **`src/tokens/primitives.ts`** — every raw color, in OKLCH. Converted once from the audited admin
   palette (`scripts/audit-colors.json`, by `scripts/convert-audit.ts`); the audited hex survives
