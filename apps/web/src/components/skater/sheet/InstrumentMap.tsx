@@ -60,7 +60,8 @@ export function InstrumentMap({
         </Suspense>
       )}
       {children}
-      <MapKey kinds={instrumentKeyKinds(input)} dim={keyDim} />
+      {/* No canvas, no marks while the GL slot is lent out — so no key either. */}
+      {suspended ? null : <MapKey kinds={instrumentKeyKinds(input)} dim={keyDim} />}
     </MapPane>
   );
 }

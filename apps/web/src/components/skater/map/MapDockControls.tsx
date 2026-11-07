@@ -200,7 +200,9 @@ function MapLayersMenu({
         {EVERYWHERE_ROWS.map(row)}
         <p className="m-0 mt-1.5 border-t border-solid border-line px-4 pt-2.5 pb-2 text-assist leading-snug text-fg3">
           Basemap and water © OpenStreetMap contributors.
-          {contourCredit ? ` Contours: ${contourCredit}.` : ''}
+          {/* The tile's credit ends with its own period (`formatContourCredit`); ours closes the
+            line, so the shared store string never prints "..". */}
+          {contourCredit ? ` Contours: ${contourCredit.replace(/\.$/, '')}.` : ''}
         </p>
       </PopoverContent>
     </Popover>

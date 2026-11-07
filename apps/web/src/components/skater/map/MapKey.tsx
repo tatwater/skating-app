@@ -75,6 +75,8 @@ export function MapKey({
   return (
     <ul
       data-slot="map-key"
+      // biome-ignore lint/a11y/noRedundantRoles: `list-none` strips the implied list role in Safari/VoiceOver; saying it back keeps the key a named list there.
+      role="list"
       aria-label="Map key"
       className={cn(
         'absolute inset-x-0 bottom-0 z-(--z-map-control) m-0 flex h-7.5 list-none items-center gap-(--space-3) px-(--space-3)',

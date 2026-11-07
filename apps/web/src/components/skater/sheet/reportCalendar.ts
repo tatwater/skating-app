@@ -108,9 +108,19 @@ function dayDelta(fromMs: number, toMs: number, timeZone: string): number {
   );
 }
 
-/** Clamp an instant into the window an end time can post with (D199). */
+const MINUTE_MS = 60_000;
+
+/**
+ * Clamp an instant into the window an end time can post with (D199), on the row's minute grain:
+ * the window's raw edges carry `now`'s seconds, and an end that kept them would sit exactly on
+ * the freshness edge — "too_old" by the time the Post lands. The old edge rounds up (still
+ * inside), the new edge down (never in the future), so a clamped end is a whole minute that
+ * still posts.
+ */
 export function clampToWindow(ms: number, nowMs: number): number {
-  return Math.min(Math.max(ms, nowMs - FRESHNESS_WINDOW_MS), nowMs);
+  const oldEdge = Math.ceil((nowMs - FRESHNESS_WINDOW_MS) / MINUTE_MS) * MINUTE_MS;
+  const newEdge = Math.floor(nowMs / MINUTE_MS) * MINUTE_MS;
+  return Math.min(Math.max(ms, oldEdge), newEdge);
 }
 
 /**

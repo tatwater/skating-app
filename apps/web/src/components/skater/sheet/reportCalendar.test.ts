@@ -171,6 +171,17 @@ describe('moving the end time to another day', () => {
     expect(clampToWindow(BOARD_NOW + HOUR, BOARD_NOW)).toBe(BOARD_NOW);
   });
 
+  it('clamps on the minute grain when now carries seconds — a clamped end stays off them', () => {
+    const now = BOARD_NOW + 31_000; // 11:52:31 — the window's raw edges would carry the :31
+    // Below the window: up to the next whole minute inside it, so it still posts.
+    const early = clampToWindow(BOARD_NOW - 8 * 24 * HOUR, now);
+    expect(early).toBe(now - FRESHNESS_WINDOW_MS + 29_000);
+    expect(early % 60_000).toBe(0);
+    expect(freshnessRefusal(early, now)).toBeNull();
+    // In the future: down to now's whole minute, never past it.
+    expect(clampToWindow(now + HOUR, now)).toBe(BOARD_NOW);
+  });
+
   it('moves the ladder with it, dropping what falls out of the window', () => {
     const row = endTimeRow({ openedAtMs: BOARD_NOW, nowMs: BOARD_NOW, timeZone: NH, sun: null });
     const today = dayStartOf(BOARD_NOW, NH);

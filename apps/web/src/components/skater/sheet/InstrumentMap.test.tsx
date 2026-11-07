@@ -32,5 +32,8 @@ describe('InstrumentMap', () => {
     expect(key).not.toHaveClass('opacity-30');
     rerender(<InstrumentMap input={input} label="Mascoma Lake" keyDim />);
     expect(screen.getByRole('list', { name: 'Map key' })).toHaveClass('opacity-30');
+    // The GL slot lent to a stacked sheet: no canvas, no marks — and no key over the empty pane.
+    rerender(<InstrumentMap input={input} label="Mascoma Lake" suspended />);
+    expect(screen.queryByRole('list', { name: 'Map key' })).toBeNull();
   });
 });

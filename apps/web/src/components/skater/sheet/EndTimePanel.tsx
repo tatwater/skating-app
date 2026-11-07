@@ -1,6 +1,5 @@
 import {
   endTimeRow,
-  floorToMinute,
   formatSkateTime,
   instantForClockAtOrBefore,
   precisionForChoice,
@@ -212,10 +211,9 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
                 onChange={(e) => {
                   const minute = timeInputToMinuteOfDay(e.target.value);
                   if (!Number.isFinite(minute)) return;
-                  // A clock reading after now clamps to now — floored to the row's minute grain
-                  // (never below the window's old edge), so a typed end stays off the seconds.
-                  const ms = clampToWindow(zonedInstantOnDayOf(day, minute, timeZone), now);
-                  choose(Math.min(ms, floorToMinute(now)));
+                  // Clamped into the window on the row's minute grain (`clampToWindow` aligns its
+                  // edges), so a typed end stays off the seconds whichever edge it hits.
+                  choose(clampToWindow(zonedInstantOnDayOf(day, minute, timeZone), now));
                 }}
               />
             ) : null}
