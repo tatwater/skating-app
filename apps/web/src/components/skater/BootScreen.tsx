@@ -92,14 +92,14 @@ function BootTopBar() {
 }
 
 /**
- * The map pages' shape: the 27.5 rem sidebar beside the map, on the same grid `MapFrame` lays out,
+ * The map pages' shape: the sidebar beside the map, on the same grid `MapFrame` lays out,
  * so the seam between them is already where it will be. The map's half stays **empty** rather than
  * wearing a skeleton — a wash the size of a map would be a picture of a lake, and nothing here
  * knows anything about any lake (D3). Below `md` the sidebar is the page, as it is on a phone.
  */
 function BootMapPage({ drawer }: { drawer: boolean }) {
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[27.5rem_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
       <div data-slot="boot-sidebar" className="h-full min-h-0 min-w-0">
         {drawer ? (
           <LakeSidebarSkeleton />

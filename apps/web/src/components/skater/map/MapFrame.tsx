@@ -12,7 +12,7 @@ import { SkaterMap } from './SkaterMap';
  * beside it. The map is mounted here, once, so it stays mounted across `/`, `/water/$id` and every
  * other skater page — a view only declares what it wants of it (`useMapSpec`).
  *
- * While a view shows the map, the view takes the fixed 27.5 rem sidebar column and the map the
+ * While a view shows the map, the view takes the fixed sidebar column (`--size-sidebar`) and the map the
  * rest. A view with no map takes the whole width; the hidden map steps out of the grid (still
  * mounted, still sized, so showing it again costs nothing). Below `md` (row 9) the map fills the
  * page area and the view lies over it: Explore shows the bare map, a lake its drawer.
@@ -29,7 +29,7 @@ export function MapFrame({ children }: { children: ReactNode }) {
       <div
         data-slot="map-frame"
         data-map-shown={shown ? '' : undefined}
-        className="relative grid h-full min-h-0 grid-cols-1 md:grid-cols-[27.5rem_minmax(0,1fr)]"
+        className="relative grid h-full min-h-0 grid-cols-1 md:grid-cols-[var(--size-sidebar)_minmax(0,1fr)]"
       >
         <div
           data-slot="map-frame-view"

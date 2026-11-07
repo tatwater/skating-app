@@ -123,7 +123,7 @@ const darkQuad = (root: HTMLElement) =>
 /** The sidebar column an action opens in, beside a blank map plate. */
 function SidebarFrame({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid h-full grid-cols-[27.5rem_minmax(0,1fr)]">
+    <div className="grid h-full grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
       <LakeSidebar label={label} body={<SidebarBody>{children}</SidebarBody>} />
       <div aria-hidden="true" className="bg-raise" />
     </div>

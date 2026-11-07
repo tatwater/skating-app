@@ -62,7 +62,9 @@ describe('OfflineOverPage', () => {
     };
     fakes.location = { pathname: '/water/w1', searchStr: '' };
     const { rerender } = render(<OfflineOverPage />);
-    expect(screen.getByRole('status')).toHaveClass('left-[calc(27.5rem+(100%-27.5rem)/2)]');
+    expect(screen.getByRole('status')).toHaveClass(
+      'left-[calc(var(--size-sidebar)+(100%-var(--size-sidebar))/2)]',
+    );
     fakes.location = { pathname: '/latest', searchStr: '' };
     rerender(<OfflineOverPage />);
     expect(screen.getByRole('status')).toHaveClass('left-1/2');

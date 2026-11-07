@@ -178,7 +178,7 @@ function LakeFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="grid h-full grid-cols-[27.5rem_minmax(0,1fr)]">
+    <div className="grid h-full grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
       <LakeSidebar
         label={label}
         header={
@@ -241,7 +241,7 @@ export const NothingChosen: Story = {
   render: () => (
     <SkaterPair height="56rem">
       {() => (
-        <div className="grid h-full grid-cols-[27.5rem_minmax(0,1fr)]">
+        <div className="grid h-full grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
           <InViewListView
             model={{ rows: IN_VIEW, hiddenCount: 0 }}
             onOpen={(_, e) => e.preventDefault()}
@@ -261,9 +261,10 @@ export const NothingChosen: Story = {
     await expect(getComputedStyle(rows[0] as HTMLElement).borderBottomStyle).toBe('dotted');
     // A clickable row keeps the control radius (Review 4).
     await expect(getComputedStyle(rows[0] as HTMLElement).borderTopLeftRadius).toBe('2px');
-    // The favorite's star is gold, and the sidebar is the boards' 440 px.
+    // The favorite's star is gold, and the sidebar is `--size-sidebar` — 472 px, widened from the
+    // boards' 440 on 2026-11-07 so the lake's four tabs fit their rail (see `app.css`).
     await expect(q.getByLabelText('A favorite')).toBeVisible();
-    await expect(q.getByRole('complementary').getBoundingClientRect().width).toBe(440);
+    await expect(q.getByRole('complementary').getBoundingClientRect().width).toBe(472);
     // The keyboard walks the rows in order.
     (rows[0] as HTMLElement).focus();
     await userEvent.tab();
@@ -319,6 +320,15 @@ export const LakeReports: Story = {
     // No credits in the sidebar: every one, the contours' too, is the map chip's.
     await expect(quad.querySelector('[data-slot="lake-sidebar-foot"]')).toBeNull();
     await expect(quad.textContent).not.toMatch(/OpenStreetMap|contours, surveyed/);
+    // **The four tabs fit the column.** At the boards' 27.5 rem they did not: the rail overflowed
+    // by 26 px and "Getting there" was clipped, which is why `--size-sidebar` is 29.5 rem. Measured
+    // rather than eyeballed, and here rather than in jsdom, because only a layout engine can say.
+    const rail = must(quad.querySelector<HTMLElement>('[role="tablist"]'));
+    await expect(rail.scrollWidth).toBeLessThanOrEqual(rail.clientWidth);
+    // And the pair under the primary has real air between them, not the 7 px they used to.
+    const hazard = q.getByRole('link', { name: 'Report a hazard' }).getBoundingClientRect();
+    const bounty = q.getByRole('link', { name: 'Post a bounty' }).getBoundingClientRect();
+    await expect(bounty.left - hazard.right).toBeGreaterThanOrEqual(8);
   },
 };
 
@@ -609,7 +619,7 @@ export const Loading: Story = {
   render: () => (
     <SkaterPair height="40rem">
       {() => (
-        <div className="grid h-full grid-cols-[27.5rem_minmax(0,1fr)]">
+        <div className="grid h-full grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
           <LakeSidebarSkeleton />
           <div aria-hidden="true" className="bg-raise" />
         </div>
@@ -629,7 +639,7 @@ export const NotFound: Story = {
   render: () => (
     <SkaterPair height="30rem">
       {() => (
-        <div className="grid h-full grid-cols-[27.5rem_minmax(0,1fr)]">
+        <div className="grid h-full grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
           <LakeUnavailable kind="not-found" explore={link('/')} />
           <div aria-hidden="true" className="bg-raise" />
         </div>

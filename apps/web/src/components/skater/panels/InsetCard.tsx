@@ -72,7 +72,7 @@ export function PanelColumn({
       ref={setEl}
       data-slot="panel-column"
       className={cn(
-        'relative isolate h-full w-[27.5rem] max-w-full shrink-0 overflow-hidden border-r border-solid border-line bg-bg',
+        'relative isolate h-full w-(--size-sidebar) max-w-full shrink-0 overflow-hidden border-r border-solid border-line bg-bg',
         className,
       )}
     >
