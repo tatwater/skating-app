@@ -86,14 +86,16 @@ export function ReportPanels({
   const id = report.id;
   const dispatch = useCallback(
     (action: SheetAction, opts?: DispatchOpts) =>
-      updateSheet((post) =>
-        updateReport(post, id, (r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }), opts),
+      updateSheet(
+        (post) =>
+          updateReport(post, id, (r) => ({ ...r, sheet: sheetReducer(r.sheet, action) }), opts),
+        opts,
       ),
     [id],
   );
   const setReport = useCallback(
     (update: (r: SheetReport) => SheetReport, opts?: DispatchOpts) =>
-      updateSheet((post) => updateReport(post, id, update, opts)),
+      updateSheet((post) => updateReport(post, id, update, opts), opts),
     [id],
   );
   const props: SectionProps = { report, body, dispatch, setReport, gaps, editing, timeZone };

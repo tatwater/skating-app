@@ -143,16 +143,18 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
     for (const r of post.reports) {
       if (defaultFold(r.sheet) === null) continue;
       // Folded inside the update, on the sheet as it stands then — never over a newer one.
-      updateSheet((p) =>
-        updateReport(
-          p,
-          r.id,
-          (x) => {
-            const folded = defaultFold(x.sheet);
-            return folded === null ? x : { ...x, sheet: folded };
-          },
-          { quiet: true },
-        ),
+      updateSheet(
+        (p) =>
+          updateReport(
+            p,
+            r.id,
+            (x) => {
+              const folded = defaultFold(x.sheet);
+              return folded === null ? x : { ...x, sheet: folded };
+            },
+            { quiet: true },
+          ),
+        { quiet: true },
       );
     }
   }, [post.reports]);
@@ -160,7 +162,7 @@ function Sheet({ post, exits }: { post: PostSheet; exits: ReportSheetExits }) {
   // The photo pool re-runs its rules when a lake's outline arrives (A10-7). Quiet: the sheet's doing.
   useEffect(() => {
     if (!post.photos || post.photos.length === 0) return;
-    updateSheet((p) => reassignPool(p, assignCandidates(p, outlines)));
+    updateSheet((p) => reassignPool(p, assignCandidates(p, outlines)), { quiet: true });
   }, [outlines, post.photos]);
 
   const sender =

@@ -3,8 +3,8 @@ import type { SheetBody } from './useSheetBody';
 
 /**
  * `quiet` marks the sheet's own doing — a peer ghost offered, the pinned minute preselected —
- * which applies without making the sheet `dirty`: only the author's hand makes a Post worth a
- * leave prompt.
+ * which applies without making the sheet `dirty` and without disarming a Post waiting to resend:
+ * only the author's hand makes a Post worth a leave prompt, or half of an edit.
  */
 export interface DispatchOpts {
   quiet?: boolean;

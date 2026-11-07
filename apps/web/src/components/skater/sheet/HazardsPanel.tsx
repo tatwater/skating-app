@@ -115,7 +115,7 @@ export function HazardsPanel({
       setReport(
         (r) => {
           // The same set again is no change at all — returned as is, so the store sees nothing
-          // (a change, even a quiet one, disarms a Post waiting to resend).
+          // (no write, no persist, no re-render).
           if (sameIds(r.bundleCandidateIds, ids)) return r;
           const applySaved =
             r.savedHazardRefs !== undefined && r.bundleCandidateIds.length === 0 && ids.length > 0;

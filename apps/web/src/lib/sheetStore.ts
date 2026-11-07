@@ -33,7 +33,9 @@
  * (`isFlushable`: a transient failure, not a parked refusal); `resendArmed` says the author still
  * wants what they pressed *Post* on. Any change they make afterward disarms it, as does a restore
  * that lost one of its photos — a half-made edit, or a Post silently missing a photo, must not go
- * out on its own because a network came back. A *sent* Post stays armed through both: it cannot
+ * out on its own because a network came back. A change the sheet makes itself (`quiet`: a peer
+ * suggestion offered, hazard candidates arriving, the fold, the photo pool re-sorting) is not the
+ * author writing again, and leaves it armed. A *sent* Post stays armed through both: it cannot
  * change, it may already be live, and only a retry finds out. `resendSheet` is what
  * `useResendOnReconnect` calls; the store runs the send, one at a time, and takes no change while
  * one is in flight.
@@ -502,13 +504,18 @@ export function setSheet(
  * send is on its way: what lands is what went, and a closing sheet would take the change with it.
  *
  * A change this takes disarms a resend: the author is writing again, and *Post* is theirs to press.
+ * Unless it is `quiet` — the sheet's own doing (the same flag `updateReport` takes to leave `dirty`
+ * alone), which the author did not make and so cannot be half of an edit.
  */
-export function updateSheet(update: (post: PostSheet) => PostSheet): void {
+export function updateSheet(
+  update: (post: PostSheet) => PostSheet,
+  opts: { quiet?: boolean } = {},
+): void {
   if (current === null || postCreateSent(attempt) || sending?.draftId === current.draftId) return;
   const next = update(current);
   if (next === current) return;
   current = next;
-  resendArmed = false;
+  if (opts.quiet !== true) resendArmed = false;
   persist();
   emit();
 }
