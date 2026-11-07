@@ -813,7 +813,7 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
 - ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5
 - ⚪ **The slow-pan region video** behind the sign-in screens — static per-theme PNGs ship; a React video library later
-- ⚪ **Filled depth bands** — the bathymetry archive holds contour lines, which MapLibre cannot fill between; the skater map ships banded contour lines with a shallowest-band fill on the focused lake. Real filled bands need the bathymetry pipeline to emit polygons and a re-tile → B03 §2
+- ⚪ **Filled depth bands** — the bathymetry archive holds contour lines, which MapLibre cannot fill between; the skater map ships banded contour lines with a shallowest-band fill on the focused lake. Real filled bands need the bathymetry pipeline to emit polygons and a re-tile; the client's fill layer is built against that contract (`VITE_BATHYMETRY_BANDS_PMTILES_URL`) and waits on the archive → B03 §2
 - ⚪ **A where drawn as an area** (board 5.13.1) — needs a `Where` geometry shape on both surfaces first → B03 §5
 - ⚪ **A cover photo on a Post** — no model field holds one → B03 §4
 - ⚪ **Towns on search hits** — naming each hit's town is a boundary read per keystroke; hits name the lake's type and state instead → B03 §1

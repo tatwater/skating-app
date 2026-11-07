@@ -37,7 +37,9 @@ class FakeMap {
   canvas = document.createElement('canvas');
   container = document.createElement('div');
   rendered: unknown[] = [];
+  /** The contour source's features; `featuresBySource` answers for any other source. */
   sourceFeatures: unknown[] = [];
+  featuresBySource = new Map<string, unknown[]>();
   zoom = 8;
   dragPan = new FakeHandler();
   scrollZoom = new FakeHandler();
@@ -109,8 +111,8 @@ class FakeMap {
   queryRenderedFeatures() {
     return this.rendered;
   }
-  querySourceFeatures() {
-    return this.sourceFeatures;
+  querySourceFeatures(id: string) {
+    return this.featuresBySource.get(id) ?? (id === 'bathymetry' ? this.sourceFeatures : []);
   }
   getCanvas() {
     return this.canvas;
@@ -187,6 +189,7 @@ vi.mock('@/lib/env', async (importOriginal) => {
       pmtilesUrl: 'https://t/region.pmtiles',
       worldPmtilesUrl: '',
       bathymetryPmtilesUrl: 'https://t/bathy.pmtiles',
+      bathymetryBandsPmtilesUrl: 'https://t/bands.pmtiles',
     },
   };
 });
@@ -211,6 +214,7 @@ const {
   LABEL_CLOCK_MS,
 } = await import('./SkaterMapCanvas');
 const { CONTOUR_LAYER_ID } = await import('@/lib/contourMap');
+const { BANDS_LAYER_ID, BANDS_SOURCE_ID } = await import('@/lib/depthBands');
 
 // ── Data ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -656,15 +660,16 @@ describe('depth', () => {
     expect(screen.getByRole('img', { name: /Depth bands/ })).toBeInTheDocument();
   });
 
-  it('stands the contours down with the imagery on (D81)', async () => {
+  it('stands the contours and the band fills down with the imagery on (D81)', async () => {
     useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: true } });
     await mount();
-    expect(visibility(CONTOUR_LAYER_ID)).toBe('none');
-    expect(map().layers.get(CONTOUR_LAYER_ID)?.filter).toEqual([
-      '==',
-      ['literal', true],
-      ['literal', false],
-    ]);
+    map().featuresBySource.set(BANDS_SOURCE_ID, [band(0), band(1)]);
+    act(() => map().fire('sourcedata', { sourceId: BANDS_SOURCE_ID }));
+    for (const id of [CONTOUR_LAYER_ID, BANDS_LAYER_ID]) {
+      expect(visibility(id)).toBe('none');
+      expect(map().layers.get(id)?.filter).toEqual(NO_LAKE);
+    }
+    expect(map().layers.get(BANDS_LAYER_ID)?.paint['fill-opacity']).toBe(0);
   });
 
   it('stands the lake’s water fill down under the picture, and brings it back after', async () => {
@@ -688,6 +693,107 @@ describe('depth', () => {
     expect(mark).toHaveAttribute('data-peek');
     act(() => useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: false } }));
     expect(mark).not.toHaveAttribute('data-peek');
+  });
+});
+
+const NO_LAKE = ['==', ['literal', true], ['literal', false]];
+const band = (bandIndex: number, extra: Record<string, unknown> = {}) => ({
+  properties: { bodyId: 'way/123', bandIndex, minDepthFt: [0, 5, 10, 20][bandIndex], ...extra },
+});
+
+describe('depth bands (B03 §2)', () => {
+  const opacity = () => map().layers.get(BANDS_LAYER_ID)?.paint['fill-opacity'];
+
+  it('adds the band fills on the water, under the contour lines', async () => {
+    await mount();
+    const ids = [...map().layers.keys()];
+    expect(ids.indexOf(BANDS_LAYER_ID)).toBeGreaterThan(ids.indexOf('water-fill'));
+    expect(ids.indexOf(BANDS_LAYER_ID)).toBeLessThan(ids.indexOf(CONTOUR_LAYER_ID));
+    expect(map().sources.has(BANDS_SOURCE_ID)).toBe(true);
+  });
+
+  it('filters the bands to the lake on the contours’ key and fades them in once readable', async () => {
+    await mount();
+    expect(visibility(BANDS_LAYER_ID)).toBe('visible');
+    expect(map().layers.get(BANDS_LAYER_ID)?.filter).toEqual(['==', ['get', 'bodyId'], 'way/123']);
+    expect(opacity()).toBe(0);
+    expect(screen.queryByRole('img', { name: /Depth bands/ })).not.toBeInTheDocument();
+    map().featuresBySource.set(BANDS_SOURCE_ID, [band(0), band(1), band(2)]);
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(opacity()).toBe(1);
+    // Bands alone are depth on screen: the shallow ground under them, and the legend.
+    expect(JSON.stringify(map().layers.get('water-fill')?.paint['fill-color'])).toContain(
+      'mascoma',
+    );
+    expect(screen.getByRole('img', { name: /Depth bands/ })).toBeInTheDocument();
+    // Polygons without an agency credit nobody rather than inventing one.
+    expect(useSkaterMapStore.getState().contourCredit).toBeNull();
+  });
+
+  it('keeps the contour tile’s credit, and falls back to the bands’ only without lines', async () => {
+    await mount();
+    map().featuresBySource.set(BANDS_SOURCE_ID, [band(1, { agency: 'VT ANR' })]);
+    act(() => map().fire('sourcedata', { sourceId: BANDS_SOURCE_ID }));
+    expect(useSkaterMapStore.getState().contourCredit).toContain('Vermont Agency');
+    map().sourceFeatures = [
+      { properties: { bodyId: 'way/123', depthFt: 10, agency: 'NH GRANIT', lane: 'surveyed' } },
+    ];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(useSkaterMapStore.getState().contourCredit).toContain('NH GRANIT');
+    expect(useSkaterMapStore.getState().contourCredit).not.toContain('Vermont');
+  });
+
+  it('keeps today’s look for a lake without band polygons: the shallow fill under its lines', async () => {
+    await mount();
+    map().sourceFeatures = [{ properties: { bodyId: 'way/123', depthFt: 5 } }];
+    act(() => map().fire('sourcedata', { sourceId: 'bathymetry' }));
+    expect(opacity()).toBe(0);
+    expect(map().layers.get(CONTOUR_LAYER_ID)?.paint['line-opacity']).toBe(0.75);
+    expect(JSON.stringify(map().layers.get('water-fill')?.paint['fill-color'])).toContain(
+      'mascoma',
+    );
+  });
+
+  it('drops the band archive’s errors without a word, and still prints every other', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await mount();
+      act(() => {
+        map().fire('error', { sourceId: BANDS_SOURCE_ID, error: new Error('404 bands.pmtiles') });
+        map().fire('error', { sourceId: BANDS_SOURCE_ID, error: new Error('tile 12/1/2') });
+      });
+      expect(error).not.toHaveBeenCalled();
+      expect(opacity()).toBe(0);
+      const other = new Error('style broke');
+      act(() => map().fire('error', { sourceId: 'water', error: other }));
+      expect(error).toHaveBeenCalledExactlyOnceWith(other);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('takes the bands away with the Depth switch, and brings them back', async () => {
+    await mount();
+    map().featuresBySource.set(BANDS_SOURCE_ID, [band(0), band(1)]);
+    act(() => map().fire('sourcedata', { sourceId: BANDS_SOURCE_ID }));
+    expect(opacity()).toBe(1);
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    expect(visibility(BANDS_LAYER_ID)).toBe('none');
+    expect(map().layers.get(BANDS_LAYER_ID)?.filter).toEqual(NO_LAKE);
+    expect(opacity()).toBe(0);
+    expect(JSON.stringify(map().layers.get('water-fill')?.paint['fill-color'])).not.toContain(
+      'mascoma',
+    );
+    expect(screen.queryByRole('img', { name: /Depth bands/ })).not.toBeInTheDocument();
+    act(() => useSkaterMapStore.getState().toggleLayer('depth'));
+    expect(visibility(BANDS_LAYER_ID)).toBe('visible');
+    expect(opacity()).toBe(1);
+  });
+
+  it('draws no bands off a lake: the region map has none', async () => {
+    await mount(exploreMapSpec());
+    expect(map().layers.get(BANDS_LAYER_ID)?.filter).toEqual(NO_LAKE);
+    expect(opacity()).toBe(0);
   });
 });
 

@@ -101,6 +101,12 @@ These are the facts that shape the build. The calls the founder still has to mak
     banded contour lines with a shallowest-band fill on the focused lake — real bands wait on polygons from
     the pipeline and a re-tile (the roadmap's *Filled depth bands* deferred row); board 3.16's Depth switch
     is the newer founder call, so D81 is amended to make depth a viewer toggle while hazards stay locked on.
+    **The client half of real bands is built** (2026-11-07): a fill layer reads band polygons from a third
+    archive (`VITE_BATHYMETRY_BANDS_PMTILES_URL`; contract in `apps/web/src/lib/depthBands.ts`, layer
+    `bands`, `bodyId` on the contours' key, `bandIndex` on the seven-band ramp) and sits on the water, under
+    the contour lines. The shallow-band ground stays under it, so a lake the archive doesn't cover — or an
+    archive that 404s, whose errors the map drops — draws exactly the look above. Region zoom draws no
+    bands, as it drew no contours: depth belongs to the open lake.
 13. **Dev Clerk disagrees with the boards twice** (the §8 build, 2026-11-07). The instance requires a
     password at sign-up, so the email → code sign-up stops at `missing_requirements` until the founder turns
     that requirement off in the dashboard; the flow shows an honest failure state, pinned by a test. And

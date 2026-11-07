@@ -17,3 +17,6 @@ dist
 
 # Storybook build output and its debug log
 storybook-static
+
+# Local band archives tried in dev (VITE_BATHYMETRY_BANDS_PMTILES_URL=/dev-tiles/…)
+public/dev-tiles/

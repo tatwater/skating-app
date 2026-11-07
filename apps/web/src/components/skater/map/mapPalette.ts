@@ -114,6 +114,20 @@ export function contourColorByBand(ramp: DepthRamp): unknown[] {
   return ['case', isIndexLine(depth), step(ramp.indexes), step(ramp.lines)];
 }
 
+/**
+ * A band polygon's fill: its band's token fill, keyed on the tile's `bandIndex`. A `step`, so an
+ * index past the ramp clamps to the deepest band and a missing one reads as the shallowest — never
+ * as no color at all.
+ */
+export function bandFillColor(ramp: DepthRamp): unknown[] {
+  return [
+    'step',
+    ['to-number', ['get', 'bandIndex'], 0],
+    ramp.fills[0],
+    ...ramp.fills.slice(1).flatMap((color, i) => [i + 1, color]),
+  ];
+}
+
 /** Index lines are 1.2 px, the rest 0.8 (mock `bathy`). */
 export function contourWidthByBand(): unknown[] {
   return ['case', isIndexLine(['to-number', ['get', 'depthFt'], 0]), 1.2, 0.8];
