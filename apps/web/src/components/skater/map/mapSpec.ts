@@ -98,6 +98,8 @@ export interface MapMode {
   mode: string;
   line?: string;
   step?: string;
+  /** The exit's name, when the mode's exit does more than leave the mode ("Close" the flow). */
+  exitLabel?: string;
 }
 
 export interface MapSpec {

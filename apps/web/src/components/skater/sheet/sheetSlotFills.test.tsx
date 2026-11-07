@@ -168,7 +168,8 @@ describe('HazardSheetFrame', () => {
     // One Esc: the flow's own way out, which ends the map's listening too.
     fireEvent.keyDown(dialog, { key: 'Escape' });
     await waitFor(() => expect(onExitMode).toHaveBeenCalled());
-    fireEvent.click(within(dialog).getByRole('button', { name: /Close/ }));
+    // The sheet's Close and the mode bar's (named Close too) leave the same way.
+    fireEvent.click(dialog.querySelector('[data-attr="hazard-sheet-close"]') as HTMLElement);
     expect(onExitMode).toHaveBeenCalledTimes(2);
     expect(onClose).not.toHaveBeenCalled();
   });

@@ -149,7 +149,7 @@ export function HazardSheetFrame({
                     mode={mapState.mode.mode}
                     step={mapState.mode.step}
                     onExit={mapState.onExitMode}
-                    exitLabel="Leave the hazard form"
+                    exitLabel={mapState.mode.exitLabel ?? 'Close'}
                   >
                     {mapState.mode.line}
                   </MapModeBar>

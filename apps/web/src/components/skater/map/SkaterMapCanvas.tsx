@@ -546,6 +546,7 @@ export default function SkaterMapCanvas() {
         <MapModeBar
           mode={spec.mode.mode}
           step={spec.mode.step}
+          {...(spec.mode.exitLabel !== undefined ? { exitLabel: spec.mode.exitLabel } : {})}
           onExit={() => activeMapHandlers().onExitMode?.()}
         >
           {spec.mode.line}

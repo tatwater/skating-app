@@ -370,6 +370,13 @@ export function postBlocker(draft: HazardDraft): string | null {
  * the drawing stands. `null` when the map isn't listening.
  */
 export function mapModeFor(draft: HazardDraft): MapMode | null {
+  const mode = placingMode(draft);
+  // The bar's exit closes the whole flow (one Esc per screen), so it says what the sheet's own
+  // button says: Close.
+  return mode === null ? null : { ...mode, exitLabel: 'Close' };
+}
+
+function placingMode(draft: HazardDraft): MapMode | null {
   if (!draft.placing || draft.shape === null || draft.hazardType === null) return null;
   const n = draftPlacementCount(draft.shape);
   switch (draft.drawKind) {

@@ -897,6 +897,14 @@ describe('modes and handlers', () => {
     expect(onExitMode).toHaveBeenCalledTimes(2);
   });
 
+  it('names the mode bar’s exit as the mode says', async () => {
+    await mount(
+      defineMapSpec({ id: 'place', mode: { mode: 'Placing a spot', exitLabel: 'Close' } }),
+    );
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Leave the mode' })).toBeNull();
+  });
+
   it('shows the imagery entry when the view has a flow for it', async () => {
     const onOpenImagery = vi.fn();
     await mount(lakeMapSpec('mascoma'), { onOpenImagery });

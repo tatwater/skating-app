@@ -190,7 +190,11 @@ describe('a spot, posted (3.1 → 3.2 → 3.7)', () => {
     fakes.mutations.set('hazards:create', create);
     const { onClose } = mount();
     fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
-    expect(flowSpec()?.mode).toEqual({ mode: 'Placing a spot', line: 'Click where it is' });
+    expect(flowSpec()?.mode).toEqual({
+      mode: 'Placing a spot',
+      line: 'Click where it is',
+      exitLabel: 'Close',
+    });
     expect(flowSpec()?.interactions.click).toBe('capture');
     // Post sleeps until it's placed, and says why.
     expect(screen.getByRole('button', { name: 'Post hazard' })).toHaveAttribute(
