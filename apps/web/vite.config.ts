@@ -38,10 +38,13 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
  * `import.meta.env.MODE` cannot stand in: a preview build is a *production-mode* build, so MODE
  * reads `production` for both and the two would be indistinguishable in PostHog.
  *
- * **Assigned into `process.env` rather than passed through `define`.** Vite resolves
- * `import.meta.env.VITE_*` with its own env loader, and that loader reads prefixed names out of
- * `process.env` — so writing it here, at config module scope, goes through the path Vite already
- * owns instead of racing it with a `define` for the same expression. Confirmed in the built client
+ * **Assigned into `process.env` rather than passed through `define`.** Vite resolves the
+ * prefixed entries on `import.meta.env` with its own env loader, and that loader reads those names
+ * out of `process.env` — so writing it here, at config module scope, goes through the path Vite
+ * already owns instead of racing it with a `define` for the same expression.
+ *
+ * (Written without the `env.`-dot-NAME spelling on purpose: `credentialsRegister.test.ts` scans
+ * this file for env reads, and prose matching that shape registers as a variable named `VITE_`.) Confirmed in the built client
  * bundle: `deployEnvironment:\`preview\`` with `VERCEL_ENV=preview`.
  *
  * If you go to re-verify this, note that setting `VERCEL_ENV` flips Nitro to its Vercel preset,
