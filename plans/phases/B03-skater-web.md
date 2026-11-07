@@ -615,26 +615,21 @@ before handoff.
 
 ## 6. Founder questions (only the calls the docs don't answer)
 
-1. **Signed-out visitors.** Today everything but `/about` and sign-in redirects to `/sign-in`, so a lake or
-   report link sent by email or text dead-ends for someone without an account. Should Explore, a lake and a
-   report be **readable signed out** (with the risk acknowledgment shown inline), or stay gated for launch? I
-   lean gated for launch: no new consent path, and it matches mobile. Public read later as its own decision.
-2. **What the web doesn't do, and how much the phone matters.** D229 makes the first store listing iPhone only,
-   so narrow web is the Android path at launch. My assumption: the web never records a skate, does no on-ice
-   alerting, no push, and no offline capture beyond the draft (all native). Narrow web gets the row 9 scope
-   (Explore, Latest, New report) in the last wave. Should narrow web move earlier as launch-critical, or be held
-   behind a flag?
-3. **Filters: URL or saved preference?** D166 keeps one persisted filter store that the Explore map also reads
-   (it dims by weather and drive time). The research doc's §4 puts filters in the URL. I recommend filters stay
-   a **saved preference** (D166, moved to Zustand), with only `report`, `q`, `skater` and `view` in Latest's
-   URL. Shareable filtered links are lost; the map keeps working across pages. Agree?
-4. **PostHog on top of the merged #91:**
-   - (a) "Sessions and session replay from day one" conflicts with D29, L12 and D235 (replay off at init,
-     legal-gated, `PRIVACY.md` promises). Keep replay **off at launch** (recommended), or run the L12 pass now
-     and enable it under §4.2's posture (adults only, 10% plus error-triggered, everything masked, map and photos
-     blocked, settings and sign-in excluded)?
-   - (b) Autocapture records clicked text, which on skater pages means usernames, report text and lake names.
-     Mask autocapture text on skater surfaces and name key controls with `data-attr` instead? I recommend yes.
+1. **Signed-out visitors — answered (founder, 2026-11-07): gated at launch** (D238). Everything but
+   `/about` and the auth pages keeps redirecting to `/sign-in`: no new consent path for the risk
+   acknowledgment, and it matches mobile. Public read returns later as its own decision.
+2. **What the web doesn't do — answered (founder, 2026-11-07): the web never records a skate** (D238) — no
+   on-ice alerting, no push, no offline capture beyond the draft (all native). **The phone pass stays the
+   last wave**, not launch-critical and not flagged: row 9's scope (Explore, Latest, New report at 390 px)
+   lands with T4 as planned.
+3. **Filters — answered (founder, 2026-11-07): a saved preference** (D242). D166's store stays as it is
+   (wrapped, not rewritten); the Explore map keeps reading the same filters to dim non-matching bodies, and
+   Latest's URL carries only `report`, `q`, `skater` and `view`. Shareable filtered links are given up.
+4. **PostHog on top of the merged #91 — answered (founder, 2026-11-07), both recorded in D240:**
+   - (a) **Replay stays off at launch.** D29, L12 and the D235 init-lock all stand; §4.2's posture is what a
+     future L12 pass would enable.
+   - (b) **Yes — autocapture text is masked on skater surfaces**, with `data-attr` names on the controls
+     worth knowing and `ph-no-capture` on the report body, comments, profile header and map pane regardless.
 
    (The host question is settled and merged: direct cross-origin to the US cloud, the proxy reversed for the
    Clerk-cookie reason recorded in `env.ts`.)
@@ -682,22 +677,25 @@ This doc is the phase doc. The ⚪ roadmap entry was written at scoping (2026-11
 The build's findings go in the phase doc, not the roadmap. Deferred-register rows: the slow-pan region video,
 Garmin (already deferred under D24), and replay (L12).
 
-**Likely D#s** (the next free number is D236, since D235 is taken on #91):
-- **D236:** the skater route grammar and URL state. Old paths are kept; tabs, actions and New report are search
-  params (`?post=`, `?tab=`, `?act=`), validated on the skater layout route, never `__root` (§1.0); `/feed` →
-  `/latest`; no coordinates or camera in any URL; filters' home (per Q3).
-- **D237:** the hazard-list caveat moves from a standing line to the title's (i) tooltip, and the empty state
-  keeps the full sentence. This amends the audit's §9.3 rule, which traces to D3 ("silence is not an
-  all-clear"). The sentence lives in `packages/core/src/hazardCopy.ts` beside the other D3 strings, so
-  mobile and the console render the same words.
-- **D238:** public or gated web (Q1) and the web/native split (Q2): what the web never does.
-- **D239:** GPX import's trust tier — **fully trusted for now** (founder, 2026-11-07), a deliberate temporary
-  D24 exception for the early testers' sake, **to be reverted to seed-and-author-only once Garmin or another
-  native import path lands** (the roadmap entry's deferred row keeps the obligation). Written as a D24
-  amendment rather than a free-standing number if that reads better in the register.
-- **D240:** the skater analytics posture on top of merged D235: routeId-deduped pageviews; `/u/:username`
-  masked while lake and report ids stay (the D235 founder call, reaffirmed); masked autocapture text (per
-  Q4b); the D3 event-name test; the `surface` super-property; and replay's recommended posture if Q4a is
-  answered. Could also be a D235 amendment.
-- Possibly **D241:** the theme moves to a cookie (an SSR first paint, replacing next-themes' localStorage),
-  which touches D34; the `.dark` class stays synced until the old `/admin` UI retires (§1.0).
+**The phase's D#s** (minted 2026-11-07 at wave 0; D236 had meanwhile gone to #92's turbo-guards
+decision, so the route grammar took D242 instead — gaps never close, tokens never shift):
+- **D237:** the hazard-list caveat moves from a standing line to the title's (i) tooltip; the empty state
+  keeps the full sentence. Amends the audit's §9.3 rule (which traces to D3); the sentence lives in
+  `packages/core/src/hazardCopy.ts` so mobile and the console render the same words.
+- **D238:** the web stays gated at launch (Q1) and never records a skate (Q2): no on-ice alerting, no push,
+  no offline capture beyond the draft; the phone pass stays the last wave.
+- **D239:** GPX import ships **fully trusted** — a deliberate temporary D24 exception, reverted to
+  seed-and-author-only once Garmin or another native import path lands (the roadmap entry's deferred row
+  keeps the obligation).
+- **D240:** the skater analytics posture on top of merged D235: URL-deduped pageviews (the §4.1 sketch said
+  routeId; that would have dropped `/water/a` → `/water/b`, so the dedupe keys on the stripped URL);
+  `/u/:username` masked while lake and report ids stay; `route_id` + `surface` super-properties with a
+  resolver stamping pageviews; the D3 test over names *and* enum values; the typed `FEATURE_FLAGS`
+  registry; replay off at launch (Q4a) and autocapture text masked on skater surfaces (Q4b).
+- **D241:** the theme moves to a cookie, replacing next-themes' localStorage; `data-mode` absent means
+  follow-the-OS (the token sheet's contract), and the `.dark` class stays synced until the old `/admin` UI
+  retires (§1.0). First paint is settled by a blocking init script rather than an SSR read — this Start
+  version exposes no server cookie helper; the promise is "no flash, one store", not the mechanism.
+- **D242:** the skater route grammar and URL state. Old paths are kept; tabs, actions and New report are
+  search params (`?post=`, `?tab=`, `?act=`), validated on the skater layout route, never `__root` (§1.0);
+  `/feed` → `/latest`; no coordinates or camera in any URL; filters stay the saved D166 preference (Q3).

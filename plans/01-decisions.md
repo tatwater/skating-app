@@ -7077,3 +7077,121 @@ That is the point — the summary line now tells the truth about what was verifi
 purpose is to turn a cache *off*. The reason is in the file.
 
 **Related:** D39, D40, #91.
+
+## D237 — The hazard-list caveat moves into the title's (i) tooltip (B03)
+**Decided** 2026-11-06 (founder, Review 4 of the web mocks); recorded 2026-11-07. The audit's §9.3
+rule — every hazard list ends with the standing no-alert line — put the same sentence under every
+list on every surface, and the founder's design pass judged the repetition noise rather than
+caution. The rule it traces to is D3's "silence is not an all-clear", and that rule stands; what
+changes is where the sentence lives. A populated *Known hazards* list carries an (i) beside its
+title whose tooltip reads "It's possible there are unreported hazards on this ice."; the **empty
+state keeps its full sentence**, because an empty list is exactly where silence would otherwise
+read as all-clear. The string lives in `packages/core/src/hazardCopy.ts` beside the other D3 copy,
+so web, mobile and the console render the same words — one rule, one home. Mobile's lists adopt
+the tooltip form when they are next touched; the copy module is shared from day one.
+
+**Related:** D3, D240; B03 §1.1.
+
+## D238 — The web at launch: signed in only, and what the web never does (B03)
+**Decided** 2026-11-07 (founder). Two calls that bound the skater web rebuild:
+
+**Q1, signed-out reading: gated at launch.** Everything but `/about` and the auth pages keeps
+redirecting to `/sign-in`. A lake or report link sent to someone without an account dead-ends, and
+that cost is accepted for now: public read would need its own consent surface for the risk
+acknowledgment (D3 — a reader who never acknowledged the risk is reading safety-adjacent peer
+observations), and mobile is gated the same way. Public read returns later as its own decision
+with its own legal pass.
+
+**Q2, the web/native split: the web never records a skate.** No on-ice alerting, no push, and no
+offline capture beyond the report draft — all of that is the phone's (the recorder needs
+background location; alerting needs to reach a pocket). D229 makes the first store listing iPhone
+only, so narrow web is the Android path at launch — but the phone pass (row 9) stays the last
+wave, not launch-critical: the row-9 scope is Explore, Latest and New report at 390 px, and it
+lands behind the same PRs as everything else rather than being pulled forward.
+
+**Related:** D24, D229, D3; B03 §6 Q1–Q2.
+
+## D239 — An imported GPX track is fully trusted — temporarily (B03)
+**Decided** 2026-11-07 (founder). D24's rule is that a *trusted* extent comes only from real
+device GPS, because a GPX file can be drawn by hand. The founder's call for B03 is a deliberate,
+temporary exception: an imported GPX is ingested as a trusted track (`provider: 'gpx'` beside
+`native`, same validation, same rendering), because right now the imported track is a large part
+of the product's wow and the early test users are not prone to meddling. **The obligation that
+travels with this:** revert to seed-and-author-only (the track seeds the report's lake, day and
+time and draws for its author alone) once Garmin or another native import path lands. The deferred
+row in B03's roadmap entry holds that obligation; the provider check in `gpsActivities` cites this
+number so the revert has one place to land.
+
+**Related:** D24 (and its 2026-11-06 amendment), L8; B03 §6 Q5.
+
+## D240 — The skater analytics posture on top of D235 (B03)
+**Decided** 2026-11-07 (founder Q4 answers; the dedupe shape found at build). D235 wired PostHog;
+B03 adds the skater surface without loosening any of it.
+
+**One pageview per page.** `capture_pageview: 'history_change'` fires on every search-param
+navigation, and the B03 grammar (D242) puts tabs, sheets and queries in search params — so
+`before_send` drops a `$pageview` whose query-stripped URL equals the previous one. The phase
+doc's sketch said "whose routeId didn't change"; built literally that would also have dropped
+`/water/a` → `/water/b` (same route, different page) and `/u/alice` → `/u/bob`, so the dedupe
+keys on the URL, which is what "a search-param-only navigation" meant. Tabs, search and the sheet
+carry their own typed events instead.
+
+**The person-naming segment is masked; place ids stay.** `/u/<handle>` → `/u/:username` in every
+URL property including `$pathname` and the `$set_once` initials. Lake and report ids are kept per
+the founder call recorded in `posthogOptions.ts` — which lakes draw traffic is a question worth
+asking; which *person* someone looked at is not.
+
+**Every event says which surface and route.** `route_id` and `surface` ride as super-properties
+(one rule for surface: `/admin` and below is the console); pageviews get theirs stamped in
+`before_send` through a router-injected resolver, because the SDK's history hook runs before the
+router resolves and the super-property would lag pageviews by one navigation.
+
+**The taxonomy stays countable shape.** Thirty-two new `object_verb` events; buckets (query
+length, GPX point count, unread count) instead of values; a test walks every event name *and*
+every enum value against the all-clear/recommendation regex (D3). The hazard verdict values are
+the author's own claims as labeled in the UI.
+
+**Q4a: replay stays off at launch** — D29, L12 and the D235 init-lock all stand. **Q4b:
+autocapture text is masked on skater surfaces** — clicked text there means usernames, report text
+and lake names; key controls get `data-attr` names and the report body, comments, profile header
+and map pane carry `ph-no-capture` regardless (lands with the shell and each composition).
+**Flags:** `FEATURE_FLAGS` is a typed registry (`latest-text-search`, `latest-skater-filter`,
+`gpx-import`); a flag never guards the shell, anything above the fold, or anything a skater's
+safety rests on.
+
+**Related:** D235, D29, D3, L12, D242; B03 §4.
+
+## D241 — The theme preference is a cookie; next-themes retires (B03, amends D34)
+**Decided** 2026-11-07. One stored preference for both surfaces, in a cookie (`gli-theme`) rather
+than next-themes' localStorage. The vocabulary stays `@skating/design`'s `ThemePreference`; the
+DOM contract follows the token sheet: `data-mode` is stated only for an explicit override, because
+the emitted CSS already follows the OS when the attribute is absent — `system` is expressed by
+*removing* it, never by a third value. The legacy `.dark` class tracks the resolved theme until
+the old `/admin` UI retires (B03 §1.0), since the pre-B01 Tailwind styles and Clerk's appearance
+have no media-query fallback. First paint: this Start version exposes no server cookie helper, so
+instead of an SSR read the provider renders a blocking inline init script ahead of all content —
+the proven next-themes mechanism, a constant with no interpolation — which settles `data-mode` and
+`.dark` before the browser paints in every mode. The outcome D241 promises is "no flash, cookie as
+the one store"; the mechanism can move server-side later without changing either.
+
+**Related:** D34, D232–D234; B03 §2.2.
+
+## D242 — The skater route grammar: old paths kept, state in search params (B03)
+**Decided** 2026-11-07. **Keep every path the outside world already links to** — notification
+targets (`/water/$id`, `/report/$id`, `/hazard/$id`, `/bounty/$id`), email links, mobile's
+`skating://` mirror, `/u/$username`, `/post?body=`, `/hazard/$id?action=confirm`. New views become
+search params on those paths (`?tab=`, `?act=`, `?post=`, `?band=`, `?frame=`), never new paths
+that break old links; `/feed` → `/latest`, `/post?body=&edit=` → `?post=…&postBody=…`, and
+`/notifications` → the bell, each redirect landing with the page that replaces it so the app works
+at every merge. Every search schema is zod with `.catch()` defaults — a bad link degrades to the
+default view. The root params (`?post=`, `?postBody=`) are validated on the pathless skater layout
+route, never `__root`, so the report sheet can never open over `/admin` (§1.0). **Never in a URL:**
+map camera, click coordinates, drawing geometry — they would leak into history, referrers, Sentry
+and PostHog; the camera lives in the map store, sessionStorage only. **Q3: filters stay a saved
+preference** (D166's store, wrapped not rewritten): the Explore map reads the same filters to dim
+non-matching bodies, and a URL home would cut the map off from them. Latest's URL carries only the
+transient view state (`report`, `q`, `skater`, `view`). Shareable filtered links are given up;
+sharing a view means sharing the lake link.
+
+**Related:** D166, D199, D240; B03 §1.
+
