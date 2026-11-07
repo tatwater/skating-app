@@ -127,6 +127,14 @@ describe('filters and paint', () => {
     ]);
     expect(JSON.stringify(waterFillOpacity(p, null))).toContain('""');
   });
+
+  it('stands the fill down for the lake under a satellite picture, and only that lake (D81)', () => {
+    const p = mapPalette('dark');
+    const [, base] = waterFillOpacity(p, null, 'm') as [string, unknown[]];
+    expect(base.slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], 'm'], 0]);
+    const [, none] = waterFillOpacity(p, null) as [string, unknown[]];
+    expect(none.slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], ''], 0]);
+  });
 });
 
 describe('mapPalette', () => {

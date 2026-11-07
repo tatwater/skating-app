@@ -666,6 +666,18 @@ describe('depth', () => {
       ['literal', false],
     ]);
   });
+
+  it('stands the lake’s water fill down under the picture, and brings it back after', async () => {
+    const fillUnder = () => {
+      const opacity = map().layers.get('water-fill')?.paint['fill-opacity'] as unknown[];
+      return opacity[1] as unknown[];
+    };
+    useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: true } });
+    await mount();
+    expect(fillUnder().slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], 'mascoma'], 0]);
+    act(() => useSkaterMapStore.setState({ layers: { ...DEFAULT_MAP_LAYERS, imagery: false } }));
+    expect(fillUnder().slice(0, 3)).toEqual(['case', ['==', ['get', '_id'], ''], 0]);
+  });
 });
 
 describe('clicks', () => {

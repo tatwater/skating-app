@@ -458,18 +458,22 @@ export default function SkaterMapCanvas() {
     };
   }, [depthOn, contourKey, loaded, mapRef]);
 
-  // Under drawn contours the lake takes the shallowest band's fill, so the rings read as depth.
+  // Under drawn contours the lake takes the shallowest band's fill, so the rings read as depth. While
+  // a satellite picture is up, the lake it's painted over drops its fill altogether — the same
+  // stand-down depth makes under imagery (D81) — so the water color never covers the picture.
+  const imageryOn = toggles.imagery;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    const ground = contoursDrawn && spec.layers.depth ? (focusBody?._id ?? null) : null;
+    const lakeId = focusBody?._id ?? null;
+    const ground = contoursDrawn && spec.layers.depth ? lakeId : null;
     map.setPaintProperty(WATER_FILL_LAYER, 'fill-color', waterFillColor(palette, ground) as never);
     map.setPaintProperty(
       WATER_FILL_LAYER,
       'fill-opacity',
-      waterFillOpacity(palette, ground) as never,
+      waterFillOpacity(palette, ground, imageryOn ? lakeId : null) as never,
     );
-  }, [contoursDrawn, spec.layers.depth, focusBody, palette, loaded, mapRef]);
+  }, [contoursDrawn, spec.layers.depth, focusBody, imageryOn, palette, loaded, mapRef]);
 
   // ── The dock's camera actions ─────────────────────────────────────────────────────────────────
   const [locating, setLocating] = useState(false);

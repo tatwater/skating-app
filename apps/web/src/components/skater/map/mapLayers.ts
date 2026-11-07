@@ -116,9 +116,16 @@ export function waterFillColor(palette: MapPalette, depthGroundBodyId: string | 
   ];
 }
 
-export function waterFillOpacity(palette: MapPalette, depthGroundBodyId: string | null): unknown[] {
+export function waterFillOpacity(
+  palette: MapPalette,
+  depthGroundBodyId: string | null,
+  /** The lake a satellite picture is painted over: its fill stands down so the picture shows (D81). */
+  underImageryBodyId: string | null = null,
+): unknown[] {
   return withAccessDim([
     'case',
+    ['==', ['get', '_id'], underImageryBodyId ?? ''],
+    0,
     ['==', ['get', 'inactive'], true],
     0.18,
     ['==', ['get', '_id'], depthGroundBodyId ?? ''],
