@@ -133,6 +133,8 @@ function MatrixChart({
   columnKickers = 'ends',
   stepOf = temperatureStep,
   className,
+  onKeyDown,
+  onBlur,
   ...props
 }: MatrixChartProps) {
   const root = useRef<HTMLDivElement | null>(null);
@@ -145,6 +147,18 @@ function MatrixChart({
   };
   const [hot, setHot] = useState<Cell | null>(null);
   const [plateAt, setPlateAt] = useState<{ x: number; y: number } | null>(null);
+
+  // The cell holding focus. When an update takes it away (its row or column went), focus would
+  // fall out of the grid to the page; it lands on the clamped tab stop instead. Only when it fell
+  // to the page: focus the operator moved elsewhere stays there.
+  const focusedCell = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const cell = focusedCell.current;
+    if (cell === null || cell.isConnected) return;
+    focusedCell.current = null;
+    const now = document.activeElement;
+    if (now === null || now === document.body) cellIn(root.current, active)?.focus();
+  });
 
   // The plate sits over the hot cell, centered on it.
   useLayoutEffect(() => {
@@ -203,7 +217,15 @@ function MatrixChart({
           : 'grid-cols-[minmax(0,1fr)_minmax(3.75rem,max-content)]',
         className,
       )}
-      onKeyDown={move}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        move(event);
+      }}
+      onBlur={(event) => {
+        onBlur?.(event);
+        // Focus moved on (to another cell, or out of the grid) — not a cell taken away under it.
+        if (event.target.isConnected) focusedCell.current = null;
+      }}
       onPointerLeave={() => setHot(null)}
       {...props}
     >
@@ -254,7 +276,8 @@ function MatrixChart({
                     // Inline: Tailwind reads the `_` in `space-0_5` inside an arbitrary calc() as a space.
                     style={CELL_HEIGHT}
                     onPointerEnter={() => setHot({ r, c })}
-                    onFocus={() => {
+                    onFocus={(event) => {
+                      focusedCell.current = event.currentTarget;
                       setActive({ r, c });
                       setHot({ r, c });
                     }}

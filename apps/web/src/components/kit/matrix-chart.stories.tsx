@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type ComponentProps, useState } from 'react';
-import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import {
   MatrixChart,
@@ -185,7 +185,13 @@ export const HoverAndKeys: Story = {
 function Shrinking(props: ComponentProps<typeof MatrixChart>) {
   const [small, setSmall] = useState(false);
   return (
-    <div className="flex flex-col gap-(--space-2_5)">
+    // biome-ignore lint/a11y/noStaticElementInteractions: a test harness hears S bubble up from a cell
+    <div
+      className="flex flex-col gap-(--space-2_5)"
+      onKeyDown={(event) => {
+        if (event.key === 's') setSmall(true);
+      }}
+    >
       <MatrixChart
         {...props}
         rows={small ? props.rows.slice(0, 2) : props.rows}
@@ -211,6 +217,38 @@ export const ShrinkKeepsTabStop: Story = {
     await waitFor(() => expect(cellsOf(grid)).toHaveLength(4));
     const cells = cellsOf(grid);
     await expect(cells.filter((el) => el.tabIndex === 0)).toEqual([cells[3]]);
+    // Focus went to the button, and the shrink leaves it there.
+    await expect(within(canvasElement).getByRole('button', { name: 'Shrink' })).toHaveFocus();
+  },
+};
+
+/**
+ * Focus survives the data shrinking under it too: when the focused cell's row and column go, focus
+ * lands on the nearest cell left (the new tab stop), and the arrows carry on from there.
+ */
+export const ShrinkKeepsFocus: Story = {
+  args: {
+    rows: SENTINELS,
+    columns: NIGHTS,
+    'aria-label': 'Overnight lows',
+    onKeyDown: fn(),
+    onBlur: fn(),
+  },
+  render: (args) => <Shrinking {...args} />,
+  play: async ({ canvasElement, args }) => {
+    const grid = within(canvasElement).getByRole('grid');
+    await userEvent.tab();
+    await userEvent.keyboard('{End}{ArrowDown}{ArrowDown}');
+    await expect(must(cellsOf(grid)[35])).toHaveFocus();
+    // S (heard outside the grid) shrinks the data while the cell holds focus.
+    await userEvent.keyboard('s');
+    await waitFor(() => expect(cellsOf(grid)).toHaveLength(4));
+    await waitFor(() => expect(must(cellsOf(grid)[3])).toHaveFocus());
+    await userEvent.keyboard('{ArrowLeft}');
+    await expect(must(cellsOf(grid)[2])).toHaveFocus();
+    // A caller's own handlers still hear the grid, beside the kit's.
+    await expect(args.onKeyDown).toHaveBeenCalled();
+    await expect(args.onBlur).toHaveBeenCalled();
   },
 };
 
