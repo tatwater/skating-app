@@ -175,6 +175,25 @@ describe('reads and writes', () => {
     await expect(putJson(config(), 'k', {})).rejects.toThrow(/R2 put k: 500/);
   });
 
+  it('states the byte length, not the character count, for multi-byte JSON', async () => {
+    const seen: { body?: string; length?: string | null } = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request) => {
+        Object.assign(seen, {
+          body: await input.text(),
+          length: input.headers.get('content-length'),
+        });
+        return new Response('');
+      }),
+    );
+    await putJson(config(), 'index/latest.json', { body: 'Lac Mégantic ❄' });
+    // 26 characters, 29 bytes (é is two, ❄ three) — a `.length` Content-Length would say 26.
+    const expected = '{"body":"Lac Mégantic ❄"}\n';
+    expect(expected.length).toBe(26);
+    expect(seen).toEqual({ body: expected, length: '29' });
+  });
+
   it('reads public JSON, a 404 as null, and anything else as an error', async () => {
     vi.stubGlobal(
       'fetch',
