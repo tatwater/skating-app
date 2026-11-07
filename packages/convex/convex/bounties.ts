@@ -702,9 +702,27 @@ export const cancel = mutation({
 });
 
 /**
+ * Whether a report can answer a bounty: **the skate it describes ended at or after the bounty opened**
+ * (B03 §11, Review 3 c-td43kf). A bounty asks for fresh eyes from the moment it was posted, so the
+ * clock that matters is when the author got off the ice, never when they wrote it up: a Monday
+ * write-up of a Saturday skate leaves a Sunday bounty open. A skate under way when the bounty opened
+ * counts, because its author was still looking at the ice afterward.
+ *
+ * Checked again wherever an attachment is acted on, because `reports.update` can re-date a report
+ * after it attached (a D199 edit is always allowed), and a row can predate this rule.
+ */
+export function reportAnswersBounty(
+  report: Pick<Doc<'reports'>, 'skateEndTime'>,
+  bounty: Pick<Doc<'bounties'>, 'createdAt'>,
+): boolean {
+  return report.skateEndTime >= bounty.createdAt;
+}
+
+/**
  * Auto-attach (decision 10) — invoked from `reports.create` for each new **visible** report. Appends the
- * report to every open bounty on its body's `fulfillingReportIds` (the minimum bar is deliberately simple:
- * any new visible report on the body). Fulfillment itself waits for the requester's helpful thumb.
+ * report to every open bounty on its body's `fulfillingReportIds` when the skate could answer it
+ * (`reportAnswersBounty`; past that the bar is deliberately simple: any visible report on the body).
+ * Fulfillment itself waits for the requester's helpful thumb.
  *
  * **This is also where the requester finds out** (A08 / D170). Fulfillment can't happen until the
  * requester thumbs an attached report, and until A08 nothing told them one had arrived — the loop only
@@ -738,6 +756,7 @@ export async function attachReportToOpenBounties(
     if (bounty.subAreaId !== undefined && !memberSubAreaIds(report).includes(bounty.subAreaId)) {
       continue;
     }
+    if (!reportAnswersBounty(report, bounty)) continue;
     if (bounty.fulfillingReportIds.includes(report._id)) continue;
     await ctx.db.patch(bounty._id, {
       fulfillingReportIds: [...bounty.fulfillingReportIds, report._id],
@@ -784,6 +803,7 @@ export async function fulfillBountyOnHelpful(
   if (!bounty.fulfillingReportIds.includes(args.reportId)) return;
   const report = await ctx.db.get(args.reportId);
   if (!report) return;
+  if (!reportAnswersBounty(report, bounty)) return;
 
   // `fulfilledAt` is stamped alongside the status so the time-to-fulfillment histogram has an end
   // point (Phase 07-2) — `status` alone only records *that* it happened, never how long people waited,
@@ -848,6 +868,8 @@ export const getDetail = query({
     for (const reportId of bounty.fulfillingReportIds) {
       const report = await ctx.db.get(reportId);
       if (report?.moderationStatus !== 'visible') continue;
+      // A candidate the requester can't fulfill with is not offered to them.
+      if (!reportAnswersBounty(report, bounty)) continue;
       const author = await ctx.db.get(report.authorId);
       fulfillingReports.push({
         _id: report._id,
@@ -912,7 +934,9 @@ export const answeredByMyReport = query({
         ANSWERED_SCAN_CAP,
         `bounties.answeredByMyReport(${status})`,
       );
-      answered += rows.filter((b) => b.fulfillingReportIds.includes(reportId)).length;
+      answered += rows.filter(
+        (b) => b.fulfillingReportIds.includes(reportId) && reportAnswersBounty(report, b),
+      ).length;
     }
     return answered;
   },
