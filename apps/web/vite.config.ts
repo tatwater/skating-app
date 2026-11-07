@@ -30,6 +30,29 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
     ]
   : [];
 
+/**
+ * Which deployment this bundle is for, stamped onto every analytics event (D235).
+ *
+ * `VERCEL_ENV` is Vercel's own build-time variable — `production`, `preview` or `development` —
+ * and it is copied to a `VITE_` name here because only prefixed names are inlined into the client.
+ * `import.meta.env.MODE` cannot stand in: a preview build is a *production-mode* build, so MODE
+ * reads `production` for both and the two would be indistinguishable in PostHog.
+ *
+ * **Assigned into `process.env` rather than passed through `define`.** Vite resolves
+ * `import.meta.env.VITE_*` with its own env loader, and that loader reads prefixed names out of
+ * `process.env` — so writing it here, at config module scope, goes through the path Vite already
+ * owns instead of racing it with a `define` for the same expression. Confirmed in the built client
+ * bundle: `deployEnvironment:\`preview\`` with `VERCEL_ENV=preview`.
+ *
+ * If you go to re-verify this, note that setting `VERCEL_ENV` flips Nitro to its Vercel preset,
+ * which writes `.vercel/output` instead of `.output` — so the old `.output` sits there stale and
+ * looks like proof that nothing changed.
+ *
+ * Absent (a local `vite dev` or `vite build`, and CI) it is `development`, which is the honest
+ * answer for every build that is not Vercel's.
+ */
+process.env.VITE_DEPLOY_ENV = process.env.VERCEL_ENV ?? 'development';
+
 export default defineConfig({
   server: { port: 3000 },
   // `@` → `src` mirrors the tsconfig path so shadcn/ui's generated `@/…` imports resolve at

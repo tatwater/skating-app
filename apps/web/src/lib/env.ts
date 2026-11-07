@@ -61,6 +61,12 @@ export const env = {
   // blank line sets it to `''` rather than leaving it undefined. With `??` that empty string would
   // win and silently point ingestion at the page's own root.
   posthogHost: import.meta.env.VITE_POSTHOG_HOST || POSTHOG_API_HOST,
+  // Which deployment this bundle is, stamped onto every analytics event so one PostHog project can
+  // hold all three without a preview click landing in a funnel beside a real skater's (D235).
+  // `vite.config.ts` injects it from Vercel's own `VERCEL_ENV`; `import.meta.env.MODE` cannot
+  // stand in, because a preview build is a production-*mode* build and the two would be
+  // indistinguishable. Settable in `.env` only to simulate one.
+  deployEnvironment: import.meta.env.VITE_DEPLOY_ENV || 'development',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */

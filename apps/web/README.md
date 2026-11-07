@@ -32,7 +32,10 @@ Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
   strings so Clerk's dev handoff token never rides along. Ingestion is direct and cross-origin on
   purpose — a same-origin proxy would send Clerk's session cookie to PostHog (D235). Autocapture is
   on, with `PersonName` / `Avatar` carrying `ph-no-capture` so element text holds places but never
-  people. `lib/featureFlags.ts` is the flags harness and is deliberately empty — D235 says why. No
+  people. Two options are *pinned* rather than left to PostHog's remote config —
+  `disable_session_recording` (L12) and `capture_performance` (Sentry owns latency) — because
+  unset, both defer to a dashboard toggle. Every event carries an `environment` property from
+  Vercel's `VERCEL_ENV`, so one project holds production, preview and local traffic. `lib/featureFlags.ts` is the flags harness and is deliberately empty — D235 says why. No
   `VITE_POSTHOG_KEY` ⇒ no init, no network, every capture a no-op.
 - **Vitest** (+ Testing Library / jsdom) for logic, components, and the token-parity guard.
 

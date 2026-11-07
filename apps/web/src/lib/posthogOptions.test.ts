@@ -76,6 +76,18 @@ describe('posthogOptions', () => {
   it('opts into the dated defaults rather than drifting with the SDK', () => {
     expect(posthogOptions.defaults).toBe('2025-05-24');
   });
+
+  /**
+   * **The other remote-config lock.** `capture_performance`'s default is `undefined`, which means
+   * "ask the PostHog project settings" — so leaving it unset lets a dashboard toggle start a
+   * second measurement of what Sentry's `browserTracingIntegration` already records at
+   * `tracesSampleRate: 1.0`. Pinned `false`, it cannot. Asserted as present *and* false, because
+   * absence here is the failure, not the fix.
+   */
+  it('pins performance capture off rather than deferring it to the dashboard', () => {
+    expect(Object.hasOwn(posthogOptions, 'capture_performance')).toBe(true);
+    expect(posthogOptions.capture_performance).toBe(false);
+  });
 });
 
 /**
@@ -144,16 +156,42 @@ describe('before_send', () => {
     });
   });
 
+  /** Our own properties pass through untouched; the environment stamp is the only addition. */
   it("leaves the app's own event properties alone", () => {
-    expect(send({ hazard_type: 'pressure_ridge', photo_count: 2 })).toEqual({
-      hazard_type: 'pressure_ridge',
-      photo_count: 2,
-    });
+    const out = send({ hazard_type: 'pressure_ridge', photo_count: 2 });
+
+    expect(out).toMatchObject({ hazard_type: 'pressure_ridge', photo_count: 2 });
+    expect(Object.keys(out ?? {}).sort()).toEqual(['environment', 'hazard_type', 'photo_count']);
   });
 
   it('passes a dropped event and a property-less event through without throwing', () => {
     expect(posthogOptions.before_send(null)).toBeNull();
     // biome-ignore lint/suspicious/noExplicitAny: a CaptureResult stub, not a real capture
     expect(() => posthogOptions.before_send({} as any)).not.toThrow();
+  });
+});
+
+/**
+ * One PostHog project holds production, preview and local traffic, so every event has to say which
+ * it came from — otherwise a preview click sits in a funnel beside a real skater's, unfilterable.
+ */
+describe('the environment stamp', () => {
+  const send = (properties: Record<string, unknown>) =>
+    // biome-ignore lint/suspicious/noExplicitAny: a CaptureResult stub, not a real capture
+    posthogOptions.before_send({ properties } as any)?.properties;
+
+  it('stamps every event with the deployment it came from', () => {
+    expect(send({})?.environment).toBe(env.deployEnvironment);
+  });
+
+  /** Under test there is no Vercel and no `.env`, which is what `development` is the answer for. */
+  it('falls back to development when nothing injected a deployment', () => {
+    expect(env.deployEnvironment).toBe('development');
+  });
+
+  it('stamps autocapture and pageviews too, not only the hand-written events', () => {
+    // `before_send` runs on everything the SDK sends, which is why the stamp lives there rather
+    // than in `useAnalytics` — a `$pageview` never passes through the typed capture wrapper.
+    expect(send({ $current_url: 'https://gli.app/feed' })?.environment).toBe(env.deployEnvironment);
   });
 });

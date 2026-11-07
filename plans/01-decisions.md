@@ -6833,10 +6833,29 @@ to be `false`.
 
 The same line settles the rest of the overlap. **Logs:** Sentry's are GA with trace context, so
 neither PostHog's browser logs nor an OTLP exporter belongs here (both were dropped — see below).
+**Web vitals and network timing:** Sentry's browser tracing already measures them at
+`tracesSampleRate: 1.0`, so `capture_performance: false` is **pinned** rather than left unset —
+its default is `undefined`, meaning "ask the project settings", which would have let a dashboard
+toggle start a duplicate measurement with no diff and no review. The same shape as the replay
+lock, and the second of the two options here that defer to remote config if left alone.
 **Session replay:** both products have it, both are off, and L12 now has to pick *which* rather
 than assume PostHog — Sentry already has the redaction pipeline D29 demands of replay.
-**Pageviews** overlap harmlessly: Sentry's navigation spans measure latency, PostHog's pageviews
-count funnels, and deduplicating them would cost one of the two questions.
+**Pageviews** overlap harmlessly and stay: Sentry's navigation spans measure latency, PostHog's
+pageviews count funnels, and deduplicating them would cost one of the two questions. One known
+asymmetry, pre-existing and not introduced here: Sentry's DOM breadcrumb serializer puts
+`aria-label`, `type`, `name`, `title` and `alt` values in the breadcrumb *message*, which
+`beforeBreadcrumb` does not redact (it walks `.data`), so `Avatar`'s `alt={displayName}` can ride
+into Sentry attached to an error even though `ph-no-capture` keeps it out of PostHog. It does not
+serialize `textContent`, so the name *text* renders are unaffected.
+
+**One PostHog project, with every event stamped `environment`.** Production, preview and local
+traffic share a project — one set of flags, one set of dashboards — and `before_send` tags each
+event with the deployment it came from so a preview click never sits in a funnel beside a real
+skater's. The value comes from Vercel's own `VERCEL_ENV`, inlined by `vite.config.ts` as
+`VITE_DEPLOY_ENV`; `import.meta.env.MODE` cannot stand in, because a preview build is a
+production-*mode* build and the two would be indistinguishable. Stamped in `before_send` rather
+than with `register()` because that path runs on every event — autocapture and pageviews included,
+neither of which passes through the typed `capture` wrapper.
 
 **Ingestion goes straight to `us.i.posthog.com`, and the reverse proxy was reversed.** A
 same-origin proxy was the first choice — a tracker blocker drops a meaningful and *unmeasurable*

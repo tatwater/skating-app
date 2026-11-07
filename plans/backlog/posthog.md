@@ -23,6 +23,11 @@ things that currently ship dark behind constants.
 - **Autocapture + SPA pageviews**, so questions nobody instrumented for stay answerable.
 - **Query strings scrubbed** from the URLs PostHog attaches itself, and **people's names masked**
   (`PersonName`, `Avatar`) so autocapture's element text holds places but not persons.
+- **Every event stamped `environment`** from Vercel's `VERCEL_ENV`, so one project holds
+  production, preview and local traffic without them mixing in a funnel.
+- **No performance capture.** `capture_performance: false` is pinned, not unset: Sentry's browser
+  tracing already measures web vitals and network timing, and the option's default defers to the
+  PostHog dashboard, where a toggle could have started a duplicate without a diff.
 - **A flags harness** — `lib/featureFlags.ts`, with **no flags registered**.
 
 ## What is still open

@@ -53,6 +53,13 @@ export const posthogOptions = {
    */
   before_send: (event: CaptureResult | null): CaptureResult | null => {
     if (!event?.properties) return event;
+
+    // Every event says which deployment it came from, so one project can hold production,
+    // preview and local traffic without a preview click sitting in a funnel beside a real
+    // skater's. Done here rather than with `register()` because this runs on *every* event —
+    // autocapture and pageviews included — with no init-order question to get wrong.
+    event.properties.environment = env.deployEnvironment;
+
     for (const key of URL_PROPERTIES) {
       if (key in event.properties) event.properties[key] = stripUrlQuery(event.properties[key]);
     }
@@ -85,6 +92,17 @@ export const posthogOptions = {
    * configured, and `PRIVACY.md` updated.
    */
   disable_session_recording: true,
+
+  /**
+   * **Performance capture off — Sentry owns latency (D235).**
+   *
+   * Pinned rather than left unset, and that distinction is the whole point: this option's default
+   * is `undefined`, which means *"fall back to the remote configuration"*. Left alone, switching
+   * web vitals on in the PostHog project settings would start a second measurement of what
+   * `browserTracingIntegration` already records at `tracesSampleRate: 1.0` — a duplicate arriving
+   * through a dashboard toggle, with no diff and no review. Same shape as the replay lock above.
+   */
+  capture_performance: false,
 
   /**
    * **`capture_exceptions` is deliberately absent. Do not add it.**
