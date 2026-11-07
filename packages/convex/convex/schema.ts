@@ -2676,6 +2676,9 @@ export default defineSchema({
     // instead. (Greptile, PR #35 — the same shape as A01's `listInViewport` and `listPromotionCandidates`
     // before it: the bound has to be in the index, not after it.)
     .index('by_water_body_first_reported', ['waterBodyId', 'firstReportedAt'])
+    // The region map's hazard marks (B03 §11, `listInViewport`): this season's live pins, one range.
+    // Every field is required, so nothing sorts as `undefined` ahead of the range.
+    .index('by_status_moderation_first_reported', ['status', 'moderationStatus', 'firstReportedAt'])
     .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 09a offline)
     // The merge chain (A05c / D80): every pin folded into one survivor, which is what the union
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
