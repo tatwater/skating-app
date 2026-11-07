@@ -5,7 +5,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { DELETION_GRACE_MS, isLeaving } from '@skating/core';
 import type { HistoryState } from '@tanstack/react-router';
 import { useMutation, useQueries, useQuery } from 'convex/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
@@ -47,11 +47,21 @@ export function ProfilePage({
 
   const mine = useQuery(api.bounties.myBounties, isSelf && !leaving ? {} : 'skip');
   const shown = (mine ?? []).slice(0, BOUNTIES_SHOWN);
-  const details = useQueries(
-    Object.fromEntries(
-      shown.map((b) => [b._id, { query: api.bounties.getDetail, args: { bountyId: b._id } }]),
-    ),
+  // **The queries object must be stable.** `useQueries` memoizes its subscription on the identity
+  // of what it is handed, so a fresh object every render re-subscribes, sets state, and renders
+  // again — React stops it at "Too many re-renders" and the page becomes the crash screen. It only
+  // bit on a profile that *has* bounties: with none, the object is empty and the observer finds
+  // nothing to change. That is your own page, which is why `/u/<someone else>` looked fine.
+  const shownKey = shown.map((b) => b._id).join(',');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the ids' content, not identity.
+  const detailQueries = useMemo(
+    () =>
+      Object.fromEntries(
+        shown.map((b) => [b._id, { query: api.bounties.getDetail, args: { bountyId: b._id } }]),
+      ),
+    [shownKey],
   );
+  const details = useQueries(detailQueries);
   const cancelBounty = useMutation(api.bounties.cancel);
   const block = useMutation(api.blocks.block);
   const flag = useMutation(api.contentFlags.flag);

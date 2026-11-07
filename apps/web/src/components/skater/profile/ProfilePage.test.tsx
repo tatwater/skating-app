@@ -291,6 +291,21 @@ describe('your own profile', () => {
     );
   });
 
+  /**
+   * The crash `/u/<your own handle>` shipped with. `useQueries` keys its subscription on the
+   * object's identity, so building one inline re-subscribed on every render and React stopped the
+   * loop at "Too many re-renders" — the page became the crash screen. Only a profile with bounties
+   * had entries to re-subscribe, which is why it was your own page and nobody else's, and why the
+   * old mock (which only answered the queries) kept the suite green through it.
+   */
+  it('holds one bounty-detail subscription across re-renders, not one per render', () => {
+    const view = page('kdonovan');
+    expect(screen.getByText('Your bounties')).toBeInTheDocument();
+    view.rerender(<ProfilePage username="kdonovan" onNavigate={navigate} />);
+    view.rerender(<ProfilePage username="kdonovan" onNavigate={navigate} />);
+    expect(fakes.unstableQueries).toBe(0);
+  });
+
   it('edits, says who sees it, and lists your bounties', async () => {
     const cancel = mutation('bounties:cancel');
     page('kdonovan');

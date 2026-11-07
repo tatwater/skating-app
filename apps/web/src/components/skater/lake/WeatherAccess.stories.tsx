@@ -59,7 +59,7 @@ const darkQuad = (root: HTMLElement) =>
 
 function Frame({ tab, children }: { tab: LakeTab; children: ReactNode }) {
   return (
-    <div className="grid h-full grid-cols-[27.5rem_minmax(0,1fr)]">
+    <div className="grid h-full grid-cols-[var(--size-sidebar)_minmax(0,1fr)]">
       <LakeSidebar
         label="Mascoma Lake"
         body={

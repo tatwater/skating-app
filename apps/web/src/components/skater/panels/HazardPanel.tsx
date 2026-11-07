@@ -22,7 +22,7 @@ import { useMemo, useState } from 'react';
 import { useAnalytics, type HazardVerdict as VerdictEvent } from '@/lib/analytics';
 
 import { HazardModeratorControls } from '../../admin/HazardModeratorControls';
-import { panelMapSpec } from '../map/mapSpec';
+import { panelMapSpec, strayHazardFit } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
 import { FlagDialog } from './FlagDialog';
 import { type HazardPanelData, HazardPanelView } from './HazardPanelView';
@@ -69,9 +69,32 @@ export function HazardPanel({ hazardId, action }: { hazardId: string; action?: '
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const bodyId = body?.available ? body.body._id : hazard?.waterBodyId;
+  // A pin that isn't on the lake it's filed under frames itself, not the lake (`strayHazardFit`) —
+  // otherwise opening it flies the map to a body the skater never clicked and leaves the pin behind.
+  const hazardBbox = hazard?.bbox;
+  const bodyBbox = body?.available ? body.body.bbox : null;
+  const strayFit = useMemo(
+    () => strayHazardFit(hazardId, hazardBbox, bodyBbox),
+    [hazardId, hazardBbox, bodyBbox],
+  );
+  // **The camera waits for both reads — the camera, and nothing else.** `bodyId` alone is not
+  // enough to frame on: it arrives with the hazard, one round trip before the lake does, and
+  // framing the lake in that gap is what sent a skater who clicked a pin on Mascoma to a body near
+  // Albany — by the time the lake's box came back and said the two disagree, the map had already
+  // flown. So the fit is withheld (`fit: null`) until both boxes are in, while the lake's focus and
+  // layers stay declared: holding the *whole* spec instead would drop the hazard marks, the put-ins
+  // and the labels for that round trip, so the pin the skater just clicked would vanish while its
+  // card loaded. Holding the camera is free — it is already wherever they clicked from.
+  const framed = hazard !== undefined && body !== undefined;
   const spec = useMemo(
-    () => (bodyId === undefined ? PANEL_LOADING_SPEC : panelMapSpec(bodyId, { hazardId })),
-    [bodyId, hazardId],
+    () =>
+      bodyId === undefined
+        ? PANEL_LOADING_SPEC
+        : panelMapSpec(bodyId, {
+            hazardId,
+            ...(framed ? (strayFit ? { fit: strayFit } : {}) : { fit: null }),
+          }),
+    [bodyId, framed, hazardId, strayFit],
   );
   useMapSpec(spec);
   usePanelViewed('hazard_viewed', hazardId);

@@ -40,6 +40,24 @@
 @custom-variant data-vertical (&:where([data-orientation="vertical"]));
 
 /*
+ * The skater sidebar's width — the view column beside the persistent region map (B03 §1.8), and
+ * the inset cards that take its place.
+ *
+ * Here rather than in `@skating/design` on purpose: it is a layout dimension of one surface of one
+ * app, not a token the console shares, and the design package is owned by the kit thread. Promote
+ * it into `sizes.ts` the day the console grows a column of the same name.
+ *
+ * **29.5 rem, widened from the boards' 27.5 rem (2026-11-07, founder).** At 440 px the lake's four
+ * tabs overflowed their rail by 26 px — *Getting there* was clipped — and the Report-a-hazard /
+ * Post-a-bounty pair had 7 px of air between them. 472 px is the first width where the tab rail
+ * fits with room to spare, and it gives each of those buttons 16 px back. `LakeSidebar.stories`
+ * measures the rail, so a label that outgrows the column fails there rather than on a lake.
+ */
+:root {
+  --size-sidebar: 29.5rem;
+}
+
+/*
  * Semantic theme tokens, single-sourced from @skating/design (themes.ts) — the web analog
  * of the mobile Tamagui bridge (D7). Two first-class themes (D34): `:root` is the
  * high-contrast bright-outdoor default (light); `.dark` is evening mode. The literal hex

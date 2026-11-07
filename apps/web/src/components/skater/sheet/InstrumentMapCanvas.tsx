@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { mapPalette } from '@/components/skater/map/mapPalette';
 import { useTheme } from '@/components/theme-provider';
 import { env } from '@/lib/env';
-import { useMapCanvas } from '@/lib/mapCanvas';
+import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
 import { DEMO_PMTILES_URL, INITIAL_CENTER, INITIAL_ZOOM, MAP_FLAVORS } from '@/lib/waterMap';
 import {
   EMPTY,
@@ -116,5 +116,5 @@ export default function InstrumentMapCanvas({
     map.fitBounds(bounds, { padding: FIT_PADDING, animate: false });
   }, [loaded, mapRef, boundsKey]);
 
-  return <div ref={containerRef} data-slot="instrument-canvas" className="absolute inset-0" />;
+  return <div ref={containerRef} data-slot="instrument-canvas" className={MAP_CONTAINER_CLASS} />;
 }

@@ -13,6 +13,8 @@
  * the warning" isn't a state this type can express (D3).
  */
 
+import { type BBox, bboxIntersects } from '@skating/core';
+
 /** The layers a view can ask for. Hazards are deliberately absent: see the module note. */
 export const SPEC_LAYERS = ['depth', 'places', 'putIns', 'tracks', 'labels', 'favorites'] as const;
 export type SpecLayer = (typeof SPEC_LAYERS)[number];
@@ -234,9 +236,19 @@ export function panelMapSpec(
     hazardId?: string;
     track?: MapOverlay | null;
     photos?: MapOverlay | null;
+    /**
+     * Frame something other than the lake, or **`null` to frame nothing yet**.
+     *
+     * Only the hazard card passes either: a `MapFit` when the pin it is about does not sit on the
+     * lake it is filed under (`strayHazardFit`), and `null` while it still has only half the answer
+     * — the hazard's box back and the lake's not. `null` holds the camera where the skater left it
+     * rather than flying it to a lake that may turn out to be the wrong one, and it does that
+     * **without** giving up the lake's focus and layers, so the pin they clicked stays drawn.
+     */
+    fit?: MapFit | null;
   } = {},
 ): MapSpec {
-  const { subAreaId, hazardId, track = null, photos = null } = options;
+  const { subAreaId, hazardId, track = null, photos = null, fit } = options;
   return defineMapSpec({
     id: 'panel',
     focus: {
@@ -245,11 +257,47 @@ export function panelMapSpec(
       ...(hazardId !== undefined ? { hazardId } : {}),
     },
     layers: ALL_LAYERS,
-    fit: { kind: 'body', bodyId },
+    fit: fit === undefined ? { kind: 'body', bodyId } : fit,
     overlays: { track, photos },
     dock: { zoom: true, layers: true, imagery: true, legend: true },
   });
 }
+
+/**
+ * The frame for a hazard whose footprint is **not on the lake it is filed under**.
+ *
+ * Normally a hazard card keeps the lake's own fit key, so opening a pin from the lake you are
+ * already looking at does not move the camera at all (board 2.1). That rule quietly assumes the pin
+ * and the lake are in the same place. When they are not — a row whose `waterBodyId` points
+ * somewhere else — the lake fit flies the map across the state to a body the skater never clicked,
+ * and the pin they *did* click is left behind. Dev has exactly such a row: a pin drawn on Mascoma
+ * filed under an unnamed body near Albany.
+ *
+ * So: when the hazard's box and the lake's box do not even touch, frame the hazard instead. Keyed
+ * on the hazard, so it runs once; a point hazard's box is a few hundred meters across, so this
+ * centers on it at a readable zoom rather than fitting a box that would push past max zoom.
+ *
+ * It is a guard, not a feature — for every hazard whose data agrees with itself this never fires,
+ * and board 2.1's still camera is untouched.
+ */
+export function strayHazardFit(
+  hazardId: string,
+  hazard: BBox | null | undefined,
+  body: BBox | null | undefined,
+): MapFit | undefined {
+  if (!hazard || !body) return undefined;
+  if (bboxIntersects(hazard, body)) return undefined;
+  return {
+    kind: 'point',
+    key: `hazard:${hazardId}`,
+    lng: (hazard.minLng + hazard.maxLng) / 2,
+    lat: (hazard.minLat + hazard.maxLat) / 2,
+    zoom: STRAY_HAZARD_ZOOM,
+  };
+}
+
+/** Close enough to read a few hundred meters of shoreline around the pin. */
+export const STRAY_HAZARD_ZOOM = 14;
 
 /** Latest's `?view=map` (board 4.4): the lakes in view, labeled; a click opens the lake. */
 export function latestMapSpec(): MapSpec {

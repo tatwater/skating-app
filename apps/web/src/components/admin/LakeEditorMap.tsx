@@ -10,7 +10,7 @@ import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';
-import { useMapCanvas } from '../../lib/mapCanvas';
+import { MAP_CONTAINER_CLASS, useMapCanvas } from '../../lib/mapCanvas';
 import { addReviewLayers, type ReviewPoints, showReview } from '../../lib/reviewMarkers';
 import {
   boundsForBody,
@@ -469,7 +469,7 @@ export function LakeEditorMap({
   return (
     <section
       ref={containerRef}
-      className="h-full w-full"
+      className={MAP_CONTAINER_CLASS}
       data-testid="lake-editor-map"
       aria-label={`Editing map for ${data.body.name}`}
     />

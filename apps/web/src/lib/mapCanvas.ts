@@ -78,6 +78,21 @@ export interface MapCanvasOptions {
  */
 let pmtilesUsers = 0;
 
+/**
+ * The class every MapLibre container in this app wears — **a height and a width, never a position**.
+ *
+ * MapLibre's own stylesheet declares `.maplibregl-map { position: relative }`, and it is loaded
+ * with the canvas chunk, so it lands *after* the app's sheet. Both selectors are one class, so the
+ * later one wins: an `absolute inset-0` container is silently turned back into a static-flow box
+ * with `inset` doing nothing, which leaves it `height: 0`. MapLibre then sizes its canvas from
+ * `getBoundingClientRect().height || 300` and the map draws a 300 px strip, or nothing at all.
+ * Nothing errors, so the only symptom is a blank map.
+ *
+ * `size-full` asks for the same box without touching `position`, so the rule has nothing to
+ * override. The pane around it (`MapPane`, `relative isolate overflow-hidden`) is what positions it.
+ */
+export const MAP_CONTAINER_CLASS = 'size-full';
+
 export interface MapCanvas {
   containerRef: React.RefObject<HTMLDivElement | null>;
   mapRef: React.RefObject<maplibregl.Map | null>;
