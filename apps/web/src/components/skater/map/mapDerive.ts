@@ -57,6 +57,25 @@ export function reportTimesByBody(
   return times;
 }
 
+/**
+ * The hazards the map draws: the open lake's from its own read, every other lake's from the
+ * viewport read, so the region is never silently hazard-free (D3). While the open lake's read is
+ * loading, its viewport rows stand in, so a lake never blinks to empty. `focusIds` names the open
+ * lake both ways (the id it was opened by and its survivor's), so one hazard is never drawn twice.
+ * A capped viewport read (`truncated`) still draws every row it has — and nothing reads the map's
+ * hazard-free stretches as clear ice.
+ */
+export function mergeHazards<H extends { waterBodyId: string }>(
+  focused: readonly H[] | undefined,
+  inViewport: readonly H[] | undefined,
+  focusIds: ReadonlySet<string>,
+): H[] {
+  const around = inViewport ?? [];
+  const isFocus = (h: H) => focusIds.has(h.waterBodyId);
+  const own = focusIds.size === 0 ? [] : (focused ?? around.filter(isFocus));
+  return [...own, ...around.filter((h) => !isFocus(h))];
+}
+
 export interface LakeLabelModel {
   id: string;
   name: string;

@@ -23,6 +23,7 @@ import {
   hazardMarksFrom,
   type LabelableBody,
   labelCountIds,
+  mergeHazards,
   reportTimesByBody,
   withBayAngles,
 } from './mapDerive';
@@ -145,10 +146,19 @@ export function useSkaterMapData({
     visible && focusId && spec.layers.tracks ? { waterBodyId: focusId } : 'skip',
   );
 
-  const hazardFeatures = useMemo(
-    () => (focusId && hazards ? hazardsToFeatureCollection(hazards) : EMPTY_FEATURES),
-    [focusId, hazards],
+  // Every lake in view draws its hazards, not just the open one (D3): the viewport read, bounded by
+  // its scan cap and keyed on the same settled viewport as the lakes.
+  const viewportHazardsNow = useQuery(
+    api.hazards.listInViewport,
+    viewportArgs === 'skip' ? 'skip' : { viewport: viewportArgs.viewport },
   );
+  const viewportHazards = useRetained(viewportHazardsNow, viewportArgs === 'skip');
+  const focusBodyId = focusBody?._id;
+  const hazardFeatures = useMemo(() => {
+    const focusIds = new Set<string>([focusId, focusBodyId].filter((id) => id != null));
+    const rows = mergeHazards(focusId ? hazards : undefined, viewportHazards?.hazards, focusIds);
+    return rows.length > 0 ? hazardsToFeatureCollection(rows) : EMPTY_FEATURES;
+  }, [focusId, focusBodyId, hazards, viewportHazards]);
   const hazardMarks = useMemo(() => hazardMarksFrom(hazardFeatures), [hazardFeatures]);
   const approachFeatures = useMemo(() => approachesToFeatureCollection(putIns ?? []), [putIns]);
   const putInMarks = useMemo<PutInMarkModel[]>(

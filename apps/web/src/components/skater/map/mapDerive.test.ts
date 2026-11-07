@@ -11,6 +11,7 @@ import {
   labelAnchor,
   labelCountIds,
   markObstacle,
+  mergeHazards,
   reportTimesByBody,
   withBayAngles,
 } from './mapDerive';
@@ -309,5 +310,37 @@ describe('clicks', () => {
       'b',
     );
     expect(hitProperty([{ properties: null }], '_id')).toBeUndefined();
+  });
+});
+
+describe('mergeHazards', () => {
+  const h = (id: string, waterBodyId: string) => ({ id, waterBodyId });
+  const around = [h('a1', 'mascoma'), h('c1', 'crystal'), h('s1', 'survivor')];
+
+  it('draws every lake in view when no lake is open', () => {
+    expect(mergeHazards(undefined, around, new Set()).map((x) => x.id)).toEqual(['a1', 'c1', 's1']);
+  });
+
+  it('takes the open lake’s own read, and never draws its viewport rows twice', () => {
+    const own = [h('a1', 'mascoma'), h('a2', 'mascoma')];
+    const ids = mergeHazards(own, around, new Set(['mascoma'])).map((x) => x.id);
+    expect(ids).toEqual(['a1', 'a2', 'c1', 's1']);
+  });
+
+  it('lets the viewport rows stand in while the open lake’s read loads', () => {
+    expect(mergeHazards(undefined, around, new Set(['mascoma'])).map((x) => x.id)).toEqual([
+      'a1',
+      'c1',
+      's1',
+    ]);
+  });
+
+  it('names the open lake both ways — the id it was opened by and its survivor', () => {
+    const ids = mergeHazards([], around, new Set(['merged', 'survivor'])).map((x) => x.id);
+    expect(ids).toEqual(['a1', 'c1']);
+  });
+
+  it('draws the open lake alone before the viewport answers', () => {
+    expect(mergeHazards([h('a1', 'mascoma')], undefined, new Set(['mascoma']))).toHaveLength(1);
   });
 });

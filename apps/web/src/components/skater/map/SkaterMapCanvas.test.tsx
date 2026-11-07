@@ -466,10 +466,38 @@ describe('data into the map', () => {
     expect(useSkaterMapStore.getState().viewportLakes).toHaveLength(2);
   });
 
+  it('draws every lake’s hazards in view, the open lake’s from its own read, and never twice', async () => {
+    const viewportHazard = (id: string, waterBodyId: string, lng: number, lat: number) => ({
+      _id: id,
+      waterBodyId,
+      type: 'thin_ice',
+      geometryKind: 'polygon',
+      geometry: ring(lng, lat, 0.002),
+      freshness: 'fresh',
+      provisional: false,
+    });
+    // At the cap: every row it has still draws.
+    results.set('hazards:listInViewport', {
+      hazards: [
+        viewportHazard('h1', 'mascoma', -72.14, 43.61),
+        viewportHazard('h9', 'crystal', -72.09, 43.59),
+      ],
+      truncated: true,
+    });
+    await mount();
+    expect(queryArgs.get('hazards:listInViewport')).toEqual({ viewport: expect.any(Object) });
+    // Mascoma's from its own read (h1), Crystal's from the viewport (h9): two, not three.
+    expect((map().sources.get('hazards') as GeoJSON.FeatureCollection).features).toHaveLength(2);
+    // The region with no lake open: the viewport read alone.
+    await mount(exploreMapSpec());
+    expect((map().sources.get('hazards') as GeoJSON.FeatureCollection).features).toHaveLength(2);
+  });
+
   it('skips every read while the pane is hidden', async () => {
     await mount(defineMapSpec({ id: 'hidden', visible: false }));
     expect(queryArgs.get('waterBodies:listInViewport')).toBe('skip');
     expect(queryArgs.get('waterBodyFavorites:listForUser')).toBe('skip');
+    expect(queryArgs.get('hazards:listInViewport')).toBe('skip');
     expect(useSkaterMapStore.getState().viewportLakes).toBeNull();
   });
 
