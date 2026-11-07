@@ -600,6 +600,11 @@ export function useSheetResend(): SheetResendState {
   return useSyncExternalStore(subscribe, getSheetResend, getServerResend);
 }
 
+/** The open sheet, read outside React. */
+export function getSheet(): PostSheet | null {
+  return current;
+}
+
 /** The open sheet's last failed attempt, read outside React. */
 export function getSheetAttempt(): PostDraft | null {
   return attempt;
