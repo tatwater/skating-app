@@ -204,15 +204,25 @@ view.
 | --- | --- | --- |
 | **Photon** (komoot's public instance) | OSM-backed, typo-tolerant, no key | public instance asks for fair use, no hard published quota; self-hostable if it ever matters |
 | **Nominatim** (OSM public) | OSM-backed, no key | usage policy: ≤ 1 req/s, identifying User-Agent, **no autocomplete** against the public instance — fine for "geocode this address once" |
-| **MapTiler / Stadia / Geoapify** geocoding | hosted, keyed | free tiers well above our volume; a key in the client; the same vendors we declined for tiles |
+| **MapTiler / Stadia** geocoding | hosted, keyed | a key in the client; the same vendors we declined for tiles |
+| **Geoapify** autocomplete | hosted, keyed; **a new free account**, no card | 3,000 credits/day, 5 req/s, one credit per geocode; commercial use allowed on the free plan ("with some limitations" in production, per its terms); OSM attribution always and "Powered by Geoapify" on the free plan; its terms read 2026-11-07 forbid neither storing a result nor sending an address, and say nothing explicit about either |
 | **Mapbox / Google** | hosted, keyed | metered and proprietary; Google's terms also restrict displaying results on a non-Google map |
-| **OpenRouteService** `/geocode` (Pelias) | the account we already have | Pelias-backed, keyed, in the existing quota family |
+| **OpenRouteService** `/geocode/autocomplete` (Pelias) | the account we already have, no new credential | **100/min, 1,000/day** in its own pool (HeiGIT's plan policy, read 2026-11-07; live `x-ratelimit-limit: 100`), free for everyone; 403 when the day is out, 429 for the minute. Type-ahead is its purpose; no clause restricts storing a result. Sources: OSM (ODbL), OpenAddresses, GeoNames, Who's On First; "© openrouteservice by HeiGIT \| Data from OpenStreetMap" owed where results show. **Its terms prohibit "Transmit personal data (apart from the data required by the HeiGIT account management)"**, and repeat limit-breaking risks the account |
 
 **Leaning:** a Pelias/Photon-class OSM geocoder, keyed, called from a Convex action (never the
 client), result cached on the anchor; **ORS's `/geocode`** is the zero-new-vendor option and is
 probably where to start. Autocomplete-as-you-type is a different product (and a different quota) from
 geocode-on-submit; the anchor needs the latter. *Considered and out:* Google Places (terms +
 metering).
+
+**The typed home address (B03 §11, board 7.18) — the provider is a founder call, open.** It needs
+autocomplete and a stored coordinate, which rules out public Nominatim (no autocomplete) and Google
+and Mapbox (permanent storage restricted). Photon has no quota or availability promise and no address
+data beyond OSM's. The candidates are ORS and Geoapify above, and the choice turns on HeiGIT's
+personal-data clause: a home address is personal data on its plain reading, even sent from our server
+with no name on it, and the account at stake also feeds the drive-time bands, which already send a
+home coordinate. `geocode.suggest` is built behind one adapter in `lib/geocoder.ts` and stays **off**
+until the call is made. The server never logs the text and never answers from a cache.
 
 ### Community references (D70/D71)
 
