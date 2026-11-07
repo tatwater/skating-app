@@ -20,6 +20,7 @@ import { Route as ReackRouteImport } from './routes/reack'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SkaterIndexRouteImport } from './routes/_skater.index'
+import { Route as SkaterLatestRouteImport } from './routes/_skater.latest'
 import { Route as SkaterSettingsRouteImport } from './routes/_skater.settings'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
@@ -99,6 +100,11 @@ const SignUpRoute = SignUpRouteImport.update({
 const SkaterIndexRoute = SkaterIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => SkaterRoute,
+} as any)
+const SkaterLatestRoute = SkaterLatestRouteImport.update({
+  id: '/latest',
+  path: '/latest',
   getParentRoute: () => SkaterRoute,
 } as any)
 const SkaterSettingsRoute = SkaterSettingsRouteImport.update({
@@ -243,6 +249,7 @@ export interface FileRoutesByFullPath {
   '/reack': typeof ReackRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/latest': typeof SkaterLatestRoute
   '/settings': typeof SkaterSettingsRouteWithChildren
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
@@ -279,6 +286,7 @@ export interface FileRoutesByTo {
   '/reack': typeof ReackRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/latest': typeof SkaterLatestRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
@@ -318,6 +326,7 @@ export interface FileRoutesById {
   '/reack': typeof ReackRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/_skater/latest': typeof SkaterLatestRoute
   '/_skater/settings': typeof SkaterSettingsRouteWithChildren
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
@@ -359,6 +368,7 @@ export interface FileRouteTypes {
     | '/reack'
     | '/sign-in'
     | '/sign-up'
+    | '/latest'
     | '/settings'
     | '/admin/features'
     | '/admin/flags'
@@ -395,6 +405,7 @@ export interface FileRouteTypes {
     | '/reack'
     | '/sign-in'
     | '/sign-up'
+    | '/latest'
     | '/admin/features'
     | '/admin/flags'
     | '/admin/ice-calibration'
@@ -433,6 +444,7 @@ export interface FileRouteTypes {
     | '/reack'
     | '/sign-in'
     | '/sign-up'
+    | '/_skater/latest'
     | '/_skater/settings'
     | '/admin/features'
     | '/admin/flags'
@@ -553,6 +565,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof SkaterIndexRouteImport
+      parentRoute: typeof SkaterRoute
+    }
+    '/_skater/latest': {
+      id: '/_skater/latest'
+      path: '/latest'
+      fullPath: '/latest'
+      preLoaderRoute: typeof SkaterLatestRouteImport
       parentRoute: typeof SkaterRoute
     }
     '/_skater/settings': {
@@ -755,6 +774,7 @@ const SkaterSettingsRouteWithChildren = SkaterSettingsRoute._addFileChildren(
 )
 
 interface SkaterRouteChildren {
+  SkaterLatestRoute: typeof SkaterLatestRoute
   SkaterSettingsRoute: typeof SkaterSettingsRouteWithChildren
   SkaterIndexRoute: typeof SkaterIndexRoute
   SkaterBountyIdRoute: typeof SkaterBountyIdRoute
@@ -765,6 +785,7 @@ interface SkaterRouteChildren {
 }
 
 const SkaterRouteChildren: SkaterRouteChildren = {
+  SkaterLatestRoute: SkaterLatestRoute,
   SkaterSettingsRoute: SkaterSettingsRouteWithChildren,
   SkaterIndexRoute: SkaterIndexRoute,
   SkaterBountyIdRoute: SkaterBountyIdRoute,
@@ -835,13 +856,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
