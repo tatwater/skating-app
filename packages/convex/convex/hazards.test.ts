@@ -1876,4 +1876,73 @@ describe('hazards.refileToFootprintBody', () => {
     expect(onHere.map((h) => h._id)).toContain(hazardId);
     expect(onElsewhere.map((h) => h._id)).not.toContain(hazardId);
   });
+
+  /** A named bay of `parent`, square, around `at`. */
+  async function bay(
+    t: ReturnType<typeof convexTest>,
+    parent: Id<'waterBodies'>,
+    { name, lat, lng, half = 0.002 }: { name: string; lat: number; lng: number; half?: number },
+  ) {
+    const mod = (await seedUser(t, `mod-${name}`, { role: 'moderator' })).id;
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: parent,
+        name,
+        searchText: name,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [lng - half, lat - half],
+              [lng + half, lat - half],
+              [lng + half, lat + half],
+              [lng - half, lat + half],
+              [lng - half, lat - half],
+            ],
+          ],
+        },
+        bbox: { minLat: lat - half, minLng: lng - half, maxLat: lat + half, maxLng: lng + half },
+        centroid: { lat, lng },
+        surfaceAreaSqM: 1e5,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: mod,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+  }
+
+  /**
+   * The bay stamp is derived from the body, so it has to move with it. Carrying it over left the
+   * card saying "Far Pond — North Bay" with North Bay a bay of the lake the pin just left.
+   */
+  test('clears a bay stamp that belonged to the lake it left', async () => {
+    const t = harness();
+    await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const stale = await bay(t, elsewhere, { name: 'Far Bay', lat: 42.61, lng: -73.87 });
+    await t.run((ctx) => ctx.db.patch(hazardId, { subAreaId: stale, subAreaName: 'Far Bay' }));
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    const row = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(row?.subAreaId).toBeUndefined();
+    expect(row?.subAreaName).toBeUndefined();
+  });
+
+  test('re-stamps the bay of the lake it joins', async () => {
+    const t = harness();
+    const here = await squareBody(t, { name: 'Mascoma', lat: 43.61, lng: -72.13 });
+    const elsewhere = await squareBody(t, { name: 'Far Pond', lat: 42.61, lng: -73.87 });
+    const hazardId = await strayHazard(t, elsewhere, { lat: 43.61, lng: -72.13 });
+    const cove = await bay(t, here, { name: 'Shaker Cove', lat: 43.61, lng: -72.13 });
+
+    await t.mutation(internal.hazards.refileToFootprintBody, { hazardId, apply: true });
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({
+      waterBodyId: here,
+      subAreaId: cove,
+      subAreaName: 'Shaker Cove',
+    });
+  });
 });

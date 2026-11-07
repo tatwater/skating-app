@@ -564,6 +564,33 @@ describe('orderAccessPutIns', () => {
     expect(ids(orderAccessPutIns([noLot, withLot]))).toEqual(['p2', 'p1']);
   });
 
+  /**
+   * A `parkingAreaId` is not a lot. `accessForBody` drops a lot a moderator hid while the launch's
+   * row keeps pointing at it, and promoting that launch routes a car at the launch with no walk to
+   * describe — the pre-A06d behavior D72 exists to fix.
+   */
+  test('a launch whose lot the caller can’t resolve is not a launch with a lot', () => {
+    // Without a resolvable lot `p1` is a bare shore node, and a bare node loses to a real lot
+    // however short its own walk.
+    const dangling = putIn('p1', { parkingAreaId: 'hidden-lot', approachMeters: 10 });
+    const real = putIn('p2', { parkingAreaId: 'lot', approachMeters: 400 });
+    expect(ids(orderAccessPutIns([dangling, real], new Set(), new Set(['lot'])))).toEqual([
+      'p2',
+      'p1',
+    ]);
+    // Told nothing about the lots, the id alone still counts — the ladder's old behavior.
+    expect(ids(orderAccessPutIns([dangling, real]))).toEqual(['p1', 'p2']);
+  });
+
+  test('chooseAccessTarget does not promote a launch for a lot it hasn’t got', () => {
+    const dangling = putIn('p1', { parkingAreaId: 'hidden-lot' });
+    const real = putIn('p2', { parkingAreaId: 'lot1', approachMeters: 400 });
+    const parking = [{ id: 'lot1', coord: at(9), source: 'osm' as const }];
+    const chosen = chooseAccessTarget([dangling, real], parking);
+    expect(chosen?.putIn.id).toBe('p2');
+    expect(chosen?.via).toBe('parking');
+  });
+
   test('the source ladder outranks the lot: a human’s pin wins', () => {
     const official = putIn('p1', { source: 'official' });
     const osmWithLot = putIn('p2', { parkingAreaId: 'lot', approachMeters: 10 });

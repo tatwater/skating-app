@@ -309,6 +309,16 @@ describe('strayHazardFit', () => {
     // The focus still names the lake it is filed under: the card says which lake, even a wrong one.
     expect(panelMapSpec('b', { hazardId: 'h', fit }).focus).toEqual({ bodyId: 'b', hazardId: 'h' });
   });
+
+  it('frames nothing on `fit: null`, and keeps the lake drawn while it waits', () => {
+    // The gap between the hazard's box and the lake's: no camera move, but the focus and every
+    // layer stay declared, so the pin the skater clicked is still on the map while its card loads.
+    const waiting = panelMapSpec('b', { hazardId: 'h', fit: null });
+    expect(waiting.fit).toBeNull();
+    expect(waiting.focus).toEqual({ bodyId: 'b', hazardId: 'h' });
+    expect(waiting.layers.putIns).toBe(true);
+    expect(waiting.layers.labels).toBe(true);
+  });
 });
 
 describe('resolveMapSpec', () => {

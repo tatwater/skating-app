@@ -33,9 +33,13 @@ export function RoutePrefetch() {
 
   useEffect(() => {
     if (!settled || done.current) return;
-    done.current = true;
 
     const warm = () => {
+      // Marked done **here**, not when the wait is scheduled. A navigation inside the first second
+      // flips `settled` back to false, which runs this effect's cleanup and cancels the pending
+      // wait — so a flag set on scheduling would leave the effect refusing to try again and
+      // nothing would ever be warmed.
+      done.current = true;
       for (const [id, route] of Object.entries(router.routesById)) {
         if (id.startsWith(SKIP_PREFIX)) continue;
         // A chunk that fails to load is not this component's problem: the navigation that needs it

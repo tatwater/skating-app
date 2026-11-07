@@ -9,7 +9,7 @@ import { type BootZone, bootCookieString, readBootZone } from '../lib/boot';
 import { useSheetOwnerBinding } from '../lib/sheetOwner';
 import { AppShell } from './AppShell';
 import { BootScreen } from './skater/BootScreen';
-import { FirstLoadSplash } from './skater/OfflineBoundary';
+import { FirstLoadHold, FirstLoadSplash } from './skater/OfflineBoundary';
 
 /**
  * The *From Google Photos* consent pop-up's landing page. It answers its opener itself and closes,
@@ -56,7 +56,8 @@ export function usesOldShell(pathname: string): boolean {
  * after it gets `BootScreen` — the shell with the page's skeletons — because the boot cookie
  * already says which zone this session resolved to, so the shape is known before a single query
  * answers. The full-screen hold on *every* document load is the thing being fixed: it wipes the
- * app away and puts it back, which reads as a restart rather than as a page loading.
+ * app away and puts it back, which reads as a restart rather than as a page loading. Both holds
+ * sit inside `FirstLoadHold`, so either one becomes the offline screen when the socket never opens.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   // Read once, at the first render on each side: the server reads the request's cookie and the
@@ -93,8 +94,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (bare) return <>{children}</>;
   if (route === 'loading' || target) {
     // Only the skater shell has a boot shape; the console keeps its own hold (`AdminLayout`).
+    //
+    // Either hold escalates to the first-load offline screen (8.12) when the socket never opens:
+    // the profile query is what `loading` is waiting for, so without it a returning load with no
+    // network holds on skeletons forever, with nothing said and nothing to retry.
     return booted === 'app' && !usesOldShell(pathname) ? (
-      <BootScreen pathname={pathname} />
+      <FirstLoadHold>
+        <BootScreen pathname={pathname} />
+      </FirstLoadHold>
     ) : (
       <FirstLoadSplash />
     );

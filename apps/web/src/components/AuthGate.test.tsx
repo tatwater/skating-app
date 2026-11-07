@@ -27,7 +27,14 @@ vi.mock('../lib/sheetOwner', () => ({ useSheetOwnerBinding: vi.fn() }));
 vi.mock('./AppShell', () => ({
   AppShell: ({ children }: { children: ReactNode }) => <div data-testid="shell">{children}</div>,
 }));
-vi.mock('./skater/OfflineBoundary', () => ({ FirstLoadSplash: () => <p>splash</p> }));
+vi.mock('./skater/OfflineBoundary', () => ({
+  FirstLoadSplash: () => <p>splash</p>,
+  // Kept visible in the tree: the hold has to sit *inside* it, or a returning load with no socket
+  // holds on skeletons forever (`OfflineBoundary.test.tsx` owns the escalation itself).
+  FirstLoadHold: ({ children }: { children: ReactNode }) => (
+    <div data-testid="first-load-hold">{children}</div>
+  ),
+}));
 vi.mock('./skater/BootScreen', () => ({
   BootScreen: ({ pathname }: { pathname: string }) => <p>{`boot ${pathname}`}</p>,
 }));
@@ -183,6 +190,10 @@ describe('the hold while auth resolves', () => {
     expect(screen.getByText('boot /water/abc')).toBeInTheDocument();
     expect(screen.queryByText('splash')).not.toBeInTheDocument();
     expect(screen.queryByText('page')).not.toBeInTheDocument();
+    // And it escalates like the splash does: a socket that never opens must reach the skater.
+    expect(screen.getByTestId('first-load-hold')).toContainElement(
+      screen.getByText('boot /water/abc'),
+    );
   });
 
   it('holds on the shape mid-redirect too, not only while Clerk loads', () => {

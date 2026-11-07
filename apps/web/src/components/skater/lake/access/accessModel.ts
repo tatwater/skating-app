@@ -148,8 +148,11 @@ export function putInCards(
   now: number,
 ): PutInCardModel[] {
   const blocked = new Set<string>(access.blockedIds);
-  const best = chooseAccessTarget(access.putIns, access.parking, blocked);
-  const ordered = orderAccessPutIns(access.putIns, blocked) as AccessPutInRow[];
+  const lotIds = new Set(access.parking.map((lot) => lot.id));
+  const ordered = orderAccessPutIns(access.putIns, blocked, lotIds) as AccessPutInRow[];
+  // The recommended way in **is** the top of this list: `chooseAccessTarget` takes the same order's
+  // first row, so asking it again would be the same sort run twice for the same answer.
+  const bestId = ordered[0]?.id;
   return ordered.map((p) => {
     // Never null: one put-in in, one target out.
     const target = chooseAccessTarget([p], access.parking, blocked) as AccessTarget;
@@ -165,7 +168,7 @@ export function putInCards(
       id: p.id,
       name,
       sub: lot ? `Put-in with a lot${lot.name ? ` · ${lot.name}` : ''}` : 'Shore put-in',
-      recommended: best?.putIn.id === p.id,
+      recommended: bestId === p.id,
       lede: lot
         ? `Park at ${lot.name ?? 'the lot'}, then put in at ${p.name ?? 'the shore'}.`
         : null,

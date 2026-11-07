@@ -53,7 +53,7 @@ export function useCardEscape(active: boolean, handler: () => void): void {
 }
 
 /**
- * The lake sidebar's position (27.5 rem, the boards' 440 px): what the card sits over. `behind` is
+ * The lake sidebar's position (`--size-sidebar`, 29.5 rem): what the card sits over. `behind` is
  * whatever the card dims — the lake's sidebar (`LakeBehind`), once the card's lake is known;
  * until then the column is bare ground.
  */

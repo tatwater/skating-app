@@ -62,6 +62,23 @@ describe('RoutePrefetch', () => {
     expect(mocks.loadRouteChunk).not.toHaveBeenCalled();
   });
 
+  it('survives a navigation during the wait — it warms once the router settles again', () => {
+    // The press that happens inside the first second: the router goes busy, the pending wait is
+    // cancelled, and the warm-up has to still be owed. It used to be forgotten for the page's life.
+    mocks.settled = false;
+    const { rerender } = render(<RoutePrefetch />);
+    mocks.settled = true;
+    rerender(<RoutePrefetch />);
+    mocks.settled = false;
+    rerender(<RoutePrefetch />);
+    vi.advanceTimersByTime(PREFETCH_FALLBACK_MS);
+    expect(mocks.loadRouteChunk).not.toHaveBeenCalled();
+    mocks.settled = true;
+    rerender(<RoutePrefetch />);
+    vi.advanceTimersByTime(PREFETCH_FALLBACK_MS);
+    expect(warmed().length).toBeGreaterThan(0);
+  });
+
   it('runs once, not on every later navigation', () => {
     const { rerender } = render(<RoutePrefetch />);
     vi.advanceTimersByTime(PREFETCH_FALLBACK_MS);

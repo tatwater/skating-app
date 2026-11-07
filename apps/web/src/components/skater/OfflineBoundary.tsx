@@ -1,5 +1,5 @@
 import { useRouterState } from '@tanstack/react-router';
-import { useSyncExternalStore } from 'react';
+import { type ReactNode, useSyncExternalStore } from 'react';
 
 import { isMapRoute } from '@/lib/mapSelection';
 import { retryConnection, useBrowserOnline, useConnection } from '@/lib/useConnection';
@@ -23,15 +23,29 @@ function useMounted(): boolean {
 }
 
 /**
- * The auth gate's holding frame: the splash while the app starts, and the first-load offline
+ * The escalation every gate hold needs: `children` while the app starts, and the first-load offline
  * screen (8.12) once the socket has never opened and the grace has run out — without it, a first
- * load with no network sits on the splash forever.
+ * load with no network sits on the hold forever, whatever that hold looks like.
+ *
+ * Shared rather than baked into the splash, because the hold is a splash only on a cold start: from
+ * the second load of a browser session it is `BootScreen` (`lib/boot.ts`), and a skeleton that never
+ * becomes the offline screen is a page that silently never loads.
  */
-export function FirstLoadSplash() {
-  return useMounted() ? <ConnectedFirstLoad /> : <Splash />;
+export function FirstLoadHold({ children }: { children: ReactNode }) {
+  if (!useMounted()) return children;
+  return <ConnectedFirstLoad>{children}</ConnectedFirstLoad>;
 }
 
-function ConnectedFirstLoad() {
+/** The auth gate's cold-start hold: the splash, and the offline screen if the socket never opens. */
+export function FirstLoadSplash() {
+  return (
+    <FirstLoadHold>
+      <Splash />
+    </FirstLoadHold>
+  );
+}
+
+function ConnectedFirstLoad({ children }: { children: ReactNode }) {
   const connection = useConnection();
   const browserOnline = useBrowserOnline();
   if (connection.status === 'offline' && connection.firstLoad) {
@@ -42,7 +56,7 @@ function ConnectedFirstLoad() {
       />
     );
   }
-  return <Splash />;
+  return children;
 }
 
 /**

@@ -497,6 +497,14 @@ export interface AccessTarget {
 const PUTIN_RANK: Record<AccessPutIn['source'], number> = { derived: 0, osm: 1, official: 2 };
 
 /**
+ * Does a live access alert name this launch or the lot it parks at? One copy, because the order and
+ * the chosen target's `alerted` flag have to agree about what "blocked" means.
+ */
+function isBlockedPutIn(p: AccessPutIn, blockedIds: ReadonlySet<string>): boolean {
+  return blockedIds.has(p.id) || (p.parkingAreaId !== undefined && blockedIds.has(p.parkingAreaId));
+}
+
+/**
  * The order the lake's launches are offered in — **one list, used twice**: the drawer's *Getting
  * there* list reads it top to bottom, and `chooseAccessTarget` takes its first row as the one to
  * route to. They were separate before, which let the card at the top of the list and the launch the
@@ -510,7 +518,8 @@ const PUTIN_RANK: Record<AccessPutIn['source'], number> = { derived: 0, osm: 1, 
  *    beats a marker derived from reports. `official` is the only rung a human vouched for.
  * 3. **A launch with a lot beats one without.** The founder's rule, and it follows D72: a launch
  *    with parking is one a car can actually be routed to, and a bare shore node on a dead-end
- *    street is not a place to send somebody in winter.
+ *    street is not a place to send somebody in winter. "With a lot" means *a lot the caller
+ *    actually has* — see `knownParkingIds`.
  * 4. **The shorter walk**, with an unmeasured walk last (`approachRank`).
  *
  * What it deliberately does *not* read is `postedAccess`: a posted rule annotates a launch, and
@@ -519,15 +528,27 @@ const PUTIN_RANK: Record<AccessPutIn['source'], number> = { derived: 0, osm: 1, 
 export function orderAccessPutIns(
   putIns: readonly AccessPutIn[],
   blockedIds: ReadonlySet<string> = new Set(),
+  /**
+   * The lots the caller can resolve — `accessForBody`'s `parking`, keyed by id.
+   *
+   * **A `parkingAreaId` is not a lot.** The server drops a lot a moderator has hidden
+   * (`status !== 'visible'`) while the launch's row keeps pointing at it, so a dangling reference
+   * would win rung 3 and then route a car *at the launch* with no walk to describe — precisely the
+   * pre-A06d behavior D72 exists to fix, now with a promotion attached. Omitted means "I don't
+   * know", and then the id alone counts, which is the ladder's old behavior.
+   */
+  knownParkingIds?: ReadonlySet<string>,
 ): AccessPutIn[] {
-  const isBlocked = (p: AccessPutIn) =>
-    blockedIds.has(p.id) || (p.parkingAreaId !== undefined && blockedIds.has(p.parkingAreaId));
+  const isBlocked = (p: AccessPutIn) => isBlockedPutIn(p, blockedIds);
+  const hasLot = (p: AccessPutIn) =>
+    p.parkingAreaId !== undefined &&
+    (knownParkingIds === undefined || knownParkingIds.has(p.parkingAreaId));
   return [...putIns].sort((a, b) => {
     const blocked = Number(isBlocked(a)) - Number(isBlocked(b));
     if (blocked !== 0) return blocked;
     const rank = PUTIN_RANK[b.source] - PUTIN_RANK[a.source];
     if (rank !== 0) return rank;
-    const lot = Number(b.parkingAreaId !== undefined) - Number(a.parkingAreaId !== undefined);
+    const lot = Number(hasLot(b)) - Number(hasLot(a));
     if (lot !== 0) return lot;
     return approachRank(a) - approachRank(b);
   });
@@ -571,10 +592,9 @@ export function chooseAccessTarget(
   if (putIns.length === 0) return null;
   const parkingById = new Map(parking.map((p) => [p.id, p]));
 
-  const isBlocked = (p: AccessPutIn) =>
-    blockedIds.has(p.id) || (p.parkingAreaId !== undefined && blockedIds.has(p.parkingAreaId));
-
-  const best = orderAccessPutIns(putIns, blockedIds)[0];
+  // The lots are in hand here, so the order is told about them: a launch pointing at a lot this
+  // caller can't resolve must not be promoted for a lot it then can't route to.
+  const best = orderAccessPutIns(putIns, blockedIds, new Set(parkingById.keys()))[0];
   if (!best) return null;
 
   const lot = best.parkingAreaId ? parkingById.get(best.parkingAreaId) : undefined;
@@ -591,7 +611,7 @@ export function chooseAccessTarget(
     approachKind: lot
       ? resolveApproachKind(best.approachMeters, best.approachKindOverride)
       : best.approachKindOverride,
-    alerted: isBlocked(best),
+    alerted: isBlockedPutIn(best, blockedIds),
   };
 }
 

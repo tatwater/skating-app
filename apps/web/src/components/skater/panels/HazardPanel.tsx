@@ -77,17 +77,23 @@ export function HazardPanel({ hazardId, action }: { hazardId: string; action?: '
     () => strayHazardFit(hazardId, hazardBbox, bodyBbox),
     [hazardId, hazardBbox, bodyBbox],
   );
-  // **The camera waits for both reads.** `bodyId` alone is not enough to frame on: it arrives with
-  // the hazard, one round trip before the lake does, and framing the lake in that gap is what sent
-  // a skater who clicked a pin on Mascoma to a body near Albany — by the time the lake's box came
-  // back and said the two disagree, the map had already flown. Holding is free: the card is still
-  // loading anyway, and the camera is already wherever the skater clicked from.
+  // **The camera waits for both reads — the camera, and nothing else.** `bodyId` alone is not
+  // enough to frame on: it arrives with the hazard, one round trip before the lake does, and
+  // framing the lake in that gap is what sent a skater who clicked a pin on Mascoma to a body near
+  // Albany — by the time the lake's box came back and said the two disagree, the map had already
+  // flown. So the fit is withheld (`fit: null`) until both boxes are in, while the lake's focus and
+  // layers stay declared: holding the *whole* spec instead would drop the hazard marks, the put-ins
+  // and the labels for that round trip, so the pin the skater just clicked would vanish while its
+  // card loaded. Holding the camera is free — it is already wherever they clicked from.
   const framed = hazard !== undefined && body !== undefined;
   const spec = useMemo(
     () =>
-      bodyId === undefined || !framed
+      bodyId === undefined
         ? PANEL_LOADING_SPEC
-        : panelMapSpec(bodyId, { hazardId, ...(strayFit ? { fit: strayFit } : {}) }),
+        : panelMapSpec(bodyId, {
+            hazardId,
+            ...(framed ? (strayFit ? { fit: strayFit } : {}) : { fit: null }),
+          }),
     [bodyId, framed, hazardId, strayFit],
   );
   useMapSpec(spec);

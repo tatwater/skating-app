@@ -1120,7 +1120,9 @@ const REFILE_MARGIN_M = 300;
  * asked, because "move this pin to another lake" is not a thing to run speculatively over a corpus.
  *
  * Both bodies' summaries are recomputed when it moves — the one that is losing the pin as much as
- * the one gaining it, or the old lake keeps counting a hazard it no longer has.
+ * the one gaining it, or the old lake keeps counting a hazard it no longer has — and the bay stamp
+ * is re-resolved against the new lake, since every other field derived from the body would
+ * otherwise still describe the old one.
  */
 export const refileToFootprintBody = internalMutation({
   args: { hazardId: v.id('hazards'), apply: v.optional(v.boolean()) },
@@ -1146,7 +1148,7 @@ export const refileToFootprintBody = internalMutation({
 
     const was = hazard.waterBodyId;
     const wasName = (await ctx.db.get(was))?.name ?? null;
-    // No listed body under the pin is not a licence to guess: leave the row alone and say so.
+    // No listed body under the pin is not a license to guess: leave the row alone and say so.
     if (matchId === null)
       return { moved: false as const, reason: 'no-body-at-footprint', was, wasName };
     if (matchId === was) return { moved: false as const, reason: 'already-correct', was, wasName };
@@ -1154,10 +1156,24 @@ export const refileToFootprintBody = internalMutation({
     const now = { was, wasName, now: matchId, nowName: byId.get(matchId)?.name ?? null };
     if (!apply) return { moved: false as const, reason: 'dry-run', ...now };
 
-    await ctx.db.patch(hazardId, { waterBodyId: matchId });
+    // **The bay stamp moves with the lake.** `subAreaId`/`subAreaName` were resolved at create
+    // against the *old* body's bays (`insertHazard`), so carrying them over would have the card say
+    // "Far Pond — North Bay" with North Bay a bay of Mascoma. Re-resolved the same way the write
+    // path resolves it, and cleared when the new lake has no bay under the pin — `undefined` in a
+    // patch removes the field, which is what "this pin is in no named bay" means.
+    const subArea = await resolveSubAreaForPoint(ctx, matchId, center);
+    await ctx.db.patch(hazardId, {
+      waterBodyId: matchId,
+      subAreaId: subArea?.subAreaId,
+      subAreaName: subArea?.subAreaName,
+    });
     // Both ends: the lake losing the pin stops counting it, the lake gaining it starts.
     await recomputeBodySummary(ctx, was);
     await recomputeBodySummary(ctx, matchId);
+    // Standing (A07b), as the create path does it: the lake now carries a hazard somebody drew on
+    // it, and a dormant body yields to that evidence. Gated and idempotent, so a pin that moves
+    // between two active lakes changes nothing.
+    await activateOnEvidence(ctx, matchId, 'hazard');
     return { moved: true as const, reason: 'refiled', ...now };
   },
 });

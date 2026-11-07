@@ -237,10 +237,15 @@ export function panelMapSpec(
     track?: MapOverlay | null;
     photos?: MapOverlay | null;
     /**
-     * Frame something other than the lake. Only the hazard card passes it, and only when the pin it
-     * is about does not sit on the lake it is filed under — see `strayHazardFit`.
+     * Frame something other than the lake, or **`null` to frame nothing yet**.
+     *
+     * Only the hazard card passes either: a `MapFit` when the pin it is about does not sit on the
+     * lake it is filed under (`strayHazardFit`), and `null` while it still has only half the answer
+     * — the hazard's box back and the lake's not. `null` holds the camera where the skater left it
+     * rather than flying it to a lake that may turn out to be the wrong one, and it does that
+     * **without** giving up the lake's focus and layers, so the pin they clicked stays drawn.
      */
-    fit?: MapFit;
+    fit?: MapFit | null;
   } = {},
 ): MapSpec {
   const { subAreaId, hazardId, track = null, photos = null, fit } = options;
@@ -252,7 +257,7 @@ export function panelMapSpec(
       ...(hazardId !== undefined ? { hazardId } : {}),
     },
     layers: ALL_LAYERS,
-    fit: fit ?? { kind: 'body', bodyId },
+    fit: fit === undefined ? { kind: 'body', bodyId } : fit,
     overlays: { track, photos },
     dock: { zoom: true, layers: true, imagery: true, legend: true },
   });

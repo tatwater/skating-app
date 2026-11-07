@@ -21,7 +21,7 @@ vi.mock('@/lib/useConnection', () => ({
 vi.mock('@tanstack/react-router', () => router);
 vi.mock('./RegionBackdrop', () => ({ RegionBackdrop: () => <img alt="" data-testid="region" /> }));
 
-import { FirstLoadSplash, OfflineOverPage } from './OfflineBoundary';
+import { FirstLoadHold, FirstLoadSplash, OfflineOverPage } from './OfflineBoundary';
 
 beforeEach(() => {
   resetFakes();
@@ -41,6 +41,33 @@ describe('FirstLoadSplash', () => {
     expect(screen.getByRole('heading', { name: 'You’re offline' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(conn.retry).toHaveBeenCalledWith(true);
+  });
+});
+
+/**
+ * The escalation belongs to the hold, not to the splash: from the second load of a browser session
+ * the gate holds on `BootScreen`, and a skeleton that never becomes the offline screen is a page
+ * that silently never loads.
+ */
+describe('FirstLoadHold', () => {
+  it('shows the hold it is given while the app starts', () => {
+    render(
+      <FirstLoadHold>
+        <p>skeletons</p>
+      </FirstLoadHold>,
+    );
+    expect(screen.getByText('skeletons')).toBeInTheDocument();
+  });
+
+  it('turns any hold into the offline screen when a first load can’t reach the server', () => {
+    conn.value = { status: 'offline', firstLoad: true, lastConnectedAt: null, lastTriedAt: 1 };
+    render(
+      <FirstLoadHold>
+        <p>skeletons</p>
+      </FirstLoadHold>,
+    );
+    expect(screen.getByRole('heading', { name: 'You’re offline' })).toBeInTheDocument();
+    expect(screen.queryByText('skeletons')).not.toBeInTheDocument();
   });
 });
 
