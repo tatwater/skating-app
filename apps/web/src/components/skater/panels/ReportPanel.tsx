@@ -100,7 +100,7 @@ export function ReportPanel({ reportId }: { reportId: string }) {
   useMapSpec(spec);
 
   usePanelViewed('report_viewed', reportId);
-  const lake = bodyId === undefined ? null : { bodyId };
+  const lake = useMemo(() => (bodyId === undefined ? null : { bodyId }), [bodyId]);
   const close = useClosePanel(lake);
   const lakeName = body?.available ? body.body.name : null;
 

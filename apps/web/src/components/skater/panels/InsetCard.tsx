@@ -188,7 +188,7 @@ export function InsetCard({
         >
           <FontAwesomeIcon icon={faArrowLeft} aria-hidden="true" className="h-3 text-fg2" />
           {backTo === null ? 'Back' : `Back to ${backTo}`}
-          <Kbd className="ml-auto" aria-hidden="true">
+          <Kbd variant="dim" className="ml-auto" aria-hidden="true">
             Esc
           </Kbd>
         </DialogClose>
