@@ -13,7 +13,7 @@ import { AboutView } from '../components/skater/settings/AboutView';
  */
 export const Route = createFileRoute('/about')({ component: AboutPage });
 
-export function AboutPage() {
+function AboutPage() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const stats = useQuery(api.regionStats.list, {});
