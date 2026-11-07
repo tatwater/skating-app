@@ -7,8 +7,8 @@ import {
   weatherRunSummary,
 } from '@skating/core';
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
 import { ConditionIcon } from '@/components/weatherGlyphs';
+import { cn } from '@/lib/utils';
 import { Eyebrow } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
 import { WeatherCorrection } from './WeatherCorrection';

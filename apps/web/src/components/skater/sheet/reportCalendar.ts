@@ -103,7 +103,12 @@ export function clampToWindow(ms: number, nowMs: number): number {
  * The end time moved to `dayStartMs`'s date at the same local clock reading, clamped into the
  * window — so picking yesterday keeps "11:30 AM" and picking today never lands after now.
  */
-export function endOnDay(endMs: number, dayStartMs: number, nowMs: number, timeZone: string): number {
+export function endOnDay(
+  endMs: number,
+  dayStartMs: number,
+  nowMs: number,
+  timeZone: string,
+): number {
   const minute = zonedMinuteOfDay(endMs, timeZone);
   return clampToWindow(zonedInstantOnDayOf(dayStartMs, minute, timeZone), nowMs);
 }

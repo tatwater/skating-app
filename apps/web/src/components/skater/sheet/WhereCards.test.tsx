@@ -7,8 +7,15 @@ import { type WhereCard, WhereCards } from './WhereCards';
 
 /** What the instrument would read: the mode's label, so a click on the ring answers the right card. */
 function ModeProbe() {
-  const { mode } = useConsoleMode();
-  return <output data-testid="mode">{mode?.kind === 'where' ? mode.label : 'none'}</output>;
+  const { mode, exit } = useConsoleMode();
+  return (
+    <>
+      <output data-testid="mode">{mode?.kind === 'where' ? mode.label : 'none'}</output>
+      <button type="button" onClick={exit}>
+        Instrument done
+      </button>
+    </>
+  );
 }
 
 function Harness({ initialOpen = true }: { initialOpen?: boolean }) {
@@ -79,10 +86,12 @@ describe('WhereCards', () => {
     expect(screen.getByTestId('mode')).toHaveTextContent('none');
   });
 
-  it('Escape leaves the mode from anywhere, and closes the question that opened it', () => {
+  it('Escape is the sheet’s, never the mode’s; the instrument’s Done leaves it and the question', () => {
     render(<Harness />);
     expect(screen.getByTestId('mode')).toHaveTextContent('Black ice');
     fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('mode')).toHaveTextContent('Black ice');
+    fireEvent.click(screen.getByRole('button', { name: 'Instrument done' }));
     expect(screen.getByTestId('mode')).toHaveTextContent('none');
     expect(screen.queryByText(/Where is the/)).not.toBeInTheDocument();
   });

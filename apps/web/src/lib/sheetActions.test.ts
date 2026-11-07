@@ -18,6 +18,15 @@ vi.mock('./sheetPhotos', () => ({
   sheetPhotoBlob: (uri: string) => blobs.get(uri) ?? null,
 }));
 
+const store = vi.hoisted(() => ({
+  resend: 'none' as 'none' | 'waiting' | 'sending',
+  setSheetAttempt: (() => {}) as (draft: unknown) => void,
+}));
+vi.mock('./sheetStore', () => ({
+  getSheetResend: () => store.resend,
+  setSheetAttempt: (draft: unknown) => store.setSheetAttempt(draft),
+}));
+
 /** A filled one-lake Post: a quality, an ice type and an end time — D189's minimum set. */
 function filled(): PostSheet {
   const post = openPostSheet('body', { waterBodyId: 'wb1', bodyName: 'Morey' }, NOW, mint);
@@ -80,6 +89,32 @@ function recorder(overrides: Record<string, (args: Record<string, unknown>) => u
 beforeEach(() => {
   blobs.clear();
   vi.clearAllMocks();
+  store.resend = 'none';
+  store.setSheetAttempt = () => {};
+});
+
+describe('postSheetOnWeb — the checkpoints', () => {
+  it("writes each checkpoint onto the open sheet's attempt while its send is in flight", async () => {
+    store.resend = 'sending';
+    const seen: Array<{ status: string }> = [];
+    store.setSheetAttempt = (draft) => seen.push(draft as { status: string });
+    const { client } = recorder({
+      'posts:create': () => ({ postId: 'post-1', reportIds: ['rep-1'] }),
+    });
+    await postSheetOnWeb(client, filled(), NOW);
+    // The `creating` mark is on the record before the create goes out: a tab closed now keeps it.
+    expect(seen.some((d) => d.status === 'creating')).toBe(true);
+  });
+
+  it('writes nothing when no send of the open sheet is in flight', async () => {
+    const seen: unknown[] = [];
+    store.setSheetAttempt = (draft) => seen.push(draft);
+    const { client } = recorder({
+      'posts:create': () => ({ postId: 'post-1', reportIds: ['rep-1'] }),
+    });
+    await postSheetOnWeb(client, filled(), NOW);
+    expect(seen).toEqual([]);
+  });
 });
 
 describe('postSheetOnWeb', () => {

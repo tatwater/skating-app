@@ -1,16 +1,20 @@
+import { Collapsible as CollapsiblePrimitive } from '@base-ui/react/collapsible';
 import type { ReactNode } from 'react';
+import { Collapsible, CollapsibleChevron, CollapsibleContent } from '@/components/kit/collapsible';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { cn } from '@/lib/utils';
 
 /**
- * One section of the sheet, as a console panel (A10-5 §10.1, re-skinned A10-6 / D206): the header
- * row is a status square, the section's name as an instrument label, its one-line summary once it
- * is filled, and the collapse caret; the body underneath while it is open.
+ * One question of the report sheet (B03 §5, boards 5.1–5.12): the folded line is the 44 px row —
+ * the square (hollow, filled once answered, amber while a refused *Post* needs it), the title in
+ * caps, the answer's summary at the right in mono, the chevron — and the whole row opens it.
  *
- * **The square is the section's state**, legend-free: hollow = nothing yet, filled = has data,
- * amber = the minimum set still wants it (D189) after a *Post* attempt. An open panel sits on the
- * raised surface with bracket corners — *this is the one being edited* — and a collapsed one is a
- * flat row. Same rules as the phone's `SheetSection`, because they are the sheet's rules and not a
- * surface's: the header never moves and never reorders, and collapsing is the author's click.
+ * **No helper lines under a head** (Review 3): what a control needs explaining says so in a tooltip
+ * on that control (`SubLabel`'s `tip`). What a panel still prints (`SheetHint`) is state — a refusal,
+ * an empty list — never instructions.
+ *
+ * The open/closed state is the sheet's own (`collapsed`, core's reducer), so a reload and a second
+ * tab keep it; the kit `Collapsible` draws the reveal.
  */
 export function SheetPanel({
   label,
@@ -22,50 +26,62 @@ export function SheetPanel({
   id,
 }: {
   label: string;
-  /** Empty when the section has nothing yet; the header then reads the name alone. */
   summary: string;
   collapsed: boolean;
   onToggle: () => void;
+  /** A refused *Post* needs this section (D189). */
   gap?: boolean;
   children: ReactNode;
   id?: string;
 }) {
   const filled = summary.length > 0;
   return (
-    <section
+    <Collapsible
       {...(id !== undefined ? { id } : {})}
-      className={cn('border-border border-b', !collapsed && 'sheet-brackets bg-surface-muted/60')}
+      open={!collapsed}
+      onOpenChange={(open) => {
+        if (open === collapsed) onToggle();
+      }}
+      data-slot="sheet-section"
+      data-gap={gap ? '' : undefined}
+      className="border-0 border-b border-solid border-line"
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!collapsed}
-        className="flex h-[34px] w-full items-center gap-2.5 px-3.5 text-left hover:bg-surface-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      <CollapsiblePrimitive.Trigger
+        data-slot="sheet-section-trigger"
+        data-attr={id}
+        className={cn(
+          'group/collapsible flex h-11 w-full cursor-pointer items-center gap-(--space-2_5) border-0 bg-transparent px-0 text-left outline-none',
+          'focus-visible:shadow-focus',
+        )}
       >
         <StatusSquare state={gap ? 'needed' : filled ? 'filled' : 'empty'} />
-        <Eyebrow className={gap ? 'text-warning' : undefined}>{label}</Eyebrow>
-        {gap ? <Eyebrow className="text-warning">· needed</Eyebrow> : null}
-        <span className="flex-1" />
-        {filled && collapsed ? (
-          <span className="max-w-[55%] truncate text-foreground text-xs">{summary}</span>
-        ) : null}
-        <span aria-hidden className="text-[10px] text-foreground-muted">
-          {collapsed ? '▼' : '▲'}
+        <span className="text-kick leading-none font-semibold tracking-head text-fg uppercase">
+          {label}
         </span>
-      </button>
-      {collapsed ? null : (
-        <div className="flex flex-col gap-2.5 px-3.5 pt-0.5 pb-3.5">{children}</div>
-      )}
-    </section>
+        <span
+          data-slot="sheet-section-value"
+          className={cn(
+            'ml-auto min-w-0 truncate font-(family-name:--family-mono) text-mono-sm leading-none',
+            gap ? 'text-warn' : 'text-fg2',
+          )}
+        >
+          {gap ? 'Needed' : collapsed ? summary : ''}
+        </span>
+        <CollapsibleChevron className="text-fg3 group-data-panel-open/collapsible:rotate-90" />
+      </CollapsiblePrimitive.Trigger>
+      <CollapsibleContent>
+        <div className="flex flex-col gap-(--space-2_5) pt-0.5 pb-(--space-4_5)">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-/** The section's name as the instrument label it is: mono, caps, tracked. */
+/** A small caps label — a kicker over a value. */
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        'font-mono text-[10.5px] text-foreground-muted uppercase tracking-[0.14em]',
+        'text-kick leading-none font-medium tracking-head text-fg3 uppercase',
         className,
       )}
     >
@@ -74,41 +90,55 @@ export function Eyebrow({ children, className }: { children: ReactNode; classNam
   );
 }
 
-/** A section's state, as a 7-px square. Hollow, filled, or amber for needed (D189). */
+/** The section's square: hollow, answered, needed — or ice (saved, live). */
 export function StatusSquare({ state }: { state: 'empty' | 'filled' | 'needed' | 'ice' }) {
   return (
     <span
       aria-hidden
+      data-state={state}
       className={cn(
-        'inline-block size-[7px] shrink-0 border',
-        state === 'empty' && 'border-border-strong',
-        state === 'filled' && 'border-foreground bg-foreground',
-        state === 'needed' && 'border-warning bg-warning shadow-[0_0_6px_var(--warning)]',
-        state === 'ice' && 'border-primary bg-primary shadow-[0_0_6px_var(--ring)]',
+        'inline-block size-2 shrink-0',
+        state === 'empty' && 'inset-ring inset-ring-fg2',
+        state === 'filled' && 'bg-fg1',
+        state === 'needed' && 'bg-warn shadow-[0_0_6px_var(--warn)]',
+        state === 'ice' && 'bg-acc',
       )}
     />
   );
 }
 
-/** A quiet helper line under a row — a suggestion's source, a note on what the row means. */
+/** A state line inside a panel — a refusal, an empty list. Never instructions (those are tooltips). */
 export function SheetHint({ children }: { children: ReactNode }) {
-  return <p className="text-foreground-muted text-xs leading-4">{children}</p>;
+  return <p className="m-0 text-assist leading-body text-fg3 [text-wrap:pretty]">{children}</p>;
 }
 
-/** A small label above a sub-row inside a section ("Surface", "Drifts"). */
-export function SubLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="pt-1 font-mono text-[10px] text-foreground-muted uppercase tracking-[0.1em]">
+/**
+ * A sub-question's label ("Did it hold you?"). `tip` is what it would have explained in a helper
+ * line, as the one tooltip style, on the label itself.
+ */
+export function SubLabel({ children, tip }: { children: ReactNode; tip?: string }) {
+  const label = (
+    <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
       {children}
+    </span>
+  );
+  return (
+    <p className="m-0 mt-(--space-1_5)">
+      {tip === undefined ? (
+        label
+      ) : (
+        <Tooltip>
+          <TooltipTrigger variant="text" tabIndex={0}>
+            {label}
+          </TooltipTrigger>
+          <TooltipContent>{tip}</TooltipContent>
+        </Tooltip>
+      )}
     </p>
   );
 }
 
-/**
- * A question block inside a panel — the where question, the put-in question — the one thing on
- * the console that borders in ice, because opening it is what puts the instrument into a mode
- * (`ConsoleMode`). Its head names the question and carries *Done*.
- */
+/** A question asked in place (where, put-in): the open card with its Done. Ice: the map is the input. */
 export function QuestionBlock({
   title,
   onDone,
@@ -117,20 +147,22 @@ export function QuestionBlock({
 }: {
   title: string;
   onDone: () => void;
-  /** Between the title and *Done* — a count, a skip. */
   extra?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-[2px] border border-primary bg-background p-2.5">
-      <div className="flex items-center gap-2.5">
-        <Eyebrow className="text-primary">{title}</Eyebrow>
+    <div className="flex flex-col gap-(--space-2_5) border border-solid border-acc bg-acc-wash p-(--space-3_5)">
+      <div className="flex items-center gap-(--space-2_5)">
+        <span className="text-kick leading-none font-semibold tracking-head text-fg uppercase">
+          {title}
+        </span>
         <span className="flex-1" />
         {extra}
         <button
           type="button"
           onClick={onDone}
-          className="h-[22px] rounded-[2px] border border-foreground bg-foreground px-2 font-semibold text-[11px] text-background uppercase tracking-[0.08em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-attr="sheet-question-done"
+          className="h-btn-xs rounded-control border-0 bg-inv-bg px-(--space-2_5) text-kick font-semibold tracking-head text-inv-fg uppercase outline-none focus-visible:shadow-focus"
         >
           Done
         </button>

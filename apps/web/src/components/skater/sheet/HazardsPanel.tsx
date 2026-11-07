@@ -15,14 +15,13 @@ import {
   selectedValues,
   toggleBundleOptOut,
 } from '@skating/core';
-import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useCallback, useMemo } from 'react';
 import { HazardBundlePrompt } from '@/components/HazardBundlePrompt';
-import { buttonVariants } from '@/components/ui/button';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
+import { ReportHazardButton } from './sheetSlots';
 import type { SheetHazard } from './useSheetBody';
 
 const VERDICT_LABELS: Record<PassedVerdict, string> = {
@@ -146,21 +145,8 @@ export function HazardsPanel({
       }
       gap={gaps.has('hazards')}
     >
-      {body ? (
-        <div className="flex flex-col gap-1">
-          <Link
-            to="/water/$id"
-            params={{ id: body.waterBodyId }}
-            search={{ hazard: true }}
-            className={buttonVariants({ variant: 'outline', className: 'self-start' })}
-          >
-            Mark one here
-          </Link>
-          <SheetHint>
-            This opens the lake's map to draw it. Your post is kept — come back to it when you're
-            done, and the new pin will be offered here.
-          </SheetHint>
-        </div>
+      {body && !editing ? (
+        <ReportHazardButton waterBodyId={body.waterBodyId} reportId={report.id} />
       ) : null}
       {body && !editing && end !== undefined ? (
         <HazardBundlePrompt
@@ -181,7 +167,7 @@ export function HazardsPanel({
       ) : null}
       {offered.length > 0 ? (
         <div className="flex flex-col gap-2.5">
-          <SubLabel>
+          <SubLabel tip="Only what you answer is sent. Not answering is not a vote.">
             {passed.length > 0 ? 'You skated past these' : 'Did you see any of these?'}
           </SubLabel>
           {offered.map(({ hazard, passed: p }) => {
@@ -218,7 +204,6 @@ export function HazardsPanel({
               </div>
             );
           })}
-          <SheetHint>Only what you answer is sent. Not answering is not a vote.</SheetHint>
         </div>
       ) : body && body.hazards.length === 0 ? (
         <SheetHint>No open hazards on this lake right now.</SheetHint>

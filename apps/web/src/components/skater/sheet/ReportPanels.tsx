@@ -47,13 +47,12 @@ import {
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Textarea } from '@/components/kit/textarea';
 import { updateSheet } from '@/lib/sheetStore';
 import { cn } from '@/lib/utils';
-import { Textarea } from '@/components/ui/textarea';
 import { AccessPanel } from './AccessPanel';
 import { EndTimePanel } from './EndTimePanel';
 import { HazardsPanel } from './HazardsPanel';
-import { PhotosPanel } from './PhotosPanel';
 import { ChipRow, SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
 import type { DispatchOpts, SectionProps } from './sectionProps';
@@ -103,7 +102,7 @@ export function ReportPanels({
   usePeerGhosts(props, body);
 
   return (
-    <div className="flex flex-col">
+    <div data-slot="sheet-sections" className="flex flex-col">
       <HowWasIt {...props} />
       <ObservedFromPanel {...props} />
       <EndTimePanel {...props} />
@@ -112,7 +111,6 @@ export function ReportPanels({
       <ThicknessPanel {...props} />
       <HazardsPanel {...props} />
       <AccessPanel {...props} />
-      <PhotosPanel {...props} />
       <Note {...props} />
     </div>
   );
@@ -151,7 +149,6 @@ function HowWasIt({ report, dispatch, gaps, timeZone }: SectionProps) {
         field="suitability"
         options={SUITABILITIES}
         label={(s) => SUITABILITY_LABELS[s]}
-        danger="dont_go"
         onSelect={(s) => dispatch({ type: 'select', field: 'suitability', key: s, value: s })}
         onDeselect={(key) => dispatch({ type: 'deselect', field: 'suitability', key })}
       />
@@ -205,14 +202,13 @@ export function ObservedFromPanel({ report, body, dispatch, gaps, timeZone }: Se
       />
       {from !== undefined ? (
         <>
-          <SubLabel>
+          <SubLabel
+            {...(from === 'on_ice'
+              ? { tip: 'Open water down the lake, ice you didn’t reach — each with where it was.' }
+              : {})}
+          >
             {from === 'on_ice' ? 'What did you see but not skate?' : 'What did you see?'}
           </SubLabel>
-          {from === 'on_ice' ? (
-            <SheetHint>
-              Open water down the lake, ice you didn’t reach — each with where it was.
-            </SheetHint>
-          ) : null}
           <ChipRow<'sightings', Sighting>
             sheet={sheet}
             field="sightings"
@@ -516,7 +512,7 @@ function Note({ report, dispatch, gaps, timeZone }: SectionProps) {
   return (
     <SheetPanel
       id="section-note"
-      label="Anything else about this lake"
+      label="Anything else"
       summary={sectionSummary(sheet, 'writing', timeZone)}
       collapsed={sheet.collapsed.writing}
       onToggle={() =>
@@ -525,6 +521,9 @@ function Note({ report, dispatch, gaps, timeZone }: SectionProps) {
       gap={gaps.has('writing')}
     >
       <Textarea
+        aria-label="Anything else about this lake"
+        data-attr="sheet-notes"
+        className="ph-no-capture"
         value={sheet.scalars.notes}
         onChange={(e) => dispatch({ type: 'setScalar', key: 'notes', value: e.target.value })}
         placeholder="A line the lake's page shows on its own — the story goes up top."

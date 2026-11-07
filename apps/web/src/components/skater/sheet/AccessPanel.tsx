@@ -145,9 +145,6 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
               }}
             />
           </div>
-          <SheetHint>
-            The launches are lit on the lake. Click one, or click the shore for somewhere else.
-          </SheetHint>
         </QuestionBlock>
       ) : (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -178,16 +175,19 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
       ) : null}
 
       <div className="flex flex-col gap-1.5">
-        <SubLabel>What did you find there?</SubLabel>
-        {editing ? (
-          // The chips file alerts when a Post creates (D197, the flush's step 7, with the new Report
-          // as provenance); an edit has no such step, so offering them here would take a plank the
-          // author clicked and quietly file nothing. The alerts already filed stand on their own.
-          <SheetHint>
-            Conditions at the launch are filed when a report posts; this edit leaves what was filed
-            as it is.
-          </SheetHint>
-        ) : target ? (
+        {/* The chips file alerts when a Post creates (D197, the flush's step 7, with the new Report
+          as provenance); an edit has no such step, so offering them here would take a plank the
+          author clicked and quietly file nothing. The alerts already filed stand on their own. */}
+        <SubLabel
+          {...(editing
+            ? {
+                tip: 'Conditions at the launch are filed when a report posts; an edit leaves what was filed as it is.',
+              }
+            : {})}
+        >
+          What did you find there?
+        </SubLabel>
+        {editing ? null : target ? (
           <>
             <div className="flex flex-wrap gap-1.5">
               {ACCESS_CONDITION_REASONS.map((reason) => {
@@ -233,6 +233,7 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
       <div className="flex flex-col gap-1">
         <div className="flex">
           <SheetChip
+            tip={SHOW_PUT_IN_EXPLAINER}
             label={SHOW_PUT_IN_LABEL}
             {...(sheet.scalars.showPutIn !== false ? { tier: 'solid' as const } : {})}
             onClick={() =>
@@ -244,7 +245,6 @@ export function AccessPanel({ report, body, dispatch, gaps, editing, timeZone }:
             }
           />
         </div>
-        <SheetHint>{SHOW_PUT_IN_EXPLAINER}</SheetHint>
       </div>
     </SheetPanel>
   );

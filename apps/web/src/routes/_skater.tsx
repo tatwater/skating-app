@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { SkaterRequestLakeHost } from '../components/skater/actions/RequestLakePane';
 import { MapFrame } from '../components/skater/map/MapFrame';
 import { SkaterShell } from '../components/skater/SkaterShell';
+import { ReportSheetHost } from '../components/skater/sheet/ReportSheetHost';
 import { useHazardDraftOwnerBinding } from '../lib/hazardDraftOwner';
 import { skaterRootSearchSchema } from '../lib/skaterSearch';
 
@@ -26,6 +27,7 @@ function SkaterLayout() {
         <Outlet />
       </MapFrame>
       <SkaterRequestLakeHost />
+      <ReportSheetHost />
     </SkaterShell>
   );
 }

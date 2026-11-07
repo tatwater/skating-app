@@ -29,7 +29,9 @@ describe('calendarDays — the boards', () => {
 
   it('draws two rows, last week and this one, Sunday first', () => {
     expect(days).toHaveLength(14);
-    expect(days.map((d) => d.dayOfMonth)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    expect(days.map((d) => d.dayOfMonth)).toEqual([
+      3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    ]);
     expect(days.filter((d) => d.today).map((d) => d.dayOfMonth)).toEqual([16]);
     expect(days.some((d) => d.future)).toBe(false);
   });

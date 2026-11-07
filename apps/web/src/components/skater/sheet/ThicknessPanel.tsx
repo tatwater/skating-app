@@ -16,7 +16,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SheetChip } from './SheetChip';
-import { SheetHint, SheetPanel, SubLabel } from './SheetPanel';
+import { SheetPanel, SubLabel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
 import { WherePicker } from './WherePicker';
 
@@ -371,9 +371,7 @@ function ReadingEditor({
             />
           ))}
         </div>
-      ) : (
-        <SheetHint>Pokes are yours and your pole's — the count is kept as a count.</SheetHint>
-      )}
+      ) : null}
       <SubLabel>Did it hold you?</SubLabel>
       <div className="flex flex-wrap gap-1.5">
         <SheetChip

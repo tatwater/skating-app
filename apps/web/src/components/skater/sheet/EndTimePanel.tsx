@@ -7,8 +7,11 @@ import {
   selectedValues,
 } from '@skating/core';
 import { useEffect, useMemo, useState } from 'react';
+import { Input } from '@/components/kit/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { datetimeLocalToMs, toDatetimeLocal } from '@/lib/reportForm';
-import { Input } from '@/components/ui/input';
+import { DayCalendar } from './DayCalendar';
+import { dayStartOf, endOnDay, ladderOnDay } from './reportCalendar';
 import { SheetChip } from './SheetChip';
 import { SheetHint, SheetPanel } from './SheetPanel';
 import type { SectionProps } from './sectionProps';
@@ -71,7 +74,20 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
     [timeZone],
   );
   const clock = (ms: number) => clockFormat.format(ms);
-  const offLadder = chosen !== undefined && !row.chips.some((c) => c.ms === chosen.ms);
+  // The day the end time is on (5.6/5.7): today unless the author picked another in the calendar.
+  const openDay = dayStartOf(row.chips[0]?.ms ?? now, timeZone);
+  const day = chosen !== undefined ? dayStartOf(chosen.ms, timeZone) : openDay;
+  const ladder = ladderOnDay(row.chips, day, now, timeZone);
+  const offLadder = chosen !== undefined && !ladder.some((c) => c.ms === chosen.ms);
+  const pickDay = (dayStartMs: number) => {
+    const from = chosen?.ms ?? row.chips[row.preselected ?? 1]?.ms ?? now;
+    dispatch({
+      type: 'select',
+      field: 'endTime',
+      key: 'chosen',
+      value: { ms: endOnDay(from, dayStartMs, now, timeZone), precision: 'half_hour' },
+    });
+  };
 
   return (
     <SheetPanel
@@ -84,12 +100,25 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
       }
       gap={gaps.has('endTime')}
     >
-      <div className="grid grid-cols-[64px_1fr] items-start gap-x-3 gap-y-2">
-        <RowLabel>End</RowLabel>
+      <div className="grid grid-cols-[4.5rem_1fr] items-start gap-x-(--space-3) gap-y-(--space-2_5)">
+        {gps || row.reason === 'expired' ? null : (
+          <>
+            <RowLabel>Day</RowLabel>
+            <DayCalendar
+              dayStartMs={day}
+              nowMs={now}
+              timeZone={timeZone}
+              onPick={(d) => pickDay(d.startMs)}
+            />
+          </>
+        )}
+        <RowLabel tip="Drag the marks on the day's ruler, or set them here. Sunrise and sunset are the lake's.">
+          End
+        </RowLabel>
         {gps ? (
-          <p className="text-foreground text-sm">
+          <p className="m-0 pt-1 text-row text-fg">
             {formatSkateTime(chosen.ms)}
-            <span className="text-foreground-muted text-xs"> · from your track</span>
+            <span className="text-assist text-fg2"> · from your track</span>
           </p>
         ) : row.reason === 'expired' ? (
           <SheetHint>
@@ -97,9 +126,14 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
             the ice — start a new one.
           </SheetHint>
         ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-1.5">
-              {row.chips.map((chip) => (
+          <div className="flex flex-col gap-(--space-2)">
+            {row.reason === 'after_dark' && chosen === undefined ? (
+              <p className="m-0 text-assist text-warn">
+                It's after dark — which day was it, and when did you come off?
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-(--space-1_5)">
+              {ladder.map((chip) => (
                 <SheetChip
                   key={chip.ms}
                   compact
@@ -129,24 +163,32 @@ export function EndTimePanel({ report, body, dispatch, gaps, timeZone }: Section
                 }}
               />
             ) : null}
-            {row.reason === 'after_dark' && chosen === undefined ? (
-              <SheetHint>It's after dark — when did you come off?</SheetHint>
-            ) : null}
           </div>
         )}
         <StartWindow report={report} dispatch={dispatch} />
       </div>
-      <SheetHint>
-        Drag the marks on the timeline, or set them here. Sunrise and sunset are the lake's.
-      </SheetHint>
     </SheetPanel>
   );
 }
 
-function RowLabel({ children }: { children: string }) {
-  return (
-    <span className="pt-1.5 font-mono text-[10px] text-foreground-muted uppercase tracking-[0.1em]">
+function RowLabel({ children, tip }: { children: string; tip?: string }) {
+  const label = (
+    <span className="text-kick leading-none font-medium tracking-head text-fg3 uppercase">
       {children}
+    </span>
+  );
+  return (
+    <span className="pt-(--space-2)">
+      {tip === undefined ? (
+        label
+      ) : (
+        <Tooltip>
+          <TooltipTrigger variant="text" tabIndex={0}>
+            {label}
+          </TooltipTrigger>
+          <TooltipContent>{tip}</TooltipContent>
+        </Tooltip>
+      )}
     </span>
   );
 }
@@ -185,20 +227,20 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
     return (
       <>
         <RowLabel>Started</RowLabel>
-        <p className="pt-1 text-foreground text-sm">
+        <p className="m-0 pt-1 text-row text-fg">
           {formatSkateTime(start)}
-          <span className="text-foreground-muted text-xs"> · from your track</span>
+          <span className="text-assist text-fg2"> · from your track</span>
         </p>
         <RowLabel>How long</RowLabel>
-        <p className="pt-1 text-foreground text-sm">{duration ?? '—'}</p>
+        <p className="m-0 pt-1 text-row text-fg">{duration ?? '—'}</p>
       </>
     );
   }
   return (
     <>
       <RowLabel>Started</RowLabel>
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-col gap-(--space-2)">
+        <div className="flex flex-wrap gap-(--space-1_5)">
           <SheetChip
             compact
             label={start !== undefined ? formatSkateTime(start) : 'A start time'}
@@ -221,8 +263,8 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
         ) : null}
       </div>
       <RowLabel>How long</RowLabel>
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-col gap-(--space-2)">
+        <div className="flex flex-wrap items-center gap-(--space-1_5)">
           <SheetChip
             compact
             label={duration ?? 'How long'}
@@ -233,7 +275,7 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
           {mode === 'duration' && end ? (
             <Input
               inputMode="numeric"
-              className="h-7 max-w-36"
+              className="max-w-36"
               placeholder="minutes, e.g. 90"
               aria-label="How long you were on the ice, in minutes"
               value={durationStr}
@@ -250,7 +292,7 @@ function StartWindow({ report, dispatch }: Pick<SectionProps, 'report' | 'dispat
           ) : null}
         </div>
         {error ? (
-          <p className="text-danger text-xs">{error}</p>
+          <p className="m-0 text-assist text-warn">{error}</p>
         ) : mode !== 'none' && !end ? (
           <SheetHint>Say when you got off first — a start time is read back from it.</SheetHint>
         ) : null}

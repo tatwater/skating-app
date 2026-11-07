@@ -9,7 +9,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { AccessPanel } from './AccessPanel';
-import { ConsoleModeProvider } from './ConsoleMode';
+import { ConsoleModeProvider, useConsoleMode } from './ConsoleMode';
 import type { SheetBody } from './useSheetBody';
 
 const NOW = Date.UTC(2026, 0, 10, 20);
@@ -35,6 +35,16 @@ const body: SheetBody = {
 /** The launches are offered inside the put-in question (A10-6): open it, as the author would. */
 function openPutIn() {
   fireEvent.click(screen.getByRole('button', { name: 'Choose on the lake' }));
+}
+
+/** The instrument's Done, which leaves the mode from outside the question. */
+function InstrumentDone() {
+  const { exit } = useConsoleMode();
+  return (
+    <button type="button" onClick={exit}>
+      Instrument done
+    </button>
+  );
 }
 
 /** Drive the real reducer, so the panel is asserted against the rules and not against a spy. */
@@ -70,6 +80,7 @@ function renderPanel(opts: { editing?: boolean } = {}) {
   render(
     <ConsoleModeProvider>
       <Wrapper />
+      <InstrumentDone />
     </ConsoleModeProvider>,
   );
   return { dispatched, get: () => latest as SheetReport };
@@ -94,12 +105,15 @@ describe('the put-in (§7.1 / D198)', () => {
    * The point *was* the launch's coordinate. Left behind when the launch is un-chosen it reads as
    * *Somewhere else · set* and posts as a nameless proposal for a launch the corpus already has.
    */
-  it('Escape closes the question with the mode, so the block never outlives the lit launches', () => {
+  it('leaving the mode from the instrument closes the question, so the block never outlives it', () => {
     renderPanel();
     openPutIn();
-    expect(screen.getByText(/The launches are lit on the lake/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    // Escape is the sheet's (one per screen): the question stays.
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByText(/The launches are lit on the lake/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Instrument done' }));
+    expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose on the lake' })).toBeInTheDocument();
   });
 
@@ -138,7 +152,7 @@ describe('the conditions (§7.2 / D197)', () => {
   it('are not offered on the edit door — they say so instead', () => {
     renderPanel({ editing: true });
     expect(screen.queryByRole('button', { name: 'Plank needed' })).not.toBeInTheDocument();
-    expect(screen.getByText(/filed when a report posts/)).toBeInTheDocument();
+    expect(screen.getByText('What did you find there?')).toBeInTheDocument();
   });
 });
 

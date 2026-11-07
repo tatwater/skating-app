@@ -1,5 +1,6 @@
 import type { ChipField, ChipTier, ReportSheetState, SheetFieldKey } from '@skating/core';
 import type { ReactNode } from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/kit/tooltip';
 import { cn } from '@/lib/utils';
 
 /**
@@ -14,18 +15,18 @@ import { cn } from '@/lib/utils';
  *   less than a click (founder call 2026-09-23: a less-strong selected, never a different style).
  * - **ghost** — someone else implied it: a dashed outline and a leading `+`, muted. Reads as an
  *   offer, never as a fill; a click makes it solid.
- * - **danger** — *don't go* (D190), the one chip that wears red, solid only.
+ * - *Don't go* (D190) is one more chip here: only the feed colors it (Review 4).
  *
  * Two pixels of radius, one hairline: blocky, as the rest of the sheet. Deliberately not the shadcn
- * `Toggle`: three tiers, a danger treatment and an offerable state are more than `pressed` can say.
+ * `Toggle`: three tiers and an offerable state are more than `pressed` can say.
  */
 export function SheetChip({
   label,
   tier,
   onClick,
-  danger = false,
   compact = false,
   title,
+  tip,
   trailing,
   emphasis = false,
 }: {
@@ -33,17 +34,17 @@ export function SheetChip({
   /** `undefined` = an unselected, plain option (the row's own vocabulary, nobody suggested it). */
   tier?: ChipTier;
   onClick: () => void;
-  /** The warning treatment — *don't go* (D190). Solid only. */
-  danger?: boolean;
   compact?: boolean;
   title?: string;
+  /** What the chip would need a helper line to explain, as the one tooltip style (Review 3). */
+  tip?: string;
   /** A small mark after the label — the `where` a chip carries, drawn by the caller. */
   trailing?: ReactNode;
   /** The chip a where question is open for: ice corner brackets, so the question and its chip read as one. */
   emphasis?: boolean;
 }) {
   const selected = tier === 'solid' || tier === 'extracted';
-  return (
+  const chip = (
     <button
       type="button"
       onClick={onClick}
@@ -56,21 +57,21 @@ export function SheetChip({
             ? `${label}, from your writing`
             : label
       }
+      data-attr="sheet-chip"
+      data-tier={tier}
       className={cn(
-        'relative inline-flex items-center gap-1.5 rounded-[2px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        compact ? 'h-6 px-2 text-xs' : 'h-7 px-2.5 text-[13px]',
-        selected ? 'font-semibold' : 'font-medium',
-        tier === 'solid' && !danger && 'border-foreground bg-foreground text-background',
-        tier === 'solid' && danger && 'border-danger bg-danger text-danger-foreground',
-        tier === 'extracted' && 'border-foreground-muted bg-foreground-muted text-background',
-        tier === 'ghost' && 'border-border-strong border-dashed text-foreground-muted',
-        tier === undefined && !danger && 'border-border text-foreground hover:bg-surface-muted',
-        tier === undefined && danger && 'border-danger text-danger hover:bg-danger/10',
-        emphasis && 'sheet-brackets',
+        'relative inline-flex cursor-pointer items-center gap-(--space-1_5) rounded-control border border-solid font-(family-name:--family-sans) outline-none',
+        'transition-[background-color,color] duration-(--duration-fast) ease-standard focus-visible:shadow-focus',
+        compact ? 'h-6.5 px-(--space-2) text-assist' : 'h-7.5 px-(--space-2_5) text-row',
+        tier === 'solid' && 'border-fg bg-fg text-bg',
+        tier === 'extracted' && 'border-fg2 bg-fg2 text-bg',
+        tier === 'ghost' && 'border-dashed border-line2 bg-transparent text-fg2',
+        tier === undefined && 'border-line2 bg-transparent text-fg1 hover:bg-lift-08',
+        emphasis && 'shadow-[0_0_0_1px_var(--color-acc)]',
       )}
     >
       {tier === 'ghost' ? (
-        <span aria-hidden className="text-foreground-muted">
+        <span aria-hidden className="text-fg3">
           +
         </span>
       ) : null}
@@ -82,6 +83,13 @@ export function SheetChip({
         </span>
       ) : null}
     </button>
+  );
+  if (tip === undefined) return chip;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -98,7 +106,6 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   label,
   onSelect,
   onDeselect,
-  danger,
   children,
   trailing,
   emphasisKey,
@@ -109,8 +116,6 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
   label: (value: V) => string;
   onSelect: (value: V) => void;
   onDeselect: (key: string) => void;
-  /** Which option wears the warning treatment. */
-  danger?: V;
   /** Rendered after the row — a where affordance, a helper line. */
   children?: ReactNode;
   /** A mark after a selected chip's label, by its key (the `where` it carries). */
@@ -120,8 +125,8 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
 }) {
   const chips = (sheet.fields[field] as ChipField<unknown>).chips;
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-col gap-(--space-2)">
+      <div className="flex flex-wrap gap-(--space-1_5)">
         {options.map((option) => {
           const chip = chips.find((c) => c.key === option);
           const tier = chip?.tier;
@@ -131,7 +136,6 @@ export function ChipRow<K extends SheetFieldKey, V extends string>({
               key={option}
               label={label(option)}
               {...(tier !== undefined ? { tier } : {})}
-              danger={danger === option}
               emphasis={emphasisKey === option}
               {...(selected && trailing ? { trailing: trailing(option) } : {})}
               onClick={() => (selected ? onDeselect(option) : onSelect(option))}
