@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { RequestLakeHost, RequestLakePane } from '../actions/RequestLakePane';
 import { exploreMapSpec } from '../map/mapSpec';
 import { useMapSpec } from '../map/useMapSpec';
 import { ActionPane } from './ActionPane';
@@ -18,16 +19,23 @@ export function ExplorePage({ search }: { search: ExploreSearch }) {
   const close = () => nav.replace(nav.with({ act: null }));
   useEscapeToClose(search.act !== undefined, close);
 
-  return search.act === 'request' ? (
-    <LakeSidebar
-      label="Request a lake"
-      body={
-        <SidebarBody>
-          <ActionPane act="request" backTo="Explore" onBack={close} />
-        </SidebarBody>
-      }
-    />
-  ) : (
-    <InViewList />
+  return (
+    <>
+      <RequestLakeHost onOpenLake={(id) => nav.push(`/water/${id}`)} />
+      {search.act === 'request' ? (
+        <LakeSidebar
+          label="Request a lake"
+          body={
+            <SidebarBody>
+              <ActionPane act="request" backTo="Explore" onBack={close}>
+                <RequestLakePane />
+              </ActionPane>
+            </SidebarBody>
+          }
+        />
+      ) : (
+        <InViewList />
+      )}
+    </>
   );
 }

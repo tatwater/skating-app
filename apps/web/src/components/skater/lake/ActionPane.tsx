@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft } from '@fortawesome/sharp-light-svg-icons';
-import { useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { Kbd } from '@/components/kit/kbd';
@@ -28,6 +28,7 @@ export function ActionPane({
   backTo,
   onBack,
   autoFocus = true,
+  children,
 }: {
   act: LakeAct | 'request';
   /** Where Back goes: the lake's name, or "Explore". */
@@ -35,6 +36,8 @@ export function ActionPane({
   onBack: () => void;
   /** Take the focus on open (always, in the app; a side-by-side story gives it to one quad). */
   autoFocus?: boolean;
+  /** The action's own body (agent J's flows); the placeholder until one lands. */
+  children?: ReactNode;
 }) {
   const back = useRef<HTMLButtonElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new action takes the focus again.
@@ -69,7 +72,7 @@ export function ActionPane({
       <h2 className="m-0 text-disp leading-none font-semibold tracking-disp text-fg uppercase">
         {LAKE_ACT_TITLES[act]}
       </h2>
-      <p className="m-0 text-row text-fg2">Coming soon.</p>
+      {children ?? <p className="m-0 text-row text-fg2">Coming soon.</p>}
     </section>
   );
 }

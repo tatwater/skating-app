@@ -54,7 +54,7 @@ describe('draft lifecycle', () => {
     useHazardDraftStore.getState().bindOwner('user_a');
     useHazardDraftStore.getState().setDraft(DRAFT);
     useHazardDraftStore.getState().setPhotoFiles([new File(['x'], 'ice.jpg')]);
-    expect(readPersistedDraft(localStorage, 'user_a')).toEqual(DRAFT);
+    expect(readPersistedDraft(localStorage, 'user_a')).toEqual({ ...DRAFT, photoCount: 1 });
     const raw = localStorage.getItem('gli-hazard-draft') ?? '';
     expect(raw).not.toContain('ice.jpg');
   });
@@ -62,9 +62,9 @@ describe('draft lifecycle', () => {
   it('updateDraft merges into the open draft and re-persists', () => {
     useHazardDraftStore.getState().bindOwner('user_a');
     useHazardDraftStore.getState().setDraft(DRAFT);
-    useHazardDraftStore.getState().updateDraft({ sizeMeters: 12 });
-    expect(useHazardDraftStore.getState().draft?.sizeMeters).toBe(12);
-    expect(readPersistedDraft(localStorage, 'user_a')?.sizeMeters).toBe(12);
+    useHazardDraftStore.getState().updateDraft({ note: 'twelve' });
+    expect(useHazardDraftStore.getState().draft?.note).toBe('twelve');
+    expect(readPersistedDraft(localStorage, 'user_a')?.note).toBe('twelve');
   });
 
   it('updateDraft with no open draft is a no-op', () => {
