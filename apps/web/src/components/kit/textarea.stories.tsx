@@ -2,7 +2,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Field, FieldDescription, FieldError, FieldLabel } from './input';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { Textarea } from './textarea';
 
@@ -32,7 +38,9 @@ export const Rest: Story = {
     const style = getComputedStyle(el);
     for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
       await expect(style[`border${side}Width`]).toBe('1px');
-      await expect(style[`border${side}Color`]).toBe(computedColor(el, 'var(--line2)'));
+      await expect(style[`border${side}Color`]).toEqual(
+        sameColor(computedColor(el, 'var(--line2)')),
+      );
     }
     await expect(style.borderRadius).toBe('0px');
     await expect(style.resize).toBe('vertical');
@@ -55,9 +63,9 @@ export const Focused: Story = {
     const step = computedColor(el, 'var(--fg2)');
     const bright = computedColor(el, 'var(--fg)');
     el.focus();
-    await waitFor(() => expect(getComputedStyle(el).borderTopColor).toBe(step));
+    await waitFor(() => expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(step)));
     const style = getComputedStyle(el);
-    await expect(style.borderTopColor).not.toBe(bright);
+    await expect(style.borderTopColor).not.toEqual(sameColor(bright));
     // No ring: every shadow layer is transparent.
     await expect(style.boxShadow.replaceAll(/rgba\(0, 0, 0, 0\)( 0px){4},? ?/g, '')).toBe('');
     await expect(style.outlineStyle).toBe('none');
@@ -99,11 +107,11 @@ export const Invalid: Story = {
     const el = box(canvasElement, 'Reason');
     const bad = computedColor(el, 'var(--bad)');
     await expect(el).toHaveAttribute('aria-invalid', 'true');
-    await expect(getComputedStyle(el).borderTopColor).toBe(bad);
+    await expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(bad));
     await expect(el).toHaveAccessibleDescription('Say a little more, for the audit log');
     el.focus();
     await expect(el).toHaveFocus();
-    await expect(getComputedStyle(el).borderTopColor).toBe(bad);
+    await expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(bad));
   },
 };
 
@@ -112,7 +120,9 @@ export const AriaInvalid: Story = {
   args: { 'aria-label': 'Reason', 'aria-invalid': true, defaultValue: 'Spam' },
   play: async ({ canvasElement }) => {
     const el = box(canvasElement);
-    await expect(getComputedStyle(el).borderTopColor).toBe(computedColor(el, 'var(--bad)'));
+    await expect(getComputedStyle(el).borderTopColor).toEqual(
+      sameColor(computedColor(el, 'var(--bad)')),
+    );
   },
 };
 
@@ -133,7 +143,7 @@ export const Required: Story = {
       expect(within(canvasElement).getByText('A reply needs some words')).toBeVisible(),
     );
     const bad = computedColor(el, 'var(--bad)');
-    await waitFor(() => expect(getComputedStyle(el).borderTopColor).toBe(bad));
+    await waitFor(() => expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(bad)));
   },
 };
 
@@ -144,8 +154,8 @@ export const Disabled: Story = {
     const el = box(canvasElement);
     await expect(el).toBeDisabled();
     const style = getComputedStyle(el);
-    await expect(style.color).toBe(computedColor(el, 'var(--fg-disabled)'));
-    await expect(style.borderTopColor).toBe(computedColor(el, 'var(--line)'));
+    await expect(style.color).toEqual(sameColor(computedColor(el, 'var(--fg-disabled)')));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(el, 'var(--line)')));
   },
 };
 
@@ -209,7 +219,9 @@ export const States: Story = {
     await expect(contrastBetween(el, ['var(--bg)'], ['var(--fg3)'])).toBeGreaterThanOrEqual(4.5);
     // A disabled box doesn't light on hover.
     const off = box(canvasElement, 'empty disabled');
-    await expect(getComputedStyle(off).borderTopColor).toBe(computedColor(off, 'var(--line)'));
+    await expect(getComputedStyle(off).borderTopColor).toEqual(
+      sameColor(computedColor(off, 'var(--line)')),
+    );
   },
 };
 
@@ -236,7 +248,9 @@ export const FourUp: Story = {
       // In every theme the focus step is a boundary (≥ 3:1) and is not the bright ink.
       const el = must(q.querySelector<HTMLElement>('[data-slot="textarea"]'));
       await expect(contrastBetween(el, ['var(--bg)'], ['var(--fg2)'])).toBeGreaterThanOrEqual(3);
-      await expect(computedColor(el, 'var(--fg2)')).not.toBe(computedColor(el, 'var(--fg)'));
+      await expect(computedColor(el, 'var(--fg2)')).not.toEqual(
+        sameColor(computedColor(el, 'var(--fg)')),
+      );
     }
   },
 };

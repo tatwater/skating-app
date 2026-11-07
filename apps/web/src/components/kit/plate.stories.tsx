@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contentRect, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, contentRect, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Plate } from './plate';
 import { Value } from './stat-tile';
 import { KICKER, must } from './storyKit';
@@ -79,8 +79,8 @@ export const Card: Story = {
     const style = getComputedStyle(card);
     await expect(style.borderRadius).toBe('0px');
     await expect(style.borderTopWidth).toBe('1px');
-    await expect(style.borderTopColor).toBe(computedColor(card, 'var(--line)'));
-    await expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(card, 'var(--line)')));
+    await expect(style.backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     // Not a button.
     await expect(card).not.toHaveAttribute('role');
     await expect(card).not.toHaveAttribute('tabindex');
@@ -95,7 +95,7 @@ export const Card: Story = {
     for (const [w, h] of arms(card)) {
       await expect([w, h]).toEqual([3, 3]);
     }
-    await expect(tickColor(card)).toBe(computedColor(card, 'var(--fg2)'));
+    await expect(tickColor(card)).toEqual(sameColor(computedColor(card, 'var(--fg2)')));
     await expect(t.backgroundPosition.split(',')).toHaveLength(8);
 
     // Junction: border → content is the padding, in rem.
@@ -116,13 +116,13 @@ export const FilledPlate: Story = {
   play: async ({ canvasElement }) => {
     const plate = plateIn(canvasElement);
     const style = getComputedStyle(plate);
-    await expect(style.backgroundColor).toBe(computedColor(plate, 'var(--panel)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(plate, 'var(--panel)')));
     await expect(style.borderTopWidth).toBe('0px');
     await expect(style.borderRadius).toBe('0px');
     const t = ticks(plate);
     await expect(t.top).toBe('-1px');
     for (const [w, h] of arms(plate)) await expect([w, h]).toEqual([2, 2]);
-    await expect(tickColor(plate)).toBe(computedColor(plate, 'var(--line2)'));
+    await expect(tickColor(plate)).toEqual(sameColor(computedColor(plate, 'var(--line2)')));
     const box = plate.getBoundingClientRect();
     const content = contentRect(must(plate.querySelector('[data-content]')));
     await near(content.left - box.left, resolvePx(plate, 'var(--space-3)'), 'left inset');
@@ -153,10 +153,10 @@ export const Chosen: Story = {
     const s = getComputedStyle(chosen);
     for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
       await expect(s[`border${side}Width`]).toBe('1px');
-      await expect(s[`border${side}Color`]).toBe(computedColor(chosen, 'var(--fg)'));
+      await expect(s[`border${side}Color`]).toEqual(sameColor(computedColor(chosen, 'var(--fg)')));
     }
     await expect(s.boxShadow).toBe('none');
-    await expect(tickColor(chosen)).toBe(computedColor(chosen, 'var(--fg)'));
+    await expect(tickColor(chosen)).toEqual(sameColor(computedColor(chosen, 'var(--fg)')));
     const a = rest.getBoundingClientRect();
     const b = chosen.getBoundingClientRect();
     await expect([b.width, b.height]).toEqual([a.width, a.height]);
@@ -186,11 +186,13 @@ export const Tones: Story = {
     const want = ['var(--warn)', 'var(--bad)', 'var(--fg)', 'var(--warn)'];
     for (const [i, w] of want.entries()) {
       const plate = plateIn(canvasElement, i);
-      await expect(tickColor(plate)).toBe(computedColor(plate, w));
+      await expect(tickColor(plate)).toEqual(sameColor(computedColor(plate, w)));
     }
     // A tone never colors the border: only the ticks carry it.
     const warn = plateIn(canvasElement, 0);
-    await expect(getComputedStyle(warn).borderTopColor).toBe(computedColor(warn, 'var(--line)'));
+    await expect(getComputedStyle(warn).borderTopColor).toEqual(
+      sameColor(computedColor(warn, 'var(--line)')),
+    );
   },
 };
 
@@ -229,7 +231,7 @@ export const Interactive: Story = {
         true,
       );
     });
-    await expect(tickColor(plate)).toBe(lit);
+    await expect(tickColor(plate)).toEqual(sameColor(lit));
     await waitFor(() => expect(getComputedStyle(plate).boxShadow).toMatch(/3px/));
 
     // Enter and Space press it.
@@ -259,7 +261,7 @@ export const Resting: Story = {
     await expect(plate.className).not.toMatch(/lit:/);
     await expect(getComputedStyle(plate).cursor).not.toBe('pointer');
     for (const [w, h] of arms(plate)) await expect([w, h]).toEqual([3, 3]);
-    await expect(tickColor(plate)).toBe(computedColor(plate, 'var(--fg2)'));
+    await expect(tickColor(plate)).toEqual(sameColor(computedColor(plate, 'var(--fg2)')));
   },
 };
 

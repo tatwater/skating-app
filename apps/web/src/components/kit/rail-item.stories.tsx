@@ -15,7 +15,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { ReactNode } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { RailItem, RailViewer } from './rail-item';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
@@ -114,17 +120,21 @@ export const Rail_: Story = {
     await expect(
       canvas.getAllByRole('link').filter((l) => l.hasAttribute('aria-current')),
     ).toHaveLength(1);
-    await expect(getComputedStyle(inbox).color).toBe(computedColor(inbox, 'var(--fg)'));
+    await expect(getComputedStyle(inbox).color).toEqual(
+      sameColor(computedColor(inbox, 'var(--fg)')),
+    );
     const overview = canvas.getByRole('link', { name: 'Overview' });
-    await expect(getComputedStyle(overview).color).toBe(computedColor(overview, 'var(--fg3)'));
+    await expect(getComputedStyle(overview).color).toEqual(
+      sameColor(computedColor(overview, 'var(--fg3)')),
+    );
     // No count, no badge — never a 0.
     await expect(overview.querySelector('[data-slot="rail-count"]')).toBeNull();
     // The three tones.
     const fill = (name: RegExp) =>
       getComputedStyle(part(canvas.getByRole('link', { name }), 'rail-count')).backgroundColor;
-    await expect(fill(/Inbox/)).toBe(computedColor(inbox, 'var(--warn)'));
-    await expect(fill(/Machinery/)).toBe(computedColor(inbox, 'var(--bad)'));
-    await expect(fill(/Corpus/)).toBe(computedColor(inbox, 'var(--fg2)'));
+    await expect(fill(/Inbox/)).toEqual(sameColor(computedColor(inbox, 'var(--warn)')));
+    await expect(fill(/Machinery/)).toEqual(sameColor(computedColor(inbox, 'var(--bad)')));
+    await expect(fill(/Corpus/)).toEqual(sameColor(computedColor(inbox, 'var(--fg2)')));
     // Navigation carries no tooltips: nothing in the rail is a tooltip trigger or has a title.
     const nav = canvas.getByRole('navigation');
     await expect(nav.querySelector('[data-slot="tooltip-trigger"], [title]')).toBeNull();
@@ -184,8 +194,12 @@ export const GoMode: Story = {
     const inbox = canvas.getByRole('link', { name: /Inbox/ });
     const reports = canvas.getByRole('link', { name: /Reports/ });
     await expect(getComputedStyle(part(inbox, 'rail-count')).visibility).toBe('hidden');
-    await expect(getComputedStyle(inbox).color).toBe(computedColor(inbox, 'var(--fg)'));
-    await expect(getComputedStyle(reports).color).toBe(computedColor(reports, 'var(--fg2)'));
+    await expect(getComputedStyle(inbox).color).toEqual(
+      sameColor(computedColor(inbox, 'var(--fg)')),
+    );
+    await expect(getComputedStyle(reports).color).toEqual(
+      sameColor(computedColor(reports, 'var(--fg2)')),
+    );
     const chip = part(reports, 'rail-go');
     await expect(chip).toHaveAttribute('data-variant', 'go');
     await expect(chip).toHaveTextContent('GR');
@@ -210,7 +224,7 @@ export const FocusLights: Story = {
     await userEvent.tab();
     await expect(overview).toHaveFocus();
     const lit = computedColor(overview, 'var(--fg1)');
-    await waitFor(() => expect(getComputedStyle(overview).color).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(overview).color).toEqual(sameColor(lit)));
     // An inset ring: it never spills over the neighbors.
     await expect(getComputedStyle(overview).boxShadow).toMatch(/inset/);
   },
@@ -274,7 +288,7 @@ export const JunctionAdmin: Story = {
     await expect(bar.width).toBe('2px');
     await expect(parseFloat(bar.height)).toBeCloseTo(px('1.5rem'), 1);
     await expect(bar.left).toBe('0px');
-    await expect(bar.backgroundColor).toBe(computedColor(inbox, 'var(--fg)'));
+    await expect(bar.backgroundColor).toEqual(sameColor(computedColor(inbox, 'var(--fg)')));
     await expect(bar.boxShadow).toMatch(/8px/);
     // A resting item draws no bar.
     await expect(

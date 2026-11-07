@@ -12,7 +12,7 @@ import {
   KeyValueList,
   KeyValueRow,
 } from './grid-list';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Section } from './section-slug';
 import { must } from './storyKit';
 
@@ -90,7 +90,7 @@ async function expectUnbrokenRules(list: HTMLElement) {
       );
       await expect(style.borderBottomWidth).toBe('1px');
       await expect(style.borderBottomStyle).toBe('dotted');
-      await expect(style.borderBottomColor).toBe(computedColor(row, 'var(--line)'));
+      await expect(style.borderBottomColor).toEqual(sameColor(computedColor(row, 'var(--line)')));
       await expect(parseFloat(style.paddingBottom)).toBeGreaterThan(0);
     } else {
       // A list ends on its spacing, never a rule.
@@ -142,7 +142,7 @@ export const KeyValue: Story = {
     await expect(getComputedStyle(mono).fontFamily).toMatch(/Martian Mono/);
     const key = must(rows[0]?.querySelector<HTMLElement>('[data-slot="key"]'));
     await expect(getComputedStyle(key).textTransform).toBe('uppercase');
-    await expect(getComputedStyle(key).color).toBe(computedColor(key, 'var(--fg3)'));
+    await expect(getComputedStyle(key).color).toEqual(sameColor(computedColor(key, 'var(--fg3)')));
   },
 };
 

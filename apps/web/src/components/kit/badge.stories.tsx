@@ -3,7 +3,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect } from 'storybook/test';
 
 import { Badge, Tag, TagRun } from './badge';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX } from './measure';
+import {
+  colorsIn,
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  sameColor,
+} from './measure';
 import { KICKER, must, rootPx } from './storyKit';
 
 const meta = {
@@ -78,9 +84,9 @@ export const Live: Story = {
   args: { variant: 'live', children: 'Running' },
   play: async ({ canvasElement }) => {
     const el = badge(canvasElement);
-    await expect(getComputedStyle(el).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await expect(getComputedStyle(el).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     const led = getComputedStyle(el, '::before');
-    await expect(led.backgroundColor).toBe(computedColor(el, 'var(--fg)'));
+    await expect(led.backgroundColor).toEqual(sameColor(computedColor(el, 'var(--fg)')));
     // It breathes — unless the reader asked for less motion.
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     await expect(led.animationName).toBe(reduced ? 'none' : 'kit-led');
@@ -94,8 +100,9 @@ export const LiveIdle: Story = {
     const led = getComputedStyle(badge(canvasElement), '::before');
     await expect(led.animationName).toBe('none');
     // No halo: every shadow layer (Tailwind stacks several) is transparent.
-    const layers = led.boxShadow.split(/,(?![^(]*\))/);
-    await expect(layers.every((s) => s.includes('rgba(0, 0, 0, 0)'))).toBe(true);
+    const layers = colorsIn(led.boxShadow);
+    await expect(layers.length).toBeGreaterThan(0);
+    for (const layer of layers) await expect(layer).toEqual(sameColor('rgba(0, 0, 0, 0)'));
   },
 };
 

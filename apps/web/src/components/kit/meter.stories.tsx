@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, spyOn, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { CellLoader, cellLit, Meter, meterTone } from './meter';
 import { KICKER, must } from './storyKit';
 
@@ -53,8 +53,12 @@ export const Bare: Story = {
     const height = track.getBoundingClientRect().height;
     await expect(height).toBeCloseTo(resolvePx(track, 'var(--stroke-now)'), 2);
     await expect(height).toBe(4);
-    await expect(getComputedStyle(track).backgroundColor).toBe(computedColor(track, 'var(--line)'));
-    await expect(getComputedStyle(fill).backgroundColor).toBe(computedColor(fill, 'var(--fg2)'));
+    await expect(getComputedStyle(track).backgroundColor).toEqual(
+      sameColor(computedColor(track, 'var(--line)')),
+    );
+    await expect(getComputedStyle(fill).backgroundColor).toEqual(
+      sameColor(computedColor(fill, 'var(--fg2)')),
+    );
     await expect(fill.getBoundingClientRect().width).toBeCloseTo(
       track.getBoundingClientRect().width * 0.24,
       1,
@@ -112,7 +116,9 @@ export const Warn: Story = {
     const meter = within(canvasElement).getByRole('meter');
     await expect(meter).toHaveAttribute('data-tone', 'warn');
     const fill = part(meter, 'meter-fill');
-    await expect(getComputedStyle(fill).backgroundColor).toBe(computedColor(fill, 'var(--warn)'));
+    await expect(getComputedStyle(fill).backgroundColor).toEqual(
+      sameColor(computedColor(fill, 'var(--warn)')),
+    );
   },
 };
 
@@ -123,7 +129,9 @@ export const Bad: Story = {
     const meter = within(canvasElement).getByRole('meter');
     await expect(meter).toHaveAttribute('data-tone', 'bad');
     const fill = part(meter, 'meter-fill');
-    await expect(getComputedStyle(fill).backgroundColor).toBe(computedColor(fill, 'var(--bad)'));
+    await expect(getComputedStyle(fill).backgroundColor).toEqual(
+      sameColor(computedColor(fill, 'var(--bad)')),
+    );
   },
 };
 
@@ -156,7 +164,9 @@ export const ThresholdMark: Story = {
     await expect(box.width).toBe(1);
     await expect(track.top - box.top).toBeCloseTo(3, 2);
     await expect(box.bottom - track.bottom).toBeCloseTo(3, 2);
-    await expect(getComputedStyle(mark).backgroundColor).toBe(computedColor(mark, 'var(--warn)'));
+    await expect(getComputedStyle(mark).backgroundColor).toEqual(
+      sameColor(computedColor(mark, 'var(--warn)')),
+    );
   },
 };
 
@@ -227,8 +237,8 @@ export const LoaderCells: Story = {
     );
     const middle = must(cells[3]);
     await waitFor(() => expect(middle).toHaveAttribute('data-lit'));
-    await expect(getComputedStyle(middle).backgroundColor).toBe(
-      computedColor(middle, 'var(--fg2)'),
+    await expect(getComputedStyle(middle).backgroundColor).toEqual(
+      sameColor(computedColor(middle, 'var(--fg2)')),
     );
   },
 };

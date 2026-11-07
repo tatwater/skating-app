@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 
 import { Button } from './button';
-import { computedColor, contentRect, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, contentRect, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Section, SectionSlug } from './section-slug';
 import { KICKER, must, rootPx } from './storyKit';
 
@@ -45,8 +45,8 @@ export const Terminal: Story = {
     await expect(chip).toBe(heading);
     const style = getComputedStyle(chip);
     await expect(style.textTransform).toBe('uppercase');
-    await expect(style.backgroundColor).toBe(computedColor(chip, 'var(--fg1)'));
-    await expect(style.color).toBe(computedColor(chip, 'var(--bg)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(chip, 'var(--fg1)')));
+    await expect(style.color).toEqual(sameColor(computedColor(chip, 'var(--bg)')));
     await expect(style.borderRadius).toBe('0px');
     // The chip is 1.7 of its kicker step tall: the mocks' 4 + 10 + 3 px at the admin step.
     const kick = resolvePx(chip, 'var(--type-kick)');
@@ -55,12 +55,14 @@ export const Terminal: Story = {
     const rule = part(canvasElement, 'section-rule');
     await expect(rule).toHaveAttribute('aria-hidden', 'true');
     await expect(rule.getBoundingClientRect().height).toBe(1);
-    await expect(getComputedStyle(rule).backgroundColor).toBe(computedColor(rule, 'var(--line2)'));
+    await expect(getComputedStyle(rule).backgroundColor).toEqual(
+      sameColor(computedColor(rule, 'var(--line2)')),
+    );
     const square = terminalOf(rule);
     await expect(square.content).toBe('""');
     await expect(square.width).toBe('4px');
     await expect(square.height).toBe('4px');
-    await expect(square.backgroundColor).toBe(computedColor(rule, 'var(--fg2)'));
+    await expect(square.backgroundColor).toEqual(sameColor(computedColor(rule, 'var(--fg2)')));
     // The rule runs to the row's end.
     const row = part(canvasElement, 'section-slug').getBoundingClientRect();
     await expect(Math.abs(rule.getBoundingClientRect().right - row.right)).toBeLessThanOrEqual(
@@ -80,7 +82,9 @@ export const Count: Story = {
     const count = part(canvasElement, 'section-count');
     await expect(count).toHaveTextContent(/^3$/);
     await expect(getComputedStyle(count).fontFamily).toMatch(/Martian Mono/);
-    await expect(getComputedStyle(count).color).toBe(computedColor(count, 'var(--fg2)'));
+    await expect(getComputedStyle(count).color).toEqual(
+      sameColor(computedColor(count, 'var(--fg2)')),
+    );
     // The count sits `space-2_5` after the rule's end and ends the row.
     const gap = count.getBoundingClientRect().left - rule.getBoundingClientRect().right;
     await expect(Math.abs(gap - resolvePx(rule, 'var(--space-2_5)'))).toBeLessThanOrEqual(

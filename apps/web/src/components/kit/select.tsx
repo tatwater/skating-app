@@ -42,8 +42,10 @@ const triggerVariants = cva(
         underline: [
           'border-0 border-b border-solid border-line2 rounded-none px-0',
           'text-body leading-none font-regular text-fg',
-          // Hover only (as the input's rule): focus has its own, stronger look below.
-          '[@media(hover:hover)]:hover:not-data-disabled:border-fg3 data-popup-open:border-fg',
+          // Hover lifts a resting rule only (as the input's): never over focus, an open list, an
+          // error or a disabled trigger.
+          '[@media(hover:hover)]:hover:not-data-disabled:not-focus-visible:not-data-popup-open:not-aria-invalid:not-data-invalid:border-fg3',
+          'data-popup-open:border-fg',
           'focus-visible:border-fg focus-visible:shadow-[0_1px_0_0_var(--fg)]',
           'aria-invalid:border-bad data-invalid:border-bad',
           'data-disabled:border-line',

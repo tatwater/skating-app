@@ -7,10 +7,12 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import {
+  computedColor,
   contentRect,
   horizontalGaps,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
+  sameColor,
   verticalGaps,
 } from './measure';
 
@@ -61,8 +63,8 @@ export const Danger: Story = {
   args: { variant: 'danger', children: 'Remove' },
   play: async ({ canvasElement }) => {
     const el = button(canvasElement, 'Remove');
-    const bad = resolveColor(el, 'var(--bad)');
-    await expect(getComputedStyle(el).color).not.toBe(bad);
+    const bad = computedColor(el, 'var(--bad)');
+    await expect(getComputedStyle(el).color).not.toEqual(sameColor(bad));
   },
 };
 
@@ -72,7 +74,7 @@ export const DangerArmed: Story = {
   play: async ({ canvasElement }) => {
     const el = button(canvasElement, 'Remove');
     await expect(el).toHaveAttribute('data-armed');
-    await expect(getComputedStyle(el).color).toBe(resolveColor(el, 'var(--bad)'));
+    await expect(getComputedStyle(el).color).toEqual(sameColor(computedColor(el, 'var(--bad)')));
   },
 };
 
@@ -81,7 +83,9 @@ export const DangerWaiting: Story = {
   args: { variant: 'danger', armed: true, disabled: true, children: 'Remove' },
   play: async ({ canvasElement, args }) => {
     const el = button(canvasElement, 'Remove');
-    await expect(getComputedStyle(el).color).toBe(resolveColor(el, 'var(--bad-dim)'));
+    await expect(getComputedStyle(el).color).toEqual(
+      sameColor(computedColor(el, 'var(--bad-dim)')),
+    );
     await userEvent.click(el, { pointerEventsCheck: 0 });
     await expect(args.onClick).not.toHaveBeenCalled();
   },
@@ -283,9 +287,9 @@ export const FocusLights: Story = {
 
     // The bare row lights with a wash, not dots.
     // (Resolve the color outside `waitFor`: its probe mutates the DOM, which re-runs `waitFor`.)
-    const wash = resolveColor(bare, 'var(--lift-08)');
+    const wash = sameColor(computedColor(bare, 'var(--lift-08)'));
     bare.focus();
-    await waitFor(() => expect(getComputedStyle(bare).backgroundColor).toBe(wash));
+    await waitFor(() => expect(getComputedStyle(bare).backgroundColor).toEqual(wash));
   },
 };
 
@@ -587,14 +591,4 @@ function Icon({ of }: { of: ComponentProps<typeof FontAwesomeIcon>['icon'] }) {
 function must<T>(el: T | null | undefined): T {
   if (el == null) throw new Error('The story did not render the element under test.');
   return el;
-}
-
-/** A token color as the browser computes it, in `el`'s theme. */
-function resolveColor(el: Element, color: string): string {
-  const probe = document.createElement('span');
-  probe.style.color = color;
-  el.parentElement?.append(probe);
-  const value = getComputedStyle(probe).color;
-  probe.remove();
-  return value;
 }

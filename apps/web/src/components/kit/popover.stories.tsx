@@ -4,7 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import {
   Popover,
   PopoverBody,
@@ -102,8 +102,8 @@ export const FilterMenuStory: Story = {
 
     const style = getComputedStyle(plate);
     await expect(style.borderRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(plate, 'var(--panel)'));
-    await expect(style.borderTopColor).toBe(computedColor(plate, 'var(--line2)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(plate, 'var(--panel)')));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(plate, 'var(--line2)')));
     await expect(plate.querySelector('[data-slot="popover-arrow"], svg')).toBeNull();
     await expect(getComputedStyle(part(plate, 'popover-title')).textTransform).toBe('uppercase');
 
@@ -217,7 +217,9 @@ export const HeadAndFoot: Story = {
     const note = part(plate, 'popover-note').getBoundingClientRect();
     await near(p.right - edge - note.right, resolvePx(plate, 'var(--space-3_5)'));
     const foot = part(plate, 'popover-footer');
-    await expect(getComputedStyle(foot).borderTopColor).toBe(computedColor(foot, 'var(--line)'));
+    await expect(getComputedStyle(foot).borderTopColor).toEqual(
+      sameColor(computedColor(foot, 'var(--line)')),
+    );
     await near(foot.getBoundingClientRect().bottom, p.bottom - edge);
     await closeWithEscape(popup);
   },

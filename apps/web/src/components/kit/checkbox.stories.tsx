@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Checkbox, CheckboxGroup, CheckboxRow } from './checkbox';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const meta = {
@@ -31,7 +31,7 @@ export const Unchecked: Story = {
     await expect(el).toHaveAttribute('aria-checked', 'true');
     // (Resolve the color outside `waitFor`: its probe mutates the DOM, which re-runs `waitFor`.)
     const fill = computedColor(el, 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(el).backgroundColor).toBe(fill));
+    await waitFor(() => expect(getComputedStyle(el).backgroundColor).toEqual(sameColor(fill)));
     el.focus();
     await userEvent.keyboard(' ');
     await expect(el).toHaveAttribute('aria-checked', 'false');
@@ -58,7 +58,9 @@ export const Invalid: Story = {
   args: { 'aria-invalid': true },
   play: async ({ canvasElement }) => {
     const el = box(canvasElement);
-    await expect(getComputedStyle(el).borderTopColor).toBe(computedColor(el, 'var(--bad)'));
+    await expect(getComputedStyle(el).borderTopColor).toEqual(
+      sameColor(computedColor(el, 'var(--bad)')),
+    );
   },
 };
 
@@ -68,7 +70,9 @@ export const Disabled: Story = {
     const el = box(canvasElement);
     await userEvent.click(el, { pointerEventsCheck: 0 });
     await expect(args.onCheckedChange).not.toHaveBeenCalled();
-    await expect(getComputedStyle(el).backgroundColor).toBe(computedColor(el, 'var(--line2)'));
+    await expect(getComputedStyle(el).backgroundColor).toEqual(
+      sameColor(computedColor(el, 'var(--line2)')),
+    );
   },
 };
 
@@ -171,10 +175,10 @@ export const FocusLights: Story = {
   play: async ({ canvasElement }) => {
     const el = box(canvasElement);
     const lit = computedColor(el, 'var(--fg)');
-    await expect(getComputedStyle(el).borderTopColor).not.toBe(lit);
+    await expect(getComputedStyle(el).borderTopColor).not.toEqual(sameColor(lit));
     el.focus();
     await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/3px/));
-    await waitFor(() => expect(getComputedStyle(el).borderTopColor).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(el).borderTopColor).toEqual(sameColor(lit)));
   },
 };
 
@@ -198,7 +202,9 @@ export const FourUp: Story = {
     for (const q of quads) {
       // A disabled row dims its words, sub-line included.
       const off = must(q.querySelector<HTMLElement>('[data-slot="checkbox-row"][data-disabled]'));
-      await expect(getComputedStyle(off).color).toBe(computedColor(off, 'var(--fg-disabled)'));
+      await expect(getComputedStyle(off).color).toEqual(
+        sameColor(computedColor(off, 'var(--fg-disabled)')),
+      );
       const el = must(q.querySelector('[role="checkbox"]')).getBoundingClientRect();
       const kick = resolvePx(q, 'var(--type-kick)');
       await expect(el.width).toBeCloseTo(kick * 1.4, 1);

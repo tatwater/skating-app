@@ -16,7 +16,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from './drawer';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
@@ -198,10 +198,10 @@ export const Menu: Story = {
     await expect([box.left, box.width]).toEqual([0, document.documentElement.clientWidth]);
     await near(box.bottom, viewportHeight());
     const style = getComputedStyle(panel);
-    await expect(style.borderTopColor).toBe(computedColor(panel, 'var(--line2)'));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(panel, 'var(--line2)')));
     await expect(style.borderTopLeftRadius).toBe('0px');
     await expect(style.borderTopRightRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(panel, 'var(--bg)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(panel, 'var(--bg)')));
     // Content-sized: shorter than full.
     await expect(box.height).toBeLessThan(viewportHeight() - resolvePx(panel, 'var(--size-top)'));
 
@@ -215,8 +215,8 @@ export const Menu: Story = {
     await near(bar.height, resolvePx(panel, 'var(--space-1)'));
     await near(bar.left + bar.width / 2, box.left + box.width / 2);
     await near(bar.top + bar.height / 2, grab.top + grab.height / 2);
-    await expect(getComputedStyle(handle).backgroundColor).toBe(
-      computedColor(handle, 'var(--line2)'),
+    await expect(getComputedStyle(handle).backgroundColor).toEqual(
+      sameColor(computedColor(handle, 'var(--line2)')),
     );
     await expect(part(panel, 'drawer-grab')).toHaveAttribute('aria-hidden', 'true');
     // The head sits right under the grab; the head is the Sheet's, with Close and its Esc key.
@@ -245,7 +245,9 @@ export const ScrimPress: Story = {
     const panel = await waitFor(() => must(drawer()));
     await settled(panel);
     const dim = must(scrim());
-    await expect(getComputedStyle(dim).backgroundColor).toBe(computedColor(dim, 'var(--scrim)'));
+    await expect(getComputedStyle(dim).backgroundColor).toEqual(
+      sameColor(computedColor(dim, 'var(--scrim)')),
+    );
     await expect(getComputedStyle(dim).backdropFilter).toBe('none');
     await expect(dim.getBoundingClientRect().height).toBe(viewportHeight());
     await userEvent.pointer({
@@ -443,8 +445,8 @@ export const FourUp: Story = {
       const frame = must(panel.closest('[data-theme-scope] .relative'));
       await near(panel.getBoundingClientRect().bottom, frame.getBoundingClientRect().bottom);
       await expect(getComputedStyle(panel).borderTopLeftRadius).toBe('0px');
-      await expect(getComputedStyle(panel).borderTopColor).toBe(
-        computedColor(panel, 'var(--line2)'),
+      await expect(getComputedStyle(panel).borderTopColor).toEqual(
+        sameColor(computedColor(panel, 'var(--line2)')),
       );
       by[must(q.dataset.surface)]?.push(part(panel, 'sheet-header').getBoundingClientRect().height);
     }

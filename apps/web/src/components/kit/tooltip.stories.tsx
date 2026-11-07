@@ -3,7 +3,13 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { expect, fn, spyOn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { must } from './storyKit';
 import { Tabs, TabsList, TabsTab } from './tabs';
 import {
@@ -56,8 +62,10 @@ export const OnAButton: Story = {
     await expect(tip).toHaveTextContent(`Promote${PROMOTE_TIP}`);
     const style = getComputedStyle(tip);
     await expect(style.borderRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(tip, 'var(--plate-solid)'));
-    await expect(style.borderTopColor).toBe(computedColor(tip, 'var(--line2)'));
+    await expect(style.backgroundColor).toEqual(
+      sameColor(computedColor(tip, 'var(--plate-solid)')),
+    );
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(tip, 'var(--line2)')));
     await expect(tip.querySelector('[data-slot="tooltip-arrow"], svg')).toBeNull();
     const title = must(tip.querySelector('[data-slot="tooltip-title"]'));
     await expect(getComputedStyle(title).textTransform).toBe('uppercase');
@@ -135,7 +143,7 @@ export const TextTrigger: Story = {
     const trigger = within(canvasElement).getByRole('button', { name: '+1' });
     const style = getComputedStyle(trigger);
     await expect(style.borderBottomStyle).toBe('dotted');
-    await expect(style.borderBottomColor).toBe(computedColor(trigger, 'var(--fg3)'));
+    await expect(style.borderBottomColor).toEqual(sameColor(computedColor(trigger, 'var(--fg3)')));
     // The box is one 1.1 line plus the 1 px pad and the 1 px rule — the rule hugs the text.
     const size = parseFloat(style.fontSize);
     await expect(trigger.getBoundingClientRect().height).toBeCloseTo(size * 1.1 + 2, 0);

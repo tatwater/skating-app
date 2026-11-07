@@ -12,7 +12,7 @@ import {
   MapZoom,
   scaleStop,
 } from './map-controls';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { must } from './storyKit';
 import { SwitchRow } from './switch';
 
@@ -405,7 +405,7 @@ export const Rest: Story = {
     const plates = root.querySelectorAll('[data-slot="map-hover-plate"]');
     await expect(plates).toHaveLength(1);
     const ground = computedColor(root, 'var(--map-plate)');
-    await expect(getComputedStyle(must(plates[0])).backgroundColor).toBe(ground);
+    await expect(getComputedStyle(must(plates[0])).backgroundColor).toEqual(sameColor(ground));
     await expect(must(plates[0]).textContent).toContain('Relham Island');
   },
 };
@@ -449,8 +449,8 @@ export const ModeActive: Story = {
     near(box.right - b.right, resolvePx(root, 'var(--space-5)'));
     // Ice: the edge and the mode's name. A mode, never a verdict.
     const ice = computedColor(root, 'var(--acc)');
-    await expect(getComputedStyle(bar).borderTopColor).toBe(ice);
-    await expect(getComputedStyle(slot(bar, 'map-mode-bar-mode')).color).toBe(ice);
+    await expect(getComputedStyle(bar).borderTopColor).toEqual(sameColor(ice));
+    await expect(getComputedStyle(slot(bar, 'map-mode-bar-mode')).color).toEqual(sameColor(ice));
     await expect(slot(bar, 'map-mode-bar-mode').textContent).toBe('Measure');
     // The rack sits 16 px under the band: 60 px down on the console.
     const rack = slot(root, 'map-layer-rack').getBoundingClientRect();
@@ -596,11 +596,13 @@ export const FourUp: Story = {
       for (const row of q.querySelectorAll('[data-slot="switch-row"]'))
         near(row.getBoundingClientRect().height, btn);
       const plate = slot(q, 'map-hover-plate');
-      await expect(getComputedStyle(plate).backgroundColor).toBe(
-        computedColor(q, 'var(--map-plate)'),
+      await expect(getComputedStyle(plate).backgroundColor).toEqual(
+        sameColor(computedColor(q, 'var(--map-plate)')),
       );
       const ice = computedColor(q, 'var(--acc)');
-      await expect(getComputedStyle(slot(q, 'map-mode-bar')).borderTopColor).toBe(ice);
+      await expect(getComputedStyle(slot(q, 'map-mode-bar')).borderTopColor).toEqual(
+        sameColor(ice),
+      );
     }
   },
 };

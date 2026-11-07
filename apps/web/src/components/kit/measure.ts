@@ -96,6 +96,136 @@ export function computedColor(scope: Element, color: string): string {
 
 const VOID = 'input, textarea, select, img, br, hr';
 
+/**
+ * Colors are compared as colors, never as strings. Chromium serializes a computed color in the
+ * form it was specified (`oklch(0.6713 0.2164 22.08)`) at rest, but in its interpolation space
+ * (`oklab(0.6713 0.200529 0.0813449)`) while a transition runs or has just run, and the form
+ * varies by version. Two colors match when they're within `COLOR_TOLERANCE` in OKLab (ΔE_OK) and
+ * alpha. That's a quarter of a just-noticeable difference (~0.02): far above serialization
+ * rounding (~1e-5) and an 8-bit step (~0.003), far below a wrong token or a half-done transition.
+ */
+export const COLOR_TOLERANCE = 0.005;
+
+/** A color in OKLab, with its alpha. */
+type Oklab = { l: number; a: number; b: number; alpha: number };
+
+/** ΔE_OK between two computed CSS colors (or the alpha gap, when that's larger). */
+export function colorDistance(x: string, y: string): number {
+  const p = toOklab(x);
+  const q = toOklab(y);
+  // Two fully transparent colors are the same paint whatever their channels say.
+  if (p.alpha < COLOR_TOLERANCE && q.alpha < COLOR_TOLERANCE) return 0;
+  return Math.max(Math.hypot(p.l - q.l, p.a - q.a, p.b - q.b), Math.abs(p.alpha - q.alpha));
+}
+
+/** What `expect` needs to treat a value as an asymmetric matcher (and print it as one). */
+type ColorMatcher = {
+  $$typeof: symbol;
+  [inspect: symbol]: unknown;
+  asymmetricMatch: (actual: unknown) => boolean;
+  toString: () => string;
+  toAsymmetricMatcher: () => string;
+};
+
+/**
+ * Matches any serialization of `expected` (a computed color, e.g. from `computedColor`), inside
+ * `toEqual` — on its own, in an array, or in `toContainEqual`:
+ * `expect(getComputedStyle(el).color).toEqual(sameColor(computedColor(el, 'var(--bad)')))`.
+ */
+export function sameColor(expected: string): ColorMatcher {
+  toOklab(expected); // a color the parser can't read fails here, where the story names it
+  const label = `sameColor(${expected})`;
+  return {
+    $$typeof: Symbol.for('jest.asymmetricMatcher'),
+    asymmetricMatch: (actual) =>
+      typeof actual === 'string' && colorDistance(actual, expected) <= COLOR_TOLERANCE,
+    toString: () => label,
+    toAsymmetricMatcher: () => label,
+    // How chai's messages print it ("expected 'oklch(…)' to deeply equal sameColor(…)").
+    [Symbol.for('chai/inspect')]: () => label,
+  };
+}
+
+/** The colors in a computed value that holds several (`box-shadow`, a gradient), in order. */
+export function colorsIn(value: string): string[] {
+  return value.match(/(?:rgba?|oklch|oklab|color)\([^()]*\)/g) ?? [];
+}
+
+const NUMBER = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?%?$/i;
+
+/** A channel: a number, a percentage of `percentOf`, or `none` (zero). */
+function channel(token: string | undefined, percentOf: number): number {
+  if (token === undefined || token === 'none') return 0;
+  if (!NUMBER.test(token)) throw new Error(`Not a color channel: ${token}`);
+  return token.endsWith('%') ? (parseFloat(token) / 100) * percentOf : parseFloat(token);
+}
+
+/**
+ * A computed CSS color in OKLab. Reads the forms Chromium computes: `rgb()`/`rgba()`, `oklch()`,
+ * `oklab()` and `color(srgb | srgb-linear …)`. Anything else throws, so a new serialization fails
+ * loudly instead of comparing wrong.
+ */
+function toOklab(css: string): Oklab {
+  const m = /^\s*([a-z-]+)\(([^()]*)\)\s*$/i.exec(css);
+  if (m === null) throw new Error(`Not a computed color: ${css}`);
+  const fn = (m[1] as string).toLowerCase();
+  const [main, slash] = (m[2] as string).split('/');
+  const parts = (main as string).split(/[\s,]+/).filter(Boolean);
+  // The legacy form puts alpha fourth, after a comma.
+  const alphaToken = slash?.trim() ?? (fn === 'rgba' || fn === 'rgb' ? parts[3] : undefined);
+  const alpha = alphaToken === undefined ? 1 : channel(alphaToken, 1);
+  if (fn === 'oklab') {
+    return {
+      l: channel(parts[0], 1),
+      a: channel(parts[1], 0.4),
+      b: channel(parts[2], 0.4),
+      alpha,
+    };
+  }
+  if (fn === 'oklch') {
+    const c = channel(parts[1], 0.4);
+    const h = (channel(parts[2], 1) * Math.PI) / 180;
+    return { l: channel(parts[0], 1), a: c * Math.cos(h), b: c * Math.sin(h), alpha };
+  }
+  if (fn === 'rgb' || fn === 'rgba') {
+    const [r, g, b] = [0, 1, 2].map((i) => decode(channel(parts[i], 255) / 255));
+    return { ...linearToOklab(r as number, g as number, b as number), alpha };
+  }
+  if (fn === 'color') {
+    const space = parts.shift();
+    const [r, g, b] = [0, 1, 2].map((i) => channel(parts[i], 1));
+    if (space === 'srgb') {
+      return {
+        ...linearToOklab(decode(r as number), decode(g as number), decode(b as number)),
+        alpha,
+      };
+    }
+    if (space === 'srgb-linear') {
+      return { ...linearToOklab(r as number, g as number, b as number), alpha };
+    }
+  }
+  throw new Error(`A color form the comparison can't read yet: ${css}`);
+}
+
+/** The sRGB transfer function, inverted (sign-kept, for out-of-gamut channels). */
+function decode(c: number): number {
+  const s = Math.abs(c);
+  const lin = s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  return Math.sign(c) * lin;
+}
+
+/** Linear sRGB → OKLab (Björn Ottosson's matrices, as CSS Color 4 uses them). */
+function linearToOklab(r: number, g: number, b: number): Omit<Oklab, 'alpha'> {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return {
+    l: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  };
+}
+
 function luminance([r, g, b]: [number, number, number]): number {
   const lin = (c: number) => {
     const s = c / 255;

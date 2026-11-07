@@ -141,7 +141,8 @@ function ChipInput({
           'pb-[calc((var(--size-btn)-var(--size-badge))/2-var(--stroke-hair))]',
           'border-0 border-b border-solid border-line2 rounded-none',
           'transition-[border-color,box-shadow] duration-(--duration-fast) ease-standard',
-          '[@media(hover:hover)]:hover:border-fg3',
+          // Hover lifts a resting rule only: never over focus or a disabled field.
+          '[@media(hover:hover)]:hover:not-focus-within:not-has-data-disabled:border-fg3',
           'focus-within:border-fg focus-within:shadow-[0_1px_0_0_var(--fg)]',
           'has-data-disabled:border-line',
           className,

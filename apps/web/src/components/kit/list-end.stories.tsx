@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { ListEnd } from './list-end';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must } from './storyKit';
 
 const meta = {
@@ -133,10 +133,10 @@ async function expectTabGeometry(root: HTMLElement) {
   for (const c of centers) await near(c[1] ?? NaN, t.rule);
   for (const r of t.terminals) {
     await expect(Number(r.getAttribute('width'))).toBe(run);
-    await expect(getComputedStyle(r).fill).toBe(computedColor(t.end, 'var(--line2)'));
+    await expect(getComputedStyle(r).fill).toEqual(sameColor(computedColor(t.end, 'var(--line2)')));
   }
   const stroke = getComputedStyle(t.path);
-  await expect(stroke.stroke).toBe(computedColor(t.end, 'var(--line)'));
+  await expect(stroke.stroke).toEqual(sameColor(computedColor(t.end, 'var(--line)')));
   await expect(parseFloat(stroke.strokeWidth)).toBe(hair);
   await expect(stroke.fill).toBe('none');
   return t;
@@ -162,7 +162,9 @@ export const UnderAList: Story = {
     const box = t.end.getBoundingClientRect();
     await near(box.top - lr.bottom, resolvePx(t.end, 'var(--space-0_5)'));
     // The same rule: the rows' gray, the rows' span.
-    await expect(getComputedStyle(last).borderBottomColor).toBe(getComputedStyle(t.path).stroke);
+    await expect(getComputedStyle(last).borderBottomColor).toEqual(
+      sameColor(getComputedStyle(t.path).stroke),
+    );
     await near(box.left, lr.left);
     await near(box.right, lr.right);
     // The drawing is hidden from readers; the label is the text.
@@ -203,7 +205,7 @@ export const Label: Story = {
     const { label } = await readTab(canvasElement);
     const style = getComputedStyle(label);
     await expect(style.textTransform).toBe('uppercase');
-    await expect(style.color).toBe(computedColor(label, 'var(--fg3)'));
+    await expect(style.color).toEqual(sameColor(computedColor(label, 'var(--fg3)')));
     await expect(parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)).toBeCloseTo(
       parseFloat(style.letterSpacing),
       1,

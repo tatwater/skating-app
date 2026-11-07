@@ -15,7 +15,13 @@ import {
   DialogTrigger,
 } from './dialog';
 import { Kbd } from './kbd';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
@@ -126,8 +132,8 @@ export const Default: Story = {
 
     const style = getComputedStyle(dialog);
     await expect(style.borderRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(dialog, 'var(--panel)'));
-    await expect(style.borderTopColor).toBe(computedColor(dialog, 'var(--line2)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(dialog, 'var(--panel)')));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(dialog, 'var(--line2)')));
     // No ×: the only button is the action, and nothing draws an icon.
     await expect(
       within(dialog)
@@ -141,7 +147,9 @@ export const Default: Story = {
     await expect(dialog).toHaveAccessibleDescription('Every key this page listens for.');
 
     const dim = must(scrim());
-    await expect(getComputedStyle(dim).backgroundColor).toBe(computedColor(dim, 'var(--scrim)'));
+    await expect(getComputedStyle(dim).backgroundColor).toEqual(
+      sameColor(computedColor(dim, 'var(--scrim)')),
+    );
     await expect(getComputedStyle(dim).backdropFilter).toBe('none');
 
     await userEvent.keyboard('{Escape}');
@@ -313,8 +321,8 @@ export const Viewer: Story = {
       inset,
     ]);
     const dim = must(scrim());
-    await expect(getComputedStyle(dim).backgroundColor).toBe(
-      computedColor(dim, 'var(--scrim-deep)'),
+    await expect(getComputedStyle(dim).backgroundColor).toEqual(
+      sameColor(computedColor(dim, 'var(--scrim-deep)')),
     );
     await closeWithEscape(popup);
   },

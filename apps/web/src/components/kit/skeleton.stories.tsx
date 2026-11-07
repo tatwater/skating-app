@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type ReactNode, useState } from 'react';
 import { expect, spyOn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Skeleton, SkeletonBlock, SkeletonRow, SkeletonStat, SkeletonText } from './skeleton';
 import { KICKER, must } from './storyKit';
 
@@ -82,7 +82,7 @@ export const Wash: Story = {
     const el = must(canvasElement.querySelector<HTMLElement>('[data-slot="skeleton"]'));
     await expect(el).toHaveAttribute('aria-hidden', 'true');
     const style = getComputedStyle(el);
-    await expect(style.backgroundColor).toBe(computedColor(el, 'var(--lift-08)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(el, 'var(--lift-08)')));
     await expect(parseFloat(style.borderTopLeftRadius)).toBeCloseTo(
       resolvePx(el, 'var(--corner-control)'),
       1,

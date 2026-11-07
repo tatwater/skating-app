@@ -4,7 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Field, FieldLabel, Input } from './input';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import {
   Sheet,
   SheetBody,
@@ -182,7 +182,9 @@ export const RatesOverLedger: Story = {
       canvas.getByTestId('rail').getBoundingClientRect().right,
     );
     const dim = must(scrim());
-    await expect(getComputedStyle(dim).backgroundColor).toBe(computedColor(dim, 'var(--scrim)'));
+    await expect(getComputedStyle(dim).backgroundColor).toEqual(
+      sameColor(computedColor(dim, 'var(--scrim)')),
+    );
     await expect(getComputedStyle(dim).backdropFilter).toBe('none');
 
     await waitFor(() => expect(getComputedStyle(panel).translate).toBe('none'));
@@ -194,8 +196,8 @@ export const RatesOverLedger: Story = {
     await near(box.width, Math.min(resolvePx(panel, 'var(--size-sheet)'), host.width));
 
     const style = getComputedStyle(panel);
-    await expect(style.backgroundColor).toBe(computedColor(panel, 'var(--bg)'));
-    await expect(style.borderLeftColor).toBe(computedColor(panel, 'var(--line2)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(panel, 'var(--bg)')));
+    await expect(style.borderLeftColor).toEqual(sameColor(computedColor(panel, 'var(--line2)')));
     await expect(style.borderRadius).toBe('0px');
     const head = part(panel, 'sheet-header');
     await near(head.getBoundingClientRect().height, resolvePx(panel, 'var(--size-top)'));
@@ -227,8 +229,8 @@ export const Stacked: Story = {
     const change = must(sheets()[1]);
     await expect(rates).toHaveAttribute('data-nested-dialog-open');
     await waitFor(() => expect(getComputedStyle(rates, '::after').opacity).toBe('1'));
-    await expect(getComputedStyle(rates, '::after').backgroundColor).toBe(
-      computedColor(rates, 'var(--scrim)'),
+    await expect(getComputedStyle(rates, '::after').backgroundColor).toEqual(
+      sameColor(computedColor(rates, 'var(--scrim)')),
     );
     await waitFor(() => expect(getComputedStyle(change).translate).toBe('none'));
     await near(change.getBoundingClientRect().width, resolvePx(change, 'var(--size-sheet-sm)'));
@@ -287,7 +289,9 @@ export const JunctionOpen: Story = {
     const foot = part(panel, 'sheet-footer');
     const note = part(foot, 'dialog-note').getBoundingClientRect();
     await near(note.left - box.left - edge, gutter);
-    await expect(getComputedStyle(foot).backgroundColor).toBe(computedColor(foot, 'var(--bg)'));
+    await expect(getComputedStyle(foot).backgroundColor).toEqual(
+      sameColor(computedColor(foot, 'var(--bg)')),
+    );
     await near(parseFloat(getComputedStyle(foot).paddingTop), resolvePx(panel, 'var(--space-3)'));
     await closeWithEscape(sheet);
   },
@@ -361,7 +365,9 @@ export const Bottom: Story = {
     const { clientWidth, clientHeight } = document.documentElement;
     await expect([box.left, box.width]).toEqual([0, clientWidth]);
     await near(box.bottom, clientHeight);
-    await expect(getComputedStyle(panel).borderTopColor).toBe(computedColor(panel, 'var(--line2)'));
+    await expect(getComputedStyle(panel).borderTopColor).toEqual(
+      sameColor(computedColor(panel, 'var(--line2)')),
+    );
     await expect(panel.dataset.side).toBe('bottom');
     await closeWithEscape(sheet);
   },

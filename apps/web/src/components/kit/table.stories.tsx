@@ -12,7 +12,7 @@ import {
 import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { ScrollArea } from './scroll-area';
 import { KICKER, must } from './storyKit';
 import { DataTable, type DataTableProps, type TableColumnMeta } from './table';
@@ -155,7 +155,7 @@ async function expectRules(table: HTMLElement) {
       const s = getComputedStyle(c);
       await expect(s.borderBottomStyle).toBe(style);
       await expect(parseFloat(s.borderBottomWidth)).toBe(hair);
-      if (color) await expect(s.borderBottomColor).toBe(color);
+      if (color) await expect(s.borderBottomColor).toEqual(sameColor(color));
       await expect(parseFloat(s.marginLeft || '0')).toBe(0);
     }
   };
@@ -218,7 +218,7 @@ export const Default: Story = {
     await expect(row).not.toHaveAttribute('tabindex');
     row.tabIndex = -1;
     row.focus();
-    await expect(getComputedStyle(row).backgroundColor).toBe(before);
+    await expect(getComputedStyle(row).backgroundColor).toEqual(sameColor(before));
     row.blur();
     row.removeAttribute('tabindex');
     // The list ends on its tab, not a rule.
@@ -248,14 +248,14 @@ export const Sorting: Story = {
     const restRuns = at(runs);
     const fg3 = computedColor(job, 'var(--fg3)');
     const fg = computedColor(job, 'var(--fg)');
-    await expect(getComputedStyle(job).color).toBe(fg3);
+    await expect(getComputedStyle(job).color).toEqual(sameColor(fg3));
 
     // A left-aligned heading: the arrow trails it, the text stays put.
     await userEvent.click(within(job).getByRole('button'));
     await waitFor(() => expect(job).toHaveAttribute('aria-sort', 'ascending'));
     await expect(job.querySelector('svg')).not.toBeNull();
     await expect(at(job).left).toBe(restJob.left);
-    await expect(getComputedStyle(job).color).toBe(fg);
+    await expect(getComputedStyle(job).color).toEqual(sameColor(fg));
     const names = () => bodyRows(canvasElement).map((r) => r.cells[0]?.textContent);
     await expect(names()).toEqual([...JOBS.map((j) => j.name)].sort());
     await userEvent.click(within(job).getByRole('button'));
@@ -300,8 +300,8 @@ export const Clickable: Story = {
 
     // The chosen row.
     await expect(chosen).toHaveAttribute('aria-current', 'true');
-    await expect(getComputedStyle(chosen).backgroundColor).toBe(lift08);
-    await expect(getComputedStyle(chosen).color).toBe(fg);
+    await expect(getComputedStyle(chosen).backgroundColor).toEqual(sameColor(lift08));
+    await expect(getComputedStyle(chosen).color).toEqual(sameColor(fg));
     const rule = getComputedStyle(must(chosen.cells[0])).boxShadow;
     await expect(rule).toContain('inset');
     await expect(rule).toContain('2px 0px 0px 0px');
@@ -315,20 +315,22 @@ export const Clickable: Story = {
     const other = must(rows[0]);
     await expect(getComputedStyle(other).cursor).toBe('pointer');
     other.focus();
-    await waitFor(() => expect(getComputedStyle(other).backgroundColor).toBe(lift05));
+    await waitFor(() => expect(getComputedStyle(other).backgroundColor).toEqual(sameColor(lift05)));
     await expect(getComputedStyle(other).outlineStyle).toBe('solid');
     other.blur();
 
     // The dim row.
     const dim = must(rows[5]);
     await expect(dim).toHaveAttribute('data-dim');
-    await expect(getComputedStyle(must(dim.cells[0])).color).toBe(fg3);
+    await expect(getComputedStyle(must(dim.cells[0])).color).toEqual(sameColor(fg3));
 
     // The arrows move along the rows, and the tab stop follows focus.
     chosen.focus();
     await userEvent.keyboard('{ArrowDown}');
     await expect(document.activeElement).toBe(rows[3]);
-    await waitFor(() => expect(getComputedStyle(must(rows[3])).backgroundColor).toBe(lift05));
+    await waitFor(() =>
+      expect(getComputedStyle(must(rows[3])).backgroundColor).toEqual(sameColor(lift05)),
+    );
     await expect(rows.filter((r) => r.tabIndex === 0)).toEqual([rows[3]]);
     await userEvent.keyboard('{End}');
     await expect(document.activeElement).toBe(rows[5]);
@@ -454,7 +456,9 @@ export const StickyHeader: Story = {
     const viewport = q(canvasElement, '[data-slot="scroll-area-viewport"]');
     const th = q(canvasElement, 'thead th');
     await expect(getComputedStyle(th).position).toBe('sticky');
-    await expect(getComputedStyle(th).backgroundColor).toBe(computedColor(th, 'var(--bg)'));
+    await expect(getComputedStyle(th).backgroundColor).toEqual(
+      sameColor(computedColor(th, 'var(--bg)')),
+    );
     viewport.scrollTop = 200;
     await waitFor(() =>
       expect(near(th.getBoundingClientRect().top, viewport.getBoundingClientRect().top)).toBe(true),

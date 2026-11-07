@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { StatGrid, StatTile, Value } from './stat-tile';
 import { must, rootPx } from './storyKit';
 
@@ -55,12 +55,14 @@ export const Tile: Story = {
     const sub = part(tile, 'stat-sub');
     await expect(getComputedStyle(label).textTransform).toBe('uppercase');
     await expect(getComputedStyle(value).fontFamily).toMatch(/Martian Mono/);
-    await expect(getComputedStyle(value).color).toBe(computedColor(value, 'var(--fg)'));
-    await expect(getComputedStyle(sub).color).toBe(computedColor(sub, 'var(--fg3)'));
+    await expect(getComputedStyle(value).color).toEqual(
+      sameColor(computedColor(value, 'var(--fg)')),
+    );
+    await expect(getComputedStyle(sub).color).toEqual(sameColor(computedColor(sub, 'var(--fg3)')));
     // Not a card: no box, no fill.
     const style = getComputedStyle(tile);
     await expect(style.borderTopWidth).toBe('0px');
-    await expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await expect(style.backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     // The gaps, content to content.
     const gap = resolvePx(tile, 'var(--space-1)');
     const [a, b, c] = [label, value, sub].map((el) => el.getBoundingClientRect());
@@ -101,7 +103,7 @@ export const ValueWithUnit: Story = {
     await expect(value.textContent).toBe('177,400 weighted');
     // The gray slot: light, smaller, fg3, same face.
     const u = getComputedStyle(unit);
-    await expect(u.color).toBe(computedColor(unit, 'var(--fg3)'));
+    await expect(u.color).toEqual(sameColor(computedColor(unit, 'var(--fg3)')));
     await expect(u.fontWeight).toBe('300');
     await expect(u.fontFamily).toMatch(/Martian Mono/);
     await expect(parseFloat(u.fontSize)).toBeLessThan(
@@ -137,11 +139,13 @@ export const Tones: Story = {
     const values = [...canvasElement.querySelectorAll<HTMLElement>('[data-slot="value"]')];
     const want = ['var(--bad)', 'var(--warn)', 'var(--fg3)', 'var(--fg)'];
     for (const [i, el] of values.entries()) {
-      await expect(getComputedStyle(el).color).toBe(computedColor(el, must(want[i])));
+      await expect(getComputedStyle(el).color).toEqual(sameColor(computedColor(el, must(want[i]))));
     }
     // The unit keeps its gray whatever the value's tone.
     const unit = part(must(values[0]), 'value-unit');
-    await expect(getComputedStyle(unit).color).toBe(computedColor(unit, 'var(--fg3)'));
+    await expect(getComputedStyle(unit).color).toEqual(
+      sameColor(computedColor(unit, 'var(--fg3)')),
+    );
   },
 };
 
@@ -324,7 +328,9 @@ async function expectUnbrokenRules(grid: HTMLElement, columns: number) {
       else {
         await expect(style.borderBottomWidth).toBe('1px');
         await expect(style.borderBottomStyle).toBe('dotted');
-        await expect(style.borderBottomColor).toBe(computedColor(cell, 'var(--line)'));
+        await expect(style.borderBottomColor).toEqual(
+          sameColor(computedColor(cell, 'var(--line)')),
+        );
       }
       // The column rules run down the grid: no gap between rows either.
       const below = rows[r + 1]?.[c];

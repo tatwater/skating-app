@@ -3,7 +3,13 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { expect, fn, spyOn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { must, openWith } from './storyKit';
 import {
   createToastManager,
@@ -122,15 +128,17 @@ export const WithUndo: Story = {
     // The plate: square, the solid plate ground, a strong-rule edge.
     const style = getComputedStyle(t);
     await expect(style.borderRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(t, 'var(--plate-solid)'));
-    await expect(style.borderTopColor).toBe(computedColor(t, 'var(--line2)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(t, 'var(--plate-solid)')));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(t, 'var(--line2)')));
     // The stripe: 6 px, white for done.
     const stripe = slot(t, 'toast-stripe');
     await expect(stripe.getBoundingClientRect().width).toBeCloseTo(
       resolvePx(t, 'var(--stroke-tick)'),
       2,
     );
-    await expect(getComputedStyle(stripe).backgroundColor).toBe(computedColor(stripe, 'var(--fg)'));
+    await expect(getComputedStyle(stripe).backgroundColor).toEqual(
+      sameColor(computedColor(stripe, 'var(--fg)')),
+    );
     // The window and the key.
     await expect(slot(t, 'toast-countdown')).toHaveTextContent(/^(10|9) s$/);
     const undo = within(t).getByRole('button', { name: /Undo/ });
@@ -267,7 +275,9 @@ export const DismissesOnItsOwn: Story = {
       resolvePx(bar, 'var(--stroke-note)'),
       2,
     );
-    await expect(getComputedStyle(bar).backgroundColor).toBe(computedColor(bar, 'var(--fg3)'));
+    await expect(getComputedStyle(bar).backgroundColor).toEqual(
+      sameColor(computedColor(bar, 'var(--fg3)')),
+    );
     await waitFor(() => expect(toastIn(canvasElement)).toBeNull(), { timeout: 3000 });
   },
 };
@@ -462,8 +472,8 @@ export const Persistent: Story = {
     await expect(t.querySelector('[data-slot="toast-countdown"]')).toBeNull();
     await expect(t).toHaveAttribute('data-type', 'bad');
     const stripe = slot(t, 'toast-stripe');
-    await expect(getComputedStyle(stripe).backgroundColor).toBe(
-      computedColor(stripe, 'var(--bad)'),
+    await expect(getComputedStyle(stripe).backgroundColor).toEqual(
+      sameColor(computedColor(stripe, 'var(--bad)')),
     );
   },
 };
@@ -532,7 +542,9 @@ export const Tones: Story = {
     });
     const s = slot(canvasElement, 'toast-stripe');
     await expect(inks).toEqual(
-      ['var(--fg)', 'var(--fg2)', 'var(--warn)', 'var(--bad)'].map((c) => computedColor(s, c)),
+      ['var(--fg)', 'var(--fg2)', 'var(--warn)', 'var(--bad)'].map((c) =>
+        sameColor(computedColor(s, c)),
+      ),
     );
   },
 };

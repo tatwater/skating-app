@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { Switch, SwitchRow } from './switch';
 
@@ -43,7 +43,7 @@ export const On: Story = {
     const track = part(el, 'switch-track');
     // (Resolve the color outside `waitFor`: its probe mutates the DOM, which re-runs `waitFor`.)
     const rim = computedColor(el, 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(track).borderTopColor).toBe(rim));
+    await waitFor(() => expect(getComputedStyle(track).borderTopColor).toEqual(sameColor(rim)));
     await expect(getComputedStyle(track).borderRadius).toBe('6px');
   },
 };
@@ -158,8 +158,8 @@ export const FocusLights: Story = {
       const lit = computedColor(el, 'var(--fg2)');
       el.focus();
       await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/3px/));
-      await waitFor(() => expect(getComputedStyle(track).borderTopColor).toBe(lit));
-      await expect(lit).not.toBe(rest);
+      await waitFor(() => expect(getComputedStyle(track).borderTopColor).toEqual(sameColor(lit)));
+      await expect(lit).not.toEqual(sameColor(rest));
     }
   },
 };

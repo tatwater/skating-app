@@ -18,7 +18,7 @@ import { Button } from './button';
 import { CommandPalette } from './command-palette';
 import { Kbd } from './kbd';
 import { type LaneGroup, Lanes } from './lanes';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { MiddleList, type MiddleListItem } from './middle-list';
 import { RailViewer } from './rail-item';
 import { StatusLamp, StatusText, useClaimKey } from './status-bar';
@@ -296,7 +296,9 @@ export const Frame: Story = {
     // The rail's edge and the top bar's rule: hairlines in `line`.
     const railStyle = getComputedStyle(slot(shell, 'shell-rail'));
     await expect(railStyle.borderRightWidth).toBe('1px');
-    await expect(railStyle.borderRightColor).toBe(computedColor(shell, 'var(--line)'));
+    await expect(railStyle.borderRightColor).toEqual(
+      sameColor(computedColor(shell, 'var(--line)')),
+    );
     await expect(getComputedStyle(slot(shell, 'shell-top')).borderBottomWidth).toBe('1px');
     // The tape is centered on the top bar.
     const tape = slot(shell, 'shell-top-center').getBoundingClientRect();
@@ -313,7 +315,9 @@ export const Frame: Story = {
     await expect(edges).toHaveLength(2);
     for (const edge of edges) {
       await near(edge.getBoundingClientRect().width, 1);
-      await expect(getComputedStyle(edge).backgroundColor).toBe(computedColor(edge, 'var(--line)'));
+      await expect(getComputedStyle(edge).backgroundColor).toEqual(
+        sameColor(computedColor(edge, 'var(--line)')),
+      );
     }
     await near(middle.left - lanes.right, 1);
     await near(inspector.left - middle.right, 1);
@@ -631,9 +635,11 @@ export const WithoutPanes: Story = {
 
 const darkLight = async (canvasElement: HTMLElement) => {
   const shell = slot(canvasElement, 'app-shell');
-  await expect(getComputedStyle(shell).backgroundColor).toBe(computedColor(shell, 'var(--bg)'));
-  await expect(getComputedStyle(slot(shell, 'shell-rail')).borderRightColor).toBe(
-    computedColor(shell, 'var(--line)'),
+  await expect(getComputedStyle(shell).backgroundColor).toEqual(
+    sameColor(computedColor(shell, 'var(--bg)')),
+  );
+  await expect(getComputedStyle(slot(shell, 'shell-rail')).borderRightColor).toEqual(
+    sameColor(computedColor(shell, 'var(--line)')),
   );
 };
 

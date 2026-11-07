@@ -27,11 +27,14 @@ import { Kbd } from './kbd';
 /** Inside an `InputGroup`, an input drops its own rule and height: the group draws them. */
 const InGroup = createContext(false);
 
-/** The rule's states, shared by a lone input and a group (which carries the rule for both). */
+/**
+ * The rule, shared by a lone input and a group (which carries the rule for both). Each adds its
+ * own hover: hover lifts a *resting* rule only, so it is gated off every state that outranks it
+ * (focus, an error, a save, disabled) instead of racing them in the cascade.
+ */
 const RULE = [
   'border-0 border-b border-solid border-line2 rounded-none',
   'transition-[border-color,box-shadow] duration-(--duration-fast) ease-standard',
-  '[@media(hover:hover)]:hover:border-fg3',
 ];
 
 function Input({ className, ...props }: InputPrimitive.Props) {
@@ -46,6 +49,7 @@ function Input({ className, ...props }: InputPrimitive.Props) {
         !grouped && [
           'h-btn',
           ...RULE,
+          '[@media(hover:hover)]:hover:not-focus:not-data-invalid:not-aria-invalid:not-data-disabled:border-fg3',
           'focus:border-fg focus:shadow-[0_1px_0_0_var(--fg)]',
           'data-invalid:border-bad data-invalid:focus:shadow-[0_1px_0_0_var(--bad)]',
           'aria-invalid:border-bad aria-invalid:focus:shadow-[0_1px_0_0_var(--bad)]',
@@ -95,6 +99,7 @@ function InputGroup({ className, status, children, onPointerDown, ...props }: In
       className={cn(
         'group/input relative flex h-btn w-full min-w-0 cursor-text items-center gap-(--space-1_5)',
         RULE,
+        '[@media(hover:hover)]:hover:not-focus-within:not-has-data-invalid:not-has-aria-invalid:not-has-data-disabled:not-data-[status=typing]:not-data-[status=saving]:not-data-[status=failed]:border-fg3',
         'focus-within:border-fg focus-within:shadow-[0_1px_0_0_var(--fg)]',
         'data-[status=typing]:border-fg2 data-[status=saving]:border-fg2',
         'data-[status=failed]:border-bad focus-within:data-[status=failed]:shadow-[0_1px_0_0_var(--bad)]',

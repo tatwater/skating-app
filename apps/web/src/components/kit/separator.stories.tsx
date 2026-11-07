@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Separator } from './separator';
 import { KICKER, must } from './storyKit';
 
@@ -36,7 +36,7 @@ export const Horizontal: Story = {
       JUNCTION_TOLERANCE_PX,
     );
     const style = getComputedStyle(rule);
-    await expect(style.backgroundColor).toBe(computedColor(rule, 'var(--line)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(rule, 'var(--line)')));
     // No margins: the stack's gap is the only space on each side.
     await expect([style.marginTop, style.marginBottom]).toEqual(['0px', '0px']);
     const [above, below] = [...pane.querySelectorAll('p')].map((p) => p.getBoundingClientRect());
@@ -78,7 +78,9 @@ export const StatusBar: Story = {
     const r = rule.getBoundingClientRect();
     await expect(r.width).toBe(resolvePx(rule, 'var(--stroke-hair)'));
     await expect(r.height).toBeCloseTo(resolvePx(bar, 'var(--space-3)'), 1);
-    await expect(getComputedStyle(rule).backgroundColor).toBe(computedColor(rule, 'var(--line2)'));
+    await expect(getComputedStyle(rule).backgroundColor).toEqual(
+      sameColor(computedColor(rule, 'var(--line2)')),
+    );
     // Centered on the bar.
     const b = bar.getBoundingClientRect();
     const mid = (b.top + b.bottom) / 2;
@@ -117,12 +119,12 @@ export const Tones: Story = {
   ),
   play: async ({ canvasElement }) => {
     const [quiet, strong] = rules(canvasElement).map(must);
-    await expect(getComputedStyle(must(quiet)).backgroundColor).toBe(
-      computedColor(must(quiet), 'var(--line)'),
+    await expect(getComputedStyle(must(quiet)).backgroundColor).toEqual(
+      sameColor(computedColor(must(quiet), 'var(--line)')),
     );
     await expect(must(strong)).toHaveAttribute('data-strong');
-    await expect(getComputedStyle(must(strong)).backgroundColor).toBe(
-      computedColor(must(strong), 'var(--line2)'),
+    await expect(getComputedStyle(must(strong)).backgroundColor).toEqual(
+      sameColor(computedColor(must(strong), 'var(--line2)')),
     );
   },
 };
@@ -151,8 +153,8 @@ export const FourUp: Story = {
         resolvePx(q, 'var(--space-3)'),
         1,
       );
-      await expect(getComputedStyle(must(h)).backgroundColor).toBe(
-        computedColor(must(h), 'var(--line)'),
+      await expect(getComputedStyle(must(h)).backgroundColor).toEqual(
+        sameColor(computedColor(must(h), 'var(--line)')),
       );
     }
   },

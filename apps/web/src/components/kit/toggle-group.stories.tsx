@@ -2,7 +2,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { ToggleGroup, ToggleGroupItem } from './toggle-group';
 
@@ -36,8 +42,8 @@ export const Joined: Story = {
     const clouded = option(canvasElement, 'Clouded');
     await expect(all).toHaveAttribute('aria-pressed', 'true');
     const style = getComputedStyle(all);
-    await expect(style.backgroundColor).toBe(computedColor(all, 'var(--fg1)'));
-    await expect(style.color).toBe(computedColor(all, 'var(--bg)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(all, 'var(--fg1)')));
+    await expect(style.color).toEqual(sameColor(computedColor(all, 'var(--bg)')));
     await expect(style.boxShadow).toBe('none');
     await expect(style.textTransform).toBe('uppercase');
     await userEvent.click(clouded);
@@ -63,11 +69,13 @@ export const Well: Story = {
   ),
   play: async ({ canvasElement }) => {
     const group = must(canvasElement.querySelector<HTMLElement>('[data-slot="toggle-group"]'));
-    await expect(getComputedStyle(group).backgroundColor).toBe(
-      computedColor(group, 'var(--panel)'),
+    await expect(getComputedStyle(group).backgroundColor).toEqual(
+      sameColor(computedColor(group, 'var(--panel)')),
     );
     const chord = option(canvasElement, 'Chord');
-    await expect(getComputedStyle(chord).backgroundColor).toBe(computedColor(chord, 'var(--fg1)'));
+    await expect(getComputedStyle(chord).backgroundColor).toEqual(
+      sameColor(computedColor(chord, 'var(--fg1)')),
+    );
   },
 };
 
@@ -171,7 +179,9 @@ export const DisabledOption: Story = {
     const naip = option(canvasElement, 'NAIP');
     await userEvent.click(naip, { pointerEventsCheck: 0 });
     await expect(args.onValueChange).not.toHaveBeenCalled();
-    await expect(getComputedStyle(naip).color).toBe(computedColor(naip, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(naip).color).toEqual(
+      sameColor(computedColor(naip, 'var(--fg-disabled)')),
+    );
     const cap = must(naip.querySelector('[data-slot="toggle-group-hint"]'));
     await expect(getComputedStyle(cap).visibility).toBe('visible');
     await expect(Number(getComputedStyle(cap).opacity)).toBeLessThan(1);
@@ -233,7 +243,7 @@ export const FocusLights: Story = {
     const lit = computedColor(clear, 'var(--fg1)');
     clear.focus();
     await waitFor(() => expect(getComputedStyle(clear).boxShadow).toMatch(/3px/));
-    await waitFor(() => expect(getComputedStyle(clear).color).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(clear).color).toEqual(sameColor(lit)));
   },
 };
 

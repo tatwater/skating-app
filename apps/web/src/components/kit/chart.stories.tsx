@@ -14,7 +14,7 @@ import {
   ChartXAxis,
   ChartYAxis,
 } from './chart';
-import { computedColor, resolvePx } from './measure';
+import { computedColor, resolvePx, sameColor } from './measure';
 import { KICKER, must } from './storyKit';
 
 const meta = {
@@ -161,8 +161,8 @@ async function expectPlate(scope: HTMLElement) {
   const p = must(plate);
   const s = getComputedStyle(p);
   await expect(s.borderTopLeftRadius).toBe('0px');
-  await expect(s.backgroundColor).toBe(computedColor(p, 'var(--plate-solid)'));
-  await expect(s.borderTopColor).toBe(computedColor(p, 'var(--line2)'));
+  await expect(s.backgroundColor).toEqual(sameColor(computedColor(p, 'var(--plate-solid)')));
+  await expect(s.borderTopColor).toEqual(sameColor(computedColor(p, 'var(--line2)')));
   await expect(s.boxShadow).not.toBe('none');
   return p;
 }
@@ -188,7 +188,7 @@ async function expectGridlines(scope: HTMLElement) {
   for (const l of [...horizontal, ...vertical]) {
     const s = getComputedStyle(l);
     await expect(s.strokeDasharray).toBe('none');
-    await expect(s.stroke).toBe(line);
+    await expect(s.stroke).toEqual(sameColor(line));
   }
   return { horizontal, vertical };
 }
@@ -279,8 +279,8 @@ export const NothingClips: Story = {
     const plate = await expectPlate(canvasElement);
     await expect(plate).toHaveTextContent('Surface water41 °F');
     // Water wears the ice accent — the one place it may.
-    await expect(getComputedStyle(q(canvasElement, '.recharts-area-curve')).stroke).toBe(
-      computedColor(canvasElement, 'var(--acc)'),
+    await expect(getComputedStyle(q(canvasElement, '.recharts-area-curve')).stroke).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--acc)')),
     );
     // Vertical gridlines run top to bottom too.
     const { vertical } = await expectGridlines(canvasElement);
@@ -302,7 +302,9 @@ export const Bars: Story = {
     await expect(bars).toHaveLength(SPEND.length);
     const bar = must(bars[4]);
     await waitFor(() => expect(bar.getBoundingClientRect().height).toBeGreaterThan(0));
-    await expect(getComputedStyle(bar).fill).toBe(computedColor(canvasElement, 'var(--fg)'));
+    await expect(getComputedStyle(bar).fill).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--fg)')),
+    );
     // The band's middle in the chart's own coordinates (hover swaps the bar's element for the
     // active one, so read it first).
     const middle = attr(bar, 'x') + attr(bar, 'width') / 2;
@@ -320,7 +322,9 @@ export const Bars: Story = {
     await expect(plate).toHaveTextContent('Spend$31.60');
     // The reference rule: the rule gray, dashed.
     const rule = q(canvasElement, '.recharts-reference-line line');
-    await expect(getComputedStyle(rule).stroke).toBe(computedColor(canvasElement, 'var(--line2)'));
+    await expect(getComputedStyle(rule).stroke).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--line2)')),
+    );
     await leave(canvasElement);
   },
 };
@@ -341,22 +345,24 @@ export const Axes: Story = {
       resolvePx(canvasElement, 'var(--type-kick)'),
       1,
     );
-    await expect(xs.fill).toBe(fg3);
+    await expect(xs.fill).toEqual(sameColor(fg3));
     await expect(ys.fontFamily).toMatch(/Martian Mono/);
-    await expect(ys.fill).toBe(fg3);
+    await expect(ys.fill).toEqual(sameColor(fg3));
     await expect(canvasElement.querySelector('.recharts-cartesian-axis-line')).toBeNull();
     // The event rule's label is a kicker.
     // (Recharts draws labels in a layer of their own, over the marks.)
     const labels = qa(canvasElement, '.recharts-label');
     const label = must(labels.find((l) => l.textContent === 'Watch opened'));
     await expect(getComputedStyle(label).textTransform).toBe('uppercase');
-    await expect(getComputedStyle(label).fill).toBe(fg3);
+    await expect(getComputedStyle(label).fill).toEqual(sameColor(fg3));
     const warn = must(labels.find((l) => l.textContent === '20 °F'));
-    await expect(getComputedStyle(warn).fill).toBe(computedColor(canvasElement, 'var(--warn)'));
+    await expect(getComputedStyle(warn).fill).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--warn)')),
+    );
     // The warning rule wears the warning tone, its label too.
     const lines = qa(canvasElement, '.recharts-reference-line line');
     const strokes = lines.map((l) => getComputedStyle(l).stroke);
-    await expect(strokes).toContain(computedColor(canvasElement, 'var(--warn)'));
+    await expect(strokes).toContainEqual(sameColor(computedColor(canvasElement, 'var(--warn)')));
   },
 };
 
@@ -434,7 +440,9 @@ export const FourUp: Story = {
       const x = q(quad, '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value');
       await expect(parseFloat(getComputedStyle(x).fontSize)).toBe(kick[surface]);
       const now = qa(quad, '.recharts-line-curve').at(-1) as SVGElement;
-      await expect(getComputedStyle(now).stroke).toBe(computedColor(quad, 'var(--fg)'));
+      await expect(getComputedStyle(now).stroke).toEqual(
+        sameColor(computedColor(quad, 'var(--fg)')),
+      );
     }
   },
 };

@@ -4,7 +4,7 @@ import { expect, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Kbd, KbdGroup } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must, rootPx, StateMatrix } from './storyKit';
 
 const meta = {
@@ -50,7 +50,9 @@ export const Go: Story = {
   play: async ({ canvasElement }) => {
     const el = kbd(canvasElement);
     await expect(el).toHaveTextContent('GI');
-    await expect(getComputedStyle(el).backgroundColor).toBe(computedColor(el, 'var(--acc)'));
+    await expect(getComputedStyle(el).backgroundColor).toEqual(
+      sameColor(computedColor(el, 'var(--acc)')),
+    );
     const spent = must(el.querySelector<HTMLElement>('[data-slot="kbd-spent"]'));
     await expect(Number(getComputedStyle(spent).opacity)).toBeLessThan(1);
   },
@@ -70,8 +72,10 @@ export const Disabled: Story = {
   play: async ({ canvasElement }) => {
     const el = kbd(canvasElement);
     await expect(el).toHaveAttribute('data-disabled');
-    await expect(getComputedStyle(el).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    await expect(getComputedStyle(el).color).toBe(computedColor(el, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(el).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    await expect(getComputedStyle(el).color).toEqual(
+      sameColor(computedColor(el, 'var(--fg-disabled)')),
+    );
   },
 };
 

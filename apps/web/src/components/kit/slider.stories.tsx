@@ -1,7 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  colorsIn,
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { Slider } from './slider';
 import { must } from './storyKit';
 
@@ -116,15 +123,20 @@ export const Disabled: Story = {
     await expect(args.onValueChange).not.toHaveBeenCalled();
     const thumb = must(canvasElement.querySelector<HTMLElement>('[data-slot="slider-thumb"]'));
     // No glow: every shadow layer left is transparent.
-    const glow = getComputedStyle(thumb).boxShadow.replaceAll('rgba(0, 0, 0, 0)', '');
-    await expect(glow).not.toMatch(/rgb|oklch/);
-    await expect(getComputedStyle(thumb).borderTopColor).toBe(computedColor(thumb, 'var(--line2)'));
+    for (const layer of colorsIn(getComputedStyle(thumb).boxShadow)) {
+      await expect(layer).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    }
+    await expect(getComputedStyle(thumb).borderTopColor).toEqual(
+      sameColor(computedColor(thumb, 'var(--line2)')),
+    );
     const fill = must(canvasElement.querySelector<HTMLElement>('[data-slot="slider-fill"]'));
-    await expect(getComputedStyle(fill).backgroundColor).toBe(
-      computedColor(fill, 'var(--fg-disabled)'),
+    await expect(getComputedStyle(fill).backgroundColor).toEqual(
+      sameColor(computedColor(fill, 'var(--fg-disabled)')),
     );
     const grip = must(canvasElement.querySelector<HTMLElement>('[data-slot="slider-grip"]'));
-    await expect(getComputedStyle(grip).backgroundColor).toBe(computedColor(grip, 'var(--line2)'));
+    await expect(getComputedStyle(grip).backgroundColor).toEqual(
+      sameColor(computedColor(grip, 'var(--line2)')),
+    );
   },
 };
 

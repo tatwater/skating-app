@@ -3,6 +3,7 @@ import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 import { alias, storybookPlugins } from './.storybook/vite.config';
+import { parkPointer } from './src/test/pointer.commands';
 
 /**
  * Web tests (D40), two projects under one `vitest run`:
@@ -95,10 +96,13 @@ export default defineConfig({
         },
         test: {
           name: 'storybook',
+          // Park the real pointer before each story (`src/test/pointer.commands.ts` says why).
+          setupFiles: ['./src/test/storybook.setup.ts'],
           browser: {
             enabled: true,
             headless: true,
             provider: playwright(),
+            commands: { parkPointer },
             instances: [{ browser: 'chromium' }],
           },
         },

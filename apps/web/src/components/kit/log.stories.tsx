@@ -4,7 +4,14 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Log, type LogLine, RunError } from './log';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  colorsIn,
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { must } from './storyKit';
 
 const meta = {
@@ -97,7 +104,9 @@ export const Live: Story = {
     const last = must(rows.at(-1));
     await expect(last).toHaveAttribute('data-live');
     await expect(rows.filter((r) => r.hasAttribute('data-live'))).toHaveLength(1);
-    await expect(getComputedStyle(last).boxShadow).toContain(computedColor(last, 'var(--fg)'));
+    await expect(colorsIn(getComputedStyle(last).boxShadow)).toContainEqual(
+      sameColor(computedColor(last, 'var(--fg)')),
+    );
     await expect(last.querySelector('[data-slot="log-cursor"]')).not.toBeNull();
     await userEvent.click(canvas.getByRole('button', { name: 'Write 10 lines' }));
     await waitFor(() => expect(parts(canvasElement).rows).toHaveLength(40));
@@ -173,12 +182,16 @@ export const Failed: Story = {
     const failing = rows.filter((r) => r.hasAttribute('data-fail'));
     await expect(failing).toEqual([rows.at(-1)]);
     const line = must(failing[0]);
-    await expect(getComputedStyle(line).backgroundColor).toBe(
-      computedColor(line, 'var(--bad-wash)'),
+    await expect(getComputedStyle(line).backgroundColor).toEqual(
+      sameColor(computedColor(line, 'var(--bad-wash)')),
     );
-    await expect(getComputedStyle(line).boxShadow).toContain(computedColor(line, 'var(--bad)'));
+    await expect(colorsIn(getComputedStyle(line).boxShadow)).toContainEqual(
+      sameColor(computedColor(line, 'var(--bad)')),
+    );
     const warn = must(rows[3]?.querySelector<HTMLElement>('[data-slot="log-word"]'));
-    await expect(getComputedStyle(warn).color).toBe(computedColor(warn, 'var(--warn)'));
+    await expect(getComputedStyle(warn).color).toEqual(
+      sameColor(computedColor(warn, 'var(--warn)')),
+    );
   },
 };
 
@@ -378,13 +391,15 @@ export const RunErrorBlock: Story = {
     const block = must(canvasElement.querySelector<HTMLElement>('[data-slot="run-error"]'));
     await expect(block).toHaveAccessibleName('Failed · Wed 14 Oct 04:12');
     const style = getComputedStyle(block);
-    await expect(style.backgroundColor).toBe(computedColor(block, 'var(--bad-wash)'));
-    await expect(style.borderLeftColor).toBe(computedColor(block, 'var(--bad)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(block, 'var(--bad-wash)')));
+    await expect(style.borderLeftColor).toEqual(sameColor(computedColor(block, 'var(--bad)')));
     await near(parseFloat(style.borderLeftWidth), resolvePx(block, 'var(--stroke-note)'));
     await expect(style.borderTopWidth).toBe('0px');
     await expect(style.borderRadius).toBe('0px');
     const head = must(block.querySelector('h3'));
-    await expect(getComputedStyle(head).color).toBe(computedColor(head, 'var(--bad)'));
+    await expect(getComputedStyle(head).color).toEqual(
+      sameColor(computedColor(head, 'var(--bad)')),
+    );
     await expect(getComputedStyle(head).textTransform).toBe('uppercase');
     const msg = must(block.querySelector<HTMLElement>('[data-slot="run-error-message"]'));
     const probe = document.createElement('span');
@@ -394,7 +409,9 @@ export const RunErrorBlock: Story = {
     probe.remove();
     await expect(getComputedStyle(msg).fontFamily).toBe(mono);
     const trace = must(block.querySelector<HTMLElement>('[data-slot="run-error-trace"]'));
-    await expect(getComputedStyle(trace).color).toBe(computedColor(trace, 'var(--fg3)'));
+    await expect(getComputedStyle(trace).color).toEqual(
+      sameColor(computedColor(trace, 'var(--fg3)')),
+    );
     // The head, message and foot sit `space-2_5` apart; the content starts `space-4` in.
     const gap = resolvePx(block, 'var(--space-2_5)');
     const b = block.getBoundingClientRect();
@@ -468,8 +485,8 @@ export const FourUp: Story = {
       const one = resolvePx(q, 'calc(var(--type-mono-sm) * var(--lead-loose))');
       await expect(Math.abs(row.getBoundingClientRect().height - one)).toBeLessThanOrEqual(0.5);
       const fail = must(q.querySelector<HTMLElement>('[data-fail]'));
-      await expect(getComputedStyle(fail).backgroundColor).toBe(
-        computedColor(q, 'var(--bad-wash)'),
+      await expect(getComputedStyle(fail).backgroundColor).toEqual(
+        sameColor(computedColor(q, 'var(--bad-wash)')),
       );
     }
   },

@@ -2,7 +2,7 @@ import * as tokens from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must } from './storyKit';
 import {
   LedStrip,
@@ -131,11 +131,11 @@ export const Sentinels: Story = {
     // Gridless: the only lines are the two rules.
     await expect(svg.querySelectorAll('line')).toHaveLength(2);
     // Inks: the lead in the bright ink, the 20 °F rule in amber.
-    await expect(getComputedStyle(must(svg.querySelector('[data-trace="clouds"]'))).stroke).toBe(
-      computedColor(chart, 'var(--fg)'),
+    await expect(getComputedStyle(must(svg.querySelector('[data-trace="clouds"]'))).stroke).toEqual(
+      sameColor(computedColor(chart, 'var(--fg)')),
     );
-    await expect(getComputedStyle(must(svg.querySelectorAll('line')[1])).stroke).toBe(
-      computedColor(chart, 'var(--warn)'),
+    await expect(getComputedStyle(must(svg.querySelectorAll('line')[1])).stroke).toEqual(
+      sameColor(computedColor(chart, 'var(--warn)')),
     );
     // End labels: mono, in caps, never overlapping.
     const labels = [...svg.querySelectorAll<SVGTextElement>('[data-slot="trace-end-label"]')];
@@ -282,11 +282,11 @@ export const Led: Story = {
     );
     await expect(must(r[1]).left - must(r[0]).right).toBeCloseTo(3, 1);
     await expect(must(r[0]).height).toBeCloseTo(resolvePx(full, 'var(--space-2)'), 1);
-    await expect(getComputedStyle(must(segs[0])).backgroundColor).toBe(
-      computedColor(full, 'var(--fg)'),
+    await expect(getComputedStyle(must(segs[0])).backgroundColor).toEqual(
+      sameColor(computedColor(full, 'var(--fg)')),
     );
-    await expect(getComputedStyle(must(segs[9])).backgroundColor).toBe(
-      computedColor(full, 'var(--line)'),
+    await expect(getComputedStyle(must(segs[9])).backgroundColor).toEqual(
+      sameColor(computedColor(full, 'var(--line)')),
     );
     // Compact: 7 × 8 px segments, `space-0_5` apart.
     const count = canvas.getByRole('meter', { name: 'Passes reviewed' });
@@ -344,10 +344,10 @@ export const Stage: Story = {
     // A running pass is ice (a live run is transient); late amber; stalled red.
     const bg = (bar: number, i: number) =>
       getComputedStyle(stage(must(bars[bar]), i)).backgroundColor;
-    await expect(bg(0, 2)).toBe(computedColor(canvasElement, 'var(--acc)'));
-    await expect(bg(1, 2)).toBe(computedColor(canvasElement, 'var(--warn)'));
-    await expect(bg(2, 2)).toBe(computedColor(canvasElement, 'var(--bad)'));
-    await expect(bg(3, 2)).toBe(computedColor(canvasElement, 'var(--line2)'));
+    await expect(bg(0, 2)).toEqual(sameColor(computedColor(canvasElement, 'var(--acc)')));
+    await expect(bg(1, 2)).toEqual(sameColor(computedColor(canvasElement, 'var(--warn)')));
+    await expect(bg(2, 2)).toEqual(sameColor(computedColor(canvasElement, 'var(--bad)')));
+    await expect(bg(3, 2)).toEqual(sameColor(computedColor(canvasElement, 'var(--line2)')));
     // A filled strip shares its width.
     const fill = must(bars[1]).querySelectorAll('[data-slot="stage"]');
     await expect(must(fill[0]).getBoundingClientRect().width).toBeCloseTo(
@@ -395,10 +395,10 @@ export const Bars: Story = {
     await expect(total).toBeCloseTo(h, 0);
     await expect(
       getComputedStyle(must(last.querySelector('[data-slot="sparkbar-fill"]'))).backgroundColor,
-    ).toBe(computedColor(bars, 'var(--fg)'));
+    ).toEqual(sameColor(computedColor(bars, 'var(--fg)')));
     await expect(
       getComputedStyle(must(last.querySelector('[data-slot="sparkbar-bad"]'))).backgroundColor,
-    ).toBe(computedColor(bars, 'var(--bad)'));
+    ).toEqual(sameColor(computedColor(bars, 'var(--bad)')));
     // A zero is a one-hair stub in the rule gray.
     const zero = must(all[2]?.querySelector('[data-slot="sparkbar-zero"]'));
     await expect(zero.getBoundingClientRect().height).toBeCloseTo(1, 1);
@@ -475,9 +475,9 @@ export const FourUp: Story = {
       fills.add(band.getAttribute('fill'));
       await expectPaperSafe(svg);
       await expectNothingClips(svg);
-      await expect(getComputedStyle(must(svg.querySelector('[data-trace="clouds"]'))).stroke).toBe(
-        computedColor(q, 'var(--fg)'),
-      );
+      await expect(
+        getComputedStyle(must(svg.querySelector('[data-trace="clouds"]'))).stroke,
+      ).toEqual(sameColor(computedColor(q, 'var(--fg)')));
     }
     // White at an alpha over the dark maps, black over the light ones.
     await expect(fills.size).toBeGreaterThanOrEqual(2);

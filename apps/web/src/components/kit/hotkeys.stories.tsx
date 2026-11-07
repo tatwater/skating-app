@@ -16,7 +16,7 @@ import { Button } from './button';
 import { GoBar } from './go-bar';
 import { Input } from './input';
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { MiddleList, type MiddleListItem } from './middle-list';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 import { KICKER, must } from './storyKit';
@@ -424,13 +424,15 @@ export const GoBarFourUp: Story = {
       const bar = must(q.querySelector<HTMLElement>('[data-slot="go-bar"]'));
       await expect(bar).toHaveRole('status');
       const acc = computedColor(bar, 'var(--acc)');
-      await expect(getComputedStyle(bar).borderTopColor).toBe(acc);
+      await expect(getComputedStyle(bar).borderTopColor).toEqual(sameColor(acc));
       const kicker = must(bar.querySelector<HTMLElement>('[data-slot="go-bar-kicker"]'));
-      await expect(getComputedStyle(kicker).color).toBe(acc);
+      await expect(getComputedStyle(kicker).color).toEqual(sameColor(acc));
       for (const b of bar.querySelectorAll('b')) {
-        await expect(getComputedStyle(b).color).toBe(computedColor(bar, 'var(--fg)'));
+        await expect(getComputedStyle(b).color).toEqual(sameColor(computedColor(bar, 'var(--fg)')));
       }
-      await expect(getComputedStyle(bar).color).toBe(computedColor(bar, 'var(--fg2)'));
+      await expect(getComputedStyle(bar).color).toEqual(
+        sameColor(computedColor(bar, 'var(--fg2)')),
+      );
     }
   },
 };

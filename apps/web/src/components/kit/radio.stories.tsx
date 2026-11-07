@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Badge, Tag } from './badge';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { Radio, RadioGroup, RadioRow } from './radio';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
@@ -77,7 +77,7 @@ export const Cells: Story = {
     const pick = within(canvasElement).getByRole('radio', { name: /^Lake Auburn/ });
     // The chosen cell lights whole: a bright edge over a lifted ground.
     const lift = computedColor(pick, 'var(--lift-08)');
-    await waitFor(() => expect(getComputedStyle(pick).backgroundColor).toBe(lift));
+    await waitFor(() => expect(getComputedStyle(pick).backgroundColor).toEqual(sameColor(lift)));
   },
 };
 
@@ -166,7 +166,9 @@ export const States: Story = {
     }
     const invalid = must(canvasElement.querySelector<HTMLElement>('[aria-invalid="true"]'));
     const dot = must(invalid.querySelector('[data-slot="radio-dot"]'));
-    await expect(getComputedStyle(dot).borderTopColor).toBe(computedColor(invalid, 'var(--bad)'));
+    await expect(getComputedStyle(dot).borderTopColor).toEqual(
+      sameColor(computedColor(invalid, 'var(--bad)')),
+    );
   },
 };
 
@@ -183,7 +185,7 @@ export const FocusLights: Story = {
     const lit = computedColor(el, 'var(--fg2)');
     el.focus();
     await waitFor(() => expect(getComputedStyle(el).boxShadow).toMatch(/3px/));
-    await waitFor(() => expect(getComputedStyle(dot).borderTopColor).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(dot).borderTopColor).toEqual(sameColor(lit)));
   },
 };
 

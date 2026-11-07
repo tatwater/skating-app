@@ -51,6 +51,56 @@ export function useQuadOpen(frame: HTMLElement | null) {
   return { open, onOpenChange };
 }
 
+/** The real pointer the story tests install (`src/test/storybook.setup.ts`). */
+export type RealPointer = {
+  /** Move the real mouse over `el`, so CSS `:hover` matches it. */
+  hover: (el: Element) => Promise<void>;
+  /** Move it off the page again. */
+  park: () => Promise<void>;
+};
+
+declare global {
+  var __kitRealPointer: RealPointer | undefined;
+}
+
+/**
+ * The real pointer, for a story that tests CSS `:hover` — `userEvent.hover` dispatches events,
+ * which never match it. Only the story tests have one, so such a story is tagged `!dev` (out of
+ * the sidebar) and fails, never skips, when it runs without it.
+ */
+export function realPointer(): RealPointer {
+  const pointer = globalThis.__kitRealPointer;
+  // Only Storybook's own UI lacks the pointer, and the story tests always install it, so no test
+  // can reach the throw; it's there so the UI says why instead of failing on `undefined`.
+  /* v8 ignore next 3 */
+  if (pointer === undefined) {
+    throw new Error('This story drives the real pointer; it runs under the story tests only.');
+  }
+  return pointer;
+}
+
+/**
+ * Resolves once every animation and transition running on `el` has finished (a canceled one
+ * counts as done), so what's read next is the state's color, not a frame of the way there.
+ */
+export async function settled(el: Element): Promise<void> {
+  await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)));
+}
+
+/**
+ * What `read` says once the real pointer is over `target` and `watch`'s transitions have settled —
+ * for a story that checks what CSS `:hover` does (and doesn't) change.
+ */
+export async function underPointer(
+  target: Element,
+  read: () => string,
+  watch: Element = target,
+): Promise<string> {
+  await realPointer().hover(target);
+  await settled(watch);
+  return read();
+}
+
 /** The kicker a board's row and column labels wear. */
 export const KICKER = 'text-kick leading-none font-semibold tracking-kick text-fg3 uppercase';
 

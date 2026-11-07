@@ -2,7 +2,14 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type ReactNode, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  colorsIn,
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import {
   Select,
   SelectContent,
@@ -22,6 +29,8 @@ import {
   openWith,
   PSEUDO_STATES,
   StateMatrix,
+  settled as transitionsDone,
+  underPointer,
   useQuadOpen,
 } from './storyKit';
 
@@ -149,10 +158,14 @@ export const Underline: Story = {
     const trigger = within(canvasElement).getByRole('combobox', { name: 'Kind' });
     const value = must(trigger.querySelector<HTMLElement>('[data-slot="select-value"]'));
     await expect(value).toHaveTextContent('Choose a kind');
-    await expect(getComputedStyle(value).color).toBe(computedColor(value, 'var(--fg3)'));
+    await expect(getComputedStyle(value).color).toEqual(
+      sameColor(computedColor(value, 'var(--fg3)')),
+    );
     // One rule, no box, no corner.
     const style = getComputedStyle(trigger);
-    await expect(style.borderBottomColor).toBe(computedColor(trigger, 'var(--line2)'));
+    await expect(style.borderBottomColor).toEqual(
+      sameColor(computedColor(trigger, 'var(--line2)')),
+    );
     await expect(style.borderTopWidth).toBe('0px');
     await expect(style.borderRadius).toBe('0px');
     // The caret is FontAwesome's angle-down.
@@ -162,8 +175,8 @@ export const Underline: Story = {
     const plate = await waitFor(() => must(popup()));
     const p = getComputedStyle(plate);
     await expect(p.borderRadius).toBe('0px');
-    await expect(p.backgroundColor).toBe(computedColor(plate, 'var(--plate-solid)'));
-    await expect(p.borderTopColor).toBe(computedColor(plate, 'var(--line2)'));
+    await expect(p.backgroundColor).toEqual(sameColor(computedColor(plate, 'var(--plate-solid)')));
+    await expect(p.borderTopColor).toEqual(sameColor(computedColor(plate, 'var(--line2)')));
     // Below the trigger, never over it.
     await waitFor(() =>
       expect(plate.getBoundingClientRect().top).toBeGreaterThanOrEqual(
@@ -174,7 +187,9 @@ export const Underline: Story = {
     await expect(changed).toHaveBeenCalledWith('river', expect.anything());
     await waitFor(() => expect(popup()).toBeNull());
     await expect(value).toHaveTextContent('River');
-    await expect(getComputedStyle(value).color).toBe(computedColor(value, 'var(--fg)'));
+    await expect(getComputedStyle(value).color).toEqual(
+      sameColor(computedColor(value, 'var(--fg)')),
+    );
 
     // Open again: the chosen kind wears the inset bar, the others don't.
     await userEvent.click(trigger);
@@ -254,7 +269,9 @@ export const DisabledOption: Story = {
     await openWith(canvasElement, 'Kind', 'combobox');
     const dam = await waitFor(() => option('Dam'));
     await expect(dam).toHaveAttribute('aria-disabled', 'true');
-    await expect(getComputedStyle(dam).color).toBe(computedColor(dam, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(dam).color).toEqual(
+      sameColor(computedColor(dam, 'var(--fg-disabled)')),
+    );
     await userEvent.click(dam, { pointerEventsCheck: 0 });
     await expect(changed).not.toHaveBeenCalled();
     await closeWithEscape(popup);
@@ -285,8 +302,8 @@ export const Disabled: Story = {
   ),
   play: async ({ canvasElement }) => {
     for (const trigger of within(canvasElement).getAllByRole('combobox')) {
-      await expect(getComputedStyle(trigger).color).toBe(
-        computedColor(trigger, 'var(--fg-disabled)'),
+      await expect(getComputedStyle(trigger).color).toEqual(
+        sameColor(computedColor(trigger, 'var(--fg-disabled)')),
       );
       await userEvent.click(trigger, { pointerEventsCheck: 0 });
       await expect(popup()).toBeNull();
@@ -312,9 +329,13 @@ export const Invalid: Story = {
   play: async ({ canvasElement }) => {
     const [underline, boxed] = within(canvasElement).getAllByRole('combobox');
     const u = must(underline);
-    await expect(getComputedStyle(u).borderBottomColor).toBe(computedColor(u, 'var(--bad)'));
+    await expect(getComputedStyle(u).borderBottomColor).toEqual(
+      sameColor(computedColor(u, 'var(--bad)')),
+    );
     const b = must(boxed);
-    await expect(getComputedStyle(b).boxShadow).toContain(computedColor(b, 'var(--bad)'));
+    await expect(colorsIn(getComputedStyle(b).boxShadow)).toContainEqual(
+      sameColor(computedColor(b, 'var(--bad)')),
+    );
   },
 };
 
@@ -338,7 +359,9 @@ export const Empty: Story = {
       resolvePx(plate, 'var(--size-td)'),
       1,
     );
-    await expect(getComputedStyle(note).color).toBe(computedColor(note, 'var(--fg3)'));
+    await expect(getComputedStyle(note).color).toEqual(
+      sameColor(computedColor(note, 'var(--fg3)')),
+    );
     await closeWithEscape(popup);
   },
 };
@@ -509,4 +532,33 @@ export const JunctionOpenSkater: Story = {
   render: () => <OpenJunction />,
   globals: { surface: 'skater' },
   play: playOpenJunction,
+};
+
+/**
+ * Hover lifts a resting underline, and only a resting one: keyboard focus and an error keep their
+ * look under the pointer. Runs under the story tests only — `:hover` needs the real pointer.
+ */
+export const HoverYieldsToState: Story = {
+  tags: ['!dev', '!autodocs'],
+  render: () => (
+    <div className="flex flex-col gap-heading">
+      <SourceSelect variant="underline" aria-label="Resting" />
+      <SourceSelect variant="underline" aria-label="Focused" />
+      <SourceSelect variant="underline" aria-label="Invalid" aria-invalid />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const trigger = (name: string) => within(canvasElement).getByRole('combobox', { name });
+    const rule = (el: HTMLElement) => () => getComputedStyle(el).borderBottomColor;
+    const fg3 = sameColor(computedColor(canvasElement, 'var(--fg3)'));
+    const fg = sameColor(computedColor(canvasElement, 'var(--fg)'));
+    const bad = sameColor(computedColor(canvasElement, 'var(--bad)'));
+    // The control: the pointer does lift a resting rule, so the cases after it can't pass idle.
+    await expect(await underPointer(trigger('Resting'), rule(trigger('Resting')))).toEqual(fg3);
+    trigger('Focused').focus();
+    await transitionsDone(trigger('Focused'));
+    await expect(await underPointer(trigger('Focused'), rule(trigger('Focused')))).toEqual(fg);
+    trigger('Focused').blur();
+    await expect(await underPointer(trigger('Invalid'), rule(trigger('Invalid')))).toEqual(bad);
+  },
 };

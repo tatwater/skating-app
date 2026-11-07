@@ -3,7 +3,13 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, waitFor, within } from 'storybook/test';
 
 import { Avatar, AvatarStack, initialsOf, StackFace } from './avatar';
-import { computedColor, horizontalGaps, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  horizontalGaps,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { KICKER, must, rootPx } from './storyKit';
 
 const meta = {
@@ -35,8 +41,8 @@ export const Initials: Story = {
     const el = within(canvasElement).getByRole('img', { name: 'Sarah Kim' });
     await expect(el).toHaveTextContent('SK');
     const style = getComputedStyle(el);
-    await expect(style.backgroundColor).toBe(computedColor(el, 'var(--line2)'));
-    await expect(style.color).toBe(computedColor(el, 'var(--fg)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(el, 'var(--line2)')));
+    await expect(style.color).toEqual(sameColor(computedColor(el, 'var(--fg)')));
     // People are circles: a square box, rounded at least half its side.
     const box = el.getBoundingClientRect();
     await expect(box.width).toBeCloseTo(box.height, 3);
@@ -83,8 +89,8 @@ export const Viewer: Story = {
   play: async ({ canvasElement }) => {
     const el = must(avatars(canvasElement)[0]);
     const style = getComputedStyle(el);
-    await expect(style.backgroundColor).toBe(computedColor(el, 'var(--raise)'));
-    await expect(style.borderTopColor).toBe(computedColor(el, 'var(--fg3)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(el, 'var(--raise)')));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(el, 'var(--fg3)')));
     await expect(el).toHaveTextContent('TA');
   },
 };
@@ -173,11 +179,13 @@ export const Stack: Story = {
     const style = getComputedStyle(first);
     const dpr = window.devicePixelRatio;
     await expect(parseFloat(style.borderTopWidth)).toBe(Math.floor(1.5 * dpr) / dpr);
-    await expect(style.borderTopColor).toBe(computedColor(first, 'var(--bg)'));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(first, 'var(--bg)')));
     // Present is lit; idle is dim and fully opaque.
-    await expect(style.backgroundColor).toBe(computedColor(first, 'var(--fg3)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(first, 'var(--fg3)')));
     const idle = must(faces[2]);
-    await expect(getComputedStyle(idle).backgroundColor).toBe(computedColor(idle, 'var(--panel)'));
+    await expect(getComputedStyle(idle).backgroundColor).toEqual(
+      sameColor(computedColor(idle, 'var(--panel)')),
+    );
     await expect(getComputedStyle(idle).opacity).toBe('1');
   },
 };

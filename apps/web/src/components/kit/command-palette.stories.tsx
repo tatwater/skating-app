@@ -12,7 +12,7 @@ import {
   type CommandPaletteProps,
 } from './command-palette';
 import { Kbd, KbdGroup } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
@@ -189,7 +189,7 @@ export const Default: Story = {
     await waitFor(() => expect(field).toHaveFocus());
     // The ice edge.
     const style = getComputedStyle(pal);
-    await expect(style.borderTopColor).toBe(computedColor(pal, 'var(--acc)'));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(pal, 'var(--acc)')));
     await expect(style.boxShadow).not.toBe('none');
     // Always open: the list is there from the first frame, the first row selected.
     await waitFor(() => expect(within(pal).getByRole('listbox')).toBeVisible());

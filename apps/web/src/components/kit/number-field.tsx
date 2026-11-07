@@ -59,13 +59,14 @@ type NumberFieldProps = Omit<NumberFieldPrimitive.Root.Props, 'render' | 'childr
 const RULE = [
   'border-0 border-b border-solid border-line2 rounded-none',
   'transition-[border-color,box-shadow] duration-(--duration-fast) ease-standard',
-  '[@media(hover:hover)]:hover:border-fg3',
+  // Hover lifts a resting rule only: gated off every state below, never racing them.
+  '[@media(hover:hover)]:hover:not-focus-within:not-group-data-changed/number:not-group-data-invalid/number:not-has-aria-invalid:not-group-data-readonly/number:not-group-data-disabled/number:border-fg3',
   'focus-within:border-fg focus-within:shadow-[0_1px_0_0_var(--fg)]',
   'group-data-changed/number:border-fg',
   'group-data-invalid/number:border-bad group-data-invalid/number:focus-within:shadow-[0_1px_0_0_var(--bad)]',
   'has-aria-invalid:border-bad has-aria-invalid:focus-within:shadow-[0_1px_0_0_var(--bad)]',
   'group-data-readonly/number:border-dotted group-data-readonly/number:border-line2 group-data-readonly/number:shadow-none',
-  'group-data-disabled/number:border-line group-data-disabled/number:hover:border-line',
+  'group-data-disabled/number:border-line',
 ];
 
 const LABEL =

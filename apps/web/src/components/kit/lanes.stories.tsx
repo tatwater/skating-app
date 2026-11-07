@@ -4,7 +4,14 @@ import { expect, fn, userEvent, within } from 'storybook/test';
 
 import { Badge, Tag } from './badge';
 import { type LaneGroup, Lanes, type LanesProps } from './lanes';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  colorsIn,
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const MACHINERY: LaneGroup[] = [
@@ -85,9 +92,11 @@ export const Machinery: Story = {
     await expect(within(nav).getByRole('list', { name: 'Pipelines' })).toBeVisible();
     const health = row(nav, /Health/);
     await expect(health).toHaveAttribute('aria-current', 'true');
-    await expect(getComputedStyle(health).color).toBe(computedColor(nav, 'var(--fg)'));
-    await expect(getComputedStyle(health).backgroundColor).toBe(
-      computedColor(nav, 'var(--lift-08)'),
+    await expect(getComputedStyle(health).color).toEqual(
+      sameColor(computedColor(nav, 'var(--fg)')),
+    );
+    await expect(getComputedStyle(health).backgroundColor).toEqual(
+      sameColor(computedColor(nav, 'var(--lift-08)')),
     );
     // On, every count reads lit; elsewhere, by meaning.
     const tone = (name: RegExp) => part(row(nav, name), 'lane-count').dataset.tone;
@@ -95,15 +104,15 @@ export const Machinery: Story = {
     await expect(tone(/Corpus/)).toBe('warn');
     await expect(tone(/Retention/)).toBe('bad');
     await expect(tone(/Notifications/)).toBe('default');
-    await expect(getComputedStyle(part(row(nav, /Corpus/), 'lane-count')).color).toBe(
-      computedColor(nav, 'var(--warn)'),
+    await expect(getComputedStyle(part(row(nav, /Corpus/), 'lane-count')).color).toEqual(
+      sameColor(computedColor(nav, 'var(--warn)')),
     );
     await expect(getComputedStyle(part(row(nav, /Corpus/), 'lane-count')).fontFamily).toMatch(
       /Martian Mono/,
     );
     // A dim lane is the quiet ink, still a lane.
     const roll = row(nav, 'Rollovers');
-    await expect(getComputedStyle(roll).color).toBe(computedColor(nav, 'var(--fg3)'));
+    await expect(getComputedStyle(roll).color).toEqual(sameColor(computedColor(nav, 'var(--fg3)')));
     // Navigation: no tips, no titles.
     await expect(nav.querySelector('[data-slot="tooltip-trigger"], [title]')).toBeNull();
     // Clicking picks: the callback hears it, and the plate moves.
@@ -267,7 +276,7 @@ export const Junction: Story = {
     const shadow = getComputedStyle(health).boxShadow;
     await expect(shadow).toMatch(/inset/);
     await expect(shadow).toMatch(/2px 0px 0px 0px/);
-    await expect(shadow).toContain(computedColor(nav, 'var(--fg)'));
+    await expect(colorsIn(shadow)).toContainEqual(sameColor(computedColor(nav, 'var(--fg)')));
 
     const label = part(health, 'lane-label').getBoundingClientRect();
     const count = part(health, 'lane-count').getBoundingClientRect();

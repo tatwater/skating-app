@@ -3,7 +3,13 @@ import { type ReactNode, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Kbd } from './kbd';
-import { computedColor, horizontalGaps, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  horizontalGaps,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 import { KICKER, must } from './storyKit';
 import { ToggleGroup, ToggleGroupItem } from './toggle-group';
@@ -82,14 +88,14 @@ export const ActionBar: Story = {
     const el = bar(canvasElement);
     await expect(el).toHaveAccessibleName('Report actions');
     const style = getComputedStyle(el);
-    await expect(style.backgroundColor).toBe(computedColor(el, 'var(--plate-solid)'));
-    await expect(style.borderTopColor).toBe(computedColor(el, 'var(--line)'));
-    await expect(style.borderTopColor).toBe(style.borderBottomColor);
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(el, 'var(--plate-solid)')));
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(el, 'var(--line)')));
+    await expect(style.borderTopColor).toEqual(sameColor(style.borderBottomColor));
     await expect(style.borderTopLeftRadius).toBe('0px');
     // Every button rests alike: none wears the primary's filled face.
     for (const b of within(el).getAllByRole('button')) {
       if (b.dataset.slot !== 'button') continue;
-      await expect(getComputedStyle(b).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+      await expect(getComputedStyle(b).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     }
   },
 };
@@ -184,7 +190,9 @@ export const DisabledStaysFocusable: Story = {
     const retry = btn(el, 'Retry');
     await expect(retry).toHaveFocus();
     await expect(retry).toHaveAttribute('aria-disabled', 'true');
-    await expect(getComputedStyle(retry).color).toBe(computedColor(retry, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(retry).color).toEqual(
+      sameColor(computedColor(retry, 'var(--fg-disabled)')),
+    );
   },
 };
 
@@ -199,11 +207,13 @@ export const ArmedAndBusy: Story = {
     await document.fonts.ready; // the label face changes the bar's width as it loads
     const width = el.getBoundingClientRect().width;
     const remove = btn(el, 'Remove');
-    await expect(getComputedStyle(remove).color).not.toBe(computedColor(remove, 'var(--bad)'));
+    await expect(getComputedStyle(remove).color).not.toEqual(
+      sameColor(computedColor(remove, 'var(--bad)')),
+    );
     await userEvent.click(remove);
     await expect(remove).toHaveAttribute('data-armed');
     const bad = computedColor(remove, 'var(--bad)'); // (a probe: never inside waitFor)
-    await waitFor(() => expect(getComputedStyle(remove).color).toBe(bad));
+    await waitFor(() => expect(getComputedStyle(remove).color).toEqual(sameColor(bad)));
     await userEvent.click(btn(el, 'Save'));
     await expect(btn(el, 'Save')).toHaveAttribute('aria-busy', 'true');
     await expect(el.getBoundingClientRect().width).toBe(width);
@@ -295,7 +305,7 @@ export const OneAction: Story = {
       parseFloat(style.paddingRight) -
       parseFloat(style.borderLeftWidth) * 2;
     await expect(open.getBoundingClientRect().width).toBeCloseTo(inner, 0);
-    await expect(getComputedStyle(open).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await expect(getComputedStyle(open).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
   },
 };
 
@@ -403,8 +413,8 @@ export const FourUp: Story = {
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
       const el = must(q.querySelector<HTMLElement>('[role="toolbar"]'));
-      await expect(getComputedStyle(el).backgroundColor).toBe(
-        computedColor(el, 'var(--plate-solid)'),
+      await expect(getComputedStyle(el).backgroundColor).toEqual(
+        sameColor(computedColor(el, 'var(--plate-solid)')),
       );
       // Every control in the bar stands the button height.
       for (const b of el.querySelectorAll('[data-slot="button"], [data-slot="select-trigger"]')) {
@@ -458,7 +468,9 @@ async function playJunction({ canvasElement }: { canvasElement: HTMLElement }) {
   await expect(s.width).toBe(1);
   await expect(s.height).toBeCloseTo(resolvePx(el, 'var(--space-5)'), 1);
   await expect(Math.abs(s.top + s.height / 2 - (k.top + k.height / 2))).toBeLessThanOrEqual(0.5);
-  await expect(getComputedStyle(must(sep)).backgroundColor).toBe(computedColor(el, 'var(--line)'));
+  await expect(getComputedStyle(must(sep)).backgroundColor).toEqual(
+    sameColor(computedColor(el, 'var(--line)')),
+  );
   await expect(must(sep)).toHaveAttribute('aria-orientation', 'vertical');
   // The plate's inset, content to its edge.
   const b = el.getBoundingClientRect();

@@ -4,9 +4,9 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Field, FieldError, FieldLabel } from './input';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { NumberField } from './number-field';
-import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
+import { KICKER, must, PSEUDO_STATES, StateMatrix, settled, underPointer } from './storyKit';
 
 const meta = {
   title: 'Kit/NumberField',
@@ -42,7 +42,7 @@ export const Rest: Story = {
     const group = part(canvasElement, 'group');
     const style = getComputedStyle(group);
     await expect(style.borderTopWidth).toBe('0px');
-    await expect(style.borderBottomColor).toBe(computedColor(group, 'var(--line2)'));
+    await expect(style.borderBottomColor).toEqual(sameColor(computedColor(group, 'var(--line2)')));
     // Mono, tabular — and the sign is a separate, quiet glyph, not part of the value.
     await expect(getComputedStyle(el).fontVariantNumeric).toContain('tabular-nums');
     await expect(getComputedStyle(el).fontFamily).toBe(
@@ -69,7 +69,9 @@ export const Focused: Story = {
     const rest = group.getBoundingClientRect();
     el.focus();
     const bright = computedColor(group, 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(group).borderBottomColor).toBe(bright));
+    await waitFor(() =>
+      expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bright)),
+    );
     await waitFor(() => expect(getComputedStyle(group).boxShadow).toMatch(/0px 1px 0px 0px/));
     const focused = group.getBoundingClientRect();
     await expect([focused.height, focused.top]).toEqual([rest.height, rest.top]);
@@ -126,14 +128,16 @@ export const Changed: Story = {
     const el = box(canvasElement, 'Retry after');
     const group = part(canvasElement, 'group');
     await expect(root).not.toHaveAttribute('data-changed');
-    await expect(getComputedStyle(el).color).toBe(computedColor(el, 'var(--fg1)'));
+    await expect(getComputedStyle(el).color).toEqual(sameColor(computedColor(el, 'var(--fg1)')));
     await userEvent.click(el);
     await userEvent.keyboard('{ArrowUp}');
     el.blur();
     await waitFor(() => expect(root).toHaveAttribute('data-changed'));
-    await expect(getComputedStyle(el).color).toBe(computedColor(el, 'var(--fg)'));
+    await expect(getComputedStyle(el).color).toEqual(sameColor(computedColor(el, 'var(--fg)')));
     const bright = computedColor(group, 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(group).borderBottomColor).toBe(bright));
+    await waitFor(() =>
+      expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bright)),
+    );
     // Back to the saved value, it rests again.
     await userEvent.click(el);
     await userEvent.keyboard('{ArrowDown}');
@@ -157,10 +161,10 @@ export const Invalid: Story = {
     await expect(el).toHaveAccessibleDescription('A quota needs at least one call');
     const group = part(canvasElement, 'group');
     const bad = computedColor(group, 'var(--bad)');
-    await expect(getComputedStyle(group).borderBottomColor).toBe(bad);
+    await expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bad));
     el.focus();
     await waitFor(() => expect(getComputedStyle(group).boxShadow).toMatch(/0px 1px 0px 0px/));
-    await expect(getComputedStyle(group).borderBottomColor).toBe(bad);
+    await expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bad));
     el.blur();
   },
 };
@@ -183,7 +187,7 @@ export const OutOfRange: Story = {
     );
     const group = part(canvasElement, 'group');
     const bad = computedColor(group, 'var(--bad)');
-    await waitFor(() => expect(getComputedStyle(group).borderBottomColor).toBe(bad));
+    await waitFor(() => expect(getComputedStyle(group).borderBottomColor).toEqual(sameColor(bad)));
   },
 };
 
@@ -192,10 +196,12 @@ export const Disabled: Story = {
   play: async ({ canvasElement }) => {
     const el = box(canvasElement, 'Price per unit');
     await expect(el).toBeDisabled();
-    await expect(getComputedStyle(el).color).toBe(computedColor(el, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(el).color).toEqual(
+      sameColor(computedColor(el, 'var(--fg-disabled)')),
+    );
     const group = part(canvasElement, 'group');
-    await expect(getComputedStyle(group).borderBottomColor).toBe(
-      computedColor(group, 'var(--line)'),
+    await expect(getComputedStyle(group).borderBottomColor).toEqual(
+      sameColor(computedColor(group, 'var(--line)')),
     );
   },
 };
@@ -390,8 +396,8 @@ export const States: Story = {
     }
     const bad = box(canvasElement, 'invalid rest');
     const group = must(bad.closest<HTMLElement>('[data-slot="number-field-group"]'));
-    await expect(getComputedStyle(group).borderBottomColor).toBe(
-      computedColor(group, 'var(--bad)'),
+    await expect(getComputedStyle(group).borderBottomColor).toEqual(
+      sameColor(computedColor(group, 'var(--bad)')),
     );
   },
 };
@@ -477,4 +483,40 @@ export const JunctionSkater: Story = {
   render: () => <Junction />,
   globals: { surface: 'skater' },
   play: playJunction,
+};
+
+/**
+ * Hover lifts a resting rule, and only a resting one: focus, an error and a disabled field keep
+ * their look under the pointer. Runs under the story tests only — `:hover` needs the real pointer.
+ */
+export const HoverYieldsToState: Story = {
+  tags: ['!dev', '!autodocs'],
+  render: () => (
+    <div className="flex flex-col gap-heading">
+      <NumberField aria-label="Resting" defaultValue={1} />
+      <NumberField aria-label="Focused" defaultValue={1} />
+      <Field invalid>
+        <FieldLabel>Invalid</FieldLabel>
+        <NumberField defaultValue={0} />
+      </Field>
+      <NumberField aria-label="Disabled" defaultValue={1} disabled />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const group = (name: string) =>
+      must(box(canvasElement, name).closest<HTMLElement>('[data-slot="number-field-group"]'));
+    const rule = (el: HTMLElement) => () => getComputedStyle(el).borderBottomColor;
+    const fg3 = sameColor(computedColor(canvasElement, 'var(--fg3)'));
+    const fg = sameColor(computedColor(canvasElement, 'var(--fg)'));
+    const bad = sameColor(computedColor(canvasElement, 'var(--bad)'));
+    const line = sameColor(computedColor(canvasElement, 'var(--line)'));
+    // The control: the pointer does lift a resting rule, so the cases after it can't pass idle.
+    await expect(await underPointer(group('Resting'), rule(group('Resting')))).toEqual(fg3);
+    box(canvasElement, 'Focused').focus();
+    await settled(group('Focused'));
+    await expect(await underPointer(group('Focused'), rule(group('Focused')))).toEqual(fg);
+    box(canvasElement, 'Focused').blur();
+    await expect(await underPointer(group('Invalid'), rule(group('Invalid')))).toEqual(bad);
+    await expect(await underPointer(group('Disabled'), rule(group('Disabled')))).toEqual(line);
+  },
 };

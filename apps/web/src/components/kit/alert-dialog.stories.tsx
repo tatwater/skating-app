@@ -19,7 +19,7 @@ import {
 import { Button } from './button';
 import { Dialog, DialogTrigger } from './dialog';
 import { Field, FieldLabel, Input } from './input';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { closeWithEscape, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
@@ -153,8 +153,10 @@ export const ReasonRequired: Story = {
     // Resolved outside `waitFor`: the probe it appends is a mutation, which would re-run the
     // callback forever.
     const focusEdge = computedColor(box, 'var(--fg2)');
-    await waitFor(() => expect(getComputedStyle(box).borderTopColor).toBe(focusEdge));
-    await expect(getComputedStyle(box).borderTopColor).not.toBe(computedColor(box, 'var(--fg)'));
+    await waitFor(() => expect(getComputedStyle(box).borderTopColor).toEqual(sameColor(focusEdge)));
+    await expect(getComputedStyle(box).borderTopColor).not.toEqual(
+      sameColor(computedColor(box, 'var(--fg)')),
+    );
     await expect(getComputedStyle(box).borderRadius).toBe('0px');
 
     // ⌘⏎ on a waiting action does nothing.
@@ -208,14 +210,14 @@ export const DestructiveTwoPress: Story = {
     await expect(remove).toBeEnabled();
     await expect(remove).not.toHaveAttribute('data-armed');
     const bad = computedColor(remove, 'var(--bad)');
-    await expect(getComputedStyle(remove).color).not.toBe(bad);
+    await expect(getComputedStyle(remove).color).not.toEqual(sameColor(bad));
     await expect(dialog.querySelector('[data-slot="dialog-note"]')).toBeNull();
 
     await userEvent.click(remove);
     await expect(confirmed).not.toHaveBeenCalled();
     await expect(remove).toHaveAttribute('data-armed');
     await expect(remove).toHaveTextContent('Remove · again');
-    await waitFor(() => expect(getComputedStyle(remove).color).toBe(bad));
+    await waitFor(() => expect(getComputedStyle(remove).color).toEqual(sameColor(bad)));
     await expect(part(dialog, 'dialog-note')).toHaveTextContent('Press again within 3 s');
 
     await userEvent.click(remove);
@@ -327,7 +329,7 @@ export const ServerRefused: Story = {
     const error = within(dialog).getByRole('alert');
     await expect(error).toHaveTextContent(/^Not saved\. Sarah set/);
     const style = getComputedStyle(error);
-    await expect(style.borderLeftColor).toBe(computedColor(error, 'var(--bad)'));
+    await expect(style.borderLeftColor).toEqual(sameColor(computedColor(error, 'var(--bad)')));
     await expect(parseFloat(style.borderLeftWidth)).toBe(resolvePx(error, 'var(--stroke-note)'));
     await expect(style.borderTopWidth).toBe('0px');
     await expect(within(dialog).getByRole('textbox')).toHaveValue('Owner asked by email, 12 Oct.');
@@ -363,7 +365,9 @@ export const JunctionOpen: Story = {
     // The question is sentence case, not a kicker.
     await expect(getComputedStyle(part(dialog, 'alert-dialog-title')).textTransform).toBe('none');
     const dim = must(scrim());
-    await expect(getComputedStyle(dim).backgroundColor).toBe(computedColor(dim, 'var(--scrim)'));
+    await expect(getComputedStyle(dim).backgroundColor).toEqual(
+      sameColor(computedColor(dim, 'var(--scrim)')),
+    );
     await expect(getComputedStyle(dim).backdropFilter).toBe('none');
     await closeWithEscape(popup);
   },

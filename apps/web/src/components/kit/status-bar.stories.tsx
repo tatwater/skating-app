@@ -4,7 +4,7 @@ import { expect, userEvent, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import {
   createKeyRegistry,
   type KeyHint,
@@ -74,8 +74,8 @@ export const Bar: Story = {
     const seps = all(bar, 'status-sep');
     await expect(seps).toHaveLength(1);
     await expect(must(seps[0])).toHaveAttribute('aria-orientation', 'vertical');
-    await expect(getComputedStyle(must(seps[0])).backgroundColor).toBe(
-      computedColor(bar, 'var(--line2)'),
+    await expect(getComputedStyle(must(seps[0])).backgroundColor).toEqual(
+      sameColor(computedColor(bar, 'var(--line2)')),
     );
     // The focused pane's keys lead, then the page's.
     await expect(keysShown(bar)).toEqual(['Tab', '↑↓', 'A–Z', 'G', '?']);
@@ -90,7 +90,9 @@ export const Bar: Story = {
     );
     // Amber by meaning.
     const text = part(bar, 'status-text');
-    await expect(getComputedStyle(text).color).toBe(computedColor(bar, 'var(--warn)'));
+    await expect(getComputedStyle(text).color).toEqual(
+      sameColor(computedColor(bar, 'var(--warn)')),
+    );
     await expect(canvas.getByRole('status')).toHaveTextContent('Convex live');
   },
 };
@@ -249,19 +251,23 @@ export const Lamps: Story = {
     const led = (state: string) =>
       part(must(canvasElement.querySelector(`[data-state="${state}"]`)), 'status-led');
     const live = getComputedStyle(led('live'));
-    await expect(live.backgroundColor).toBe(computedColor(canvasElement, 'var(--fg)'));
+    await expect(live.backgroundColor).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--fg)')),
+    );
     await expect(live.animationName).toBe(reduced() ? 'none' : 'kit-led');
     // The pulse is the lamp token: 2400 ms (zero under reduced motion).
     await expect(live.animationDuration).toBe(reduced() ? '0s' : '2.4s');
     await expect(live.boxShadow).toMatch(/8px/);
     const idle = getComputedStyle(led('idle'));
     await expect(idle.animationName).toBe('none');
-    await expect(idle.backgroundColor).toBe(computedColor(canvasElement, 'var(--fg3)'));
-    await expect(getComputedStyle(led('warn')).backgroundColor).toBe(
-      computedColor(canvasElement, 'var(--warn)'),
+    await expect(idle.backgroundColor).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--fg3)')),
     );
-    await expect(getComputedStyle(led('bad')).backgroundColor).toBe(
-      computedColor(canvasElement, 'var(--bad)'),
+    await expect(getComputedStyle(led('warn')).backgroundColor).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--warn)')),
+    );
+    await expect(getComputedStyle(led('bad')).backgroundColor).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--bad)')),
     );
     // Square: an LED, not a dot.
     await expect(live.borderRadius).toBe('0px');
@@ -316,7 +322,9 @@ export const Junction: Story = {
     await expect(box.height).toBeCloseTo(px('var(--size-status)'), 1);
     await expect(box.height).toBeCloseTo(px('1.625rem'), 1);
     await expect(getComputedStyle(bar).borderTopWidth).toBe('1px');
-    await expect(getComputedStyle(bar).borderTopColor).toBe(computedColor(bar, 'var(--line)'));
+    await expect(getComputedStyle(bar).borderTopColor).toEqual(
+      sameColor(computedColor(bar, 'var(--line)')),
+    );
 
     const keys = all(bar, 'status-key');
     for (const key of keys) {

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import {
   type Colleague,
@@ -110,11 +110,11 @@ export const Tape_: Story = {
     await expect(canvasElement.querySelector('[title]')).toBeNull();
     // The tones: ice for the watch (a water mark), amber for a person's attention.
     const events = all(canvasElement, 'tape-event');
-    await expect(getComputedStyle(must(events[0])).backgroundColor).toBe(
-      computedColor(tape, 'var(--acc)'),
+    await expect(getComputedStyle(must(events[0])).backgroundColor).toEqual(
+      sameColor(computedColor(tape, 'var(--acc)')),
     );
-    await expect(getComputedStyle(must(events[1])).backgroundColor).toBe(
-      computedColor(tape, 'var(--warn)'),
+    await expect(getComputedStyle(must(events[1])).backgroundColor).toEqual(
+      sameColor(computedColor(tape, 'var(--warn)')),
     );
     await expect(getComputedStyle(part(canvasElement, 'tape-ghost')).borderLeftStyle).toBe(
       'dashed',
@@ -122,7 +122,7 @@ export const Tape_: Story = {
     // The day badge reads beside the season: outlined, mono, never filled.
     const badge = part(canvasElement, 'tape-badge');
     await expect(badge).toHaveTextContent('Day 10');
-    await expect(getComputedStyle(badge).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await expect(getComputedStyle(badge).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     await expect(getComputedStyle(badge).fontFamily).toMatch(/Martian Mono/);
   },
 };
@@ -246,8 +246,8 @@ export const Search: Story = {
     // One rule under it, no box: the input's look.
     await expect(style.borderBottomWidth).toBe('1px');
     await expect(style.borderTopWidth).toBe('0px');
-    await expect(style.borderBottomColor).toBe(computedColor(search, 'var(--line2)'));
-    await expect(style.color).toBe(computedColor(search, 'var(--fg3)'));
+    await expect(style.borderBottomColor).toEqual(sameColor(computedColor(search, 'var(--line2)')));
+    await expect(style.color).toEqual(sameColor(computedColor(search, 'var(--fg3)')));
   },
 };
 
@@ -270,7 +270,9 @@ export const SearchFocus: Story = {
     await userEvent.tab();
     await expect(search).toHaveFocus();
     const bright = computedColor(search, 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(search).borderBottomColor).toBe(bright));
+    await waitFor(() =>
+      expect(getComputedStyle(search).borderBottomColor).toEqual(sameColor(bright)),
+    );
     await expect(getComputedStyle(search).boxShadow).toMatch(/0px 1px 0px 0px/);
     search.blur();
   },
@@ -322,8 +324,8 @@ export const Faces: Story = {
     // Circles, always; idle is dim but solid (never see-through).
     for (const face of faces) await expect(getComputedStyle(face).borderRadius).not.toBe('0px');
     await expect(getComputedStyle(must(faces[1])).opacity).toBe('1');
-    await expect(getComputedStyle(must(faces[1])).backgroundColor).toBe(
-      computedColor(trigger, 'var(--panel)'),
+    await expect(getComputedStyle(must(faces[1])).backgroundColor).toEqual(
+      sameColor(computedColor(trigger, 'var(--panel)')),
     );
   },
 };
@@ -427,8 +429,8 @@ export const States: Story = {
     // The forced columns are for the eye (the pseudo-states addon runs in Storybook, not under
     // Vitest); `SearchFocus` tests the real lit look. Here: the resting cell.
     const [rest] = all(canvasElement, 'search-trigger');
-    await expect(getComputedStyle(must(rest)).borderBottomColor).toBe(
-      computedColor(canvasElement, 'var(--line2)'),
+    await expect(getComputedStyle(must(rest)).borderBottomColor).toEqual(
+      sameColor(computedColor(canvasElement, 'var(--line2)')),
     );
   },
 };

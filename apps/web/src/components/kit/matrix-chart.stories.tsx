@@ -10,7 +10,13 @@ import {
   TEMP_STEPS,
   temperatureStep,
 } from './matrix-chart';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { must } from './storyKit';
 
 const meta = {
@@ -124,13 +130,13 @@ export const Season: Story = {
     // Each cell wears its step's token: 7 Oct at Clouds (19 °F) is the coldest cyan.
     const coldest = must(cells[6]);
     await expect(coldest).toHaveAttribute('data-step', 'cold-4');
-    await expect(getComputedStyle(coldest).backgroundColor).toBe(
-      computedColor(grid, 'var(--temp-cold-4)'),
+    await expect(getComputedStyle(coldest).backgroundColor).toEqual(
+      sameColor(computedColor(grid, 'var(--temp-cold-4)')),
     );
     await expect(coldest).toHaveAccessibleName('Clouds, 7 Oct: 19 °F');
     // The bright cells take the dark ink (the void on the console's dark map).
     const dark = computedColor(grid, 'var(--bg)');
-    await expect(getComputedStyle(must(coldest.firstElementChild)).color).toBe(dark);
+    await expect(getComputedStyle(must(coldest.firstElementChild)).color).toEqual(sameColor(dark));
     // Column kickers: the ends only.
     const kickers = [...grid.querySelectorAll('[data-slot="matrix-column-kicker"]')].map(
       (k) => k.textContent,
@@ -316,8 +322,8 @@ export const FourUp: Story = {
       for (const c of cells) near(c.getBoundingClientRect().height, h);
       // The same eight grounds in every map.
       for (const [i, step] of TEMP_STEPS.entries())
-        await expect(getComputedStyle(must(cells[i])).backgroundColor).toBe(
-          computedColor(q, `var(--temp-${step})`),
+        await expect(getComputedStyle(must(cells[i])).backgroundColor).toEqual(
+          sameColor(computedColor(q, `var(--temp-${step})`)),
         );
       await expectInksPass(q);
       await expect(must(cells[8])).toHaveAccessibleName('Scale, 9 Dec: no reading');

@@ -1,7 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 import { Tabs, TabsList, TabsPanel, TabsTab } from './tabs';
 
@@ -38,7 +44,7 @@ export const Joined: Story = {
     await expect(home).toHaveAttribute('aria-selected', 'true');
     // Filled, not a pill, not underlined.
     const style = getComputedStyle(home);
-    await expect(style.backgroundColor).toBe(computedColor(home, 'var(--fg1)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(home, 'var(--fg1)')));
     await expect(style.textDecorationLine).toBe('none');
     await expect(style.boxShadow).toBe('none');
     await userEvent.click(metrics);
@@ -69,7 +75,9 @@ export const Grid: Story = {
     const canvas = within(canvasElement);
     const water = canvas.getByRole('tab', { name: 'Water (Missing bathymetry)' });
     const flag = must(water.querySelector('[data-slot="tabs-flag"]'));
-    await expect(getComputedStyle(flag).backgroundColor).toBe(computedColor(flag, 'var(--warn)'));
+    await expect(getComputedStyle(flag).backgroundColor).toEqual(
+      sameColor(computedColor(flag, 'var(--warn)')),
+    );
   },
 };
 
@@ -104,8 +112,8 @@ export const DisabledTab: Story = {
     const metrics = within(canvasElement).getByRole('tab', { name: 'Metrics' });
     await userEvent.click(metrics, { pointerEventsCheck: 0 });
     await expect(args.onValueChange).not.toHaveBeenCalled();
-    await expect(getComputedStyle(metrics).color).toBe(
-      computedColor(metrics, 'var(--fg-disabled)'),
+    await expect(getComputedStyle(metrics).color).toEqual(
+      sameColor(computedColor(metrics, 'var(--fg-disabled)')),
     );
   },
 };
@@ -163,7 +171,7 @@ export const FocusLights: Story = {
     const lit = computedColor(metrics, 'var(--fg1)');
     metrics.focus();
     await waitFor(() => expect(getComputedStyle(metrics).boxShadow).toMatch(/3px/));
-    await waitFor(() => expect(getComputedStyle(metrics).color).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(metrics).color).toEqual(sameColor(lit)));
   },
 };
 

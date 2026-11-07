@@ -16,7 +16,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './dropdown-menu';
-import { computedColor, contrastBetween, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import {
+  computedColor,
+  contrastBetween,
+  JUNCTION_TOLERANCE_PX,
+  resolvePx,
+  sameColor,
+} from './measure';
 import { closeWithEscape, KICKER, must, openWith, useQuadOpen } from './storyKit';
 
 const meta = {
@@ -140,8 +146,10 @@ export const Default: Story = {
     const plate = await waitFor(() => must(popup()));
     const style = getComputedStyle(plate);
     await expect(style.borderRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(plate, 'var(--plate-solid)'));
-    await expect(style.borderTopColor).toBe(computedColor(plate, 'var(--line2)'));
+    await expect(style.backgroundColor).toEqual(
+      sameColor(computedColor(plate, 'var(--plate-solid)')),
+    );
+    await expect(style.borderTopColor).toEqual(sameColor(computedColor(plate, 'var(--line2)')));
     await waitFor(() =>
       expect(plate.getBoundingClientRect().top).toBeGreaterThanOrEqual(
         trigger.getBoundingClientRect().bottom,
@@ -201,11 +209,13 @@ export const Danger: Story = {
     // Highlight off: hover the plate's edge, not the row.
     remove.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
     await waitFor(() => expect(remove).not.toHaveAttribute('data-highlighted'));
-    await expect(getComputedStyle(remove).color).toBe(computedColor(remove, 'var(--fg1)'));
+    await expect(getComputedStyle(remove).color).toEqual(
+      sameColor(computedColor(remove, 'var(--fg1)')),
+    );
     await userEvent.hover(remove);
     await waitFor(() => expect(remove).toHaveAttribute('data-highlighted'));
     const red = computedColor(remove, 'var(--bad)');
-    await waitFor(() => expect(getComputedStyle(remove).color).toBe(red));
+    await waitFor(() => expect(getComputedStyle(remove).color).toEqual(sameColor(red)));
     await userEvent.click(remove);
     await expect(chose).toHaveBeenCalledOnce();
   },
@@ -219,7 +229,9 @@ export const DisabledItem: Story = {
     await openWith(canvasElement, 'Copy log');
     const all = await waitFor(() => item('Copy all logs'));
     await expect(all).toHaveAttribute('aria-disabled', 'true');
-    await expect(getComputedStyle(all).color).toBe(computedColor(all, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(all).color).toEqual(
+      sameColor(computedColor(all, 'var(--fg-disabled)')),
+    );
     await userEvent.click(all, { pointerEventsCheck: 0 });
     await expect(chose).not.toHaveBeenCalled();
     await expect(popup()).not.toBeNull();
@@ -248,7 +260,9 @@ export const Empty: Story = {
       resolvePx(plate, 'var(--size-td)'),
       1,
     );
-    await expect(getComputedStyle(note).color).toBe(computedColor(note, 'var(--fg3)'));
+    await expect(getComputedStyle(note).color).toEqual(
+      sameColor(computedColor(note, 'var(--fg3)')),
+    );
     await closeWithEscape(popup);
   },
 };

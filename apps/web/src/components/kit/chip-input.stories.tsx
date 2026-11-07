@@ -10,8 +10,9 @@ import {
   horizontalGaps,
   JUNCTION_TOLERANCE_PX,
   resolvePx,
+  sameColor,
 } from './measure';
-import { must } from './storyKit';
+import { must, settled, underPointer } from './storyKit';
 
 const meta = {
   title: 'Kit/ChipInput',
@@ -68,14 +69,14 @@ export const Default: Story = {
     await expect(input).toHaveAccessibleName('Aliases');
     await expect(chipText(canvasElement)).toEqual(ALIASES);
     const root = must(canvasElement.querySelector<HTMLElement>('[data-slot="chip-input"]'));
-    await expect(getComputedStyle(root).borderBottomColor).toBe(
-      computedColor(root, 'var(--line2)'),
+    await expect(getComputedStyle(root).borderBottomColor).toEqual(
+      sameColor(computedColor(root, 'var(--line2)')),
     );
     await expect(getComputedStyle(root).borderTopWidth).toBe('0px');
     const chip = must(chips(canvasElement)[0]);
     const style = getComputedStyle(chip);
     await expect(style.borderRadius).toBe('0px');
-    await expect(style.backgroundColor).toBe(computedColor(chip, 'var(--raise)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(chip, 'var(--raise)')));
     await expect(style.textTransform).toBe('none');
     await expect(chip.getBoundingClientRect().height).toBeCloseTo(
       resolvePx(chip, 'var(--size-badge)'),
@@ -88,7 +89,9 @@ export const Default: Story = {
     // Focus brightens the rule and doubles it, as the standard input does.
     await userEvent.click(input);
     const bright = computedColor(root, 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(root).borderBottomColor).toBe(bright));
+    await waitFor(() =>
+      expect(getComputedStyle(root).borderBottomColor).toEqual(sameColor(bright)),
+    );
     await expect(getComputedStyle(root).boxShadow).toMatch(/0px 1px 0px 0px/);
     input.blur();
   },
@@ -226,8 +229,8 @@ export const Empty: Story = {
       1,
     );
     // The placeholder is the quiet ink, and passes AA on the field, so an empty one still reads.
-    await expect(getComputedStyle(input, '::placeholder').color).toBe(
-      computedColor(input, 'var(--fg3)'),
+    await expect(getComputedStyle(input, '::placeholder').color).toEqual(
+      sameColor(computedColor(input, 'var(--fg3)')),
     );
     await expect(contrastBetween(input, ['var(--bg)'], ['var(--fg3)'])).toBeGreaterThanOrEqual(4.5);
   },
@@ -255,9 +258,13 @@ export const Disabled: Story = {
   play: async ({ canvasElement }) => {
     await expect(field(canvasElement)).toBeDisabled();
     const root = must(canvasElement.querySelector<HTMLElement>('[data-slot="chip-input"]'));
-    await expect(getComputedStyle(root).borderBottomColor).toBe(computedColor(root, 'var(--line)'));
+    await expect(getComputedStyle(root).borderBottomColor).toEqual(
+      sameColor(computedColor(root, 'var(--line)')),
+    );
     const chip = must(chips(canvasElement)[0]);
-    await expect(getComputedStyle(chip).color).toBe(computedColor(chip, 'var(--fg-disabled)'));
+    await expect(getComputedStyle(chip).color).toEqual(
+      sameColor(computedColor(chip, 'var(--fg-disabled)')),
+    );
     await userEvent.click(
       within(canvasElement).getByRole('button', { name: 'Remove Lake Mascoma' }),
     );
@@ -330,5 +337,36 @@ export const FourUp: Story = {
     const admin = rows.filter((r) => r.surface === 'admin').map((r) => r.chip);
     const skater = rows.filter((r) => r.surface === 'skater').map((r) => r.chip);
     await expect(Math.max(...admin)).toBeLessThan(Math.min(...skater));
+  },
+};
+
+/**
+ * Hover lifts a resting rule, and only a resting one: focus and a disabled field keep their look
+ * under the pointer. Runs under the story tests only — `:hover` needs the real pointer.
+ */
+export const HoverYieldsToState: Story = {
+  tags: ['!dev', '!autodocs'],
+  render: () => (
+    <div className="flex flex-col gap-heading">
+      <ChipInput aria-label="Resting" />
+      <ChipInput aria-label="Focused" />
+      <ChipInput aria-label="Disabled" defaultValue={ALIASES} disabled />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const input = (name: string) => within(canvasElement).getByRole('combobox', { name });
+    const root = (name: string) =>
+      must(input(name).closest<HTMLElement>('[data-slot="chip-input"]'));
+    const rule = (el: HTMLElement) => () => getComputedStyle(el).borderBottomColor;
+    const fg3 = sameColor(computedColor(canvasElement, 'var(--fg3)'));
+    const fg = sameColor(computedColor(canvasElement, 'var(--fg)'));
+    const line = sameColor(computedColor(canvasElement, 'var(--line)'));
+    // The control: the pointer does lift a resting rule, so the cases after it can't pass idle.
+    await expect(await underPointer(root('Resting'), rule(root('Resting')))).toEqual(fg3);
+    input('Focused').focus();
+    await settled(root('Focused'));
+    await expect(await underPointer(root('Focused'), rule(root('Focused')))).toEqual(fg);
+    input('Focused').blur();
+    await expect(await underPointer(root('Disabled'), rule(root('Disabled')))).toEqual(line);
   },
 };

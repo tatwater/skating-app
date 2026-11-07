@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Badge } from './badge';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { colorsIn, computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { MiddleList, type MiddleListItem, type MiddleListProps } from './middle-list';
 import { KICKER, must } from './storyKit';
 
@@ -300,30 +300,30 @@ export const Washes: Story = {
     const crack = row(canvasElement, /Pressure crack/);
     const narrows = row(canvasElement, /Thin ice/);
     // At rest (unfocused): only the open row is washed.
-    await expect(getComputedStyle(ridge).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    await waitFor(() => expect(getComputedStyle(crack).backgroundColor).toBe(lift08));
+    await expect(getComputedStyle(ridge).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    await waitFor(() => expect(getComputedStyle(crack).backgroundColor).toEqual(sameColor(lift08)));
     const rule = resolvePx(box, 'var(--stroke-note)');
     await expect(getComputedStyle(crack).boxShadow).toContain(`${rule}px 0px 0px 0px`);
-    await expect(getComputedStyle(crack).boxShadow).toContain(fg);
+    await expect(colorsIn(getComputedStyle(crack).boxShadow)).toContainEqual(sameColor(fg));
     const title = (el: HTMLElement) =>
       must(el.querySelector<HTMLElement>('[data-slot="middle-list-title"]'));
-    await expect(getComputedStyle(title(crack)).color).toBe(fg);
-    await expect(getComputedStyle(title(ridge)).color).toBe(fg1);
+    await expect(getComputedStyle(title(crack)).color).toEqual(sameColor(fg));
+    await expect(getComputedStyle(title(ridge)).color).toEqual(sameColor(fg1));
     // Focused: the cursor row takes the hover look; the open row keeps its own.
     await userEvent.click(within(canvasElement).getByRole('region', { name: 'Detail' }));
     await userEvent.tab({ shift: true });
     await userEvent.keyboard('{Home}');
-    await waitFor(() => expect(getComputedStyle(ridge).backgroundColor).toBe(lift05));
-    await expect(getComputedStyle(crack).backgroundColor).toBe(lift08);
+    await waitFor(() => expect(getComputedStyle(ridge).backgroundColor).toEqual(sameColor(lift05)));
+    await expect(getComputedStyle(crack).backgroundColor).toEqual(sameColor(lift08));
     // On the open row, the cursor doesn't dim the selection.
     await userEvent.keyboard('{End}{ArrowUp}{ArrowUp}');
     await expect(activeRow(box)).toBe(crack);
-    await waitFor(() => expect(getComputedStyle(crack).backgroundColor).toBe(lift08));
+    await waitFor(() => expect(getComputedStyle(crack).backgroundColor).toEqual(sameColor(lift08)));
     // Locked: half opacity, readable, no wash ever — and no hover rule at all.
     await expect(getComputedStyle(narrows).opacity).toBe(
       String(parseFloat(resolveOpacity(box, '--opacity-muted'))),
     );
-    await expect(getComputedStyle(narrows).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    await expect(getComputedStyle(narrows).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
     await expect(narrows.className).not.toMatch(/hover:/);
     await expect(ridge.className).toMatch(/hover:bg-lift-05/);
     await expect(narrows).toBeVisible();
@@ -563,7 +563,9 @@ export const FourUp: Story = {
       const box = within(q).getByRole('listbox');
       const lift08 = computedColor(box, 'var(--lift-08)');
       const selected = within(q).getByRole('option', { selected: true });
-      await waitFor(() => expect(getComputedStyle(selected).backgroundColor).toBe(lift08));
+      await waitFor(() =>
+        expect(getComputedStyle(selected).backgroundColor).toEqual(sameColor(lift08)),
+      );
       const locked = within(q).getByRole('option', { name: /Thin ice/ });
       await expect(getComputedStyle(locked).opacity).toBe('0.5');
     }
@@ -590,7 +592,7 @@ async function playJunctions({ canvasElement }: { canvasElement: HTMLElement }) 
     await near(parseFloat(s.paddingLeft), px('var(--gap-gutter)'));
     await expect(s.borderBottomStyle).toBe('dotted');
     await near(parseFloat(s.borderBottomWidth), px('var(--stroke-hair)'));
-    await expect(s.borderBottomColor).toBe(computedColor(box, 'var(--line)'));
+    await expect(s.borderBottomColor).toEqual(sameColor(computedColor(box, 'var(--line)')));
   }
   // A plain row's height is its parts: padding, the title's line, the sub's gap and line, the rule.
   const plain = row(canvasElement, /Pressure crack/);

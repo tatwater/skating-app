@@ -8,7 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from './collapsible';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const meta = {
@@ -147,7 +147,7 @@ export const Keyboard: Story = {
     // Keyboard focus rings the row and lights the name, as hover does.
     await waitFor(() => expect(getComputedStyle(trigger).boxShadow).toMatch(/3px/));
     const lit = computedColor(trigger, 'var(--fg1)');
-    await waitFor(() => expect(getComputedStyle(trigger).color).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(trigger).color).toEqual(sameColor(lit)));
   },
 };
 
@@ -212,8 +212,8 @@ export const Disabled: Story = {
     const trigger = head(canvasElement, /Known features/);
     await userEvent.click(trigger, { pointerEventsCheck: 0 });
     await expect(args.onOpenChange).not.toHaveBeenCalled();
-    await expect(getComputedStyle(trigger).color).toBe(
-      computedColor(trigger, 'var(--fg-disabled)'),
+    await expect(getComputedStyle(trigger).color).toEqual(
+      sameColor(computedColor(trigger, 'var(--fg-disabled)')),
     );
   },
 };
@@ -312,8 +312,10 @@ export const FourUp: Story = {
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
       for (const t of q.querySelectorAll<HTMLElement>('[data-slot="collapsible-trigger"]')) {
-        await expect(getComputedStyle(t).borderTopColor).toBe(computedColor(t, 'var(--line)'));
-        await expect(getComputedStyle(t).color).toBe(computedColor(t, 'var(--fg2)'));
+        await expect(getComputedStyle(t).borderTopColor).toEqual(
+          sameColor(computedColor(t, 'var(--line)')),
+        );
+        await expect(getComputedStyle(t).color).toEqual(sameColor(computedColor(t, 'var(--fg2)')));
       }
     }
   },

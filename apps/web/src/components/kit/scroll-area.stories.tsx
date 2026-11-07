@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor } from 'storybook/test';
 
-import { computedColor, resolvePx } from './measure';
+import { computedColor, resolvePx, sameColor } from './measure';
 import { ScrollArea } from './scroll-area';
 import { KICKER, must } from './storyKit';
 
@@ -83,7 +83,7 @@ export const Pane: Story = {
       resolvePx(root, 'var(--stroke-run)'),
       1,
     );
-    await expect(style.backgroundColor).toBe(computedColor(t, 'var(--fg3)'));
+    await expect(style.backgroundColor).toEqual(sameColor(computedColor(t, 'var(--fg3)')));
     await userEvent.hover(root);
     await waitFor(() => expect(b).toHaveAttribute('data-hovering'));
     await waitFor(() => expect(getComputedStyle(b).opacity).toBe('1'));
@@ -218,7 +218,9 @@ export const Always: Story = {
     await expect(bar).not.toHaveAttribute('data-hovering');
     await expect(getComputedStyle(bar).opacity).toBe('1');
     // The track is drawn: the lane's content box, in `raise`.
-    await expect(getComputedStyle(bar).backgroundColor).toBe(computedColor(bar, 'var(--raise)'));
+    await expect(getComputedStyle(bar).backgroundColor).toEqual(
+      sameColor(computedColor(bar, 'var(--raise)')),
+    );
     await expect(getComputedStyle(bar).backgroundClip).toBe('content-box');
   },
 };
@@ -330,7 +332,9 @@ export const FourUp: Story = {
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
       const thumb = await waitFor(() => must(parts(q).thumb));
-      await expect(getComputedStyle(thumb).backgroundColor).toBe(computedColor(q, 'var(--fg3)'));
+      await expect(getComputedStyle(thumb).backgroundColor).toEqual(
+        sameColor(computedColor(q, 'var(--fg3)')),
+      );
       await expect(thumb.getBoundingClientRect().width).toBeCloseTo(
         resolvePx(q, 'var(--stroke-run)'),
         1,

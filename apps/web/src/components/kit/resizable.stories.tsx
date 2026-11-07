@@ -4,7 +4,7 @@ import { type GroupProps, type Layout, useGroupRef, usePanelRef } from 'react-re
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
-import { computedColor, resolvePx } from './measure';
+import { computedColor, resolvePx, sameColor } from './measure';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizable';
 import { ScrollArea } from './scroll-area';
 import { KICKER, must } from './storyKit';
@@ -135,7 +135,9 @@ export const Panes: Story = {
       await expect(h).toHaveAttribute('role', 'separator');
       await expect(h).toHaveAttribute('aria-orientation', 'vertical');
       await expect(width(h)).toBe(1);
-      await expect(getComputedStyle(h).backgroundColor).toBe(computedColor(h, 'var(--line)'));
+      await expect(getComputedStyle(h).backgroundColor).toEqual(
+        sameColor(computedColor(h, 'var(--line)')),
+      );
     }
   },
 };
@@ -153,7 +155,9 @@ export const Keyboard: Story = {
     must(edge).focus();
     await waitFor(() => expect(edge).toHaveAttribute('data-separator', 'focus'));
     const bright = computedColor(must(edge), 'var(--fg)');
-    await waitFor(() => expect(getComputedStyle(must(edge)).backgroundColor).toBe(bright));
+    await waitFor(() =>
+      expect(getComputedStyle(must(edge)).backgroundColor).toEqual(sameColor(bright)),
+    );
     await waitFor(() => expect(getComputedStyle(must(edge)).boxShadow).toMatch(/1px 0px 0px 0px/));
     const before = width(queue);
     await userEvent.keyboard('{ArrowRight}');
@@ -430,8 +434,8 @@ export const FourUp: Story = {
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
       const [edge] = handles(q);
-      await expect(getComputedStyle(must(edge)).backgroundColor).toBe(
-        computedColor(q, 'var(--line)'),
+      await expect(getComputedStyle(must(edge)).backgroundColor).toEqual(
+        sameColor(computedColor(q, 'var(--line)')),
       );
       await expect(width(must(edge))).toBe(1);
     }

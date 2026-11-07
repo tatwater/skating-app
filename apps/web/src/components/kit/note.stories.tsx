@@ -5,7 +5,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { Button } from './button';
 import { Kbd } from './kbd';
-import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx } from './measure';
+import { computedColor, JUNCTION_TOLERANCE_PX, resolvePx, sameColor } from './measure';
 import { LockBanner, Note } from './note';
 import { KICKER, must } from './storyKit';
 
@@ -49,12 +49,12 @@ export const Default: Story = {
     const s = getComputedStyle(note);
     await expect(s.borderLeftWidth).toBe('2px');
     await expect(s.borderLeftStyle).toBe('solid');
-    await expect(s.borderLeftColor).toBe(computedColor(note, 'var(--fg3)'));
+    await expect(s.borderLeftColor).toEqual(sameColor(computedColor(note, 'var(--fg3)')));
     for (const side of ['Top', 'Right', 'Bottom'] as const) {
       await expect(s[`border${side}Width`]).toBe('0px');
     }
-    await expect(s.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    await expect(s.color).toBe(computedColor(note, 'var(--fg2)'));
+    await expect(s.backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
+    await expect(s.color).toEqual(sameColor(computedColor(note, 'var(--fg2)')));
     // Rule → ink.
     const text = document.createRange();
     text.selectNodeContents(note);
@@ -79,12 +79,18 @@ export const Warn: Story = {
   },
   play: async ({ canvasElement }) => {
     const note = within(canvasElement).getByRole('note');
-    await expect(getComputedStyle(note).borderLeftColor).toBe(computedColor(note, 'var(--warn)'));
+    await expect(getComputedStyle(note).borderLeftColor).toEqual(
+      sameColor(computedColor(note, 'var(--warn)')),
+    );
     // Emphasis is the lit ink, medium — the text stays gray.
     const strong = must(note.querySelector('strong'));
-    await expect(getComputedStyle(strong).color).toBe(computedColor(strong, 'var(--fg)'));
+    await expect(getComputedStyle(strong).color).toEqual(
+      sameColor(computedColor(strong, 'var(--fg)')),
+    );
     await expect(getComputedStyle(strong).fontWeight).toBe(String(tokens.fontWeight.medium));
-    await expect(getComputedStyle(note).color).toBe(computedColor(note, 'var(--fg2)'));
+    await expect(getComputedStyle(note).color).toEqual(
+      sameColor(computedColor(note, 'var(--fg2)')),
+    );
   },
 };
 
@@ -93,7 +99,9 @@ export const Bad: Story = {
   args: { tone: 'bad', children: 'The import stopped at batch 9 of 21. Nothing after it ran.' },
   play: async ({ canvasElement }) => {
     const note = within(canvasElement).getByRole('note');
-    await expect(getComputedStyle(note).borderLeftColor).toBe(computedColor(note, 'var(--bad)'));
+    await expect(getComputedStyle(note).borderLeftColor).toEqual(
+      sameColor(computedColor(note, 'var(--bad)')),
+    );
   },
 };
 
@@ -102,11 +110,11 @@ export const NeverRedAtRest: Story = {
   args: { children: 'Two reports disagree about the east shore.' },
   play: async ({ canvasElement }) => {
     const note = within(canvasElement).getByRole('note');
-    await expect(getComputedStyle(note).borderLeftColor).not.toBe(
-      computedColor(note, 'var(--bad)'),
+    await expect(getComputedStyle(note).borderLeftColor).not.toEqual(
+      sameColor(computedColor(note, 'var(--bad)')),
     );
-    await expect(getComputedStyle(note).borderLeftColor).not.toBe(
-      computedColor(note, 'var(--warn)'),
+    await expect(getComputedStyle(note).borderLeftColor).not.toEqual(
+      sameColor(computedColor(note, 'var(--warn)')),
     );
   },
 };
@@ -180,8 +188,8 @@ export const LockHeld: Story = {
     await expect(banner).not.toHaveAttribute('role');
     const s = getComputedStyle(banner);
     await expect(s.borderTopWidth).toBe('1px');
-    await expect(s.borderTopColor).toBe(computedColor(banner, 'var(--line2)'));
-    await expect(s.backgroundColor).toBe(computedColor(banner, 'var(--panel)'));
+    await expect(s.borderTopColor).toEqual(sameColor(computedColor(banner, 'var(--line2)')));
+    await expect(s.backgroundColor).toEqual(sameColor(computedColor(banner, 'var(--panel)')));
     await expect(s.borderRadius).toBe('0px');
     const box = banner.getBoundingClientRect();
     const button = within(banner)
@@ -208,7 +216,9 @@ export const LockDecided: Story = {
   play: async ({ canvasElement }) => {
     const banner = within(canvasElement).getByRole('status');
     await expect(banner).toHaveAttribute('data-state', 'decided');
-    await expect(getComputedStyle(banner).borderTopColor).toBe(computedColor(banner, 'var(--fg2)'));
+    await expect(getComputedStyle(banner).borderTopColor).toEqual(
+      sameColor(computedColor(banner, 'var(--fg2)')),
+    );
     const box = banner.getBoundingClientRect();
     const line = part(banner, 'lock-banner-line').getBoundingClientRect();
     const actions = part(banner, 'lock-banner-actions').getBoundingClientRect();
@@ -267,7 +277,7 @@ export const DecidedWhileYouLooked: Story = {
     const lit = computedColor(banner, 'var(--fg2)');
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Decide elsewhere' }));
     await expect(within(canvasElement).getByRole('status')).toBe(banner);
-    await waitFor(() => expect(getComputedStyle(banner).borderTopColor).toBe(lit));
+    await waitFor(() => expect(getComputedStyle(banner).borderTopColor).toEqual(sameColor(lit)));
     await expect(banner.getBoundingClientRect().top).toBe(top);
   },
 };
@@ -306,7 +316,7 @@ export const FourUp: Story = {
       await expect(notes).toHaveLength(3);
       for (const n of notes) {
         await expect(getComputedStyle(n).borderLeftWidth).toBe('2px');
-        await expect(getComputedStyle(n).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+        await expect(getComputedStyle(n).backgroundColor).toEqual(sameColor('rgba(0, 0, 0, 0)'));
       }
       await expect(within(q).getAllByRole('status')).toHaveLength(1);
     }
