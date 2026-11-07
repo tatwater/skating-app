@@ -165,6 +165,53 @@ describe('SheetWords — the words and photos', () => {
     expect(within(screen.getByTestId('menu')).getByText('?')).toBeInTheDocument();
     expect(menu.mock.calls[0]?.[0]).toMatchObject({ reportId: null });
   });
+
+  it('still mounts the menu on an assigned photo in a one-lake Post, which shows no number', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    setSheet({
+      ...post,
+      reports: [
+        { ...first, photos: [{ id: 'on-1', fullUri: 'f', thumbUri: 't', placeOnMap: false }] },
+      ],
+    });
+    const menu = vi.fn(({ trigger }: { trigger: React.ReactNode }) => (
+      <span data-testid="menu">{trigger}</span>
+    ));
+    render(
+      <SheetSlotsProvider value={{ photoTileMenu: menu }}>
+        <Connected />
+      </SheetSlotsProvider>,
+    );
+    expect(menu).toHaveBeenCalledTimes(1);
+    expect(menu.mock.calls[0]?.[0]).toMatchObject({ reportId: first.id });
+    expect(
+      within(screen.getByTestId('menu')).getByText(
+        (_, el) => el?.getAttribute('data-slot') === 'photo-tile-mark',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('gives a kept photo no menu and no mark', () => {
+    const post = openPostSheet('body', { waterBodyId: 'b1', bodyName: 'Morey' }, NOW, mint);
+    const first = post.reports[0];
+    if (first === undefined) throw new Error('no report');
+    h.queries.set('photos:getUrls', [{ photoId: 'kept-1', thumbUrl: 'https://t/1.jpg' }]);
+    setSheet({
+      ...post,
+      mode: { kind: 'edit', reportId: first.id },
+      reports: [{ ...first, keptPhotoIds: ['kept-1'] }],
+    });
+    const menu = vi.fn();
+    render(
+      <SheetSlotsProvider value={{ photoTileMenu: menu }}>
+        <Connected editing />
+      </SheetSlotsProvider>,
+    );
+    expect(menu).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-slot="photo-tile-mark"]')).toBeNull();
+  });
 });
 
 describe('LakeNameSearch — the keyboard path', () => {
