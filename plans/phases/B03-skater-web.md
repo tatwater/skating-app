@@ -96,6 +96,16 @@ These are the facts that shape the build. The calls the founder still has to mak
     what moves into `kit/` mid-build.
 11. **D3 copy has one home.** The hazard-caveat strings live in `packages/core/src/hazardCopy.ts`, shared with
     mobile; D237's tooltip sentence is added *there*, and both surfaces' hazard lists render it.
+12. **Depth draws as banded lines, not filled bands, and is now a switch** (the §2 build, 2026-11-07). The
+    bathymetry archive holds contour lines, which MapLibre cannot fill between, so the skater map ships
+    banded contour lines with a shallowest-band fill on the focused lake — real bands wait on polygons from
+    the pipeline and a re-tile (the roadmap's *Filled depth bands* deferred row); board 3.16's Depth switch
+    is the newer founder call, so D81 is amended to make depth a viewer toggle while hazards stay locked on.
+13. **Dev Clerk disagrees with the boards twice** (the §8 build, 2026-11-07). The instance requires a
+    password at sign-up, so the email → code sign-up stops at `missing_requirements` until the founder turns
+    that requirement off in the dashboard; the flow shows an honest failure state, pinned by a test. And
+    Google, Apple and Microsoft sign-in are enabled on the instance while the boards draw email only, so the
+    rebuilt web drops those buttons — an account created with Google can still receive an email code.
 
 ---
 

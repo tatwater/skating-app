@@ -2573,6 +2573,12 @@ safety regression delivered by a display preference.
 - The satellite preference is per-device and persisted, default off (A06e as scoped 2026-07-31; D146
   later made the reveal per-body and unpersisted). It is the map's **only** persisted display state.
 
+**Amended 2026-11-07 (B03 §2):** board 3.16 of the skater web mocks draws a Depth switch in the map's
+layers menu, and the board is the newer founder call, so depth contours are now a viewer toggle on the
+skater map (default on; imagery still supersedes depth while it shows). What does NOT move: hazards
+have no switch anywhere — the row is drawn locked on, the store has no hazards toggle, and a stale
+stored value is ignored (D3).
+
 **Related:** [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e),
 [`phase-A06b`](./phases/A06b-bathymetry-layer.md), [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
