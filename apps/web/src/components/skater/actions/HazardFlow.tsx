@@ -59,8 +59,12 @@ export interface HazardFlowProps {
    * calls this.
    */
   onClose: () => void;
-  /** Filed or confirmed. Defaults to `onClose`. */
-  onDone?: (result: HazardFlowResult) => void;
+  /**
+   * Filed or confirmed. Defaults to `onClose`. `open` is false when the skater had already left
+   * before the Post landed: the host still carries the result on, but has nothing to close — and
+   * must not close whatever it has opened since.
+   */
+  onDone?: (result: HazardFlowResult, how: { open: boolean }) => void;
   /** A portal container for the tooltips (the host sheet's, or a story's themed quad). */
   container?: HTMLElement | null;
 }
@@ -140,19 +144,23 @@ export function HazardFlow({
     apply(stopPlacing);
     onClose();
   };
-  const finish = (result: HazardFlowResult) => {
+  const finish = (result: HazardFlowResult, filedDraftId: string | undefined) => {
     // The draft goes however the skater left: a Post still in flight when they pressed Close lands
     // here after `leave`, and a draft that restored after its hazard was filed would file it twice.
+    // Only *that* draft, though: by the time a slow Post lands the skater may have thrown it away
+    // and started another hazard on this lake, and that one (and its photos) is theirs to keep.
     const state = useHazardDraftStore.getState();
-    if (state.draft?.waterBodyId === waterBodyId) state.clearDraft();
+    if (state.draft?.waterBodyId === waterBodyId && state.draft.draftId === filedDraftId) {
+      state.clearDraft();
+    }
     if (left.current) {
       // Already gone, so nothing navigates — but a host that carries the result on (the report
       // sheet's `hazardIds`) still hears of it.
-      onDone?.(result);
+      onDone?.(result, { open: false });
       return;
     }
     left.current = true;
-    (onDone ?? (() => onClose()))(result);
+    (onDone ?? (() => onClose()))(result, { open: true });
   };
 
   // Leaving by any road (a route change included) takes the map out of listening mode.
@@ -203,7 +211,7 @@ export function HazardFlow({
         geometry_kind: shape.geometryKind,
         photo_count: photoIds.length,
       });
-      finish({ outcome: 'filed', hazardId: String(hazardId) });
+      finish({ outcome: 'filed', hazardId: String(hazardId) }, current.draftId);
     } catch (e) {
       setError(messageOf(e, 'Couldn’t save that hazard. Check your connection and try again.'));
     } finally {
@@ -257,6 +265,7 @@ export function HazardFlow({
 
   const confirmNearby = async () => {
     const hazardId = draft.nearbyHazardId;
+    const confirmingDraftId = draft.draftId;
     if (hazardId === null) return;
     setSubmitting(true);
     setError(null);
@@ -267,7 +276,7 @@ export function HazardFlow({
         via: 'duplicate_nudge',
       });
       capture('existing_hazard_confirmed', { confirmation_source: 'duplicate_nudge' });
-      finish({ outcome: 'confirmed', hazardId });
+      finish({ outcome: 'confirmed', hazardId }, confirmingDraftId);
     } catch (e) {
       setNudge(null);
       apply((d) => ({ ...d, nearbyHazardId: null, step: stepOf({ ...d, nearbyHazardId: null }) }));

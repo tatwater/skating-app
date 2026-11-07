@@ -300,17 +300,26 @@ describe('StackedHazard (5.10.1)', () => {
       />,
     );
     await screen.findByRole('dialog');
-    const done = h.flow?.onDone as (r: { outcome: string; hazardId: string }) => void;
-    act(() => done({ outcome: 'confirmed', hazardId: 'old' }));
+    const done = h.flow?.onDone as (
+      r: { outcome: string; hazardId: string },
+      how: { open: boolean },
+    ) => void;
+    act(() => done({ outcome: 'confirmed', hazardId: 'old' }, { open: true }));
     let sheet: PostSheet | null = null;
     render(<SheetProbe onSheet={(p) => (sheet = p)} />);
     expect((sheet as PostSheet | null)?.reports[0]?.sheet.scalars.hazardIds).toEqual([]);
     expect(onFiled).not.toHaveBeenCalled();
-    act(() => done({ outcome: 'filed', hazardId: 'h1' }));
+    act(() => done({ outcome: 'filed', hazardId: 'h1' }, { open: true }));
     act(() => carryHazard(reportId, 'h1'));
     render(<SheetProbe onSheet={(p) => (sheet = p)} />);
     expect((sheet as PostSheet | null)?.reports[0]?.sheet.scalars.hazardIds).toEqual(['h1']);
     expect(onFiled).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(2);
+    // A Post that lands after the skater left still rides on the report, but closes nothing: the
+    // opener may have shown another hazard sheet since.
+    act(() => done({ outcome: 'filed', hazardId: 'h2' }, { open: false }));
+    render(<SheetProbe onSheet={(p) => (sheet = p)} />);
+    expect((sheet as PostSheet | null)?.reports[0]?.sheet.scalars.hazardIds).toEqual(['h1', 'h2']);
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
@@ -571,10 +580,10 @@ describe('PhotoTileMenu', () => {
     await screen.findByRole('dialog', { name: 'Report a hazard' });
     expect(h.flow).toMatchObject({ waterBodyId: 'mascoma', stacked: true });
     act(() =>
-      ((h.flow as Record<string, unknown>).onDone as (r: unknown) => void)({
-        outcome: 'filed',
-        hazardId: 'hz',
-      }),
+      ((h.flow as Record<string, unknown>).onDone as (r: unknown, how: unknown) => void)(
+        { outcome: 'filed', hazardId: 'hz' },
+        { open: true },
+      ),
     );
     let sheet: PostSheet | null = null;
     render(<SheetProbe onSheet={(p) => (sheet = p)} />);

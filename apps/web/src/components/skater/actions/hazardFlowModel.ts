@@ -78,7 +78,7 @@ export function drawKindsFor(type: HazardType | null): HazardDrawKind[] {
 
 /** A fresh flow on a lake. */
 export function startDraft(waterBodyId: string, stackedInReport: boolean): HazardDraft {
-  return { ...EMPTY_HAZARD_DRAFT, waterBodyId, stackedInReport };
+  return { ...EMPTY_HAZARD_DRAFT, draftId: crypto.randomUUID(), waterBodyId, stackedInReport };
 }
 
 /** The storable shape, or `null` while the draft can't post yet — core's one definition. */

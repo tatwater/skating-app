@@ -28,8 +28,8 @@ export interface HazardSheetFrameProps {
   container?: HTMLElement | null;
   /** Left by Close, Esc, Back or Cancel — the draft kept unless Cancel threw it away. */
   onClose: () => void;
-  /** Filed or confirmed. Defaults to `onClose`. */
-  onDone?: (result: HazardFlowResult) => void;
+  /** Filed or confirmed (`HazardFlow`'s `onDone`). Defaults to `onClose`. */
+  onDone?: (result: HazardFlowResult, how: { open: boolean }) => void;
   /** Photos to start the hazard with (a report photo's *This is a hazard…*). */
   seedPhotos?: readonly File[];
 }

@@ -46,12 +46,14 @@ export function StackedHazard({
       stacked
       container={container}
       onClose={onClose}
-      onDone={(result) => {
+      onDone={(result, { open }) => {
         if (result.outcome === 'filed') {
           carryHazard(reportId, result.hazardId);
           onFiled?.();
         }
-        onClose();
+        // A Post that lands after the skater left has nothing of its own to close; closing here
+        // would shut whatever hazard sheet the opener has shown since.
+        if (open) onClose();
       }}
       {...(seedPhotos !== undefined ? { seedPhotos } : {})}
     />

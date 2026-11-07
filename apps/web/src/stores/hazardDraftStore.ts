@@ -50,6 +50,12 @@ export interface ShorePick {
 }
 
 export interface HazardDraft {
+  /**
+   * This draft, as distinct from the next one on the same lake: stamped when the flow starts one
+   * (`startDraft`). A Post that lands late clears only the draft it filed, never a newer draft that
+   * has since taken the slot. Absent on a draft stored before it existed.
+   */
+  draftId?: string;
   step: HazardFlowStep;
   /** The lake the draft was drawn on. A draft for another lake doesn't restore here. */
   waterBodyId: string | null;

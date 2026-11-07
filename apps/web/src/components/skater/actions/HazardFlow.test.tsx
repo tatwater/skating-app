@@ -484,8 +484,47 @@ describe('leaving', () => {
     await act(async () => land('h_late'));
     // Never restores to be filed twice; the host that carries the result still hears of it.
     expect(useHazardDraftStore.getState().draft).toBeNull();
-    expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_late' });
+    expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_late' }, { open: false });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('an old Post that lands after a new draft started clears only its own draft', async () => {
+    let land: (id: string) => void = () => {};
+    const create = vi.fn(() => new Promise<string>((resolve) => (land = resolve)));
+    fakes.mutations.set('hazards:create', create);
+    const onDone = vi.fn();
+    const first = mount({ onDone });
+    fireEvent.click(await screen.findByRole('button', { name: 'Thin ice' }));
+    capture(43.63, -72.15);
+    fireEvent.click(screen.getByRole('button', { name: 'Post hazard' }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    const filed = useHazardDraftStore.getState().draft?.draftId;
+    expect(filed).toEqual(expect.any(String));
+    // Close while it's in flight, reopen on the same lake, throw the old draft away, start another.
+    act(() => activeMapHandlers().onExitMode?.());
+    first.unmount();
+    const second = mount();
+    // The old draft comes back (same lake, same draft); Cancel throws it away.
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(useHazardDraftStore.getState().draft).toBeNull();
+    second.unmount();
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Pressure ridge' }));
+    const photo = new File(['x'], 'ridge.jpg', { type: 'image/jpeg' });
+    act(() => useHazardDraftStore.getState().setPhotoFiles([photo]));
+    const fresh = useHazardDraftStore.getState().draft?.draftId;
+    expect(fresh).toEqual(expect.any(String));
+    expect(fresh).not.toBe(filed);
+
+    // The old Post lands now.
+    await act(async () => land('h_old'));
+    expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_old' }, { open: false });
+    // The new draft and its photo are untouched.
+    expect(useHazardDraftStore.getState().draft).toMatchObject({
+      draftId: fresh,
+      hazardType: 'pressure_ridge',
+    });
+    expect(useHazardDraftStore.getState().photoFiles).toEqual([photo]);
   });
 });
 
@@ -510,7 +549,10 @@ describe('stacked inside the report sheet (5.10.1)', () => {
     act(() => state.onCapture({ lat: 43.63, lng: -72.15 }));
     fireEvent.click(screen.getByRole('button', { name: 'Post hazard' }));
     await waitFor(() =>
-      expect(onDone).toHaveBeenCalledWith({ outcome: 'filed', hazardId: 'h_stacked' }),
+      expect(onDone).toHaveBeenCalledWith(
+        { outcome: 'filed', hazardId: 'h_stacked' },
+        { open: true },
+      ),
     );
     expect(onClose).not.toHaveBeenCalled();
     unmount();
