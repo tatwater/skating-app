@@ -22,6 +22,7 @@ import {
   temperatureWindowF,
   timelineDaysFromArchive,
   timelineExtent,
+  timelineReadoutParts,
   timelineScrollbar,
   weatherTimelineModel,
 } from './weatherTimeline';
@@ -873,6 +874,30 @@ describe('fetch as the wind lane second channel', () => {
       expect(fetchAlong(undefined, 315)).toBeNull();
       expect(fetchAlong(exposed, undefined)).toBeNull();
       expect(fetchAlong([1, 2, 3], 315)).toBeNull(); // wrong sector count
+    });
+  });
+
+  describe('the scrub readout names the reach in miles', () => {
+    it('converts the meters rather than relabeling them', () => {
+      // 4,000 m is 2.49 mi; a relabel would have said "4 mi", and the old copy said "4 km".
+      const nw = timelineReadoutParts(
+        hour(14, { windSpeedKph: 16, windDirectionDeg: 315 }),
+        exposed,
+      );
+      expect(nw).toContain('2.5 mi across the lake');
+      expect(nw.join(' · ')).not.toMatch(/km/);
+      // The sheltered bearing on the same lake still reads, at its own (short) reach.
+      const ne = timelineReadoutParts(
+        hour(14, { windSpeedKph: 16, windDirectionDeg: 45 }),
+        exposed,
+      );
+      expect(ne).toContain('0.2 mi across the lake');
+    });
+
+    it('says nothing about reach on a pond, or without a profile', () => {
+      const h = hour(14, { windSpeedKph: 16, windDirectionDeg: 315 });
+      expect(timelineReadoutParts(h, pond).join(' · ')).not.toMatch(/across the lake/);
+      expect(timelineReadoutParts(h).join(' · ')).not.toMatch(/across the lake/);
     });
   });
 
