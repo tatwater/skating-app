@@ -16,6 +16,15 @@ import { mapPalette } from './mapPalette';
 import { DOCK_CONTROLS, type DockControls } from './mapSpec';
 import { MapStill, SkaterPair, type StillView, stillBands } from './mapStill';
 import { MASCOMA_INTERIOR, MASCOMA_PUT_INS, MASCOMA_RINGS, NEARBY_RINGS } from './mapStoryData';
+import {
+  MASCOMA_APPROACH,
+  MASCOMA_BAYS,
+  MASCOMA_CONTOURS,
+  MASCOMA_DIVIDER,
+  MASCOMA_HAZARDS,
+  MASCOMA_LANDMARKS,
+  MASCOMA_TRACK,
+} from './mapStoryDepth';
 
 /**
  * The region map's compositions (boards 1.1, 1.2, 3.16, 3.25), on the skater surface in both modes.
@@ -111,15 +120,18 @@ const AREA_LABELS: LakeLabelModel[] = [
   }),
 ];
 
+/** One mark per drawn footprint, as `hazardMarksFrom` makes them. */
+const HAZARD_MARKS: HazardMarkModel[] = MASCOMA_HAZARDS.map((h) => ({
+  id: h.id,
+  hazardType: h.hazardType,
+  lng: h.at.lng,
+  lat: h.at.lat,
+  tone: h.tone,
+  provisional: h.provisional,
+}));
 /** The lead at the Narrows, by Shaker Bridge (board 1.2). */
-const NARROWS: HazardMarkModel = {
-  id: 'narrows',
-  hazardType: 'open_water',
-  lng: -72.1566,
-  lat: 43.6322,
-  tone: 'danger',
-  provisional: false,
-};
+const NARROWS = HAZARD_MARKS[0] as HazardMarkModel;
+const PUT_INS = MASCOMA_PUT_INS.map((p, i) => ({ id: String(i), ...p }));
 
 const dockFor = (on: readonly (typeof DOCK_CONTROLS)[number][]): DockControls =>
   Object.fromEntries(DOCK_CONTROLS.map((c) => [c, on.includes(c)])) as DockControls;
@@ -192,18 +204,26 @@ export const NothingChosen: Story = {
   },
 };
 
-/** 1.2 — Mascoma chosen: its put-ins, the known hazard, the legend and the imagery entry. */
+/**
+ * 1.2 — Mascoma chosen: its depth (the real isobaths over the shallowest band's fill), its
+ * put-ins, the known hazard's footprint and mark, the legend and the imagery entry.
+ */
 export const LakeChosen: Story = {
   render: () => (
     <SkaterPair>
       {(mode) => (
-        <MapStill mode={mode} view={LAKE} water={[{ rings: MASCOMA_RINGS, selected: true }]}>
+        <MapStill
+          mode={mode}
+          view={LAKE}
+          water={[{ rings: MASCOMA_RINGS, selected: true, contours: MASCOMA_CONTOURS }]}
+          overlays={{ hazards: [MASCOMA_HAZARDS[0] as (typeof MASCOMA_HAZARDS)[number]] }}
+        >
           {(map) => (
             <>
               <MapMarksLayer
                 map={map}
                 labels={[]}
-                putIns={MASCOMA_PUT_INS.map((p, i) => ({ id: String(i), ...p }))}
+                putIns={PUT_INS}
                 hazards={[NARROWS]}
                 onOpenHazard={fn()}
               />
@@ -346,6 +366,67 @@ export const Bands: Story = {
         await canvas.findByRole('button', { name: 'Hazard: Open water / lead' }),
       ).toBeVisible();
     }
+  },
+};
+
+/**
+ * Every layer the canvas draws, on one lake, so each color can be judged next to the others: a bay
+ * framed (the rest of the lake under the scrim, the bay's edge lit), the bay names and the real
+ * landmarks, the walk in from the lot, a skated track, a confirmed hazard and a provisional one
+ * (dashed, softer, never gone), a neighbor under the pointer and an inactive pond. Not a board —
+ * the review surface for the map's palette.
+ */
+export const EveryLayer: Story = {
+  render: () => (
+    <SkaterPair>
+      {(mode) => (
+        <MapStill
+          mode={mode}
+          view={LAKE}
+          water={[
+            { rings: MASCOMA_RINGS, selected: true, contours: MASCOMA_CONTOURS },
+            { rings: NEARBY_RINGS['Crystal Lake'] ?? [], hovered: true },
+            { rings: NEARBY_RINGS['Smith Pond'] ?? [] },
+            { rings: NEARBY_RINGS['George Pond'] ?? [], inactive: true },
+          ]}
+          overlays={{
+            hazards: MASCOMA_HAZARDS,
+            bay: { chord: MASCOMA_DIVIDER, inside: [-72.17, 43.641], names: MASCOMA_BAYS },
+            landmarks: MASCOMA_LANDMARKS,
+            approach: MASCOMA_APPROACH,
+            track: MASCOMA_TRACK,
+          }}
+        >
+          {(map) => (
+            <>
+              <MapMarksLayer
+                map={map}
+                labels={[]}
+                putIns={PUT_INS}
+                hazards={HAZARD_MARKS}
+                selectedHazardId="narrows"
+                onOpenHazard={fn()}
+              />
+              <MapDockControls
+                {...dockProps}
+                controls={dockFor(['zoom', 'layers', 'legend'])}
+                depthShown
+              />
+            </>
+          )}
+        </MapStill>
+      )}
+    </SkaterPair>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.querySelector('section') as HTMLElement);
+    // Both hazards draw: the provisional one is dashed and softer, never hidden (D3, D54).
+    expect(
+      await canvas.findByRole('button', { name: /Thin ice, not yet confirmed/ }),
+    ).toBeVisible();
+    const chosen = canvas.getByRole('button', { name: 'Hazard: Open water / lead' });
+    expect(chosen).toHaveAttribute('aria-current', 'true');
+    expect(canvas.getAllByRole('img', { name: /^Put-in/ })).toHaveLength(6);
   },
 };
 
