@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as MapRouteImport } from './routes/_map'
 import { Route as SkaterRouteImport } from './routes/_skater'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -33,9 +32,9 @@ import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
 import { Route as GooglePhotosCallbackRouteImport } from './routes/google-photos.callback'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
-import { Route as MapBountyIdRouteImport } from './routes/_map.bounty.$id'
-import { Route as MapHazardIdRouteImport } from './routes/_map.hazard.$id'
-import { Route as MapReportIdRouteImport } from './routes/_map.report.$id'
+import { Route as SkaterBountyIdRouteImport } from './routes/_skater.bounty.$id'
+import { Route as SkaterHazardIdRouteImport } from './routes/_skater.hazard.$id'
+import { Route as SkaterReportIdRouteImport } from './routes/_skater.report.$id'
 import { Route as SkaterWaterIdRouteImport } from './routes/_skater.water.$id'
 import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
 import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
@@ -46,10 +45,6 @@ import { Route as AdminWaterRequestsRouteImport } from './routes/admin.water.req
 import { Route as AdminWaterReviewRouteImport } from './routes/admin.water.review'
 import { Route as AdminWaterStandingRouteImport } from './routes/admin.water.standing'
 
-const MapRoute = MapRouteImport.update({
-  id: '/_map',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SkaterRoute = SkaterRouteImport.update({
   id: '/_skater',
   getParentRoute: () => rootRouteImport,
@@ -164,20 +159,20 @@ const UUsernameRoute = UUsernameRouteImport.update({
   path: '/u/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MapBountyIdRoute = MapBountyIdRouteImport.update({
+const SkaterBountyIdRoute = SkaterBountyIdRouteImport.update({
   id: '/bounty/$id',
   path: '/bounty/$id',
-  getParentRoute: () => MapRoute,
+  getParentRoute: () => SkaterRoute,
 } as any)
-const MapHazardIdRoute = MapHazardIdRouteImport.update({
+const SkaterHazardIdRoute = SkaterHazardIdRouteImport.update({
   id: '/hazard/$id',
   path: '/hazard/$id',
-  getParentRoute: () => MapRoute,
+  getParentRoute: () => SkaterRoute,
 } as any)
-const MapReportIdRoute = MapReportIdRouteImport.update({
+const SkaterReportIdRoute = SkaterReportIdRouteImport.update({
   id: '/report/$id',
   path: '/report/$id',
-  getParentRoute: () => MapRoute,
+  getParentRoute: () => SkaterRoute,
 } as any)
 const SkaterWaterIdRoute = SkaterWaterIdRouteImport.update({
   id: '/water/$id',
@@ -248,9 +243,9 @@ export interface FileRoutesByFullPath {
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/u/$username': typeof UUsernameRoute
   '/admin/': typeof AdminIndexRoute
-  '/bounty/$id': typeof MapBountyIdRoute
-  '/hazard/$id': typeof MapHazardIdRoute
-  '/report/$id': typeof MapReportIdRoute
+  '/bounty/$id': typeof SkaterBountyIdRoute
+  '/hazard/$id': typeof SkaterHazardIdRoute
+  '/report/$id': typeof SkaterReportIdRoute
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
@@ -262,7 +257,6 @@ export interface FileRoutesByFullPath {
   '/admin/water/': typeof AdminWaterIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof SkaterIndexRoute
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
   '/notifications': typeof NotificationsRoute
@@ -282,10 +276,11 @@ export interface FileRoutesByTo {
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/u/$username': typeof UUsernameRoute
+  '/': typeof SkaterIndexRoute
   '/admin': typeof AdminIndexRoute
-  '/bounty/$id': typeof MapBountyIdRoute
-  '/hazard/$id': typeof MapHazardIdRoute
-  '/report/$id': typeof MapReportIdRoute
+  '/bounty/$id': typeof SkaterBountyIdRoute
+  '/hazard/$id': typeof SkaterHazardIdRoute
+  '/report/$id': typeof SkaterReportIdRoute
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
@@ -298,7 +293,6 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_map': typeof MapRouteWithChildren
   '/_skater': typeof SkaterRouteWithChildren
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
@@ -322,9 +316,9 @@ export interface FileRoutesById {
   '/u/$username': typeof UUsernameRoute
   '/_skater/': typeof SkaterIndexRoute
   '/admin/': typeof AdminIndexRoute
-  '/_map/bounty/$id': typeof MapBountyIdRoute
-  '/_map/hazard/$id': typeof MapHazardIdRoute
-  '/_map/report/$id': typeof MapReportIdRoute
+  '/_skater/bounty/$id': typeof SkaterBountyIdRoute
+  '/_skater/hazard/$id': typeof SkaterHazardIdRoute
+  '/_skater/report/$id': typeof SkaterReportIdRoute
   '/_skater/water/$id': typeof SkaterWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
@@ -374,7 +368,6 @@ export interface FileRouteTypes {
     | '/admin/water/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/about'
     | '/feed'
     | '/notifications'
@@ -394,6 +387,7 @@ export interface FileRouteTypes {
     | '/admin/tuning'
     | '/google-photos/callback'
     | '/u/$username'
+    | '/'
     | '/admin'
     | '/bounty/$id'
     | '/hazard/$id'
@@ -409,7 +403,6 @@ export interface FileRouteTypes {
     | '/admin/water'
   id:
     | '__root__'
-    | '/_map'
     | '/_skater'
     | '/about'
     | '/admin'
@@ -433,9 +426,9 @@ export interface FileRouteTypes {
     | '/u/$username'
     | '/_skater/'
     | '/admin/'
-    | '/_map/bounty/$id'
-    | '/_map/hazard/$id'
-    | '/_map/report/$id'
+    | '/_skater/bounty/$id'
+    | '/_skater/hazard/$id'
+    | '/_skater/report/$id'
     | '/_skater/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
@@ -448,7 +441,6 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  MapRoute: typeof MapRouteWithChildren
   SkaterRoute: typeof SkaterRouteWithChildren
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRouteWithChildren
@@ -466,13 +458,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_map': {
-      id: '/_map'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof MapRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_skater': {
       id: '/_skater'
       path: ''
@@ -634,26 +619,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_map/bounty/$id': {
-      id: '/_map/bounty/$id'
+    '/_skater/bounty/$id': {
+      id: '/_skater/bounty/$id'
       path: '/bounty/$id'
       fullPath: '/bounty/$id'
-      preLoaderRoute: typeof MapBountyIdRouteImport
-      parentRoute: typeof MapRoute
+      preLoaderRoute: typeof SkaterBountyIdRouteImport
+      parentRoute: typeof SkaterRoute
     }
-    '/_map/hazard/$id': {
-      id: '/_map/hazard/$id'
+    '/_skater/hazard/$id': {
+      id: '/_skater/hazard/$id'
       path: '/hazard/$id'
       fullPath: '/hazard/$id'
-      preLoaderRoute: typeof MapHazardIdRouteImport
-      parentRoute: typeof MapRoute
+      preLoaderRoute: typeof SkaterHazardIdRouteImport
+      parentRoute: typeof SkaterRoute
     }
-    '/_map/report/$id': {
-      id: '/_map/report/$id'
+    '/_skater/report/$id': {
+      id: '/_skater/report/$id'
       path: '/report/$id'
       fullPath: '/report/$id'
-      preLoaderRoute: typeof MapReportIdRouteImport
-      parentRoute: typeof MapRoute
+      preLoaderRoute: typeof SkaterReportIdRouteImport
+      parentRoute: typeof SkaterRoute
     }
     '/_skater/water/$id': {
       id: '/_skater/water/$id'
@@ -721,27 +706,19 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface MapRouteChildren {
-  MapBountyIdRoute: typeof MapBountyIdRoute
-  MapHazardIdRoute: typeof MapHazardIdRoute
-  MapReportIdRoute: typeof MapReportIdRoute
-}
-
-const MapRouteChildren: MapRouteChildren = {
-  MapBountyIdRoute: MapBountyIdRoute,
-  MapHazardIdRoute: MapHazardIdRoute,
-  MapReportIdRoute: MapReportIdRoute,
-}
-
-const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
-
 interface SkaterRouteChildren {
   SkaterIndexRoute: typeof SkaterIndexRoute
+  SkaterBountyIdRoute: typeof SkaterBountyIdRoute
+  SkaterHazardIdRoute: typeof SkaterHazardIdRoute
+  SkaterReportIdRoute: typeof SkaterReportIdRoute
   SkaterWaterIdRoute: typeof SkaterWaterIdRoute
 }
 
 const SkaterRouteChildren: SkaterRouteChildren = {
   SkaterIndexRoute: SkaterIndexRoute,
+  SkaterBountyIdRoute: SkaterBountyIdRoute,
+  SkaterHazardIdRoute: SkaterHazardIdRoute,
+  SkaterReportIdRoute: SkaterReportIdRoute,
   SkaterWaterIdRoute: SkaterWaterIdRoute,
 }
 
@@ -791,7 +768,6 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  MapRoute: MapRouteWithChildren,
   SkaterRoute: SkaterRouteWithChildren,
   AboutRoute: AboutRoute,
   AdminRoute: AdminRouteWithChildren,
