@@ -205,7 +205,11 @@ vi.mock('convex/react', () => ({
 const { useSkaterMapStore, DEFAULT_MAP_LAYERS } = await import('@/stores/skaterMapStore');
 const { exploreMapSpec, lakeMapSpec, panelMapSpec, defineMapSpec } = await import('./mapSpec');
 const { useMapSpec } = await import('./useMapSpec');
-const { default: SkaterMapCanvas, CAMERA_WRITE_DELAY_MS } = await import('./SkaterMapCanvas');
+const {
+  default: SkaterMapCanvas,
+  CAMERA_WRITE_DELAY_MS,
+  LABEL_CLOCK_MS,
+} = await import('./SkaterMapCanvas');
 const { CONTOUR_LAYER_ID } = await import('@/lib/contourMap');
 
 // ── Data ──────────────────────────────────────────────────────────────────────────────────────
@@ -479,6 +483,22 @@ describe('data into the map', () => {
     expect(
       screen.queryByText('Mascoma Lake', { selector: '[data-slot="lake-label-name"]' }),
     ).toBeNull();
+  });
+
+  it('re-reads "today" against the clock, so a report from before midnight stops claiming it', async () => {
+    const lateEvening = new Date(2026, 1, 16, 23, 30).getTime();
+    vi.setSystemTime(lateEvening);
+    results.set('reports:recentCardsForBodies', [
+      { waterBodyId: 'crystal', skateEndTime: lateEvening - 30 * 60_000 },
+    ]);
+    await mount();
+    expect(screen.getByText('1 report · today')).toBeInTheDocument();
+    // The canvas outlives the day it mounted on: an hour later it is tomorrow.
+    await act(async () => {
+      vi.advanceTimersByTime(LABEL_CLOCK_MS * 61);
+    });
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(lateEvening);
+    expect(screen.getByText(`1 report · ${weekday}`)).toBeInTheDocument();
   });
 
   it('dims bodies the weather filter didn’t match', async () => {

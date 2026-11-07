@@ -73,6 +73,8 @@ import { useSkaterMapData, type ViewportQuery } from './useSkaterMapData';
 
 /** How long the camera must rest before it's written to the store (and so to sessionStorage). */
 export const CAMERA_WRITE_DELAY_MS = 300;
+/** How often the labels' "today" is re-read against the clock. */
+export const LABEL_CLOCK_MS = 60_000;
 /** Room around a framed lake, px: clear of the dock on the right and the legend on the left. */
 export const FIT_PADDING = { top: 72, bottom: 72, left: 72, right: 88 };
 
@@ -108,7 +110,13 @@ export default function SkaterMapCanvas() {
   const contourArchive = env.bathymetryPmtilesUrl;
 
   const [query, setQuery] = useState<ViewportQuery | null>(null);
-  const [now] = useState(() => Date.now());
+  // The labels' clock. This canvas lives for the whole session, so a `now` taken once at mount would
+  // keep calling yesterday's report "today" past midnight (D3: never fresher than it is).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), LABEL_CLOCK_MS);
+    return () => clearInterval(id);
+  }, []);
   const data = useSkaterMapData({ query, spec, now });
   const contourCreditLine = useSkaterMapStore((s) => s.contourCredit);
 
