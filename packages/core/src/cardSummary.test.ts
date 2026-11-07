@@ -35,15 +35,23 @@ describe('thicknessSummaryOf (B03 §11)', () => {
   });
 
   it('the thinnest figure anyone gave is never hidden by the span', () => {
-    const reading = fc.record(
-      {
-        valueCm: fc.integer({ min: 0, max: 100 }),
-        minCm: fc.integer({ min: 0, max: 100 }),
-        maxCm: fc.integer({ min: 0, max: 100 }),
-        method: fc.constantFrom(...THICKNESS_METHODS),
-      },
-      { requiredKeys: ['method'] },
-    );
+    // A range is ordered, as `validateReport` insists (`minCm must be ≤ maxCm`): no stored reading
+    // has its top below its bottom.
+    const reading = fc
+      .record(
+        {
+          valueCm: fc.integer({ min: 0, max: 100 }),
+          minCm: fc.integer({ min: 0, max: 100 }),
+          maxCm: fc.integer({ min: 0, max: 100 }),
+          method: fc.constantFrom(...THICKNESS_METHODS),
+        },
+        { requiredKeys: ['method'] },
+      )
+      .map((r) =>
+        r.minCm !== undefined && r.maxCm !== undefined && r.minCm > r.maxCm
+          ? { ...r, minCm: r.maxCm, maxCm: r.minCm }
+          : r,
+      );
     fc.assert(
       fc.property(fc.array(reading, { minLength: 1, maxLength: 8 }), (readings) => {
         const summary = thicknessSummaryOf({ readings });
