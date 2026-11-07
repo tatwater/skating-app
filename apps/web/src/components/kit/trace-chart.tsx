@@ -236,6 +236,31 @@ function spreadLabels(ys: readonly number[], gap: number, min: number, max: numb
   return out;
 }
 
+/**
+ * Each trace's end label height, spread by {@link spreadLabels} — over the labels that draw only:
+ * a trace ending in a gap has no label (`undefined`), and holds no slot that would push the others
+ * down. Pure, for the tests.
+ */
+function endLabelYs(
+  ends: ReadonlyArray<Point | null>,
+  gap: number,
+  min: number,
+  max: number,
+): Array<number | undefined> {
+  const drawn = ends.flatMap((e, k) => (e === null ? [] : [{ k, y: e.y }]));
+  const spread = spreadLabels(
+    drawn.map((d) => d.y),
+    gap,
+    min,
+    max,
+  );
+  const out = new Array<number | undefined>(ends.length).fill(undefined);
+  drawn.forEach((d, i) => {
+    out[d.k] = spread[i];
+  });
+  return out;
+}
+
 type TraceChartProps = Omit<ComponentProps<'div'>, 'children'> & {
   traces: readonly Trace[];
   rules?: readonly TraceRule[];
@@ -351,8 +376,8 @@ function TraceChart({
     inset,
     gutter,
   });
-  const labelYs = spreadLabels(
-    geo.ends.map((e) => e?.y ?? 0),
+  const labelYs = endLabelYs(
+    geo.ends,
     Math.max(label.height, size.font * 1.1),
     half,
     size.height - half,
@@ -639,6 +664,7 @@ function Sparkbars({
 }
 
 export {
+  endLabelYs,
   LedStrip,
   type LedStripProps,
   paperColor,

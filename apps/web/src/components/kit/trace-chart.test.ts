@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { spreadLabels, stageSummary, type Trace, traceGeometry } from './trace-chart';
+import { endLabelYs, spreadLabels, stageSummary, type Trace, traceGeometry } from './trace-chart';
 
 const traces: Trace[] = [
   { key: 'a', label: 'A', values: [34, 31, 19, null, 28, 33] },
@@ -103,6 +103,15 @@ describe('spreadLabels', () => {
       if (ys.length * 11 <= 108) for (const y of out) expect(y).toBeLessThanOrEqual(114 + 1e-9);
       if (ys.length * 11 <= 108) for (const y of out) expect(y).toBeGreaterThanOrEqual(6 - 1e-9);
     }
+  });
+});
+
+describe('endLabelYs', () => {
+  it('spreads only the labels that draw; a trace ending in a gap holds no slot', () => {
+    const ends = [null, { x: 90, y: 10 }, { x: 90, y: 30 }];
+    // Without the gap's phantom at the top, neither real label moves.
+    expect(endLabelYs(ends, 11, 6, 114)).toEqual([undefined, 10, 30]);
+    expect(endLabelYs([null, null], 11, 6, 114)).toEqual([undefined, undefined]);
   });
 });
 

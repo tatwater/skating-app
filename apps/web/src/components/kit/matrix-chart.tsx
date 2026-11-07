@@ -137,7 +137,12 @@ function MatrixChart({
 }: MatrixChartProps) {
   const root = useRef<HTMLDivElement | null>(null);
   const theme = useNearestTheme(root);
-  const [active, setActive] = useState<Cell>({ r: 0, c: 0 });
+  const [activeState, setActive] = useState<Cell>({ r: 0, c: 0 });
+  // Kept inside the grid, so the one tab stop survives the rows or columns shrinking under it.
+  const active: Cell = {
+    r: Math.max(0, Math.min(activeState.r, rows.length - 1)),
+    c: Math.max(0, Math.min(activeState.c, columns.length - 1)),
+  };
   const [hot, setHot] = useState<Cell | null>(null);
   const [plateAt, setPlateAt] = useState<{ x: number; y: number } | null>(null);
 

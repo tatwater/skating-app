@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { type ComponentProps, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import {
@@ -177,6 +178,39 @@ export const HoverAndKeys: Story = {
     await expect(must(cells[0]).tabIndex).toBe(0);
     must(cells[0]).blur();
     await waitFor(() => expect(plate()).toHaveLength(0));
+  },
+};
+
+/** A matrix whose data shrinks on a press, for the tab stop's sake. */
+function Shrinking(props: ComponentProps<typeof MatrixChart>) {
+  const [small, setSmall] = useState(false);
+  return (
+    <div className="flex flex-col gap-(--space-2_5)">
+      <MatrixChart
+        {...props}
+        rows={small ? props.rows.slice(0, 2) : props.rows}
+        columns={small ? props.columns.slice(0, 2) : props.columns}
+      />
+      <button type="button" onClick={() => setSmall(true)}>
+        Shrink
+      </button>
+    </div>
+  );
+}
+
+/** The one tab stop survives the data shrinking under it: the cursor keeps to the cells left. */
+export const ShrinkKeepsTabStop: Story = {
+  args: { rows: SENTINELS, columns: NIGHTS, 'aria-label': 'Overnight lows' },
+  render: (args) => <Shrinking {...args} />,
+  play: async ({ canvasElement }) => {
+    const grid = within(canvasElement).getByRole('grid');
+    await userEvent.tab();
+    await userEvent.keyboard('{End}{ArrowDown}{ArrowDown}');
+    await expect(must(cellsOf(grid)[35])).toHaveFocus();
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Shrink' }));
+    await waitFor(() => expect(cellsOf(grid)).toHaveLength(4));
+    const cells = cellsOf(grid);
+    await expect(cells.filter((el) => el.tabIndex === 0)).toEqual([cells[3]]);
   },
 };
 
