@@ -83,11 +83,12 @@ export const INK_KEEPS_OFF: Readonly<Partial<Record<ColorKey, readonly Ground[]>
 
 /**
  * Pairs one map's values fall short of AA on, as drawn — **awaiting a founder call**, not exempt.
- * Skater light is the approved mocks' designed palette (2026-11-06); its accents were picked for
- * text on white and miss AA on the tinted grounds the table above pairs them with. The fix is the
- * founder's: darken an accent, or keep it off those grounds (move the pair to `INK_KEEPS_OFF`).
- * Until then the suite holds each pair to what it measures today (`SHORTFALL_FLOOR` and below AA,
- * so the list can't go stale) and passes every other pair at AA. Measured contrasts in comments.
+ * The fix is the founder's: darken an ink, or keep it off that ground (move the pair to
+ * `INK_KEEPS_OFF`). While a pair is listed the suite holds it to what it measures (`SHORTFALL_FLOOR`
+ * and below AA, so the list can't go stale) and passes every other pair at AA.
+ *
+ * Empty: skater light's accents, drawn for text on white, missed AA on the tinted grounds, and were
+ * darkened until every pair passes (founder, 2026-11-06; see `primitives.ts`).
  */
 export const SHORTFALLS: Readonly<
   Partial<
@@ -96,40 +97,9 @@ export const SHORTFALLS: Readonly<
       Partial<Record<ColorKey, readonly Ground[]>>
     >
   >
-> = {
-  'skater light': {
-    // #0A7D9C: 4.75 on white; 4.39 panel, 4.09 raise, 4.40 plate-solid, 4.38 lift-05, 4.09 lift-08,
-    // 3.66 lift-12, 4.4996 acc-tint, 4.21 acc-wash, 3.68 acc-wash-strong
-    acc: [
-      'panel',
-      'raise',
-      'plate-solid',
-      'lift-05',
-      'lift-08',
-      'lift-12',
-      'acc-tint',
-      'acc-wash',
-      'acc-wash-strong',
-    ],
-    // #A26B00: 4.53 on white; 4.19 panel, 3.90 raise, 4.20 plate-solid, 4.33 lift-03, 4.18 lift-05,
-    // 3.90 lift-08, 3.49 lift-12, 4.17 warn-tint, 3.99 warn-wash
-    warn: [
-      'panel',
-      'raise',
-      'plate-solid',
-      'lift-03',
-      'lift-05',
-      'lift-08',
-      'lift-12',
-      'warn-tint',
-      'warn-wash',
-    ],
-    bad: ['lift-12'], // #D21F2C: 4.08 on the selection plate
-    'acc-dim': ['raise'], // derived #007A8F: 4.34 on raise
-  },
-};
+> = {};
 
-/** The lowest a recorded shortfall may measure: just under the worst today (3.49), so none slides unseen. */
+/** The lowest a recorded shortfall may measure, so none slides unseen (the last list's worst was 3.49). */
 export const SHORTFALL_FLOOR = 3.4;
 
 /** Inks that sit on one specific plate. */

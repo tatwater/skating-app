@@ -220,9 +220,11 @@ describe('skater light is designed: the approved mocks, value for value', () => 
     ['fg1', '#262626'],
     ['fg2', '#474747'],
     ['fg3', '#6b6b6b'],
-    ['acc', '#0a7d9c'],
-    ['warn', '#a26b00'],
-    ['bad', '#d21f2c'],
+    // The mocks' accents, darkened for AA (were #0a7d9c, #a26b00, #d21f2c; acc-dim derived #007a8f).
+    ['acc', '#006c88'],
+    ['acc-dim', '#00768a'],
+    ['warn', '#895a00'],
+    ['bad', '#c80b23'],
     ['inv-bg', '#0a0a0a'],
     ['inv-fg', '#ffffff'],
   ] as const)('%s is %s', (key, hex) => {
@@ -230,10 +232,10 @@ describe('skater light is designed: the approved mocks, value for value', () => 
   });
 
   it.each([
-    ['acc-wash', 'rgba(10, 125, 156, 0.09)'],
-    ['warn-wash', 'rgba(162, 107, 0, 0.1)'],
-    ['bad-wash', 'rgba(210, 31, 44, 0.08)'],
-    ['acc-mark', 'rgba(10, 125, 156, 0.22)'],
+    ['acc-wash', 'rgba(0, 108, 136, 0.09)'],
+    ['warn-wash', 'rgba(137, 90, 0, 0.1)'],
+    ['bad-wash', 'rgba(200, 11, 35, 0.08)'],
+    ['acc-mark', 'rgba(0, 108, 136, 0.22)'],
     ['plate', 'rgba(255, 255, 255, 0.92)'],
     ['scrim', 'rgba(10, 10, 10, 0.32)'],
     ['shade', 'rgba(0, 0, 0, 0.12)'],
@@ -241,6 +243,27 @@ describe('skater light is designed: the approved mocks, value for value', () => 
     ['shade-deep', 'rgba(0, 0, 0, 0.18)'],
   ] as const)('%s is %s', (key, rgba) => {
     expect(toNativeColor(light[key])).toBe(rgba);
+  });
+
+  it('passes its accents as text on every paired ground with a margin, and records no shortfall', () => {
+    // 4.6, not 4.5, so a rounding step in a consumer's color format never flips a pair.
+    const map = themeMaps.skater.light;
+    for (const ink of ['acc', 'acc-dim', 'warn', 'bad'] as const) {
+      for (const ground of TEXT_PAIRS[ink] ?? []) {
+        expect(contrastOn(map, ink, ground), `${ink} on ${ground}`).toBeGreaterThanOrEqual(4.6);
+      }
+    }
+    expect(SHORTFALLS).toEqual({});
+  });
+
+  it("keeps each darkened accent the mock's hue", () => {
+    for (const [name, h] of [
+      ['skater-light-ice', 223.61],
+      ['skater-light-amber', 73.76],
+      ['skater-light-red', 24.81],
+    ] as const) {
+      expect(primitives[name].h, name).toBe(h);
+    }
   });
 
   it('takes no designed value from the derivation: each one is its primitive or a designed alpha', () => {

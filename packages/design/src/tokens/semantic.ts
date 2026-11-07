@@ -210,11 +210,13 @@ export type DesignedMap = Readonly<Partial<Record<ColorKey, DesignedColor>>>;
  * mocks — `skater-web/skater.css` (the `body` and `body.light` blocks, `lat.css`'s search mark) and
  * the *Gli · Web app · Review 3* Paper file's `--color-light-*` and `--color-fg3-dark` tokens
  * (2026-11-06). Where the two disagree, Paper's token wins: light amber is Paper's #A26B00,
- * where the boards' CSS drew #C25400 (flagged to the founder, 2026-11-06).
+ * where the boards' CSS drew #C25400. The light accents (and `acc-dim`) are then darkened to pass
+ * AA as text on every ground they're paired with (founder, 2026-11-06; see `primitives.ts`). Of the
+ * two ambers, Paper's was kept: darkened, the orange lands within 17 ΔE2000 of the red, the amber 30.
  *
- * Skater light keys left out derive as before, against the designed white field: `acc-dim`,
- * `fg-disabled`, the tints, strong washes, glows and `warn-line`, `bad-dim`, the lifts,
- * `plate-solid`, `map-plate`, `map-foot` and `scrim-deep`. The mocks give no light value for them.
+ * Skater light keys left out derive as before, against the designed white field: `fg-disabled`,
+ * the tints, strong washes, glows and `warn-line`, `bad-dim`, the lifts, `plate-solid`,
+ * `map-plate`, `map-foot` and `scrim-deep`. The mocks give no light value for them.
  */
 export const designedColors: Readonly<
   Record<Surface, Readonly<Partial<Record<Mode, DesignedMap>>>>
@@ -236,6 +238,7 @@ export const designedColors: Readonly<
       fg2: 'skater-light-fg2',
       fg3: 'skater-light-fg3',
       acc: 'skater-light-ice',
+      'acc-dim': 'skater-light-ice-dim', // derived, it measured 4.34 on raise; darkened to pass
       warn: 'skater-light-amber',
       bad: 'skater-light-red',
       'inv-bg': 'skater-light-fg', // the primary button is solid ink; inv-fg (the field) is white

@@ -40,9 +40,13 @@ export const primitives = {
   'skater-light-fg1': { l: 0.2686, c: 0, h: 0 }, // #262626
   'skater-light-fg2': { l: 0.3979, c: 0, h: 0 }, // #474747
   'skater-light-fg3': { l: 0.5278, c: 0, h: 0 }, // #6b6b6b
-  'skater-light-ice': { l: 0.5482, c: 0.1005, h: 223.61 }, // #0a7d9c
-  'skater-light-amber': { l: 0.5721, c: 0.1214, h: 73.76 }, // #a26b00
-  'skater-light-red': { l: 0.5554, c: 0.2096, h: 24.81 }, // #d21f2c
+  // The light accents are the mocks' hues, darkened in L only (chroma where the sRGB edge forced it)
+  // until every pair they are text on clears AA at 4.6, the selection plate binding (founder,
+  // 2026-11-06). The mocks' originals: ice #0a7d9c, amber #a26b00, red #d21f2c.
+  'skater-light-ice': { l: 0.4947, c: 0.0926, h: 223.61 }, // #006c88
+  'skater-light-ice-dim': { l: 0.5193, c: 0.0918, h: 215.16 }, // #00768a: the derived #007a8f, darkened
+  'skater-light-amber': { l: 0.5061, c: 0.1073, h: 73.76 }, // #895a00
+  'skater-light-red': { l: 0.5271, c: 0.2096, h: 24.81 }, // #c80b23
   'temp-cold-4': { l: 0.8699, c: 0.1126, h: 211.82 }, // #6fe8ff
   'temp-cold-3': { l: 0.8012, c: 0.1334, h: 215.49 }, // #2fd3f4
   'temp-cold-2': { l: 0.6439, c: 0.1085, h: 216.84 }, // #1f9db8
