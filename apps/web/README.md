@@ -54,30 +54,25 @@ username + display name + DOB + risk ack) → `reack` (renew consent after a ver
 src/
   routes/                    # file-based routes
     __root.tsx               # HTML shell + providers + AuthGate
-    _map.tsx                 # pathless layout: one persistent MapView + <Outlet/> for drawers
-    _map.index.tsx           # /            (bare map)
-    _map.water.$id.tsx       # /water/$id   (water-body detail drawer, deep-linkable)
-    _map.report.$id.tsx      # /report/$id  (report detail drawer, deep-linkable)
-    feed.tsx                 # Newsfeed (placeholder)
-    u.$username.tsx          # profile (incl. your own)
-    settings.tsx  about.tsx  # account hub (the "You" analog) · licenses (D43)
-    sign-in.tsx  sign-up.tsx # Clerk prebuilt <SignIn>/<SignUp>
+    _skater.tsx              # the skater app's layout: one persistent map + <Outlet/> (D242)
+    _skater.index.tsx        # /            Explore
+    _skater.water.$id.tsx    # /water/$id   a lake
+    _skater.report.$id.tsx   # /report/$id  (also hazard.$id, bounty.$id) panels over the map
+    _skater.latest.tsx       # /latest      Latest
+    _skater.u.$username.tsx  # profile · _skater.settings.* settings
+    feed.tsx  post.tsx  notifications.tsx  # old paths, kept as redirects (D242)
+    sign-in.tsx  sign-up.tsx # Clerk sign-in / sign-up
     onboarding.tsx  reack.tsx# profile provisioning · risk-ack renewal
+    admin.*.tsx              # the admin console (still inside the old AppShell)
   components/
     AppProviders.tsx         # Clerk → Convex → theme
     AuthGate.tsx             # shared resolveAuthRoute → redirect (mobile parity, D7)
-    AppShell.tsx             # signed-in nav chrome
-    MapView.tsx              # interactive MapLibre map — client-only WebGL shell
-    MapSelectionContext.tsx  # drawers → map: highlight / fly-to / photo pins / put-in pin
-    DetailSheet.tsx          # non-modal drawer shell (keeps the map tappable behind it)
-    DrawerStates.tsx         # shared loading + not-available drawer panels
-    WaterBodyDetail.tsx      # water-body drawer: area + report feed + "Add a report"
-    ReportDetail.tsx         # report drawer: fields (imperial) + photos + author
-    ReportForm.tsx           # report create form (Dialog) + presentational ReportFormFields
-    photoPipeline.ts         # HEIC decode → EXIF read → optimize/strip → upload (browser-only)
-    ui/                      # shadcn/ui (Base UI): button, card, badge, sheet, dialog, …
-  lib/                       # env, links, riskAck, authZone, waterMap, mapSelection,
-                             #   reportDisplay, reportForm, photo (+ tests)
+    AppShell.tsx             # the admin console's chrome
+    skater/                  # the skater app (B03): shell, map, lake, panels, sheet, Latest, phone
+    admin/                   # admin console pieces
+    kit/                     # the design kit (Storybook)
+    ui/                      # shadcn/ui (Base UI) pieces the admin console still uses
+  lib/  stores/              # pure logic + zustand stores (+ tests)
   styles/app.css             # Tailwind + design-token → CSS-variable bridge (+ shadcn aliases)
   router.tsx  start.ts       # router factory (+ Sentry tracing) · Clerk + Sentry middleware
   client.tsx  server.ts      # client + server entries (each loads its Sentry instrument first)
@@ -98,8 +93,8 @@ in-query prominence filter (wide views return the few prominent bodies — a boo
 guaranteed — not a read-capped slice). On open it frames on the browser geolocation fix when inside
 the pilot region (D12/D20), else the default Vermont view. WebGL needs the DOM, so it's **client-only**
 (a mounted gate) and the pure logic (style, feature/viewport transforms, framing, feature-id lookup)
-lives in the testable `src/lib/waterMap.ts` while `components/MapView.tsx` is the untestable WebGL
-shell (coverage-excluded via the `src/lib`-only coverage `include`).
+lives in the testable `src/lib/waterMap.ts` while the map component was the untestable WebGL
+shell (today `components/skater/map/SkaterMapCanvas.tsx`) (coverage-excluded via the `src/lib`-only coverage `include`).
 
 **The loop (D47).** Tapping a lake highlights it (MapLibre feature-state) and opens a **drawer**
 (shadcn `Sheet`, non-modal so the map stays usable behind it). Selection is **URL-backed and
