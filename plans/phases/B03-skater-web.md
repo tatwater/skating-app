@@ -818,3 +818,21 @@ deployment ran the pre-test build. #100 replays them onto main.
   replacement by *content*, not by commit count. `git cherry` is useless once a branch has been
   squash-merged (every patch-id differs), which is what hid this; what found it was grepping main for each
   fix's own marker — `MAP_CONTAINER_CLASS`, `--size-sidebar`, `gli-boot`, `orderAccessPutIns`.
+
+### 8.2 Latest's filter column was a segment too narrow
+
+The founder's live test found "Great" cropped off the right edge of the Quality row. The column was
+the boards' 17 rem (272 px); the row needs 285.3. A `ToggleGroup` segment is `whitespace-nowrap`, so
+`flex-auto` cannot shrink one below its own label — `min-width: auto` floors it at the text — and the
+row therefore does not compress, it spills, which the aside's `overflow-y: auto` turns into a
+sideways scrollbar nobody goes looking for. 18 rem is the first width that fits, by 2.7 px; the
+column is 18.5, which leaves Quality 10.7 px of air and Posted 32.
+
+The column and the `BootScreen` skeleton standing in for it now read one `--size-latest-filters`,
+the way `BootMapPage` already shares `--size-sidebar` with the real sidebar. They have to agree: a
+skeleton a different width from the page it becomes would slide the feed sideways the moment the
+first query lands. `Latest.stories` measures both segment rows against the column's edge, so the
+next label that outgrows it fails in the browser project instead of on the founder's screen.
+
+Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
+is a measurement, not a judgment, and jsdom has no layout to make it.

@@ -58,6 +58,25 @@
 }
 
 /*
+ * Latest's filter column — the left column of `LatestFrame`, and the skeleton `BootScreen` draws
+ * in its place. A variable rather than a literal in both, because they have to agree: the boot
+ * screen's columns are what the page settles into, and a filter column that changed width on load
+ * would shift the feed under the reader's eye. Same reasoning as `--size-sidebar` above, which
+ * `BootMapPage` shares with the real one.
+ *
+ * **18.5 rem, widened from the boards' 17 rem (2026-11-08, founder).** At 272 px the Quality
+ * segment needed 285.3 px and "Great" ran 13 px past the column's right edge. The segments are
+ * `whitespace-nowrap`, so flex can't shrink one below its own label: the row either fits or spills.
+ * 18 rem is the first width that fits, by 2.7 px — too thin to survive a font that measures a
+ * hair wider — so 296 px, which leaves the Quality row 10.7 px and the Posted row 32 px.
+ * `Latest.stories` measures both rows, so a label that outgrows the column fails there rather
+ * than on the page.
+ */
+:root {
+  --size-latest-filters: 18.5rem;
+}
+
+/*
  * Semantic theme tokens, single-sourced from @skating/design (themes.ts) — the web analog
  * of the mobile Tamagui bridge (D7). Two first-class themes (D34): `:root` is the
  * high-contrast bright-outdoor default (light); `.dark` is evening mode. The literal hex

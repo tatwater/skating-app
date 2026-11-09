@@ -240,6 +240,22 @@ export const Default: Story = {
     await expect(good).toHaveAttribute('aria-pressed', 'true');
     const recommended = must(dark?.querySelector<HTMLElement>('[data-slot="recommended-card"]'));
     await expect(getComputedStyle(recommended).borderRadius).toBe('0px');
+    // **Both segment rows fit the column.** At the boards' 17 rem the Quality row did not: it
+    // needed 285.3 px of 272 and "Great" ran 13 px past the edge, which is why
+    // `--size-latest-filters` is 18.5 rem. A segment is `whitespace-nowrap`, so flex cannot shrink
+    // one below its own label — the row either fits or spills, and only a layout engine can say
+    // which, so this is measured here rather than in jsdom.
+    const column = must(dark?.querySelector<HTMLElement>('[data-slot="latest-filters"]'));
+    const rows = [...column.querySelectorAll<HTMLElement>('[data-slot="toggle-group"]')];
+    await expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const segments = [...row.querySelectorAll<HTMLElement>('[data-slot="toggle-group-item"]')];
+      const last = must(segments[segments.length - 1]);
+      // Sub-pixel: a fitting row's last segment ends on the row's edge, a spilling one past it.
+      await expect(last.getBoundingClientRect().right).toBeLessThanOrEqual(
+        row.getBoundingClientRect().right + 0.5,
+      );
+    }
     // Arrow along the segment, Enter chooses.
     good.focus();
     await userEvent.keyboard('{ArrowRight}');
