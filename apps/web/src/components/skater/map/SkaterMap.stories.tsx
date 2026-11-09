@@ -392,6 +392,7 @@ export const EveryLayer: Story = {
             { rings: NEARBY_RINGS['Smith Pond'] ?? [] },
             { rings: NEARBY_RINGS['George Pond'] ?? [], inactive: true },
           ]}
+          bands={MASCOMA_BANDS}
           overlays={{
             hazards: MASCOMA_HAZARDS,
             bay: { chord: MASCOMA_DIVIDER, inside: [-72.17, 43.641], names: MASCOMA_BAYS },
@@ -430,6 +431,11 @@ export const EveryLayer: Story = {
     const chosen = canvas.getByRole('button', { name: 'Hazard: Open water / lead' });
     expect(chosen).toHaveAttribute('aria-current', 'true');
     expect(canvas.getAllByRole('img', { name: /^Put-in/ })).toHaveLength(6);
+    // The marks are judged over the whole ramp, not just its shallow end: the bands draw under
+    // them, so a hazard, a track and a put-in each have to hold against the deepest fill too.
+    const section = canvasElement.querySelector('section') as HTMLElement;
+    const bands = [...section.querySelectorAll<SVGPathElement>('path[data-band]')];
+    expect(bands.map((b) => b.dataset.band)).toEqual(['0', '2', '3', '4']);
   },
 };
 
