@@ -78,7 +78,10 @@ describe('the map earth is midway between the field and band 0', () => {
   ] as const)('%s', (_mode, field, water, earth) => {
     const midpoint = (primitives[field].l + primitives[water].l) / 2;
     expect(primitives[earth].l).toBeCloseTo(midpoint, 4);
-    // Achromatic: the land has no hue of its own, so the water reads as water at any lightness.
-    expect(primitives[earth].c).toBe(0);
+    // A whisper of the depth ramp's hue and no more: snow in shade. Enough that the whole basemap
+    // solves off a cold land, far too little to read as a blue in its own right.
+    expect(primitives[earth].h).toBe(245);
+    expect(primitives[earth].c).toBeGreaterThan(0);
+    expect(primitives[earth].c).toBeLessThan(0.012);
   });
 });

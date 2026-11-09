@@ -10,7 +10,7 @@
  */
 
 import { convertFilter } from '@maplibre/maplibre-gl-style-spec';
-import { layers, namedFlavor } from '@protomaps/basemaps';
+import { layers, type namedFlavor } from '@protomaps/basemaps';
 import {
   type BBox,
   composeBasemapLayers,
@@ -21,9 +21,9 @@ import {
   summaryHasCard,
 } from '@skating/core';
 import { themes } from '@skating/design';
-import { nativeThemes } from '@skating/design/native';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
+import { mapEarth, mapWater, winterFlavor } from './winterFlavor';
 
 /**
  * ODbL attribution for both the Protomaps basemap and our OSM-derived water data — a launch
@@ -54,19 +54,7 @@ const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4';
 export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
-/**
- * The map's own land — our token, not the flavor's. Protomaps' `white` earth is `#ffffff`, which is
- * the skater light field exactly, so the map pane had no edge against the sidebar at all; `dark`'s
- * `#1f1f1f` happened to be right. The token sits halfway in lightness between the field and the
- * shallowest water (founder, 2026-11-09), so the pane parts from the page by the same step the water
- * then takes away from the land. Every halo and label shadow on the map is cut in this color, so it
- * is the one place to change the map's ground.
- */
-export function mapEarth(flavor: MapFlavor): string {
-  return (flavor === 'dark' ? nativeThemes.skater.dark : nativeThemes.skater.light).color[
-    'map-earth'
-  ];
-}
+export { mapEarth, mapWater } from './winterFlavor';
 
 /**
  * The shoreline's color, which depends on what is inside it (A06e).
@@ -190,8 +178,7 @@ const MASK_FILL_OPACITY = 0.999;
  * mask into the same pass as the labels, where being later in the list finally means being on top.
  */
 function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
-  const palette = namedFlavor(flavor) as unknown as Record<string, string>;
-  const water = palette.water ?? '#dcdcdc';
+  const water = mapWater(flavor);
   const earth = mapEarth(flavor);
   const fill = (id: string, kind: string, color: string) => ({
     id,
@@ -236,8 +223,7 @@ export function buildMapStyle(input: {
   // from. A background layer ignores its source and paints the entire viewport, so that field
   // color is what the pane shows for every frame before the earth tiles land and anywhere they
   // don't cover: override only `earth` and the edgeless pane comes back on every pan.
-  const earth = mapEarth(flavor);
-  const themed = { ...namedFlavor(flavor), earth, background: earth };
+  const themed = winterFlavor(flavor) as unknown as ReturnType<typeof namedFlavor>;
   const region = layers(REGION_SOURCE, themed, { lang: 'en' });
   // With no world archive there is nothing to compose against, so the regional set is used whole —
   // including its own background and boundaries, which the two-source path deliberately drops.

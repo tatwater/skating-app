@@ -59,9 +59,11 @@ export const primitives = {
   // the shallowest depth band, so the pane always parts from the sidebar by the same step the water
   // then takes away from the land (founder, 2026-11-09). `primitives.test.ts` holds the arithmetic,
   // under "the map earth is midway between the field and band 0".
-  // Achromatic on purpose: the land has no hue, so the water reads as water at any lightness.
-  'map-earth-dark': { l: 0.2404, c: 0, h: 0 }, // #1f1f1f
-  'map-earth-light': { l: 0.9626, c: 0, h: 0 }, // #f2f2f2
+  // The chroma is a whisper of the depth ramp's own hue — snow in shade, not a blue anyone would
+  // name — so the whole basemap reads as weather rather than as a gray sheet the water was
+  // dropped onto. `winterFlavor` solves every other land color off this one.
+  'map-earth-dark': { l: 0.2404, c: 0.006, h: 245 }, // #1d2022
+  'map-earth-light': { l: 0.9626, c: 0.006, h: 245 }, // #eff3f6
   // A shore under the pointer: band 0's index line, carried 0.12 further from the land in its own
   // hue and chroma — so a hover is a step along the water's own ramp, never a jump to another color.
   'map-shore-hover-dark': { l: 0.6208, c: 0.0376, h: 245.81 }, // #74899c

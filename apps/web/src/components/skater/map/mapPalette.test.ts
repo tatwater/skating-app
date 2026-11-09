@@ -81,10 +81,11 @@ describe('mapPalette', () => {
         expect(tokens.has(color), `${flavor} ${path} = ${color}`).toBe(true);
       }
     }
-    // Dark's land is where Protomaps already had it; light's is not — its `white` earth is #ffffff,
-    // the skater field exactly, which left the map pane with no edge against the sidebar at all.
-    expect(mapEarth('dark')).toBe('#1f1f1f');
-    expect(mapEarth('white')).toBe('#f2f2f2');
+    // Dark's land is where Protomaps already had it in lightness; light's is not — its `white` earth
+    // is #ffffff, the skater field exactly, which left the map pane with no edge against the sidebar
+    // at all. Both carry a whisper of the depth ramp's hue, which is what the basemap solves off.
+    expect(mapEarth('dark')).toBe('#1d2022');
+    expect(mapEarth('white')).toBe('#eff3f6');
     expect(mapEarth('white')).not.toBe(
       (namedFlavor('white') as unknown as { earth: string }).earth,
     );
