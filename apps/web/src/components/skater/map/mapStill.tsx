@@ -4,8 +4,9 @@ import { type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } fro
 import { MapPane } from '@/components/kit/map-controls';
 import { CONTOUR_OPACITY } from '@/lib/contourMap';
 import { FRESHNESS_FILL_OPACITY, PROVISIONAL_OPACITY_SCALE } from '@/lib/hazardMap';
+import { mapEarth } from '@/lib/waterMap';
 import type { ProjectingMap } from './MapMarksLayer';
-import { mapGround, mapMarkVars, mapPalette } from './mapPalette';
+import { mapMarkVars, mapPalette } from './mapPalette';
 import type { Ring } from './mapStoryData';
 import type { StoryContour, StoryHazard } from './mapStoryDepth';
 
@@ -263,7 +264,7 @@ export function MapStill({
         ...mapMarkVars(flavor),
         width: view.width,
         height: view.height,
-        background: mapGround(flavor),
+        background: mapEarth(flavor),
       }}
     >
       <svg

@@ -55,6 +55,16 @@ export const primitives = {
   'temp-warm-1': { l: 0.5438, c: 0.089, h: 81.36 }, // #8a6a2c
   'temp-warm-2': { l: 0.7292, c: 0.1447, h: 77.64 }, // #d99a1f
   'temp-warm-3': { l: 0.7045, c: 0.1926, h: 39.23 }, // #ff6b35
+  // The map's own land, in both modes: the lightness exactly halfway between the skater field and
+  // the shallowest depth band, so the pane always parts from the sidebar by the same step the water
+  // then takes away from the land (founder, 2026-11-09). `mapEarthIsMidway` holds the arithmetic.
+  // Achromatic on purpose: the land has no hue, so the water reads as water at any lightness.
+  'map-earth-dark': { l: 0.2404, c: 0, h: 0 }, // #1f1f1f
+  'map-earth-light': { l: 0.9626, c: 0, h: 0 }, // #f2f2f2
+  // A shore under the pointer: band 0's index line, carried 0.12 further from the land in its own
+  // hue and chroma — so a hover is a step along the water's own ramp, never a jump to another color.
+  'map-shore-hover-dark': { l: 0.6208, c: 0.0376, h: 245.81 }, // #74899c
+  'map-shore-hover-light': { l: 0.6295, c: 0.0125, h: 239.97 }, // #828a90
   'depth-dark-0': { l: 0.3658, c: 0.0485, h: 247.17 }, // #294157
   'depth-dark-0-line': { l: 0.4409, c: 0.0434, h: 248.84 }, // #40556a
   'depth-dark-0-index': { l: 0.5008, c: 0.0376, h: 245.81 }, // #526678

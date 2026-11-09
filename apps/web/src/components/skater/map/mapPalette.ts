@@ -16,11 +16,10 @@
  * follows the basemap if the basemap ever changes.
  */
 
-import { namedFlavor } from '@protomaps/basemaps';
 import { DEPTH_BAND_EDGES_FT, type HazardPalette } from '@skating/core';
 import { nativeThemes } from '@skating/design/native';
 import type { CSSProperties } from 'react';
-import type { MapFlavor } from '@/lib/waterMap';
+import { type MapFlavor, mapEarth } from '@/lib/waterMap';
 
 /** Every contour on a multiple of this is an index line: a touch heavier, a touch brighter. */
 export const DEPTH_INDEX_INTERVAL_FT = 25;
@@ -33,9 +32,9 @@ export interface DepthRamp {
 
 export interface MapPalette {
   flavor: MapFlavor;
-  /** The basemap's field: the halo and label-shadow color. */
+  /** The map's land: the halo and label-shadow color. */
   ground: string;
-  /** The one water color for every listed body, and its shore at rest — both ice, both translucent. */
+  /** Every listed body's water and its shore at rest: the shallowest depth band and its contour. */
   water: { fill: string; shore: string };
   /** An inactive body: gray, not ice (Review 2) — an ink lift and an ink hairline. */
   inactive: { fill: string; shore: string };
@@ -43,7 +42,7 @@ export interface MapPalette {
   accent: string;
   /** The chosen lake's shore (and a framed bay's): the lit ink. */
   selected: string;
-  /** A hovered lake's shore: the ice, lit. */
+  /** A hovered lake's shore: a step up the same band — band 0's index line. */
   hovered: string;
   depth: DepthRamp;
   hazard: HazardPalette;
@@ -59,29 +58,30 @@ function themeColors(flavor: MapFlavor): ColorMap {
   return flavor === 'dark' ? nativeThemes.skater.dark.color : nativeThemes.skater.light.color;
 }
 
-/** The basemap's own field color for a flavor (#1f1f1f on dark). */
-export function mapGround(flavor: MapFlavor): string {
-  return (namedFlavor(flavor) as unknown as { earth: string }).earth;
-}
-
 export function mapPalette(flavor: MapFlavor): MapPalette {
   const c = themeColors(flavor);
   const band = (suffix: '' | '-line' | '-index') =>
     DEPTH_BAND_EDGES_FT.map((_, i) => c[`depth-${i}${suffix}` as keyof ColorMap] as string);
   return {
     flavor,
-    ground: mapGround(flavor),
-    water: { fill: c['map-water'], shore: c['map-shore'] },
+    ground: mapEarth(flavor),
+    // A body is drawn in the depth language whether or not its depth is open: band 0 is the water
+    // and band 0's index line is its shore, so opening a lake reveals the deeper bands that were
+    // always under it rather than changing the color of the water it was already showing. The
+    // index line, not the contour: a 1 px contour measures 1.58:1 on the new land in light, under
+    // the floor this file holds, and the index line is the step the ramp means you to read anyway.
+    water: { fill: c['depth-0'], shore: c['depth-0-index'] },
     inactive: { fill: c['map-water-inactive'], shore: c['map-shore-inactive'] },
     accent: c.acc,
     selected: c.fg,
-    hovered: c.acc,
+    // One step further along the water's own ramp, never a jump to another hue.
+    hovered: c['map-shore-hover'],
     depth: { fills: band(''), lines: band('-line'), indexes: band('-index') },
     // Danger and healing in the skater tokens; the passage marker in ice — it is a suggestion
     // somebody made about a crossing, and green would read as a verdict on it (D3). A known body
     // feature (D53) is a fact about the place, not a warning: quiet ink, never a hazard color.
     hazard: { danger: c.bad, healing: c.warn, passage: c.acc, feature: c.fg3 },
-    places: { label: c.fg2, landmark: c.fg3, halo: mapGround(flavor), outline: c.fg2 },
+    places: { label: c.fg2, landmark: c.fg3, halo: mapEarth(flavor), outline: c.fg2 },
     track: c.acc,
     scrim: c.scrim,
   };
@@ -92,7 +92,7 @@ export function mapPalette(flavor: MapFlavor): MapPalette {
  * shadow (the field at the mock's strength, so the words read over anything).
  */
 export function mapMarkVars(flavor: MapFlavor): CSSProperties {
-  const ground = mapGround(flavor);
+  const ground = mapEarth(flavor);
   return {
     '--map-ground': ground,
     '--lab-sh': `color-mix(in oklab, var(--bg) ${flavor === 'dark' ? 92 : 95}%, transparent)`,

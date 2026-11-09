@@ -353,10 +353,13 @@ export const Bands: Story = {
       for (const b of bands) {
         expect(b.getAttribute('fill')).toBe(palette.depth.fills[Number(b.dataset.band)]);
       }
-      // The lake under them is the shallowest band, not plain water.
+      // The lake under them is the shallowest band — which is now what plain water is too, so a
+      // band edge can never show a seam of a different blue against the water it sits on.
       const ground = section.querySelector('svg path:not([data-band])');
       expect(ground?.getAttribute('fill')).toBe(palette.depth.fills[0]);
-      expect(ground?.getAttribute('fill-opacity')).toBe('1');
+      expect(palette.water.fill).toBe(palette.depth.fills[0]);
+      // Opaque by construction: the ramp is a reading, so there is no opacity left to dilute it.
+      expect(ground?.getAttribute('fill-opacity')).toBeNull();
       const canvas = within(section);
       expect(
         canvas.getByRole('img', { name: 'Depth bands: 0–10 ft, 10–20 ft, 20–30 ft, 30+ ft' }),

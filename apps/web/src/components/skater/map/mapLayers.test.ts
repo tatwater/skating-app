@@ -188,9 +188,11 @@ describe('filters and paint', () => {
       p.depth.fills[0],
       p.water.fill,
     ]);
-    // The water and the inactive gray carry their own alpha; the layer's opacity stays 1.
+    // The water is the depth ramp's own value, opaque; only the inactive gray is a wash, and it
+    // carries its own alpha — so the layer's opacity stays 1 either way.
     expect(JSON.stringify(waterFillOpacity())).toContain('""');
-    expect(p.water.fill).toMatch(/^rgba\(/);
+    expect(p.water.fill).toBe(p.depth.fills[0]);
+    expect(p.water.fill).toMatch(/^#[0-9a-f]{6}$/);
     expect(p.inactive.fill).toMatch(/^rgba\(/);
   });
 

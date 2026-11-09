@@ -64,3 +64,21 @@ describe('admin dark is the audit', () => {
     }
   });
 });
+
+/**
+ * The map's land sits exactly halfway, in lightness, between the skater field it is framed against
+ * and the shallowest water drawn on it (founder, 2026-11-09): the pane parts from the sidebar by
+ * the same step the water then takes away from the land, in both modes. Held here so an edit to the
+ * field or to band 0 can't quietly leave the land where it was.
+ */
+describe('the map earth is midway between the field and band 0', () => {
+  it.each([
+    ['dark', 'void', 'depth-dark-0', 'map-earth-dark'],
+    ['light', 'skater-light-bg', 'depth-light-0', 'map-earth-light'],
+  ] as const)('%s', (_mode, field, water, earth) => {
+    const midpoint = (primitives[field].l + primitives[water].l) / 2;
+    expect(primitives[earth].l).toBeCloseTo(midpoint, 4);
+    // Achromatic: the land has no hue of its own, so the water reads as water at any lightness.
+    expect(primitives[earth].c).toBe(0);
+  });
+});

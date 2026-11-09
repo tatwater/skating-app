@@ -12,6 +12,7 @@ import {
   landmarkLabelLayer,
   type MappableBody,
   type MappableSubArea,
+  mapEarth,
   NORTHEAST_REGION_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
@@ -80,7 +81,7 @@ describe('buildMapStyle', () => {
     expect(at('region-mask-land')).toBeLessThan(at('world_boundaries'));
   });
 
-  it("paints the mask in the flavor's own land and water colors, not a gray of its own", () => {
+  it('paints the mask in the map\u2019s own land and the flavor\u2019s water, not a gray of its own', () => {
     const light = buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'white' });
     const fill = (style: ReturnType<typeof buildMapStyle>) =>
       (
@@ -88,9 +89,13 @@ describe('buildMapStyle', () => {
           paint: Record<string, string>;
         }
       ).paint['fill-color'];
-    expect(fill(light)).toBe('#ffffff');
-    expect(fill(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'dark' }))).not.toBe(
-      '#ffffff',
+    // The land is ours, not Protomaps': its `white` flavor paints earth #ffffff, which is the
+    // skater light field exactly, so the map pane had no edge against the sidebar (founder,
+    // 2026-11-09). The mask has to follow the basemap or the clip line shows as a seam.
+    expect(fill(light)).toBe(mapEarth('white'));
+    expect(fill(light)).not.toBe('#ffffff');
+    expect(fill(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'dark' }))).toBe(
+      mapEarth('dark'),
     );
   });
 

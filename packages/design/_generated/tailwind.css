@@ -41,8 +41,8 @@
   --color-plate-solid: var(--plate-solid);
   --color-map-plate: var(--map-plate);
   --color-map-foot: var(--map-foot);
-  --color-map-water: var(--map-water);
-  --color-map-shore: var(--map-shore);
+  --color-map-earth: var(--map-earth);
+  --color-map-shore-hover: var(--map-shore-hover);
   --color-map-water-inactive: var(--map-water-inactive);
   --color-map-shore-inactive: var(--map-shore-inactive);
   --color-scrim: var(--scrim);

@@ -3,9 +3,9 @@ import { hueDistance } from '@skating/design';
 import { nativeThemes } from '@skating/design/native';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { mapEarth } from '@/lib/waterMap';
 import {
   type MapPalette,
-  mapGround,
   mapPalette,
   SHORE_OPACITY_BY_ZOOM,
   shoreOpacityByZoom,
@@ -67,36 +67,41 @@ function colorsOf(palette: MapPalette): Array<[string, string]> {
 }
 
 describe('mapPalette', () => {
-  it('takes the ground from the basemap itself, and only the ground', () => {
+  it('is skater tokens all the way down, the land included (D232)', () => {
     for (const flavor of FLAVORS) {
       const p = mapPalette(flavor);
-      expect(p.ground).toBe((namedFlavor(flavor) as unknown as { earth: string }).earth);
+      const c = nativeThemes.skater[flavor === 'dark' ? 'dark' : 'light'].color;
+      expect(p.ground).toBe(c['map-earth']);
       expect(p.places.halo).toBe(p.ground);
-      // Every other color is a skater token (D232): nothing on the map is a hex of its own.
-      const tokens = new Set<string>(
-        Object.values(nativeThemes.skater[flavor === 'dark' ? 'dark' : 'light'].color),
-      );
+      // Nothing on the map is a hex of its own any more — the ground stopped being the one exception
+      // when the land became a token (founder, 2026-11-09).
+      const tokens = new Set<string>(Object.values(c));
       for (const [path, color] of colorsOf(p)) {
-        if (path === 'ground' || path === 'places.halo') continue;
         expect(tokens.has(color), `${flavor} ${path} = ${color}`).toBe(true);
       }
     }
-    expect(mapGround('dark')).toBe('#1f1f1f');
+    // Dark's land is where Protomaps already had it; light's is not — its `white` earth is #ffffff,
+    // the skater field exactly, which left the map pane with no edge against the sidebar at all.
+    expect(mapEarth('dark')).toBe('#1f1f1f');
+    expect(mapEarth('white')).toBe('#f2f2f2');
+    expect(mapEarth('white')).not.toBe(
+      (namedFlavor('white') as unknown as { earth: string }).earth,
+    );
   });
 
-  it('draws every listed body in one water color, and that color is ice (Review 2)', () => {
+  it('draws every listed body in the shallowest depth band, opaque (founder, 2026-11-09)', () => {
     for (const flavor of FLAVORS) {
-      const c = nativeThemes.skater[flavor === 'dark' ? 'dark' : 'light'].color;
       const p = mapPalette(flavor);
-      expect(p.water.fill).toBe(c['map-water']);
-      expect(p.water.shore).toBe(c['map-shore']);
-      // The wash and the shore are the accent's hue, not a second blue.
-      for (const color of [p.water.fill, p.water.shore]) {
-        expect(hueDistance(over(color, p.ground), c.acc)).toBeLessThan(20);
-      }
-      // Translucent: a wash over the basemap, so its roads and names stay under the ice.
-      expect(parse(p.water.fill).a).toBeLessThan(0.4);
-      expect(parse(p.water.fill).a).toBeGreaterThan(0.1);
+      // One language for every body: an unchosen lake is band 0 and its contour, so opening a lake
+      // adds the deeper bands rather than changing the color of the water it already showed.
+      expect(p.water.fill).toBe(p.depth.fills[0]);
+      expect(p.water.shore).toBe(p.depth.indexes[0]);
+      // Opaque, not a wash: the depth ramp is a reading, and a reading can't be diluted by whatever
+      // the basemap happens to draw under it.
+      expect(parse(p.water.fill).a).toBe(1);
+      expect(parse(p.water.shore).a).toBe(1);
+      // And it is the ramp's own hue, never the accent's: ice is for paths and pins now.
+      expect(hueDistance(p.water.fill, p.depth.fills[6] as string)).toBeLessThan(15);
     }
   });
 
@@ -115,11 +120,13 @@ describe('mapPalette', () => {
     }
   });
 
-  it('lights the shore in steps: ice at rest, ice under the pointer, white when chosen', () => {
+  it('lights the shore in steps, all three from band 0: contour, index, then the lit ink', () => {
     for (const flavor of FLAVORS) {
       const p = mapPalette(flavor);
       const c = nativeThemes.skater[flavor === 'dark' ? 'dark' : 'light'].color;
-      expect(p.hovered).toBe(c.acc);
+      // A hover is a step further along the water's own ramp, not a jump to another hue.
+      expect(p.hovered).toBe(c['map-shore-hover']);
+      expect(hueDistance(p.hovered, p.water.shore)).toBeLessThan(15);
       expect(p.selected).toBe(c.fg);
       const rest = contrast(over(p.water.shore, p.ground), p.ground);
       const hover = contrast(p.hovered, p.ground);

@@ -21,6 +21,7 @@ import {
   summaryHasCard,
 } from '@skating/core';
 import { themes } from '@skating/design';
+import { nativeThemes } from '@skating/design/native';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
@@ -52,6 +53,20 @@ const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4';
  */
 export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
+
+/**
+ * The map's own land — our token, not the flavor's. Protomaps' `white` earth is `#ffffff`, which is
+ * the skater light field exactly, so the map pane had no edge against the sidebar at all; `dark`'s
+ * `#1f1f1f` happened to be right. The token sits halfway in lightness between the field and the
+ * shallowest water (founder, 2026-11-09), so the pane parts from the page by the same step the water
+ * then takes away from the land. Every halo and label shadow on the map is cut in this color, so it
+ * is the one place to change the map's ground.
+ */
+export function mapEarth(flavor: MapFlavor): string {
+  return (flavor === 'dark' ? nativeThemes.skater.dark : nativeThemes.skater.light).color[
+    'map-earth'
+  ];
+}
 
 /**
  * The shoreline's color, which depends on what is inside it (A06e).
@@ -175,6 +190,7 @@ const MASK_FILL_OPACITY = 0.999;
 function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
   const palette = namedFlavor(flavor) as unknown as Record<string, string>;
   const water = palette.water ?? '#dcdcdc';
+  const earth = mapEarth(flavor);
   const fill = (id: string, kind: string, color: string) => ({
     id,
     type: 'fill' as const,
@@ -184,7 +200,7 @@ function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
   });
   return [
     fill('region-mask-sea', 'sea', water),
-    fill('region-mask-land', 'land', palette.earth ?? '#ffffff'),
+    fill('region-mask-land', 'land', earth),
     fill('region-mask-water', 'water', water),
   ] as StyleSpecification['layers'];
 }
@@ -209,7 +225,9 @@ export function buildMapStyle(input: {
   flavor?: MapFlavor;
 }): StyleSpecification {
   const { regionUrl, worldUrl, flavor = 'white' } = input;
-  const themed = namedFlavor(flavor);
+  // The flavor, with its land swapped for ours: every basemap layer the generator paints with
+  // `earth` (the background, the landuse plates) then follows the token.
+  const themed = { ...namedFlavor(flavor), earth: mapEarth(flavor) };
   const region = layers(REGION_SOURCE, themed, { lang: 'en' });
   // With no world archive there is nothing to compose against, so the regional set is used whole —
   // including its own background and boundaries, which the two-source path deliberately drops.
