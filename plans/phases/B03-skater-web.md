@@ -848,3 +848,39 @@ by 12 px on this row, which is the whole margin under test (Greptile, #101).
 
 Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
 is a measurement, not a judgment, and jsdom has no layout to make it.
+
+### 8.3 The map palette: light has no headroom (#102)
+
+The map's water and shore were Phase 01's `#3a6ea5` and `#9ecae1` in *both* modes, neither a token.
+The founder settled it on 2026-11-09: a listed body is drawn in the bathymetric ramp rather than in
+ice — band 0 is the water, band 0's index line is the shore — so an unchosen lake and a chosen
+lake's shallows are the same color and opening a lake *reveals* depth instead of repainting the
+water. Ice is left to the things that aren't water. Three things the build found:
+
+**Protomaps' `white` earth is `#ffffff`, which is the skater light field exactly.** The map pane had
+no edge against the sidebar at all; the lakes floated on the page. The land became a token,
+`map-earth`, placed halfway in lightness between the field and band 0 (the founder's rule). It
+resolves to `#f2f2f2` light and `#1f1f1f` dark — and dark's midpoint is exactly where Protomaps
+already had it, so the rule confirms dark as-is and only light moves. `primitives.test.ts` holds the
+arithmetic so an edit to the field or to band 0 can't quietly leave the land behind.
+
+**The flavor has a `background` field as well as `earth`.** Protomaps keys its viewport-wide
+background layer on the former, so overriding `earth` alone left light painting `#ffffff` behind
+everything — invisible to every test (nothing rendered a basemap), visible on first paint and on
+every pan past the tiles, in the one mode the token was added for. A background layer ignores its
+source and covers the viewport: it is the first thing you see and the last thing a unit test knows
+about.
+
+**A softening sized for one palette is a hazard in the next.** The shore's zoom curve faded it to
+.55 below z7 so a region of lakes wasn't a region of outlines — correct when the shore was bright
+ice. Against band 0's index line on the new land it measured 1.43:1 in light and 1.71:1 in dark,
+under the file's own floor, and the app opens at `INITIAL_ZOOM` 6.5 — *below* `farZoom` — so that
+dim value is what the region view actually paints. The guard missed it by measuring the shore
+undimmed, an opacity the region map never uses. `far` is .9 now, which is all light can afford.
+
+**Still open.** Light's band 0 (`#dde8f0`, L 0.925) sits a hair under the field (L 1.0), so the
+midpoint land lands between two near-identical values: the water reads 1.11:1 against the land, and
+a mark's ground halo over water reads the same — and that halo exists under D34 to lift a pin off
+whatever it lands on, which is usually water, not land. Dark is comfortable throughout (1.56 /
+2.50 / 1.56). Closing it means moving a founder-signed color — light's band 0, or the land off the
+midpoint — so it is a call, not a fix.
