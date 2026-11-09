@@ -57,7 +57,8 @@ export const primitives = {
   'temp-warm-3': { l: 0.7045, c: 0.1926, h: 39.23 }, // #ff6b35
   // The map's own land, in both modes: the lightness exactly halfway between the skater field and
   // the shallowest depth band, so the pane always parts from the sidebar by the same step the water
-  // then takes away from the land (founder, 2026-11-09). `mapEarthIsMidway` holds the arithmetic.
+  // then takes away from the land (founder, 2026-11-09). `primitives.test.ts` holds the arithmetic,
+  // under "the map earth is midway between the field and band 0".
   // Achromatic on purpose: the land has no hue, so the water reads as water at any lightness.
   'map-earth-dark': { l: 0.2404, c: 0, h: 0 }, // #1f1f1f
   'map-earth-light': { l: 0.9626, c: 0, h: 0 }, // #f2f2f2

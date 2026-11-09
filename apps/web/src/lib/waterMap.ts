@@ -175,10 +175,12 @@ const MASK_FILL_OPACITY = 0.999;
  * Three layers, drawn in this order: **sea**, then **land** on top of it, then the major **lakes**.
  * Together they tile the whole neighborhood, which matters more than it sounds — see below.
  *
- * Colored from the flavor itself — `earth` for land, `water` for sea and lakes — so the mask is not
- * a gray rectangle laid over a map but the same white and the same pale gray the basemap already
- * paints with. The seam where it meets the world overview's own earth is invisible by construction;
- * the only seam a user can see is where it meets *our* detail, which is the border, which is the point.
+ * Colored from what the basemap is actually painted in — `mapEarth` for land (the token the flavor's
+ * own `earth` is overridden with, see `buildMapStyle`), the flavor's `water` for sea and lakes — so
+ * the mask is not a gray rectangle laid over a map but the same land and the same pale gray the
+ * basemap already paints with. The seam where it meets the world overview's own earth is invisible by
+ * construction; the only seam a user can see is where it meets *our* detail, which is the border,
+ * which is the point.
  *
  * **`fill-opacity: 0.999`, and it is not a rounding artifact.** MapLibre sends a fill to the *opaque*
  * render pass only at exactly opacity 1; everything else goes to the *translucent* pass. Symbols only
@@ -226,8 +228,16 @@ export function buildMapStyle(input: {
 }): StyleSpecification {
   const { regionUrl, worldUrl, flavor = 'white' } = input;
   // The flavor, with its land swapped for ours: every basemap layer the generator paints with
-  // `earth` (the background, the landuse plates) then follows the token.
-  const themed = { ...namedFlavor(flavor), earth: mapEarth(flavor) };
+  // `earth` (the earth fill itself, the landuse plates) then follows the token.
+  //
+  // **`background` as well as `earth`, and it is not a belt-and-braces override.** The generator
+  // keys its `background` layer on a *separate* flavor field, which `white` sets to `#ffffff` —
+  // the skater light field exactly, which is the whole thing this token exists to part the map
+  // from. A background layer ignores its source and paints the entire viewport, so that field
+  // color is what the pane shows for every frame before the earth tiles land and anywhere they
+  // don't cover: override only `earth` and the edgeless pane comes back on every pan.
+  const earth = mapEarth(flavor);
+  const themed = { ...namedFlavor(flavor), earth, background: earth };
   const region = layers(REGION_SOURCE, themed, { lang: 'en' });
   // With no world archive there is nothing to compose against, so the regional set is used whole —
   // including its own background and boundaries, which the two-source path deliberately drops.

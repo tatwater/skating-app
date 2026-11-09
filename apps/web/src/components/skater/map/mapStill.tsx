@@ -3,10 +3,14 @@ import tokensCss from '@skating/design/tokens.css?raw';
 import { type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MapPane } from '@/components/kit/map-controls';
 import { CONTOUR_OPACITY } from '@/lib/contourMap';
-import { FRESHNESS_FILL_OPACITY, PROVISIONAL_OPACITY_SCALE } from '@/lib/hazardMap';
+import {
+  FRESHNESS_FILL_OPACITY,
+  PROVISIONAL_DASH_ARRAY,
+  PROVISIONAL_OPACITY_SCALE,
+} from '@/lib/hazardMap';
 import { mapEarth } from '@/lib/waterMap';
 import type { ProjectingMap } from './MapMarksLayer';
-import { mapMarkVars, mapPalette } from './mapPalette';
+import { DEPTH_INDEX_INTERVAL_FT, mapMarkVars, mapPalette } from './mapPalette';
 import type { Ring } from './mapStoryData';
 import type { StoryContour, StoryHazard } from './mapStoryDepth';
 
@@ -137,19 +141,6 @@ export interface StillOverlays {
 
 type Project = (p: readonly [number, number]) => { x: number; y: number };
 
-const pathOf = (project: Project, rings: readonly Ring[]) =>
-  rings
-    .map(
-      (ring) =>
-        `${ring
-          .map(([lng, lat], i) => {
-            const p = project([lng, lat]);
-            return `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-          })
-          .join(' ')} Z`,
-    )
-    .join(' ');
-
 const lineOf = (project: Project, ring: Ring) =>
   ring
     .map(([lng, lat], i) => {
@@ -157,6 +148,18 @@ const lineOf = (project: Project, ring: Ring) =>
       return `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
     })
     .join(' ');
+
+/** The same points, closed, one subpath per ring — a fill rather than a line. */
+const pathOf = (project: Project, rings: readonly Ring[]) =>
+  rings.map((ring) => `${lineOf(project, ring)} Z`).join(' ');
+
+/**
+ * The hazard outline, as `skaterLayers` draws it. MapLibre's `line-dasharray` is in multiples of the
+ * line width and SVG's is in px, so the dash has to be scaled by the width or the provisional
+ * hazard's dash reads at half the length it has on the map.
+ */
+const HAZARD_OUTLINE_WIDTH = 1.4;
+const HAZARD_DASH = PROVISIONAL_DASH_ARRAY.map((n) => n * HAZARD_OUTLINE_WIDTH).join(' ');
 
 /** The half-plane on `inside`'s side of the chord, as a path (mock `northClip`). */
 function halfPlane(
@@ -281,9 +284,6 @@ export function MapStill({
             <clipPath id={`${clipId}-rest`}>
               <path d={halfPlane(project, overlays.bay.chord, overlays.bay.inside, true)} />
             </clipPath>
-            <clipPath id={`${clipId}-lake`}>
-              <path d={pathOf(project, bayLake.rings)} clipRule="evenodd" />
-            </clipPath>
           </defs>
         )}
         {/* water-fill, then the contours over the chosen lake, then water-outline / hover / selected */}
@@ -317,7 +317,7 @@ export function MapStill({
         {water.map((body, i) =>
           body.contours?.map((c) => {
             const band = depthBandIndex(c.depthFt);
-            const index = c.depthFt > 0 && c.depthFt % 25 === 0;
+            const index = c.depthFt > 0 && c.depthFt % DEPTH_INDEX_INTERVAL_FT === 0;
             return (
               <path
                 // biome-ignore lint/suspicious/noArrayIndexKey: a fixed fixture
@@ -456,8 +456,8 @@ export function MapStill({
               FRESHNESS_FILL_OPACITY[h.freshness] * (h.provisional ? PROVISIONAL_OPACITY_SCALE : 1)
             }
             stroke={hazardColor(h.tone)}
-            strokeWidth={1.4}
-            strokeDasharray={h.provisional ? '2 2' : undefined}
+            strokeWidth={HAZARD_OUTLINE_WIDTH}
+            strokeDasharray={h.provisional ? HAZARD_DASH : undefined}
           />
         ))}
       </svg>

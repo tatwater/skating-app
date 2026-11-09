@@ -99,6 +99,25 @@ describe('buildMapStyle', () => {
     );
   });
 
+  it('paints the viewport-wide background in the land token too, in both composition paths', () => {
+    // The generator keys `background` on its own flavor field, not on `earth`, and `white` sets it
+    // to #ffffff — the skater light field. A background layer paints the whole viewport regardless
+    // of its source, so that is what the pane shows before the earth tiles land: override only
+    // `earth` and the edgeless pane the token exists to fix comes back on every pan.
+    const bg = (style: ReturnType<typeof buildMapStyle>) =>
+      style.layers
+        .filter((l) => l.type === 'background')
+        .map((l) => (l as unknown as { paint: Record<string, string> }).paint['background-color']);
+    for (const flavor of ['white', 'dark'] as const) {
+      expect(bg(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor }))).toEqual([
+        mapEarth(flavor),
+      ]);
+      // And with no world archive, where the regional set keeps its own background.
+      expect(bg(buildMapStyle({ regionUrl: REGION, flavor }))).toEqual([mapEarth(flavor)]);
+    }
+    expect(mapEarth('white')).not.toBe('#ffffff');
+  });
+
   it('keeps the mask a thousandth short of opaque, or it cannot hide a label', () => {
     // MapLibre sends a fill to the opaque render pass only at exactly opacity 1, and symbols render
     // in the translucent pass afterwards with depth testing off — so an opaque mask draws *under*

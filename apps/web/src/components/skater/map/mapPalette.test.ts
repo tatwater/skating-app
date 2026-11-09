@@ -29,11 +29,12 @@ function parse(color: string): { r: number; g: number; b: number; a: number } {
 const hex = (c: { r: number; g: number; b: number }) =>
   `#${[c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 
-/** The color as it lands over the map's ground. */
-function over(color: string, ground: string): string {
+/** The color as it lands over the map's ground, optionally at a layer opacity on top of its own. */
+function over(color: string, ground: string, opacity = 1): string {
   const c = parse(color);
   const g = parse(ground);
-  const mix = (a: number, b: number) => Math.round(a * c.a + b * (1 - c.a));
+  const alpha = c.a * opacity;
+  const mix = (a: number, b: number) => Math.round(a * alpha + b * (1 - alpha));
   return hex({ r: mix(c.r, g.r), g: mix(c.g, g.g), b: mix(c.b, g.b) });
 }
 
@@ -128,7 +129,10 @@ describe('mapPalette', () => {
       expect(p.hovered).toBe(c['map-shore-hover']);
       expect(hueDistance(p.hovered, p.water.shore)).toBeLessThan(15);
       expect(p.selected).toBe(c.fg);
-      const rest = contrast(over(p.water.shore, p.ground), p.ground);
+      // At the *far* opacity: the app opens at INITIAL_ZOOM 6.5, below the curve's farZoom, so the
+      // region view — the one with a hundred shorelines on it — is the dimmest the shore ever gets,
+      // and it is the zoom this floor has to hold at.
+      const rest = contrast(over(p.water.shore, p.ground, SHORE_OPACITY_BY_ZOOM.far), p.ground);
       const hover = contrast(p.hovered, p.ground);
       const chosen = contrast(p.selected, p.ground);
       expect(rest).toBeLessThan(hover);
@@ -148,7 +152,10 @@ describe('mapPalette', () => {
       SHORE_OPACITY_BY_ZOOM.nearZoom,
       SHORE_OPACITY_BY_ZOOM.near,
     ]);
-    expect(SHORE_OPACITY_BY_ZOOM.far).toBeGreaterThanOrEqual(0.5);
+    // The softening was sized for a shore in bright ice. Band 0's index line is quiet to begin
+    // with, so there is almost nothing left to take away: below .9 the light shore stops clearing
+    // the floor above (1.43:1 at the old .55), and the region view is where lakes get found.
+    expect(SHORE_OPACITY_BY_ZOOM.far).toBeGreaterThanOrEqual(0.9);
     expect(SHORE_OPACITY_BY_ZOOM.near).toBe(1);
   });
 

@@ -11,9 +11,11 @@
  * the same ice at rest, lit to full ice under the pointer and to white when chosen; depth is the
  * founder's seven-band ramp and reads as bathymetry, never as a quality of the ice (D3, D82).
  *
- * The one color that isn't a token is the **map's ground**: the halos and the label shadow are cut
- * in the basemap's own field color (Review 2), so it comes from the Protomaps flavor itself and
- * follows the basemap if the basemap ever changes.
+ * The **map's ground** was the one color that wasn't a token — the halos and the label shadow were
+ * cut in the Protomaps flavor's own field color (Review 2). It is `map-earth` now, and the basemap
+ * follows *it* (`mapEarth`, `buildMapStyle`): the flavor's `white` earth is `#ffffff`, the skater
+ * light field exactly, so the map pane had no edge against the sidebar at all (founder, 2026-11-09).
+ * Nothing on this map is a hex of its own any more, and `mapPalette.test.ts` holds that.
  */
 
 import { DEPTH_BAND_EDGES_FT, type HazardPalette } from '@skating/core';
@@ -105,7 +107,7 @@ export function mapMarkVars(flavor: MapFlavor): CSSProperties {
  * dim (`withAccessDim`) goes on each stop's output — MapLibre allows `zoom` only at the top of a
  * paint expression, so the curve can't be multiplied from outside.
  */
-export const SHORE_OPACITY_BY_ZOOM = { farZoom: 7, far: 0.55, nearZoom: 11, near: 1 } as const;
+export const SHORE_OPACITY_BY_ZOOM = { farZoom: 7, far: 0.9, nearZoom: 11, near: 1 } as const;
 
 export function shoreOpacityByZoom(stop: (opacity: number) => unknown = (o) => o): unknown[] {
   const z = SHORE_OPACITY_BY_ZOOM;
