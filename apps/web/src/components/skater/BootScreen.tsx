@@ -122,7 +122,7 @@ function BootLatestPage() {
       data-slot="boot-latest"
       className="flex h-full min-h-0 justify-center gap-(--space-10) px-(--space-10) pt-(--space-7)"
     >
-      <div className="w-[17rem] shrink-0 flex-col gap-(--space-6) max-md:hidden md:flex">
+      <div className="w-(--size-latest-filters) shrink-0 flex-col gap-(--space-6) max-md:hidden md:flex">
         <Skeleton className="h-[0.6875rem] w-20" />
         <Skeleton className="h-28 w-full" />
         <Skeleton className="h-36 w-full" />

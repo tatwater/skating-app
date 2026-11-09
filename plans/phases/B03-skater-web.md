@@ -818,3 +818,33 @@ deployment ran the pre-test build. #100 replays them onto main.
   replacement by *content*, not by commit count. `git cherry` is useless once a branch has been
   squash-merged (every patch-id differs), which is what hid this; what found it was grepping main for each
   fix's own marker — `MAP_CONTAINER_CLASS`, `--size-sidebar`, `gli-boot`, `orderAccessPutIns`.
+
+### 8.2 Latest's filter column was a segment too narrow
+
+The founder's live test found "Great" cropped off the right edge of the Quality row. The column was
+the boards' 17 rem (272 px). A `ToggleGroup` segment is `whitespace-nowrap`, so `flex-auto` cannot
+shrink one below its own label — `min-width: auto` floors it at the text — and the row therefore
+does not compress, it spills, which the aside's `overflow-y: auto` turns into a sideways scrollbar
+nobody goes looking for. The column is now 18.5 rem (296 px).
+
+**Chasing the number found a second thing: the web app never fetches its typeface.** The first
+measurement said the row wanted 285.3 px; a measurement with the webfont loaded said 273.5. Both
+were right. `--family-sans` is `Saira, system-ui, sans-serif`, and the only place Saira is fetched
+for web is `.storybook/preview-head.html`. The app's root links one stylesheet, `app.css`, and
+neither it, `kit.css` nor the design package's generated CSS carries an `@font-face` — so the
+skater web app has been rendering in `system-ui` since B03 shipped, while every story renders in
+Saira. That is why the founder's screen cropped the row harder than a story does, and it means
+every measurement story in the kit has been validating a face the app does not serve. Whether the
+app should load Saira is the founder's call (it is a visual change on every screen, and a Google
+Fonts dependency); 296 px was chosen to clear both faces so this fix does not depend on the answer.
+
+The column and the `BootScreen` skeleton standing in for it now read one `--size-latest-filters`,
+the way `BootMapPage` already shares `--size-sidebar` with the real sidebar. They have to agree: a
+skeleton a different width from the page it becomes would slide the feed sideways the moment the
+first query lands. `Latest.stories` measures both segment rows against the column's edge, so the
+next label that outgrows it fails in the browser project instead of on the founder's screen — after
+awaiting Saira by name, because Storybook fetches it with `display=swap` and the two faces differ
+by 12 px on this row, which is the whole margin under test (Greptile, #101).
+
+Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
+is a measurement, not a judgment, and jsdom has no layout to make it.
