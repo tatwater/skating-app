@@ -102,7 +102,7 @@ export interface MapCanvas {
    * The live map if its style is ready to be written to, else `null`.
    *
    * **Every effect that touches the map imperatively must gate on this, never on `mapRef.current`
-   * plus `loaded`** (B03 §8.3). `loaded` is React state, so an effect body reads the value from the
+   * plus `loaded`** (B03 §8.5). `loaded` is React state, so an effect body reads the value from the
    * render that scheduled it — while `mapRef` is mutated during the commit. A theme switch changes
    * `flavor` *and* the caller's palette in one render, so the cleanup that removes the old map and
    * the body that builds the new one both run in a commit where `loaded` still says `true`: a style

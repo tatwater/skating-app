@@ -1047,9 +1047,9 @@ The general shape, worth remembering past this phase: **a React-state flag is ne
 ref that the same commit rewrites.** Where a ref and a flag describe one object, the flag belongs in a
 ref beside it.
 
-### 8.4 What §8.3 cost the winter imagery, and two CI reds that were nobody's diff
+### 8.6 What §8.5 cost the winter imagery, and two CI reds that were nobody's diff
 
-Greptile's read of §8.3 found the one place where publishing `null` is not the same as publishing a
+Greptile's read of §8.5 found the one place where publishing `null` is not the same as publishing a
 map nobody may write to. `useFreezeUpFrame` keeps its lanes — a raster source and layer per date —
 in refs that deliberately **outlive** the effect that mounted them, because tying a lane's lifetime
 to a cleanup is the remove-then-add shape that blanked the map. Its own comment named the contract:
@@ -1062,7 +1062,7 @@ found no layer there and returned, and the February photograph was simply gone u
 scrubbed to another date. No error.
 
 `drop()` now takes the map optionally and the drop-all branch covers `!map`: with no instance to
-take a lane off, forgetting it is the whole job. That is the same correction as §8.3 one level up —
+take a lane off, forgetting it is the whole job. That is the same correction as §8.5 one level up —
 bookkeeping about an instance is only true of that instance.
 
 **The red CI on #104 was not #104's.** Two tests on main fail on a loaded or oddly-zoned runner, and

@@ -211,7 +211,7 @@ export function useFreezeUpFrame({
      * source *on one instance*, and a theme switch replaces the instance — so when there is no map
      * to take it off, forgetting the lane is the whole job, and it is not optional: a record of a
      * lane on a dead instance is what makes the reconciler below skip mounting the frame on the
-     * live one (`show` finds no layer and returns, so the picture is simply gone, B03 §8.4).
+     * live one (`show` finds no layer and returns, so the picture is simply gone, B03 §8.6).
      */
     const drop = (lane: FreezeUpLane) => {
       const mounted = lanesRef.current[lane];
@@ -230,7 +230,7 @@ export function useFreezeUpFrame({
     // **No map is a reason to forget the lanes, not a reason to leave them.** This read `!map` with
     // an early return above `drop`, which made "the map went away" the one path that kept its
     // bookkeeping — and a re-created map is handed to us as no map at all for a commit (the shell
-    // publishes the instance only while its style can take a write, B03 §8.3).
+    // publishes the instance only while its style can take a write, B03 §8.5).
     if (!map || !loaded || !baseUrl || !key || !season) {
       for (let lane = 0; lane < lanesRef.current.length; lane++) drop(lane);
       return;

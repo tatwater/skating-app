@@ -447,7 +447,7 @@ export function LakeEditorMap({
   }, [data.draftPolygon, setData]);
 
   // The reveal adds and removes its own source and layer, so it takes the live map rather than the
-  // `mapRef` + `loaded` pair a style write may never be guarded by (B03 §8.3): on a theme switch
+  // `mapRef` + `loaded` pair a style write may never be guarded by (B03 §8.5): on a theme switch
   // with Aerial on, that pair handed its teardown the map the shell had already removed.
   const live = liveMap();
   useImageryReveal({ map: live, loaded: live !== null, masks: imageryMask, unmasked: true });
