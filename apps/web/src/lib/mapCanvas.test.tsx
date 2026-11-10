@@ -282,7 +282,7 @@ describe('useMapCanvas', () => {
   });
 
   /**
-   * The theme-switch crash (B03 §8.3).
+   * The theme-switch crash (B03 §8.5).
    *
    * `loaded` is React state, so an effect body reads the value from the render that scheduled it —
    * while `mapRef` is mutated during the commit. A theme switch changes `flavor` and the caller's

@@ -1,10 +1,10 @@
 # Phase B03 — The skater web app
 
-> **Status:** scoped, 2026-11-07. Nothing built. The scoping pass below was written before any code and
-> revised the same day after the founder's review: PRs #90 (the kit) and #91 (PostHog) are merged to main,
-> so the build cuts from main (branch `phase-b03-skater-web`, worktree `../skating-b03-skater-web`). The
-> open founder questions are §6; the build model (one governor, 6–8 parallel agents) is §5. Mocks: Paper
-> *Gli · Web app · Review 3* (157 boards), rules in `skating-mockups/skater-web/README.md`.
+> **Status:** complete, 2026-11-07. PRs #95–#98 built it; #100–#104 are the close-out and the live-test
+> fixes that followed, and §8 is their record. The build model held: one governor and parallel agents in
+> their own worktrees, cut from main on `phase-b03-skater-web`. The deferred and owed rows live in the
+> roadmap entry (`07-roadmap.md`, Phase B03). Mocks: Paper *Gli · Web app · Review 3* (157 boards), rules
+> in `skating-mockups/skater-web/README.md`.
 
 It covers the seven route pages of *Gli · Web app · Review 3* (157 boards,
 `skating-mockups/skater-web/boards-all.tsv`), built on the kit (`apps/web/src/components/kit/`, merged with
@@ -778,7 +778,8 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   exist z9–14; the layer keeps the contours' z11 floor. The ramp's edges and band math have one home,
   `@skating/core`'s `contourLayer.ts`. A local archive can't be tried through the web dev server — its
   Nitro static handler answers a Range request with the whole file, which pmtiles rejects — so BANDS.md
-  now says to serve it with `serve --cors`. What remains is the upload (the roadmap row).
+  now says to serve it with `serve --cors`. The upload followed on 2026-11-09:
+  `dev/bathymetry-20261109.pmtiles`, with both apps' env vars pointed at it.
 - **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
   coordinates are redacted on a public report.
 
@@ -1048,9 +1049,9 @@ The general shape, worth remembering past this phase: **a React-state flag is ne
 ref that the same commit rewrites.** Where a ref and a flag describe one object, the flag belongs in a
 ref beside it.
 
-### 8.4 What §8.3 cost the winter imagery, and two CI reds that were nobody's diff
+### 8.6 What §8.5 cost the winter imagery, and two CI reds that were nobody's diff
 
-Greptile's read of §8.3 found the one place where publishing `null` is not the same as publishing a
+Greptile's read of §8.5 found the one place where publishing `null` is not the same as publishing a
 map nobody may write to. `useFreezeUpFrame` keeps its lanes — a raster source and layer per date —
 in refs that deliberately **outlive** the effect that mounted them, because tying a lane's lifetime
 to a cleanup is the remove-then-add shape that blanked the map. Its own comment named the contract:
@@ -1063,7 +1064,7 @@ found no layer there and returned, and the February photograph was simply gone u
 scrubbed to another date. No error.
 
 `drop()` now takes the map optionally and the drop-all branch covers `!map`: with no instance to
-take a lane off, forgetting it is the whole job. That is the same correction as §8.3 one level up —
+take a lane off, forgetting it is the whole job. That is the same correction as §8.5 one level up —
 bookkeeping about an instance is only true of that instance.
 
 **The red CI on #104 was not #104's.** Two tests on main fail on a loaded or oddly-zoned runner, and

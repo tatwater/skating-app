@@ -85,7 +85,7 @@
 >   below those headings stands as written
 >   except where *§What the A06c-1 build found* corrects it.
 >   — **except §6.2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
->   is built: see [*§6.2 as built*](#62-as-built--the-run-history). Its own sequencing note asked for
+>   is built: see [*§6.2 as built*](#the-run-history--62-as-built). Its own sequencing note asked for
 >   this and was nearly missed: *"§6.2 wants to exist **before** the A06a depth run, not after — the
 >   first real run is the one whose numbers matter most."*
 >
@@ -1234,7 +1234,9 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 Both halves answer the same question — **what happened to this water body, and who or what did it** — and both
 are cheap because the data already exists and is simply never read.*
 
-**§6.1 — A per-body activity timeline on `/admin/water/$id`.** Linear-style: a tight, blame-attributed
+### §6.1 — A per-body activity timeline on `/admin/water/$id`
+
+Linear-style: a tight, blame-attributed
 list at the bottom of the editor. **This is a UI component and no backend at all** —
 `moderation.listActions` already takes `targetType: 'waterbody'` + `targetId`, reads `by_target` newest
 first, and resolves the actor. Every human write to a body already lands there: depth, curated boost,
@@ -1250,7 +1252,9 @@ Two gaps to close as part of §6.1, neither large:
   old value and re-enter it, which is one click short and zero new invariants.
 - **ETL writes are unaudited**, so the timeline is human-only until F2.
 
-**§6.2 — Store an ETL run summary instead of printing it.** Every loader we have (`etl`, `admin-areas`,
+### §6.2 — Store an ETL run summary instead of printing it
+
+Every loader we have (`etl`, `admin-areas`,
 `lake-depth`) computes a genuinely useful summary — match rate, rejects by reason, un-gated matches,
 overrides held, contested merges — and writes it to a terminal that scrolls. There is no way to answer
 "how did the last import go", "is coverage better or worse than last time", or "which water bodies did it
@@ -1268,7 +1272,7 @@ a durable home.
 
 ---
 
-## §6.2 as built — the run history
+## The run history — §6.2 as built
 
 *Built 2026-08-02, immediately before the A06c data campaign's first pass, on the founder's ask to
 document failures and show the campaign's stats on the admin dashboard. Three deltas from the text
