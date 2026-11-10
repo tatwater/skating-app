@@ -15,10 +15,11 @@ vi.mock('@/lib/sheetStore', () => ({
   readStoredSheet: () => m.stored,
 }));
 
+import { BOARD_NOON } from '@/test/boardNow';
 import { SignOutDialog, startedLabel, unsentDraft } from './SignOutGuard';
 import { useGuardedSignOut } from './useGuardedSignOut';
 
-const NOON = new Date(2027, 0, 16, 12, 0).getTime();
+const NOON = BOARD_NOON;
 
 function sheet(over: Partial<PostSheet> = {}): PostSheet {
   return {

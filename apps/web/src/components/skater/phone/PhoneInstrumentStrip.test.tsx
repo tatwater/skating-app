@@ -1,13 +1,13 @@
 import type { SheetReport } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-
+import { BOARD_NOW_NH } from '@/test/boardNow';
 import type { SheetBody } from '../sheet/useSheetBody';
 import { PhoneInstrumentStrip, whenLine } from './PhoneInstrumentStrip';
 
 const NH = 'America/New_York';
 // Saturday 16 January 2027, 11:52 AM in New Hampshire — the boards' "today".
-const NOW = Date.UTC(2027, 0, 16, 16, 52);
+const NOW = BOARD_NOW_NH;
 const at = (h: number, m: number) => Date.UTC(2027, 0, 16, h + 5, m);
 
 /** A Report with just what the strip reads: the end time's selected value and the start. */

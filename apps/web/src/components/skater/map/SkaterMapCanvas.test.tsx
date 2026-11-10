@@ -9,6 +9,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BOARD_NOON } from '@/test/boardNow';
+
 // ── The fake map ──────────────────────────────────────────────────────────────────────────────
 
 type Handler = (e?: unknown) => void;
@@ -282,7 +284,7 @@ function seed() {
   results.set('gpsActivities:listTracksForBody', { tracks: [] });
   results.set('bounties:listOpen', [{ waterBodyId: 'crystal' }, { waterBodyId: 'crystal' }]);
   results.set('reports:recentCountsForBodies', {
-    crystal: { count: 1, capped: false, newestSkateEndTime: Date.now() - 1000 },
+    crystal: { count: 1, capped: false, newestSkateEndTime: BOARD_NOON - 1000 },
   });
 }
 
@@ -320,7 +322,11 @@ async function mount(spec = lakeMapSpec('mascoma'), handlers = {}) {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  // Pinned to the boards' "today", not the runner's: the label asks whether a report's instant
+  // falls on the same local date as `now`, so an unpinned clock makes this file's fixtures read
+  // "today" all day and a weekday for the first hours after local midnight. The rollover test
+  // below sets its own instant on top of this.
+  vi.useFakeTimers({ now: BOARD_NOON, shouldAdvanceTime: true });
   FakeMap.instances = [];
   results.clear();
   queryArgs.clear();

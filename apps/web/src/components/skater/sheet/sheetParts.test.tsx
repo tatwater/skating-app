@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSheet, useSheet } from '@/lib/sheetStore';
 import { installFakeStore, reloadPage, stubObjectUrls } from '@/lib/sheetStore.fixtures';
+import { BOARD_NOW_NH } from '@/test/boardNow';
 import { DayCalendar } from './DayCalendar';
 import { EndTimePanel } from './EndTimePanel';
 import { LakeNameSearch } from './LakeNameSearch';
@@ -33,7 +34,7 @@ vi.mock('convex/react', () => ({
 }));
 
 const NH = 'America/New_York';
-const NOW = Date.UTC(2027, 0, 16, 16, 52);
+const NOW = BOARD_NOW_NH;
 let seq = 0;
 const mint = () => `s-${++seq}`;
 

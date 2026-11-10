@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B03 — The skater web app
-🟢 **Complete** 2026-11-07 · PRs #95–#98, #100 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242
+🟢 **Complete** 2026-11-07 · PRs #95–#98, #100 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
@@ -809,7 +809,7 @@ route-level boundaries. Built by one governor and parallel agents in their own w
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
 
 #### Deferred
-- 🟡 **The map palette redesign** — PR #102. The water and shore were Phase 01's `#3a6ea5` in *both* modes,
+- 🟢 **The map palette redesign** — PR #102. The water and shore were Phase 01's `#3a6ea5` in *both* modes,
   neither a token. The founder's three calls (2026-11-09): a listed body is drawn in the bathymetric ramp,
   not in ice — band 0 for the water, band 0's index line for the shore, so opening a lake reveals the deeper
   bands rather than repainting it; the map's land is a token (`map-earth`) halfway in lightness between the
