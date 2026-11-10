@@ -909,3 +909,24 @@ hardcode their fixture instants, so they are deterministic already. It did show 
 mix the shared anchor with hardcoded `2027` literals (`panelTime`'s `at()` helper,
 `reportCalendar`, `sheetParts`, `SignOutGuard`'s `openedAtMs`) — correct today, but coupled to the
 anchor's year, so moving the anchor would break them confusingly. Left as follow-up.
+
+**What the coverage review added.** Three gaps, found by asking what the existing tests *don't*
+discriminate:
+
+1. **Nothing exercised the zone argument.** `recentReportsLabel` and `labelSlug` take a
+   `timeZone` so the viewer's zone decides the day, and every test of both sat mid-afternoon,
+   where New York and UTC agree on the date — so the argument did no visible work and dropping it
+   would not have failed anything. Now one instant (9 PM Saturday in New York, already Sunday in
+   UTC) reads `1 report Sat` with the zone and `1 report today` without. Verified by deleting the
+   `timeZone` pass-through: both new tests go red.
+2. **The 25-hour day.** On the Sunday the clocks go back, two reports a full 24 hours apart share
+   a local date. The labels group by date, so both count — `2 reports today` in New York, `1` in
+   UTC, from the same two instants. A 24-hour window would have split them silently.
+3. **The clock-skew branch, pinned on purpose.** `dayLabel` reads a future instant as "Today",
+   which is deliberate for a fast device clock and is also exactly how an unpinned test looks
+   pinned — the ProfilePage trap above. Pinned now in `panelTime.test.ts` with that failure named.
+
+And the static guard got a dynamic half: CI re-runs the web unit project in a zone **computed from
+the current UTC hour** so local time is always ~01:00, inside the window that broke #102, instead
+of hoping a run lands there. 35 s, and verified to catch the original bug: restoring
+`latestFixtures`' live clock turns that step red at local 01:46.

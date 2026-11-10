@@ -71,6 +71,39 @@ describe('labels', () => {
     // Without a zone, the runtime's.
     expect(recentReportsLabel([{ skateEndTime: NOW }], NOW)).toBe('1 report today');
   });
+
+  /**
+   * The viewer's zone decides the day, which is the whole reason `timeZone` is a parameter — and
+   * the behavior nothing exercised before: every case above sits mid-afternoon, where UTC and
+   * New York agree. Here one instant straddles midnight, so the same report reads two ways.
+   */
+  it('lets the viewer’s zone decide the day, not the server’s', () => {
+    // 9 PM Saturday in New York is already Sunday in UTC.
+    const sundayMorningNY = Date.UTC(2027, 0, 17, 14, 0); // Sun 17 Jan, 9 AM in New York
+    const saturdayEveningNY = Date.UTC(2027, 0, 17, 2, 0); // Sat 16 Jan, 9 PM in New York
+    const card = [{ skateEndTime: saturdayEveningNY }];
+
+    expect(recentReportsLabel(card, sundayMorningNY, ZONE)).toBe('1 report Sat');
+    expect(recentReportsLabel(card, sundayMorningNY, 'UTC')).toBe('1 report today');
+  });
+
+  /**
+   * The day the clocks go back is 25 hours long, so two reports a full 24 hours apart can share a
+   * local date. The label groups by date rather than by elapsed time, so it counts both — a
+   * 24-hour window would have split them, and the zone changes the count, not just the word.
+   */
+  it('counts a 25-hour day as one day (the clocks go back)', () => {
+    // Sunday 7 November 2027, when America/New_York leaves EDT for EST.
+    const midnightEDT = Date.UTC(2027, 10, 7, 4, 0); // 00:00 Nov 7, EDT
+    const lateEST = Date.UTC(2027, 10, 8, 4, 0); // 23:00 Nov 7, EST — 24 h later
+    const evening = Date.UTC(2027, 10, 8, 2, 0); // 21:00 Nov 7 in New York
+    const cards = [{ skateEndTime: midnightEDT }, { skateEndTime: lateEST }];
+
+    expect((lateEST - midnightEDT) / HOUR).toBe(24);
+    expect(recentReportsLabel(cards, evening, ZONE)).toBe('2 reports today');
+    // In UTC those two instants are different dates, so only the later one counts.
+    expect(recentReportsLabel(cards, evening, 'UTC')).toBe('1 report today');
+  });
 });
 
 describe('picks', () => {

@@ -54,6 +54,24 @@ describe('panelTime', () => {
     expect(ageLabel(new Date(2027, 0, 14, 23, 0).getTime(), justAfterMidnight)).toBe('Thu');
   });
 
+  /**
+   * An instant *ahead* of `now` reads as the present rather than as a negative age — deliberate,
+   * for a device whose clock runs fast. It is pinned here because of how it fails: it is also what
+   * makes an unpinned test look pinned. `ProfilePage`'s fixtures sat in 2027 while the component
+   * read the real clock, and the "Today" assertion passed through this branch for two months
+   * before anyone would have noticed, with the first red appearing on 17 January 2027
+   * (Greptile, #103). If a calendar assertion is green only because its fixture is in the future,
+   * it is not testing the label.
+   */
+  it('reads an instant ahead of now as the present — clock skew, not a date', () => {
+    const ahead = now + 2 * 60 * 60_000;
+    expect(dayLabel(ahead, now)).toBe('Today');
+    expect(ageLabel(ahead, now)).toBe('just now');
+    expect(whenLabel(ahead, now)).toBe('Today · 2:00 PM');
+    // A fixture a whole day ahead still reads as today, which is the trap.
+    expect(dayLabel(now + 24 * 60 * 60_000, now)).toBe('Today');
+  });
+
   it('gives a report’s corner its day and clock', () => {
     expect(whenLabel(at(16, 11, 40), now)).toBe('Today · 11:40 AM');
     expect(whenLabel(at(14, 15, 15), now)).toBe('Thu · 3:15 PM');
