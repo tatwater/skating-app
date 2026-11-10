@@ -8,7 +8,7 @@ import {
 } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';
 import { MAP_CONTAINER_CLASS, useMapCanvas } from '../../lib/mapCanvas';
 import { addReviewLayers, type ReviewPoints, showReview } from '../../lib/reviewMarkers';
@@ -122,7 +122,7 @@ export function LakeEditorMap({
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
-  const { containerRef, mapRef, loaded } = useMapCanvas({
+  const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
@@ -308,13 +308,17 @@ export function LakeEditorMap({
     },
   });
 
-  const setData = (id: string, fc: GeoJSON.FeatureCollection) => {
-    const source = mapRef.current?.getSource(id) as maplibregl.GeoJSONSource | undefined;
-    source?.setData(fc);
-  };
+  // Memoized on `liveMap`, so its identity carries readiness: every effect below lists `setData`
+  // alone and re-runs — re-filling its source — once a map that can take the write exists.
+  const setData = useCallback(
+    (id: string, fc: GeoJSON.FeatureCollection) => {
+      const source = liveMap()?.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      source?.setData(fc);
+    },
+    [liveMap],
+  );
 
   useEffect(() => {
-    if (!loaded) return;
     setData(
       'editor-body',
       waterBodiesToFeatureCollection([
@@ -326,11 +330,9 @@ export function LakeEditorMap({
         },
       ]),
     );
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.body, setData]);
+  }, [data.body, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
     setData(
       'editor-sub-areas',
       subAreasToFeatureCollection(
@@ -343,11 +345,9 @@ export function LakeEditorMap({
         })),
       ),
     );
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.subAreas, setData]);
+  }, [data.subAreas, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
     setData('editor-mouths', {
       type: 'FeatureCollection',
       features: data.subAreas.flatMap((s) =>
@@ -375,11 +375,9 @@ export function LakeEditorMap({
           : [],
       ),
     });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.subAreas, data.body.polygon, setData]);
+  }, [data.subAreas, data.body.polygon, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
     setData('editor-put-ins', {
       type: 'FeatureCollection',
       features: data.putIns.map((p) => ({
@@ -388,11 +386,9 @@ export function LakeEditorMap({
         properties: { source: p.source },
       })),
     });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.putIns, setData]);
+  }, [data.putIns, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
     setData('editor-landmarks', {
       type: 'FeatureCollection',
       features: (data.landmarks ?? []).map((l) => ({
@@ -401,11 +397,9 @@ export function LakeEditorMap({
         properties: { name: l.name, prominence: l.prominence },
       })),
     });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.landmarks, setData]);
+  }, [data.landmarks, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
     setData('editor-parking', {
       type: 'FeatureCollection',
       features: data.parkingAreas.map((p) => ({
@@ -414,11 +408,9 @@ export function LakeEditorMap({
         properties: { source: p.source },
       })),
     });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.parkingAreas, setData]);
+  }, [data.parkingAreas, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
     setData('editor-sample-points', {
       type: 'FeatureCollection',
       features: [
@@ -434,17 +426,15 @@ export function LakeEditorMap({
         })),
       ],
     });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.samplePoints, data.suggestedPoints, setData]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mapRef is a ref; the review is the trigger.
-  useEffect(() => {
-    if (!loaded || !mapRef.current) return;
-    showReview(mapRef.current, data.review ?? null);
-  }, [loaded, data.review]);
+  }, [data.samplePoints, data.suggestedPoints, setData]);
 
   useEffect(() => {
-    if (!loaded) return;
+    const map = liveMap();
+    if (map === null) return;
+    showReview(map, data.review ?? null);
+  }, [liveMap, data.review]);
+
+  useEffect(() => {
     setData(
       'editor-draft',
       data.draftPolygon
@@ -454,18 +444,18 @@ export function LakeEditorMap({
           }
         : EMPTY,
     );
-    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
-  }, [loaded, data.draftPolygon, setData]);
+  }, [data.draftPolygon, setData]);
 
-  // Labeled as a region rather than left as an anonymous div (D34): this canvas is the primary
-  // content of the route, and a screen reader landing on an unlabelled full-page div has nothing to
-  // announce. The tools beside it are the operable surface; this is the subject they act on.
+  // The reveal adds and removes its own source and layer, so it takes the live map rather than the
+  // `mapRef` + `loaded` pair a style write may never be guarded by (B03 §8.3): on a theme switch
+  // with Aerial on, that pair handed its teardown the map the shell had already removed.
+  const live = liveMap();
+  useImageryReveal({ map: live, loaded: live !== null, masks: imageryMask, unmasked: true });
+
   // A labeled `section` rather than an anonymous div (D34): this canvas is the primary content of
   // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
   // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
   // `HTMLElement` as its container, so the semantic element costs nothing.
-  useImageryReveal({ map: mapRef.current, loaded, masks: imageryMask, unmasked: true });
-
   return (
     <section
       ref={containerRef}

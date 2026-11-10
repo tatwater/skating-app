@@ -24,7 +24,12 @@ vi.mock('@/lib/mapCanvas', () => ({
       };
       options.onLoad(h.map);
     }
-    return { containerRef: { current: null }, mapRef: { current: h.map }, loaded: h.loaded };
+    return {
+      containerRef: { current: null },
+      mapRef: { current: h.map },
+      loaded: h.loaded,
+      liveMap: () => (h.loaded ? h.map : null),
+    };
   },
 }));
 

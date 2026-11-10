@@ -859,10 +859,15 @@ water. Ice is left to the things that aren't water. Three things the build found
 
 **Protomaps' `white` earth is `#ffffff`, which is the skater light field exactly.** The map pane had
 no edge against the sidebar at all; the lakes floated on the page. The land became a token,
-`map-earth`, placed halfway in lightness between the field and band 0 (the founder's rule). It
-resolves to `#f2f2f2` light and `#1f1f1f` dark — and dark's midpoint is exactly where Protomaps
-already had it, so the rule confirms dark as-is and only light moves. `primitives.test.ts` holds the
-arithmetic so an edit to the field or to band 0 can't quietly leave the land behind.
+`map-earth`, placed a fraction of the way in lightness from the field to band 0 — `MAP_EARTH_SPLIT`,
+the founder's rule, and the single number the whole basemap hangs on. It was the midpoint on
+2026-11-09, which put it at `#1d2022` dark and `#eff3f6` light; **the founder's live read on
+2026-11-10 was that the midpoint is muddy in both themes**, so the split is a quarter and the land
+resolves to `#0f1114` dark and `#f6f9fd` light — darker in dark, lighter in light. What that buys is
+a map that reads as one surface with the page; what it spends is the pane's own edge, which falls
+from 1.24:1 to 1.08:1 against the field in dark (1.11:1 → 1.06:1 in light). `primitives.test.ts`
+derives the four literals from the fraction, so a third pass is one number and an edit to the field
+or to band 0 can't quietly leave the land behind.
 
 **The flavor has a `background` field as well as `earth`.** Protomaps keys its viewport-wide
 background layer on the former, so overriding `earth` alone left light painting `#ffffff` behind
@@ -991,3 +996,94 @@ class 1, and `Etc/GMT-14` / `Etc/GMT+11` — UTC+14 and UTC−11, which bracket 
 class 2. Both brackets are load-bearing, and each was shown to be: with the bug reintroduced, the
 16:52 UTC instant fails only at UTC+14, while the mirror case (a 02:00 UTC Saturday) fails only at
 UTC−11. Three runs, about 105 s.
+
+### 8.5 A theme switch crashed the app: readiness is state, the map is a ref
+
+The founder's live test: in light mode, pick **Dark** from the account menu and the app lands on the
+crash screen. Pressing either *Try again* or *Reload the page* completes the switch, so the theme
+itself was never the problem — the transition was, exactly once.
+
+A theme switch re-creates the MapLibre instance (the basemap style is built per flavor; `useMapCanvas`
+has done it that way since A02) and the skater canvas derives `palette` from the same flavor. So one
+render changes both, and the paint effect that follows `palette` has its dependencies changed in the
+*very commit* where the shell's cleanup removes the old map and the shell's body builds the new one.
+That effect gated on `mapRef.current` and `loaded` — and those two disagree in that window:
+
+- `mapRef.current` is mutated *during* the commit, so by the time the effect body runs it is already
+  the new map, whose style has not loaded.
+- `loaded` is React state, so the body reads the value from the render that scheduled it: `true`,
+  about a map that no longer exists.
+
+The guard therefore passed and `setPaintProperty` landed on an unloaded style. MapLibre's
+`_checkLoaded` **throws** there — `Style is not done loading.` — rather than no-opping, the throw came
+out of a passive effect, and `Sentry.ErrorBoundary` turned it into the crash screen. A retry re-rendered
+after `load` had fired, which is why both buttons "worked".
+
+The fix is one accessor, `MapCanvas.liveMap()`: the live map if its style can take a write, else `null`,
+with readiness held in a ref the same commit updates so it can never be stale about the map it answers
+for. Every imperative effect in all four canvases now gates on it — a style write is never guarded by
+state — and the accessor *replaces* `loaded` in their dependency lists rather than joining it: it takes
+a fresh identity whenever readiness changes, so listing it alone is what re-runs them (and so re-applies
+the whole spec) once the new map is ready. `loaded` keeps only the job it is safe for, the React gate on
+what *renders* over the map.
+
+Readiness itself is keyed on the loaded map rather than on a boolean, so a `load` that ever landed in
+the same React batch as the teardown's reset cannot settle back on `true` and leave the accessor holding
+its old identity — which would hand the new instance no spec, no filters and no sources, silently. Two
+instances are never the same object.
+
+The admin lake editor had the same pair one layer out: it handed `useImageryReveal` `mapRef.current` and
+`loaded` as props, and that hook adds and removes its own source and layer. There the two disagreed a
+commit later rather than sooner — the render that saw `loaded` drop also saw the *new* map in the ref, so
+the reveal's teardown ran against the instance the shell had already removed. It takes `liveMap()` now,
+which is also what leaves `loaded` with no imperative caller at all.
+
+**Why no test caught it:** `SkaterMapCanvas.test` already had *re-applies everything on a theme switch*,
+but its fake map's `setPaintProperty` silently no-opped on an unknown layer, so the one call that
+mattered was swallowed. The fake now models `_checkLoaded` — every style write throws before `load` and
+after `remove` — and that existing test fails without the fix. `mapCanvas.test` pins the contract
+itself: across a flavor change a caller is handed `null`, never the new map before it has loaded.
+
+The general shape, worth remembering past this phase: **a React-state flag is never a safe guard for a
+ref that the same commit rewrites.** Where a ref and a flag describe one object, the flag belongs in a
+ref beside it.
+
+### 8.4 What §8.3 cost the winter imagery, and two CI reds that were nobody's diff
+
+Greptile's read of §8.3 found the one place where publishing `null` is not the same as publishing a
+map nobody may write to. `useFreezeUpFrame` keeps its lanes — a raster source and layer per date —
+in refs that deliberately **outlive** the effect that mounted them, because tying a lane's lifetime
+to a cleanup is the remove-then-add shape that blanked the map. Its own comment named the contract:
+*"a map that is genuinely re-created arrives here as `loaded` going false, which the reconciler
+already handles."* It did handle it — by dropping every lane — but the first line of the reconciler
+was `if (!map) return`, so once the shell stopped publishing an unloaded instance, a re-created map
+arrived as no map at all and that was the single path that *kept* its bookkeeping. The replacement
+map then matched the unchanged frame key against a lane recorded on the dead instance, `show()`
+found no layer there and returned, and the February photograph was simply gone until the skater
+scrubbed to another date. No error.
+
+`drop()` now takes the map optionally and the drop-all branch covers `!map`: with no instance to
+take a lane off, forgetting it is the whole job. That is the same correction as §8.3 one level up —
+bookkeeping about an instance is only true of that instance.
+
+**The red CI on #104 was not #104's.** Two tests on main fail on a loaded or oddly-zoned runner, and
+the second was hidden behind the first (the time-zone step runs three zones in one loop and stops at
+the first non-zero exit):
+
+- `GlobalSearch`'s *once per query* asserted an analytics **effect** immediately after a `findBy*`.
+  Testing Library's `asyncWrapper` turns the act environment *off* for that wait, so the debounce's
+  state update commits outside `act` and React flushes its passive effects in a scheduler task that
+  the single `setTimeout(0)` drain after the wait is not guaranteed to outlast. Pure load decides
+  it: green alone, red under a full suite, which is why it hit the normal step here and the
+  zone-shifted step on main. It waits for the event itself now, then holds it to one across a
+  further render of the same term — stronger than what it replaced, not weaker. `pinBoardClock`'s
+  comment blamed fake timers for this; corrected, since leaving them real never fixed it.
+- `sheetSlotFills` anchored its fixtures to 16:52 **UTC** while `PhotoSorter` groups a pool by each
+  photo's **local date** and its line names the result ("on two lakes" against "over two days"). On
+  a UTC+9 runner that instant reads 01:52 local, which put the 3-hours-ago photo on the previous day
+  and changed the copy. It is `BOARD_NOON` now — the zone-naive constant `boardNow.ts` prescribes
+  for exactly this, with half a day of headroom either side.
+
+Both are the same lesson as the one above in a different register: a test that reads a clock, or a
+flag, from somewhere other than the thing it is asserting about will be right until something else
+decides the timing.

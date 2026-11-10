@@ -16,9 +16,10 @@
  * Every value is **solved**, not picked: each role is a contrast target against the land, and
  * `solveForContrast` finds the lightness that stands that far off it — darker on light, lighter on
  * dark, from the same numbers. That is why the two modes feel like one map, and why moving the land
- * (`map-earth` is still an open founder call in light) carries the whole basemap with it instead of
- * stranding seventy hexes. The targets are all *below* the shoreline's own floor on purpose: the
- * basemap may never be the loudest thing on a map whose subject is the water.
+ * carries the whole basemap with it instead of stranding seventy hexes — as the founder's second
+ * pass on `MAP_EARTH_SPLIT` did on 2026-11-10, at no cost here. The targets are all *below* the
+ * shoreline's own floor on purpose: the basemap may never be the loudest thing on a map whose
+ * subject is the water.
  */
 
 import { namedFlavor } from '@protomaps/basemaps';
@@ -28,11 +29,12 @@ import type { MapFlavor } from './waterMap';
 
 /**
  * The map's own land — our token, not the flavor's. Protomaps' `white` earth is `#ffffff`, which is
- * the skater light field exactly, so the map pane had no edge against the sidebar at all; `dark`'s
- * `#1f1f1f` happened to be right. The token sits halfway in lightness between the field and the
- * shallowest water (founder, 2026-11-09), so the pane parts from the page by the same step the water
- * then takes away from the land. Every halo and label shadow on the map is cut in this color, so it
- * is the one place to change the map's ground.
+ * the skater light field exactly, so the map pane had no edge against the sidebar at all, and
+ * `dark`'s `#1f1f1f` was a gray sheet. The token sits `MAP_EARTH_SPLIT` of the way in lightness
+ * from the field to the shallowest water — a quarter (founder, 2026-11-10; the midpoint of
+ * 2026-11-09 read muddy in both themes), so the pane parts from the page by a quiet step and the
+ * water keeps the rest. Every halo and label shadow on the map is cut in this color, so it is the
+ * one place to change the map's ground.
  */
 export function mapEarth(flavor: MapFlavor): string {
   return (flavor === 'dark' ? nativeThemes.skater.dark : nativeThemes.skater.light).color[
@@ -150,11 +152,29 @@ function step(land: Oklch, role: Role): string {
 }
 
 /**
- * The flavor Protomaps' layer generator paints from. Spread over the stock flavor so a key added by
- * a future version of `@protomaps/basemaps` still has a value; `winterFlavor.test.ts` holds that
- * every key we are handed today is one of ours, and that nothing on the map is green.
+ * The flavor Protomaps' layer generator paints from: the stock flavor with {@link winterOverrides}
+ * on top, so a key added by a future version of `@protomaps/basemaps` still has a value.
+ *
+ * `winterFlavor.test.ts` holds that every key it hands us today is one of ours, and that nothing on
+ * the map is green.
  */
 export function winterFlavor(flavor: MapFlavor): Record<string, string> {
+  return {
+    ...(namedFlavor(flavor) as unknown as Record<string, string>),
+    ...winterOverrides(flavor),
+  };
+}
+
+/**
+ * Every color this map states for itself, by the path Protomaps reads it at — **ours alone, with no
+ * stock flavor underneath**.
+ *
+ * Split out from {@link winterFlavor} so the leak guard has something to ask the question of. Asked
+ * of the merged flavor it answers itself: the spread puts every stock key in the result whether we
+ * assign it or not, so "is every key Protomaps hands us one of ours?" could only ever come back yes
+ * (Greptile, #104). The merge is what the map paints from; this is what we have actually decided.
+ */
+export function winterOverrides(flavor: MapFlavor): Record<string, string> {
   const land = landOf(flavor);
   const earth = mapEarth(flavor);
   const water = mapUnknownWater(flavor);
@@ -166,8 +186,6 @@ export function winterFlavor(flavor: MapFlavor): Record<string, string> {
   const highway = s('highway');
 
   return {
-    ...(namedFlavor(flavor) as unknown as Record<string, string>),
-
     // The ground. `background` is the viewport fill and `earth` the land polygons; a background
     // layer ignores its source, so the two have to agree or the map has an edge where the tiles do.
     background: earth,

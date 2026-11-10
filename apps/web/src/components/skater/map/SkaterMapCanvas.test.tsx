@@ -56,6 +56,7 @@ class FakeMap {
   zoomOut = vi.fn();
   resize = vi.fn();
   removed = false;
+  styleLoaded = false;
 
   constructor(options: Record<string, unknown>) {
     this.options = options;
@@ -74,13 +75,26 @@ class FakeMap {
     );
   }
   fire(event: string, e?: unknown) {
+    // MapLibre's style is writable from the moment it fires `load`, which is also when the shell
+    // hands the map to `onLoad` to add its layers.
+    if (event === 'load') this.styleLoaded = true;
     for (const h of this.handlers.get(event) ?? []) h(e);
+  }
+  /**
+   * Every style write goes through MapLibre's `_checkLoaded`, which **throws** before `load` and on
+   * a removed map — it does not no-op. Modeled here because that throw is the theme-switch crash:
+   * the switch re-creates the map, and anything that wrote paint in the same commit landed on the
+   * new, unloaded one and took the whole app to the crash screen.
+   */
+  private checkLoaded() {
+    if (!this.styleLoaded) throw new Error('Style is not done loading.');
   }
   controls: unknown[] = [];
   addControl(control: unknown) {
     this.controls.push(control);
   }
   addSource(id: string, spec: { data?: unknown }) {
+    this.checkLoaded();
     this.sources.set(id, spec.data);
   }
   addLayer(spec: {
@@ -89,6 +103,7 @@ class FakeMap {
     paint?: Record<string, unknown>;
     filter?: unknown;
   }) {
+    this.checkLoaded();
     this.layers.set(spec.id, {
       layout: { ...spec.layout },
       paint: { ...spec.paint },
@@ -102,14 +117,17 @@ class FakeMap {
     return this.sources.has(id) ? { setData: (d: unknown) => this.sources.set(id, d) } : undefined;
   }
   setLayoutProperty(id: string, key: string, value: unknown) {
+    this.checkLoaded();
     const layer = this.layers.get(id);
     if (layer) layer.layout[key] = value;
   }
   setPaintProperty(id: string, key: string, value: unknown) {
+    this.checkLoaded();
     const layer = this.layers.get(id);
     if (layer) layer.paint[key] = value;
   }
   setFilter(id: string, filter: unknown) {
+    this.checkLoaded();
     const layer = this.layers.get(id);
     if (layer) layer.filter = filter;
   }
@@ -151,6 +169,7 @@ class FakeMap {
   }
   remove() {
     this.removed = true;
+    this.styleLoaded = false;
   }
 }
 

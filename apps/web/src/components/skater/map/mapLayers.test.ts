@@ -219,7 +219,7 @@ describe('filters and paint', () => {
 
 describe('mapPalette, as the layers read it', () => {
   it('sets the label shadow from the field, stronger on light', () => {
-    expect(mapMarkVars('dark')).toMatchObject({ '--map-ground': '#1d2022' });
+    expect(mapMarkVars('dark')).toMatchObject({ '--map-ground': '#0f1114' });
     expect(String((mapMarkVars('white') as Record<string, string>)['--lab-sh'])).toContain('95%');
   });
 

@@ -20,7 +20,7 @@ export function RequestPreviewMap({ review }: { review: ReviewPoints | null }) {
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const pinHalo = PIN_HALO_COLOR[flavor];
-  const { containerRef, mapRef, loaded } = useMapCanvas({
+  const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
@@ -29,11 +29,11 @@ export function RequestPreviewMap({ review }: { review: ReviewPoints | null }) {
     onLoad: (map) => addReviewLayers(map, pinHalo),
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mapRef is a ref; the review is the trigger.
   useEffect(() => {
-    if (!loaded || !mapRef.current) return;
-    showReview(mapRef.current, review, { zoom: 13 });
-  }, [loaded, review]);
+    const map = liveMap();
+    if (map === null) return;
+    showReview(map, review, { zoom: 13 });
+  }, [liveMap, review]);
 
   return (
     <section
