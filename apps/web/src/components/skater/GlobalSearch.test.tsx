@@ -14,6 +14,8 @@ vi.mock('@/lib/analytics', async (load) => ({
   useAnalytics: () => ({ capture: fakes.capture }),
 }));
 
+import { BOARD_NOON } from '@/test/boardNow';
+import { pinBoardClock } from '@/test/pinBoardClock';
 import {
   GlobalSearch,
   recentArgs,
@@ -50,6 +52,8 @@ beforeEach(() => {
   useSearchStore.setState({ owner: null, recents: [] });
 });
 afterEach(() => useChromeStore.setState({ overlay: null }));
+
+pinBoardClock();
 
 describe('useSearchOwnerBinding', () => {
   it('binds the recents to the signed-in account once Clerk has loaded', () => {
@@ -92,7 +96,7 @@ describe('GlobalSearch', () => {
   });
 
   it('searches lakes, bays and skaters, then opens a pick and records it without the text', async () => {
-    const now = Date.now();
+    const now = BOARD_NOON;
     fakes.queries.set('waterBodies:searchByName', [lake, bay]);
     fakes.queries.set('profiles:searchProfiles', [person]);
     fakes.queries.set('reports:recentCardsForBodies', [

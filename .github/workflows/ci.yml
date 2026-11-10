@@ -77,6 +77,27 @@ jobs:
       - name: Test (with coverage)
         run: pnpm test
 
+      # The suite must not care what hour it runs at, and for a while it did. #102 went red at
+      # 00:18 UTC on five calendar-label tests that were green on the author's laptop (D243): the
+      # labels bucket by *local date*, so a fixture backdated from a live clock falls off "Today"
+      # in the first hours after local midnight — and 7 PM–midnight Eastern is 00:00–05:00 UTC,
+      # so the author's whole working evening was CI's broken window.
+      #
+      # `packages/guards/src/testClock.test.ts` is the static half: it stops a new fixture or
+      # calendar-asserting test from reading the live clock. This is the dynamic half, and it runs
+      # the suite in a zone chosen from the *current UTC hour* so local time is always ~01:00 —
+      # inside the window that broke #102 — rather than hoping CI happens to run there. Note that
+      # `Etc/GMT+N` is UTC−N, the sign inverted, so an east-positive offset O maps to `Etc/GMT-O`.
+      #
+      # The unit project only: it is the fixture-heavy half and costs under a minute, where the
+      # story project needs another Chromium pass. Invoked through vitest rather than `pnpm test`
+      # so turbo replays nothing.
+      - name: Test the web suite again at 1 AM local, whatever the hour
+        run: |
+          ZONE=$(node -e 'let o=((1-new Date().getUTCHours())%24+24)%24; if (o>12) o-=24; console.log(o>=0?`Etc/GMT-${o}`:`Etc/GMT+${-o}`)')
+          echo "Re-running the web unit project in $ZONE — local time $(TZ="$ZONE" date +%H:%M)"
+          TZ="$ZONE" pnpm --filter @skating/web exec vitest run --project unit
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

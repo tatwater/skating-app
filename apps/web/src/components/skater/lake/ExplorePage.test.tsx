@@ -14,12 +14,14 @@ vi.mock('@tanstack/react-router', () => ({
     select({ location: fakes.location }),
 }));
 
+import { BOARD_NOON } from '@/test/boardNow';
+import { pinBoardClock } from '@/test/pinBoardClock';
 import { ExplorePage } from './ExplorePage';
 import { buildInViewModel } from './InViewList';
 import { resetWaterBodyOpenSource, takeWaterBodyOpenSource } from './openSource';
 
 const ACRE = 4046.8564224;
-const now = Date.now();
+const now = BOARD_NOON;
 
 const square = (lng: number, lat: number) => ({
   type: 'Polygon' as const,
@@ -71,6 +73,8 @@ beforeEach(() => {
   });
 });
 afterEach(() => useSkaterMapStore.setState({ viewportLakes: null }));
+
+pinBoardClock();
 
 describe('Explore, nothing chosen (1.1)', () => {
   it('holds the loading frame until the map answers, and declares the explore map', () => {

@@ -1,5 +1,6 @@
 import type { FeedCardData, PostCardData } from '@skating/core';
 
+import { BOARD_NOON } from '@/test/boardNow';
 import type { BountyPanelData } from './BountyPanelView';
 import type { HazardPanelData } from './HazardPanelView';
 import type { ReportPanelData } from './ReportPanelView';
@@ -8,7 +9,7 @@ import type { ReportPanelData } from './ReportPanelView';
  * The boards' row 2, as data (stories and tests; nothing in the app imports it). People, reports
  * and the hazard are invented; "today" is Saturday 16 January 2027, as on the boards.
  */
-export const BOARD_NOW = new Date(2027, 0, 16, 12, 0).getTime();
+export const BOARD_NOW = BOARD_NOON;
 const at = (day: number, h: number, m = 0) => new Date(2027, 0, day, h, m).getTime();
 
 /** 2.1: the lead at the Narrows — fresh, confirmed twice. */

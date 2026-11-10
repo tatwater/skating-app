@@ -848,3 +848,85 @@ by 12 px on this row, which is the whole margin under test (Greptile, #101).
 
 Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
 is a measurement, not a judgment, and jsdom has no layout to make it.
+
+### 8.4 CI was red every evening, and it was pointing at a product bug (D243, D244)
+
+#102 failed CI at 00:18 UTC on five tests in `GlobalSearch`, `latestViews` and `ProfilePage` — none
+of them in the map-palette code that PR touched, and all five green on the laptop that pushed them.
+The three runs before it, at 22:42, 23:03 and 23:10 UTC, had passed.
+
+The cause is that the cards' clock words are calendar-based, not elapsed-based. `panelTime`'s
+`daysBetween` floors both instants with `setHours(0, 0, 0, 0)`, so a fixture backdated N hours from
+a live `Date.now()` falls off "Today" once the runner's clock reads earlier than N:00:
+
+| fixture | reads "Today" until the local hour is |
+| --- | --- |
+| `NOW - 2 * HOUR` (the `Today` assertions) | 00:00–01:59 |
+| `NOW - 5 * HOUR` (`Also from … · 5 h`) | 00:00–04:59 |
+
+Which makes the window **00:00–05:00 UTC** — and 7 PM–midnight Eastern *is* 00:00–05:00 UTC. The
+founder's working hours were the broken window, every night, on any branch. It reproduced exactly:
+at 03:21 UTC only the five-hour fixture failed; under `TZ=America/Sao_Paulo` at 01:01 local, three
+failed on #102's head and none after the fix.
+
+Three things the build found while fixing it:
+
+**The convention already existed, six times.** `lakeModel`, `reportCalendar`,
+`PhoneInstrumentStrip`, `panelTime`, `profileModel` and `SignOutGuard` each re-derived "Saturday 16
+January 2027 — the boards' today" as a local constant. Only the files that missed it broke. It is
+now `apps/web/src/test/boardNow.ts`, and the date has to stay **frozen** rather than "today at
+noon": `profileModel` asserts `dayKicker(NOW - 3 * DAY, NOW)` is `'Wednesday'`, which holds only
+when today is a Saturday.
+
+**Pinning fixtures is not enough.** `GlobalSearch.tsx:185`, `SkaterMapCanvas.tsx:147` and
+`InViewList.tsx:178` each read the clock themselves rather than taking `now` as a prop, so a pinned
+fixture disagrees with the component by months. Two bigger hammers were tried and rejected with
+numbers: pinning the clock in `setup.ts` for every unit test failed **118** of them (the sheet's
+IndexedDB, photo-pipeline and reconnect suites drive real async work that a faked clock starves),
+and faking the timers rather than just `Date` cost a debounce flake in `GlobalSearch` that passed in
+isolation and failed under full-suite load — the same green-here-red-on-CI shape as §8.2.
+`pinBoardClock()` fakes `Date` alone, per file, only where a calendar label is asserted.
+
+**`SkaterMapCanvas` was already faking its timers — without an instant.**
+`useFakeTimers({ shouldAdvanceTime: true })` and no `now` leaves `Date.now()` on the runner's real
+clock, so that file had the identical latent bug behind a fake that looked like a fix. Pinning is
+the instant, not the fake, and the guard refuses to accept the one for the other.
+
+And the flake was pointing at something real (D244): because `ageLabel` demanded the same calendar
+day, a report that ended at 11 PM read "Fri" to anyone looking at 12:30 AM — ninety minutes old. It
+now counts hours across midnight, with the boundary pinned deliberately in `panelTime.test.ts`
+rather than sampled at whatever hour CI runs.
+
+**A pinned fixture is not a pinned test (Greptile, #103).** The first cut of this fix pinned
+`ProfilePage`'s fixtures and left the component reading the clock at `ProfilePage.tsx:73`. It went
+green — because `dayLabel` treats a future instant as "Today" by design (clock skew), and a 2027
+fixture is two months ahead of the present. The assertion was testing the skew branch, not "today",
+and would have started failing on **17 January 2027**. Proved by moving the anchor six years into
+the past, where the test fails, and again after pinning, where it passes.
+
+Checking for others the same way turned up none: `SignOutGuard` and `latestViews` inject `now` and
+hardcode their fixture instants, so they are deterministic already. It did show that four files
+mix the shared anchor with hardcoded `2027` literals (`panelTime`'s `at()` helper,
+`reportCalendar`, `sheetParts`, `SignOutGuard`'s `openedAtMs`) — correct today, but coupled to the
+anchor's year, so moving the anchor would break them confusingly. Left as follow-up.
+
+**What the coverage review added.** Three gaps, found by asking what the existing tests *don't*
+discriminate:
+
+1. **Nothing exercised the zone argument.** `recentReportsLabel` and `labelSlug` take a
+   `timeZone` so the viewer's zone decides the day, and every test of both sat mid-afternoon,
+   where New York and UTC agree on the date — so the argument did no visible work and dropping it
+   would not have failed anything. Now one instant (9 PM Saturday in New York, already Sunday in
+   UTC) reads `1 report Sat` with the zone and `1 report today` without. Verified by deleting the
+   `timeZone` pass-through: both new tests go red.
+2. **The 25-hour day.** On the Sunday the clocks go back, two reports a full 24 hours apart share
+   a local date. The labels group by date, so both count — `2 reports today` in New York, `1` in
+   UTC, from the same two instants. A 24-hour window would have split them silently.
+3. **The clock-skew branch, pinned on purpose.** `dayLabel` reads a future instant as "Today",
+   which is deliberate for a fast device clock and is also exactly how an unpinned test looks
+   pinned — the ProfilePage trap above. Pinned now in `panelTime.test.ts` with that failure named.
+
+And the static guard got a dynamic half: CI re-runs the web unit project in a zone **computed from
+the current UTC hour** so local time is always ~01:00, inside the window that broke #102, instead
+of hoping a run lands there. 35 s, and verified to catch the original bug: restoring
+`latestFixtures`' live clock turns that step red at local 01:46.
