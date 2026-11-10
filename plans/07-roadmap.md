@@ -809,14 +809,15 @@ route-level boundaries. Built by one governor and parallel agents in their own w
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
 
 #### Deferred
-- ⚪ **The map palette redesign** — the water and shore were Phase 01's `#3a6ea5` in *both* modes, neither a
-  token; the rewrite (`cab6cf4e` + `bdbedc3f`, on the stale `phase-b03-skater-web`) resolves every GL color
-  but `mapGround` from a skater token and fades the shore 0.55 at z7 → 1 at z11. It is held back from #100
-  as one unit: its second half conflicts in nine places with the filled depth bands that landed in #98, and
-  three founder calls are open — the depth ramp is still the slate h≈245 while everything else is ice h≈215
-  (so a chosen lake goes slate beside a teal neighbor), light's Protomaps `white` earth merges the map into
-  the white sidebar, and light water alpha `.20` may want tuning over Protomaps' `#dcdcdc`. Renders in
-  `skating-b03-skater-web/.claude/map-palette/` → B03 §2
+- 🟢 **The map palette redesign** — PR #102. The water and shore were Phase 01's `#3a6ea5` in *both* modes,
+  neither a token. The founder's three calls (2026-11-09): a listed body is drawn in the bathymetric ramp,
+  not in ice — band 0 for the water, band 0's index line for the shore, so opening a lake reveals the deeper
+  bands rather than repainting it; the map's land is a token (`map-earth`) halfway in lightness between the
+  skater field and band 0, because Protomaps' `white` earth is `#ffffff`, the field exactly; and no alpha in
+  the water, which the first call settles. Ice is left to the track, the put-ins, the walk in and the
+  suggested crossing. **Open:** light has no headroom — water fill 1.11:1 on the land, a mark's halo over
+  water 1.11:1 — because light's band 0 sits a hair under the field. Renders in
+  `skating-b03-map-palette/.claude/map-palette-v2/` → B03 §2
 - ❓ **Session replay** — off at launch (the D235 test keeps it so); waits on the L12 legal pass → the plan's §4.2 posture
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
 - ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5

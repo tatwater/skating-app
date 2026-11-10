@@ -528,7 +528,7 @@ export default function SkaterMapCanvas() {
     map.setPaintProperty(
       WATER_FILL_LAYER,
       'fill-opacity',
-      waterFillOpacity(palette, ground, imageryOn ? lakeId : null) as never,
+      waterFillOpacity(imageryOn ? lakeId : null) as never,
     );
   }, [depthDrawn, focusBody, imageryOn, palette, loaded, mapRef]);
 

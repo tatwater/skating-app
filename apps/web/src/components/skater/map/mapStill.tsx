@@ -1,15 +1,26 @@
+import { depthBandIndex } from '@skating/core';
 import tokensCss from '@skating/design/tokens.css?raw';
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MapPane } from '@/components/kit/map-controls';
+import { CONTOUR_OPACITY } from '@/lib/contourMap';
+import {
+  FRESHNESS_FILL_OPACITY,
+  PROVISIONAL_DASH_ARRAY,
+  PROVISIONAL_OPACITY_SCALE,
+} from '@/lib/hazardMap';
+import { mapEarth } from '@/lib/waterMap';
 import type { ProjectingMap } from './MapMarksLayer';
-import { mapGround, mapMarkVars, mapPalette } from './mapPalette';
+import { DEPTH_INDEX_INTERVAL_FT, mapMarkVars, mapPalette } from './mapPalette';
 import type { Ring } from './mapStoryData';
+import type { StoryContour, StoryHazard } from './mapStoryDepth';
 
 /**
  * Story support (not a story): the skater surface in both modes, and a still map to lay the real
  * marks, labels and dock over — MapLibre needs WebGL and tiles, so the stories draw the water from
  * the dev outlines in SVG and hand `MapMarksLayer` a projection, exactly the seam the app's
- * canvas uses. Nothing in the app imports this file.
+ * canvas uses. Every GL layer the canvas paints has a still here, in the palette's own colors at
+ * `skaterLayers`' widths, dashes and opacities, so a color nobody can see in a story doesn't exist.
+ * Nothing in the app imports this file.
  */
 
 type Mode = 'dark' | 'light';
@@ -81,6 +92,9 @@ export interface StillWater {
   selected?: boolean;
   /** Depth is drawn on this lake: it takes the shallowest band's fill, as the canvas grounds it. */
   depthGround?: boolean;
+  hovered?: boolean;
+  /** The lake's isobaths: the lines the canvas lays over the band fills. */
+  contours?: readonly StoryContour[];
 }
 
 /** One band polygon, as the band layer draws it: its band's token fill, its edge in its line. */
@@ -109,6 +123,76 @@ export function stillBands(fc: GeoJSON.FeatureCollection, bodyId: string): Still
     .sort((a, b) => a.bandIndex - b.bandIndex);
 }
 
+/** A framed bay (board 1.10): the chord that parts the lake, and which side is the bay. */
+export interface StillBay {
+  chord: Ring;
+  /** A point inside the framed bay, to pick its side of the chord. */
+  inside: readonly [number, number];
+  names: ReadonlyArray<{ name: string; lng: number; lat: number; angle: number }>;
+}
+
+export interface StillOverlays {
+  hazards?: readonly StoryHazard[];
+  bay?: StillBay;
+  landmarks?: ReadonlyArray<{ name: string; lng: number; lat: number }>;
+  approach?: { path: Ring; label: string };
+  track?: Ring;
+}
+
+type Project = (p: readonly [number, number]) => { x: number; y: number };
+
+const lineOf = (project: Project, ring: Ring) =>
+  ring
+    .map(([lng, lat], i) => {
+      const p = project([lng, lat]);
+      return `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+    })
+    .join(' ');
+
+/** The same points, closed, one subpath per ring — a fill rather than a line. */
+const pathOf = (project: Project, rings: readonly Ring[]) =>
+  rings.map((ring) => `${lineOf(project, ring)} Z`).join(' ');
+
+/**
+ * The hazard outline, as `skaterLayers` draws it. MapLibre's `line-dasharray` is in multiples of the
+ * line width and SVG's is in px, so the dash has to be scaled by the width or the provisional
+ * hazard's dash reads at half the length it has on the map.
+ */
+const HAZARD_OUTLINE_WIDTH = 1.4;
+const HAZARD_DASH = PROVISIONAL_DASH_ARRAY.map((n) => n * HAZARD_OUTLINE_WIDTH).join(' ');
+
+/** The half-plane on `inside`'s side of the chord, as a path (mock `northClip`). */
+function halfPlane(
+  project: Project,
+  chord: Ring,
+  inside: readonly [number, number],
+  flip: boolean,
+) {
+  const [p, q] = chord.map((c) => project(c)) as [
+    { x: number; y: number },
+    { x: number; y: number },
+  ];
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len;
+  const uy = dy / len;
+  let nx = -uy;
+  let ny = ux;
+  const c = project(inside);
+  if ((c.x - p.x) * nx + (c.y - p.y) * ny < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  if (flip) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const F = 9000;
+  const P = (x: number, y: number) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+  return `M${P(p.x - ux * F, p.y - uy * F)} L${P(q.x + ux * F, q.y + uy * F)} L${P(q.x + ux * F + nx * F, q.y + uy * F + ny * F)} L${P(p.x - ux * F + nx * F, p.y - uy * F + ny * F)} Z`;
+}
+
 /**
  * A still map: the basemap's ground, the water drawn the way the canvas paints it, and whatever
  * the story lays over it. `children` gets the projecting map once the pane has measured.
@@ -118,12 +202,14 @@ export function MapStill({
   view,
   water,
   bands = [],
+  overlays = {},
   children,
 }: {
   mode: Mode;
   view: StillView;
   water: readonly StillWater[];
   bands?: readonly StillBand[];
+  overlays?: StillOverlays;
   children: (map: ProjectingMap) => ReactNode;
 }) {
   const flavor = mode === 'dark' ? 'dark' : 'white';
@@ -131,6 +217,7 @@ export function MapStill({
   const project = useMemo(() => stillProjection(view), [view]);
   const pane = useRef<HTMLDivElement | null>(null);
   const [map, setMap] = useState<ProjectingMap | null>(null);
+  const clipId = useId();
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el) return;
@@ -142,18 +229,35 @@ export function MapStill({
     });
   }, [project]);
 
-  const path = (rings: readonly Ring[]) =>
-    rings
-      .map(
-        (ring) =>
-          `${ring
-            .map(([lng, lat], i) => {
-              const p = project([lng, lat]);
-              return `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-            })
-            .join(' ')} Z`,
-      )
-      .join(' ');
+  const hazardColor = (tone: StoryHazard['tone']) => palette.hazard[tone];
+  const bayLake = water.find((w) => w.selected) ?? water[0];
+  const label = (
+    key: string,
+    text: string,
+    at: { x: number; y: number },
+    color: string,
+    opts: { size: number; weight: number; spacing?: number; angle?: number; upper?: boolean },
+  ) => (
+    <text
+      key={key}
+      x={0}
+      y={0}
+      transform={`translate(${at.x.toFixed(1)} ${at.y.toFixed(1)}) rotate(${opts.angle ?? 0})`}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      fontFamily="Noto Sans, sans-serif"
+      fontSize={opts.size}
+      fontWeight={opts.weight}
+      letterSpacing={opts.spacing ?? 0}
+      fill={color}
+      stroke={palette.places.halo}
+      strokeWidth={3}
+      strokeLinejoin="round"
+      style={{ paintOrder: 'stroke' }}
+    >
+      {opts.upper ? text.toUpperCase() : text}
+    </text>
+  );
 
   return (
     <MapPane
@@ -163,7 +267,7 @@ export function MapStill({
         ...mapMarkVars(flavor),
         width: view.width,
         height: view.height,
-        background: mapGround(flavor),
+        background: mapEarth(flavor),
       }}
     >
       <svg
@@ -172,47 +276,188 @@ export function MapStill({
         height={view.height}
         className="absolute inset-0 block"
       >
+        {overlays.bay && bayLake && (
+          <defs>
+            <clipPath id={`${clipId}-bay`}>
+              <path d={halfPlane(project, overlays.bay.chord, overlays.bay.inside, false)} />
+            </clipPath>
+            <clipPath id={`${clipId}-rest`}>
+              <path d={halfPlane(project, overlays.bay.chord, overlays.bay.inside, true)} />
+            </clipPath>
+          </defs>
+        )}
+        {/* water-fill, then the contours over the chosen lake, then water-outline / hover / selected */}
         {water.map((body, i) => (
           <path
             // biome-ignore lint/suspicious/noArrayIndexKey: a fixed fixture
             key={i}
-            d={path(body.rings)}
+            d={pathOf(project, body.rings)}
             fillRule="evenodd"
             fill={
               body.inactive
                 ? palette.inactive.fill
-                : body.depthGround
+                : body.depthGround || body.contours
                   ? palette.depth.fills[0]
                   : palette.water.fill
             }
-            fillOpacity={
-              body.depthGround
-                ? 1
-                : body.inactive
-                  ? 0.18
-                  : body.selected
-                    ? 0
-                    : palette.water.fillOpacity
-            }
-            stroke={
-              body.selected
-                ? palette.selected
-                : body.inactive
-                  ? palette.inactive.outline
-                  : palette.water.outline
-            }
-            strokeWidth={body.selected ? 1.6 : 1}
+            stroke="none"
           />
         ))}
         {bands.map((band) => (
           <path
             key={band.bandIndex}
             data-band={band.bandIndex}
-            d={path(band.rings)}
+            d={pathOf(project, band.rings)}
             fillRule="evenodd"
             fill={palette.depth.fills[band.bandIndex] ?? palette.depth.fills.at(-1)}
             stroke={palette.depth.lines[band.bandIndex] ?? palette.depth.lines.at(-1)}
             strokeWidth={0.8}
+          />
+        ))}
+        {water.map((body, i) =>
+          body.contours?.map((c) => {
+            const band = depthBandIndex(c.depthFt);
+            const index = c.depthFt > 0 && c.depthFt % DEPTH_INDEX_INTERVAL_FT === 0;
+            return (
+              <path
+                // biome-ignore lint/suspicious/noArrayIndexKey: a fixed fixture
+                key={`${i}-${c.depthFt}-${c.ring[0]?.join()}`}
+                d={pathOf(project, [c.ring])}
+                fill="none"
+                stroke={index ? palette.depth.indexes[band] : palette.depth.lines[band]}
+                strokeWidth={index ? 1.2 : 0.8}
+                strokeOpacity={CONTOUR_OPACITY}
+                strokeLinejoin="round"
+              />
+            );
+          }),
+        )}
+        {water.map((body, i) => (
+          <path
+            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed fixture
+            key={i}
+            d={pathOf(project, body.rings)}
+            fillRule="evenodd"
+            fill="none"
+            stroke={
+              body.selected
+                ? palette.selected
+                : body.hovered
+                  ? palette.hovered
+                  : body.inactive
+                    ? palette.inactive.shore
+                    : palette.water.shore
+            }
+            strokeWidth={body.selected ? 1.6 : body.hovered ? 1.4 : 1}
+          />
+        ))}
+        {/* sub-area-scrim, sub-area-outline, sub-area-selected, landmark-label, sub-area-label */}
+        {overlays.bay && bayLake && (
+          <g>
+            <path
+              d={pathOf(project, bayLake.rings)}
+              fillRule="evenodd"
+              clipPath={`url(#${clipId}-rest)`}
+              fill={palette.scrim}
+              fillOpacity={0.75}
+            />
+            <path
+              d={pathOf(project, bayLake.rings)}
+              fillRule="evenodd"
+              clipPath={`url(#${clipId}-rest)`}
+              fill="none"
+              stroke={palette.places.outline}
+              strokeWidth={1}
+              strokeOpacity={0.7}
+              strokeDasharray="4 3"
+            />
+            <path
+              d={lineOf(project, overlays.bay.chord)}
+              fill="none"
+              stroke={palette.places.outline}
+              strokeWidth={1}
+              strokeOpacity={0.7}
+              strokeDasharray="4 3"
+            />
+            <path
+              d={pathOf(project, bayLake.rings)}
+              fillRule="evenodd"
+              clipPath={`url(#${clipId}-bay)`}
+              fill="none"
+              stroke={palette.selected}
+              strokeWidth={2}
+            />
+            <path
+              d={lineOf(project, overlays.bay.chord)}
+              fill="none"
+              stroke={palette.selected}
+              strokeWidth={2}
+            />
+          </g>
+        )}
+        {overlays.landmarks?.map((l) =>
+          label(l.name, l.name, project([l.lng, l.lat]), palette.places.landmark, {
+            size: 11,
+            weight: 400,
+          }),
+        )}
+        {overlays.bay?.names.map((b) =>
+          label(b.name, b.name, project([b.lng, b.lat]), palette.places.label, {
+            size: 11,
+            weight: 500,
+            spacing: 3,
+            angle: b.angle,
+            upper: true,
+          }),
+        )}
+        {/* approach + approach-label (the walk in, amber, dashed), then track-line */}
+        {overlays.approach && (
+          <g>
+            <path
+              d={lineOf(project, overlays.approach.path)}
+              fill="none"
+              stroke={palette.hazard.healing}
+              strokeWidth={2.5}
+              strokeOpacity={0.9}
+              strokeDasharray="5 5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {label(
+              'walk',
+              overlays.approach.label,
+              (() => {
+                const mid = overlays.approach.path[Math.floor(overlays.approach.path.length / 2)];
+                const p = project(mid ?? [0, 0]);
+                return { x: p.x, y: p.y - 12 };
+              })(),
+              palette.hazard.healing,
+              { size: 12, weight: 500 },
+            )}
+          </g>
+        )}
+        {overlays.track && (
+          <path
+            d={lineOf(project, overlays.track)}
+            fill="none"
+            stroke={palette.track}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+        {/* hazard-fill, hazard-outline-provisional / -confirmed: over everything (D82) */}
+        {overlays.hazards?.map((h) => (
+          <path
+            key={h.id}
+            d={pathOf(project, [h.ring])}
+            fill={hazardColor(h.tone)}
+            fillOpacity={
+              FRESHNESS_FILL_OPACITY[h.freshness] * (h.provisional ? PROVISIONAL_OPACITY_SCALE : 1)
+            }
+            stroke={hazardColor(h.tone)}
+            strokeWidth={HAZARD_OUTLINE_WIDTH}
+            strokeDasharray={h.provisional ? HAZARD_DASH : undefined}
           />
         ))}
       </svg>

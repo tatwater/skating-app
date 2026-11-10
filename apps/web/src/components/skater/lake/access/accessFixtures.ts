@@ -1,4 +1,4 @@
-import { BOARD_NOW_NH } from '@/test/boardNow';
+import { BOARD_NOON } from '@/test/boardNow';
 import type { AccessData } from './accessModel';
 
 /**
@@ -7,8 +7,15 @@ import type { AccessData } from './accessModel';
  */
 
 const DAY = 86_400_000;
-/** Saturday 16 January 2027, 11:52 AM EST. */
-export const ACCESS_NOW = BOARD_NOW_NH;
+/**
+ * Saturday 16 January 2027, noon in the runner's own zone — the *local-parts* anchor, not the New
+ * Hampshire instant. `putInCards` and `derivedPutIns` label their times with `reportWhen`, which
+ * `accessModel` calls without a `timeZone`, so the weekday comes out of the runner's zone. A fixed
+ * UTC instant is not enough for that: `Date.UTC(2027, 0, 16, 16, 52)` is Saturday in Hanover and
+ * already Sunday 3:52 AM at UTC+11, which slid "reported Thu" to "reported Fri" and turned main
+ * red at `f5d070a0`. Pinning the instant pins the clock; only local parts pin the *day*.
+ */
+export const ACCESS_NOW = BOARD_NOON;
 
 export const MASCOMA_ACCESS = {
   putIns: [

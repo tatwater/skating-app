@@ -70,7 +70,7 @@ export default function InstrumentMapCanvas({
         id: 'instrument-lake-fill',
         type: 'fill',
         source: INSTRUMENT_SOURCES.lake,
-        paint: { 'fill-color': palette.water.fill, 'fill-opacity': palette.water.fillOpacity },
+        paint: { 'fill-color': palette.water.fill, 'fill-opacity': 1 },
       });
       map.addLayer({
         id: 'instrument-lake-line',

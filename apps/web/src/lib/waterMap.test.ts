@@ -12,6 +12,7 @@ import {
   landmarkLabelLayer,
   type MappableBody,
   type MappableSubArea,
+  mapEarth,
   NORTHEAST_REGION_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
@@ -80,7 +81,7 @@ describe('buildMapStyle', () => {
     expect(at('region-mask-land')).toBeLessThan(at('world_boundaries'));
   });
 
-  it("paints the mask in the flavor's own land and water colors, not a gray of its own", () => {
+  it('paints the mask in the map\u2019s own land and the flavor\u2019s water, not a gray of its own', () => {
     const light = buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'white' });
     const fill = (style: ReturnType<typeof buildMapStyle>) =>
       (
@@ -88,10 +89,33 @@ describe('buildMapStyle', () => {
           paint: Record<string, string>;
         }
       ).paint['fill-color'];
-    expect(fill(light)).toBe('#ffffff');
-    expect(fill(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'dark' }))).not.toBe(
-      '#ffffff',
+    // The land is ours, not Protomaps': its `white` flavor paints earth #ffffff, which is the
+    // skater light field exactly, so the map pane had no edge against the sidebar (founder,
+    // 2026-11-09). The mask has to follow the basemap or the clip line shows as a seam.
+    expect(fill(light)).toBe(mapEarth('white'));
+    expect(fill(light)).not.toBe('#ffffff');
+    expect(fill(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'dark' }))).toBe(
+      mapEarth('dark'),
     );
+  });
+
+  it('paints the viewport-wide background in the land token too, in both composition paths', () => {
+    // The generator keys `background` on its own flavor field, not on `earth`, and `white` sets it
+    // to #ffffff — the skater light field. A background layer paints the whole viewport regardless
+    // of its source, so that is what the pane shows before the earth tiles land: override only
+    // `earth` and the edgeless pane the token exists to fix comes back on every pan.
+    const bg = (style: ReturnType<typeof buildMapStyle>) =>
+      style.layers
+        .filter((l) => l.type === 'background')
+        .map((l) => (l as unknown as { paint: Record<string, string> }).paint['background-color']);
+    for (const flavor of ['white', 'dark'] as const) {
+      expect(bg(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor }))).toEqual([
+        mapEarth(flavor),
+      ]);
+      // And with no world archive, where the regional set keeps its own background.
+      expect(bg(buildMapStyle({ regionUrl: REGION, flavor }))).toEqual([mapEarth(flavor)]);
+    }
+    expect(mapEarth('white')).not.toBe('#ffffff');
   });
 
   it('keeps the mask a thousandth short of opaque, or it cannot hide a label', () => {

@@ -61,10 +61,11 @@ describe('SkaterMap', () => {
     render(<SkaterMap className="col-span-2" />);
     expect(pane().className).toContain('ph-no-capture');
     expect(pane().className).toContain('col-span-2');
-    expect(pane().style.getPropertyValue('--map-ground')).toBe('#ffffff');
+    // The map's land, not the flavor's: light's Protomaps earth is #ffffff, the skater field.
+    expect(pane().style.getPropertyValue('--map-ground')).toBe('#eff3f6');
     theme.resolvedTheme = 'dark';
     render(<SkaterMap />);
     const panes = document.querySelectorAll<HTMLElement>('[data-slot="skater-map"]');
-    expect(panes[1]?.style.getPropertyValue('--map-ground')).toBe('#1f1f1f');
+    expect(panes[1]?.style.getPropertyValue('--map-ground')).toBe('#1d2022');
   });
 });

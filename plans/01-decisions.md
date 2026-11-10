@@ -7254,6 +7254,18 @@ rule is "pins the clock", not "avoids `Date.now()`", and the pin must cover the 
 one `it` setting its own instant says nothing about its neighbours, and `SkaterMapCanvas.test.tsx`
 legitimately holds both a suite-wide pin and a per-test one (Greptile, #103).
 
+**A pinned instant pins the clock, not the day** — amended 2026-11-10, after this decision's own
+guard turned main red at `f5d070a0`. `accessFixtures`' `ACCESS_NOW` was a fixed UTC instant
+(`Date.UTC(2027, 0, 16, 16, 52)`, Saturday 11:52 AM in Hanover) and `accessModel` labels its times
+with `reportWhen` **without** passing a `timeZone`, so the weekday comes out of the *runner's*
+zone. That instant is Saturday from UTC−11 to about UTC+7 and Sunday beyond it, so `reported Thu`
+became `reported Fri` at UTC+11 — nothing to do with the live clock this decision is about, and
+invisible to every zone the founder or a UTC runner sits in. So the rule has a second half:
+**a fixture whose label reads the local date anchors on `BOARD_NOON`, built from local parts; only
+a fixture that passes its zone explicitly may use `BOARD_NOW_NH`.** Choosing between them is
+choosing whether the *day* is pinned, and pointing `ACCESS_NOW` at the absolute anchor preserved a
+bug that predated the anchor entirely.
+
 **Related:** D3, D40, D236; B03 §8.4.
 
 ## D244 — A row's corner counts hours across midnight (B03, amends D237)

@@ -180,6 +180,26 @@ export const colorSpecs = {
   'plate-solid': overlay(onKey('panel'), 0.96, 'keep', 'plate-solid'), // action bar, tooltip, toast
   'map-plate': overlay(PLATE_ON_IMAGERY, 0.72, 'keep', 'map-plate'), // controls over the map or a photo
   'map-foot': overlay(onKey('bg'), 0.85, 'keep', 'map-foot'), // the map's foot strip
+
+  // The map's land. A listed body's own water comes from the depth ramp instead — band 0 and its
+  // contour, see `mapPalette` — so a lake and the lake beside it are drawn in one language, and a
+  // chosen lake only reveals the deeper bands it already had. A body that isn't listed as active is
+  // gray, not water: an ink lift and an ink hairline, no chroma at all. `keep`, not `match`: these
+  // sit on the basemap, not the field.
+  'map-earth': { role: 'data', dark: 'map-earth-dark', light: 'map-earth-light' },
+  'map-shore-hover': {
+    role: 'data',
+    dark: 'map-shore-hover-dark',
+    light: 'map-shore-hover-light',
+  },
+  'map-water-inactive': {
+    role: 'data',
+    dark: 'map-water-inactive-dark',
+    light: 'map-water-inactive-light',
+  },
+  // .22, not more: a receded shore has to stay quieter than a listed body's, and a listed body's
+  // is now band 0's index line rather than the old ice (`mapPalette.test.ts` holds that order).
+  'map-shore-inactive': overlay(INK_PURE, 0.22, 'keep'), // its shore
   scrim: overlay(BLACK, 0.66, 'keep', 'scrim'), // behind a sheet, a drawer, an inset card
   'scrim-deep': overlay(BLACK, 0.76, 'keep', 'scrim-deep'), // behind a viewer modal
   shade: overlay(BLACK, 0.6, 'keep', 'shadow'), // the color of a box shadow
@@ -216,7 +236,9 @@ export type DesignedMap = Readonly<Partial<Record<ColorKey, DesignedColor>>>;
  *
  * Skater light keys left out derive as before, against the designed white field: `fg-disabled`,
  * the tints, strong washes, glows and `warn-line`, `bad-dim`, the lifts, `plate-solid`,
- * `map-plate`, `map-foot` and `scrim-deep`. The mocks give no light value for them.
+ * `map-plate`, `map-foot`, `scrim-deep` and the inactive water. The mocks give no light value for
+ * them. The map's land is a primitive pair of its own (`map-earth`), not a mock color: the mocks
+ * drew the land white, which is the skater field exactly.
  */
 export const designedColors: Readonly<
   Record<Surface, Readonly<Partial<Record<Mode, DesignedMap>>>>

@@ -849,6 +849,42 @@ by 12 px on this row, which is the whole margin under test (Greptile, #101).
 Same shape as the `--size-sidebar` widening recorded above: a row of nowrap boxes in a fixed column
 is a measurement, not a judgment, and jsdom has no layout to make it.
 
+### 8.3 The map palette: light has no headroom (#102)
+
+The map's water and shore were Phase 01's `#3a6ea5` and `#9ecae1` in *both* modes, neither a token.
+The founder settled it on 2026-11-09: a listed body is drawn in the bathymetric ramp rather than in
+ice — band 0 is the water, band 0's index line is the shore — so an unchosen lake and a chosen
+lake's shallows are the same color and opening a lake *reveals* depth instead of repainting the
+water. Ice is left to the things that aren't water. Three things the build found:
+
+**Protomaps' `white` earth is `#ffffff`, which is the skater light field exactly.** The map pane had
+no edge against the sidebar at all; the lakes floated on the page. The land became a token,
+`map-earth`, placed halfway in lightness between the field and band 0 (the founder's rule). It
+resolves to `#f2f2f2` light and `#1f1f1f` dark — and dark's midpoint is exactly where Protomaps
+already had it, so the rule confirms dark as-is and only light moves. `primitives.test.ts` holds the
+arithmetic so an edit to the field or to band 0 can't quietly leave the land behind.
+
+**The flavor has a `background` field as well as `earth`.** Protomaps keys its viewport-wide
+background layer on the former, so overriding `earth` alone left light painting `#ffffff` behind
+everything — invisible to every test (nothing rendered a basemap), visible on first paint and on
+every pan past the tiles, in the one mode the token was added for. A background layer ignores its
+source and covers the viewport: it is the first thing you see and the last thing a unit test knows
+about.
+
+**A softening sized for one palette is a hazard in the next.** The shore's zoom curve faded it to
+.55 below z7 so a region of lakes wasn't a region of outlines — correct when the shore was bright
+ice. Against band 0's index line on the new land it measured 1.43:1 in light and 1.71:1 in dark,
+under the file's own floor, and the app opens at `INITIAL_ZOOM` 6.5 — *below* `farZoom` — so that
+dim value is what the region view actually paints. The guard missed it by measuring the shore
+undimmed, an opacity the region map never uses. `far` is .9 now, which is all light can afford.
+
+**Still open.** Light's band 0 (`#dde8f0`, L 0.925) sits a hair under the field (L 1.0), so the
+midpoint land lands between two near-identical values: the water reads 1.11:1 against the land, and
+a mark's ground halo over water reads the same — and that halo exists under D34 to lift a pin off
+whatever it lands on, which is usually water, not land. Dark is comfortable throughout (1.56 /
+2.50 / 1.56). Closing it means moving a founder-signed color — light's band 0, or the land off the
+midpoint — so it is a call, not a fix.
+
 ### 8.4 CI was red every evening, and it was pointing at a product bug (D243, D244)
 
 #102 failed CI at 00:18 UTC on five tests in `GlobalSearch`, `latestViews` and `ProfilePage` — none
@@ -930,3 +966,28 @@ And the static guard got a dynamic half: CI re-runs the web unit project in a zo
 the current UTC hour** so local time is always ~01:00, inside the window that broke #102, instead
 of hoping a run lands there. 35 s, and verified to catch the original bug: restoring
 `latestFixtures`' live clock turns that step red at local 01:46.
+
+**What the dynamic half found nine hours later (2026-11-10).** The step above went green on its own
+PR at local 01:57 and then turned main red at `f5d070a0` — on two `accessModel` tests neither #103
+nor #102 touched. The cause is a *second* way a clock word goes wrong, and it is not the live clock
+this section is about: `ACCESS_NOW` was a fixed UTC instant, and `accessModel` calls `reportWhen`
+without a `timeZone`, so the weekday is formatted in the **runner's** zone. `Date.UTC(2027, 0, 16,
+16, 52)` is Saturday in Hanover and Sunday 3:52 AM at UTC+11, so `reported Thu` read `reported
+Fri`. It predated the anchor; #103 pointed the fixture at `BOARD_NOW_NH` and so carried it
+forward. The fix is one line — the local-parts `BOARD_NOON`, per D243's amendment — and it was
+verified in six zones from UTC+14 to UTC−11.
+
+The lesson is about the probe, not the fixture. **One zone per run cannot show both classes**, and
+which class it shows depends on the hour CI happens to run:
+
+| Zone | Picked when | Live clock (class 1) | Date-line shift (class 2) |
+| --- | --- | --- | --- |
+| UTC−3 (`Etc/GMT+3`) | CI at 05:00 UTC | caught | **missed** |
+| UTC+11 (`Etc/GMT-11`) | CI at 14:00 UTC | caught | caught |
+
+#103 merged at 04:57 UTC and drew UTC−3, which shifts no dates at all; the push to main ran at
+14:03 UTC, drew UTC+11, and failed. So the step now runs three zones: the computed 01:00 one for
+class 1, and `Etc/GMT-14` / `Etc/GMT+11` — UTC+14 and UTC−11, which bracket every real zone — for
+class 2. Both brackets are load-bearing, and each was shown to be: with the bug reintroduced, the
+16:52 UTC instant fails only at UTC+14, while the mirror case (a 02:00 UTC Saturday) fails only at
+UTC−11. Three runs, about 105 s.
