@@ -859,10 +859,15 @@ water. Ice is left to the things that aren't water. Three things the build found
 
 **Protomaps' `white` earth is `#ffffff`, which is the skater light field exactly.** The map pane had
 no edge against the sidebar at all; the lakes floated on the page. The land became a token,
-`map-earth`, placed halfway in lightness between the field and band 0 (the founder's rule). It
-resolves to `#f2f2f2` light and `#1f1f1f` dark — and dark's midpoint is exactly where Protomaps
-already had it, so the rule confirms dark as-is and only light moves. `primitives.test.ts` holds the
-arithmetic so an edit to the field or to band 0 can't quietly leave the land behind.
+`map-earth`, placed a fraction of the way in lightness from the field to band 0 — `MAP_EARTH_SPLIT`,
+the founder's rule, and the single number the whole basemap hangs on. It was the midpoint on
+2026-11-09, which put it at `#1d2022` dark and `#eff3f6` light; **the founder's live read on
+2026-11-10 was that the midpoint is muddy in both themes**, so the split is a quarter and the land
+resolves to `#0f1114` dark and `#f6f9fd` light — darker in dark, lighter in light. What that buys is
+a map that reads as one surface with the page; what it spends is the pane's own edge, which falls
+from 1.24:1 to 1.08:1 against the field in dark (1.11:1 → 1.06:1 in light). `primitives.test.ts`
+derives the four literals from the fraction, so a third pass is one number and an edit to the field
+or to band 0 can't quietly leave the land behind.
 
 **The flavor has a `background` field as well as `earth`.** Protomaps keys its viewport-wide
 background layer on the former, so overriding `earth` alone left light painting `#ffffff` behind

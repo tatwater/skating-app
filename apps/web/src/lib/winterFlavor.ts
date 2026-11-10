@@ -16,9 +16,10 @@
  * Every value is **solved**, not picked: each role is a contrast target against the land, and
  * `solveForContrast` finds the lightness that stands that far off it — darker on light, lighter on
  * dark, from the same numbers. That is why the two modes feel like one map, and why moving the land
- * (`map-earth` is still an open founder call in light) carries the whole basemap with it instead of
- * stranding seventy hexes. The targets are all *below* the shoreline's own floor on purpose: the
- * basemap may never be the loudest thing on a map whose subject is the water.
+ * carries the whole basemap with it instead of stranding seventy hexes — as the founder's second
+ * pass on `MAP_EARTH_SPLIT` did on 2026-11-10, at no cost here. The targets are all *below* the
+ * shoreline's own floor on purpose: the basemap may never be the loudest thing on a map whose
+ * subject is the water.
  */
 
 import { namedFlavor } from '@protomaps/basemaps';
@@ -28,11 +29,12 @@ import type { MapFlavor } from './waterMap';
 
 /**
  * The map's own land — our token, not the flavor's. Protomaps' `white` earth is `#ffffff`, which is
- * the skater light field exactly, so the map pane had no edge against the sidebar at all; `dark`'s
- * `#1f1f1f` happened to be right. The token sits halfway in lightness between the field and the
- * shallowest water (founder, 2026-11-09), so the pane parts from the page by the same step the water
- * then takes away from the land. Every halo and label shadow on the map is cut in this color, so it
- * is the one place to change the map's ground.
+ * the skater light field exactly, so the map pane had no edge against the sidebar at all, and
+ * `dark`'s `#1f1f1f` was a gray sheet. The token sits `MAP_EARTH_SPLIT` of the way in lightness
+ * from the field to the shallowest water — a quarter (founder, 2026-11-10; the midpoint of
+ * 2026-11-09 read muddy in both themes), so the pane parts from the page by a quiet step and the
+ * water keeps the rest. Every halo and label shadow on the map is cut in this color, so it is the
+ * one place to change the map's ground.
  */
 export function mapEarth(flavor: MapFlavor): string {
   return (flavor === 'dark' ? nativeThemes.skater.dark : nativeThemes.skater.light).color[

@@ -13,6 +13,22 @@
 
 import type { Oklch } from './oklch';
 
+/**
+ * How far the map's land sits from the skater field toward the shallowest water, in lightness.
+ *
+ * **This fraction is the whole rule, and the only thing to edit for a second pass.** It sets
+ * `map-earth-dark` and `map-earth-light` below; `map-water-inactive-*` is solved off the land in
+ * turn, and `winterFlavor` solves every road, label and halo on the basemap off it at runtime — so
+ * one number carries the entire map in both themes. `primitives.test.ts` derives the four literals
+ * from it and fails with the values to paste, so the numbers can never drift from the rule.
+ *
+ * It was `1 / 2` when the land became a token (founder, 2026-11-09). The midpoint read muddy in
+ * both themes, so it is a quarter from 2026-11-10: the map goes darker in dark and lighter in
+ * light, closer to the page it is framed against. The cost is the pane's own edge — the land stands
+ * 1.08:1 off the field in dark and 1.06:1 in light, where the midpoint stood 1.24:1 and 1.11:1.
+ */
+export const MAP_EARTH_SPLIT = 1 / 4;
+
 export const primitives = {
   void: { l: 0.1149, c: 0, h: 0 }, // #050505
   g1: { l: 0.1591, c: 0, h: 0 }, // #0d0d0d
@@ -55,15 +71,19 @@ export const primitives = {
   'temp-warm-1': { l: 0.5438, c: 0.089, h: 81.36 }, // #8a6a2c
   'temp-warm-2': { l: 0.7292, c: 0.1447, h: 77.64 }, // #d99a1f
   'temp-warm-3': { l: 0.7045, c: 0.1926, h: 39.23 }, // #ff6b35
-  // The map's own land, in both modes: the lightness exactly halfway between the skater field and
-  // the shallowest depth band, so the pane always parts from the sidebar by the same step the water
-  // then takes away from the land (founder, 2026-11-09). `primitives.test.ts` holds the arithmetic,
-  // under "the map earth is midway between the field and band 0".
+  // The map's own land, in both modes: `MAP_EARTH_SPLIT` of the way in lightness from the skater
+  // field to the shallowest depth band, so the pane parts from the sidebar by a fraction of the step
+  // the water then takes away from the land. It was the midpoint (founder, 2026-11-09), which read
+  // muddy in both themes; a quarter is the founder's call of 2026-11-10 — the land stays close to
+  // the page it is framed against and the water keeps the rest of the distance to itself.
+  // `primitives.test.ts` holds the arithmetic, under "the map earth is MAP_EARTH_SPLIT of the way
+  // from the field to band 0"; it derives these four values from the fraction, so moving the
+  // fraction fails the test with the numbers to paste here.
   // The chroma is a whisper of the depth ramp's own hue — snow in shade, not a blue anyone would
   // name — so the whole basemap reads as weather rather than as a gray sheet the water was
   // dropped onto. `winterFlavor` solves every other land color off this one.
-  'map-earth-dark': { l: 0.2404, c: 0.006, h: 245 }, // #1d2022
-  'map-earth-light': { l: 0.9626, c: 0.006, h: 245 }, // #eff3f6
+  'map-earth-dark': { l: 0.1776, c: 0.006, h: 245 }, // #0f1114
+  'map-earth-light': { l: 0.9813, c: 0.006, h: 245 }, // #f6f9fd
   // A shore under the pointer: band 0's index line, carried 0.12 further from the land in its own
   // hue and chroma — so a hover is a step along the water's own ramp, never a jump to another color.
   // Water the map has nothing to say about — an unlisted pond, a river, a retired body. Gray, and
@@ -71,8 +91,8 @@ export const primitives = {
   // quieter of the two in either mode. It also has to differ from band 0: the basemap paints its
   // own water under ours, and `withAccessDim` halves our fill's opacity to say "no public access" —
   // half of a color over the same color is that color, and the dim said nothing at all (#102).
-  'map-water-inactive-dark': { l: 0.3164, c: 0, h: 0 }, // #323232
-  'map-water-inactive-light': { l: 0.9437, c: 0, h: 0 }, // #ececec
+  'map-water-inactive-dark': { l: 0.3019, c: 0, h: 0 }, // #2e2e2e
+  'map-water-inactive-light': { l: 0.9522, c: 0, h: 0 }, // #efefef
   'map-shore-hover-dark': { l: 0.6208, c: 0.0376, h: 245.81 }, // #74899c
   'map-shore-hover-light': { l: 0.6295, c: 0.0125, h: 239.97 }, // #828a90
   'depth-dark-0': { l: 0.3658, c: 0.0485, h: 247.17 }, // #294157

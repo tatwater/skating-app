@@ -42,19 +42,27 @@ describe('the winter flavor', () => {
   });
 
   it('leaves the stock flavor nothing to leak through', () => {
-    // Every color is one we solved. A key Protomaps adds in a future version arrives with its own
+    // Every color is one we assign. A key Protomaps adds in a future version arrives with its own
     // default and fails here rather than quietly painting a summer color on a winter map.
+    //
+    // By **path**, not by value. This compared the two sets of color *values* until the land moved
+    // to a quarter of the way to band 0 (founder, 2026-11-10): the solved `map-water-inactive-light`
+    // landed on #efefef, which is also stock `white`'s `runway`, `pier` and `buildings` — three keys
+    // we do assign. The proxy failed on a coincidence, and it could never have held: a solved value
+    // is free to collide with a default, and a key we had actually forgotten would pass the moment
+    // Protomaps' default for it happened to differ from every color of ours. Path coverage is the
+    // invariant the comment above always described.
     for (const flavor of FLAVORS) {
-      const ours = new Set(colorsOf(flavor).map(([, color]) => color));
-      const stock = new Set<string>();
-      for (const [, value] of Object.entries(
+      const ours = new Set(colorsOf(flavor).map(([path]) => path));
+      const stock: string[] = [];
+      for (const [key, value] of Object.entries(
         namedFlavor(flavor) as unknown as Record<string, unknown>,
       )) {
-        if (typeof value === 'string') stock.add(value);
-        else for (const c of Object.values(value as object)) stock.add(c as string);
+        if (typeof value === 'string') stock.push(key);
+        else for (const sub of Object.keys(value as object)) stock.push(`${key}.${sub}`);
       }
-      const leaked = [...ours].filter((color) => stock.has(color));
-      expect(leaked, `${flavor} kept stock colors`).toEqual([]);
+      const leaked = stock.filter((path) => !ours.has(path));
+      expect(leaked, `${flavor} left stock colors in place`).toEqual([]);
     }
   });
 

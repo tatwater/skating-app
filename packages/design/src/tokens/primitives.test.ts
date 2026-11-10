@@ -11,7 +11,7 @@ import {
   toNativeColor,
   withAlpha,
 } from './oklch';
-import { overlays, primitives } from './primitives';
+import { MAP_EARTH_SPLIT, overlays, primitives } from './primitives';
 import { colorSpecs } from './semantic';
 
 /** The audited palette, as audited (the conversion's input, kept for provenance). */
@@ -74,18 +74,24 @@ describe('admin dark is the audit', () => {
 });
 
 /**
- * The map's land sits exactly halfway, in lightness, between the skater field it is framed against
- * and the shallowest water drawn on it (founder, 2026-11-09): the pane parts from the sidebar by
- * the same step the water then takes away from the land, in both modes. Held here so an edit to the
- * field or to band 0 can't quietly leave the land where it was.
+ * The map's land sits `MAP_EARTH_SPLIT` of the way, in lightness, from the skater field it is framed
+ * against to the shallowest water drawn on it: the pane parts from the sidebar by that fraction of
+ * the step the water then takes away from the land, in both modes. The split was the midpoint
+ * (founder, 2026-11-09) and is a quarter from 2026-11-10 — the midpoint read muddy in both themes.
+ *
+ * Derived from the fraction rather than restated, so the split is the single edit a second pass
+ * needs: move `MAP_EARTH_SPLIT` and this fails with the lightness to paste into `primitives.ts`.
+ * It also holds the other way round — an edit to the field or to band 0 can't quietly leave the
+ * land where it was.
  */
-describe('the map earth is midway between the field and band 0', () => {
+describe('the map earth is MAP_EARTH_SPLIT of the way from the field to band 0', () => {
   it.each([
     ['dark', 'void', 'depth-dark-0', 'map-earth-dark'],
     ['light', 'skater-light-bg', 'depth-light-0', 'map-earth-light'],
   ] as const)('%s', (_mode, field, water, earth) => {
-    const midpoint = (primitives[field].l + primitives[water].l) / 2;
-    expect(primitives[earth].l).toBeCloseTo(midpoint, 4);
+    const from = primitives[field].l;
+    const split = from + (primitives[water].l - from) * MAP_EARTH_SPLIT;
+    expect(primitives[earth].l).toBeCloseTo(split, 4);
     // A whisper of the depth ramp's hue and no more: snow in shade. Enough that the whole basemap
     // solves off a cold land, far too little to read as a blue in its own right.
     expect(primitives[earth].h).toBe(245);

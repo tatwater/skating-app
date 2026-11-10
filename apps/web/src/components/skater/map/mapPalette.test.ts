@@ -81,11 +81,13 @@ describe('mapPalette', () => {
         expect(tokens.has(color), `${flavor} ${path} = ${color}`).toBe(true);
       }
     }
-    // Dark's land is where Protomaps already had it in lightness; light's is not — its `white` earth
-    // is #ffffff, the skater field exactly, which left the map pane with no edge against the sidebar
-    // at all. Both carry a whisper of the depth ramp's hue, which is what the basemap solves off.
-    expect(mapEarth('dark')).toBe('#1d2022');
-    expect(mapEarth('white')).toBe('#eff3f6');
+    // Neither mode's land is the flavor's any more: Protomaps' `white` earth is #ffffff, the skater
+    // field exactly, which left the map pane with no edge against the sidebar at all, and `dark`'s
+    // #1f1f1f was a gray sheet. Both carry a whisper of the depth ramp's hue, which is what the
+    // basemap solves off. The lightness is `MAP_EARTH_SPLIT` of the way from the field to band 0 —
+    // a quarter (founder, 2026-11-10); `primitives.test.ts` is where that arithmetic is enforced.
+    expect(mapEarth('dark')).toBe('#0f1114');
+    expect(mapEarth('white')).toBe('#f6f9fd');
     expect(mapEarth('white')).not.toBe(
       (namedFlavor('white') as unknown as { earth: string }).earth,
     );
