@@ -810,6 +810,7 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 
 #### Data runs
 - **2026-11-07 — the phase's two backfills on dev:** `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`, run against the deployment the app drives; neither needs a re-run
+- **2026-11-08 — the geocoder on dev:** the Geoapify account exists and `GEOAPIFY_API_KEY` is set on the dev deployment (founder); the geocoder functions are live, so the typed home address resolves instead of answering `off`
 - **2026-11-09 — dev deployed from main `29812ae9`:** `hazards:refileToFootprintBody` is live, and nothing merged through #104 touches `convex/`
 - **2026-11-09 — the filled depth bands archive:** `dev/bathymetry-20261109.pmtiles`, the lines and `bathymetry_bands` in one archive; `VITE_BATHYMETRY_PMTILES_URL` points at it in both local checkouts and on Vercel (Preview and Production), `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` in EAS; the bucket's CORS answers localhost and the production domain
 
@@ -837,7 +838,6 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - ⚪ **The phone placing mode** — a full-screen map for shore put-ins and photo placement at phone width; the founder set the direction (2026-11-07), and until it's built both actions say "on a wider screen" → B03 §9
 
 #### Owed
-- The Geoapify account and `GEOAPIFY_API_KEY` on dev — until both exist the typed address answers `off` and Settings offers "Use my current location"; the provider flip reaches dev at the next `convex dev --once`
 - The founder's device and browser pass of the new app (desktop browsers and the Pixel)
 - The pool-reassign path can still place a pool photo by location regardless of its day when a lake outline loads late (noted in the PhotoSorter fix commit)
 - The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both
