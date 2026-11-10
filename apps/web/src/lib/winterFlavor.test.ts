@@ -11,19 +11,30 @@ import {
 import { describe, expect, it } from 'vitest';
 import { mapPalette, SHORE_OPACITY_BY_ZOOM } from '@/components/skater/map/mapPalette';
 import type { MapFlavor } from './waterMap';
-import { mapEarth, mapListedWater, mapUnknownWater, winterFlavor } from './winterFlavor';
+import {
+  mapEarth,
+  mapListedWater,
+  mapUnknownWater,
+  winterFlavor,
+  winterOverrides,
+} from './winterFlavor';
 
 const FLAVORS = ['white', 'dark'] as const;
 
-/** Every color the flavor holds, nested maps flattened, by the path it sits at. */
-function colorsOf(flavor: MapFlavor): Array<[string, string]> {
+/** Every color a flavor holds, nested maps flattened, by the path it sits at. */
+function flatten(flavor: Record<string, unknown>): Array<[string, string]> {
   const out: Array<[string, string]> = [];
-  for (const [key, value] of Object.entries(winterFlavor(flavor))) {
+  for (const [key, value] of Object.entries(flavor)) {
     if (typeof value === 'string') out.push([key, value]);
-    else for (const [sub, c] of Object.entries(value as object)) out.push([`${key}.${sub}`, c]);
+    else
+      for (const [sub, c] of Object.entries(value as object))
+        out.push([`${key}.${sub}`, c as string]);
   }
   return out;
 }
+
+/** What the map paints from: the stock flavor with ours on top. */
+const colorsOf = (flavor: MapFlavor) => flatten(winterFlavor(flavor));
 
 const contrast = (color: string, ground: string) =>
   contrastOklch(hexToOklch(color), hexToOklch(ground));
@@ -45,23 +56,22 @@ describe('the winter flavor', () => {
     // Every color is one we assign. A key Protomaps adds in a future version arrives with its own
     // default and fails here rather than quietly painting a summer color on a winter map.
     //
-    // By **path**, not by value. This compared the two sets of color *values* until the land moved
-    // to a quarter of the way to band 0 (founder, 2026-11-10): the solved `map-water-inactive-light`
-    // landed on #efefef, which is also stock `white`'s `runway`, `pier` and `buildings` — three keys
-    // we do assign. The proxy failed on a coincidence, and it could never have held: a solved value
-    // is free to collide with a default, and a key we had actually forgotten would pass the moment
-    // Protomaps' default for it happened to differ from every color of ours. Path coverage is the
-    // invariant the comment above always described.
+    // By **path**, not by value, and against `winterOverrides` rather than the flavor the map
+    // paints from. Two corrections, in that order:
+    //
+    // - Values stopped working when the land moved a quarter of the way to band 0 (founder,
+    //   2026-11-10): the solved `map-water-inactive-light` landed on #efefef, which is also stock
+    //   `white`'s `runway`, `pier` and `buildings` — three keys we do assign. It could never have
+    //   held either way, since a solved value is free to collide with a default and a key we had
+    //   genuinely forgotten would pass the moment Protomaps' default for it differed from every
+    //   color of ours.
+    // - Paths against `winterFlavor` then made the test **vacuous** (Greptile, #104): that function
+    //   spreads the whole stock flavor before ours, so every stock path is in the result by
+    //   construction and `leaked` could only ever be empty. Only the overrides know what we decided.
     for (const flavor of FLAVORS) {
-      const ours = new Set(colorsOf(flavor).map(([path]) => path));
-      const stock: string[] = [];
-      for (const [key, value] of Object.entries(
-        namedFlavor(flavor) as unknown as Record<string, unknown>,
-      )) {
-        if (typeof value === 'string') stock.push(key);
-        else for (const sub of Object.keys(value as object)) stock.push(`${key}.${sub}`);
-      }
-      const leaked = stock.filter((path) => !ours.has(path));
+      const ours = new Set(flatten(winterOverrides(flavor)).map(([path]) => path));
+      const stock = flatten(namedFlavor(flavor) as unknown as Record<string, unknown>);
+      const leaked = stock.map(([path]) => path).filter((path) => !ours.has(path));
       expect(leaked, `${flavor} left stock colors in place`).toEqual([]);
     }
   });

@@ -152,11 +152,29 @@ function step(land: Oklch, role: Role): string {
 }
 
 /**
- * The flavor Protomaps' layer generator paints from. Spread over the stock flavor so a key added by
- * a future version of `@protomaps/basemaps` still has a value; `winterFlavor.test.ts` holds that
- * every key we are handed today is one of ours, and that nothing on the map is green.
+ * The flavor Protomaps' layer generator paints from: the stock flavor with {@link winterOverrides}
+ * on top, so a key added by a future version of `@protomaps/basemaps` still has a value.
+ *
+ * `winterFlavor.test.ts` holds that every key it hands us today is one of ours, and that nothing on
+ * the map is green.
  */
 export function winterFlavor(flavor: MapFlavor): Record<string, string> {
+  return {
+    ...(namedFlavor(flavor) as unknown as Record<string, string>),
+    ...winterOverrides(flavor),
+  };
+}
+
+/**
+ * Every color this map states for itself, by the path Protomaps reads it at — **ours alone, with no
+ * stock flavor underneath**.
+ *
+ * Split out from {@link winterFlavor} so the leak guard has something to ask the question of. Asked
+ * of the merged flavor it answers itself: the spread puts every stock key in the result whether we
+ * assign it or not, so "is every key Protomaps hands us one of ours?" could only ever come back yes
+ * (Greptile, #104). The merge is what the map paints from; this is what we have actually decided.
+ */
+export function winterOverrides(flavor: MapFlavor): Record<string, string> {
   const land = landOf(flavor);
   const earth = mapEarth(flavor);
   const water = mapUnknownWater(flavor);
@@ -168,8 +186,6 @@ export function winterFlavor(flavor: MapFlavor): Record<string, string> {
   const highway = s('highway');
 
   return {
-    ...(namedFlavor(flavor) as unknown as Record<string, string>),
-
     // The ground. `background` is the viewport fill and `earth` the land polygons; a background
     // layer ignores its source, so the two have to agree or the map has an edge where the tiles do.
     background: earth,

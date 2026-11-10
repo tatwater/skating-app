@@ -1047,3 +1047,43 @@ itself: across a flavor change a caller is handed `null`, never the new map befo
 The general shape, worth remembering past this phase: **a React-state flag is never a safe guard for a
 ref that the same commit rewrites.** Where a ref and a flag describe one object, the flag belongs in a
 ref beside it.
+
+### 8.4 What §8.3 cost the winter imagery, and two CI reds that were nobody's diff
+
+Greptile's read of §8.3 found the one place where publishing `null` is not the same as publishing a
+map nobody may write to. `useFreezeUpFrame` keeps its lanes — a raster source and layer per date —
+in refs that deliberately **outlive** the effect that mounted them, because tying a lane's lifetime
+to a cleanup is the remove-then-add shape that blanked the map. Its own comment named the contract:
+*"a map that is genuinely re-created arrives here as `loaded` going false, which the reconciler
+already handles."* It did handle it — by dropping every lane — but the first line of the reconciler
+was `if (!map) return`, so once the shell stopped publishing an unloaded instance, a re-created map
+arrived as no map at all and that was the single path that *kept* its bookkeeping. The replacement
+map then matched the unchanged frame key against a lane recorded on the dead instance, `show()`
+found no layer there and returned, and the February photograph was simply gone until the skater
+scrubbed to another date. No error.
+
+`drop()` now takes the map optionally and the drop-all branch covers `!map`: with no instance to
+take a lane off, forgetting it is the whole job. That is the same correction as §8.3 one level up —
+bookkeeping about an instance is only true of that instance.
+
+**The red CI on #104 was not #104's.** Two tests on main fail on a loaded or oddly-zoned runner, and
+the second was hidden behind the first (the time-zone step runs three zones in one loop and stops at
+the first non-zero exit):
+
+- `GlobalSearch`'s *once per query* asserted an analytics **effect** immediately after a `findBy*`.
+  Testing Library's `asyncWrapper` turns the act environment *off* for that wait, so the debounce's
+  state update commits outside `act` and React flushes its passive effects in a scheduler task that
+  the single `setTimeout(0)` drain after the wait is not guaranteed to outlast. Pure load decides
+  it: green alone, red under a full suite, which is why it hit the normal step here and the
+  zone-shifted step on main. It waits for the event itself now, then holds it to one across a
+  further render of the same term — stronger than what it replaced, not weaker. `pinBoardClock`'s
+  comment blamed fake timers for this; corrected, since leaving them real never fixed it.
+- `sheetSlotFills` anchored its fixtures to 16:52 **UTC** while `PhotoSorter` groups a pool by each
+  photo's **local date** and its line names the result ("on two lakes" against "over two days"). On
+  a UTC+9 runner that instant reads 01:52 local, which put the 3-hours-ago photo on the previous day
+  and changed the copy. It is `BOARD_NOON` now — the zone-naive constant `boardNow.ts` prescribes
+  for exactly this, with half a day of headroom either side.
+
+Both are the same lesson as the one above in a different register: a test that reads a clock, or a
+flag, from somewhere other than the thing it is asserting about will be right until something else
+decides the timing.

@@ -401,3 +401,58 @@ describe('useFreezeUpFrame — the reveal floor', () => {
     }
   });
 });
+
+/**
+ * A theme switch re-creates the MapLibre instance (B03 §8.3), so these drive what the hook is
+ * handed across one: the live map, then no map at all for a commit, then a different map — with the
+ * same frame selected the whole way through, because the skater did not touch the scrubber.
+ */
+describe('useFreezeUpFrame — the map underneath is replaced', () => {
+  const mountSwappable = (harness: ReturnType<typeof fakeMap>, f: IndexedFrame | null) => {
+    const mapRef = { current: harness.map as maplibregl.Map | null };
+    const view = renderHook(
+      ({ map, loaded }: { map: maplibregl.Map | null; loaded: boolean }) => {
+        mapRef.current = map;
+        useFreezeUpFrame({ mapRef, loaded, frame: f, season: 'winter-2025-26' });
+      },
+      { initialProps: { map: harness.map as maplibregl.Map | null, loaded: true } },
+    );
+    return view;
+  };
+
+  it('mounts the frame again on the replacement map, so the photograph survives the switch', () => {
+    const first = fakeMap();
+    const { rerender } = mountSwappable(first, frame());
+    expect(first.sources.has(LANE0.sourceId)).toBe(true);
+
+    // The shell publishes no instance while one is being swapped for the other.
+    rerender({ map: null, loaded: false });
+    const second = fakeMap();
+    rerender({ map: second.map, loaded: true });
+
+    // The regression: the lane recorded against the first map made this look like a frame already
+    // held, so the hook showed a lane that does not exist here and the winter picture vanished.
+    expect(second.sources.get(LANE0.sourceId)).toMatchObject({ type: 'raster' });
+    expect(second.layers.has(LANE0.layerId)).toBe(true);
+  });
+
+  it('reveals on the replacement map, rather than sitting at zero forever', () => {
+    const first = fakeMap();
+    const { rerender } = mountSwappable(first, frame());
+    rerender({ map: null, loaded: false });
+
+    const second = fakeMap();
+    second.loadedSources.add(LANE0.sourceId);
+    rerender({ map: second.map, loaded: true });
+    second.emit('sourcedata', { sourceId: LANE0.sourceId });
+    expect(opacityOf(second, LANE0.layerId)).toBe(1);
+  });
+
+  it('leaves the dead map alone: nothing is removed from an instance that is already gone', () => {
+    const first = fakeMap();
+    const { rerender } = mountSwappable(first, frame());
+    const before = [...first.ops];
+    rerender({ map: null, loaded: false });
+    expect(first.ops).toEqual(before);
+  });
+});

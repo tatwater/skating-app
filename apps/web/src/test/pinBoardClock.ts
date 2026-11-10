@@ -17,11 +17,17 @@
  * a faked clock starves it, even with `shouldAdvanceTime`. So this goes only where a calendar label
  * is actually asserted.
  *
- * Only `Date` is faked. Faking the timers too cost a flake straight away: `GlobalSearch`'s
- * "once per query" analytics assertion is debounce-timed, and it passed alone but failed under a
- * full-suite load where turbo runs every package at once. The components here read the clock
- * through `Date.now()` and nothing else, so `setTimeout`, `setInterval`, `waitFor` and `findBy*`
- * are left entirely real and behave as they did.
+ * Only `Date` is faked. Faking the timers too broke `GlobalSearch`'s debounce outright. The
+ * components here read the clock through `Date.now()` and nothing else, so `setTimeout`,
+ * `setInterval`, `waitFor` and `findBy*` are left entirely real and behave as they did.
+ *
+ * ⚠ **The `GlobalSearch` "once per query" flake was never this file's**, though it was first read
+ * that way: that test asserted an effect's analytics call immediately after a `findBy*`, and
+ * `findBy*` waits with the act environment *off*, so the commit it waits for flushes its passive
+ * effects in a scheduler task the wait does not reliably outlast. Load decided it, which is why it
+ * passed alone and failed under a full suite. It waits for the event itself now. Pinning the clock
+ * changed only how often the race was lost — if a timing assertion fails near this helper, look for
+ * an un-awaited effect before suspecting the clock.
  */
 
 import { afterEach, beforeEach, vi } from 'vitest';
