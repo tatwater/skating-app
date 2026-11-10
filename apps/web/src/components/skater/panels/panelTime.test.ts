@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { BOARD_NOON } from '@/test/boardNow';
+
 import { ageLabel, clockLabel, dayLabel, daysBetween, whenLabel } from './panelTime';
 
 // Saturday 16 January 2027, noon local — the boards' "today".
-const now = new Date(2027, 0, 16, 12, 0).getTime();
+const now = BOARD_NOON;
 const at = (day: number, h: number, m = 0) => new Date(2027, 0, day, h, m).getTime();
 
 describe('panelTime', () => {
@@ -31,6 +33,25 @@ describe('panelTime', () => {
     expect(ageLabel(at(16, 9), now)).toBe('3 h');
     expect(ageLabel(at(14, 15), now)).toBe('Thu');
     expect(ageLabel(at(4, 9), now)).toBe('Jan 4');
+  });
+
+  /**
+   * The corner counts hours across midnight. Read just after midnight, a report that ended at
+   * 11 PM is ninety minutes old; it used to read "Fri", because the hour branch also demanded the
+   * same calendar day. The day words stay calendar-true — that is `dayLabel`'s job, not the
+   * corner's. Pinned deliberately so the behavior is not merely sampled at whatever hour CI runs.
+   */
+  it('counts hours across midnight, and still names the day as yesterday', () => {
+    const justAfterMidnight = new Date(2027, 0, 16, 0, 30).getTime();
+    const lateLastNight = new Date(2027, 0, 15, 23, 0).getTime();
+
+    expect(ageLabel(lateLastNight, justAfterMidnight)).toBe('1 h');
+    expect(ageLabel(new Date(2027, 0, 15, 23, 50).getTime(), justAfterMidnight)).toBe('40 min');
+    expect(dayLabel(lateLastNight, justAfterMidnight)).toBe('Yesterday');
+    expect(whenLabel(lateLastNight, justAfterMidnight)).toBe('Fri · 11:00 PM');
+
+    // A full day back is still the weekday — only the under-24-hour window changed.
+    expect(ageLabel(new Date(2027, 0, 14, 23, 0).getTime(), justAfterMidnight)).toBe('Thu');
   });
 
   it('gives a report’s corner its day and clock', () => {

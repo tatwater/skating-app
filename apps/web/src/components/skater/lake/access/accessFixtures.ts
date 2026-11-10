@@ -1,3 +1,4 @@
+import { BOARD_NOW_NH } from '@/test/boardNow';
 import type { AccessData } from './accessModel';
 
 /**
@@ -7,7 +8,7 @@ import type { AccessData } from './accessModel';
 
 const DAY = 86_400_000;
 /** Saturday 16 January 2027, 11:52 AM EST. */
-export const ACCESS_NOW = Date.UTC(2027, 0, 16, 16, 52);
+export const ACCESS_NOW = BOARD_NOW_NH;
 
 export const MASCOMA_ACCESS = {
   putIns: [

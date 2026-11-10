@@ -7,6 +7,7 @@ import {
 } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { BOARD_NOW_NH } from '@/test/boardNow';
 import {
   calendarCaption,
   calendarDays,
@@ -29,7 +30,7 @@ const ZONES = [
 ];
 const HOUR = 3600_000;
 // Saturday 16 January 2027, 11:52 AM in New Hampshire — the boards' "today".
-const BOARD_NOW = Date.UTC(2027, 0, 16, 16, 52);
+const BOARD_NOW = BOARD_NOW_NH;
 const NH = 'America/New_York';
 
 describe('calendarDays — the boards', () => {

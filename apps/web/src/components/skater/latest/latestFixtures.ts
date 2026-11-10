@@ -1,11 +1,13 @@
 import type { BodyResultData, FeedCardData, PostCardData } from '@skating/core';
 
+import { BOARD_NOON } from '@/test/boardNow';
+
 /**
  * Latest's fixtures, drawn from the boards (row 4: "today" is the morning of the posts) — shared by
  * the tests and the stories. Story-and-test only; nothing in the app imports it.
  */
 
-export const NOW = Date.now();
+export const NOW = BOARD_NOON;
 const HOUR = 3_600_000;
 
 export const REPORT: FeedCardData = {

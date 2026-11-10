@@ -33,12 +33,20 @@ export function dayLabel(ms: number, now: number): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(ms);
 }
 
-/** The short form a row's corner carries: "just now", "25 min", "3 h", "Thu", "Jan 4". */
+/**
+ * The short form a row's corner carries: "just now", "25 min", "3 h", "Thu", "Jan 4".
+ *
+ * Under a day is always counted in hours, even across midnight. This used to also require the same
+ * calendar day, which meant a report that ended at 11 PM read "Fri" to anyone looking at 12:30 AM
+ * — ninety minutes old, cornered as though it were days old, on the one signal the card exists to
+ * carry (D3: age is a confidence signal). The day words belong to `dayLabel` and `whenLabel`,
+ * which still say "Yesterday" where that is the true answer; a corner's job is the age.
+ */
 export function ageLabel(ms: number, now: number): string {
   const diff = now - ms;
   if (diff < MINUTE) return 'just now';
   if (diff < HOUR) return `${Math.floor(diff / MINUTE)} min`;
-  if (diff < DAY && daysBetween(ms, now) === 0) return `${Math.floor(diff / HOUR)} h`;
+  if (diff < DAY) return `${Math.floor(diff / HOUR)} h`;
   const days = daysBetween(ms, now);
   if (days < 7) return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(ms);
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(ms);
