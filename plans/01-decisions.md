@@ -7245,6 +7245,15 @@ with no `now` — `SkaterMapCanvas`'s former state — leaves `Date.now()` live 
 clock at all, and no calendar-asserting app test may either unless it pins the clock for its whole
 suite. It carries a reason per exemption, and floors so it cannot pass without having looked.
 
+**A pinned fixture against a live component clock passes for the wrong reason, and then stops.**
+`dayLabel` reads a *future* instant as "Today" (clock skew, by design), so `ProfilePage` — which
+reads the clock at `ProfilePage.tsx:73` — went green on a 2027 fixture while the component sat in
+the real present, and would have begun failing on **17 January 2027**. A fixture ahead of the
+runner's clock is not a pinned test; it is an unpinned one with a two-month head start. Hence the
+rule is "pins the clock", not "avoids `Date.now()`", and the pin must cover the **whole suite** —
+one `it` setting its own instant says nothing about its neighbours, and `SkaterMapCanvas.test.tsx`
+legitimately holds both a suite-wide pin and a per-test one (Greptile, #103).
+
 **Related:** D3, D40, D236; B03 §8.4.
 
 ## D244 — A row's corner counts hours across midnight (B03, amends D237)

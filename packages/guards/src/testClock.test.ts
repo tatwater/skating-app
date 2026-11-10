@@ -75,7 +75,31 @@ const ASSERTED_AGAINST_NOW =
  *   other tests stay live — which is precisely the state the line above was in, since this file
  *   also has a deliberate midnight-rollover test that sets its own instant.
  */
-const PINS_CLOCK = /\bpinBoardClock\(\)|useFakeTimers\(\{[^}]*\bnow:/u;
+const PIN_CALL = /\bpinBoardClock\(\)|useFakeTimers\(\{[^}]*\bnow:/u;
+
+/**
+ * Does the pin cover the **whole suite**, rather than one test inside it?
+ *
+ * A pin found anywhere used to excuse the entire file, which missed the partial-pinning mistake
+ * this rule exists to catch: one `it` that sets its own instant says nothing about its neighbours,
+ * and `SkaterMapCanvas.test.tsx` is a live example of a file that legitimately holds both a
+ * suite-wide pin and a per-test one. So the pin counts only at file scope (`pinBoardClock();` in
+ * column 0) or inside a top-level `beforeEach`. Anything nested — in a `describe`, in a single
+ * `it` — does not (Greptile, #103).
+ */
+function pinsWholeSuite(code: string): boolean {
+  let inTopLevelHook = false;
+  for (const line of code.split('\n')) {
+    if (/^\S/u.test(line) && PIN_CALL.test(line)) return true;
+    if (/^beforeEach\(/u.test(line)) inTopLevelHook = true;
+    else if (inTopLevelHook) {
+      if (PIN_CALL.test(line)) return true;
+      // Any line back in column 0 has closed the top-level hook.
+      if (/^\S/u.test(line)) inTopLevelHook = false;
+    }
+  }
+  return false;
+}
 
 /**
  * Does this source read the live clock anywhere that could reach a fixture value? Takes source
@@ -83,7 +107,7 @@ const PINS_CLOCK = /\bpinBoardClock\(\)|useFakeTimers\(\{[^}]*\bnow:/u;
  * text — rule 2, which looks for a calendar assertion in it — strips the file once.
  */
 function readsLiveClockInCode(code: string): boolean {
-  if (PINS_CLOCK.test(code)) return false;
+  if (pinsWholeSuite(code)) return false;
   return code.split('\n').some((line) => LIVE_CLOCK.test(line) && !ASSERTED_AGAINST_NOW.test(line));
 }
 
@@ -164,6 +188,55 @@ describe('the test clock is pinned, not live (PR #102)', () => {
       return readsLiveClockInCode(code) && CALENDAR_ASSERTION.test(code);
     });
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * The detection itself, against sources written here rather than whatever the repo happens to
+   * hold — a lint whose predicate is only ever exercised on passing files is a lint that has never
+   * been shown to say no. Each case is a mistake that actually occurred in #103.
+   */
+  test('the predicate tells a suite-wide pin from a partial one', () => {
+    const calendarAssertion = "expect(screen.getByText('Today')).toBeInTheDocument();";
+    const live = 'const NOW = Date.now();';
+
+    // Pinned at file scope: every test in the file sees the pinned instant.
+    expect(readsLiveClockInCode(`pinBoardClock();\n\ndescribe('x', () => {\n  ${live}\n});`)).toBe(
+      false,
+    );
+
+    // Pinned in a top-level beforeEach: same reach.
+    expect(
+      readsLiveClockInCode(
+        `beforeEach(() => {\n  vi.useFakeTimers({ now: BOARD_NOON });\n});\n\n${live}`,
+      ),
+    ).toBe(false);
+
+    // Pinned inside one `it`, with a live calendar assertion beside it — the P2 case.
+    const partial = [
+      "describe('x', () => {",
+      "  it('a', () => {",
+      '    vi.useFakeTimers({ now: BOARD_NOON });',
+      '  });',
+      "  it('b', () => {",
+      `    ${live}`,
+      `    ${calendarAssertion}`,
+      '  });',
+      '});',
+    ].join('\n');
+    expect(readsLiveClockInCode(partial)).toBe(true);
+
+    // Faked timers with no instant leave Date.now() on the runner's clock — the SkaterMapCanvas case.
+    expect(
+      readsLiveClockInCode(
+        `beforeEach(() => {\n  vi.useFakeTimers({ shouldAdvanceTime: true });\n});\n\n${live}`,
+      ),
+    ).toBe(true);
+
+    // A comparison against the real clock inside an assertion is the one honest live use.
+    expect(readsLiveClockInCode('expect(suspendedUntil).toBeGreaterThan(Date.now());')).toBe(false);
+
+    // And the calendar matcher has to actually recognize the assertion it is scoped to.
+    expect(CALENDAR_ASSERTION.test(calendarAssertion)).toBe(true);
   });
 
   test('every exemption names a file that exists and says why', () => {

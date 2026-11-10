@@ -896,3 +896,16 @@ And the flake was pointing at something real (D244): because `ageLabel` demanded
 day, a report that ended at 11 PM read "Fri" to anyone looking at 12:30 AM — ninety minutes old. It
 now counts hours across midnight, with the boundary pinned deliberately in `panelTime.test.ts`
 rather than sampled at whatever hour CI runs.
+
+**A pinned fixture is not a pinned test (Greptile, #103).** The first cut of this fix pinned
+`ProfilePage`'s fixtures and left the component reading the clock at `ProfilePage.tsx:73`. It went
+green — because `dayLabel` treats a future instant as "Today" by design (clock skew), and a 2027
+fixture is two months ahead of the present. The assertion was testing the skew branch, not "today",
+and would have started failing on **17 January 2027**. Proved by moving the anchor six years into
+the past, where the test fails, and again after pinning, where it passes.
+
+Checking for others the same way turned up none: `SignOutGuard` and `latestViews` inject `now` and
+hardcode their fixture instants, so they are deterministic already. It did show that four files
+mix the shared anchor with hardcoded `2027` literals (`panelTime`'s `at()` helper,
+`reportCalendar`, `sheetParts`, `SignOutGuard`'s `openedAtMs`) — correct today, but coupled to the
+anchor's year, so moving the anchor would break them confusingly. Left as follow-up.

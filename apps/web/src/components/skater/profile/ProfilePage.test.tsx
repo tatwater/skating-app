@@ -7,6 +7,7 @@ import { convexReact, fakes, resetFakes } from '../testMocks';
 vi.mock('convex/react', () => convexReact);
 
 import { BOARD_NOON } from '@/test/boardNow';
+import { pinBoardClock } from '@/test/pinBoardClock';
 import { ProfilePage } from './ProfilePage';
 
 beforeAll(() => {
@@ -107,6 +108,12 @@ beforeEach(() => {
   });
   fakes.queries.set('profiles:getPublicProfile', publicProfile());
 });
+
+// `ProfilePage` reads the clock itself (ProfilePage.tsx:73) and hands it to the cards, so pinning
+// the fixtures alone left the two disagreeing: `NOW` sat in 2027 while the component sat in the
+// real present, and `dayLabel` returned "Today" only because it reads a *future* instant as today
+// (clock skew). The assertion would have started failing on 17 January 2027 (Greptile, #103).
+pinBoardClock();
 
 describe('someone else’s profile', () => {
   it('shows the header, the counts, the badges and the reports, behind ph-no-capture', () => {
