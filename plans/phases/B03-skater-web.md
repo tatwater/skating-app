@@ -1017,8 +1017,21 @@ after `load` had fired, which is why both buttons "worked".
 The fix is one accessor, `MapCanvas.liveMap()`: the live map if its style can take a write, else `null`,
 with readiness held in a ref the same commit updates so it can never be stale about the map it answers
 for. Every imperative effect in all four canvases now gates on it — a style write is never guarded by
-state — while `loaded` stays in the dependency lists, since it is what re-runs them (and so re-applies
-the whole spec) once the new map is ready.
+state — and the accessor *replaces* `loaded` in their dependency lists rather than joining it: it takes
+a fresh identity whenever readiness changes, so listing it alone is what re-runs them (and so re-applies
+the whole spec) once the new map is ready. `loaded` keeps only the job it is safe for, the React gate on
+what *renders* over the map.
+
+Readiness itself is keyed on the loaded map rather than on a boolean, so a `load` that ever landed in
+the same React batch as the teardown's reset cannot settle back on `true` and leave the accessor holding
+its old identity — which would hand the new instance no spec, no filters and no sources, silently. Two
+instances are never the same object.
+
+The admin lake editor had the same pair one layer out: it handed `useImageryReveal` `mapRef.current` and
+`loaded` as props, and that hook adds and removes its own source and layer. There the two disagreed a
+commit later rather than sooner — the render that saw `loaded` drop also saw the *new* map in the ref, so
+the reveal's teardown ran against the instance the shell had already removed. It takes `liveMap()` now,
+which is also what leaves `loaded` with no imperative caller at all.
 
 **Why no test caught it:** `SkaterMapCanvas.test` already had *re-applies everything on a theme switch*,
 but its fake map's `setPaintProperty` silently no-opped on an unknown layer, so the one call that

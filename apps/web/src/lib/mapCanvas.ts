@@ -140,15 +140,26 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  // The same fact as `loaded`, in a ref so it is true of `mapRef.current` *now* and not of whichever
-  // map was live when the current render was scheduled. See `MapCanvas.liveMap`.
+  /**
+   * The map that has fired `load`, **as state** rather than a boolean, so `liveMap` can key on it.
+   *
+   * A boolean would collapse: a `load` landing in the same React batch as the cleanup's reset — a
+   * synchronous style, or a caller firing it inside the effect — would settle back on `true`, the
+   * memo below would keep its identity and no caller effect would re-run, leaving the new instance
+   * with no spec, no filters and no sources and no error anywhere. Two instances are never the same
+   * object, so keying on the map itself cannot collapse that way.
+   */
+  const [loadedMap, setLoadedMap] = useState<maplibregl.Map | null>(null);
+  const loaded = loadedMap !== null;
+  // The same fact again, in a ref so it is true of `mapRef.current` *now* and not of whichever map
+  // was live when the current render was scheduled — it is what closes the window between a `load`
+  // and the re-render it schedules. See `MapCanvas.liveMap`.
   const styleLoadedRef = useRef(false);
   // A fresh identity per readiness change, so `liveMap` is a caller's whole dependency: it both reads
   // the map and re-runs their effect once a new one can take a write.
   const liveMap = useMemo(
-    () => () => (loaded && styleLoadedRef.current ? mapRef.current : null),
-    [loaded],
+    () => () => (loadedMap !== null && styleLoadedRef.current ? mapRef.current : null),
+    [loadedMap],
   );
   const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
@@ -185,7 +196,6 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     const container = containerRef.current;
     if (!container) return;
 
-    styleLoadedRef.current = false;
     const protocol = new Protocol();
     if (pmtilesUsers === 0) maplibregl.addProtocol('pmtiles', protocol.tile);
     pmtilesUsers++;
@@ -253,14 +263,14 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       if (fitBounds && !lastViewRef.current)
         map.fitBounds(fitBounds, { padding: 24, animate: false });
       onLoadRef.current(map);
-      setLoaded(true);
+      setLoadedMap(map);
       syncViewport(); // first query, framed on the initial view
     });
     map.on('moveend', syncViewport);
 
     return () => {
       styleLoadedRef.current = false;
-      setLoaded(false);
+      setLoadedMap(null);
       map.remove();
       mapRef.current = null;
       attributionRef.current = null;

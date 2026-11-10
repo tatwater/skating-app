@@ -122,7 +122,7 @@ export function LakeEditorMap({
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
-  const { containerRef, mapRef, loaded, liveMap } = useMapCanvas({
+  const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
@@ -446,15 +446,16 @@ export function LakeEditorMap({
     );
   }, [data.draftPolygon, setData]);
 
-  // Labeled as a region rather than left as an anonymous div (D34): this canvas is the primary
-  // content of the route, and a screen reader landing on an unlabelled full-page div has nothing to
-  // announce. The tools beside it are the operable surface; this is the subject they act on.
+  // The reveal adds and removes its own source and layer, so it takes the live map rather than the
+  // `mapRef` + `loaded` pair a style write may never be guarded by (B03 §8.3): on a theme switch
+  // with Aerial on, that pair handed its teardown the map the shell had already removed.
+  const live = liveMap();
+  useImageryReveal({ map: live, loaded: live !== null, masks: imageryMask, unmasked: true });
+
   // A labeled `section` rather than an anonymous div (D34): this canvas is the primary content of
   // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
   // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
   // `HTMLElement` as its container, so the semantic element costs nothing.
-  useImageryReveal({ map: mapRef.current, loaded, masks: imageryMask, unmasked: true });
-
   return (
     <section
       ref={containerRef}
