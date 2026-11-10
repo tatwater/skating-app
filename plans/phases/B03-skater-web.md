@@ -778,7 +778,8 @@ Recorded at close-out (2026-11-07). Telegraphic; the commits carry the detail.
   exist z9–14; the layer keeps the contours' z11 floor. The ramp's edges and band math have one home,
   `@skating/core`'s `contourLayer.ts`. A local archive can't be tried through the web dev server — its
   Nitro static handler answers a Range request with the whole file, which pmtiles rejects — so BANDS.md
-  now says to serve it with `serve --cors`. What remains is the upload (the roadmap row).
+  now says to serve it with `serve --cors`. The upload followed on 2026-11-09:
+  `dev/bathymetry-20261109.pmtiles`, with both apps' env vars pointed at it.
 - **Waiting on the founder:** the "Weather at" default (whole lake or the bay in view); whether a reading's
   coordinates are redacted on a public report.
 

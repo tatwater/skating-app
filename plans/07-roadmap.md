@@ -808,6 +808,11 @@ PostHog extends the merged D235 (deduped pageviews, masked usernames, a wider ta
 route-level boundaries. Built by one governor and parallel agents in their own worktrees, four PRs. *A
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
 
+#### Data runs
+- **2026-11-07 — the phase's two backfills on dev:** `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`, run against the deployment the app drives; neither needs a re-run
+- **2026-11-09 — dev deployed from main `29812ae9`:** `hazards:refileToFootprintBody` is live, and nothing merged through #104 touches `convex/`
+- **2026-11-09 — the filled depth bands archive:** `dev/bathymetry-20261109.pmtiles`, the lines and `bathymetry_bands` in one archive; `VITE_BATHYMETRY_PMTILES_URL` points at it in both local checkouts and on Vercel (Preview and Production), `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` in EAS; the bucket's CORS answers localhost and the production domain
+
 #### Deferred
 - 🟢 **The map palette redesign** — PR #102. The water and shore were Phase 01's `#3a6ea5` in *both* modes,
   neither a token. The founder's three calls (2026-11-09): a listed body is drawn in the bathymetric ramp,
@@ -822,7 +827,7 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - ⚪ **Garmin connection** — shown disabled, "Coming soon" (the D24 amendment); GPX import takes its place
 - ⚪ **The GPX trust downgrade** — imported GPX ships *fully trusted*, a deliberate temporary D24 exception for the early testers (founder, 2026-11-07, D239); revert to seed-and-author-only once Garmin or another native import path lands → the plan's §6 Q5
 - ⚪ **The slow-pan region video** behind the sign-in screens — static per-theme PNGs ship; a React video library later
-- ⚪ **Filled depth bands: the upload** — the pipeline half (`build-bands`, `scripts/bathymetry/BANDS.md`: layer `bathymetry_bands` in the same archive as the lines) and the web render half (a fill layer under the lines, legend at each band's real depths) are built; what remains is the upload — `scripts/bathymetry/tile.sh --upload dev/bathymetry-<date>.pmtiles`, a new key every upload, then point both apps' bathymetry env vars (`VITE_BATHYMETRY_PMTILES_URL`, `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` + the EAS environment) at it. Founder's data calls, recorded: band edges land only on contours a lake really has (accepted — Mascoma has no 5–10 ft band); unmeasured coves on fitted lakes ship unclipped, with the `lane` provenance flag on every band for a later treatment → B03 §2
+- 🟢 **Filled depth bands: the upload** — uploaded 2026-11-09 (the data run above); the pipeline (`build-bands`, `scripts/bathymetry/BANDS.md`: layer `bathymetry_bands` beside the lines) and the web render (a fill under the lines, a legend at each band's real depths) shipped in #98. Founder's data calls, recorded: band edges land only on contours a lake really has (accepted — Mascoma has no 5–10 ft band); unmeasured coves on fitted lakes ship unclipped, with the `lane` provenance flag on every band for a later treatment → B03 §2
 - ⚪ **A where drawn as an area** (board 5.13.1) — needs a `Where` geometry shape on both surfaces first → B03 §5
 - ⚪ **A cover photo on a Post** — no model field holds one → B03 §4
 - ⚪ **Towns on search hits** — naming each hit's town is a boundary read per keystroke; hits name the lake's type and state instead → B03 §1
@@ -834,7 +839,6 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 #### Owed
 - The Geoapify account and `GEOAPIFY_API_KEY` on dev — until both exist the typed address answers `off` and Settings offers "Use my current location"; the provider flip reaches dev at the next `convex dev --once`
 - The founder's device and browser pass of the new app (desktop browsers and the Pixel)
-- Before driving dev: `convex dev --once`, then `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`
 - The pool-reassign path can still place a pool photo by location regardless of its day when a lake outline loads late (noted in the PhotoSorter fix commit)
 - The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both
 - A check that the Clerk `convex` JWT template carries `picture` and `updated_at`
