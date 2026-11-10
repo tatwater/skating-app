@@ -73,6 +73,8 @@ export function mapPalette(flavor: MapFlavor): MapPalette {
     // index line, not the contour: a 1 px contour measures 1.58:1 on the new land in light, under
     // the floor this file holds, and the index line is the step the ramp means you to read anyway.
     water: { fill: c['depth-0'], shore: c['depth-0-index'] },
+    // The same gray the basemap gives water it knows nothing about: a retired body and an unlisted
+    // pond say the same thing, and neither may carry the app's hue (Review 2).
     inactive: { fill: c['map-water-inactive'], shore: c['map-shore-inactive'] },
     accent: c.acc,
     selected: c.fg,

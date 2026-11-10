@@ -1,9 +1,17 @@
 import { namedFlavor } from '@protomaps/basemaps';
-import { contrastOklch, hexToOklch } from '@skating/design/tokens';
+import { NO_PUBLIC_ACCESS_OPACITY_SCALE } from '@skating/core';
+import {
+  composite,
+  contrastOklch,
+  deltaE,
+  hexToOklch,
+  rgbToOklch,
+  withAlpha,
+} from '@skating/design/tokens';
 import { describe, expect, it } from 'vitest';
 import { mapPalette, SHORE_OPACITY_BY_ZOOM } from '@/components/skater/map/mapPalette';
 import type { MapFlavor } from './waterMap';
-import { mapEarth, mapWater, winterFlavor } from './winterFlavor';
+import { mapEarth, mapListedWater, mapUnknownWater, winterFlavor } from './winterFlavor';
 
 const FLAVORS = ['white', 'dark'] as const;
 
@@ -85,12 +93,35 @@ describe('the winter flavor', () => {
     }
   });
 
-  it('draws all water in one color — the shallowest depth band', () => {
+  it('draws water it knows nothing about in gray, under the water it does (#102)', () => {
+    for (const flavor of FLAVORS) {
+      const land = mapEarth(flavor);
+      const f = winterFlavor(flavor) as Record<string, string>;
+      // A river, an unlisted pond and a retired body all say the same thing, and none of them may
+      // carry the app's hue.
+      expect(f.water).toBe(mapUnknownWater(flavor));
+      expect(f.water).toBe(mapPalette(flavor).inactive.fill);
+      const { c } = hexToOklch(f.water as string);
+      expect(c).toBe(0);
+      // Quieter than a body we can speak for — in both modes, by construction.
+      expect(contrast(f.water as string, land)).toBeLessThan(
+        contrast(mapListedWater(flavor), land),
+      );
+    }
+  });
+
+  it('leaves the access dim something to say: the basemap is never band 0 (#102)', () => {
     for (const flavor of FLAVORS) {
       const f = winterFlavor(flavor) as Record<string, string>;
-      expect(f.water).toBe(mapWater(flavor));
-      expect(f.water).toBe(mapPalette(flavor).depth.fills[0]);
-      expect(f.water).toBe(mapPalette(flavor).water.fill);
+      const listed = hexToOklch(mapListedWater(flavor));
+      // The basemap paints its own water under ours. `withAccessDim` halves our fill's opacity to
+      // say "no public access", so if the two colors matched, half of a color over the same color
+      // would be that color and the dim would say nothing at all. It did.
+      expect(f.water).not.toBe(mapListedWater(flavor));
+      const dimmed = rgbToOklch(
+        composite(withAlpha(listed, NO_PUBLIC_ACCESS_OPACITY_SCALE), hexToOklch(f.water as string)),
+      );
+      expect(deltaE(dimmed, listed), `${flavor} dim is imperceptible`).toBeGreaterThan(1);
     }
   });
 
@@ -100,15 +131,24 @@ describe('the winter flavor', () => {
       const p = mapPalette(flavor);
       // What the shore measures where it is faintest — the region view, which is the zoom with the
       // most basemap on screen and the one where a lake has to be findable.
-      const shore = contrast(p.water.shore, land) * SHORE_OPACITY_BY_ZOOM.far;
+      // Composited, not scaled: a contrast ratio is not linear in opacity, so multiplying one by
+      // an alpha gives a number that describes nothing (#102).
+      const shore = contrastOklch(
+        withAlpha(hexToOklch(p.water.shore), SHORE_OPACITY_BY_ZOOM.far),
+        hexToOklch(land),
+      );
       const f = winterFlavor(flavor) as Record<string, string>;
       for (const key of ['buildings', 'highway', 'major', 'minor_a', 'railway', 'boundaries']) {
         expect(contrast(f[key] as string, land), `${flavor} ${key}`).toBeLessThan(shore);
       }
-      // And the loudest road stays under the water itself on dark, where the water has the room to
-      // say so. A highway that reads as loud as a river is the map arguing with its own subject.
+      // And the loudest road stays under a lake we can speak for, on dark, where the water has the
+      // room to say so. A highway that reads as loud as a lake is the map arguing with its subject.
+      // Light cannot be held to this: its band 0 measures 1.11:1 on the land, under a hairline, so
+      // there is no ordering to enforce — in light a lake is found by its shore, not by its fill.
       if (flavor === 'dark') {
-        expect(contrast(f.highway as string, land)).toBeLessThan(contrast(f.water as string, land));
+        expect(contrast(f.highway as string, land)).toBeLessThan(
+          contrast(mapListedWater(flavor), land),
+        );
       }
       // And every basemap name stays under our own place labels.
       const ours = contrast(p.places.label, land);

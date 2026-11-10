@@ -2,7 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { themeMaps } from './maps';
-import { deltaE, hexToOklch, inGamut, toNativeColor, withAlpha } from './oklch';
+import {
+  contrastOklch,
+  deltaE,
+  hexToOklch,
+  inGamut,
+  solveForContrast,
+  toNativeColor,
+  withAlpha,
+} from './oklch';
 import { overlays, primitives } from './primitives';
 import { colorSpecs } from './semantic';
 
@@ -83,5 +91,32 @@ describe('the map earth is midway between the field and band 0', () => {
     expect(primitives[earth].h).toBe(245);
     expect(primitives[earth].c).toBeGreaterThan(0);
     expect(primitives[earth].c).toBeLessThan(0.012);
+  });
+});
+
+/**
+ * Water the map has nothing to say about sits halfway, in contrast against the land, between that
+ * land and the water it can speak for — so an unlisted pond is always the quieter of the two, in
+ * either mode. It has to be a different color from band 0 at all: the basemap paints its own water
+ * under ours, and the access dim is a halved opacity, so matching colors made the dim a no-op
+ * (#102). Held here so a move to the land or to the ramp carries it rather than stranding it.
+ */
+describe('unlisted water is halfway between the land and the water we know', () => {
+  it.each([
+    ['dark', 'map-earth-dark', 'depth-dark-0', 'map-water-inactive-dark'],
+    ['light', 'map-earth-light', 'depth-light-0', 'map-water-inactive-light'],
+  ] as const)('%s', (_mode, earth, band0, unlisted) => {
+    const land = primitives[earth];
+    const half = 1 + (contrastOklch(primitives[band0], land) - 1) / 2;
+    const solved = solveForContrast(
+      { l: land.l, c: 0, h: 0 },
+      land,
+      half,
+      land.l > 0.5 ? 'darker' : 'lighter',
+    );
+    expect(primitives[unlisted].l).toBeCloseTo(solved.l, 4);
+    // Gray, never ice (Review 2): nothing receded carries the app's hue.
+    expect(primitives[unlisted].c).toBe(0);
+    expect(primitives[unlisted]).not.toEqual(primitives[band0]);
   });
 });

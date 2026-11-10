@@ -43,7 +43,7 @@
   --map-foot: oklch(1 0 0 / 0.85);
   --map-earth: oklch(0.9626 0.006 245);
   --map-shore-hover: oklch(0.6295 0.0125 239.97);
-  --map-water-inactive: oklch(0 0 0 / 0.08);
+  --map-water-inactive: oklch(0.9437 0 0);
   --map-shore-inactive: oklch(0 0 0 / 0.22);
   --scrim: oklch(0.1448 0 0 / 0.32);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -252,7 +252,7 @@
   --map-foot: oklch(0.9761 0 0 / 0.85);
   --map-earth: oklch(0.9626 0.006 245);
   --map-shore-hover: oklch(0.6295 0.0125 239.97);
-  --map-water-inactive: oklch(0 0 0 / 0.08);
+  --map-water-inactive: oklch(0.9437 0 0);
   --map-shore-inactive: oklch(0 0 0 / 0.22);
   --scrim: oklch(0 0 0 / 0.66);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -376,7 +376,7 @@
     --map-foot: oklch(0.1149 0 0 / 0.85);
     --map-earth: oklch(0.2404 0.006 245);
     --map-shore-hover: oklch(0.6208 0.0376 245.81);
-    --map-water-inactive: oklch(1 0 0 / 0.08);
+    --map-water-inactive: oklch(0.3164 0 0);
     --map-shore-inactive: oklch(1 0 0 / 0.22);
     --scrim: oklch(0 0 0 / 0.66);
     --scrim-deep: oklch(0 0 0 / 0.76);
@@ -456,7 +456,7 @@
     --map-foot: oklch(0.1149 0 0 / 0.85);
     --map-earth: oklch(0.2404 0.006 245);
     --map-shore-hover: oklch(0.6208 0.0376 245.81);
-    --map-water-inactive: oklch(1 0 0 / 0.08);
+    --map-water-inactive: oklch(0.3164 0 0);
     --map-shore-inactive: oklch(1 0 0 / 0.22);
     --scrim: oklch(0 0 0 / 0.66);
     --scrim-deep: oklch(0 0 0 / 0.76);
@@ -539,7 +539,7 @@
   --map-foot: oklch(0.1149 0 0 / 0.85);
   --map-earth: oklch(0.2404 0.006 245);
   --map-shore-hover: oklch(0.6208 0.0376 245.81);
-  --map-water-inactive: oklch(1 0 0 / 0.08);
+  --map-water-inactive: oklch(0.3164 0 0);
   --map-shore-inactive: oklch(1 0 0 / 0.22);
   --scrim: oklch(0 0 0 / 0.66);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -621,7 +621,7 @@
   --map-foot: oklch(1 0 0 / 0.85);
   --map-earth: oklch(0.9626 0.006 245);
   --map-shore-hover: oklch(0.6295 0.0125 239.97);
-  --map-water-inactive: oklch(0 0 0 / 0.08);
+  --map-water-inactive: oklch(0.9437 0 0);
   --map-shore-inactive: oklch(0 0 0 / 0.22);
   --scrim: oklch(0.1448 0 0 / 0.32);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -703,7 +703,7 @@
   --map-foot: oklch(0.1149 0 0 / 0.85);
   --map-earth: oklch(0.2404 0.006 245);
   --map-shore-hover: oklch(0.6208 0.0376 245.81);
-  --map-water-inactive: oklch(1 0 0 / 0.08);
+  --map-water-inactive: oklch(0.3164 0 0);
   --map-shore-inactive: oklch(1 0 0 / 0.22);
   --scrim: oklch(0 0 0 / 0.66);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -827,7 +827,7 @@
   --map-foot: oklch(0.9761 0 0 / 0.85);
   --map-earth: oklch(0.9626 0.006 245);
   --map-shore-hover: oklch(0.6295 0.0125 239.97);
-  --map-water-inactive: oklch(0 0 0 / 0.08);
+  --map-water-inactive: oklch(0.9437 0 0);
   --map-shore-inactive: oklch(0 0 0 / 0.22);
   --scrim: oklch(0 0 0 / 0.66);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -951,7 +951,7 @@
   --map-foot: oklch(0.1149 0 0 / 0.85);
   --map-earth: oklch(0.2404 0.006 245);
   --map-shore-hover: oklch(0.6208 0.0376 245.81);
-  --map-water-inactive: oklch(1 0 0 / 0.08);
+  --map-water-inactive: oklch(0.3164 0 0);
   --map-shore-inactive: oklch(1 0 0 / 0.22);
   --scrim: oklch(0 0 0 / 0.66);
   --scrim-deep: oklch(0 0 0 / 0.76);
@@ -1075,7 +1075,7 @@
   --map-foot: oklch(1 0 0 / 0.85);
   --map-earth: oklch(0.9626 0.006 245);
   --map-shore-hover: oklch(0.6295 0.0125 239.97);
-  --map-water-inactive: oklch(0 0 0 / 0.08);
+  --map-water-inactive: oklch(0.9437 0 0);
   --map-shore-inactive: oklch(0 0 0 / 0.22);
   --scrim: oklch(0.1448 0 0 / 0.32);
   --scrim-deep: oklch(0 0 0 / 0.76);

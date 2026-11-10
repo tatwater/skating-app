@@ -192,7 +192,11 @@ export const colorSpecs = {
     dark: 'map-shore-hover-dark',
     light: 'map-shore-hover-light',
   },
-  'map-water-inactive': overlay(INK_PURE, 0.08, 'keep'), // an inactive body's fill
+  'map-water-inactive': {
+    role: 'data',
+    dark: 'map-water-inactive-dark',
+    light: 'map-water-inactive-light',
+  },
   // .22, not more: a receded shore has to stay quieter than a listed body's, and a listed body's
   // is now band 0's index line rather than the old ice (`mapPalette.test.ts` holds that order).
   'map-shore-inactive': overlay(INK_PURE, 0.22, 'keep'), // its shore

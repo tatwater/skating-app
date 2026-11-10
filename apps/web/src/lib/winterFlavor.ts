@@ -40,14 +40,33 @@ export function mapEarth(flavor: MapFlavor): string {
   ];
 }
 
-/**
- * All water on the map, basemap water included: the shallowest depth band. A river and an unlisted
- * pond are drawn as what they are, and a body we know about earns its shore, its bands and its name
- * on top — the difference between them is what we can tell you, not what they are made of.
- */
-export function mapWater(flavor: MapFlavor): string {
+/** The water of a body we have something to say about: the shallowest depth band. */
+export function mapListedWater(flavor: MapFlavor): string {
   return (flavor === 'dark' ? nativeThemes.skater.dark : nativeThemes.skater.light).color[
     'depth-0'
+  ];
+}
+
+/**
+ * **Water we have nothing to say about** — a river, an unlisted pond, the sea beyond the region,
+ * and a listed body we have taken out of service. Gray, and exactly halfway between the land and
+ * the water we *do* know about, so it is always the quieter of the two in either mode.
+ *
+ * It was the depth band itself until Greptile caught what that cost (#102). The basemap paints its
+ * own water under ours, so a listed body drawn in band 0 sat on a basemap polygon of the identical
+ * color: `withAccessDim` halves that fill's opacity to say "no public access", and half of a color
+ * over the same color is that color — the dim did nothing at all. An inactive body kept its blue
+ * under the ink wash that was supposed to make it gray, for the same reason. One water color was a
+ * tidy rule and a wrong one; **gray is what the map says when it cannot tell you anything**, and
+ * that is true of an unlisted pond and a retired lake alike.
+ *
+ * Achromatic on purpose (Review 2's rule: gray, not ice), so nothing receded carries the app's
+ * hue. `primitives.test.ts` holds the halfway arithmetic, so moving the land or the ramp
+ * carries this with them.
+ */
+export function mapUnknownWater(flavor: MapFlavor): string {
+  return (flavor === 'dark' ? nativeThemes.skater.dark : nativeThemes.skater.light).color[
+    'map-water-inactive'
   ];
 }
 
@@ -138,7 +157,7 @@ function step(land: Oklch, role: Role): string {
 export function winterFlavor(flavor: MapFlavor): Record<string, string> {
   const land = landOf(flavor);
   const earth = mapEarth(flavor);
-  const water = mapWater(flavor);
+  const water = mapUnknownWater(flavor);
   const s = (role: Role) => step(land, role);
   const built = s('built');
   const minor = s('minor');
@@ -172,9 +191,9 @@ export function winterFlavor(flavor: MapFlavor): Record<string, string> {
     pedestrian: earth,
     aerodrome: earth,
 
-    // All water on the map is one color: the shallowest depth band. A river and an unlisted pond
-    // are drawn as what they are, and a body we know about earns its shore, its bands and its name
-    // on top — the difference is what we can tell you about it, not what it is made of.
+    // Unlisted water is gray: it is water we have nothing to say about, drawn exactly as a retired
+    // body is. It also has to differ from band 0, or a listed lake's access dim — half opacity on
+    // our fill — would be half of a color over the same color, and say nothing (#102).
     water,
 
     // The approach. Casings are the land, so a road reads as cut into it rather than laid on it.

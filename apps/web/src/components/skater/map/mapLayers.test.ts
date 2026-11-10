@@ -193,7 +193,10 @@ describe('filters and paint', () => {
     expect(JSON.stringify(waterFillOpacity())).toContain('""');
     expect(p.water.fill).toBe(p.depth.fills[0]);
     expect(p.water.fill).toMatch(/^#[0-9a-f]{6}$/);
-    expect(p.inactive.fill).toMatch(/^rgba\(/);
+    // The inactive gray is opaque too, and a different color from band 0 — the basemap paints its
+    // own water under ours, so a translucent gray over a matching blue stayed blue (#102).
+    expect(p.inactive.fill).toMatch(/^#[0-9a-f]{6}$/);
+    expect(p.inactive.fill).not.toBe(p.water.fill);
   });
 
   it('stands the fill down for the lake under a satellite picture, and only that lake (D81)', () => {

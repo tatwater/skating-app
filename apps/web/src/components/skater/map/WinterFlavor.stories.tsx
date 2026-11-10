@@ -1,6 +1,6 @@
-import { contrastOklch, hexToOklch } from '@skating/design/tokens';
+import { contrastOklch, hexToOklch, withAlpha } from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { mapEarth, winterFlavor } from '@/lib/winterFlavor';
+import { mapEarth, mapListedWater, winterFlavor } from '@/lib/winterFlavor';
 import { mapPalette, SHORE_OPACITY_BY_ZOOM } from './mapPalette';
 import { SkaterPair } from './mapStill';
 
@@ -31,8 +31,11 @@ const ROWS: ReadonlyArray<{ group: string; rows: ReadonlyArray<[string, string]>
     ],
   },
   {
-    group: 'The water — every drop of it, one color',
-    rows: [['basemap water · rivers, unlisted ponds', 'water']],
+    group: 'The water we have nothing to say about',
+    rows: [
+      ['rivers, unlisted ponds, retired bodies', 'water'],
+      ['a lake we can speak for, for scale', 'listed'],
+    ],
   },
   {
     group: 'The approach',
@@ -59,6 +62,7 @@ const ROWS: ReadonlyArray<{ group: string; rows: ReadonlyArray<[string, string]>
 ];
 
 function at(flavor: 'white' | 'dark', path: string): string {
+  if (path === 'listed') return mapListedWater(flavor);
   const f = winterFlavor(flavor) as Record<string, unknown>;
   const [head, tail] = path.split('.');
   const value = f[head as string];
@@ -71,7 +75,12 @@ function Plate({ mode }: { mode: 'dark' | 'light' }) {
   const land = mapEarth(flavor);
   const p = mapPalette(flavor);
   const ratio = (c: string) => contrastOklch(hexToOklch(c), hexToOklch(land));
-  const shore = ratio(p.water.shore) * SHORE_OPACITY_BY_ZOOM.far;
+  // Composited at the far-zoom opacity, not scaled by it: a contrast ratio is not linear in
+  // alpha, so multiplying one by an opacity produces a number that describes nothing (#102).
+  const shore = contrastOklch(
+    withAlpha(hexToOklch(p.water.shore), SHORE_OPACITY_BY_ZOOM.far),
+    hexToOklch(land),
+  );
   const ours = ratio(p.places.label);
 
   return (

@@ -23,7 +23,7 @@ import {
 import { themes } from '@skating/design';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
-import { mapEarth, mapWater, winterFlavor } from './winterFlavor';
+import { mapEarth, mapUnknownWater, winterFlavor } from './winterFlavor';
 
 /**
  * ODbL attribution for both the Protomaps basemap and our OSM-derived water data — a launch
@@ -54,7 +54,7 @@ const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4';
 export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
-export { mapEarth, mapWater } from './winterFlavor';
+export { mapEarth, mapListedWater, mapUnknownWater } from './winterFlavor';
 
 /**
  * The shoreline's color, which depends on what is inside it (A06e).
@@ -178,7 +178,7 @@ const MASK_FILL_OPACITY = 0.999;
  * mask into the same pass as the labels, where being later in the list finally means being on top.
  */
 function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
-  const water = mapWater(flavor);
+  const water = mapUnknownWater(flavor);
   const earth = mapEarth(flavor);
   const fill = (id: string, kind: string, color: string) => ({
     id,
