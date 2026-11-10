@@ -16,7 +16,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { CAPABILITIES, type Capability, GRANTS } from './capabilities';
+import { CAPABILITIES, type Capability, GRANTS } from '../../core/src/capabilities';
 
 const CONVEX = resolve(__dirname, '../../convex/convex');
 

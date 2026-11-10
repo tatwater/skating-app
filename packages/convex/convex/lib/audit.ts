@@ -4,7 +4,7 @@
  * Every operator action — and every machine action an operator should be able to check — leaves one
  * audit row. They used to be written by 51 direct inserts across 16 files; they all come through here
  * now, so the row's shape is decided once: who (absent when the system acted), what, on what, why,
- * what it replaced, and — for an undo — which row it undoes. `auditWriters.test.ts` (core) holds the
+ * what it replaced, and — for an undo — which row it undoes. `auditWriters.test.ts` (guards) holds the
  * sources to this file being the only writer.
  */
 
