@@ -2,7 +2,7 @@ import { isRegionOffscreen } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapModeBar } from '@/components/kit/map-controls';
 import { toast } from '@/components/kit/toast';
 import { useTheme } from '@/components/theme-provider';
@@ -156,7 +156,7 @@ export default function SkaterMapCanvas() {
   const cameraTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [zoomBounds, setZoomBounds] = useState({ atMax: false, atMin: false });
 
-  const { containerRef, mapRef, loaded } = useMapCanvas({
+  const { containerRef, mapRef, loaded, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
@@ -267,11 +267,13 @@ export default function SkaterMapCanvas() {
     [],
   );
 
-  // The instance, for the two imperative tools allowed to hold it (see `useMapInstance`).
+  // The instance, for the two imperative tools allowed to hold it (see `useMapInstance`). They add
+  // their own sources, so they get the map only while its style can take one.
   useEffect(() => {
-    publishMapInstance(mapRef.current, loaded);
+    const live = liveMap();
+    publishMapInstance(live, live !== null);
     return () => publishMapInstance(null, false);
-  }, [loaded, mapRef]);
+  }, [liveMap]);
 
   // ── The spec, applied as a diff ──────────────────────────────────────────────────────────────
   const appliedRef = useRef<MapSpec | null>(null);
@@ -279,8 +281,8 @@ export default function SkaterMapCanvas() {
   const [pendingFit, setPendingFit] = useState<MapFit | null>(null);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !loaded) {
+    const map = liveMap();
+    if (!map) {
       appliedRef.current = null;
       return;
     }
@@ -337,13 +339,13 @@ export default function SkaterMapCanvas() {
       }
     }
     appliedRef.current = spec;
-  }, [spec, loaded, mapRef]);
+  }, [spec, liveMap]);
 
   // A fit runs once its target is known: a body fit waits for the focus read.
   const focusBody = data.focusBody;
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !loaded || !pendingFit) return;
+    const map = liveMap();
+    if (!map || !pendingFit) return;
     const key = fitKey(pendingFit);
     const first = lastFitKey.current === null && !useSkaterMapStore.getState().camera;
     const animate = !first;
@@ -369,7 +371,7 @@ export default function SkaterMapCanvas() {
     }
     lastFitKey.current = key;
     setPendingFit(null);
-  }, [pendingFit, focusBody, loaded, mapRef, specRef]);
+  }, [pendingFit, focusBody, liveMap, specRef]);
 
   // On first open of a view with no framing of its own and no camera this session, frame on the
   // skater's own water when the device says they're in the region (D12/D20). Never stored.
@@ -379,12 +381,11 @@ export default function SkaterMapCanvas() {
   // it must never pull the skater back from where they've since gone.
   const geolocated = useRef(false);
   useEffect(() => {
-    if (!loaded || geolocated.current) return;
+    const map = liveMap();
+    if (!map || geolocated.current) return;
     geolocated.current = true;
     if (useSkaterMapStore.getState().camera || spec.fit !== null || !spec.visible) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
-    const map = mapRef.current;
-    if (!map) return;
     let moved = false;
     const onMove = () => {
       moved = true;
@@ -398,7 +399,7 @@ export default function SkaterMapCanvas() {
         now.fit === null &&
         now.visible &&
         !useSkaterMapStore.getState().camera &&
-        mapRef.current === map
+        liveMap() === map
       );
     };
     navigator.geolocation.getCurrentPosition(
@@ -412,33 +413,32 @@ export default function SkaterMapCanvas() {
       },
       { timeout: 8000, maximumAge: 60_000 },
     );
-  }, [loaded, spec.fit, spec.visible, mapRef, specRef]);
+  }, [spec.fit, spec.visible, liveMap, specRef]);
 
   // ── Data → sources ───────────────────────────────────────────────────────────────────────────
-  const setSource = (id: string, fc: GeoJSON.FeatureCollection) => {
-    (mapRef.current?.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(fc);
-  };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setSource reads the ref.
+  // Memoized on `liveMap`, so its identity carries readiness: every effect below lists `setSource`
+  // alone and re-runs — re-filling its source — once a map that can take the write exists.
+  const setSource = useCallback(
+    (id: string, fc: GeoJSON.FeatureCollection) => {
+      (liveMap()?.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(fc);
+    },
+    [liveMap],
+  );
   useEffect(() => {
-    if (loaded) setSource(SOURCES.water, data.water);
-  }, [data.water, loaded]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setSource reads the ref.
+    setSource(SOURCES.water, data.water);
+  }, [data.water, setSource]);
   useEffect(() => {
-    if (loaded) setSource(SOURCES.subAreas, data.subAreaFeatures);
-  }, [data.subAreaFeatures, loaded]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setSource reads the ref.
+    setSource(SOURCES.subAreas, data.subAreaFeatures);
+  }, [data.subAreaFeatures, setSource]);
   useEffect(() => {
-    if (!loaded) return;
     setSource(SOURCES.hazards, data.hazardFeatures);
     setSource(SOURCES.bodyFeatures, data.bodyFeatureFeatures);
-  }, [data.hazardFeatures, data.bodyFeatureFeatures, loaded]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setSource reads the ref.
+  }, [data.hazardFeatures, data.bodyFeatureFeatures, setSource]);
   useEffect(() => {
-    if (!loaded) return;
     setSource(SOURCES.approach, data.approachFeatures);
     setSource(SOURCES.landmarks, data.landmarkFeatures);
     setSource(SOURCES.tracks, data.trackFeatures);
-  }, [data.approachFeatures, data.landmarkFeatures, data.trackFeatures, loaded]);
+  }, [data.approachFeatures, data.landmarkFeatures, data.trackFeatures, setSource]);
 
   // The sidebar's In view list reads the rows the map is drawing (no second subscription).
   useEffect(() => {
@@ -449,9 +449,8 @@ export default function SkaterMapCanvas() {
 
   // Hover, both ways: the sidebar's row and the map's water share `hoveredBodyId`.
   useEffect(() => {
-    const map = mapRef.current;
-    if (map && loaded) map.setFilter(WATER_HOVER_LAYER, matchId(hoveredBodyId) as never);
-  }, [hoveredBodyId, loaded, mapRef]);
+    liveMap()?.setFilter(WATER_HOVER_LAYER, matchId(hoveredBodyId) as never);
+  }, [hoveredBodyId, liveMap]);
 
   // ── Depth: the focused lake's band fills and contours, and the credit the tiles carry ─────
   const [contoursDrawn, setContoursDrawn] = useState(false);
@@ -461,8 +460,8 @@ export default function SkaterMapCanvas() {
     focusBody && spec.focus ? contourBodyKey(focusBody.externalId, focusBody._id) : null;
   const depthOn = spec.layers.depth && contourKey !== null && contourArchive !== '';
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !loaded) return;
+    const map = liveMap();
+    if (!map) return;
     const layers = DEPTH_LAYERS.filter((l) => map.getLayer(l.layer));
     if (layers.length === 0) return;
     // One filter for both: the bands are stamped with the contours' own key.
@@ -511,7 +510,7 @@ export default function SkaterMapCanvas() {
     return () => {
       map.off('sourcedata', onData);
     };
-  }, [depthOn, contourKey, loaded, mapRef]);
+  }, [depthOn, contourKey, liveMap]);
 
   // Under drawn depth the lake takes the shallowest band's fill: the ground the band polygons lie
   // on, or — for a lake with contour lines and no polygons — what makes the rings read as depth.
@@ -520,8 +519,8 @@ export default function SkaterMapCanvas() {
   const depthDrawn = (contoursDrawn || bands.length > 0) && spec.layers.depth;
   const imageryOn = toggles.imagery;
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !loaded) return;
+    const map = liveMap();
+    if (!map) return;
     const lakeId = focusBody?._id ?? null;
     const ground = depthDrawn ? lakeId : null;
     map.setPaintProperty(WATER_FILL_LAYER, 'fill-color', waterFillColor(palette, ground) as never);
@@ -530,7 +529,7 @@ export default function SkaterMapCanvas() {
       'fill-opacity',
       waterFillOpacity(imageryOn ? lakeId : null) as never,
     );
-  }, [depthDrawn, focusBody, imageryOn, palette, loaded, mapRef]);
+  }, [depthDrawn, focusBody, imageryOn, palette, liveMap]);
 
   // ── The dock's camera actions ─────────────────────────────────────────────────────────────────
   const [locating, setLocating] = useState(false);

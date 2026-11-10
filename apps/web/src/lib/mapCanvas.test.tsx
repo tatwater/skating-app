@@ -13,6 +13,7 @@
  */
 
 import { act, render } from '@testing-library/react';
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** One fake map, recording what the shell asked of it. */
@@ -22,6 +23,9 @@ class FakeMap {
   handlers = new Map<string, () => void>();
   controls: unknown[] = [];
   removed = false;
+  /** MapLibre takes a style write only between `load` and `remove`; `liveMap` is what enforces it. */
+  styleLoaded = false;
+  paint = new Map<string, unknown>();
   fitted: unknown[] = [];
   resizes = 0;
   rotationDisabled: string[] = [];
@@ -40,12 +44,21 @@ class FakeMap {
   }
   remove() {
     this.removed = true;
+    this.styleLoaded = false;
   }
   fitBounds(bounds: unknown) {
     this.fitted.push(bounds);
   }
   resize() {
     this.resizes++;
+  }
+  /**
+   * A style write. MapLibre's `_checkLoaded` **throws** before `load` and on a removed map rather
+   * than no-opping, which is what turned the theme switch into the crash screen.
+   */
+  setPaintProperty(key: string, value: unknown) {
+    if (!this.styleLoaded) throw new Error('Style is not done loading.');
+    this.paint.set(key, value);
   }
   getCenter() {
     return { lng: -73, lat: 44.5 };
@@ -63,6 +76,7 @@ class FakeMap {
   }
   /** Fire `load` the way MapLibre would once the style is ready. */
   load() {
+    this.styleLoaded = true;
     act(() => {
       this.handlers.get('load')?.();
     });
@@ -124,6 +138,29 @@ function Host({
     onLoad: onLoad ?? (() => {}),
   });
   return <div ref={containerRef} data-tick={tick} />;
+}
+
+/**
+ * A caller shaped like the real ones at the moment of a theme switch: `flavor` and the palette
+ * derived from it change in the *same* render, so the effect that writes paint for that palette
+ * re-runs in the very commit where the shell destroys one map and builds the next. Every map the
+ * effect was handed is recorded.
+ */
+function PaintHost({ flavor, seen }: { flavor: 'white' | 'dark'; seen: (FakeMap | null)[] }) {
+  const { containerRef, liveMap } = useMapCanvas({
+    pmtilesUrl: 'pmtiles://x',
+    flavor,
+    initialCenter: [-73, 44.5],
+    initialZoom: 11,
+    onLoad: () => {},
+  });
+  const palette = `palette:${flavor}`;
+  useEffect(() => {
+    const map = liveMap() as FakeMap | null;
+    seen.push(map);
+    map?.setPaintProperty('fill-color', palette);
+  }, [palette, liveMap, seen]);
+  return <div ref={containerRef} />;
 }
 
 beforeEach(() => {
@@ -242,6 +279,33 @@ describe('useMapCanvas', () => {
     expect(FakeMap.instances[0]?.resizes).toBe(0);
     FakeMap.instances[0]?.load();
     expect(FakeMap.instances[0]?.resizes).toBe(1);
+  });
+
+  /**
+   * The theme-switch crash (B03 §8.3).
+   *
+   * `loaded` is React state, so an effect body reads the value from the render that scheduled it —
+   * while `mapRef` is mutated during the commit. A theme switch changes `flavor` and the caller's
+   * palette in one render, so the cleanup that removed the old map and the body that built the new
+   * one both ran in a commit where `loaded` still said `true`: the caller's paint effect, whose
+   * deps had changed in that same render, wrote to a map whose style had not loaded. MapLibre
+   * throws `Style is not done loading.` there, and the error boundary turned that into the crash
+   * screen — the whole app, for picking Dark from the account menu.
+   *
+   * So the contract is `liveMap()`, not the pair: it is never a map that cannot be written to.
+   */
+  it('hands a caller no map at all while one is being swapped for the theme', () => {
+    const seen: (FakeMap | null)[] = [];
+    const { rerender } = render(<PaintHost flavor="white" seen={seen} />);
+    FakeMap.instances[0]?.load();
+    expect(seen.at(-1)).toBe(FakeMap.instances[0]);
+
+    rerender(<PaintHost flavor="dark" seen={seen} />);
+    expect(FakeMap.instances).toHaveLength(2); // the switch re-created it, as it always has
+    expect(seen.at(-1)).toBeNull(); // and not the new, unloaded map
+
+    FakeMap.instances[1]?.load();
+    expect(seen.at(-1)).toBe(FakeMap.instances[1]); // re-applied once it can take a write
   });
 
   it('tears the map down on unmount and releases the pmtiles protocol', () => {

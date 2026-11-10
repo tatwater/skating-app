@@ -991,3 +991,41 @@ class 1, and `Etc/GMT-14` / `Etc/GMT+11` — UTC+14 and UTC−11, which bracket 
 class 2. Both brackets are load-bearing, and each was shown to be: with the bug reintroduced, the
 16:52 UTC instant fails only at UTC+14, while the mirror case (a 02:00 UTC Saturday) fails only at
 UTC−11. Three runs, about 105 s.
+
+### 8.5 A theme switch crashed the app: readiness is state, the map is a ref
+
+The founder's live test: in light mode, pick **Dark** from the account menu and the app lands on the
+crash screen. Pressing either *Try again* or *Reload the page* completes the switch, so the theme
+itself was never the problem — the transition was, exactly once.
+
+A theme switch re-creates the MapLibre instance (the basemap style is built per flavor; `useMapCanvas`
+has done it that way since A02) and the skater canvas derives `palette` from the same flavor. So one
+render changes both, and the paint effect that follows `palette` has its dependencies changed in the
+*very commit* where the shell's cleanup removes the old map and the shell's body builds the new one.
+That effect gated on `mapRef.current` and `loaded` — and those two disagree in that window:
+
+- `mapRef.current` is mutated *during* the commit, so by the time the effect body runs it is already
+  the new map, whose style has not loaded.
+- `loaded` is React state, so the body reads the value from the render that scheduled it: `true`,
+  about a map that no longer exists.
+
+The guard therefore passed and `setPaintProperty` landed on an unloaded style. MapLibre's
+`_checkLoaded` **throws** there — `Style is not done loading.` — rather than no-opping, the throw came
+out of a passive effect, and `Sentry.ErrorBoundary` turned it into the crash screen. A retry re-rendered
+after `load` had fired, which is why both buttons "worked".
+
+The fix is one accessor, `MapCanvas.liveMap()`: the live map if its style can take a write, else `null`,
+with readiness held in a ref the same commit updates so it can never be stale about the map it answers
+for. Every imperative effect in all four canvases now gates on it — a style write is never guarded by
+state — while `loaded` stays in the dependency lists, since it is what re-runs them (and so re-applies
+the whole spec) once the new map is ready.
+
+**Why no test caught it:** `SkaterMapCanvas.test` already had *re-applies everything on a theme switch*,
+but its fake map's `setPaintProperty` silently no-opped on an unknown layer, so the one call that
+mattered was swallowed. The fake now models `_checkLoaded` — every style write throws before `load` and
+after `remove` — and that existing test fails without the fix. `mapCanvas.test` pins the contract
+itself: across a flavor change a caller is handed `null`, never the new map before it has loaded.
+
+The general shape, worth remembering past this phase: **a React-state flag is never a safe guard for a
+ref that the same commit rewrites.** Where a ref and a flag describe one object, the flag belongs in a
+ref beside it.
